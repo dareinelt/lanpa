@@ -1,0 +1,91 @@
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-intranet}
+      MYSQL_USER: ${DB_USER:-intranet}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD muss in .env gesetzt sein}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD muss in .env gesetzt sein}
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/intranet.cnf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - intranet
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: app
+      SEED_ON_START: ${SEED_ON_START:-true}
+    env_file:
+      - .env
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - app_storage:/var/www/html/storage
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1/health') !== false ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - intranet
+
+  sync:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+      db:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: sync
+    env_file:
+      - .env
+    command: ["php", "scripts/sync_worker.php"]
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks:
+      - intranet
+
+  # Optionales Verwaltungswerkzeug: docker compose --profile tools up -d
+  phpmyadmin:
+    image: phpmyadmin:5
+    profiles: ["tools"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PMA_HOST: db
+      PMA_PORT: 3306
+      UPLOAD_LIMIT: 64M
+    ports:
+      - "${PMA_PORT:-8081}:80"
+    networks:
+      - intranet
+
+volumes:
+  db_data:
+  app_storage:
+
+networks:
+  intranet:
+    driver: bridge

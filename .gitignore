@@ -1,0 +1,16 @@
+# Konfiguration und Geheimnisse
+.env
+*.env.local
+
+# Laufzeitdaten
+storage/logs/*
+!storage/logs/.gitkeep
+storage/uploads/*
+!storage/uploads/.gitkeep
+
+# Werkzeuge / Editoren
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store

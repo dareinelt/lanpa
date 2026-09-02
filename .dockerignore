@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.local
+storage/logs/*
+storage/uploads/*
+tests
+docs
+README.md
+*.md
+.idea
+.vscode

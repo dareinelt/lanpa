@@ -63,7 +63,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 
 <footer class="site-footer">
     <div class="container site-footer__inner">
-        <span><?= Html::e($siteTitle ?? $appName) ?></span>
+        <span><?= Html::e(($footerText ?? '') !== '' ? $footerText : ($siteTitle ?? $appName)) ?></span>
         <a href="/admin">Administration</a>
     </div>
 </footer>

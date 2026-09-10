@@ -102,6 +102,7 @@ $settings = [
     'site_title' => 'Intranet',
     'site_subtitle' => 'Zentraler Einstieg zu internen Anwendungen',
     'site_subtitle_visible' => '1',
+    'footer_text' => 'Intranet',
     'description_mode' => 'both',
     'color_primary' => '#1f4e79',
     'color_secondary' => '#37718e',

@@ -27,6 +27,7 @@ abstract class Controller
             'siteTitle' => $settings->get('site_title'),
             'siteSubtitle' => $settings->get('site_subtitle'),
             'siteSubtitleVisible' => $settings->bool('site_subtitle_visible'),
+            'footerText' => $settings->get('footer_text'),
             'themeCss' => Container::theme()->css(),
             'hasLogo' => Container::logo()->current() !== null,
             'flashes' => Session::takeFlash(),

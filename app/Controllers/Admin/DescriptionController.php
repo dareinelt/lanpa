@@ -25,6 +25,7 @@ final class DescriptionController extends AdminController
             'descriptionMode' => $settings->descriptionMode(),
             'siteTitle' => $settings->get('site_title'),
             'siteSubtitle' => $settings->get('site_subtitle'),
+            'siteSubtitleVisible' => $settings->bool('site_subtitle_visible'),
             'items' => Container::navigation()->allItems(),
             'errors' => [],
         ]);
@@ -37,6 +38,7 @@ final class DescriptionController extends AdminController
         $mode = (string) $request->input('description_mode', 'both');
         $title = Validator::cleanText((string) $request->input('site_title', ''), 120);
         $subtitle = Validator::cleanText((string) $request->input('site_subtitle', ''), 200);
+        $subtitleVisible = $request->input('site_subtitle_visible') !== null;
 
         $errors = [];
         if (!Validator::isDescriptionMode($mode)) {
@@ -55,6 +57,7 @@ final class DescriptionController extends AdminController
                 'descriptionMode' => $mode,
                 'siteTitle' => $title,
                 'siteSubtitle' => $subtitle,
+                'siteSubtitleVisible' => $subtitleVisible,
                 'items' => Container::navigation()->allItems(),
                 'errors' => $errors,
             ], 422);
@@ -64,6 +67,7 @@ final class DescriptionController extends AdminController
             'description_mode' => $mode,
             'site_title' => $title,
             'site_subtitle' => $subtitle,
+            'site_subtitle_visible' => $subtitleVisible ? '1' : '0',
         ]);
 
         app_logger()->info('Darstellungseinstellungen geändert.', [

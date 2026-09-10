@@ -37,6 +37,13 @@ Runner::test('Telefonnummern werden auf Ziffern reduziert', static function (): 
     Assert::same('', Validator::normalizePhone(null));
 });
 
+Runner::test('Notfallnummern erlauben Stern und Raute', static function (): void {
+    Assert::true(Validator::isPhoneNumber('112'));
+    Assert::true(Validator::isPhoneNumber('*112#'));
+    Assert::true(Validator::isPhoneNumber('+49 (30) 123-456#'));
+    Assert::false(Validator::isPhoneNumber('abc'));
+});
+
 Runner::test('Freitext wird bereinigt und begrenzt', static function (): void {
     Assert::same('Test', Validator::cleanText("  Test\x07  "));
     Assert::same('abcde', Validator::cleanText('abcdefghij', 5));

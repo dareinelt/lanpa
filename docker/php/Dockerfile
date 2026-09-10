@@ -7,11 +7,12 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends \
         libldap-common \
         libldap2-dev \
+        libsasl2-dev \
         default-mysql-client \
     ; \
     docker-php-ext-configure ldap --with-ldap-sasl; \
     docker-php-ext-install -j"$(nproc)" pdo_mysql ldap opcache; \
-    apt-get purge -y --auto-remove libldap2-dev; \
+    apt-get purge -y --auto-remove libldap2-dev libsasl2-dev; \
     rm -rf /var/lib/apt/lists/*
 
 # Apache-Module und DocumentRoot

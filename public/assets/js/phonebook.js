@@ -22,6 +22,7 @@
     var offset = 0;
     var currentTerm = '';
     var searchStarted = false;
+    var initialStatus = status ? status.textContent : '';
 
     function startSearch() {
         if (searchStarted) {
@@ -32,6 +33,31 @@
             emergency.hidden = true;
         }
         results.hidden = false;
+    }
+
+    function resetSearch() {
+        window.clearTimeout(timer);
+
+        if (controller) {
+            controller.abort();
+            controller = null;
+        }
+
+        searchStarted = false;
+        currentTerm = '';
+        offset = 0;
+        results.textContent = '';
+        results.hidden = true;
+
+        if (moreButton) {
+            moreButton.hidden = true;
+        }
+
+        if (emergency) {
+            emergency.hidden = false;
+        }
+
+        setStatus(initialStatus);
     }
 
     function setStatus(message) {
@@ -161,6 +187,12 @@
     if (input) {
         input.addEventListener('input', function () {
             window.clearTimeout(timer);
+
+            if (input.value.trim() === '') {
+                resetSearch();
+                return;
+            }
+
             timer = window.setTimeout(function () {
                 currentTerm = input.value.trim();
                 offset = 0;

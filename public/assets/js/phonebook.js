@@ -45,7 +45,6 @@
 
         node.querySelector('[data-field="display_name"]').textContent = person.display_name;
         node.querySelector('[data-field="department"]').textContent = person.department || '–';
-        node.querySelector('[data-field="modified"]').textContent = person.modified || '–';
 
         var phone = node.querySelector('[data-field="phone"]');
         if (person.phone) {
@@ -56,10 +55,19 @@
             parent.textContent = '–';
         }
 
-        setOptionalLink(node, 'mobile', person.mobile, 'tel:');
+        var mobile = person.mobile;
+        if (mobile && person.phone && normalizeNumber(mobile) === normalizeNumber(person.phone)) {
+            mobile = '';
+        }
+
+        setOptionalLink(node, 'mobile', mobile, 'tel:');
         setOptionalLink(node, 'email', person.email, 'mailto:');
 
         return node;
+    }
+
+    function normalizeNumber(value) {
+        return String(value).replace(/[^\d+]/g, '');
     }
 
     function setOptionalLink(node, field, value, scheme) {

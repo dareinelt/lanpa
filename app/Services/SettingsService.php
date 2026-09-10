@@ -30,6 +30,7 @@ final class SettingsService
             'site_title' => (string) Config::get('app.name', 'Intranet'),
             'site_subtitle' => 'Zentraler Einstieg zu internen Anwendungen',
             'site_subtitle_visible' => '1',
+            'footer_text' => (string) Config::get('app.name', 'Intranet'),
             'description_mode' => 'both',
             'color_primary' => '#1f4e79',
             'color_secondary' => '#37718e',

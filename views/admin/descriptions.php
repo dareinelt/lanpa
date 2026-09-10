@@ -7,6 +7,7 @@ use App\Support\Html;
 
 /** @var string $descriptionMode */
 /** @var bool $siteSubtitleVisible */
+/** @var string $footerText */
 /** @var list<array<string,mixed>> $items */
 /** @var array<string,string> $errors */
 $modes = [
@@ -34,6 +35,12 @@ $modes = [
     <div class="field field--check">
         <input type="checkbox" id="site_subtitle_visible" name="site_subtitle_visible" value="1"<?= $siteSubtitleVisible ? ' checked' : '' ?>>
         <label for="site_subtitle_visible">Untertitel unter dem Seitentitel anzeigen</label>
+    </div>
+
+    <div class="field">
+        <label for="footer_text">Footer-Text</label>
+        <input type="text" id="footer_text" name="footer_text" maxlength="200" value="<?= Html::e($footerText) ?>">
+        <p class="field__hint">Wird links im Seitenfuß angezeigt. Ohne Angabe erscheint der Seitentitel.</p>
     </div>
 
     <fieldset class="fieldset">

@@ -134,7 +134,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | --- | --- |
 | Übersicht | Kennzahlen zu Navigation, Telefonliste, Klicks und letztem AD-Lauf |
 | Navigation | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Sortieren, Löschen |
-| Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`) |
+| Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`) |
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
 | Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Intervall, manueller Testlauf |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |

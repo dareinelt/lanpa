@@ -7,6 +7,7 @@ use App\Support\Html;
 
 /** @var string $descriptionMode */
 /** @var bool $siteSubtitleVisible */
+/** @var bool $landingIntroVisible */
 /** @var string $footerText */
 /** @var list<array<string,mixed>> $items */
 /** @var array<string,string> $errors */
@@ -35,6 +36,11 @@ $modes = [
     <div class="field field--check">
         <input type="checkbox" id="site_subtitle_visible" name="site_subtitle_visible" value="1"<?= $siteSubtitleVisible ? ' checked' : '' ?>>
         <label for="site_subtitle_visible">Untertitel unter dem Seitentitel anzeigen</label>
+    </div>
+
+    <div class="field field--check">
+        <input type="checkbox" id="landing_intro_visible" name="landing_intro_visible" value="1"<?= $landingIntroVisible ? ' checked' : '' ?>>
+        <label for="landing_intro_visible">Seitentitel und Untertitel über den Kacheln auf der Startseite anzeigen</label>
     </div>
 
     <div class="field">

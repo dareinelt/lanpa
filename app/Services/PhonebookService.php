@@ -18,12 +18,12 @@ final class PhonebookService
     /**
      * @return array{items:list<array<string,mixed>>,total:int,limit:int,offset:int,has_more:bool}
      */
-    public function search(string $term, int $limit = self::DEFAULT_LIMIT, int $offset = 0): array
+    public function search(string $term, int $limit = self::DEFAULT_LIMIT, int $offset = 0, bool $includeWithoutPhone = false): array
     {
         $limit = max(1, min(PhonebookRepository::MAX_LIMIT, $limit));
         $offset = max(0, $offset);
 
-        $result = $this->repository->search($term, $limit, $offset);
+        $result = $this->repository->search($term, $limit, $offset, $includeWithoutPhone);
 
         $items = array_map(
             static fn (array $row): array => [
@@ -52,6 +52,11 @@ final class PhonebookService
     public function countActive(): int
     {
         return $this->repository->countActive();
+    }
+
+    public function countVisible(bool $includeWithoutPhone = false): int
+    {
+        return $this->repository->countVisible($includeWithoutPhone);
     }
 
     public function lastSyncedAt(): ?string

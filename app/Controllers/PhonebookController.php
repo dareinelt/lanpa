@@ -17,7 +17,7 @@ final class PhonebookController extends Controller
 
         return $this->view('phonebook.index', [
             'pageTitle' => 'Telefonliste',
-            'entryCount' => $service->countActive(),
+            'entryCount' => $service->countVisible(Container::auth()->check()),
             'lastSync' => $service->lastSyncedAt(),
             'emergencyNumbers' => Container::emergencyNumbers()->activeItems(),
             'activeNav' => 'phonebook',
@@ -34,7 +34,7 @@ final class PhonebookController extends Controller
         $limit = $request->queryInt('limit', PhonebookService::DEFAULT_LIMIT);
         $offset = $request->queryInt('offset', 0);
 
-        $result = Container::phonebook()->search($term, $limit, $offset);
+        $result = Container::phonebook()->search($term, $limit, $offset, Container::auth()->check());
 
         return Response::json($result)->withHeader('Cache-Control', 'no-store');
     }

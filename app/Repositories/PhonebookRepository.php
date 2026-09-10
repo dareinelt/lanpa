@@ -12,6 +12,12 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     public const MAX_LIMIT = 100;
 
     /**
+     * Eintraege ohne Telefon- und Mobilnummer sind nur fuer angemeldete
+     * Administratoren sichtbar.
+     */
+    private const PHONE_CONDITION = "((phone IS NOT NULL AND phone <> '') OR (mobile IS NOT NULL AND mobile <> ''))";
+
+    /**
      * Sucht im lokalen Datenbestand (nicht im AD).
      *
      * Es werden bewusst Praefix-Suchen (`term%`) verwendet, damit die Indizes
@@ -19,12 +25,12 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
      *
      * @return array{items:list<array<string,mixed>>,total:int}
      */
-    public function search(string $term, int $limit = 50, int $offset = 0): array
+    public function search(string $term, int $limit = 50, int $offset = 0, bool $includeWithoutPhone = false): array
     {
         $limit = max(1, min(self::MAX_LIMIT, $limit));
         $offset = max(0, $offset);
 
-        [$where, $params] = $this->buildSearchCondition($term);
+        [$where, $params] = $this->buildSearchCondition($term, $includeWithoutPhone);
 
         $countStatement = $this->pdo->prepare('SELECT COUNT(*) FROM phonebook WHERE ' . $where);
         $countStatement->execute($params);
@@ -48,10 +54,14 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     /**
      * @return array{0:string,1:array<string,string>}
      */
-    public function buildSearchCondition(string $term): array
+    public function buildSearchCondition(string $term, bool $includeWithoutPhone = false): array
     {
         $conditions = ['active = 1'];
         $params = [];
+
+        if (!$includeWithoutPhone) {
+            $conditions[] = self::PHONE_CONDITION;
+        }
 
         $tokens = preg_split('/\s+/u', trim($term)) ?: [];
         $tokens = array_values(array_filter(array_slice($tokens, 0, 5), static fn (string $t): bool => $t !== ''));
@@ -88,6 +98,21 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     public function countActive(): int
     {
         $value = $this->pdo->query('SELECT COUNT(*) FROM phonebook WHERE active = 1')?->fetchColumn();
+
+        return is_numeric($value) ? (int) $value : 0;
+    }
+
+    /**
+     * Zaehlt die fuer die Suche sichtbaren Eintraege.
+     */
+    public function countVisible(bool $includeWithoutPhone = false): int
+    {
+        $sql = 'SELECT COUNT(*) FROM phonebook WHERE active = 1';
+        if (!$includeWithoutPhone) {
+            $sql .= ' AND ' . self::PHONE_CONDITION;
+        }
+
+        $value = $this->pdo->query($sql)?->fetchColumn();
 
         return is_numeric($value) ? (int) $value : 0;
     }

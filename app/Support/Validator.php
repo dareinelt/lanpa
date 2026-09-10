@@ -90,6 +90,16 @@ final class Validator
     }
 
     /**
+     * Erlaubt Ziffern sowie uebliche Trennzeichen einer Telefonnummer.
+     */
+    public static function isPhoneNumber(string $phone): bool
+    {
+        $phone = trim($phone);
+
+        return $phone !== '' && preg_match('/^[0-9+\/\-\s()]{2,64}$/', $phone) === 1;
+    }
+
+    /**
      * Entfernt Steuerzeichen und begrenzt die Laenge.
      */
     public static function cleanText(?string $value, int $max = 255): string

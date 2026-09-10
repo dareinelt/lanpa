@@ -16,6 +16,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 $navItems = [
     'dashboard' => ['/admin', 'Dashboard'],
     'navigation' => ['/admin/navigation', 'Navigation'],
+    'emergency' => ['/admin/notfallnummern', 'Notfallnummern'],
     'descriptions' => ['/admin/beschreibungen', 'Beschreibungen'],
     'design' => ['/admin/design', 'Design'],
     'ldap' => ['/admin/ad', 'Active Directory'],

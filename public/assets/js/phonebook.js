@@ -7,6 +7,7 @@
 
     var form = document.querySelector('[data-phonebook-form]');
     var results = document.querySelector('[data-phonebook-results]');
+    var emergency = document.querySelector('[data-phonebook-emergency]');
     var status = document.querySelector('[data-phonebook-status]');
     var moreButton = document.querySelector('[data-phonebook-more]');
     var template = document.querySelector('[data-phonebook-template]');
@@ -20,6 +21,18 @@
     var controller = null;
     var offset = 0;
     var currentTerm = '';
+    var searchStarted = false;
+
+    function startSearch() {
+        if (searchStarted) {
+            return;
+        }
+        searchStarted = true;
+        if (emergency) {
+            emergency.hidden = true;
+        }
+        results.hidden = false;
+    }
 
     function setStatus(message) {
         if (status) {
@@ -95,6 +108,8 @@
     }
 
     function load(term, append) {
+        startSearch();
+
         if (controller) {
             controller.abort();
         }
@@ -151,7 +166,4 @@
             load(currentTerm, true);
         });
     }
-
-    // Initiale Anzeige der ersten Einträge.
-    load('', false);
 })();

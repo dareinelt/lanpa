@@ -12,6 +12,7 @@ use App\Controllers\Admin\AuthController;
 use App\Controllers\Admin\DashboardController;
 use App\Controllers\Admin\DescriptionController;
 use App\Controllers\Admin\DesignController;
+use App\Controllers\Admin\EmergencyNumberController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\StatisticsController;
@@ -72,6 +73,15 @@ $router->group([$requireAuth], static function (Router $router): void {
     $router->post('/admin/navigation/loeschen', [NavigationController::class, 'delete']);
     $router->post('/admin/navigation/status', [NavigationController::class, 'toggle']);
     $router->post('/admin/navigation/sortieren', [NavigationController::class, 'move']);
+
+    $router->get('/admin/notfallnummern', [EmergencyNumberController::class, 'index']);
+    $router->get('/admin/notfallnummern/neu', [EmergencyNumberController::class, 'create']);
+    $router->post('/admin/notfallnummern/neu', [EmergencyNumberController::class, 'store']);
+    $router->get('/admin/notfallnummern/bearbeiten', [EmergencyNumberController::class, 'edit']);
+    $router->post('/admin/notfallnummern/bearbeiten', [EmergencyNumberController::class, 'update']);
+    $router->post('/admin/notfallnummern/loeschen', [EmergencyNumberController::class, 'delete']);
+    $router->post('/admin/notfallnummern/status', [EmergencyNumberController::class, 'toggle']);
+    $router->post('/admin/notfallnummern/sortieren', [EmergencyNumberController::class, 'move']);
 
     $router->get('/admin/beschreibungen', [DescriptionController::class, 'index']);
     $router->post('/admin/beschreibungen', [DescriptionController::class, 'update']);

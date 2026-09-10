@@ -6,12 +6,14 @@ namespace App\Core;
 
 use App\Repositories\AdminUserRepository;
 use App\Repositories\ClickRepository;
+use App\Repositories\EmergencyNumberRepository;
 use App\Repositories\NavigationRepository;
 use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\SyncLogRepository;
 use App\Security\Auth;
 use App\Services\AdSyncService;
+use App\Services\EmergencyNumberService;
 use App\Services\LdapClient;
 use App\Services\LogoService;
 use App\Services\NavigationService;
@@ -83,6 +85,14 @@ final class Container
         return self::make(SyncLogRepository::class, static fn (): SyncLogRepository => new SyncLogRepository());
     }
 
+    public static function emergencyNumberRepository(): EmergencyNumberRepository
+    {
+        return self::make(
+            EmergencyNumberRepository::class,
+            static fn (): EmergencyNumberRepository => new EmergencyNumberRepository()
+        );
+    }
+
     public static function settings(): SettingsService
     {
         return self::make(SettingsService::class, static fn (): SettingsService => new SettingsService(self::settingsRepository()));
@@ -101,6 +111,14 @@ final class Container
     public static function phonebook(): PhonebookService
     {
         return self::make(PhonebookService::class, static fn (): PhonebookService => new PhonebookService(self::phonebookRepository()));
+    }
+
+    public static function emergencyNumbers(): EmergencyNumberService
+    {
+        return self::make(
+            EmergencyNumberService::class,
+            static fn (): EmergencyNumberService => new EmergencyNumberService(self::emergencyNumberRepository())
+        );
     }
 
     public static function statistics(): StatisticsService

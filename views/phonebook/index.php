@@ -7,6 +7,7 @@ use App\Support\Html;
 
 /** @var int $entryCount */
 /** @var string|null $lastSync */
+/** @var list<array<string,mixed>> $emergencyNumbers */
 ?>
 <section class="page-head">
     <h1>Telefonliste</h1>
@@ -36,7 +37,33 @@ use App\Support\Html;
     </p>
 </form>
 
-<div class="phonebook" data-phonebook-results>
+<?php if ($emergencyNumbers !== []) { ?>
+    <div class="phonebook" data-phonebook-emergency>
+        <?php foreach ($emergencyNumbers as $number) { ?>
+            <article class="person person--emergency">
+                <h2 class="person__name"><?= Html::e((string) $number['label']) ?></h2>
+                <dl class="person__details">
+                    <div class="person__row">
+                        <dt>Telefon</dt>
+                        <dd>
+                            <a class="person__phone" href="tel:<?= Html::e(preg_replace('/[^\d+]/', '', (string) $number['phone']) ?? '') ?>">
+                                <?= Html::e((string) $number['phone']) ?>
+                            </a>
+                        </dd>
+                    </div>
+                    <?php if ((string) $number['description'] !== '') { ?>
+                        <div class="person__row">
+                            <dt>Hinweis</dt>
+                            <dd><?= Html::e((string) $number['description']) ?></dd>
+                        </div>
+                    <?php } ?>
+                </dl>
+            </article>
+        <?php } ?>
+    </div>
+<?php } ?>
+
+<div class="phonebook" data-phonebook-results hidden>
     <noscript>
         <p class="empty-state">Für die Suche wird JavaScript benötigt.</p>
     </noscript>
@@ -73,3 +100,4 @@ use App\Support\Html;
         </dl>
     </article>
 </template>
+

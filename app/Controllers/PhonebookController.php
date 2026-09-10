@@ -19,6 +19,7 @@ final class PhonebookController extends Controller
             'pageTitle' => 'Telefonliste',
             'entryCount' => $service->countActive(),
             'lastSync' => $service->lastSyncedAt(),
+            'emergencyNumbers' => Container::emergencyNumbers()->activeItems(),
             'activeNav' => 'phonebook',
             'pageScript' => 'phonebook.js',
         ]);

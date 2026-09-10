@@ -9,7 +9,10 @@ use App\Support\Html;
 /** @var array<string,string> $errors */
 $isNew = ($item['id'] ?? null) === null;
 $action = $isNew ? '/admin/navigation/neu' : '/admin/navigation/bearbeiten';
-$icons = ['', 'document', 'app', 'phone', 'alert', 'tools', 'robot', 'link'];
+$icons = [
+    '', 'document', 'app', 'phone', 'alert', 'tools', 'robot', 'link',
+    'clock', 'helmet', 'wrench', 'snail', 'beacon', 'ekg', 'warning',
+];
 ?>
 <form method="post" action="<?= Html::e($action) ?>" class="form form--wide">
     <?= Csrf::field() ?>

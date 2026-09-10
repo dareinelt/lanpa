@@ -26,6 +26,7 @@ final class DescriptionController extends AdminController
             'siteTitle' => $settings->get('site_title'),
             'siteSubtitle' => $settings->get('site_subtitle'),
             'siteSubtitleVisible' => $settings->bool('site_subtitle_visible'),
+            'landingIntroVisible' => $settings->bool('landing_intro_visible'),
             'footerText' => $settings->get('footer_text'),
             'items' => Container::navigation()->allItems(),
             'errors' => [],
@@ -40,6 +41,7 @@ final class DescriptionController extends AdminController
         $title = Validator::cleanText((string) $request->input('site_title', ''), 120);
         $subtitle = Validator::cleanText((string) $request->input('site_subtitle', ''), 200);
         $subtitleVisible = $request->input('site_subtitle_visible') !== null;
+        $landingIntroVisible = $request->input('landing_intro_visible') !== null;
         $footerText = Validator::cleanText((string) $request->input('footer_text', ''), 200);
 
         $errors = [];
@@ -60,6 +62,7 @@ final class DescriptionController extends AdminController
                 'siteTitle' => $title,
                 'siteSubtitle' => $subtitle,
                 'siteSubtitleVisible' => $subtitleVisible,
+                'landingIntroVisible' => $landingIntroVisible,
                 'footerText' => $footerText,
                 'items' => Container::navigation()->allItems(),
                 'errors' => $errors,
@@ -71,6 +74,7 @@ final class DescriptionController extends AdminController
             'site_title' => $title,
             'site_subtitle' => $subtitle,
             'site_subtitle_visible' => $subtitleVisible ? '1' : '0',
+            'landing_intro_visible' => $landingIntroVisible ? '1' : '0',
             'footer_text' => $footerText,
         ]);
 

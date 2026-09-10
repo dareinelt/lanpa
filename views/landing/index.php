@@ -6,13 +6,16 @@ use App\Support\Html;
 
 /** @var list<array<string,mixed>> $items */
 /** @var string $descriptionMode */
+/** @var bool $landingIntroVisible */
 ?>
-<section class="intro">
-    <h1 class="intro__title"><?= Html::e($siteTitle ?? 'Intranet') ?></h1>
-    <?php if (($siteSubtitle ?? '') !== '') { ?>
-        <p class="intro__text"><?= Html::e($siteSubtitle) ?></p>
-    <?php } ?>
-</section>
+<?php if ($landingIntroVisible ?? true) { ?>
+    <section class="intro">
+        <h1 class="intro__title"><?= Html::e($siteTitle ?? 'Intranet') ?></h1>
+        <?php if (($siteSubtitle ?? '') !== '') { ?>
+            <p class="intro__text"><?= Html::e($siteSubtitle) ?></p>
+        <?php } ?>
+    </section>
+<?php } ?>
 
 <?php if ($items === []) { ?>
     <p class="empty-state">Es sind derzeit keine Anwendungen freigeschaltet. Bitte wenden Sie sich an die Administration.</p>

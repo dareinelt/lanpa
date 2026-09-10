@@ -28,12 +28,12 @@ use App\Support\Html;
                class="search__input"
                autocomplete="off"
                spellcheck="false"
-               placeholder="z. B. Mustermann, IT oder 123456"
+               placeholder=""
                aria-describedby="phonebook-status">
         <button type="submit" class="button button--primary">Suchen</button>
     </div>
     <p class="search__hint" id="phonebook-status" role="status" aria-live="polite" data-phonebook-status>
-        Bitte geben Sie einen Suchbegriff ein oder starten Sie die Suche, um alle Einträge zu sehen.
+        Bitte geben Sie einen Suchbegriff ein.
     </p>
 </form>
 

@@ -423,6 +423,10 @@ code {
     font-size: .9rem;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 .phonebook {
     display: grid;
     gap: 1rem;

@@ -93,10 +93,6 @@ use App\Support\Html;
                 <dt>E-Mail</dt>
                 <dd><a class="person__mail" data-field="email" href="#"></a></dd>
             </div>
-            <div class="person__row">
-                <dt>Zuletzt geändert</dt>
-                <dd data-field="modified"></dd>
-            </div>
         </dl>
     </article>
 </template>

@@ -96,7 +96,7 @@ final class Validator
     {
         $phone = trim($phone);
 
-        return $phone !== '' && preg_match('/^[0-9+\/\-\s()]{2,64}$/', $phone) === 1;
+        return $phone !== '' && preg_match('/^[0-9+*#\/\-\s()]{2,64}$/', $phone) === 1;
     }
 
     /**

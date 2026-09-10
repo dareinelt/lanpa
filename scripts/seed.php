@@ -101,6 +101,7 @@ foreach ($items as $index => $item) {
 $settings = [
     'site_title' => 'Intranet',
     'site_subtitle' => 'Zentraler Einstieg zu internen Anwendungen',
+    'site_subtitle_visible' => '1',
     'description_mode' => 'both',
     'color_primary' => '#1f4e79',
     'color_secondary' => '#37718e',

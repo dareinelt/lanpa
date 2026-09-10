@@ -11,6 +11,7 @@ use App\Support\Html;
 $pageTitle = $pageTitle ?? ($siteTitle ?? $appName);
 $activeNav = $activeNav ?? '';
 $hasLogo = $hasLogo ?? false;
+$siteSubtitleVisible = $siteSubtitleVisible ?? true;
 $flashes = $flashes ?? [];
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 ?>
@@ -38,7 +39,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
             <?php } ?>
             <span class="brand__text">
                 <span class="brand__title"><?= Html::e($siteTitle ?? $appName) ?></span>
-                <?php if (($siteSubtitle ?? '') !== '') { ?>
+                <?php if (($siteSubtitleVisible ?? true) && ($siteSubtitle ?? '') !== '') { ?>
                     <span class="brand__subtitle"><?= Html::e($siteSubtitle) ?></span>
                 <?php } ?>
             </span>

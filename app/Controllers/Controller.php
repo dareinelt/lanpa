@@ -26,6 +26,7 @@ abstract class Controller
             'appName' => (string) Config::get('app.name', 'Intranet'),
             'siteTitle' => $settings->get('site_title'),
             'siteSubtitle' => $settings->get('site_subtitle'),
+            'siteSubtitleVisible' => $settings->bool('site_subtitle_visible'),
             'themeCss' => Container::theme()->css(),
             'hasLogo' => Container::logo()->current() !== null,
             'flashes' => Session::takeFlash(),

@@ -6,6 +6,7 @@ use App\Security\Csrf;
 use App\Support\Html;
 
 /** @var string $descriptionMode */
+/** @var bool $siteSubtitleVisible */
 /** @var list<array<string,mixed>> $items */
 /** @var array<string,string> $errors */
 $modes = [
@@ -28,6 +29,11 @@ $modes = [
     <div class="field">
         <label for="site_subtitle">Untertitel</label>
         <input type="text" id="site_subtitle" name="site_subtitle" maxlength="200" value="<?= Html::e($siteSubtitle) ?>">
+    </div>
+
+    <div class="field field--check">
+        <input type="checkbox" id="site_subtitle_visible" name="site_subtitle_visible" value="1"<?= $siteSubtitleVisible ? ' checked' : '' ?>>
+        <label for="site_subtitle_visible">Untertitel unter dem Seitentitel anzeigen</label>
     </div>
 
     <fieldset class="fieldset">

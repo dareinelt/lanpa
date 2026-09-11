@@ -13,11 +13,13 @@ use App\Controllers\Admin\DashboardController;
 use App\Controllers\Admin\DescriptionController;
 use App\Controllers\Admin\DesignController;
 use App\Controllers\Admin\EmergencyNumberController;
+use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\StatisticsController;
 use App\Controllers\ClickController;
 use App\Controllers\HealthController;
+use App\Controllers\ImportantLinkIconController;
 use App\Controllers\LandingController;
 use App\Controllers\LogoController;
 use App\Controllers\PhonebookController;
@@ -43,6 +45,7 @@ $router->get('/telefonliste', [PhonebookController::class, 'index']);
 $router->get('/api/telefonliste', [PhonebookController::class, 'search']);
 $router->post('/api/klick', [ClickController::class, 'store']);
 $router->get('/logo', [LogoController::class, 'show']);
+$router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
 $router->get('/health', [HealthController::class, 'index']);
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
@@ -82,6 +85,14 @@ $router->group([$requireAuth], static function (Router $router): void {
     $router->post('/admin/notfallnummern/loeschen', [EmergencyNumberController::class, 'delete']);
     $router->post('/admin/notfallnummern/status', [EmergencyNumberController::class, 'toggle']);
     $router->post('/admin/notfallnummern/sortieren', [EmergencyNumberController::class, 'move']);
+
+    $router->get('/admin/wichtige-links', [ImportantLinkController::class, 'index']);
+    $router->get('/admin/wichtige-links/neu', [ImportantLinkController::class, 'create']);
+    $router->post('/admin/wichtige-links/neu', [ImportantLinkController::class, 'store']);
+    $router->get('/admin/wichtige-links/bearbeiten', [ImportantLinkController::class, 'edit']);
+    $router->post('/admin/wichtige-links/bearbeiten', [ImportantLinkController::class, 'update']);
+    $router->post('/admin/wichtige-links/loeschen', [ImportantLinkController::class, 'delete']);
+    $router->post('/admin/wichtige-links/status', [ImportantLinkController::class, 'toggle']);
 
     $router->get('/admin/beschreibungen', [DescriptionController::class, 'index']);
     $router->post('/admin/beschreibungen', [DescriptionController::class, 'update']);

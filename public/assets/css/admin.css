@@ -361,6 +361,13 @@
     max-width: 22rem;
 }
 
+.important-links__admin-icon {
+    display: block;
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
 .row-actions {
     display: flex;
     gap: .4rem;

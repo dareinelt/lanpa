@@ -7,6 +7,7 @@ namespace App\Core;
 use App\Repositories\AdminUserRepository;
 use App\Repositories\ClickRepository;
 use App\Repositories\EmergencyNumberRepository;
+use App\Repositories\ImportantLinkRepository;
 use App\Repositories\NavigationRepository;
 use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
@@ -14,6 +15,8 @@ use App\Repositories\SyncLogRepository;
 use App\Security\Auth;
 use App\Services\AdSyncService;
 use App\Services\EmergencyNumberService;
+use App\Services\FaviconService;
+use App\Services\ImportantLinkService;
 use App\Services\LdapClient;
 use App\Services\LogoService;
 use App\Services\NavigationService;
@@ -93,6 +96,14 @@ final class Container
         );
     }
 
+    public static function importantLinkRepository(): ImportantLinkRepository
+    {
+        return self::make(
+            ImportantLinkRepository::class,
+            static fn (): ImportantLinkRepository => new ImportantLinkRepository()
+        );
+    }
+
     public static function settings(): SettingsService
     {
         return self::make(SettingsService::class, static fn (): SettingsService => new SettingsService(self::settingsRepository()));
@@ -118,6 +129,22 @@ final class Container
         return self::make(
             EmergencyNumberService::class,
             static fn (): EmergencyNumberService => new EmergencyNumberService(self::emergencyNumberRepository())
+        );
+    }
+
+    public static function favicons(): FaviconService
+    {
+        return self::make(FaviconService::class, static fn (): FaviconService => FaviconService::fromConfig());
+    }
+
+    public static function importantLinks(): ImportantLinkService
+    {
+        return self::make(
+            ImportantLinkService::class,
+            static fn (): ImportantLinkService => new ImportantLinkService(
+                self::importantLinkRepository(),
+                self::favicons()
+            )
         );
     }
 

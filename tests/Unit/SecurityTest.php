@@ -43,6 +43,7 @@ Runner::test('Anmeldung mit korrektem Passwort ist erfolgreich', static function
         'id' => 1,
         'username' => 'admin',
         'password_hash' => password_hash('sicheres-passwort', PASSWORD_DEFAULT),
+        'role' => 'admin',
         'active' => 1,
     ]);
     $auth = new Auth($store);
@@ -51,7 +52,25 @@ Runner::test('Anmeldung mit korrektem Passwort ist erfolgreich', static function
     Assert::true($auth->check());
     Assert::same(1, $auth->id());
     Assert::same('admin', $auth->username());
+    Assert::same('admin', $auth->role());
+    Assert::true($auth->isAdmin());
     Assert::same(1, $store->logins);
+});
+
+Runner::test('Benutzer der Gruppe Redaktion werden nicht als Administrator erkannt', static function (): void {
+    $_SESSION = [];
+    $store = new FakeAdminUserStore([
+        'id' => 2,
+        'username' => 'redakteur',
+        'password_hash' => password_hash('sicheres-passwort', PASSWORD_DEFAULT),
+        'role' => 'redaktion',
+        'active' => 1,
+    ]);
+    $auth = new Auth($store);
+
+    Assert::true($auth->attempt('redakteur', 'sicheres-passwort'));
+    Assert::same('redaktion', $auth->role());
+    Assert::false($auth->isAdmin());
 });
 
 Runner::test('Falsches Passwort und unbekannter Benutzer werden abgelehnt', static function (): void {

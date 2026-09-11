@@ -11,7 +11,7 @@ namespace App\Contracts;
 interface AdminUserStoreInterface
 {
     /**
-     * @return array<string,mixed>|null
+     * @return array<string,mixed>|null enthaelt u. a. die Schluessel id, username, password_hash, role, active
      */
     public function findActiveByUsername(string $username): ?array;
 

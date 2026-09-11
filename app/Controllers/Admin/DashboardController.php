@@ -13,6 +13,10 @@ final class DashboardController extends AdminController
 {
     public function index(Request $request): Response
     {
+        if (!Container::auth()->isAdmin()) {
+            return $this->redirect('/admin/wichtige-links');
+        }
+
         $statistics = Container::statistics();
         $phonebook = Container::phonebook();
         $settings = Container::settings();

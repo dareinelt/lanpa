@@ -11,9 +11,12 @@ $pageTitle = $pageTitle ?? 'Administration';
 $activeNav = $activeNav ?? '';
 $flashes = $flashes ?? [];
 $adminUser = $adminUser ?? null;
+$adminRole = $adminRole ?? 'admin';
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 
-$navItems = [
+$isAdmin = $adminRole === 'admin';
+
+$navItems = $isAdmin ? [
     'dashboard' => ['/admin', 'Dashboard'],
     'navigation' => ['/admin/navigation', 'Navigation'],
     'important_links' => ['/admin/wichtige-links', 'Wichtige Links'],
@@ -22,6 +25,9 @@ $navItems = [
     'design' => ['/admin/design', 'Design'],
     'ldap' => ['/admin/ad', 'Active Directory'],
     'statistics' => ['/admin/statistik', 'Statistik'],
+    'users' => ['/admin/benutzer', 'Benutzer'],
+] : [
+    'important_links' => ['/admin/wichtige-links', 'Wichtige Links'],
 ];
 ?>
 <!doctype html>

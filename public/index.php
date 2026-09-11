@@ -9,6 +9,7 @@ declare(strict_types=1);
 require_once dirname(__DIR__) . '/bootstrap.php';
 
 use App\Controllers\Admin\AuthController;
+use App\Controllers\Admin\AdminUserController;
 use App\Controllers\Admin\DashboardController;
 use App\Controllers\Admin\DescriptionController;
 use App\Controllers\Admin\DesignController;
@@ -63,28 +64,22 @@ $requireAuth = static function (Request $request): ?Response {
     return Response::redirect('/admin/login');
 };
 
-$router->group([$requireAuth], static function (Router $router): void {
+$requireAdmin = static function (Request $request): ?Response {
+    if (Container::auth()->isAdmin()) {
+        return null;
+    }
+
+    if (str_starts_with($request->path, '/admin/api')) {
+        return Response::json(['error' => 'Kein Zugriff.'], 403);
+    }
+
+    throw new HttpException(403, 'Für diesen Bereich fehlt die Berechtigung.');
+};
+
+$router->group([$requireAuth], static function (Router $router) use ($requireAdmin): void {
     $router->post('/admin/logout', [AuthController::class, 'logout']);
 
     $router->get('/admin', [DashboardController::class, 'index']);
-
-    $router->get('/admin/navigation', [NavigationController::class, 'index']);
-    $router->get('/admin/navigation/neu', [NavigationController::class, 'create']);
-    $router->post('/admin/navigation/neu', [NavigationController::class, 'store']);
-    $router->get('/admin/navigation/bearbeiten', [NavigationController::class, 'edit']);
-    $router->post('/admin/navigation/bearbeiten', [NavigationController::class, 'update']);
-    $router->post('/admin/navigation/loeschen', [NavigationController::class, 'delete']);
-    $router->post('/admin/navigation/status', [NavigationController::class, 'toggle']);
-    $router->post('/admin/navigation/sortieren', [NavigationController::class, 'move']);
-
-    $router->get('/admin/notfallnummern', [EmergencyNumberController::class, 'index']);
-    $router->get('/admin/notfallnummern/neu', [EmergencyNumberController::class, 'create']);
-    $router->post('/admin/notfallnummern/neu', [EmergencyNumberController::class, 'store']);
-    $router->get('/admin/notfallnummern/bearbeiten', [EmergencyNumberController::class, 'edit']);
-    $router->post('/admin/notfallnummern/bearbeiten', [EmergencyNumberController::class, 'update']);
-    $router->post('/admin/notfallnummern/loeschen', [EmergencyNumberController::class, 'delete']);
-    $router->post('/admin/notfallnummern/status', [EmergencyNumberController::class, 'toggle']);
-    $router->post('/admin/notfallnummern/sortieren', [EmergencyNumberController::class, 'move']);
 
     $router->get('/admin/wichtige-links', [ImportantLinkController::class, 'index']);
     $router->get('/admin/wichtige-links/neu', [ImportantLinkController::class, 'create']);
@@ -94,20 +89,48 @@ $router->group([$requireAuth], static function (Router $router): void {
     $router->post('/admin/wichtige-links/loeschen', [ImportantLinkController::class, 'delete']);
     $router->post('/admin/wichtige-links/status', [ImportantLinkController::class, 'toggle']);
 
-    $router->get('/admin/beschreibungen', [DescriptionController::class, 'index']);
-    $router->post('/admin/beschreibungen', [DescriptionController::class, 'update']);
+    $router->group([$requireAdmin], static function (Router $router): void {
+        $router->get('/admin/navigation', [NavigationController::class, 'index']);
+        $router->get('/admin/navigation/neu', [NavigationController::class, 'create']);
+        $router->post('/admin/navigation/neu', [NavigationController::class, 'store']);
+        $router->get('/admin/navigation/bearbeiten', [NavigationController::class, 'edit']);
+        $router->post('/admin/navigation/bearbeiten', [NavigationController::class, 'update']);
+        $router->post('/admin/navigation/loeschen', [NavigationController::class, 'delete']);
+        $router->post('/admin/navigation/status', [NavigationController::class, 'toggle']);
+        $router->post('/admin/navigation/sortieren', [NavigationController::class, 'move']);
 
-    $router->get('/admin/design', [DesignController::class, 'index']);
-    $router->post('/admin/design', [DesignController::class, 'update']);
-    $router->post('/admin/design/logo', [DesignController::class, 'uploadLogo']);
-    $router->post('/admin/design/logo-entfernen', [DesignController::class, 'removeLogo']);
+        $router->get('/admin/notfallnummern', [EmergencyNumberController::class, 'index']);
+        $router->get('/admin/notfallnummern/neu', [EmergencyNumberController::class, 'create']);
+        $router->post('/admin/notfallnummern/neu', [EmergencyNumberController::class, 'store']);
+        $router->get('/admin/notfallnummern/bearbeiten', [EmergencyNumberController::class, 'edit']);
+        $router->post('/admin/notfallnummern/bearbeiten', [EmergencyNumberController::class, 'update']);
+        $router->post('/admin/notfallnummern/loeschen', [EmergencyNumberController::class, 'delete']);
+        $router->post('/admin/notfallnummern/status', [EmergencyNumberController::class, 'toggle']);
+        $router->post('/admin/notfallnummern/sortieren', [EmergencyNumberController::class, 'move']);
 
-    $router->get('/admin/ad', [LdapController::class, 'index']);
-    $router->post('/admin/ad', [LdapController::class, 'update']);
-    $router->post('/admin/ad/sync', [LdapController::class, 'sync']);
+        $router->get('/admin/beschreibungen', [DescriptionController::class, 'index']);
+        $router->post('/admin/beschreibungen', [DescriptionController::class, 'update']);
 
-    $router->get('/admin/statistik', [StatisticsController::class, 'index']);
-    $router->get('/admin/api/statistik', [StatisticsController::class, 'data']);
+        $router->get('/admin/design', [DesignController::class, 'index']);
+        $router->post('/admin/design', [DesignController::class, 'update']);
+        $router->post('/admin/design/logo', [DesignController::class, 'uploadLogo']);
+        $router->post('/admin/design/logo-entfernen', [DesignController::class, 'removeLogo']);
+
+        $router->get('/admin/ad', [LdapController::class, 'index']);
+        $router->post('/admin/ad', [LdapController::class, 'update']);
+        $router->post('/admin/ad/sync', [LdapController::class, 'sync']);
+
+        $router->get('/admin/statistik', [StatisticsController::class, 'index']);
+        $router->get('/admin/api/statistik', [StatisticsController::class, 'data']);
+
+        $router->get('/admin/benutzer', [AdminUserController::class, 'index']);
+        $router->get('/admin/benutzer/neu', [AdminUserController::class, 'create']);
+        $router->post('/admin/benutzer/neu', [AdminUserController::class, 'store']);
+        $router->get('/admin/benutzer/bearbeiten', [AdminUserController::class, 'edit']);
+        $router->post('/admin/benutzer/bearbeiten', [AdminUserController::class, 'update']);
+        $router->post('/admin/benutzer/loeschen', [AdminUserController::class, 'delete']);
+        $router->post('/admin/benutzer/status', [AdminUserController::class, 'toggle']);
+    });
 });
 
 try {

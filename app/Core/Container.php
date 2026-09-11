@@ -14,6 +14,7 @@ use App\Repositories\SettingsRepository;
 use App\Repositories\SyncLogRepository;
 use App\Security\Auth;
 use App\Services\AdSyncService;
+use App\Services\AdminUserService;
 use App\Services\EmergencyNumberService;
 use App\Services\FaviconService;
 use App\Services\ImportantLinkService;
@@ -161,6 +162,14 @@ final class Container
         return self::make(
             Auth::class,
             static fn (): Auth => new Auth(self::adminUserRepository(), (int) Config::get('app.session_idle_timeout', 3600))
+        );
+    }
+
+    public static function adminUsers(): AdminUserService
+    {
+        return self::make(
+            AdminUserService::class,
+            static fn (): AdminUserService => new AdminUserService(self::adminUserRepository())
         );
     }
 

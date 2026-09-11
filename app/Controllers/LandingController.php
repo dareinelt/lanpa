@@ -19,6 +19,7 @@ final class LandingController extends Controller
             'items' => $items,
             'importantLinks' => Container::importantLinks()->activeItems(),
             'descriptionMode' => Container::settings()->descriptionMode(),
+            'announcement' => Container::announcements()->active(),
             'activeNav' => 'home',
             'pageScript' => 'landing.js',
         ]);

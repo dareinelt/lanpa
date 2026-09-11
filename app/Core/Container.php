@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core;
 
 use App\Repositories\AdminUserRepository;
+use App\Repositories\AnnouncementRepository;
 use App\Repositories\ClickRepository;
 use App\Repositories\EmergencyNumberRepository;
 use App\Repositories\ImportantLinkRepository;
@@ -15,6 +16,7 @@ use App\Repositories\SyncLogRepository;
 use App\Security\Auth;
 use App\Services\AdSyncService;
 use App\Services\AdminUserService;
+use App\Services\AnnouncementService;
 use App\Services\EmergencyNumberService;
 use App\Services\FaviconService;
 use App\Services\ImportantLinkService;
@@ -102,6 +104,22 @@ final class Container
         return self::make(
             ImportantLinkRepository::class,
             static fn (): ImportantLinkRepository => new ImportantLinkRepository()
+        );
+    }
+
+    public static function announcementRepository(): AnnouncementRepository
+    {
+        return self::make(
+            AnnouncementRepository::class,
+            static fn (): AnnouncementRepository => new AnnouncementRepository()
+        );
+    }
+
+    public static function announcements(): AnnouncementService
+    {
+        return self::make(
+            AnnouncementService::class,
+            static fn (): AnnouncementService => new AnnouncementService(self::announcementRepository())
         );
     }
 

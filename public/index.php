@@ -10,6 +10,7 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 
 use App\Controllers\Admin\AuthController;
 use App\Controllers\Admin\AdminUserController;
+use App\Controllers\Admin\AnnouncementController;
 use App\Controllers\Admin\DashboardController;
 use App\Controllers\Admin\DescriptionController;
 use App\Controllers\Admin\DesignController;
@@ -107,6 +108,14 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/notfallnummern/loeschen', [EmergencyNumberController::class, 'delete']);
         $router->post('/admin/notfallnummern/status', [EmergencyNumberController::class, 'toggle']);
         $router->post('/admin/notfallnummern/sortieren', [EmergencyNumberController::class, 'move']);
+
+        $router->get('/admin/mitteilungen', [AnnouncementController::class, 'index']);
+        $router->get('/admin/mitteilungen/neu', [AnnouncementController::class, 'create']);
+        $router->post('/admin/mitteilungen/neu', [AnnouncementController::class, 'store']);
+        $router->get('/admin/mitteilungen/bearbeiten', [AnnouncementController::class, 'edit']);
+        $router->post('/admin/mitteilungen/bearbeiten', [AnnouncementController::class, 'update']);
+        $router->post('/admin/mitteilungen/loeschen', [AnnouncementController::class, 'delete']);
+        $router->post('/admin/mitteilungen/status', [AnnouncementController::class, 'toggle']);
 
         $router->get('/admin/beschreibungen', [DescriptionController::class, 'index']);
         $router->post('/admin/beschreibungen', [DescriptionController::class, 'update']);

@@ -17,6 +17,7 @@ final class LandingController extends Controller
         return $this->view('landing.index', [
             'pageTitle' => Container::settings()->get('site_title'),
             'items' => $items,
+            'importantLinks' => Container::importantLinks()->activeItems(),
             'descriptionMode' => Container::settings()->descriptionMode(),
             'activeNav' => 'home',
             'pageScript' => 'landing.js',

@@ -24,6 +24,7 @@ abstract class AdminController extends Controller
             'flashes' => Session::takeFlash(),
             'csrfToken' => Csrf::token(),
             'adminUser' => Container::auth()->username(),
+            'adminRole' => Container::auth()->role(),
             'assetVersion' => $this->assetVersion(),
             'errors' => [],
             'old' => [],

@@ -13,12 +13,15 @@ final class Auth
 {
     private const USER_KEY = '_admin_user_id';
     private const NAME_KEY = '_admin_username';
+    private const ROLE_KEY = '_admin_role';
     private const LAST_ACTIVITY = '_admin_last_activity';
     private const ATTEMPTS_KEY = '_login_attempts';
     private const LOCKED_UNTIL = '_login_locked_until';
 
     public const MAX_ATTEMPTS = 5;
     public const LOCK_SECONDS = 300;
+    public const ROLE_ADMIN = 'admin';
+    public const ROLE_REDAKTION = 'redaktion';
 
     public function __construct(
         private readonly AdminUserStoreInterface $users,
@@ -53,6 +56,7 @@ final class Auth
         Csrf::rotate();
         Session::put(self::USER_KEY, (int) $user['id']);
         Session::put(self::NAME_KEY, (string) $user['username']);
+        Session::put(self::ROLE_KEY, isset($user['role']) ? (string) $user['role'] : self::ROLE_ADMIN);
         Session::put(self::LAST_ACTIVITY, time());
         Session::forget(self::ATTEMPTS_KEY);
         Session::forget(self::LOCKED_UNTIL);
@@ -94,10 +98,23 @@ final class Auth
         return is_string($name) ? $name : null;
     }
 
+    public function role(): ?string
+    {
+        $role = Session::get(self::ROLE_KEY);
+
+        return is_string($role) ? $role : null;
+    }
+
+    public function isAdmin(): bool
+    {
+        return $this->role() === self::ROLE_ADMIN;
+    }
+
     public function logout(): void
     {
         Session::forget(self::USER_KEY);
         Session::forget(self::NAME_KEY);
+        Session::forget(self::ROLE_KEY);
         Session::forget(self::LAST_ACTIVITY);
         Csrf::rotate();
         Session::regenerate();

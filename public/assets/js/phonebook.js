@@ -23,6 +23,7 @@
     var currentTerm = '';
     var searchStarted = false;
     var initialStatus = status ? status.textContent : '';
+    var phoneClickable = results.getAttribute('data-phone-clickable') !== '0';
 
     function startSearch() {
         if (searchStarted) {
@@ -75,7 +76,11 @@
         var phone = node.querySelector('[data-field="phone"]');
         if (person.phone) {
             phone.textContent = person.phone;
-            phone.setAttribute('href', 'tel:' + person.phone.replace(/[^\d+]/g, ''));
+            if (phoneClickable) {
+                phone.setAttribute('href', 'tel:' + person.phone.replace(/[^\d+]/g, ''));
+            } else {
+                phone.removeAttribute('href');
+            }
         } else {
             var parent = phone.parentNode;
             parent.textContent = '–';
@@ -109,7 +114,11 @@
 
         var link = row.querySelector('[data-field="' + field + '"]');
         link.textContent = value;
-        link.setAttribute('href', scheme + (scheme === 'tel:' ? value.replace(/[^\d+]/g, '') : value));
+        if (scheme === 'tel:' && !phoneClickable) {
+            link.removeAttribute('href');
+        } else {
+            link.setAttribute('href', scheme + (scheme === 'tel:' ? value.replace(/[^\d+]/g, '') : value));
+        }
         row.hidden = false;
     }
 

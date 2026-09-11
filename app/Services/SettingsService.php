@@ -33,6 +33,7 @@ final class SettingsService
             'landing_intro_visible' => '1',
             'footer_text' => (string) Config::get('app.name', 'Intranet'),
             'description_mode' => 'both',
+            'phone_numbers_clickable' => '1',
             'color_primary' => '#1f4e79',
             'color_secondary' => '#37718e',
             'color_accent' => '#c8102e',
@@ -110,6 +111,11 @@ final class SettingsService
         $mode = $this->get('description_mode', 'both');
 
         return Validator::isDescriptionMode($mode) ? $mode : 'both';
+    }
+
+    public function phoneNumbersClickable(): bool
+    {
+        return $this->bool('phone_numbers_clickable');
     }
 
     /**

@@ -28,6 +28,7 @@ final class DescriptionController extends AdminController
             'siteSubtitleVisible' => $settings->bool('site_subtitle_visible'),
             'landingIntroVisible' => $settings->bool('landing_intro_visible'),
             'footerText' => $settings->get('footer_text'),
+            'phoneNumbersClickable' => $settings->phoneNumbersClickable(),
             'items' => Container::navigation()->allItems(),
             'errors' => [],
         ]);
@@ -43,6 +44,7 @@ final class DescriptionController extends AdminController
         $subtitleVisible = $request->input('site_subtitle_visible') !== null;
         $landingIntroVisible = $request->input('landing_intro_visible') !== null;
         $footerText = Validator::cleanText((string) $request->input('footer_text', ''), 200);
+        $phoneNumbersClickable = $request->input('phone_numbers_clickable') !== null;
 
         $errors = [];
         if (!Validator::isDescriptionMode($mode)) {
@@ -64,6 +66,7 @@ final class DescriptionController extends AdminController
                 'siteSubtitleVisible' => $subtitleVisible,
                 'landingIntroVisible' => $landingIntroVisible,
                 'footerText' => $footerText,
+                'phoneNumbersClickable' => $phoneNumbersClickable,
                 'items' => Container::navigation()->allItems(),
                 'errors' => $errors,
             ], 422);
@@ -76,6 +79,7 @@ final class DescriptionController extends AdminController
             'site_subtitle_visible' => $subtitleVisible ? '1' : '0',
             'landing_intro_visible' => $landingIntroVisible ? '1' : '0',
             'footer_text' => $footerText,
+            'phone_numbers_clickable' => $phoneNumbersClickable ? '1' : '0',
         ]);
 
         app_logger()->info('Darstellungseinstellungen geändert.', [

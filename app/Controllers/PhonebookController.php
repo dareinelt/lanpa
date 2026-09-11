@@ -20,6 +20,7 @@ final class PhonebookController extends Controller
             'entryCount' => $service->countVisible(Container::auth()->check()),
             'lastSync' => $service->lastSyncedAt(),
             'emergencyNumbers' => Container::emergencyNumbers()->activeItems(),
+            'phoneNumbersClickable' => Container::settings()->phoneNumbersClickable(),
             'activeNav' => 'phonebook',
             'pageScript' => 'phonebook.js',
         ]);

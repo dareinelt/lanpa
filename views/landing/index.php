@@ -7,7 +7,29 @@ use App\Support\Html;
 /** @var list<array<string,mixed>> $items */
 /** @var string $descriptionMode */
 /** @var bool $landingIntroVisible */
+/** @var array<string,mixed>|null $announcement */
 ?>
+<?php if (($announcement ?? null) !== null) {
+    $announcementId = (int) $announcement['id'];
+    $announcementUpdatedAt = (string) ($announcement['updated_at'] ?? $announcement['created_at'] ?? '');
+    ?>
+    <div class="announcement-overlay"
+         data-announcement
+         data-announcement-id="<?= $announcementId ?>"
+         data-announcement-version="<?= Html::e($announcementUpdatedAt) ?>"
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="announcement-title"
+         hidden>
+        <div class="announcement-overlay__box">
+            <h2 class="announcement-overlay__title" id="announcement-title"><?= Html::e((string) $announcement['title']) ?></h2>
+            <p class="announcement-overlay__text"><?= nl2br(Html::e((string) $announcement['message'])) ?></p>
+            <div class="announcement-overlay__actions">
+                <button type="button" class="button button--primary" data-announcement-dismiss>Verstanden</button>
+            </div>
+        </div>
+    </div>
+<?php } ?>
 <?php if ($landingIntroVisible ?? true) { ?>
     <section class="intro">
         <h1 class="intro__title"><?= Html::e($siteTitle ?? 'Intranet') ?></h1>

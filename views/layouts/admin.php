@@ -21,6 +21,7 @@ $navItems = $isAdmin ? [
     'navigation' => ['/admin/navigation', 'Navigation'],
     'important_links' => ['/admin/wichtige-links', 'Wichtige Links'],
     'emergency' => ['/admin/notfallnummern', 'Notfallnummern'],
+    'announcements' => ['/admin/mitteilungen', 'Mitteilungen'],
     'descriptions' => ['/admin/beschreibungen', 'Beschreibungen'],
     'design' => ['/admin/design', 'Design'],
     'ldap' => ['/admin/ad', 'Active Directory'],

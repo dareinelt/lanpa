@@ -8,6 +8,7 @@ use App\Support\Html;
 /** @var int $entryCount */
 /** @var string|null $lastSync */
 /** @var list<array<string,mixed>> $emergencyNumbers */
+/** @var bool $phoneNumbersClickable */
 ?>
 <section class="page-head">
     <h1>Telefonliste</h1>
@@ -46,9 +47,13 @@ use App\Support\Html;
                     <div class="person__row">
                         <dt>Telefon</dt>
                         <dd>
-                            <a class="person__phone" href="tel:<?= Html::e(preg_replace('/[^\d+]/', '', (string) $number['phone']) ?? '') ?>">
-                                <?= Html::e((string) $number['phone']) ?>
-                            </a>
+                            <?php if ($phoneNumbersClickable) { ?>
+                                <a class="person__phone" href="tel:<?= Html::e(preg_replace('/[^\d+]/', '', (string) $number['phone']) ?? '') ?>">
+                                    <?= Html::e((string) $number['phone']) ?>
+                                </a>
+                            <?php } else { ?>
+                                <span class="person__phone"><?= Html::e((string) $number['phone']) ?></span>
+                            <?php } ?>
                         </dd>
                     </div>
                     <?php if ((string) $number['description'] !== '') { ?>
@@ -63,7 +68,7 @@ use App\Support\Html;
     </div>
 <?php } ?>
 
-<div class="phonebook" data-phonebook-results hidden>
+<div class="phonebook" data-phonebook-results data-phone-clickable="<?= $phoneNumbersClickable ? '1' : '0' ?>" hidden>
     <noscript>
         <p class="empty-state">Für die Suche wird JavaScript benötigt.</p>
     </noscript>

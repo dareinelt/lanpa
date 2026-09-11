@@ -9,6 +9,7 @@ use App\Support\Html;
 /** @var bool $siteSubtitleVisible */
 /** @var bool $landingIntroVisible */
 /** @var string $footerText */
+/** @var bool $phoneNumbersClickable */
 /** @var list<array<string,mixed>> $items */
 /** @var array<string,string> $errors */
 $modes = [
@@ -64,6 +65,18 @@ $modes = [
         <p class="field__hint">
             Unabhängig vom gewählten Modus bleibt die Beschreibung per Tastatur und auf Touchgeräten über die
             Schaltfläche „Details“ erreichbar.
+        </p>
+    </fieldset>
+
+    <fieldset class="fieldset">
+        <legend>Telefonliste</legend>
+        <div class="field field--check">
+            <input type="checkbox" id="phone_numbers_clickable" name="phone_numbers_clickable" value="1"<?= $phoneNumbersClickable ? ' checked' : '' ?>>
+            <label for="phone_numbers_clickable">Telefonnummern als anklickbare Links (tel:) darstellen</label>
+        </div>
+        <p class="field__hint">
+            Ist diese Option deaktiviert, werden Telefon- und Mobilnummern in der Telefonliste sowie bei den
+            Notfallnummern nur als Text angezeigt.
         </p>
     </fieldset>
 

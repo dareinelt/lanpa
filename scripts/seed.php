@@ -104,6 +104,7 @@ $settings = [
     'site_subtitle_visible' => '1',
     'footer_text' => 'Intranet',
     'description_mode' => 'both',
+    'phone_numbers_clickable' => '1',
     'color_primary' => '#1f4e79',
     'color_secondary' => '#37718e',
     'color_accent' => '#c8102e',

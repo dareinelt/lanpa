@@ -154,6 +154,9 @@ Sitzungserneuerung nach der Anmeldung, automatische Abmeldung bei Inaktivität, 
   *nichts* geschrieben und *nichts* deaktiviert – der letzte gültige Stand bleibt aktiv.
   Jeder Lauf wird in `sync_log` protokolliert und im Adminbereich angezeigt.
 - Personen, die im AD nicht mehr enthalten sind, werden auf `active = 0` gesetzt (kein Löschen).
+- Im AD deaktivierte Benutzerkonten (`userAccountControl`-Bit `ACCOUNTDISABLE`) werden beim
+  Import übersprungen; bereits importierte, inzwischen deaktivierte Konten werden dadurch
+  ebenfalls auf `active = 0` gesetzt.
 
 ### Protokolle
 

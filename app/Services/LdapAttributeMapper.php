@@ -13,6 +13,16 @@ use App\Support\Validator;
 final class LdapAttributeMapper
 {
     /**
+     * Bit im userAccountControl-Attribut, das ein deaktiviertes AD-Konto kennzeichnet.
+     */
+    private const UAC_ACCOUNTDISABLE = 0x0002;
+
+    /**
+     * Fest verdrahtetes AD-Attribut, um deaktivierte Konten beim Import auszuschliessen.
+     */
+    private const ATTRIBUTE_ACCOUNT_CONTROL = 'userAccountControl';
+
+    /**
      * @param array<string,string> $mapping interner Schluessel => AD-Attribut
      */
     public function __construct(private readonly array $mapping)
@@ -32,6 +42,8 @@ final class LdapAttributeMapper
             }
         }
 
+        $attributes[strtolower(self::ATTRIBUTE_ACCOUNT_CONTROL)] = self::ATTRIBUTE_ACCOUNT_CONTROL;
+
         return array_values($attributes);
     }
 
@@ -42,6 +54,11 @@ final class LdapAttributeMapper
      */
     public function map(array $entry, ?string $dn = null): ?array
     {
+        if ($this->isAccountDisabled($entry)) {
+            // Im AD deaktivierte Nutzer werden nicht (mehr) importiert.
+            return null;
+        }
+
         $uniqueAttribute = $this->mapping['unique_id'] ?? '';
         $externalId = $uniqueAttribute === '' ? null : $this->value($entry, $uniqueAttribute);
 
@@ -113,6 +130,21 @@ final class LdapAttributeMapper
         $timestamp = strtotime($value);
 
         return $timestamp === false ? null : date('Y-m-d H:i:s', $timestamp);
+    }
+
+    /**
+     * Prueft anhand des userAccountControl-Attributs, ob das AD-Konto deaktiviert ist.
+     *
+     * @param array<string,mixed> $entry
+     */
+    private function isAccountDisabled(array $entry): bool
+    {
+        $raw = $this->value($entry, self::ATTRIBUTE_ACCOUNT_CONTROL);
+        if ($raw === null || trim($raw) === '' || !is_numeric($raw)) {
+            return false;
+        }
+
+        return ((int) $raw & self::UAC_ACCOUNTDISABLE) === self::UAC_ACCOUNTDISABLE;
     }
 
     /**

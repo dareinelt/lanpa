@@ -92,6 +92,34 @@ Runner::test('Ungültige E-Mail-Adressen werden verworfen', static function (): 
     Assert::null($result['email']);
 });
 
+Runner::test('Im AD deaktivierte Nutzer werden nicht importiert', static function (): void {
+    $mapper = new LdapAttributeMapper(testMapping());
+    $result = $mapper->map([
+        'objectguid' => ['x1'],
+        'displayname' => ['Erika Muster'],
+        'useraccountcontrol' => ['514'],
+    ]);
+
+    Assert::null($result);
+});
+
+Runner::test('Aktive AD-Nutzer werden trotz gesetztem userAccountControl importiert', static function (): void {
+    $mapper = new LdapAttributeMapper(testMapping());
+    $result = $mapper->map([
+        'objectguid' => ['x1'],
+        'displayname' => ['Erika Muster'],
+        'useraccountcontrol' => ['512'],
+    ]);
+
+    Assert::same('Erika Muster', $result['display_name']);
+});
+
+Runner::test('userAccountControl wird stets mitabgefragt', static function (): void {
+    $mapper = new LdapAttributeMapper(testMapping());
+
+    Assert::true(in_array('userAccountControl', $mapper->attributes(), true));
+});
+
 Runner::test('AD-Zeitstempel werden umgewandelt', static function (): void {
     Assert::same('2026-09-02 12:00:00', LdapAttributeMapper::parseAdTimestamp('20260902120000.0Z'));
     Assert::null(LdapAttributeMapper::parseAdTimestamp(''));

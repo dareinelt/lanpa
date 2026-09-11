@@ -13,9 +13,9 @@
     function readMode() {
         try {
             var stored = window.localStorage.getItem(STORAGE_KEY);
-            return MODES.indexOf(stored) === -1 ? 'auto' : stored;
+            return MODES.indexOf(stored) === -1 ? 'light' : stored;
         } catch (error) {
-            return 'auto';
+            return 'light';
         }
     }
 

@@ -32,7 +32,7 @@ $navItems = $isAdmin ? [
 ];
 ?>
 <!doctype html>
-<html lang="de" data-theme="auto">
+<html lang="de" data-theme="light">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

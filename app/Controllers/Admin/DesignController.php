@@ -31,6 +31,7 @@ final class DesignController extends AdminController
             'activeNav' => 'design',
             'colorKeys' => self::COLOR_KEYS,
             'theme' => Container::settings()->theme(),
+            'navOpacity' => Container::settings()->navOpacity(),
             'hasLogo' => Container::logo()->current() !== null,
             'maxLogoKb' => (int) ((int) Config::get('app.max_logo_bytes', 512 * 1024) / 1024),
             'hasBackground' => Container::backgroundImage()->current() !== null,
@@ -58,14 +59,22 @@ final class DesignController extends AdminController
             $values[$key] = $normalized;
         }
 
+        $navOpacityRaw = trim((string) $request->input('nav_opacity', ''));
+        if (!Validator::isPercentage($navOpacityRaw)) {
+            $errors['nav_opacity'] = 'Bitte einen Wert zwischen 0 und 100 angeben.';
+        } else {
+            $values['nav_opacity'] = (string) (int) $navOpacityRaw;
+        }
+
         if ($errors !== []) {
-            Session::flash('error', 'Bitte prüfen Sie die Farbwerte.');
+            Session::flash('error', 'Bitte prüfen Sie die Eingaben.');
 
             return $this->adminView('admin.design', [
                 'pageTitle' => 'Design',
                 'activeNav' => 'design',
                 'colorKeys' => self::COLOR_KEYS,
                 'theme' => array_merge(Container::settings()->theme(), $values),
+                'navOpacity' => $values['nav_opacity'] ?? Container::settings()->navOpacity(),
                 'hasLogo' => Container::logo()->current() !== null,
                 'maxLogoKb' => (int) ((int) Config::get('app.max_logo_bytes', 512 * 1024) / 1024),
                 'hasBackground' => Container::backgroundImage()->current() !== null,
@@ -75,8 +84,8 @@ final class DesignController extends AdminController
         }
 
         Container::settings()->update($values);
-        app_logger()->info('Farbschema geändert.', ['admin' => Container::auth()->username()]);
-        Session::flash('success', 'Das Farbschema wurde gespeichert.');
+        app_logger()->info('Darstellungseinstellungen geändert.', ['admin' => Container::auth()->username()]);
+        Session::flash('success', 'Die Darstellungseinstellungen wurden gespeichert.');
 
         return $this->redirect('/admin/design');
     }

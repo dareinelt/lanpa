@@ -32,7 +32,18 @@ use App\Support\Html;
                 $href = Html::url((string) $item['url']);
             }
             ?>
-            <li class="tile">
+            <li class="tile"<?php
+                $styleParts = [];
+                $bgColor = (string) ($item['background_color'] ?? '');
+                $bgOpacity = $item['background_opacity'] ?? null;
+                if ($bgColor !== '') {
+                    $opacity = ($bgOpacity !== null && $bgOpacity !== '' && is_numeric($bgOpacity)) ? (int) $bgOpacity : 97;
+                    $styleParts[] = '--tile-bg: ' . Html::e($bgColor) . '; --tile-bg-opacity: ' . (int) $opacity . '%';
+                }
+                if ($styleParts !== []) {
+                    echo ' style="' . Html::e(implode(' ', $styleParts)) . '"';
+                }
+                ?>>
                 <a class="tile__link"
                    href="<?= Html::e($href) ?>"
                    data-nav-id="<?= $id ?>"

@@ -144,6 +144,16 @@ final class NavigationService
             $errors['icon'] = 'Icon-Schlüssel dürfen nur Kleinbuchstaben, Ziffern und Bindestriche enthalten.';
         }
 
+        $backgroundColor = (string) ($input['background_color'] ?? '');
+        if ($backgroundColor !== '' && !Validator::isHexColor($backgroundColor)) {
+            $errors['background_color'] = 'Bitte einen gültigen Hex-Farbwert angeben (z. B. #1f4e79).';
+        }
+
+        $backgroundOpacity = $input['background_opacity'] ?? null;
+        if ($backgroundOpacity !== null && $backgroundOpacity !== '' && !Validator::isPercentage($backgroundOpacity)) {
+            $errors['background_opacity'] = 'Bitte einen Wert zwischen 0 und 100 angeben.';
+        }
+
         $shortDescription = Validator::cleanText((string) ($input['short_description'] ?? ''), 255);
         $description = Validator::cleanText((string) ($input['description'] ?? ''), 5000);
 
@@ -166,6 +176,8 @@ final class NavigationService
             'parent_id' => $parentId,
             'content' => $content,
             'icon' => $icon === '' ? null : $icon,
+            'background_color' => $backgroundColor === '' ? null : $backgroundColor,
+            'background_opacity' => $backgroundOpacity === null || $backgroundOpacity === '' ? null : (int) $backgroundOpacity,
             'short_description' => $shortDescription,
             'description' => $description,
             'sort_order' => $sortOrder,

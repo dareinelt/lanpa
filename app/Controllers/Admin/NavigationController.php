@@ -144,12 +144,15 @@ final class NavigationController extends AdminController
      */
     private function payload(Request $request): array
     {
+        $bgOpacity = $request->input('background_opacity', '');
         return [
             'title' => (string) $request->input('title', ''),
             'url' => (string) $request->input('url', ''),
             'type' => (string) $request->input('type', 'external'),
             'parent_id' => $request->inputInt('parent_id', 0),
             'icon' => (string) $request->input('icon', ''),
+            'background_color' => (string) $request->input('background_color', ''),
+            'background_opacity' => $bgOpacity !== '' ? (int) $bgOpacity : null,
             'short_description' => (string) $request->input('short_description', ''),
             'description' => (string) $request->input('description', ''),
             'content' => (string) $request->input('content', ''),

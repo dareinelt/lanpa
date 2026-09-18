@@ -15,6 +15,7 @@ use App\Controllers\Admin\DashboardController;
 use App\Controllers\Admin\DescriptionController;
 use App\Controllers\Admin\DesignController;
 use App\Controllers\Admin\EmergencyNumberController;
+use App\Controllers\Admin\ImportExportController;
 use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
@@ -147,6 +148,10 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/benutzer/bearbeiten', [AdminUserController::class, 'update']);
         $router->post('/admin/benutzer/loeschen', [AdminUserController::class, 'delete']);
         $router->post('/admin/benutzer/status', [AdminUserController::class, 'toggle']);
+
+        $router->get('/admin/sicherung', [ImportExportController::class, 'index']);
+        $router->post('/admin/sicherung/export', [ImportExportController::class, 'export']);
+        $router->post('/admin/sicherung/import', [ImportExportController::class, 'import']);
     });
 });
 

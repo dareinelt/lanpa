@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Core\Config;
+use App\Exceptions\ValidationException;
 
 /**
  * Ermittelt und speichert automatisch das Favicon einer verlinkten Seite.
@@ -82,6 +83,32 @@ final class FaviconService
         $path = rtrim($this->uploadPath, '/\\') . DIRECTORY_SEPARATOR . $filename;
 
         return is_readable($path) ? $path : null;
+    }
+
+    /**
+     * Schreibt ein Favicon aus einer Sicherung. Dateiname, Typ und Inhalt
+     * stammen aus der Exportdatei und werden unveraendert uebernommen.
+     */
+    public function writeFromImport(string $filename, string $contents, string $mime): void
+    {
+        if (!$this->isValidFilename($filename)) {
+            throw new ValidationException(['favicon' => 'Ungültiger Favicon-Dateiname in der Sicherung.']);
+        }
+
+        $extension = self::ALLOWED[$mime] ?? null;
+        if ($extension === null) {
+            throw new ValidationException(['favicon' => 'Nicht erlaubter Favicon-Typ in der Sicherung.']);
+        }
+
+        if (strtolower((string) pathinfo($filename, PATHINFO_EXTENSION)) !== $extension) {
+            throw new ValidationException(['favicon' => 'Favicon-Dateiendung und -Typ passen nicht zusammen.']);
+        }
+
+        if (strlen($contents) <= 0 || strlen($contents) > self::MAX_BYTES) {
+            throw new ValidationException(['favicon' => 'Die Favicon-Datei ist zu groß.']);
+        }
+
+        $this->writeContents($filename, $contents);
     }
 
     /**
@@ -251,20 +278,35 @@ final class FaviconService
             return null;
         }
 
-        if (!is_dir($this->uploadPath) && !@mkdir($this->uploadPath, 0o775, true) && !is_dir($this->uploadPath)) {
-            return null;
-        }
-
         $filename = 'favicon-' . bin2hex(random_bytes(8)) . '.' . $extension;
-        $target = rtrim($this->uploadPath, '/\\') . DIRECTORY_SEPARATOR . $filename;
-
-        if (@file_put_contents($target, $contents) === false) {
+        try {
+            $this->writeContents($filename, $contents);
+        } catch (ValidationException) {
             return null;
         }
-
-        @chmod($target, 0o644);
 
         return ['icon_file' => $filename, 'icon_mime' => $mime];
+    }
+
+    private function writeContents(string $filename, string $contents): void
+    {
+        if (!is_dir($this->uploadPath) && !@mkdir($this->uploadPath, 0o775, true) && !is_dir($this->uploadPath)) {
+            throw new ValidationException(['favicon' => 'Das Upload-Verzeichnis ist nicht beschreibbar.']);
+        }
+
+        $target = rtrim($this->uploadPath, '/\\') . DIRECTORY_SEPARATOR . $filename;
+        $tmp = $target . '.tmp';
+
+        if (@file_put_contents($tmp, $contents) === false) {
+            throw new ValidationException(['favicon' => 'Die Datei konnte nicht gespeichert werden.']);
+        }
+
+        @chmod($tmp, 0o644);
+        if (!@rename($tmp, $target)) {
+            @unlink($tmp);
+
+            throw new ValidationException(['favicon' => 'Die Datei konnte nicht gespeichert werden.']);
+        }
     }
 
     private function isValidFilename(string $filename): bool

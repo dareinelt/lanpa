@@ -193,4 +193,73 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
 
         return $statement->rowCount();
     }
+
+    /**
+     * Alle Eintraege inklusive inaktiver – fuer den Export der Sicherung.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function all(): array
+    {
+        $statement = $this->pdo->query(
+            'SELECT id, external_id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active FROM phonebook ORDER BY id ASC'
+        );
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement === false ? [] : $statement->fetchAll();
+
+        return $rows;
+    }
+
+    /**
+     * Einfaches Einfuegen (ohne Upsert) – fuer den Import, der die Tabelle
+     * vorher leert.
+     *
+     * @param array<string,mixed> $data
+     */
+    public function insert(array $data): int
+    {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO phonebook
+                (external_id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active)
+             VALUES
+                (:external_id, :display_name, :first_name, :last_name, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, :active)'
+        );
+        $statement->execute($this->bindings($data));
+
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    public function deleteAll(): void
+    {
+        $this->pdo->exec('DELETE FROM phonebook');
+    }
+
+    /**
+     * @param array<string,mixed> $data
+     *
+     * @return array<string,mixed>
+     */
+    private function bindings(array $data): array
+    {
+        return [
+            'external_id' => (string) ($data['external_id'] ?? ''),
+            'display_name' => (string) ($data['display_name'] ?? ''),
+            'first_name' => $this->value($data['first_name'] ?? null),
+            'last_name' => $this->value($data['last_name'] ?? null),
+            'phone' => $this->value($data['phone'] ?? null),
+            'phone_digits' => $this->value($data['phone_digits'] ?? null),
+            'mobile' => $this->value($data['mobile'] ?? null),
+            'email' => $this->value($data['email'] ?? null),
+            'department' => $this->value($data['department'] ?? null),
+            'ad_modified' => $this->value($data['ad_modified'] ?? null),
+            'synced_at' => $this->value($data['synced_at'] ?? null),
+            'active' => !empty($data['active']) ? 1 : 0,
+        ];
+    }
+
+    private function value(mixed $value): ?string
+    {
+        return $value === null ? null : (string) $value;
+    }
 }

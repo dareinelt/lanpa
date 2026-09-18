@@ -46,6 +46,23 @@ final class Response
         return new self('', 204);
     }
 
+    /**
+     * Datei-Download-Antwort (z. B. fuer die Sicherungsdatei).
+     */
+    public static function download(string $contents, string $filename, string $contentType = 'application/octet-stream'): self
+    {
+        // Header-Injection verhindern.
+        $filename = str_replace(["\r", "\n", '"'], '', $filename);
+
+        return new self($contents, 200, [
+            'Content-Type' => $contentType,
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Content-Length' => (string) strlen($contents),
+            'Cache-Control' => 'no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
     public function withHeader(string $name, string $value): self
     {
         $this->headers[$name] = $value;

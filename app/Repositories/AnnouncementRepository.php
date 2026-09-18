@@ -90,6 +90,11 @@ final class AnnouncementRepository extends Repository
         $statement->execute(['id' => $id]);
     }
 
+    public function deleteAll(): void
+    {
+        $this->pdo->exec('DELETE FROM announcements');
+    }
+
     /**
      * Aktiviert eine Mitteilung (und deaktiviert alle anderen), oder
      * archiviert sie.

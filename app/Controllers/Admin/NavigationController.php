@@ -9,6 +9,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Exceptions\ValidationException;
 use App\Security\Session;
+use App\Support\Validator;
 
 final class NavigationController extends AdminController
 {
@@ -18,11 +19,23 @@ final class NavigationController extends AdminController
             'pageTitle' => 'Navigation',
             'activeNav' => 'navigation',
             'items' => Container::navigation()->allItems(),
+            'navTreeMode' => Container::settings()->navTreeMode(),
+            'pageScript' => 'navigation.js',
         ]);
     }
 
     public function create(Request $request): Response
     {
+        $type = (string) $request->query('type', 'external');
+        if (!Validator::isNavigationType($type)) {
+            $type = 'external';
+        }
+
+        $parentId = $request->queryInt('parent_id', 0);
+        if ($type !== 'subpage' && $type !== 'page') {
+            $parentId = 0;
+        }
+
         return $this->adminView('admin.navigation.form', [
             'pageTitle' => 'Element anlegen',
             'activeNav' => 'navigation',
@@ -32,13 +45,13 @@ final class NavigationController extends AdminController
                 'id' => null,
                 'title' => '',
                 'url' => '',
-                'type' => 'external',
-                'parent_id' => null,
+                'type' => $type,
+                'parent_id' => $parentId > 0 ? $parentId : null,
                 'icon' => '',
                 'short_description' => '',
                 'description' => '',
                 'content' => '',
-                'sort_order' => Container::navigationRepository()->nextSortOrder(),
+                'sort_order' => Container::navigationRepository()->nextSortOrder($parentId > 0 ? $parentId : null),
                 'active' => 1,
             ],
             'errors' => [],
@@ -135,6 +148,21 @@ final class NavigationController extends AdminController
         } else {
             Session::flash('success', 'Die Reihenfolge wurde aktualisiert.');
         }
+
+        return $this->redirect('/admin/navigation');
+    }
+
+    public function updateViewMode(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $enabled = $request->has('nav_tree_mode');
+        Container::settings()->update(['nav_tree_mode' => $enabled ? '1' : '0']);
+        app_logger()->info('Navigationsansicht geändert.', [
+            'admin' => Container::auth()->username(),
+            'nav_tree_mode' => $enabled ? '1' : '0',
+        ]);
+        Session::flash('success', $enabled ? 'Die Baumansicht ist jetzt aktiv.' : 'Die Listenansicht ist jetzt aktiv.');
 
         return $this->redirect('/admin/navigation');
     }

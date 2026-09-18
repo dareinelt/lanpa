@@ -6,12 +6,27 @@ use App\Security\Csrf;
 use App\Support\Html;
 
 /** @var list<array<string,mixed>> $items */
+/** @var bool $navTreeMode */
 ?>
 <div class="toolbar">
     <a class="button button--primary" href="/admin/navigation/neu">Neues Element</a>
+
+    <form method="post" action="/admin/navigation/ansicht" class="view-switch-form">
+        <?= Csrf::field() ?>
+        <label class="switch">
+            <input type="checkbox" name="nav_tree_mode" value="1" data-auto-submit <?= $navTreeMode ? 'checked' : '' ?>>
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="switch__label">Baumansicht</span>
+        </label>
+        <noscript>
+            <button type="submit" class="button button--ghost">Übernehmen</button>
+        </noscript>
+    </form>
 </div>
 
-<?php if ($items === []) { ?>
+<?php if ($navTreeMode) { ?>
+    <?php require __DIR__ . '/tree.php'; ?>
+<?php } elseif ($items === []) { ?>
     <p class="empty-state">Es sind noch keine Navigationselemente vorhanden.</p>
 <?php } else { ?>
     <div class="table-wrapper">

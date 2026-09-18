@@ -34,6 +34,7 @@ final class SettingsService
             'footer_text' => (string) Config::get('app.name', 'Intranet'),
             'description_mode' => 'both',
             'phone_numbers_clickable' => '1',
+            'nav_tree_mode' => '0',
             'color_primary' => '#1f4e79',
             'color_secondary' => '#37718e',
             'color_accent' => '#c8102e',
@@ -119,6 +120,14 @@ final class SettingsService
     public function phoneNumbersClickable(): bool
     {
         return $this->bool('phone_numbers_clickable');
+    }
+
+    /**
+     * Baumansicht der Navigation im Administrationsbereich.
+     */
+    public function navTreeMode(): bool
+    {
+        return $this->bool('nav_tree_mode');
     }
 
     /**

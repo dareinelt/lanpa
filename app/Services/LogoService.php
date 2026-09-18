@@ -133,6 +133,44 @@ final class LogoService
         return is_readable($path) ? ['path' => $path, 'mime' => $mime] : null;
     }
 
+    /**
+     * Schreibt ein Logo aus einer Sicherung. Dateiname, Typ und Inhalt stammen
+     * aus der Exportdatei und werden unveraendert uebernommen.
+     */
+    public function writeFromImport(string $filename, string $contents, string $mime): void
+    {
+        if (!$this->isValidFilename($filename)) {
+            throw new ValidationException(['logo' => 'Ungültiger Logo-Dateiname in der Sicherung.']);
+        }
+
+        $extension = self::ALLOWED[$mime] ?? null;
+        if ($extension === null) {
+            throw new ValidationException(['logo' => 'Erlaubt sind ausschließlich PNG, JPEG, WebP und SVG.']);
+        }
+
+        $validExtensions = $extension === 'jpg' ? ['jpg', 'jpeg'] : [$extension];
+        if (!in_array(strtolower((string) pathinfo($filename, PATHINFO_EXTENSION)), $validExtensions, true)) {
+            throw new ValidationException(['logo' => 'Logo-Dateiendung und -Typ passen nicht zusammen.']);
+        }
+
+        if (strlen($contents) <= 0 || strlen($contents) > $this->maxBytes) {
+            throw new ValidationException(['logo' => sprintf('Die Datei darf maximal %d KB groß sein.', (int) ($this->maxBytes / 1024))]);
+        }
+
+        if ($extension === 'svg') {
+            if (!$this->allowSvg) {
+                throw new ValidationException(['logo' => 'SVG-Uploads sind in dieser Installation deaktiviert.']);
+            }
+            if (!$this->isSafeSvg($contents)) {
+                throw new ValidationException(['logo' => 'Die SVG-Datei enthält nicht erlaubte aktive Inhalte.']);
+            }
+        } elseif (@getimagesizefromstring($contents) === false) {
+            throw new ValidationException(['logo' => 'Die Bilddatei ist ungültig.']);
+        }
+
+        $this->writeContents($filename, $contents);
+    }
+
     public function isSafeSvg(string $contents): bool
     {
         $normalized = strtolower($contents);
@@ -171,6 +209,27 @@ final class LogoService
         $path = rtrim($this->uploadPath, '/\\') . DIRECTORY_SEPARATOR . $filename;
         if (is_file($path)) {
             @unlink($path);
+        }
+    }
+
+    private function writeContents(string $filename, string $contents): void
+    {
+        if (!is_dir($this->uploadPath) && !@mkdir($this->uploadPath, 0o775, true) && !is_dir($this->uploadPath)) {
+            throw new ValidationException(['logo' => 'Das Upload-Verzeichnis ist nicht beschreibbar.']);
+        }
+
+        $target = rtrim($this->uploadPath, '/\\') . DIRECTORY_SEPARATOR . $filename;
+        $tmp = $target . '.tmp';
+
+        if (@file_put_contents($tmp, $contents) === false) {
+            throw new ValidationException(['logo' => 'Die Datei konnte nicht gespeichert werden.']);
+        }
+
+        @chmod($tmp, 0o644);
+        if (!@rename($tmp, $target)) {
+            @unlink($tmp);
+
+            throw new ValidationException(['logo' => 'Die Datei konnte nicht gespeichert werden.']);
         }
     }
 

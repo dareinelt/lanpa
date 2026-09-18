@@ -64,4 +64,21 @@ final class SettingsRepository extends Repository
             throw $exception;
         }
     }
+
+    /**
+     * Einfaches Einfuegen ohne Upsert – fuer den Import, der die Tabelle
+     * vorher leert und so keine Duplikate erzeugen kann.
+     */
+    public function insert(string $key, string $value): void
+    {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO settings (setting_key, setting_value) VALUES (:key, :value)'
+        );
+        $statement->execute(['key' => $key, 'value' => $value]);
+    }
+
+    public function deleteAll(): void
+    {
+        $this->pdo->exec('DELETE FROM settings');
+    }
 }

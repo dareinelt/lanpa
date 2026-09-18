@@ -57,6 +57,23 @@ final class AdminUserRepository extends Repository implements AdminUserStoreInte
         return $rows;
     }
 
+    /**
+     * Alle Konten inklusive Passwort-Hash, fuer den Export der Sicherung.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function allWithPasswordHash(): array
+    {
+        $statement = $this->pdo->query(
+            'SELECT id, username, password_hash, role, active FROM admin_users ORDER BY username ASC'
+        );
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement !== false ? $statement->fetchAll() : [];
+
+        return $rows;
+    }
+
     public function updatePasswordHash(int $id, string $hash): void
     {
         $statement = $this->pdo->prepare('UPDATE admin_users SET password_hash = :hash WHERE id = :id');
@@ -97,6 +114,11 @@ final class AdminUserRepository extends Repository implements AdminUserStoreInte
     {
         $statement = $this->pdo->prepare('DELETE FROM admin_users WHERE id = :id');
         $statement->execute(['id' => $id]);
+    }
+
+    public function deleteAll(): void
+    {
+        $this->pdo->exec('DELETE FROM admin_users');
     }
 
     public function count(): int

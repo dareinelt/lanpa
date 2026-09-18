@@ -103,6 +103,11 @@ final class ImportantLinkRepository extends Repository
         $statement->execute(['id' => $id]);
     }
 
+    public function deleteAll(): void
+    {
+        $this->pdo->exec('DELETE FROM important_links');
+    }
+
     public function setActive(int $id, bool $active): void
     {
         $statement = $this->pdo->prepare('UPDATE important_links SET active = :active WHERE id = :id');

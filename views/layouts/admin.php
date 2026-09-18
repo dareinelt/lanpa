@@ -28,6 +28,7 @@ $navItems = $isAdmin ? [
     'ldap' => ['/admin/ad', 'Active Directory'],
     'statistics' => ['/admin/statistik', 'Statistik'],
     'users' => ['/admin/benutzer', 'Benutzer'],
+    'backup' => ['/admin/sicherung', 'Sicherung'],
 ] : [
     'important_links' => ['/admin/wichtige-links', 'Wichtige Links'],
 ];

@@ -119,6 +119,35 @@ final class BackgroundImageService
         return is_readable($path) ? ['path' => $path, 'mime' => $mime] : null;
     }
 
+    /**
+     * Schreibt ein Hintergrundbild aus einer Sicherung. Dateiname, Typ und
+     * Inhalt stammen aus der Exportdatei und werden unveraendert uebernommen.
+     */
+    public function writeFromImport(string $filename, string $contents, string $mime): void
+    {
+        if (!$this->isValidFilename($filename)) {
+            throw new ValidationException(['background' => 'Ungültiger Dateiname für das Hintergrundbild in der Sicherung.']);
+        }
+
+        if (!isset(self::ALLOWED[$mime])) {
+            throw new ValidationException(['background' => 'Erlaubt ist ausschließlich das PNG-Format.']);
+        }
+
+        if (strtolower((string) pathinfo($filename, PATHINFO_EXTENSION)) !== 'png') {
+            throw new ValidationException(['background' => 'Dateiendung und Dateiinhalt passen nicht zusammen.']);
+        }
+
+        if (strlen($contents) <= 0 || strlen($contents) > $this->maxBytes) {
+            throw new ValidationException(['background' => sprintf('Die Datei darf maximal %d KB groß sein.', (int) ($this->maxBytes / 1024))]);
+        }
+
+        if (@getimagesizefromstring($contents) === false) {
+            throw new ValidationException(['background' => 'Die Bilddatei ist ungültig.']);
+        }
+
+        $this->writeContents($filename, $contents);
+    }
+
     private function isValidFilename(string $filename): bool
     {
         return preg_match('/^background-[a-f0-9]{16}\.png$/', $filename) === 1;
@@ -133,6 +162,27 @@ final class BackgroundImageService
         $path = rtrim($this->uploadPath, '/\\') . DIRECTORY_SEPARATOR . $filename;
         if (is_file($path)) {
             @unlink($path);
+        }
+    }
+
+    private function writeContents(string $filename, string $contents): void
+    {
+        if (!is_dir($this->uploadPath) && !@mkdir($this->uploadPath, 0o775, true) && !is_dir($this->uploadPath)) {
+            throw new ValidationException(['background' => 'Das Upload-Verzeichnis ist nicht beschreibbar.']);
+        }
+
+        $target = rtrim($this->uploadPath, '/\\') . DIRECTORY_SEPARATOR . $filename;
+        $tmp = $target . '.tmp';
+
+        if (@file_put_contents($tmp, $contents) === false) {
+            throw new ValidationException(['background' => 'Die Datei konnte nicht gespeichert werden.']);
+        }
+
+        @chmod($tmp, 0o644);
+        if (!@rename($tmp, $target)) {
+            @unlink($tmp);
+
+            throw new ValidationException(['background' => 'Die Datei konnte nicht gespeichert werden.']);
         }
     }
 

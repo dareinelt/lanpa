@@ -111,6 +111,14 @@ final class SettingsService
         $this->cache = null;
     }
 
+    /**
+     * Leert den Zwischenspeicher (z. B. nach einem Sicherungs-Import).
+     */
+    public function resetCache(): void
+    {
+        $this->cache = null;
+    }
+
     public function descriptionMode(): string
     {
         $mode = $this->get('description_mode', 'both');

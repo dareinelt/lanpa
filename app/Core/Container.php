@@ -17,9 +17,11 @@ use App\Security\Auth;
 use App\Services\AdSyncService;
 use App\Services\AdminUserService;
 use App\Services\AnnouncementService;
+use App\Services\BackupService;
 use App\Services\EmergencyNumberService;
 use App\Services\FaviconService;
 use App\Services\ImportantLinkService;
+use App\Services\ImportService;
 use App\Services\BackgroundImageService;
 use App\Services\LdapClient;
 use App\Services\LogoService;
@@ -226,6 +228,45 @@ final class Container
                 self::phonebookRepository(),
                 self::syncLogRepository(),
                 app_logger()
+            )
+        );
+    }
+
+    public static function backup(): BackupService
+    {
+        return self::make(
+            BackupService::class,
+            static fn (): BackupService => new BackupService(
+                self::settingsRepository(),
+                self::navigationRepository(),
+                self::importantLinkRepository(),
+                self::emergencyNumberRepository(),
+                self::announcementRepository(),
+                self::adminUserRepository(),
+                self::phonebookRepository(),
+                self::logo(),
+                self::backgroundImage(),
+                self::favicons()
+            )
+        );
+    }
+
+    public static function import(): ImportService
+    {
+        return self::make(
+            ImportService::class,
+            static fn (): ImportService => new ImportService(
+                self::settingsRepository(),
+                self::settings(),
+                self::navigationRepository(),
+                self::importantLinkRepository(),
+                self::emergencyNumberRepository(),
+                self::announcementRepository(),
+                self::adminUserRepository(),
+                self::phonebookRepository(),
+                self::logo(),
+                self::backgroundImage(),
+                self::favicons()
             )
         );
     }

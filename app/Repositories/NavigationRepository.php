@@ -161,6 +161,17 @@ final class NavigationRepository extends Repository
         $statement->execute(['id' => $id]);
     }
 
+    public function deleteAll(): void
+    {
+        $this->pdo->exec('DELETE FROM navigation_items');
+    }
+
+    public function setParentId(int $id, ?int $parentId): void
+    {
+        $statement = $this->pdo->prepare('UPDATE navigation_items SET parent_id = :parent_id WHERE id = :id');
+        $statement->execute(['parent_id' => $parentId, 'id' => $id]);
+    }
+
     public function setActive(int $id, bool $active): void
     {
         $statement = $this->pdo->prepare('UPDATE navigation_items SET active = :active WHERE id = :id');

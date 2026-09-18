@@ -272,7 +272,7 @@ code {
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition), var(--nav-opacity, 92%);
 }
 
 .tile:hover,

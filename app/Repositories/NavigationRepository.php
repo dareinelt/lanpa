@@ -6,15 +6,15 @@ namespace App\Repositories;
 
 final class NavigationRepository extends Repository
 {
-    private const COLUMNS = 'id, title, url, type, icon, short_description, description, sort_order, active, created_at, updated_at';
+    private const COLUMNS = 'id, title, url, type, parent_id, icon, short_description, description, content, sort_order, active, created_at, updated_at';
 
     /**
      * @return list<array<string,mixed>>
      */
-    public function allActive(): array
+    public function all(): array
     {
         $statement = $this->pdo->query(
-            'SELECT ' . self::COLUMNS . ' FROM navigation_items WHERE active = 1 ORDER BY sort_order ASC, id ASC'
+            'SELECT ' . self::COLUMNS . ' FROM navigation_items ORDER BY (parent_id IS NULL) DESC, COALESCE(parent_id, 0) ASC, sort_order ASC, id ASC'
         );
 
         /** @var list<array<string,mixed>> $rows */
@@ -26,16 +26,70 @@ final class NavigationRepository extends Repository
     /**
      * @return list<array<string,mixed>>
      */
-    public function all(): array
+    public function activeTopLevel(): array
+    {
+        return $this->activeChildrenWhere('parent_id IS NULL');
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function activeChildren(int $parentId): array
+    {
+        return $this->activeChildrenWhere('parent_id = :parent_id', ['parent_id' => $parentId]);
+    }
+
+    /**
+     * Alle (auch inaktiven) Unterseiten, fuer die Auswahl der uebergeordneten Ebene.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function subpages(): array
     {
         $statement = $this->pdo->query(
-            'SELECT ' . self::COLUMNS . ' FROM navigation_items ORDER BY sort_order ASC, id ASC'
+            'SELECT id, title, parent_id, sort_order, active FROM navigation_items WHERE type = \'subpage\' ORDER BY (parent_id IS NULL) DESC, COALESCE(parent_id, 0) ASC, sort_order ASC, id ASC'
         );
 
         /** @var list<array<string,mixed>> $rows */
         $rows = $statement === false ? [] : $statement->fetchAll();
 
         return $rows;
+    }
+
+    /**
+     * Alle Nachfahren-IDs eines Elements (zur Vermeidung zirkulaerer Verschachtelung).
+     *
+     * @return list<int>
+     */
+    public function descendantIds(int $id): array
+    {
+        $rows = $this->all();
+        $children = [];
+        foreach ($rows as $row) {
+            $children[(int) $row['parent_id']][] = (int) $row['id'];
+        }
+
+        $result = [];
+        $stack = [$id];
+        while ($stack !== []) {
+            $current = array_pop($stack);
+            foreach ($children[$current] ?? [] as $child) {
+                if (!in_array($child, $result, true)) {
+                    $result[] = $child;
+                    $stack[] = $child;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    public function hasChildren(int $id): bool
+    {
+        $statement = $this->pdo->prepare('SELECT 1 FROM navigation_items WHERE parent_id = :id LIMIT 1');
+        $statement->execute(['id' => $id]);
+
+        return $statement->fetchColumn() !== false;
     }
 
     /**
@@ -69,8 +123,8 @@ final class NavigationRepository extends Repository
     public function create(array $data): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO navigation_items (title, url, type, icon, short_description, description, sort_order, active)
-             VALUES (:title, :url, :type, :icon, :short_description, :description, :sort_order, :active)'
+            'INSERT INTO navigation_items (title, url, type, parent_id, icon, short_description, description, content, sort_order, active)
+             VALUES (:title, :url, :type, :parent_id, :icon, :short_description, :description, :content, :sort_order, :active)'
         );
         $statement->execute($this->bindings($data));
 
@@ -87,9 +141,11 @@ final class NavigationRepository extends Repository
                 SET title = :title,
                     url = :url,
                     type = :type,
+                    parent_id = :parent_id,
                     icon = :icon,
                     short_description = :short_description,
                     description = :description,
+                    content = :content,
                     sort_order = :sort_order,
                     active = :active
               WHERE id = :id'
@@ -109,19 +165,29 @@ final class NavigationRepository extends Repository
         $statement->execute(['active' => $active ? 1 : 0, 'id' => $id]);
     }
 
-    public function nextSortOrder(): int
+    public function nextSortOrder(?int $parentId = null): int
     {
-        $value = $this->pdo->query('SELECT COALESCE(MAX(sort_order), 0) + 1 FROM navigation_items')?->fetchColumn();
+        $sql = 'SELECT COALESCE(MAX(sort_order), 0) + 1 FROM navigation_items WHERE ' . ($parentId === null ? 'parent_id IS NULL' : 'parent_id = :parent_id');
+        $statement = $this->pdo->prepare($sql);
+        $statement->execute($parentId === null ? [] : ['parent_id' => $parentId]);
+        $value = $statement->fetchColumn();
 
         return is_numeric($value) ? (int) $value : 1;
     }
 
     /**
-     * Verschiebt ein Element um eine Position nach oben oder unten.
+     * Verschiebt ein Element um eine Position nach oben oder unten,
+     * innerhalb seiner Ebene (Eltern-Scope).
      */
     public function move(int $id, string $direction): bool
     {
-        $items = $this->all();
+        $item = $this->find($id);
+        if ($item === null) {
+            return false;
+        }
+
+        $parentId = $item['parent_id'] === null ? null : (int) $item['parent_id'];
+        $items = $this->siblings($parentId);
         $index = null;
         foreach ($items as $position => $item) {
             if ((int) $item['id'] === $id) {
@@ -165,6 +231,41 @@ final class NavigationRepository extends Repository
     }
 
     /**
+     * Alle Elemente einer Ebene (gleiche parent_id), inklusive inaktiver.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function siblings(?int $parentId): array
+    {
+        $sql = 'SELECT ' . self::COLUMNS . ' FROM navigation_items WHERE ' . ($parentId === null ? 'parent_id IS NULL' : 'parent_id = :parent_id') . ' ORDER BY sort_order ASC, id ASC';
+        $statement = $this->pdo->prepare($sql);
+        $statement->execute($parentId === null ? [] : ['parent_id' => $parentId]);
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement->fetchAll();
+
+        return $rows;
+    }
+
+    /**
+     * @param array<string,mixed> $bindings
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function activeChildrenWhere(string $where, array $bindings = []): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT ' . self::COLUMNS . ' FROM navigation_items WHERE active = 1 AND ' . $where . ' ORDER BY sort_order ASC, id ASC'
+        );
+        $statement->execute($bindings);
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement->fetchAll();
+
+        return $rows;
+    }
+
+    /**
      * @param array<string,mixed> $data
      *
      * @return array<string,mixed>
@@ -175,9 +276,11 @@ final class NavigationRepository extends Repository
             'title' => (string) $data['title'],
             'url' => (string) $data['url'],
             'type' => (string) $data['type'],
+            'parent_id' => isset($data['parent_id']) && $data['parent_id'] !== '' && $data['parent_id'] !== null ? (int) $data['parent_id'] : null,
             'icon' => $data['icon'] === null || $data['icon'] === '' ? null : (string) $data['icon'],
             'short_description' => (string) ($data['short_description'] ?? ''),
             'description' => (string) ($data['description'] ?? ''),
+            'content' => isset($data['content']) && $data['content'] !== null && $data['content'] !== '' ? (string) $data['content'] : null,
             'sort_order' => (int) ($data['sort_order'] ?? 1),
             'active' => !empty($data['active']) ? 1 : 0,
         ];

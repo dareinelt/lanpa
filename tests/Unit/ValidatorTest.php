@@ -69,6 +69,9 @@ Runner::test('Hostnamen und Ports werden validiert', static function (): void {
 
 Runner::test('Aufzählungswerte werden geprüft', static function (): void {
     Assert::true(Validator::isNavigationType('internal'));
+    Assert::true(Validator::isNavigationType('external'));
+    Assert::true(Validator::isNavigationType('subpage'));
+    Assert::true(Validator::isNavigationType('page'));
     Assert::false(Validator::isNavigationType('script'));
     Assert::true(Validator::isDescriptionMode('both'));
     Assert::false(Validator::isDescriptionMode('popup'));

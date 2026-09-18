@@ -399,7 +399,7 @@ code {
 /* Wichtige Links (aufklappbarer Bereich unterhalb der Kacheln) */
 .important-links {
     margin-top: clamp(1.5rem, 4vw, 2.5rem);
-    background: var(--color-surface);
+    background: var(--color-surface), var(--nav-opacity, 92%);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);

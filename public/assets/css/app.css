@@ -743,6 +743,124 @@ code {
     overflow: hidden;
 }
 
+.breadcrumb {
+    margin: 0 0 1.25rem;
+}
+
+.breadcrumb__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+    font-size: .95rem;
+    color: var(--color-muted);
+}
+
+.breadcrumb__item {
+    display: inline-flex;
+}
+
+.breadcrumb__item a {
+    color: var(--color-link, var(--color-accent));
+    text-decoration: none;
+}
+
+.breadcrumb__item a:hover {
+    text-decoration: underline;
+}
+
+.breadcrumb__item [aria-current="page"] {
+    color: var(--color-text);
+    font-weight: 600;
+}
+
+.rich-text {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1.75rem;
+    box-shadow: var(--shadow);
+    max-width: 52rem;
+    line-height: 1.65;
+}
+
+.rich-text__title {
+    margin-top: 0;
+    font-size: 1.75rem;
+}
+
+.rich-text h1,
+.rich-text h2,
+.rich-text h3,
+.rich-text h4,
+.rich-text h5,
+.rich-text h6 {
+    line-height: 1.25;
+    margin: 1.5em 0 .5em;
+}
+
+.rich-text h1:first-child,
+.rich-text h2:first-child,
+.rich-text h3:first-child {
+    margin-top: 0;
+}
+
+.rich-text p {
+    margin: 0 0 1em;
+}
+
+.rich-text ul,
+.rich-text ol {
+    margin: 0 0 1em;
+    padding-left: 1.5rem;
+}
+
+.rich-text blockquote {
+    margin: 1em 0;
+    padding: .5rem 1rem;
+    border-left: 4px solid var(--color-border);
+    color: var(--color-muted);
+}
+
+.rich-text code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .92em;
+    background: var(--color-surface-alt, rgba(0, 0, 0, .06));
+    border-radius: 4px;
+    padding: .1em .35em;
+}
+
+.rich-text pre {
+    background: var(--color-surface-alt, rgba(0, 0, 0, .06));
+    border-radius: var(--radius);
+    padding: 1rem;
+    overflow-x: auto;
+}
+
+.rich-text pre code {
+    background: none;
+    padding: 0;
+}
+
+.rich-text a {
+    color: var(--color-link, var(--color-accent));
+}
+
+.rich-text hr {
+    border: none;
+    border-top: 1px solid var(--color-border);
+    margin: 1.5em 0;
+}
+
+.rich-text mark {
+    background: var(--color-accent-soft, rgba(255, 200, 0, .35));
+    border-radius: 2px;
+    padding: 0 .2em;
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

@@ -83,7 +83,7 @@ final class Validator
 
     public static function isNavigationType(string $type): bool
     {
-        return in_array($type, ['external', 'internal'], true);
+        return in_array($type, ['external', 'internal', 'subpage', 'page'], true);
     }
 
     public static function isDescriptionMode(string $mode): bool

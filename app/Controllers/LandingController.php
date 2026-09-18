@@ -12,7 +12,7 @@ final class LandingController extends Controller
 {
     public function index(Request $request): Response
     {
-        $items = Container::navigation()->activeItems();
+        $items = Container::navigation()->activeTopLevel();
 
         return $this->view('landing.index', [
             'pageTitle' => Container::settings()->get('site_title'),

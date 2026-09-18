@@ -7,14 +7,16 @@ use App\Support\Html;
 
 /** @var array<string,mixed> $item */
 /** @var array<string,string> $errors */
+/** @var list<array<string,mixed>> $subpages */
 $isNew = ($item['id'] ?? null) === null;
 $action = $isNew ? '/admin/navigation/neu' : '/admin/navigation/bearbeiten';
+$type = (string) ($item['type'] ?? 'external');
 $icons = [
     '', 'document', 'app', 'phone', 'alert', 'tools', 'robot', 'link',
     'clock', 'helmet', 'wrench', 'snail', 'beacon', 'ekg', 'warning',
 ];
 ?>
-<form method="post" action="<?= Html::e($action) ?>" class="form form--wide">
+<form method="post" action="<?= Html::e($action) ?>" class="form form--wide" data-editor-form>
     <?= Csrf::field() ?>
     <?php if (!$isNew) { ?>
         <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
@@ -30,9 +32,9 @@ $icons = [
         <?php } ?>
     </div>
 
-    <div class="field">
+    <div class="field" data-editor-url>
         <label for="url">URL <span aria-hidden="true">*</span></label>
-        <input type="text" id="url" name="url" required maxlength="2048"
+        <input type="text" id="url" name="url" maxlength="2048"
                value="<?= Html::e((string) $item['url']) ?>"
                <?= isset($errors['url']) ? 'aria-invalid="true" aria-describedby="url-error"' : 'aria-describedby="url-hint"' ?>>
         <p class="field__hint" id="url-hint">Externe Ziele als vollständige https-URL, interne Ziele als Pfad (z. B. /telefonliste).</p>
@@ -41,12 +43,62 @@ $icons = [
         <?php } ?>
     </div>
 
+    <div class="field" data-editor-parent>
+        <label for="parent_id">Übergeordnete Ebene</label>
+        <select id="parent_id" name="parent_id" <?= isset($errors['parent_id']) ? 'aria-invalid="true" aria-describedby="parent-error"' : '' ?>>
+            <option value="0" <?= (int) ($item['parent_id'] ?? 0) === 0 ? 'selected' : '' ?>>— oberste Ebene —</option>
+            <?php foreach ($subpages as $subpage) { ?>
+                <?php if ((int) $subpage['id'] === (int) ($item['id'] ?? 0)) {
+                    continue;
+                } ?>
+                <option value="<?= (int) $subpage['id'] ?>" <?= (int) ($item['parent_id'] ?? 0) === (int) $subpage['id'] ? 'selected' : '' ?>>
+                    <?= Html::e((string) $subpage['title']) ?>
+                </option>
+            <?php } ?>
+        </select>
+        <p class="field__hint">Legt fest, unter welcher Unterseite dieses Element erscheint.</p>
+        <?php if (isset($errors['parent_id'])) { ?>
+            <p class="field__error" id="parent-error"><?= Html::e($errors['parent_id']) ?></p>
+        <?php } ?>
+    </div>
+
+    <div class="field" data-editor-content>
+        <label for="content">Inhalt</label>
+        <div class="editor" data-editor>
+            <div class="editor__toolbar" role="toolbar" aria-label="Textformatierung">
+                <button type="button" class="editor__button" data-command="bold" title="Fett" aria-label="Fett"><strong>F</strong></button>
+                <button type="button" class="editor__button" data-command="italic" title="Kursiv" aria-label="Kursiv"><em>K</em></button>
+                <button type="button" class="editor__button" data-command="underline" title="Unterstrichen" aria-label="Unterstrichen"><u>U</u></button>
+                <button type="button" class="editor__button" data-command="strikeThrough" title="Durchgestrichen" aria-label="Durchgestrichen"><s>S</s></button>
+                <span class="editor__separator" aria-hidden="true"></span>
+                <button type="button" class="editor__button" data-command="formatBlock" data-value="p" title="Absatz" aria-label="Absatz">¶</button>
+                <button type="button" class="editor__button" data-command="formatBlock" data-value="h2" title="Überschrift 2" aria-label="Überschrift 2">H2</button>
+                <button type="button" class="editor__button" data-command="formatBlock" data-value="h3" title="Überschrift 3" aria-label="Überschrift 3">H3</button>
+                <span class="editor__separator" aria-hidden="true"></span>
+                <button type="button" class="editor__button" data-command="insertUnorderedList" title="Aufzählung" aria-label="Aufzählung">• Liste</button>
+                <button type="button" class="editor__button" data-command="insertOrderedList" title="Nummerierung" aria-label="Nummerierung">1. Liste</button>
+                <button type="button" class="editor__button" data-command="formatBlock" data-value="blockquote" title="Zitat" aria-label="Zitat">❝</button>
+                <span class="editor__separator" aria-hidden="true"></span>
+                <button type="button" class="editor__button" data-command="createLink" title="Link einfügen" aria-label="Link einfügen">Link</button>
+                <button type="button" class="editor__button" data-command="removeFormat" title="Formatierung entfernen" aria-label="Formatierung entfernen">✕</button>
+            </div>
+            <div class="editor__surface" contenteditable="true" data-editor-surface></div>
+            <textarea id="content" name="content" hidden data-editor-source><?= Html::e((string) ($item['content'] ?? '')) ?></textarea>
+        </div>
+        <p class="field__hint">Erlaubt sind Überschriften, Absätze, Listen, Zitate, Links und Hervorhebungen.</p>
+        <?php if (isset($errors['content'])) { ?>
+            <p class="field__error"><?= Html::e($errors['content']) ?></p>
+        <?php } ?>
+    </div>
+
     <div class="field-row">
         <div class="field">
             <label for="type">Typ</label>
-            <select id="type" name="type">
-                <option value="external" <?= (string) $item['type'] === 'external' ? 'selected' : '' ?>>extern (neuer Tab)</option>
-                <option value="internal" <?= (string) $item['type'] === 'internal' ? 'selected' : '' ?>>intern (in der Anwendung)</option>
+            <select id="type" name="type" data-editor-type>
+                <option value="external" <?= $type === 'external' ? 'selected' : '' ?>>extern (neuer Tab)</option>
+                <option value="internal" <?= $type === 'internal' ? 'selected' : '' ?>>intern (in der Anwendung)</option>
+                <option value="subpage" <?= $type === 'subpage' ? 'selected' : '' ?>>Unterseite (weitere Kacheln)</option>
+                <option value="page" <?= $type === 'page' ? 'selected' : '' ?>>Textseite (formatierter Inhalt)</option>
             </select>
         </div>
 

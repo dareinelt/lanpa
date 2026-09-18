@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Exceptions\ValidationException;
 use App\Repositories\NavigationRepository;
+use App\Support\Sanitizer;
 use App\Support\Validator;
 
 final class NavigationService
@@ -15,19 +16,41 @@ final class NavigationService
     }
 
     /**
+     * Aktive Navigationselemente der obersten Ebene (Landingpage).
+     *
      * @return list<array<string,mixed>>
      */
-    public function activeItems(): array
+    public function activeTopLevel(): array
     {
-        return $this->repository->allActive();
+        return $this->repository->activeTopLevel();
     }
 
     /**
+     * Aktive Unterseiten eines Elements.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function activeChildren(int $parentId): array
+    {
+        return $this->repository->activeChildren($parentId);
+    }
+
+    /**
+     * Alle Elemente (auch inaktive), fuer die Admin-Liste.
+     *
      * @return list<array<string,mixed>>
      */
     public function allItems(): array
     {
         return $this->repository->all();
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function subpages(): array
+    {
+        return $this->repository->subpages();
     }
 
     /**
@@ -39,11 +62,45 @@ final class NavigationService
     }
 
     /**
+     * Findet ein aktives Element (fuer oeffentliche Seiten).
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findActive(int $id): ?array
+    {
+        $item = $this->repository->find($id);
+
+        return $item !== null && (int) $item['active'] === 1 ? $item : null;
+    }
+
+    /**
+     * Liefert den Breadcrumb-Pfad (Elternkette) fuer ein Element.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function breadcrumb(int $id): array
+    {
+        $chain = [];
+        $visited = [];
+        $current = $this->repository->find($id);
+
+        while ($current !== null && !in_array((int) $current['id'], $visited, true)) {
+            $visited[] = (int) $current['id'];
+            array_unshift($chain, $current);
+
+            $parentId = $current['parent_id'];
+            $current = $parentId === null ? null : $this->repository->find((int) $parentId);
+        }
+
+        return $chain;
+    }
+
+    /**
      * @param array<string,mixed> $input
      *
      * @return array<string,mixed> validierte Daten
      */
-    public function validate(array $input, bool $isNew): array
+    public function validate(array $input, bool $isNew, ?int $id = null): array
     {
         $errors = [];
 
@@ -52,18 +109,34 @@ final class NavigationService
             $errors['title'] = 'Bitte einen Titel angeben (max. 120 Zeichen).';
         }
 
-        $url = trim((string) ($input['url'] ?? ''));
-        if (!Validator::isSafeUrl($url)) {
-            $errors['url'] = 'Bitte eine gültige http(s)-URL oder einen internen Pfad (/telefonliste) angeben.';
-        }
-
         $type = (string) ($input['type'] ?? 'external');
         if (!Validator::isNavigationType($type)) {
             $errors['type'] = 'Ungültiger Typ.';
         }
 
-        if ($type === 'internal' && !str_starts_with($url, '/')) {
-            $errors['url'] = 'Interne Elemente benötigen einen anwendungsinternen Pfad, z. B. /telefonliste.';
+        $url = '';
+        $content = null;
+        $parentId = null;
+
+        if ($type === 'external' || $type === 'internal') {
+            $url = trim((string) ($input['url'] ?? ''));
+            if (!Validator::isSafeUrl($url)) {
+                $errors['url'] = 'Bitte eine gültige http(s)-URL oder einen internen Pfad (/telefonliste) angeben.';
+            } elseif ($type === 'internal' && !str_starts_with($url, '/')) {
+                $errors['url'] = 'Interne Elemente benötigen einen anwendungsinternen Pfad, z. B. /telefonliste.';
+            }
+        } else {
+            // subpage / page: verschachtelbar; page enthält formatierten Rich-Text.
+            $parentId = $this->resolveParentId($input['parent_id'] ?? null);
+            if ($parentId !== null) {
+                if (!$this->isValidParent($parentId, $id)) {
+                    $errors['parent_id'] = 'Die übergeordnete Ebene ist ungültig oder würde eine Schleife erzeugen.';
+                }
+            }
+
+            if ($type === 'page') {
+                $content = Sanitizer::html((string) ($input['content'] ?? ''));
+            }
         }
 
         $icon = Validator::cleanText((string) ($input['icon'] ?? ''), 32);
@@ -76,7 +149,7 @@ final class NavigationService
 
         $sortOrder = (int) ($input['sort_order'] ?? 0);
         if ($sortOrder < 1) {
-            $sortOrder = $isNew ? $this->repository->nextSortOrder() : 1;
+            $sortOrder = $isNew ? $this->repository->nextSortOrder($parentId) : 1;
         }
         if ($sortOrder > 9999) {
             $errors['sort_order'] = 'Sortierung muss zwischen 1 und 9999 liegen.';
@@ -90,12 +163,41 @@ final class NavigationService
             'title' => $title,
             'url' => $url,
             'type' => $type,
+            'parent_id' => $parentId,
+            'content' => $content,
             'icon' => $icon === '' ? null : $icon,
             'short_description' => $shortDescription,
             'description' => $description,
             'sort_order' => $sortOrder,
             'active' => !empty($input['active']),
         ];
+    }
+
+    private function resolveParentId(mixed $value): ?int
+    {
+        if ($value === null || $value === '' || $value === '0' || $value === 0) {
+            return null;
+        }
+
+        $id = (int) $value;
+
+        return $id > 0 ? $id : null;
+    }
+
+    private function isValidParent(int $parentId, ?int $currentId): bool
+    {
+        $parent = $this->repository->find($parentId);
+        if ($parent === null || $parent['type'] !== 'subpage') {
+            return false;
+        }
+
+        if ($currentId !== null) {
+            if ($parentId === $currentId || in_array($parentId, $this->repository->descendantIds($currentId), true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -115,7 +217,7 @@ final class NavigationService
             throw new ValidationException(['id' => 'Element nicht gefunden.']);
         }
 
-        $this->repository->update($id, $this->validate($input, false));
+        $this->repository->update($id, $this->validate($input, false, $id));
     }
 
     public function delete(int $id): void

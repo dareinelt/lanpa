@@ -29,7 +29,20 @@ use App\Support\Html;
             </thead>
             <tbody>
             <?php foreach ($items as $index => $item) {
-                $id = (int) $item['id']; ?>
+                $id = (int) $item['id'];
+                $itemType = (string) $item['type'];
+                $typeLabels = [
+                    'external' => 'extern',
+                    'internal' => 'intern',
+                    'subpage' => 'Unterseite',
+                    'page' => 'Textseite',
+                ];
+                $typeLabel = $typeLabels[$itemType] ?? $itemType;
+                $target = match ($itemType) {
+                    'subpage' => '/unterseite?id=' . $id,
+                    'page' => '/seite?id=' . $id,
+                    default => (string) $item['url'],
+                }; ?>
                 <tr>
                     <td>
                         <div class="order-controls">
@@ -52,12 +65,15 @@ use App\Support\Html;
                     </td>
                     <td>
                         <strong><?= Html::e((string) $item['title']) ?></strong>
+                        <?php if ($item['parent_id'] !== null) { ?>
+                            <div class="table__hint">untergeordnet (ID <?= (int) $item['parent_id'] ?>)</div>
+                        <?php } ?>
                         <?php if ((string) $item['short_description'] !== '') { ?>
                             <div class="table__hint"><?= Html::e((string) $item['short_description']) ?></div>
                         <?php } ?>
                     </td>
-                    <td class="table__url"><?= Html::e((string) $item['url']) ?></td>
-                    <td><?= (string) $item['type'] === 'external' ? 'extern' : 'intern' ?></td>
+                    <td class="table__url"><?= Html::e($target) ?></td>
+                    <td><?= Html::e($typeLabel) ?></td>
                     <td>
                         <span class="badge <?= (int) $item['active'] === 1 ? 'badge--ok' : 'badge--muted' ?>">
                             <?= (int) $item['active'] === 1 ? 'aktiv' : 'inaktiv' ?>

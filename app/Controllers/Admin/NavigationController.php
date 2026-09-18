@@ -26,14 +26,18 @@ final class NavigationController extends AdminController
         return $this->adminView('admin.navigation.form', [
             'pageTitle' => 'Element anlegen',
             'activeNav' => 'navigation',
+            'pageScript' => 'editor.js',
+            'subpages' => Container::navigation()->subpages(),
             'item' => [
                 'id' => null,
                 'title' => '',
                 'url' => '',
                 'type' => 'external',
+                'parent_id' => null,
                 'icon' => '',
                 'short_description' => '',
                 'description' => '',
+                'content' => '',
                 'sort_order' => Container::navigationRepository()->nextSortOrder(),
                 'active' => 1,
             ],
@@ -69,6 +73,8 @@ final class NavigationController extends AdminController
         return $this->adminView('admin.navigation.form', [
             'pageTitle' => 'Element bearbeiten',
             'activeNav' => 'navigation',
+            'pageScript' => 'editor.js',
+            'subpages' => Container::navigation()->subpages(),
             'item' => $item,
             'errors' => [],
         ]);
@@ -142,9 +148,11 @@ final class NavigationController extends AdminController
             'title' => (string) $request->input('title', ''),
             'url' => (string) $request->input('url', ''),
             'type' => (string) $request->input('type', 'external'),
+            'parent_id' => $request->inputInt('parent_id', 0),
             'icon' => (string) $request->input('icon', ''),
             'short_description' => (string) $request->input('short_description', ''),
             'description' => (string) $request->input('description', ''),
+            'content' => (string) $request->input('content', ''),
             'sort_order' => $request->inputInt('sort_order', 0),
             'active' => $request->has('active'),
         ];
@@ -159,6 +167,8 @@ final class NavigationController extends AdminController
         return $this->adminView('admin.navigation.form', [
             'pageTitle' => $id === null ? 'Element anlegen' : 'Element bearbeiten',
             'activeNav' => 'navigation',
+            'pageScript' => 'editor.js',
+            'subpages' => Container::navigation()->subpages(),
             'item' => $payload,
             'errors' => $exception->errors(),
         ], 422);

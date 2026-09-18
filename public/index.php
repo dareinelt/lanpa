@@ -25,6 +25,7 @@ use App\Controllers\HealthController;
 use App\Controllers\ImportantLinkIconController;
 use App\Controllers\LandingController;
 use App\Controllers\LogoController;
+use App\Controllers\PageController;
 use App\Controllers\PhonebookController;
 use App\Core\Config;
 use App\Core\Container;
@@ -44,6 +45,8 @@ $GLOBALS['csp_nonce'] = $nonce;
 $router = new Router();
 
 $router->get('/', [LandingController::class, 'index']);
+$router->get('/unterseite', [PageController::class, 'subpage']);
+$router->get('/seite', [PageController::class, 'page']);
 $router->get('/telefonliste', [PhonebookController::class, 'index']);
 $router->get('/api/telefonliste', [PhonebookController::class, 'search']);
 $router->post('/api/klick', [ClickController::class, 'store']);

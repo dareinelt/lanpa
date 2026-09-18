@@ -112,7 +112,7 @@ code {
     background-image: var(--watermark-image, none);
     background-repeat: no-repeat;
     background-position: center;
-    background-size: cover;
+    background-size: contain;
     opacity: .06;
     pointer-events: none;
 }

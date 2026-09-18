@@ -33,6 +33,8 @@ final class DesignController extends AdminController
             'theme' => Container::settings()->theme(),
             'hasLogo' => Container::logo()->current() !== null,
             'maxLogoKb' => (int) ((int) Config::get('app.max_logo_bytes', 512 * 1024) / 1024),
+            'hasBackground' => Container::backgroundImage()->current() !== null,
+            'maxBackgroundKb' => (int) ((int) Config::get('app.max_background_bytes', 2 * 1024 * 1024) / 1024),
             'errors' => [],
         ]);
     }
@@ -66,6 +68,8 @@ final class DesignController extends AdminController
                 'theme' => array_merge(Container::settings()->theme(), $values),
                 'hasLogo' => Container::logo()->current() !== null,
                 'maxLogoKb' => (int) ((int) Config::get('app.max_logo_bytes', 512 * 1024) / 1024),
+                'hasBackground' => Container::backgroundImage()->current() !== null,
+                'maxBackgroundKb' => (int) ((int) Config::get('app.max_background_bytes', 2 * 1024 * 1024) / 1024),
                 'errors' => $errors,
             ], 422);
         }
@@ -104,6 +108,37 @@ final class DesignController extends AdminController
         Container::logo()->remove();
         app_logger()->info('Logo entfernt.', ['admin' => Container::auth()->username()]);
         Session::flash('success', 'Das Logo wurde entfernt.');
+
+        return $this->redirect('/admin/design');
+    }
+
+    public function uploadBackground(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        /** @var array<string,mixed> $file */
+        $file = $request->files['background'] ?? ['error' => UPLOAD_ERR_NO_FILE];
+
+        try {
+            Container::backgroundImage()->store($file);
+        } catch (ValidationException $exception) {
+            Session::flash('error', implode(' ', $exception->errors()));
+
+            return $this->redirect('/admin/design');
+        }
+
+        app_logger()->info('Hintergrundbild aktualisiert.', ['admin' => Container::auth()->username()]);
+        Session::flash('success', 'Das Hintergrundbild wurde gespeichert.');
+
+        return $this->redirect('/admin/design');
+    }
+
+    public function removeBackground(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        Container::backgroundImage()->remove();
+        app_logger()->info('Hintergrundbild entfernt.', ['admin' => Container::auth()->username()]);
+        Session::flash('success', 'Das Hintergrundbild wurde entfernt.');
 
         return $this->redirect('/admin/design');
     }

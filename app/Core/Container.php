@@ -20,6 +20,7 @@ use App\Services\AnnouncementService;
 use App\Services\EmergencyNumberService;
 use App\Services\FaviconService;
 use App\Services\ImportantLinkService;
+use App\Services\BackgroundImageService;
 use App\Services\LdapClient;
 use App\Services\LogoService;
 use App\Services\NavigationService;
@@ -200,6 +201,18 @@ final class Container
                 (string) Config::get('app.upload_path', BASE_PATH . '/storage/uploads'),
                 (int) Config::get('app.max_logo_bytes', 512 * 1024),
                 (bool) Config::get('app.allow_svg_logo', true)
+            )
+        );
+    }
+
+    public static function backgroundImage(): BackgroundImageService
+    {
+        return self::make(
+            BackgroundImageService::class,
+            static fn (): BackgroundImageService => new BackgroundImageService(
+                self::settings(),
+                (string) Config::get('app.upload_path', BASE_PATH . '/storage/uploads'),
+                (int) Config::get('app.max_background_bytes', 2 * 1024 * 1024)
             )
         );
     }

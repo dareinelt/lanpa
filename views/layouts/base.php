@@ -11,6 +11,7 @@ use App\Support\Html;
 $pageTitle = $pageTitle ?? ($siteTitle ?? $appName);
 $activeNav = $activeNav ?? '';
 $hasLogo = $hasLogo ?? false;
+$hasBackground = $hasBackground ?? false;
 $siteSubtitleVisible = $siteSubtitleVisible ?? true;
 $flashes = $flashes ?? [];
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
@@ -24,10 +25,14 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
     <title><?= Html::e($pageTitle) ?> – <?= Html::e($siteTitle ?? $appName) ?></title>
     <link rel="icon" href="/assets/images/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/css/app.css?v=<?= Html::e($assetVersion) ?>">
-    <style nonce="<?= Html::e($nonce) ?>"><?= $themeCss ?></style>
+    <style nonce="<?= Html::e($nonce) ?>"><?= $themeCss ?><?php if ($hasBackground) { ?>:root{--watermark-image:url('/hintergrundbild');}<?php } ?></style>
 </head>
 <body>
 <a class="skip-link" href="#inhalt">Zum Inhalt springen</a>
+
+<?php if ($hasBackground) { ?>
+    <div class="site-watermark" aria-hidden="true"></div>
+<?php } ?>
 
 <header class="site-header">
     <div class="container site-header__inner">

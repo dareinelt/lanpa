@@ -10,6 +10,8 @@ use App\Support\Html;
 /** @var array<string,string> $errors */
 /** @var bool $hasLogo */
 /** @var int $maxLogoKb */
+/** @var bool $hasBackground */
+/** @var int $maxBackgroundKb */
 ?>
 <form method="post" action="/admin/design" class="form form--wide">
     <?= Csrf::field() ?>
@@ -70,6 +72,47 @@ use App\Support\Html;
               data-confirm="Soll das Logo entfernt werden?">
             <?= Csrf::field() ?>
             <button type="submit" class="button button--danger">Logo entfernen</button>
+        </form>
+    <?php } ?>
+</section>
+
+<section class="card">
+    <h2 class="card__title">Hintergrundbild (Wasserzeichen)</h2>
+    <p class="card__hint">
+        Das Bild wird auf allen öffentlichen Seiten sehr dezent und transparent im Hintergrund dargestellt,
+        bleibt beim Scrollen fixiert und reicht bis hinter Kopf- und Fußzeile. Es lenkt nicht vom Inhalt ab
+        und beeinträchtigt nicht die Barrierefreiheit.
+    </p>
+
+    <?php if ($hasBackground) { ?>
+        <p><img src="/hintergrundbild" alt="Aktuelles Hintergrundbild" class="logo-preview"></p>
+    <?php } else { ?>
+        <p class="card__hint">Es ist kein Hintergrundbild hinterlegt.</p>
+    <?php } ?>
+
+    <form method="post" action="/admin/design/hintergrundbild" enctype="multipart/form-data" class="form">
+        <?= Csrf::field() ?>
+        <div class="field">
+            <label for="background">Hintergrundbild hochladen (nur PNG, max. <?= (int) $maxBackgroundKb ?> KB)</label>
+            <input type="file" id="background" name="background" accept="image/png" required>
+            <?php if (isset($errors['background'])) { ?>
+                <p class="field__error"><?= Html::e($errors['background']) ?></p>
+            <?php } ?>
+            <p class="field__hint">
+                Dateien werden außerhalb des Webverzeichnisses gespeichert und über die Anwendung ausgeliefert.
+                Es sind ausschließlich PNG-Dateien erlaubt.
+            </p>
+        </div>
+        <div class="form__actions">
+            <button type="submit" class="button button--primary">Hochladen</button>
+        </div>
+    </form>
+
+    <?php if ($hasBackground) { ?>
+        <form method="post" action="/admin/design/hintergrundbild-entfernen" class="inline-form"
+              data-confirm="Soll das Hintergrundbild entfernt werden?">
+            <?= Csrf::field() ?>
+            <button type="submit" class="button button--danger">Hintergrundbild entfernen</button>
         </form>
     <?php } ?>
 </section>

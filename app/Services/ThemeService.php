@@ -48,7 +48,7 @@ final class ThemeService
             '--color-on-accent' => $this->readableTextColor($this->lighten($theme['color_accent'], 0.25)),
         ];
 
-        return ':root{' . $this->toDeclarations($light) . '}'
+        return ':root{' . $this->toDeclarations($light) . '--nav-opacity:' . $this->settings->navOpacity() . '%;}'
             . '@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){' . $this->toDeclarations($dark) . '}}'
             . ':root[data-theme="dark"]{' . $this->toDeclarations($dark) . '}'
             . ':root[data-theme="light"]{' . $this->toDeclarations($light) . '}';

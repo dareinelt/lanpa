@@ -64,6 +64,16 @@ final class Validator
         return $color;
     }
 
+    /**
+     * Prüft, ob der Wert eine ganzzahlige Prozentangabe zwischen 0 und 100 ist.
+     */
+    public static function isPercentage(string $value): bool
+    {
+        $value = trim($value);
+
+        return preg_match('/^\d{1,3}$/', $value) === 1 && (int) $value >= 0 && (int) $value <= 100;
+    }
+
     public static function isNotEmpty(?string $value, int $max = 255): bool
     {
         $value = trim((string) $value);

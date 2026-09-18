@@ -41,6 +41,7 @@ final class SettingsService
             'color_text' => '#1b1f23',
             'color_background_dark' => '#12161c',
             'color_text_dark' => '#e8eaed',
+            'nav_opacity' => '92',
             'logo_file' => '',
             'logo_mime' => '',
             'background_file' => '',
@@ -143,6 +144,20 @@ final class SettingsService
         }
 
         return $theme;
+    }
+
+    /**
+     * Deckkraft der Navigationselemente in Prozent (0-100).
+     */
+    public function navOpacity(): int
+    {
+        $value = $this->get('nav_opacity', $this->defaults()['nav_opacity']);
+
+        if (!Validator::isPercentage($value)) {
+            return (int) $this->defaults()['nav_opacity'];
+        }
+
+        return (int) $value;
     }
 
     /**

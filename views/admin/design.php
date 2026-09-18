@@ -7,6 +7,7 @@ use App\Support\Html;
 
 /** @var array<string,string> $colorKeys */
 /** @var array<string,string> $theme */
+/** @var int|string $navOpacity */
 /** @var array<string,string> $errors */
 /** @var bool $hasLogo */
 /** @var int $maxLogoKb */
@@ -38,8 +39,24 @@ use App\Support\Html;
         <p class="field__hint">Alle Farbwerte werden serverseitig geprüft; es werden ausschließlich Hex-Werte gespeichert.</p>
     </fieldset>
 
+    <fieldset class="fieldset">
+        <legend>Navigation</legend>
+        <div class="field">
+            <label for="nav_opacity">Deckkraft der Navigationselemente (in %)</label>
+            <input type="number" id="nav_opacity" name="nav_opacity" min="0" max="100" step="1"
+                   value="<?= Html::e((string) $navOpacity) ?>">
+            <p class="field__hint">
+                Steuert die Deckkraft von Kopf- und Fußzeile, damit das Hintergrundbild nicht hart verdeckt wird.
+                Werte zwischen 0 (vollständig transparent) und 100 (vollständig deckend) sind möglich.
+            </p>
+            <?php if (isset($errors['nav_opacity'])) { ?>
+                <p class="field__error"><?= Html::e($errors['nav_opacity']) ?></p>
+            <?php } ?>
+        </div>
+    </fieldset>
+
     <div class="form__actions">
-        <button type="submit" class="button button--primary">Farben speichern</button>
+        <button type="submit" class="button button--primary">Einstellungen speichern</button>
     </div>
 </form>
 

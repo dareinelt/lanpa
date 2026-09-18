@@ -29,6 +29,7 @@ abstract class Controller
             'siteSubtitleVisible' => $settings->bool('site_subtitle_visible'),
             'landingIntroVisible' => $settings->bool('landing_intro_visible'),
             'footerText' => $settings->get('footer_text'),
+            'documentationEnabled' => $settings->documentationEnabled(),
             'themeCss' => Container::theme()->css(),
             'hasLogo' => Container::logo()->current() !== null,
             'hasBackground' => Container::backgroundImage()->current() !== null,

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Anwenderhandbuch – Intranet</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== Deckblatt ===================== -->
+<div class="cover">
+  <p class="kicker">Anwenderhandbuch</p>
+  <h1>Intranet-Landingpage</h1>
+  <p class="subtitle">Leitfaden für Mitarbeiterinnen und Mitarbeiter: Startseite, Telefonliste, Unterseiten, Textseiten, Wichtige Links und Darstellung.</p>
+  <div class="meta">
+    Version 1.0 &middot; Stand: September 2026<br>
+    Zielgruppe: alle Beschäftigten
+  </div>
+</div>
+
+<!-- ===================== Inhaltsverzeichnis ===================== -->
+<nav class="toc">
+  <h2>Inhaltsverzeichnis</h2>
+  <ol>
+    <li><a href="#ch1"><span class="num">1</span> Einleitung und Aufruf</a></li>
+    <li><a href="#ch2"><span class="num">2</span> Die Startseite</a></li>
+    <li><a href="#ch3"><span class="num">3</span> Kacheln und Detailbeschreibungen</a></li>
+    <li><a href="#ch4"><span class="num">4</span> Mitteilungen</a></li>
+    <li><a href="#ch5"><span class="num">5</span> Telefonliste</a></li>
+    <li><a href="#ch6"><span class="num">6</span> Unterseiten und Textseiten</a></li>
+    <li><a href="#ch7"><span class="num">7</span> Wichtige Links und Notfallnummern</a></li>
+    <li><a href="#ch8"><span class="num">8</span> Darstellung anpassen (Hell/Dunkel)</a></li>
+    <li><a href="#ch9"><span class="num">9</span> Tipps und häufig gestellte Fragen</a></li>
+  </ol>
+</nav>
+
+<!-- ===================== 1 ===================== -->
+<section class="chapter" id="ch1">
+  <h1 class="chapter-title">1&ensp;Einleitung und Aufruf</h1>
+
+  <p>Die <strong>Intranet-Landingpage</strong> ist die zentrale Einstiegsseite Ihrer Einrichtung. Sie bündelt
+  häufig benötigte Anwendungen, Kontaktdaten und aktuelle Informationen an einem Ort. Statt sich viele
+  einzelne Webadressen zu merken, rufen Sie nur die Startseite auf und erreichen von dort aus alle
+  hinterlegten Dienste.</p>
+
+  <p>Die Anwendung läuft in Ihrem Browser und benötigt keine Installation. Sie funktioniert mit allen
+  gängigen Browsern (Chrome, Edge, Firefox, Safari) sowohl am Desktop als auch auf Tablets und
+  Smartphones.</p>
+
+  <h2>1.1&ensp;Seite aufrufen</h2>
+  <ol>
+    <li>Öffnen Sie Ihren Browser.</li>
+    <li>Geben Sie die interne Adresse der Startseite in die Adresszeile ein (z.&nbsp;B. <code>https://intranet.example.org</code>).</li>
+    <li>Die Startseite wird ohne Anmeldung angezeigt – alle Inhalte sind für angemeldete Beschäftigte im internen Netz frei zugänglich.</li>
+  </ol>
+
+  <div class="note">
+    <span class="label">Hinweis</span>
+    Die konkrete Adresse erhalten Sie von Ihrer IT-Abteilung. Sie können die Startseite als Lesezeichen oder
+    als Browser-Startseite festlegen.
+  </div>
+</section>
+
+<!-- ===================== 2 ===================== -->
+<section class="chapter" id="ch2">
+  <h1 class="chapter-title">2&ensp;Die Startseite</h1>
+
+  <p>Die Startseite besteht aus drei Bereichen: der <strong>Titelleiste</strong> oben, den
+  <strong>Navigationskacheln</strong> in der Mitte und der <strong>Fußzeile</strong> unten. Je nach
+  Konfiguration erscheinen zusätzlich aktuelle <strong>Mitteilungen</strong> beim ersten Aufruf.</p>
+
+  <figure>
+    <img src="../screenshots/02-landing.png" alt="Startseite der Intranet-Landingpage">
+    <figcaption><span class="fig-label">Abb. 1</span> Startseite mit Navigationskacheln.</figcaption>
+  </figure>
+
+  <h2>2.1&ensp;Navigationskacheln</h2>
+  <p>Jede Kachel steht für eine Anwendung, eine Seite oder einen externen Dienst. Ein Klick auf die Kachel
+  öffnet das jeweilige Ziel – interne Seiten im selben Fenster, externe Dienste in einem neuen Tab.</p>
+  <p>Kacheln mit einem kleinen <strong>Pfeil- oder „Details“-Symbol</strong> besitzen zusätzliche
+  Informationen (Detailbeschreibung), die Sie per Klick, beim Überfahren mit der Maus oder über die
+  Schaltfläche „Details“ einblenden können (siehe Kapitel 3).</p>
+
+  <h2>2.2&ensp;Fußzeile</h2>
+  <p>In der Fußzeile sind ein frei konfigurierbarer Text sowie – sofern eingestellt – Untertitel und weitere
+  Hinweise der Einrichtung hinterlegt. Diese Informationen werden zentral von der Administration gepflegt.
+  Daneben finden Sie hier den Link <strong>Anwenderhandbuch</strong> (sofern von der Administration aktiviert)
+  sowie den Link zum <strong>Administrationsbereich</strong>.</p>
+</section>
+
+<!-- ===================== 3 ===================== -->
+<section class="chapter" id="ch3">
+  <h1 class="chapter-title">3&ensp;Kacheln und Detailbeschreibungen</h1>
+
+  <p>Viele Kacheln besitzen eine kurze Beschreibung, die direkt auf der Kachel sichtbar ist, sowie eine
+  ausführlichere <strong>Detailbeschreibung</strong>. Wie die Detailbeschreibung angezeigt wird, legt die
+  Administration fest. Es gibt drei mögliche Darstellungen:</p>
+
+  <table>
+    <thead>
+      <tr><th>Modus</th><th>Verhalten</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>Beim Überfahren (Hover)</strong></td><td>Die Detailbeschreibung erscheint, sobald Sie den Mauszeiger über die Kachel bewegen.</td></tr>
+      <tr><td><strong>Aufklappen</strong></td><td>Die Detailbeschreibung wird durch einen Klick auf die Kachel bzw. auf „Details“ ein- und ausgeblendet.</td></tr>
+      <tr><td><strong>Beides</strong></td><td>Die Beschreibung reagiert sowohl auf Überfahren als auch auf Klick.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <span class="label">Hinweis</span>
+    Unabhängig vom gewählten Modus bleibt die Beschreibung per Tastatur (Tab-Taste) und auf Touchgeräten über
+    die Schaltfläche <strong>„Details“</strong> erreichbar.
+  </div>
+
+  <figure>
+    <img src="../screenshots/06-unterseite-service.png" alt="Unterseite Service mit aufklappbaren Kacheln">
+    <figcaption><span class="fig-label">Abb. 2</span> Unterseite „Service“ – Kacheln mit Kurz- und Detailbeschreibungen.</figcaption>
+  </figure>
+</section>
+
+<!-- ===================== 4 ===================== -->
+<section class="chapter" id="ch4">
+  <h1 class="chapter-title">4&ensp;Mitteilungen</h1>
+
+  <p>Wichtige Ankündigungen der Verwaltung werden beim Aufruf der Startseite als <strong>Mitteilung</strong>
+  (Dialogfenster) eingeblendet. So erreichen Sie dringende Informationen, ohne danach suchen zu müssen.</p>
+
+  <figure>
+    <img src="../screenshots/01-landing-mitteilung.png" alt="Startseite mit eingeblendeter Mitteilung">
+    <figcaption><span class="fig-label">Abb. 3</span> Mitteilung beim Öffnen der Startseite.</figcaption>
+  </figure>
+
+  <ol>
+    <li>Lesen Sie den Text der Mitteilung.</li>
+    <li>Schließen Sie das Fenster über die Schaltfläche <strong>„Schließen“</strong> oder <strong>„Verstanden“</strong>.</li>
+  </ol>
+
+  <p>Wird eine Mitteilung einmal geschlossen, erscheint sie bei späteren Besuchen erst wieder, wenn sie
+  inhaltlich geändert wurde. So werden Sie nicht wiederholt mit derselben Meldung unterbrochen.</p>
+</section>
+
+<!-- ===================== 5 ===================== -->
+<section class="chapter" id="ch5">
+  <h1 class="chapter-title">5&ensp;Telefonliste</h1>
+
+  <p>Über die Kachel <strong>„Telefonliste“</strong> (bzw. den entsprechenden Menüpunkt) gelangen Sie zum
+  internen Telefonverzeichnis. Es zeigt Name, Abteilung, Durchwahl und – sofern hinterlegt – Mobilnummer.</p>
+
+  <figure>
+    <img src="../screenshots/04-telefonliste.png" alt="Telefonliste">
+    <figcaption><span class="fig-label">Abb. 4</span> Telefonliste mit allen hinterlegten Kontakten.</figcaption>
+  </figure>
+
+  <h2>5.1&ensp;Suchen</h2>
+  <p>Geben Sie in das Suchfeld einen Namen, eine Durchwahl oder eine Abteilung ein. Die Trefferliste wird
+  während der Eingabe automatisch aktualisiert.</p>
+
+  <figure>
+    <img src="../screenshots/05-telefonliste-suche.png" alt="Telefonliste mit Suchfilter">
+    <figcaption><span class="fig-label">Abb. 5</span> Gefilterte Telefonliste nach einer Suchanfrage.</figcaption>
+  </figure>
+
+  <h2>5.2&ensp;Anrufen</h2>
+  <p>Sofern die Administration die Funktion aktiviert hat, sind Telefon- und Mobilnummern als anklickbare
+  Links (<code>tel:</code>) dargestellt. Ein Klick öffnet auf unterstützten Geräten direkt die Telefon-App.
+  Andernfalls wählen Sie die Nummer wie gewohnt über Ihr Telefon.</p>
+
+  <h2>5.3&ensp;Notfallnummern</h2>
+  <p>Wichtige Notfall- und Störungsnummern sind separat auf der Startseite bzw. als eigene Kachel
+  hinterlegt und jederzeit schnell erreichbar.</p>
+
+  <figure>
+    <img src="../screenshots/15-admin-notfallnummern.png" alt="Notfallnummern">
+    <figcaption><span class="fig-label">Abb. 6</span> Übersicht der Notfall- und Störungsnummern.</figcaption>
+  </figure>
+</section>
+
+<!-- ===================== 6 ===================== -->
+<section class="chapter" id="ch6">
+  <h1 class="chapter-title">6&ensp;Unterseiten und Textseiten</h1>
+
+  <p>Neben den Kacheln gibt es zwei weitere Inhaltstypen: <strong>Unterseiten</strong>, die weitere Kacheln
+  gruppieren, und <strong>Textseiten</strong>, die längere Informationen darstellen.</p>
+
+  <h2>6.1&ensp;Unterseiten</h2>
+  <p>Eine Unterseite bündelt thematisch zusammengehörige Kacheln. Beim Klick auf eine solche Kachel öffnet
+  sich eine eigene Ansicht mit den zugeordneten Einträgen (siehe Abb. 2, „Service“).</p>
+
+  <h2>6.2&ensp;Textseiten</h2>
+  <p>Textseiten enthalten ausführliche, formatierte Informationen – beispielsweise Regelungen, Anleitungen
+  oder Verhaltenshinweise.</p>
+
+  <figure>
+    <img src="../screenshots/07-textseite-it-sicherheit.png" alt="Textseite IT-Sicherheit">
+    <figcaption><span class="fig-label">Abb. 7</span> Textseite „IT-Sicherheit“.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="../screenshots/08-textseite-richtlinien.png" alt="Textseite IT-Richtlinien">
+    <figcaption><span class="fig-label">Abb. 8</span> Textseite „IT-Richtlinien“.</figcaption>
+  </figure>
+</section>
+
+<!-- ===================== 7 ===================== -->
+<section class="chapter" id="ch7">
+  <h1 class="chapter-title">7&ensp;Wichtige Links und Notfallnummern</h1>
+
+  <p>Häufig benötigte externe und interne Verknüpfungen sind als <strong>„Wichtige Links“</strong> gesammelt.
+  Sie erscheinen in einer eigenen Übersicht mit Symbol, Beschriftung und Kurzbeschreibung.</p>
+
+  <figure>
+    <img src="../screenshots/14-admin-wichtige-links.png" alt="Wichtige Links">
+    <figcaption><span class="fig-label">Abb. 9</span> Übersicht der wichtigen Links.</figcaption>
+  </figure>
+
+  <p>Die <strong>Notfallnummern</strong> (siehe Kapitel 5.3) sind ebenfalls zentral hinterlegt und jederzeit
+  erreichbar, damit Sie in dringenden Fällen schnell die richtige Stelle kontaktieren.</p>
+</section>
+
+<!-- ===================== 8 ===================== -->
+<section class="chapter" id="ch8">
+  <h1 class="chapter-title">8&ensp;Darstellung anpassen (Hell/Dunkel)</h1>
+
+  <p>Die Startseite unterstützt ein helles und ein dunkles Farbschema. Sie können zwischen
+  <strong>Hell</strong>, <strong>Dunkel</strong> und <strong>Automatisch</strong> (Systemeinstellung des
+  Geräts wird übernommen) wählen.</p>
+
+  <ol>
+    <li>Klicken Sie auf das Umschalt-Symbol (Sonne/Mond) in der Titelleiste.</li>
+    <li>Die Ansicht wechselt zwischen den verfügbaren Modi.</li>
+  </ol>
+
+  <figure>
+    <img src="../screenshots/03-landing-dunkel.png" alt="Startseite im dunklen Design">
+    <figcaption><span class="fig-label">Abb. 10</span> Startseite im dunklen Farbschema.</figcaption>
+  </figure>
+
+  <div class="tip">
+    <span class="label">Tipp</span>
+    Die gewählte Einstellung wird im Browser gespeichert und beim nächsten Besuch automatisch wiederhergestellt.
+  </div>
+</section>
+
+<!-- ===================== 9 ===================== -->
+<section class="chapter" id="ch9">
+  <h1 class="chapter-title">9&ensp;Tipps und häufig gestellte Fragen</h1>
+
+  <h2>9.1&ensp;Häufige Fragen</h2>
+  <table>
+    <thead><tr><th>Frage</th><th>Antwort</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Die Startseite lädt nicht.</td>
+        <td>Prüfen Sie Ihre Netzwerkverbindung und ob Sie sich im internen Netz befinden. Wenden Sie sich bei anhaltenden Problemen an die IT.</td>
+      </tr>
+      <tr>
+        <td>Eine Kachel öffnet eine leere oder falsche Seite.</td>
+        <td>Die Verknüpfung ist möglicherweise nicht mehr aktuell. Melden Sie dies der Administration.</td>
+      </tr>
+      <tr>
+        <td>Ich finde eine Person nicht in der Telefonliste.</td>
+        <td>Versuchen Sie eine kürzere Suche (z.&nbsp;B. nur Nachname). Fehlende Einträge werden von der Administration gepflegt.</td>
+      </tr>
+      <tr>
+        <td>Die Darstellung ist zu hell/dunkel.</td>
+        <td>Wechseln Sie das Farbschema über das Symbol in der Titelleiste (siehe Kapitel 8).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>9.2&ensp;Bedienungshinweise</h2>
+  <ul>
+    <li>Nutzen Sie die Tabulatortaste, um sich per Tastatur durch die Kacheln zu bewegen; mit
+    <kbd>Enter</kbd> aktivieren Sie das ausgewählte Element.</li>
+    <li>Auf Touchgeräten tippen Sie Kacheln einfach an; Detailbeschreibungen öffnen Sie über „Details“.</li>
+    <li>Setzen Sie die Startseite als Lesezeichen, um sie jederzeit schnell zu erreichen.</li>
+  </ul>
+</section>
+
+</body>
+</html>

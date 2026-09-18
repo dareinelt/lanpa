@@ -136,7 +136,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Übersicht | Kennzahlen zu Navigation, Telefonliste, Klicks und letztem AD-Lauf |
 | Navigation | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Sortieren, Löschen |
 | Wichtige Links | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Löschen; Favicon wird automatisch geladen, Reihenfolge stets alphabetisch (keine manuelle Sortierung) |
-| Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`) |
+| Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`), Handbuch-Links ein-/ausblenden |
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
 | Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Intervall, manueller Testlauf |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |
@@ -233,3 +233,55 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 - Uploads landen außerhalb des DocumentRoots und werden über `/logo` mit geprüftem MIME-Typ ausgeliefert
 - URL-Prüfung erlaubt ausschließlich `http`, `https` und interne Pfade (kein `javascript:`, `data:` oder `//host`)
 - Keine externen Ressourcen, kein Tracking, keine Cookies für Besucher außerhalb der Sitzung
+
+---
+
+## 9. Handbücher und Screenshots
+
+### Handbücher
+
+- **[Anwenderhandbuch](docs/manuals/anwenderhandbuch.pdf)** – Bedienung der Landingpage für Beschäftigte (Startseite, Kacheln, Telefonliste, Mitteilungen, Hell/Dunkel).
+- **[Administratorhandbuch](docs/manuals/administratorhandbuch.pdf)** – Betrieb, Konfiguration und Pflege des Administrationsbereichs (Docker, Navigation, Design, AD/LDAP, Statistik, Benutzer).
+
+Die Quellen liegen als HTML unter `docs/manuals/` (mit `style.css` für den Druck). Die PDFs werden zusätzlich
+aus der Anwendung heraus verlinkt (`public/manuals/`); die Anzeige lässt sich im Administrationsbereich unter
+**Beschreibungen → Dokumentation** ein- und ausschalten.
+
+### Screenshots
+
+<details>
+<summary>Öffentlicher Bereich</summary>
+
+| Modul | Screenshot |
+| --- | --- |
+| Startseite mit Mitteilungs-Overlay | <img src="docs/screenshots/01-landing-mitteilung.png" alt="Mitteilung" width="520"> |
+| Startseite (hell) | <img src="docs/screenshots/02-landing.png" alt="Startseite hell" width="520"> |
+| Startseite (dunkel) | <img src="docs/screenshots/03-landing-dunkel.png" alt="Startseite dunkel" width="520"> |
+| Telefonliste | <img src="docs/screenshots/04-telefonliste.png" alt="Telefonliste" width="520"> |
+| Telefonliste mit Suche | <img src="docs/screenshots/05-telefonliste-suche.png" alt="Telefonliste Suche" width="520"> |
+| Unterseite „Service“ | <img src="docs/screenshots/06-unterseite-service.png" alt="Unterseite Service" width="520"> |
+| Textseite „IT-Sicherheit“ | <img src="docs/screenshots/07-textseite-it-sicherheit.png" alt="Textseite IT-Sicherheit" width="520"> |
+| Textseite „IT-Richtlinien“ | <img src="docs/screenshots/08-textseite-richtlinien.png" alt="Textseite IT-Richtlinien" width="520"> |
+
+</details>
+
+<details>
+<summary>Administrationsbereich</summary>
+
+| Modul | Screenshot |
+| --- | --- |
+| Anmeldung | <img src="docs/screenshots/09-admin-login.png" alt="Anmeldung" width="520"> |
+| Übersicht (Dashboard) | <img src="docs/screenshots/10-admin-uebersicht.png" alt="Dashboard" width="520"> |
+| Navigation (Liste) | <img src="docs/screenshots/11-admin-navigation-liste.png" alt="Navigation Liste" width="520"> |
+| Navigation (Baum) | <img src="docs/screenshots/12-admin-navigation-baum.png" alt="Navigation Baum" width="520"> |
+| Navigation (Formular) | <img src="docs/screenshots/13-admin-navigation-formular.png" alt="Navigation Formular" width="520"> |
+| Wichtige Links | <img src="docs/screenshots/14-admin-wichtige-links.png" alt="Wichtige Links" width="520"> |
+| Notfallnummern | <img src="docs/screenshots/15-admin-notfallnummern.png" alt="Notfallnummern" width="520"> |
+| Mitteilungen | <img src="docs/screenshots/16-admin-mitteilungen.png" alt="Mitteilungen" width="520"> |
+| Beschreibungen | <img src="docs/screenshots/17-admin-beschreibungen.png" alt="Beschreibungen" width="520"> |
+| Design | <img src="docs/screenshots/18-admin-design.png" alt="Design" width="520"> |
+| Active Directory | <img src="docs/screenshots/19-admin-ad.png" alt="Active Directory" width="520"> |
+| Statistik | <img src="docs/screenshots/20-admin-statistik.png" alt="Statistik" width="520"> |
+| Benutzer | <img src="docs/screenshots/21-admin-benutzer.png" alt="Benutzer" width="520"> |
+
+</details>

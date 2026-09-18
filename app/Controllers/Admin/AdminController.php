@@ -25,6 +25,7 @@ abstract class AdminController extends Controller
             'csrfToken' => Csrf::token(),
             'adminUser' => Container::auth()->username(),
             'adminRole' => Container::auth()->role(),
+            'documentationEnabled' => Container::settings()->documentationEnabled(),
             'assetVersion' => $this->assetVersion(),
             'errors' => [],
             'old' => [],

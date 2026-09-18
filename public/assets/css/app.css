@@ -104,9 +104,29 @@ code {
     left: 0;
 }
 
+/* Hintergrundbild (Wasserzeichen), administrativ hochgeladen */
+.site-watermark {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-image: var(--watermark-image, none);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+    opacity: .06;
+    pointer-events: none;
+}
+
+@media (forced-colors: active) {
+    .site-watermark {
+        display: none;
+    }
+}
+
 /* Kopfbereich */
 .site-header {
-    background: var(--color-surface);
+    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+    backdrop-filter: blur(6px);
     border-bottom: 1px solid var(--color-border);
     position: sticky;
     top: 0;
@@ -653,7 +673,8 @@ code {
 /* Fußbereich */
 .site-footer {
     border-top: 1px solid var(--color-border);
-    background: var(--color-surface);
+    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+    backdrop-filter: blur(6px);
     padding-block: 1rem;
     font-size: .9rem;
 }

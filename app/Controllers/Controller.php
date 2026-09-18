@@ -31,6 +31,7 @@ abstract class Controller
             'footerText' => $settings->get('footer_text'),
             'themeCss' => Container::theme()->css(),
             'hasLogo' => Container::logo()->current() !== null,
+            'hasBackground' => Container::backgroundImage()->current() !== null,
             'flashes' => Session::takeFlash(),
             'csrfToken' => Csrf::token(),
             'assetVersion' => $this->assetVersion(),

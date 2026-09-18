@@ -19,6 +19,7 @@ use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\StatisticsController;
+use App\Controllers\BackgroundImageController;
 use App\Controllers\ClickController;
 use App\Controllers\HealthController;
 use App\Controllers\ImportantLinkIconController;
@@ -47,6 +48,7 @@ $router->get('/telefonliste', [PhonebookController::class, 'index']);
 $router->get('/api/telefonliste', [PhonebookController::class, 'search']);
 $router->post('/api/klick', [ClickController::class, 'store']);
 $router->get('/logo', [LogoController::class, 'show']);
+$router->get('/hintergrundbild', [BackgroundImageController::class, 'show']);
 $router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
 $router->get('/health', [HealthController::class, 'index']);
 
@@ -124,6 +126,8 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/design', [DesignController::class, 'update']);
         $router->post('/admin/design/logo', [DesignController::class, 'uploadLogo']);
         $router->post('/admin/design/logo-entfernen', [DesignController::class, 'removeLogo']);
+        $router->post('/admin/design/hintergrundbild', [DesignController::class, 'uploadBackground']);
+        $router->post('/admin/design/hintergrundbild-entfernen', [DesignController::class, 'removeBackground']);
 
         $router->get('/admin/ad', [LdapController::class, 'index']);
         $router->post('/admin/ad', [LdapController::class, 'update']);

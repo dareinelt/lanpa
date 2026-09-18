@@ -104,6 +104,7 @@ Alles außer dem LDAP-Bind-Passwort ist im Administrationsbereich pflegbar.
 | `APP_FORCE_SECURE_COOKIES` | Session-Cookie nur über HTTPS | `false` |
 | `APP_SESSION_IDLE_TIMEOUT` | Automatische Abmeldung nach Inaktivität (Sekunden) | `3600` |
 | `APP_MAX_LOGO_BYTES` | Maximale Logogröße | `524288` |
+| `APP_MAX_BACKGROUND_BYTES` | Maximale Größe des Hintergrundbilds (Wasserzeichen) | `2097152` |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Datenbankzugang | – |
 | `LDAP_HOST`, `LDAP_PORT`, `LDAP_BASE_DN`, `LDAP_BIND_DN` | AD-Zugang | – |
 | `LDAP_PASSWORD` / `LDAP_PASSWORD_FILE` | Bind-Passwort (nur ENV bzw. Docker-Secret) | – |

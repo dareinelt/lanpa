@@ -43,6 +43,8 @@ final class SettingsService
             'color_text_dark' => '#e8eaed',
             'logo_file' => '',
             'logo_mime' => '',
+            'background_file' => '',
+            'background_mime' => '',
             'ldap_host' => (string) Config::get('ldap.host', ''),
             'ldap_port' => (string) Config::get('ldap.port', 636),
             'ldap_use_tls' => Config::get('ldap.use_tls', true) ? '1' : '0',

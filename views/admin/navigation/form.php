@@ -114,6 +114,33 @@ $icons = [
         </div>
 
         <div class="field">
+            <label for="background_color">Kachel-Hintergrundfarbe</label>
+            <div class="color-input">
+                <input type="color" id="background_color" name="background_color"
+                       value="<?= Html::e((string) ($item['background_color'] ?? '#1f4e79')) ?>"
+                       data-color-sync="background_color-text">
+                <input type="text" id="background_color-text" name="background_color_text"
+                       value="<?= Html::e((string) ($item['background_color'] ?? '#1f4e79')) ?>"
+                       pattern="#[0-9a-fA-F]{6}" maxlength="7"
+                       aria-label="Kachel-Hintergrundfarbe als Hex-Wert" data-color-mirror="background_color">
+            </div>
+            <p class="field__hint">Optional. Leer lassen für Standard-Hintergrund (var(--color-surface)).</p>
+            <?php if (isset($errors['background_color'])) { ?>
+                <p class="field__error"><?= Html::e($errors['background_color']) ?></p>
+            <?php } ?>
+        </div>
+
+        <div class="field">
+            <label for="background_opacity">Kachel-Deckkraft (in %)</label>
+            <input type="number" id="background_opacity" name="background_opacity" min="0" max="100" step="1"
+                   value="<?= $item['background_opacity'] !== null && $item['background_opacity'] !== '' ? (int) $item['background_opacity'] : '' ?>">
+            <p class="field__hint">Optional. Steuert die Transparenz der Kachel-Hintergrundfarbe (0 = transparent, 100 = deckend). Leer für Standard (97%).</p>
+            <?php if (isset($errors['background_opacity'])) { ?>
+                <p class="field__error"><?= Html::e($errors['background_opacity']) ?></p>
+            <?php } ?>
+        </div>
+
+        <div class="field">
             <label for="sort_order">Sortierung</label>
             <input type="number" id="sort_order" name="sort_order" min="1" max="9999"
                    value="<?= (int) $item['sort_order'] ?>">

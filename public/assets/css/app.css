@@ -268,11 +268,22 @@ code {
     position: relative;
     display: flex;
     flex-direction: column;
-    background: var(--color-surface), var(--nav-opacity, 97%);
+    background: transparent;
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    overflow: hidden;
+}
+
+.tile::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--tile-bg, var(--color-surface));
+    opacity: calc(var(--tile-bg-opacity, var(--nav-opacity, 97%)) / 100);
+    z-index: -1;
+    transition: opacity var(--transition);
 }
 
 .tile:hover,

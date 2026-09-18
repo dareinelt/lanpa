@@ -20,6 +20,8 @@ function navigationTestPdo(): PDO
             type VARCHAR(16) NOT NULL DEFAULT \'external\',
             parent_id INTEGER NULL,
             icon VARCHAR(32) NULL,
+            background_color VARCHAR(7) NULL,
+            background_opacity INTEGER NULL,
             short_description VARCHAR(255) NOT NULL DEFAULT \'\',
             description TEXT NOT NULL DEFAULT \'\',
             content TEXT NULL,

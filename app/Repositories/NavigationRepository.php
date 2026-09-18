@@ -6,7 +6,7 @@ namespace App\Repositories;
 
 final class NavigationRepository extends Repository
 {
-    private const COLUMNS = 'id, title, url, type, parent_id, icon, short_description, description, content, sort_order, active, created_at, updated_at';
+    private const COLUMNS = 'id, title, url, type, parent_id, icon, background_color, background_opacity, short_description, description, content, sort_order, active, created_at, updated_at';
 
     /**
      * @return list<array<string,mixed>>
@@ -123,8 +123,8 @@ final class NavigationRepository extends Repository
     public function create(array $data): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO navigation_items (title, url, type, parent_id, icon, short_description, description, content, sort_order, active)
-             VALUES (:title, :url, :type, :parent_id, :icon, :short_description, :description, :content, :sort_order, :active)'
+            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, short_description, description, content, sort_order, active)
+             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :short_description, :description, :content, :sort_order, :active)'
         );
         $statement->execute($this->bindings($data));
 
@@ -143,6 +143,8 @@ final class NavigationRepository extends Repository
                     type = :type,
                     parent_id = :parent_id,
                     icon = :icon,
+                    background_color = :background_color,
+                    background_opacity = :background_opacity,
                     short_description = :short_description,
                     description = :description,
                     content = :content,
@@ -272,12 +274,21 @@ final class NavigationRepository extends Repository
      */
     private function bindings(array $data): array
     {
+        $bgColor = $data['background_color'] ?? null;
+        $bgOpacity = $data['background_opacity'] ?? null;
+
+        // Normalize empty strings to null for optional fields
+        $bgColor = $bgColor === '' ? null : $bgColor;
+        $bgOpacity = $bgOpacity === '' ? null : $bgOpacity;
+
         return [
             'title' => (string) $data['title'],
             'url' => (string) $data['url'],
             'type' => (string) $data['type'],
             'parent_id' => isset($data['parent_id']) && $data['parent_id'] !== '' && $data['parent_id'] !== null ? (int) $data['parent_id'] : null,
             'icon' => $data['icon'] === null || $data['icon'] === '' ? null : (string) $data['icon'],
+            'background_color' => $bgColor === null ? null : (string) $bgColor,
+            'background_opacity' => $bgOpacity === null ? null : (int) $bgOpacity,
             'short_description' => (string) ($data['short_description'] ?? ''),
             'description' => (string) ($data['description'] ?? ''),
             'content' => isset($data['content']) && $data['content'] !== null && $data['content'] !== '' ? (string) $data['content'] : null,

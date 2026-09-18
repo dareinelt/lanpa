@@ -12,6 +12,7 @@ $activeNav = $activeNav ?? '';
 $flashes = $flashes ?? [];
 $adminUser = $adminUser ?? null;
 $adminRole = $adminRole ?? 'admin';
+$documentationEnabled = $documentationEnabled ?? false;
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 
 $isAdmin = $adminRole === 'admin';
@@ -88,6 +89,18 @@ $navItems = $isAdmin ? [
         <?= $content ?>
     </main>
 </div>
+
+<footer class="site-footer">
+    <div class="container site-footer__inner">
+        <span><?= Html::e($appName) ?></span>
+        <nav class="site-footer__links" aria-label="Fußnavigation">
+            <?php if ($documentationEnabled) { ?>
+                <a href="/manuals/administratorhandbuch.pdf" target="_blank" rel="noopener">Administratorhandbuch</a>
+            <?php } ?>
+            <a href="/">Zur Landingpage</a>
+        </nav>
+    </div>
+</footer>
 
 <script src="/assets/js/app.js?v=<?= Html::e($assetVersion ?? '1') ?>" defer></script>
 <?php if (($pageScript ?? '') !== '') { ?>

@@ -10,6 +10,7 @@ use App\Support\Html;
 /** @var bool $landingIntroVisible */
 /** @var string $footerText */
 /** @var bool $phoneNumbersClickable */
+/** @var bool $documentationEnabled */
 /** @var list<array<string,mixed>> $items */
 /** @var array<string,string> $errors */
 $modes = [
@@ -77,6 +78,17 @@ $modes = [
         <p class="field__hint">
             Ist diese Option deaktiviert, werden Telefon- und Mobilnummern in der Telefonliste sowie bei den
             Notfallnummern nur als Text angezeigt.
+        </p>
+    </fieldset>
+
+    <fieldset class="fieldset">
+        <legend>Dokumentation</legend>
+        <div class="field field--check">
+            <input type="checkbox" id="documentation_enabled" name="documentation_enabled" value="1"<?= $documentationEnabled ? ' checked' : '' ?>>
+            <label for="documentation_enabled">Handbücher in der Anwendung anzeigen (Anwenderhandbuch im Fußbereich, Administratorhandbuch im Administrationsbereich)</label>
+        </div>
+        <p class="field__hint">
+            Deaktivieren Sie diese Option, um die Links zu den Handbüchern auszublenden.
         </p>
     </fieldset>
 

@@ -14,6 +14,7 @@ $hasLogo = $hasLogo ?? false;
 $hasBackground = $hasBackground ?? false;
 $siteSubtitleVisible = $siteSubtitleVisible ?? true;
 $flashes = $flashes ?? [];
+$documentationEnabled = $documentationEnabled ?? false;
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 ?>
 <!doctype html>
@@ -69,7 +70,12 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 <footer class="site-footer">
     <div class="container site-footer__inner">
         <span><?= Html::e(($footerText ?? '') !== '' ? $footerText : ($siteTitle ?? $appName)) ?></span>
-        <a href="/admin">Administration</a>
+        <nav class="site-footer__links" aria-label="Fußnavigation">
+            <?php if ($documentationEnabled) { ?>
+                <a href="/manuals/anwenderhandbuch.pdf" target="_blank" rel="noopener">Anwenderhandbuch</a>
+            <?php } ?>
+            <a href="/admin">Administration</a>
+        </nav>
     </div>
 </footer>
 

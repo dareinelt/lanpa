@@ -698,6 +698,12 @@ code {
     color: var(--color-muted);
 }
 
+.site-footer__links {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
 .error-page {
     max-width: 46ch;
     margin-inline: auto;

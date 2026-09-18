@@ -29,6 +29,7 @@ final class DescriptionController extends AdminController
             'landingIntroVisible' => $settings->bool('landing_intro_visible'),
             'footerText' => $settings->get('footer_text'),
             'phoneNumbersClickable' => $settings->phoneNumbersClickable(),
+            'documentationEnabled' => $settings->documentationEnabled(),
             'items' => Container::navigation()->allItems(),
             'errors' => [],
         ]);
@@ -45,6 +46,7 @@ final class DescriptionController extends AdminController
         $landingIntroVisible = $request->input('landing_intro_visible') !== null;
         $footerText = Validator::cleanText((string) $request->input('footer_text', ''), 200);
         $phoneNumbersClickable = $request->input('phone_numbers_clickable') !== null;
+        $documentationEnabled = $request->input('documentation_enabled') !== null;
 
         $errors = [];
         if (!Validator::isDescriptionMode($mode)) {
@@ -67,6 +69,7 @@ final class DescriptionController extends AdminController
                 'landingIntroVisible' => $landingIntroVisible,
                 'footerText' => $footerText,
                 'phoneNumbersClickable' => $phoneNumbersClickable,
+                'documentationEnabled' => $documentationEnabled,
                 'items' => Container::navigation()->allItems(),
                 'errors' => $errors,
             ], 422);
@@ -80,6 +83,7 @@ final class DescriptionController extends AdminController
             'landing_intro_visible' => $landingIntroVisible ? '1' : '0',
             'footer_text' => $footerText,
             'phone_numbers_clickable' => $phoneNumbersClickable ? '1' : '0',
+            'documentation_enabled' => $documentationEnabled ? '1' : '0',
         ]);
 
         app_logger()->info('Darstellungseinstellungen geändert.', [

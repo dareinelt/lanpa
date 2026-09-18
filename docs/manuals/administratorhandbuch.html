@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Administratorhandbuch – Intranet</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== Deckblatt ===================== -->
+<div class="cover">
+  <p class="kicker">Administratorhandbuch</p>
+  <h1>Intranet-Landingpage</h1>
+  <p class="subtitle">Betrieb, Konfiguration und Verwaltung: Installation, Navigation, Inhalte, Design, Active Directory, Statistik und Benutzerverwaltung.</p>
+  <div class="meta">
+    Version 1.0 &middot; Stand: September 2026<br>
+    Zielgruppe: IT-Administration und Redaktion
+  </div>
+</div>
+
+<!-- ===================== Inhaltsverzeichnis ===================== -->
+<nav class="toc">
+  <h2>Inhaltsverzeichnis</h2>
+  <ol>
+    <li><a href="#ch1"><span class="num">1</span> Einleitung und Überblick</a></li>
+    <li><a href="#ch2"><span class="num">2</span> Installation und Betrieb (Docker)</a></li>
+    <li><a href="#ch3"><span class="num">3</span> Anmeldung und Rollen</a></li>
+    <li><a href="#ch4"><span class="num">4</span> Dashboard</a></li>
+    <li><a href="#ch5"><span class="num">5</span> Navigation verwalten</a></li>
+    <li><a href="#ch6"><span class="num">6</span> Wichtige Links</a></li>
+    <li><a href="#ch7"><span class="num">7</span> Notfallnummern</a></li>
+    <li><a href="#ch8"><span class="num">8</span> Mitteilungen</a></li>
+    <li><a href="#ch9"><span class="num">9</span> Beschreibungen und Texte</a></li>
+    <li><a href="#ch10"><span class="num">10</span> Design (Farben, Logo, Hintergrund)</a></li>
+    <li><a href="#ch11"><span class="num">11</span> Active Directory / LDAP</a></li>
+    <li><a href="#ch12"><span class="num">12</span> Statistik</a></li>
+    <li><a href="#ch13"><span class="num">13</span> Benutzerverwaltung</a></li>
+    <li><a href="#ch14"><span class="num">14</span> Anhang: Konfigurationsreferenz</a></li>
+  </ol>
+</nav>
+
+<!-- ===================== 1 ===================== -->
+<section class="chapter" id="ch1">
+  <h1 class="chapter-title">1&ensp;Einleitung und Überblick</h1>
+
+  <p>Die <strong>Intranet-Landingpage</strong> ist eine schlanke Webanwendung (PHP 8.3, ohne Framework,
+  MySQL/MariaDB) und wird vollständig über <strong>Docker Compose</strong> betrieben. Sie stellt den
+  Beschäftigten eine zentrale Startseite mit Navigationskacheln, Telefonliste, Mitteilungen und Textseiten
+  bereit. Die Inhalte werden über einen geschützten Adminbereich gepflegt.</p>
+
+  <h2>1.1&ensp;Module im Überblick</h2>
+  <table>
+    <thead><tr><th>Modul</th><th>Beschreibung</th><th>Rolle</th></tr></thead>
+    <tbody>
+      <tr><td>Dashboard</td><td>Übersicht mit Kennzahlen und Systemstatus</td><td>Admin</td></tr>
+      <tr><td>Navigation</td><td>Kacheln, Unterseiten, Textseiten, externe Links, Sortierung</td><td>Admin</td></tr>
+      <tr><td>Wichtige Links</td><td>Sammlung häufig genutzter Verknüpfungen</td><td>Admin, Redaktion</td></tr>
+      <tr><td>Notfallnummern</td><td>Notfall- und Störungsnummern</td><td>Admin</td></tr>
+      <tr><td>Mitteilungen</td><td>Ankündigungen als Dialog auf der Startseite</td><td>Admin</td></tr>
+      <tr><td>Beschreibungen</td><td>Seitentexte, Darstellungsmodus, Telefonlinks</td><td>Admin</td></tr>
+      <tr><td>Design</td><td>Farben (Hell/Dunkel), Logo, Hintergrundbild</td><td>Admin</td></tr>
+      <tr><td>Active Directory</td><td>LDAP-Anbindung und Synchronisation</td><td>Admin</td></tr>
+      <tr><td>Statistik</td><td>Klickzahlen je Kachel über Zeiträume</td><td>Admin</td></tr>
+      <tr><td>Benutzer</td><td>Verwaltung der Admin-Konten</td><td>Admin</td></tr>
+    </tbody>
+  </table>
+
+  <h2>1.2&ensp;Technische Struktur</h2>
+  <ul>
+    <li><strong>Dienste:</strong> <code>db</code> (MySQL 8.0), <code>app</code> (Apache/PHP), <code>sync</code> (LDAP-Hintergrund-Worker) sowie optional <code>phpmyadmin</code>.</li>
+    <li><strong>Datenbank:</strong> eine MySQL-Datenbank (<code>intranet</code>) mit Tabellen für Navigation, Telefonbuch, Links, Notfallnummern, Mitteilungen, Einstellungen, Benutzer und Klickstatistik.</li>
+    <li><strong>Speicher:</strong> ein Docker-Volume <code>app_storage</code> für hochgeladene Dateien (Logo, Hintergrundbild) und Protokolle.</li>
+  </ul>
+</section>
+
+<!-- ===================== 2 ===================== -->
+<section class="chapter" id="ch2">
+  <h1 class="chapter-title">2&ensp;Installation und Betrieb (Docker)</h1>
+
+  <h2>2.1&ensp;Voraussetzungen</h2>
+  <ul>
+    <li>Docker Engine und Docker Compose (Plugin v2).</li>
+    <li>Freie Ports für Webapplikation und optional phpMyAdmin.</li>
+    <li>Zugriff auf den MySQL-Container-Image (<code>mysql:8.0</code>) beim ersten Start.</li>
+  </ul>
+
+  <h2>2.2&ensp;Konfiguration anlegen</h2>
+  <p>Legen Sie im Projektverzeichnis eine Datei <code>.env</code> an. Eine vollständige Referenz aller
+  Variablen finden Sie in Kapitel 14. Pflichtfelder sind insbesondere die Datenbankpasswörter:</p>
+
+  <pre>DB_PASSWORD=geheimes-passwort
+DB_ROOT_PASSWORD=geheimes-root-passwort
+APP_PORT=8080
+PMA_PORT=8081
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=startpasswort-aendern</pre>
+
+  <div class="warn">
+    <span class="label">Sicherheit</span>
+    Ändern Sie das initiale Admin-Passwort nach der ersten Anmeldung umgehend (siehe Kapitel 13). Die Datei
+    <code>.env</code> enthält Zugangsdaten und darf nicht in die Versionsverwaltung aufgenommen werden.
+  </div>
+
+  <h2>2.3&ensp;Starten</h2>
+  <pre>docker compose up -d --build</pre>
+  <p>Beim ersten Start führt der Container automatisch die Datenbank-Migration, die Grundbefüllung
+  (Beispiel-Navigation) und die Anlage des initialen Admin-Kontos aus.</p>
+
+  <h2>2.4&ensp;Status und Stoppen</h2>
+  <pre>docker compose ps          # Status der Dienste
+docker compose logs -f app # Logs verfolgen
+docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
+
+  <div class="tip">
+    <span class="label">Tipp</span>
+    phpMyAdmin starten Sie bei Bedarf zusätzlich über
+    <code>docker compose --profile tools up -d</code>.
+  </div>
+
+  <h2>2.5&ensp;Daten und Sicherung</h2>
+  <p>Datenbank und hochgeladene Dateien liegen in den Volumes <code>db_data</code> und
+  <code>app_storage</code>. Für ein Backup sichern Sie die MySQL-Datenbank (z.&nbsp;B. über
+  <code>mysqldump</code>) sowie das Volume <code>app_storage</code>.</p>
+</section>
+
+<!-- ===================== 3 ===================== -->
+<section class="chapter" id="ch3">
+  <h1 class="chapter-title">3&ensp;Anmeldung und Rollen</h1>
+
+  <p>Der Adminbereich ist unter dem Pfad <code>/admin</code> erreichbar (z.&nbsp;B.
+  <code>http://localhost:8080/admin</code>).</p>
+
+  <figure>
+    <img src="../screenshots/09-admin-login.png" alt="Anmeldeseite des Adminbereichs">
+    <figcaption><span class="fig-label">Abb. 1</span> Anmeldeseite des Adminbereichs.</figcaption>
+  </figure>
+
+  <h2>3.1&ensp;Anmelden</h2>
+  <ol>
+    <li>Rufen Sie <code>/admin</code> auf.</li>
+    <li>Geben Sie Benutzername und Passwort ein.</li>
+    <li>Bestätigen Sie mit „Anmelden“.</li>
+  </ol>
+
+  <h2>3.2&ensp;Rollen</h2>
+  <table>
+    <thead><tr><th>Rolle</th><th>Berechtigung</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Admin</strong></td><td>Vollzugriff auf alle Module.</td></tr>
+      <tr><td><strong>Redaktion</strong></td><td>Nur das Modul „Wichtige Links“.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3.3&ensp;Schutzmechanismen</h2>
+  <ul>
+    <li><strong>Sperre nach Fehlversuchen:</strong> Nach wiederholten Fehlanmeldungen wird der Zugang vorübergehend gesperrt.</li>
+    <li><strong>Inaktivitätstimeout:</strong> Nach einer einstellbaren Zeit ohne Aktivität erfolgt die automatische Abmeldung.</li>
+    <li><strong>CSRF-Schutz:</strong> Alle schreibenden Formulare sind mit einem Sitzungstoken abgesichert.</li>
+  </ul>
+</section>
+
+<!-- ===================== 4 ===================== -->
+<section class="chapter" id="ch4">
+  <h1 class="chapter-title">4&ensp;Dashboard</h1>
+
+  <p>Nach der Anmeldung sehen Sie das <strong>Dashboard</strong>. Es fasst die wichtigsten Kennzahlen und den
+  Systemstatus zusammen.</p>
+
+  <figure>
+    <img src="../screenshots/10-admin-uebersicht.png" alt="Admin-Dashboard">
+    <figcaption><span class="fig-label">Abb. 2</span> Dashboard mit Systemstatus, Telefonbuch, Navigation und Klickstatistik.</figcaption>
+  </figure>
+
+  <h2>4.1&ensp;Kennzahlen</h2>
+  <ul>
+    <li><strong>Systemstatus:</strong> Hinweise auf laufende Dienste, Version und Konfiguration.</li>
+    <li><strong>Telefonbuch:</strong> Anzahl der Einträge in der Telefonliste.</li>
+    <li><strong>Navigation:</strong> Anzahl der Navigationselemente.</li>
+    <li><strong>Klickstatistik:</strong> Zusammenfassung der erfassten Klicks.</li>
+  </ul>
+
+  <p>Von hier aus gelangen Sie über die Seitenleiste direkt zu allen Modulen.</p>
+</section>
+
+<!-- ===================== 5 ===================== -->
+<section class="chapter" id="ch5">
+  <h1 class="chapter-title">5&ensp;Navigation verwalten</h1>
+
+  <p>Im Modul <strong>Navigation</strong> pflegen Sie alle Elemente der Startseite: Kacheln, Unterseiten,
+  Textseiten und externe Links. Die Ansicht kann als <strong>Liste</strong> oder als <strong>Baum</strong>
+  (Hierarchie) dargestellt werden.</p>
+
+  <figure>
+    <img src="../screenshots/11-admin-navigation-liste.png" alt="Navigation als Liste">
+    <figcaption><span class="fig-label">Abb. 3</span> Navigationsverwaltung in der Listenansicht.</figcaption>
+  </figure>
+
+  <figure>
+    <img src="../screenshots/12-admin-navigation-baum.png" alt="Navigation als Baum">
+    <figcaption><span class="fig-label">Abb. 4</span> Navigationsverwaltung in der Baumansicht (Hierarchie).</figcaption>
+  </figure>
+
+  <h2>5.1&ensp;Elementtypen</h2>
+  <table>
+    <thead><tr><th>Typ</th><th>Verwendung</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Externer Link</strong></td><td>Verweist auf eine externe URL (öffnet in neuem Tab).</td></tr>
+      <tr><td><strong>Interne Seite</strong></td><td>Verweist auf eine interne Route, z.&nbsp;B. die Telefonliste.</td></tr>
+      <tr><td><strong>Unterseite</strong></td><td>Bündelt untergeordnete Elemente in einer eigenen Ansicht.</td></tr>
+      <tr><td><strong>Textseite</strong></td><td>Stellt ausführlichen, formatierten Inhalt dar.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5.2&ensp;Element anlegen oder bearbeiten</h2>
+  <ol>
+    <li>Wählen Sie „Neues Element“ oder „Bearbeiten“ bei einem vorhandenen Eintrag.</li>
+    <li>Füllen Sie das Formular aus (Titel, Typ, Ziel, Kurz- und Detailbeschreibung, Symbol, Farbe).</li>
+    <li>Speichern Sie.</li>
+  </ol>
+
+  <figure>
+    <img src="../screenshots/13-admin-navigation-formular.png" alt="Formular zur Navigation">
+    <figcaption><span class="fig-label">Abb. 5</span> Formular zum Anlegen/Bearbeiten eines Navigationselements.</figcaption>
+  </figure>
+
+  <h2>5.3&ensp;Sortierung und Hierarchie</h2>
+  <p>Über die Sortierfunktion legen Sie die Reihenfolge der Kacheln fest. Mit dem Eltern-Element
+  (<em>übergeordnetes Element</em>) ordnen Sie Einträge einer Unterseite zu und bilden so mehrstufige
+  Strukturen ab.</p>
+
+  <h2>5.4&ensp;Ein-/Ausblenden und Löschen</h2>
+  <p>Elemente lassen sich über den Status-Schalter ausblenden, ohne sie zu löschen. Das Löschen entfernt den
+  Eintrag dauerhaft; untergeordnete Elemente einer Unterseite sollten zuvor neu zugeordnet werden.</p>
+</section>
+
+<!-- ===================== 6 ===================== -->
+<section class="chapter" id="ch6">
+  <h1 class="chapter-title">6&ensp;Wichtige Links</h1>
+
+  <p>Das Modul <strong>Wichtige Links</strong> verwaltet die Sammlung häufig genutzter Verknüpfungen. Es ist
+  das einzige Modul, das auch Benutzern mit der Rolle <strong>Redaktion</strong> zur Verfügung steht.</p>
+
+  <figure>
+    <img src="../screenshots/14-admin-wichtige-links.png" alt="Verwaltung der wichtigen Links">
+    <figcaption><span class="fig-label">Abb. 6</span> Verwaltung der wichtigen Links.</figcaption>
+  </figure>
+
+  <p>Jeder Link besitzt einen Titel, eine Zieladresse, ein Symbol und eine optionale Kurzbeschreibung. Die
+  Einträge erscheinen auf der Startseite in der Übersicht „Wichtige Links“.</p>
+</section>
+
+<!-- ===================== 7 ===================== -->
+<section class="chapter" id="ch7">
+  <h1 class="chapter-title">7&ensp;Notfallnummern</h1>
+
+  <p>Im Modul <strong>Notfallnummern</strong> pflegen Sie die wichtigen Notfall- und Störungsnummern, die den
+  Beschäftigten jederzeit schnell zur Verfügung stehen.</p>
+
+  <figure>
+    <img src="../screenshots/15-admin-notfallnummern.png" alt="Verwaltung der Notfallnummern">
+    <figcaption><span class="fig-label">Abb. 7</span> Verwaltung der Notfallnummern.</figcaption>
+  </figure>
+
+  <p>Pro Eintrag werden Bezeichnung und Telefonnummer hinterlegt. Die Anzeige als anklickbarer Link wird
+  global im Modul „Beschreibungen“ gesteuert (siehe Kapitel 9).</p>
+</section>
+
+<!-- ===================== 8 ===================== -->
+<section class="chapter" id="ch8">
+  <h1 class="chapter-title">8&ensp;Mitteilungen</h1>
+
+  <p>Über das Modul <strong>Mitteilungen</strong> veröffentlichen Sie Ankündigungen, die den Beschäftigten
+  beim Aufruf der Startseite als Dialog eingeblendet werden.</p>
+
+  <figure>
+    <img src="../screenshots/16-admin-mitteilungen.png" alt="Verwaltung der Mitteilungen">
+    <figcaption><span class="fig-label">Abb. 8</span> Verwaltung der Mitteilungen.</figcaption>
+  </figure>
+
+  <h2>8.1&ensp;Verhalten</h2>
+  <ul>
+    <li>Eine aktive Mitteilung wird beim Öffnen der Startseite angezeigt.</li>
+    <li>Schließt eine Person die Mitteilung, wird sie erst wieder eingeblendet, wenn sich die Mitteilung ändert.</li>
+    <li>Mehrere Mitteilungen können zeitlich befristet (aktiv/inaktiv) geschaltet werden.</li>
+  </ul>
+</section>
+
+<!-- ===================== 9 ===================== -->
+<section class="chapter" id="ch9">
+  <h1 class="chapter-title">9&ensp;Beschreibungen und Texte</h1>
+
+  <p>Das Modul <strong>Beschreibungen</strong> steuert die allgemeinen Seitentexte sowie die Darstellung der
+  Detailbeschreibungen der Kacheln.</p>
+
+  <figure>
+    <img src="../screenshots/17-admin-beschreibungen.png" alt="Modul Beschreibungen">
+    <figcaption><span class="fig-label">Abb. 9</span> Modul „Beschreibungen“ mit Texteinstellungen und Beschreibungsübersicht.</figcaption>
+  </figure>
+
+  <h2>9.1&ensp;Allgemeine Texte</h2>
+  <ul>
+    <li><strong>Seitentitel und Untertitel</strong> der Startseite (Untertitel optional ein-/ausblendbar).</li>
+    <li><strong>Landing-Intro</strong> als einleitender Text (optional sichtbar).</li>
+    <li><strong>Fußzeilentext</strong>.</li>
+  </ul>
+
+  <h2>9.2&ensp;Darstellung der Detailbeschreibungen</h2>
+  <p>Legen Sie fest, wie die Detailbeschreibungen der Kacheln angezeigt werden: <strong>Beim Überfahren</strong>,
+  <strong>Aufklappen</strong> oder <strong>Beides</strong>. Per Tastatur und auf Touchgeräten bleibt die
+  Beschreibung immer über „Details“ erreichbar.</p>
+
+  <h2>9.3&ensp;Telefonliste</h2>
+  <p>Aktivieren oder deaktivieren Sie die Darstellung von Telefonnummern als anklickbare <code>tel:</code>-Links.
+  Dies betrifft die Telefonliste und die Notfallnummern.</p>
+
+  <h2>9.4&ensp;Beschreibungen der Elemente</h2>
+  <p>Die untere Tabelle zeigt Kurz- und Detailbeschreibung aller Navigationselemente. Die eigentliche Pflege
+  erfolgt je Element im Modul „Navigation“ (Kapitel 5).</p>
+
+  <h2>9.5&ensp;Dokumentation</h2>
+  <p>Über die Option <strong>Handbücher in der Anwendung anzeigen</strong> steuern Sie, ob die Links zum
+  <em>Anwenderhandbuch</em> (Fußzeile der Landingpage) und zum <em>Administratorhandbuch</em> (Fußzeile des
+  Administrationsbereichs) eingeblendet werden. Deaktivieren Sie die Option, werden beide Links ausgeblendet.</p>
+</section>
+
+<!-- ===================== 10 ===================== -->
+<section class="chapter" id="ch10">
+  <h1 class="chapter-title">10&ensp;Design (Farben, Logo, Hintergrund)</h1>
+
+  <p>Im Modul <strong>Design</strong> passen Sie das Erscheinungsbild der Startseite an: Farben für das helle
+  und das dunkle Farbschema, Logo und Hintergrundbild.</p>
+
+  <figure>
+    <img src="../screenshots/18-admin-design.png" alt="Modul Design">
+    <figcaption><span class="fig-label">Abb. 10</span> Modul „Design“ mit Farb- und Dateieinstellungen.</figcaption>
+  </figure>
+
+  <h2>10.1&ensp;Farben</h2>
+  <p>Hintergrund-, Text- und Akzentfarben werden getrennt für das helle und das dunkle Farbschema gepflegt.
+  Änderungen wirken sich unmittelbar auf die Startseite aus.</p>
+
+  <h2>10.2&ensp;Logo und Hintergrundbild</h2>
+  <ul>
+    <li><strong>Logo:</strong> wird in der Titelleiste angezeigt (SVG optional, Größenlimit konfigurierbar).</li>
+    <li><strong>Hintergrundbild:</strong> optionales Hintergrundbild der Startseite (Größenlimit konfigurierbar).</li>
+  </ul>
+
+  <div class="note">
+    <span class="label">Hinweis</span>
+    Hochgeladene Dateien werden im Volume <code>app_storage</code> abgelegt und sind daher Teil der
+    Datensicherung.
+  </div>
+</section>
+
+<!-- ===================== 11 ===================== -->
+<section class="chapter" id="ch11">
+  <h1 class="chapter-title">11&ensp;Active Directory / LDAP</h1>
+
+  <p>Das Modul <strong>Active Directory</strong> verbindet die Anwendung mit Ihrem Verzeichnisdienst, um die
+  Telefonliste automatisch mit Benutzerdaten (Name, Abteilung, Telefon, E-Mail) zu befüllen.</p>
+
+  <figure>
+    <img src="../screenshots/19-admin-ad.png" alt="Modul Active Directory">
+    <figcaption><span class="fig-label">Abb. 11</span> Modul „Active Directory“ mit Konfiguration und Sync-Protokoll.</figcaption>
+  </figure>
+
+  <h2>11.1&ensp;Konfiguration</h2>
+  <p>Die Verbindungsdaten (Server, Port, TLS, Basis-DN, Bind-Benutzer, Suchfilter, Attribut-Zuordnung)
+  werden über die Umgebungsvariablen <code>LDAP_*</code> gesetzt (siehe Kapitel 14). Änderungen erfordern
+  einen Neustart des <code>sync</code>-Dienstes.</p>
+
+  <h2>11.2&ensp;Synchronisation</h2>
+  <ul>
+    <li>Ein Hintergrund-Worker (<code>sync</code>) synchronisiert die Daten in einem einstellbaren Intervall.</li>
+    <li>Über das Modul lässt sich die Synchronisation manuell anstoßen.</li>
+    <li>Das Sync-Protokoll zeigt den Verlauf und eventuelle Fehler.</li>
+  </ul>
+
+  <div class="warn">
+    <span class="label">Sicherheit</span>
+    Verwenden Sie für die Anbindung ein dediziertes Dienstkonto mit minimalen Leseberechtigungen. Das
+    Bind-Passwort darf nicht in der Versionsverwaltung landen.
+  </div>
+</section>
+
+<!-- ===================== 12 ===================== -->
+<section class="chapter" id="ch12">
+  <h1 class="chapter-title">12&ensp;Statistik</h1>
+
+  <p>Das Modul <strong>Statistik</strong> wertet die Klicks auf die Navigationselemente aus. Die Anwendung
+  erfasst jeden Klick auf eine Kachel und stellt die Verteilung grafisch dar.</p>
+
+  <figure>
+    <img src="../screenshots/20-admin-statistik.png" alt="Modul Statistik">
+    <figcaption><span class="fig-label">Abb. 12</span> Klickstatistik mit Diagramm und Zeitraumauswahl.</figcaption>
+  </figure>
+
+  <h2>12.1&ensp;Zeiträume</h2>
+  <p>Wählbare Auswertungszeiträume: 3, 7, 14, 30, 90 und 365 Tage.</p>
+
+  <h2>12.2&ensp;Datenhaltung</h2>
+  <p>Die Aufbewahrungsdauer der Klickdaten ist über <code>CLICK_RETENTION_DAYS</code> konfigurierbar;
+  ältere Daten werden automatisch gelöscht.</p>
+</section>
+
+<!-- ===================== 13 ===================== -->
+<section class="chapter" id="ch13">
+  <h1 class="chapter-title">13&ensp;Benutzerverwaltung</h1>
+
+  <p>Im Modul <strong>Benutzer</strong> verwalten Sie die Konten für den Adminbereich, einschließlich der
+  Rollenzuweisung (Admin oder Redaktion).</p>
+
+  <figure>
+    <img src="../screenshots/21-admin-benutzer.png" alt="Modul Benutzerverwaltung">
+    <figcaption><span class="fig-label">Abb. 13</span> Benutzerverwaltung des Adminbereichs.</figcaption>
+  </figure>
+
+  <h2>13.1&ensp;Konten anlegen und ändern</h2>
+  <ol>
+    <li>Legen Sie ein neues Konto an oder wählen Sie ein bestehendes.</li>
+    <li>Vergeben Sie Benutzername, Passwort und Rolle.</li>
+    <li>Speichern Sie.</li>
+  </ol>
+
+  <div class="warn">
+    <span class="label">Sicherheit</span>
+    Vergeben Sie starke, individuelle Passwörter und beschränken Sie die Rolle „Admin“ auf einen kleinen
+    Personenkreis. Deaktivieren Sie nicht mehr benötigte Konten.
+  </div>
+</section>
+
+<!-- ===================== 14 ===================== -->
+<section class="chapter" id="ch14">
+  <h1 class="chapter-title">14&ensp;Anhang: Konfigurationsreferenz</h1>
+
+  <p>Die Konfiguration erfolgt über die Datei <code>.env</code>. Die wichtigsten Variablen:</p>
+
+  <h2>14.1&ensp;Allgemein und Datenbank</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
+    <tbody>
+      <tr><td><code>APP_NAME</code></td><td>Name der Anwendung.</td></tr>
+      <tr><td><code>APP_URL</code></td><td>Basis-URL der Anwendung.</td></tr>
+      <tr><td><code>APP_ENV</code> / <code>APP_DEBUG</code></td><td>Umgebung (<code>production</code>) und Debug-Modus.</td></tr>
+      <tr><td><code>APP_PORT</code> / <code>PMA_PORT</code></td><td>Externe Ports für App und phpMyAdmin.</td></tr>
+      <tr><td><code>DB_HOST</code>, <code>DB_PORT</code>, <code>DB_NAME</code></td><td>Datenbankverbindung.</td></tr>
+      <tr><td><code>DB_USER</code> / <code>DB_PASSWORD</code></td><td>Datenbankzugang.</td></tr>
+      <tr><td><code>DB_ROOT_PASSWORD</code></td><td>MySQL-Root-Passwort.</td></tr>
+      <tr><td><code>SEED_ON_START</code></td><td>Grundbefüllung beim Start (<code>true</code>/<code>false</code>).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>14.2&ensp;Admin-Konto</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
+    <tbody>
+      <tr><td><code>ADMIN_USERNAME</code> / <code>ADMIN_PASSWORD</code></td><td>Initiales Admin-Konto (wird nur angelegt, wenn noch kein Benutzer existiert).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>14.3&ensp;LDAP / Active Directory</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
+    <tbody>
+      <tr><td><code>LDAP_HOST</code>, <code>LDAP_PORT</code></td><td>Server und Port (z.&nbsp;B. 636).</td></tr>
+      <tr><td><code>LDAP_USE_TLS</code>, <code>LDAP_VERIFY_CERT</code></td><td>TLS aktivieren bzw. Zertifikatsprüfung.</td></tr>
+      <tr><td><code>LDAP_BASE_DN</code>, <code>LDAP_BIND_DN</code>, <code>LDAP_PASSWORD</code></td><td>Suchbasis, Bind-Benutzer und Passwort.</td></tr>
+      <tr><td><code>LDAP_FILTER</code></td><td>LDAP-Suchfilter.</td></tr>
+      <tr><td><code>LDAP_TIMEOUT</code>, <code>LDAP_PAGE_SIZE</code></td><td>Timeout und Seitengröße.</td></tr>
+      <tr><td><code>LDAP_SYNC_INTERVAL</code></td><td>Synchronisationsintervall in Sekunden.</td></tr>
+      <tr><td><code>LDAP_ATTR_*</code></td><td>Zuordnung der LDAP-Attribute (Name, Telefon, E-Mail, Abteilung usw.).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>14.4&ensp;Sonstiges</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
+    <tbody>
+      <tr><td><code>CLICK_RETENTION_DAYS</code></td><td>Aufbewahrungsdauer der Klickdaten in Tagen.</td></tr>
+      <tr><td><code>APP_SESSION_IDLE_TIMEOUT</code></td><td>Inaktivitätstimeout in Sekunden.</td></tr>
+      <tr><td><code>APP_MAX_LOGO_BYTES</code>, <code>APP_ALLOW_SVG_LOGO</code></td><td>Logo-Größenlimit und SVG-Erlaubnis.</td></tr>
+      <tr><td><code>APP_MAX_BACKGROUND_BYTES</code></td><td>Größenlimit Hintergrundbild.</td></tr>
+      <tr><td><code>APP_FORCE_SECURE_COOKIES</code></td><td>Secure-Cookies erzwingen (bei HTTPS).</td></tr>
+    </tbody>
+  </table>
+
+  <p>Nach Änderungen an <code>.env</code> müssen die betroffenen Dienste neu gestartet werden:</p>
+  <pre>docker compose up -d</pre>
+</section>
+
+</body>
+</html>

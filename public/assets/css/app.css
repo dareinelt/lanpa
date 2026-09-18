@@ -268,7 +268,7 @@ code {
     position: relative;
     display: flex;
     flex-direction: column;
-    background: var(--color-surface);
+    background: var(--color-surface), var(--nav-opacity, 92%);
     border: 1px solid var(--color-border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);

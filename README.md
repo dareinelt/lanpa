@@ -87,6 +87,7 @@ installieren, nicht starten).
 | `db` | MySQL 8, benanntes Volume `db_data` | `mysqladmin ping` |
 | `sync` | Dauerlauf der AD-Synchronisation (`scripts/sync_worker.php`) | – |
 | `phpmyadmin` | optional, Profil `tools` | – |
+| `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
 
 ---
 
@@ -188,6 +189,47 @@ Sitzungserneuerung nach der Anmeldung, automatische Abmeldung bei Inaktivität, 
 - Im AD deaktivierte Benutzerkonten (`userAccountControl`-Bit `ACCOUNTDISABLE`) werden beim
   Import übersprungen; bereits importierte, inzwischen deaktivierte Konten werden dadurch
   ebenfalls auf `active = 0` gesetzt.
+
+### SNMP-Überwachung
+
+Der Container `snmp` stellt den Zustand der Dienste und des AD-Synchronisations-
+Workflows über SNMP (v2c) bereit. Der Agent lauscht intern auf UDP 161 und wird
+über `${SNMP_PORT:-161}` auf den Host veröffentlicht. Er liest den Zustand der
+Container über den (read-only gemounteten) Docker-Socket aus und den Status des
+Synchronisations-Workflows direkt aus der Tabelle `sync_log`.
+
+Vor dem Produktivbetrieb `SNMP_COMMUNITY` in der `.env` auf einen eigenen,
+starken Community-String setzen.
+
+Die Werte liegen in der NET-SNMP-Tabelle `UCD-SNMP-MIB::extTable`
+(Basis `.1.3.6.1.4.1.2021.8.1`). Jeder Dienst liefert:
+
+| Prüfung | `extResult` (Exit-Code) | `extOutput` (Text) |
+| --- | --- | --- |
+| `app` (Web) | `.1.3.6.1.4.1.2021.8.1.100.1` | `.1.3.6.1.4.1.2021.8.1.101.1` |
+| `db` (MySQL) | `.1.3.6.1.4.1.2021.8.1.100.2` | `.1.3.6.1.4.1.2021.8.1.101.2` |
+| `sync` (AD-Dauerlauf) | `.1.3.6.1.4.1.2021.8.1.100.3` | `.1.3.6.1.4.1.2021.8.1.101.3` |
+| `sync_workflow` (letzter AD-Lauf) | `.1.3.6.1.4.1.2021.8.1.100.4` | `.1.3.6.1.4.1.2021.8.1.101.4` |
+| `phpmyadmin` (optional) | `.1.3.6.1.4.1.2021.8.1.100.5` | `.1.3.6.1.4.1.2021.8.1.101.5` |
+
+Exit-Codes: `0` OK, `1` WARNING (startend/laufend/veraltet), `2` CRITICAL
+(gestoppt/fehlgeschlagen), `3` UNKNOWN (z. B. phpMyAdmin nicht bereitgestellt).
+`sync_workflow` meldet `0`, wenn der letzte Lauf `success` und jünger als
+`2 × LDAP_SYNC_INTERVAL` ist; `1` bei laufender oder veralteter, `2` bei
+fehlgeschlagener Synchronisation.
+
+Abfragen (Beispiel, Port ggf. über `SNMP_PORT` anpassen):
+
+```bash
+snmpwalk -v2c -c public localhost .1.3.6.1.4.1.2021.8.1.100   # alle Exit-Codes
+snmpwalk -v2c -c public localhost .1.3.6.1.4.1.2021.8.1.101   # alle Status-Texte
+snmpget -v2c -c public localhost \
+  .1.3.6.1.4.1.2021.8.1.100.1 .1.3.6.1.4.1.2021.8.1.101.1    # App-Status
+```
+
+Der Agent startet automatisch mit dem Stack (`docker compose up -d` bzw. über
+den systemd-Dienst) und kann in Monitoring-Systemen wie LibreNMS, PRTG oder
+Nagios/Icinga als Standard-SNMP-Host eingebunden werden.
 
 ### Protokolle
 

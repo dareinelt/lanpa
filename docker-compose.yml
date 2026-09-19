@@ -82,6 +82,33 @@ services:
     networks:
       - intranet
 
+  # SNMP-Agent: Status der Container/Dienste/Workflows per SNMP abfragbar.
+  # Liest den Docker-Socket (read-only) und die Datenbank (sync_log) aus.
+  snmp:
+    build:
+      context: .
+      dockerfile: docker/snmp/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+      db:
+        condition: service_healthy
+      sync:
+        condition: service_started
+    environment:
+      SNMP_COMMUNITY: ${SNMP_COMMUNITY:-public}
+      SNMP_SYS_LOCATION: ${SNMP_SYS_LOCATION:-Intranet}
+      SNMP_SYS_CONTACT: ${SNMP_SYS_CONTACT:-admin@example.internal}
+    env_file:
+      - .env
+    ports:
+      - "${SNMP_PORT:-161}:161/udp"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - intranet
+
 volumes:
   db_data:
   app_storage:

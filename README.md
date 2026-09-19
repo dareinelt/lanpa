@@ -56,6 +56,29 @@ Optionales Datenbankwerkzeug:
 docker compose --profile tools up -d phpmyadmin   # http://<host>:8081
 ```
 
+### Als Systemdienst beim Boot starten (Ubuntu ≥ 22.04)
+
+Mitgeliefertes Skript legt einen systemd-Service an, der die Container beim
+Systemstart hochfährt (`docker compose up -d`) und bei `systemctl stop` wieder
+stoppt (`docker compose down`):
+
+```bash
+sudo ./scripts/install-systemd-service.sh
+```
+
+Danach übernimmt systemd den Autostart. Nützliche Befehle:
+
+```bash
+systemctl status intranet      # Status anzeigen
+systemctl stop intranet        # Container stoppen
+systemctl disable intranet     # Autostart deaktivieren
+```
+
+Das Skript lässt sich über Umgebungsvariablen anpassen, z. B.
+`SERVICE_NAME=mein-dienst` (Service-Name, Standard `intranet`),
+`COMPOSE_PROJECT_NAME` (Compose-Projektname) oder `INSTALL_ONLY=1` (nur
+installieren, nicht starten).
+
 ### Enthaltene Dienste
 
 | Dienst | Zweck | Healthcheck |

@@ -72,6 +72,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
                         data-alarm-title="<?= Html::e((string) $item['title']) ?>"
                         data-alarm-text="<?= Html::e((string) $item['alarm_text']) ?>"
                         data-alarm-group="<?= Html::e((string) $item['alarm_group_description']) ?>"
+                        <?php if ($isProtected) { ?>data-protected-id="<?= $id ?>" data-nav-title="<?= Html::e((string) $item['title']) ?>"<?php } ?>
                         <?= $description !== '' ? 'aria-describedby="' . Html::e($detailsId) . '"' : '' ?>>
                     <span class="tile__icon-wrap" aria-hidden="true">
                         <?php require __DIR__ . '/icon.php'; ?>
@@ -82,7 +83,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
                             <span class="tile__short"><?= Html::e($shortDescription) ?></span>
                         <?php } ?>
                     </span>
-                    <span class="visually-hidden">(öffnet eine Bestätigung)</span>
+                    <span class="visually-hidden"><?= $isProtected ? '(erfordert einen Zugangscode)' : '(öffnet eine Bestätigung)' ?></span>
                 </button>
                 <?php } elseif ($isProtected) { ?>
                 <button type="button"

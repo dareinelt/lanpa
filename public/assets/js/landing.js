@@ -2,6 +2,10 @@
 (function () {
     'use strict';
 
+    // Referenz auf die Alarm-Overlay-Oeffnungsfunktion, damit geschuetzte
+    // Alarm-Kacheln nach der SMS-Freischaltung die Bestaetigung oeffnen koennen.
+    var openAlarm = null;
+
     function initToggles() {
         document.addEventListener('click', function (event) {
             var toggle = event.target.closest('.tile__toggle');
@@ -216,6 +220,8 @@
             }
         }
 
+        openAlarm = open;
+
         function send() {
             if (!current || done) {
                 return;
@@ -263,7 +269,9 @@
 
         document.addEventListener('click', function (event) {
             var trigger = event.target.closest('[data-alarm-id]');
-            if (trigger) {
+            // Geschuetzte Alarm-Kacheln werden zuerst durch die SMS-Schranke
+            // abgefangen und erst danach wird die Bestaetigung geoeffnet.
+            if (trigger && !trigger.hasAttribute('data-protected-id')) {
                 event.preventDefault();
                 open(trigger);
             }
@@ -411,7 +419,9 @@
                 id: trigger.getAttribute('data-protected-id'),
                 href: trigger.getAttribute('data-nav-href') || '',
                 external: trigger.getAttribute('data-nav-external') === '1',
-                title: trigger.getAttribute('data-nav-title') || ''
+                alarm: trigger.hasAttribute('data-alarm-id'),
+                title: trigger.getAttribute('data-nav-title') || '',
+                trigger: trigger
             };
 
             reset();
@@ -429,6 +439,14 @@
 
         function navigate() {
             if (!current) {
+                return;
+            }
+            if (current.alarm) {
+                var alarmTrigger = current.trigger || document.querySelector('[data-alarm-id="' + current.id + '"]');
+                close();
+                if (openAlarm && alarmTrigger) {
+                    openAlarm(alarmTrigger);
+                }
                 return;
             }
             if (current.external) {

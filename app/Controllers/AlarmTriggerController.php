@@ -22,6 +22,11 @@ final class AlarmTriggerController extends Controller
             return Response::json(['status' => 'error', 'message' => 'Ungültige Anfrage.'], 422);
         }
 
+        $item = Container::navigation()->find($navigationId);
+        if ($item !== null && !empty($item['protected_access']) && !Container::smsCode()->isVerified($navigationId)) {
+            return Response::json(['status' => 'error', 'message' => 'Für diese Alarmierung ist ein Zugangscode erforderlich.'], 422);
+        }
+
         $additionalText = (string) $request->input('additional_text', '');
 
         $result = Container::alarm()->trigger($navigationId, $additionalText);

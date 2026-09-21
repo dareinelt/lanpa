@@ -34,6 +34,7 @@ use App\Controllers\LandingController;
 use App\Controllers\LogoController;
 use App\Controllers\PageController;
 use App\Controllers\PhonebookController;
+use App\Controllers\ProtectedAccessController;
 use App\Controllers\SmsCodeController;
 use App\Core\Config;
 use App\Core\Container;
@@ -52,19 +53,38 @@ $GLOBALS['csp_nonce'] = $nonce;
 
 $router = new Router();
 
-$router->get('/', [LandingController::class, 'index']);
-$router->get('/unterseite', [PageController::class, 'subpage']);
-$router->get('/seite', [PageController::class, 'page']);
-$router->get('/telefonliste', [PhonebookController::class, 'index']);
-$router->get('/api/telefonliste', [PhonebookController::class, 'search']);
-$router->post('/api/klick', [ClickController::class, 'store']);
-$router->post('/api/alarm', [AlarmTriggerController::class, 'store']);
-$router->post('/api/sms-code/send', [SmsCodeController::class, 'send']);
-$router->post('/api/sms-code/verify', [SmsCodeController::class, 'verify']);
-$router->get('/logo', [LogoController::class, 'show']);
-$router->get('/hintergrundbild', [BackgroundImageController::class, 'show']);
-$router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
-$router->get('/health', [HealthController::class, 'index']);
+// Serverseitige Zugriffssperre fuer geschuetzte interne Navigationselemente.
+// Interne Elemente (z. B. /telefonliste) werden nicht ueber den PageController
+// ausgeliefert, deshalb greift hier eine zusaetzliche Schranke.
+$requireUnlocked = static function (Request $request): ?Response {
+    if ($request->method !== 'GET') {
+        return null;
+    }
+
+    $item = Container::smsCode()->findProtectedInternal($request->path);
+    if ($item === null || Container::smsCode()->isVerified((int) $item['id'])) {
+        return null;
+    }
+
+    return Response::redirect('/zugriff?id=' . (int) $item['id']);
+};
+
+$router->group([$requireUnlocked], static function (Router $router): void {
+    $router->get('/', [LandingController::class, 'index']);
+    $router->get('/unterseite', [PageController::class, 'subpage']);
+    $router->get('/seite', [PageController::class, 'page']);
+    $router->get('/zugriff', [ProtectedAccessController::class, 'show']);
+    $router->get('/telefonliste', [PhonebookController::class, 'index']);
+    $router->get('/api/telefonliste', [PhonebookController::class, 'search']);
+    $router->post('/api/klick', [ClickController::class, 'store']);
+    $router->post('/api/alarm', [AlarmTriggerController::class, 'store']);
+    $router->post('/api/sms-code/send', [SmsCodeController::class, 'send']);
+    $router->post('/api/sms-code/verify', [SmsCodeController::class, 'verify']);
+    $router->get('/logo', [LogoController::class, 'show']);
+    $router->get('/hintergrundbild', [BackgroundImageController::class, 'show']);
+    $router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
+    $router->get('/health', [HealthController::class, 'index']);
+});
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
 $router->post('/admin/login', [AuthController::class, 'login']);

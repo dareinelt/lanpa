@@ -18,14 +18,23 @@ use App\Support\Html;
  */
 $tileRules = [];
 foreach ($items as $item) {
+    if (empty($item['override_background'])) {
+        continue;
+    }
     $bgColor = (string) ($item['background_color'] ?? '');
-    if ($bgColor === '') {
+    $bgOpacity = $item['background_opacity'] ?? null;
+    $declarations = '';
+    if ($bgColor !== '') {
+        $declarations .= '--tile-bg:' . Html::e($bgColor) . ';';
+    }
+    if ($bgOpacity !== null && $bgOpacity !== '' && is_numeric($bgOpacity)) {
+        $declarations .= '--tile-bg-opacity:' . (int) $bgOpacity . '%;';
+    }
+    if ($declarations === '') {
         continue;
     }
     $tileId = (int) $item['id'];
-    $bgOpacity = $item['background_opacity'] ?? null;
-    $opacity = ($bgOpacity !== null && $bgOpacity !== '' && is_numeric($bgOpacity)) ? (int) $bgOpacity : 97;
-    $tileRules[] = '.tile[data-tile-id="' . $tileId . '"]{--tile-bg:' . Html::e($bgColor) . ';--tile-bg-opacity:' . $opacity . '%}';
+    $tileRules[] = '.tile[data-tile-id="' . $tileId . '"]{' . $declarations . '}';
 }
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 ?>

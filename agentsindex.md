@@ -252,7 +252,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 | Tabelle | Zweck | Wichtige Spalten |
 | --- | --- | --- |
-| `navigation_items` | Kacheln/Unterseiten/Textseiten | `type` (external/internal/subpage/page), `parent_id`, `content`, `background_color`, `background_opacity`, `sort_order`, `active` |
+| `navigation_items` | Kacheln/Unterseiten/Textseiten | `type` (external/internal/subpage/page), `parent_id`, `content`, `background_color`, `background_opacity`, `override_background`, `sort_order`, `active` |
 | `settings` | Schlüssel-Wert-Einstellungen | `setting_key` (unique), `setting_value` |
 | `phonebook` | AD-synchronisierte Telefonliste | `external_id` (unique), Name, `phone`, `phone_digits`, `mobile`, `department`, `active` |
 | `click_events` | Klickstatistik | `navigation_id` (FK, SET NULL), `clicked_at` |

@@ -6,7 +6,7 @@ namespace App\Repositories;
 
 final class NavigationRepository extends Repository
 {
-    private const COLUMNS = 'n.id, n.title, n.url, n.type, n.parent_id, n.icon, n.background_color, n.background_opacity, n.short_description, n.description, n.content, n.alarm_text, n.alarm_group_id, n.sort_order, n.active, n.created_at, n.updated_at, g.group_number AS alarm_group_number, g.description AS alarm_group_description';
+    private const COLUMNS = 'n.id, n.title, n.url, n.type, n.parent_id, n.icon, n.background_color, n.background_opacity, n.override_background, n.short_description, n.description, n.content, n.alarm_text, n.alarm_group_id, n.sort_order, n.active, n.created_at, n.updated_at, g.group_number AS alarm_group_number, g.description AS alarm_group_description';
 
     private const FROM = ' FROM navigation_items n LEFT JOIN alarm_groups g ON g.id = n.alarm_group_id';
 
@@ -125,8 +125,8 @@ final class NavigationRepository extends Repository
     public function create(array $data): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, short_description, description, content, alarm_text, alarm_group_id, sort_order, active)
-             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :short_description, :description, :content, :alarm_text, :alarm_group_id, :sort_order, :active)'
+            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, override_background, short_description, description, content, alarm_text, alarm_group_id, sort_order, active)
+             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :override_background, :short_description, :description, :content, :alarm_text, :alarm_group_id, :sort_order, :active)'
         );
         $statement->execute($this->bindings($data));
 
@@ -147,6 +147,7 @@ final class NavigationRepository extends Repository
                     icon = :icon,
                     background_color = :background_color,
                     background_opacity = :background_opacity,
+                    override_background = :override_background,
                     short_description = :short_description,
                     description = :description,
                     content = :content,
@@ -308,6 +309,7 @@ final class NavigationRepository extends Repository
             'icon' => $data['icon'] === null || $data['icon'] === '' ? null : (string) $data['icon'],
             'background_color' => $bgColor === null ? null : (string) $bgColor,
             'background_opacity' => $bgOpacity === null ? null : (int) $bgOpacity,
+            'override_background' => !empty($data['override_background']) ? 1 : 0,
             'short_description' => (string) ($data['short_description'] ?? ''),
             'description' => (string) ($data['description'] ?? ''),
             'content' => isset($data['content']) && $data['content'] !== null && $data['content'] !== '' ? (string) $data['content'] : null,

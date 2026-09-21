@@ -7,7 +7,47 @@ use App\Support\Html;
 
 /** @var list<array<string,mixed>> $items */
 /** @var bool $navTreeMode */
+/** @var string $tileBackgroundColor */
+/** @var int $tileBackgroundOpacity */
+/** @var array<string,string> $tileErrors */
 ?>
+<form method="post" action="/admin/navigation/einstellungen" class="form form--wide">
+    <?= Csrf::field() ?>
+    <fieldset class="fieldset">
+        <legend>Kachel-Standardwerte</legend>
+        <div class="field-row">
+            <div class="field">
+                <label for="tile_background_color">Kachel-Hintergrundfarbe</label>
+                <div class="color-input">
+                    <input type="color" id="tile_background_color"
+                           value="<?= Html::e($tileBackgroundColor !== '' ? $tileBackgroundColor : '#1f4e79') ?>"
+                           data-color-sync="tile_background_color-text">
+                    <input type="text" id="tile_background_color-text" name="tile_background_color"
+                           value="<?= Html::e($tileBackgroundColor) ?>"
+                           pattern="#[0-9a-fA-F]{6}" maxlength="7"
+                           aria-label="Kachel-Hintergrundfarbe als Hex-Wert" data-color-mirror="tile_background_color">
+                </div>
+                <p class="field__hint">Optional. Leer lassen für den Standard-Hintergrund (var(--color-surface)).</p>
+                <?php if (isset($tileErrors['tile_background_color'])) { ?>
+                    <p class="field__error"><?= Html::e($tileErrors['tile_background_color']) ?></p>
+                <?php } ?>
+            </div>
+            <div class="field">
+                <label for="tile_background_opacity">Kachel-Deckkraft (in %)</label>
+                <input type="number" id="tile_background_opacity" name="tile_background_opacity" min="0" max="100" step="1"
+                       value="<?= (int) $tileBackgroundOpacity ?>">
+                <p class="field__hint">Steuert die Transparenz der Kachel-Hintergrundfarbe (0 = transparent, 100 = deckend).</p>
+                <?php if (isset($tileErrors['tile_background_opacity'])) { ?>
+                    <p class="field__error"><?= Html::e($tileErrors['tile_background_opacity']) ?></p>
+                <?php } ?>
+            </div>
+        </div>
+        <div class="form__actions">
+            <button type="submit" class="button button--primary">Standardwerte speichern</button>
+        </div>
+    </fieldset>
+</form>
+
 <div class="toolbar">
     <a class="button button--primary" href="/admin/navigation/neu">Neues Element</a>
 

@@ -46,6 +46,7 @@ function backupImportPdo(): PDO
             icon VARCHAR(32) NULL,
             background_color VARCHAR(7) NULL,
             background_opacity INTEGER NULL,
+            override_background INTEGER NOT NULL DEFAULT 0,
             short_description VARCHAR(255) NOT NULL DEFAULT \'\',
             description TEXT NOT NULL DEFAULT \'\',
             content TEXT NULL,

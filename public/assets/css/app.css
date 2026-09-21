@@ -357,8 +357,8 @@ code {
     content: '';
     position: absolute;
     inset: 0;
-    background: var(--tile-bg, var(--color-surface));
-    opacity: var(--tile-bg-opacity, var(--nav-opacity, 97%));
+    background: var(--tile-bg, var(--tile-bg-default, var(--color-surface)));
+    opacity: var(--tile-bg-opacity, var(--tile-bg-opacity-default, 97%));
     z-index: -1;
     transition: opacity var(--transition);
 }

@@ -44,6 +44,8 @@ final class SettingsService
             'color_background_dark' => '#12161c',
             'color_text_dark' => '#e8eaed',
             'nav_opacity' => '92',
+            'tile_background_color' => '',
+            'tile_background_opacity' => '97',
             'logo_file' => '',
             'logo_mime' => '',
             'background_file' => '',
@@ -184,6 +186,30 @@ final class SettingsService
 
         if (!Validator::isPercentage($value)) {
             return (int) $this->defaults()['nav_opacity'];
+        }
+
+        return (int) $value;
+    }
+
+    /**
+     * Zentrale Kachel-Hintergrundfarbe (leer = Standard-Oberflächenfarbe).
+     */
+    public function tileBackgroundColor(): string
+    {
+        $color = $this->get('tile_background_color', '');
+
+        return Validator::normalizeHexColor($color) ?? '';
+    }
+
+    /**
+     * Zentrale Kachel-Deckkraft in Prozent (0-100).
+     */
+    public function tileBackgroundOpacity(): int
+    {
+        $value = $this->get('tile_background_opacity', $this->defaults()['tile_background_opacity']);
+
+        if (!Validator::isPercentage($value)) {
+            return (int) $this->defaults()['tile_background_opacity'];
         }
 
         return (int) $value;

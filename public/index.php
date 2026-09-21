@@ -111,6 +111,7 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/navigation/status', [NavigationController::class, 'toggle']);
         $router->post('/admin/navigation/sortieren', [NavigationController::class, 'move']);
         $router->post('/admin/navigation/ansicht', [NavigationController::class, 'updateViewMode']);
+        $router->post('/admin/navigation/einstellungen', [NavigationController::class, 'updateSettings']);
 
         $router->get('/admin/notfallnummern', [EmergencyNumberController::class, 'index']);
         $router->get('/admin/notfallnummern/neu', [EmergencyNumberController::class, 'create']);

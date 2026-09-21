@@ -32,7 +32,7 @@ Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst ges
 | Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, optional `phpmyadmin`) |
 | Abhängigkeiten | **keine** – kein Composer, kein npm, kein CDN |
 
-Benötigte PHP-Erweiterungen: `pdo_mysql`, `ldap`, `mbstring`, `json`, `openssl`.
+Benötigte PHP-Erweiterungen: `pdo_mysql`, `ldap`, `mbstring`, `json`, `openssl`, `zip`.
 
 ---
 

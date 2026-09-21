@@ -72,6 +72,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
                         data-alarm-title="<?= Html::e((string) $item['title']) ?>"
                         data-alarm-text="<?= Html::e((string) $item['alarm_text']) ?>"
                         data-alarm-group="<?= Html::e((string) $item['alarm_group_description']) ?>"
+                        data-alarm-mode="<?= Html::e((string) $item['alarm_group_type']) ?>"
                         <?php if ($isProtected) { ?>data-protected-id="<?= $id ?>" data-nav-title="<?= Html::e((string) $item['title']) ?>"<?php } ?>
                         <?= $description !== '' ? 'aria-describedby="' . Html::e($detailsId) . '"' : '' ?>>
                     <span class="tile__icon-wrap" aria-hidden="true">

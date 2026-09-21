@@ -50,6 +50,7 @@ function alarmServicePdo(): PDO
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_number VARCHAR(64) NOT NULL,
             description VARCHAR(255) NOT NULL,
+            type VARCHAR(16) NOT NULL DEFAULT \'group\',
             sort_order INTEGER NOT NULL DEFAULT 1,
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -64,6 +65,7 @@ function alarmServicePdo(): PDO
             alarm_text VARCHAR(255) NOT NULL,
             group_number VARCHAR(64) NOT NULL,
             group_description VARCHAR(255) NOT NULL DEFAULT \'\',
+            mode VARCHAR(16) NOT NULL DEFAULT \'group\',
             status VARCHAR(16) NOT NULL DEFAULT \'error\',
             message VARCHAR(1000) NULL,
             triggered_at TEXT NOT NULL
@@ -121,6 +123,27 @@ Runner::test('Ohne Freitext bleibt die Vorlage unverändert', static function ()
     $rows = $pdo->query('SELECT alarm_text FROM alarm_log')->fetchAll();
     Assert::same(1, count($rows));
     Assert::same('Einsatzalarm', (string) $rows[0]['alarm_text']);
+});
+
+Runner::test('Rufnummern-Ziel wird als mode=number protokolliert', static function (): void {
+    $pdo = alarmServicePdo();
+    $service = alarmServiceInstance($pdo);
+
+    $pdo->prepare('INSERT INTO alarm_groups (group_number, description, type) VALUES (?, ?, ?)')
+        ->execute(['+49 170 1234567', 'Bereitschaft', 'number']);
+    $pdo->prepare(
+        'INSERT INTO navigation_items (title, url, type, alarm_text, alarm_group_id, active)
+         VALUES (?, ?, ?, ?, ?, ?)'
+    )->execute(['Bereitschaft', '', 'alarm', 'Einsatzalarm', 1, 1]);
+
+    $result = $service->trigger((int) $pdo->lastInsertId());
+
+    Assert::same('error', $result['status']);
+
+    $rows = $pdo->query('SELECT mode, group_number FROM alarm_log')->fetchAll();
+    Assert::same(1, count($rows));
+    Assert::same('number', (string) $rows[0]['mode']);
+    Assert::same('+49 170 1234567', (string) $rows[0]['group_number']);
 });
 
 Runner::test('Meldung über 255 Zeichen wird abgelehnt', static function (): void {

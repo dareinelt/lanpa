@@ -45,7 +45,7 @@ use App\Support\Html;
 
 <section class="card">
     <h2 class="card__title">Aktivierungs-Rufnummern</h2>
-    <p class="card__hint">Rufnummern, an die der Zugangscode gesendet werden darf. Jede Rufnummer wird einer Gruppe aus den Alarmierungseinstellungen zugeordnet.</p>
+    <p class="card__hint">Rufnummern, an die der Zugangscode gesendet werden darf. Der Code wird direkt an die hinterlegte Rufnummer versendet (Einzelnummern-Versand).</p>
 
     <div class="toolbar">
         <a class="button button--primary" href="/admin/aktivierungs-rufnummern/neu">Neue Rufnummer</a>
@@ -61,7 +61,6 @@ use App\Support\Html;
                 <tr>
                     <th scope="col">Reihenfolge</th>
                     <th scope="col">Rufnummer</th>
-                    <th scope="col">Gruppe</th>
                     <th scope="col">Status</th>
                     <th scope="col">Aktionen</th>
                 </tr>
@@ -90,10 +89,6 @@ use App\Support\Html;
                             </div>
                         </td>
                         <td><code><?= Html::e((string) $item['phone']) ?></code></td>
-                        <td>
-                            <?= Html::e((string) ($item['group_description'] ?? '')) ?>
-                            <div class="table__hint"><?= Html::e((string) ($item['group_number'] ?? '')) ?></div>
-                        </td>
                         <td>
                             <span class="badge <?= (int) $item['active'] === 1 ? 'badge--ok' : 'badge--muted' ?>">
                                 <?= (int) $item['active'] === 1 ? 'aktiv' : 'inaktiv' ?>

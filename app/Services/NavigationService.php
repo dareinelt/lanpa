@@ -145,9 +145,9 @@ final class NavigationService
 
                 $alarmGroupId = $this->resolveParentId($input['alarm_group_id'] ?? null);
                 if ($alarmGroupId === null) {
-                    $errors['alarm_group_id'] = 'Bitte eine Gruppe auswählen.';
+                    $errors['alarm_group_id'] = 'Bitte eine Gruppe oder Rufnummer auswählen.';
                 } elseif ($this->alarmGroups !== null && $this->alarmGroups->find($alarmGroupId) === null) {
-                    $errors['alarm_group_id'] = 'Die gewählte Gruppe ist ungültig.';
+                    $errors['alarm_group_id'] = 'Das gewählte Ziel ist ungültig.';
                 }
             } elseif ($type === 'page') {
                 $content = Sanitizer::html((string) ($input['content'] ?? ''));

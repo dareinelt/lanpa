@@ -193,7 +193,8 @@
                 id: trigger.getAttribute('data-alarm-id'),
                 title: trigger.getAttribute('data-alarm-title') || '',
                 text: trigger.getAttribute('data-alarm-text') || '',
-                group: trigger.getAttribute('data-alarm-group') || ''
+                group: trigger.getAttribute('data-alarm-group') || '',
+                mode: trigger.getAttribute('data-alarm-mode') || 'group'
             };
 
             resetOverlay();
@@ -206,7 +207,7 @@
                 lines.push('Text: ' + current.text);
             }
             if (current.group) {
-                lines.push('Gruppe: ' + current.group);
+                lines.push((current.mode === 'number' ? 'Rufnummer' : 'Ziel') + ': ' + current.group);
             }
             if (details) {
                 details.textContent = lines.join('\n');

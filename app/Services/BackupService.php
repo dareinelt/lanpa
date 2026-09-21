@@ -55,7 +55,7 @@ final class BackupService
     private function exportSettings(): array
     {
         $settings = $this->settingsRepository->all();
-        unset($settings['alarm_password'], $settings['sms_code_secret']);
+        unset($settings['alarm_password'], $settings['alarm_single_password'], $settings['sms_code_secret']);
 
         return $settings;
     }

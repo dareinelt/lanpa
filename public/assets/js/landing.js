@@ -71,9 +71,51 @@
         var details = overlay.querySelector('[data-alarm-details]');
         var cancelButton = overlay.querySelector('[data-alarm-cancel]');
         var confirmButton = overlay.querySelector('[data-alarm-confirm]');
+        var freetextContainer = overlay.querySelector('.alarm-freetext');
+        var freetextToggle = overlay.querySelector('[data-alarm-freetext-toggle]');
+        var freetextBody = overlay.querySelector('[data-alarm-freetext-body]');
+        var freetextInput = overlay.querySelector('[data-alarm-freetext]');
+        var freetextCounter = overlay.querySelector('[data-alarm-freetext-counter]');
+        var previewContainer = overlay.querySelector('.alarm-preview');
+        var previewMessage = overlay.querySelector('[data-alarm-preview-message]');
         var current = null;
         var done = false;
         var lastTrigger = null;
+
+        var MAX_TOTAL = 255;
+
+        function combinedMessage() {
+            var base = current ? (current.text || '') : '';
+            var extra = freetextInput ? freetextInput.value : '';
+            if (extra === '') {
+                return base;
+            }
+            return base === '' ? extra : base + ' ' + extra;
+        }
+
+        function updateFreetext() {
+            if (!freetextInput || !freetextCounter || !previewMessage) {
+                return;
+            }
+
+            var base = current ? (current.text || '') : '';
+            var baseLen = base.length;
+            // Der Freitext darf zusammen mit dem Leerzeichen und dem Vorlagentext
+            // insgesamt 255 Zeichen nicht überschreiten.
+            var maxExtra = Math.max(0, MAX_TOTAL - baseLen - (baseLen > 0 ? 1 : 0));
+            freetextInput.maxLength = maxExtra;
+
+            var combined = combinedMessage();
+            var remaining = Math.max(0, MAX_TOTAL - combined.length);
+            freetextCounter.textContent = 'Noch ' + remaining + ' Zeichen';
+            if (remaining === 0) {
+                freetextCounter.classList.add('is-full');
+            } else {
+                freetextCounter.classList.remove('is-full');
+            }
+
+            previewMessage.textContent = combined === '' ? '—' : combined;
+        }
 
         function resetOverlay() {
             done = false;
@@ -85,11 +127,28 @@
             }
             if (cancelButton) {
                 cancelButton.hidden = false;
+                cancelButton.disabled = false;
             }
             if (confirmButton) {
                 confirmButton.textContent = 'Alarmierung auslösen';
                 confirmButton.disabled = false;
             }
+            if (freetextContainer) {
+                freetextContainer.hidden = false;
+            }
+            if (previewContainer) {
+                previewContainer.hidden = false;
+            }
+            if (freetextToggle) {
+                freetextToggle.checked = false;
+            }
+            if (freetextInput) {
+                freetextInput.value = '';
+            }
+            if (freetextBody) {
+                freetextBody.hidden = true;
+            }
+            updateFreetext();
         }
 
         function close() {
@@ -116,6 +175,12 @@
             if (confirmButton) {
                 confirmButton.textContent = 'OK';
                 confirmButton.disabled = false;
+            }
+            if (freetextContainer) {
+                freetextContainer.hidden = true;
+            }
+            if (previewContainer) {
+                previewContainer.hidden = true;
             }
         }
 
@@ -171,6 +236,10 @@
             body.append('_token', token);
             body.append('navigation_id', current.id);
 
+            if (freetextToggle && freetextToggle.checked && freetextInput && freetextInput.value.trim() !== '') {
+                body.append('additional_text', freetextInput.value);
+            }
+
             fetch('/api/alarm', {
                 method: 'POST',
                 body: body
@@ -202,6 +271,20 @@
 
         if (cancelButton) {
             cancelButton.addEventListener('click', close);
+        }
+
+        if (freetextToggle && freetextBody) {
+            freetextToggle.addEventListener('change', function () {
+                freetextBody.hidden = !freetextToggle.checked;
+                updateFreetext();
+                if (freetextToggle.checked && freetextInput) {
+                    freetextInput.focus();
+                }
+            });
+        }
+
+        if (freetextInput) {
+            freetextInput.addEventListener('input', updateFreetext);
         }
 
         if (confirmButton) {

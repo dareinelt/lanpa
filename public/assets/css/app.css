@@ -281,7 +281,7 @@ code {
     position: absolute;
     inset: 0;
     background: var(--tile-bg, var(--color-surface));
-    opacity: calc(var(--tile-bg-opacity, var(--nav-opacity, 97%)) / 100);
+    opacity: var(--tile-bg-opacity, var(--nav-opacity, 97%));
     z-index: -1;
     transition: opacity var(--transition);
 }

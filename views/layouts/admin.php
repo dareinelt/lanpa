@@ -28,6 +28,7 @@ $navItems = $isAdmin ? [
     'design' => ['/admin/design', 'Design'],
     'ldap' => ['/admin/ad', 'Active Directory'],
     'alarm' => ['/admin/alarmierung', 'Alarmierung'],
+    'snmp' => ['/admin/snmp', 'SNMP'],
     'statistics' => ['/admin/statistik', 'Statistik'],
     'users' => ['/admin/benutzer', 'Benutzer'],
     'backup' => ['/admin/sicherung', 'Sicherung'],

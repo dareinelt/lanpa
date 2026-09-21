@@ -22,6 +22,7 @@ use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\PhonebookAdminController;
+use App\Controllers\Admin\SnmpController;
 use App\Controllers\Admin\StatisticsController;
 use App\Controllers\BackgroundImageController;
 use App\Controllers\AlarmTriggerController;
@@ -146,6 +147,9 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/ad', [LdapController::class, 'index']);
         $router->post('/admin/ad', [LdapController::class, 'update']);
         $router->post('/admin/ad/sync', [LdapController::class, 'sync']);
+
+        $router->get('/admin/snmp', [SnmpController::class, 'index']);
+        $router->post('/admin/snmp', [SnmpController::class, 'update']);
 
         $router->get('/admin/alarmierung', [AlarmController::class, 'index']);
         $router->post('/admin/alarmierung', [AlarmController::class, 'update']);

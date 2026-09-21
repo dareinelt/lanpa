@@ -71,6 +71,9 @@ final class SettingsService
             'alarm_host' => (string) Config::get('alarm.host', ''),
             'alarm_username' => (string) Config::get('alarm.username', ''),
             'alarm_password' => '',
+            'snmp_community' => (string) Config::get('snmp.community', 'public'),
+            'snmp_sys_location' => (string) Config::get('snmp.sys_location', 'Intranet'),
+            'snmp_sys_contact' => (string) Config::get('snmp.sys_contact', 'admin@example.internal'),
         ];
     }
 
@@ -279,5 +282,20 @@ final class SettingsService
         $config = $this->alarmConfig();
 
         return $config['host'] !== '' && $config['username'] !== '' && $config['password'] !== '';
+    }
+
+    /**
+     * Effektive SNMP-Konfiguration (net-snmp/snmpd). Der am Host
+     * veroeffentlichte UDP-Port bleibt ueber die Umgebung konfiguriert.
+     *
+     * @return array{community:string,sys_location:string,sys_contact:string}
+     */
+    public function snmpConfig(): array
+    {
+        return [
+            'community' => $this->get('snmp_community'),
+            'sys_location' => $this->get('snmp_sys_location'),
+            'sys_contact' => $this->get('snmp_sys_contact'),
+        ];
     }
 }

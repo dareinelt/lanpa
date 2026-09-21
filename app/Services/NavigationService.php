@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\ValidationException;
+use App\Repositories\AlarmGroupRepository;
 use App\Repositories\NavigationRepository;
 use App\Support\Sanitizer;
 use App\Support\Validator;
 
 final class NavigationService
 {
-    public function __construct(private readonly NavigationRepository $repository)
-    {
+    public function __construct(
+        private readonly NavigationRepository $repository,
+        private readonly ?AlarmGroupRepository $alarmGroups = null
+    ) {
     }
 
     /**
@@ -117,6 +120,8 @@ final class NavigationService
         $url = '';
         $content = null;
         $parentId = null;
+        $alarmText = null;
+        $alarmGroupId = null;
 
         if ($type === 'external' || $type === 'internal') {
             $url = trim((string) ($input['url'] ?? ''));
@@ -124,6 +129,18 @@ final class NavigationService
                 $errors['url'] = 'Bitte eine gültige http(s)-URL oder einen internen Pfad (/telefonliste) angeben.';
             } elseif ($type === 'internal' && !str_starts_with($url, '/')) {
                 $errors['url'] = 'Interne Elemente benötigen einen anwendungsinternen Pfad, z. B. /telefonliste.';
+            }
+        } elseif ($type === 'alarm') {
+            $alarmText = Validator::cleanText((string) ($input['alarm_text'] ?? ''), 255);
+            if (!Validator::isNotEmpty($alarmText, 255)) {
+                $errors['alarm_text'] = 'Bitte einen Alarmierungstext angeben (max. 255 Zeichen).';
+            }
+
+            $alarmGroupId = $this->resolveParentId($input['alarm_group_id'] ?? null);
+            if ($alarmGroupId === null) {
+                $errors['alarm_group_id'] = 'Bitte eine Gruppe auswählen.';
+            } elseif ($this->alarmGroups !== null && $this->alarmGroups->find($alarmGroupId) === null) {
+                $errors['alarm_group_id'] = 'Die gewählte Gruppe ist ungültig.';
             }
         } else {
             // subpage / page: verschachtelbar; page enthält formatierten Rich-Text.
@@ -175,6 +192,8 @@ final class NavigationService
             'type' => $type,
             'parent_id' => $parentId,
             'content' => $content,
+            'alarm_text' => $alarmText,
+            'alarm_group_id' => $alarmGroupId,
             'icon' => $icon === '' ? null : $icon,
             'background_color' => $backgroundColor === '' ? null : $backgroundColor,
             'background_opacity' => $backgroundOpacity === null || $backgroundOpacity === '' ? null : (int) $backgroundOpacity,

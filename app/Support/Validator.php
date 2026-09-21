@@ -83,7 +83,7 @@ final class Validator
 
     public static function isNavigationType(string $type): bool
     {
-        return in_array($type, ['external', 'internal', 'subpage', 'page'], true);
+        return in_array($type, ['external', 'internal', 'subpage', 'page', 'alarm'], true);
     }
 
     public static function isDescriptionMode(string $mode): bool
@@ -107,6 +107,38 @@ final class Validator
         $phone = trim($phone);
 
         return $phone !== '' && preg_match('/^[0-9+*#\/\-\s()]{2,64}$/', $phone) === 1;
+    }
+
+    /**
+     * Gruppennummer eines SMS-Gateways (z. B. "10" oder "feuerwehr").
+     */
+    public static function isGroupNumber(string $value): bool
+    {
+        $value = trim($value);
+
+        return $value !== '' && preg_match('/^[A-Za-z0-9+*#.\-]{1,64}$/', $value) === 1;
+    }
+
+    /**
+     * Hostname oder IP mit optionalem Port fuer ein SMS-Gateway.
+     */
+    public static function isGatewayHost(string $host): bool
+    {
+        $host = trim($host);
+        if ($host === '' || mb_strlen($host) > 253) {
+            return false;
+        }
+
+        if (preg_match('/^(.+):(\d{1,5})$/', $host, $matches) === 1) {
+            $port = (int) $matches[2];
+            if ($port < 1 || $port > 65535) {
+                return false;
+            }
+
+            return self::isHostname($matches[1]);
+        }
+
+        return self::isHostname($host);
     }
 
     /**

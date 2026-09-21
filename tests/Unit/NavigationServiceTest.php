@@ -25,6 +25,20 @@ function navigationTestPdo(): PDO
             short_description VARCHAR(255) NOT NULL DEFAULT \'\',
             description TEXT NOT NULL DEFAULT \'\',
             content TEXT NULL,
+            alarm_text VARCHAR(255) NULL,
+            alarm_group_id INTEGER NULL,
+            sort_order INTEGER NOT NULL DEFAULT 1,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )'
+    );
+
+    $pdo->exec(
+        'CREATE TABLE alarm_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_number VARCHAR(64) NOT NULL,
+            description VARCHAR(255) NOT NULL,
             sort_order INTEGER NOT NULL DEFAULT 1,
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

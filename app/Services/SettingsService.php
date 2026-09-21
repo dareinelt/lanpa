@@ -66,6 +66,9 @@ final class SettingsService
             'ldap_attr_department' => (string) Config::get('ldap.attributes.department', 'department'),
             'ldap_attr_modified' => (string) Config::get('ldap.attributes.modified', 'whenChanged'),
             'ldap_attr_unique_id' => (string) Config::get('ldap.attributes.unique_id', 'objectGUID'),
+            'alarm_host' => (string) Config::get('alarm.host', ''),
+            'alarm_username' => (string) Config::get('alarm.username', ''),
+            'alarm_password' => '',
         ];
     }
 
@@ -224,5 +227,31 @@ final class SettingsService
         $config = $this->ldapConfig();
 
         return $config['host'] !== '' && $config['base_dn'] !== '';
+    }
+
+    /**
+     * Effektive SMS-Gateway-Konfiguration. Das Passwort stammt bevorzugt aus der
+     * Umgebung (ALARM_PASSWORD / ALARM_PASSWORD_FILE) und wird nie zurückgegeben
+     * oder gerendert. Andernfalls wird der in der Datenbank hinterlegte Wert
+     * verwendet (ebenfalls nie exponiert).
+     *
+     * @return array{host:string,username:string,password:string}
+     */
+    public function alarmConfig(): array
+    {
+        $envPassword = (string) Config::get('alarm.password', '');
+
+        return [
+            'host' => $this->get('alarm_host'),
+            'username' => $this->get('alarm_username'),
+            'password' => $envPassword !== '' ? $envPassword : $this->get('alarm_password'),
+        ];
+    }
+
+    public function isAlarmConfigured(): bool
+    {
+        $config = $this->alarmConfig();
+
+        return $config['host'] !== '' && $config['username'] !== '' && $config['password'] !== '';
     }
 }

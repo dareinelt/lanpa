@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Repositories\AdminUserRepository;
+use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AnnouncementRepository;
 use App\Repositories\EmergencyNumberRepository;
 use App\Repositories\ImportantLinkRepository;
@@ -36,10 +37,25 @@ final class BackupService
         private readonly AnnouncementRepository $announcementRepository,
         private readonly AdminUserRepository $adminUserRepository,
         private readonly PhonebookRepository $phonebookRepository,
+        private readonly AlarmGroupRepository $alarmGroupRepository,
         private readonly LogoService $logo,
         private readonly BackgroundImageService $backgroundImage,
         private readonly FaviconService $favicons
     ) {
+    }
+
+    /**
+     * Exportiert die Einstellungen ohne das SMS-Gateway-Passwort. Das Passwort
+     * ist ein Secret und darf weder angezeigt noch in einer Sicherung landen.
+     *
+     * @return array<string,string>
+     */
+    private function exportSettings(): array
+    {
+        $settings = $this->settingsRepository->all();
+        unset($settings['alarm_password']);
+
+        return $settings;
     }
 
     /**
@@ -52,13 +68,14 @@ final class BackupService
             'app' => self::APP,
             'exported_at' => gmdate('Y-m-d\TH:i:s\Z'),
             'data' => [
-                'settings' => $this->settingsRepository->all(),
+                'settings' => $this->exportSettings(),
                 'navigation_items' => $this->navigationRepository->all(),
                 'important_links' => $this->importantLinkRepository->all(),
                 'emergency_numbers' => $this->emergencyNumberRepository->all(),
                 'announcements' => $this->announcementRepository->all(),
                 'admin_users' => $this->adminUserRepository->allWithPasswordHash(),
                 'phonebook' => $this->phonebookRepository->all(),
+                'alarm_groups' => $this->alarmGroupRepository->all(),
             ],
             'files' => [],
         ];

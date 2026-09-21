@@ -10,6 +10,7 @@
     var urlField = form.querySelector('[data-editor-url]');
     var parentField = form.querySelector('[data-editor-parent]');
     var contentField = form.querySelector('[data-editor-content]');
+    var alarmFields = form.querySelectorAll('[data-editor-alarm]');
 
     function syncFields() {
         var type = typeSelect ? typeSelect.value : 'external';
@@ -28,6 +29,10 @@
 
         if (contentField) {
             contentField.hidden = type !== 'page';
+        }
+
+        for (var i = 0; i < alarmFields.length; i++) {
+            alarmFields[i].hidden = type !== 'alarm';
         }
     }
 

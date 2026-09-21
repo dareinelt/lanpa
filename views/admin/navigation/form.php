@@ -8,12 +8,13 @@ use App\Support\Html;
 /** @var array<string,mixed> $item */
 /** @var array<string,string> $errors */
 /** @var list<array<string,mixed>> $subpages */
+/** @var list<array<string,mixed>> $alarmGroups */
 $isNew = ($item['id'] ?? null) === null;
 $action = $isNew ? '/admin/navigation/neu' : '/admin/navigation/bearbeiten';
 $type = (string) ($item['type'] ?? 'external');
 $icons = [
     '', 'document', 'app', 'phone', 'alert', 'tools', 'robot', 'link',
-    'clock', 'helmet', 'wrench', 'snail', 'beacon', 'ekg', 'warning',
+    'clock', 'helmet', 'wrench', 'snail', 'beacon', 'ekg', 'warning', 'siren',
 ];
 ?>
 <form method="post" action="<?= Html::e($action) ?>" class="form form--wide" data-editor-form>
@@ -40,6 +41,34 @@ $icons = [
         <p class="field__hint" id="url-hint">Externe Ziele als vollständige https-URL, interne Ziele als Pfad (z. B. /telefonliste).</p>
         <?php if (isset($errors['url'])) { ?>
             <p class="field__error" id="url-error"><?= Html::e($errors['url']) ?></p>
+        <?php } ?>
+    </div>
+
+    <div class="field" data-editor-alarm>
+        <label for="alarm_text">Freitext <span aria-hidden="true">*</span></label>
+        <textarea id="alarm_text" name="alarm_text" rows="4" maxlength="255"
+                  <?= isset($errors['alarm_text']) ? 'aria-invalid="true" aria-describedby="alarm_text-error"' : '' ?>><?= Html::e((string) ($item['alarm_text'] ?? '')) ?></textarea>
+        <p class="field__hint">Wird als „text“-Parameter an das SMS-Gateway übergeben.</p>
+        <?php if (isset($errors['alarm_text'])) { ?>
+            <p class="field__error" id="alarm_text-error"><?= Html::e($errors['alarm_text']) ?></p>
+        <?php } ?>
+    </div>
+
+    <div class="field" data-editor-alarm>
+        <label for="alarm_group_id">Gruppe <span aria-hidden="true">*</span></label>
+        <select id="alarm_group_id" name="alarm_group_id"
+                <?= isset($errors['alarm_group_id']) ? 'aria-invalid="true" aria-describedby="alarm_group_id-error"' : '' ?>>
+            <option value="0">— Gruppe wählen —</option>
+            <?php foreach ($alarmGroups as $group) { ?>
+                <option value="<?= (int) $group['id'] ?>"
+                    <?= (int) ($item['alarm_group_id'] ?? 0) === (int) $group['id'] ? 'selected' : '' ?>>
+                    <?= Html::e((string) $group['group_number'] . ' — ' . (string) $group['description']) ?>
+                </option>
+            <?php } ?>
+        </select>
+        <p class="field__hint">Gruppennummer mit freier Beschreibung aus den Alarmierungseinstellungen.</p>
+        <?php if (isset($errors['alarm_group_id'])) { ?>
+            <p class="field__error" id="alarm_group_id-error"><?= Html::e($errors['alarm_group_id']) ?></p>
         <?php } ?>
     </div>
 
@@ -99,6 +128,7 @@ $icons = [
                 <option value="internal" <?= $type === 'internal' ? 'selected' : '' ?>>intern (in der Anwendung)</option>
                 <option value="subpage" <?= $type === 'subpage' ? 'selected' : '' ?>>Unterseite (weitere Kacheln)</option>
                 <option value="page" <?= $type === 'page' ? 'selected' : '' ?>>Textseite (formatierter Inhalt)</option>
+                <option value="alarm" <?= $type === 'alarm' ? 'selected' : '' ?>>Alarmierung</option>
             </select>
         </div>
 

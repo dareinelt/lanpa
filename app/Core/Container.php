@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Core;
 
 use App\Repositories\AdminUserRepository;
+use App\Repositories\AlarmGroupRepository;
+use App\Repositories\AlarmLogRepository;
 use App\Repositories\AnnouncementRepository;
 use App\Repositories\ClickRepository;
 use App\Repositories\EmergencyNumberRepository;
@@ -16,6 +18,8 @@ use App\Repositories\SyncLogRepository;
 use App\Security\Auth;
 use App\Services\AdSyncService;
 use App\Services\AdminUserService;
+use App\Services\AlarmGroupService;
+use App\Services\AlarmService;
 use App\Services\AnnouncementService;
 use App\Services\BackupService;
 use App\Services\EmergencyNumberService;
@@ -118,6 +122,42 @@ final class Container
         );
     }
 
+    public static function alarmGroupRepository(): AlarmGroupRepository
+    {
+        return self::make(
+            AlarmGroupRepository::class,
+            static fn (): AlarmGroupRepository => new AlarmGroupRepository()
+        );
+    }
+
+    public static function alarmLogRepository(): AlarmLogRepository
+    {
+        return self::make(
+            AlarmLogRepository::class,
+            static fn (): AlarmLogRepository => new AlarmLogRepository()
+        );
+    }
+
+    public static function alarmGroups(): AlarmGroupService
+    {
+        return self::make(
+            AlarmGroupService::class,
+            static fn (): AlarmGroupService => new AlarmGroupService(self::alarmGroupRepository())
+        );
+    }
+
+    public static function alarm(): AlarmService
+    {
+        return self::make(
+            AlarmService::class,
+            static fn (): AlarmService => new AlarmService(
+                self::navigationRepository(),
+                self::alarmLogRepository(),
+                self::settings()
+            )
+        );
+    }
+
     public static function announcements(): AnnouncementService
     {
         return self::make(
@@ -138,7 +178,10 @@ final class Container
 
     public static function navigation(): NavigationService
     {
-        return self::make(NavigationService::class, static fn (): NavigationService => new NavigationService(self::navigationRepository()));
+        return self::make(
+            NavigationService::class,
+            static fn (): NavigationService => new NavigationService(self::navigationRepository(), self::alarmGroupRepository())
+        );
     }
 
     public static function phonebook(): PhonebookService
@@ -244,6 +287,7 @@ final class Container
                 self::announcementRepository(),
                 self::adminUserRepository(),
                 self::phonebookRepository(),
+                self::alarmGroupRepository(),
                 self::logo(),
                 self::backgroundImage(),
                 self::favicons()
@@ -264,6 +308,7 @@ final class Container
                 self::announcementRepository(),
                 self::adminUserRepository(),
                 self::phonebookRepository(),
+                self::alarmGroupRepository(),
                 self::logo(),
                 self::backgroundImage(),
                 self::favicons()

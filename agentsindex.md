@@ -170,7 +170,7 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 
 - Basisklasse `Controller` stellt `view()`, `requireValidCsrf()`, `redirect()`, `assetVersion()` bereit.
 - **Öffentlich:** `LandingController`, `PageController` (Unterseiten/Textseiten), `PhonebookController`, `ClickController`, `LogoController`, `BackgroundImageController`, `ImportantLinkIconController`, `HealthController`.
-- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `StatisticsController`, `AdminUserController`, `ImportExportController`, plus Basis `AdminController`.
+- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `SnmpController`, `StatisticsController`, `AdminUserController`, `ImportExportController`, plus Basis `AdminController`.
 
 ### Services (`app/Services/`) – Geschäftslogik
 
@@ -237,7 +237,8 @@ Definiert zentral in `public/index.php`.
 ### Admin (Middleware `$requireAdmin`, nur Rolle `admin`)
 
 Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `mitteilungen`,
-`beschreibungen`, `design`, `ad`, `statistik` (+ `admin/api/statistik`), `benutzer`, `sicherung`.
+`beschreibungen`, `design`, `ad`, `alarmierung`, `snmp`, `statistik`
+(+ `admin/api/statistik`), `benutzer`, `sicherung`.
 
 **Middleware-Verhalten:** `$requireAuth` → Redirect auf `/admin/login` (bzw. JSON 401 bei `/admin/api/*`);
 `$requireAdmin` → HTTP 403 (bzw. JSON 403 bei `/admin/api/*`).
@@ -271,7 +272,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 **Vorrangregel: Umgebungsvariablen liefern die Grundeinstellung, die Tabelle `settings` überschreibt sie** (außer dem LDAP-Bind-Passwort, das nur aus ENV/Docker-Secret kommt).
 
-- `config/app.php`, `config/database.php`, `config/ldap.php` lesen die Werte über `Env::get()`.
+- `config/app.php`, `config/database.php`, `config/ldap.php`, `config/alarm.php`, `config/snmp.php` lesen die Werte über `Env::get()`.
 - Jede Variable unterstützt die Datei-Variante `<NAME>_FILE` für Docker-Secrets.
 - Vollständige Liste der Variablen: siehe `README.md` (Abschnitt „Konfiguration“) und `.env.example`.
 

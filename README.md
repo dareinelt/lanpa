@@ -163,6 +163,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`), Handbuch-Links ein-/ausblenden |
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
 | Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Intervall, manueller Testlauf |
+| SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
 | Telefonliste | Alle Einträge auflisten und je Eintrag ein-/ausblenden (Standard für neu synchronisierte Einträge: eingeblendet); Filter nach „Hat E-Mail-Adresse“, „Ist aktiv“, „Hat Telefonnummer“ und „Nur eingeblendete“ |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |
 | Benutzer | Benutzerverwaltung: Konten anlegen/bearbeiten/deaktivieren/löschen, Rollenvergabe (nur für Administratoren) |
@@ -201,6 +202,13 @@ Synchronisations-Workflows direkt aus der Tabelle `sync_log`.
 
 Vor dem Produktivbetrieb `SNMP_COMMUNITY` in der `.env` auf einen eigenen,
 starken Community-String setzen.
+
+Community-String, `sysLocation` und `sysContact` lassen sich auch im
+Administrationsbereich unter **SNMP** pflegen (Tabelle `settings`, überschreibt
+die Umgebungsvariablen `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION` und
+`SNMP_SYS_CONTACT`). Änderungen werden nach einem Neustart des `snmp`-Containers
+wirksam. Der am Host veröffentlichte UDP-Port bleibt ausschließlich über
+`SNMP_PORT` konfiguriert (Docker-Port-Mapping).
 
 Die Werte liegen in der NET-SNMP-Tabelle `UCD-SNMP-MIB::extTable`
 (Basis `.1.3.6.1.4.1.2021.8.1`). Jeder Dienst liefert:

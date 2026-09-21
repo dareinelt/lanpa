@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Repositories\ActivationNumberRepository;
 use App\Repositories\AdminUserRepository;
 use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AnnouncementRepository;
@@ -38,6 +39,7 @@ final class BackupService
         private readonly AdminUserRepository $adminUserRepository,
         private readonly PhonebookRepository $phonebookRepository,
         private readonly AlarmGroupRepository $alarmGroupRepository,
+        private readonly ActivationNumberRepository $activationNumberRepository,
         private readonly LogoService $logo,
         private readonly BackgroundImageService $backgroundImage,
         private readonly FaviconService $favicons
@@ -53,7 +55,7 @@ final class BackupService
     private function exportSettings(): array
     {
         $settings = $this->settingsRepository->all();
-        unset($settings['alarm_password']);
+        unset($settings['alarm_password'], $settings['sms_code_secret']);
 
         return $settings;
     }
@@ -76,6 +78,7 @@ final class BackupService
                 'admin_users' => $this->adminUserRepository->allWithPasswordHash(),
                 'phonebook' => $this->phonebookRepository->all(),
                 'alarm_groups' => $this->alarmGroupRepository->all(),
+                'activation_numbers' => $this->activationNumberRepository->all(),
             ],
             'files' => [],
         ];

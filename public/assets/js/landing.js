@@ -298,9 +298,285 @@
         }
     }
 
+    function initSmsCode() {
+        var overlay = document.querySelector('[data-sms-overlay]');
+        if (!overlay) {
+            return;
+        }
+
+        var titleText = overlay.querySelector('[data-sms-title]');
+        var phoneStage = overlay.querySelector('[data-sms-stage="phone"]');
+        var codeStage = overlay.querySelector('[data-sms-stage="code"]');
+        var phoneInput = overlay.querySelector('#sms-phone');
+        var codeInput = overlay.querySelector('#sms-code');
+        var phoneError = phoneStage ? phoneStage.querySelector('[data-sms-error]') : null;
+        var codeError = codeStage ? codeStage.querySelector('[data-sms-error]') : null;
+        var countdown = overlay.querySelector('[data-sms-countdown]');
+        var requestButton = overlay.querySelector('[data-sms-request]');
+        var verifyButton = overlay.querySelector('[data-sms-verify]');
+        var cancelButton = overlay.querySelector('[data-sms-cancel]');
+        var backButton = overlay.querySelector('[data-sms-back]');
+
+        var current = null;
+        var countdownTimer = null;
+        var lastTrigger = null;
+
+        function csrfToken() {
+            var meta = document.querySelector('meta[name="csrf-token"]');
+            return meta ? meta.getAttribute('content') : '';
+        }
+
+        function showError(errorElement, message) {
+            if (!errorElement) {
+                return;
+            }
+            if (message) {
+                errorElement.textContent = message;
+                errorElement.hidden = false;
+            } else {
+                errorElement.textContent = '';
+                errorElement.hidden = true;
+            }
+        }
+
+        function setStage(stage) {
+            if (phoneStage) {
+                phoneStage.hidden = stage !== 'phone';
+            }
+            if (codeStage) {
+                codeStage.hidden = stage !== 'code';
+            }
+        }
+
+        function stopCountdown() {
+            if (countdownTimer !== null) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+        }
+
+        function startCountdown(seconds) {
+            stopCountdown();
+            var remaining = seconds;
+            if (countdown) {
+                countdown.textContent = String(remaining);
+            }
+            countdownTimer = setInterval(function () {
+                remaining -= 1;
+                if (countdown) {
+                    countdown.textContent = String(remaining);
+                }
+                if (remaining <= 0) {
+                    stopCountdown();
+                    showError(codeError, 'Der Code ist abgelaufen. Bitte fordern Sie einen neuen Code an.');
+                    if (verifyButton) {
+                        verifyButton.disabled = true;
+                    }
+                }
+            }, 1000);
+        }
+
+        function reset() {
+            stopCountdown();
+            if (phoneInput) {
+                phoneInput.value = '';
+            }
+            if (codeInput) {
+                codeInput.value = '';
+            }
+            showError(phoneError, '');
+            showError(codeError, '');
+            if (requestButton) {
+                requestButton.disabled = false;
+            }
+            if (verifyButton) {
+                verifyButton.disabled = false;
+            }
+            setStage('phone');
+        }
+
+        function close() {
+            stopCountdown();
+            overlay.hidden = true;
+            document.body.classList.remove('has-announcement-overlay');
+            current = null;
+            if (lastTrigger) {
+                lastTrigger.focus();
+                lastTrigger = null;
+            }
+        }
+
+        function open(trigger) {
+            current = {
+                id: trigger.getAttribute('data-protected-id'),
+                href: trigger.getAttribute('data-nav-href') || '',
+                external: trigger.getAttribute('data-nav-external') === '1',
+                title: trigger.getAttribute('data-nav-title') || ''
+            };
+
+            reset();
+            if (titleText) {
+                titleText.textContent = current.title ? 'Geschützter Zugriff: ' + current.title : 'Geschützter Zugriff';
+            }
+
+            lastTrigger = trigger;
+            overlay.hidden = false;
+            document.body.classList.add('has-announcement-overlay');
+            if (phoneInput) {
+                phoneInput.focus();
+            }
+        }
+
+        function navigate() {
+            if (!current) {
+                return;
+            }
+            if (current.external) {
+                window.open(current.href, '_blank', 'noopener,noreferrer');
+            } else {
+                window.location.href = current.href;
+            }
+            close();
+        }
+
+        function sendCode(event) {
+            event.preventDefault();
+            if (!current) {
+                return;
+            }
+
+            var phone = phoneInput ? phoneInput.value.trim() : '';
+            if (phone === '') {
+                showError(phoneError, 'Bitte eine Rufnummer angeben.');
+                return;
+            }
+            showError(phoneError, '');
+
+            if (requestButton) {
+                requestButton.disabled = true;
+            }
+
+            var body = new FormData();
+            body.append('_token', csrfToken());
+            body.append('navigation_id', current.id);
+            body.append('phone', phone);
+
+            fetch('/api/sms-code/send', { method: 'POST', body: body })
+                .then(function (response) {
+                    return response.json().catch(function () { return {}; });
+                })
+                .then(function (data) {
+                    if (requestButton) {
+                        requestButton.disabled = false;
+                    }
+
+                    if (data && data.status === 'success') {
+                        current.phone = phone;
+                        if (codeInput) {
+                            codeInput.value = '';
+                        }
+                        showError(codeError, '');
+                        setStage('code');
+                        if (codeInput) {
+                            codeInput.focus();
+                        }
+                        var timeout = parseInt(data.timeout, 10);
+                        startCountdown(isNaN(timeout) ? 120 : timeout);
+                    } else {
+                        // Der Server gibt bei nicht hinterlegten Rufnummern
+                        // bewusst KEINEN Hinweis aus; nur echte Fehler landen hier.
+                        showError(phoneError, (data && data.message) || 'Der Code konnte nicht angefordert werden.');
+                    }
+                })
+                .catch(function () {
+                    if (requestButton) {
+                        requestButton.disabled = false;
+                    }
+                    showError(phoneError, 'Der Code konnte nicht angefordert werden.');
+                });
+        }
+
+        function verifyCode(event) {
+            event.preventDefault();
+            if (!current) {
+                return;
+            }
+
+            var code = codeInput ? codeInput.value.trim() : '';
+            if (code === '') {
+                showError(codeError, 'Bitte den Code eingeben.');
+                return;
+            }
+            showError(codeError, '');
+
+            if (verifyButton) {
+                verifyButton.disabled = true;
+            }
+
+            var body = new FormData();
+            body.append('_token', csrfToken());
+            body.append('navigation_id', current.id);
+            body.append('phone', current.phone || (phoneInput ? phoneInput.value : ''));
+            body.append('code', code);
+
+            fetch('/api/sms-code/verify', { method: 'POST', body: body })
+                .then(function (response) {
+                    return response.json().catch(function () { return {}; });
+                })
+                .then(function (data) {
+                    if (data && data.status === 'success') {
+                        navigate();
+                    } else {
+                        if (verifyButton) {
+                            verifyButton.disabled = false;
+                        }
+                        showError(codeError, (data && data.message) || 'Der Code ist ungültig.');
+                    }
+                })
+                .catch(function () {
+                    if (verifyButton) {
+                        verifyButton.disabled = false;
+                    }
+                    showError(codeError, 'Die Prüfung konnte nicht durchgeführt werden.');
+                });
+        }
+
+        document.addEventListener('click', function (event) {
+            var trigger = event.target.closest('[data-protected-id]');
+            if (trigger) {
+                event.preventDefault();
+                open(trigger);
+            }
+        });
+
+        if (phoneStage) {
+            phoneStage.addEventListener('submit', sendCode);
+        }
+        if (codeStage) {
+            codeStage.addEventListener('submit', verifyCode);
+        }
+        if (cancelButton) {
+            cancelButton.addEventListener('click', close);
+        }
+        if (backButton) {
+            backButton.addEventListener('click', function () {
+                stopCountdown();
+                showError(codeError, '');
+                if (verifyButton) {
+                    verifyButton.disabled = false;
+                }
+                setStage('phone');
+                if (phoneInput) {
+                    phoneInput.focus();
+                }
+            });
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         initToggles();
         initTracking();
         initAlarms();
+        initSmsCode();
     });
 })();

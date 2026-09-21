@@ -10,6 +10,7 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 
 use App\Controllers\Admin\AuthController;
 use App\Controllers\Admin\AdminUserController;
+use App\Controllers\Admin\ActivationNumberController;
 use App\Controllers\Admin\AlarmController;
 use App\Controllers\Admin\AlarmGroupController;
 use App\Controllers\Admin\AnnouncementController;
@@ -33,6 +34,7 @@ use App\Controllers\LandingController;
 use App\Controllers\LogoController;
 use App\Controllers\PageController;
 use App\Controllers\PhonebookController;
+use App\Controllers\SmsCodeController;
 use App\Core\Config;
 use App\Core\Container;
 use App\Core\Request;
@@ -57,6 +59,8 @@ $router->get('/telefonliste', [PhonebookController::class, 'index']);
 $router->get('/api/telefonliste', [PhonebookController::class, 'search']);
 $router->post('/api/klick', [ClickController::class, 'store']);
 $router->post('/api/alarm', [AlarmTriggerController::class, 'store']);
+$router->post('/api/sms-code/send', [SmsCodeController::class, 'send']);
+$router->post('/api/sms-code/verify', [SmsCodeController::class, 'verify']);
 $router->get('/logo', [LogoController::class, 'show']);
 $router->get('/hintergrundbild', [BackgroundImageController::class, 'show']);
 $router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
@@ -159,6 +163,16 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/alarmierung/gruppen/bearbeiten', [AlarmGroupController::class, 'update']);
         $router->post('/admin/alarmierung/gruppen/loeschen', [AlarmGroupController::class, 'delete']);
         $router->post('/admin/alarmierung/gruppen/status', [AlarmGroupController::class, 'toggle']);
+
+        $router->get('/admin/aktivierungs-rufnummern', [ActivationNumberController::class, 'index']);
+        $router->post('/admin/aktivierungs-rufnummern', [ActivationNumberController::class, 'update']);
+        $router->get('/admin/aktivierungs-rufnummern/neu', [ActivationNumberController::class, 'create']);
+        $router->post('/admin/aktivierungs-rufnummern/neu', [ActivationNumberController::class, 'store']);
+        $router->get('/admin/aktivierungs-rufnummern/bearbeiten', [ActivationNumberController::class, 'edit']);
+        $router->post('/admin/aktivierungs-rufnummern/bearbeiten', [ActivationNumberController::class, 'updateItem']);
+        $router->post('/admin/aktivierungs-rufnummern/loeschen', [ActivationNumberController::class, 'delete']);
+        $router->post('/admin/aktivierungs-rufnummern/status', [ActivationNumberController::class, 'toggle']);
+        $router->post('/admin/aktivierungs-rufnummern/sortieren', [ActivationNumberController::class, 'move']);
 
         $router->get('/admin/statistik', [StatisticsController::class, 'index']);
         $router->get('/admin/api/statistik', [StatisticsController::class, 'data']);

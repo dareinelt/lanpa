@@ -74,6 +74,9 @@ final class SettingsService
             'snmp_community' => (string) Config::get('snmp.community', 'public'),
             'snmp_sys_location' => (string) Config::get('snmp.sys_location', 'Intranet'),
             'snmp_sys_contact' => (string) Config::get('snmp.sys_contact', 'admin@example.internal'),
+            'sms_code_template' => 'Ihr Zugangscode: {code}',
+            'sms_code_timeout' => '120',
+            'sms_code_secret' => '',
         ];
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Core;
 
+use App\Repositories\ActivationNumberRepository;
 use App\Repositories\AdminUserRepository;
 use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AlarmLogRepository;
@@ -17,6 +18,7 @@ use App\Repositories\SettingsRepository;
 use App\Repositories\SyncLogRepository;
 use App\Security\Auth;
 use App\Services\AdSyncService;
+use App\Services\ActivationNumberService;
 use App\Services\AdminUserService;
 use App\Services\AlarmGroupService;
 use App\Services\AlarmService;
@@ -32,6 +34,7 @@ use App\Services\LogoService;
 use App\Services\NavigationService;
 use App\Services\PhonebookService;
 use App\Services\SettingsService;
+use App\Services\SmsCodeService;
 use App\Services\StatisticsService;
 use App\Services\ThemeService;
 
@@ -127,6 +130,37 @@ final class Container
         return self::make(
             AlarmGroupRepository::class,
             static fn (): AlarmGroupRepository => new AlarmGroupRepository()
+        );
+    }
+
+    public static function activationNumberRepository(): ActivationNumberRepository
+    {
+        return self::make(
+            ActivationNumberRepository::class,
+            static fn (): ActivationNumberRepository => new ActivationNumberRepository()
+        );
+    }
+
+    public static function activationNumbers(): ActivationNumberService
+    {
+        return self::make(
+            ActivationNumberService::class,
+            static fn (): ActivationNumberService => new ActivationNumberService(
+                self::activationNumberRepository(),
+                self::alarmGroupRepository()
+            )
+        );
+    }
+
+    public static function smsCode(): SmsCodeService
+    {
+        return self::make(
+            SmsCodeService::class,
+            static fn (): SmsCodeService => new SmsCodeService(
+                self::navigationRepository(),
+                self::activationNumberRepository(),
+                self::settings()
+            )
         );
     }
 
@@ -288,6 +322,7 @@ final class Container
                 self::adminUserRepository(),
                 self::phonebookRepository(),
                 self::alarmGroupRepository(),
+                self::activationNumberRepository(),
                 self::logo(),
                 self::backgroundImage(),
                 self::favicons()
@@ -309,6 +344,7 @@ final class Container
                 self::adminUserRepository(),
                 self::phonebookRepository(),
                 self::alarmGroupRepository(),
+                self::activationNumberRepository(),
                 self::logo(),
                 self::backgroundImage(),
                 self::favicons()

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\ValidationException;
+use App\Repositories\ActivationNumberRepository;
 use App\Repositories\AdminUserRepository;
 use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AnnouncementRepository;
@@ -40,6 +41,7 @@ final class ImportService
         'admin_users',
         'phonebook',
         'alarm_groups',
+        'activation_numbers',
     ];
 
     /** @var array<int,int> */
@@ -55,6 +57,7 @@ final class ImportService
         private readonly AdminUserRepository $adminUserRepository,
         private readonly PhonebookRepository $phonebookRepository,
         private readonly AlarmGroupRepository $alarmGroupRepository,
+        private readonly ActivationNumberRepository $activationNumberRepository,
         private readonly LogoService $logo,
         private readonly BackgroundImageService $backgroundImage,
         private readonly FaviconService $favicons
@@ -74,6 +77,7 @@ final class ImportService
         try {
             $this->applySettings($data['settings']);
             $this->applyAlarmGroups($data['alarm_groups']);
+            $this->applyActivationNumbers($data['activation_numbers']);
             $this->applyNavigation($data['navigation_items']);
             $this->applyImportantLinks($data['important_links']);
             $this->applyEmergencyNumbers($data['emergency_numbers']);
@@ -261,14 +265,15 @@ final class ImportService
      */
     private function applySettings(array $settings): void
     {
-        // Das SMS-Gateway-Passwort ist ein Secret: Es wird nicht exportiert und
-        // darf durch einen Import nicht überschrieben werden.
+        // Secrets (SMS-Gateway-Passwort und SMS-Code-Schluessel) werden nicht
+        // exportiert und duerfen durch einen Import nicht überschrieben werden.
         $existingPassword = $this->settingsRepository->get('alarm_password');
+        $existingSecret = $this->settingsRepository->get('sms_code_secret');
 
         $this->settingsRepository->deleteAll();
 
         foreach ($settings as $key => $value) {
-            if ($key === 'alarm_password') {
+            if ($key === 'alarm_password' || $key === 'sms_code_secret') {
                 continue;
             }
             $this->settingsRepository->insert((string) $key, (string) $value);
@@ -276,6 +281,10 @@ final class ImportService
 
         if (is_string($existingPassword) && $existingPassword !== '') {
             $this->settingsRepository->insert('alarm_password', $existingPassword);
+        }
+
+        if (is_string($existingSecret) && $existingSecret !== '') {
+            $this->settingsRepository->insert('sms_code_secret', $existingSecret);
         }
     }
 
@@ -292,6 +301,23 @@ final class ImportService
             $this->alarmGroupIdMap[$oldId] = $this->alarmGroupRepository->create([
                 'group_number' => (string) ($row['group_number'] ?? ''),
                 'description' => (string) ($row['description'] ?? ''),
+                'sort_order' => (int) ($row['sort_order'] ?? 1),
+                'active' => !empty($row['active']),
+            ]);
+        }
+    }
+
+    /**
+     * @param list<array<string,mixed>> $rows
+     */
+    private function applyActivationNumbers(array $rows): void
+    {
+        $this->activationNumberRepository->deleteAll();
+
+        foreach ($rows as $row) {
+            $this->activationNumberRepository->create([
+                'phone' => (string) ($row['phone'] ?? ''),
+                'alarm_group_id' => $this->remapAlarmGroupId($row['alarm_group_id'] ?? null),
                 'sort_order' => (int) ($row['sort_order'] ?? 1),
                 'active' => !empty($row['active']),
             ]);
@@ -322,6 +348,7 @@ final class ImportService
                 'content' => $row['content'] ?? null,
                 'alarm_text' => $row['alarm_text'] ?? null,
                 'alarm_group_id' => $this->remapAlarmGroupId($row['alarm_group_id'] ?? null),
+                'protected_access' => !empty($row['protected_access']),
                 'sort_order' => (int) ($row['sort_order'] ?? 1),
                 'active' => !empty($row['active']),
             ]);

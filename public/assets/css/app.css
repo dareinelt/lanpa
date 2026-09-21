@@ -1073,3 +1073,66 @@ code {
         transition-duration: .001ms !important;
     }
 }
+
+/* SMS-Code-Schutz: Overlay fuer geschuetzte Navigationselemente */
+.sms-overlay__box {
+    max-width: 26rem;
+}
+
+.sms-overlay__form {
+    margin-top: 1.25rem;
+}
+
+.sms-overlay__form[hidden] {
+    display: none;
+}
+
+.sms-overlay__form .field {
+    margin-bottom: 1rem;
+}
+
+.sms-overlay__form label {
+    display: block;
+    margin-bottom: .4rem;
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.sms-overlay__form input[type="tel"],
+.sms-overlay__form input[type="text"] {
+    width: 100%;
+    padding: .6rem .75rem;
+    font: inherit;
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+}
+
+.sms-overlay__form input[type="tel"]:focus,
+.sms-overlay__form input[type="text"]:focus {
+    outline: 3px solid var(--color-accent);
+    outline-offset: 0;
+    border-color: transparent;
+}
+
+.sms-overlay__countdown {
+    margin: 0 0 .75rem;
+    font-size: .95rem;
+    color: var(--color-muted);
+}
+
+.sms-overlay__countdown strong {
+    color: var(--color-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.sms-overlay__form .field__hint--error {
+    margin: .4rem 0 0;
+    font-size: .85rem;
+    color: var(--color-accent);
+}
+
+.sms-overlay__form .field__hint--error[hidden] {
+    display: none;
+}

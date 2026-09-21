@@ -19,12 +19,12 @@ final class PhonebookService
     /**
      * @return array{items:list<array<string,mixed>>,total:int,limit:int,offset:int,has_more:bool}
      */
-    public function search(string $term, int $limit = self::DEFAULT_LIMIT, int $offset = 0, bool $includeWithoutPhone = false): array
+    public function search(string $term, int $limit = self::DEFAULT_LIMIT, int $offset = 0, bool $includeWithoutEmail = false): array
     {
         $limit = max(1, min(PhonebookRepository::MAX_LIMIT, $limit));
         $offset = max(0, $offset);
 
-        $result = $this->repository->search($term, $limit, $offset, $includeWithoutPhone);
+        $result = $this->repository->search($term, $limit, $offset, $includeWithoutEmail);
 
         $items = array_map(
             static fn (array $row): array => [
@@ -55,9 +55,9 @@ final class PhonebookService
         return $this->repository->countActive();
     }
 
-    public function countVisible(bool $includeWithoutPhone = false): int
+    public function countVisible(bool $includeWithoutEmail = false): int
     {
-        return $this->repository->countVisible($includeWithoutPhone);
+        return $this->repository->countVisible($includeWithoutEmail);
     }
 
     public function lastSyncedAt(): ?string
@@ -68,11 +68,13 @@ final class PhonebookService
     /**
      * Alle Eintraege fuer den Adminbereich (aktiv/inaktiv, ein-/ausgeblendet).
      *
+     * @param array{has_email?:bool,is_active?:bool,has_phone?:bool,is_visible?:bool} $filters
+     *
      * @return list<array<string,mixed>>
      */
-    public function allEntries(string $term = ''): array
+    public function allEntries(string $term = '', array $filters = []): array
     {
-        $rows = $this->repository->allForAdmin($term);
+        $rows = $this->repository->allForAdmin($term, $filters);
 
         return array_map(
             static fn (array $row): array => [

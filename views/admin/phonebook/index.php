@@ -7,8 +7,9 @@ use App\Support\Html;
 
 /** @var list<array<string,mixed>> $items */
 /** @var string $term */
+/** @var array{has_email:bool,is_active:bool,has_phone:bool,is_visible:bool} $filters */
 ?>
-<form method="get" action="/admin/telefonliste" class="search" role="search">
+<form method="get" action="/admin/telefonliste" class="search" role="search" data-phonebook-filter-form>
     <label class="search__label" for="phonebook-admin-search">Eintrag suchen</label>
     <div class="search__control">
         <input type="search"
@@ -20,6 +21,27 @@ use App\Support\Html;
                autocomplete="off">
         <button type="submit" class="button button--primary">Suchen</button>
     </div>
+    <fieldset class="fieldset fieldset--filters">
+        <legend>Filter</legend>
+        <div class="field-row">
+            <div class="field field--check">
+                <input type="checkbox" id="filter-has-email" name="has_email" value="1" data-phonebook-filter <?= $filters['has_email'] ? 'checked' : '' ?>>
+                <label for="filter-has-email">Hat E-Mail-Adresse</label>
+            </div>
+            <div class="field field--check">
+                <input type="checkbox" id="filter-is-active" name="is_active" value="1" data-phonebook-filter <?= $filters['is_active'] ? 'checked' : '' ?>>
+                <label for="filter-is-active">Ist aktiv</label>
+            </div>
+            <div class="field field--check">
+                <input type="checkbox" id="filter-has-phone" name="has_phone" value="1" data-phonebook-filter <?= $filters['has_phone'] ? 'checked' : '' ?>>
+                <label for="filter-has-phone">Hat Telefonnummer</label>
+            </div>
+            <div class="field field--check">
+                <input type="checkbox" id="filter-is-visible" name="is_visible" value="1" data-phonebook-filter <?= $filters['is_visible'] ? 'checked' : '' ?>>
+                <label for="filter-is-visible">Nur eingeblendete</label>
+            </div>
+        </div>
+    </fieldset>
 </form>
 
 <?php if ($items === []) { ?>
@@ -74,6 +96,10 @@ use App\Support\Html;
                             <input type="hidden" name="id" value="<?= $id ?>">
                             <input type="hidden" name="visible" value="<?= $visible ? 0 : 1 ?>">
                             <input type="hidden" name="q" value="<?= Html::e($term) ?>">
+                            <input type="hidden" name="has_email" value="<?= $filters['has_email'] ? '1' : '0' ?>">
+                            <input type="hidden" name="is_active" value="<?= $filters['is_active'] ? '1' : '0' ?>">
+                            <input type="hidden" name="has_phone" value="<?= $filters['has_phone'] ? '1' : '0' ?>">
+                            <input type="hidden" name="is_visible" value="<?= $filters['is_visible'] ? '1' : '0' ?>">
                             <button type="submit" class="button button--ghost" data-phonebook-toggle-button>
                                 <?= $visible ? 'Ausblenden' : 'Einblenden' ?>
                             </button>

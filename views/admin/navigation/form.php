@@ -12,6 +12,7 @@ use App\Support\Html;
 $isNew = ($item['id'] ?? null) === null;
 $action = $isNew ? '/admin/navigation/neu' : '/admin/navigation/bearbeiten';
 $type = (string) ($item['type'] ?? 'external');
+$tileColor = (string) ($item['background_color'] ?? '');
 $icons = [
     '', 'document', 'app', 'phone', 'alert', 'tools', 'robot', 'link',
     'clock', 'helmet', 'wrench', 'snail', 'beacon', 'ekg', 'warning', 'siren',
@@ -120,6 +121,14 @@ $icons = [
         <?php } ?>
     </div>
 
+    <div class="field field--check">
+        <input type="checkbox" id="override_background" name="override_background" value="1"
+               data-tile-override-toggle
+               <?= (int) ($item['override_background'] ?? 0) === 1 ? 'checked' : '' ?>>
+        <label for="override_background">Abweichende Kachel-Hintergrundfarbe/Deckkraft verwenden</label>
+        <p class="field__hint">Ohne Haken gelten die zentralen Standardwerte unter „Navigation“.</p>
+    </div>
+
     <div class="field-row">
         <div class="field">
             <label for="type">Typ</label>
@@ -143,28 +152,28 @@ $icons = [
             </select>
         </div>
 
-        <div class="field">
+        <div class="field" data-tile-override>
             <label for="background_color">Kachel-Hintergrundfarbe</label>
             <div class="color-input">
-                <input type="color" id="background_color" name="background_color"
-                       value="<?= Html::e((string) ($item['background_color'] ?? '#1f4e79')) ?>"
+                <input type="color" id="background_color"
+                       value="<?= Html::e($tileColor !== '' ? $tileColor : '#1f4e79') ?>"
                        data-color-sync="background_color-text">
-                <input type="text" id="background_color-text" name="background_color_text"
-                       value="<?= Html::e((string) ($item['background_color'] ?? '#1f4e79')) ?>"
+                <input type="text" id="background_color-text" name="background_color"
+                       value="<?= Html::e($tileColor) ?>"
                        pattern="#[0-9a-fA-F]{6}" maxlength="7"
                        aria-label="Kachel-Hintergrundfarbe als Hex-Wert" data-color-mirror="background_color">
             </div>
-            <p class="field__hint">Optional. Leer lassen für Standard-Hintergrund (var(--color-surface)).</p>
+            <p class="field__hint">Optional. Leer lassen für die zentrale Standardfarbe bzw. den Standard-Hintergrund.</p>
             <?php if (isset($errors['background_color'])) { ?>
                 <p class="field__error"><?= Html::e($errors['background_color']) ?></p>
             <?php } ?>
         </div>
 
-        <div class="field">
+        <div class="field" data-tile-override>
             <label for="background_opacity">Kachel-Deckkraft (in %)</label>
             <input type="number" id="background_opacity" name="background_opacity" min="0" max="100" step="1"
                    value="<?= $item['background_opacity'] !== null && $item['background_opacity'] !== '' ? (int) $item['background_opacity'] : '' ?>">
-            <p class="field__hint">Optional. Steuert die Transparenz der Kachel-Hintergrundfarbe (0 = transparent, 100 = deckend). Leer für Standard (97%).</p>
+            <p class="field__hint">Optional. Steuert die Transparenz der Kachel-Hintergrundfarbe (0 = transparent, 100 = deckend). Leer für den zentralen Standardwert.</p>
             <?php if (isset($errors['background_opacity'])) { ?>
                 <p class="field__error"><?= Html::e($errors['background_opacity']) ?></p>
             <?php } ?>

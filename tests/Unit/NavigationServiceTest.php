@@ -22,6 +22,7 @@ function navigationTestPdo(): PDO
             icon VARCHAR(32) NULL,
             background_color VARCHAR(7) NULL,
             background_opacity INTEGER NULL,
+            override_background INTEGER NOT NULL DEFAULT 0,
             short_description VARCHAR(255) NOT NULL DEFAULT \'\',
             description TEXT NOT NULL DEFAULT \'\',
             content TEXT NULL,
@@ -145,10 +146,48 @@ Runner::test('Deckkraft wird auch als Integer akzeptiert', static function (): v
         'title' => 'Kachel',
         'type' => 'external',
         'url' => 'https://example.com',
+        'override_background' => true,
         'background_opacity' => 97,
         'active' => true,
     ]);
 
     $item = $service->find($id);
     Assert::same(97, (int) $item['background_opacity']);
+});
+
+Runner::test('Ohne Opt-Out werden abweichende Kachelfarben verworfen', static function (): void {
+    $service = navigationTestService(navigationTestPdo());
+
+    $id = $service->create([
+        'title' => 'Kachel',
+        'type' => 'external',
+        'url' => 'https://example.com',
+        'background_color' => '#123456',
+        'background_opacity' => 50,
+        'active' => true,
+    ]);
+
+    $item = $service->find($id);
+    Assert::same(0, (int) $item['override_background']);
+    Assert::same(null, $item['background_color']);
+    Assert::same(null, $item['background_opacity']);
+});
+
+Runner::test('Mit Opt-Out werden abweichende Kachelfarben übernommen', static function (): void {
+    $service = navigationTestService(navigationTestPdo());
+
+    $id = $service->create([
+        'title' => 'Kachel',
+        'type' => 'external',
+        'url' => 'https://example.com',
+        'override_background' => true,
+        'background_color' => '#123456',
+        'background_opacity' => 50,
+        'active' => true,
+    ]);
+
+    $item = $service->find($id);
+    Assert::same(1, (int) $item['override_background']);
+    Assert::same('#123456', (string) $item['background_color']);
+    Assert::same(50, (int) $item['background_opacity']);
 });

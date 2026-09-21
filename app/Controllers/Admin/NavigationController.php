@@ -21,6 +21,9 @@ final class NavigationController extends AdminController
             'items' => Container::navigation()->allItems(),
             'navTreeMode' => Container::settings()->navTreeMode(),
             'pageScript' => 'navigation.js',
+            'tileBackgroundColor' => Container::settings()->tileBackgroundColor(),
+            'tileBackgroundOpacity' => Container::settings()->tileBackgroundOpacity(),
+            'tileErrors' => [],
         ]);
     }
 
@@ -173,6 +176,54 @@ final class NavigationController extends AdminController
         return $this->redirect('/admin/navigation');
     }
 
+    public function updateSettings(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $errors = [];
+        $values = [];
+
+        $colorRaw = trim((string) $request->input('tile_background_color', ''));
+        if ($colorRaw !== '') {
+            $normalized = Validator::normalizeHexColor($colorRaw);
+            if ($normalized === null) {
+                $errors['tile_background_color'] = 'Bitte einen gültigen Hex-Farbwert angeben (z. B. #1f4e79).';
+            } else {
+                $values['tile_background_color'] = $normalized;
+            }
+        } else {
+            $values['tile_background_color'] = '';
+        }
+
+        $opacityRaw = trim((string) $request->input('tile_background_opacity', ''));
+        if (!Validator::isPercentage($opacityRaw)) {
+            $errors['tile_background_opacity'] = 'Bitte einen Wert zwischen 0 und 100 angeben.';
+        } else {
+            $values['tile_background_opacity'] = (string) (int) $opacityRaw;
+        }
+
+        if ($errors !== []) {
+            Session::flash('error', 'Bitte prüfen Sie die Eingaben.');
+
+            return $this->adminView('admin.navigation.index', [
+                'pageTitle' => 'Navigation',
+                'activeNav' => 'navigation',
+                'items' => Container::navigation()->allItems(),
+                'navTreeMode' => Container::settings()->navTreeMode(),
+                'pageScript' => 'navigation.js',
+                'tileBackgroundColor' => $values['tile_background_color'] ?? Container::settings()->tileBackgroundColor(),
+                'tileBackgroundOpacity' => (int) ($values['tile_background_opacity'] ?? Container::settings()->tileBackgroundOpacity()),
+                'tileErrors' => $errors,
+            ]);
+        }
+
+        Container::settings()->update($values);
+        app_logger()->info('Kachel-Standardwerte geändert.', ['admin' => Container::auth()->username()]);
+        Session::flash('success', 'Die Kachel-Standardwerte wurden gespeichert.');
+
+        return $this->redirect('/admin/navigation');
+    }
+
     /**
      * @return array<string,mixed>
      */
@@ -187,6 +238,7 @@ final class NavigationController extends AdminController
             'icon' => (string) $request->input('icon', ''),
             'background_color' => (string) $request->input('background_color', ''),
             'background_opacity' => $bgOpacity !== '' ? (int) $bgOpacity : null,
+            'override_background' => $request->has('override_background'),
             'short_description' => (string) $request->input('short_description', ''),
             'description' => (string) $request->input('description', ''),
             'content' => (string) $request->input('content', ''),

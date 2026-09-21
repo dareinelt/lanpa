@@ -41,6 +41,21 @@
     }
     syncFields();
 
+    var overrideToggle = form.querySelector('[data-tile-override-toggle]');
+    var overrideFields = form.querySelectorAll('[data-tile-override]');
+
+    function syncOverride() {
+        var show = overrideToggle ? overrideToggle.checked : false;
+        for (var i = 0; i < overrideFields.length; i++) {
+            overrideFields[i].hidden = !show;
+        }
+    }
+
+    if (overrideToggle) {
+        overrideToggle.addEventListener('change', syncOverride);
+    }
+    syncOverride();
+
     var surface = form.querySelector('[data-editor-surface]');
     var source = form.querySelector('[data-editor-source]');
 

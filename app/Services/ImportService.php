@@ -316,6 +316,7 @@ final class ImportService
                 'icon' => $row['icon'] ?? null,
                 'background_color' => $row['background_color'] ?? null,
                 'background_opacity' => $row['background_opacity'] ?? null,
+                'override_background' => !empty($row['override_background']),
                 'short_description' => (string) ($row['short_description'] ?? ''),
                 'description' => (string) ($row['description'] ?? ''),
                 'content' => $row['content'] ?? null,

@@ -132,9 +132,26 @@ Runner::test('Unbekannte Rufnummer erzeugt keine Fehlermeldung und laesst sich m
     $ok = $service->verify($navId, '+49 170 1234567', $service->currentCode());
     Assert::same('success', $ok['status']);
 
+    // Nach erfolgreicher Verifizierung ist der Zugriff freigeschaltet.
+    Assert::true($service->isVerified($navId));
+
     // Ein zweiter Versuch scheitert, weil die Sitzung bereits verbraucht ist.
     $again = $service->verify($navId, '+49 170 1234567', $service->currentCode());
     Assert::same('error', $again['status']);
+});
+
+Runner::test('Zugriff ist erst nach erfolgreicher Verifizierung freigeschaltet', static function (): void {
+    $_SESSION = [];
+
+    $pdo = smsCodePdo();
+    $service = smsCodeService($pdo);
+    $navId = smsCodeSeedNavigation($pdo);
+
+    Assert::false($service->isVerified($navId));
+
+    $service->markVerified($navId);
+    Assert::true($service->isVerified($navId));
+    Assert::false($service->isVerified($navId + 1));
 });
 
 Runner::test('Nicht geschuetzte Elemente werden abgelehnt', static function (): void {

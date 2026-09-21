@@ -17,6 +17,8 @@ final class SmsCodeService
 {
     private const SESSION_KEY = 'sms_code';
 
+    private const VERIFIED_KEY = 'sms_verified';
+
     private const MAX_ATTEMPTS = 5;
 
     private const CODE_LENGTH = 6;
@@ -122,12 +124,39 @@ final class SmsCodeService
         }
 
         Session::forget(self::SESSION_KEY);
+        $this->markVerified($navigationId);
 
         return [
             'status' => 'success',
             'href' => $this->targetUrl($item),
             'external' => ((string) $item['type']) === 'external',
         ];
+    }
+
+    /**
+     * Merkt sich fuer die aktuelle Sitzung, dass der Zugriff auf dieses
+     * Element per SMS-Code freigeschaltet wurde.
+     */
+    public function markVerified(int $navigationId): void
+    {
+        $verified = Session::get(self::VERIFIED_KEY);
+        if (!is_array($verified)) {
+            $verified = [];
+        }
+
+        $verified[$navigationId] = time();
+        Session::put(self::VERIFIED_KEY, $verified);
+    }
+
+    /**
+     * Prueft, ob der Zugriff auf dieses Element in der aktuellen Sitzung
+     * bereits per SMS-Code freigeschaltet wurde.
+     */
+    public function isVerified(int $navigationId): bool
+    {
+        $verified = Session::get(self::VERIFIED_KEY);
+
+        return is_array($verified) && isset($verified[$navigationId]);
     }
 
     /**

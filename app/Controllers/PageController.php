@@ -18,6 +18,11 @@ final class PageController extends Controller
     {
         $item = $this->resolve($request, 'subpage');
 
+        $gate = $this->accessGate($item);
+        if ($gate !== null) {
+            return $gate;
+        }
+
         return $this->view('pages.subpage', [
             'pageTitle' => (string) $item['title'],
             'item' => $item,
@@ -32,6 +37,11 @@ final class PageController extends Controller
     public function page(Request $request): Response
     {
         $item = $this->resolve($request, 'page');
+
+        $gate = $this->accessGate($item);
+        if ($gate !== null) {
+            return $gate;
+        }
 
         return $this->view('pages.page', [
             'pageTitle' => (string) $item['title'],
@@ -53,5 +63,30 @@ final class PageController extends Controller
         }
 
         return $item;
+    }
+
+    /**
+     * Liefert eine Zugriffssperre, wenn das Element geschuetzt ist und der
+     * Zugriff in der aktuellen Sitzung noch nicht per SMS-Code freigeschaltet
+     * wurde. Andernfalls null (Zugriff erlaubt).
+     *
+     * @param array<string,mixed> $item
+     */
+    private function accessGate(array $item): ?Response
+    {
+        if (empty($item['protected_access']) || Container::smsCode()->isVerified((int) $item['id'])) {
+            return null;
+        }
+
+        $id = (int) $item['id'];
+        $href = (string) $item['type'] === 'subpage' ? '/unterseite?id=' . $id : '/seite?id=' . $id;
+
+        return $this->view('pages.access_required', [
+            'pageTitle' => 'Geschützter Zugriff',
+            'item' => $item,
+            'breadcrumb' => Container::navigation()->breadcrumb($id),
+            'href' => $href,
+            'pageScript' => 'landing.js',
+        ]);
     }
 }

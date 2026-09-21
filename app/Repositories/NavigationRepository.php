@@ -106,6 +106,26 @@ final class NavigationRepository extends Repository
         return is_array($row) ? $row : null;
     }
 
+    /**
+     * Findet ein aktives internes Navigationselement anhand seines Pfads
+     * (z. B. /telefonliste). Dient der serverseitigen Zugriffssperre.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findActiveInternalByUrl(string $url): ?array
+    {
+        // Der angeforderte Pfad ist normalisiert (ohne abschliessenden Slash).
+        // Gepflegte interne URLs koennen jedoch mit oder ohne Slash hinterlegt
+        // sein – deshalb werden beide Schreibweisen abgeglichen.
+        $statement = $this->pdo->prepare(
+            'SELECT ' . self::COLUMNS . self::FROM . " WHERE n.type = 'internal' AND n.active = 1 AND (n.url = :url OR n.url = :url_slash) LIMIT 1"
+        );
+        $statement->execute(['url' => $url, 'url_slash' => rtrim($url, '/') . '/']);
+        $row = $statement->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
     public function exists(int $id, bool $onlyActive = true): bool
     {
         $sql = 'SELECT 1 FROM navigation_items WHERE id = :id';

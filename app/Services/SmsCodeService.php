@@ -160,6 +160,23 @@ final class SmsCodeService
     }
 
     /**
+     * Liefert das geschuetzte interne Navigationselement, dessen Pfad mit dem
+     * angeforderten Pfad uebereinstimmt, oder null. Dient der serverseitigen
+     * Zugriffssperre fuer interne Elemente (z. B. /telefonliste).
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findProtectedInternal(string $path): ?array
+    {
+        $item = $this->navigation->findActiveInternalByUrl($path);
+        if ($item === null || (int) ($item['protected_access'] ?? 0) !== 1) {
+            return null;
+        }
+
+        return $item;
+    }
+
+    /**
      * Ersetzt die Platzhalter {code} und {title} in der SMS-Vorlage.
      */
     public function buildMessage(string $code, string $title): string
@@ -197,9 +214,11 @@ final class SmsCodeService
     }
 
     /**
+     * Ziel-URL fuer ein Navigationselement nach erfolgreicher Freischaltung.
+     *
      * @param array<string,mixed> $item
      */
-    private function targetUrl(array $item): string
+    public function targetUrl(array $item): string
     {
         $type = (string) $item['type'];
         if ($type === 'subpage') {

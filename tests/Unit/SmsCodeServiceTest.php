@@ -164,3 +164,37 @@ Runner::test('Nicht geschuetzte Elemente werden abgelehnt', static function (): 
     $result = $service->requestCode($navId, '+49 170 1234567');
     Assert::same('error', $result['status']);
 });
+
+Runner::test('findProtectedInternal liefert geschuetzte interne Elemente', static function (): void {
+    $pdo = smsCodePdo();
+    $pdo->prepare(
+        'INSERT INTO navigation_items (title, url, type, protected_access, active) VALUES (?, ?, ?, ?, ?)'
+    )->execute(['Telefonliste', '/telefonliste', 'internal', 1, 1]);
+
+    $service = smsCodeService($pdo);
+
+    $item = $service->findProtectedInternal('/telefonliste');
+    Assert::true($item !== null);
+    Assert::same('internal', (string) $item['type']);
+    Assert::true($service->findProtectedInternal('/unbekannt') === null);
+});
+
+Runner::test('findProtectedInternal ignoriert ungeschuetzte interne Elemente', static function (): void {
+    $pdo = smsCodePdo();
+    $pdo->prepare(
+        'INSERT INTO navigation_items (title, url, type, protected_access, active) VALUES (?, ?, ?, ?, ?)'
+    )->execute(['Telefonliste', '/telefonliste', 'internal', 0, 1]);
+
+    $service = smsCodeService($pdo);
+
+    Assert::true($service->findProtectedInternal('/telefonliste') === null);
+});
+
+Runner::test('targetUrl bildet alle Elementtypen ab', static function (): void {
+    $service = smsCodeService(smsCodePdo());
+
+    Assert::same('/seite?id=5', $service->targetUrl(['id' => 5, 'type' => 'page', 'url' => '']));
+    Assert::same('/unterseite?id=7', $service->targetUrl(['id' => 7, 'type' => 'subpage', 'url' => '']));
+    Assert::same('/telefonliste', $service->targetUrl(['id' => 9, 'type' => 'internal', 'url' => '/telefonliste']));
+    Assert::same('https://example.com', $service->targetUrl(['id' => 11, 'type' => 'external', 'url' => 'https://example.com']));
+});

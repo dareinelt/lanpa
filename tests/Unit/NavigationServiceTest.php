@@ -113,6 +113,30 @@ Runner::test('Nur Unterseiten koennen eine uebergeordnete Ebene sein', static fu
     }
 });
 
+Runner::test('Alarmierungen koennen einer Unterseite zugeordnet werden', static function (): void {
+    $service = navigationTestService(navigationTestPdo());
+
+    $root = $service->create(['title' => 'Bereich', 'type' => 'subpage', 'active' => true]);
+    $alarm = $service->create([
+        'title' => 'Alarm',
+        'type' => 'alarm',
+        'parent_id' => $root,
+        'alarm_text' => 'Einsatzalarm',
+        'alarm_group_id' => 1,
+        'active' => true,
+    ]);
+
+    $children = $service->activeChildren($root);
+    Assert::same(1, count($children));
+    Assert::same($alarm, (int) $children[0]['id']);
+    Assert::same('alarm', $children[0]['type']);
+
+    $breadcrumb = $service->breadcrumb($alarm);
+    Assert::same(2, count($breadcrumb));
+    Assert::same($root, (int) $breadcrumb[0]['id']);
+    Assert::same($alarm, (int) $breadcrumb[1]['id']);
+});
+
 Runner::test('Deckkraft wird auch als Integer akzeptiert', static function (): void {
     $service = navigationTestService(navigationTestPdo());
 

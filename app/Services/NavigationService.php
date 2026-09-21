@@ -130,28 +130,26 @@ final class NavigationService
             } elseif ($type === 'internal' && !str_starts_with($url, '/')) {
                 $errors['url'] = 'Interne Elemente benötigen einen anwendungsinternen Pfad, z. B. /telefonliste.';
             }
-        } elseif ($type === 'alarm') {
-            $alarmText = Validator::cleanText((string) ($input['alarm_text'] ?? ''), 255);
-            if (!Validator::isNotEmpty($alarmText, 255)) {
-                $errors['alarm_text'] = 'Bitte einen Alarmierungstext angeben (max. 255 Zeichen).';
-            }
-
-            $alarmGroupId = $this->resolveParentId($input['alarm_group_id'] ?? null);
-            if ($alarmGroupId === null) {
-                $errors['alarm_group_id'] = 'Bitte eine Gruppe auswählen.';
-            } elseif ($this->alarmGroups !== null && $this->alarmGroups->find($alarmGroupId) === null) {
-                $errors['alarm_group_id'] = 'Die gewählte Gruppe ist ungültig.';
-            }
         } else {
-            // subpage / page: verschachtelbar; page enthält formatierten Rich-Text.
+            // subpage / page / alarm: verschachtelbar; page enthält formatierten Rich-Text.
             $parentId = $this->resolveParentId($input['parent_id'] ?? null);
-            if ($parentId !== null) {
-                if (!$this->isValidParent($parentId, $id)) {
-                    $errors['parent_id'] = 'Die übergeordnete Ebene ist ungültig oder würde eine Schleife erzeugen.';
-                }
+            if ($parentId !== null && !$this->isValidParent($parentId, $id)) {
+                $errors['parent_id'] = 'Die übergeordnete Ebene ist ungültig oder würde eine Schleife erzeugen.';
             }
 
-            if ($type === 'page') {
+            if ($type === 'alarm') {
+                $alarmText = Validator::cleanText((string) ($input['alarm_text'] ?? ''), 255);
+                if (!Validator::isNotEmpty($alarmText, 255)) {
+                    $errors['alarm_text'] = 'Bitte einen Alarmierungstext angeben (max. 255 Zeichen).';
+                }
+
+                $alarmGroupId = $this->resolveParentId($input['alarm_group_id'] ?? null);
+                if ($alarmGroupId === null) {
+                    $errors['alarm_group_id'] = 'Bitte eine Gruppe auswählen.';
+                } elseif ($this->alarmGroups !== null && $this->alarmGroups->find($alarmGroupId) === null) {
+                    $errors['alarm_group_id'] = 'Die gewählte Gruppe ist ungültig.';
+                }
+            } elseif ($type === 'page') {
                 $content = Sanitizer::html((string) ($input['content'] ?? ''));
             }
         }

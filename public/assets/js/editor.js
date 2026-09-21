@@ -24,7 +24,7 @@
         }
 
         if (parentField) {
-            parentField.hidden = type !== 'subpage' && type !== 'page';
+            parentField.hidden = type !== 'subpage' && type !== 'page' && type !== 'alarm';
         }
 
         if (contentField) {

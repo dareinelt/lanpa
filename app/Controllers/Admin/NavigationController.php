@@ -32,7 +32,7 @@ final class NavigationController extends AdminController
         }
 
         $parentId = $request->queryInt('parent_id', 0);
-        if ($type !== 'subpage' && $type !== 'page') {
+        if ($type !== 'subpage' && $type !== 'page' && $type !== 'alarm') {
             $parentId = 0;
         }
 

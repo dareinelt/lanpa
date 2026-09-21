@@ -190,6 +190,16 @@
         event.preventDefault();
         currentTerm = input ? input.value.trim() : '';
         offset = 0;
+
+        if (currentTerm === '') {
+            resetSearch();
+            setStatus('Bitte geben Sie einen Suchbegriff ein.');
+            if (input) {
+                input.focus();
+            }
+            return;
+        }
+
         load(currentTerm, false);
     });
 

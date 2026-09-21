@@ -115,6 +115,7 @@ function backupImportPdo(): PDO
             ad_modified VARCHAR(32) NULL,
             synced_at TEXT NULL,
             active INTEGER NOT NULL DEFAULT 1,
+            visible INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )'

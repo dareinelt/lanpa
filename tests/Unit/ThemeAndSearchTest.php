@@ -114,3 +114,12 @@ Runner::test('Administratoren sehen auch Eintraege ohne Telefonnummer', static f
     Assert::false(str_contains($sql, 'phone IS NOT NULL'));
     Assert::contains('active = 1', $sql);
 });
+
+Runner::test('Ausgeblendete Eintraege bleiben in der oeffentlichen Suche ausgeschlossen', static function (): void {
+    /** @var PhonebookRepository $repository */
+    $repository = (new ReflectionClass(PhonebookRepository::class))->newInstanceWithoutConstructor();
+
+    [$sql] = $repository->buildSearchCondition('Muster');
+
+    Assert::contains('visible = 1', $sql);
+});

@@ -56,12 +56,32 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
      */
     public function buildSearchCondition(string $term, bool $includeWithoutPhone = false): array
     {
-        $conditions = ['active = 1'];
+        $conditions = ['active = 1', 'visible = 1'];
         $params = [];
 
         if (!$includeWithoutPhone) {
             $conditions[] = self::PHONE_CONDITION;
         }
+
+        [$termCondition, $termParams] = $this->buildTermCondition($term);
+        if ($termCondition !== '') {
+            $conditions[] = $termCondition;
+            $params = $termParams;
+        }
+
+        return [implode(' AND ', $conditions), $params];
+    }
+
+    /**
+     * Baut aus den eingegebenen Suchbegriffen eine LIKE-Bedingung ohne die
+     * Aktiv-/Sichtbarkeitsfilter.
+     *
+     * @return array{0:string,1:array<string,string>}
+     */
+    private function buildTermCondition(string $term): array
+    {
+        $conditions = [];
+        $params = [];
 
         $tokens = preg_split('/\s+/u', trim($term)) ?: [];
         $tokens = array_values(array_filter(array_slice($tokens, 0, 5), static fn (string $t): bool => $t !== ''));
@@ -107,7 +127,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
      */
     public function countVisible(bool $includeWithoutPhone = false): int
     {
-        $sql = 'SELECT COUNT(*) FROM phonebook WHERE active = 1';
+        $sql = 'SELECT COUNT(*) FROM phonebook WHERE active = 1 AND visible = 1';
         if (!$includeWithoutPhone) {
             $sql .= ' AND ' . self::PHONE_CONDITION;
         }
@@ -146,6 +166,10 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     }
 
     /**
+     * `visible` wird hier bewusst nicht angefasst: neue Eintraege erhalten
+     * ueber den Spalten-Standard `1` (eingeblendet), und die Entscheidung des
+     * Administrators bleibt bei erneuten Synchronisationen erhalten.
+     *
      * @param array<string,string|null> $user
      */
     public function upsert(array $user, string $syncedAt): void
@@ -202,13 +226,54 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     public function all(): array
     {
         $statement = $this->pdo->query(
-            'SELECT id, external_id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active FROM phonebook ORDER BY id ASC'
+            'SELECT id, external_id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible FROM phonebook ORDER BY id ASC'
         );
 
         /** @var list<array<string,mixed>> $rows */
         $rows = $statement === false ? [] : $statement->fetchAll();
 
         return $rows;
+    }
+
+    /**
+     * Alle Eintraege (aktiv und inaktiv, ein- und ausgeblendet) fuer den
+     * Adminbereich, optional gefiltert nach einem Suchbegriff.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function allForAdmin(string $term = ''): array
+    {
+        $sql = 'SELECT id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible
+                  FROM phonebook';
+        $params = [];
+
+        [$termCondition, $termParams] = $this->buildTermCondition($term);
+        if ($termCondition !== '') {
+            $sql .= ' WHERE ' . $termCondition;
+            $params = $termParams;
+        }
+
+        $sql .= ' ORDER BY last_name ASC, first_name ASC, display_name ASC';
+
+        $statement = $this->pdo->prepare($sql);
+        $statement->execute($params);
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement->fetchAll();
+
+        return $rows;
+    }
+
+    /**
+     * Setzt die Sichtbarkeit eines Eintrags. Liefert false, wenn der Eintrag
+     * nicht existiert.
+     */
+    public function setVisible(int $id, bool $visible): bool
+    {
+        $statement = $this->pdo->prepare('UPDATE phonebook SET visible = :visible WHERE id = :id');
+        $statement->execute(['visible' => $visible ? 1 : 0, 'id' => $id]);
+
+        return $statement->rowCount() > 0;
     }
 
     /**
@@ -221,9 +286,9 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     {
         $statement = $this->pdo->prepare(
             'INSERT INTO phonebook
-                (external_id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active)
+                (external_id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible)
              VALUES
-                (:external_id, :display_name, :first_name, :last_name, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, :active)'
+                (:external_id, :display_name, :first_name, :last_name, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, :active, :visible)'
         );
         $statement->execute($this->bindings($data));
 
@@ -255,6 +320,8 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
             'ad_modified' => $this->value($data['ad_modified'] ?? null),
             'synced_at' => $this->value($data['synced_at'] ?? null),
             'active' => !empty($data['active']) ? 1 : 0,
+            // Beim Import fehlendes/unklares `visible` gilt als eingeblendet (Standard).
+            'visible' => ((int) ($data['visible'] ?? 1)) > 0 ? 1 : 0,
         ];
     }
 

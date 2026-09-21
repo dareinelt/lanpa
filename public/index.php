@@ -19,6 +19,7 @@ use App\Controllers\Admin\ImportExportController;
 use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
+use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\StatisticsController;
 use App\Controllers\BackgroundImageController;
 use App\Controllers\ClickController;
@@ -115,6 +116,9 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/notfallnummern/loeschen', [EmergencyNumberController::class, 'delete']);
         $router->post('/admin/notfallnummern/status', [EmergencyNumberController::class, 'toggle']);
         $router->post('/admin/notfallnummern/sortieren', [EmergencyNumberController::class, 'move']);
+
+        $router->get('/admin/telefonliste', [PhonebookAdminController::class, 'index']);
+        $router->post('/admin/telefonliste/status', [PhonebookAdminController::class, 'toggle']);
 
         $router->get('/admin/mitteilungen', [AnnouncementController::class, 'index']);
         $router->get('/admin/mitteilungen/neu', [AnnouncementController::class, 'create']);

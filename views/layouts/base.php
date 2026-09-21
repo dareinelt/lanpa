@@ -140,6 +140,28 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
     <div class="announcement-overlay__box">
         <h2 class="announcement-overlay__title" id="alarm-overlay-title">Alarmierung auslösen</h2>
         <p class="announcement-overlay__text" data-alarm-details></p>
+
+        <div class="alarm-freetext">
+            <label class="alarm-freetext__toggle">
+                <input type="checkbox" data-alarm-freetext-toggle>
+                Freitext hinzufügen
+            </label>
+            <div class="alarm-freetext__body" data-alarm-freetext-body hidden>
+                <textarea class="alarm-freetext__input" data-alarm-freetext rows="3" maxlength="255"
+                          placeholder="Zusätzlicher Text für die Meldung …"></textarea>
+                <p class="alarm-freetext__counter" data-alarm-freetext-counter aria-live="polite"></p>
+            </div>
+        </div>
+
+        <div class="alarm-preview">
+            <p class="alarm-preview__label">Vorschau</p>
+            <div class="alarm-preview__phone" aria-hidden="true">
+                <div class="alarm-preview__screen">
+                    <div class="alarm-preview__message" data-alarm-preview-message></div>
+                </div>
+            </div>
+        </div>
+
         <div class="announcement-overlay__actions">
             <button type="button" class="button button--ghost" data-alarm-cancel>Abbrechen</button>
             <button type="button" class="button button--danger" data-alarm-confirm>Alarmierung auslösen</button>

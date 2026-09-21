@@ -22,7 +22,9 @@ final class AlarmTriggerController extends Controller
             return Response::json(['status' => 'error', 'message' => 'Ungültige Anfrage.'], 422);
         }
 
-        $result = Container::alarm()->trigger($navigationId);
+        $additionalText = (string) $request->input('additional_text', '');
+
+        $result = Container::alarm()->trigger($navigationId, $additionalText);
 
         return Response::json($result, $result['status'] === 'success' ? 200 : 422);
     }

@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Repositories\AlarmLogRepository;
 use App\Repositories\NavigationRepository;
+use App\Support\Validator;
 
 /**
  * Löst eine Alarmierung aus: baut die Gateway-URL serverseitig zusammen, sendet
@@ -24,7 +25,7 @@ final class AlarmService
     /**
      * @return array{status:string,message:string}
      */
-    public function trigger(int $navigationId): array
+    public function trigger(int $navigationId, string $additionalText = ''): array
     {
         $item = $this->navigation->find($navigationId);
 
@@ -41,6 +42,19 @@ final class AlarmService
             $this->log($navigationId, $title, $text, $groupNumber, $groupDescription, 'error', 'Alarmierungstext oder Gruppe fehlt.');
 
             return ['status' => 'error', 'message' => 'Die Alarmierung ist unvollständig konfiguriert.'];
+        }
+
+        // Optionaler Freitext wird an die Vorlage angehängt. Das Gesamtlimit von
+        // 255 Zeichen gilt für die vollständige Meldung (Vorlage + Freitext).
+        $additional = Validator::cleanText($additionalText, 255);
+        if ($additional !== '') {
+            $text = rtrim($text) . ' ' . $additional;
+        }
+
+        if (mb_strlen($text) > 255) {
+            $this->log($navigationId, $title, mb_substr($text, 0, 255), $groupNumber, $groupDescription, 'error', 'Die Meldung überschreitet das Limit von 255 Zeichen.');
+
+            return ['status' => 'error', 'message' => 'Die Meldung ist zu lang (max. 255 Zeichen).'];
         }
 
         $config = $this->settings->alarmConfig();

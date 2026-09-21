@@ -241,6 +241,36 @@
         }
     }
 
+    function initAnnouncementMenu() {
+        var menus = document.querySelectorAll('[data-announcement-menu]');
+        if (menus.length === 0) {
+            return;
+        }
+
+        function closeAll() {
+            Array.prototype.forEach.call(menus, function (menu) {
+                menu.removeAttribute('open');
+            });
+        }
+
+        // ESC klappt das aufgeklappte Mitteilungen-Menü ein.
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' || event.key === 'Esc') {
+                closeAll();
+            }
+        });
+
+        // Klick in einen freien Bereich klappt das Menü ein.
+        document.addEventListener('click', function (event) {
+            for (var i = 0; i < menus.length; i++) {
+                if (menus[i].contains(event.target)) {
+                    return;
+                }
+            }
+            closeAll();
+        });
+    }
+
     // Theme sofort setzen, damit es keinen Farbsprung gibt.
     applyMode(readMode());
 
@@ -249,5 +279,6 @@
         initConfirmations();
         initColorFields();
         initAnnouncements();
+        initAnnouncementMenu();
     });
 })();

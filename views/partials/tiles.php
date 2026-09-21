@@ -10,10 +10,31 @@ use App\Support\Html;
  * @var list<array<string,mixed>> $items
  * @var string $descriptionMode
  */
+
+/**
+ * Kachel-Hintergrundfarben werden als CSS-Regeln in einem per Nonce
+ * freigegebenen <style>-Block ausgeliefert. Inline-Style-Attribute sind durch
+ * die Content-Security-Policy (style-src ohne 'unsafe-inline') gesperrt.
+ */
+$tileRules = [];
+foreach ($items as $item) {
+    $bgColor = (string) ($item['background_color'] ?? '');
+    if ($bgColor === '') {
+        continue;
+    }
+    $tileId = (int) $item['id'];
+    $bgOpacity = $item['background_opacity'] ?? null;
+    $opacity = ($bgOpacity !== null && $bgOpacity !== '' && is_numeric($bgOpacity)) ? (int) $bgOpacity : 97;
+    $tileRules[] = '.tile[data-tile-id="' . $tileId . '"]{--tile-bg:' . Html::e($bgColor) . ';--tile-bg-opacity:' . $opacity . '%}';
+}
+$nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 ?>
 <?php if ($items === []) { ?>
     <p class="empty-state">Es sind derzeit keine Anwendungen freigeschaltet. Bitte wenden Sie sich an die Administration.</p>
 <?php } else { ?>
+    <?php if ($tileRules !== []) { ?>
+        <style nonce="<?= Html::e($nonce) ?>"><?= implode('', $tileRules) ?></style>
+    <?php } ?>
     <ul class="tiles" data-description-mode="<?= Html::e($descriptionMode) ?>">
         <?php foreach ($items as $item) {
             $id = (int) $item['id'];
@@ -32,18 +53,7 @@ use App\Support\Html;
                 $href = Html::url((string) $item['url']);
             }
             ?>
-            <li class="tile"<?php
-                $styleParts = [];
-                $bgColor = (string) ($item['background_color'] ?? '');
-                $bgOpacity = $item['background_opacity'] ?? null;
-                if ($bgColor !== '') {
-                    $opacity = ($bgOpacity !== null && $bgOpacity !== '' && is_numeric($bgOpacity)) ? (int) $bgOpacity : 97;
-                    $styleParts[] = '--tile-bg: ' . Html::e($bgColor) . '; --tile-bg-opacity: ' . (int) $opacity . '%';
-                }
-                if ($styleParts !== []) {
-                    echo ' style="' . Html::e(implode(' ', $styleParts)) . '"';
-                }
-                ?>>
+            <li class="tile" data-tile-id="<?= $id ?>">
                 <a class="tile__link"
                    href="<?= Html::e($href) ?>"
                    data-nav-id="<?= $id ?>"

@@ -1,17 +1,18 @@
 # syntax=docker/dockerfile:1
 FROM php:8.3-apache
 
-# Systempakete fuer die benoetigten PHP-Erweiterungen (pdo_mysql, ldap)
+# Systempakete fuer die benoetigten PHP-Erweiterungen (pdo_mysql, ldap, zip)
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         libldap-common \
         libldap2-dev \
         libsasl2-dev \
+        libzip-dev \
         default-mysql-client \
     ; \
     docker-php-ext-configure ldap --with-ldap-sasl; \
-    docker-php-ext-install -j"$(nproc)" pdo_mysql ldap opcache; \
+    docker-php-ext-install -j"$(nproc)" pdo_mysql ldap opcache zip; \
     apt-get purge -y --auto-remove libldap2-dev libsasl2-dev; \
     rm -rf /var/lib/apt/lists/*
 

@@ -200,6 +200,12 @@ $icons = [
     </div>
 
     <div class="field field--check">
+        <input type="checkbox" id="protected_access" name="protected_access" value="1"
+               <?= (int) ($item['protected_access'] ?? 0) === 1 ? 'checked' : '' ?>>
+        <label for="protected_access">Geschützten Zugriffsmodus aktivieren (SMS-Code erforderlich)</label>
+    </div>
+
+    <div class="field field--check">
         <input type="checkbox" id="active" name="active" value="1" <?= (int) $item['active'] === 1 ? 'checked' : '' ?>>
         <label for="active">Element ist aktiv</label>
     </div>

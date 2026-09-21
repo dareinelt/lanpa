@@ -38,6 +38,7 @@ function alarmServicePdo(): PDO
             content TEXT NULL,
             alarm_text VARCHAR(255) NULL,
             alarm_group_id INTEGER NULL,
+            protected_access INTEGER NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 1,
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

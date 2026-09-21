@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Repositories\ActivationNumberRepository;
 use App\Repositories\AdminUserRepository;
 use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AnnouncementRepository;
@@ -52,6 +53,7 @@ function backupImportPdo(): PDO
             content TEXT NULL,
             alarm_text VARCHAR(255) NULL,
             alarm_group_id INTEGER NULL,
+            protected_access INTEGER NOT NULL DEFAULT 0,
             sort_order INTEGER NOT NULL DEFAULT 1,
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -97,6 +99,18 @@ function backupImportPdo(): PDO
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_number VARCHAR(64) NOT NULL,
             description VARCHAR(255) NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 1,
+            active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )'
+    );
+    $pdo->exec(
+        'CREATE TABLE activation_numbers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone VARCHAR(64) NOT NULL,
+            phone_digits VARCHAR(64) NOT NULL UNIQUE,
+            alarm_group_id INTEGER NULL,
             sort_order INTEGER NOT NULL DEFAULT 1,
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -153,6 +167,7 @@ function backupImportServices(PDO $pdo, string $uploadDir): array
     $adminUserRepo = new AdminUserRepository($pdo);
     $phonebookRepo = new PhonebookRepository($pdo);
     $alarmGroupRepo = new AlarmGroupRepository($pdo);
+    $activationRepo = new ActivationNumberRepository($pdo);
 
     $logo = new LogoService($settings, $uploadDir, 512 * 1024, true);
     $background = new BackgroundImageService($settings, $uploadDir, 2 * 1024 * 1024);
@@ -167,6 +182,7 @@ function backupImportServices(PDO $pdo, string $uploadDir): array
         $adminUserRepo,
         $phonebookRepo,
         $alarmGroupRepo,
+        $activationRepo,
         $logo,
         $background,
         $favicons
@@ -182,6 +198,7 @@ function backupImportServices(PDO $pdo, string $uploadDir): array
         $adminUserRepo,
         $phonebookRepo,
         $alarmGroupRepo,
+        $activationRepo,
         $logo,
         $background,
         $favicons

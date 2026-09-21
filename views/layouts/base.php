@@ -169,6 +169,45 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
     </div>
 </div>
 
+<div class="announcement-overlay"
+     data-sms-overlay
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="sms-overlay-title"
+     hidden>
+    <div class="announcement-overlay__box sms-overlay__box">
+        <h2 class="announcement-overlay__title" id="sms-overlay-title">Geschützter Zugriff</h2>
+        <p class="announcement-overlay__text" data-sms-title></p>
+
+        <form class="sms-overlay__form" data-sms-stage="phone" novalidate>
+            <div class="field">
+                <label for="sms-phone">Rufnummer</label>
+                <input type="tel" id="sms-phone" name="phone" inputmode="tel" autocomplete="tel"
+                       placeholder="+49 170 1234567" maxlength="64">
+                <p class="field__hint field__hint--error" data-sms-error hidden></p>
+            </div>
+            <div class="announcement-overlay__actions">
+                <button type="button" class="button button--ghost" data-sms-cancel>Abbrechen</button>
+                <button type="submit" class="button button--primary" data-sms-request>Code anfordern</button>
+            </div>
+        </form>
+
+        <form class="sms-overlay__form" data-sms-stage="code" hidden novalidate>
+            <p class="sms-overlay__countdown">Code gültig für <strong data-sms-countdown>120</strong> Sekunden.</p>
+            <div class="field">
+                <label for="sms-code">Sechsstelliger Code</label>
+                <input type="text" id="sms-code" name="code" inputmode="numeric" autocomplete="one-time-code"
+                       maxlength="6" pattern="[0-9]{6}" placeholder="123456">
+                <p class="field__hint field__hint--error" data-sms-error hidden></p>
+            </div>
+            <div class="announcement-overlay__actions">
+                <button type="button" class="button button--ghost" data-sms-back>Zurück</button>
+                <button type="submit" class="button button--primary" data-sms-verify>Bestätigen</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script src="/assets/js/app.js?v=<?= Html::e($assetVersion) ?>" defer></script>
 <?php if (($pageScript ?? '') !== '') { ?>
     <script src="/assets/js/<?= Html::e($pageScript) ?>?v=<?= Html::e($assetVersion) ?>" defer></script>

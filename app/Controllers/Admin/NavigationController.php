@@ -59,6 +59,7 @@ final class NavigationController extends AdminController
                 'content' => '',
                 'alarm_text' => '',
                 'alarm_group_id' => null,
+                'protected_access' => 0,
                 'sort_order' => Container::navigationRepository()->nextSortOrder($parentId > 0 ? $parentId : null),
                 'active' => 1,
             ],
@@ -244,6 +245,7 @@ final class NavigationController extends AdminController
             'content' => (string) $request->input('content', ''),
             'alarm_text' => (string) $request->input('alarm_text', ''),
             'alarm_group_id' => $request->inputInt('alarm_group_id', 0),
+            'protected_access' => $request->has('protected_access'),
             'sort_order' => $request->inputInt('sort_order', 0),
             'active' => $request->has('active'),
         ];
@@ -254,6 +256,7 @@ final class NavigationController extends AdminController
         $payload = $this->payload($request);
         $payload['id'] = $id;
         $payload['active'] = $payload['active'] ? 1 : 0;
+        $payload['protected_access'] = $payload['protected_access'] ? 1 : 0;
 
         return $this->adminView('admin.navigation.form', [
             'pageTitle' => $id === null ? 'Element anlegen' : 'Element bearbeiten',

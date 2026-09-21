@@ -206,6 +206,7 @@ final class NavigationService
             'description' => $description,
             'sort_order' => $sortOrder,
             'active' => !empty($input['active']),
+            'protected_access' => !empty($input['protected_access']),
         ];
     }
 

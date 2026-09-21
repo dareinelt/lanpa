@@ -6,7 +6,7 @@ namespace App\Repositories;
 
 final class NavigationRepository extends Repository
 {
-    private const COLUMNS = 'n.id, n.title, n.url, n.type, n.parent_id, n.icon, n.background_color, n.background_opacity, n.override_background, n.short_description, n.description, n.content, n.alarm_text, n.alarm_group_id, n.sort_order, n.active, n.created_at, n.updated_at, g.group_number AS alarm_group_number, g.description AS alarm_group_description';
+    private const COLUMNS = 'n.id, n.title, n.url, n.type, n.parent_id, n.icon, n.background_color, n.background_opacity, n.override_background, n.short_description, n.description, n.content, n.alarm_text, n.alarm_group_id, n.protected_access, n.sort_order, n.active, n.created_at, n.updated_at, g.group_number AS alarm_group_number, g.description AS alarm_group_description';
 
     private const FROM = ' FROM navigation_items n LEFT JOIN alarm_groups g ON g.id = n.alarm_group_id';
 
@@ -125,8 +125,8 @@ final class NavigationRepository extends Repository
     public function create(array $data): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, override_background, short_description, description, content, alarm_text, alarm_group_id, sort_order, active)
-             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :override_background, :short_description, :description, :content, :alarm_text, :alarm_group_id, :sort_order, :active)'
+            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, override_background, short_description, description, content, alarm_text, alarm_group_id, protected_access, sort_order, active)
+             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :override_background, :short_description, :description, :content, :alarm_text, :alarm_group_id, :protected_access, :sort_order, :active)'
         );
         $statement->execute($this->bindings($data));
 
@@ -153,6 +153,7 @@ final class NavigationRepository extends Repository
                     content = :content,
                     alarm_text = :alarm_text,
                     alarm_group_id = :alarm_group_id,
+                    protected_access = :protected_access,
                     sort_order = :sort_order,
                     active = :active
               WHERE id = :id'
@@ -315,6 +316,7 @@ final class NavigationRepository extends Repository
             'content' => isset($data['content']) && $data['content'] !== null && $data['content'] !== '' ? (string) $data['content'] : null,
             'alarm_text' => $alarmText === null ? null : (string) $alarmText,
             'alarm_group_id' => $alarmGroupId === null ? null : (int) $alarmGroupId,
+            'protected_access' => !empty($data['protected_access']) ? 1 : 0,
             'sort_order' => (int) ($data['sort_order'] ?? 1),
             'active' => !empty($data['active']) ? 1 : 0,
         ];

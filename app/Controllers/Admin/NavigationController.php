@@ -48,6 +48,8 @@ final class NavigationController extends AdminController
                 'type' => $type,
                 'parent_id' => $parentId > 0 ? $parentId : null,
                 'icon' => '',
+                'background_color' => '',
+                'background_opacity' => null,
                 'short_description' => '',
                 'description' => '',
                 'content' => '',

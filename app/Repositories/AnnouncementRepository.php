@@ -24,6 +24,24 @@ final class AnnouncementRepository extends Repository
     }
 
     /**
+     * Alle aktuell aktiven Mitteilungen fuer das "Mitteilungen"-Menue
+     * der oeffentlichen Navigation, neueste zuerst.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function activeItems(): array
+    {
+        $statement = $this->pdo->query(
+            'SELECT ' . self::COLUMNS . ' FROM announcements WHERE active = 1 ORDER BY created_at DESC, id DESC'
+        );
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement === false ? [] : $statement->fetchAll();
+
+        return $rows;
+    }
+
+    /**
      * Alle Mitteilungen fuer den Adminbereich, neueste zuerst.
      *
      * @return list<array<string,mixed>>

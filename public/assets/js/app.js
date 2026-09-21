@@ -9,6 +9,7 @@
         light: 'Design: hell',
         dark: 'Design: dunkel'
     };
+    var ANNOUNCEMENT_STORAGE_KEY = 'intranet.announcement.dismissed';
 
     function readMode() {
         try {
@@ -91,6 +92,155 @@
         });
     }
 
+    function announcementStore() {
+        try {
+            return window.localStorage;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function announcementDismissedTokens() {
+        var store = announcementStore();
+        if (!store) {
+            return {};
+        }
+
+        var raw = store.getItem(ANNOUNCEMENT_STORAGE_KEY);
+        if (!raw) {
+            return {};
+        }
+
+        // Neues Format: JSON-Array von Token. Altes Format: einzelnes Token.
+        if (raw.charAt(0) === '[') {
+            try {
+                var tokens = JSON.parse(raw);
+                var map = {};
+                if (Array.isArray(tokens)) {
+                    tokens.forEach(function (token) {
+                        map[token] = true;
+                    });
+                }
+                return map;
+            } catch (error) {
+                return {};
+            }
+        }
+
+        var legacy = {};
+        legacy[raw] = true;
+        return legacy;
+    }
+
+    function announcementStoreDismissed(token) {
+        var store = announcementStore();
+        if (!store) {
+            return;
+        }
+
+        var tokens = Object.keys(announcementDismissedTokens());
+        if (tokens.indexOf(token) === -1) {
+            tokens.push(token);
+        }
+
+        try {
+            store.setItem(ANNOUNCEMENT_STORAGE_KEY, JSON.stringify(tokens));
+        } catch (error) {
+            /* Speichern ist optional. */
+        }
+    }
+
+    function initAnnouncements() {
+        var overlay = document.querySelector('[data-announcement-overlay]');
+        if (!overlay) {
+            return;
+        }
+
+        var contentBox = overlay.querySelector('[data-announcement-content]');
+        var dismissButton = overlay.querySelector('[data-announcement-dismiss]');
+        var templates = document.querySelectorAll('.announcement-template');
+        var menuItems = document.querySelectorAll('[data-announcement-open]');
+        var lastTrigger = null;
+
+        function templateFor(id) {
+            for (var i = 0; i < templates.length; i++) {
+                if (templates[i].getAttribute('data-announcement-id') === String(id)) {
+                    return templates[i];
+                }
+            }
+            return null;
+        }
+
+        function open(id, version) {
+            var template = templateFor(id);
+            if (!template || !contentBox) {
+                return;
+            }
+
+            contentBox.textContent = '';
+            var clone = template.content.cloneNode(true);
+            var title = clone.querySelector('.announcement-overlay__title');
+            if (title) {
+                title.id = 'announcement-overlay-title';
+            }
+            contentBox.appendChild(clone);
+
+            overlay.setAttribute('data-announcement-id', String(id));
+            overlay.setAttribute('data-announcement-version', version || '');
+            overlay.hidden = false;
+            document.body.classList.add('has-announcement-overlay');
+
+            if (dismissButton) {
+                dismissButton.focus();
+            }
+        }
+
+        function close() {
+            overlay.hidden = true;
+            document.body.classList.remove('has-announcement-overlay');
+            if (lastTrigger) {
+                lastTrigger.focus();
+                lastTrigger = null;
+            }
+        }
+
+        if (dismissButton) {
+            dismissButton.addEventListener('click', function () {
+                var id = overlay.getAttribute('data-announcement-id') || '';
+                var version = overlay.getAttribute('data-announcement-version') || '';
+                if (id !== '') {
+                    announcementStoreDismissed(id + ':' + version);
+                }
+                close();
+            });
+        }
+
+        Array.prototype.forEach.call(menuItems, function (item) {
+            item.addEventListener('click', function () {
+                var id = item.getAttribute('data-announcement-id');
+                var template = templateFor(id);
+                var version = template ? (template.getAttribute('data-announcement-version') || '') : '';
+                lastTrigger = item;
+                open(id, version);
+            });
+        });
+
+        // Aktive Mitteilung beim Oeffnen der Landingpage als Overlay anzeigen.
+        if (document.body.getAttribute('data-page') === 'home') {
+            for (var i = 0; i < menuItems.length; i++) {
+                var id = menuItems[i].getAttribute('data-announcement-id');
+                var template = templateFor(id);
+                var version = template ? (template.getAttribute('data-announcement-version') || '') : '';
+                var token = id + ':' + version;
+
+                if (!announcementDismissedTokens()[token]) {
+                    open(id, version);
+                    break;
+                }
+            }
+        }
+    }
+
     // Theme sofort setzen, damit es keinen Farbsprung gibt.
     applyMode(readMode());
 
@@ -98,5 +248,6 @@
         initTheme();
         initConfirmations();
         initColorFields();
+        initAnnouncements();
     });
 })();

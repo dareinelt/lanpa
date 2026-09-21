@@ -12,9 +12,11 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     public const MAX_LIMIT = 100;
 
     /**
-     * Eintraege ohne Telefon- und Mobilnummer sind nur fuer angemeldete
+     * Eintraege ohne E-Mail-Adresse sind nur fuer angemeldete
      * Administratoren sichtbar.
      */
+    private const EMAIL_CONDITION = "(email IS NOT NULL AND email <> '')";
+
     private const PHONE_CONDITION = "((phone IS NOT NULL AND phone <> '') OR (mobile IS NOT NULL AND mobile <> ''))";
 
     /**
@@ -25,12 +27,12 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
      *
      * @return array{items:list<array<string,mixed>>,total:int}
      */
-    public function search(string $term, int $limit = 50, int $offset = 0, bool $includeWithoutPhone = false): array
+    public function search(string $term, int $limit = 50, int $offset = 0, bool $includeWithoutEmail = false): array
     {
         $limit = max(1, min(self::MAX_LIMIT, $limit));
         $offset = max(0, $offset);
 
-        [$where, $params] = $this->buildSearchCondition($term, $includeWithoutPhone);
+        [$where, $params] = $this->buildSearchCondition($term, $includeWithoutEmail);
 
         $countStatement = $this->pdo->prepare('SELECT COUNT(*) FROM phonebook WHERE ' . $where);
         $countStatement->execute($params);
@@ -54,13 +56,13 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     /**
      * @return array{0:string,1:array<string,string>}
      */
-    public function buildSearchCondition(string $term, bool $includeWithoutPhone = false): array
+    public function buildSearchCondition(string $term, bool $includeWithoutEmail = false): array
     {
         $conditions = ['active = 1', 'visible = 1'];
         $params = [];
 
-        if (!$includeWithoutPhone) {
-            $conditions[] = self::PHONE_CONDITION;
+        if (!$includeWithoutEmail) {
+            $conditions[] = self::EMAIL_CONDITION;
         }
 
         [$termCondition, $termParams] = $this->buildTermCondition($term);
@@ -125,11 +127,11 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     /**
      * Zaehlt die fuer die Suche sichtbaren Eintraege.
      */
-    public function countVisible(bool $includeWithoutPhone = false): int
+    public function countVisible(bool $includeWithoutEmail = false): int
     {
         $sql = 'SELECT COUNT(*) FROM phonebook WHERE active = 1 AND visible = 1';
-        if (!$includeWithoutPhone) {
-            $sql .= ' AND ' . self::PHONE_CONDITION;
+        if (!$includeWithoutEmail) {
+            $sql .= ' AND ' . self::EMAIL_CONDITION;
         }
 
         $value = $this->pdo->query($sql)?->fetchColumn();
@@ -237,20 +239,44 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
 
     /**
      * Alle Eintraege (aktiv und inaktiv, ein- und ausgeblendet) fuer den
-     * Adminbereich, optional gefiltert nach einem Suchbegriff.
+     * Adminbereich, optional gefiltert nach einem Suchbegriff und
+     * Bool-Filtern (has_email, is_active, has_phone, is_visible).
+     *
+     * @param array{has_email?:bool,is_active?:bool,has_phone?:bool,is_visible?:bool} $filters
      *
      * @return list<array<string,mixed>>
      */
-    public function allForAdmin(string $term = ''): array
+    public function allForAdmin(string $term = '', array $filters = []): array
     {
         $sql = 'SELECT id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible
                   FROM phonebook';
+        $conditions = [];
         $params = [];
 
         [$termCondition, $termParams] = $this->buildTermCondition($term);
         if ($termCondition !== '') {
-            $sql .= ' WHERE ' . $termCondition;
+            $conditions[] = $termCondition;
             $params = $termParams;
+        }
+
+        if (!empty($filters['has_email'])) {
+            $conditions[] = self::EMAIL_CONDITION;
+        }
+
+        if (!empty($filters['is_active'])) {
+            $conditions[] = 'active = 1';
+        }
+
+        if (!empty($filters['has_phone'])) {
+            $conditions[] = self::PHONE_CONDITION;
+        }
+
+        if (!empty($filters['is_visible'])) {
+            $conditions[] = 'visible = 1';
+        }
+
+        if ($conditions !== []) {
+            $sql .= ' WHERE ' . implode(' AND ', $conditions);
         }
 
         $sql .= ' ORDER BY last_name ASC, first_name ASC, display_name ASC';

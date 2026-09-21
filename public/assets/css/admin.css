@@ -261,6 +261,10 @@
     padding-inline: .35rem;
 }
 
+.fieldset--filters {
+    margin-top: 1rem;
+}
+
 .form__actions {
     display: flex;
     gap: .75rem;

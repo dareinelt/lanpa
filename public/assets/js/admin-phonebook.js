@@ -108,4 +108,14 @@
                 });
         });
     });
+
+    var filterForm = document.querySelector('[data-phonebook-filter-form]');
+
+    if (filterForm) {
+        Array.prototype.forEach.call(filterForm.querySelectorAll('[data-phonebook-filter]'), function (input) {
+            input.addEventListener('change', function () {
+                filterForm.submit();
+            });
+        });
+    }
 })();

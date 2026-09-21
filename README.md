@@ -16,7 +16,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | Bereich | Beschreibung |
 | --- | --- |
 | Landingpage | Kacheln aller aktiven Navigationselemente, Kurz- und Langbeschreibung, Klickzählung; Unterseiten mit weiteren Kacheln im selben Stil sowie formatierte Textseiten (Rich-Text-Editor im Adminbereich); aufklappbarer Bereich „Wichtige Links“ (automatisch alphabetisch sortiert, mit automatisch ermitteltem Favicon) |
-| Telefonliste | Suche über Name, Vorname, Nachname, Abteilung und Telefonnummer (Live-Suche, Paginierung); Einträge ohne Telefon- und Mobilnummer sind nur für angemeldete Administratoren sichtbar; einzelne Einträge lassen sich im Adminbereich ein-/ausblenden (Standard: eingeblendet) |
+| Telefonliste | Suche über Name, Vorname, Nachname, Abteilung und Telefonnummer (Live-Suche, Paginierung); Einträge ohne E-Mail-Adresse sind nur für angemeldete Administratoren sichtbar; einzelne Einträge lassen sich im Adminbereich ein-/ausblenden (Standard: eingeblendet) |
 | AD-Synchronisation | LDAP/LDAPS-Abgleich in die lokale Datenbank, konfigurierbares Intervall und Attribut-Mapping |
 | Administration | Navigation (CRUD, Sortierung, Aktivierung, Hierarchie aus Unterseiten/Textseiten), Beschreibungen, Design/Logo, AD-Konfiguration, Statistik |
 | Statistik | Klicks je Element und Tag, Zeiträume 3/7/14/30/90/365 Tage, selbst gerendertes SVG-Liniendiagramm |
@@ -163,7 +163,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`), Handbuch-Links ein-/ausblenden |
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
 | Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Intervall, manueller Testlauf |
-| Telefonliste | Alle Einträge auflisten und je Eintrag ein-/ausblenden (Standard für neu synchronisierte Einträge: eingeblendet) |
+| Telefonliste | Alle Einträge auflisten und je Eintrag ein-/ausblenden (Standard für neu synchronisierte Einträge: eingeblendet); Filter nach „Hat E-Mail-Adresse“, „Ist aktiv“, „Hat Telefonnummer“ und „Nur eingeblendete“ |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |
 | Benutzer | Benutzerverwaltung: Konten anlegen/bearbeiten/deaktivieren/löschen, Rollenvergabe (nur für Administratoren) |
 

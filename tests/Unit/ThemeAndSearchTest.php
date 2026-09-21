@@ -84,34 +84,33 @@ Runner::test('Suchbegriffe werden auf fünf Tokens begrenzt', static function ()
     Assert::same(20, count(array_filter(array_keys($params), static fn (string $k): bool => str_starts_with($k, 't'))));
 });
 
-Runner::test('Leerer Suchbegriff liefert nur den Aktiv- und Telefonfilter', static function (): void {
+Runner::test('Leerer Suchbegriff liefert nur den Aktiv- und E-Mail-Filter', static function (): void {
     /** @var PhonebookRepository $repository */
     $repository = (new ReflectionClass(PhonebookRepository::class))->newInstanceWithoutConstructor();
 
     [$sql, $params] = $repository->buildSearchCondition('   ');
 
     Assert::contains('active = 1', $sql);
-    Assert::contains("phone <> ''", $sql);
+    Assert::contains("email <> ''", $sql);
     Assert::same(0, count($params));
 });
 
-Runner::test('Eintraege ohne Telefonnummer werden fuer Nutzer ausgeblendet', static function (): void {
+Runner::test('Eintraege ohne E-Mail-Adresse werden fuer Nutzer ausgeblendet', static function (): void {
     /** @var PhonebookRepository $repository */
     $repository = (new ReflectionClass(PhonebookRepository::class))->newInstanceWithoutConstructor();
 
     [$sql] = $repository->buildSearchCondition('Muster');
 
-    Assert::contains("(phone IS NOT NULL AND phone <> '')", $sql);
-    Assert::contains("(mobile IS NOT NULL AND mobile <> '')", $sql);
+    Assert::contains("(email IS NOT NULL AND email <> '')", $sql);
 });
 
-Runner::test('Administratoren sehen auch Eintraege ohne Telefonnummer', static function (): void {
+Runner::test('Administratoren sehen auch Eintraege ohne E-Mail-Adresse', static function (): void {
     /** @var PhonebookRepository $repository */
     $repository = (new ReflectionClass(PhonebookRepository::class))->newInstanceWithoutConstructor();
 
     [$sql] = $repository->buildSearchCondition('Muster', true);
 
-    Assert::false(str_contains($sql, 'phone IS NOT NULL'));
+    Assert::false(str_contains($sql, 'email IS NOT NULL'));
     Assert::contains('active = 1', $sql);
 });
 

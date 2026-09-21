@@ -26,6 +26,7 @@ final class DashboardController extends AdminController
             'activeNav' => 'dashboard',
             'navigationCount' => count(Container::navigation()->allItems()),
             'phonebookCount' => $phonebook->countActive(),
+            'phonebookVisible' => $phonebook->countVisible(true),
             'lastSync' => Container::syncLogRepository()->last(),
             'lastSuccessfulSync' => Container::syncLogRepository()->lastSuccessful(),
             'clicksTotal' => $statistics->totalClicks(),

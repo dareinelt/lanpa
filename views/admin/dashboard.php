@@ -36,6 +36,8 @@ use App\Support\Html;
         <h2 class="card__title">Telefonbuch</h2>
         <p class="metric"><?= (int) $phonebookCount ?></p>
         <p class="card__hint">aktive Einträge</p>
+        <p class="metric"><?= (int) $phonebookVisible ?></p>
+        <p class="card__hint">eingeblendete Einträge</p>
         <p class="card__hint">
             Letzte erfolgreiche Synchronisation:
             <?= $lastSuccessfulSync === null ? 'noch keine' : Html::e(Dates::formatDateTime((string) $lastSuccessfulSync['finished_at'])) ?>

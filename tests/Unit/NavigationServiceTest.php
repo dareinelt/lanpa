@@ -98,3 +98,19 @@ Runner::test('Nur Unterseiten koennen eine uebergeordnete Ebene sein', static fu
         Assert::true(isset($exception->errors()['parent_id']));
     }
 });
+
+Runner::test('Deckkraft wird auch als Integer akzeptiert', static function (): void {
+    $service = navigationTestService(navigationTestPdo());
+
+    // Der Controller reicht background_opacity bereits als Integer durch (vgl. NavigationController::payload).
+    $id = $service->create([
+        'title' => 'Kachel',
+        'type' => 'external',
+        'url' => 'https://example.com',
+        'background_opacity' => 97,
+        'active' => true,
+    ]);
+
+    $item = $service->find($id);
+    Assert::same(97, (int) $item['background_opacity']);
+});

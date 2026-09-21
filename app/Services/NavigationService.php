@@ -150,7 +150,7 @@ final class NavigationService
         }
 
         $backgroundOpacity = $input['background_opacity'] ?? null;
-        if ($backgroundOpacity !== null && $backgroundOpacity !== '' && !Validator::isPercentage($backgroundOpacity)) {
+        if ($backgroundOpacity !== null && $backgroundOpacity !== '' && !Validator::isPercentage((string) $backgroundOpacity)) {
             $errors['background_opacity'] = 'Bitte einen Wert zwischen 0 und 100 angeben.';
         }
 

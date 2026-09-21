@@ -22,6 +22,7 @@ $icons = [
     'beacon' => '<path d="M9 10a3 3 0 1 1 6 0c0 2-1 3-1 5h-4c0-2-1-3-1-5z"/><path d="M9 15h6v2H9z"/><path d="M11 17h2v4h-2z"/><path d="M5 9l1.5 1"/><path d="M19 9l-1.5 1"/><path d="M12 4v2"/>',
     'ekg' => '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 12h3l2-4 2 8 2-4h3"/>',
     'warning' => '<rect x="6.34" y="6.34" width="11.31" height="11.31" rx="2" transform="rotate(45 12 12)"/><path d="M12 8.5v5"/><circle cx="12" cy="16" r="0.6" fill="currentColor"/>',
+    'siren' => '<path d="M3 10v4a1 1 0 0 0 1 1h2l4 3V6L6 9H4a1 1 0 0 0-1 1z"/><path d="M14 9a3 3 0 0 1 0 6"/><path d="M17 7a6 6 0 0 1 0 10"/>',
 ];
 
 $key = isset($icon) && is_string($icon) && isset($icons[$icon]) ? $icon : 'link';

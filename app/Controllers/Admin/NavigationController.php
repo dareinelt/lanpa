@@ -41,6 +41,7 @@ final class NavigationController extends AdminController
             'activeNav' => 'navigation',
             'pageScript' => 'editor.js',
             'subpages' => Container::navigation()->subpages(),
+            'alarmGroups' => Container::alarmGroups()->activeItems(),
             'item' => [
                 'id' => null,
                 'title' => '',
@@ -53,6 +54,8 @@ final class NavigationController extends AdminController
                 'short_description' => '',
                 'description' => '',
                 'content' => '',
+                'alarm_text' => '',
+                'alarm_group_id' => null,
                 'sort_order' => Container::navigationRepository()->nextSortOrder($parentId > 0 ? $parentId : null),
                 'active' => 1,
             ],
@@ -90,6 +93,7 @@ final class NavigationController extends AdminController
             'activeNav' => 'navigation',
             'pageScript' => 'editor.js',
             'subpages' => Container::navigation()->subpages(),
+            'alarmGroups' => Container::alarmGroups()->activeItems(),
             'item' => $item,
             'errors' => [],
         ]);
@@ -186,6 +190,8 @@ final class NavigationController extends AdminController
             'short_description' => (string) $request->input('short_description', ''),
             'description' => (string) $request->input('description', ''),
             'content' => (string) $request->input('content', ''),
+            'alarm_text' => (string) $request->input('alarm_text', ''),
+            'alarm_group_id' => $request->inputInt('alarm_group_id', 0),
             'sort_order' => $request->inputInt('sort_order', 0),
             'active' => $request->has('active'),
         ];
@@ -202,6 +208,7 @@ final class NavigationController extends AdminController
             'activeNav' => 'navigation',
             'pageScript' => 'editor.js',
             'subpages' => Container::navigation()->subpages(),
+            'alarmGroups' => Container::alarmGroups()->activeItems(),
             'item' => $payload,
             'errors' => $exception->errors(),
         ], 422);

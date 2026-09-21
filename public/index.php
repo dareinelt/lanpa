@@ -10,6 +10,8 @@ require_once dirname(__DIR__) . '/bootstrap.php';
 
 use App\Controllers\Admin\AuthController;
 use App\Controllers\Admin\AdminUserController;
+use App\Controllers\Admin\AlarmController;
+use App\Controllers\Admin\AlarmGroupController;
 use App\Controllers\Admin\AnnouncementController;
 use App\Controllers\Admin\DashboardController;
 use App\Controllers\Admin\DescriptionController;
@@ -22,6 +24,7 @@ use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\StatisticsController;
 use App\Controllers\BackgroundImageController;
+use App\Controllers\AlarmTriggerController;
 use App\Controllers\ClickController;
 use App\Controllers\HealthController;
 use App\Controllers\ImportantLinkIconController;
@@ -52,6 +55,7 @@ $router->get('/seite', [PageController::class, 'page']);
 $router->get('/telefonliste', [PhonebookController::class, 'index']);
 $router->get('/api/telefonliste', [PhonebookController::class, 'search']);
 $router->post('/api/klick', [ClickController::class, 'store']);
+$router->post('/api/alarm', [AlarmTriggerController::class, 'store']);
 $router->get('/logo', [LogoController::class, 'show']);
 $router->get('/hintergrundbild', [BackgroundImageController::class, 'show']);
 $router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
@@ -141,6 +145,15 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/ad', [LdapController::class, 'index']);
         $router->post('/admin/ad', [LdapController::class, 'update']);
         $router->post('/admin/ad/sync', [LdapController::class, 'sync']);
+
+        $router->get('/admin/alarmierung', [AlarmController::class, 'index']);
+        $router->post('/admin/alarmierung', [AlarmController::class, 'update']);
+        $router->get('/admin/alarmierung/gruppen/neu', [AlarmGroupController::class, 'create']);
+        $router->post('/admin/alarmierung/gruppen/neu', [AlarmGroupController::class, 'store']);
+        $router->get('/admin/alarmierung/gruppen/bearbeiten', [AlarmGroupController::class, 'edit']);
+        $router->post('/admin/alarmierung/gruppen/bearbeiten', [AlarmGroupController::class, 'update']);
+        $router->post('/admin/alarmierung/gruppen/loeschen', [AlarmGroupController::class, 'delete']);
+        $router->post('/admin/alarmierung/gruppen/status', [AlarmGroupController::class, 'toggle']);
 
         $router->get('/admin/statistik', [StatisticsController::class, 'index']);
         $router->get('/admin/api/statistik', [StatisticsController::class, 'data']);

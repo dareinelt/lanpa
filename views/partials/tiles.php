@@ -40,6 +40,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
             $id = (int) $item['id'];
             $type = (string) $item['type'];
             $isExternal = $type === 'external';
+            $isAlarm = $type === 'alarm';
             $description = trim((string) ($item['description'] ?? ''));
             $shortDescription = trim((string) ($item['short_description'] ?? ''));
             $detailsId = 'tile-details-' . $id;
@@ -54,6 +55,26 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
             }
             ?>
             <li class="tile" data-tile-id="<?= $id ?>">
+                <?php if ($isAlarm) { ?>
+                <button type="button"
+                        class="tile__link tile__link--button"
+                        data-alarm-id="<?= $id ?>"
+                        data-alarm-title="<?= Html::e((string) $item['title']) ?>"
+                        data-alarm-text="<?= Html::e((string) $item['alarm_text']) ?>"
+                        data-alarm-group="<?= Html::e((string) $item['alarm_group_description']) ?>"
+                        <?= $description !== '' ? 'aria-describedby="' . Html::e($detailsId) . '"' : '' ?>>
+                    <span class="tile__icon-wrap" aria-hidden="true">
+                        <?php require __DIR__ . '/icon.php'; ?>
+                    </span>
+                    <span class="tile__body">
+                        <span class="tile__title"><?= Html::e((string) $item['title']) ?></span>
+                        <?php if ($shortDescription !== '') { ?>
+                            <span class="tile__short"><?= Html::e($shortDescription) ?></span>
+                        <?php } ?>
+                    </span>
+                    <span class="visually-hidden">(öffnet eine Bestätigung)</span>
+                </button>
+                <?php } else { ?>
                 <a class="tile__link"
                    href="<?= Html::e($href) ?>"
                    data-nav-id="<?= $id ?>"
@@ -72,6 +93,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
                         <span class="visually-hidden">(öffnet in einem neuen Tab)</span>
                     <?php } ?>
                 </a>
+                <?php } ?>
 
                 <?php if ($description !== '') { ?>
                     <button type="button"

@@ -381,6 +381,16 @@ code {
     border-radius: var(--radius);
 }
 
+.tile__link--button {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+}
+
 .tile__icon-wrap {
     display: grid;
     place-items: center;

@@ -16,6 +16,7 @@ $siteSubtitleVisible = $siteSubtitleVisible ?? true;
 $flashes = $flashes ?? [];
 $announcements = $announcements ?? [];
 $documentationEnabled = $documentationEnabled ?? false;
+$csrfToken = $csrfToken ?? '';
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 ?>
 <!doctype html>
@@ -24,6 +25,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
+    <meta name="csrf-token" content="<?= Html::e($csrfToken) ?>">
     <title><?= Html::e($pageTitle) ?> – <?= Html::e($siteTitle ?? $appName) ?></title>
     <link rel="icon" href="/assets/images/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="/assets/css/app.css?v=<?= Html::e($assetVersion) ?>">
@@ -128,6 +130,22 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
         </div>
     </div>
 <?php } ?>
+
+<div class="announcement-overlay"
+     data-alarm-overlay
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="alarm-overlay-title"
+     hidden>
+    <div class="announcement-overlay__box">
+        <h2 class="announcement-overlay__title" id="alarm-overlay-title">Alarmierung auslösen</h2>
+        <p class="announcement-overlay__text" data-alarm-details></p>
+        <div class="announcement-overlay__actions">
+            <button type="button" class="button button--ghost" data-alarm-cancel>Abbrechen</button>
+            <button type="button" class="button button--danger" data-alarm-confirm>Alarmierung auslösen</button>
+        </div>
+    </div>
+</div>
 
 <script src="/assets/js/app.js?v=<?= Html::e($assetVersion) ?>" defer></script>
 <?php if (($pageScript ?? '') !== '') { ?>

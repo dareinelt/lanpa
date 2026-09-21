@@ -6,7 +6,9 @@ namespace App\Repositories;
 
 final class NavigationRepository extends Repository
 {
-    private const COLUMNS = 'id, title, url, type, parent_id, icon, background_color, background_opacity, short_description, description, content, sort_order, active, created_at, updated_at';
+    private const COLUMNS = 'n.id, n.title, n.url, n.type, n.parent_id, n.icon, n.background_color, n.background_opacity, n.short_description, n.description, n.content, n.alarm_text, n.alarm_group_id, n.sort_order, n.active, n.created_at, n.updated_at, g.group_number AS alarm_group_number, g.description AS alarm_group_description';
+
+    private const FROM = ' FROM navigation_items n LEFT JOIN alarm_groups g ON g.id = n.alarm_group_id';
 
     /**
      * @return list<array<string,mixed>>
@@ -14,7 +16,7 @@ final class NavigationRepository extends Repository
     public function all(): array
     {
         $statement = $this->pdo->query(
-            'SELECT ' . self::COLUMNS . ' FROM navigation_items ORDER BY (parent_id IS NULL) DESC, COALESCE(parent_id, 0) ASC, sort_order ASC, id ASC'
+            'SELECT ' . self::COLUMNS . self::FROM . ' ORDER BY (n.parent_id IS NULL) DESC, COALESCE(n.parent_id, 0) ASC, n.sort_order ASC, n.id ASC'
         );
 
         /** @var list<array<string,mixed>> $rows */
@@ -97,7 +99,7 @@ final class NavigationRepository extends Repository
      */
     public function find(int $id): ?array
     {
-        $statement = $this->pdo->prepare('SELECT ' . self::COLUMNS . ' FROM navigation_items WHERE id = :id');
+        $statement = $this->pdo->prepare('SELECT ' . self::COLUMNS . self::FROM . ' WHERE n.id = :id');
         $statement->execute(['id' => $id]);
         $row = $statement->fetch();
 
@@ -123,8 +125,8 @@ final class NavigationRepository extends Repository
     public function create(array $data): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, short_description, description, content, sort_order, active)
-             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :short_description, :description, :content, :sort_order, :active)'
+            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, short_description, description, content, alarm_text, alarm_group_id, sort_order, active)
+             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :short_description, :description, :content, :alarm_text, :alarm_group_id, :sort_order, :active)'
         );
         $statement->execute($this->bindings($data));
 
@@ -148,6 +150,8 @@ final class NavigationRepository extends Repository
                     short_description = :short_description,
                     description = :description,
                     content = :content,
+                    alarm_text = :alarm_text,
+                    alarm_group_id = :alarm_group_id,
                     sort_order = :sort_order,
                     active = :active
               WHERE id = :id'
@@ -250,7 +254,7 @@ final class NavigationRepository extends Repository
      */
     public function siblings(?int $parentId): array
     {
-        $sql = 'SELECT ' . self::COLUMNS . ' FROM navigation_items WHERE ' . ($parentId === null ? 'parent_id IS NULL' : 'parent_id = :parent_id') . ' ORDER BY sort_order ASC, id ASC';
+        $sql = 'SELECT ' . self::COLUMNS . self::FROM . ' WHERE ' . ($parentId === null ? 'n.parent_id IS NULL' : 'n.parent_id = :parent_id') . ' ORDER BY n.sort_order ASC, n.id ASC';
         $statement = $this->pdo->prepare($sql);
         $statement->execute($parentId === null ? [] : ['parent_id' => $parentId]);
 
@@ -268,7 +272,7 @@ final class NavigationRepository extends Repository
     private function activeChildrenWhere(string $where, array $bindings = []): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT ' . self::COLUMNS . ' FROM navigation_items WHERE active = 1 AND ' . $where . ' ORDER BY sort_order ASC, id ASC'
+            'SELECT ' . self::COLUMNS . self::FROM . ' WHERE n.active = 1 AND ' . $where . ' ORDER BY n.sort_order ASC, n.id ASC'
         );
         $statement->execute($bindings);
 
@@ -287,10 +291,14 @@ final class NavigationRepository extends Repository
     {
         $bgColor = $data['background_color'] ?? null;
         $bgOpacity = $data['background_opacity'] ?? null;
+        $alarmText = $data['alarm_text'] ?? null;
+        $alarmGroupId = $data['alarm_group_id'] ?? null;
 
         // Normalize empty strings to null for optional fields
         $bgColor = $bgColor === '' ? null : $bgColor;
         $bgOpacity = $bgOpacity === '' ? null : $bgOpacity;
+        $alarmText = $alarmText === '' ? null : $alarmText;
+        $alarmGroupId = $alarmGroupId === '' ? null : $alarmGroupId;
 
         return [
             'title' => (string) $data['title'],
@@ -303,6 +311,8 @@ final class NavigationRepository extends Repository
             'short_description' => (string) ($data['short_description'] ?? ''),
             'description' => (string) ($data['description'] ?? ''),
             'content' => isset($data['content']) && $data['content'] !== null && $data['content'] !== '' ? (string) $data['content'] : null,
+            'alarm_text' => $alarmText === null ? null : (string) $alarmText,
+            'alarm_group_id' => $alarmGroupId === null ? null : (int) $alarmGroupId,
             'sort_order' => (int) ($data['sort_order'] ?? 1),
             'active' => !empty($data['active']) ? 1 : 0,
         ];

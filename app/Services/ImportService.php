@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Exceptions\ValidationException;
 use App\Repositories\AdminUserRepository;
+use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AnnouncementRepository;
 use App\Repositories\EmergencyNumberRepository;
 use App\Repositories\ImportantLinkRepository;
@@ -38,7 +39,11 @@ final class ImportService
         'announcements',
         'admin_users',
         'phonebook',
+        'alarm_groups',
     ];
+
+    /** @var array<int,int> */
+    private array $alarmGroupIdMap = [];
 
     public function __construct(
         private readonly SettingsRepository $settingsRepository,
@@ -49,6 +54,7 @@ final class ImportService
         private readonly AnnouncementRepository $announcementRepository,
         private readonly AdminUserRepository $adminUserRepository,
         private readonly PhonebookRepository $phonebookRepository,
+        private readonly AlarmGroupRepository $alarmGroupRepository,
         private readonly LogoService $logo,
         private readonly BackgroundImageService $backgroundImage,
         private readonly FaviconService $favicons
@@ -67,6 +73,7 @@ final class ImportService
 
         try {
             $this->applySettings($data['settings']);
+            $this->applyAlarmGroups($data['alarm_groups']);
             $this->applyNavigation($data['navigation_items']);
             $this->applyImportantLinks($data['important_links']);
             $this->applyEmergencyNumbers($data['emergency_numbers']);
@@ -254,10 +261,40 @@ final class ImportService
      */
     private function applySettings(array $settings): void
     {
+        // Das SMS-Gateway-Passwort ist ein Secret: Es wird nicht exportiert und
+        // darf durch einen Import nicht überschrieben werden.
+        $existingPassword = $this->settingsRepository->get('alarm_password');
+
         $this->settingsRepository->deleteAll();
 
         foreach ($settings as $key => $value) {
+            if ($key === 'alarm_password') {
+                continue;
+            }
             $this->settingsRepository->insert((string) $key, (string) $value);
+        }
+
+        if (is_string($existingPassword) && $existingPassword !== '') {
+            $this->settingsRepository->insert('alarm_password', $existingPassword);
+        }
+    }
+
+    /**
+     * @param list<array<string,mixed>> $rows
+     */
+    private function applyAlarmGroups(array $rows): void
+    {
+        $this->alarmGroupRepository->deleteAll();
+        $this->alarmGroupIdMap = [];
+
+        foreach ($rows as $row) {
+            $oldId = (int) $row['id'];
+            $this->alarmGroupIdMap[$oldId] = $this->alarmGroupRepository->create([
+                'group_number' => (string) ($row['group_number'] ?? ''),
+                'description' => (string) ($row['description'] ?? ''),
+                'sort_order' => (int) ($row['sort_order'] ?? 1),
+                'active' => !empty($row['active']),
+            ]);
         }
     }
 
@@ -282,6 +319,8 @@ final class ImportService
                 'short_description' => (string) ($row['short_description'] ?? ''),
                 'description' => (string) ($row['description'] ?? ''),
                 'content' => $row['content'] ?? null,
+                'alarm_text' => $row['alarm_text'] ?? null,
+                'alarm_group_id' => $this->remapAlarmGroupId($row['alarm_group_id'] ?? null),
                 'sort_order' => (int) ($row['sort_order'] ?? 1),
                 'active' => !empty($row['active']),
             ]);
@@ -294,6 +333,15 @@ final class ImportService
 
             $this->navigationRepository->setParentId($idMap[$oldId], $parentId);
         }
+    }
+
+    private function remapAlarmGroupId(mixed $oldId): ?int
+    {
+        if ($oldId === null || $oldId === '') {
+            return null;
+        }
+
+        return $this->alarmGroupIdMap[(int) $oldId] ?? null;
     }
 
     /**

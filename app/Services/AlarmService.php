@@ -1,0 +1,143 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Repositories\AlarmLogRepository;
+use App\Repositories\NavigationRepository;
+
+/**
+ * Löst eine Alarmierung aus: baut die Gateway-URL serverseitig zusammen, sendet
+ * sie per GET und protokolliert das Ergebnis. Das Gateway-Passwort wird niemals
+ * zurückgegeben, gerendert oder geloggt.
+ */
+final class AlarmService
+{
+    public function __construct(
+        private readonly NavigationRepository $navigation,
+        private readonly AlarmLogRepository $log,
+        private readonly SettingsService $settings
+    ) {
+    }
+
+    /**
+     * @return array{status:string,message:string}
+     */
+    public function trigger(int $navigationId): array
+    {
+        $item = $this->navigation->find($navigationId);
+
+        if ($item === null || (string) $item['type'] !== 'alarm' || (int) $item['active'] !== 1) {
+            return ['status' => 'error', 'message' => 'Alarmierung nicht gefunden oder nicht aktiv.'];
+        }
+
+        $title = (string) ($item['title'] ?? '');
+        $text = (string) ($item['alarm_text'] ?? '');
+        $groupNumber = (string) ($item['alarm_group_number'] ?? '');
+        $groupDescription = (string) ($item['alarm_group_description'] ?? '');
+
+        if ($text === '' || $groupNumber === '') {
+            $this->log($navigationId, $title, $text, $groupNumber, $groupDescription, 'error', 'Alarmierungstext oder Gruppe fehlt.');
+
+            return ['status' => 'error', 'message' => 'Die Alarmierung ist unvollständig konfiguriert.'];
+        }
+
+        $config = $this->settings->alarmConfig();
+        if ($config['host'] === '' || $config['username'] === '' || $config['password'] === '') {
+            $this->log($navigationId, $title, $text, $groupNumber, $groupDescription, 'error', 'SMS-Gateway ist nicht vollständig konfiguriert.');
+
+            return ['status' => 'error', 'message' => 'Das SMS-Gateway ist nicht vollständig konfiguriert.'];
+        }
+
+        $url = $this->buildUrl($config['host'], $text, $groupNumber, $config['username'], $config['password']);
+        [$status, $message] = $this->send($url);
+
+        $this->log($navigationId, $title, $text, $groupNumber, $groupDescription, $status, $message);
+
+        app_logger()->info('Alarmierung ausgelöst.', [
+            'navigation_id' => $navigationId,
+            'group' => $groupNumber,
+            'status' => $status,
+        ]);
+
+        return [
+            'status' => $status,
+            'message' => $status === 'success' ? 'Die Alarmierung wurde ausgelöst.' : $message,
+        ];
+    }
+
+    private function buildUrl(string $host, string $text, string $groupNumber, string $username, string $password): string
+    {
+        $host = rtrim(trim($host), '/');
+
+        return 'http://' . $host . '/api.php?' . http_build_query([
+            'text' => $text,
+            'to' => $groupNumber,
+            'username' => $username,
+            'password' => $password,
+            'mode' => 'group',
+        ]);
+    }
+
+    /**
+     * @return array{0:string,1:string} [status, message]
+     */
+    private function send(string $url): array
+    {
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'GET',
+                'timeout' => 10,
+                'ignore_errors' => true,
+                'user_agent' => 'lanpa-alarm/1.0',
+            ],
+        ]);
+
+        $body = @file_get_contents($url, false, $context);
+
+        $statusLine = '';
+        if (isset($http_response_header) && is_array($http_response_header)) {
+            $statusLine = (string) ($http_response_header[0] ?? '');
+        }
+
+        $code = 0;
+        if (preg_match('#\s(\d{3})\s#', $statusLine, $matches) === 1) {
+            $code = (int) $matches[1];
+        }
+
+        if ($body === false) {
+            return ['error', 'Verbindung zum SMS-Gateway fehlgeschlagen.'];
+        }
+
+        if ($code < 200 || $code >= 300) {
+            return ['error', 'Das SMS-Gateway antwortete mit Status ' . $code . '.'];
+        }
+
+        return ['success', 'OK'];
+    }
+
+    /**
+     * @param array<string,mixed> $context
+     */
+    private function log(
+        int $navigationId,
+        string $title,
+        string $text,
+        string $groupNumber,
+        string $groupDescription,
+        string $status,
+        string $message
+    ): void {
+        $this->log->create([
+            'navigation_id' => $navigationId,
+            'title' => $title,
+            'alarm_text' => $text,
+            'group_number' => $groupNumber,
+            'group_description' => $groupDescription,
+            'status' => $status,
+            'message' => $message,
+            'triggered_at' => gmdate('Y-m-d H:i:s'),
+        ]);
+    }
+}

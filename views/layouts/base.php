@@ -14,6 +14,7 @@ $hasLogo = $hasLogo ?? false;
 $hasBackground = $hasBackground ?? false;
 $siteSubtitleVisible = $siteSubtitleVisible ?? true;
 $flashes = $flashes ?? [];
+$announcements = $announcements ?? [];
 $documentationEnabled = $documentationEnabled ?? false;
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 ?>
@@ -28,7 +29,7 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
     <link rel="stylesheet" href="/assets/css/app.css?v=<?= Html::e($assetVersion) ?>">
     <style nonce="<?= Html::e($nonce) ?>"><?= $themeCss ?><?php if ($hasBackground) { ?>:root{--watermark-image:url('/hintergrundbild');}<?php } ?></style>
 </head>
-<body>
+<body data-page="<?= Html::e($activeNav) ?>">
 <a class="skip-link" href="#inhalt">Zum Inhalt springen</a>
 
 <?php if ($hasBackground) { ?>
@@ -52,6 +53,28 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
         </a>
 
         <nav class="site-nav" aria-label="Hauptnavigation">
+            <?php if ($announcements !== []) { ?>
+                <details class="site-nav__dropdown" data-announcement-menu>
+                    <summary class="site-nav__link site-nav__summary">
+                        <span class="site-nav__summary-label">Mitteilungen</span>
+                        <span class="site-nav__summary-count" aria-hidden="true"><?= count($announcements) ?></span>
+                        <span class="site-nav__chevron" aria-hidden="true"></span>
+                    </summary>
+                    <ul class="site-nav__dropdown-list">
+                        <?php foreach ($announcements as $announcementItem) {
+                            $announcementItemId = (int) $announcementItem['id']; ?>
+                            <li>
+                                <button type="button"
+                                        class="site-nav__dropdown-item"
+                                        data-announcement-open
+                                        data-announcement-id="<?= $announcementItemId ?>">
+                                    <?= Html::e((string) $announcementItem['title']) ?>
+                                </button>
+                            </li>
+                        <?php } ?>
+                    </ul>
+                </details>
+            <?php } ?>
             <a class="site-nav__link<?= $activeNav === 'home' ? ' is-active' : '' ?>" href="/"<?= $activeNav === 'home' ? ' aria-current="page"' : '' ?>>Start</a>
             <a class="site-nav__link<?= $activeNav === 'phonebook' ? ' is-active' : '' ?>" href="/telefonliste"<?= $activeNav === 'phonebook' ? ' aria-current="page"' : '' ?>>Telefonliste</a>
             <button type="button" class="theme-toggle" data-theme-toggle aria-live="polite">
@@ -78,6 +101,33 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
         </nav>
     </div>
 </footer>
+
+<?php if ($announcements !== []) { ?>
+    <?php foreach ($announcements as $announcementItem) {
+        $announcementItemId = (int) $announcementItem['id'];
+        $announcementItemVersion = (string) ($announcementItem['updated_at'] ?? $announcementItem['created_at'] ?? '');
+        ?>
+        <template class="announcement-template"
+                  data-announcement-id="<?= $announcementItemId ?>"
+                  data-announcement-version="<?= Html::e($announcementItemVersion) ?>">
+            <h2 class="announcement-overlay__title"><?= Html::e((string) $announcementItem['title']) ?></h2>
+            <p class="announcement-overlay__text"><?= nl2br(Html::e((string) $announcementItem['message'])) ?></p>
+        </template>
+    <?php } ?>
+    <div class="announcement-overlay"
+         data-announcement-overlay
+         role="dialog"
+         aria-modal="true"
+         aria-labelledby="announcement-overlay-title"
+         hidden>
+        <div class="announcement-overlay__box">
+            <div data-announcement-content></div>
+            <div class="announcement-overlay__actions">
+                <button type="button" class="button button--primary" data-announcement-dismiss>Verstanden</button>
+            </div>
+        </div>
+    </div>
+<?php } ?>
 
 <script src="/assets/js/app.js?v=<?= Html::e($assetVersion) ?>" defer></script>
 <?php if (($pageScript ?? '') !== '') { ?>

@@ -114,3 +114,17 @@ Runner::test('Unbekannte Mitteilungen werden beim Statuswechsel abgewiesen', sta
         Assert::true(isset($exception->errors()['id']));
     }
 });
+
+Runner::test('activeItems liefert nur aktive Mitteilungen aus', static function (): void {
+    $service = announcementsTestService(announcementsTestPdo());
+
+    $activeId = $service->create(['title' => 'Aktiv', 'message' => 'Aktiver Text', 'active' => true]);
+    $service->create(['title' => 'Archiviert', 'message' => 'Archivierter Text', 'active' => false]);
+
+    $activeItems = $service->activeItems();
+    Assert::same(1, count($activeItems));
+    Assert::same($activeId, (int) $activeItems[0]['id']);
+
+    $service->setActive($activeId, false);
+    Assert::same(0, count($service->activeItems()));
+});

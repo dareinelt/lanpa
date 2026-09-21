@@ -30,7 +30,7 @@ $action = $isNew ? '/admin/mitteilungen/neu' : '/admin/mitteilungen/bearbeiten';
         <label for="message">Text <span aria-hidden="true">*</span></label>
         <textarea id="message" name="message" rows="6" required maxlength="5000"
                   <?= isset($errors['message']) ? 'aria-invalid="true" aria-describedby="message-error"' : '' ?>><?= Html::e((string) $item['message']) ?></textarea>
-        <p class="field__hint">Wird als Overlay beim Öffnen der Landingpage angezeigt und lässt sich mit „Verstanden“ schließen.</p>
+        <p class="field__hint">Wird als Overlay beim Öffnen der Landingpage angezeigt. Nach dem Bestätigen bleibt die Mitteilung bis zur Archivierung im Menü „Mitteilungen“ abrufbar.</p>
         <?php if (isset($errors['message'])) { ?>
             <p class="field__error" id="message-error"><?= Html::e($errors['message']) ?></p>
         <?php } ?>

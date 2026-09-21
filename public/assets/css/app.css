@@ -210,6 +210,83 @@ code {
     color: var(--color-primary);
 }
 
+/* Mitteilungen-Menü (aufklappbar, links neben Start/Telefonliste) */
+.site-nav__dropdown {
+    position: relative;
+}
+
+.site-nav__summary {
+    list-style: none;
+    cursor: pointer;
+    gap: .4rem;
+}
+
+.site-nav__summary::-webkit-details-marker {
+    display: none;
+}
+
+.site-nav__summary-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 20px;
+    height: 20px;
+    padding-inline: .3rem;
+    font-size: .75rem;
+    font-weight: 700;
+    border-radius: 999px;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+}
+
+.site-nav__chevron {
+    width: 0;
+    height: 0;
+    flex: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid currentColor;
+    transition: transform var(--transition);
+}
+
+.site-nav__dropdown[open] .site-nav__chevron {
+    transform: rotate(180deg);
+}
+
+.site-nav__dropdown-list {
+    position: absolute;
+    top: calc(100% + .35rem);
+    left: 0;
+    min-width: 16rem;
+    max-width: calc(100vw - 2rem);
+    margin: 0;
+    padding: .4rem;
+    list-style: none;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-hover);
+    z-index: 30;
+}
+
+.site-nav__dropdown-item {
+    display: block;
+    width: 100%;
+    padding: .6rem .75rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.site-nav__dropdown-item:hover,
+.site-nav__dropdown-item:focus-visible {
+    background: var(--color-surface-hover);
+    color: var(--color-primary);
+}
+
 .theme-toggle {
     display: inline-flex;
     align-items: center;

@@ -33,6 +33,7 @@ abstract class Controller
             'themeCss' => Container::theme()->css(),
             'hasLogo' => Container::logo()->current() !== null,
             'hasBackground' => Container::backgroundImage()->current() !== null,
+            'announcements' => Container::announcements()->activeItems(),
             'flashes' => Session::takeFlash(),
             'csrfToken' => Csrf::token(),
             'assetVersion' => $this->assetVersion(),

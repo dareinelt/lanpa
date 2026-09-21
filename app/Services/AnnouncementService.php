@@ -30,6 +30,16 @@ final class AnnouncementService
     }
 
     /**
+     * Alle aktuell aktiven Mitteilungen, neueste zuerst.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function activeItems(): array
+    {
+        return $this->repository->activeItems();
+    }
+
+    /**
      * @return list<array<string,mixed>>
      */
     public function allItems(): array

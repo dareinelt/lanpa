@@ -8,9 +8,9 @@ use App\Support\Validator;
 
 final class ActivationNumberRepository extends Repository
 {
-    private const COLUMNS = 'a.id, a.phone, a.phone_digits, a.alarm_group_id, a.sort_order, a.active, a.created_at, a.updated_at, g.group_number AS group_number, g.description AS group_description';
+    private const COLUMNS = 'a.id, a.phone, a.phone_digits, a.sort_order, a.active, a.created_at, a.updated_at';
 
-    private const FROM = ' FROM activation_numbers a LEFT JOIN alarm_groups g ON g.id = a.alarm_group_id';
+    private const FROM = ' FROM activation_numbers a';
 
     /**
      * @return list<array<string,mixed>>
@@ -92,8 +92,8 @@ final class ActivationNumberRepository extends Repository
     public function create(array $data): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO activation_numbers (phone, phone_digits, alarm_group_id, sort_order, active)
-             VALUES (:phone, :phone_digits, :alarm_group_id, :sort_order, :active)'
+            'INSERT INTO activation_numbers (phone, phone_digits, sort_order, active)
+             VALUES (:phone, :phone_digits, :sort_order, :active)'
         );
         $statement->execute($this->bindings($data));
 
@@ -109,7 +109,6 @@ final class ActivationNumberRepository extends Repository
             'UPDATE activation_numbers
                 SET phone = :phone,
                     phone_digits = :phone_digits,
-                    alarm_group_id = :alarm_group_id,
                     sort_order = :sort_order,
                     active = :active
               WHERE id = :id'
@@ -197,12 +196,10 @@ final class ActivationNumberRepository extends Repository
     private function bindings(array $data): array
     {
         $phone = (string) ($data['phone'] ?? '');
-        $alarmGroupId = $data['alarm_group_id'] ?? null;
 
         return [
             'phone' => $phone,
             'phone_digits' => Validator::normalizePhone($phone),
-            'alarm_group_id' => ($alarmGroupId === null || $alarmGroupId === '' || $alarmGroupId === 0) ? null : (int) $alarmGroupId,
             'sort_order' => (int) ($data['sort_order'] ?? 1),
             'active' => !empty($data['active']) ? 1 : 0,
         ];

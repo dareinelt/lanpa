@@ -47,8 +47,17 @@ final class AlarmGroupService
     {
         $errors = [];
 
+        $type = (string) ($input['type'] ?? 'group');
+        if (!in_array($type, ['group', 'number'], true)) {
+            $type = 'group';
+        }
+
         $groupNumber = Validator::cleanText((string) ($input['group_number'] ?? ''), 64);
-        if (!Validator::isGroupNumber($groupNumber)) {
+        if ($type === 'number') {
+            if (!Validator::isPhoneNumber($groupNumber)) {
+                $errors['group_number'] = 'Bitte eine gültige Rufnummer angeben (max. 64 Zeichen).';
+            }
+        } elseif (!Validator::isGroupNumber($groupNumber)) {
             $errors['group_number'] = 'Bitte eine gültige Gruppennummer angeben (max. 64 Zeichen).';
         }
 
@@ -72,6 +81,7 @@ final class AlarmGroupService
         return [
             'group_number' => $groupNumber,
             'description' => $description,
+            'type' => $type,
             'sort_order' => $sortOrder,
             'active' => !empty($input['active']),
         ];
@@ -91,7 +101,7 @@ final class AlarmGroupService
     public function update(int $id, array $input): void
     {
         if ($this->repository->find($id) === null) {
-            throw new ValidationException(['id' => 'Gruppe nicht gefunden.']);
+            throw new ValidationException(['id' => 'Ziel nicht gefunden.']);
         }
 
         $this->repository->update($id, $this->validate($input, false));
@@ -106,7 +116,7 @@ final class AlarmGroupService
     {
         $item = $this->repository->find($id);
         if ($item === null) {
-            throw new ValidationException(['id' => 'Gruppe nicht gefunden.']);
+            throw new ValidationException(['id' => 'Ziel nicht gefunden.']);
         }
 
         $this->repository->setActive($id, !(bool) $item['active']);

@@ -56,18 +56,19 @@ $icons = [
     </div>
 
     <div class="field" data-editor-alarm>
-        <label for="alarm_group_id">Gruppe <span aria-hidden="true">*</span></label>
+        <label for="alarm_group_id">Ziel <span aria-hidden="true">*</span></label>
         <select id="alarm_group_id" name="alarm_group_id"
                 <?= isset($errors['alarm_group_id']) ? 'aria-invalid="true" aria-describedby="alarm_group_id-error"' : '' ?>>
-            <option value="0">— Gruppe wählen —</option>
-            <?php foreach ($alarmGroups as $group) { ?>
+            <option value="0">— Ziel wählen —</option>
+            <?php foreach ($alarmGroups as $group) {
+                $targetType = (string) ($group['type'] ?? 'group'); ?>
                 <option value="<?= (int) $group['id'] ?>"
                     <?= (int) ($item['alarm_group_id'] ?? 0) === (int) $group['id'] ? 'selected' : '' ?>>
-                    <?= Html::e((string) $group['group_number'] . ' — ' . (string) $group['description']) ?>
+                    <?= Html::e((string) $group['group_number'] . ' — ' . (string) $group['description'] . ($targetType === 'number' ? ' (Rufnummer)' : '')) ?>
                 </option>
             <?php } ?>
         </select>
-        <p class="field__hint">Gruppennummer mit freier Beschreibung aus den Alarmierungseinstellungen.</p>
+        <p class="field__hint">Gruppe oder einzelne Rufnummer aus den Alarmierungseinstellungen.</p>
         <?php if (isset($errors['alarm_group_id'])) { ?>
             <p class="field__error" id="alarm_group_id-error"><?= Html::e($errors['alarm_group_id']) ?></p>
         <?php } ?>

@@ -7,7 +7,6 @@ use App\Support\Html;
 
 /** @var array<string,mixed> $item */
 /** @var array<string,string> $errors */
-/** @var list<array<string,mixed>> $alarmGroups */
 $isNew = ($item['id'] ?? null) === null;
 $action = $isNew ? '/admin/aktivierungs-rufnummern/neu' : '/admin/aktivierungs-rufnummern/bearbeiten';
 ?>
@@ -25,24 +24,6 @@ $action = $isNew ? '/admin/aktivierungs-rufnummern/neu' : '/admin/aktivierungs-r
         <p class="field__hint">Rufnummer, an die der sechsstellige Zugangscode gesendet wird (z. B. +49 170 1234567).</p>
         <?php if (isset($errors['phone'])) { ?>
             <p class="field__error" id="phone-error"><?= Html::e($errors['phone']) ?></p>
-        <?php } ?>
-    </div>
-
-    <div class="field">
-        <label for="alarm_group_id">Gruppe <span aria-hidden="true">*</span></label>
-        <select id="alarm_group_id" name="alarm_group_id"
-                <?= isset($errors['alarm_group_id']) ? 'aria-invalid="true" aria-describedby="alarm_group_id-error"' : '' ?>>
-            <option value="0">— Gruppe wählen —</option>
-            <?php foreach ($alarmGroups as $group) { ?>
-                <option value="<?= (int) $group['id'] ?>"
-                    <?= (int) ($item['alarm_group_id'] ?? 0) === (int) $group['id'] ? 'selected' : '' ?>>
-                    <?= Html::e((string) $group['group_number'] . ' — ' . (string) $group['description']) ?>
-                </option>
-            <?php } ?>
-        </select>
-        <p class="field__hint">Gruppennummer aus den Alarmierungseinstellungen, an die die Code-SMS gesendet wird.</p>
-        <?php if (isset($errors['alarm_group_id'])) { ?>
-            <p class="field__error" id="alarm_group_id-error"><?= Html::e($errors['alarm_group_id']) ?></p>
         <?php } ?>
     </div>
 

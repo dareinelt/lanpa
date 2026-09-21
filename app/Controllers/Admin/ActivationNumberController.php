@@ -55,12 +55,10 @@ final class ActivationNumberController extends AdminController
             'item' => [
                 'id' => null,
                 'phone' => '',
-                'alarm_group_id' => null,
                 'sort_order' => Container::activationNumberRepository()->nextSortOrder(),
                 'active' => 1,
             ],
             'errors' => [],
-            'alarmGroups' => Container::alarmGroups()->activeItems(),
         ]);
     }
 
@@ -94,7 +92,6 @@ final class ActivationNumberController extends AdminController
             'activeNav' => 'activation',
             'item' => $item,
             'errors' => [],
-            'alarmGroups' => Container::alarmGroups()->activeItems(),
         ]);
     }
 
@@ -185,7 +182,6 @@ final class ActivationNumberController extends AdminController
     {
         return [
             'phone' => (string) $request->input('phone', ''),
-            'alarm_group_id' => $request->inputInt('alarm_group_id', 0),
             'sort_order' => $request->inputInt('sort_order', 0),
             'active' => $request->has('active'),
         ];
@@ -202,7 +198,6 @@ final class ActivationNumberController extends AdminController
             'activeNav' => 'activation',
             'item' => $payload,
             'errors' => $exception->errors(),
-            'alarmGroups' => Container::alarmGroups()->activeItems(),
         ], 422);
     }
 }

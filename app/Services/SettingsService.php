@@ -71,6 +71,10 @@ final class SettingsService
             'alarm_host' => (string) Config::get('alarm.host', ''),
             'alarm_username' => (string) Config::get('alarm.username', ''),
             'alarm_password' => '',
+            'alarm_single_custom' => '0',
+            'alarm_single_host' => '',
+            'alarm_single_username' => '',
+            'alarm_single_password' => '',
             'snmp_community' => (string) Config::get('snmp.community', 'public'),
             'snmp_sys_location' => (string) Config::get('snmp.sys_location', 'Intranet'),
             'snmp_sys_contact' => (string) Config::get('snmp.sys_contact', 'admin@example.internal'),
@@ -285,6 +289,27 @@ final class SettingsService
         $config = $this->alarmConfig();
 
         return $config['host'] !== '' && $config['username'] !== '' && $config['password'] !== '';
+    }
+
+    /**
+     * Effektive Konfiguration fuer den Einzelnummern-Versand. Ohne Opt-In
+     * ("Einzelversand benötigt andere Einstellungen") gelten die Werte des
+     * Gruppenversands. Bei aktivem Opt-In werden die abweichenden Werte aus
+     * der Datenbank verwendet.
+     *
+     * @return array{host:string,username:string,password:string}
+     */
+    public function alarmSingleConfig(): array
+    {
+        if (!$this->bool('alarm_single_custom')) {
+            return $this->alarmConfig();
+        }
+
+        return [
+            'host' => $this->get('alarm_single_host'),
+            'username' => $this->get('alarm_single_username'),
+            'password' => $this->get('alarm_single_password'),
+        ];
     }
 
     /**

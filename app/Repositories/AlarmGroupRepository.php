@@ -6,7 +6,7 @@ namespace App\Repositories;
 
 final class AlarmGroupRepository extends Repository
 {
-    private const COLUMNS = 'id, group_number, description, sort_order, active, created_at, updated_at';
+    private const COLUMNS = 'id, group_number, description, type, sort_order, active, created_at, updated_at';
 
     /**
      * @return list<array<string,mixed>>
@@ -56,8 +56,8 @@ final class AlarmGroupRepository extends Repository
     public function create(array $data): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO alarm_groups (group_number, description, sort_order, active)
-             VALUES (:group_number, :description, :sort_order, :active)'
+            'INSERT INTO alarm_groups (group_number, description, type, sort_order, active)
+             VALUES (:group_number, :description, :type, :sort_order, :active)'
         );
         $statement->execute($this->bindings($data));
 
@@ -73,6 +73,7 @@ final class AlarmGroupRepository extends Repository
             'UPDATE alarm_groups
                 SET group_number = :group_number,
                     description = :description,
+                    type = :type,
                     sort_order = :sort_order,
                     active = :active
               WHERE id = :id'
@@ -114,6 +115,7 @@ final class AlarmGroupRepository extends Repository
         return [
             'group_number' => (string) $data['group_number'],
             'description' => (string) ($data['description'] ?? ''),
+            'type' => (string) ($data['type'] ?? 'group'),
             'sort_order' => (int) ($data['sort_order'] ?? 1),
             'active' => !empty($data['active']) ? 1 : 0,
         ];

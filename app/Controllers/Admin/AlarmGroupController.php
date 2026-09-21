@@ -15,12 +15,13 @@ final class AlarmGroupController extends AdminController
     public function create(Request $request): Response
     {
         return $this->adminView('admin.alarm_group', [
-            'pageTitle' => 'Alarmierungsgruppe anlegen',
+            'pageTitle' => 'Alarmierungsziel anlegen',
             'activeNav' => 'alarm',
             'item' => [
                 'id' => null,
                 'group_number' => '',
                 'description' => '',
+                'type' => 'group',
                 'sort_order' => Container::alarmGroupRepository()->nextSortOrder(),
                 'active' => 1,
             ],
@@ -38,8 +39,8 @@ final class AlarmGroupController extends AdminController
             return $this->formWithErrors($request, $exception, null);
         }
 
-        app_logger()->info('Alarmierungsgruppe angelegt.', ['id' => $id, 'admin' => Container::auth()->username()]);
-        Session::flash('success', 'Die Alarmierungsgruppe wurde angelegt.');
+        app_logger()->info('Alarmierungsziel angelegt.', ['id' => $id, 'admin' => Container::auth()->username()]);
+        Session::flash('success', 'Das Alarmierungsziel wurde angelegt.');
 
         return $this->redirect('/admin/alarmierung');
     }
@@ -48,13 +49,13 @@ final class AlarmGroupController extends AdminController
     {
         $item = Container::alarmGroups()->find($request->queryInt('id', 0));
         if ($item === null) {
-            Session::flash('error', 'Alarmierungsgruppe nicht gefunden.');
+            Session::flash('error', 'Alarmierungsziel nicht gefunden.');
 
             return $this->redirect('/admin/alarmierung');
         }
 
         return $this->adminView('admin.alarm_group', [
-            'pageTitle' => 'Alarmierungsgruppe bearbeiten',
+            'pageTitle' => 'Alarmierungsziel bearbeiten',
             'activeNav' => 'alarm',
             'item' => $item,
             'errors' => [],
@@ -72,7 +73,7 @@ final class AlarmGroupController extends AdminController
             return $this->formWithErrors($request, $exception, $id);
         }
 
-        app_logger()->info('Alarmierungsgruppe geändert.', ['id' => $id, 'admin' => Container::auth()->username()]);
+        app_logger()->info('Alarmierungsziel geändert.', ['id' => $id, 'admin' => Container::auth()->username()]);
         Session::flash('success', 'Die Änderungen wurden gespeichert.');
 
         return $this->redirect('/admin/alarmierung');
@@ -84,8 +85,8 @@ final class AlarmGroupController extends AdminController
         $id = $request->inputInt('id', 0);
 
         Container::alarmGroups()->delete($id);
-        app_logger()->info('Alarmierungsgruppe gelöscht.', ['id' => $id, 'admin' => Container::auth()->username()]);
-        Session::flash('success', 'Die Alarmierungsgruppe wurde gelöscht.');
+        app_logger()->info('Alarmierungsziel gelöscht.', ['id' => $id, 'admin' => Container::auth()->username()]);
+        Session::flash('success', 'Das Alarmierungsziel wurde gelöscht.');
 
         return $this->redirect('/admin/alarmierung');
     }
@@ -99,7 +100,7 @@ final class AlarmGroupController extends AdminController
             Container::alarmGroups()->toggle($id);
             Session::flash('success', 'Der Status wurde geändert.');
         } catch (ValidationException) {
-            Session::flash('error', 'Alarmierungsgruppe nicht gefunden.');
+            Session::flash('error', 'Alarmierungsziel nicht gefunden.');
         }
 
         return $this->redirect('/admin/alarmierung');
@@ -113,6 +114,7 @@ final class AlarmGroupController extends AdminController
         return [
             'group_number' => (string) $request->input('group_number', ''),
             'description' => (string) $request->input('description', ''),
+            'type' => (string) $request->input('type', 'group'),
             'sort_order' => $request->inputInt('sort_order', 0),
             'active' => $request->has('active'),
         ];
@@ -125,7 +127,7 @@ final class AlarmGroupController extends AdminController
         $payload['active'] = $payload['active'] ? 1 : 0;
 
         return $this->adminView('admin.alarm_group', [
-            'pageTitle' => $id === null ? 'Alarmierungsgruppe anlegen' : 'Alarmierungsgruppe bearbeiten',
+            'pageTitle' => $id === null ? 'Alarmierungsziel anlegen' : 'Alarmierungsziel bearbeiten',
             'activeNav' => 'alarm',
             'item' => $payload,
             'errors' => $exception->errors(),

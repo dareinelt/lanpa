@@ -268,12 +268,13 @@ final class ImportService
         // Secrets (SMS-Gateway-Passwort und SMS-Code-Schluessel) werden nicht
         // exportiert und duerfen durch einen Import nicht überschrieben werden.
         $existingPassword = $this->settingsRepository->get('alarm_password');
+        $existingSinglePassword = $this->settingsRepository->get('alarm_single_password');
         $existingSecret = $this->settingsRepository->get('sms_code_secret');
 
         $this->settingsRepository->deleteAll();
 
         foreach ($settings as $key => $value) {
-            if ($key === 'alarm_password' || $key === 'sms_code_secret') {
+            if (in_array($key, ['alarm_password', 'alarm_single_password', 'sms_code_secret'], true)) {
                 continue;
             }
             $this->settingsRepository->insert((string) $key, (string) $value);
@@ -281,6 +282,10 @@ final class ImportService
 
         if (is_string($existingPassword) && $existingPassword !== '') {
             $this->settingsRepository->insert('alarm_password', $existingPassword);
+        }
+
+        if (is_string($existingSinglePassword) && $existingSinglePassword !== '') {
+            $this->settingsRepository->insert('alarm_single_password', $existingSinglePassword);
         }
 
         if (is_string($existingSecret) && $existingSecret !== '') {
@@ -301,6 +306,7 @@ final class ImportService
             $this->alarmGroupIdMap[$oldId] = $this->alarmGroupRepository->create([
                 'group_number' => (string) ($row['group_number'] ?? ''),
                 'description' => (string) ($row['description'] ?? ''),
+                'type' => (string) ($row['type'] ?? 'group'),
                 'sort_order' => (int) ($row['sort_order'] ?? 1),
                 'active' => !empty($row['active']),
             ]);
@@ -317,7 +323,6 @@ final class ImportService
         foreach ($rows as $row) {
             $this->activationNumberRepository->create([
                 'phone' => (string) ($row['phone'] ?? ''),
-                'alarm_group_id' => $this->remapAlarmGroupId($row['alarm_group_id'] ?? null),
                 'sort_order' => (int) ($row['sort_order'] ?? 1),
                 'active' => !empty($row['active']),
             ]);

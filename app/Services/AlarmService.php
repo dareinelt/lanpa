@@ -35,11 +35,23 @@ final class AlarmService
 
         $title = (string) ($item['title'] ?? '');
         $text = (string) ($item['alarm_text'] ?? '');
-        $groupNumber = (string) ($item['alarm_group_number'] ?? '');
-        $groupDescription = (string) ($item['alarm_group_description'] ?? '');
+        $target = (string) ($item['alarm_group_number'] ?? '');
+        $description = (string) ($item['alarm_group_description'] ?? '');
+        $mode = (string) ($item['alarm_group_type'] ?? 'group');
+        if (!in_array($mode, ['group', 'number'], true)) {
+            $mode = 'group';
+        }
 
-        if ($text === '' || $groupNumber === '') {
-            $this->log($navigationId, $title, $text, $groupNumber, $groupDescription, 'error', 'Alarmierungstext oder Gruppe fehlt.');
+        if ($text === '') {
+            $this->log($navigationId, $title, $text, $target, $description, $mode, 'error', 'Alarmierungstext fehlt.');
+
+            return ['status' => 'error', 'message' => 'Die Alarmierung ist unvollständig konfiguriert.'];
+        }
+
+        // Das Ziel (Gruppe oder Rufnummer) muss hinterlegt sein, damit eine
+        // Meldung ausgelöst wird.
+        if ($target === '') {
+            $this->log($navigationId, $title, $text, $target, $description, $mode, 'error', $mode === 'number' ? 'Rufnummer fehlt.' : 'Gruppe fehlt.');
 
             return ['status' => 'error', 'message' => 'Die Alarmierung ist unvollständig konfiguriert.'];
         }
@@ -52,26 +64,27 @@ final class AlarmService
         }
 
         if (mb_strlen($text) > 255) {
-            $this->log($navigationId, $title, mb_substr($text, 0, 255), $groupNumber, $groupDescription, 'error', 'Die Meldung überschreitet das Limit von 255 Zeichen.');
+            $this->log($navigationId, $title, mb_substr($text, 0, 255), $target, $description, $mode, 'error', 'Die Meldung überschreitet das Limit von 255 Zeichen.');
 
             return ['status' => 'error', 'message' => 'Die Meldung ist zu lang (max. 255 Zeichen).'];
         }
 
-        $config = $this->settings->alarmConfig();
+        $config = $mode === 'number' ? $this->settings->alarmSingleConfig() : $this->settings->alarmConfig();
         if ($config['host'] === '' || $config['username'] === '' || $config['password'] === '') {
-            $this->log($navigationId, $title, $text, $groupNumber, $groupDescription, 'error', 'SMS-Gateway ist nicht vollständig konfiguriert.');
+            $this->log($navigationId, $title, $text, $target, $description, $mode, 'error', 'SMS-Gateway ist nicht vollständig konfiguriert.');
 
             return ['status' => 'error', 'message' => 'Das SMS-Gateway ist nicht vollständig konfiguriert.'];
         }
 
-        $url = $this->buildUrl($config['host'], $text, $groupNumber, $config['username'], $config['password']);
+        $url = $this->buildUrl($config['host'], $text, $target, $config['username'], $config['password'], $mode);
         [$status, $message] = $this->send($url);
 
-        $this->log($navigationId, $title, $text, $groupNumber, $groupDescription, $status, $message);
+        $this->log($navigationId, $title, $text, $target, $description, $mode, $status, $message);
 
         app_logger()->info('Alarmierung ausgelöst.', [
             'navigation_id' => $navigationId,
-            'group' => $groupNumber,
+            'target' => $target,
+            'mode' => $mode,
             'status' => $status,
         ]);
 
@@ -81,16 +94,16 @@ final class AlarmService
         ];
     }
 
-    private function buildUrl(string $host, string $text, string $groupNumber, string $username, string $password): string
+    private function buildUrl(string $host, string $text, string $target, string $username, string $password, string $mode): string
     {
         $host = rtrim(trim($host), '/');
 
         return 'http://' . $host . '/api.php?' . http_build_query([
             'text' => $text,
-            'to' => $groupNumber,
+            'to' => $target,
             'username' => $username,
             'password' => $password,
-            'mode' => 'group',
+            'mode' => $mode,
         ]);
     }
 
@@ -131,15 +144,13 @@ final class AlarmService
         return ['success', 'OK'];
     }
 
-    /**
-     * @param array<string,mixed> $context
-     */
     private function log(
         int $navigationId,
         string $title,
         string $text,
-        string $groupNumber,
-        string $groupDescription,
+        string $target,
+        string $description,
+        string $mode,
         string $status,
         string $message
     ): void {
@@ -147,8 +158,9 @@ final class AlarmService
             'navigation_id' => $navigationId,
             'title' => $title,
             'alarm_text' => $text,
-            'group_number' => $groupNumber,
-            'group_description' => $groupDescription,
+            'group_number' => $target,
+            'group_description' => $description,
+            'mode' => $mode,
             'status' => $status,
             'message' => $message,
             'triggered_at' => gmdate('Y-m-d H:i:s'),

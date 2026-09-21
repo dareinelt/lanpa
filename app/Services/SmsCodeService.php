@@ -67,10 +67,10 @@ final class SmsCodeService
 
         $entry = $this->activationNumbers->findByPhoneDigits($digits);
         if ($entry !== null && (int) $entry['active'] === 1) {
-            $groupNumber = (string) ($entry['group_number'] ?? '');
-            if ($groupNumber !== '') {
+            $phone = (string) ($entry['phone'] ?? '');
+            if ($phone !== '') {
                 $text = $this->buildMessage($code, (string) ($item['title'] ?? ''));
-                [$status, $message] = $this->sendSms($text, $groupNumber);
+                [$status, $message] = $this->sendSms($text, $phone);
 
                 if ($status !== 'success') {
                     app_logger()->warning('SMS-Code-Versand fehlgeschlagen.', [
@@ -245,9 +245,9 @@ final class SmsCodeService
     /**
      * @return array{0:string,1:string} [status, message]
      */
-    private function sendSms(string $text, string $groupNumber): array
+    private function sendSms(string $text, string $phone): array
     {
-        $config = $this->settings->alarmConfig();
+        $config = $this->settings->alarmSingleConfig();
         if ($config['host'] === '' || $config['username'] === '' || $config['password'] === '') {
             return ['error', 'SMS-Gateway ist nicht vollständig konfiguriert.'];
         }
@@ -255,10 +255,10 @@ final class SmsCodeService
         $host = rtrim(trim($config['host']), '/');
         $url = 'http://' . $host . '/api.php?' . http_build_query([
             'text' => $text,
-            'to' => $groupNumber,
+            'to' => $phone,
             'username' => $config['username'],
             'password' => $config['password'],
-            'mode' => 'group',
+            'mode' => 'number',
         ]);
 
         $context = stream_context_create([

@@ -41,6 +41,7 @@ function navigationTestPdo(): PDO
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_number VARCHAR(64) NOT NULL,
             description VARCHAR(255) NOT NULL,
+            type VARCHAR(16) NOT NULL DEFAULT \'group\',
             sort_order INTEGER NOT NULL DEFAULT 1,
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,

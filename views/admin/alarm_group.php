@@ -17,7 +17,16 @@ $action = $isNew ? '/admin/alarmierung/gruppen/neu' : '/admin/alarmierung/gruppe
     <?php } ?>
 
     <div class="field">
-        <label for="group_number">Gruppennummer <span aria-hidden="true">*</span></label>
+        <label for="type">Typ <span aria-hidden="true">*</span></label>
+        <select id="type" name="type">
+            <option value="group" <?= (string) ($item['type'] ?? 'group') === 'group' ? 'selected' : '' ?>>Gruppe</option>
+            <option value="number" <?= (string) ($item['type'] ?? 'group') === 'number' ? 'selected' : '' ?>>Einzelne Rufnummer</option>
+        </select>
+        <p class="field__hint">Gruppen werden als <code>mode=group</code>, einzelne Rufnummern als <code>mode=number</code> versendet.</p>
+    </div>
+
+    <div class="field">
+        <label for="group_number">Gruppennummer / Rufnummer <span aria-hidden="true">*</span></label>
         <input type="text" id="group_number" name="group_number" required maxlength="64"
                value="<?= Html::e((string) $item['group_number']) ?>"
                <?= isset($errors['group_number']) ? 'aria-invalid="true" aria-describedby="group_number-error"' : '' ?>>
@@ -48,7 +57,7 @@ $action = $isNew ? '/admin/alarmierung/gruppen/neu' : '/admin/alarmierung/gruppe
 
     <div class="field field--check">
         <input type="checkbox" id="active" name="active" value="1" <?= (int) $item['active'] === 1 ? 'checked' : '' ?>>
-        <label for="active">Gruppe ist aktiv</label>
+        <label for="active">Eintrag ist aktiv</label>
     </div>
 
     <div class="form__actions">

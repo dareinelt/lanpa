@@ -6,14 +6,12 @@ namespace App\Services;
 
 use App\Exceptions\ValidationException;
 use App\Repositories\ActivationNumberRepository;
-use App\Repositories\AlarmGroupRepository;
 use App\Support\Validator;
 
 final class ActivationNumberService
 {
     public function __construct(
-        private readonly ActivationNumberRepository $repository,
-        private readonly ?AlarmGroupRepository $alarmGroups = null
+        private readonly ActivationNumberRepository $repository
     ) {
     }
 
@@ -61,17 +59,6 @@ final class ActivationNumberService
             $errors['phone'] = 'Diese Rufnummer ist bereits hinterlegt.';
         }
 
-        $rawGroup = $input['alarm_group_id'] ?? null;
-        $alarmGroupId = ($rawGroup === null || $rawGroup === '' || $rawGroup === 0 || $rawGroup === '0')
-            ? null
-            : (int) $rawGroup;
-
-        if ($alarmGroupId === null) {
-            $errors['alarm_group_id'] = 'Bitte eine Gruppe auswählen.';
-        } elseif ($this->alarmGroups !== null && $this->alarmGroups->find($alarmGroupId) === null) {
-            $errors['alarm_group_id'] = 'Die gewählte Gruppe ist ungültig.';
-        }
-
         $sortOrder = (int) ($input['sort_order'] ?? 0);
         if ($sortOrder < 1) {
             $sortOrder = $isNew ? $this->repository->nextSortOrder() : 1;
@@ -87,7 +74,6 @@ final class ActivationNumberService
         return [
             'phone' => $phone,
             'phone_digits' => $phoneDigits,
-            'alarm_group_id' => $alarmGroupId,
             'sort_order' => $sortOrder,
             'active' => !empty($input['active']),
         ];

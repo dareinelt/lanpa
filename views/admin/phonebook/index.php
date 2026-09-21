@@ -63,17 +63,18 @@ use App\Support\Html;
                         </span>
                     </td>
                     <td>
-                        <span class="badge <?= $visible ? 'badge--ok' : 'badge--muted' ?>">
+                        <span class="badge <?= $visible ? 'badge--ok' : 'badge--muted' ?>"
+                              data-phonebook-visible="<?= $visible ? '1' : '0' ?>">
                             <?= $visible ? 'eingeblendet' : 'ausgeblendet' ?>
                         </span>
                     </td>
                     <td>
-                        <form method="post" action="/admin/telefonliste/status" class="inline-form">
+                        <form method="post" action="/admin/telefonliste/status" class="inline-form" data-phonebook-toggle>
                             <?= Csrf::field() ?>
                             <input type="hidden" name="id" value="<?= $id ?>">
                             <input type="hidden" name="visible" value="<?= $visible ? 0 : 1 ?>">
                             <input type="hidden" name="q" value="<?= Html::e($term) ?>">
-                            <button type="submit" class="button button--ghost">
+                            <button type="submit" class="button button--ghost" data-phonebook-toggle-button>
                                 <?= $visible ? 'Ausblenden' : 'Einblenden' ?>
                             </button>
                         </form>

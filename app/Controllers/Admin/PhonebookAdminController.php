@@ -21,6 +21,7 @@ final class PhonebookAdminController extends AdminController
             'activeNav' => 'phonebook',
             'items' => Container::phonebook()->allEntries($term),
             'term' => $term,
+            'pageScript' => 'admin-phonebook.js',
         ]);
     }
 
@@ -32,15 +33,35 @@ final class PhonebookAdminController extends AdminController
         $visible = $request->inputInt('visible', 1) === 1;
         $term = (string) $request->input('q', '');
 
+        $success = $visible ? 'Der Eintrag wird eingeblendet.' : 'Der Eintrag wird ausgeblendet.';
+        $error = 'Eintrag nicht gefunden.';
+
+        $ok = true;
         try {
             Container::phonebook()->setVisible($id, $visible);
-            Session::flash('success', $visible ? 'Der Eintrag wird eingeblendet.' : 'Der Eintrag wird ausgeblendet.');
         } catch (ValidationException) {
-            Session::flash('error', 'Eintrag nicht gefunden.');
+            $ok = false;
         }
+
+        if ($this->wantsJson($request)) {
+            return Response::json([
+                'ok' => $ok,
+                'visible' => $ok ? $visible : null,
+                'message' => $ok ? $success : $error,
+            ], $ok ? 200 : 404);
+        }
+
+        Session::flash($ok ? 'success' : 'error', $ok ? $success : $error);
 
         $query = $term !== '' ? '?q=' . rawurlencode($term) : '';
 
         return $this->redirect('/admin/telefonliste' . $query);
+    }
+
+    private function wantsJson(Request $request): bool
+    {
+        $accept = (string) ($request->server['HTTP_ACCEPT'] ?? '');
+
+        return str_contains($accept, 'application/json');
     }
 }

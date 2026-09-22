@@ -11,7 +11,7 @@
 <div class="cover">
   <p class="kicker">Administratorhandbuch</p>
   <h1>Intranet-Landingpage</h1>
-  <p class="subtitle">Betrieb, Konfiguration und Verwaltung: Installation, Navigation, Inhalte, Design, Active Directory, Statistik und Benutzerverwaltung.</p>
+  <p class="subtitle">Betrieb, Konfiguration und Verwaltung: Installation, Navigation, Inhalte, Design, Active Directory, Alarmierung, Zugangscode, SNMP, Statistik, Benutzerverwaltung und Sicherung.</p>
   <div class="meta">
     Version 1.0 &middot; Stand: September 2026<br>
     Zielgruppe: IT-Administration und Redaktion
@@ -33,9 +33,13 @@
     <li><a href="#ch9"><span class="num">9</span> Beschreibungen und Texte</a></li>
     <li><a href="#ch10"><span class="num">10</span> Design (Farben, Logo, Hintergrund)</a></li>
     <li><a href="#ch11"><span class="num">11</span> Active Directory / LDAP</a></li>
-    <li><a href="#ch12"><span class="num">12</span> Statistik</a></li>
-    <li><a href="#ch13"><span class="num">13</span> Benutzerverwaltung</a></li>
-    <li><a href="#ch14"><span class="num">14</span> Anhang: Konfigurationsreferenz</a></li>
+    <li><a href="#ch12"><span class="num">12</span> Alarmierung</a></li>
+    <li><a href="#ch13"><span class="num">13</span> Aktivierungs-Rufnummern und Zugangscode</a></li>
+    <li><a href="#ch14"><span class="num">14</span> SNMP-Überwachung</a></li>
+    <li><a href="#ch15"><span class="num">15</span> Statistik</a></li>
+    <li><a href="#ch16"><span class="num">16</span> Benutzerverwaltung</a></li>
+    <li><a href="#ch17"><span class="num">17</span> Sicherung (Export/Import)</a></li>
+    <li><a href="#ch18"><span class="num">18</span> Anhang: Konfigurationsreferenz</a></li>
   </ol>
 </nav>
 
@@ -45,8 +49,8 @@
 
   <p>Die <strong>Intranet-Landingpage</strong> ist eine schlanke Webanwendung (PHP 8.3, ohne Framework,
   MySQL/MariaDB) und wird vollständig über <strong>Docker Compose</strong> betrieben. Sie stellt den
-  Beschäftigten eine zentrale Startseite mit Navigationskacheln, Telefonliste, Mitteilungen und Textseiten
-  bereit. Die Inhalte werden über einen geschützten Adminbereich gepflegt.</p>
+  Beschäftigten eine zentrale Startseite mit Navigationskacheln, Telefonliste, Mitteilungen, Alarmierungen
+  und Textseiten bereit. Die Inhalte werden über einen geschützten Adminbereich gepflegt.</p>
 
   <h2>1.1&ensp;Module im Überblick</h2>
   <table>
@@ -60,14 +64,18 @@
       <tr><td>Beschreibungen</td><td>Seitentexte, Darstellungsmodus, Telefonlinks</td><td>Admin</td></tr>
       <tr><td>Design</td><td>Farben (Hell/Dunkel), Logo, Hintergrundbild</td><td>Admin</td></tr>
       <tr><td>Active Directory</td><td>LDAP-Anbindung und Synchronisation</td><td>Admin</td></tr>
+      <tr><td>Alarmierung</td><td>SMS-Gateway und Alarm-Kacheln (Gruppen/Rufnummern, Verlauf)</td><td>Admin</td></tr>
+      <tr><td>Aktivierungs-Rufnummern</td><td>Für den Zugangscode freigeschaltete Rufnummern</td><td>Admin</td></tr>
+      <tr><td>SNMP</td><td>Überwachung der Dienste per SNMP (Community, Standort, Kontakt)</td><td>Admin</td></tr>
       <tr><td>Statistik</td><td>Klickzahlen je Kachel über Zeiträume</td><td>Admin</td></tr>
       <tr><td>Benutzer</td><td>Verwaltung der Admin-Konten</td><td>Admin</td></tr>
+      <tr><td>Sicherung</td><td>Vollständige Sicherung exportieren und einspielen</td><td>Admin</td></tr>
     </tbody>
   </table>
 
   <h2>1.2&ensp;Technische Struktur</h2>
   <ul>
-    <li><strong>Dienste:</strong> <code>db</code> (MySQL 8.0), <code>app</code> (Apache/PHP), <code>sync</code> (LDAP-Hintergrund-Worker) sowie optional <code>phpmyadmin</code>.</li>
+    <li><strong>Dienste:</strong> <code>db</code> (MySQL 8.0), <code>app</code> (Apache/PHP), <code>sync</code> (LDAP-Hintergrund-Worker), <code>snmp</code> (SNMP-Agent) sowie optional <code>phpmyadmin</code>.</li>
     <li><strong>Datenbank:</strong> eine MySQL-Datenbank (<code>intranet</code>) mit Tabellen für Navigation, Telefonbuch, Links, Notfallnummern, Mitteilungen, Einstellungen, Benutzer und Klickstatistik.</li>
     <li><strong>Speicher:</strong> ein Docker-Volume <code>app_storage</code> für hochgeladene Dateien (Logo, Hintergrundbild) und Protokolle.</li>
   </ul>
@@ -86,7 +94,7 @@
 
   <h2>2.2&ensp;Konfiguration anlegen</h2>
   <p>Legen Sie im Projektverzeichnis eine Datei <code>.env</code> an. Eine vollständige Referenz aller
-  Variablen finden Sie in Kapitel 14. Pflichtfelder sind insbesondere die Datenbankpasswörter:</p>
+  Variablen finden Sie in Kapitel 18. Pflichtfelder sind insbesondere die Datenbankpasswörter:</p>
 
   <pre>DB_PASSWORD=geheimes-passwort
 DB_ROOT_PASSWORD=geheimes-root-passwort
@@ -97,7 +105,7 @@ ADMIN_PASSWORD=startpasswort-aendern</pre>
 
   <div class="warn">
     <span class="label">Sicherheit</span>
-    Ändern Sie das initiale Admin-Passwort nach der ersten Anmeldung umgehend (siehe Kapitel 13). Die Datei
+    Ändern Sie das initiale Admin-Passwort nach der ersten Anmeldung umgehend (siehe Kapitel 16). Die Datei
     <code>.env</code> enthält Zugangsdaten und darf nicht in die Versionsverwaltung aufgenommen werden.
   </div>
 
@@ -208,6 +216,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
       <tr><td><strong>Interne Seite</strong></td><td>Verweist auf eine interne Route, z.&nbsp;B. die Telefonliste.</td></tr>
       <tr><td><strong>Unterseite</strong></td><td>Bündelt untergeordnete Elemente in einer eigenen Ansicht.</td></tr>
       <tr><td><strong>Textseite</strong></td><td>Stellt ausführlichen, formatierten Inhalt dar.</td></tr>
+      <tr><td><strong>Alarm</strong></td><td>Löst beim Klick eine SMS-Alarmierung an eine Gruppe oder Einzelrufnummer aus.</td></tr>
     </tbody>
   </table>
 
@@ -231,6 +240,11 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
   <h2>5.4&ensp;Ein-/Ausblenden und Löschen</h2>
   <p>Elemente lassen sich über den Status-Schalter ausblenden, ohne sie zu löschen. Das Löschen entfernt den
   Eintrag dauerhaft; untergeordnete Elemente einer Unterseite sollten zuvor neu zugeordnet werden.</p>
+
+  <h2>5.5&ensp;Geschützter Zugriff</h2>
+  <p>Jedes Element lässt sich als <strong>geschützt</strong> markieren. Geschützte Elemente verlangen beim
+  Aufruf einen Zugangscode, den berechtigte Personen per SMS anfordern (siehe Kapitel 13). Geeignet für
+  sensible interne Seiten und Alarm-Kacheln.</p>
 </section>
 
 <!-- ===================== 6 ===================== -->
@@ -366,7 +380,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
 
   <h2>11.1&ensp;Konfiguration</h2>
   <p>Die Verbindungsdaten (Server, Port, TLS, Basis-DN, Bind-Benutzer, Suchfilter, Attribut-Zuordnung)
-  werden über die Umgebungsvariablen <code>LDAP_*</code> gesetzt (siehe Kapitel 14). Änderungen erfordern
+  werden über die Umgebungsvariablen <code>LDAP_*</code> gesetzt (siehe Kapitel 18). Änderungen erfordern
   einen Neustart des <code>sync</code>-Dienstes.</p>
 
   <h2>11.2&ensp;Synchronisation</h2>
@@ -385,7 +399,95 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
 
 <!-- ===================== 12 ===================== -->
 <section class="chapter" id="ch12">
-  <h1 class="chapter-title">12&ensp;Statistik</h1>
+  <h1 class="chapter-title">12&ensp;Alarmierung</h1>
+
+  <p>Das Modul <strong>Alarmierung</strong> bündelt alle Einstellungen für die SMS-Alarmierungen. Alarm-Kacheln
+  (Navigationstyp „Alarm“, siehe Kapitel 5) lösen beim Klick eine SMS an eine Gruppe oder eine einzelne
+  Rufnummer aus.</p>
+
+  <h2>12.1&ensp;SMS-Gateway</h2>
+  <p>Tragen Sie hier die Verbindungsdaten des SMS-Gateways ein:</p>
+  <ul>
+    <li><strong>Host</strong> – Zieladresse des Gateways (Hostname oder IP, optional mit Port).</li>
+    <li><strong>Benutzername</strong> – Zugangsname für das Gateway.</li>
+    <li><strong>Passwort</strong> – wird nur gespeichert, wenn Sie eines eingeben („leer = unverändert“).
+    Alternativ lässt sich das Passwort ausschließlich über die Umgebung (<code>ALARM_PASSWORD</code> bzw.
+    Docker-Secret) hinterlegen.</li>
+  </ul>
+
+  <h2>12.2&ensp;Gruppen und Einzelrufnummern</h2>
+  <p>Als Empfänger einer Alarmierung dienen <strong>Gruppen</strong> oder <strong>Einzelrufnummern</strong>.
+  Sie legen diese Ziele hier an und ordnen sie den Alarm-Kacheln in der Navigation zu:</p>
+  <ul>
+    <li><strong>Gruppe</strong> – eine Gruppennummer, an die das Gateway die Meldung verteilt.</li>
+    <li><strong>Einzelrufnummer</strong> – eine konkrete Telefonnummer als Direktziel.</li>
+  </ul>
+
+  <h2>12.3&ensp;Verlauf</h2>
+  <p>Jede ausgelöste Alarmierung wird mit Zeitpunkt, Meldungstext, Ziel, Modus (Gruppe/Einzelnummer) und
+  Status protokolliert. So lässt sich nachvollziehen, wann alarmiert wurde und ob der Versand erfolgreich war.</p>
+
+  <div class="warn">
+    <span class="label">Sicherheit</span>
+    Das Gateway-Passwort wird niemals angezeigt, exportiert oder protokolliert.
+  </div>
+</section>
+
+<!-- ===================== 13 ===================== -->
+<section class="chapter" id="ch13">
+  <h1 class="chapter-title">13&ensp;Aktivierungs-Rufnummern und Zugangscode</h1>
+
+  <p>Geschützte Navigationselemente (siehe Kapitel 5.5) verlangen beim Aufruf einen <strong>Zugangscode</strong>,
+  den berechtigte Personen per SMS anfordern. Im Modul <strong>Aktivierungs-Rufnummern</strong> pflegen Sie,
+  welche Rufnummern einen Code erhalten dürfen.</p>
+
+  <h2>13.1&ensp;Rufnummern pflegen</h2>
+  <ol>
+    <li>Legen Sie eine Rufnummer an (Bezeichnung und Telefonnummer).</li>
+    <li>Nur aktive Rufnummern erhalten einen Code.</li>
+    <li>Nicht mehr benötigte Nummern deaktivieren oder löschen Sie.</li>
+  </ol>
+
+  <h2>13.2&ensp;Ablauf für die Nutzenden</h2>
+  <ul>
+    <li>Beim Aufruf eines geschützten Elements erscheint die Zugangscode-Seite.</li>
+    <li>Die Person gibt ihre Rufnummer ein und fordert einen Code an.</li>
+    <li>Der sechsstellige Code wechselt täglich und ist standardmäßig 120 Sekunden gültig
+    (konfigurierbar über die Einstellung <code>sms_code_timeout</code>).</li>
+    <li>Nach fünf Fehlversuchen muss ein neuer Code angefordert werden.</li>
+  </ul>
+
+  <div class="note">
+    <span class="label">Hinweis</span>
+    Wird die eingegebene Rufnummer nicht in den Aktivierungs-Rufnummern geführt, wird kein Code versendet –
+    bewusst ohne Fehlermeldung, um keine gültigen Nummern preiszugeben.
+  </div>
+</section>
+
+<!-- ===================== 14 ===================== -->
+<section class="chapter" id="ch14">
+  <h1 class="chapter-title">14&ensp;SNMP-Überwachung</h1>
+
+  <p>Die Anwendung stellt den Zustand ihrer Dienste und des AD-Synchronisations-Workflows über
+  <strong>SNMP (v2c)</strong> bereit. Im Modul <strong>SNMP</strong> pflegen Sie Community-String, Standort
+  (<code>sysLocation</code>) und Kontakt (<code>sysContact</code>) des Agents.</p>
+
+  <h2>14.1&ensp;Konfiguration</h2>
+  <ul>
+    <li><strong>Community-String</strong> – für den Produktivbetrieb unbedingt auf einen eigenen, starken Wert
+    ändern (Standard <code>public</code>).</li>
+    <li><strong>Standort / Kontakt</strong> – werden als <code>sysLocation</code> und <code>sysContact</code>
+    ausgeliefert.</li>
+    <li>Der am Host veröffentlichte UDP-Port bleibt ausschließlich über <code>SNMP_PORT</code> konfiguriert
+    (Docker-Port-Mapping).</li>
+  </ul>
+
+  <p>Geänderte Werte werden nach einem Neustart des <code>snmp</code>-Containers wirksam.</p>
+</section>
+
+<!-- ===================== 15 ===================== -->
+<section class="chapter" id="ch15">
+  <h1 class="chapter-title">15&ensp;Statistik</h1>
 
   <p>Das Modul <strong>Statistik</strong> wertet die Klicks auf die Navigationselemente aus. Die Anwendung
   erfasst jeden Klick auf eine Kachel und stellt die Verteilung grafisch dar.</p>
@@ -395,17 +497,17 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     <figcaption><span class="fig-label">Abb. 12</span> Klickstatistik mit Diagramm und Zeitraumauswahl.</figcaption>
   </figure>
 
-  <h2>12.1&ensp;Zeiträume</h2>
+  <h2>15.1&ensp;Zeiträume</h2>
   <p>Wählbare Auswertungszeiträume: 3, 7, 14, 30, 90 und 365 Tage.</p>
 
-  <h2>12.2&ensp;Datenhaltung</h2>
+  <h2>15.2&ensp;Datenhaltung</h2>
   <p>Die Aufbewahrungsdauer der Klickdaten ist über <code>CLICK_RETENTION_DAYS</code> konfigurierbar;
   ältere Daten werden automatisch gelöscht.</p>
 </section>
 
-<!-- ===================== 13 ===================== -->
-<section class="chapter" id="ch13">
-  <h1 class="chapter-title">13&ensp;Benutzerverwaltung</h1>
+<!-- ===================== 16 ===================== -->
+<section class="chapter" id="ch16">
+  <h1 class="chapter-title">16&ensp;Benutzerverwaltung</h1>
 
   <p>Im Modul <strong>Benutzer</strong> verwalten Sie die Konten für den Adminbereich, einschließlich der
   Rollenzuweisung (Admin oder Redaktion).</p>
@@ -415,7 +517,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     <figcaption><span class="fig-label">Abb. 13</span> Benutzerverwaltung des Adminbereichs.</figcaption>
   </figure>
 
-  <h2>13.1&ensp;Konten anlegen und ändern</h2>
+  <h2>16.1&ensp;Konten anlegen und ändern</h2>
   <ol>
     <li>Legen Sie ein neues Konto an oder wählen Sie ein bestehendes.</li>
     <li>Vergeben Sie Benutzername, Passwort und Rolle.</li>
@@ -429,13 +531,38 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
   </div>
 </section>
 
-<!-- ===================== 14 ===================== -->
-<section class="chapter" id="ch14">
-  <h1 class="chapter-title">14&ensp;Anhang: Konfigurationsreferenz</h1>
+<!-- ===================== 17 ===================== -->
+<section class="chapter" id="ch17">
+  <h1 class="chapter-title">17&ensp;Sicherung (Export/Import)</h1>
+
+  <p>Im Modul <strong>Sicherung</strong> erstellen Sie eine vollständige Sicherung der Anwendung und können
+  sie bei Bedarf wieder einspielen.</p>
+
+  <h2>17.1&ensp;Export</h2>
+  <p>Über <strong>„Sicherung herunterladen“</strong> wird eine ZIP-Datei erzeugt, die Konfiguration,
+  Navigation, Inhalte und Einstellungen enthält. Bewahren Sie die Datei an einem sicheren Ort auf.</p>
+
+  <h2>17.2&ensp;Import</h2>
+  <ol>
+    <li>Wählen Sie eine zuvor erstellte Sicherungsdatei aus.</li>
+    <li>Starten Sie den Import.</li>
+    <li>Die enthaltenen Daten werden eingespielt; Sie erhalten anschließend eine Erfolgs- oder Fehlermeldung.</li>
+  </ol>
+
+  <div class="note">
+    <span class="label">Hinweis</span>
+    Zusätzlich empfiehlt sich die reguläre Sicherung der Datenbank und der Dateiablage über
+    <code>mysqldump</code> und das Volume <code>app_storage</code> (siehe Kapitel 2.5).
+  </div>
+</section>
+
+<!-- ===================== 18 ===================== -->
+<section class="chapter" id="ch18">
+  <h1 class="chapter-title">18&ensp;Anhang: Konfigurationsreferenz</h1>
 
   <p>Die Konfiguration erfolgt über die Datei <code>.env</code>. Die wichtigsten Variablen:</p>
 
-  <h2>14.1&ensp;Allgemein und Datenbank</h2>
+  <h2>18.1&ensp;Allgemein und Datenbank</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
@@ -450,7 +577,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     </tbody>
   </table>
 
-  <h2>14.2&ensp;Admin-Konto</h2>
+  <h2>18.2&ensp;Admin-Konto</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
@@ -458,7 +585,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     </tbody>
   </table>
 
-  <h2>14.3&ensp;LDAP / Active Directory</h2>
+  <h2>18.3&ensp;LDAP / Active Directory</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
@@ -472,7 +599,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     </tbody>
   </table>
 
-  <h2>14.4&ensp;Sonstiges</h2>
+  <h2>18.4&ensp;Sonstiges</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
@@ -481,6 +608,25 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
       <tr><td><code>APP_MAX_LOGO_BYTES</code>, <code>APP_ALLOW_SVG_LOGO</code></td><td>Logo-Größenlimit und SVG-Erlaubnis.</td></tr>
       <tr><td><code>APP_MAX_BACKGROUND_BYTES</code></td><td>Größenlimit Hintergrundbild.</td></tr>
       <tr><td><code>APP_FORCE_SECURE_COOKIES</code></td><td>Secure-Cookies erzwingen (bei HTTPS).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>18.5&ensp;Alarmierung / SMS-Gateway</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
+    <tbody>
+      <tr><td><code>ALARM_HOST</code>, <code>ALARM_USERNAME</code></td><td>Host und Benutzername des SMS-Gateways (auch im Adminbereich pflegbar).</td></tr>
+      <tr><td><code>ALARM_PASSWORD</code> / <code>ALARM_PASSWORD_FILE</code></td><td>Gateway-Passwort (nur Umgebung bzw. Docker-Secret).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>18.6&ensp;SNMP</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
+    <tbody>
+      <tr><td><code>SNMP_COMMUNITY</code></td><td>Community-String des SNMP-Agenten.</td></tr>
+      <tr><td><code>SNMP_SYS_LOCATION</code>, <code>SNMP_SYS_CONTACT</code></td><td>Standort und Kontakt des Agents.</td></tr>
+      <tr><td><code>SNMP_PORT</code></td><td>Am Host veröffentlichter UDP-Port (nur Docker-Port-Mapping).</td></tr>
     </tbody>
   </table>
 

@@ -18,6 +18,10 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | Landingpage | Kacheln aller aktiven Navigationselemente, Kurz- und Langbeschreibung, Klickzählung; Unterseiten mit weiteren Kacheln im selben Stil sowie formatierte Textseiten (Rich-Text-Editor im Adminbereich); aufklappbarer Bereich „Wichtige Links“ (automatisch alphabetisch sortiert, mit automatisch ermitteltem Favicon) |
 | Telefonliste | Suche über Name, Vorname, Nachname, Abteilung und Telefonnummer (Live-Suche, Paginierung); Einträge ohne E-Mail-Adresse sind nur für angemeldete Administratoren sichtbar; einzelne Einträge lassen sich im Adminbereich ein-/ausblenden (Standard: eingeblendet) |
 | AD-Synchronisation | LDAP/LDAPS-Abgleich in die lokale Datenbank, konfigurierbares Intervall und Attribut-Mapping |
+| Notfallnummern | Eigene, farblich abgesetzte Kacheln für Notfallnummern (z. B. Werkschutz, Feuerwehr), im Adminbereich pflegbar |
+| Mitteilungen | Aufklappbares Mitteilungs-Overlay auf der Startseite, im Adminbereich pflegbar |
+| Alarmierungen | Alarm-Kacheln, die per Klick eine SMS über ein konfigurierbares SMS-Gateway auslösen – an eine Gruppe oder eine einzelne Rufnummer, mit Verlauf |
+| Geschützter Zugriffsmodus | Interne Elemente, Unterseiten und Textseiten optional mit einem per SMS zugestellten, täglich wechselnden Zugangscode schützen |
 | Administration | Navigation (CRUD, Sortierung, Aktivierung, Hierarchie aus Unterseiten/Textseiten), Beschreibungen, Design/Logo, AD-Konfiguration, Statistik |
 | Statistik | Klicks je Element und Tag, Zeiträume 3/7/14/30/90/365 Tage, selbst gerendertes SVG-Liniendiagramm |
 | Darstellung | Hell-/Dunkelmodus (System oder manuell), frei konfigurierbare Farben, eigenes Logo |
@@ -137,6 +141,10 @@ Alles außer dem LDAP-Bind-Passwort ist im Administrationsbereich pflegbar.
 | `LDAP_ATTR_*` | Attributzuordnung (z. B. `LDAP_ATTR_PHONE=telephoneNumber`) | AD-Standardwerte |
 | `SEED_ON_START` | Beispielnavigation beim Containerstart anlegen | `true` |
 | `CLICK_RETENTION_DAYS` | Aufbewahrung der Klickdaten für `purge_clicks.php` | `400` |
+| `ALARM_HOST`, `ALARM_USERNAME` | SMS-Gateway für Alarmierungen (auch im Adminbereich pflegbar) | – |
+| `ALARM_PASSWORD` / `ALARM_PASSWORD_FILE` | Gateway-Passwort (nur ENV bzw. Docker-Secret) | – |
+| `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` | SNMP-Agent (Community-String, Standort, Kontakt) | `public` / `Intranet` / `admin@example.internal` |
+| `SNMP_PORT` | Am Host veröffentlichter UDP-Port des SNMP-Agenten (nur Docker-Port-Mapping) | `161` |
 
 Jede Variable unterstützt zusätzlich die Datei-Variante `<NAME>_FILE` für Docker-Secrets.
 
@@ -160,13 +168,18 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Übersicht | Kennzahlen zu Navigation, Telefonliste, Klicks und letztem AD-Lauf |
 | Navigation | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Sortieren, Löschen |
 | Wichtige Links | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Löschen; Favicon wird automatisch geladen, Reihenfolge stets alphabetisch (keine manuelle Sortierung) |
+| Notfallnummern | Notfallnummern-Kacheln anlegen, bearbeiten, sortieren, ein-/ausblenden |
+| Telefonliste | Alle Einträge auflisten und je Eintrag ein-/ausblenden (Standard für neu synchronisierte Einträge: eingeblendet); Filter nach „Hat E-Mail-Adresse“, „Ist aktiv“, „Hat Telefonnummer“ und „Nur eingeblendete“ |
+| Mitteilungen | Mitteilungs-Overlay der Startseite anlegen, bearbeiten, ein-/ausblenden |
 | Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`), Handbuch-Links ein-/ausblenden |
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
 | Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Intervall, manueller Testlauf |
+| Alarmierung | SMS-Gateway konfigurieren (Host, Benutzername; Passwort nur über Umgebung), Alarmgruppen/-rufnummern verwalten, Verlauf einsehen |
+| Aktivierungs-Rufnummern | Für den geschützten Zugriffsmodus erlaubte Rufnummern pflegen |
 | SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
-| Telefonliste | Alle Einträge auflisten und je Eintrag ein-/ausblenden (Standard für neu synchronisierte Einträge: eingeblendet); Filter nach „Hat E-Mail-Adresse“, „Ist aktiv“, „Hat Telefonnummer“ und „Nur eingeblendete“ |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |
 | Benutzer | Benutzerverwaltung: Konten anlegen/bearbeiten/deaktivieren/löschen, Rollenvergabe (nur für Administratoren) |
+| Sicherung | Vollständige Sicherung als ZIP exportieren und wieder einspielen |
 
 Rollen: **Administrator** darf den gesamten Adminbereich verwalten, inkl. Benutzerverwaltung. Die Gruppe
 **Redaktion** darf ausschließlich die „Wichtigen Links“ bearbeiten; alle anderen Admin-Bereiche sind für sie
@@ -240,6 +253,34 @@ Der Agent startet automatisch mit dem Stack (`docker compose up -d` bzw. über
 den systemd-Dienst) und kann in Monitoring-Systemen wie LibreNMS, PRTG oder
 Nagios/Icinga als Standard-SNMP-Host eingebunden werden.
 
+### Alarmierungen
+
+Alarm-Kacheln (Navigationstyp „Alarm“) lösen beim Klick eine SMS über ein
+SMS-Gateway aus. Ziel ist entweder eine Gruppe (`alarm_groups`, Typ `group`)
+oder eine einzelne Rufnummer (Typ `number`). Der Versand erfolgt per GET an
+`http://<Gateway>/api.php` mit den Parametern `text`, `to`, `username`,
+`password` und `mode`. Ein optionaler Freitext wird an die Vorlage angehängt
+(max. 255 Zeichen gesamt).
+
+Gateway-Einstellungen (Host, Benutzername) werden im Adminbereich unter
+**Alarmierung** gepflegt; das Passwort kommt ausschließlich aus der Umgebung
+(`ALARM_PASSWORD` bzw. Docker-Secret `ALARM_PASSWORD_FILE`). Für den
+Einzelnummern-Versand kann abweichend ein eigenes Gateway hinterlegt werden
+(Opt-in). Jede Auslösung wird mit Status und Meldung in `alarm_log`
+protokolliert und im Adminbereich angezeigt. Das Passwort wird niemals
+zurückgegeben, gerendert oder geloggt.
+
+### Geschützter Zugriffsmodus (SMS-Code)
+
+Navigationselemente können als „geschützt“ markiert werden (`protected_access`).
+Beim Aufruf erscheint dann die Zugangscode-Seite (`/zugriff`): Besucher geben
+ihre Rufnummer ein, erhalten den täglich wechselnden sechsstelligen Code per SMS
+und schalten das Element damit für die Sitzung frei. Die Rufnummer muss in den
+**Aktivierungs-Rufnummern** hinterlegt und aktiv sein. Der Code ist standardmäßig
+120 Sekunden gültig (konfigurierbar `sms_code_timeout`); nach fünf Fehlversuchen
+wird ein neuer Code benötigt. Geschützt werden können interne Elemente
+(z. B. die Telefonliste), Unterseiten, Textseiten und Alarm-Kacheln.
+
 ### Protokolle
 
 - Anwendungsprotokoll: `storage/logs/app.log` (Passwörter/Token werden maskiert)
@@ -257,6 +298,9 @@ Wiederherstellung:
 ```bash
 docker compose exec -T db mysql -u root -p intranet < backup-2026-01-01.sql
 ```
+
+Zusätzlich lässt sich im Adminbereich unter **Sicherung** eine vollständige
+Sicherung (ZIP) erstellen und wieder einspielen (Export/Import).
 
 ### Datenpflege
 
@@ -306,6 +350,7 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 - Session-Cookies: `HttpOnly`, `SameSite=Lax`, optional `Secure`
 - Uploads landen außerhalb des DocumentRoots und werden über `/logo` mit geprüftem MIME-Typ ausgeliefert
 - URL-Prüfung erlaubt ausschließlich `http`, `https` und interne Pfade (kein `javascript:`, `data:` oder `//host`)
+- Zugangscode-Schutz: geschützte Elemente verlangen einen täglich wechselnden, per SMS zugestellten Code (Hash-Vergleich, fünf Fehlversuche)
 - Keine externen Ressourcen, kein Tracking, keine Cookies für Besucher außerhalb der Sitzung
 
 ---

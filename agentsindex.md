@@ -124,11 +124,11 @@ app/            Anwendungscode
   Exceptions/   HttpException, ValidationException
   Repositories/ Datenbankzugriff (PDO)
   Security/     Auth, Csrf, Session
-  Services/     Geschäftslogik (19 Klassen)
+  Services/     Geschäftslogik (21 Klassen)
   Support/      Dates, Html, Sanitizer, Validator
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
-  migrations/   SQL-Migrationen (001…008)
+  migrations/   SQL-Migrationen (001…013)
 docker/         Dockerfile, Entrypoint, PHP-/MySQL-Konfiguration
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
 scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung)
@@ -169,15 +169,16 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 ### Controller (`app/Controllers/`)
 
 - Basisklasse `Controller` stellt `view()`, `requireValidCsrf()`, `redirect()`, `assetVersion()` bereit.
-- **Öffentlich:** `LandingController`, `PageController` (Unterseiten/Textseiten), `PhonebookController`, `ClickController`, `LogoController`, `BackgroundImageController`, `ImportantLinkIconController`, `HealthController`.
-- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `SnmpController`, `StatisticsController`, `AdminUserController`, `ImportExportController`, plus Basis `AdminController`.
+- **Öffentlich:** `LandingController`, `PageController` (Unterseiten/Textseiten), `PhonebookController`, `ClickController`, `LogoController`, `BackgroundImageController`, `ImportantLinkIconController`, `HealthController`, `AlarmTriggerController` (Alarm-Kacheln), `ProtectedAccessController` (Zugangscode-Seite), `SmsCodeController` (Code-Versand/-Prüfung).
+- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `StatisticsController`, `AdminUserController`, `ImportExportController`, plus Basis `AdminController`.
 
 ### Services (`app/Services/`) – Geschäftslogik
 
-`AdSyncService`, `AdminUserService`, `AnnouncementService`, `BackgroundImageService`,
-`BackupService`, `EmergencyNumberService`, `FaviconService`, `ImportService`,
-`ImportantLinkService`, `LdapAttributeMapper`, `LdapClient`, `LogoService`,
-`NavigationService`, `PhonebookService`, `SettingsService`, `StatisticsService`, `ThemeService`.
+`ActivationNumberService`, `AdSyncService`, `AdminUserService`, `AlarmGroupService`,
+`AlarmService`, `AnnouncementService`, `BackgroundImageService`, `BackupService`,
+`EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
+`LdapAttributeMapper`, `LdapClient`, `LogoService`, `NavigationService`,
+`PhonebookService`, `SettingsService`, `SmsCodeService`, `StatisticsService`, `ThemeService`.
 
 Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 (`Validator`/`Sanitizer`) und wirft bei Fehlern `ValidationException` mit einem
@@ -185,7 +186,8 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 
 ### Repositories (`app/Repositories/`)
 
-`AdminUserRepository`, `AnnouncementRepository`, `ClickRepository`,
+`ActivationNumberRepository`, `AdminUserRepository`, `AlarmGroupRepository`,
+`AlarmLogRepository`, `AnnouncementRepository`, `ClickRepository`,
 `EmergencyNumberRepository`, `ImportantLinkRepository`, `NavigationRepository`,
 `PhonebookRepository`, `SettingsRepository`, `SyncLogRepository`, plus Basis `Repository`
 (stellt `PDO $pdo` bereit; Test kann eine eigene `PDO`-Instanz injizieren).
@@ -221,9 +223,13 @@ Definiert zentral in `public/index.php`.
 | GET | `/` | `LandingController::index` |
 | GET | `/unterseite` | `PageController::subpage` |
 | GET | `/seite` | `PageController::page` |
+| GET | `/zugriff` | `ProtectedAccessController::show` |
 | GET | `/telefonliste` | `PhonebookController::index` |
 | GET | `/api/telefonliste` | `PhonebookController::search` |
 | POST | `/api/klick` | `ClickController::store` |
+| POST | `/api/alarm` | `AlarmTriggerController::store` |
+| POST | `/api/sms-code/send` | `SmsCodeController::send` |
+| POST | `/api/sms-code/verify` | `SmsCodeController::verify` |
 | GET | `/logo` | `LogoController::show` |
 | GET | `/hintergrundbild` | `BackgroundImageController::show` |
 | GET | `/wichtige-links/icon` | `ImportantLinkIconController::show` |
@@ -236,8 +242,9 @@ Definiert zentral in `public/index.php`.
 
 ### Admin (Middleware `$requireAdmin`, nur Rolle `admin`)
 
-Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `mitteilungen`,
-`beschreibungen`, `design`, `ad`, `alarmierung`, `snmp`, `statistik`
+Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
+`mitteilungen`, `beschreibungen`, `design`, `ad`, `alarmierung`
+(inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `snmp`, `statistik`
 (+ `admin/api/statistik`), `benutzer`, `sicherung`.
 
 **Middleware-Verhalten:** `$requireAuth` → Redirect auf `/admin/login` (bzw. JSON 401 bei `/admin/api/*`);
@@ -253,7 +260,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 | Tabelle | Zweck | Wichtige Spalten |
 | --- | --- | --- |
-| `navigation_items` | Kacheln/Unterseiten/Textseiten | `type` (external/internal/subpage/page), `parent_id`, `content`, `background_color`, `background_opacity`, `override_background`, `sort_order`, `active` |
+| `navigation_items` | Kacheln/Unterseiten/Textseiten/Alarmierungen | `type` (external/internal/subpage/page/alarm), `parent_id`, `content`, `alarm_text`, `alarm_group_id`, `protected_access`, `background_color`, `background_opacity`, `override_background`, `sort_order`, `active` |
 | `settings` | Schlüssel-Wert-Einstellungen | `setting_key` (unique), `setting_value` |
 | `phonebook` | AD-synchronisierte Telefonliste | `external_id` (unique), Name, `phone`, `phone_digits`, `mobile`, `department`, `active` |
 | `click_events` | Klickstatistik | `navigation_id` (FK, SET NULL), `clicked_at` |
@@ -263,6 +270,9 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `emergency_numbers` | Notfallnummern-Kacheln | `label`, `phone`, `sort_order`, `active` |
 | `important_links` | „Wichtige Links“ | `title`, `url`, `icon_file`, `icon_mime`, `active` |
 | `announcements` | Mitteilungs-Overlay | `title`, `message`, `active` |
+| `alarm_groups` | Alarmierungsziele (Gruppen oder Einzelrufnummern) | `type` (group/number), `group_number`, `description`, `sort_order`, `active` |
+| `alarm_log` | Verlauf ausgelöster Alarmierungen | `navigation_id`, `title`, `alarm_text`, `group_number`, `mode`, `status`, `message`, `triggered_at` |
+| `activation_numbers` | Für den SMS-Zugangscode erlaubte Rufnummern | `phone`, `phone_digits` (unique), `sort_order`, `active` |
 
 **Konventionen:** `InnoDB`, `utf8mb4`/`utf8mb4_unicode_ci`, `TIMESTAMP`-Spalten `created_at`/`updated_at`, `TINYINT(1)` für Booleans (`active`), Fremdschlüssel mit `ON DELETE SET NULL`/`ON UPDATE CASCADE`.
 
@@ -276,7 +286,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - Jede Variable unterstützt die Datei-Variante `<NAME>_FILE` für Docker-Secrets.
 - Vollständige Liste der Variablen: siehe `README.md` (Abschnitt „Konfiguration“) und `.env.example`.
 
-**Wichtigste Variablen:** `APP_URL`, `APP_DEBUG`, `APP_FORCE_SECURE_COOKIES`, `APP_SESSION_IDLE_TIMEOUT`, `DB_*`, `LDAP_*` (inkl. `LDAP_ATTR_*`-Mapping), `SEED_ON_START`, `CLICK_RETENTION_DAYS`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
+**Wichtigste Variablen:** `APP_URL`, `APP_DEBUG`, `APP_FORCE_SECURE_COOKIES`, `APP_SESSION_IDLE_TIMEOUT`, `DB_*`, `LDAP_*` (inkl. `LDAP_ATTR_*`-Mapping), `ALARM_*` (SMS-Gateway), `SNMP_*`, `SEED_ON_START`, `CLICK_RETENTION_DAYS`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
 
 ---
 
@@ -290,6 +300,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - **Login:** Sperre nach 5 Fehlversuchen (300 s), Timing-Attacken-Schutz (Dummy-Hash), `password_hash`/`password_verify`.
 - **Uploads:** außerhalb des DocumentRoot (`storage/uploads`), Auslieferung über `/logo`/`/hintergrundbild` mit MIME-Prüfung; Größenlimits `APP_MAX_LOGO_BYTES` / `APP_MAX_BACKGROUND_BYTES`.
 - **URL-Validierung:** nur `http`, `https` und interne Pfade (kein `javascript:`, `data:`, `//host`).
+- **Zugangscode-Schutz:** geschützte Elemente (`protected_access`) verlangen einen täglich wechselnden, per SMS zugestellten Code (HMAC-Ableitung aus `sms_code_secret`, Hash-Vergleich, 5 Fehlversuche).
 - **Logging:** Passwörter/Tokens werden im Log maskiert.
 
 ---
@@ -319,6 +330,11 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - Unit-Tests in `tests/Unit/*Test.php` (u. a. `AdSyncServiceTest`, `NavigationServiceTest`, `SecurityTest`, `StatisticsServiceTest`, `ValidatorTest`).
 - Tests nutzen `Database::set()` mit einer SQLite-In-Memory-PDO bzw. Fake-Repositories.
 
+### Alarmierung & SMS-Zugangscode
+
+- Alarm-Kacheln (`type=alarm`) lösen per `POST /api/alarm` eine SMS über das Gateway aus (`ALARM_*` bzw. Settings `alarm_*`), Ziel = Gruppe oder Einzelnummer (`alarm_groups.type`), protokolliert in `alarm_log`. Das Gateway-Passwort kommt nur aus der Umgebung bzw. einem Docker-Secret.
+- Geschützte Elemente (`protected_access=1`) führen zu `/zugriff`; Freischaltung über `POST /api/sms-code/send` und `/api/sms-code/verify`. Der sechsstellige Tagescode wird per HMAC aus `sms_code_secret` abgeleitet, das Zeitfenster steht in `sms_code_timeout`.
+
 ---
 
 ## 13. Konventionen & Coding-Standards
@@ -342,6 +358,8 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | Neue Einstellung | `SettingsService`/`settings`-Tabelle nutzen (Key in `settings`), ggf. ENV-Default in `config/` + `.env.example` + README ergänzen |
 | Schema-Änderung | Neue `database/migrations/0NN_*.sql`, `php scripts/migrate.php` |
 | LDAP-Attribut-Mapping | `config/ldap.php` / `LDAP_ATTR_*` bzw. Adminbereich „Active Directory“ |
+| Alarmierung anlegen | Navigationselement vom Typ `alarm` anlegen; Ziel (Gruppe/Rufnummer) in `alarm_groups`; Gateway unter **Alarmierung** konfigurieren |
+| Geschütztes Element | `protected_access` am Element setzen; erlaubte Rufnummern unter **Aktivierungs-Rufnummern** pflegen |
 | Frontend-Styling | `public/assets/css/app.css` (handgeschrieben, Theme-Variablen über `ThemeService`) |
 
 ---

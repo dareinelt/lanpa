@@ -18,7 +18,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | Landingpage | Kacheln aller aktiven Navigationselemente, Kurz- und Langbeschreibung, Klickzählung; Unterseiten mit weiteren Kacheln im selben Stil sowie formatierte Textseiten (Rich-Text-Editor im Adminbereich); aufklappbarer Bereich „Wichtige Links“ (automatisch alphabetisch sortiert, mit automatisch ermitteltem Favicon) |
 | Telefonliste | Suche über Name, Vorname, Nachname, Abteilung und Telefonnummer (Live-Suche, Paginierung); Einträge ohne E-Mail-Adresse sind nur für angemeldete Administratoren sichtbar; einzelne Einträge lassen sich im Adminbereich ein-/ausblenden (Standard: eingeblendet) |
 | AD-Synchronisation | LDAP/LDAPS-Abgleich in die lokale Datenbank, konfigurierbares Intervall und Attribut-Mapping; optional AD-Gruppen aus konfigurierbaren Pfaden (inkl. verschachtelter Mitgliedschaften) für die Rechtevergabe |
-| Office (optional) | Nextcloud mit Euro-Office DocumentServer hinter demselben Einstieg, Einrichtung per Einzeiler, Updates aus den offiziellen Quellen, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, gestaltbare Kachel mit Verfügbarkeitsstatus, verschlüsselte Sicherung – siehe [docs/office.md](docs/office.md) |
+| Office (optional) | Nextcloud mit Euro-Office DocumentServer hinter demselben Einstieg, Einrichtung per Einzeiler, Updates aus den offiziellen Quellen, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, gestaltbare Kachel mit Verfügbarkeitsstatus, Office-Apps (Euro-Office-Webapps, Dateien, Outlook Web App) mit Freigabe per AD-Gruppe/App-Paket, verschlüsselte Sicherung – siehe [docs/office.md](docs/office.md) |
 | Notfallnummern | Eigene, farblich abgesetzte Kacheln für Notfallnummern (z. B. Werkschutz, Feuerwehr), im Adminbereich pflegbar |
 | Mitteilungen | Aufklappbares Mitteilungs-Overlay auf der Startseite, im Adminbereich pflegbar |
 | Alarmierungen | Alarm-Kacheln, die per Klick eine SMS über ein konfigurierbares SMS-Gateway auslösen – an eine Gruppe oder eine einzelne Rufnummer, mit Verlauf |
@@ -184,7 +184,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
 | Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Gruppen-Pfade für die Rechtevergabe, Intervall, manueller Testlauf |
 | Navigation → Berechtigungen | Kacheln auf Benutzer und AD-Gruppen beschränken; Gruppennamen werden beim Tippen aus dem synchronisierten Bestand vorgeschlagen (Inline-Ergänzung und Liste, keine Live-Abfrage des AD) |
-| Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Sicherung ([docs/office.md](docs/office.md)) |
+| Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Office-Apps/App-Pakete und OWA-Link, Sicherung ([docs/office.md](docs/office.md)) |
 | Alarmierung | SMS-Gateway konfigurieren (Host, Benutzername; Passwort nur über Umgebung), Alarmgruppen/-rufnummern verwalten, Verlauf einsehen |
 | Aktivierungs-Rufnummern | Für den geschützten Zugriffsmodus erlaubte Rufnummern pflegen |
 | SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
@@ -436,6 +436,10 @@ aus der Anwendung heraus verlinkt (`public/manuals/`); die Anzeige lässt sich i
 | Fußzeile eingeklappt | <img src="docs/screenshots/32-office-fusszeile-eingeklappt.png" alt="Fußzeile eingeklappt" width="520"> |
 | Office-Kachel (Landingpage) | <img src="docs/screenshots/39-landing-office-kachel.png" alt="Office-Kachel" width="520"> |
 | Office-Kachel, nur Farbpunkt | <img src="docs/screenshots/43-landing-office-kachel-kompakt.png" alt="Office-Kachel kompakt" width="360"> |
+| Office-Apps nach Klick auf die Kachel | <img src="docs/screenshots/44-office-apps-uebersicht.png" alt="Office-Apps" width="520"> |
+| Textdokument aus der Office-App | <img src="docs/screenshots/49-office-app-textdokument.png" alt="Euro-Office Document Editor" width="520"> |
+| Admin: Office-Apps und Berechtigungen | <img src="docs/screenshots/45-admin-office-apps.png" alt="Office-Apps und Berechtigungen" width="520"> |
+| Admin: App-Paket | <img src="docs/screenshots/46-admin-office-app-paket.png" alt="App-Paket" width="520"> |
 | Admin: Status | <img src="docs/screenshots/33-admin-office-status.png" alt="Office Status" width="520"> |
 | Admin: Diagnose | <img src="docs/screenshots/34-admin-office-diagnose.png" alt="Office Diagnose" width="520"> |
 | Admin: Fußzeile | <img src="docs/screenshots/35-admin-office-fusszeile.png" alt="Office Fußzeile" width="520"> |

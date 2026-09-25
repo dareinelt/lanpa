@@ -13,6 +13,7 @@ use Throwable;
  * Komponenten:
  *   nextcloud       status.php (installiert, Wartung, Upgrade)
  *   eurooffice      DocumentServer /healthcheck
+ *   webapps         Euro-Office-Webapps (web-apps/apps/api/documents/api.js)
  *   eurooffice_jwt  signierter Versionsbefehl (prueft das gemeinsame Secret)
  *   connector       Diagnose der Nextcloud-App intranet_integration
  *                   (Connector installiert/aktiv, URLs, JWT; optional
@@ -32,6 +33,7 @@ final class OfficeHealthService
     private const LABELS = [
         'nextcloud' => 'Nextcloud',
         'eurooffice' => 'Euro-Office DocumentServer',
+        'webapps' => 'Euro-Office-Webapps (Editoren)',
         'eurooffice_jwt' => 'JWT (Intranet ↔ DocumentServer)',
         'connector' => 'Nextcloud-Connector (eurooffice)',
         'redis' => 'Redis (Nextcloud-Cache)',
@@ -65,6 +67,7 @@ final class OfficeHealthService
 
         $components['nextcloud'] = $this->checkNextcloud((string) ($infra['nextcloud_internal_url'] ?? ''), $timeout, $diagnostics);
         $components['eurooffice'] = $this->checkEuroOffice((string) ($infra['eurooffice_internal_url'] ?? ''), $timeout);
+        $components['webapps'] = $this->checkWebApps((string) ($infra['eurooffice_internal_url'] ?? ''), $timeout);
         $components['eurooffice_jwt'] = $this->checkEuroOfficeJwt((string) ($infra['eurooffice_internal_url'] ?? ''), $timeout, $diagnostics);
         $components['connector'] = $this->checkConnector(
             (string) ($infra['nextcloud_internal_url'] ?? ''),
@@ -205,6 +208,25 @@ final class OfficeHealthService
         }
 
         return $this->component('eurooffice', self::ERROR, 'Healthcheck fehlgeschlagen (HTTP ' . $response['status'] . ').');
+    }
+
+    /**
+     * Prueft, ob der DocumentServer die Euro-Office-Webapps (Editoren) ausliefert.
+     *
+     * @return array{label:string,status:string,message:string}
+     */
+    private function checkWebApps(string $baseUrl, int $timeout): array
+    {
+        $response = $this->probe->request('GET', $this->join($baseUrl, 'web-apps/apps/api/documents/api.js'), [], null, $timeout);
+        if ($response['error'] !== null || $response['status'] === 0) {
+            return $this->component('webapps', self::ERROR, 'Nicht erreichbar: ' . ($response['error'] ?? 'keine Antwort'));
+        }
+
+        if ($response['status'] === 200) {
+            return $this->component('webapps', self::OK, 'Editoren-API wird ausgeliefert.');
+        }
+
+        return $this->component('webapps', self::ERROR, 'Editoren-API nicht gefunden (HTTP ' . $response['status'] . ').');
     }
 
     /**

@@ -22,6 +22,11 @@ $icons = [
     'beacon' => '<path d="M9 10a3 3 0 1 1 6 0c0 2-1 3-1 5h-4c0-2-1-3-1-5z"/><path d="M9 15h6v2H9z"/><path d="M11 17h2v4h-2z"/><path d="M5 9l1.5 1"/><path d="M19 9l-1.5 1"/><path d="M12 4v2"/>',
     'ekg' => '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 12h3l2-4 2 8 2-4h3"/>',
     'warning' => '<rect x="6.34" y="6.34" width="11.31" height="11.31" rx="2" transform="rotate(45 12 12)"/><path d="M12 8.5v5"/><circle cx="12" cy="16" r="0.6" fill="currentColor"/>',
+    'spreadsheet' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 4v16M15 4v16"/>',
+    'presentation' => '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M12 16v4M8 20h8"/><path d="M8 12l3-3 2 2 3-3"/>',
+    'pdf' => '<path d="M14 3v5h5"/><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M8.5 17v-4h1.5a1.25 1.25 0 0 1 0 2.5H8.5"/><path d="M13 13v4h1a2 2 0 0 0 0-4z"/>',
+    'folder' => '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    'mail' => '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
     'siren' => '<path d="M3 10v4a1 1 0 0 0 1 1h2l4 3V6L6 9H4a1 1 0 0 0-1 1z"/><path d="M14 9a3 3 0 0 1 0 6"/><path d="M17 7a6 6 0 0 1 0 10"/>',
 ];
 

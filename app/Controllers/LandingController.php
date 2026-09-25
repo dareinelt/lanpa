@@ -13,7 +13,7 @@ final class LandingController extends Controller
     public function index(Request $request): Response
     {
         $ssoUser = Container::sso()->resolve($request);
-        $items = Container::navigation()->activeTopLevelFor($ssoUser);
+        $items = Container::officeApps()->filterNavigation(Container::navigation()->activeTopLevelFor($ssoUser), $ssoUser);
 
         return $this->view('landing.index', [
             'pageTitle' => Container::settings()->get('site_title'),

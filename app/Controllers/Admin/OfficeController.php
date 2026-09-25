@@ -23,6 +23,7 @@ final class OfficeController extends AdminController
     public const TILE_ICONS = [
         'document', 'app', 'phone', 'alert', 'tools', 'robot', 'link',
         'clock', 'helmet', 'wrench', 'snail', 'beacon', 'ekg', 'warning', 'siren',
+        'spreadsheet', 'presentation', 'pdf', 'folder', 'mail',
     ];
 
     private const TILE_DESIGN_KEYS = ['title', 'short_description', 'description', 'icon', 'background_color', 'background_opacity'];
@@ -113,7 +114,7 @@ final class OfficeController extends AdminController
                 'type' => 'internal',
                 'url' => PublicOfficeController::ENTRY_PATH,
                 'icon' => 'document',
-                'short_description' => 'Dokumente bearbeiten (Nextcloud mit Euro-Office)',
+                'short_description' => 'Dokumente, Tabellen, Präsentationen, Dateien und E-Mail',
                 'description' => '',
                 'active' => '1',
             ]);
@@ -124,9 +125,9 @@ final class OfficeController extends AdminController
         }
 
         app_logger()->info('Office-Kachel angelegt.', ['admin' => Container::auth()->username(), 'id' => $id]);
-        Session::flash('success', 'Die Office-Kachel wurde angelegt. Berechtigungen (Benutzer/AD-Gruppen) können in der Navigation gepflegt werden.');
+        Session::flash('success', 'Die Office-Kachel wurde angelegt. Legen Sie nun fest, welche AD-Gruppen welche Office-Apps erhalten.');
 
-        return $this->redirect('/admin/navigation/berechtigungen?id=' . $id);
+        return $this->redirect('/admin/office/apps#freigaben');
     }
 
     /**

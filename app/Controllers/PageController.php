@@ -27,7 +27,10 @@ final class PageController extends Controller
         return $this->view('pages.subpage', [
             'pageTitle' => (string) $item['title'],
             'item' => $item,
-            'items' => Container::navigation()->activeChildrenFor((int) $item['id'], $ssoUser),
+            'items' => Container::officeApps()->filterNavigation(
+                Container::navigation()->activeChildrenFor((int) $item['id'], $ssoUser),
+                $ssoUser
+            ),
             'breadcrumb' => Container::navigation()->breadcrumb((int) $item['id']),
             'descriptionMode' => Container::settings()->descriptionMode(),
             'activeNav' => '',

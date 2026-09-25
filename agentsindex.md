@@ -133,7 +133,7 @@ app/            Anwendungscode
   Support/      Dates, Html, Sanitizer, Validator
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
-  migrations/   SQL-Migrationen (001…015)
+  migrations/   SQL-Migrationen (001…016)
 docker/         Dockerfiles, Entrypoints, PHP-/MySQL-Konfiguration, SNMP-Agent
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
 scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation)
@@ -175,13 +175,14 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 
 - Basisklasse `Controller` stellt `view()`, `requireValidCsrf()`, `redirect()`, `assetVersion()` bereit.
 - **Öffentlich:** `LandingController`, `PageController` (Unterseiten/Textseiten), `PhonebookController`, `ClickController`, `LogoController`, `BackgroundImageController`, `ImportantLinkIconController`, `HealthController`, `AlarmTriggerController` (Alarm-Kacheln), `ProtectedAccessController` (Zugangscode-Seite), `SmsCodeController` (Code-Versand/-Prüfung).
-- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `StatisticsController`, `AdminUserController`, `ImportExportController`, plus Basis `AdminController`.
+- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `StatisticsController`, `AdminUserController`, `ImportExportController`, `OfficeController`, `OfficeAppsController`, plus Basis `AdminController`.
 
 ### Services (`app/Services/`) – Geschäftslogik
 
 `ActivationNumberService`, `AdSyncService`, `AdminUserService`, `AlarmGroupService`,
 `AlarmService`, `AnnouncementService`, `BackgroundImageService`, `BackupService`,
 `Office\OfficeConfigService` (Einstellungen Fußzeile/Kachel), `Office\OfficeHealthService` (Status/Diagnose, Probe per `OfficeProbeInterface`), `Office\OfficeBackupService` (Steuerung des Containers `office-backup`),
+`Office\OfficeAppService` + `Office\OfficeAppCatalog` (Office-Apps unter der Kachel: Euro-Office-Webapps, Dateien, OWA; Freigabe per AD-Gruppe/App-Paket, ohne Zuordnung/ohne SSO keine Apps),
 `EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
 `LdapAttributeMapper`, `LdapClient`, `LogoService`, `NavigationService`,
 `PhonebookService`, `SettingsService`, `SmsCodeService`, `StatisticsService`, `ThemeService`.
@@ -195,7 +196,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 `ActivationNumberRepository`, `AdminUserRepository`, `AlarmGroupRepository`,
 `AlarmLogRepository`, `AnnouncementRepository`, `ClickRepository`,
 `EmergencyNumberRepository`, `ImportantLinkRepository`, `NavigationRepository`,
-`PhonebookRepository`, `SettingsRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), plus Basis `Repository`
+`PhonebookRepository`, `SettingsRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), plus Basis `Repository`
 (stellt `PDO $pdo` bereit; Test kann eine eigene `PDO`-Instanz injizieren).
 
 ### Security (`app/Security/`)
@@ -257,9 +258,9 @@ Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
 (inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `snmp`, `statistik`
 (+ `admin/api/statistik`), `benutzer`, `sicherung` (Export/Import), `office`
 (inkl. `office/pruefen`, `office/sicherung`, `office/kachel`, `office/kachel/gestaltung`,
-`office/kachel/vorschau`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
+`office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
 
-Office öffentlich: `GET /office-starten` (Einstieg über die Kachel, prüft Rechte), `GET /office-nicht-verfuegbar`,
+Office öffentlich: `GET /office-starten` (Übersicht der freigegebenen Office-Apps), `GET /office-app?app=…` (Start einer App, prüft Freigabe), `GET /office-nicht-verfuegbar`,
 `GET /api/office/footer` (Konfiguration der Fußzeile), `GET /api/office/status` (Verfügbarkeit für die Kachel).
 
 **Middleware-Verhalten:** `$requireAuth` → Redirect auf `/admin/login` (bzw. JSON 401 bei `/admin/api/*`);
@@ -291,6 +292,9 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `navigation_item_permissions` | Kachel-Berechtigungen (Benutzer oder AD-Gruppe) | `navigation_id`, `phonebook_id`, `group_name` |
 | `ad_groups` | Synchronisierte AD-Gruppen (aus `ldap_group_base_dn`) | `dn_hash` (unique), `dn`, `name`, `description`, `member_count`, `active` |
 | `ad_group_members` | Mitglieder (verschachtelt aufgelöst) | `group_id`, `phonebook_id` |
+| `office_app_packages` | App-Pakete für Office-Apps | `name` (unique), `description` |
+| `office_app_package_apps` | Apps eines Pakets | `package_id`, `app_key` |
+| `office_app_permissions` | Freigabe von Apps/Paketen für AD-Gruppen | `group_name`, `app_key` oder `package_id` |
 
 **Konventionen:** `InnoDB`, `utf8mb4`/`utf8mb4_unicode_ci`, `TIMESTAMP`-Spalten `created_at`/`updated_at`, `TINYINT(1)` für Booleans (`active`), Fremdschlüssel mit `ON DELETE SET NULL`/`ON UPDATE CASCADE`.
 
@@ -406,5 +410,5 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 - `README.md` – ausführliche Projektdokumentation (Funktionsumfang, Docker, Konfiguration, Betrieb, Sicherheit).
 - `docs/manuals/anwenderhandbuch.pdf` / `administratorhandbuch.pdf` (Quellen als HTML unter `docs/manuals/`).
-- `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche (30–43: Office und AD-Gruppen).
+- `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche (30–52: Office, Office-Apps und AD-Gruppen).
 - `docs/office.md` – Office-Erweiterung: Einrichtung, Architektur, Updates, AD-Gruppen/SSO, Kachel, Sicherung, SNMP.

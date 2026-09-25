@@ -42,6 +42,7 @@ final class FakeOfficeProbe implements OfficeProbeInterface
         $probe->responses['GET http://nextcloud/office/status.php'] = ['status' => 200, 'error' => null,
             'body' => json_encode(['installed' => true, 'maintenance' => false, 'needsDbUpgrade' => false, 'versionstring' => '34.0.4'])];
         $probe->responses['GET http://eurooffice/healthcheck'] = ['status' => 200, 'body' => 'true', 'error' => null];
+        $probe->responses['GET http://eurooffice/web-apps/apps/api/documents/api.js'] = ['status' => 200, 'body' => '/* api */', 'error' => null];
         $probe->responses['POST http://eurooffice/command'] = ['status' => 200, 'body' => '{"error":0,"version":"9.3.4.37"}', 'error' => null];
         $probe->responses['GET http://nextcloud/office/index.php/apps/intranet_integration/api/diagnostics'] = ['status' => 200, 'error' => null,
             'body' => json_encode([

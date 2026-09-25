@@ -58,6 +58,7 @@ final class OfficeConfigService
             'office_footer_show_back' => '1',
             'office_direct_access' => 'footer',
             'office_tile_status' => 'full',
+            'office_owa_url' => '',
         ];
     }
 

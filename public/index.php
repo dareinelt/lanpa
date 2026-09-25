@@ -23,6 +23,7 @@ use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\OfficeController as OfficeAdminController;
+use App\Controllers\Admin\OfficeAppsController as OfficeAppsAdminController;
 use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
 use App\Controllers\Admin\StatisticsController;
@@ -94,6 +95,7 @@ $router->group([$requireUnlocked], static function (Router $router): void {
 $router->get('/office-nicht-verfuegbar', [OfficeController::class, 'unavailable']);
 $router->get('/api/office/footer', [OfficeController::class, 'footer']);
 $router->get('/api/office/status', [OfficeController::class, 'status']);
+$router->get('/office-app', [OfficeController::class, 'launch']);
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
 $router->post('/admin/login', [AuthController::class, 'login']);
@@ -191,6 +193,12 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/office/kachel', [OfficeAdminController::class, 'createTile']);
         $router->post('/admin/office/kachel/gestaltung', [OfficeAdminController::class, 'updateTile']);
         $router->get('/admin/office/kachel/vorschau', [OfficeAdminController::class, 'tilePreview']);
+        $router->get('/admin/office/apps', [OfficeAppsAdminController::class, 'index']);
+        $router->post('/admin/office/apps/owa', [OfficeAppsAdminController::class, 'updateOwa']);
+        $router->post('/admin/office/apps/freigaben', [OfficeAppsAdminController::class, 'updatePermissions']);
+        $router->get('/admin/office/apps/paket', [OfficeAppsAdminController::class, 'editPackage']);
+        $router->post('/admin/office/apps/paket', [OfficeAppsAdminController::class, 'savePackage']);
+        $router->post('/admin/office/apps/paket/loeschen', [OfficeAppsAdminController::class, 'deletePackage']);
 
         $router->get('/admin/snmp', [SnmpController::class, 'index']);
         $router->post('/admin/snmp', [SnmpController::class, 'update']);

@@ -14,6 +14,7 @@ use App\Repositories\ClickRepository;
 use App\Repositories\EmergencyNumberRepository;
 use App\Repositories\ImportantLinkRepository;
 use App\Repositories\NavigationRepository;
+use App\Repositories\OfficeAppRepository;
 use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\SyncLogRepository;
@@ -34,6 +35,7 @@ use App\Services\BackgroundImageService;
 use App\Services\LdapClient;
 use App\Services\LogoService;
 use App\Services\NavigationService;
+use App\Services\Office\OfficeAppService;
 use App\Services\Office\OfficeBackupService;
 use App\Services\Office\OfficeConfigService;
 use App\Services\Office\OfficeHealthService;
@@ -399,6 +401,18 @@ final class Container
             OfficeBackupService::class,
             static fn (): OfficeBackupService => new OfficeBackupService(
                 (string) Config::get('office.backup_control_dir', BASE_PATH . '/storage/office-backup')
+            )
+        );
+    }
+
+    public static function officeApps(): OfficeAppService
+    {
+        return self::make(
+            OfficeAppService::class,
+            static fn (): OfficeAppService => new OfficeAppService(
+                new OfficeAppRepository(),
+                self::officeConfig(),
+                self::settings()
             )
         );
     }

@@ -16,6 +16,7 @@ $tileColor = (string) ($item['background_color'] ?? '');
 $icons = [
     '', 'document', 'app', 'phone', 'alert', 'tools', 'robot', 'link',
     'clock', 'helmet', 'wrench', 'snail', 'beacon', 'ekg', 'warning', 'siren',
+    'spreadsheet', 'presentation', 'pdf', 'folder', 'mail',
 ];
 ?>
 <form method="post" action="<?= Html::e($action) ?>" class="form form--wide" data-editor-form>

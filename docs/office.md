@@ -66,8 +66,10 @@ Konfiguration bleibt beim Einzeiler oben.
 
 ### Einstieg und Fußzeile
 
-- Die Kachel ruft `/office-starten` auf. Das Intranet prüft Berechtigung und
-  Verfügbarkeit und leitet dann zu `/office/` weiter.
+- Die Kachel ruft `/office-starten` auf. Das Intranet prüft die Berechtigung
+  und zeigt die **Office-Apps** an, die der angemeldete Benutzer erhält
+  (siehe Abschnitt 5a). Ein Klick auf eine App (`/office-app?app=…`) prüft die
+  Freigabe erneut und leitet weiter.
 - Nextcloud und Euro-Office zeigen eine dezente **Intranet-Fußzeile** mit
   „Zum Intranet“ und „Zurück“. Sie ist im Ruhezustand transparent, wird bei
   Mauszeiger, Tastaturfokus oder Antippen deckend und lässt sich einklappen.
@@ -179,15 +181,77 @@ Navigation.
 
 ---
 
+## 5a. Office-Apps und App-Pakete
+
+Nach Klick auf die Office-Kachel erscheint eine Übersicht der einzelnen Apps:
+
+| Office-Kachel (angemeldet) | Office-Apps des Benutzers |
+| --- | --- |
+| ![Landingpage mit Office-Kachel](screenshots/47-landing-office-angemeldet.png) | ![Übersicht der Office-Apps](screenshots/44-office-apps-uebersicht.png) |
+
+| App | Ziel |
+| --- | --- |
+| Textdokument | Euro-Office-Webapp `documenteditor` |
+| Tabelle | Euro-Office-Webapp `spreadsheeteditor` |
+| Präsentation | Euro-Office-Webapp `presentationeditor` |
+| PDF-Formular | Euro-Office-Webapp `pdfeditor` |
+| Dateien | eigene Dateien in Nextcloud (`/office/index.php/apps/files/`) |
+| Outlook Web App | im Adminbereich hinterlegter Link (öffnet in neuem Tab) |
+
+Die Editoren stammen aus [Euro-Office/web-apps](https://github.com/Euro-Office/web-apps)
+und werden vom DocumentServer (`/eurooffice/web-apps/…`) ausgeliefert. Gestartet
+wird über den Nextcloud-Connector `eurooffice`
+(`/office/index.php/apps/eurooffice/new?name=…&dir=/`): Er legt ein leeres
+Dokument in den eigenen Dateien an und öffnet es direkt in der passenden
+Webapp. So sind Speicherort, Berechtigungen und JWT-Absicherung dieselben wie
+beim Öffnen aus Nextcloud. Die Diagnose prüft zusätzlich, ob die Webapps
+ausgeliefert werden (Komponente „Euro-Office-Webapps“, nicht kritisch).
+
+| Textdokument | Tabelle | Dateien |
+| --- | --- | --- |
+| ![Euro-Office Document Editor](screenshots/49-office-app-textdokument.png) | ![Euro-Office Spreadsheet Editor](screenshots/50-office-app-tabelle.png) | ![Eigene Dateien in Nextcloud](screenshots/51-office-app-dateien.png) |
+
+**Berechtigungen (Office → Office-Apps und Berechtigungen, `/admin/office/apps`):**
+
+- Je App lassen sich AD-Gruppen direkt freigeben (mit Vorschlägen aus dem
+  synchronisierten Bestand).
+- **App-Pakete** fassen mehrere Apps zusammen (z. B. „Office Basis“ =
+  Textdokument, Tabelle, Dateien) und werden ebenfalls AD-Gruppen zugeordnet.
+- Ein Benutzer sieht alle Apps, die einer seiner Gruppen direkt oder über ein
+  Paket freigegeben sind. Die Spalte „Wirksam für“ zeigt die Summe.
+- **Ohne Zuordnung ist eine App für niemanden sichtbar.**
+- **Nicht angemeldete Nutzer** (kein SSO-Benutzer) erhalten keine Apps; die
+  Office-Kachel wird für sie – wie für alle ohne freigegebene App – ausgeblendet.
+- „Outlook Web App“ erscheint nur, wenn ein gültiger http(s)-Link hinterlegt ist.
+- Die Kachel-Berechtigungen der Navigation gelten zusätzlich.
+
+![Office-Apps und Berechtigungen im Adminbereich](screenshots/45-admin-office-apps.png)
+
+| App-Paket bearbeiten | Nicht angemeldet: keine Office-Kachel |
+| --- | --- |
+| ![App-Paket](screenshots/46-admin-office-app-paket.png) | ![Landingpage ohne Anmeldung](screenshots/52-landing-ohne-anmeldung.png) |
+
+Im Beispiel gehört der Benutzer zu `GG-Office-Basis` und `GG-Controlling`: Er
+erhält Textdokument, Tabelle und Dateien über das Paket „Office Basis“, das
+PDF-Formular direkt über `GG-Controlling` und die Outlook Web App; die
+Präsentation (nur `GG-Marketing`) fehlt.
+
+Hinweis: Die App-Freigaben steuern, was im Intranet angeboten wird. Wer auf
+Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
+`NEXTCLOUD_OFFICE_GROUPS` (Abschnitt 4).
+
+---
+
 ## 6. Adminbereich „Office“
 
 | Bereich | Inhalt |
 | --- | --- |
 | Status | Gesamtzustand, letzte Prüfung, „Jetzt prüfen“ |
-| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), PostgreSQL, Redis, Connector |
+| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector |
 | Fußzeile und Einstieg | Text, Transparenz, Logo, „Zurück“, Ziel „Zum Intranet“, direkter Aufruf |
 | Vorschau der Fußzeile | Live-Vorschau mit demselben Stylesheet/Skript wie in Nextcloud |
 | Kachel im Intranet | Gestaltung, Status-Darstellung, Berechtigungen |
+| Office-Apps | Link zur Outlook Web App, Freigaben je App (AD-Gruppen), App-Pakete ([Abschnitt 5a](#5a-office-apps-und-app-pakete)) |
 | Sicherung | Sicherung anstoßen, vorhandene Sicherungen, Aufbewahrung |
 
 | Status | Diagnose |

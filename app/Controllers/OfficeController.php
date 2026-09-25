@@ -9,47 +9,80 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Exceptions\HttpException;
 use App\Security\Session;
+use App\Services\Office\OfficeAppService;
 use Throwable;
 
 /**
  * Oeffentliche Endpunkte der Office-Integration.
  *
- *   GET /office-starten           Intranet-Einstieg (Kachel) -> /office/...
+ *   GET /office-starten           Office-Kachel: Uebersicht der freigegebenen Apps
+ *                                 (?ziel=/office/... -> Weiterleitung zu Nextcloud)
+ *   GET /office-app?app=<key>     Start einer App (Euro-Office-Webapp, Dateien, OWA)
  *   GET /office-nicht-verfuegbar  Hinweisseite (auch Fehlerseite des auth-Proxys)
  *   GET /api/office/footer        Konfiguration der Fusszeile in Nextcloud
  *   GET /api/office/status        Verfuegbarkeit fuer die Kachelanzeige
  */
 final class OfficeController extends Controller
 {
-    public const ENTRY_PATH = '/office-starten';
+    public const ENTRY_PATH = OfficeAppService::ENTRY_PATH;
     public const SESSION_KEY = 'office_entered_at';
 
+    /**
+     * Office-Kachel: Uebersicht der freigegebenen Apps. Mit ?ziel=... (Einstieg
+     * aus der Fusszeile/Direktaufruf) wie bisher Weiterleitung zu Nextcloud.
+     */
     public function start(Request $request): Response
     {
-        $office = Container::officeConfig();
-        if (!$office->isEnabled()) {
-            throw new HttpException(404, 'Office ist in dieser Installation nicht aktiviert.');
-        }
+        $ssoUser = $this->authorize($request);
+        $apps = Container::officeApps()->allowedFor($ssoUser);
 
-        // Kachel-Berechtigungen (Benutzer/AD-Gruppen) auch beim Direktaufruf
-        // des Einstiegs beachten.
-        $tile = Container::navigationRepository()->findActiveInternalByUrl(self::ENTRY_PATH);
-        if ($tile !== null) {
-            $ssoUser = Container::sso()->resolve($request);
-            if (!Container::navigation()->isAccessible((int) $tile['id'], $ssoUser)) {
+        $target = $request->query('ziel');
+        if ($target !== null && $target !== '') {
+            if (!$this->hasNextcloudApp($apps)) {
                 throw new HttpException(403, 'Für Office fehlt die Berechtigung.');
             }
+
+            return $this->enterNextcloud(Container::officeConfig()->entryTarget($target));
         }
 
-        Session::put(self::SESSION_KEY, time());
+        $tile = Container::navigationRepository()->findActiveInternalByUrl(self::ENTRY_PATH);
 
-        if (!Container::officeHealth()->publicSummary()['available']) {
-            return $this->redirect('/office-nicht-verfuegbar');
-        }
-
-        return $this->redirect($office->entryTarget($request->query('ziel')));
+        return $this->view('office.apps', [
+            'pageTitle' => $tile !== null ? (string) $tile['title'] : 'Office',
+            'tile' => $tile,
+            'apps' => $apps,
+            'breadcrumb' => $tile !== null ? Container::navigation()->breadcrumb((int) $tile['id']) : [],
+            'ssoUser' => $ssoUser,
+            'descriptionMode' => Container::settings()->descriptionMode(),
+            'activeNav' => '',
+            'pageScript' => 'landing.js',
+        ])->withHeader('Cache-Control', 'no-store')->withHeader('Vary', 'Cookie');
     }
 
+    /**
+     * Startet eine einzelne Office-App (Pruefung der AD-Gruppen-Freigabe).
+     */
+    public function launch(Request $request): Response
+    {
+        $tile = Container::navigationRepository()->findActiveInternalByUrl(self::ENTRY_PATH);
+        if ($tile !== null && !empty($tile['protected_access']) && !Container::smsCode()->isVerified((int) $tile['id'])) {
+            return $this->redirect('/zugriff?id=' . (int) $tile['id']);
+        }
+
+        $ssoUser = $this->authorize($request);
+        $app = Container::officeApps()->findAllowed((string) $request->query('app', ''), $ssoUser);
+        if ($app === null) {
+            throw new HttpException(403, 'Diese Office-App ist für Sie nicht freigegeben.');
+        }
+
+        app_logger()->info('Office-App gestartet.', ['app' => $app['key'], 'user' => $ssoUser['username'] ?? '']);
+
+        if ($app['external']) {
+            return $this->redirect($app['target']);
+        }
+
+        return $this->enterNextcloud($app['target']);
+    }
     public function unavailable(Request $request): Response
     {
         $response = null;
@@ -104,6 +137,56 @@ final class OfficeController extends Controller
         }
 
         return Response::json(Container::officeHealth()->publicSummary());
+    }
+
+    /**
+     * Gemeinsame Pruefung: Office aktiv, Kachel-Berechtigung, angemeldeter Benutzer.
+     *
+     * @return array{id:int,username:string,display_name:string,groups:list<string>}
+     */
+    private function authorize(Request $request): array
+    {
+        if (!Container::officeConfig()->isEnabled()) {
+            throw new HttpException(404, 'Office ist in dieser Installation nicht aktiviert.');
+        }
+
+        $ssoUser = Container::sso()->resolve($request);
+        if ($ssoUser === null) {
+            throw new HttpException(403, 'Office-Apps stehen nur angemeldeten Benutzern zur Verfügung.');
+        }
+
+        // Kachel-Berechtigungen (Benutzer/AD-Gruppen) auch beim Direktaufruf beachten.
+        $tile = Container::navigationRepository()->findActiveInternalByUrl(self::ENTRY_PATH);
+        if ($tile !== null && !Container::navigation()->isAccessible((int) $tile['id'], $ssoUser)) {
+            throw new HttpException(403, 'Für Office fehlt die Berechtigung.');
+        }
+
+        return $ssoUser;
+    }
+
+    /**
+     * @param list<array<string,mixed>> $apps
+     */
+    private function hasNextcloudApp(array $apps): bool
+    {
+        foreach ($apps as $app) {
+            if (empty($app['external'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function enterNextcloud(string $target): Response
+    {
+        Session::put(self::SESSION_KEY, time());
+
+        if (!Container::officeHealth()->publicSummary()['available']) {
+            return $this->redirect('/office-nicht-verfuegbar');
+        }
+
+        return $this->redirect($target);
     }
 
     public static function hasEntered(int $lifetime): bool

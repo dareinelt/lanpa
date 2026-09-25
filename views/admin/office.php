@@ -227,6 +227,19 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
     <script src="<?= Html::e((string) $previewConfig['assets']['js']) ?>" defer></script>
 </section>
 
+<section class="card" id="apps" aria-labelledby="office-apps-title">
+    <h2 class="card__title" id="office-apps-title">Office-Apps und Berechtigungen</h2>
+    <p class="card__hint">
+        Ein Klick auf die Office-Kachel zeigt die einzelnen Apps: die Euro-Office-Webapps (Text, Tabelle,
+        Präsentation, PDF), „Dateien“ (eigene Dateien in Nextcloud) und die „Outlook Web App“.
+        Welche Apps ein Benutzer sieht, wird über AD-Gruppen je App oder App-Paket geregelt; nicht
+        angemeldete Nutzer erhalten keine Office-Apps. Dort wird auch der Link zur Outlook Web App hinterlegt.
+    </p>
+    <div class="form__actions">
+        <a class="button button--primary" href="/admin/office/apps">Apps und Berechtigungen verwalten</a>
+    </div>
+</section>
+
 <section class="card" id="kachel" aria-labelledby="office-tile-title">
     <h2 class="card__title" id="office-tile-title">Kachel im Intranet</h2>
     <?php if ($tile !== null && $tileValues !== null) {
@@ -241,7 +254,7 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
         $override = !empty($tileValues['override_background']);
         ?>
         <p class="card__hint">
-            Die Kachel „<?= Html::e((string) $tile['title']) ?>“ führt über <code>/office-starten</code> zu Office.
+            Die Kachel „<?= Html::e((string) $tile['title']) ?>“ führt über <code>/office-starten</code> zur Übersicht der Office-Apps.
             Änderungen werden rechts sofort in der Vorschau angezeigt und erst mit „Kachel speichern“ übernommen.
         </p>
         <div class="office-tile-design">
@@ -303,7 +316,7 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
                 </div>
                 <div class="form__actions">
                     <button type="submit" class="button button--primary">Kachel speichern</button>
-                    <a class="button" href="/admin/navigation/berechtigungen?id=<?= (int) $tile['id'] ?>">Berechtigungen (Benutzer/AD-Gruppen)</a>
+                    <a class="button" href="/admin/navigation/berechtigungen?id=<?= (int) $tile['id'] ?>">Kachel-Berechtigungen (Benutzer/AD-Gruppen)</a>
                     <a class="button" href="/admin/navigation/bearbeiten?id=<?= (int) $tile['id'] ?>">Weitere Optionen</a>
                 </div>
             </form>

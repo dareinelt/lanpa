@@ -22,8 +22,8 @@ RUN set -eux; \
 RUN set -eux; \
     a2enmod proxy proxy_http headers auth_ntlm_winbind rewrite
 
-COPY ntlm.conf /etc/apache2/sites-available/000-default.conf
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/auth/ntlm.conf /etc/apache2/sites-available/000-default.conf
+COPY docker/auth/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 80

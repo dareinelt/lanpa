@@ -1,3 +1,61 @@
+# Office-Erweiterung (Nextcloud + Euro-Office): Profil "office", Einrichtung
+# per Einzeiler ./scripts/office-setup.sh (siehe docs/office.md).
+x-nextcloud-env: &nextcloud-env
+  POSTGRES_HOST: nextcloud-db
+  POSTGRES_DB: nextcloud
+  POSTGRES_USER: nextcloud
+  POSTGRES_PASSWORD_FILE: /run/secrets/nextcloud_db_password
+  NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_ADMIN_USER:-ncadmin}
+  NEXTCLOUD_ADMIN_PASSWORD_FILE: /run/secrets/nextcloud_admin_password
+  NEXTCLOUD_TRUSTED_DOMAINS: nextcloud
+  REDIS_HOST: nextcloud-redis
+  REDIS_HOST_PASSWORD_FILE: /run/secrets/nextcloud_redis_password
+  # Nur der auth-Container (Office-Netz) ist vertrauenswuerdiger Proxy.
+  TRUSTED_PROXIES: ${OFFICE_SUBNET:-172.30.250.0/24}
+  APACHE_DISABLE_REWRITE_IP: "1"
+  OVERWRITECLIURL: ${APP_URL:-http://localhost:8080}/office
+  PHP_MEMORY_LIMIT: ${NEXTCLOUD_PHP_MEMORY_LIMIT:-1024M}
+  PHP_UPLOAD_LIMIT: ${NEXTCLOUD_UPLOAD_LIMIT:-4G}
+  APP_URL: ${APP_URL:-http://localhost:8080}
+  EUROOFFICE_JWT_SECRET_FILE: /run/secrets/office_jwt_secret
+  EUROOFFICE_JWT_HEADER: AuthorizationJwt
+  NEXTCLOUD_EXTRA_TRUSTED_DOMAINS: ${NEXTCLOUD_EXTRA_TRUSTED_DOMAINS:-}
+  NEXTCLOUD_OFFICE_GROUPS: ${NEXTCLOUD_OFFICE_GROUPS:-}
+  # AD-Anbindung (nutzt die bestehenden LDAP_*-Werte des Intranets).
+  SSO_ENABLED: ${SSO_ENABLED:-false}
+  NEXTCLOUD_LDAP_ENABLED: ${NEXTCLOUD_LDAP_ENABLED:-false}
+  NEXTCLOUD_LDAP_PASSWORD_FILE: /run/secrets/nextcloud_ldap_password
+  NEXTCLOUD_LDAP_ALLOWED_GROUPS: ${NEXTCLOUD_LDAP_ALLOWED_GROUPS:-}
+  NEXTCLOUD_LDAP_ADMIN_GROUP: ${NEXTCLOUD_LDAP_ADMIN_GROUP:-}
+  NEXTCLOUD_LDAP_USER_FILTER: ${NEXTCLOUD_LDAP_USER_FILTER:-}
+  NEXTCLOUD_LDAP_GROUP_FILTER: ${NEXTCLOUD_LDAP_GROUP_FILTER:-}
+  NEXTCLOUD_LDAP_GROUPS_BASE_DN: ${NEXTCLOUD_LDAP_GROUPS_BASE_DN:-}
+  LDAP_HOST: ${LDAP_HOST:-}
+  LDAP_PORT: ${LDAP_PORT:-636}
+  LDAP_USE_TLS: ${LDAP_USE_TLS:-true}
+  LDAP_VERIFY_CERT: ${LDAP_VERIFY_CERT:-true}
+  LDAP_BASE_DN: ${LDAP_BASE_DN:-}
+  LDAP_BIND_DN: ${LDAP_BIND_DN:-}
+  LDAP_GROUP_BASE_DN: ${LDAP_GROUP_BASE_DN:-}
+  LDAP_ATTR_SAMACCOUNT_NAME: ${LDAP_ATTR_SAMACCOUNT_NAME:-sAMAccountName}
+  LDAP_ATTR_DISPLAY_NAME: ${LDAP_ATTR_DISPLAY_NAME:-displayName}
+  LDAP_ATTR_EMAIL: ${LDAP_ATTR_EMAIL:-mail}
+
+x-nextcloud-volumes: &nextcloud-volumes
+  - nextcloud_html:/var/www/html
+  - nextcloud_data:/var/www/html/data
+  # Werden von hooks/intranet-setup.sh nach config/ bzw. custom_apps/ kopiert
+  # (verschachtelte Bind-Mounts wuerden die Verzeichnisse root-eigen machen).
+  - ./docker/nextcloud/intranet.config.php:/usr/src/nextcloud/config/intranet.config.php:ro
+  - ./docker/nextcloud/apps/intranet_integration:/opt/intranet/intranet_integration:ro
+
+x-nextcloud-secrets: &nextcloud-secrets
+  - nextcloud_db_password
+  - nextcloud_admin_password
+  - nextcloud_redis_password
+  - nextcloud_ldap_password
+  - office_jwt_secret
+
 services:
   db:
     image: mysql:8.0
@@ -32,8 +90,12 @@ services:
       SEED_ON_START: ${SEED_ON_START:-true}
       # SSO-Header duerfen nur vom vorgelagerten auth-Container stammen.
       SSO_TRUSTED_PROXY: ${SSO_TRUSTED_PROXY:-auth}
+      # Gemeinsames Euro-Office-Secret (signierte Diagnose-/Versionsabfragen).
+      OFFICE_JWT_SECRET_FILE: /run/secrets/office_jwt_secret
     env_file:
       - .env
+    secrets:
+      - office_jwt_secret
     volumes:
       - app_storage:/var/www/html/storage
     healthcheck:
@@ -44,6 +106,9 @@ services:
       start_period: 40s
     networks:
       - intranet
+      # Office-Statuspruefung (Nextcloud, DocumentServer, Redis, PostgreSQL).
+      - office
+      - office_backend
 
   # Vorgelagerter NTLM-Authentifizierungs-Container (ohne Kerberos).
   # Fuehrt den NTLM-Handshake durch und reicht den SamAccountName als
@@ -65,10 +130,14 @@ services:
       SSO_DC_IP: ${SSO_DC_IP:-}
       SSO_JOIN_USER: ${SSO_JOIN_USER:-}
       SSO_JOIN_PASSWORD: ${SSO_JOIN_PASSWORD:-}
+      # Reverse-Proxy /office/ und /eurooffice/ (Same-Origin).
+      OFFICE_ENABLED: ${OFFICE_ENABLED:-false}
+      APP_URL: ${APP_URL:-http://localhost:8080}
     ports:
       - "${APP_PORT:-8080}:80"
     networks:
       - intranet
+      - office
 
   sync:
     build:
@@ -133,11 +202,202 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - intranet
+      - office
+
+  # ---------------------------------------------------------------------------
+  # Office-Erweiterung (Profil "office"): Nextcloud + Euro-Office DocumentServer
+  # ---------------------------------------------------------------------------
+  nextcloud-db:
+    image: postgres:${NEXTCLOUD_DB_IMAGE_TAG:-17.6-alpine}
+    profiles: ["office"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nextcloud
+      POSTGRES_USER: nextcloud
+      POSTGRES_PASSWORD_FILE: /run/secrets/nextcloud_db_password
+    secrets:
+      - nextcloud_db_password
+    volumes:
+      - nextcloud_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nextcloud -d nextcloud -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - office_backend
+
+  nextcloud-redis:
+    image: redis:${NEXTCLOUD_REDIS_IMAGE_TAG:-7.4.5-alpine}
+    profiles: ["office"]
+    restart: unless-stopped
+    # Passwort aus dem Secret in eine Konfigurationsdatei (nicht in die Prozessliste).
+    command:
+      - sh
+      - -c
+      - umask 077; printf 'requirepass "%s"\nsave ""\nappendonly no\n' "$$(cat /run/secrets/nextcloud_redis_password)" > /tmp/redis.conf; exec redis-server /tmp/redis.conf
+    secrets:
+      - nextcloud_redis_password
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /run/secrets/nextcloud_redis_password)\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - office_backend
+
+  nextcloud:
+    image: nextcloud:${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
+    profiles: ["office"]
+    restart: unless-stopped
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+      nextcloud-redis:
+        condition: service_healthy
+    environment: *nextcloud-env
+    secrets: *nextcloud-secrets
+    volumes:
+      - nextcloud_html:/var/www/html
+      - nextcloud_data:/var/www/html/data
+      - ./docker/nextcloud/intranet.config.php:/usr/src/nextcloud/config/intranet.config.php:ro
+      - ./docker/nextcloud/apps/intranet_integration:/opt/intranet/intranet_integration:ro
+      - ./docker/nextcloud/apache-office.conf:/etc/apache2/conf-enabled/zz-intranet-office.conf:ro
+      - ./docker/nextcloud/hooks/intranet-setup.sh:/docker-entrypoint-hooks.d/post-installation/50-intranet-setup.sh:ro
+      - ./docker/nextcloud/hooks/intranet-setup.sh:/docker-entrypoint-hooks.d/before-starting/50-intranet-setup.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H 'Host: nextcloud' http://127.0.0.1/office/status.php | grep -q '\"installed\":true'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+    networks:
+      - office
+      - office_backend
+
+  # Hintergrundjobs von Nextcloud (cron.php alle 5 Minuten).
+  nextcloud-cron:
+    image: nextcloud:${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
+    profiles: ["office"]
+    restart: unless-stopped
+    entrypoint: /cron.sh
+    depends_on:
+      nextcloud:
+        condition: service_healthy
+    environment: *nextcloud-env
+    secrets: *nextcloud-secrets
+    volumes: *nextcloud-volumes
+    networks:
+      - office
+      - office_backend
+
+  eurooffice:
+    image: ghcr.io/euro-office/documentserver:${EUROOFFICE_IMAGE_TAG:-v9.3.4-hotfix.1}
+    profiles: ["office"]
+    restart: unless-stopped
+    # Das Image liest das JWT-Secret nur aus JWT_SECRET: aus dem Docker-Secret
+    # uebernehmen, damit es weder in .env noch in docker inspect steht.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - JWT_SECRET="$$(cat /run/secrets/office_jwt_secret)"; export JWT_SECRET; exec /entrypoint.sh
+    environment:
+      JWT_ENABLED: "true"
+      JWT_HEADER: AuthorizationJwt
+      JWT_IN_BODY: "true"
+      # Nextcloud liegt im internen Docker-Netz (private Adresse).
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+      USE_UNAUTHORIZED_STORAGE: "false"
+      WOPI_ENABLED: "false"
+    secrets:
+      - office_jwt_secret
+    volumes:
+      - eurooffice_data:/var/www/euro-office/Data
+      - eurooffice_db:/var/lib/postgresql
+      - eurooffice_logs:/var/log/euro-office
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1/healthcheck | grep -q true"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    networks:
+      - office
+
+  # Sicherung/Wiederherstellung der Office-Daten, ausgeloest ueber den
+  # Intranet-Adminbereich (Auftragsdatei im gemeinsamen Speicher) oder
+  # ./scripts/office-backup.sh. Kein Docker-Socket.
+  office-backup:
+    build:
+      context: .
+      dockerfile: docker/office-backup/Dockerfile
+    profiles: ["office"]
+    restart: unless-stopped
+    depends_on:
+      nextcloud-db:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-intranet}
+      DB_USER: ${DB_USER:-intranet}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      OFFICE_BACKUP_RETENTION: ${OFFICE_BACKUP_RETENTION:-7}
+      OFFICE_BACKUP_SCHEDULE_HOUR: ${OFFICE_BACKUP_SCHEDULE_HOUR:-}
+    secrets:
+      - nextcloud_db_password
+      - office_backup_passphrase
+    volumes:
+      - app_storage:/data/intranet-storage
+      - nextcloud_html:/data/nextcloud-html
+      - nextcloud_data:/data/nextcloud-data
+      - eurooffice_data:/data/eurooffice-data
+      - ${OFFICE_BACKUP_DIR:-./backups}:/backups
+    networks:
+      - intranet
+      - office_backend
 
 volumes:
   db_data:
   app_storage:
+  nextcloud_html:
+  nextcloud_data:
+  nextcloud_db:
+  eurooffice_data:
+  eurooffice_db:
+  eurooffice_logs:
 
 networks:
   intranet:
     driver: bridge
+  # Oeffentlicher Office-Pfad: auth <-> nextcloud/eurooffice (feste Adressen,
+  # damit Nextcloud nur den auth-Container als Proxy vertraut).
+  office:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${OFFICE_SUBNET:-172.30.250.0/24}
+  # Datenbank und Redis von Nextcloud: kein Zugang von aussen.
+  office_backend:
+    driver: bridge
+    internal: true
+
+# Secrets liegen nach ./scripts/office-setup.sh in ./secrets/ (nicht
+# versioniert). Ohne Einrichtung verweisen sie auf leere Platzhalter, damit
+# Installationen ohne Office unveraendert starten.
+secrets:
+  office_jwt_secret:
+    file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/office_jwt_secret
+  nextcloud_db_password:
+    file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/nextcloud_db_password
+  nextcloud_admin_password:
+    file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/nextcloud_admin_password
+  nextcloud_redis_password:
+    file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/nextcloud_redis_password
+  nextcloud_ldap_password:
+    file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/nextcloud_ldap_password
+  office_backup_passphrase:
+    file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/office_backup_passphrase

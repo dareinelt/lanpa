@@ -17,7 +17,8 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | --- | --- |
 | Landingpage | Kacheln aller aktiven Navigationselemente, Kurz- und Langbeschreibung, Klickzählung; Unterseiten mit weiteren Kacheln im selben Stil sowie formatierte Textseiten (Rich-Text-Editor im Adminbereich); aufklappbarer Bereich „Wichtige Links“ (automatisch alphabetisch sortiert, mit automatisch ermitteltem Favicon) |
 | Telefonliste | Suche über Name, Vorname, Nachname, Abteilung und Telefonnummer (Live-Suche, Paginierung); Einträge ohne E-Mail-Adresse sind nur für angemeldete Administratoren sichtbar; einzelne Einträge lassen sich im Adminbereich ein-/ausblenden (Standard: eingeblendet) |
-| AD-Synchronisation | LDAP/LDAPS-Abgleich in die lokale Datenbank, konfigurierbares Intervall und Attribut-Mapping |
+| AD-Synchronisation | LDAP/LDAPS-Abgleich in die lokale Datenbank, konfigurierbares Intervall und Attribut-Mapping; optional AD-Gruppen aus konfigurierbaren Pfaden (inkl. verschachtelter Mitgliedschaften) für die Rechtevergabe |
+| Office (optional) | Nextcloud mit Euro-Office DocumentServer hinter demselben Einstieg, Einrichtung per Einzeiler, Updates aus den offiziellen Quellen, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, gestaltbare Kachel mit Verfügbarkeitsstatus, verschlüsselte Sicherung – siehe [docs/office.md](docs/office.md) |
 | Notfallnummern | Eigene, farblich abgesetzte Kacheln für Notfallnummern (z. B. Werkschutz, Feuerwehr), im Adminbereich pflegbar |
 | Mitteilungen | Aufklappbares Mitteilungs-Overlay auf der Startseite, im Adminbereich pflegbar |
 | Alarmierungen | Alarm-Kacheln, die per Klick eine SMS über ein konfigurierbares SMS-Gateway auslösen – an eine Gruppe oder eine einzelne Rufnummer, mit Verlauf |
@@ -92,6 +93,8 @@ installieren, nicht starten).
 | `sync` | Dauerlauf der AD-Synchronisation (`scripts/sync_worker.php`) | – |
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
+| `auth` | Apache als Einstieg/Reverse-Proxy, optional NTLM-Anmeldung; leitet `/office/` und `/eurooffice/` weiter | `GET /auth-health` |
+| `nextcloud`, `nextcloud-cron`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
 
 ---
 
@@ -139,6 +142,12 @@ Alles außer dem LDAP-Bind-Passwort ist im Administrationsbereich pflegbar.
 | `LDAP_USE_TLS`, `LDAP_VERIFY_CERT` | Transportverschlüsselung und Zertifikatsprüfung | `true` |
 | `LDAP_SYNC_INTERVAL` | Intervall des Synchronisationsdienstes (Sekunden) | `3600` |
 | `LDAP_ATTR_*` | Attributzuordnung (z. B. `LDAP_ATTR_PHONE=telephoneNumber`) | AD-Standardwerte |
+| `LDAP_GROUP_BASE_DN` | Pfad(e) der AD-Gruppen für die Rechtevergabe (mehrere mit `;`), leer = keine Gruppen | – |
+| `LDAP_GROUP_FILTER`, `LDAP_GROUP_NAME_ATTRIBUTE` | Filter und Namensattribut der Gruppen | `(objectClass=group)` / `cn` |
+| `OFFICE_ENABLED`, `COMPOSE_PROFILES=office` | Office-Erweiterung aktivieren (setzt `scripts/office-setup.sh`) | `false` |
+| `EUROOFFICE_IMAGE_TAG`, `NEXTCLOUD_IMAGE_TAG` | Versionen aus den offiziellen Quellen (`scripts/office-update.sh`) | siehe `.env.example` |
+| `NEXTCLOUD_LDAP_*`, `NEXTCLOUD_OFFICE_GROUPS` | AD-Anbindung und Gruppenbeschränkung in Nextcloud | – |
+| `OFFICE_BACKUP_DIR`, `OFFICE_BACKUP_RETENTION`, `OFFICE_BACKUP_SCHEDULE_HOUR` | Office-Sicherung | `./backups` / `7` / – |
 | `SEED_ON_START` | Beispielnavigation beim Containerstart anlegen | `true` |
 | `CLICK_RETENTION_DAYS` | Aufbewahrung der Klickdaten für `purge_clicks.php` | `400` |
 | `ALARM_HOST`, `ALARM_USERNAME` | SMS-Gateway für Alarmierungen (auch im Adminbereich pflegbar) | – |
@@ -173,7 +182,9 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Mitteilungen | Mitteilungs-Overlay der Startseite anlegen, bearbeiten, ein-/ausblenden |
 | Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`), Handbuch-Links ein-/ausblenden |
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
-| Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Intervall, manueller Testlauf |
+| Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Gruppen-Pfade für die Rechtevergabe, Intervall, manueller Testlauf |
+| Navigation → Berechtigungen | Kacheln auf Benutzer und AD-Gruppen beschränken; Gruppennamen werden beim Tippen aus dem synchronisierten Bestand vorgeschlagen (Inline-Ergänzung und Liste, keine Live-Abfrage des AD) |
+| Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Sicherung ([docs/office.md](docs/office.md)) |
 | Alarmierung | SMS-Gateway konfigurieren (Host, Benutzername; Passwort nur über Umgebung), Alarmgruppen/-rufnummern verwalten, Verlauf einsehen |
 | Aktivierungs-Rufnummern | Für den geschützten Zugriffsmodus erlaubte Rufnummern pflegen |
 | SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
@@ -201,6 +212,9 @@ Sitzungserneuerung nach der Anmeldung, automatische Abmeldung bei Inaktivität, 
   *nichts* geschrieben und *nichts* deaktiviert – der letzte gültige Stand bleibt aktiv.
   Jeder Lauf wird in `sync_log` protokolliert und im Adminbereich angezeigt.
 - Personen, die im AD nicht mehr enthalten sind, werden auf `active = 0` gesetzt (kein Löschen).
+- Ist ein Gruppen-Pfad hinterlegt, werden die Gruppen darunter samt (verschachtelter)
+  Mitglieder übernommen; nicht mehr vorhandene Gruppen werden deaktiviert. Scheitert nur
+  der Gruppenabruf, bleibt der bisherige Gruppenstand unverändert.
 - Im AD deaktivierte Benutzerkonten (`userAccountControl`-Bit `ACCOUNTDISABLE`) werden beim
   Import übersprungen; bereits importierte, inzwischen deaktivierte Konten werden dadurch
   ebenfalls auf `active = 0` gesetzt.
@@ -233,6 +247,11 @@ Die Werte liegen in der NET-SNMP-Tabelle `UCD-SNMP-MIB::extTable`
 | `sync` (AD-Dauerlauf) | `.1.3.6.1.4.1.2021.8.1.100.3` | `.1.3.6.1.4.1.2021.8.1.101.3` |
 | `sync_workflow` (letzter AD-Lauf) | `.1.3.6.1.4.1.2021.8.1.100.4` | `.1.3.6.1.4.1.2021.8.1.101.4` |
 | `phpmyadmin` (optional) | `.1.3.6.1.4.1.2021.8.1.100.5` | `.1.3.6.1.4.1.2021.8.1.101.5` |
+| `nextcloud` (Office, optional) | `.1.3.6.1.4.1.2021.8.1.100.6` | `.1.3.6.1.4.1.2021.8.1.101.6` |
+| `nextcloud_db` (PostgreSQL, optional) | `.1.3.6.1.4.1.2021.8.1.100.7` | `.1.3.6.1.4.1.2021.8.1.101.7` |
+| `nextcloud_redis` (Redis, optional) | `.1.3.6.1.4.1.2021.8.1.100.8` | `.1.3.6.1.4.1.2021.8.1.101.8` |
+| `eurooffice` (DocumentServer, optional) | `.1.3.6.1.4.1.2021.8.1.100.9` | `.1.3.6.1.4.1.2021.8.1.101.9` |
+| `office_workflow` (Nextcloud + DocumentServer erreichbar) | `.1.3.6.1.4.1.2021.8.1.100.10` | `.1.3.6.1.4.1.2021.8.1.101.10` |
 
 Exit-Codes: `0` OK, `1` WARNING (startend/laufend/veraltet), `2` CRITICAL
 (gestoppt/fehlgeschlagen), `3` UNKNOWN (z. B. phpMyAdmin nicht bereitgestellt).
@@ -402,5 +421,27 @@ aus der Anwendung heraus verlinkt (`public/manuals/`); die Anzeige lässt sich i
 | Active Directory | <img src="docs/screenshots/19-admin-ad.png" alt="Active Directory" width="520"> |
 | Statistik | <img src="docs/screenshots/20-admin-statistik.png" alt="Statistik" width="520"> |
 | Benutzer | <img src="docs/screenshots/21-admin-benutzer.png" alt="Benutzer" width="520"> |
+| AD-Gruppen-Pfad | <img src="docs/screenshots/41-admin-ad-gruppenpfad.png" alt="AD-Gruppen-Pfad" width="520"> |
+| Berechtigungen mit Gruppenvorschlägen | <img src="docs/screenshots/40-admin-ad-gruppen-vorschlaege.png" alt="Gruppenvorschläge" width="520"> |
+
+</details>
+
+<details>
+<summary>Office (Nextcloud + Euro-Office)</summary>
+
+| Modul | Screenshot |
+| --- | --- |
+| Editor mit Intranet-Fußzeile | <img src="docs/screenshots/30-office-editor-fusszeile.png" alt="Editor" width="520"> |
+| Dateien mit Fußzeile | <img src="docs/screenshots/31-office-dateien-fusszeile.png" alt="Dateien" width="520"> |
+| Fußzeile eingeklappt | <img src="docs/screenshots/32-office-fusszeile-eingeklappt.png" alt="Fußzeile eingeklappt" width="520"> |
+| Office-Kachel (Landingpage) | <img src="docs/screenshots/39-landing-office-kachel.png" alt="Office-Kachel" width="520"> |
+| Office-Kachel, nur Farbpunkt | <img src="docs/screenshots/43-landing-office-kachel-kompakt.png" alt="Office-Kachel kompakt" width="360"> |
+| Admin: Status | <img src="docs/screenshots/33-admin-office-status.png" alt="Office Status" width="520"> |
+| Admin: Diagnose | <img src="docs/screenshots/34-admin-office-diagnose.png" alt="Office Diagnose" width="520"> |
+| Admin: Fußzeile | <img src="docs/screenshots/35-admin-office-fusszeile.png" alt="Office Fußzeile" width="520"> |
+| Admin: Vorschau der Fußzeile | <img src="docs/screenshots/36-admin-office-vorschau.png" alt="Office Vorschau" width="520"> |
+| Admin: Sicherung | <img src="docs/screenshots/37-admin-office-sicherung.png" alt="Office Sicherung" width="520"> |
+| Admin: Kachel-Berechtigungen | <img src="docs/screenshots/38-admin-office-kachel-rechte.png" alt="Kachel-Berechtigungen" width="520"> |
+| Admin: Kachel gestalten | <img src="docs/screenshots/42-admin-office-kachel-gestaltung.png" alt="Kachel gestalten" width="520"> |
 
 </details>

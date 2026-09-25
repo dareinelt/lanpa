@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Core\Config;
 use App\Repositories\SettingsRepository;
+use App\Services\Office\OfficeConfigService;
 use App\Support\Validator;
 
 /**
@@ -26,7 +27,7 @@ final class SettingsService
      */
     public function defaults(): array
     {
-        return [
+        return OfficeConfigService::defaults() + [
             'site_title' => (string) Config::get('app.name', 'Intranet'),
             'site_subtitle' => 'Zentraler Einstieg zu internen Anwendungen',
             'site_subtitle_visible' => '1',
@@ -59,6 +60,9 @@ final class SettingsService
             'ldap_filter' => (string) Config::get('ldap.filter', '(&(objectClass=user)(objectCategory=person))'),
             'ldap_timeout' => (string) Config::get('ldap.timeout', 10),
             'ldap_sync_interval' => (string) Config::get('ldap.sync_interval', 3600),
+            'ldap_group_base_dn' => (string) Config::get('ldap.group_base_dn', ''),
+            'ldap_group_filter' => (string) Config::get('ldap.group_filter', '(objectClass=group)'),
+            'ldap_group_name_attribute' => (string) Config::get('ldap.group_name_attribute', 'cn'),
             'ldap_attr_display_name' => (string) Config::get('ldap.attributes.display_name', 'displayName'),
             'ldap_attr_first_name' => (string) Config::get('ldap.attributes.first_name', 'givenName'),
             'ldap_attr_last_name' => (string) Config::get('ldap.attributes.last_name', 'sn'),
@@ -68,6 +72,7 @@ final class SettingsService
             'ldap_attr_department' => (string) Config::get('ldap.attributes.department', 'department'),
             'ldap_attr_modified' => (string) Config::get('ldap.attributes.modified', 'whenChanged'),
             'ldap_attr_unique_id' => (string) Config::get('ldap.attributes.unique_id', 'objectGUID'),
+            'ldap_attr_samaccount_name' => (string) Config::get('ldap.attributes.samaccount_name', 'sAMAccountName'),
             'alarm_host' => (string) Config::get('alarm.host', ''),
             'alarm_username' => (string) Config::get('alarm.username', ''),
             'alarm_password' => '',
@@ -244,6 +249,9 @@ final class SettingsService
             'timeout' => $this->int('ldap_timeout', 10),
             'page_size' => (int) Config::get('ldap.page_size', 500),
             'sync_interval' => $this->int('ldap_sync_interval', 3600),
+            'group_base_dns' => self::splitDnList($this->get('ldap_group_base_dn')),
+            'group_filter' => $this->get('ldap_group_filter'),
+            'group_name_attribute' => $this->get('ldap_group_name_attribute'),
             'attributes' => [
                 'display_name' => $this->get('ldap_attr_display_name'),
                 'first_name' => $this->get('ldap_attr_first_name'),
@@ -254,6 +262,7 @@ final class SettingsService
                 'department' => $this->get('ldap_attr_department'),
                 'modified' => $this->get('ldap_attr_modified'),
                 'unique_id' => $this->get('ldap_attr_unique_id'),
+                'samaccount_name' => $this->get('ldap_attr_samaccount_name'),
             ],
         ];
     }
@@ -263,6 +272,24 @@ final class SettingsService
         $config = $this->ldapConfig();
 
         return $config['host'] !== '' && $config['base_dn'] !== '';
+    }
+
+    /**
+     * Zerlegt eine Liste von DNs (getrennt durch ";" oder Zeilenumbruch).
+     *
+     * @return list<string>
+     */
+    public static function splitDnList(string $raw): array
+    {
+        $dns = [];
+        foreach (preg_split('/[;\r\n]+/', $raw) ?: [] as $dn) {
+            $dn = trim($dn);
+            if ($dn !== '' && !isset($dns[strtolower($dn)])) {
+                $dns[strtolower($dn)] = $dn;
+            }
+        }
+
+        return array_values($dns);
     }
 
     /**

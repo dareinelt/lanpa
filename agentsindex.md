@@ -17,6 +17,7 @@
 - einen **vollständigen Administrationsbereich** (CRUD, Design, AD-Konfiguration, Statistik, Benutzer)
 - optionale **Alarmierungen** per SMS-Gateway (an Gruppen oder Einzelrufnummern) und einen per SMS-Code **geschützten Zugriffsmodus**
 - einen **SNMP-Agenten** (Container `snmp`) zur Überwachung der Dienste und des AD-Synchronisations-Workflows
+- optional **Office** (Profil `office`): Nextcloud + Euro-Office DocumentServer hinter dem `auth`-Container, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, Sicherung – Details in `docs/office.md`
 
 Grundprinzip: **komplett ohne Frameworks, ohne CDNs, ohne externe Abhängigkeiten.**
 Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst geschrieben.
@@ -31,7 +32,7 @@ Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst ges
 | Frontend | Vanilla JavaScript + handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons) |
 | Datenbank | MySQL 8 / MariaDB 11 (utf8mb4) |
 | Web | Apache mit `mod_rewrite`, DocumentRoot `public/` |
-| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `snmp`, optional `phpmyadmin`) |
+| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`) |
 | Monitoring | net-snmp-Agent im Container `snmp` (UDP 161, read-only Docker-Socket + `sync_log`) |
 | Abhängigkeiten | **keine** – kein Composer, kein npm, kein CDN |
 
@@ -132,7 +133,7 @@ app/            Anwendungscode
   Support/      Dates, Html, Sanitizer, Validator
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
-  migrations/   SQL-Migrationen (001…013)
+  migrations/   SQL-Migrationen (001…015)
 docker/         Dockerfiles, Entrypoints, PHP-/MySQL-Konfiguration, SNMP-Agent
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
 scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation)
@@ -180,6 +181,7 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 
 `ActivationNumberService`, `AdSyncService`, `AdminUserService`, `AlarmGroupService`,
 `AlarmService`, `AnnouncementService`, `BackgroundImageService`, `BackupService`,
+`Office\OfficeConfigService` (Einstellungen Fußzeile/Kachel), `Office\OfficeHealthService` (Status/Diagnose, Probe per `OfficeProbeInterface`), `Office\OfficeBackupService` (Steuerung des Containers `office-backup`),
 `EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
 `LdapAttributeMapper`, `LdapClient`, `LogoService`, `NavigationService`,
 `PhonebookService`, `SettingsService`, `SmsCodeService`, `StatisticsService`, `ThemeService`.
@@ -193,7 +195,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 `ActivationNumberRepository`, `AdminUserRepository`, `AlarmGroupRepository`,
 `AlarmLogRepository`, `AnnouncementRepository`, `ClickRepository`,
 `EmergencyNumberRepository`, `ImportantLinkRepository`, `NavigationRepository`,
-`PhonebookRepository`, `SettingsRepository`, `SyncLogRepository`, plus Basis `Repository`
+`PhonebookRepository`, `SettingsRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), plus Basis `Repository`
 (stellt `PDO $pdo` bereit; Test kann eine eigene `PDO`-Instanz injizieren).
 
 ### Security (`app/Security/`)
@@ -211,7 +213,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 
 ### Contracts (`app/Contracts/`) & Exceptions (`app/Exceptions/`)
 
-- Interfaces: `AdminUserStoreInterface`, `LdapClientInterface`, `PhonebookStoreInterface`, `SyncLogStoreInterface`.
+- Interfaces: `AdminUserStoreInterface`, `AdGroupStoreInterface`, `LdapClientInterface`, `OfficeProbeInterface`, `PhonebookStoreInterface`, `SyncLogStoreInterface`.
 - Exceptions: `HttpException` (mit `statusCode()`), `ValidationException` (mit `errors()`).
 
 ---
@@ -253,7 +255,12 @@ auf `/zugriff` umgeleitet, bis sie für die Sitzung freigeschaltet sind.
 Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
 `mitteilungen`, `beschreibungen`, `design`, `ad`, `alarmierung`
 (inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `snmp`, `statistik`
-(+ `admin/api/statistik`), `benutzer`, `sicherung` (Export/Import).
+(+ `admin/api/statistik`), `benutzer`, `sicherung` (Export/Import), `office`
+(inkl. `office/pruefen`, `office/sicherung`, `office/kachel`, `office/kachel/gestaltung`,
+`office/kachel/vorschau`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
+
+Office öffentlich: `GET /office-starten` (Einstieg über die Kachel, prüft Rechte), `GET /office-nicht-verfuegbar`,
+`GET /api/office/footer` (Konfiguration der Fußzeile), `GET /api/office/status` (Verfügbarkeit für die Kachel).
 
 **Middleware-Verhalten:** `$requireAuth` → Redirect auf `/admin/login` (bzw. JSON 401 bei `/admin/api/*`);
 `$requireAdmin` → HTTP 403 (bzw. JSON 403 bei `/admin/api/*`).
@@ -281,6 +288,9 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `alarm_groups` | Alarmierungsziele (Gruppen oder Einzelrufnummern) | `type` (group/number), `group_number`, `description`, `sort_order`, `active` |
 | `alarm_log` | Verlauf ausgelöster Alarmierungen | `navigation_id`, `title`, `alarm_text`, `group_number`, `mode`, `status`, `message`, `triggered_at` |
 | `activation_numbers` | Für den SMS-Zugangscode erlaubte Rufnummern | `phone`, `phone_digits` (unique), `sort_order`, `active` |
+| `navigation_item_permissions` | Kachel-Berechtigungen (Benutzer oder AD-Gruppe) | `navigation_id`, `phonebook_id`, `group_name` |
+| `ad_groups` | Synchronisierte AD-Gruppen (aus `ldap_group_base_dn`) | `dn_hash` (unique), `dn`, `name`, `description`, `member_count`, `active` |
+| `ad_group_members` | Mitglieder (verschachtelt aufgelöst) | `group_id`, `phonebook_id` |
 
 **Konventionen:** `InnoDB`, `utf8mb4`/`utf8mb4_unicode_ci`, `TIMESTAMP`-Spalten `created_at`/`updated_at`, `TINYINT(1)` für Booleans (`active`), Fremdschlüssel mit `ON DELETE SET NULL`/`ON UPDATE CASCADE`.
 
@@ -328,8 +338,8 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 1. Liest `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` aus der Umgebung.
 2. Überschreibt diese mit den Werten aus der Tabelle `settings` (`snmp_community`, `snmp_sys_location`, `snmp_sys_contact`), falls die Datenbank erreichbar ist.
-3. Erzeugt `snmpd.conf` und hängt die Status-Checks als `exec`-Einträge an (`UCD-SNMP-MIB::extTable`, Basis `.1.3.6.1.4.1.2021.8.1`): `app`, `db`, `sync`, `sync_workflow`, `phpmyadmin`.
-4. `exec snmpd -f -Lo -c /etc/snmp/snmpd.conf` (lauscht auf UDP 161).
+3. Erzeugt `snmpd.conf` und hängt die Status-Checks als `exec`-Einträge an (`UCD-SNMP-MIB::extTable`, Basis `.1.3.6.1.4.1.2021.8.1`): `app`, `db`, `sync`, `sync_workflow`, `phpmyadmin` sowie die Office-Dienste.
+4. `exec snmpd -f -Lo -C -c /etc/snmp/snmpd.conf` (lauscht auf UDP 161).
 
 ### AD-Synchronisation
 
@@ -338,6 +348,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - **Datensicherheit:** nicht erreichbares/leeres AD → *kein* Schreiben, letzter Stand bleibt aktiv.
 - Nicht mehr vorhandene Personen → `active = 0` (kein Löschen); deaktivierte AD-Konten (`ACCOUNTDISABLE`) werden übersprungen/deaktiviert.
 - Jeder Lauf wird in `sync_log` protokolliert und im Adminbereich angezeigt.
+- Gruppen: `LdapClient::fetchGroups()` liest Gruppen unter `ldap_group_base_dn` und löst Mitglieder per `LDAP_MATCHING_RULE_IN_CHAIN` auf; `AdGroupRepository::replaceAll()` schreibt sie in derselben Transaktion. Fehler beim Gruppenabruf lassen den alten Gruppenstand unverändert. `SsoAuth` ergänzt die Gruppen des angemeldeten Benutzers aus diesem Bestand (keine Live-Abfrage des AD).
 
 ### Tests
 
@@ -354,7 +365,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 ### SNMP-Überwachung
 
 - Container `snmp` liest den Zustand der Dienste über den (read-only gemounteten) Docker-Socket und den Zustand des AD-Workflows direkt aus `sync_log`.
-- Ausgabe in `UCD-SNMP-MIB::extTable`: `extResult` (Exit-Code) unter `.1.3.6.1.4.1.2021.8.1.100.N`, `extOutput` (Text) unter `.1.3.6.1.4.1.2021.8.1.101.N`, Index `N` = 1 `app`, 2 `db`, 3 `sync`, 4 `sync_workflow`, 5 `phpmyadmin`.
+- Ausgabe in `UCD-SNMP-MIB::extTable`: `extResult` (Exit-Code) unter `.1.3.6.1.4.1.2021.8.1.100.N`, `extOutput` (Text) unter `.1.3.6.1.4.1.2021.8.1.101.N`, Index `N` = 1 `app`, 2 `db`, 3 `sync`, 4 `sync_workflow`, 5 `phpmyadmin`, 6 `nextcloud`, 7 `nextcloud_db`, 8 `nextcloud_redis`, 9 `eurooffice`, 10 `office_workflow` (6–10 nur mit Profil `office`, sonst UNKNOWN).
 - Exit-Codes: `0` OK, `1` WARNING, `2` CRITICAL, `3` UNKNOWN; `sync_workflow` meldet `0`, wenn der letzte Lauf `success` und jünger als `2 × LDAP_SYNC_INTERVAL` ist.
 - Community/Strings im Adminbereich unter **SNMP** pflegbar; werden erst nach Neustart des `snmp`-Containers wirksam.
 
@@ -395,4 +406,5 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 - `README.md` – ausführliche Projektdokumentation (Funktionsumfang, Docker, Konfiguration, Betrieb, Sicherheit).
 - `docs/manuals/anwenderhandbuch.pdf` / `administratorhandbuch.pdf` (Quellen als HTML unter `docs/manuals/`).
-- `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche.
+- `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche (30–43: Office und AD-Gruppen).
+- `docs/office.md` – Office-Erweiterung: Einrichtung, Architektur, Updates, AD-Gruppen/SSO, Kachel, Sicherung, SNMP.

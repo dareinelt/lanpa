@@ -23,6 +23,11 @@ return [
     'timeout' => Env::int('LDAP_TIMEOUT', 10),
     'page_size' => Env::int('LDAP_PAGE_SIZE', 500),
     'sync_interval' => Env::int('LDAP_SYNC_INTERVAL', 3600),
+    // Pfad(e) der fuer die Rechtevergabe relevanten Gruppen (mehrere per ";"
+    // getrennt). Leer = keine Gruppen-Synchronisation.
+    'group_base_dn' => Env::get('LDAP_GROUP_BASE_DN', ''),
+    'group_filter' => Env::get('LDAP_GROUP_FILTER', '(objectClass=group)'),
+    'group_name_attribute' => Env::get('LDAP_GROUP_NAME_ATTRIBUTE', 'cn'),
     'attributes' => [
         'display_name' => Env::get('LDAP_ATTR_DISPLAY_NAME', 'displayName'),
         'first_name' => Env::get('LDAP_ATTR_FIRST_NAME', 'givenName'),

@@ -10,6 +10,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Security\Session;
 use App\Services\LdapClient;
+use App\Services\SettingsService;
 use App\Support\Validator;
 
 final class LdapController extends AdminController
@@ -24,6 +25,7 @@ final class LdapController extends AdminController
         'ldap_attr_department' => 'department',
         'ldap_attr_modified' => 'modified',
         'ldap_attr_unique_id' => 'unique_id',
+        'ldap_attr_samaccount_name' => 'samaccount_name',
     ];
 
     public function index(Request $request): Response
@@ -74,6 +76,36 @@ final class LdapController extends AdminController
         }
         $values['ldap_sync_interval'] = (string) $interval;
 
+        $groupDns = SettingsService::splitDnList((string) $request->input('ldap_group_base_dn', ''));
+        foreach ($groupDns as $dn) {
+            if (mb_strlen($dn) > 255 || !str_contains($dn, '=') || preg_match('/[\x00-\x1F]/', $dn) === 1) {
+                $errors['ldap_group_base_dn'] = 'Bitte je Zeile einen gültigen DN angeben, z. B. OU=Gruppen,DC=example,DC=internal.';
+                break;
+            }
+        }
+        if (count($groupDns) > 20) {
+            $errors['ldap_group_base_dn'] = 'Es sind höchstens 20 Gruppen-Pfade möglich.';
+        }
+        $values['ldap_group_base_dn'] = implode("\n", $groupDns);
+
+        $groupFilter = trim((string) $request->input('ldap_group_filter', ''));
+        if ($groupFilter === '') {
+            $groupFilter = '(objectClass=group)';
+        }
+        if (!Validator::isLdapFilter($groupFilter)) {
+            $errors['ldap_group_filter'] = 'Der Gruppenfilter muss in Klammern stehen, z. B. (objectClass=group).';
+        }
+        $values['ldap_group_filter'] = $groupFilter;
+
+        $groupName = trim((string) $request->input('ldap_group_name_attribute', ''));
+        if ($groupName === '') {
+            $groupName = 'cn';
+        }
+        if (!Validator::isLdapAttribute($groupName)) {
+            $errors['ldap_group_name_attribute'] = 'Ungültiger Attributname.';
+        }
+        $values['ldap_group_name_attribute'] = $groupName;
+
         $values['ldap_use_tls'] = $request->has('ldap_use_tls') ? '1' : '0';
         $values['ldap_verify_cert'] = $request->has('ldap_verify_cert') ? '1' : '0';
 
@@ -121,16 +153,57 @@ final class LdapController extends AdminController
         $result = Container::adSync()->run();
 
         if ($result['status'] === 'success') {
-            Session::flash('success', sprintf(
+            $message = sprintf(
                 'Synchronisation erfolgreich: %d Einträge aktualisiert, %d deaktiviert.',
                 $result['processed'],
                 $result['deactivated']
-            ));
+            );
+            if (($result['groups'] ?? null) !== null) {
+                $message .= sprintf(' %d AD-Gruppen für die Rechtevergabe übernommen.', $result['groups']);
+            } elseif (Container::settings()->ldapConfig()['group_base_dns'] !== []) {
+                $message .= ' Die AD-Gruppen konnten nicht gelesen werden (siehe Log); der bisherige Gruppenbestand bleibt erhalten.';
+            }
+            Session::flash('success', $message);
         } else {
             Session::flash('error', 'Die Synchronisation ist fehlgeschlagen. Details stehen im Log. Der letzte gültige Datenbestand bleibt erhalten.');
         }
 
         return $this->redirect('/admin/ad');
+    }
+
+    /**
+     * Vorschlaege fuer AD-Gruppennamen bei der Rechtevergabe. Quelle ist
+     * ausschliesslich der lokal synchronisierte Datenbestand (kein Live-Zugriff
+     * auf das AD) sowie bereits vergebene Gruppennamen.
+     */
+    public function groups(Request $request): Response
+    {
+        $term = Validator::cleanText((string) $request->query('q', ''), 100);
+        $items = [];
+
+        try {
+            foreach (Container::adGroupRepository()->suggest($term) as $group) {
+                $items[strtolower($group['name'])] = $group + ['source' => 'ad'];
+            }
+        } catch (\Throwable) {
+            // Gruppentabelle fehlt (Migration ausstehend) – nur vergebene Namen.
+        }
+
+        foreach (Container::navigationRepository()->permissionGroupNames($term, 20) as $name) {
+            $items[strtolower($name)] ??= ['name' => $name, 'description' => '', 'members' => null, 'source' => 'vergeben'];
+        }
+
+        return Response::json(['items' => array_slice(array_values($items), 0, 20)])
+            ->withHeader('Cache-Control', 'no-store');
+    }
+
+    private function safeGroupCount(): ?int
+    {
+        try {
+            return Container::adGroupRepository()->countActive();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -150,6 +223,9 @@ final class LdapController extends AdminController
             'ldap_filter' => $settings->get('ldap_filter'),
             'ldap_timeout' => (string) $settings->int('ldap_timeout', 10),
             'ldap_sync_interval' => (string) $settings->int('ldap_sync_interval', 3600),
+            'ldap_group_base_dn' => implode("\n", SettingsService::splitDnList($settings->get('ldap_group_base_dn'))),
+            'ldap_group_filter' => $settings->get('ldap_group_filter'),
+            'ldap_group_name_attribute' => $settings->get('ldap_group_name_attribute'),
         ];
 
         foreach (array_keys(self::ATTRIBUTE_KEYS) as $key) {
@@ -166,6 +242,7 @@ final class LdapController extends AdminController
             'ldapExtensionAvailable' => LdapClient::isSupported(),
             'syncRuns' => Container::syncLogRepository()->recent(10),
             'phonebookCount' => Container::phonebook()->countActive(),
+            'groupCount' => $this->safeGroupCount(),
         ], $status);
     }
 }

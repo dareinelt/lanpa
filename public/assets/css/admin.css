@@ -223,6 +223,11 @@
     font-weight: 450;
 }
 
+.field--check .field__hint,
+.field--check .field__error {
+    grid-column: 2;
+}
+
 .field__hint {
     margin: 0;
     color: var(--color-muted);
@@ -239,6 +244,7 @@
 .field-row {
     display: grid;
     gap: 1rem;
+    align-items: start;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
 }
 
@@ -755,4 +761,155 @@
 
 body.has-nav-tree-overlay {
     overflow: hidden;
+}
+
+.badge--error {
+    background: rgba(200, 16, 46, .12);
+    color: #a40e26;
+    border-color: rgba(200, 16, 46, .4);
+}
+
+.code-block {
+    margin: 0 0 1rem;
+    padding: .75rem 1rem;
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-background);
+    font-size: .9rem;
+}
+
+.code-block code {
+    padding: 0;
+    background: none;
+}
+
+.office-preview--disabled .iof {
+    filter: grayscale(1);
+    opacity: .45;
+}
+
+.office-actions {
+    margin-top: 1rem;
+}
+
+/* Vorschlagsliste fuer AD-Gruppen (Kachel-Berechtigungen) */
+.group-suggest__control {
+    position: relative;
+}
+
+.group-suggest__control input {
+    width: 100%;
+}
+
+.group-suggest__list {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + .25rem);
+    left: 0;
+    right: 0;
+    max-height: 18rem;
+    margin: 0;
+    padding: .25rem 0;
+    overflow-y: auto;
+    list-style: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+}
+
+.group-suggest__list[hidden] {
+    display: none;
+}
+
+.group-suggest__option {
+    display: grid;
+    gap: .1rem;
+    padding: .5rem .85rem;
+    cursor: pointer;
+}
+
+.group-suggest__option:hover,
+.group-suggest__option.is-active {
+    background: var(--color-surface-hover);
+    color: var(--color-primary);
+}
+
+.group-suggest__option.is-active {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
+}
+
+.group-suggest__name {
+    font-weight: 600;
+}
+
+.group-suggest__meta {
+    color: var(--color-muted);
+    font-size: .85rem;
+}
+
+/* Office-Kachel: Gestaltung mit Live-Vorschau */
+.office-tile-design {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(16rem, 2fr);
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.office-tile-design .form {
+    margin-bottom: 0;
+}
+
+.office-tile-preview {
+    position: sticky;
+    top: 5rem;
+}
+
+.office-tile-preview__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .5rem;
+}
+
+.office-tile-preview__title {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.office-tile-preview__state {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .875rem;
+    color: var(--color-muted);
+}
+
+.office-tile-preview__state select {
+    width: auto;
+    min-height: 2.25rem;
+    padding: .25rem .5rem;
+}
+
+.office-tile-preview__frame {
+    display: block;
+    width: 100%;
+    height: 13rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+}
+
+@media (max-width: 960px) {
+    .office-tile-design {
+        grid-template-columns: 1fr;
+    }
+
+    .office-tile-preview {
+        position: static;
+    }
 }

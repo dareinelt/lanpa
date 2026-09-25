@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<info xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
+    <id>intranet_integration</id>
+    <name>Intranet-Integration</name>
+    <summary>Intranet-Fusszeile und Diagnose fuer Euro-Office</summary>
+    <description>Blendet auf allen Nextcloud- und Euro-Office-Seiten die Fusszeile des Intranets ein (Inhalt und Darstellung stammen aus dem Intranet) und stellt einen signierten Diagnose-Endpunkt fuer den Intranet-Adminbereich bereit.</description>
+    <version>1.0.0</version>
+    <licence>agpl</licence>
+    <author>Intranet</author>
+    <namespace>IntranetIntegration</namespace>
+    <category>integration</category>
+    <bugs>https://github.com/dareinelt/lanpa/issues</bugs>
+    <dependencies>
+        <nextcloud min-version="33" max-version="35"/>
+    </dependencies>
+</info>

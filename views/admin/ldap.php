@@ -22,6 +22,7 @@ $attributeLabels = [
     'ldap_attr_department' => 'Abteilung',
     'ldap_attr_modified' => 'Zuletzt geändert',
     'ldap_attr_unique_id' => 'Eindeutige ID',
+    'ldap_attr_samaccount_name' => 'Windows-Anmeldename',
 ];
 ?>
 <?php if (!$ldapExtensionAvailable) { ?>
@@ -101,6 +102,37 @@ $attributeLabels = [
     </fieldset>
 
     <fieldset class="fieldset">
+        <legend>Gruppen für die Rechtevergabe</legend>
+        <p class="field__hint">
+            Die Synchronisation übernimmt alle Gruppen unterhalb dieser Pfade samt ihrer – auch verschachtelten –
+            Mitglieder. Die Gruppen stehen danach bei den Kachel-Berechtigungen als Vorschläge zur Verfügung und
+            gelten für per Windows-Anmeldung erkannte Benutzer. Ohne Pfad werden keine Gruppen übernommen.
+        </p>
+
+        <div class="field">
+            <label for="ldap_group_base_dn">Gruppen-Pfade (Base DN, ein Pfad je Zeile)</label>
+            <textarea id="ldap_group_base_dn" name="ldap_group_base_dn" rows="3" maxlength="5200"
+                      placeholder="OU=Gruppen,OU=Intranet,DC=example,DC=internal"<?= isset($errors['ldap_group_base_dn']) ? ' aria-invalid="true"' : '' ?>><?= Html::e($values['ldap_group_base_dn'] ?? '') ?></textarea>
+            <?php if (isset($errors['ldap_group_base_dn'])) { ?><p class="field__error"><?= Html::e($errors['ldap_group_base_dn']) ?></p><?php } ?>
+        </div>
+
+        <div class="field-row">
+            <div class="field">
+                <label for="ldap_group_filter">Gruppenfilter</label>
+                <input type="text" id="ldap_group_filter" name="ldap_group_filter" maxlength="512"
+                       value="<?= Html::e($values['ldap_group_filter'] ?? '') ?>" placeholder="(objectClass=group)">
+                <?php if (isset($errors['ldap_group_filter'])) { ?><p class="field__error"><?= Html::e($errors['ldap_group_filter']) ?></p><?php } ?>
+            </div>
+            <div class="field">
+                <label for="ldap_group_name_attribute">Attribut für den Gruppennamen</label>
+                <input type="text" id="ldap_group_name_attribute" name="ldap_group_name_attribute" maxlength="64"
+                       value="<?= Html::e($values['ldap_group_name_attribute'] ?? '') ?>" placeholder="cn">
+                <?php if (isset($errors['ldap_group_name_attribute'])) { ?><p class="field__error"><?= Html::e($errors['ldap_group_name_attribute']) ?></p><?php } ?>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset class="fieldset">
         <legend>Attributmapping</legend>
         <div class="field-grid">
             <?php foreach ($attributeKeys as $key => $internal) { ?>
@@ -121,7 +153,10 @@ $attributeLabels = [
 
 <section class="card">
     <h2 class="card__title">Synchronisation</h2>
-    <p class="card__hint">Aktive Telefonbucheinträge: <?= (int) $phonebookCount ?></p>
+    <p class="card__hint">
+        Aktive Telefonbucheinträge: <?= (int) $phonebookCount ?>
+        <?php if (($groupCount ?? null) !== null) { ?> · AD-Gruppen für die Rechtevergabe: <?= (int) $groupCount ?><?php } ?>
+    </p>
 
     <form method="post" action="/admin/ad/sync" class="inline-form">
         <?= Csrf::field() ?>

@@ -29,6 +29,7 @@ $navItems = $isAdmin ? [
     'ldap' => ['/admin/ad', 'Active Directory'],
     'alarm' => ['/admin/alarmierung', 'Alarmierung'],
     'activation' => ['/admin/aktivierungs-rufnummern', 'Aktivierungs-Rufnummern'],
+    'office' => ['/admin/office', 'Office'],
     'snmp' => ['/admin/snmp', 'SNMP'],
     'statistics' => ['/admin/statistik', 'Statistik'],
     'users' => ['/admin/benutzer', 'Benutzer'],

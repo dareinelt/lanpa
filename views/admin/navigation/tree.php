@@ -39,6 +39,7 @@ $renderNode = static function (array $item) use (&$renderNode, $childrenMap, $ty
                             aria-haspopup="menu" aria-expanded="false"
                             aria-label="Unterelement zu „<?= Html::e((string) $item['title']) ?>“ anlegen">+</button>
                 <?php } ?>
+                <a class="button button--ghost" href="/admin/navigation/berechtigungen?id=<?= $id ?>">Berechtigungen</a>
                 <a class="button button--ghost" href="/admin/navigation/bearbeiten?id=<?= $id ?>">Bearbeiten</a>
                 <form method="post" action="/admin/navigation/status" class="inline-form">
                     <?= Csrf::field() ?>

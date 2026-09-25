@@ -136,6 +136,7 @@ use App\Support\Html;
                     </td>
                     <td>
                         <div class="row-actions">
+                            <a class="button button--ghost" href="/admin/navigation/berechtigungen?id=<?= $id ?>">Berechtigungen</a>
                             <a class="button button--ghost" href="/admin/navigation/bearbeiten?id=<?= $id ?>">Bearbeiten</a>
                             <form method="post" action="/admin/navigation/status" class="inline-form">
                                 <?= Csrf::field() ?>

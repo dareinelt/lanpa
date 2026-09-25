@@ -94,6 +94,7 @@ final class LdapAttributeMapper
 
         return [
             'external_id' => Validator::cleanText($externalId, 190),
+            'samaccount_name' => $this->clean($this->value($entry, $this->mapping['samaccount_name'] ?? ''), 64),
             'display_name' => Validator::cleanText($displayName, 190),
             'first_name' => $this->clean($firstName, 100),
             'last_name' => $this->clean($lastName, 100),

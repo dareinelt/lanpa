@@ -225,6 +225,71 @@ final class NavigationController extends AdminController
         return $this->redirect('/admin/navigation');
     }
 
+    public function permissions(Request $request): Response
+    {
+        $item = Container::navigation()->find($request->queryInt('id', 0));
+        if ($item === null) {
+            Session::flash('error', 'Element nicht gefunden.');
+
+            return $this->redirect('/admin/navigation');
+        }
+
+        $permissions = Container::navigation()->permissions((int) $item['id']);
+
+        return $this->adminView('admin.navigation.permissions', [
+            'pageTitle' => 'Kachel-Berechtigungen',
+            'activeNav' => 'navigation',
+            'item' => $item,
+            'users' => Container::phonebookRepository()->assignableUsers(),
+            'assignedUserIds' => $permissions['user_ids'],
+            'assignedGroupNames' => $permissions['group_names'],
+        ]);
+    }
+
+    public function storePermissions(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $id = $request->inputInt('id', 0);
+
+        $userIds = $request->post['users'] ?? [];
+        if (!is_array($userIds)) {
+            $userIds = [];
+        }
+
+        try {
+            Container::navigation()->assignPermissions($id, $userIds, $this->splitGroupNames((string) $request->input('groups', '')));
+        } catch (ValidationException $exception) {
+            Session::flash('error', 'Element nicht gefunden.');
+
+            return $this->redirect('/admin/navigation');
+        }
+
+        app_logger()->info('Kachel-Berechtigungen geändert.', [
+            'id' => $id,
+            'admin' => Container::auth()->username(),
+            'users' => count($userIds),
+        ]);
+        Session::flash('success', 'Die Berechtigungen wurden gespeichert.');
+
+        return $this->redirect('/admin/navigation');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function splitGroupNames(string $raw): array
+    {
+        $groups = [];
+        foreach (explode(',', $raw) as $group) {
+            $group = trim($group);
+            if ($group !== '' && !in_array($group, $groups, true)) {
+                $groups[] = $group;
+            }
+        }
+
+        return $groups;
+    }
+
     /**
      * @return array<string,mixed>
      */

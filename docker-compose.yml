@@ -30,10 +30,10 @@ services:
     environment:
       CONTAINER_ROLE: app
       SEED_ON_START: ${SEED_ON_START:-true}
+      # SSO-Header duerfen nur vom vorgelagerten auth-Container stammen.
+      SSO_TRUSTED_PROXY: ${SSO_TRUSTED_PROXY:-auth}
     env_file:
       - .env
-    ports:
-      - "${APP_PORT:-8080}:80"
     volumes:
       - app_storage:/var/www/html/storage
     healthcheck:
@@ -42,6 +42,30 @@ services:
       timeout: 5s
       retries: 5
       start_period: 40s
+    networks:
+      - intranet
+
+  # Vorgelagerter NTLM-Authentifizierungs-Container (ohne Kerberos).
+  # Fuehrt den NTLM-Handshake durch und reicht den SamAccountName als
+  # Header "X-Remote-User" an die Hauptanwendung weiter. Ersetzt den
+  # direkten externen Zugriff auf den app-Container.
+  auth:
+    build:
+      context: .
+      dockerfile: docker/auth/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      SSO_DOMAIN: ${SSO_DOMAIN:-WORKGROUP}
+      SSO_REALM: ${SSO_REALM:-}
+      SSO_DC: ${SSO_DC:-}
+      SSO_DC_IP: ${SSO_DC_IP:-}
+      SSO_JOIN_USER: ${SSO_JOIN_USER:-}
+      SSO_JOIN_PASSWORD: ${SSO_JOIN_PASSWORD:-}
+    ports:
+      - "${APP_PORT:-8080}:80"
     networks:
       - intranet
 

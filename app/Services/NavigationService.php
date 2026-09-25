@@ -39,6 +39,115 @@ final class NavigationService
     }
 
     /**
+     * Aktive oberste Ebene, gefiltert nach SSO-Berechtigungen.
+     *
+     * @param array{id:int,username:string,display_name:string,groups:list<string>}|null $ssoUser
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function activeTopLevelFor(?array $ssoUser = null): array
+    {
+        $ssoUser = $this->normalizeSsoUser($ssoUser);
+
+        return $this->repository->activeTopLevelForUser($ssoUser['id'], $ssoUser['groups']);
+    }
+
+    /**
+     * Aktive Unterseiten, gefiltert nach SSO-Berechtigungen.
+     *
+     * @param array{id:int,username:string,display_name:string,groups:list<string>}|null $ssoUser
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function activeChildrenFor(int $parentId, ?array $ssoUser = null): array
+    {
+        $ssoUser = $this->normalizeSsoUser($ssoUser);
+
+        return $this->repository->activeChildrenForUser($parentId, $ssoUser['id'], $ssoUser['groups']);
+    }
+
+    /**
+     * Serverseitige Sichtbarkeitspruefung fuer ein einzelnes Element.
+     *
+     * @param array{id:int,username:string,display_name:string,groups:list<string>}|null $ssoUser
+     */
+    public function isAccessible(int $id, ?array $ssoUser = null): bool
+    {
+        $ssoUser = $this->normalizeSsoUser($ssoUser);
+
+        return $this->repository->isAccessible($id, $ssoUser['id'], $ssoUser['groups']);
+    }
+
+    /**
+     * Berechtigungen eines Elements (fuer den Adminbereich).
+     *
+     * @return array{user_ids:list<int>,group_names:list<string>}
+     */
+    public function permissions(int $navigationId): array
+    {
+        return $this->repository->permissionsForNavigation($navigationId);
+    }
+
+    /**
+     * Setzt die Berechtigungen eines Elements.
+     *
+     * @param list<mixed> $userIds
+     * @param list<mixed> $groupNames
+     */
+    public function assignPermissions(int $navigationId, array $userIds, array $groupNames): void
+    {
+        if ($this->repository->find($navigationId) === null) {
+            throw new ValidationException(['id' => 'Element nicht gefunden.']);
+        }
+
+        $cleanUserIds = [];
+        foreach ($userIds as $userId) {
+            $userId = (int) $userId;
+            if ($userId > 0 && !in_array($userId, $cleanUserIds, true)) {
+                $cleanUserIds[] = $userId;
+            }
+        }
+
+        $cleanGroups = [];
+        foreach ($groupNames as $groupName) {
+            $groupName = trim((string) $groupName);
+            if ($groupName !== '' && !in_array($groupName, $cleanGroups, true)) {
+                $cleanGroups[] = $groupName;
+            }
+        }
+
+        $this->repository->replacePermissions($navigationId, $cleanUserIds, $cleanGroups);
+    }
+
+    /**
+     * Normalisiert den SSO-Benutzer auf die Form {id, groups}.
+     *
+     * @param array{id:int,username:string,display_name:string,groups:list<string>}|null $ssoUser
+     *
+     * @return array{id:?int,groups:list<string>}
+     */
+    private function normalizeSsoUser(?array $ssoUser): array
+    {
+        if ($ssoUser === null) {
+            return ['id' => null, 'groups' => []];
+        }
+
+        $id = isset($ssoUser['id']) ? (int) $ssoUser['id'] : 0;
+
+        $groups = [];
+        if (isset($ssoUser['groups']) && is_array($ssoUser['groups'])) {
+            foreach ($ssoUser['groups'] as $group) {
+                $group = trim((string) $group);
+                if ($group !== '' && !in_array($group, $groups, true)) {
+                    $groups[] = $group;
+                }
+            }
+        }
+
+        return ['id' => $id > 0 ? $id : null, 'groups' => $groups];
+    }
+
+    /**
      * Alle Elemente (auch inaktive), fuer die Admin-Liste.
      *
      * @return list<array<string,mixed>>

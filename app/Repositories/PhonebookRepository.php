@@ -125,6 +125,53 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     }
 
     /**
+     * Findet einen aktiven Telefonbucheintrag anhand seines SamAccountNames.
+     * Der Vergleich ist case-insensitiv (SamAccountNames sind im AD nicht
+     * case-sensitiv).
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findBySamAccountName(string $name): ?array
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return null;
+        }
+
+        $statement = $this->pdo->prepare(
+            'SELECT id, external_id, samaccount_name, display_name, first_name, last_name, email, department
+               FROM phonebook
+              WHERE active = 1 AND samaccount_name IS NOT NULL AND LOWER(samaccount_name) = LOWER(:name)
+              LIMIT 1'
+        );
+        $statement->execute(['name' => $name]);
+        $row = $statement->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * Alle aktiven Eintraege mit hinterlegtem SamAccountName – die Grundlage
+     * fuer die benutzerbasierte Kachel-Berechtigung im Adminbereich.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function assignableUsers(): array
+    {
+        $statement = $this->pdo->query(
+            "SELECT id, samaccount_name, display_name, first_name, last_name, department
+               FROM phonebook
+              WHERE active = 1 AND samaccount_name IS NOT NULL AND samaccount_name <> ''
+              ORDER BY display_name ASC, id ASC"
+        );
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement === false ? [] : $statement->fetchAll();
+
+        return $rows;
+    }
+
+    /**
      * Zaehlt die fuer die Suche sichtbaren Eintraege.
      */
     public function countVisible(bool $includeWithoutEmail = false): int
@@ -178,10 +225,11 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     {
         $statement = $this->pdo->prepare(
             'INSERT INTO phonebook
-                (external_id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active)
+                (external_id, samaccount_name, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active)
              VALUES
-                (:external_id, :display_name, :first_name, :last_name, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, 1)
+                (:external_id, :samaccount_name, :display_name, :first_name, :last_name, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, 1)
              ON DUPLICATE KEY UPDATE
+                samaccount_name = VALUES(samaccount_name),
                 display_name = VALUES(display_name),
                 first_name = VALUES(first_name),
                 last_name = VALUES(last_name),
@@ -197,6 +245,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
 
         $statement->execute([
             'external_id' => (string) $user['external_id'],
+            'samaccount_name' => $this->value($user['samaccount_name'] ?? null),
             'display_name' => (string) ($user['display_name'] ?? ''),
             'first_name' => $user['first_name'] ?? null,
             'last_name' => $user['last_name'] ?? null,
@@ -228,7 +277,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     public function all(): array
     {
         $statement = $this->pdo->query(
-            'SELECT id, external_id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible FROM phonebook ORDER BY id ASC'
+            'SELECT id, external_id, samaccount_name, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible FROM phonebook ORDER BY id ASC'
         );
 
         /** @var list<array<string,mixed>> $rows */
@@ -312,9 +361,9 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     {
         $statement = $this->pdo->prepare(
             'INSERT INTO phonebook
-                (external_id, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible)
+                (external_id, samaccount_name, display_name, first_name, last_name, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible)
              VALUES
-                (:external_id, :display_name, :first_name, :last_name, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, :active, :visible)'
+                (:external_id, :samaccount_name, :display_name, :first_name, :last_name, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, :active, :visible)'
         );
         $statement->execute($this->bindings($data));
 
@@ -335,6 +384,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     {
         return [
             'external_id' => (string) ($data['external_id'] ?? ''),
+            'samaccount_name' => $this->value($data['samaccount_name'] ?? null),
             'display_name' => (string) ($data['display_name'] ?? ''),
             'first_name' => $this->value($data['first_name'] ?? null),
             'last_name' => $this->value($data['last_name'] ?? null),

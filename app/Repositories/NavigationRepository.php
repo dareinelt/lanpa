@@ -42,6 +42,220 @@ final class NavigationRepository extends Repository
     }
 
     /**
+     * Aktive oberste Ebene, gefiltert nach SSO-Berechtigungen.
+     *
+     * Kacheln ohne Berechtigungseintrag gelten als oeffentlich; Kacheln mit
+     * Eintrag sind nur sichtbar, wenn $userId oder eine der $groups zugeordnet
+     * ist. Ist $userId null (anonym), werden nur oeffentliche Kacheln geliefert.
+     * Ein angemeldeter Benutzer ohne jegliche zugewiesene Berechtigung verhaelt
+     * sich dabei wie ein anonymer Benutzer (er sieht ausschliesslich oeffentliche
+     * Kacheln).
+     *
+     * @param list<string> $groups
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function activeTopLevelForUser(?int $userId, array $groups = []): array
+    {
+        return $this->activeChildrenWhereForUser('n.parent_id IS NULL', [], $userId, $groups);
+    }
+
+    /**
+     * Aktive Unterseiten, gefiltert nach SSO-Berechtigungen (siehe oben).
+     *
+     * @param list<string> $groups
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function activeChildrenForUser(int $parentId, ?int $userId, array $groups = []): array
+    {
+        return $this->activeChildrenWhereForUser('n.parent_id = :parent_id', ['parent_id' => $parentId], $userId, $groups);
+    }
+
+    /**
+     * Prueft, ob ein Element fuer den gegebenen Benutzer sichtbar ist
+     * (serverseitige Zugriffssperre fuer Unterseiten/Textseiten).
+     *
+     * @param list<string> $groups
+     */
+    public function isAccessible(int $id, ?int $userId, array $groups = []): bool
+    {
+        if (!$this->exists($id, false)) {
+            return false;
+        }
+
+        if (!$this->hasPermissions($id)) {
+            return true;
+        }
+
+        if ($userId === null) {
+            return false;
+        }
+
+        $bindings = ['nav' => $id, 'perm_user' => $userId];
+        $groupClause = '';
+        if ($groups !== []) {
+            $placeholders = [];
+            foreach (array_values($groups) as $index => $group) {
+                $placeholders[] = ':perm_group_' . $index;
+                $bindings['perm_group_' . $index] = $group;
+            }
+            $groupClause = ' OR (p.identity_type = \'group\' AND LOWER(p.group_name) IN (' . implode(', ', array_map(static fn (string $p): string => 'LOWER(' . $p . ')', $placeholders)) . '))';
+        }
+
+        $statement = $this->pdo->prepare(
+            'SELECT 1 FROM navigation_item_permissions p
+              WHERE p.navigation_id = :nav
+                AND ((p.identity_type = \'user\' AND p.user_id = :perm_user)' . $groupClause . ')
+              LIMIT 1'
+        );
+        $statement->execute($bindings);
+
+        return $statement->fetchColumn() !== false;
+    }
+
+    /**
+     * @param list<string> $groups
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function activeChildrenWhereForUser(string $where, array $bindings, ?int $userId, array $groups): array
+    {
+        $sql = 'SELECT ' . self::COLUMNS . self::FROM
+            . ' WHERE n.active = 1 AND ' . $where . ' AND ' . $this->visibilityClause($userId, $groups)
+            . ' ORDER BY n.sort_order ASC, n.id ASC';
+
+        $statement = $this->pdo->prepare($sql);
+        $statement->execute($bindings + $this->visibilityBindings($userId, $groups));
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement->fetchAll();
+
+        return $rows;
+    }
+
+    /**
+     * @param list<string> $groups
+     */
+    private function visibilityClause(?int $userId, array $groups): string
+    {
+        if ($userId === null) {
+            return 'n.id NOT IN (SELECT navigation_id FROM navigation_item_permissions)';
+        }
+
+        $allowed = "(p.identity_type = 'user' AND p.user_id = :perm_user)";
+        if ($groups !== []) {
+            $placeholders = [];
+            foreach (array_keys($groups) as $index) {
+                $placeholders[] = ':perm_group_' . $index;
+            }
+            $allowed .= " OR (p.identity_type = 'group' AND LOWER(p.group_name) IN (" . implode(', ', array_map(static fn (string $p): string => 'LOWER(' . $p . ')', $placeholders)) . '))';
+        }
+
+        return '(n.id NOT IN (SELECT navigation_id FROM navigation_item_permissions)'
+            . ' OR n.id IN (SELECT p.navigation_id FROM navigation_item_permissions p WHERE ' . $allowed . '))';
+    }
+
+    /**
+     * @param list<string> $groups
+     *
+     * @return array<string,mixed>
+     */
+    private function visibilityBindings(?int $userId, array $groups): array
+    {
+        if ($userId === null) {
+            return [];
+        }
+
+        $bindings = ['perm_user' => $userId];
+        foreach (array_values($groups) as $index => $group) {
+            $bindings['perm_group_' . $index] = $group;
+        }
+
+        return $bindings;
+    }
+
+    /**
+     * Liefert true, wenn fuer das Element mindestens ein Berechtigungseintrag
+     * existiert (also kein oeffentliches Element ist).
+     */
+    public function hasPermissions(int $navigationId): bool
+    {
+        $statement = $this->pdo->prepare('SELECT 1 FROM navigation_item_permissions WHERE navigation_id = :nav LIMIT 1');
+        $statement->execute(['nav' => $navigationId]);
+
+        return $statement->fetchColumn() !== false;
+    }
+
+    /**
+     * Liefert die einem Element zugeordneten Benutzer-IDs und Gruppennamen.
+     *
+     * @return array{user_ids:list<int>,group_names:list<string>}
+     */
+    public function permissionsForNavigation(int $navigationId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT identity_type, user_id, group_name FROM navigation_item_permissions WHERE navigation_id = :nav ORDER BY id ASC'
+        );
+        $statement->execute(['nav' => $navigationId]);
+        $rows = $statement->fetchAll();
+
+        $userIds = [];
+        $groupNames = [];
+        foreach ($rows as $row) {
+            if ($row['identity_type'] === 'group') {
+                $groupNames[] = (string) $row['group_name'];
+            } else {
+                $userIds[] = (int) $row['user_id'];
+            }
+        }
+
+        return [
+            'user_ids' => array_values(array_unique($userIds)),
+            'group_names' => array_values(array_unique($groupNames)),
+        ];
+    }
+
+    /**
+     * Ersetzt alle Berechtigungseintraege eines Elements.
+     *
+     * @param list<int>    $userIds
+     * @param list<string> $groupNames
+     */
+    public function replacePermissions(int $navigationId, array $userIds, array $groupNames): void
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $delete = $this->pdo->prepare('DELETE FROM navigation_item_permissions WHERE navigation_id = :nav');
+            $delete->execute(['nav' => $navigationId]);
+
+            $insertUser = $this->pdo->prepare(
+                "INSERT INTO navigation_item_permissions (navigation_id, identity_type, user_id) VALUES (:nav, 'user', :user_id)"
+            );
+            foreach (array_unique($userIds) as $userId) {
+                $insertUser->execute(['nav' => $navigationId, 'user_id' => (int) $userId]);
+            }
+
+            $insertGroup = $this->pdo->prepare(
+                "INSERT INTO navigation_item_permissions (navigation_id, identity_type, group_name) VALUES (:nav, 'group', :group_name)"
+            );
+            foreach (array_unique($groupNames) as $groupName) {
+                $groupName = trim((string) $groupName);
+                if ($groupName === '') {
+                    continue;
+                }
+                $insertGroup->execute(['nav' => $navigationId, 'group_name' => $groupName]);
+            }
+
+            $this->pdo->commit();
+        } catch (\Throwable $exception) {
+            $this->pdo->rollBack();
+
+            throw $exception;
+        }
+    }
+
+    /**
      * Alle (auch inaktiven) Unterseiten, fuer die Auswahl der uebergeordneten Ebene.
      *
      * @return list<array<string,mixed>>

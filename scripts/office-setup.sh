@@ -43,7 +43,7 @@ random_secret() {
 
 env_get() {
     [ -f .env ] || return 0
-    sed -n "s/^$1=//p" .env | tail -n1 | sed -e 's/^"//' -e 's/"$//'
+    sed -n "s/^$1=//p" .env | tail -n1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//"
 }
 
 env_set() {

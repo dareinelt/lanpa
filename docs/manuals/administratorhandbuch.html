@@ -92,6 +92,15 @@
     <li>Zugriff auf den MySQL-Container-Image (<code>mysql:8.0</code>) beim ersten Start.</li>
   </ul>
 
+  <div class="tip">
+    <span class="label">Assistierte Installation</span>
+    Statt der manuellen Schritte 2.2 und 2.3 kann <code>./scripts/install.sh</code> verwendet werden. Der
+    menügeführte Assistent prüft die Voraussetzungen, installiert fehlende Pakete (u.&nbsp;a. Docker und
+    Compose), kopiert <code>.env.example</code> nach <code>.env</code>, fragt alle Passwörter und Secrets ab,
+    startet die Container und legt einen Abschlussbericht für die Dokumentation unter
+    <code>install-reports/</code> ab. Details: <code>docs/installation.md</code>.
+  </div>
+
   <h2>2.2&ensp;Konfiguration anlegen</h2>
   <p>Legen Sie im Projektverzeichnis eine Datei <code>.env</code> an. Eine vollständige Referenz aller
   Variablen finden Sie in Kapitel 18. Pflichtfelder sind insbesondere die Datenbankpasswörter:</p>

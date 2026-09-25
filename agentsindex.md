@@ -44,6 +44,10 @@ Benötigte PHP-Erweiterungen: `pdo_mysql`, `ldap`, `mbstring`, `json`, `openssl`
 
 ### Docker (empfohlener Weg)
 
+Assistierte Komplettinstallation (Paketprüfung/-installation, `.env` inkl. Secrets,
+Start, Abschlussbericht in `install-reports/`): `./scripts/install.sh` – siehe
+`docs/installation.md`. Manuell:
+
 ```bash
 cp .env.example .env        # mindestens DB_PASSWORD und DB_ROOT_PASSWORD setzen
 docker compose up -d        # Seite unter http://<host>:8080
@@ -78,6 +82,7 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 | `sync_ad.php` | Einmaliger AD-Abgleich |
 | `sync_worker.php` | Dauerlauf der AD-Synchronisation (Container `sync`) |
 | `purge_clicks.php` | Löscht Klickdaten älter als N Tage (Standard `CLICK_RETENTION_DAYS=400`) |
+| `install.sh` | Assistierte Komplettinstallation (whiptail/dialog/Text): prüft und installiert Abhängigkeiten, kopiert `.env.example`, fragt Passwörter/Secrets ab, startet und prüft die Container, schreibt Abschlussbericht nach `install-reports/` (Doku: `docs/installation.md`) |
 | `install-systemd-service.sh` | Installiert die Landingpage als systemd-Service (Ubuntu ≥ 22.04; Autostart beim Boot, `docker compose up/down`) |
 
 ---
@@ -412,4 +417,5 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - `README.md` – ausführliche Projektdokumentation (Funktionsumfang, Docker, Konfiguration, Betrieb, Sicherheit).
 - `docs/manuals/anwenderhandbuch.pdf` / `administratorhandbuch.pdf` (Quellen als HTML unter `docs/manuals/`).
 - `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche (30–52: Office, Office-Apps und AD-Gruppen).
+- `docs/installation.md` – Assistierte Installation mit `scripts/install.sh`: Ablauf, Optionen, Bedienung, abgefragte Variablen, Abschlussbericht, Fehlerbehebung.
 - `docs/office.md` – Office-Erweiterung: Einrichtung, Architektur, Updates, AD-Gruppen/SSO, Kachel, Sicherung, SNMP.

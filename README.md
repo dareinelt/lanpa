@@ -32,6 +32,22 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 
 ## 2. Schnellstart mit Docker
 
+### Assistierte Installation (empfohlen)
+
+```bash
+./scripts/install.sh
+```
+
+Der menügeführte Assistent prüft alle Voraussetzungen und installiert fehlende Pakete
+(u. a. Docker und Compose) automatisch, kopiert `.env.example` nach `.env`, fragt alle
+Einstellungen, Passwörter und Secrets ab (Datenbank, Administrator, AD/LDAP,
+Windows-Anmeldung, SMS-Gateway, SNMP, Office, phpMyAdmin, Autostart), startet die
+Container, prüft die Betriebsbereitschaft und speichert einen Abschlussbericht für die
+Dokumentation unter `install-reports/`. Optionen (`--defaults`, `--text`, `--no-start`, …)
+und Bedienung: [docs/installation.md](docs/installation.md).
+
+### Manuell
+
 Voraussetzung: Docker mit Compose-Plugin.
 
 ```bash

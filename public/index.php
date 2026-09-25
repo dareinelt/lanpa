@@ -137,6 +137,8 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/navigation/sortieren', [NavigationController::class, 'move']);
         $router->post('/admin/navigation/ansicht', [NavigationController::class, 'updateViewMode']);
         $router->post('/admin/navigation/einstellungen', [NavigationController::class, 'updateSettings']);
+        $router->get('/admin/navigation/berechtigungen', [NavigationController::class, 'permissions']);
+        $router->post('/admin/navigation/berechtigungen', [NavigationController::class, 'storePermissions']);
 
         $router->get('/admin/notfallnummern', [EmergencyNumberController::class, 'index']);
         $router->get('/admin/notfallnummern/neu', [EmergencyNumberController::class, 'create']);

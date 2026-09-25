@@ -12,11 +12,13 @@ final class LandingController extends Controller
 {
     public function index(Request $request): Response
     {
-        $items = Container::navigation()->activeTopLevel();
+        $ssoUser = Container::sso()->resolve($request);
+        $items = Container::navigation()->activeTopLevelFor($ssoUser);
 
         return $this->view('landing.index', [
             'pageTitle' => Container::settings()->get('site_title'),
             'items' => $items,
+            'ssoUser' => $ssoUser,
             'importantLinks' => Container::importantLinks()->activeItems(),
             'descriptionMode' => Container::settings()->descriptionMode(),
             'activeNav' => 'home',

@@ -33,5 +33,6 @@ return [
         'department' => Env::get('LDAP_ATTR_DEPARTMENT', 'department'),
         'modified' => Env::get('LDAP_ATTR_MODIFIED', 'whenChanged'),
         'unique_id' => Env::get('LDAP_ATTR_UNIQUE_ID', 'objectGUID'),
+        'samaccount_name' => Env::get('LDAP_ATTR_SAMACCOUNT_NAME', 'sAMAccountName'),
     ],
 ];

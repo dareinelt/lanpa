@@ -16,7 +16,8 @@ final class PageController extends Controller
 {
     public function subpage(Request $request): Response
     {
-        $item = $this->resolve($request, 'subpage');
+        $ssoUser = Container::sso()->resolve($request);
+        $item = $this->resolve($request, 'subpage', $ssoUser);
 
         $gate = $this->accessGate($item);
         if ($gate !== null) {
@@ -26,7 +27,7 @@ final class PageController extends Controller
         return $this->view('pages.subpage', [
             'pageTitle' => (string) $item['title'],
             'item' => $item,
-            'items' => Container::navigation()->activeChildren((int) $item['id']),
+            'items' => Container::navigation()->activeChildrenFor((int) $item['id'], $ssoUser),
             'breadcrumb' => Container::navigation()->breadcrumb((int) $item['id']),
             'descriptionMode' => Container::settings()->descriptionMode(),
             'activeNav' => '',
@@ -36,7 +37,8 @@ final class PageController extends Controller
 
     public function page(Request $request): Response
     {
-        $item = $this->resolve($request, 'page');
+        $ssoUser = Container::sso()->resolve($request);
+        $item = $this->resolve($request, 'page', $ssoUser);
 
         $gate = $this->accessGate($item);
         if ($gate !== null) {
@@ -52,13 +54,21 @@ final class PageController extends Controller
     }
 
     /**
+     * @param array{id:int,username:string,display_name:string,groups:list<string>}|null $ssoUser
+     *
      * @return array<string,mixed>
      */
-    private function resolve(Request $request, string $type): array
+    private function resolve(Request $request, string $type, ?array $ssoUser): array
     {
         $item = Container::navigation()->findActive($request->queryInt('id', 0));
 
         if ($item === null || (string) $item['type'] !== $type) {
+            throw new HttpException(404, 'Die Seite wurde nicht gefunden.');
+        }
+
+        // Serverseitige Schranke: fuer den Benutzer nicht freigeschaltete
+        // Kacheln werden wie nicht vorhanden behandelt (kein Informationsleck).
+        if (!Container::navigation()->isAccessible((int) $item['id'], $ssoUser)) {
             throw new HttpException(404, 'Die Seite wurde nicht gefunden.');
         }
 

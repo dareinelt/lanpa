@@ -17,6 +17,7 @@ use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\SyncLogRepository;
 use App\Security\Auth;
+use App\Security\SsoAuth;
 use App\Services\AdSyncService;
 use App\Services\ActivationNumberService;
 use App\Services\AdminUserService;
@@ -260,6 +261,14 @@ final class Container
         return self::make(
             Auth::class,
             static fn (): Auth => new Auth(self::adminUserRepository(), (int) Config::get('app.session_idle_timeout', 3600))
+        );
+    }
+
+    public static function sso(): SsoAuth
+    {
+        return self::make(
+            SsoAuth::class,
+            static fn (): SsoAuth => new SsoAuth(self::phonebookRepository(), (array) Config::get('sso', []))
         );
     }
 

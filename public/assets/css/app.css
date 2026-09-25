@@ -317,6 +317,55 @@ code {
     font-size: .9rem;
 }
 
+/* Angemeldeter Benutzer (SSO) im Kopf – dezent */
+.site-user {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    min-height: 44px;
+    padding-inline: .5rem .65rem;
+    color: var(--color-muted);
+    font-size: .85rem;
+    max-width: 16rem;
+}
+
+.site-user__avatar {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+    font-size: .7rem;
+    font-weight: 650;
+    letter-spacing: .02em;
+}
+
+.site-user__name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.site-user__badge {
+    flex: none;
+    padding: .05rem .4rem;
+    border: 1px dashed currentColor;
+    border-radius: 999px;
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+@media (max-width: 480px) {
+    .site-user__name {
+        display: none;
+    }
+}
+
 /* Landingpage */
 .intro {
     margin-bottom: clamp(1.5rem, 4vw, 2.5rem);

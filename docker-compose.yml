@@ -21,6 +21,9 @@ x-nextcloud-env: &nextcloud-env
   EUROOFFICE_JWT_HEADER: AuthorizationJwt
   NEXTCLOUD_EXTRA_TRUSTED_DOMAINS: ${NEXTCLOUD_EXTRA_TRUSTED_DOMAINS:-}
   NEXTCLOUD_OFFICE_GROUPS: ${NEXTCLOUD_OFFICE_GROUPS:-}
+  # Automatische Anmeldung des im Intranet erkannten Benutzers.
+  NEXTCLOUD_SSO_LOGIN_REDIRECT: ${NEXTCLOUD_SSO_LOGIN_REDIRECT:-true}
+  NEXTCLOUD_SSO_AUTOPROVISION: ${NEXTCLOUD_SSO_AUTOPROVISION:-false}
   # AD-Anbindung (nutzt die bestehenden LDAP_*-Werte des Intranets).
   SSO_ENABLED: ${SSO_ENABLED:-false}
   NEXTCLOUD_LDAP_ENABLED: ${NEXTCLOUD_LDAP_ENABLED:-false}

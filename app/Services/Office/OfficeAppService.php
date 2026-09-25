@@ -71,7 +71,8 @@ final class OfficeAppService
      */
     public function allowedFor(?array $ssoUser): array
     {
-        if ($ssoUser === null || (int) ($ssoUser['id'] ?? 0) <= 0) {
+        // Nur erkannte Benutzer (SSO bzw. simulierte Anmeldung im Testmodus).
+        if ($ssoUser === null || trim((string) ($ssoUser['username'] ?? '')) === '') {
             return [];
         }
 

@@ -15,6 +15,9 @@ final class OfficeConfigService
 {
     public const DIRECT_ACCESS_MODES = ['footer', 'redirect'];
 
+    /** SSO-Endpunkt der Nextcloud-App intranet_integration (relativ zum Webroot). */
+    public const SSO_LOGIN_ROUTE = 'index.php/apps/intranet_integration/sso';
+
     public const SETTING_KEYS = [
         'office_footer_enabled',
         'office_footer_text',
@@ -87,6 +90,32 @@ final class OfficeConfigService
     public function publicPath(): string
     {
         return self::normalizePath((string) ($this->config['public_path'] ?? '/office/'), '/office/');
+    }
+
+    /**
+     * Einstieg in Nextcloud mit automatischer Anmeldung des im Intranet
+     * erkannten Benutzers: signiertes, einmal verwendbares Token an den
+     * SSO-Endpunkt der App intranet_integration, die danach zu $target leitet.
+     *
+     * @param array{username:string,display_name?:string,email?:string} $ssoUser
+     */
+    public function ssoEntryUrl(array $ssoUser, string $target, ?int $now = null): ?string
+    {
+        $secret = $this->jwtSecret();
+        if ($secret === '' || ($ssoUser['username'] ?? '') === '') {
+            return null;
+        }
+
+        $token = OfficeJwt::ssoToken(
+            $secret,
+            (string) $ssoUser['username'],
+            (string) ($ssoUser['display_name'] ?? ''),
+            (string) ($ssoUser['email'] ?? ''),
+            $this->entryTarget($target),
+            $now
+        );
+
+        return $this->publicPath() . self::SSO_LOGIN_ROUTE . '?' . http_build_query(['token' => $token]);
     }
 
     public function euroOfficePublicPath(): string

@@ -28,4 +28,13 @@ return [
     // deren Header uebernommen werden duerfen. Im Docker-Setup ist das der
     // Hostname des auth-Containers (z. B. "auth"). Leer = kein Vertrauen.
     'trusted_proxy' => Env::get('SSO_TRUSTED_PROXY', ''),
+
+    // Testmodus: simuliert eine bestehende Windows-Anmeldung dieses Benutzers
+    // (SamAccountName) ohne NTLM/Domaene. In APP_ENV=production wirkungslos.
+    'fake_user' => Env::get('SSO_FAKE_USER', ''),
+    'fake_display_name' => Env::get('SSO_FAKE_DISPLAY_NAME', ''),
+    'fake_email' => Env::get('SSO_FAKE_EMAIL', ''),
+    // Kommagetrennte AD-Gruppen des Testbenutzers (z. B. fuer Office-Apps).
+    'fake_groups' => Env::get('SSO_FAKE_GROUPS', ''),
+    'fake_allowed' => strtolower((string) Env::get('APP_ENV', 'production')) !== 'production',
 ];

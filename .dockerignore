@@ -2,6 +2,8 @@
 .gitignore
 .env
 .env.local
+.env.bak-*
+install-reports
 storage/logs/*
 storage/uploads/*
 tests

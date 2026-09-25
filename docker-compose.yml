@@ -58,6 +58,7 @@ services:
       app:
         condition: service_healthy
     environment:
+      SSO_ENABLED: ${SSO_ENABLED:-false}
       SSO_DOMAIN: ${SSO_DOMAIN:-WORKGROUP}
       SSO_REALM: ${SSO_REALM:-}
       SSO_DC: ${SSO_DC:-}

@@ -11,6 +11,8 @@ namespace App\Services\Office;
 final class OfficeJwt
 {
     public const DIAGNOSTICS_AUDIENCE = 'intranet_integration';
+    public const SSO_AUDIENCE = 'intranet_integration_sso';
+    public const SSO_LIFETIME = 60;
 
     /**
      * @param array<string,mixed> $claims
@@ -36,6 +38,41 @@ final class OfficeJwt
             'iat' => $now,
             'exp' => $now + 60,
         ], $secret);
+    }
+
+    /**
+     * Schluessel fuer Anmelde-Tokens: vom gemeinsamen Secret abgeleitet
+     * (Domaenentrennung), damit ein Euro-Office-Token nie als Anmeldung gilt.
+     */
+    public static function ssoKey(string $secret): string
+    {
+        return $secret === '' ? '' : hash_hmac('sha256', self::SSO_AUDIENCE, $secret);
+    }
+
+    /**
+     * Kurzlebiges, einmal verwendbares Token, mit dem Nextcloud (App
+     * intranet_integration) den im Intranet erkannten Benutzer anmeldet.
+     */
+    public static function ssoToken(
+        string $secret,
+        string $username,
+        string $displayName,
+        string $email,
+        string $target,
+        ?int $now = null
+    ): string {
+        $now ??= time();
+
+        return self::encode([
+            'aud' => self::SSO_AUDIENCE,
+            'sub' => $username,
+            'name' => $displayName,
+            'email' => $email,
+            'target' => $target,
+            'jti' => bin2hex(random_bytes(16)),
+            'iat' => $now,
+            'exp' => $now + self::SSO_LIFETIME,
+        ], self::ssoKey($secret));
     }
 
     /**

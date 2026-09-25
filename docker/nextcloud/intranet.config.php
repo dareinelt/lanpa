@@ -43,6 +43,13 @@ $CONFIG = (static function (): array {
         // Basis-URL der Intranet-Anwendung (gleicher Host), fuer die Fusszeile.
         'intranet_integration' => [
             'intranet_base' => '/',
+            // Automatische Anmeldung: Anmeldeseite -> Intranet-Einstieg, der den
+            // erkannten Benutzer per Einmal-Token an apps/intranet_integration/sso
+            // weiterreicht ("?direct=1" zeigt weiterhin das Formular).
+            'intranet_entry' => '/office-starten',
+            'sso_login_redirect' => $env('NEXTCLOUD_SSO_LOGIN_REDIRECT', 'true') !== 'false',
+            // Unbekannte Konten lokal anlegen (nur ohne AD bzw. zum Testen).
+            'sso_autoprovision' => $env('NEXTCLOUD_SSO_AUTOPROVISION', 'false') === 'true',
         ],
     ];
 })();

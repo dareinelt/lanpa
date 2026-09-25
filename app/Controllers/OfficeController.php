@@ -33,16 +33,27 @@ final class OfficeController extends Controller
      */
     public function start(Request $request): Response
     {
+        $target = $request->query('ziel');
+        if ($target !== null && $target !== '' && Container::officeConfig()->isEnabled() && Container::sso()->resolve($request) === null) {
+            // Nicht erkannt (z. B. kein Domaenen-Client): Anmeldeformular von
+            // Nextcloud; "direct=1" verhindert die erneute Umleitung hierher.
+            $office = Container::officeConfig();
+
+            return $this->redirect($office->publicPath() . 'index.php/login?' . http_build_query([
+                'direct' => '1',
+                'redirect_url' => $office->entryTarget($target),
+            ]));
+        }
+
         $ssoUser = $this->authorize($request);
         $apps = Container::officeApps()->allowedFor($ssoUser);
 
-        $target = $request->query('ziel');
         if ($target !== null && $target !== '') {
             if (!$this->hasNextcloudApp($apps)) {
                 throw new HttpException(403, 'Für Office fehlt die Berechtigung.');
             }
 
-            return $this->enterNextcloud(Container::officeConfig()->entryTarget($target));
+            return $this->enterNextcloud(Container::officeConfig()->entryTarget($target), $ssoUser);
         }
 
         $tile = Container::navigationRepository()->findActiveInternalByUrl(self::ENTRY_PATH);
@@ -81,7 +92,7 @@ final class OfficeController extends Controller
             return $this->redirect($app['target']);
         }
 
-        return $this->enterNextcloud($app['target']);
+        return $this->enterNextcloud($app['target'], $ssoUser);
     }
     public function unavailable(Request $request): Response
     {
@@ -142,7 +153,7 @@ final class OfficeController extends Controller
     /**
      * Gemeinsame Pruefung: Office aktiv, Kachel-Berechtigung, angemeldeter Benutzer.
      *
-     * @return array{id:int,username:string,display_name:string,groups:list<string>}
+     * @return array{id:int,username:string,display_name:string,email:string,groups:list<string>,fake:bool}
      */
     private function authorize(Request $request): array
     {
@@ -178,7 +189,14 @@ final class OfficeController extends Controller
         return false;
     }
 
-    private function enterNextcloud(string $target): Response
+    /**
+     * Wechsel nach Nextcloud: Der im Intranet erkannte Benutzer wird immer
+     * per signiertem Einmal-Token weitergereicht und dort automatisch
+     * angemeldet (keine erneute Kennworteingabe).
+     *
+     * @param array{username:string,display_name?:string,email?:string} $ssoUser
+     */
+    private function enterNextcloud(string $target, array $ssoUser): Response
     {
         Session::put(self::SESSION_KEY, time());
 
@@ -186,7 +204,16 @@ final class OfficeController extends Controller
             return $this->redirect('/office-nicht-verfuegbar');
         }
 
-        return $this->redirect($target);
+        $url = Container::officeConfig()->ssoEntryUrl($ssoUser, $target);
+        if ($url === null) {
+            app_logger()->warning('Office-SSO: Kein Secret konfiguriert, Benutzer kann nicht an Nextcloud weitergereicht werden.');
+
+            return $this->redirect($target);
+        }
+
+        return $this->redirect($url)
+            ->withHeader('Cache-Control', 'no-store')
+            ->withHeader('Referrer-Policy', 'no-referrer');
     }
 
     public static function hasEntered(int $lifetime): bool

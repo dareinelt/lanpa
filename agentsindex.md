@@ -201,6 +201,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 
 ### Security (`app/Security/`)
 
+- `SsoAuth` – Windows-Benutzer aus dem Header des `auth`-Containers (nur von `SSO_TRUSTED_PROXY`) bzw. simulierte Anmeldung im Testmodus (`SSO_FAKE_USER`, nicht in `APP_ENV=production`); der erkannte Benutzer erscheint im Kopf (`views/layouts/base.php`, `.site-user`) und wird beim Wechsel nach Nextcloud per Einmal-Token (`OfficeJwt::ssoToken`, `OfficeConfigService::ssoEntryUrl`) an `apps/intranet_integration/sso` (`SsoController`) weitergereicht – siehe `docs/office.md`.
 - `Auth` – Session-Authentifizierung, Rollen `admin`/`redaktion`, Login-Lockout (5 Versuche / 300 s), Idle-Timeout, Session-Regeneration.
 - `Csrf` – Token-Erzeugung/-Validierung.
 - `Session` – Session-Verwaltung (Start, Flash, Regenerate).

@@ -17,6 +17,7 @@ $flashes = $flashes ?? [];
 $announcements = $announcements ?? [];
 $documentationEnabled = $documentationEnabled ?? false;
 $csrfToken = $csrfToken ?? '';
+$ssoUser = isset($ssoUser) && is_array($ssoUser) ? $ssoUser : null;
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 ?>
 <!doctype html>
@@ -79,6 +80,26 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
             <?php } ?>
             <a class="site-nav__link<?= $activeNav === 'home' ? ' is-active' : '' ?>" href="/"<?= $activeNav === 'home' ? ' aria-current="page"' : '' ?>>Start</a>
             <a class="site-nav__link<?= $activeNav === 'phonebook' ? ' is-active' : '' ?>" href="/telefonliste"<?= $activeNav === 'phonebook' ? ' aria-current="page"' : '' ?>>Telefonliste</a>
+            <?php if ($ssoUser !== null) {
+                $ssoName = trim((string) ($ssoUser['display_name'] ?? '')) ?: (string) ($ssoUser['username'] ?? '');
+                $ssoInitials = '';
+                foreach (preg_split('/[\s._-]+/u', $ssoName, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $ssoPart) {
+                    if (mb_strlen($ssoInitials) < 2) {
+                        $ssoInitials .= mb_strtoupper(mb_substr($ssoPart, 0, 1));
+                    }
+                }
+                $ssoTitle = 'Angemeldet als ' . $ssoName . ' (' . (string) ($ssoUser['username'] ?? '') . ')'
+                    . (!empty($ssoUser['fake']) ? ' – simulierte Anmeldung (Testmodus)' : '');
+                ?>
+                <span class="site-user<?= !empty($ssoUser['fake']) ? ' site-user--fake' : '' ?>" title="<?= Html::e($ssoTitle) ?>" data-sso-user>
+                    <span class="site-user__avatar" aria-hidden="true"><?= Html::e($ssoInitials) ?></span>
+                    <span class="visually-hidden">Angemeldet als</span>
+                    <span class="site-user__name"><?= Html::e($ssoName) ?></span>
+                    <?php if (!empty($ssoUser['fake'])) { ?>
+                        <span class="site-user__badge">Test</span>
+                    <?php } ?>
+                </span>
+            <?php } ?>
             <button type="button" class="theme-toggle" data-theme-toggle aria-live="polite">
                 <span class="theme-toggle__icon" aria-hidden="true"></span>
                 <span class="theme-toggle__label">Design wechseln</span>

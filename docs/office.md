@@ -149,6 +149,59 @@ aufrufen.
   `LDAP_*`-Werte). Mit `--with-sso` meldet `user_saml` (Umgebungsvariablen-Modus)
   den per NTLM erkannten Benutzer automatisch an; `…/login?direct=1` bleibt als
   Rückfall für Nicht-Domänen-Clients.
+- **Wechsel ins Office ohne erneute Kennworteingabe:** Der auf der Startseite
+  erkannte Benutzer wird beim Wechsel nach Nextcloud bzw. in eine Office-App
+  **immer** weitergereicht (siehe unten). Er erscheint dezent im Kopf der
+  Startseite (Initialen und Name, Tooltip mit Anmeldenamen).
+
+### Automatische Anmeldung in Nextcloud (Intranet-SSO)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant I as Intranet (/office-app, /office-starten)
+    participant N as Nextcloud (intranet_integration)
+    B->>I: Klick auf Office-App (Benutzer per SSO erkannt)
+    I->>B: 302 /office/index.php/apps/intranet_integration/sso?token=…
+    B->>N: Token (HS256, 60 s, einmalig)
+    N->>N: Signatur/Ablauf/Replay prüfen, Konto suchen, Sitzung anlegen
+    N->>B: 303 Ziel (Dateien, Editor …)
+```
+
+- Das Token enthält den SamAccountName (`sub`), Anzeigename, E-Mail und das
+  Ziel. Es ist mit einem vom Euro-Office-Secret **abgeleiteten** Schlüssel
+  signiert (`HMAC(secret, "intranet_integration_sso")`), 60 Sekunden gültig
+  und nur einmal verwendbar (Replay-Schutz über Redis).
+- Nextcloud sucht das Konto lokal bzw. über `user_ldap` (Groß-/Kleinschreibung
+  egal, notfalls per E-Mail). Ist bereits ein anderes Konto angemeldet, wird es
+  abgemeldet – maßgeblich ist die Identität des Intranets. Die Sitzung benötigt
+  keine Kennwortbestätigung für sensible Aktionen.
+- Ruft jemand Nextcloud direkt auf, leitet die Anmeldeseite zum
+  Intranet-Einstieg (`/office-starten?ziel=…`), der den Benutzer ebenso
+  weiterreicht. Wird er dort nicht erkannt oder ist das Token ungültig,
+  erscheint das normale Anmeldeformular (`…/login?direct=1`, keine Schleife).
+- `NEXTCLOUD_SSO_LOGIN_REDIRECT=false` schaltet die Umleitung der
+  Anmeldeseite ab; `NEXTCLOUD_SSO_AUTOPROVISION=true` legt unbekannte Konten
+  lokal an (nur ohne AD bzw. zum Testen sinnvoll).
+
+### Testmodus: simulierte SSO-Anmeldung
+
+Ohne Domäne lässt sich eine bestehende Windows-Anmeldung auf der Startseite
+simulieren (nur wenn `APP_ENV` nicht `production` ist):
+
+```dotenv
+APP_ENV=development
+SSO_FAKE_USER=erika.muster              # SamAccountName
+SSO_FAKE_DISPLAY_NAME=Erika Muster      # falls kein Telefonbucheintrag existiert
+SSO_FAKE_EMAIL=erika.muster@example.internal
+SSO_FAKE_GROUPS=GG-Office-Basis         # AD-Gruppen für Office-Apps/Kacheln
+NEXTCLOUD_SSO_AUTOPROVISION=true        # Konto in Nextcloud ohne AD anlegen
+```
+
+Existiert der Benutzer im Telefonbuch, werden dessen Daten und
+synchronisierte Gruppen verwendet. Im Kopf erscheint zusätzlich die Marke
+„Test“. Kein NTLM, kein auth-Header nötig – der Testmodus ersetzt
+ausschließlich die Erkennung des Benutzers.
 - Optional in Nextcloud: `NEXTCLOUD_LDAP_ALLOWED_GROUPS` (Anmeldung nur für
   Mitglieder), `NEXTCLOUD_LDAP_ADMIN_GROUP` (Nextcloud-Admins),
   `NEXTCLOUD_OFFICE_GROUPS` (Bearbeitung mit Euro-Office nur für diese Gruppen).
@@ -220,7 +273,7 @@ ausgeliefert werden (Komponente „Euro-Office-Webapps“, nicht kritisch).
 - Ein Benutzer sieht alle Apps, die einer seiner Gruppen direkt oder über ein
   Paket freigegeben sind. Die Spalte „Wirksam für“ zeigt die Summe.
 - **Ohne Zuordnung ist eine App für niemanden sichtbar.**
-- **Nicht angemeldete Nutzer** (kein SSO-Benutzer) erhalten keine Apps; die
+- **Nicht angemeldete Nutzer** (kein SSO-Benutzer bzw. simulierter Testbenutzer) erhalten keine Apps; die
   Office-Kachel wird für sie – wie für alle ohne freigegebene App – ausgeblendet.
 - „Outlook Web App“ erscheint nur, wenn ein gültiger http(s)-Link hinterlegt ist.
 - Die Kachel-Berechtigungen der Navigation gelten zusätzlich.
@@ -299,6 +352,9 @@ Einträge `UNKNOWN` (3). OIDs: siehe README, Abschnitt SNMP-Überwachung.
 - Alle Secrets liegen als Dateien unter `./secrets/` (Docker-Secrets), nie in
   der `.env` oder im Repository.
 - Nextcloud ↔ DocumentServer und Intranet ↔ Office sind per JWT abgesichert.
+- Anmelde-Tokens für Nextcloud nutzen einen abgeleiteten Schlüssel, sind
+  60 Sekunden gültig und nur einmal verwendbar; der Testmodus
+  (`SSO_FAKE_USER`) ist in `APP_ENV=production` wirkungslos.
 - Datenbank und Redis sind nur im internen Netz erreichbar.
 - `auth` entfernt von außen gesendete `X-Remote-User`-/`X-Remote-Groups`-Header.
   Das Intranet wertet sie nur von `SSO_TRUSTED_PROXY` aus.

@@ -17,6 +17,11 @@ use App\Repositories\PhonebookRepository;
  * Anfrage von einem konfigurierten, vertrauenswuerdigen Proxy stammt. Ohne
  * gueltige Zuordnung liefert resolve() null – die Anwendung faellt dann auf
  * das bisherige Verhalten (oeffentliche Elemente) zurueck.
+ *
+ * Testmodus: Mit SSO_FAKE_USER (nur ausserhalb von APP_ENV=production) wird
+ * eine bestehende Windows-Anmeldung simuliert – ohne auth-Container, NTLM und
+ * Domaene. Existiert der Benutzer nicht im Telefonbuch, wird ein Testbenutzer
+ * mit den Gruppen aus SSO_FAKE_GROUPS angenommen.
  */
 final class SsoAuth
 {
@@ -32,17 +37,30 @@ final class SsoAuth
 
     public function isEnabled(): bool
     {
-        return (bool) ($this->config['enabled'] ?? false);
+        return (bool) ($this->config['enabled'] ?? false) || $this->isFake();
+    }
+
+    /**
+     * Simulierte Anmeldung (Testmodus) aktiv?
+     */
+    public function isFake(): bool
+    {
+        return $this->fakeUsername() !== null;
     }
 
     /**
      * Liefert den angemeldeten Windows-Nutzer oder null, wenn keine (gueltige)
      * SSO-Authentifizierung vorliegt.
      *
-     * @return array{id:int,username:string,display_name:string,groups:list<string>}|null
+     * @return array{id:int,username:string,display_name:string,email:string,groups:list<string>,fake:bool}|null
      */
     public function resolve(Request $request): ?array
     {
+        $fake = $this->fakeUsername();
+        if ($fake !== null) {
+            return $this->resolveFake($fake);
+        }
+
         if (!$this->isEnabled() || !$this->isTrusted($request)) {
             return null;
         }
@@ -60,6 +78,47 @@ final class SsoAuth
         // Gruppen stammen aus der AD-Synchronisation (Gruppen-Pfad) und
         // optional zusaetzlich aus einem vertrauenswuerdigen Proxy-Header.
         $groups = $this->normalizeGroups($this->header($request, (string) ($this->config['groups_header'] ?? '')));
+
+        return $this->buildUser($user, $username, $groups, false);
+    }
+
+    /**
+     * @return array{id:int,username:string,display_name:string,email:string,groups:list<string>,fake:bool}
+     */
+    private function resolveFake(string $username): array
+    {
+        $groups = $this->normalizeGroups((string) ($this->config['fake_groups'] ?? ''));
+        $user = null;
+        try {
+            $user = $this->phonebook->findBySamAccountName($username);
+        } catch (\Throwable) {
+            // Ohne Datenbank bleibt der Testbenutzer nutzbar.
+        }
+
+        if ($user === null) {
+            $name = trim((string) ($this->config['fake_display_name'] ?? ''));
+
+            return [
+                'id' => 0,
+                'username' => $username,
+                'display_name' => $name !== '' ? $name : $username,
+                'email' => trim((string) ($this->config['fake_email'] ?? '')),
+                'groups' => $groups,
+                'fake' => true,
+            ];
+        }
+
+        return $this->buildUser($user, $username, $groups, true);
+    }
+
+    /**
+     * @param array<string,mixed> $user
+     * @param list<string> $groups
+     *
+     * @return array{id:int,username:string,display_name:string,email:string,groups:list<string>,fake:bool}
+     */
+    private function buildUser(array $user, string $username, array $groups, bool $fake): array
+    {
         if ($this->groups !== null) {
             try {
                 $groups = array_values(array_unique(array_merge($groups, $this->groups->namesForUser((int) $user['id']))));
@@ -68,12 +127,25 @@ final class SsoAuth
             }
         }
 
+        $displayName = trim((string) ($user['display_name'] ?? ''));
+
         return [
             'id' => (int) $user['id'],
             'username' => $username,
-            'display_name' => (string) ($user['display_name'] ?? $username),
+            'display_name' => $displayName !== '' ? $displayName : $username,
+            'email' => trim((string) ($user['email'] ?? '')),
             'groups' => $groups,
+            'fake' => $fake,
         ];
+    }
+
+    private function fakeUsername(): ?string
+    {
+        if (empty($this->config['fake_allowed'])) {
+            return null;
+        }
+
+        return self::normalizeUsername((string) ($this->config['fake_user'] ?? ''));
     }
 
     /**

@@ -1,0 +1,244 @@
+/*
+ * Intranet-Fusszeile in Nextcloud / Euro-Office (und Vorschau im Adminbereich).
+ * Alle Selektoren sind mit "iof" praefixiert, um Konflikte mit Nextcloud zu vermeiden.
+ */
+.iof {
+    --iof-height: 36px;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2147483000;
+    font: 500 13px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--iof-fg, #fff);
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.iof *,
+.iof *::before,
+.iof *::after {
+    box-sizing: border-box;
+}
+
+.iof--embedded {
+    position: absolute;
+    z-index: 2;
+}
+
+.iof__bar {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: var(--iof-height);
+    padding: 4px max(12px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    background: var(--iof-bg, #1f4e79);
+    box-shadow: 0 -1px 6px rgba(0, 0, 0, .18);
+    opacity: var(--iof-rest-opacity, .6);
+    transition: opacity .18s ease-in-out;
+}
+
+.iof:hover .iof__bar,
+.iof:focus-within .iof__bar,
+.iof--active .iof__bar {
+    opacity: 1;
+}
+
+.iof__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.iof__logo {
+    height: 22px;
+    width: auto;
+    max-width: 90px;
+    object-fit: contain;
+    background: rgba(255, 255, 255, .92);
+    border-radius: 3px;
+    padding: 1px 3px;
+}
+
+.iof__text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.iof__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.iof .iof__link,
+.iof .iof__toggle,
+.iof .iof__expand {
+    /* Nextcloud gestaltet button/a global - hier bewusst ueberschreiben. */
+    appearance: none !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: auto !important;
+    height: auto !important;
+    min-height: 28px !important;
+    min-width: 28px !important;
+    margin: 0 !important;
+    padding: 3px 10px !important;
+    border: 1px solid currentColor !important;
+    border-radius: 999px !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: inherit !important;
+    font: inherit !important;
+    font-weight: 500 !important;
+    line-height: 1.3 !important;
+    text-decoration: none !important;
+    cursor: pointer;
+    white-space: nowrap;
+    opacity: 1;
+}
+
+.iof .iof__link:hover,
+.iof .iof__toggle:hover,
+.iof .iof__expand:hover {
+    background: rgba(255, 255, 255, .16) !important;
+}
+
+.iof .iof__link:focus-visible,
+.iof .iof__toggle:focus-visible,
+.iof .iof__expand:focus-visible {
+    outline: 2px solid var(--iof-accent, #c8102e) !important;
+    outline-offset: 2px;
+}
+
+.iof .iof__toggle {
+    padding: 3px 6px !important;
+}
+
+.iof__toggle::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+}
+
+.iof .iof__expand {
+    pointer-events: auto;
+    position: absolute !important;
+    /* Mittig: dort liegen weder Navigationseintraege von Nextcloud noch
+       Bedienelemente der Editor-Statusleiste. */
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(4px + env(safe-area-inset-bottom));
+    min-height: 24px !important;
+    padding: 1px 12px !important;
+    font-size: 12px !important;
+    background: var(--iof-bg, #1f4e79) !important;
+    color: var(--iof-fg, #fff) !important;
+    opacity: var(--iof-rest-opacity, .6);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, .25) !important;
+}
+
+.iof:hover .iof__expand,
+.iof:focus-within .iof__expand,
+.iof--active .iof__expand {
+    opacity: 1;
+}
+
+.iof .iof__bar[hidden],
+.iof .iof__expand[hidden] {
+    display: none !important;
+}
+
+/* Platz fuer die Fusszeile reservieren, damit Bedienelemente von Nextcloud
+   und die Statusleiste des Editors nicht verdeckt werden. Nextcloud (ab 28)
+   berechnet die Hoehe des Inhaltsbereichs aus --body-height. */
+html.iof-reserve body {
+    --body-height: calc(100% - env(safe-area-inset-bottom) - var(--header-height, 50px) - var(--body-container-margin, 0px) - 36px) !important;
+}
+
+/* Der Connector setzt am Container "inset: 0 !important" inline; daher wird
+   der Eltern-Container (#content-vue) oberhalb der Fusszeile beendet. */
+html.iof-reserve #content-vue:has(> .eurooffice-iframe-container),
+html.iof-reserve .content:has(> .eurooffice-iframe-container) {
+    bottom: var(--iof-height, 36px) !important;
+    height: auto !important;
+    max-height: calc(100% - var(--iof-height, 36px)) !important;
+}
+
+html.iof-reserve .eurooffice-inviewer > iframe {
+    height: calc(100vh - var(--iof-height, 36px)) !important;
+}
+
+html.iof-reserve #app > iframe {
+    height: calc(100dvh - 36px) !important;
+}
+
+html.iof-reserve #content.app-eurooffice #app > iframe {
+    height: calc(100dvh - 50px - 36px) !important;
+}
+
+@media (max-width: 600px) {
+    .iof__text {
+        max-width: 38vw;
+    }
+
+    .iof__link--back {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .iof__bar,
+    .iof__expand {
+        transition: none;
+    }
+}
+
+@media print {
+    .iof {
+        display: none !important;
+    }
+}
+
+/* Vorschau im Adminbereich */
+.office-preview {
+    position: relative;
+    height: 220px;
+    overflow: hidden;
+    border: 1px solid var(--color-border, #d0d7de);
+    border-radius: var(--radius, 8px);
+    background: #eef1f4;
+}
+
+.office-preview__app {
+    position: absolute;
+    inset: 0;
+}
+
+.office-preview__bar {
+    height: 44px;
+    background: #0082c9;
+}
+
+.office-preview__doc {
+    position: absolute;
+    top: 64px;
+    left: 50%;
+    width: min(420px, 80%);
+    bottom: 0;
+    transform: translateX(-50%);
+    background: #fff;
+    box-shadow: 0 0 8px rgba(0, 0, 0, .12);
+    background-image: repeating-linear-gradient(to bottom, transparent 0 18px, #e5e8eb 18px 20px);
+    background-clip: content-box;
+    padding: 24px 32px;
+}

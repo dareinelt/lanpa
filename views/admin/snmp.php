@@ -75,6 +75,11 @@ use App\Support\Html;
             <tr><td>sync (AD-Dauerlauf)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.3</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.3</code></td></tr>
             <tr><td>sync_workflow (letzter AD-Lauf)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.4</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.4</code></td></tr>
             <tr><td>phpmyadmin (optional)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.5</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.5</code></td></tr>
+            <tr><td>nextcloud (Office, optional)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.6</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.6</code></td></tr>
+            <tr><td>nextcloud_db (PostgreSQL, optional)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.7</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.7</code></td></tr>
+            <tr><td>nextcloud_redis (Redis, optional)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.8</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.8</code></td></tr>
+            <tr><td>eurooffice (DocumentServer, optional)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.9</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.9</code></td></tr>
+            <tr><td>office_workflow (Nextcloud + DocumentServer)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.10</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.10</code></td></tr>
             </tbody>
         </table>
     </div>

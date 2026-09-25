@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Contracts\AdGroupStoreInterface;
 use App\Contracts\LdapClientInterface;
 use App\Contracts\PhonebookStoreInterface;
 use App\Contracts\SyncLogStoreInterface;
@@ -22,12 +23,13 @@ final class AdSyncService
         private readonly LdapClientInterface $client,
         private readonly PhonebookStoreInterface $store,
         private readonly SyncLogStoreInterface $syncLog,
-        private readonly Logger $logger
+        private readonly Logger $logger,
+        private readonly ?AdGroupStoreInterface $groups = null
     ) {
     }
 
     /**
-     * @return array{status:string,processed:int,deactivated:int,message:?string}
+     * @return array{status:string,processed:int,deactivated:int,message:?string,groups:?int}
      */
     public function run(): array
     {
@@ -41,7 +43,7 @@ final class AdSyncService
             $this->logger->error($message);
             $this->syncLog->finish($runId, 'error', 0, 0, $exception->getMessage());
 
-            return ['status' => 'error', 'processed' => 0, 'deactivated' => 0, 'message' => $message];
+            return ['status' => 'error', 'processed' => 0, 'deactivated' => 0, 'message' => $message, 'groups' => null];
         }
 
         if ($users === []) {
@@ -49,7 +51,18 @@ final class AdSyncService
             $this->logger->warning($message);
             $this->syncLog->finish($runId, 'error', 0, 0, 'Keine Datensätze geliefert.');
 
-            return ['status' => 'error', 'processed' => 0, 'deactivated' => 0, 'message' => $message];
+            return ['status' => 'error', 'processed' => 0, 'deactivated' => 0, 'message' => $message, 'groups' => null];
+        }
+
+        // Gruppen sind optional: Schlaegt ihr Abruf fehl, werden die Benutzer
+        // trotzdem synchronisiert und der letzte Gruppenbestand bleibt erhalten.
+        $groups = null;
+        if ($this->groups !== null) {
+            try {
+                $groups = $this->client->fetchGroups();
+            } catch (Throwable $exception) {
+                $this->logger->warning('AD-Gruppen konnten nicht gelesen werden – bisheriger Gruppenbestand bleibt erhalten: ' . $exception->getMessage());
+            }
         }
 
         try {
@@ -66,6 +79,9 @@ final class AdSyncService
             }
 
             $deactivated = $processed > 0 ? $this->store->deactivateStale($syncedAt) : 0;
+            $groupCount = $groups !== null && $this->groups !== null
+                ? $this->groups->replaceAll($groups, $syncedAt)
+                : null;
             $this->store->commit();
         } catch (Throwable $exception) {
             $this->store->rollBack();
@@ -73,12 +89,13 @@ final class AdSyncService
             $this->logger->error($message);
             $this->syncLog->finish($runId, 'error', 0, 0, $exception->getMessage());
 
-            return ['status' => 'error', 'processed' => 0, 'deactivated' => 0, 'message' => $message];
+            return ['status' => 'error', 'processed' => 0, 'deactivated' => 0, 'message' => $message, 'groups' => null];
         }
 
         $this->logger->info('AD-Synchronisation erfolgreich.', [
             'processed' => $processed,
             'deactivated' => $deactivated,
+            'groups' => $groupCount,
         ]);
         $this->syncLog->finish($runId, 'success', $processed, $deactivated, null);
 
@@ -87,6 +104,7 @@ final class AdSyncService
             'processed' => $processed,
             'deactivated' => $deactivated,
             'message' => null,
+            'groups' => $groupCount,
         ];
     }
 }

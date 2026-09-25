@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security;
 
+use App\Contracts\AdGroupStoreInterface;
 use App\Core\Request;
 use App\Repositories\PhonebookRepository;
 
@@ -24,7 +25,8 @@ final class SsoAuth
      */
     public function __construct(
         private readonly PhonebookRepository $phonebook,
-        private readonly array $config
+        private readonly array $config,
+        private readonly ?AdGroupStoreInterface $groups = null
     ) {
     }
 
@@ -55,11 +57,22 @@ final class SsoAuth
             return null;
         }
 
+        // Gruppen stammen aus der AD-Synchronisation (Gruppen-Pfad) und
+        // optional zusaetzlich aus einem vertrauenswuerdigen Proxy-Header.
+        $groups = $this->normalizeGroups($this->header($request, (string) ($this->config['groups_header'] ?? '')));
+        if ($this->groups !== null) {
+            try {
+                $groups = array_values(array_unique(array_merge($groups, $this->groups->namesForUser((int) $user['id']))));
+            } catch (\Throwable) {
+                // Ohne Gruppentabelle (z. B. vor der Migration) nur Benutzerrechte.
+            }
+        }
+
         return [
             'id' => (int) $user['id'],
             'username' => $username,
             'display_name' => (string) ($user['display_name'] ?? $username),
-            'groups' => $this->normalizeGroups($this->header($request, (string) ($this->config['groups_header'] ?? ''))),
+            'groups' => $groups,
         ];
     }
 

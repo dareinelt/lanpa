@@ -188,6 +188,24 @@ final class NavigationRepository extends Repository
     }
 
     /**
+     * Bereits vergebene Gruppennamen (fuer Vorschlaege bei der Rechtevergabe).
+     *
+     * @return list<string>
+     */
+    public function permissionGroupNames(string $term, int $limit = 20): array
+    {
+        $limit = max(1, min(50, $limit));
+        $statement = $this->pdo->prepare(
+            "SELECT DISTINCT group_name FROM navigation_item_permissions
+              WHERE identity_type = 'group' AND group_name IS NOT NULL AND group_name LIKE :like
+              ORDER BY group_name ASC LIMIT " . $limit
+        );
+        $statement->execute(['like' => '%' . addcslashes(trim($term), '%_\\') . '%']);
+
+        return array_values(array_map('strval', $statement->fetchAll(\PDO::FETCH_COLUMN) ?: []));
+    }
+
+    /**
      * Liefert die einem Element zugeordneten Benutzer-IDs und Gruppennamen.
      *
      * @return array{user_ids:list<int>,group_names:list<string>}

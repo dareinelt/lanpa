@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Contracts\AdGroupStoreInterface;
 use App\Contracts\AdminUserStoreInterface;
 use App\Contracts\LdapClientInterface;
 use App\Contracts\PhonebookStoreInterface;
@@ -21,8 +22,24 @@ final class FakeLdapClient implements LdapClientInterface
      */
     public function __construct(
         private readonly array $users = [],
-        private readonly bool $shouldFail = false
+        private readonly bool $shouldFail = false,
+        private readonly ?array $groups = null,
+        private readonly bool $groupsFail = false
     ) {
+    }
+
+    public function fetchGroups(): array
+    {
+        if ($this->shouldFail || $this->groupsFail) {
+            throw new RuntimeException('AD-Gruppen nicht lesbar');
+        }
+
+        return $this->groups ?? [];
+    }
+
+    public function hasGroupConfig(): bool
+    {
+        return $this->groups !== null;
     }
 
     public function fetchUsers(): array
@@ -145,5 +162,34 @@ final class FakeAdminUserStore implements AdminUserStoreInterface
     public function touchLastLogin(int $id): void
     {
         $this->logins++;
+    }
+}
+
+final class FakeAdGroupStore implements AdGroupStoreInterface
+{
+    /** @var list<list<array<string,mixed>>> */
+    public array $replaced = [];
+
+    /**
+     * @param array<int,list<string>> $namesByUser
+     */
+    public function __construct(private array $namesByUser = [], private bool $fail = false)
+    {
+    }
+
+    public function replaceAll(array $groups, string $syncedAt): int
+    {
+        $this->replaced[] = $groups;
+
+        return count($groups);
+    }
+
+    public function namesForUser(int $phonebookId): array
+    {
+        if ($this->fail) {
+            throw new \RuntimeException('Datenbank nicht erreichbar');
+        }
+
+        return $this->namesByUser[$phonebookId] ?? [];
     }
 }

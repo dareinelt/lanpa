@@ -37,6 +37,12 @@ foreach ($items as $item) {
     $tileRules[] = '.tile[data-tile-id="' . $tileId . '"]{' . $declarations . '}';
 }
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
+$officeTileStatus = (bool) ($officeTileStatus ?? false);
+$officeTileStatusMode = (string) ($officeTileStatusMode ?? 'full');
+// Nur in der Admin-Vorschau gesetzt: Beispielzustand statt Live-Abfrage.
+$officePreviewState = $officePreviewState ?? null;
+$officeStateLabels = ['ok' => 'Verfügbar', 'degraded' => 'Eingeschränkt verfügbar', 'down' => 'Nicht verfügbar'];
+$officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
 ?>
 <?php if ($items === []) { ?>
     <p class="empty-state">Es sind derzeit keine Anwendungen freigeschaltet. Bitte wenden Sie sich an die Administration.</p>
@@ -63,8 +69,9 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
             } else {
                 $href = Html::url((string) $item['url']);
             }
+            $isOfficeTile = $officeTileStatus && $type === 'internal' && rtrim((string) $item['url'], '/') === '/office-starten';
             ?>
-            <li class="tile" data-tile-id="<?= $id ?>">
+            <li class="tile" data-tile-id="<?= $id ?>"<?= $isOfficeTile ? ' data-office-tile' : '' ?>>
                 <?php if ($isAlarm) { ?>
                 <button type="button"
                         class="tile__link tile__link--button"
@@ -124,6 +131,24 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
                         <span class="visually-hidden">(öffnet in einem neuen Tab)</span>
                     <?php } ?>
                 </a>
+                <?php } ?>
+
+                <?php if ($isOfficeTile) {
+                    $previewVisible = is_string($officePreviewState) && isset($officeStateLabels[$officePreviewState])
+                        && !($officeTileStatusMode === 'problems' && $officePreviewState === 'ok');
+                    $statusText = $previewVisible ? 'Office: ' . $officeStateLabels[$officePreviewState] : '';
+                    $statusClass = 'tile__status tile__status--' . Html::e($officeTileStatusMode)
+                        . ($previewVisible ? ' tile__status--' . $officeStateClasses[$officePreviewState] : '');
+                    ?>
+                    <span class="<?= $statusClass ?>"
+                          data-office-status
+                          data-mode="<?= Html::e($officeTileStatusMode) ?>"
+                          role="status"
+                          <?= $statusText !== '' ? 'title="' . Html::e($statusText) . '"' : '' ?>
+                          <?= $previewVisible ? '' : 'hidden' ?>>
+                        <span class="tile__status-dot" aria-hidden="true"></span>
+                        <span class="tile__status-text"><?= Html::e($statusText) ?></span>
+                    </span>
                 <?php } ?>
 
                 <?php if ($description !== '') { ?>

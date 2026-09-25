@@ -9,6 +9,7 @@ use App\Repositories\AdminUserRepository;
 use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AlarmLogRepository;
 use App\Repositories\AnnouncementRepository;
+use App\Repositories\AdGroupRepository;
 use App\Repositories\ClickRepository;
 use App\Repositories\EmergencyNumberRepository;
 use App\Repositories\ImportantLinkRepository;
@@ -33,6 +34,10 @@ use App\Services\BackgroundImageService;
 use App\Services\LdapClient;
 use App\Services\LogoService;
 use App\Services\NavigationService;
+use App\Services\Office\OfficeBackupService;
+use App\Services\Office\OfficeConfigService;
+use App\Services\Office\OfficeHealthService;
+use App\Services\Office\StreamOfficeProbe;
 use App\Services\PhonebookService;
 use App\Services\SettingsService;
 use App\Services\SmsCodeService;
@@ -85,6 +90,11 @@ final class Container
     public static function phonebookRepository(): PhonebookRepository
     {
         return self::make(PhonebookRepository::class, static fn (): PhonebookRepository => new PhonebookRepository());
+    }
+
+    public static function adGroupRepository(): AdGroupRepository
+    {
+        return self::make(AdGroupRepository::class, static fn (): AdGroupRepository => new AdGroupRepository());
     }
 
     public static function clickRepository(): ClickRepository
@@ -268,7 +278,7 @@ final class Container
     {
         return self::make(
             SsoAuth::class,
-            static fn (): SsoAuth => new SsoAuth(self::phonebookRepository(), (array) Config::get('sso', []))
+            static fn (): SsoAuth => new SsoAuth(self::phonebookRepository(), (array) Config::get('sso', []), self::adGroupRepository())
         );
     }
 
@@ -313,7 +323,8 @@ final class Container
                 new LdapClient(self::settings()->ldapConfig()),
                 self::phonebookRepository(),
                 self::syncLogRepository(),
-                app_logger()
+                app_logger(),
+                self::adGroupRepository()
             )
         );
     }
@@ -357,6 +368,37 @@ final class Container
                 self::logo(),
                 self::backgroundImage(),
                 self::favicons()
+            )
+        );
+    }
+
+    public static function officeConfig(): OfficeConfigService
+    {
+        return self::make(
+            OfficeConfigService::class,
+            static fn (): OfficeConfigService => new OfficeConfigService(self::settings(), (array) Config::get('office', []))
+        );
+    }
+
+    public static function officeHealth(): OfficeHealthService
+    {
+        return self::make(
+            OfficeHealthService::class,
+            static fn (): OfficeHealthService => new OfficeHealthService(
+                self::officeConfig(),
+                new StreamOfficeProbe(),
+                (string) Config::get('office.health_cache_file', BASE_PATH . '/storage/cache/office_health.json'),
+                (int) Config::get('office.health_cache_ttl', 30)
+            )
+        );
+    }
+
+    public static function officeBackup(): OfficeBackupService
+    {
+        return self::make(
+            OfficeBackupService::class,
+            static fn (): OfficeBackupService => new OfficeBackupService(
+                (string) Config::get('office.backup_control_dir', BASE_PATH . '/storage/office-backup')
             )
         );
     }

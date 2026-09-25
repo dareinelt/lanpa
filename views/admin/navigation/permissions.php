@@ -53,10 +53,16 @@ $groupValue = Html::e(implode(', ', $assignedGroupNames));
 
     <fieldset class="fieldset">
         <legend>AD-Gruppen</legend>
-        <div class="field">
+        <div class="field group-suggest">
             <label for="groups">Gruppennamen (kommagetrennt)</label>
-            <input type="text" id="groups" name="groups" maxlength="1000" value="<?= $groupValue ?>">
-            <p class="field__hint">Namen der Active-Directory-Gruppen, deren Mitglieder die Kachel sehen dürfen (z. B. Verwaltung, Geschäftsleitung).</p>
+            <input type="text" id="groups" name="groups" maxlength="1000" value="<?= $groupValue ?>"
+                   autocomplete="off" spellcheck="false" aria-describedby="groups-hint"
+                   data-group-suggest="/admin/ad/gruppen">
+            <p class="field__hint" id="groups-hint">
+                Namen der Active-Directory-Gruppen, deren Mitglieder die Kachel sehen dürfen (z. B. Verwaltung, Geschäftsleitung).
+                Beim Tippen werden die per AD-Synchronisation übernommenen Gruppen vorgeschlagen
+                (Pfeiltasten und Eingabetaste zur Auswahl, Tab übernimmt die Ergänzung).
+            </p>
         </div>
     </fieldset>
 

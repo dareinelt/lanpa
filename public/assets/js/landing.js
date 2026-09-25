@@ -597,5 +597,36 @@
         initTracking();
         initAlarms();
         initSmsCode();
+        initOfficeStatus();
     });
+
+    // Verfuegbarkeit der Office-Kachel (Nextcloud + Euro-Office) anzeigen.
+    function initOfficeStatus() {
+        var badges = document.querySelectorAll('[data-office-status]');
+        if (!badges.length || !window.fetch) {
+            return;
+        }
+        fetch('/api/office/status', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+            .then(function (response) { return response.ok ? response.json() : null; })
+            .then(function (data) {
+                if (!data || data.state === 'disabled') {
+                    return;
+                }
+                badges.forEach(function (badge) {
+                    var mode = badge.getAttribute('data-mode') || 'full';
+                    var text = 'Office: ' + String(data.label || '');
+                    var label = badge.querySelector('.tile__status-text');
+                    if (label) {
+                        label.textContent = text;
+                    } else {
+                        badge.textContent = text;
+                    }
+                    badge.title = text;
+                    badge.className = 'tile__status tile__status--' + mode + ' tile__status--' + (data.state === 'ok' ? 'ok' : (data.state === 'degraded' ? 'warn' : 'down'));
+                    // "Nur bei Stoerungen": bei voller Verfuegbarkeit nichts anzeigen.
+                    badge.hidden = mode === 'problems' && data.state === 'ok';
+                });
+            })
+            .catch(function () { /* Status ist optional */ });
+    }
 })();

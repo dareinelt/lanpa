@@ -37,6 +37,8 @@ abstract class Controller
             'flashes' => Session::takeFlash(),
             'csrfToken' => Csrf::token(),
             'assetVersion' => $this->assetVersion(),
+            'officeTileStatus' => Container::officeConfig()->isEnabled() && Container::officeConfig()->tileStatusEnabled(),
+            'officeTileStatusMode' => Container::officeConfig()->tileStatusMode(),
         ];
 
         return Response::html(View::render($template, array_merge($shared, $data), $layout), $status);
@@ -47,8 +49,14 @@ abstract class Controller
         static $version = null;
 
         if ($version === null) {
-            $file = BASE_PATH . '/public/assets/css/app.css';
-            $version = is_file($file) ? (string) filemtime($file) : '1';
+            // Neueste Aenderung aller Stylesheets und Skripte, damit auch
+            // Aenderungen an admin.css oder office-footer.css den Cache leeren.
+            $files = array_merge(
+                glob(BASE_PATH . '/public/assets/css/*.css') ?: [],
+                glob(BASE_PATH . '/public/assets/js/*.js') ?: []
+            );
+            $mtimes = array_map('filemtime', $files);
+            $version = $mtimes === [] ? '1' : (string) max($mtimes);
         }
 
         return $version;

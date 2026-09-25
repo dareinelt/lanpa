@@ -243,6 +243,7 @@ final class NavigationController extends AdminController
             'users' => Container::phonebookRepository()->assignableUsers(),
             'assignedUserIds' => $permissions['user_ids'],
             'assignedGroupNames' => $permissions['group_names'],
+            'pageScript' => 'admin-group-autocomplete.js',
         ]);
     }
 

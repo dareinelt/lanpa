@@ -22,6 +22,7 @@ use App\Controllers\Admin\ImportExportController;
 use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
+use App\Controllers\Admin\OfficeController as OfficeAdminController;
 use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
 use App\Controllers\Admin\StatisticsController;
@@ -32,6 +33,7 @@ use App\Controllers\HealthController;
 use App\Controllers\ImportantLinkIconController;
 use App\Controllers\LandingController;
 use App\Controllers\LogoController;
+use App\Controllers\OfficeController;
 use App\Controllers\PageController;
 use App\Controllers\PhonebookController;
 use App\Controllers\ProtectedAccessController;
@@ -84,7 +86,14 @@ $router->group([$requireUnlocked], static function (Router $router): void {
     $router->get('/hintergrundbild', [BackgroundImageController::class, 'show']);
     $router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
     $router->get('/health', [HealthController::class, 'index']);
+    $router->get('/office-starten', [OfficeController::class, 'start']);
 });
+
+// Office-Integration: Hinweisseite (auch Fehlerseite des auth-Proxys) und
+// Endpunkte fuer die Fusszeile in Nextcloud bzw. den Kachelstatus.
+$router->get('/office-nicht-verfuegbar', [OfficeController::class, 'unavailable']);
+$router->get('/api/office/footer', [OfficeController::class, 'footer']);
+$router->get('/api/office/status', [OfficeController::class, 'status']);
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
 $router->post('/admin/login', [AuthController::class, 'login']);
@@ -173,6 +182,15 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/ad', [LdapController::class, 'index']);
         $router->post('/admin/ad', [LdapController::class, 'update']);
         $router->post('/admin/ad/sync', [LdapController::class, 'sync']);
+        $router->get('/admin/ad/gruppen', [LdapController::class, 'groups']);
+
+        $router->get('/admin/office', [OfficeAdminController::class, 'index']);
+        $router->post('/admin/office', [OfficeAdminController::class, 'update']);
+        $router->post('/admin/office/pruefen', [OfficeAdminController::class, 'check']);
+        $router->post('/admin/office/sicherung', [OfficeAdminController::class, 'backup']);
+        $router->post('/admin/office/kachel', [OfficeAdminController::class, 'createTile']);
+        $router->post('/admin/office/kachel/gestaltung', [OfficeAdminController::class, 'updateTile']);
+        $router->get('/admin/office/kachel/vorschau', [OfficeAdminController::class, 'tilePreview']);
 
         $router->get('/admin/snmp', [SnmpController::class, 'index']);
         $router->post('/admin/snmp', [SnmpController::class, 'update']);

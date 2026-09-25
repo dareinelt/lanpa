@@ -15,6 +15,8 @@
 - eine **Telefonliste**, gespeist aus dem Active Directory (LDAP)
 - **Klickstatistiken** je Kachel
 - einen **vollständigen Administrationsbereich** (CRUD, Design, AD-Konfiguration, Statistik, Benutzer)
+- optionale **Alarmierungen** per SMS-Gateway (an Gruppen oder Einzelrufnummern) und einen per SMS-Code **geschützten Zugriffsmodus**
+- einen **SNMP-Agenten** (Container `snmp`) zur Überwachung der Dienste und des AD-Synchronisations-Workflows
 
 Grundprinzip: **komplett ohne Frameworks, ohne CDNs, ohne externe Abhängigkeiten.**
 Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst geschrieben.
@@ -29,7 +31,8 @@ Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst ges
 | Frontend | Vanilla JavaScript + handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons) |
 | Datenbank | MySQL 8 / MariaDB 11 (utf8mb4) |
 | Web | Apache mit `mod_rewrite`, DocumentRoot `public/` |
-| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, optional `phpmyadmin`) |
+| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `snmp`, optional `phpmyadmin`) |
+| Monitoring | net-snmp-Agent im Container `snmp` (UDP 161, read-only Docker-Socket + `sync_log`) |
 | Abhängigkeiten | **keine** – kein Composer, kein npm, kein CDN |
 
 Benötigte PHP-Erweiterungen: `pdo_mysql`, `ldap`, `mbstring`, `json`, `openssl`, `zip`.
@@ -74,6 +77,7 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 | `sync_ad.php` | Einmaliger AD-Abgleich |
 | `sync_worker.php` | Dauerlauf der AD-Synchronisation (Container `sync`) |
 | `purge_clicks.php` | Löscht Klickdaten älter als N Tage (Standard `CLICK_RETENTION_DAYS=400`) |
+| `install-systemd-service.sh` | Installiert die Landingpage als systemd-Service (Ubuntu ≥ 22.04; Autostart beim Boot, `docker compose up/down`) |
 
 ---
 
@@ -129,9 +133,9 @@ app/            Anwendungscode
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
   migrations/   SQL-Migrationen (001…013)
-docker/         Dockerfile, Entrypoint, PHP-/MySQL-Konfiguration
+docker/         Dockerfiles, Entrypoints, PHP-/MySQL-Konfiguration, SNMP-Agent
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
-scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung)
+scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation)
 storage/        logs/ und uploads/ (außerhalb des DocumentRoot)
 tests/          Dependency-freier Testrunner + Unit-Tests
 views/          PHP-Templates (admin, errors, landing, layouts, pages, partials, phonebook)
@@ -216,6 +220,10 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 
 Definiert zentral in `public/index.php`.
 
+Vor den öffentlichen GET-Routen hängt eine Middleware-Gruppe `$requireUnlocked`:
+Interne, per SMS-Code geschützte Elemente (`protected_access`) werden serverseitig
+auf `/zugriff` umgeleitet, bis sie für die Sitzung freigeschaltet sind.
+
 ### Öffentlich (keine Anmeldung)
 
 | Methode | Pfad | Handler |
@@ -245,7 +253,7 @@ Definiert zentral in `public/index.php`.
 Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
 `mitteilungen`, `beschreibungen`, `design`, `ad`, `alarmierung`
 (inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `snmp`, `statistik`
-(+ `admin/api/statistik`), `benutzer`, `sicherung`.
+(+ `admin/api/statistik`), `benutzer`, `sicherung` (Export/Import).
 
 **Middleware-Verhalten:** `$requireAuth` → Redirect auf `/admin/login` (bzw. JSON 401 bei `/admin/api/*`);
 `$requireAdmin` → HTTP 403 (bzw. JSON 403 bei `/admin/api/*`).
@@ -283,10 +291,11 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 **Vorrangregel: Umgebungsvariablen liefern die Grundeinstellung, die Tabelle `settings` überschreibt sie** (außer dem LDAP-Bind-Passwort, das nur aus ENV/Docker-Secret kommt).
 
 - `config/app.php`, `config/database.php`, `config/ldap.php`, `config/alarm.php`, `config/snmp.php` lesen die Werte über `Env::get()`.
+- `config/snmp.php` liefert `community`, `sys_location`, `sys_contact` – alle im Adminbereich (Tabelle `settings`) pflegbar; der am Host veröffentlichte UDP-Port (`SNMP_PORT`) ist ausschließlich über die Umgebung (Docker-Port-Mapping) konfigurierbar.
 - Jede Variable unterstützt die Datei-Variante `<NAME>_FILE` für Docker-Secrets.
 - Vollständige Liste der Variablen: siehe `README.md` (Abschnitt „Konfiguration“) und `.env.example`.
 
-**Wichtigste Variablen:** `APP_URL`, `APP_DEBUG`, `APP_FORCE_SECURE_COOKIES`, `APP_SESSION_IDLE_TIMEOUT`, `DB_*`, `LDAP_*` (inkl. `LDAP_ATTR_*`-Mapping), `ALARM_*` (SMS-Gateway), `SNMP_*`, `SEED_ON_START`, `CLICK_RETENTION_DAYS`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
+**Wichtigste Variablen:** `APP_URL`, `APP_DEBUG`, `APP_FORCE_SECURE_COOKIES`, `APP_SESSION_IDLE_TIMEOUT`, `APP_MAX_LOGO_BYTES`, `APP_ALLOW_SVG_LOGO`, `APP_MAX_BACKGROUND_BYTES`, `DB_*`, `LDAP_*` (inkl. `LDAP_ATTR_*`-Mapping), `ALARM_*` (SMS-Gateway), `SNMP_COMMUNITY`/`SNMP_SYS_LOCATION`/`SNMP_SYS_CONTACT`/`SNMP_PORT`, `SEED_ON_START`, `CLICK_RETENTION_DAYS`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
 
 ---
 
@@ -315,6 +324,13 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 4. Rolle `sync`: kurz warten (Migrationen abwarten), dann `sync_worker.php` (Dauerschleife).
 5. `exec "$@"` (App: `apache2-foreground`; Sync: `php scripts/sync_worker.php`).
 
+### SNMP-Container-Startup (`docker/snmp/entrypoint.sh`)
+
+1. Liest `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` aus der Umgebung.
+2. Überschreibt diese mit den Werten aus der Tabelle `settings` (`snmp_community`, `snmp_sys_location`, `snmp_sys_contact`), falls die Datenbank erreichbar ist.
+3. Erzeugt `snmpd.conf` und hängt die Status-Checks als `exec`-Einträge an (`UCD-SNMP-MIB::extTable`, Basis `.1.3.6.1.4.1.2021.8.1`): `app`, `db`, `sync`, `sync_workflow`, `phpmyadmin`.
+4. `exec snmpd -f -Lo -c /etc/snmp/snmpd.conf` (lauscht auf UDP 161).
+
 ### AD-Synchronisation
 
 - Einzellauf: `php scripts/sync_ad.php` oder Schaltfläche im Adminbereich.
@@ -334,6 +350,17 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 - Alarm-Kacheln (`type=alarm`) lösen per `POST /api/alarm` eine SMS über das Gateway aus (`ALARM_*` bzw. Settings `alarm_*`), Ziel = Gruppe oder Einzelnummer (`alarm_groups.type`), protokolliert in `alarm_log`. Das Gateway-Passwort kommt nur aus der Umgebung bzw. einem Docker-Secret.
 - Geschützte Elemente (`protected_access=1`) führen zu `/zugriff`; Freischaltung über `POST /api/sms-code/send` und `/api/sms-code/verify`. Der sechsstellige Tagescode wird per HMAC aus `sms_code_secret` abgeleitet, das Zeitfenster steht in `sms_code_timeout`.
+
+### SNMP-Überwachung
+
+- Container `snmp` liest den Zustand der Dienste über den (read-only gemounteten) Docker-Socket und den Zustand des AD-Workflows direkt aus `sync_log`.
+- Ausgabe in `UCD-SNMP-MIB::extTable`: `extResult` (Exit-Code) unter `.1.3.6.1.4.1.2021.8.1.100.N`, `extOutput` (Text) unter `.1.3.6.1.4.1.2021.8.1.101.N`, Index `N` = 1 `app`, 2 `db`, 3 `sync`, 4 `sync_workflow`, 5 `phpmyadmin`.
+- Exit-Codes: `0` OK, `1` WARNING, `2` CRITICAL, `3` UNKNOWN; `sync_workflow` meldet `0`, wenn der letzte Lauf `success` und jünger als `2 × LDAP_SYNC_INTERVAL` ist.
+- Community/Strings im Adminbereich unter **SNMP** pflegbar; werden erst nach Neustart des `snmp`-Containers wirksam.
+
+### Systemdienst (Autostart)
+
+- `scripts/install-systemd-service.sh` erzeugt eine systemd-Unit (`intranet.service`, konfigurierbar über `SERVICE_NAME`), die beim Boot `docker compose up -d` und bei `systemctl stop` `docker compose down` ausführt (Ubuntu ≥ 22.04).
 
 ---
 

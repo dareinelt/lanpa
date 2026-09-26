@@ -29,7 +29,7 @@ Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst ges
 
 | Ebene | Technologie |
 | --- | --- |
-| Backend | PHP 8.2+ (getestet mit 8.3), PDO/MySQL |
+| Backend | PHP 8.5 (mindestens 8.4), PDO/MySQL |
 | Frontend | Vanilla JavaScript + handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons) |
 | Datenbank | MySQL 8 / MariaDB 11 (utf8mb4) |
 | Web | Apache mit `mod_rewrite`, DocumentRoot `public/` |

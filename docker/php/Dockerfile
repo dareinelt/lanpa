@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
-FROM php:8.3-apache
+FROM php:8.5-apache
 
-# Systempakete fuer die benoetigten PHP-Erweiterungen (pdo_mysql, ldap, zip)
+# Systempakete fuer die benoetigten PHP-Erweiterungen (pdo_mysql, ldap, zip).
+# OPcache ist ab PHP 8.5 fest eingebaut und wird nicht mehr separat installiert.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -12,7 +13,7 @@ RUN set -eux; \
         default-mysql-client \
     ; \
     docker-php-ext-configure ldap --with-ldap-sasl; \
-    docker-php-ext-install -j"$(nproc)" pdo_mysql ldap opcache zip; \
+    docker-php-ext-install -j"$(nproc)" pdo_mysql ldap zip; \
     apt-get purge -y --auto-remove libldap2-dev libsasl2-dev; \
     rm -rf /var/lib/apt/lists/*
 

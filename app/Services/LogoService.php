@@ -240,7 +240,6 @@ final class LogoService
             $finfo = finfo_open(FILEINFO_MIME_TYPE);
             if ($finfo !== false) {
                 $detected = finfo_file($finfo, $path);
-                finfo_close($finfo);
                 $mime = is_string($detected) ? $detected : '';
             }
         }

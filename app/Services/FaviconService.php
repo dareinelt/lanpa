@@ -253,7 +253,6 @@ final class FaviconService
             $finfo = finfo_open(FILEINFO_MIME_TYPE);
             if ($finfo !== false) {
                 $detected = finfo_buffer($finfo, $contents);
-                finfo_close($finfo);
                 if (is_string($detected) && isset(self::ALLOWED[$detected])) {
                     return $detected;
                 }

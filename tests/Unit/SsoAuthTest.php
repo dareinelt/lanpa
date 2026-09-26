@@ -29,6 +29,7 @@ function ssoPhonebookPdo(): PDO
         'CREATE TABLE phonebook (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             external_id TEXT NULL,
+            identity_source_id INTEGER NOT NULL DEFAULT 0,
             samaccount_name TEXT NULL,
             display_name TEXT NULL,
             first_name TEXT NULL,
@@ -119,4 +120,66 @@ Runner::test('Unbekannter Benutzer liefert null (Fallback auf anonym)', static f
     ]);
 
     Assert::null($sso->resolve($request));
+});
+
+Runner::test('Erkannte Windows-Anmeldung bleibt in der Sitzung (ohne Anmeldepflicht)', static function (): void {
+    $_SESSION = [];
+    $sso = new SsoAuth(new PhonebookRepository(ssoPhonebookPdo()), ssoConfig() + ['auto_login' => true, 'session_lifetime' => 3600]);
+
+    // Ohne Anmeldung: anonym, einmaliger automatischer Versuch fuer Seitenaufrufe.
+    $anonymous = ssoRequest(['REMOTE_ADDR' => '10.0.0.2', 'HTTP_ACCEPT' => 'text/html,*/*']);
+    Assert::null($sso->resolve($anonymous));
+    Assert::true($sso->shouldAttempt($anonymous));
+    Assert::false($sso->shouldAttempt(ssoRequest(['REMOTE_ADDR' => '10.0.0.2', 'HTTP_ACCEPT' => 'application/json'])));
+
+    $_SESSION[SsoAuth::ATTEMPT_KEY] = time();
+    Assert::false($sso->shouldAttempt($anonymous));
+
+    // Anmeldepunkt: Header des auth-Containers wird gemerkt.
+    $user = $sso->resolveHeader(ssoRequest(['REMOTE_ADDR' => '10.0.0.2', 'HTTP_X_REMOTE_USER' => 'DOMAIN\\erika.muster']));
+    Assert::true(is_array($user));
+    $sso->remember($user);
+    Assert::false(isset($_SESSION[SsoAuth::ATTEMPT_KEY]));
+
+    // Folgeanfragen ohne Header (auch von beliebiger Adresse) nutzen die Sitzung.
+    $again = $sso->resolve(ssoRequest(['REMOTE_ADDR' => '203.0.113.9']));
+    Assert::true(is_array($again));
+    Assert::same('erika.muster', $again['username']);
+    Assert::false($sso->shouldAttempt($anonymous));
+
+    // Abgelaufen: verworfen, erneuter Versuch erlaubt.
+    $_SESSION[SsoAuth::SESSION_KEY]['at'] = time() - 7200;
+    Assert::null($sso->resolve($anonymous));
+    Assert::false(isset($_SESSION[SsoAuth::SESSION_KEY]));
+    Assert::true($sso->shouldAttempt($anonymous));
+
+    // Nicht mehr im Telefonbuch: verworfen.
+    $_SESSION[SsoAuth::SESSION_KEY] = ['username' => 'nicht.vorhanden', 'source_key' => '', 'at' => time()];
+    Assert::null($sso->resolve($anonymous));
+    Assert::false(isset($_SESSION[SsoAuth::SESSION_KEY]));
+
+    // Deaktiviertes SSO ignoriert die Sitzung.
+    $_SESSION[SsoAuth::SESSION_KEY] = ['username' => 'erika.muster', 'source_key' => '', 'at' => time()];
+    $disabled = new SsoAuth(new PhonebookRepository(ssoPhonebookPdo()), ['enabled' => false] + ssoConfig());
+    Assert::null($disabled->resolve($anonymous));
+    $_SESSION = [];
+});
+
+Runner::test('Automatischer Anmeldeversuch lässt sich abschalten', static function (): void {
+    $_SESSION = [];
+    $sso = new SsoAuth(new PhonebookRepository(ssoPhonebookPdo()), ssoConfig() + ['auto_login' => false]);
+    Assert::false($sso->shouldAttempt(ssoRequest(['REMOTE_ADDR' => '10.0.0.2', 'HTTP_ACCEPT' => 'text/html'])));
+    $_SESSION = [];
+});
+
+Runner::test('Rücksprungziel der Windows-Anmeldung nur lokal', static function (): void {
+    Assert::same('/seite?id=3', SsoAuth::safeTarget('/seite?id=3'));
+    Assert::same('/', SsoAuth::safeTarget('https://evil.example/'));
+    Assert::same('/', SsoAuth::safeTarget('//evil.example/'));
+    Assert::same('/', SsoAuth::safeTarget('/\\evil.example'));
+    Assert::same('/', SsoAuth::safeTarget("/x\r\nLocation: y"));
+    Assert::same('/', SsoAuth::safeTarget('/sso/anmelden'));
+    Assert::same('/', SsoAuth::safeTarget('/sso?ziel=/'));
+    Assert::same('/ssoabc', SsoAuth::safeTarget('/ssoabc'));
+    Assert::same('/sso?ziel=%2Funterseite%3Fid%3D2', SsoAuth::loginUrl('/unterseite?id=2'));
 });

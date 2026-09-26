@@ -140,7 +140,9 @@ php scripts/create_admin.php admin
 ## 4. Konfiguration
 
 Es gilt: **Umgebungsvariablen liefern die Grundeinstellung, die Tabelle `settings` überschreibt sie.**
-Alles außer dem LDAP-Bind-Passwort ist im Administrationsbereich pflegbar.
+Alles ist im Administrationsbereich pflegbar. **AD-Zugangsdaten** (Bind-Passwörter, Konten für den
+Domänenbeitritt der Windows-Anmeldung) werden ausschließlich dort eingegeben und verschlüsselt in der
+Datenbank gespeichert – sie gehören nicht in die `.env`.
 
 ### Wichtige Umgebungsvariablen
 
@@ -153,8 +155,8 @@ Alles außer dem LDAP-Bind-Passwort ist im Administrationsbereich pflegbar.
 | `APP_MAX_LOGO_BYTES` | Maximale Logogröße | `524288` |
 | `APP_MAX_BACKGROUND_BYTES` | Maximale Größe des Hintergrundbilds (Wasserzeichen) | `2097152` |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Datenbankzugang | – |
-| `LDAP_HOST`, `LDAP_PORT`, `LDAP_BASE_DN`, `LDAP_BIND_DN` | AD-Zugang | – |
-| `LDAP_PASSWORD` / `LDAP_PASSWORD_FILE` | Bind-Passwort (nur ENV bzw. Docker-Secret) | – |
+| `LDAP_HOST`, `LDAP_PORT`, `LDAP_BASE_DN`, `LDAP_BIND_DN` | Startwerte der AD-Hauptquelle (`LDAP_HOST`: ein oder mehrere Server) | – |
+| `LDAP_LABEL` | Beschriftung der Hauptquelle | `Zentrale` |
 | `LDAP_USE_TLS`, `LDAP_VERIFY_CERT` | Transportverschlüsselung und Zertifikatsprüfung | `true` |
 | `LDAP_SYNC_INTERVAL` | Intervall des Synchronisationsdienstes (Sekunden) | `3600` |
 | `LDAP_ATTR_*` | Attributzuordnung (z. B. `LDAP_ATTR_PHONE=telephoneNumber`) | AD-Standardwerte |
@@ -171,6 +173,10 @@ Alles außer dem LDAP-Bind-Passwort ist im Administrationsbereich pflegbar.
 | `ALARM_PASSWORD` / `ALARM_PASSWORD_FILE` | Gateway-Passwort (nur ENV bzw. Docker-Secret) | – |
 | `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` | SNMP-Agent (Community-String, Standort, Kontakt) | `public` / `Intranet` / `admin@example.internal` |
 | `SNMP_PORT` | Am Host veröffentlichter UDP-Port des SNMP-Agenten (nur Docker-Port-Mapping) | `161` |
+| `SSO_ENABLED` | Windows-Anmeldung (NTLM) global ein-/ausschalten; Domänen werden im Adminbereich gepflegt | `false` |
+| `SSO_AUTO_LOGIN` | Automatischer Windows-Anmeldeversuch einmal je Sitzung (sonst nur über „Mit Windows anmelden“) | `true` |
+| `SSO_SESSION_LIFETIME` | Gültigkeit der erkannten Windows-Anmeldung in der Sitzung (Sekunden, `0` = Sitzungsende) | `28800` |
+| `SECRETS_KEY_FILE` | Schlüssel für gespeicherte Zugangsdaten | `storage/keys/secrets.key` |
 
 Jede Variable unterstützt zusätzlich die Datei-Variante `<NAME>_FILE` für Docker-Secrets.
 
@@ -179,7 +185,7 @@ Jede Variable unterstützt zusätzlich die Datei-Variante `<NAME>_FILE` für Doc
 - `DB_PASSWORD`, `DB_ROOT_PASSWORD` – eigene, starke Passwörter
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD` bzw. das automatisch erzeugte Passwort sofort ändern
 - `APP_URL` auf die reale Adresse setzen, `APP_FORCE_SECURE_COOKIES=true` bei HTTPS
-- alle `LDAP_*`-Werte auf das produktive Active Directory setzen (`LDAP_PASSWORD` niemals im Repository)
+- das produktive Active Directory im Adminbereich einrichten (Server, Base DN, Bind DN und Passwort des Dienstkontos)
 - die Platzhalter-URLs `https://*.example.internal` der Kacheln im Adminbereich durch die echten Anwendungsadressen ersetzen
 - `SEED_ON_START=false` setzen, sobald die Navigation gepflegt ist
 
@@ -199,7 +205,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Mitteilungen | Mitteilungs-Overlay der Startseite anlegen, bearbeiten, ein-/ausblenden |
 | Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`), Handbuch-Links ein-/ausblenden |
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
-| Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Gruppen-Pfade für die Rechtevergabe, Intervall, manueller Testlauf |
+| Active Directory | Identitätsquellen (Hauptquelle und weitere AD von Zweigstellen/Tochtergesellschaften, je mit Beschriftung und mehreren Servern als Ausfallreserve): Server, Verschlüsselung, Base DN, Bind DN und Passwort (verschlüsselt gespeichert), Filter, Attributzuordnung, Gruppen-Pfade, Windows-Anmeldung je Domäne (Domänencontroller, Beitrittskonto, Client-Netze/Hostnamen), Verbindungstest je Server, Intervall, manueller Testlauf |
 | Navigation → Berechtigungen | Kacheln auf Benutzer und AD-Gruppen beschränken; Gruppennamen werden beim Tippen aus dem synchronisierten Bestand vorgeschlagen (Inline-Ergänzung und Liste, keine Live-Abfrage des AD) |
 | Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Office-Apps/App-Pakete und OWA-Link, lokale KI (Endpunkt, Modell, Audio-/Bildfunktionen in Nextcloud), Sicherung ([docs/office.md](docs/office.md)) |
 | Alarmierung | SMS-Gateway konfigurieren (Host, Benutzername; Passwort nur über Umgebung), Alarmgruppen/-rufnummern verwalten, Verlauf einsehen |
@@ -229,12 +235,66 @@ Sitzungserneuerung nach der Anmeldung, automatische Abmeldung bei Inaktivität, 
   *nichts* geschrieben und *nichts* deaktiviert – der letzte gültige Stand bleibt aktiv.
   Jeder Lauf wird in `sync_log` protokolliert und im Adminbereich angezeigt.
 - Personen, die im AD nicht mehr enthalten sind, werden auf `active = 0` gesetzt (kein Löschen).
+- **Mehrere Identitätsquellen:** Jede Quelle (Zentrale, Zweigstellen, Tochtergesellschaften) wird
+  getrennt synchronisiert. Fällt eine Quelle aus, bleibt ihr letzter Stand erhalten, die übrigen
+  werden trotzdem aktualisiert (Status `partial`, Exit-Code 4 von `sync_ad.php`). Innerhalb einer
+  Quelle werden die Server der Reihe nach versucht. In der Telefonliste erscheint bei mehreren
+  Quellen die Beschriftung als „Standort“.
+- **Hinweis Rechtevergabe:** Gruppennamen bilden einen gemeinsamen Namensraum über alle Quellen;
+  eine gleichnamige Gruppe einer Zweigstelle erhält dieselben Rechte wie die der Zentrale.
 - Ist ein Gruppen-Pfad hinterlegt, werden die Gruppen darunter samt (verschachtelter)
   Mitglieder übernommen; nicht mehr vorhandene Gruppen werden deaktiviert. Scheitert nur
   der Gruppenabruf, bleibt der bisherige Gruppenstand unverändert.
 - Im AD deaktivierte Benutzerkonten (`userAccountControl`-Bit `ACCOUNTDISABLE`) werden beim
   Import übersprungen; bereits importierte, inzwischen deaktivierte Konten werden dadurch
   ebenfalls auf `active = 0` gesetzt.
+
+### Windows-Anmeldung ohne Anmeldepflicht
+
+Die Seite bleibt ohne Anmeldung nutzbar: Öffentliche Kacheln, Telefonliste und Links sind immer
+sichtbar, berechtigungsbeschränkte Kacheln erst nach erkannter Windows-Anmeldung. Der auth-Container
+verlangt NTLM nur am Anmeldepunkt `/sso/anmelden`; die Anwendung merkt sich den erkannten Benutzer in
+der Sitzung (`SSO_SESSION_LIFETIME`) und prüft ihn bei jeder Anfrage erneut gegen das Telefonbuch.
+
+- Mit `SSO_AUTO_LOGIN=true` (Standard) wird jeder Browser einmal je Sitzung über den Anmeldepunkt
+  geleitet: Domänen-PCs kommen unbemerkt angemeldet zurück. Browser außerhalb der Domäne erhalten die
+  Seite `/sso/nicht-erkannt`, die sofort zurückführt; manche Browser zeigen vorher einmal einen
+  Anmeldedialog – „Abbrechen“ führt ohne Anmeldung weiter.
+- Mit `SSO_AUTO_LOGIN=false` erfolgt die Anmeldung nur über den Link „Mit Windows anmelden“ im Kopf.
+- Voraussetzung für die unbemerkte Anmeldung: Die Adresse des Intranets liegt bei den Clients in der
+  Zone „Lokales Intranet“ bzw. ist per Richtlinie (`AuthServerAllowlist`) freigegeben.
+
+### Windows-Anmeldung für mehrere Domänen
+
+Domänen ohne Vertrauensstellung (Zweigstellen, Tochtergesellschaften) erhalten je eine eigene
+Anmelde-Instanz `auth-<kennung>`, die der jeweiligen Domäne beitritt. Die Hauptinstanz `auth`
+verteilt die Anfragen per HAProxy anhand des aufgerufenen Hostnamens bzw. des Client-Netzes; ist
+eine Instanz nicht erreichbar, bedient die Hauptinstanz die Anfrage (ohne automatische Anmeldung).
+
+1. `SSO_ENABLED=true` in der `.env`.
+2. Adminbereich → Active Directory: bei der Hauptquelle und jeder weiteren Quelle Domäne,
+   Domänencontroller (je Zeile `host [ip]`, mehrere als Ausfallreserve), Beitrittskonto und
+   Passwort eintragen; bei weiteren Quellen zusätzlich Client-Netze bzw. Hostnamen.
+3. `./scripts/sso-domains.sh` erzeugt `docker-compose.sso.yml` mit den Instanzen (ohne
+   Zugangsdaten), anschließend `COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml` in der
+   `.env` setzen und `docker compose up -d --build --remove-orphans && docker compose restart auth`.
+
+Die auth-Container rufen ihre Konfiguration beim Start über `/internal/sso-config` von der
+Anwendung ab (Token im Volume `sso_token`, Prüfung des absendenden Containers; über den
+öffentlichen Proxy gesperrt). Nach geänderten Zugangsdaten genügt `docker compose restart auth
+auth-<kennung>`. Jede Instanz darf nur Benutzer ihrer eigenen Quelle melden.
+
+### Zugangsdaten und Schlüssel
+
+- AD-Passwörter werden mit libsodium (XSalsa20-Poly1305) verschlüsselt; der Schlüssel liegt in
+  `storage/keys/secrets.key` (Volume `app_storage`, wird beim ersten Start erzeugt).
+- Die ZIP-Sicherung des Adminbereichs enthält keine Zugangsdaten; beim Einspielen bleiben die
+  vorhandenen erhalten. Wer Datenbank und `storage/` sichert, muss den Schlüssel mitsichern – ohne
+  ihn sind die Passwörter nach einer Wiederherstellung neu einzugeben (die Oberfläche weist darauf hin).
+- Altinstallationen: Noch in der `.env` stehende Werte (`LDAP_PASSWORD`, `LDAP_PASSWORD_<KENNUNG>`,
+  `SSO_DOMAIN`, `SSO_DC`, `SSO_DC_IP`, `SSO_JOIN_USER`, `SSO_JOIN_PASSWORD`, `SSO_<KENNUNG>_*`)
+  werden beim Start einmalig verschlüsselt übernommen (`php scripts/credentials.php`) und können
+  danach aus der `.env` entfernt werden.
 
 ### SNMP-Überwachung
 
@@ -386,6 +446,7 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 - Session-Cookies: `HttpOnly`, `SameSite=Lax`, optional `Secure`
 - Uploads landen außerhalb des DocumentRoots und werden über `/logo` mit geprüftem MIME-Typ ausgeliefert
 - URL-Prüfung erlaubt ausschließlich `http`, `https` und interne Pfade (kein `javascript:`, `data:` oder `//host`)
+- AD-Zugangsdaten verschlüsselt gespeichert (Schlüssel außerhalb der Datenbank), nie an den Browser ausgegeben
 - Zugangscode-Schutz: geschützte Elemente verlangen einen täglich wechselnden, per SMS zugestellten Code (Hash-Vergleich, fünf Fehlversuche)
 - Keine externen Ressourcen, kein Tracking, keine Cookies für Besucher außerhalb der Sitzung
 

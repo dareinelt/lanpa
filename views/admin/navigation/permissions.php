@@ -36,8 +36,12 @@ $groupValue = Html::e(implode(', ', $assignedGroupNames));
                 <?php foreach ($users as $user) {
                     $userId = (int) $user['id'];
                     $label = (string) $user['display_name'];
-                    if ((string) ($user['department'] ?? '') !== '') {
-                        $label .= ' (' . (string) $user['department'] . ')';
+                    $details = array_filter([
+                        (string) ($user['department'] ?? ''),
+                        (string) (($sourceLabels ?? [])[(int) ($user['identity_source_id'] ?? 0)] ?? ''),
+                    ], static fn (string $part): bool => $part !== '');
+                    if ($details !== []) {
+                        $label .= ' (' . implode(', ', $details) . ')';
                     }
                     ?>
                     <label class="permission-list__item">

@@ -9,6 +9,7 @@ use App\Repositories\AdminUserRepository;
 use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AnnouncementRepository;
 use App\Repositories\EmergencyNumberRepository;
+use App\Repositories\IdentitySourceRepository;
 use App\Repositories\ImportantLinkRepository;
 use App\Repositories\NavigationRepository;
 use App\Repositories\PhonebookRepository;
@@ -42,7 +43,8 @@ final class BackupService
         private readonly ActivationNumberRepository $activationNumberRepository,
         private readonly LogoService $logo,
         private readonly BackgroundImageService $backgroundImage,
-        private readonly FaviconService $favicons
+        private readonly FaviconService $favicons,
+        private readonly ?IdentitySourceRepository $identitySources = null
     ) {
     }
 
@@ -56,8 +58,35 @@ final class BackupService
     {
         $settings = $this->settingsRepository->all();
         unset($settings['alarm_password'], $settings['alarm_single_password'], $settings['sms_code_secret'], $settings['office_ai_api_key']);
+        // Verschluesselte AD-Zugangsdaten verlassen die Installation nicht
+        // (der Schluessel liegt ohnehin nur lokal in storage/keys/).
+        foreach (IdentitySourceService::PRIMARY_SECRET_SETTINGS as $key) {
+            unset($settings[$key]);
+        }
 
         return $settings;
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    private function exportIdentitySources(): array
+    {
+        if ($this->identitySources === null) {
+            return [];
+        }
+
+        try {
+            return array_map(static function (array $row): array {
+                foreach (IdentitySourceService::SECRET_FIELDS as $column) {
+                    unset($row[$column]);
+                }
+
+                return $row;
+            }, $this->identitySources->all());
+        } catch (\PDOException) {
+            return [];
+        }
     }
 
     /**
@@ -79,6 +108,8 @@ final class BackupService
                 'phonebook' => $this->phonebookRepository->all(),
                 'alarm_groups' => $this->alarmGroupRepository->all(),
                 'activation_numbers' => $this->activationNumberRepository->all(),
+                // Weitere Identitaetsquellen (ohne Passwoerter – die stehen nur in der Umgebung).
+                'identity_sources' => $this->exportIdentitySources(),
             ],
             'files' => [],
         ];

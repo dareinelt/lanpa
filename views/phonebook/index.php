@@ -94,6 +94,10 @@ use App\Support\Html;
                 <dt>Abteilung</dt>
                 <dd data-field="department"></dd>
             </div>
+            <div class="person__row" data-row="source" hidden>
+                <dt>Standort</dt>
+                <dd data-field="source"></dd>
+            </div>
             <div class="person__row" data-row="email" hidden>
                 <dt>E-Mail</dt>
                 <dd><a class="person__mail" data-field="email" href="#"></a></dd>

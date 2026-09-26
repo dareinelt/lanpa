@@ -9,140 +9,121 @@ use App\Support\Html;
 /** @var array<string,string> $values */
 /** @var array<string,string> $errors */
 /** @var array<string,string> $attributeKeys */
-/** @var bool $hasBindPassword */
+/** @var array<string,string> $secretStates */
 /** @var bool $ldapExtensionAvailable */
 /** @var list<array<string,mixed>> $syncRuns */
-$attributeLabels = [
-    'ldap_attr_display_name' => 'Anzeigename',
-    'ldap_attr_first_name' => 'Vorname',
-    'ldap_attr_last_name' => 'Nachname',
-    'ldap_attr_phone' => 'Telefon',
-    'ldap_attr_mobile' => 'Mobil',
-    'ldap_attr_email' => 'E-Mail',
-    'ldap_attr_department' => 'Abteilung',
-    'ldap_attr_modified' => 'Zuletzt geändert',
-    'ldap_attr_unique_id' => 'Eindeutige ID',
-    'ldap_attr_samaccount_name' => 'Windows-Anmeldename',
-];
+/** @var list<array<string,mixed>> $sources */
 ?>
 <?php if (!$ldapExtensionAvailable) { ?>
     <p class="flash flash--error">Die PHP-Erweiterung <code>ldap</code> ist nicht installiert. Eine Synchronisation ist nicht möglich.</p>
 <?php } ?>
 
-<?php if (!$hasBindPassword) { ?>
-    <p class="flash flash--info">
-        Es ist kein Bind-Passwort gesetzt. Das Passwort wird ausschließlich über die Umgebungsvariable
-        <code>LDAP_PASSWORD</code> bzw. <code>LDAP_PASSWORD_FILE</code> konfiguriert und niemals in der Datenbank gespeichert.
+<?php if (($secretStates['ldap_bind_password'] ?? 'missing') === 'invalid' || ($secretStates['sso_join_password'] ?? 'missing') === 'invalid') { ?>
+    <p class="flash flash--error">
+        Mindestens ein gespeichertes Passwort der Hauptquelle kann nicht entschlüsselt werden (z. B. nach einer
+        Wiederherstellung auf einem anderen Server). Bitte die Passwörter neu eingeben.
     </p>
 <?php } ?>
 
+<section class="card">
+    <h2 class="card__title">Identitätsquellen</h2>
+    <p class="card__hint">
+        Jedes Active Directory (Zentrale, Zweigstellen, Tochtergesellschaften, …) wird als eigene Identitätsquelle
+        synchronisiert. Fällt eine Quelle aus, bleiben deren letzte Daten erhalten; die übrigen Quellen werden trotzdem aktualisiert.
+        Zugangsdaten werden hier gepflegt und ausschließlich verschlüsselt gespeichert; sie werden nie angezeigt.
+    </p>
+
+    <div class="table-wrapper">
+        <table class="table">
+            <caption class="visually-hidden">Liste der Identitätsquellen</caption>
+            <thead>
+            <tr>
+                <th scope="col">Beschriftung</th>
+                <th scope="col">Server</th>
+                <th scope="col">Status</th>
+                <th scope="col">Aktionen</th>
+            </tr>
+            </thead>
+            <tbody>
+            <?php foreach ($sources as $source) {
+                $sourceId = (int) $source['id']; ?>
+                <tr>
+                    <td>
+                        <strong><?= Html::e((string) $source['label']) ?></strong>
+                        <div class="table__hint"><?= $source['primary'] ? 'Hauptquelle' : 'Kennung <code>' . Html::e((string) $source['key']) . '</code>' ?></div>
+                        <?php if ((string) $source['base_dn'] !== '') { ?><div class="table__hint"><?= Html::e((string) $source['base_dn']) ?></div><?php } ?>
+                    </td>
+                    <td>
+                        <?php if ($source['hosts'] === []) { ?>
+                            <span class="table__hint">nicht konfiguriert</span>
+                        <?php } else { ?>
+                            <?= implode('<br>', array_map(static fn (string $host): string => Html::e($host), $source['hosts'])) ?>
+                        <?php } ?>
+                    </td>
+                    <td>
+                        <span class="badge <?= $source['active'] && $source['configured'] ? 'badge--ok' : 'badge--muted' ?>">
+                            <?= !$source['active'] ? 'inaktiv' : ($source['configured'] ? 'aktiv' : 'unvollständig') ?>
+                        </span>
+                        <div class="table__hint"><?= (int) $source['users'] ?> aktive Einträge</div>
+                        <?php if ($source['password_state'] === 'invalid') { ?>
+                            <div class="table__hint">Passwort nicht entschlüsselbar – bitte neu eingeben</div>
+                        <?php } elseif ($source['password_state'] !== 'set') { ?>
+                            <div class="table__hint">Ohne Passwort des Dienstkontos</div>
+                        <?php } ?>
+                        <?php if ($source['sso'] !== null) { ?>
+                            <div class="table__hint">Windows-Anmeldung: <?= Html::e((string) $source['sso']) ?></div>
+                        <?php } ?>
+                    </td>
+                    <td>
+                        <div class="row-actions">
+                            <?php if ($source['primary']) { ?>
+                                <a class="button button--ghost" href="#hauptquelle">Bearbeiten</a>
+                            <?php } else { ?>
+                                <a class="button button--ghost" href="/admin/ad/quellen/bearbeiten?id=<?= $sourceId ?>">Bearbeiten</a>
+                            <?php } ?>
+                            <form method="post" action="/admin/ad/quellen/testen" class="inline-form">
+                                <?= Csrf::field() ?>
+                                <input type="hidden" name="id" value="<?= $sourceId ?>">
+                                <button type="submit" class="button button--ghost" <?= $ldapExtensionAvailable && $source['configured'] ? '' : 'disabled' ?>
+                                        aria-label="Verbindung zu <?= Html::e((string) $source['label']) ?> testen">Verbindung testen</button>
+                            </form>
+                            <?php if (!$source['primary']) { ?>
+                                <form method="post" action="/admin/ad/quellen/loeschen" class="inline-form"
+                                      data-confirm="Soll die Identitätsquelle wirklich gelöscht werden? Ihre Telefonbucheinträge und Gruppen werden ausgeblendet.">
+                                    <?= Csrf::field() ?>
+                                    <input type="hidden" name="id" value="<?= $sourceId ?>">
+                                    <button type="submit" class="button button--danger">Löschen</button>
+                                </form>
+                            <?php } ?>
+                        </div>
+                    </td>
+                </tr>
+            <?php } ?>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="toolbar">
+        <a class="button button--primary" href="/admin/ad/quellen/neu">Identitätsquelle hinzufügen</a>
+    </div>
+</section>
+
+<h2 id="hauptquelle">Hauptquelle</h2>
 <form method="post" action="/admin/ad" class="form form--wide">
     <?= Csrf::field() ?>
 
+    <?php require __DIR__ . '/ldap/fields.php'; ?>
+
+    <?php $serviceName = 'auth'; require __DIR__ . '/ldap/sso.php'; ?>
+
     <fieldset class="fieldset">
-        <legend>Verbindung</legend>
-
-        <div class="field-row">
-            <div class="field">
-                <label for="ldap_host">LDAP-Server</label>
-                <input type="text" id="ldap_host" name="ldap_host" maxlength="253" value="<?= Html::e($values['ldap_host']) ?>"
-                       placeholder="dc01.example.internal">
-                <?php if (isset($errors['ldap_host'])) { ?><p class="field__error"><?= Html::e($errors['ldap_host']) ?></p><?php } ?>
-            </div>
-
-            <div class="field">
-                <label for="ldap_port">Port</label>
-                <input type="number" id="ldap_port" name="ldap_port" min="1" max="65535" value="<?= Html::e($values['ldap_port']) ?>">
-                <?php if (isset($errors['ldap_port'])) { ?><p class="field__error"><?= Html::e($errors['ldap_port']) ?></p><?php } ?>
-            </div>
-
-            <div class="field">
-                <label for="ldap_timeout">Timeout (Sekunden)</label>
-                <input type="number" id="ldap_timeout" name="ldap_timeout" min="1" max="120" value="<?= Html::e($values['ldap_timeout']) ?>">
-                <?php if (isset($errors['ldap_timeout'])) { ?><p class="field__error"><?= Html::e($errors['ldap_timeout']) ?></p><?php } ?>
-            </div>
-        </div>
-
-        <div class="field field--check">
-            <input type="checkbox" id="ldap_use_tls" name="ldap_use_tls" value="1" <?= $values['ldap_use_tls'] === '1' ? 'checked' : '' ?>>
-            <label for="ldap_use_tls">Verschlüsselte Verbindung verwenden (LDAPS auf Port 636, sonst StartTLS)</label>
-        </div>
-
-        <div class="field field--check">
-            <input type="checkbox" id="ldap_verify_cert" name="ldap_verify_cert" value="1" <?= $values['ldap_verify_cert'] === '1' ? 'checked' : '' ?>>
-            <label for="ldap_verify_cert">Zertifikat prüfen (dringend empfohlen)</label>
-        </div>
-
-        <div class="field">
-            <label for="ldap_base_dn">Base DN</label>
-            <input type="text" id="ldap_base_dn" name="ldap_base_dn" maxlength="255" value="<?= Html::e($values['ldap_base_dn']) ?>"
-                   placeholder="OU=Benutzer,DC=example,DC=internal">
-        </div>
-
-        <div class="field">
-            <label for="ldap_bind_dn">Bind DN</label>
-            <input type="text" id="ldap_bind_dn" name="ldap_bind_dn" maxlength="255" value="<?= Html::e($values['ldap_bind_dn']) ?>"
-                   placeholder="CN=svc-intranet,OU=Dienstkonten,DC=example,DC=internal">
-            <p class="field__hint">Das zugehörige Passwort wird über die Umgebung bereitgestellt.</p>
-        </div>
-
-        <div class="field">
-            <label for="ldap_filter">Suchfilter</label>
-            <input type="text" id="ldap_filter" name="ldap_filter" maxlength="512" value="<?= Html::e($values['ldap_filter']) ?>">
-            <?php if (isset($errors['ldap_filter'])) { ?><p class="field__error"><?= Html::e($errors['ldap_filter']) ?></p><?php } ?>
-        </div>
-
+        <legend>Synchronisation</legend>
         <div class="field">
             <label for="ldap_sync_interval">Synchronisationsintervall (Sekunden)</label>
             <input type="number" id="ldap_sync_interval" name="ldap_sync_interval" min="60" max="86400"
                    value="<?= Html::e($values['ldap_sync_interval']) ?>">
             <p class="field__hint">Wird vom Synchronisationsdienst (Container <code>sync</code>) ausgewertet.</p>
             <?php if (isset($errors['ldap_sync_interval'])) { ?><p class="field__error"><?= Html::e($errors['ldap_sync_interval']) ?></p><?php } ?>
-        </div>
-    </fieldset>
-
-    <fieldset class="fieldset">
-        <legend>Gruppen für die Rechtevergabe</legend>
-        <p class="field__hint">
-            Die Synchronisation übernimmt alle Gruppen unterhalb dieser Pfade samt ihrer – auch verschachtelten –
-            Mitglieder. Die Gruppen stehen danach bei den Kachel-Berechtigungen als Vorschläge zur Verfügung und
-            gelten für per Windows-Anmeldung erkannte Benutzer. Ohne Pfad werden keine Gruppen übernommen.
-        </p>
-
-        <div class="field">
-            <label for="ldap_group_base_dn">Gruppen-Pfade (Base DN, ein Pfad je Zeile)</label>
-            <textarea id="ldap_group_base_dn" name="ldap_group_base_dn" rows="3" maxlength="5200"
-                      placeholder="OU=Gruppen,OU=Intranet,DC=example,DC=internal"<?= isset($errors['ldap_group_base_dn']) ? ' aria-invalid="true"' : '' ?>><?= Html::e($values['ldap_group_base_dn'] ?? '') ?></textarea>
-            <?php if (isset($errors['ldap_group_base_dn'])) { ?><p class="field__error"><?= Html::e($errors['ldap_group_base_dn']) ?></p><?php } ?>
-        </div>
-
-        <div class="field-row">
-            <div class="field">
-                <label for="ldap_group_filter">Gruppenfilter</label>
-                <input type="text" id="ldap_group_filter" name="ldap_group_filter" maxlength="512"
-                       value="<?= Html::e($values['ldap_group_filter'] ?? '') ?>" placeholder="(objectClass=group)">
-                <?php if (isset($errors['ldap_group_filter'])) { ?><p class="field__error"><?= Html::e($errors['ldap_group_filter']) ?></p><?php } ?>
-            </div>
-            <div class="field">
-                <label for="ldap_group_name_attribute">Attribut für den Gruppennamen</label>
-                <input type="text" id="ldap_group_name_attribute" name="ldap_group_name_attribute" maxlength="64"
-                       value="<?= Html::e($values['ldap_group_name_attribute'] ?? '') ?>" placeholder="cn">
-                <?php if (isset($errors['ldap_group_name_attribute'])) { ?><p class="field__error"><?= Html::e($errors['ldap_group_name_attribute']) ?></p><?php } ?>
-            </div>
-        </div>
-    </fieldset>
-
-    <fieldset class="fieldset">
-        <legend>Attributmapping</legend>
-        <div class="field-grid">
-            <?php foreach ($attributeKeys as $key => $internal) { ?>
-                <div class="field">
-                    <label for="<?= Html::e($key) ?>"><?= Html::e($attributeLabels[$key] ?? $internal) ?> (<code><?= Html::e($internal) ?></code>)</label>
-                    <input type="text" id="<?= Html::e($key) ?>" name="<?= Html::e($key) ?>" maxlength="64"
-                           value="<?= Html::e($values[$key] ?? '') ?>">
-                    <?php if (isset($errors[$key])) { ?><p class="field__error"><?= Html::e($errors[$key]) ?></p><?php } ?>
-                </div>
-            <?php } ?>
         </div>
     </fieldset>
 

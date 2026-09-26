@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Contracts\LdapClientInterface;
+use App\Core\Logger;
 use App\Support\Validator;
 use RuntimeException;
 
@@ -18,7 +19,7 @@ final class LdapClient implements LdapClientInterface
     /**
      * @param array<string,mixed> $config
      */
-    public function __construct(private readonly array $config)
+    public function __construct(private readonly array $config, private readonly ?Logger $logger = null)
     {
         /** @var array<string,string> $attributes */
         $attributes = $this->config['attributes'] ?? [];
@@ -37,10 +38,44 @@ final class LdapClient implements LdapClientInterface
     }
 
     /**
+     * Prueft jeden konfigurierten Server einzeln (Verbindung + Bind).
+     *
+     * @return array<string,?string> Server => null (erreichbar) bzw. Fehlermeldung
+     */
+    public function testHosts(): array
+    {
+        if (!self::isSupported()) {
+            throw new RuntimeException('Die PHP-Erweiterung "ldap" ist nicht installiert.');
+        }
+
+        $port = (int) ($this->config['port'] ?? 636);
+        $results = [];
+        foreach ($this->hosts() as $host) {
+            if (!Validator::isHostname($host) || !Validator::isPort($port)) {
+                $results[$host] = 'Ungültiger Server oder Port.';
+                continue;
+            }
+
+            try {
+                $connection = $this->connectHost($host, $port);
+                @ldap_unbind($connection);
+                $results[$host] = null;
+            } catch (RuntimeException $exception) {
+                $results[$host] = $exception->getMessage();
+            }
+        }
+
+        return $results;
+    }
+
+    /**
      * OID von LDAP_MATCHING_RULE_IN_CHAIN: loest verschachtelte
      * Gruppenmitgliedschaften serverseitig auf (Active Directory, Samba AD).
      */
     private const MATCHING_RULE_IN_CHAIN = '1.2.840.113556.1.4.1941';
+
+    /** LDAP-Ergebniscode "invalidCredentials". */
+    private const LDAP_INVALID_CREDENTIALS = 49;
 
     /**
      * @return list<array<string,string|null>>
@@ -249,6 +284,26 @@ final class LdapClient implements LdapClientInterface
     }
 
     /**
+     * Konfigurierte Server in Prioritaetsreihenfolge.
+     *
+     * @return list<string>
+     */
+    public function hosts(): array
+    {
+        $hosts = $this->config['hosts'] ?? null;
+        if (!is_array($hosts)) {
+            $hosts = SettingsService::splitHostList((string) ($this->config['host'] ?? ''));
+        }
+
+        return array_values(array_filter(array_map(static fn ($host): string => trim((string) $host), $hosts), static fn (string $host): bool => $host !== ''));
+    }
+
+    /**
+     * Baut die Verbindung zum ersten erreichbaren Server auf. Ist ein Server
+     * nicht erreichbar (oder scheitert TLS), wird der naechste versucht. Bei
+     * abgewiesenen Anmeldedaten wird sofort abgebrochen, damit das Dienstkonto
+     * nicht durch Wiederholungen auf mehreren Servern gesperrt wird.
+     *
      * @return \LDAP\Connection
      */
     private function connect()
@@ -257,26 +312,68 @@ final class LdapClient implements LdapClientInterface
             throw new RuntimeException('Die PHP-Erweiterung "ldap" ist nicht installiert.');
         }
 
-        $host = (string) ($this->config['host'] ?? '');
+        $hosts = $this->hosts();
         $port = (int) ($this->config['port'] ?? 636);
-        $useTls = (bool) ($this->config['use_tls'] ?? true);
-        $verifyCert = (bool) ($this->config['verify_cert'] ?? true);
-        $timeout = max(1, (int) ($this->config['timeout'] ?? 10));
-        $bindDn = (string) ($this->config['bind_dn'] ?? '');
-        $password = (string) ($this->config['password'] ?? '');
 
-        if (!Validator::isHostname($host) || !Validator::isPort($port)) {
+        if ($hosts === [] || !Validator::isPort($port)) {
             throw new RuntimeException('LDAP-Host oder -Port ist nicht konfiguriert bzw. ungültig.');
+        }
+        foreach ($hosts as $host) {
+            if (!Validator::isHostname($host)) {
+                throw new RuntimeException('Ungültiger LDAP-Host: ' . $host);
+            }
         }
 
         if ((string) ($this->config['base_dn'] ?? '') === '') {
             throw new RuntimeException('LDAP Base DN ist nicht konfiguriert.');
         }
 
+        $failures = [];
+        foreach ($hosts as $index => $host) {
+            try {
+                $connection = $this->connectHost($host, $port);
+                if ($index > 0 && $this->logger !== null) {
+                    $this->logger->warning('LDAP: Ausweichserver verwendet.', [
+                        'source' => (string) ($this->config['label'] ?? ''),
+                        'host' => $host,
+                        'unavailable' => implode(', ', array_keys($failures)),
+                    ]);
+                }
+
+                return $connection;
+            } catch (RuntimeException $exception) {
+                if ($exception->getCode() === self::LDAP_INVALID_CREDENTIALS) {
+                    throw $exception;
+                }
+                $failures[$host] = $exception->getMessage();
+            }
+        }
+
+        $details = [];
+        foreach ($failures as $host => $message) {
+            $details[] = $host . ': ' . $message;
+        }
+
+        throw new RuntimeException(
+            (count($hosts) > 1 ? 'Kein LDAP-Server erreichbar (' : '') . implode('; ', $details) . (count($hosts) > 1 ? ')' : '')
+        );
+    }
+
+    /**
+     * @return \LDAP\Connection
+     */
+    private function connectHost(string $host, int $port)
+    {
+        $useTls = (bool) ($this->config['use_tls'] ?? true);
+        $verifyCert = (bool) ($this->config['verify_cert'] ?? true);
+        $timeout = max(1, (int) ($this->config['timeout'] ?? 10));
+        $bindDn = (string) ($this->config['bind_dn'] ?? '');
+        $password = (string) ($this->config['password'] ?? '');
+
         // Zertifikatspruefung nur, wenn bewusst deaktiviert (dokumentierte Ausnahme fuer Testumgebungen).
         ldap_set_option(null, LDAP_OPT_X_TLS_REQUIRE_CERT, $verifyCert ? LDAP_OPT_X_TLS_HARD : LDAP_OPT_X_TLS_NEVER);
 
-        $uri = sprintf('%s://%s:%d', $useTls && $port === 636 ? 'ldaps' : 'ldap', $host, $port);
+        $uri = self::uri($host, $port, $useTls);
         $connection = @ldap_connect($uri);
         if ($connection === false) {
             throw new RuntimeException('LDAP-Verbindung konnte nicht aufgebaut werden.');
@@ -289,6 +386,7 @@ final class LdapClient implements LdapClientInterface
 
         // StartTLS fuer den Klartext-Port, wenn TLS gewuenscht ist.
         if ($useTls && $port !== 636 && !@ldap_start_tls($connection)) {
+            @ldap_unbind($connection);
             throw new RuntimeException('StartTLS fehlgeschlagen.');
         }
 
@@ -298,9 +396,27 @@ final class LdapClient implements LdapClientInterface
 
         if ($bound !== true) {
             // Fehlermeldung ohne Passwort.
-            throw new RuntimeException('LDAP-Bind fehlgeschlagen: ' . ldap_error($connection));
+            $errno = ldap_errno($connection);
+            $message = 'LDAP-Bind fehlgeschlagen: ' . ldap_error($connection);
+            @ldap_unbind($connection);
+
+            throw new RuntimeException($message, $errno === self::LDAP_INVALID_CREDENTIALS ? self::LDAP_INVALID_CREDENTIALS : 0);
         }
 
         return $connection;
     }
+
+    /**
+     * LDAP-URI fuer einen Server; IPv6-Adressen werden in Klammern gesetzt.
+     */
+    public static function uri(string $host, int $port, bool $useTls): string
+    {
+        $scheme = $useTls && $port === 636 ? 'ldaps' : 'ldap';
+        if (str_contains($host, ':') && !str_starts_with($host, '[')) {
+            $host = '[' . $host . ']';
+        }
+
+        return sprintf('%s://%s:%d', $scheme, $host, $port);
+    }
 }
+

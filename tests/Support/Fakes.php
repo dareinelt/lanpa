@@ -95,9 +95,13 @@ final class FakePhonebookStore implements PhonebookStoreInterface
         $this->upserted[] = $user;
     }
 
-    public function deactivateStale(string $syncedAt): int
+    /** @var list<int> */
+    public array $deactivatedSources = [];
+
+    public function deactivateStale(string $syncedAt, int $sourceId = 0): int
     {
         $this->deactivateCalls++;
+        $this->deactivatedSources[] = $sourceId;
 
         return 2;
     }
@@ -177,9 +181,13 @@ final class FakeAdGroupStore implements AdGroupStoreInterface
     {
     }
 
-    public function replaceAll(array $groups, string $syncedAt): int
+    /** @var list<int> */
+    public array $replacedSources = [];
+
+    public function replaceAll(array $groups, string $syncedAt, int $sourceId = 0): int
     {
         $this->replaced[] = $groups;
+        $this->replacedSources[] = $sourceId;
 
         return count($groups);
     }

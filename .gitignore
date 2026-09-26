@@ -24,3 +24,4 @@ Thumbs.db
 # Office-Erweiterung: Secrets und Sicherungen
 /secrets/
 /backups/
+/docker-compose.sso.yml

@@ -30,7 +30,7 @@ flowchart LR
 | --- | --- |
 | 1. Voraussetzungen | Prüft Basiswerkzeuge, `curl`, Dialog-Werkzeug, Docker Engine, Docker Compose, laufenden Docker-Dienst, Zugriffsrechte, Speicherplatz und Arbeitsspeicher. Fehlende Pakete werden nach Bestätigung automatisch installiert. |
 | 2. Konfigurationsdatei | Kopiert `.env.example` automatisch nach `.env` (Rechte `0600`). Existiert bereits eine `.env`, kann sie weiterverwendet (neue Schlüssel aus `.env.example` werden ergänzt) oder gesichert und neu angelegt werden. |
-| 3. Konfiguration | Gefragt werden Anwendung, Datenbank, Administrator, optionale Module (AD/LDAP, Windows-Anmeldung, SMS-Gateway, Office, phpMyAdmin, Autostart) und SNMP. Alle Werte landen in der `.env`. |
+| 3. Konfiguration | Gefragt werden Anwendung, Datenbank, Administrator, optionale Module (AD/LDAP, Windows-Anmeldung, SMS-Gateway, Office, phpMyAdmin, Autostart) und SNMP. Alle Werte landen in der `.env` – ausgenommen AD-Zugangsdaten (Bind-Passwort, Domäne, Domänencontroller, Beitrittskonto), die nach dem Start verschlüsselt in der Datenbank gespeichert werden. |
 | 4. Installation | Richtet ggf. Office ein, prüft belegte Ports, validiert `docker-compose.yml`, baut und startet die Container mit Fortschrittsanzeige, wartet auf die Healthchecks, setzt das Administrationskonto, startet optional phpMyAdmin und den systemd-Dienst. |
 | 5. Abschlussbericht | Zeigt eine vollständige Zusammenfassung (inkl. Zugangsdaten) an und speichert sie als Markdown unter `install-reports/installation-<Zeitstempel>.md`. |
 
@@ -149,8 +149,8 @@ Anführungszeichen gesetzt, damit Docker Compose und die Anwendung sie wörtlich
 
 | Modul | Abgefragte Werte |
 | --- | --- |
-| **Active Directory / LDAP** | `LDAP_HOST`, TLS (`LDAP_USE_TLS`, `LDAP_VERIFY_CERT`), `LDAP_PORT` (636/389), `LDAP_BASE_DN`, `LDAP_BIND_DN`, `LDAP_PASSWORD`, `LDAP_GROUP_BASE_DN`, `LDAP_SYNC_INTERVAL` |
-| **Windows-Anmeldung (NTLM)** | `SSO_ENABLED=true`, `SSO_DOMAIN`, `SSO_REALM`, `SSO_DC`, `SSO_DC_IP`, `SSO_JOIN_USER`, `SSO_JOIN_PASSWORD` – aktiviert automatisch auch LDAP |
+| **Active Directory / LDAP** | `LDAP_HOST`, TLS (`LDAP_USE_TLS`, `LDAP_VERIFY_CERT`), `LDAP_PORT` (636/389), `LDAP_BASE_DN`, `LDAP_BIND_DN`, `LDAP_GROUP_BASE_DN`, `LDAP_SYNC_INTERVAL`; Passwort des Dienstkontos (verschlüsselt in der Datenbank) |
+| **Windows-Anmeldung (NTLM)** | `SSO_ENABLED=true`; Domäne (NetBIOS), Domänencontroller (mehrere als Ausfallreserve, optional mit IP), Beitrittskonto und Passwort (verschlüsselt in der Datenbank) – aktiviert automatisch auch LDAP. Weitere Domänen (Zweigstellen, Tochtergesellschaften) werden danach im Adminbereich angelegt, siehe README „Windows-Anmeldung für mehrere Domänen“ |
 | **SMS-Gateway** | `ALARM_HOST`, `ALARM_USERNAME`, `ALARM_PASSWORD` |
 | **Office** | `NEXTCLOUD_ADMIN_USER`, `NEXTCLOUD_EXTRA_TRUSTED_DOMAINS`, `OFFICE_BACKUP_DIR`, Verschlüsselung der Sicherungen. Danach wird `scripts/office-setup.sh --no-start` (ggf. mit `--with-ad`/`--with-sso`/`--no-encryption`) ausgeführt, das die Secrets unter `./secrets/` erzeugt – siehe [office.md](office.md). |
 | **phpMyAdmin** | `PMA_PORT`; wird nach dem Start mit `--profile tools` gestartet |

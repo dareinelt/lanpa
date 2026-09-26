@@ -133,6 +133,7 @@ function backupImportPdo(): PDO
         'CREATE TABLE phonebook (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             external_id VARCHAR(128) NULL UNIQUE,
+            identity_source_id INTEGER NOT NULL DEFAULT 0,
             samaccount_name VARCHAR(64) NULL,
             display_name VARCHAR(120) NOT NULL DEFAULT \'\',
             first_name VARCHAR(64) NULL,

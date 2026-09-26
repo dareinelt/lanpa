@@ -72,7 +72,12 @@ use App\Support\Html;
                             <div class="table__hint"><?= Html::e((string) $item['email']) ?></div>
                         <?php } ?>
                     </td>
-                    <td><?= Html::e((string) $item['department']) ?></td>
+                    <td>
+                        <?= Html::e((string) $item['department']) ?>
+                        <?php if ((string) ($item['source'] ?? '') !== '') { ?>
+                            <div class="table__hint"><?= Html::e((string) $item['source']) ?></div>
+                        <?php } ?>
+                    </td>
                     <td>
                         <?= Html::e((string) $item['phone']) ?>
                         <?php if ((string) $item['mobile'] !== '') { ?>

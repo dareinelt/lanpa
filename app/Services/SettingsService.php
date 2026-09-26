@@ -51,6 +51,7 @@ final class SettingsService
             'logo_mime' => '',
             'background_file' => '',
             'background_mime' => '',
+            'ldap_label' => (string) Config::get('ldap.label', 'Zentrale'),
             'ldap_host' => (string) Config::get('ldap.host', ''),
             'ldap_port' => (string) Config::get('ldap.port', 636),
             'ldap_use_tls' => Config::get('ldap.use_tls', true) ? '1' : '0',
@@ -237,14 +238,24 @@ final class SettingsService
      */
     public function ldapConfig(): array
     {
+        $hosts = self::splitHostList($this->get('ldap_host'));
+        $label = trim($this->get('ldap_label'));
+
         return [
-            'host' => $this->get('ldap_host'),
+            // Hauptquelle: ID 0, ohne Kennung.
+            'id' => 0,
+            'key' => '',
+            'label' => $label !== '' ? $label : 'Zentrale',
+            'hosts' => $hosts,
+            'host' => $hosts[0] ?? '',
             'port' => $this->int('ldap_port', 636),
             'use_tls' => $this->bool('ldap_use_tls'),
             'verify_cert' => $this->bool('ldap_verify_cert'),
             'base_dn' => $this->get('ldap_base_dn'),
             'bind_dn' => $this->get('ldap_bind_dn'),
-            'password' => (string) Config::get('ldap.password', ''),
+            // Bind-Passwort: verschluesselt in ldap_bind_password, entschluesselt
+            // von IdentitySourceService::primaryConfig().
+            'password' => '',
             'filter' => $this->get('ldap_filter'),
             'timeout' => $this->int('ldap_timeout', 10),
             'page_size' => (int) Config::get('ldap.page_size', 500),
@@ -271,7 +282,26 @@ final class SettingsService
     {
         $config = $this->ldapConfig();
 
-        return $config['host'] !== '' && $config['base_dn'] !== '';
+        return $config['hosts'] !== [] && $config['base_dn'] !== '';
+    }
+
+    /**
+     * Zerlegt eine Serverliste (IP-Adressen oder Hostnamen, getrennt durch
+     * Zeilenumbruch, Komma, Semikolon oder Leerzeichen). Reihenfolge = Prioritaet.
+     *
+     * @return list<string>
+     */
+    public static function splitHostList(string $raw): array
+    {
+        $hosts = [];
+        foreach (preg_split('/[\s,;]+/', $raw) ?: [] as $host) {
+            $host = trim($host);
+            if ($host !== '' && !isset($hosts[strtolower($host)])) {
+                $hosts[strtolower($host)] = $host;
+            }
+        }
+
+        return array_values($hosts);
     }
 
     /**

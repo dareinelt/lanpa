@@ -12,6 +12,7 @@ use App\Core\View;
 use App\Exceptions\HttpException;
 use App\Security\Csrf;
 use App\Security\Session;
+use App\Security\SsoAuth;
 
 abstract class Controller
 {
@@ -40,8 +41,36 @@ abstract class Controller
             'officeTileStatus' => Container::officeConfig()->isEnabled() && Container::officeConfig()->tileStatusEnabled(),
             'officeTileStatusMode' => Container::officeConfig()->tileStatusMode(),
         ];
+        $shared += $this->ssoShared();
 
         return Response::html(View::render($template, array_merge($shared, $data), $layout), $status);
+    }
+
+    /**
+     * Erkannter Windows-Benutzer fuer den Seitenkopf und, falls keiner erkannt
+     * ist, der Link zur freiwilligen Windows-Anmeldung.
+     *
+     * @return array{ssoUser:?array<string,mixed>,ssoLoginUrl:string}
+     */
+    private function ssoShared(): array
+    {
+        try {
+            $sso = Container::sso();
+            if (!$sso->isEnabled()) {
+                return ['ssoUser' => null, 'ssoLoginUrl' => ''];
+            }
+
+            $request = Request::fromGlobals();
+            $user = $sso->resolve($request);
+            $uri = (string) ($request->server['REQUEST_URI'] ?? '/');
+
+            return [
+                'ssoUser' => $user,
+                'ssoLoginUrl' => $user === null && !$sso->isFake() ? SsoAuth::loginUrl($uri) : '',
+            ];
+        } catch (\Throwable) {
+            return ['ssoUser' => null, 'ssoLoginUrl' => ''];
+        }
     }
 
     protected function assetVersion(): string

@@ -11,17 +11,17 @@ final class AdGroupRepository extends Repository implements AdGroupStoreInterfac
 {
     public const MAX_SUGGESTIONS = 20;
 
-    public function replaceAll(array $groups, string $syncedAt): int
+    public function replaceAll(array $groups, string $syncedAt, int $sourceId = 0): int
     {
         $upsert = $this->pdo->prepare(
-            'INSERT INTO ad_groups (dn_hash, dn, name, description, member_count, synced_at, active)
-             VALUES (:dn_hash, :dn, :name, :description, :member_count, :synced_at, 1)
+            'INSERT INTO ad_groups (identity_source_id, dn_hash, dn, name, description, member_count, synced_at, active)
+             VALUES (:source, :dn_hash, :dn, :name, :description, :member_count, :synced_at, 1)
              ON DUPLICATE KEY UPDATE dn = VALUES(dn), name = VALUES(name), description = VALUES(description),
                 member_count = VALUES(member_count), synced_at = VALUES(synced_at), active = 1'
         );
-        $findId = $this->pdo->prepare('SELECT id FROM ad_groups WHERE dn_hash = :dn_hash');
+        $findId = $this->pdo->prepare('SELECT id FROM ad_groups WHERE identity_source_id = :source AND dn_hash = :dn_hash');
         $deleteMembers = $this->pdo->prepare('DELETE FROM ad_group_members WHERE group_id = :group_id');
-        $userIds = $this->phonebookIdsByExternalId();
+        $userIds = $this->phonebookIdsByExternalId($sourceId);
 
         $seenIds = [];
         foreach ($groups as $group) {
@@ -34,6 +34,7 @@ final class AdGroupRepository extends Repository implements AdGroupStoreInterfac
             }
 
             $upsert->execute([
+                'source' => $sourceId,
                 'dn_hash' => $hash,
                 'dn' => mb_substr($group['dn'], 0, 1024),
                 'name' => $group['name'],
@@ -41,7 +42,7 @@ final class AdGroupRepository extends Repository implements AdGroupStoreInterfac
                 'member_count' => count($members),
                 'synced_at' => $syncedAt,
             ]);
-            $findId->execute(['dn_hash' => $hash]);
+            $findId->execute(['source' => $sourceId, 'dn_hash' => $hash]);
             $groupId = (int) $findId->fetchColumn();
             if ($groupId === 0) {
                 continue;
@@ -54,15 +55,17 @@ final class AdGroupRepository extends Repository implements AdGroupStoreInterfac
             $seenIds[$groupId] = true;
         }
 
-        // Nicht mehr gelieferte Gruppen deaktivieren und Mitglieder entfernen
-        // (Abgleich ueber die IDs dieses Laufs, nicht ueber den Zeitstempel).
+        // Nicht mehr gelieferte Gruppen dieser Quelle deaktivieren und
+        // Mitglieder entfernen (Abgleich ueber die IDs dieses Laufs, nicht
+        // ueber den Zeitstempel). Andere Quellen bleiben unberuehrt.
         if ($seenIds === []) {
-            $this->pdo->exec('UPDATE ad_groups SET active = 0, member_count = 0 WHERE active = 1');
+            $this->pdo->prepare('UPDATE ad_groups SET active = 0, member_count = 0 WHERE active = 1 AND identity_source_id = ?')
+                ->execute([$sourceId]);
         } else {
             $ids = array_keys($seenIds);
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
-            $stale = $this->pdo->prepare("UPDATE ad_groups SET active = 0, member_count = 0 WHERE active = 1 AND id NOT IN ({$placeholders})");
-            $stale->execute($ids);
+            $stale = $this->pdo->prepare("UPDATE ad_groups SET active = 0, member_count = 0 WHERE active = 1 AND identity_source_id = ? AND id NOT IN ({$placeholders})");
+            $stale->execute(array_merge([$sourceId], $ids));
         }
         $this->pdo->exec('DELETE m FROM ad_group_members m JOIN ad_groups g ON g.id = m.group_id WHERE g.active = 0');
 
@@ -129,11 +132,12 @@ final class AdGroupRepository extends Repository implements AdGroupStoreInterfac
     /**
      * @return array<string,int>
      */
-    private function phonebookIdsByExternalId(): array
+    private function phonebookIdsByExternalId(int $sourceId): array
     {
         $map = [];
-        $statement = $this->pdo->query('SELECT id, external_id FROM phonebook WHERE active = 1');
-        foreach ($statement?->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+        $statement = $this->pdo->prepare('SELECT id, external_id FROM phonebook WHERE active = 1 AND identity_source_id = :source');
+        $statement->execute(['source' => $sourceId]);
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
             $map[(string) $row['external_id']] = (int) $row['id'];
         }
 

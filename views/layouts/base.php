@@ -19,6 +19,8 @@ $documentationEnabled = $documentationEnabled ?? false;
 $csrfToken = $csrfToken ?? '';
 $ssoUser = isset($ssoUser) && is_array($ssoUser) ? $ssoUser : null;
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
+$metaRefresh = isset($metaRefresh) && is_string($metaRefresh) ? $metaRefresh : '';
+$ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '';
 ?>
 <!doctype html>
 <html lang="de" data-theme="light">
@@ -26,6 +28,9 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
+    <?php if ($metaRefresh !== '') { ?>
+        <meta http-equiv="refresh" content="0;url=<?= Html::e($metaRefresh) ?>">
+    <?php } ?>
     <meta name="csrf-token" content="<?= Html::e($csrfToken) ?>">
     <title><?= Html::e($pageTitle) ?> – <?= Html::e($siteTitle ?? $appName) ?></title>
     <link rel="icon" href="/assets/images/favicon.svg" type="image/svg+xml">
@@ -99,6 +104,8 @@ $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
                         <span class="site-user__badge">Test</span>
                     <?php } ?>
                 </span>
+            <?php } elseif ($ssoLoginUrl !== '') { ?>
+                <a class="site-nav__link site-nav__link--sso" href="<?= Html::e($ssoLoginUrl) ?>" title="Mit dem Windows-Konto anmelden, um persönliche Inhalte zu sehen">Mit Windows anmelden</a>
             <?php } ?>
             <button type="button" class="theme-toggle" data-theme-toggle aria-live="polite">
                 <span class="theme-toggle__icon" aria-hidden="true"></span>

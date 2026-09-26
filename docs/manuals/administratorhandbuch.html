@@ -77,7 +77,7 @@
 
   <h2>1.2&ensp;Technische Struktur</h2>
   <ul>
-    <li><strong>Dienste:</strong> <code>db</code> (MySQL 8.0), <code>app</code> (Apache/PHP), <code>sync</code> (LDAP-Hintergrund-Worker), <code>snmp</code> (SNMP-Agent) sowie optional <code>phpmyadmin</code>.</li>
+    <li><strong>Dienste:</strong> <code>db</code> (MySQL 9.7 LTS), <code>app</code> (Apache/PHP), <code>sync</code> (LDAP-Hintergrund-Worker), <code>snmp</code> (SNMP-Agent) sowie optional <code>phpmyadmin</code>.</li>
     <li><strong>Datenbank:</strong> eine MySQL-Datenbank (<code>intranet</code>) mit Tabellen für Navigation, Telefonbuch, Links, Notfallnummern, Mitteilungen, Einstellungen, Benutzer und Klickstatistik.</li>
     <li><strong>Speicher:</strong> ein Docker-Volume <code>app_storage</code> für hochgeladene Dateien (Logo, Hintergrundbild) und Protokolle.</li>
   </ul>
@@ -91,7 +91,7 @@
   <ul>
     <li>Docker Engine und Docker Compose (Plugin v2).</li>
     <li>Freie Ports für Webapplikation und optional phpMyAdmin.</li>
-    <li>Zugriff auf den MySQL-Container-Image (<code>mysql:8.0</code>) beim ersten Start.</li>
+    <li>Zugriff auf den MySQL-Container-Image (<code>mysql:9.7.2</code>) beim ersten Start.</li>
   </ul>
 
   <div class="tip">

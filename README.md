@@ -6,7 +6,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 
 - **Backend:** PHP 8.5 (mindestens 8.4), PDO/MySQL, eigene Autoloader-/Router-/View-Schicht
 - **Frontend:** Vanilla JavaScript und handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons)
-- **Datenbank:** MySQL 8 / MariaDB 11 (utf8mb4)
+- **Datenbank:** MySQL 9.7 LTS (utf8mb4)
 - **Betrieb:** Docker Compose (App + Datenbank + Synchronisationsdienst, optional phpMyAdmin)
 
 ---
@@ -107,7 +107,7 @@ installieren, nicht starten).
 | Dienst | Zweck | Healthcheck |
 | --- | --- | --- |
 | `app` | PHP 8.5 + Apache, DocumentRoot `public/` | `GET /health` |
-| `db` | MySQL 8, benanntes Volume `db_data` | `mysqladmin ping` |
+| `db` | MySQL 9.7 LTS (`DB_IMAGE_TAG`, Standard `9.7.2`), benanntes Volume `db_data` | `mysqladmin ping` |
 | `sync` | Dauerlauf der AD-Synchronisation (`scripts/sync_worker.php`) | – |
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
@@ -121,7 +121,7 @@ installieren, nicht starten).
 1. PHP 8.5 (mindestens 8.4) mit den Erweiterungen `pdo_mysql`, `ldap`, `mbstring`, `json`, `openssl`, `zip` bereitstellen.
 2. Repository in das Zielverzeichnis kopieren, **DocumentRoot auf `public/`** setzen (`mod_rewrite` aktivieren).
 3. `.env.example` nach `.env` kopieren und ausfüllen.
-4. Datenbank und Benutzer anlegen (utf8mb4).
+4. Datenbank (MySQL 9.7 LTS) und Benutzer anlegen (utf8mb4).
 5. Einrichten:
 
 ```bash
@@ -159,6 +159,7 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | `APP_MAX_LOGO_BYTES` | Maximale Logogröße | `524288` |
 | `APP_MAX_BACKGROUND_BYTES` | Maximale Größe des Hintergrundbilds (Wasserzeichen) | `2097152` |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Datenbankzugang | – |
+| `DB_IMAGE_TAG` | MySQL-Image des `db`-Dienstes (nur Patch-Versionen der LTS-Reihe 9.7) | `9.7.2` |
 | `LDAP_HOST`, `LDAP_PORT`, `LDAP_BASE_DN`, `LDAP_BIND_DN` | Startwerte der AD-Hauptquelle (`LDAP_HOST`: ein oder mehrere Server) | – |
 | `LDAP_LABEL` | Beschriftung der Hauptquelle | `Zentrale` |
 | `LDAP_USE_TLS`, `LDAP_VERIFY_CERT` | Transportverschlüsselung und Zertifikatsprüfung | `true` |
@@ -465,6 +466,25 @@ docker compose exec -T db mysql -u root -p intranet < backup-2026-01-01.sql
 Zusätzlich lässt sich im Adminbereich unter **Sicherung** eine vollständige
 Sicherung (ZIP) erstellen und wieder einspielen (Export/Import).
 
+### MySQL-Upgrade von 8.0 auf 9.7 LTS
+
+Neue Installationen starten direkt mit MySQL 9.7 LTS – ein Upgrade ist nicht nötig.
+Bestehende Installationen mit MySQL 8.0 (Volume `<projekt>_db_data`) lassen sich nicht
+direkt auf 9.7 heben: MySQL erlaubt nur LTS-zu-LTS-Upgrades (8.0 → 8.4 → 9.7); der
+`db`-Container bricht sonst mit `Cannot upgrade from 80xxx to 907xx` ab. Nach dem
+Aktualisieren des Repositorys daher einmalig ausführen:
+
+```bash
+./scripts/mysql-upgrade.sh          # --check: nur prüfen, --no-backup, --no-start, --yes
+```
+
+Das Skript stoppt den Stack, sichert das Datenverzeichnis nach `backups/mysql/`, hebt
+den Datenbestand mit einem temporären `mysql:8.4`-Container an, stellt Konten mit dem in
+9.7 entfernten `mysql_native_password` (`DB_USER`, `root`) auf `caching_sha2_password`
+um und startet den Stack; der `db`-Dienst führt den Schritt auf 9.7 selbst aus.
+`scripts/install.sh` erledigt das bei einem vorhandenen 8.0-Volume automatisch.
+Rückweg: Volume leeren, Archiv aus `backups/mysql/` zurückspielen, `DB_IMAGE_TAG=8.0`.
+
 ### Datenpflege
 
 ```bash
@@ -481,7 +501,7 @@ config/         Konfiguration aus Umgebungsvariablen
 database/       SQL-Migrationen
 docker/         Dockerfile, Entrypoint, PHP-/MySQL-Konfiguration
 public/         DocumentRoot: Front-Controller und Assets
-scripts/        CLI-Werkzeuge (Migration, Seed, Adminkonto, Synchronisation, Bereinigung)
+scripts/        CLI-Werkzeuge (Migration, Seed, Adminkonto, Synchronisation, Bereinigung, MySQL-Upgrade)
 storage/        Protokolle und Uploads (nicht im DocumentRoot)
 tests/          Abhängigkeitsfreier Testrunner und Unit-Tests
 views/          PHP-Templates

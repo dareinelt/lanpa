@@ -4,7 +4,7 @@ Zentrale Startseite für das Intranet: Kacheln für interne Anwendungen, eine au
 Active Directory gespeiste Telefonliste, Klickstatistiken und ein vollständiger
 Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkeiten.
 
-- **Backend:** PHP 8.2+ (getestet mit 8.3), PDO/MySQL, eigene Autoloader-/Router-/View-Schicht
+- **Backend:** PHP 8.5 (mindestens 8.4), PDO/MySQL, eigene Autoloader-/Router-/View-Schicht
 - **Frontend:** Vanilla JavaScript und handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons)
 - **Datenbank:** MySQL 8 / MariaDB 11 (utf8mb4)
 - **Betrieb:** Docker Compose (App + Datenbank + Synchronisationsdienst, optional phpMyAdmin)
@@ -106,7 +106,7 @@ installieren, nicht starten).
 
 | Dienst | Zweck | Healthcheck |
 | --- | --- | --- |
-| `app` | PHP 8.3 + Apache, DocumentRoot `public/` | `GET /health` |
+| `app` | PHP 8.5 + Apache, DocumentRoot `public/` | `GET /health` |
 | `db` | MySQL 8, benanntes Volume `db_data` | `mysqladmin ping` |
 | `sync` | Dauerlauf der AD-Synchronisation (`scripts/sync_worker.php`) | – |
 | `phpmyadmin` | optional, Profil `tools` | – |
@@ -118,7 +118,7 @@ installieren, nicht starten).
 
 ## 3. Installation ohne Docker
 
-1. PHP 8.2+ mit den Erweiterungen `pdo_mysql`, `ldap`, `mbstring`, `json`, `openssl`, `zip` bereitstellen.
+1. PHP 8.5 (mindestens 8.4) mit den Erweiterungen `pdo_mysql`, `ldap`, `mbstring`, `json`, `openssl`, `zip` bereitstellen.
 2. Repository in das Zielverzeichnis kopieren, **DocumentRoot auf `public/`** setzen (`mod_rewrite` aktivieren).
 3. `.env.example` nach `.env` kopieren und ausfüllen.
 4. Datenbank und Benutzer anlegen (utf8mb4).

@@ -123,10 +123,8 @@ final class AlarmService
 
         $body = @file_get_contents($url, false, $context);
 
-        $statusLine = '';
-        if (isset($http_response_header) && is_array($http_response_header)) {
-            $statusLine = (string) ($http_response_header[0] ?? '');
-        }
+        $responseHeaders = http_get_last_response_headers() ?? [];
+        $statusLine = (string) ($responseHeaders[0] ?? '');
 
         $code = 0;
         if (preg_match('#\s(\d{3})\s#', $statusLine, $matches) === 1) {

@@ -16,7 +16,8 @@
 - **Klickstatistiken** je Kachel
 - einen **vollständigen Administrationsbereich** (CRUD, Design, AD-Konfiguration, Statistik, Benutzer)
 - optionale **Alarmierungen** per SMS-Gateway (an Gruppen oder Einzelrufnummern) und einen per SMS-Code **geschützten Zugriffsmodus**
-- einen **SNMP-Agenten** (Container `snmp`) zur Überwachung der Dienste und des AD-Synchronisations-Workflows
+- einen **SNMP-Agenten** (Container `snmp`) zur Überwachung der Dienste, des AD-Synchronisations-Workflows und der Gültigkeit des HTTPS-Zertifikats
+- eine **Zertifikatsverwaltung** (Admin → Zertifikate (HTTPS)): CSR erstellen, Zertifikat (PEM/CRT) mit Vorschau importieren, aktives Zertifikat wählen; der `auth`-Container liefert damit HTTPS aus (sonst selbstsigniertes Notfall-Zertifikat, HTTP nur aus freigegebenen Quellnetzen)
 - optional **Office** (Profil `office`): Nextcloud + Euro-Office DocumentServer hinter dem `auth`-Container, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, lokale KI für alle Benutzer (Nextcloud-Assistent, KI-Plugin der Editoren; Audio/Bilder im Adminbereich schaltbar), Sicherung – Details in `docs/office.md`
 
 Grundprinzip: **komplett ohne Frameworks, ohne CDNs, ohne externe Abhängigkeiten.**
@@ -140,7 +141,7 @@ app/            Anwendungscode
   Support/      Dates, Html, Sanitizer, Validator
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
-  migrations/   SQL-Migrationen (001…016)
+  migrations/   SQL-Migrationen (001…018)
 docker/         Dockerfiles, Entrypoints, PHP-/MySQL-Konfiguration, SNMP-Agent
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
 scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation)
@@ -182,7 +183,7 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 
 - Basisklasse `Controller` stellt `view()`, `requireValidCsrf()`, `redirect()`, `assetVersion()` bereit.
 - **Öffentlich:** `LandingController`, `PageController` (Unterseiten/Textseiten), `PhonebookController`, `ClickController`, `LogoController`, `BackgroundImageController`, `ImportantLinkIconController`, `HealthController`, `AlarmTriggerController` (Alarm-Kacheln), `ProtectedAccessController` (Zugangscode-Seite), `SmsCodeController` (Code-Versand/-Prüfung).
-- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `StatisticsController`, `AdminUserController`, `ImportExportController`, `OfficeController`, `OfficeAppsController`, plus Basis `AdminController`.
+- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `CertificateController` (Zertifikate/HTTPS), `StatisticsController`, `AdminUserController`, `ImportExportController`, `OfficeController`, `OfficeAppsController`, plus Basis `AdminController`.
 
 ### Services (`app/Services/`) – Geschäftslogik
 
@@ -193,7 +194,8 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 `EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
 `LdapAttributeMapper`, `LdapClient`, `LogoService`, `NavigationService`,
 `IdentitySourceService` (Identitätsquellen: Hauptquelle ID 0 aus `settings`, weitere aus `identity_sources`; Validierung, Ver-/Entschlüsselung der Zugangsdaten, SSO-Routen/Worker, `authEnvironment()` für `/internal/sso-config`),
-`PhonebookService`, `SettingsService`, `SmsCodeService`, `StatisticsService`, `ThemeService`.
+`PhonebookService`, `SettingsService`, `SmsCodeService`, `StatisticsService`, `ThemeService`,
+`Tls\TlsCertificateService` (CSR/Schlüssel erzeugen, Import-Vorschau und -Bestätigung, Aktivierung, Notfall-Zertifikat, HTTP-Quellnetze `tls_http_networks`, `authConfig()` für `/internal/tls-config`) + `Tls\CertificateInspector` (PEM/DER/Base64 lesen, Details, Kette ordnen, Status valid/expiring/expired/not_yet_valid, Hostname-Abdeckung).
 
 Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 (`Validator`/`Sanitizer`) und wirft bei Fehlern `ValidationException` mit einem
@@ -260,6 +262,7 @@ auf `/zugriff` umgeleitet, bis sie für die Sitzung freigeschaltet sind.
 | GET | `/sso?ziel=…` | `SsoController::start` – merkt Ziel + Versuch in der Sitzung, leitet zu `/sso/anmelden` |
 | GET | `/sso/anmelden` | `SsoController::login` – einziger Pfad mit NTLM im auth-Container; übernimmt den Header-Benutzer in die Sitzung (`SsoAuth::remember`) |
 | GET | `/sso/nicht-erkannt` | `SsoController::notRecognized` – ErrorDocument 401/500 des Anmeldepunkts (Status 401, Meta-Refresh zum Ziel) |
+| GET | `/internal/tls-config` | `InternalController::tlsConfig` – `TLS_MODE` (strict/fallback), `TLS_HTTP_NETWORKS`, `TLS_CERT` (inkl. Kette), `TLS_KEY`, `TLS_ID`, `TLS_LABEL` (je `NAME=base64`) für die Hauptinstanz `auth`; Token wie `sso-config`, markiert das ausgelieferte Zertifikat als verwendet (`first_used_at`/`last_used_at`) |
 | GET | `/internal/sso-config?source=KEY` | `InternalController::ssoConfig` – Domänen-Konfiguration inkl. entschlüsselter Zugangsdaten für die auth-Container; nur mit Token (`X-Intranet-Sso-Token`, Datei im Volume `sso_token`), ohne `X-Forwarded-*` und nur vom passenden auth-Container; im auth-Proxy per 404 gesperrt |
 | GET/POST | `/admin/login` | `AuthController::showLogin` / `login` |
 
@@ -271,7 +274,7 @@ auf `/zugriff` umgeleitet, bis sie für die Sitzung freigeschaltet sind.
 
 Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
 `mitteilungen`, `beschreibungen`, `design`, `ad`, `alarmierung`
-(inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `snmp`, `statistik`
+(inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `zertifikate` (inkl. `zertifikate/csr` (POST erstellen, GET `?id=` herunterladen), `zertifikate/import/pruefen`, `…/import/bestaetigen`, `…/import/verwerfen`, `zertifikate/aktivieren`, `…/deaktivieren`, `…/loeschen`, `…/http-netze`), `snmp`, `statistik`
 (+ `admin/api/statistik`), `benutzer`, `sicherung` (Export/Import), `office`
 (inkl. `office/pruefen`, `office/sicherung`, `office/kachel`, `office/kachel/gestaltung`,
 `office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`, `office/ki`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
@@ -311,6 +314,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `office_app_packages` | App-Pakete für Office-Apps | `name` (unique), `description` |
 | `office_app_package_apps` | Apps eines Pakets | `package_id`, `app_key` |
 | `identity_sources` | Weitere AD-Quellen (Zweigstellen, Tochtergesellschaften) | `source_key` (unique), `label`, `hosts` (je Zeile ein Server, Ausfallreserve), LDAP-Felder, `bind_password` (verschlüsselt), `sso_enabled`, `sso_domain`, `sso_dcs`, `sso_join_user`, `sso_join_password` (verschlüsselt), `sso_networks`, `sso_hostnames`, `sort_order`, `active` |
+| `tls_certificates` | CSR-Requests mit Schlüssel (verschlüsselt) und importiertem Zertifikat; `kind='fallback'` = selbstsigniertes Notfall-Zertifikat | `kind` (csr/fallback), `common_name`, `san`, `key_type`, `private_key`, `public_key_hash`, `csr_pem`, `certificate_pem`, `chain_pem`, `cert_*` (Details, `cert_not_before`/`cert_not_after` als Unix-Zeit), `active` (genau eins), `activated_at`, `first_used_at`/`last_used_at` |
 | `office_app_permissions` | Freigabe von Apps/Paketen für AD-Gruppen | `group_name`, `app_key` oder `package_id` |
 
 **Konventionen:** `InnoDB`, `utf8mb4`/`utf8mb4_unicode_ci`, `TIMESTAMP`-Spalten `created_at`/`updated_at`, `TINYINT(1)` für Booleans (`active`), Fremdschlüssel mit `ON DELETE SET NULL`/`ON UPDATE CASCADE`.
@@ -326,7 +330,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - Jede Variable unterstützt die Datei-Variante `<NAME>_FILE` für Docker-Secrets.
 - Vollständige Liste der Variablen: siehe `README.md` (Abschnitt „Konfiguration“) und `.env.example`.
 
-**Wichtigste Variablen:** `APP_URL`, `APP_DEBUG`, `APP_FORCE_SECURE_COOKIES`, `APP_SESSION_IDLE_TIMEOUT`, `APP_MAX_LOGO_BYTES`, `APP_ALLOW_SVG_LOGO`, `APP_MAX_BACKGROUND_BYTES`, `DB_*`, `LDAP_*` (inkl. `LDAP_ATTR_*`-Mapping), `ALARM_*` (SMS-Gateway), `SNMP_COMMUNITY`/`SNMP_SYS_LOCATION`/`SNMP_SYS_CONTACT`/`SNMP_PORT`, `SEED_ON_START`, `CLICK_RETENTION_DAYS`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
+**Wichtigste Variablen:** `APP_URL`, `APP_DEBUG`, `APP_FORCE_SECURE_COOKIES`, `APP_SESSION_IDLE_TIMEOUT`, `APP_MAX_LOGO_BYTES`, `APP_ALLOW_SVG_LOGO`, `APP_MAX_BACKGROUND_BYTES`, `DB_*`, `LDAP_*` (inkl. `LDAP_ATTR_*`-Mapping), `ALARM_*` (SMS-Gateway), `SNMP_COMMUNITY`/`SNMP_SYS_LOCATION`/`SNMP_SYS_CONTACT`/`SNMP_PORT`, `APP_PORT`/`APP_HTTPS_PORT`, `TLS_ENABLED`, `SEED_ON_START`, `CLICK_RETENTION_DAYS`, `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
 
 ---
 
@@ -360,13 +364,15 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 ### auth-Container (`docker/auth/entrypoint.sh`)
 
 - Ruft beim Start `/internal/sso-config?source=<SSO_SOURCE>` von `app` ab (Token aus `sso_token`, Wiederholungen) und tritt damit der Domäne bei; Änderungen erfordern einen Neustart (`docker compose restart auth auth-<kennung>`).
+- HTTPS (`TLS_ENABLED=true`, nur Hauptinstanz): `tls-sync.sh once` holt vor dem Start `/internal/tls-config` und schreibt `/etc/intranet-tls/` (`cert.pem`, `key.pem`, `server.pem`, `mode`, `networks`; prüft, dass Schlüssel und Zertifikat zusammenpassen; ohne Anwendung lokales selbstsigniertes Zertifikat). `tls-sync.sh loop` gleicht alle `TLS_SYNC_INTERVAL` (60) Sekunden ab und lädt nur bei Änderungen neu (`apache2ctl graceful` bzw. HAProxy `-sf`).
+- Ohne Verteiler: Apache mit `-D TLS_APACHE` – HTTP-VirtualHost bindet `http-policy.conf` (Umleitung 302 auf `https://host:HTTPS_PUBLIC_PORT`, im Modus fallback nicht für die Quellnetze, nie für `/auth-health`) und den gemeinsamen Inhalt `common.conf` ein, HTTPS-VirtualHost `*:443` ebenso `common.conf`; `X-Forwarded-Proto` je nach `%{HTTPS}`. Mit Verteiler (`-D TLS_PROXY`): HAProxy terminiert TLS auf `:443` (`alpn http/1.1`), setzt `X-Forwarded-Proto` und leitet selbst um (`sso-routes.sh` liest `/etc/intranet-tls/`).
 - Hauptinstanz `auth`: HAProxy verteilt per `SSO_ROUTES` (Hostname/Client-Netz) an die Worker `auth-<kennung>` (`sso-routes.sh`, Fallback auf die Hauptinstanz, wenn ein Worker ausfällt); Worker aus `docker-compose.sso.yml` (`scripts/sso-domains.sh`).
 
 ### SNMP-Container-Startup (`docker/snmp/entrypoint.sh`)
 
 1. Liest `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` aus der Umgebung.
 2. Überschreibt diese mit den Werten aus der Tabelle `settings` (`snmp_community`, `snmp_sys_location`, `snmp_sys_contact`), falls die Datenbank erreichbar ist.
-3. Erzeugt `snmpd.conf` und hängt die Status-Checks als `exec`-Einträge an (`UCD-SNMP-MIB::extTable`, Basis `.1.3.6.1.4.1.2021.8.1`): `app`, `db`, `sync`, `sync_workflow`, `phpmyadmin` sowie die Office-Dienste.
+3. Erzeugt `snmpd.conf` und hängt die Status-Checks als `exec`-Einträge an (`UCD-SNMP-MIB::extTable`, Basis `.1.3.6.1.4.1.2021.8.1`): `app`, `db`, `sync`, `sync_workflow`, `phpmyadmin`, die Office-Dienste sowie `tls_certificate`/`tls_certificate_days`.
 4. `exec snmpd -f -Lo -C -c /etc/snmp/snmpd.conf` (lauscht auf UDP 161).
 
 ### AD-Synchronisation
@@ -394,7 +400,8 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 ### SNMP-Überwachung
 
 - Container `snmp` liest den Zustand der Dienste über den (read-only gemounteten) Docker-Socket und den Zustand des AD-Workflows direkt aus `sync_log`.
-- Ausgabe in `UCD-SNMP-MIB::extTable`: `extResult` (Exit-Code) unter `.1.3.6.1.4.1.2021.8.1.100.N`, `extOutput` (Text) unter `.1.3.6.1.4.1.2021.8.1.101.N`, Index `N` = 1 `app`, 2 `db`, 3 `sync`, 4 `sync_workflow`, 5 `phpmyadmin`, 6 `nextcloud`, 7 `nextcloud_db`, 8 `nextcloud_redis`, 9 `eurooffice`, 10 `office_workflow` (6–10 nur mit Profil `office`, sonst UNKNOWN).
+- Ausgabe in `UCD-SNMP-MIB::extTable`: `extResult` (Exit-Code) unter `.1.3.6.1.4.1.2021.8.1.100.N`, `extOutput` (Text) unter `.1.3.6.1.4.1.2021.8.1.101.N`, Index `N` = 1 `app`, 2 `db`, 3 `sync`, 4 `sync_workflow`, 5 `phpmyadmin`, 6 `nextcloud`, 7 `nextcloud_db`, 8 `nextcloud_redis`, 9 `eurooffice`, 10 `office_workflow` (6–10 nur mit Profil `office`, sonst UNKNOWN), 11 `tls_certificate` (aktives HTTPS-Zertifikat: 0 > 30 Tage, 1 ≤ 30 Tage oder keins aktiv, 2 abgelaufen/noch nicht gültig), 12 `tls_certificate_days` (gleiche Exit-Codes, Text = Resttage, `-9999` = keins aktiv).
+- Datenbankabfragen (`db_query`): direkt per MariaDB-Client, sonst über den Docker-Socket im `db`-Container (Alpine-Client ohne `caching_sha2_password`).
 - Exit-Codes: `0` OK, `1` WARNING, `2` CRITICAL, `3` UNKNOWN; `sync_workflow` meldet `0`, wenn der letzte Lauf `success` und jünger als `2 × LDAP_SYNC_INTERVAL` ist.
 - Community/Strings im Adminbereich unter **SNMP** pflegbar; werden erst nach Neustart des `snmp`-Containers wirksam.
 

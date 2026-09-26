@@ -23,6 +23,13 @@
 #                        Umgebungsvariablen (Altinstallationen).
 # - OFFICE_ENABLED=true: Reverse-Proxy fuer Nextcloud/Euro-Office aktivieren
 #                        (-D OFFICE, bindet /etc/apache2/intranet/office.conf ein).
+# - TLS_ENABLED=true:    HTTPS auf Port 443 mit dem Zertifikat aus der
+#                        Zertifikatsverwaltung (tls-sync.sh, alle 60 s
+#                        abgeglichen). Ohne gueltiges Zertifikat gilt ein
+#                        selbstsigniertes Notfall-Zertifikat, HTTP bleibt dann
+#                        fuer die freigegebenen Quellnetze erlaubt. Nur in der
+#                        Hauptinstanz (nicht bei SSO_SOURCE). Aus (false) z. B.
+#                        hinter einem externen TLS-Proxy.
 set -e
 
 : "${SSO_ENABLED:=false}"
@@ -31,6 +38,8 @@ set -e
 : "${SSO_PROXY_PROTOCOL:=false}"
 : "${OFFICE_ENABLED:=false}"
 : "${APP_URL:=http://localhost:8080}"
+: "${TLS_ENABLED:=true}"
+: "${HTTPS_PUBLIC_PORT:=443}"
 
 is_true() {
     case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
@@ -204,8 +213,29 @@ else
     echo "[auth] SSO_ENABLED ist nicht gesetzt - keine NTLM-Anmeldung, reiner Proxy."
 fi
 
+# Oeffentliches Schema (http/https) aus APP_URL (X-Forwarded-Proto ohne eigenes TLS).
+case "$APP_URL" in
+    https://*) OFFICE_PUBLIC_SCHEME=https ;;
+    *)         OFFICE_PUBLIC_SCHEME=http ;;
+esac
+export OFFICE_PUBLIC_SCHEME
+
+# HTTPS: Zertifikat und HTTP-Richtlinie aus der Zertifikatsverwaltung.
+if [ -n "$SSO_SOURCE" ]; then
+    TLS_ENABLED=false
+fi
+if ! printf '%s' "$HTTPS_PUBLIC_PORT" | grep -Eq '^[0-9]{1,5}$'; then
+    echo "[auth] FEHLER: Ungueltiger HTTPS_PUBLIC_PORT '${HTTPS_PUBLIC_PORT}'." >&2
+    exit 1
+fi
+export TLS_ENABLED HTTPS_PUBLIC_PORT
+if is_true "$TLS_ENABLED"; then
+    /usr/local/bin/tls-sync.sh once
+fi
+
 # HAProxy-Verteiler fuer weitere Identitaetsquellen (nur Hauptinstanz).
 if [ -n "$SSO_ROUTES" ]; then
+    printf '%s' "$SSO_ROUTES" > /etc/haproxy/sso-routes
     /usr/local/bin/sso-routes.sh "$SSO_ROUTES" > /etc/haproxy/haproxy.cfg
     haproxy -c -q -f /etc/haproxy/haproxy.cfg
     haproxy -D -f /etc/haproxy/haproxy.cfg -p /run/haproxy.pid
@@ -213,21 +243,20 @@ if [ -n "$SSO_ROUTES" ]; then
     AUTH_HTTP_PORT=8081
     SSO_PROXY_PROTOCOL=true
     APACHE_DEFINES="${APACHE_DEFINES} -D SSO_ROUTER"
+    is_true "$TLS_ENABLED" && APACHE_DEFINES="${APACHE_DEFINES} -D TLS_PROXY"
     printf 'Listen 127.0.0.1:%s\n' "$AUTH_HTTP_PORT" > /etc/apache2/ports.conf
     echo "[auth] Verteiler fuer weitere Identitaetsquellen aktiv."
+elif is_true "$TLS_ENABLED"; then
+    APACHE_DEFINES="${APACHE_DEFINES} -D TLS_APACHE"
+    printf 'Listen %s\nListen 443\n' "$AUTH_HTTP_PORT" > /etc/apache2/ports.conf
+else
+    printf 'Listen %s\n' "$AUTH_HTTP_PORT" > /etc/apache2/ports.conf
 fi
 export AUTH_HTTP_PORT
 
 if is_true "$SSO_PROXY_PROTOCOL"; then
     APACHE_DEFINES="${APACHE_DEFINES} -D PROXY_PROTOCOL"
 fi
-
-# Oeffentliches Schema (http/https) fuer X-Forwarded-Proto aus APP_URL.
-case "$APP_URL" in
-    https://*) OFFICE_PUBLIC_SCHEME=https ;;
-    *)         OFFICE_PUBLIC_SCHEME=http ;;
-esac
-export OFFICE_PUBLIC_SCHEME
 
 if is_true "$OFFICE_ENABLED"; then
     APACHE_DEFINES="${APACHE_DEFINES} -D OFFICE"
@@ -236,5 +265,11 @@ fi
 
 # apache2ctl uebergibt APACHE_ARGUMENTS an httpd.
 export APACHE_ARGUMENTS="${APACHE_ARGUMENTS:-}${APACHE_DEFINES}"
+
+if is_true "$TLS_ENABLED"; then
+    # Abgleich im Hintergrund: laedt Apache/HAProxy bei Aenderungen neu.
+    /usr/local/bin/tls-sync.sh loop &
+    echo "[auth] HTTPS aktiv (Port 443, oeffentlich ${HTTPS_PUBLIC_PORT})."
+fi
 
 exec "$@"

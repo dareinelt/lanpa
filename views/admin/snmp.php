@@ -80,6 +80,8 @@ use App\Support\Html;
             <tr><td>nextcloud_redis (Redis, optional)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.8</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.8</code></td></tr>
             <tr><td>eurooffice (DocumentServer, optional)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.9</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.9</code></td></tr>
             <tr><td>office_workflow (Nextcloud + DocumentServer)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.10</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.10</code></td></tr>
+            <tr><td>tls_certificate (Gültigkeit des aktiven HTTPS-Zertifikats)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.11</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.11</code></td></tr>
+            <tr><td>tls_certificate_days (Resttage als Zahl)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.12</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.12</code></td></tr>
             </tbody>
         </table>
     </div>

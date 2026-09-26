@@ -34,7 +34,7 @@ db_contact="$(setting snmp_sys_contact || true)"
 
 mkdir -p /var/lib/snmp
 
-# Hinweis: Die Reihenfolge der exec-Eintraege bestimmt den Index (1..10) der
+# Hinweis: Die Reihenfolge der exec-Eintraege bestimmt den Index (1..12) der
 # extResult-/extOutput-OIDs. Bei Aenderungen die README-Dokumentation anpassen.
 cat > /etc/snmp/snmpd.conf <<EOF
 # Erzeugt vom Entrypoint – nicht manuell bearbeiten.
@@ -53,6 +53,8 @@ exec nextcloud_db    /opt/snmp/check_status.sh nextcloud_db
 exec nextcloud_redis /opt/snmp/check_status.sh nextcloud_redis
 exec eurooffice      /opt/snmp/check_status.sh eurooffice
 exec office_workflow /opt/snmp/check_status.sh office_workflow
+exec tls_certificate      /opt/snmp/check_status.sh tls_certificate
+exec tls_certificate_days /opt/snmp/check_status.sh tls_certificate_days
 EOF
 
 # -C: nur diese Datei lesen (sonst wird snmpd.conf doppelt geladen -> doppelte

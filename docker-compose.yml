@@ -141,10 +141,16 @@ services:
       # Reverse-Proxy /office/ und /eurooffice/ (Same-Origin).
       OFFICE_ENABLED: ${OFFICE_ENABLED:-false}
       APP_URL: ${APP_URL:-http://localhost:8080}
+      # HTTPS mit dem Zertifikat aus Adminbereich -> Zertifikate (alle 60 s
+      # von /internal/tls-config abgeglichen). HTTPS_PUBLIC_PORT = Zielport
+      # der Umleitung von HTTP auf HTTPS.
+      TLS_ENABLED: ${TLS_ENABLED:-true}
+      HTTPS_PUBLIC_PORT: ${APP_HTTPS_PORT:-8443}
     volumes:
       - sso_token:/run/intranet-sso:ro
     ports:
       - "${APP_PORT:-8080}:80"
+      - "${APP_HTTPS_PORT:-8443}:443"
     networks:
       - intranet
       - office

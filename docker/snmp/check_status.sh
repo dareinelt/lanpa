@@ -2,7 +2,8 @@
 # SNMP-Statuspruefung fuer die Intranet-Landingpage.
 #
 # Verwendung: check_status.sh <app|db|sync|sync_workflow|phpmyadmin|
-#                              nextcloud|nextcloud_db|nextcloud_redis|eurooffice|office_workflow>
+#                              nextcloud|nextcloud_db|nextcloud_redis|eurooffice|office_workflow|
+#                              tls_certificate|tls_certificate_days>
 #
 # Rueckgabe (Exit-Code, landet als extResult in der SNMP-Tabelle):
 #   0 = OK        Dienst laeuft/gesund bzw. Workflow frisch erfolgreich
@@ -18,7 +19,8 @@ PROJECT="${COMPOSE_PROJECT_NAME:-}"
 
 # IDs aller Container eines Compose-Dienstes (Label-basiert).
 service_ids() {
-    local svc="$1" filter="label=com.docker.compose.service=${svc}"
+    local svc="$1" filter
+    filter="label=com.docker.compose.service=${svc}"
     [ -n "$PROJECT" ] && filter="label=com.docker.compose.project=${PROJECT},${filter}"
     "$DOCKER_BIN" ps -aq --filter "$filter" 2>/dev/null
 }
@@ -61,14 +63,29 @@ check_container() {
     return 0
 }
 
-# Liest eine einzelne Spalte der letzten Zeile aus sync_log.
-sync_log_value() {
+# Fuehrt eine Abfrage in der Intranet-Datenbank aus (tabulatorgetrennt, ohne
+# Kopfzeile). Der Alpine-MariaDB-Client beherrscht caching_sha2_password
+# (Standard ab MySQL 8) nicht; dann wird die Abfrage per Docker-Socket im
+# db-Container ausgefuehrt (mit dessen Zugangsdaten MYSQL_USER/MYSQL_PASSWORD).
+db_query() {
     local host="${DB_HOST:-db}" port="${DB_PORT:-3306}" user="${DB_USER:-intranet}"
-    local name="${DB_NAME:-intranet}" pass="${DB_PASSWORD:-}" passfile="${DB_PASSWORD_FILE:-}"
+    local name="${DB_NAME:-intranet}" pass="${DB_PASSWORD:-}" passfile="${DB_PASSWORD_FILE:-}" id
     [ -n "$passfile" ] && [ -r "$passfile" ] && pass="$(cat "$passfile")"
 
-    MYSQL_PWD="$pass" mysql --protocol=tcp -h "$host" -P "$port" -u "$user" -N -B \
-        -e "SELECT ${1} FROM \`${name}\`.sync_log ORDER BY id DESC LIMIT 1" 2>/dev/null
+    MYSQL_PWD="$pass" mysql --protocol=tcp -h "$host" -P "$port" -u "$user" -N -B -D "$name" \
+        -e "$1" 2>/dev/null && return 0
+
+    id="$(service_ids db | head -n1)"
+    [ -n "$id" ] || return 1
+    "$DOCKER_BIN" exec -i "$id" sh -c 'MYSQL_PWD="$MYSQL_PASSWORD" exec mysql -u"$MYSQL_USER" -N -B -D "$MYSQL_DATABASE"' \
+        <<SQL 2>/dev/null
+$1
+SQL
+}
+
+# Liest eine einzelne Spalte der letzten Zeile aus sync_log.
+sync_log_value() {
+    db_query "SELECT ${1} FROM sync_log ORDER BY id DESC LIMIT 1"
 }
 
 # Status des AD-Synchronisations-Workflows (letzter Lauf + Alter).
@@ -82,8 +99,8 @@ check_sync_workflow() {
 
     [ -z "$row" ] && { echo "sync_workflow: keine Laeufe"; return 3; }
 
-    status="${row%% *}"
-    age="${row#* }"
+    status="$(printf '%s' "$row" | cut -f1)"
+    age="$(printf '%s' "$row" | cut -f2)"
     [ -z "$age" ] && age=0
     threshold=$(( interval * 2 ))
 
@@ -164,6 +181,51 @@ check_office_workflow() {
     return 0
 }
 
+
+# Gueltigkeit des aktiven HTTPS-Zertifikats des auth-Containers
+# (Adminbereich -> Zertifikate). $1 = "text" (Klartext) oder "days"
+# (nur Resttage als Zahl, negativ = abgelaufen, -9999 = kein Zertifikat).
+#   0 = gueltig > TLS_WARN_DAYS (30) Tage
+#   1 = laeuft bald ab bzw. kein Zertifikat aktiv (Notfall-Zertifikat)
+#   2 = abgelaufen oder noch nicht gueltig / Datenbank nicht erreichbar
+check_tls_certificate() {
+    local format="${1:-text}" warn_days="${TLS_WARN_DAYS:-30}" row left before until cn days
+    row="$(db_query "SELECT cert_not_after - UNIX_TIMESTAMP(), cert_not_before - UNIX_TIMESTAMP(), DATE_FORMAT(DATE_ADD('1970-01-01 00:00:00', INTERVAL cert_not_after SECOND), '%Y-%m-%d %H:%i UTC'), common_name FROM tls_certificates WHERE kind = 'csr' AND active = 1 AND certificate_pem IS NOT NULL ORDER BY id DESC LIMIT 1")" || {
+        [ "$format" = "days" ] && echo "-9999" || echo "tls_certificate: Datenbank nicht erreichbar"
+        return 2
+    }
+    if [ -z "$row" ]; then
+        [ "$format" = "days" ] && echo "-9999" || echo "tls_certificate: kein Zertifikat aktiv (Notfall-Zertifikat)"
+        return 1
+    fi
+
+    left="$(printf '%s' "$row" | cut -f1)"
+    before="$(printf '%s' "$row" | cut -f2)"
+    until="$(printf '%s' "$row" | cut -f3)"
+    cn="$(printf '%s' "$row" | cut -f4)"
+    if [ "$left" -ge 0 ]; then
+        days=$((left / 86400))
+    else
+        days=$(( -((-left + 86399) / 86400) ))
+    fi
+    [ "$format" = "days" ] && echo "$days"
+
+    if [ "$before" -gt 0 ]; then
+        [ "$format" = "days" ] || echo "tls_certificate: ${cn} noch nicht gueltig"
+        return 2
+    fi
+    if [ "$left" -le 0 ]; then
+        [ "$format" = "days" ] || echo "tls_certificate: ${cn} abgelaufen seit ${until}"
+        return 2
+    fi
+    if [ "$days" -le "$warn_days" ]; then
+        [ "$format" = "days" ] || echo "tls_certificate: ${cn} laeuft in ${days} Tagen ab (${until})"
+        return 1
+    fi
+    [ "$format" = "days" ] || echo "tls_certificate: ${cn} gueltig bis ${until} (${days} Tage)"
+    return 0
+}
+
 case "${1:-}" in
     app)           check_container app 1 ;;
     db)            check_container db 1 ;;
@@ -175,5 +237,7 @@ case "${1:-}" in
     nextcloud_redis) check_office_container nextcloud-redis ;;
     eurooffice)      check_office_container eurooffice ;;
     office_workflow) check_office_workflow ;;
+    tls_certificate)      check_tls_certificate text ;;
+    tls_certificate_days) check_tls_certificate days ;;
     *) echo "unbekannte Pruefung: ${1:-}"; exit 3 ;;
 esac

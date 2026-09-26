@@ -136,6 +136,7 @@ Anführungszeichen gesetzt, damit Docker Compose und die Anwendung sie wörtlich
 | Name der Anwendung | `APP_NAME` | `Intranet` |
 | Betriebsart | `APP_ENV`, `APP_DEBUG` | `production` / `false` |
 | Port | `APP_PORT` | `8080` |
+| HTTPS-Port (wird bei Belegung abgefragt) | `APP_HTTPS_PORT` | `8443` |
 | Öffentliche Adresse | `APP_URL` | `http://<hostname>:<port>` |
 | Nur HTTPS-Cookies (bei `https://`) | `APP_FORCE_SECURE_COOKIES` | `true` bei HTTPS |
 | Zeitzone | `APP_TIMEZONE` | `Europe/Berlin` |

@@ -1073,7 +1073,8 @@ stack_running() { [ -n "$($COMPOSE ps -q 2>/dev/null)" ]; }
 
 step_ports() {
     stack_running && return 0
-    for spec in "APP_PORT:tcp:Webseite" "SNMP_PORT:udp:SNMP"; do
+    [ -n "$(env_get APP_HTTPS_PORT)" ] || env_set APP_HTTPS_PORT 8443
+    for spec in "APP_PORT:tcp:Webseite" "APP_HTTPS_PORT:tcp:Webseite (HTTPS)" "SNMP_PORT:udp:SNMP"; do
         key="${spec%%:*}"; rest="${spec#*:}"; proto="${rest%%:*}"; label="${rest#*:}"
         while port_in_use "$(env_get "$key")" "$proto"; do
             ask_port "Port belegt" "Der Port $(env_get "$key")/$proto ($label) ist bereits belegt.
@@ -1326,7 +1327,7 @@ write_report() { # ziel include_secrets(1|0)
         echo
         echo "| Einstellung | Wert |"
         echo "| --- | --- |"
-        for k in APP_NAME APP_ENV APP_DEBUG APP_URL APP_PORT APP_TIMEZONE APP_FORCE_SECURE_COOKIES SEED_ON_START \
+        for k in APP_NAME APP_ENV APP_DEBUG APP_URL APP_PORT APP_HTTPS_PORT TLS_ENABLED APP_TIMEZONE APP_FORCE_SECURE_COOKIES SEED_ON_START \
                  DB_HOST DB_PORT DB_NAME DB_USER ADMIN_USERNAME SNMP_PORT SNMP_SYS_LOCATION SNMP_SYS_CONTACT; do
             echo "| \`$k\` | $(env_get "$k") |"
         done

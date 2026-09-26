@@ -1,0 +1,16 @@
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant A as auth (Apache)
+    participant I as Intranet
+    participant N as Nextcloud
+    B->>A: Aufruf der Startseite
+    A->>B: NTLM-Handshake (Windows-Anmeldung)
+    A->>I: Anfrage mit geprüftem Anmeldenamen
+    I->>I: Benutzer und AD-Gruppen aus dem Datenbestand ermitteln
+    I->>B: Startseite mit freigegebenen Kacheln
+    B->>I: Klick auf eine Office-App
+    I->>B: Weiterleitung mit signiertem Token (60 s, einmalig)
+    B->>N: Token einlösen
+    N->>N: Signatur, Ablauf und Wiederverwendung prüfen
+    N->>B: Angemeldet – Editor oder Dateien öffnen

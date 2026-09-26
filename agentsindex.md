@@ -416,6 +416,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 - `README.md` – ausführliche Projektdokumentation (Funktionsumfang, Docker, Konfiguration, Betrieb, Sicherheit).
 - `docs/manuals/anwenderhandbuch.pdf` / `administratorhandbuch.pdf` (Quellen als HTML unter `docs/manuals/`).
+- `docs/projektdokumentation/` – IT-Projektdokumentation (HTML-Quelle, PDF, Abbildungen); PDF neu erzeugen mit `./docs/projektdokumentation/build.sh` (nur Docker nötig).
 - `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche (30–56: Office, Office-Apps, AD-Gruppen und lokale KI).
 - `docs/installation.md` – Assistierte Installation mit `scripts/install.sh`: Ablauf, Optionen, Bedienung, abgefragte Variablen, Abschlussbericht, Fehlerbehebung.
 - `docs/office.md` – Office-Erweiterung: Einrichtung, Architektur, Updates, AD-Gruppen/SSO, Kachel, lokale KI, Sicherung, SNMP.

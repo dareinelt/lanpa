@@ -397,6 +397,7 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 
 - **[Anwenderhandbuch](docs/manuals/anwenderhandbuch.pdf)** – Bedienung der Landingpage für Beschäftigte (Startseite, Kacheln, Telefonliste, Mitteilungen, Hell/Dunkel).
 - **[Administratorhandbuch](docs/manuals/administratorhandbuch.pdf)** – Betrieb, Konfiguration und Pflege des Administrationsbereichs (Docker, Navigation, Design, AD/LDAP, Statistik, Benutzer).
+- **[IT-Projektdokumentation](docs/projektdokumentation/projektdokumentation.pdf)** – Ist-Analyse, Anforderungen, Alternativenbewertung, Architektur, Umsetzung, Tests und Einführung (Quelle: `docs/projektdokumentation/`, PDF-Erzeugung per Docker mit `./docs/projektdokumentation/build.sh`).
 
 Die Quellen liegen als HTML unter `docs/manuals/` (mit `style.css` für den Druck). Die PDFs werden zusätzlich
 aus der Anwendung heraus verlinkt (`public/manuals/`); die Anzeige lässt sich im Administrationsbereich unter

@@ -1,0 +1,4 @@
+{ "theme": "base", "themeVariables": { "fontFamily": "Helvetica, Arial, sans-serif", "fontSize": "15px", "primaryColor": "#eef4f9", "primaryBorderColor": "#1f4e79", "primaryTextColor": "#1b1f23", "lineColor": "#37718e", "clusterBkg": "#f7f9fb", "clusterBorder": "#9bb3c7" },
+  "flowchart": { "htmlLabels": true, "padding": 14, "nodeSpacing": 40, "rankSpacing": 55, "wrappingWidth": 260 },
+  "sequence": { "useMaxWidth": false, "wrap": true, "width": 170 },
+  "gantt": { "useMaxWidth": false, "barHeight": 24, "fontSize": 13, "sectionFontSize": 14, "leftPadding": 230, "gridLineStartPadding": 40 } }

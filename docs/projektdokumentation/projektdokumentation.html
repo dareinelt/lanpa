@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>IT-Projektdokumentation – Modernisierung des Klinikum-Intranets</title>
+<link rel="stylesheet" href="../manuals/style.css">
+<link rel="stylesheet" href="projektdokumentation.css">
+</head>
+<body>
+
+<!-- ===================== Deckblatt ===================== -->
+<div class="cover">
+  <p class="kicker">IT-Projektdokumentation</p>
+  <h1>Modernisierung des Klinikum-Intranets</h1>
+  <p class="subtitle">Ablösung des IIS-/ActiveX-Intranets durch eine browserunabhängige Intranet-Landingpage mit
+  Telefonverzeichnis, souveräner Office- und Dateiplattform (Nextcloud, Euro-Office) und lokaler KI – betrieben im
+  eigenen Rechenzentrum.</p>
+  <div class="meta">
+    Version 1.0 &middot; Stand: 26. September 2026<br>
+    Umfeld: Klinikum (Healthcare, kritische Infrastruktur)<br>
+    Zielgruppe: Klinikumsleitung, IT-Leitung, Datenschutz, Informationssicherheit, Projektbeteiligte
+  </div>
+</div>
+
+<!-- ===================== Inhaltsverzeichnis ===================== -->
+<nav class="toc" id="toc">
+  <h2>Inhaltsverzeichnis</h2>
+  <ol id="toc-list"></ol>
+</nav>
+
+<!-- ===================== 1 ===================== -->
+<section class="chapter" id="k1">
+  <h1 class="chapter-title">1&ensp;Einleitung</h1>
+
+  <h2 id="k1-1">1.1&ensp;Projektumfeld</h2>
+  <p>Das Klinikum versorgt Patientinnen und Patienten rund um die Uhr. Medizin, Pflege, Funktionsdienste,
+  Technik und Verwaltung arbeiten im Schichtbetrieb und sind auf schnell verfügbare Informationen angewiesen:
+  Telefon- und Bereitschaftsnummern, Notfallrufnummern, Verfahrensanweisungen (SOPs), Hygiene- und
+  Alarmierungspläne, Formulare sowie gemeinsam bearbeitete Dokumente. Das Intranet ist dafür der zentrale
+  Einstiegspunkt – seine Verfügbarkeit und Bedienbarkeit wirken sich damit mittelbar auf die Abläufe in der
+  Patientenversorgung aus.</p>
+  <table class="compact kv">
+    <tbody>
+      <tr><td style="width:34%">Beschäftigte</td><td>ca. 1.300 Mitarbeitende in Medizin, Pflege, Funktionsdiensten, Technik und Verwaltung</td></tr>
+      <tr><td>Arbeitsplätze</td><td>rund 500 PCs, davon viele als gemeinsam genutzte Geräte auf Stationen und in Funktionsbereichen</td></tr>
+      <tr><td>Organisation</td><td>Klinikum als Muttergesellschaft, zwei Tochtergesellschaften sowie weitere, historisch gewachsene Einheiten mit eigenen Strukturen</td></tr>
+      <tr><td>Betrieb</td><td>24/7 im Schichtdienst, eigenes Rechenzentrum, eigene IT-Abteilung</td></tr>
+    </tbody>
+  </table>
+  <p>Als Einrichtung des Gesundheitswesens unterliegt das Klinikum besonderen Anforderungen: Gesundheitsdaten
+  sind nach Art.&nbsp;9 DSGVO besonders geschützt, für Beschäftigte gilt die berufliche Schweigepflicht
+  (§&nbsp;203 StGB), und Krankenhäuser müssen angemessene Vorkehrungen zur Informationssicherheit nach dem
+  Stand der Technik treffen (§&nbsp;391 SGB&nbsp;V, ehemals §&nbsp;75c SGB&nbsp;V; branchenspezifischer
+  Sicherheitsstandard B3S „Medizinische Versorgung“; für Häuser im KRITIS- bzw. NIS-2-Anwendungsbereich
+  zusätzlich die Vorgaben des BSI-Gesetzes).</p>
+
+  <h2 id="k1-2">1.2&ensp;Projektanlass</h2>
+  <p>Das bestehende Intranet basiert auf einer abgekündigten IIS-Plattform mit ActiveX-Komponenten. Es ist
+  langsam, störanfällig und nur eingeschränkt mit aktuellen Browsern nutzbar. Parallel stehen Entscheidungen
+  zur Zukunft der Office-Arbeitsplätze und der Dateiablage an: Microsoft Office&nbsp;2019 erhält seit dem
+  14.&nbsp;Oktober&nbsp;2025 keine Sicherheitsupdates mehr, und der Umstieg auf Microsoft&nbsp;365 wurde aus
+  Kosten-, Datenschutz-, Verfügbarkeits- und Souveränitätsgründen verworfen (siehe Kapitel&nbsp;2 und 4).</p>
+
+  <h2 id="k1-3">1.3&ensp;Projektziele</h2>
+  <ul>
+    <li><strong>Ablösung</strong> des IIS-/ActiveX-Intranets durch eine wartbare, browserunabhängige Lösung ohne Internet-Explorer-Abhängigkeit.</li>
+    <li><strong>Performance:</strong> Suche im Telefonverzeichnis in unter einer Sekunde (bisher ≥&nbsp;15&nbsp;s).</li>
+    <li><strong>Verfügbarkeit:</strong> Stabiler Betrieb mit Überwachung, Selbstheilung und Sicherung; Betrieb ohne Abhängigkeit von Internetanbindung oder Cloud-Diensten.</li>
+    <li><strong>Auffindbarkeit:</strong> Ein zentraler Einstieg für den gesamten Verbund (Klinikum, Tochtergesellschaften, weitere Einheiten) mit klarer, zentral gepflegter Navigation.</li>
+    <li><strong>Zusammenarbeit:</strong> Browserbasierte Dokumentbearbeitung und abteilungsübergreifende Ablage mit Rechtevergabe über AD-Gruppen.</li>
+    <li><strong>KI-Unterstützung:</strong> Lokal betriebene KI für Textarbeit (Zusammenfassen, Übersetzen, Formulieren) ohne Datenabfluss.</li>
+    <li><strong>Digitale Souveränität:</strong> Open-Source-Komponenten europäischer Herkunft, Betrieb im eigenen Rechenzentrum, weitgehende Unabhängigkeit von US-Anbietern.</li>
+  </ul>
+
+  <h2 id="k1-4">1.4&ensp;Projektabgrenzung</h2>
+  <table>
+    <thead><tr><th style="width:50%">Im Projektumfang</th><th>Nicht im Projektumfang</th></tr></thead>
+    <tbody>
+      <tr><td>Intranet-Landingpage mit Navigation, Unter- und Textseiten, Mitteilungen, Notfallnummern, Alarmierung</td><td>Klinische Primärsysteme (KIS, PACS, LIS) und deren Schnittstellen</td></tr>
+      <tr><td>Telefonverzeichnis mit Synchronisation aus dem Active Directory</td><td>Verarbeitung von Patientendaten im Intranet</td></tr>
+      <tr><td>Windows-Anmeldung (SSO) und Berechtigungen über AD-Gruppen</td><td>Ablösung von E-Mail/Exchange (Outlook Web App wird nur verlinkt)</td></tr>
+      <tr><td>Office-Plattform (Nextcloud, Euro-Office) inkl. Sicherung und Monitoring</td><td>Vollständige Migration aller Netzlaufwerke (Folgeprojekt, siehe Kapitel&nbsp;9)</td></tr>
+      <tr><td>Anbindung eines lokalen KI-Endpunkts</td><td>Beschaffung und Betrieb der KI-Server-Hardware</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===================== 2 ===================== -->
+<section class="chapter" id="k2">
+  <h1 class="chapter-title">2&ensp;Ist-Analyse</h1>
+
+  <p>Die Ist-Analyse wurde durch Interviews mit Stationsleitungen, Sekretariaten, Verwaltung und IT, durch
+  Auswertung der Störungstickets sowie durch Messungen am Bestandssystem durchgeführt. Abbildung&nbsp;1
+  zeigt die vereinfachte Ausgangsarchitektur.</p>
+
+  <figure class="diagram">
+    <div class="arch">
+      <div class="layer"><div class="layer-name">Arbeitsplatz<br>(ca. 500 PCs)</div><div class="boxes">
+        <div class="box warn-box"><b>Internet Explorer / Edge im IE-Modus</b><span>nur so sind ActiveX-Module nutzbar</span></div>
+        <div class="box warn-box"><b>Microsoft Office 2019</b><span>lokal installiert, seit 10/2025 ohne Support</span></div>
+      </div></div>
+      <div class="arrow">▼ HTTP&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;▼ SMB</div>
+      <div class="layer"><div class="layer-name">Rechenzentrum</div><div class="boxes">
+        <div class="box warn-box"><b>Intranet auf IIS</b><span>abgekündigt, regelmäßige Ausfälle</span></div>
+        <div class="box warn-box"><b>ActiveX-Module</b><span>Formulare, Auswertungen</span></div>
+        <div class="box warn-box"><b>Telefonverzeichnis</b><span>Suche ≥ 15 s</span></div>
+        <div class="box"><b>Netzlaufwerke</b><span>je Abteilung und Gesellschaft</span></div>
+      </div></div>
+      <div class="arrow">▲ Abfragen, Gruppenzuordnung</div>
+      <div class="layer"><div class="layer-name">Verzeichnis und Verwaltung</div><div class="boxes">
+        <div class="box"><b>Active Directory</b><span>Klinikum, Tochtergesellschaften, weitere Einheiten</span></div>
+        <div class="box"><b>IT-Abteilung</b><span>manuelle Rechtevergabe per Ticket, Verknüpfungen</span></div>
+      </div></div>
+    </div>
+    <figcaption>Vereinfachte Ist-Architektur des Intranets und der Dateiablage (rot: abgekündigt bzw. kritisch).</figcaption>
+  </figure>
+
+  <h2 id="k2-1">2.1&ensp;Technologische Basis und Browserabhängigkeit</h2>
+  <p>Das Intranet läuft auf einer älteren Version der Internet Information Services (IIS), deren
+  Herstellerunterstützung ausgelaufen bzw. abgekündigt ist. Mehrere Module – darunter Formulare und
+  Auswertungen – setzen ActiveX-Steuerelemente voraus. ActiveX wird ausschließlich vom Internet Explorer
+  unterstützt, dessen Support am 15.&nbsp;Juni&nbsp;2022 endete. Diese Module sind nur noch im Internet
+  Explorer oder in Microsoft Edge im IE-Modus nutzbar.</p>
+  <p>Daraus ergeben sich mehrere Probleme:</p>
+  <ul>
+    <li><strong>Sicherheitsrisiko:</strong> ActiveX-Komponenten laufen mit weitreichenden Rechten auf dem Client und
+    gelten als häufiges Einfallstor für Schadcode. Für veraltete Komponenten stehen keine Sicherheitsupdates mehr
+    zur Verfügung – ein Widerspruch zur Forderung nach dem „Stand der Technik“ (§&nbsp;391 SGB&nbsp;V, B3S).</li>
+    <li><strong>Pflegeaufwand:</strong> Die IE-Modus-Siteliste muss zentral per Gruppenrichtlinie gepflegt werden;
+    jede neue oder verschobene Seite erzeugt Aufwand und Fehlerquellen.</li>
+    <li><strong>Eingeschränkte Endgeräte:</strong> Mobile Geräte (z.&nbsp;B. Visitenwagen-Tablets), Thin Clients mit
+    anderen Browsern und künftige Windows-Versionen können die betroffenen Module nicht nutzen.</li>
+    <li><strong>Know-how-Verlust:</strong> Die ursprünglichen Entwickler stehen nicht mehr zur Verfügung;
+    Änderungen an den ActiveX-Modulen sind praktisch nicht mehr möglich.</li>
+  </ul>
+
+  <h2 id="k2-2">2.2&ensp;Performance</h2>
+  <p>Die Antwortzeiten sind durchgängig unbefriedigend. Besonders kritisch ist das Telefonverzeichnis: Eine
+  Suche dauert <strong>mindestens 15&nbsp;Sekunden</strong>, zu Stoßzeiten (Schichtwechsel, Visite) auch deutlich
+  länger. Ursache ist, dass jede Suche das Verzeichnis ohne geeignete Indizierung durchsucht bzw. live an
+  Backend-Systeme weitergereicht wird. Im Klinikalltag – etwa bei der Suche nach dem diensthabenden
+  Konsiliararzt, der Blutbank oder der Haustechnik – ist diese Wartezeit nicht akzeptabel. Beschäftigte weichen
+  deshalb auf ausgedruckte, oft veraltete Telefonlisten aus.</p>
+
+  <h2 id="k2-3">2.3&ensp;Verfügbarkeit und Stabilität</h2>
+  <p>Es kommt regelmäßig zu Ausfällen, deren Ursache in Fehlern des IIS liegt (u.&nbsp;a. hängende
+  Anwendungspools, Speicherengpässe, fehlerhafte Module nach Updates). Die Wiederherstellung erfordert manuelle
+  Eingriffe der IT, teilweise außerhalb der Regelarbeitszeit. Während eines Ausfalls sind Telefonverzeichnis,
+  Verfahrensanweisungen und Formulare nicht erreichbar. Eine systematische Überwachung mit frühzeitiger
+  Alarmierung existiert nicht; Störungen werden meist erst durch Anrufe beim Service-Desk bekannt.</p>
+
+  <h2 id="k2-4">2.4&ensp;Navigation und Auffindbarkeit</h2>
+  <p>Die Navigation ist über Jahre gewachsen. Inhalte sind auf verschiedene Navigationselemente verteilt –
+  Hauptmenü, Seitenleisten, Linklisten einzelner Abteilungen und Schnellzugriffe auf der Startseite. Gleiche
+  Ziele sind mehrfach und unter verschiedenen Bezeichnungen verlinkt, andere nur über mehrere Klickebenen
+  erreichbar. Neue Beschäftigte, Rotationsassistenten und Springerkräfte finden benötigte Inhalte nur schwer.
+  Eine zentrale Pflege fehlt; Änderungen erfordern häufig die IT, und tote Links bleiben lange bestehen.
+  Nutzungszahlen, die eine Priorisierung der Inhalte erlauben würden, liegen nicht vor.</p>
+
+  <h2 id="k2-5">2.5&ensp;Arbeitsplatz und Office</h2>
+  <p>Auf den Arbeitsplätzen ist Microsoft Office&nbsp;2019 als lokal installierte Kaufversion im Einsatz. Der
+  erweiterte Support endete am 14.&nbsp;Oktober&nbsp;2025; seitdem erscheinen keine Sicherheitsupdates mehr.
+  Dokumente werden lokal oder auf Netzlaufwerken bearbeitet und per E-Mail-Anhang ausgetauscht. Gleichzeitiges
+  Bearbeiten ist nicht möglich, was zu Versionskonflikten und Kopien („Dienstplan_final_v3_neu.xlsx“) führt.
+  Die Verteilung von Updates und Add-ins erfolgt über die Softwareverteilung und bindet IT-Kapazität.</p>
+
+  <h2 id="k2-6">2.6&ensp;Dateiablage und Berechtigungen</h2>
+  <p>Die Dateiablage besteht aus Netzlaufwerken (SMB-Freigaben) je Abteilung. Die abteilungsübergreifende
+  Zusammenarbeit – etwa zwischen Stationen, Hygiene, Qualitätsmanagement, Medizincontrolling und Einkauf – wird
+  über Verknüpfungen auf fremde Freigaben und/oder über die Zuordnung zu AD-Gruppen realisiert. Beides wird
+  ausschließlich von der IT auf Ticketanforderung eingerichtet.</p>
+  <ul>
+    <li>Die Einrichtung dauert je nach Auslastung Tage; Projektgruppen behelfen sich mit E-Mail-Anhängen oder USB-Sticks.</li>
+    <li>Berechtigungen werden selten zurückgenommen („Berechtigungsdrift“); wer worauf Zugriff hat, ist nur mit Aufwand nachvollziehbar – ein Risiko bei Audits und für die Vertraulichkeit sensibler Unterlagen.</li>
+    <li>Ein Zugriff außerhalb des Arbeitsplatz-PCs (z.&nbsp;B. per Browser oder Tablet) ist nicht vorgesehen.</li>
+  </ul>
+
+  <h2 id="k2-7">2.7&ensp;Fragmentierte Organisationsstruktur</h2>
+  <p>Neben dem Klinikum selbst gehören zwei Tochtergesellschaften und weitere, historisch gewachsene Einheiten
+  zum Verbund. Diese Struktur spiegelt sich in der IT wider: Inhalte, Linklisten und Ablagen existieren je
+  Gesellschaft bzw. Einheit getrennt, teils mit abweichenden Bezeichnungen und Verantwortlichkeiten. Eine
+  gesellschaftsübergreifende Sicht – etwa ein gemeinsames Telefonverzeichnis oder verbundweit gültige
+  Verfahrensanweisungen – gibt es nicht oder nur als manuell gepflegte Kopien.</p>
+  <ul>
+    <li>Beschäftigte der Tochtergesellschaften finden Ansprechpartner im Klinikum (und umgekehrt) nur schwer.</li>
+    <li>Die gemeinsame Arbeit über Gesellschaftsgrenzen hinweg ist auf Netzlaufwerken besonders aufwendig, weil
+    Freigaben und Gruppen je Einheit separat angefragt und gepflegt werden müssen.</li>
+    <li>Rund 1.300 Mitarbeitende teilen sich etwa 500 PCs. Im Schichtbetrieb wechseln die Personen an einem Gerät
+    häufig; lokal gespeicherte Dateien und arbeitsplatzgebundene Einstellungen sind daher ungeeignet.</li>
+    <li>Jede Lizenzierung pro Benutzer (statt pro Gerät) wirkt sich bei 1.300 Personen – viele davon mit nur
+    gelegentlicher PC-Nutzung – unmittelbar auf die Kosten aus.</li>
+  </ul>
+
+  <h2 id="k2-8">2.8&ensp;Fehlende KI-Unterstützung</h2>
+  <p>Es gibt keinerlei KI-Unterstützung, um einzelne Arbeitsschritte zu erleichtern oder zu automatisieren –
+  etwa das Zusammenfassen langer Protokolle, das Formulieren von Mitteilungen, das Übersetzen von
+  Patienteninformationen oder das Überarbeiten von Verfahrensanweisungen. Gleichzeitig ist die Nutzung
+  öffentlicher KI-Dienste durch Beschäftigte („Schatten-KI“) nicht auszuschließen. Gerade im Gesundheitswesen
+  ist das ein erhebliches Risiko, weil dabei personenbezogene oder vertrauliche Inhalte unkontrolliert an
+  Drittanbieter außerhalb der EU gelangen können.</p>
+
+  <h2 id="k2-9">2.9&ensp;Bewertung von Microsoft&nbsp;365 als naheliegende Alternative</h2>
+  <p>Microsoft&nbsp;365 wurde als Nachfolger für Office&nbsp;2019 und Dateiablage geprüft und aus folgenden Gründen
+  nicht weiterverfolgt:</p>
+  <ul>
+    <li><strong>Kosten:</strong> Abonnementlizenzen werden je Benutzer berechnet. Bei rund 1.300 Mitarbeitenden
+    an nur etwa 500 PCs – einschließlich Schicht- und Teilzeitkräften mit gelegentlicher Nutzung sowie der
+    Beschäftigten der Tochtergesellschaften – entstehen dauerhaft hohe laufende Kosten. Preisänderungen liegen
+    allein beim Anbieter.</li>
+    <li><strong>Datenschutz:</strong> Es bestehen Bedenken hinsichtlich der Verarbeitung personenbezogener und
+    besonders schützenswerter Daten (Art.&nbsp;9 DSGVO), der Telemetrie- und Diagnosedaten sowie der
+    Kontrollierbarkeit von Unterauftragsverarbeitern. Die Datenschutzkonferenz hat die datenschutzkonforme
+    Nutzung wiederholt kritisch bewertet.</li>
+    <li><strong>Verfügbarkeit bei Ausfällen:</strong> Eine Cloud-Lösung macht das Arbeiten von der
+    Internetanbindung des Klinikums und von der Verfügbarkeit des Anbieters abhängig. Großflächige
+    Störungen von Cloud-Diensten sowie Ausfälle der WAN-Anbindung sind nicht beeinflussbar. Für ein Haus im
+    24/7-Betrieb, das seine Notfallfähigkeit auch bei gestörter Außenanbindung sicherstellen muss, ist das ein
+    wesentliches Risiko.</li>
+    <li><strong>US-Abhängigkeit:</strong> Als US-Anbieter unterliegt Microsoft US-Recht (u.&nbsp;a. CLOUD Act,
+    FISA Section&nbsp;702). Selbst bei Datenhaltung in der EU sind behördliche Zugriffe nicht auszuschließen; der
+    Fortbestand des EU-US Data Privacy Framework ist rechtlich ungewiss. Gewünscht ist daher eine – soweit
+    möglich – US-unabhängige Lösung, die digitale Souveränität und Handlungsfähigkeit auch bei
+    geopolitischen Veränderungen sichert.</li>
+  </ul>
+
+  <h2 id="k2-10">2.10&ensp;Zusammenfassung der Schwachstellen</h2>
+  <table class="compact">
+    <thead><tr><th class="id">Nr.</th><th style="width:26%">Schwachstelle</th><th>Auswirkung</th><th style="width:13%">Risiko</th></tr></thead>
+    <tbody>
+      <tr><td>S1</td><td>Abgekündigter IIS, ActiveX</td><td>Keine Sicherheitsupdates, Angriffsfläche auf Clients, Verstoß gegen „Stand der Technik“</td><td><span class="badge high">hoch</span></td></tr>
+      <tr><td>S2</td><td>IE-/IE-Modus-Abhängigkeit</td><td>Eingeschränkte Endgeräte, Pflegeaufwand für Sitelisten, keine Zukunftsfähigkeit</td><td><span class="badge high">hoch</span></td></tr>
+      <tr><td>S3</td><td>Telefonsuche ≥&nbsp;15&nbsp;s</td><td>Zeitverlust im Klinikalltag, Ausweichen auf veraltete Papierlisten</td><td><span class="badge high">hoch</span></td></tr>
+      <tr><td>S4</td><td>Regelmäßige IIS-Ausfälle</td><td>Informationen, SOPs und Formulare nicht verfügbar; manueller Wiederanlauf</td><td><span class="badge high">hoch</span></td></tr>
+      <tr><td>S5</td><td>Verstreute Navigation</td><td>Lange Suchzeiten, Doppelpflege, tote Links, hoher Einarbeitungsaufwand</td><td><span class="badge mid">mittel</span></td></tr>
+      <tr><td>S6</td><td>Office&nbsp;2019 ohne Support</td><td>Sicherheitslücken, keine gemeinsame Bearbeitung</td><td><span class="badge high">hoch</span></td></tr>
+      <tr><td>S7</td><td>Rechtevergabe auf Netzlaufwerken nur durch IT</td><td>Verzögerte Zusammenarbeit, Berechtigungsdrift, schwer auditierbar</td><td><span class="badge mid">mittel</span></td></tr>
+      <tr><td>S8</td><td>Fragmentierte Struktur (Klinikum, zwei Töchter, weitere Einheiten)</td><td>Getrennte Inhalte und Ablagen, kein gemeinsames Telefonverzeichnis, hoher Abstimmungsaufwand</td><td><span class="badge mid">mittel</span></td></tr>
+      <tr><td>S9</td><td>Keine (sichere) KI</td><td>Ungenutztes Entlastungspotenzial, Risiko durch Schatten-KI</td><td><span class="badge mid">mittel</span></td></tr>
+      <tr><td>S10</td><td>Cloud-Alternative ungeeignet</td><td>Kosten, Datenschutz, Ausfallabhängigkeit, US-Recht</td><td><span class="badge mid">mittel</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===================== 3 ===================== -->
+<section class="chapter" id="k3">
+  <h1 class="chapter-title">3&ensp;Soll-Konzept und Anforderungen</h1>
+
+  <p>Aus den Schwachstellen wurden die folgenden Anforderungen abgeleitet. Die Priorität folgt der
+  MoSCoW-Methode (M&nbsp;=&nbsp;Muss, S&nbsp;=&nbsp;Soll, K&nbsp;=&nbsp;Kann).</p>
+
+  <h2 id="k3-1">3.1&ensp;Funktionale Anforderungen</h2>
+  <table class="compact">
+    <thead><tr><th class="id">ID</th><th>Anforderung</th><th style="width:9%">Prio.</th><th style="width:10%">Bezug</th></tr></thead>
+    <tbody>
+      <tr><td>F01</td><td>Zentrale Startseite mit Kacheln für alle Anwendungen, Unterseiten und Textseiten</td><td>M</td><td>S5</td></tr>
+      <tr><td>F02</td><td>Verbundweites Telefonverzeichnis (Klinikum und Tochtergesellschaften) mit Live-Suche über Name, Abteilung und Rufnummer</td><td>M</td><td>S3</td></tr>
+      <tr><td>F03</td><td>Automatischer Abgleich des Telefonverzeichnisses mit dem Active Directory</td><td>M</td><td>S3</td></tr>
+      <tr><td>F04</td><td>Zentrale, rollenbasierte Pflege der Navigation ohne Programmierkenntnisse</td><td>M</td><td>S5</td></tr>
+      <tr><td>F05</td><td>Notfallnummern, Mitteilungen und SMS-Alarmierung auf der Startseite</td><td>M</td><td>–</td></tr>
+      <tr><td>F06</td><td>Anmeldung mit dem Windows-Konto (Single Sign-on), Sichtbarkeit von Kacheln nach AD-Gruppen</td><td>M</td><td>S7</td></tr>
+      <tr><td>F07</td><td>Browserbasierte Bearbeitung von Text, Tabellen, Präsentationen und PDF-Formularen, kompatibel zu Microsoft-Formaten</td><td>M</td><td>S6</td></tr>
+      <tr><td>F08</td><td>Gemeinsame Dateiablage mit Freigaben über AD-Gruppen</td><td>S</td><td>S7</td></tr>
+      <tr><td>F09</td><td>KI-Funktionen (Chat, Zusammenfassen, Übersetzen) in Editoren und Dateiablage</td><td>S</td><td>S9</td></tr>
+      <tr><td>F10</td><td>Nutzungsstatistik je Kachel zur Priorisierung der Inhalte</td><td>K</td><td>S5</td></tr>
+      <tr><td>F11</td><td>Schutz sensibler Inhalte durch zusätzlichen Zugangscode (SMS)</td><td>K</td><td>–</td></tr>
+      <tr><td>F12</td><td>Gesellschaftsübergreifende Inhalte und gesellschaftsspezifische Kacheln über AD-Gruppen</td><td>M</td><td>S8</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="k3-2">3.2&ensp;Nicht-funktionale Anforderungen</h2>
+  <table class="compact">
+    <thead><tr><th class="id">ID</th><th>Anforderung</th><th style="width:9%">Prio.</th><th style="width:10%">Bezug</th></tr></thead>
+    <tbody>
+      <tr><td>N01</td><td>Antwortzeit der Telefonsuche &lt;&nbsp;1&nbsp;s, Seitenaufbau &lt;&nbsp;2&nbsp;s, ausgelegt für ca. 1.300 Beschäftigte</td><td>M</td><td>S3</td></tr>
+      <tr><td>N02</td><td>Lauffähig in allen aktuellen Browsern, keine Plug-ins, kein IE-Modus</td><td>M</td><td>S1, S2</td></tr>
+      <tr><td>N03</td><td>Betrieb vollständig im eigenen Rechenzentrum, keine Abhängigkeit von Internet oder Cloud</td><td>M</td><td>S10</td></tr>
+      <tr><td>N04</td><td>Überwachung aller Dienste per SNMP, automatischer Neustart, verschlüsselte Sicherung</td><td>M</td><td>S4</td></tr>
+      <tr><td>N05</td><td>Datenschutz nach DSGVO/BDSG und kirchlichem bzw. Landesdatenschutz; keine externen Ressourcen, kein Tracking</td><td>M</td><td>S10</td></tr>
+      <tr><td>N06</td><td>Informationssicherheit nach Stand der Technik (CSRF-Schutz, Sicherheitsheader, Secrets außerhalb des Codes)</td><td>M</td><td>S1</td></tr>
+      <tr><td>N07</td><td>Open Source, bevorzugt europäische Hersteller; Austauschbarkeit der Komponenten</td><td>S</td><td>S10</td></tr>
+      <tr><td>N08</td><td>KI ausschließlich lokal, ohne Datenübermittlung an Dritte</td><td>M</td><td>S9</td></tr>
+      <tr><td>N09</td><td>Barrierefreiheit (Tastaturbedienung, Kontraste, Screenreader)</td><td>S</td><td>–</td></tr>
+      <tr><td>N10</td><td>Automatisierte Tests und reproduzierbare Installation</td><td>S</td><td>–</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===================== 4 ===================== -->
+<section class="chapter" id="k4">
+  <h1 class="chapter-title">4&ensp;Alternativen und Entscheidung</h1>
+
+  <h2 id="k4-1">4.1&ensp;Betrachtete Alternativen</h2>
+  <table>
+    <thead><tr><th style="width:24%">Alternative</th><th>Beschreibung</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A</strong> – Microsoft on-premises</td><td>SharePoint Server Subscription Edition als Intranet, Office LTSC als Nachfolger von Office&nbsp;2019, Dateiablage weiter auf Netzlaufwerken bzw. SharePoint.</td></tr>
+      <tr><td><strong>B</strong> – Microsoft&nbsp;365</td><td>SharePoint Online als Intranet, Microsoft&nbsp;365 Apps, OneDrive/Teams als Ablage, Copilot als KI.</td></tr>
+      <tr><td><strong>C</strong> – Souveräne Open-Source-Lösung</td><td>Schlanke Intranet-Landingpage (PHP/MySQL), Nextcloud als Dateiplattform, Euro-Office als Editor, lokaler KI-Endpunkt; alles als Container im eigenen Rechenzentrum.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="k4-2">4.2&ensp;Nutzwertanalyse</h2>
+  <p>Bewertung von 1 (ungenügend) bis 5 (sehr gut); der Nutzwert ergibt sich aus der Summe von Gewichtung
+  × Bewertung, geteilt durch 100.</p>
+  <table class="compact score">
+    <thead><tr><th>Kriterium</th><th>Gewicht</th><th>A</th><th>B</th><th>C</th></tr></thead>
+    <tbody>
+      <tr><td>Datenschutz (Gesundheitsdaten, Schweigepflicht)</td><td>20&nbsp;%</td><td>4</td><td>2</td><td>5</td></tr>
+      <tr><td>Verfügbarkeit bei Internet- oder Anbieterausfall</td><td>15&nbsp;%</td><td>4</td><td>2</td><td>4</td></tr>
+      <tr><td>US-Unabhängigkeit, digitale Souveränität</td><td>15&nbsp;%</td><td>2</td><td>1</td><td>5</td></tr>
+      <tr><td>Laufende Kosten (Lizenzen, Betrieb)</td><td>15&nbsp;%</td><td>2</td><td>2</td><td>4</td></tr>
+      <tr><td>Browserunabhängigkeit, Zukunftsfähigkeit</td><td>10&nbsp;%</td><td>4</td><td>5</td><td>5</td></tr>
+      <tr><td>Integration AD, Single Sign-on</td><td>10&nbsp;%</td><td>5</td><td>5</td><td>4</td></tr>
+      <tr><td>Benutzerfreundlichkeit, Auffindbarkeit</td><td>10&nbsp;%</td><td>3</td><td>5</td><td>4</td></tr>
+      <tr><td>KI-Unterstützung (datenschutzkonform nutzbar)</td><td>5&nbsp;%</td><td>2</td><td>3</td><td>4</td></tr>
+      <tr class="sum"><td>Nutzwert</td><td>100&nbsp;%</td><td>3,30</td><td>2,80</td><td>4,45</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="k4-3">4.3&ensp;Entscheidung</h2>
+  <p>Alternative&nbsp;C erreicht den höchsten Nutzwert. Ausschlaggebend sind Datenschutz, Unabhängigkeit von
+  Internetanbindung und Cloud-Anbietern sowie der Wegfall laufender Lizenzkosten. Die eingesetzten
+  Komponenten stammen überwiegend aus Europa: Nextcloud wird von der Nextcloud GmbH (Stuttgart) entwickelt,
+  Euro-Office ist eine europäische Open-Source-Initiative für einen souveränen Office-Editor. Für die lokale
+  KI können Modelle europäischer Anbieter (z.&nbsp;B. Mistral AI, Frankreich) oder andere offene Modelle
+  eingesetzt werden; der Endpunkt ist austauschbar.</p>
+  <div class="note">
+    <span class="label">Verbleibende Abhängigkeiten</span>
+    Arbeitsplatz-Betriebssystem (Windows), Active Directory und Exchange bleiben vorerst bestehen und liegen
+    außerhalb dieses Projekts. Die gewählte Architektur nutzt offene Standards (LDAP, HTTP, OpenAI-kompatible
+    API, OOXML/ODF), sodass ein späterer Wechsel dieser Komponenten nicht behindert wird.
+  </div>
+</section>
+
+<!-- ===================== 5 ===================== -->
+<section class="chapter" id="k5">
+  <h1 class="chapter-title">5&ensp;Projektplanung</h1>
+
+  <h2 id="k5-1">5.1&ensp;Vorgehensmodell</h2>
+  <p>Das Projekt wurde hybrid durchgeführt: Analyse, Konzept und Abnahme folgten einem klassischen
+  Phasenmodell; die Umsetzung erfolgte iterativ in kurzen Zyklen mit regelmäßigen Reviews durch Vertreter aus
+  Pflege, Medizin, Verwaltung und IT. Jede Änderung wurde als Pull Request mit automatisierten Tests
+  eingebracht.</p>
+
+  <h2 id="k5-2">5.2&ensp;Zeitplan</h2>
+  <figure class="diagram">
+    <table class="gantt">
+      <thead><tr><th class="task">Arbeitspaket</th><th class="track"><div class="months"><span style="left:0.0%;width:20%">März</span><span style="left:20.0%;width:20%">April</span><span style="left:40.0%;width:20%">Mai</span><span style="left:60.0%;width:20%">Juni</span><span style="left:80.0%;width:20%">Juli</span></div></th></tr></thead>
+      <tbody>
+        <tr class="phase"><td colspan="2">Analyse</td></tr>
+<tr><td class="task">Ist-Analyse, Interviews</td><td class="track"><div class="bar" style="left:0.0%;width:10.0%"></div></td></tr>
+<tr><td class="task">Soll-Konzept, Anforderungen</td><td class="track"><div class="bar" style="left:10.0%;width:7.5%"></div></td></tr>
+<tr><td class="task">Alternativenbewertung</td><td class="track"><div class="bar" style="left:17.5%;width:4.0%"></div></td></tr>
+<tr class="phase"><td colspan="2">Umsetzung</td></tr>
+<tr><td class="task">Intranet-Kern, Telefonverzeichnis</td><td class="track"><div class="bar" style="left:21.5%;width:15.0%"></div></td></tr>
+<tr><td class="task">Administration, AD-Abgleich</td><td class="track"><div class="bar" style="left:36.5%;width:10.0%"></div></td></tr>
+<tr><td class="task">SSO, Berechtigungen</td><td class="track"><div class="bar" style="left:46.5%;width:7.5%"></div></td></tr>
+<tr><td class="task">Office-Plattform, lokale KI</td><td class="track"><div class="bar" style="left:54.0%;width:15.0%"></div></td></tr>
+<tr class="phase"><td colspan="2">Abschluss</td></tr>
+<tr><td class="task">Tests, Abnahme</td><td class="track"><div class="bar" style="left:69.0%;width:7.5%"></div></td></tr>
+<tr><td class="task">Pilotbetrieb</td><td class="track"><div class="bar" style="left:76.5%;width:10.0%"></div></td></tr>
+<tr><td class="task">Rollout in Wellen, Schulung</td><td class="track"><div class="bar" style="left:86.5%;width:11.0%"></div></td></tr>
+      </tbody>
+    </table>
+    <figcaption>Projektablauf 2026 mit Phasen und Arbeitspaketen (Kalenderwochen 10 bis 29).</figcaption>
+  </figure>
+
+  <h2 id="k5-3">5.3&ensp;Meilensteine</h2>
+  <table class="compact">
+    <thead><tr><th class="id">MS</th><th>Meilenstein</th><th style="width:22%">Ergebnis</th></tr></thead>
+    <tbody>
+      <tr><td>M1</td><td>Ist-Analyse und Soll-Konzept abgenommen</td><td>Anforderungskatalog</td></tr>
+      <tr><td>M2</td><td>Entscheidung für Alternative C durch Klinikumsleitung</td><td>Entscheidungsvorlage</td></tr>
+      <tr><td>M3</td><td>Intranet-Kern mit Telefonverzeichnis lauffähig</td><td>Testsystem</td></tr>
+      <tr><td>M4</td><td>SSO, AD-Gruppen und Office-Plattform integriert</td><td>Integrationssystem</td></tr>
+      <tr><td>M5</td><td>Tests und Abnahme erfolgreich</td><td>Abnahmeprotokoll</td></tr>
+      <tr><td>M6</td><td>Pilotbetrieb abgeschlossen, Rollout freigegeben</td><td>Go-live</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="k5-4">5.4&ensp;Projektorganisation</h2>
+  <table class="compact">
+    <thead><tr><th style="width:28%">Rolle</th><th>Aufgabe</th></tr></thead>
+    <tbody>
+      <tr><td>Auftraggeber</td><td>Klinikumsleitung / Kaufmännische Direktion: Budget, Entscheidung, Abnahme</td></tr>
+      <tr><td>Projektleitung</td><td>IT-Abteilung: Planung, Steuerung, Berichtswesen</td></tr>
+      <tr><td>Entwicklung, Betrieb</td><td>IT-Abteilung: Umsetzung, Container-Betrieb, Tests</td></tr>
+      <tr><td>Fachvertretung</td><td>Pflegedirektion, Ärztlicher Dienst, Verwaltung, Qualitätsmanagement: Anforderungen, Tests, Pilot</td></tr>
+      <tr><td>Datenschutz, Informationssicherheit</td><td>Datenschutzbeauftragte/r, ISB: Datenschutz-Folgenabschätzung, Sicherheitskonzept</td></tr>
+      <tr><td>Mitarbeitervertretung</td><td>Betriebs- bzw. Personalrat: Beteiligung, u.&nbsp;a. zur Nutzungsstatistik und KI</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===================== 6 ===================== -->
+<section class="chapter" id="k6">
+  <h1 class="chapter-title">6&ensp;Lösungsarchitektur</h1>
+
+  <h2 id="k6-1">6.1&ensp;Überblick</h2>
+  <p>Alle Komponenten laufen als Docker-Container auf Servern im Rechenzentrum des Klinikums. Einziger
+  Einstiegspunkt ist der Container <code>auth</code>: Er übernimmt die Windows-Anmeldung und leitet Anfragen an
+  das Intranet, an Nextcloud und an den Euro-Office-DocumentServer weiter. Datenbanken sind nur im internen
+  Container-Netz erreichbar.</p>
+  <figure class="diagram">
+    <div class="arch">
+      <div class="layer"><div class="layer-name">Arbeitsplatz</div><div class="boxes">
+        <div class="box ok-box"><b>Beliebiger aktueller Browser</b><span>Edge, Chrome, Firefox – PC, Thin Client, Tablet</span></div>
+      </div></div>
+      <div class="arrow">▼ HTTPS, Windows-Anmeldung (NTLM)</div>
+      <div class="layer"><div class="layer-name">Einstieg</div><div class="boxes">
+        <div class="box"><b>auth</b><span>Apache: einziger Einstiegspunkt, Reverse-Proxy, SSO</span></div>
+      </div></div>
+      <div class="arrow">▼ /&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;▼ /office/&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;▼ /eurooffice/</div>
+      <div class="layer"><div class="layer-name">Anwendungen</div><div class="boxes">
+        <div class="box"><b>app</b><span>Intranet (PHP 8.3): Startseite, Telefonverzeichnis, Administration</span></div>
+        <div class="box"><b>nextcloud</b><span>Dateien, Freigaben, KI-Assistent</span></div>
+        <div class="box"><b>eurooffice</b><span>Editoren für Text, Tabelle, Präsentation, PDF</span></div>
+      </div></div>
+      <div class="arrow">▼ SQL, JWT-gesicherte Aufrufe</div>
+      <div class="layer"><div class="layer-name">Daten und Hintergrunddienste</div><div class="boxes">
+        <div class="box"><b>db</b><span>MySQL 8</span></div>
+        <div class="box"><b>sync</b><span>AD-Abgleich</span></div>
+        <div class="box"><b>nextcloud-db / -redis</b><span>PostgreSQL, Redis</span></div>
+        <div class="box"><b>office-backup</b><span>AES-256</span></div>
+        <div class="box"><b>snmp</b><span>Monitoring</span></div>
+      </div></div>
+      <div class="arrow">▼ LDAPS&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;▼ OpenAI-kompatible API (lokal)</div>
+      <div class="layer"><div class="layer-name">Infrastruktur im Klinikum</div><div class="boxes">
+        <div class="box"><b>Active Directory</b><span>Personen und Gruppen aller Gesellschaften</span></div>
+        <div class="box ok-box"><b>Lokaler KI-Server</b><span>z. B. Ollama oder vLLM mit offenen Modellen</span></div>
+        <div class="box"><b>Monitoring</b><span>z. B. PRTG, Icinga, LibreNMS</span></div>
+      </div></div>
+    </div>
+    <figcaption>Soll-Architektur: alle Dienste als Container im Rechenzentrum des Klinikums, ohne Cloud-Abhängigkeit.</figcaption>
+  </figure>
+
+  <h2 id="k6-2">6.2&ensp;Komponenten</h2>
+  <table class="compact">
+    <thead><tr><th style="width:24%">Dienst</th><th>Aufgabe</th><th style="width:24%">Technologie</th></tr></thead>
+    <tbody>
+      <tr><td><code>auth</code></td><td>Einstiegspunkt, Reverse-Proxy, Windows-Anmeldung (NTLM), Schutz vor gefälschten Identitäts-Headern</td><td>Apache&nbsp;2.4</td></tr>
+      <tr><td><code>app</code></td><td>Intranet-Landingpage, Telefonverzeichnis, Administration, Statistik</td><td>PHP&nbsp;8.3, Vanilla JS, eigenes CSS</td></tr>
+      <tr><td><code>db</code></td><td>Datenbank des Intranets (Navigation, Telefonverzeichnis, Einstellungen, Protokolle)</td><td>MySQL&nbsp;8</td></tr>
+      <tr><td><code>sync</code></td><td>Regelmäßiger Abgleich von Personen und Gruppen aus dem Active Directory</td><td>PHP, LDAPS</td></tr>
+      <tr><td><code>snmp</code></td><td>Zustand aller Dienste und des AD-Abgleichs für das Monitoring</td><td>net-snmp (v2c)</td></tr>
+      <tr><td><code>nextcloud</code>, <code>nextcloud-cron</code>, <code>nextcloud-ai-worker</code></td><td>Dateiablage, Freigaben, Oberfläche, KI-Assistent</td><td>Nextcloud&nbsp;34</td></tr>
+      <tr><td><code>eurooffice</code></td><td>Browser-Editoren für Text, Tabellen, Präsentationen, PDF-Formulare</td><td>Euro-Office DocumentServer</td></tr>
+      <tr><td><code>nextcloud-db</code>, <code>nextcloud-redis</code></td><td>Datenbank und Cache von Nextcloud</td><td>PostgreSQL&nbsp;17, Redis&nbsp;7</td></tr>
+      <tr><td><code>office-backup</code></td><td>Verschlüsselte Sicherung und Wiederherstellung</td><td>AES-256</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="k6-3">6.3&ensp;Anmeldung und Berechtigungen</h2>
+  <p>Beschäftigte melden sich nicht erneut an: Der Container <code>auth</code> erkennt die bestehende
+  Windows-Anmeldung. Das Intranet ordnet den Anmeldenamen dem synchronisierten Verzeichnis zu und ermittelt die
+  AD-Gruppen – auch verschachtelte Mitgliedschaften. Kacheln, Office-Apps und App-Pakete werden über diese
+  Gruppen freigegeben. So erhalten Beschäftigte des Klinikums und der Tochtergesellschaften eine gemeinsame Startseite, sehen aber zusätzlich nur die für ihre Gesellschaft, Abteilung oder Funktion relevanten Kacheln. Beim Wechsel in Nextcloud oder eine Office-App wird der Benutzer über ein signiertes,
+  60&nbsp;Sekunden gültiges und nur einmal verwendbares Token angemeldet.</p>
+  <figure>
+    <img src="diagramme/sso-ablauf.png" alt="Ablauf der Anmeldung">
+    <figcaption>Ablauf der automatischen Anmeldung vom Intranet bis in die Office-Plattform.</figcaption>
+  </figure>
+
+  <h2 id="k6-4">6.4&ensp;Lokale KI</h2>
+  <p>Ein OpenAI-kompatibler Endpunkt (z.&nbsp;B. Ollama, vLLM oder LocalAI) wird im Adminbereich einmalig
+  hinterlegt und steht danach allen Beschäftigten zur Verfügung – im Nextcloud-Assistenten sowie über das
+  KI-Plugin in allen Euro-Office-Editoren. Die Anfragen werden serverseitig weitergeleitet; der API-Schlüssel
+  erreicht den Browser nicht. Es werden keine Daten an externe Anbieter übermittelt. Audio- und Bildfunktionen
+  sind standardmäßig deaktiviert und können gezielt freigegeben werden.</p>
+
+  <h2 id="k6-5">6.5&ensp;Verfügbarkeit und Ausfallsicherheit</h2>
+  <ul>
+    <li><strong>Unabhängig vom Internet:</strong> Alle Dienste inklusive KI laufen lokal; externe Ressourcen (CDNs, Web-Fonts, Tracking) werden nicht geladen.</li>
+    <li><strong>Selbstheilung:</strong> Jeder Container besitzt einen Healthcheck und startet bei Fehlern automatisch neu; der Stack startet als Systemdienst beim Serverstart.</li>
+    <li><strong>Robuster AD-Abgleich:</strong> Ist das AD nicht erreichbar, bleibt der letzte gültige Stand des Telefonverzeichnisses erhalten – die Telefonsuche funktioniert weiter.</li>
+    <li><strong>Entkopplung:</strong> Fällt die Office-Plattform aus, bleiben Startseite, Telefonverzeichnis und Notfallnummern verfügbar; die Office-Kachel zeigt den Status an.</li>
+    <li><strong>Monitoring:</strong> Der SNMP-Agent meldet den Zustand jedes Dienstes an bestehende Systeme (z.&nbsp;B. PRTG, Icinga, LibreNMS).</li>
+    <li><strong>Sicherung:</strong> Tägliche, AES-256-verschlüsselte Sicherung von Office-Plattform und Intranet mit einstellbarer Aufbewahrung; Wiederherstellung per Skript.</li>
+  </ul>
+
+  <h2 id="k6-6">6.6&ensp;Informationssicherheit und Datenschutz</h2>
+  <ul>
+    <li>Datenbankzugriffe ausschließlich über vorbereitete Anweisungen; konsequente Ausgabe-Maskierung gegen XSS.</li>
+    <li>CSRF-Token für alle schreibenden Anfragen, Sperre nach fünf fehlgeschlagenen Anmeldungen, automatische Abmeldung bei Inaktivität.</li>
+    <li>Sicherheitsheader (Content-Security-Policy, X-Frame-Options, Referrer-Policy u.&nbsp;a.).</li>
+    <li>Passwörter und Schlüssel ausschließlich als Docker-Secrets, nie im Quellcode oder in Protokollen.</li>
+    <li>Absicherung der Kommunikation zwischen Intranet, Nextcloud und DocumentServer per JWT.</li>
+    <li>Rollenmodell im Adminbereich (Administrator, Redaktion); Protokollierung von Änderungen und AD-Läufen.</li>
+    <li>Keine Verarbeitung von Patientendaten im Intranet; die Nutzungsstatistik erfasst nur Klicks je Kachel und Tag, ohne Personenbezug.</li>
+  </ul>
+</section>
+
+<!-- ===================== 7 ===================== -->
+<section class="chapter" id="k7">
+  <h1 class="chapter-title">7&ensp;Umsetzungsergebnis</h1>
+  <p>Dieses Kapitel stellt die umgesetzten Module anhand von Screenshots des Testsystems vor. Alle Namen und
+  Rufnummern sind Beispieldaten.</p>
+
+  <h2 id="k7-1">7.1&ensp;Startseite</h2>
+  <p>Die Startseite bündelt alle Anwendungen als Kacheln. Eine Kachel kann auf eine Anwendung, eine
+  Unterseite mit weiteren Kacheln oder eine formatierte Textseite verweisen. Notfallnummern sind farblich
+  abgesetzt, wichtige Links stehen in einem aufklappbaren Bereich. Aktuelle Mitteilungen erscheinen beim
+  Aufruf als Overlay. Die Darstellung passt sich hellen und dunklen Farbschemata an.</p>
+  <figure>
+    <img src="../screenshots/02-landing.png" alt="Startseite">
+    <figcaption>Startseite mit Kacheln und aufklappbaren wichtigen Links (dunkles Farbschema).</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/01-landing-mitteilung.png" alt="Mitteilung">
+    <figcaption>Startseite mit Mitteilungs-Overlay.</figcaption>
+  </figure>
+
+  <h2 id="k7-2">7.2&ensp;Telefonverzeichnis</h2>
+  <p>Das Telefonverzeichnis wird aus dem Active Directory gespeist und lokal indiziert vorgehalten. Die
+  Live-Suche liefert bereits während der Eingabe Ergebnisse über Name, Vorname, Nachname, Abteilung und
+  Rufnummer (auch Teilnummern). Die gemessene Antwortzeit liegt im Millisekundenbereich (Kapitel&nbsp;8.2).</p>
+  <figure>
+    <img src="abbildungen/telefonverzeichnis.png" alt="Telefonverzeichnis">
+    <figcaption>Telefonverzeichnis.</figcaption>
+  </figure>
+  <figure>
+    <img src="abbildungen/telefonverzeichnis-suche.png" alt="Telefonverzeichnis Suche">
+    <figcaption>Live-Suche „Kardio“: Treffer über die Abteilung, bereits während der Eingabe.</figcaption>
+  </figure>
+
+  <h2 id="k7-3">7.3&ensp;Unterseiten und Textseiten</h2>
+  <p>Inhalte werden hierarchisch statt über verstreute Menüs strukturiert. Textseiten – etwa IT-Richtlinien
+  oder Hinweise zur Informationssicherheit – werden im Adminbereich mit einem Editor gepflegt.</p>
+  <figure>
+    <img src="../screenshots/06-unterseite-service.png" alt="Unterseite">
+    <figcaption>Unterseite „Service“ mit eigenen Kacheln.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/07-textseite-it-sicherheit.png" alt="Textseite IT-Sicherheit">
+    <figcaption>Textseite „IT-Sicherheit“.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/08-textseite-richtlinien.png" alt="Textseite Richtlinien">
+    <figcaption>Textseite „IT-Richtlinien“.</figcaption>
+  </figure>
+
+  <h2 id="k7-4">7.4&ensp;Administration</h2>
+  <p>Redaktion und IT pflegen alle Inhalte zentral im Adminbereich – ohne Programmierkenntnisse. Die Übersicht
+  zeigt Kennzahlen und den Zustand des letzten AD-Abgleichs.</p>
+  <figure>
+    <img src="../screenshots/09-admin-login.png" alt="Anmeldung">
+    <figcaption>Anmeldung zum Adminbereich.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/10-admin-uebersicht.png" alt="Übersicht">
+    <figcaption>Übersicht mit Kennzahlen.</figcaption>
+  </figure>
+
+  <h3>Navigation</h3>
+  <p>Kacheln werden angelegt, sortiert, aktiviert und hierarchisch angeordnet. Die Baumansicht macht die
+  Struktur sichtbar; im Formular werden Ziel, Beschreibung, Darstellung und Berechtigungen festgelegt.</p>
+  <figure>
+    <img src="../screenshots/11-admin-navigation-liste.png" alt="Navigation Liste">
+    <figcaption>Navigation als Liste.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/12-admin-navigation-baum.png" alt="Navigation Baum">
+    <figcaption>Navigation als Baum.</figcaption>
+  </figure>
+  <figure>
+    <img src="abbildungen/navigation-formular.png" alt="Navigation Formular">
+    <figcaption>Formular für ein Navigationselement.</figcaption>
+  </figure>
+
+  <h3>Wichtige Links, Notfallnummern und Mitteilungen</h3>
+  <figure>
+    <img src="../screenshots/14-admin-wichtige-links.png" alt="Wichtige Links">
+    <figcaption>Pflege der wichtigen Links.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/16-admin-mitteilungen.png" alt="Mitteilungen">
+    <figcaption>Pflege der Mitteilungen.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/15-admin-notfallnummern.png" alt="Notfallnummern">
+    <figcaption>Pflege der Notfallnummern.</figcaption>
+  </figure>
+
+  <h3>Beschreibungen und Design</h3>
+  <p>Seitentitel, Texte und Darstellung der Beschreibungen sowie Farben und Logo des Klinikums lassen sich
+  anpassen.</p>
+  <figure>
+    <img src="../screenshots/17-admin-beschreibungen.png" alt="Beschreibungen">
+    <figcaption>Beschreibungen und Texte.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/18-admin-design.png" alt="Design">
+    <figcaption>Design: Farbschema und Logo.</figcaption>
+  </figure>
+
+  <h3>Active Directory und Berechtigungen</h3>
+  <p>Server, Verschlüsselung, Suchpfade und Attributzuordnung des AD-Abgleichs werden im Adminbereich
+  konfiguriert. Über Gruppenpfade werden AD-Gruppen übernommen, die anschließend beim Tippen als Vorschlag für
+  Berechtigungen erscheinen.</p>
+  <figure>
+    <img src="../screenshots/19-admin-ad.png" alt="Active Directory">
+    <figcaption>Konfiguration des AD-Abgleichs.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/41-admin-ad-gruppenpfad.png" alt="Gruppenpfad">
+    <figcaption>Gruppenpfade für die Rechtevergabe.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/40-admin-ad-gruppen-vorschlaege.png" alt="Gruppenvorschläge">
+    <figcaption>Berechtigungen mit Gruppenvorschlägen.</figcaption>
+  </figure>
+
+  <h3>Statistik und Benutzer</h3>
+  <p>Die Nutzungsstatistik zeigt Klicks je Kachel über wählbare Zeiträume und hilft, die Navigation an der
+  tatsächlichen Nutzung auszurichten. Die Benutzerverwaltung vergibt die Rollen Administrator und Redaktion.</p>
+  <figure>
+    <img src="../screenshots/20-admin-statistik.png" alt="Statistik">
+    <figcaption>Nutzungsstatistik.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/21-admin-benutzer.png" alt="Benutzer">
+    <figcaption>Benutzerverwaltung.</figcaption>
+  </figure>
+
+  <h2 id="k7-5">7.5&ensp;Office-Plattform</h2>
+  <p>Die Office-Kachel erscheint nur für Beschäftigte mit freigegebenen Apps. Ein Klick zeigt die Office-Apps
+  des angemeldeten Benutzers; ohne Anmeldung wird die Kachel ausgeblendet.</p>
+  <figure>
+    <img src="../screenshots/47-landing-office-angemeldet.png" alt="Office-Kachel angemeldet">
+    <figcaption>Startseite mit Office-Kachel und erkanntem Benutzer.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/52-landing-ohne-anmeldung.png" alt="Ohne Anmeldung">
+    <figcaption>Ohne Anmeldung: keine Office-Kachel.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/44-office-apps-uebersicht.png" alt="Office-Apps">
+    <figcaption>Office-Apps des angemeldeten Benutzers.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/49-office-app-textdokument.png" alt="Textdokument">
+    <figcaption>Textdokument im Euro-Office-Editor.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/50-office-app-tabelle.png" alt="Tabelle">
+    <figcaption>Tabelle im Euro-Office-Editor.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/51-office-app-dateien.png" alt="Dateien">
+    <figcaption>Eigene Dateien in Nextcloud.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/30-office-editor-fusszeile.png" alt="Editor mit Fußzeile">
+    <figcaption>Editor mit Intranet-Fußzeile.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/31-office-dateien-fusszeile.png" alt="Dateien mit Fußzeile">
+    <figcaption>Dateiansicht mit Intranet-Fußzeile.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/32-office-fusszeile-eingeklappt.png" alt="Fußzeile eingeklappt">
+    <figcaption>Eingeklappte Intranet-Fußzeile.</figcaption>
+  </figure>
+
+  <h3>Office-Kachel und Office-Apps verwalten</h3>
+  <p>Office-Apps werden einzeln oder als App-Paket an AD-Gruppen freigegeben. Die Spalte „Wirksam für“ zeigt,
+  wer eine App tatsächlich erhält.</p>
+  <figure>
+    <img src="../screenshots/45-admin-office-apps.png" alt="Office-Apps verwalten">
+    <figcaption>Office-Apps und Berechtigungen.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/46-admin-office-app-paket.png" alt="App-Paket">
+    <figcaption>Bearbeiten eines App-Pakets.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/42-admin-office-kachel-gestaltung.png" alt="Kachel gestalten">
+    <figcaption>Gestaltung der Office-Kachel mit Vorschau.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/38-admin-office-kachel-rechte.png" alt="Kachel-Berechtigungen">
+    <figcaption>Berechtigungen der Office-Kachel.</figcaption>
+  </figure>
+  <div class="fig-grid pair">
+    <figure>
+      <img src="../screenshots/39-landing-office-kachel.png" alt="Office-Kachel">
+      <figcaption>Office-Kachel mit Verfügbarkeitsstatus.</figcaption>
+    </figure>
+    <figure>
+      <img src="../screenshots/43-landing-office-kachel-kompakt.png" alt="Office-Kachel kompakt" class="small">
+      <figcaption>Kompakte Statusanzeige (nur Farbpunkt).</figcaption>
+    </figure>
+  </div>
+
+  <h3>Betrieb der Office-Plattform</h3>
+  <figure>
+    <img src="../screenshots/33-admin-office-status.png" alt="Office-Status">
+    <figcaption>Status der Office-Plattform.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/34-admin-office-diagnose.png" alt="Office-Diagnose">
+    <figcaption>Diagnose aller Komponenten.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/35-admin-office-fusszeile.png" alt="Fußzeile konfigurieren">
+    <figcaption>Konfiguration der Intranet-Fußzeile.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/36-admin-office-vorschau.png" alt="Fußzeilen-Vorschau">
+    <figcaption>Live-Vorschau der Fußzeile.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/37-admin-office-sicherung.png" alt="Sicherung">
+    <figcaption>Verschlüsselte Sicherung der Office-Plattform.</figcaption>
+  </figure>
+
+  <h2 id="k7-6">7.6&ensp;Lokale KI</h2>
+  <p>Der lokale KI-Endpunkt wird zentral konfiguriert und geprüft. Beschäftigte nutzen die KI anschließend
+  ohne eigene Einrichtung im Nextcloud-Assistenten und im Reiter „AI“ der Editoren.</p>
+  <figure>
+    <img src="../screenshots/53-admin-office-ki.png" alt="KI-Konfiguration">
+    <figcaption>Konfiguration der lokalen KI.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/54-admin-office-ki-status.png" alt="KI-Status">
+    <figcaption>KI-Status in der Diagnose.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/55-nextcloud-assistant-ki.png" alt="Nextcloud-Assistent">
+    <figcaption>Nextcloud-Assistent mit lokaler KI.</figcaption>
+  </figure>
+  <figure>
+    <img src="../screenshots/56-eurooffice-ki-plugin.png" alt="KI-Plugin">
+    <figcaption>KI-Plugin im Euro-Office-Editor.</figcaption>
+  </figure>
+</section>
+
+<!-- ===================== 8 ===================== -->
+<section class="chapter" id="k8">
+  <h1 class="chapter-title">8&ensp;Qualitätssicherung</h1>
+
+  <h2 id="k8-1">8.1&ensp;Automatisierte Tests</h2>
+  <p>Die Anwendung verfügt über einen abhängigkeitsfreien Testrunner mit Unit-Tests für Services, Sicherheit,
+  Berechtigungen, AD-Abgleich, SSO, Office-Integration, KI-Konfiguration sowie Sicherung und
+  Wiederherstellung. Externe Systeme (AD, SMS-Gateway, Office) werden durch Testdoppel ersetzt.</p>
+  <table class="compact">
+    <thead><tr><th style="width:40%">Kennzahl</th><th>Ergebnis</th></tr></thead>
+    <tbody>
+      <tr><td>Testfälle</td><td>150 (22 Testdateien)</td></tr>
+      <tr><td>Zusicherungen</td><td>568</td></tr>
+      <tr><td>Ergebnis</td><td>150 erfolgreich, 0 fehlgeschlagen</td></tr>
+      <tr><td>Umgebung</td><td>Anwendungs-Image (PHP&nbsp;8.3) unter Docker, Lauf vom 26.09.2026</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="k8-2">8.2&ensp;Performance-Messung</h2>
+  <p>Zur Überprüfung von N01 wurden Anwendung und Datenbank isoliert in Docker gestartet und mit
+  10.000 synthetischen Einträgen im Telefonverzeichnis befüllt. Gemessen wurde die serverseitige Antwortzeit
+  mit <code>curl</code> (Median aus fünf Läufen nach einem Aufwärmaufruf).</p>
+  <table class="compact score-left">
+    <thead><tr><th>Messung</th><th style="width:22%">Median</th><th style="width:22%">Bestandssystem</th></tr></thead>
+    <tbody>
+      <tr><td>Telefonsuche „Schmidt“ (Nachname)</td><td>17&nbsp;ms</td><td>≥&nbsp;15.000&nbsp;ms</td></tr>
+      <tr><td>Telefonsuche „Anna Weber“ (zwei Begriffe)</td><td>15&nbsp;ms</td><td>≥&nbsp;15.000&nbsp;ms</td></tr>
+      <tr><td>Telefonsuche „IT“ (Abteilung)</td><td>16&nbsp;ms</td><td>≥&nbsp;15.000&nbsp;ms</td></tr>
+      <tr><td>Telefonsuche „10500“ (Teilnummer)</td><td>16&nbsp;ms</td><td>≥&nbsp;15.000&nbsp;ms</td></tr>
+      <tr><td>Aufruf der Startseite</td><td>5&nbsp;ms</td><td>–</td></tr>
+      <tr><td>Aufruf des Telefonverzeichnisses</td><td>12&nbsp;ms</td><td>–</td></tr>
+    </tbody>
+  </table>
+  <p>Die Anforderung N01 (&lt;&nbsp;1&nbsp;s) wird damit um mehr als eine Größenordnung unterschritten. Die Werte
+  enthalten keine Netzwerklaufzeit im Klinikumsnetz; auch mit dieser bleibt die Suche für Beschäftigte
+  praktisch verzögerungsfrei.</p>
+
+  <h2 id="k8-3">8.3&ensp;Soll-Ist-Vergleich</h2>
+  <table class="compact">
+    <thead><tr><th class="id">ID</th><th>Anforderung (Kurzform)</th><th style="width:18%">Status</th></tr></thead>
+    <tbody>
+      <tr><td>F01–F05</td><td>Startseite, Telefonverzeichnis, AD-Abgleich, Navigation, Notfall/Alarmierung</td><td><span class="badge ok">erfüllt</span></td></tr>
+      <tr><td>F06</td><td>SSO und Berechtigungen über AD-Gruppen</td><td><span class="badge ok">erfüllt</span>*</td></tr>
+      <tr><td>F07</td><td>Browserbasierte Dokumentbearbeitung</td><td><span class="badge ok">erfüllt</span></td></tr>
+      <tr><td>F08</td><td>Gemeinsame Ablage mit Freigaben über AD-Gruppen</td><td><span class="badge mid">teilweise</span></td></tr>
+      <tr><td>F09–F12</td><td>KI, Statistik, Zugangscode, gesellschaftsübergreifende Inhalte</td><td><span class="badge ok">erfüllt</span></td></tr>
+      <tr><td>N01–N04</td><td>Performance, Browser, lokaler Betrieb, Überwachung/Sicherung</td><td><span class="badge ok">erfüllt</span></td></tr>
+      <tr><td>N05–N10</td><td>Datenschutz, Sicherheit, Open Source, lokale KI, Barrierefreiheit, Tests</td><td><span class="badge ok">erfüllt</span></td></tr>
+    </tbody>
+  </table>
+  <p class="small-note">* NTLM-Anmeldung und AD-Gruppen sind durch Unit-Tests mit Testdoppeln und einen Testmodus
+  mit simuliertem Benutzer abgedeckt; die Ende-zu-Ende-Prüfung gegen die produktive Domäne erfolgt im
+  Pilotbetrieb. F08: Nextcloud ist an das AD angebunden; die Einrichtung abteilungsübergreifender Gruppenordner
+  und die Migration der Netzlaufwerke sind als Folgeschritt geplant (Kapitel&nbsp;9).</p>
+</section>
+
+<!-- ===================== 9 ===================== -->
+<section class="chapter" id="k9">
+  <h1 class="chapter-title">9&ensp;Einführung, Migration und Betrieb</h1>
+
+  <h2 id="k9-1">9.1&ensp;Einführungsstrategie</h2>
+  <ol>
+    <li><strong>Pilot:</strong> Betrieb mit ausgewählten Bereichen (z.&nbsp;B. IT, Verwaltung, eine Normalstation, eine Funktionsabteilung, ein Bereich einer Tochtergesellschaft); altes Intranet bleibt parallel erreichbar.</li>
+    <li><strong>Inhaltsmigration:</strong> Inventur der alten Navigation und der Inhalte aller Gesellschaften anhand der Fachbereiche, Festlegung von Redaktionsverantwortlichen je Gesellschaft, Bereinigung doppelter und toter Links, Übernahme als Kacheln, Unter- und Textseiten.</li>
+    <li><strong>Ablösung der ActiveX-Module:</strong> Jedes Modul wird ersetzt (neues Intranet-Modul, Euro-Office-Formular, bestehende Fachanwendung) oder nach Rücksprache mit dem Fachbereich stillgelegt.</li>
+    <li><strong>Umstellung:</strong> Rollout in Wellen – zuerst Klinikum, danach die Tochtergesellschaften und weiteren Einheiten. Die neue Startseite wird per Gruppenrichtlinie auf den rund 500 PCs als Browser-Startseite verteilt, die IE-Modus-Siteliste wird geleert.</li>
+    <li><strong>Abschaltung</strong> des IIS-Intranets nach einer Übergangsfrist und Archivierung.</li>
+  </ol>
+
+  <h2 id="k9-2">9.2&ensp;Migration von Office und Dateiablage (Folgeschritt)</h2>
+  <ul>
+    <li>Euro-Office bearbeitet die Microsoft-Formate (DOCX, XLSX, PPTX) direkt. Office&nbsp;2019 wird schrittweise abgelöst; Sonderfälle (z.&nbsp;B. komplexe Makros, Access-Anwendungen) werden erfasst und einzeln bewertet.</li>
+    <li>Abteilungsübergreifende Ablagen werden als Nextcloud-Gruppenordner mit AD-Gruppen eingerichtet. Freigaben innerhalb von Projektgruppen können von berechtigten Beschäftigten selbst vergeben werden; die IT legt nur noch den Rahmen fest.</li>
+    <li>Während der Übergangszeit können bestehende SMB-Freigaben als externe Speicher in Nextcloud eingebunden werden, sodass keine Stichtagsmigration nötig ist.</li>
+  </ul>
+
+  <h2 id="k9-3">9.3&ensp;Schulung und Kommunikation</h2>
+  <p>Für Beschäftigte stehen ein Anwenderhandbuch und kurze Einweisungen auf den Stationen bereit; Redaktion
+  und IT erhalten das Administratorhandbuch sowie eine Schulung zur Pflege der Inhalte. Die Umstellung wird
+  über Mitteilungen auf der Startseite, das Intranet selbst und Multiplikatoren in den Bereichen begleitet.</p>
+
+  <h2 id="k9-4">9.4&ensp;Betrieb</h2>
+  <ul>
+    <li>Installation per Assistent (<code>scripts/install.sh</code>) bzw. Einzeiler für die Office-Plattform; Autostart als systemd-Dienst.</li>
+    <li>Updates der Office-Komponenten aus den offiziellen Quellen mit vorheriger automatischer Sicherung.</li>
+    <li>Einbindung des SNMP-Agenten in das zentrale Monitoring und Aufnahme in den Notfallplan der IT.</li>
+    <li>Regelmäßige Wiederherstellungstests der Sicherung; getrennte Aufbewahrung der Sicherungs-Passphrase.</li>
+  </ul>
+</section>
+
+<!-- ===================== 10 ===================== -->
+<section class="chapter" id="k10">
+  <h1 class="chapter-title">10&ensp;Risiken und Maßnahmen</h1>
+  <table class="compact">
+    <thead><tr><th style="width:26%">Risiko</th><th style="width:15%">Bewertung</th><th>Maßnahme</th></tr></thead>
+    <tbody>
+      <tr><td>Akzeptanz der Office-Alternative</td><td><span class="badge mid">mittel</span></td><td>Pilot mit Multiplikatoren, vertraute Oberfläche, Schulungen, Office&nbsp;2019 für Sonderfälle übergangsweise</td></tr>
+      <tr><td>Formatabweichungen bei komplexen Dokumenten</td><td><span class="badge mid">mittel</span></td><td>Test typischer Vorlagen im Pilot, Anpassung zentraler Vorlagen</td></tr>
+      <tr><td>Know-how-Konzentration in der IT</td><td><span class="badge mid">mittel</span></td><td>Dokumentation, Handbücher, schlanker Technologiestapel ohne Frameworks, optionaler Supportvertrag für Nextcloud</td></tr>
+      <tr><td>Ressourcenbedarf der lokalen KI</td><td><span class="badge mid">mittel</span></td><td>Start mit kleinem Modell, bedarfsgerechter Ausbau der GPU-Kapazität, austauschbarer Endpunkt</td></tr>
+      <tr><td>Fehlerhafte KI-Ergebnisse</td><td><span class="badge mid">mittel</span></td><td>Nutzungsrichtlinie, KI nur als Unterstützung, keine Nutzung für medizinische Entscheidungen, Schulung</td></tr>
+      <tr><td>Ausfall des Servers</td><td><span class="badge low">gering</span></td><td>Healthchecks, Monitoring, tägliche Sicherung, dokumentierter Wiederanlauf; optional zweiter Knoten</td></tr>
+      <tr><td>Nicht abgelöste ActiveX-Module</td><td><span class="badge low">gering</span></td><td>Modul-Inventur mit Verantwortlichen und Terminen, befristete Ausnahmen</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===================== 11 ===================== -->
+<section class="chapter" id="k11">
+  <h1 class="chapter-title">11&ensp;Fazit und Ausblick</h1>
+  <p>Mit dem Projekt wurde das abgekündigte IIS-/ActiveX-Intranet durch eine moderne, browserunabhängige und
+  vollständig im eigenen Rechenzentrum betriebene Lösung ersetzt. Die Telefonsuche ist von mindestens
+  15&nbsp;Sekunden auf rund 15–17&nbsp;Millisekunden (serverseitig) beschleunigt worden. Die Navigation ist
+  zentral gepflegt, verbundweit einheitlich und nach Nutzung auswertbar. Überwachung, Selbstheilung und verschlüsselte Sicherungen
+  adressieren die bisherigen Ausfälle.</p>
+  <p>Mit Nextcloud, Euro-Office und lokaler KI steht erstmals eine Plattform für gemeinsame Dokumentbearbeitung
+  und KI-Unterstützung zur Verfügung, die ohne Microsoft&nbsp;365 auskommt, keine Gesundheits- oder
+  Beschäftigtendaten an Dritte übermittelt, auch bei gestörter Internetanbindung funktioniert und weitgehend
+  unabhängig von US-Anbietern ist.</p>
+  <h2 id="k11-1">11.1&ensp;Ausblick</h2>
+  <ul>
+    <li>Migration der Netzlaufwerke in Nextcloud-Gruppenordner und Ablösung von Office&nbsp;2019.</li>
+    <li>Ausbau der KI: Durchsuchen interner Dokumente (z.&nbsp;B. SOPs) mit lokalem Retrieval, weitere Automatisierungen.</li>
+    <li>Weitere Konsolidierung der fragmentierten Strukturen (einheitliche Gruppen- und Ablagekonzepte für alle Gesellschaften).</li>
+    <li>Hochverfügbarkeit durch einen zweiten Knoten an einem getrennten Brandabschnitt.</li>
+    <li>Prüfung weiterer souveräner Bausteine (z.&nbsp;B. E-Mail, Chat) als eigene Projekte.</li>
+  </ul>
+</section>
+
+<!-- ===================== Anhang ===================== -->
+<section class="chapter" id="anhang">
+  <h1 class="chapter-title">Anhang</h1>
+
+  <h2 id="a1">A&ensp;Glossar</h2>
+  <table class="compact">
+    <thead><tr><th style="width:24%">Begriff</th><th>Erläuterung</th></tr></thead>
+    <tbody>
+      <tr><td>ActiveX</td><td>Veraltete Microsoft-Technologie für ausführbare Komponenten im Internet Explorer</td></tr>
+      <tr><td>AD / LDAP(S)</td><td>Active Directory; Verzeichnisdienst und (verschlüsseltes) Abfrageprotokoll</td></tr>
+      <tr><td>B3S</td><td>Branchenspezifischer Sicherheitsstandard, hier „Medizinische Versorgung“</td></tr>
+      <tr><td>CLOUD Act</td><td>US-Gesetz, das US-Anbieter zur Herausgabe von Daten auch aus ausländischen Rechenzentren verpflichten kann</td></tr>
+      <tr><td>Container / Docker</td><td>Isolierte, reproduzierbar betriebene Anwendungsumgebungen</td></tr>
+      <tr><td>Euro-Office</td><td>Europäischer Open-Source-Office-Editor im Browser (DocumentServer)</td></tr>
+      <tr><td>IE-Modus</td><td>Kompatibilitätsmodus in Microsoft Edge zur Darstellung alter Internet-Explorer-Seiten</td></tr>
+      <tr><td>IIS</td><td>Internet Information Services, Webserver von Microsoft</td></tr>
+      <tr><td>JWT</td><td>JSON Web Token; signierter Nachweis zur Absicherung von Anfragen</td></tr>
+      <tr><td>KRITIS / NIS-2</td><td>Regelungen für kritische bzw. wichtige Einrichtungen zur Informationssicherheit</td></tr>
+      <tr><td>Nextcloud</td><td>Open-Source-Plattform für Dateiablage und Zusammenarbeit</td></tr>
+      <tr><td>NTLM / SSO</td><td>Windows-Anmeldeverfahren; Single Sign-on ohne erneute Kennworteingabe</td></tr>
+      <tr><td>SNMP</td><td>Protokoll zur Überwachung von Netzwerk- und Serverdiensten</td></tr>
+      <tr><td>SOP</td><td>Standard Operating Procedure, Verfahrensanweisung</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="a2">B&ensp;Abbildungsverzeichnis</h2>
+  <ol class="toc-like" id="fig-list"></ol>
+
+  <h2 id="a3">C&ensp;Referenzdokumente</h2>
+  <ul>
+    <li>Anwenderhandbuch und Administratorhandbuch (<code>docs/manuals/</code>)</li>
+    <li>Installationsanleitung (<code>docs/installation.md</code>)</li>
+    <li>Dokumentation der Office-Erweiterung (<code>docs/office.md</code>)</li>
+    <li>Projekt-README mit Konfiguration, Betrieb und Sicherheit (<code>README.md</code>)</li>
+  </ul>
+</section>
+
+<script src="projektdokumentation.js"></script>
+</body>
+</html>

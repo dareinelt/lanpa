@@ -10,10 +10,12 @@ use App\Repositories\AdminUserRepository;
 use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AnnouncementRepository;
 use App\Repositories\EmergencyNumberRepository;
+use App\Repositories\IdentitySourceRepository;
 use App\Repositories\ImportantLinkRepository;
 use App\Repositories\NavigationRepository;
 use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
+use App\Support\Validator;
 use JsonException;
 use ZipArchive;
 
@@ -60,7 +62,8 @@ final class ImportService
         private readonly ActivationNumberRepository $activationNumberRepository,
         private readonly LogoService $logo,
         private readonly BackgroundImageService $backgroundImage,
-        private readonly FaviconService $favicons
+        private readonly FaviconService $favicons,
+        private readonly ?IdentitySourceRepository $identitySources = null
     ) {
     }
 
@@ -83,6 +86,11 @@ final class ImportService
             $this->applyEmergencyNumbers($data['emergency_numbers']);
             $this->applyAnnouncements($data['announcements']);
             $this->applyAdminUsers($data['admin_users']);
+            // Optional: aeltere Sicherungen enthalten keine Identitaetsquellen –
+            // dann bleiben die vorhandenen unveraendert.
+            if (is_array($data['identity_sources'] ?? null)) {
+                $this->applyIdentitySources($data['identity_sources']);
+            }
             $this->applyPhonebook($data['phonebook']);
 
             $pdo->commit();
@@ -271,11 +279,16 @@ final class ImportService
         $existingSinglePassword = $this->settingsRepository->get('alarm_single_password');
         $existingSecret = $this->settingsRepository->get('sms_code_secret');
         $existingAiKey = $this->settingsRepository->get('office_ai_api_key');
+        $existingAdSecrets = [];
+        foreach (IdentitySourceService::PRIMARY_SECRET_SETTINGS as $key) {
+            $existingAdSecrets[$key] = $this->settingsRepository->get($key);
+        }
 
         $this->settingsRepository->deleteAll();
 
+        $protected = array_merge(['alarm_password', 'alarm_single_password', 'sms_code_secret', 'office_ai_api_key'], IdentitySourceService::PRIMARY_SECRET_SETTINGS);
         foreach ($settings as $key => $value) {
-            if (in_array($key, ['alarm_password', 'alarm_single_password', 'sms_code_secret', 'office_ai_api_key'], true)) {
+            if (in_array($key, $protected, true)) {
                 continue;
             }
             $this->settingsRepository->insert((string) $key, (string) $value);
@@ -295,6 +308,12 @@ final class ImportService
 
         if (is_string($existingAiKey) && $existingAiKey !== '') {
             $this->settingsRepository->insert('office_ai_api_key', $existingAiKey);
+        }
+
+        foreach ($existingAdSecrets as $key => $value) {
+            if (is_string($value) && $value !== '') {
+                $this->settingsRepository->insert($key, $value);
+            }
         }
     }
 
@@ -450,6 +469,62 @@ final class ImportService
 
             $this->adminUserRepository->setActive($id, !empty($row['active']));
         }
+    }
+
+    /**
+     * @param array<mixed> $rows
+     */
+    private function applyIdentitySources(array $rows): void
+    {
+        if ($this->identitySources === null) {
+            return;
+        }
+
+        // Verschluesselte Zugangsdaten sind nicht Teil der Sicherung; bestehende
+        // Werte bleiben je Kennung erhalten.
+        $existingSecrets = [];
+        foreach ($this->identitySources->all() as $existing) {
+            $existingSecrets[IdentitySourceService::normalizeKey((string) $existing['source_key'])] = $existing;
+        }
+
+        $valid = [];
+        $keys = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || (int) ($row['id'] ?? 0) <= 0) {
+                continue;
+            }
+
+            $key = IdentitySourceService::normalizeKey((string) ($row['source_key'] ?? ''));
+            if (!IdentitySourceService::isValidKey($key) || isset($keys[$key])) {
+                continue;
+            }
+            $keys[$key] = true;
+
+            $hosts = array_filter(SettingsService::splitHostList((string) ($row['hosts'] ?? '')), [Validator::class, 'isHostname']);
+            $row['source_key'] = $key;
+            $row['label'] = Validator::cleanText((string) ($row['label'] ?? $key), 100) ?: $key;
+            $row['hosts'] = implode("\n", array_slice($hosts, 0, IdentitySourceService::MAX_HOSTS));
+            $row['user_filter'] = Validator::isLdapFilter((string) ($row['user_filter'] ?? ''))
+                ? (string) $row['user_filter'] : '(&(objectClass=user)(objectCategory=person))';
+            $row['group_filter'] = Validator::isLdapFilter((string) ($row['group_filter'] ?? ''))
+                ? (string) $row['group_filter'] : '(objectClass=group)';
+            $row['group_name_attribute'] = Validator::isLdapAttribute((string) ($row['group_name_attribute'] ?? ''))
+                ? (string) $row['group_name_attribute'] : 'cn';
+            $row['attributes'] = json_encode(IdentitySourceService::decodeAttributes((string) ($row['attributes'] ?? '')), JSON_THROW_ON_ERROR);
+
+            [$sso, $ssoErrors] = IdentitySourceService::validateSso($row, true);
+            $row = array_merge($row, $sso);
+            if ($ssoErrors !== []) {
+                $row['sso_enabled'] = '0';
+            }
+            $row['sso_enabled'] = $row['sso_enabled'] === '1';
+            foreach (IdentitySourceService::SECRET_FIELDS as $column) {
+                $row[$column] = $existingSecrets[$key][$column] ?? null;
+            }
+            $valid[] = $row;
+        }
+
+        $this->identitySources->replaceAllWithIds($valid);
     }
 
     /**

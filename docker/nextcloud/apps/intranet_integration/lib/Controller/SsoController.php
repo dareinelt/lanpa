@@ -72,7 +72,8 @@ class SsoController extends Controller {
 
         $target = $this->safeTarget((string) ($claims['target'] ?? ''));
         $uid = (string) ($claims['sub'] ?? '');
-        if (preg_match('/^[a-zA-Z0-9._-]{1,64}$/', $uid) !== 1 || !$this->consume((string) ($claims['jti'] ?? ''))) {
+        // SamAccountName, bei weiteren Identitaetsquellen mit "@kennung".
+        if (preg_match('/^[a-zA-Z0-9._-]{1,64}(@[a-z0-9_]{1,32})?$/', $uid) !== 1 || !$this->consume((string) ($claims['jti'] ?? ''))) {
             $this->logger->warning('Intranet-SSO: Token ohne gueltigen Benutzer oder bereits verwendet.', ['app' => Application::APP_ID]);
             return $this->fallback($target);
         }
@@ -137,7 +138,8 @@ class SsoController extends Controller {
     }
 
     /**
-     * Sucht das Konto zum SamAccountName (lokal oder ueber user_ldap).
+     * Sucht das Konto zum SamAccountName (lokal oder ueber user_ldap) bzw.
+     * zu "samaccountname@kennung" bei weiteren Identitaetsquellen.
      */
     private function findUser(string $uid, string $email): ?IUser {
         $user = $this->userManager->get($uid);
@@ -153,7 +155,10 @@ class SsoController extends Controller {
             }
         }
 
-        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) !== false) {
+        // Kein Abgleich ueber die E-Mail-Adresse fuer Konten weiterer
+        // Identitaetsquellen ("@kennung"): deren Verzeichnis koennte sonst per
+        // gleicher Adresse ein Konto der Hauptquelle uebernehmen.
+        if (!str_contains($uid, '@') && $email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) !== false) {
             $matches = $this->userManager->getByEmail($email);
             if (count($matches) === 1) {
                 return $matches[0];

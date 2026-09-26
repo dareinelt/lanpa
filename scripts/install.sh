@@ -321,6 +321,14 @@ env_set() { # schluessel wert
     log "env: $1 gesetzt"
 }
 
+env_del() { # schluessel...
+    for k in "$@"; do
+        grep -q "^$k=" .env 2>/dev/null || continue
+        awk -v k="$k" 'index($0, k "=") != 1 { print }' .env > "$TMP_DIR/env" && cat "$TMP_DIR/env" > .env
+        log "env: $k entfernt"
+    done
+}
+
 env_merge_missing() {
     # Ergaenzt Schluessel, die in .env.example neu hinzugekommen sind.
     added=""
@@ -773,6 +781,9 @@ host_ip() {
 
 M_LDAP=0; M_SSO=0; M_ALARM=0; M_OFFICE=0; M_PMA=0; M_SYSTEMD=0
 C_ADMIN_USER=""; C_ADMIN_PW=""; OFFICE_ENCRYPT=1
+# AD-Zugangsdaten werden nicht in die .env geschrieben, sondern nach dem Start
+# verschluesselt in der Datenbank gespeichert (scripts/credentials.php).
+C_LDAP_PW=""; C_SSO_DOMAIN=""; C_SSO_DCS=""; C_SSO_JOIN_USER=""; C_SSO_JOIN_PW=""; CRED_OK=0
 
 step_config() {
     t="Schritt 3/5: Konfiguration"
@@ -845,7 +856,7 @@ Bei bestehender Installation wird das Passwort damit zurueckgesetzt." "$(env_pre
 
     # --- Module ---
     on() { if [ "$1" = "1" ]; then echo ON; else echo OFF; fi; }
-    ldap_on=0; [ -n "$(env_get LDAP_PASSWORD)" ] && ldap_on=1
+    ldap_on=0; [ -n "$(env_get LDAP_HOST)" ] && ldap_on=1
     sso_on=0; is_true "$(env_get SSO_ENABLED)" && sso_on=1
     alarm_on=0; [ -n "$(env_get ALARM_HOST)" ] && alarm_on=1
     office_on=0; is_true "$(env_get OFFICE_ENABLED)" && office_on=1
@@ -894,8 +905,11 @@ config_ldap() {
     ask_port "$t" "LDAP-Port:" "$cur"; env_set LDAP_PORT "$REPLY"
     ask_required "$t" "Basis-DN der Benutzer (LDAP_BASE_DN):" "$(env_get LDAP_BASE_DN)"; env_set LDAP_BASE_DN "$REPLY"
     ask_required "$t" "Bind-DN des Dienstkontos (LDAP_BIND_DN):" "$(env_get LDAP_BIND_DN)"; env_set LDAP_BIND_DN "$REPLY"
-    ask_secret "$t" "Passwort des Dienstkontos (LDAP_PASSWORD):" "$(env_prev LDAP_PASSWORD)" 1 0
-    env_set LDAP_PASSWORD "$REPLY"
+    ask_secret "$t" "Passwort des Dienstkontos.
+Es wird verschluesselt in der Datenbank gespeichert (nicht in der .env) und
+kann spaeter unter Verwaltung -> Active Directory geaendert werden." "$(env_prev LDAP_PASSWORD)" 1 0
+    C_LDAP_PW="$REPLY"
+    env_del LDAP_PASSWORD LDAP_PASSWORD_FILE
     ask_input "$t" "Pfad(e) der AD-Gruppen fuer die Rechtevergabe (LDAP_GROUP_BASE_DN, mehrere mit ';', leer = keine):" "$(env_get LDAP_GROUP_BASE_DN)"
     env_set LDAP_GROUP_BASE_DN "$REPLY"
     ask_input "$t" "Synchronisationsintervall in Sekunden:" "$(env_or LDAP_SYNC_INTERVAL 3600)"
@@ -905,15 +919,59 @@ config_ldap() {
 config_sso() {
     t="Schritt 3/5: Windows-Anmeldung"
     env_set SSO_ENABLED true
-    ask_required "$t" "NetBIOS-Name der Domaene (SSO_DOMAIN, z. B. FIRMA):" "$(env_get SSO_DOMAIN)"; env_set SSO_DOMAIN "$REPLY"
-    ask_required "$t" "DNS-Name/Realm der Domaene (SSO_REALM, z. B. firma.local):" "$(env_get SSO_REALM)"; env_set SSO_REALM "$REPLY"
-    dc="$(env_get SSO_DC)"; [ -z "$dc" ] && dc="$(env_get LDAP_HOST)"
-    ask_required "$t" "Domaenencontroller (SSO_DC):" "$dc"; env_set SSO_DC "$REPLY"
-    ask_input "$t" "IP-Adresse des Domaenencontrollers (optional, falls kein DNS):" "$(env_get SSO_DC_IP)"; env_set SSO_DC_IP "$REPLY"
-    ask_input "$t" "Konto fuer den Domaenenbeitritt (SSO_JOIN_USER):" "$(env_get SSO_JOIN_USER)"; env_set SSO_JOIN_USER "$REPLY"
-    ask_secret "$t" "Passwort fuer den Domaenenbeitritt (SSO_JOIN_PASSWORD):" "$(env_prev SSO_JOIN_PASSWORD)" 1 0
-    env_set SSO_JOIN_PASSWORD "$REPLY"
+    ui_msg "$t" "Domaene, Domaenencontroller und Konto fuer den Domaenenbeitritt werden
+verschluesselt in der Datenbank gespeichert (nicht in der .env) und koennen
+spaeter unter Verwaltung -> Active Directory geaendert werden. Weitere
+Domaenen (Zweigstellen, Tochtergesellschaften) werden ebenfalls dort angelegt."
+    while :; do
+        ask_required "$t" "NetBIOS-Name der Domaene (z. B. FIRMA):" "$(env_get SSO_DOMAIN)"
+        C_SSO_DOMAIN="$(printf '%s' "$REPLY" | tr '[:lower:]' '[:upper:]')"
+        printf '%s' "$C_SSO_DOMAIN" | grep -Eq '^[A-Z0-9][A-Z0-9._-]{0,14}$' && break
+        [ "$NONINTERACTIVE" = "1" ] && break
+        ui_msg "Ungueltiger Name" "1-15 Zeichen aus A-Z 0-9 . _ -"
+    done
+    dc="$(env_get SSO_DC)"; [ -z "$dc" ] && dc="$(env_get LDAP_HOST | tr ',;' '  ' | awk '{print $1}')"
+    ask_required "$t" "Domaenencontroller (mehrere durch Leerzeichen getrennt, Ausfallreserve):" "$dc"; dcs="$REPLY"
+    ask_input "$t" "IP-Adressen der Domaenencontroller in gleicher Reihenfolge (optional, falls kein DNS):" "$(env_get SSO_DC_IP)"; ips="$REPLY"
+    C_SSO_DCS=""
+    # shellcheck disable=SC2086
+    set -- $(printf '%s' "$ips" | tr ',;' '  ')
+    for d in $(printf '%s' "$dcs" | tr ',;' '  '); do
+        line="$d"
+        if [ $# -gt 0 ]; then line="$d $1"; shift; fi
+        C_SSO_DCS="${C_SSO_DCS:+$C_SSO_DCS
+}$line"
+    done
+    ask_required "$t" "Konto fuer den Domaenenbeitritt:" "$(env_get SSO_JOIN_USER)"; C_SSO_JOIN_USER="$REPLY"
+    ask_secret "$t" "Passwort fuer den Domaenenbeitritt:" "$(env_prev SSO_JOIN_PASSWORD)" 1 0
+    C_SSO_JOIN_PW="$REPLY"
+    env_del SSO_DOMAIN SSO_REALM SSO_DC SSO_DC_IP SSO_JOIN_USER SSO_JOIN_PASSWORD
 }
+
+# Uebertraegt die AD-Zugangsdaten verschluesselt in die Datenbank (ueber stdin,
+# nicht ueber die Prozessliste).
+store_credentials() {
+    [ -n "$C_LDAP_PW$C_SSO_DOMAIN$C_SSO_JOIN_PW" ] || return 0
+    {
+        [ -n "$C_LDAP_PW" ] && echo "ldap_bind_password=$(b64 "$C_LDAP_PW")"
+        if [ -n "$C_SSO_DOMAIN" ]; then
+            echo "sso_domain=$(b64 "$C_SSO_DOMAIN")"
+            echo "sso_dcs=$(b64 "$C_SSO_DCS")"
+            echo "sso_join_user=$(b64 "$C_SSO_JOIN_USER")"
+        fi
+        [ -n "$C_SSO_JOIN_PW" ] && echo "sso_join_password=$(b64 "$C_SSO_JOIN_PW")"
+        :
+    } > "$TMP_DIR/cred.in"
+    log "+ $COMPOSE exec -T app php scripts/credentials.php --set-primary"
+    if $COMPOSE exec -T app php scripts/credentials.php --set-primary < "$TMP_DIR/cred.in" >> "$LOG_FILE" 2>&1; then
+        CRED_OK=1
+        # auth ruft die Domaenen-Konfiguration beim Start ab.
+        [ -n "$C_SSO_DOMAIN" ] && run_logged $COMPOSE restart auth
+    fi
+    rm -f "$TMP_DIR/cred.in"
+}
+
+b64() { printf '%s' "$1" | base64 | tr -d '\n'; }
 
 config_alarm() {
     t="Schritt 3/5: SMS-Gateway"
@@ -949,6 +1007,13 @@ config_pma() {
     env_set PMA_PORT "$REPLY"
 }
 
+dbmask() { # wert (verschluesselt in der Datenbank gespeichert)
+    if [ -z "$1" ]; then echo "(nicht eingegeben - Verwaltung -> Active Directory)"
+    elif [ "${REPORT_SECRETS:-0}" = "1" ]; then echo "$1"
+    elif [ "$CRED_OK" = "1" ]; then echo "******** (verschluesselt in der Datenbank)"
+    else echo "******** (nicht gespeichert - bitte unter Verwaltung -> Active Directory eintragen)"; fi
+}
+
 mask() { # wert schluessel
     if [ -z "$1" ]; then echo "(leer)"
     elif [ "${REPORT_SECRETS:-0}" = "1" ]; then echo "$1"
@@ -968,14 +1033,15 @@ step_review() {
         echo "Administrator:  $C_ADMIN_USER"
         echo
         echo "AD/LDAP:        $( [ "$M_LDAP" = 1 ] && echo "ja ($(env_get LDAP_HOST):$(env_get LDAP_PORT))" || echo nein)"
-        echo "Windows-SSO:    $( [ "$M_SSO" = 1 ] && echo "ja ($(env_get SSO_DOMAIN))" || echo nein)"
+        echo "Windows-SSO:    $( [ "$M_SSO" = 1 ] && echo "ja ($C_SSO_DOMAIN)" || echo nein)"
         echo "SMS-Gateway:    $( [ "$M_ALARM" = 1 ] && echo "ja ($(env_get ALARM_HOST))" || echo nein)"
         echo "SNMP:           UDP $(env_get SNMP_PORT)"
         echo "Office:         $( [ "$M_OFFICE" = 1 ] && echo ja || echo nein)"
         echo "phpMyAdmin:     $( [ "$M_PMA" = 1 ] && echo "ja (Port $(env_get PMA_PORT))" || echo nein)"
         echo "Autostart:      $( [ "$M_SYSTEMD" = 1 ] && echo "ja (systemd)" || echo nein)"
         echo
-        echo "Alle Passwoerter und Secrets sind in .env eingetragen (Rechte 0600)."
+        echo "Passwoerter und Secrets sind in .env eingetragen (Rechte 0600);"
+        echo "AD-Zugangsdaten werden verschluesselt in der Datenbank gespeichert."
         [ "$START" = "0" ] && echo "Hinweis: --no-start - Container werden nicht gestartet."
     } > "$f"
     ui_textbox "Zusammenfassung vor der Installation" "$f"
@@ -1081,6 +1147,12 @@ step_install() {
     chmod 600 .env
     mkdir -p storage/logs storage/uploads
 
+    if [ "$M_OFFICE" = "1" ] && [ "$M_LDAP" = "1" ] && [ -n "$C_LDAP_PW" ]; then
+        # Bind-Passwort fuer die Nextcloud-LDAP-Anbindung (Docker-Secret).
+        (umask 077 && mkdir -p ./secrets && printf '%s' "$C_LDAP_PW" > ./secrets/nextcloud_ldap_password)
+        chmod 700 ./secrets; chmod 644 ./secrets/nextcloud_ldap_password
+    fi
+
     if [ "$M_OFFICE" = "1" ]; then
         set -- --no-start
         [ "$OFFICE_ENCRYPT" = "0" ] && set -- "$@" --no-encryption
@@ -1141,6 +1213,9 @@ $LOG_FILE"
             ADMIN_OK=1
         fi
         grep -v -i 'passwort:' "$TMP_DIR/admin.out" >> "$LOG_FILE"
+
+        ui_info "$t" "Speichere die AD-Zugangsdaten verschluesselt ..."
+        store_credentials
     fi
 
     if [ "$M_OFFICE" = "1" ] && [ "$OFFICE_SETUP_OK" = "1" ]; then
@@ -1236,8 +1311,8 @@ write_report() { # ziel include_secrets(1|0)
         echo "| Intranet-Administrator | $C_ADMIN_USER | $pw |"
         echo "| Datenbank (Anwendung) | $(env_get DB_USER) | $(mask "$(env_get DB_PASSWORD)" DB_PASSWORD) |"
         echo "| Datenbank (root) | root | $(mask "$(env_get DB_ROOT_PASSWORD)" DB_ROOT_PASSWORD) |"
-        [ "$M_LDAP" = "1" ] && echo "| AD-Dienstkonto | $(env_get LDAP_BIND_DN) | $(mask "$(env_get LDAP_PASSWORD)" LDAP_PASSWORD) |"
-        [ "$M_SSO" = "1" ] && echo "| Domaenenbeitritt (NTLM) | $(env_get SSO_JOIN_USER) | $(mask "$(env_get SSO_JOIN_PASSWORD)" SSO_JOIN_PASSWORD) |"
+        [ "$M_LDAP" = "1" ] && echo "| AD-Dienstkonto | $(env_get LDAP_BIND_DN) | $(dbmask "$C_LDAP_PW") |"
+        [ "$M_SSO" = "1" ] && echo "| Domaenenbeitritt (NTLM) | $C_SSO_JOIN_USER | $(dbmask "$C_SSO_JOIN_PW") |"
         [ "$M_ALARM" = "1" ] && echo "| SMS-Gateway | $(env_get ALARM_USERNAME) | $(mask "$(env_get ALARM_PASSWORD)" ALARM_PASSWORD) |"
         echo "| SNMP-Community | - | $(mask "$(env_get SNMP_COMMUNITY)" SNMP_COMMUNITY) |"
         if [ "$M_OFFICE" = "1" ]; then
@@ -1261,7 +1336,9 @@ write_report() { # ziel include_secrets(1|0)
             done
         fi
         if [ "$M_SSO" = "1" ]; then
-            for k in SSO_ENABLED SSO_DOMAIN SSO_REALM SSO_DC SSO_DC_IP; do echo "| \`$k\` | $(env_get "$k") |"; done
+            echo "| \`SSO_ENABLED\` | $(env_get SSO_ENABLED) |"
+            echo "| Domaene (Verwaltung) | $C_SSO_DOMAIN |"
+            echo "| Domaenencontroller (Verwaltung) | $(printf '%s' "$C_SSO_DCS" | tr '\n' ';') |"
         fi
         [ "$M_ALARM" = "1" ] && echo "| \`ALARM_HOST\` | $(env_get ALARM_HOST) |"
         if [ "$M_OFFICE" = "1" ]; then

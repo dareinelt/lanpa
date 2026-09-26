@@ -241,6 +241,7 @@ final class NavigationController extends AdminController
             'activeNav' => 'navigation',
             'item' => $item,
             'users' => Container::phonebookRepository()->assignableUsers(),
+            'sourceLabels' => Container::identitySources()->hasAdditionalSources() ? Container::identitySources()->labels() : [],
             'assignedUserIds' => $permissions['user_ids'],
             'assignedGroupNames' => $permissions['group_names'],
             'pageScript' => 'admin-group-autocomplete.js',

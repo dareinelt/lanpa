@@ -18,7 +18,7 @@ if (!LdapClient::isSupported()) {
     exit(2);
 }
 
-if (!Container::settings()->isLdapConfigured()) {
+if (!Container::identitySources()->isAnyConfigured()) {
     fwrite(STDERR, 'LDAP ist nicht vollständig konfiguriert (Host und Base DN erforderlich).' . PHP_EOL);
     exit(3);
 }
@@ -33,6 +33,20 @@ if ($result['status'] === 'success') {
         PHP_EOL
     ));
     exit(0);
+}
+
+if ($result['status'] === 'partial') {
+    foreach ($result['sources'] as $source) {
+        fwrite($source['status'] === 'success' ? STDOUT : STDERR, sprintf(
+            '%s: %s%s',
+            $source['label'],
+            $source['status'] === 'success'
+                ? sprintf('%d aktualisiert, %d deaktiviert', $source['processed'], $source['deactivated'])
+                : 'fehlgeschlagen – letzter Datenbestand bleibt erhalten',
+            PHP_EOL
+        ));
+    }
+    exit(4);
 }
 
 fwrite(STDERR, 'Synchronisation fehlgeschlagen. Der letzte gültige Datenbestand bleibt erhalten.' . PHP_EOL);

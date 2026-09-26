@@ -105,6 +105,8 @@ services:
       - app_storage:/var/www/html/storage
       # KI-Einstellungen fuer Euro-Office (runtime.json, siehe eurooffice).
       - office_ai:/var/www/html/storage/office-ai
+      # Token fuer den Abruf der SSO-Konfiguration durch die auth-Container.
+      - sso_token:/run/intranet-sso
     healthcheck:
       test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1/health') !== false ? 0 : 1);"]
       interval: 30s
@@ -131,15 +133,16 @@ services:
         condition: service_healthy
     environment:
       SSO_ENABLED: ${SSO_ENABLED:-false}
-      SSO_DOMAIN: ${SSO_DOMAIN:-WORKGROUP}
-      SSO_REALM: ${SSO_REALM:-}
-      SSO_DC: ${SSO_DC:-}
-      SSO_DC_IP: ${SSO_DC_IP:-}
-      SSO_JOIN_USER: ${SSO_JOIN_USER:-}
-      SSO_JOIN_PASSWORD: ${SSO_JOIN_PASSWORD:-}
+      # Domaene, Domaenencontroller und Konto fuer den Domaenenbeitritt werden
+      # im Adminbereich gepflegt (verschluesselt gespeichert) und beim Start
+      # von der Anwendung abgerufen (/internal/sso-config, Token im Volume
+      # sso_token). Die Verteilung auf die Instanzen weiterer Domaenen
+      # (scripts/sso-domains.sh) kommt ebenfalls von dort.
       # Reverse-Proxy /office/ und /eurooffice/ (Same-Origin).
       OFFICE_ENABLED: ${OFFICE_ENABLED:-false}
       APP_URL: ${APP_URL:-http://localhost:8080}
+    volumes:
+      - sso_token:/run/intranet-sso:ro
     ports:
       - "${APP_PORT:-8080}:80"
     networks:
@@ -395,6 +398,7 @@ services:
 volumes:
   db_data:
   app_storage:
+  sso_token:
   nextcloud_html:
   nextcloud_data:
   nextcloud_db:

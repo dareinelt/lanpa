@@ -18,15 +18,17 @@ interface PhonebookStoreInterface
 
     /**
      * Legt einen Datensatz an oder aktualisiert ihn (Schluessel: external_id).
+     * `identity_source_id` im Datensatz ordnet ihn einer Identitaetsquelle zu.
      *
      * @param array<string,string|null> $user
      */
     public function upsert(array $user, string $syncedAt): void;
 
     /**
-     * Deaktiviert alle Eintraege, die im aktuellen Lauf nicht geliefert wurden.
+     * Deaktiviert alle Eintraege der Identitaetsquelle (0 = Hauptquelle), die
+     * im aktuellen Lauf nicht geliefert wurden.
      */
-    public function deactivateStale(string $syncedAt): int;
+    public function deactivateStale(string $syncedAt, int $sourceId = 0): int;
 
     public function countActive(): int;
 }

@@ -10,7 +10,8 @@ namespace App\Contracts;
 interface AdGroupStoreInterface
 {
     /**
-     * Ersetzt den Gruppenbestand. Nicht mehr gelieferte Gruppen werden
+     * Ersetzt den Gruppenbestand einer Identitaetsquelle (0 = Hauptquelle);
+     * die Gruppen anderer Quellen bleiben unveraendert. Nicht mehr gelieferte Gruppen werden
      * deaktiviert (und verlieren ihre Mitglieder), damit entzogene Rechte
      * sofort wirken.
      *
@@ -19,7 +20,7 @@ interface AdGroupStoreInterface
      *
      * @return int Anzahl aktiver Gruppen
      */
-    public function replaceAll(array $groups, string $syncedAt): int;
+    public function replaceAll(array $groups, string $syncedAt, int $sourceId = 0): int;
 
     /**
      * Namen (Kleinschreibung) der aktiven Gruppen eines Telefonbuch-Eintrags.

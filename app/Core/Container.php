@@ -12,6 +12,7 @@ use App\Repositories\AnnouncementRepository;
 use App\Repositories\AdGroupRepository;
 use App\Repositories\ClickRepository;
 use App\Repositories\EmergencyNumberRepository;
+use App\Repositories\IdentitySourceRepository;
 use App\Repositories\ImportantLinkRepository;
 use App\Repositories\NavigationRepository;
 use App\Repositories\OfficeAppRepository;
@@ -19,6 +20,7 @@ use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\SyncLogRepository;
 use App\Security\Auth;
+use App\Security\SecretBox;
 use App\Security\SsoAuth;
 use App\Services\AdSyncService;
 use App\Services\ActivationNumberService;
@@ -29,6 +31,7 @@ use App\Services\AnnouncementService;
 use App\Services\BackupService;
 use App\Services\EmergencyNumberService;
 use App\Services\FaviconService;
+use App\Services\IdentitySourceService;
 use App\Services\ImportantLinkService;
 use App\Services\ImportService;
 use App\Services\BackgroundImageService;
@@ -98,6 +101,31 @@ final class Container
     public static function adGroupRepository(): AdGroupRepository
     {
         return self::make(AdGroupRepository::class, static fn (): AdGroupRepository => new AdGroupRepository());
+    }
+
+    public static function identitySourceRepository(): IdentitySourceRepository
+    {
+        return self::make(IdentitySourceRepository::class, static fn (): IdentitySourceRepository => new IdentitySourceRepository());
+    }
+
+    public static function identitySources(): IdentitySourceService
+    {
+        return self::make(
+            IdentitySourceService::class,
+            static fn (): IdentitySourceService => new IdentitySourceService(self::identitySourceRepository(), self::settings(), self::secretBox())
+        );
+    }
+
+    /**
+     * Verschluesselung gespeicherter Zugangsdaten (Schluessel ausserhalb der
+     * Datenbank, im Speicher-Volume).
+     */
+    public static function secretBox(): SecretBox
+    {
+        return self::make(
+            SecretBox::class,
+            static fn (): SecretBox => new SecretBox((string) Env::get('SECRETS_KEY_FILE', BASE_PATH . '/storage/keys/secrets.key'))
+        );
     }
 
     public static function clickRepository(): ClickRepository
@@ -234,7 +262,7 @@ final class Container
 
     public static function phonebook(): PhonebookService
     {
-        return self::make(PhonebookService::class, static fn (): PhonebookService => new PhonebookService(self::phonebookRepository()));
+        return self::make(PhonebookService::class, static fn (): PhonebookService => new PhonebookService(self::phonebookRepository(), self::identitySources()));
     }
 
     public static function emergencyNumbers(): EmergencyNumberService
@@ -281,8 +309,51 @@ final class Container
     {
         return self::make(
             SsoAuth::class,
-            static fn (): SsoAuth => new SsoAuth(self::phonebookRepository(), (array) Config::get('sso', []), self::adGroupRepository())
+            static fn (): SsoAuth => new SsoAuth(
+                self::phonebookRepository(),
+                self::ssoConfig(),
+                self::adGroupRepository(),
+                self::identitySourceRepository(),
+                (string) self::settings()->ldapConfig()['label']
+            )
         );
+    }
+
+    /**
+     * SSO-Konfiguration; die auth-Instanzen weiterer Quellen mit aktiver
+     * Windows-Anmeldung werden automatisch (an ihre Kennung gebunden) als
+     * vertrauenswuerdige Proxys ergaenzt.
+     *
+     * @return array<string,mixed>
+     */
+    private static function ssoConfig(): array
+    {
+        $config = (array) Config::get('sso', []);
+        if (empty($config['enabled'])) {
+            return $config;
+        }
+
+        try {
+            $workers = self::identitySources()->trustedWorkerProxies();
+        } catch (\Throwable) {
+            $workers = [];
+        }
+        if ($workers === []) {
+            return $config;
+        }
+
+        // Mit weiteren Instanzen duerfen ungebundene Eintraege (z. B. "auth")
+        // nur noch die Hauptquelle melden.
+        $entries = [];
+        foreach (explode(',', (string) ($config['trusted_proxy'] ?? '')) as $entry) {
+            $entry = trim($entry);
+            if ($entry !== '') {
+                $entries[] = str_contains($entry, '=') ? $entry : $entry . '=';
+            }
+        }
+        $config['trusted_proxy'] = implode(',', array_values(array_unique(array_merge($entries, $workers))));
+
+        return $config;
     }
 
     public static function adminUsers(): AdminUserService
@@ -322,13 +393,27 @@ final class Container
     {
         return self::make(
             AdSyncService::class,
-            static fn (): AdSyncService => new AdSyncService(
-                new LdapClient(self::settings()->ldapConfig()),
-                self::phonebookRepository(),
-                self::syncLogRepository(),
-                app_logger(),
-                self::adGroupRepository()
-            )
+            static function (): AdSyncService {
+                // Alle aktiven, vollstaendig konfigurierten Identitaetsquellen.
+                $sources = [];
+                foreach (self::identitySources()->configs() as $config) {
+                    if (IdentitySourceService::isConfigured($config)) {
+                        $sources[] = [
+                            'id' => (int) $config['id'],
+                            'label' => (string) $config['label'],
+                            'client' => new LdapClient($config, app_logger()),
+                        ];
+                    }
+                }
+
+                return new AdSyncService(
+                    $sources,
+                    self::phonebookRepository(),
+                    self::syncLogRepository(),
+                    app_logger(),
+                    self::adGroupRepository()
+                );
+            }
         );
     }
 
@@ -348,7 +433,8 @@ final class Container
                 self::activationNumberRepository(),
                 self::logo(),
                 self::backgroundImage(),
-                self::favicons()
+                self::favicons(),
+                self::identitySourceRepository()
             )
         );
     }
@@ -370,7 +456,8 @@ final class Container
                 self::activationNumberRepository(),
                 self::logo(),
                 self::backgroundImage(),
-                self::favicons()
+                self::favicons(),
+                self::identitySourceRepository()
             )
         );
     }

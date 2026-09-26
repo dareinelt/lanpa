@@ -97,18 +97,26 @@ final class OfficeConfigService
      * erkannten Benutzers: signiertes, einmal verwendbares Token an den
      * SSO-Endpunkt der App intranet_integration, die danach zu $target leitet.
      *
-     * @param array{username:string,display_name?:string,email?:string} $ssoUser
+     * Benutzer weiterer Identitaetsquellen werden als "name@kennung"
+     * uebergeben (office_uid), damit gleichnamige Konten verschiedener
+     * Verzeichnisse getrennt bleiben.
+     *
+     * @param array{username:string,office_uid?:string,display_name?:string,email?:string} $ssoUser
      */
     public function ssoEntryUrl(array $ssoUser, string $target, ?int $now = null): ?string
     {
         $secret = $this->jwtSecret();
-        if ($secret === '' || ($ssoUser['username'] ?? '') === '') {
+        $uid = trim((string) ($ssoUser['office_uid'] ?? ''));
+        if ($uid === '') {
+            $uid = trim((string) ($ssoUser['username'] ?? ''));
+        }
+        if ($secret === '' || $uid === '') {
             return null;
         }
 
         $token = OfficeJwt::ssoToken(
             $secret,
-            (string) $ssoUser['username'],
+            $uid,
             (string) ($ssoUser['display_name'] ?? ''),
             (string) ($ssoUser['email'] ?? ''),
             $this->entryTarget($target),

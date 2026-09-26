@@ -35,9 +35,35 @@ until php -r '
 done
 echo "[entrypoint] Datenbank erreichbar."
 
+# Schluessel fuer verschluesselt gespeicherte Zugangsdaten (storage/keys/).
+# Wird als root erzeugt und anschliessend www-data uebergeben.
+fix_key_permissions() {
+    if [ -d storage/keys ]; then
+        chown -R www-data:www-data storage/keys || true
+        chmod 700 storage/keys || true
+        chmod 600 storage/keys/* 2>/dev/null || true
+    fi
+}
+
 if [ "$CONTAINER_ROLE" = "app" ]; then
     echo "[entrypoint] Führe Migrationen aus ..."
     php scripts/migrate.php
+
+    # Schluessel sicherstellen und Zugangsdaten frueherer Versionen aus der
+    # Umgebung einmalig verschluesselt in die Datenbank uebernehmen.
+    php scripts/credentials.php || echo "[entrypoint] WARNUNG: Zugangsdaten-Schlüssel konnte nicht eingerichtet werden." >&2
+    fix_key_permissions
+
+    # Token fuer den Abruf der SSO-Konfiguration durch die auth-Container
+    # (gemeinsames Volume, nur app und auth-* haben Zugriff).
+    SSO_TOKEN_FILE="${SSO_CONFIG_TOKEN_FILE:-/run/intranet-sso/token}"
+    if [ -d "$(dirname "$SSO_TOKEN_FILE")" ]; then
+        if [ ! -s "$SSO_TOKEN_FILE" ]; then
+            (umask 077 && php -r 'echo bin2hex(random_bytes(32)), "\n";' > "$SSO_TOKEN_FILE")
+        fi
+        chown root:www-data "$SSO_TOKEN_FILE" || true
+        chmod 640 "$SSO_TOKEN_FILE" || true
+    fi
 
     if [ "${SEED_ON_START:-true}" = "true" ]; then
         echo "[entrypoint] Führe Seeder aus ..."
@@ -52,6 +78,8 @@ if [ "$CONTAINER_ROLE" = "app" ]; then
 else
     # Der Sync-Container wartet kurz, damit der App-Container die Migrationen abschliessen kann.
     sleep 10
+    php scripts/credentials.php --key || true
+    fix_key_permissions
 fi
 
 exec "$@"

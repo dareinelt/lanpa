@@ -9,6 +9,10 @@
 #    weitergereicht. Nur aktiv bei SSO_ENABLED=true.
 #    (Das frueher verwendete Paket libapache2-mod-auth-ntlm-winbind ist in
 #    Debian bookworm nicht mehr enthalten.)
+#    Weitere Domaenen ohne Vertrauensstellung (Zweigstellen, Toechter, ...)
+#    laufen als eigene Instanzen dieses Images (SSO_SOURCE=<KENNUNG>, siehe
+#    scripts/sso-domains.sh). Die Hauptinstanz verteilt die Anfragen dann per
+#    HAProxy (Client-Netz bzw. Hostname) auf die passende Instanz.
 # 2. Reverse-Proxy fuer Euro-Office: /office/ -> nextcloud, /eurooffice/ ->
 #    eurooffice (inkl. WebSockets). Nur aktiv bei OFFICE_ENABLED=true.
 FROM debian:bookworm-slim
@@ -22,6 +26,7 @@ RUN set -eux; \
         libapache2-mod-auth-gssapi \
         gss-ntlmssp \
         winbind \
+        haproxy \
         samba-common-bin \
         ca-certificates \
         curl \
@@ -31,7 +36,7 @@ RUN set -eux; \
 # Apache-Module; Apache (www-data) benoetigt fuer die NTLM-Pruefung Zugriff
 # auf die privilegierte winbind-Pipe (Gruppe winbindd_priv).
 RUN set -eux; \
-    a2enmod proxy proxy_http proxy_wstunnel headers auth_gssapi rewrite alias; \
+    a2enmod proxy proxy_http proxy_wstunnel headers auth_gssapi rewrite alias remoteip; \
     getent group winbindd_priv >/dev/null || groupadd -r winbindd_priv; \
     usermod -a -G winbindd_priv www-data; \
     printf '%s\n' 'ServerName localhost' 'ServerTokens Prod' 'ServerSignature Off' 'TraceEnable Off' \
@@ -43,7 +48,8 @@ RUN set -eux; \
 COPY docker/auth/ntlm.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/auth/office.conf /etc/apache2/intranet/office.conf
 COPY docker/auth/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY docker/auth/sso-routes.sh /usr/local/bin/sso-routes.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/sso-routes.sh
 
 EXPOSE 80
 

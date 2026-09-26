@@ -73,6 +73,11 @@
         node.querySelector('[data-field="display_name"]').textContent = person.display_name;
         node.querySelector('[data-field="department"]').textContent = person.department || '–';
 
+        if (person.source) {
+            node.querySelector('[data-field="source"]').textContent = person.source;
+            node.querySelector('[data-row="source"]').hidden = false;
+        }
+
         var phone = node.querySelector('[data-field="phone"]');
         if (person.phone) {
             phone.textContent = person.phone;

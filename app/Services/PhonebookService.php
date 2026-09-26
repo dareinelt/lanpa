@@ -12,8 +12,34 @@ final class PhonebookService
 {
     public const DEFAULT_LIMIT = 25;
 
-    public function __construct(private readonly PhonebookRepository $repository)
+    /** @var array<int,string>|null */
+    private ?array $sourceLabels = null;
+
+    public function __construct(
+        private readonly PhonebookRepository $repository,
+        private readonly ?IdentitySourceService $sources = null,
+    ) {
+    }
+
+    /**
+     * Beschriftung der Identitaetsquelle eines Eintrags; leer, solange nur
+     * die Hauptquelle existiert (dann ist keine Unterscheidung noetig).
+     *
+     * @param array<string,mixed> $row
+     */
+    private function sourceLabel(array $row): string
     {
+        if ($this->sourceLabels === null) {
+            $this->sourceLabels = $this->sources !== null && $this->sources->hasAdditionalSources()
+                ? $this->sources->labels()
+                : [];
+        }
+
+        if ($this->sourceLabels === []) {
+            return '';
+        }
+
+        return $this->sourceLabels[(int) ($row['identity_source_id'] ?? 0)] ?? '';
     }
 
     /**
@@ -27,7 +53,7 @@ final class PhonebookService
         $result = $this->repository->search($term, $limit, $offset, $includeWithoutEmail);
 
         $items = array_map(
-            static fn (array $row): array => [
+            fn (array $row): array => [
                 'id' => (int) $row['id'],
                 'display_name' => (string) ($row['display_name'] ?? ''),
                 'first_name' => (string) ($row['first_name'] ?? ''),
@@ -36,6 +62,7 @@ final class PhonebookService
                 'mobile' => (string) ($row['mobile'] ?? ''),
                 'email' => (string) ($row['email'] ?? ''),
                 'department' => (string) ($row['department'] ?? ''),
+                'source' => $this->sourceLabel($row),
                 'modified' => Dates::formatDate(is_string($row['ad_modified'] ?? null) ? $row['ad_modified'] : null),
             ],
             $result['items']
@@ -77,7 +104,7 @@ final class PhonebookService
         $rows = $this->repository->allForAdmin($term, $filters);
 
         return array_map(
-            static fn (array $row): array => [
+            fn (array $row): array => [
                 'id' => (int) $row['id'],
                 'display_name' => (string) ($row['display_name'] ?? ''),
                 'first_name' => (string) ($row['first_name'] ?? ''),
@@ -86,6 +113,7 @@ final class PhonebookService
                 'mobile' => (string) ($row['mobile'] ?? ''),
                 'email' => (string) ($row['email'] ?? ''),
                 'department' => (string) ($row['department'] ?? ''),
+                'source' => $this->sourceLabel($row),
                 'active' => (int) ($row['active'] ?? 0) === 1,
                 'visible' => (int) ($row['visible'] ?? 1) === 1,
                 'synced_at' => is_string($row['synced_at'] ?? null) ? $row['synced_at'] : null,

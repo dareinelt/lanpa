@@ -600,7 +600,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     <tbody>
       <tr><td><code>LDAP_HOST</code>, <code>LDAP_PORT</code></td><td>Server und Port (z.&nbsp;B. 636).</td></tr>
       <tr><td><code>LDAP_USE_TLS</code>, <code>LDAP_VERIFY_CERT</code></td><td>TLS aktivieren bzw. Zertifikatsprüfung.</td></tr>
-      <tr><td><code>LDAP_BASE_DN</code>, <code>LDAP_BIND_DN</code>, <code>LDAP_PASSWORD</code></td><td>Suchbasis, Bind-Benutzer und Passwort.</td></tr>
+      <tr><td><code>LDAP_BASE_DN</code>, <code>LDAP_BIND_DN</code></td><td>Suchbasis und Bind-Benutzer (Startwerte der Hauptquelle). Das Passwort wird ausschließlich unter <em>Verwaltung → Active Directory</em> eingegeben und verschlüsselt in der Datenbank gespeichert; dort werden auch weitere Identitätsquellen (Zweigstellen, Tochtergesellschaften) mit Beschriftung, mehreren Servern und eigener Windows-Anmeldung gepflegt.</td></tr>
       <tr><td><code>LDAP_FILTER</code></td><td>LDAP-Suchfilter.</td></tr>
       <tr><td><code>LDAP_TIMEOUT</code>, <code>LDAP_PAGE_SIZE</code></td><td>Timeout und Seitengröße.</td></tr>
       <tr><td><code>LDAP_SYNC_INTERVAL</code></td><td>Synchronisationsintervall in Sekunden.</td></tr>

@@ -93,16 +93,27 @@ ensure_secret nextcloud_db_password "$(random_secret)"
 ensure_secret nextcloud_admin_password "$(random_secret)"
 ensure_secret nextcloud_redis_password "$(random_secret)"
 
-# AD-Bind-Passwort: aus LDAP_PASSWORD bzw. LDAP_PASSWORD_FILE uebernehmen.
-ldap_pw="$(env_get LDAP_PASSWORD)"
-ldap_pw_file="$(env_get LDAP_PASSWORD_FILE)"
-if [ -z "$ldap_pw" ] && [ -n "$ldap_pw_file" ] && [ -r "$ldap_pw_file" ]; then
-    ldap_pw="$(cat "$ldap_pw_file")"
+# AD-Bind-Passwort fuer die Nextcloud-LDAP-Anbindung: wird in der Verwaltung
+# gepflegt (verschluesselt gespeichert) und hier vom laufenden app-Container
+# gelesen. Fallback fuer Altinstallationen: LDAP_PASSWORD(_FILE) der .env.
+ldap_pw=""
+if docker compose ps --status running --services 2>/dev/null | grep -qx app; then
+    ldap_pw="$(docker compose exec -T app php scripts/credentials.php --ldap-password 2>/dev/null || true)"
+fi
+if [ -z "$ldap_pw" ]; then
+    ldap_pw="$(env_get LDAP_PASSWORD)"
+    ldap_pw_file="$(env_get LDAP_PASSWORD_FILE)"
+    if [ -z "$ldap_pw" ] && [ -n "$ldap_pw_file" ] && [ -r "$ldap_pw_file" ]; then
+        ldap_pw="$(cat "$ldap_pw_file")"
+    fi
 fi
 if [ -n "$ldap_pw" ]; then
-    printf '%s' "$ldap_pw" > "$SECRETS_DIR/nextcloud_ldap_password"
+    (umask 077 && printf '%s' "$ldap_pw" > "$SECRETS_DIR/nextcloud_ldap_password")
 elif [ ! -f "$SECRETS_DIR/nextcloud_ldap_password" ]; then
     : > "$SECRETS_DIR/nextcloud_ldap_password"
+    if [ "$(env_get NEXTCLOUD_LDAP_ENABLED)" = "true" ]; then
+        info "Hinweis: Kein AD-Bind-Passwort gefunden. Nach dem Eintragen unter Verwaltung -> Active Directory dieses Skript erneut ausfuehren."
+    fi
 fi
 chmod 644 "$SECRETS_DIR/nextcloud_ldap_password"
 

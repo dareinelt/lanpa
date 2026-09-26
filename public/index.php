@@ -32,6 +32,7 @@ use App\Controllers\AlarmTriggerController;
 use App\Controllers\ClickController;
 use App\Controllers\HealthController;
 use App\Controllers\ImportantLinkIconController;
+use App\Controllers\InternalController;
 use App\Controllers\LandingController;
 use App\Controllers\LogoController;
 use App\Controllers\OfficeController;
@@ -39,6 +40,7 @@ use App\Controllers\PageController;
 use App\Controllers\PhonebookController;
 use App\Controllers\ProtectedAccessController;
 use App\Controllers\SmsCodeController;
+use App\Controllers\SsoController;
 use App\Core\Config;
 use App\Core\Container;
 use App\Core\Request;
@@ -47,6 +49,7 @@ use App\Core\Router;
 use App\Core\View;
 use App\Exceptions\HttpException;
 use App\Security\Session;
+use App\Security\SsoAuth;
 
 $request = Request::fromGlobals();
 Session::start($request->isSecure());
@@ -72,7 +75,29 @@ $requireUnlocked = static function (Request $request): ?Response {
     return Response::redirect('/zugriff?id=' . (int) $item['id']);
 };
 
-$router->group([$requireUnlocked], static function (Router $router): void {
+// Freiwillige Windows-Anmeldung: Seitenaufrufe ohne erkannte Anmeldung werden
+// einmal je Sitzung ueber den Anmeldepunkt geleitet (SSO_AUTO_LOGIN).
+// Domaenen-Clients kommen angemeldet zurueck, alle anderen ohne Anmeldung –
+// es gibt keine Anmeldepflicht.
+$ssoAttempt = static function (Request $request): ?Response {
+    if (!in_array($request->path, ['/', '/unterseite', '/seite', '/office-starten', '/office-app'], true)) {
+        return null;
+    }
+
+    $sso = Container::sso();
+    if (!$sso->shouldAttempt($request)) {
+        return null;
+    }
+
+    return Response::redirect(SsoAuth::loginUrl((string) ($request->server['REQUEST_URI'] ?? '/')))
+        ->withHeader('Cache-Control', 'no-store');
+};
+
+$router->get('/sso', [SsoController::class, 'start']);
+$router->get('/sso/anmelden', [SsoController::class, 'login']);
+$router->get('/sso/nicht-erkannt', [SsoController::class, 'notRecognized']);
+
+$router->group([$requireUnlocked, $ssoAttempt], static function (Router $router): void {
     $router->get('/', [LandingController::class, 'index']);
     $router->get('/unterseite', [PageController::class, 'subpage']);
     $router->get('/seite', [PageController::class, 'page']);
@@ -90,12 +115,17 @@ $router->group([$requireUnlocked], static function (Router $router): void {
     $router->get('/office-starten', [OfficeController::class, 'start']);
 });
 
+// Interne Schnittstelle fuer die auth-Container (Token + Absenderpruefung).
+$router->get('/internal/sso-config', [InternalController::class, 'ssoConfig']);
+
 // Office-Integration: Hinweisseite (auch Fehlerseite des auth-Proxys) und
 // Endpunkte fuer die Fusszeile in Nextcloud bzw. den Kachelstatus.
 $router->get('/office-nicht-verfuegbar', [OfficeController::class, 'unavailable']);
 $router->get('/api/office/footer', [OfficeController::class, 'footer']);
 $router->get('/api/office/status', [OfficeController::class, 'status']);
-$router->get('/office-app', [OfficeController::class, 'launch']);
+$router->group([$ssoAttempt], static function (Router $router): void {
+    $router->get('/office-app', [OfficeController::class, 'launch']);
+});
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
 $router->post('/admin/login', [AuthController::class, 'login']);
@@ -184,6 +214,12 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/ad', [LdapController::class, 'index']);
         $router->post('/admin/ad', [LdapController::class, 'update']);
         $router->post('/admin/ad/sync', [LdapController::class, 'sync']);
+        $router->get('/admin/ad/quellen/neu', [LdapController::class, 'createSource']);
+        $router->post('/admin/ad/quellen/neu', [LdapController::class, 'storeSource']);
+        $router->get('/admin/ad/quellen/bearbeiten', [LdapController::class, 'editSource']);
+        $router->post('/admin/ad/quellen/bearbeiten', [LdapController::class, 'updateSource']);
+        $router->post('/admin/ad/quellen/loeschen', [LdapController::class, 'deleteSource']);
+        $router->post('/admin/ad/quellen/testen', [LdapController::class, 'testSource']);
         $router->get('/admin/ad/gruppen', [LdapController::class, 'groups']);
 
         $router->get('/admin/office', [OfficeAdminController::class, 'index']);

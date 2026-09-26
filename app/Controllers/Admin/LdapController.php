@@ -9,66 +9,35 @@ use App\Core\Container;
 use App\Core\Request;
 use App\Core\Response;
 use App\Security\Session;
+use App\Services\IdentitySourceService;
 use App\Services\LdapClient;
 use App\Services\SettingsService;
 use App\Support\Validator;
 
+/**
+ * Active Directory: Identitaetsquellen (Hauptquelle + weitere Verzeichnisse
+ * von Zweigstellen, Tochtergesellschaften, ...), Synchronisation und
+ * Gruppenvorschlaege.
+ */
 final class LdapController extends AdminController
 {
-    private const ATTRIBUTE_KEYS = [
-        'ldap_attr_display_name' => 'display_name',
-        'ldap_attr_first_name' => 'first_name',
-        'ldap_attr_last_name' => 'last_name',
-        'ldap_attr_phone' => 'phone',
-        'ldap_attr_mobile' => 'mobile',
-        'ldap_attr_email' => 'email',
-        'ldap_attr_department' => 'department',
-        'ldap_attr_modified' => 'modified',
-        'ldap_attr_unique_id' => 'unique_id',
-        'ldap_attr_samaccount_name' => 'samaccount_name',
-    ];
+    private const SSO_RESTART_HINT = ' Die Windows-Anmeldung übernimmt geänderte Domänen-Einstellungen erst nach einem Neustart der auth-Container (docker compose restart auth bzw. ./scripts/sso-domains.sh bei neuen oder entfernten Domänen).';
 
     public function index(Request $request): Response
     {
         return $this->render();
     }
 
+    /**
+     * Speichert die Hauptquelle (Einstellungen ldap_*) und das
+     * Synchronisationsintervall.
+     */
     public function update(Request $request): Response
     {
         $this->requireValidCsrf($request);
 
-        $errors = [];
-        $values = [];
-
-        $host = trim((string) $request->input('ldap_host', ''));
-        if ($host !== '' && !Validator::isHostname($host)) {
-            $errors['ldap_host'] = 'Ungültiger Hostname oder ungültige IP-Adresse.';
-        }
-        $values['ldap_host'] = $host;
-
-        $port = $request->inputInt('ldap_port', 636);
-        if (!Validator::isPort($port)) {
-            $errors['ldap_port'] = 'Der Port muss zwischen 1 und 65535 liegen.';
-        }
-        $values['ldap_port'] = (string) $port;
-
-        $baseDn = Validator::cleanText((string) $request->input('ldap_base_dn', ''), 255);
-        $values['ldap_base_dn'] = $baseDn;
-
-        $bindDn = Validator::cleanText((string) $request->input('ldap_bind_dn', ''), 255);
-        $values['ldap_bind_dn'] = $bindDn;
-
-        $filter = trim((string) $request->input('ldap_filter', ''));
-        if (!Validator::isLdapFilter($filter)) {
-            $errors['ldap_filter'] = 'Der Suchfilter muss in Klammern stehen, z. B. (&(objectClass=user)(objectCategory=person)).';
-        }
-        $values['ldap_filter'] = $filter;
-
-        $timeout = $request->inputInt('ldap_timeout', 10);
-        if ($timeout < 1 || $timeout > 120) {
-            $errors['ldap_timeout'] = 'Das Timeout muss zwischen 1 und 120 Sekunden liegen.';
-        }
-        $values['ldap_timeout'] = (string) $timeout;
+        $service = Container::identitySources();
+        [$values, $errors] = IdentitySourceService::validateConnection($request->post);
 
         $interval = $request->inputInt('ldap_sync_interval', 3600);
         if ($interval < 60 || $interval > 86400) {
@@ -76,46 +45,15 @@ final class LdapController extends AdminController
         }
         $values['ldap_sync_interval'] = (string) $interval;
 
-        $groupDns = SettingsService::splitDnList((string) $request->input('ldap_group_base_dn', ''));
-        foreach ($groupDns as $dn) {
-            if (mb_strlen($dn) > 255 || !str_contains($dn, '=') || preg_match('/[\x00-\x1F]/', $dn) === 1) {
-                $errors['ldap_group_base_dn'] = 'Bitte je Zeile einen gültigen DN angeben, z. B. OU=Gruppen,DC=example,DC=internal.';
-                break;
-            }
-        }
-        if (count($groupDns) > 20) {
-            $errors['ldap_group_base_dn'] = 'Es sind höchstens 20 Gruppen-Pfade möglich.';
-        }
-        $values['ldap_group_base_dn'] = implode("\n", $groupDns);
+        [$ssoValues, $ssoErrors] = IdentitySourceService::validateSso($request->post, false);
+        $values += $ssoValues;
+        $errors += $ssoErrors;
 
-        $groupFilter = trim((string) $request->input('ldap_group_filter', ''));
-        if ($groupFilter === '') {
-            $groupFilter = '(objectClass=group)';
-        }
-        if (!Validator::isLdapFilter($groupFilter)) {
-            $errors['ldap_group_filter'] = 'Der Gruppenfilter muss in Klammern stehen, z. B. (objectClass=group).';
-        }
-        $values['ldap_group_filter'] = $groupFilter;
-
-        $groupName = trim((string) $request->input('ldap_group_name_attribute', ''));
-        if ($groupName === '') {
-            $groupName = 'cn';
-        }
-        if (!Validator::isLdapAttribute($groupName)) {
-            $errors['ldap_group_name_attribute'] = 'Ungültiger Attributname.';
-        }
-        $values['ldap_group_name_attribute'] = $groupName;
-
-        $values['ldap_use_tls'] = $request->has('ldap_use_tls') ? '1' : '0';
-        $values['ldap_verify_cert'] = $request->has('ldap_verify_cert') ? '1' : '0';
-
-        foreach (array_keys(self::ATTRIBUTE_KEYS) as $key) {
-            $attribute = trim((string) $request->input($key, ''));
-            if (!Validator::isLdapAttribute($attribute)) {
-                $errors[$key] = 'Ungültiger Attributname.';
-                continue;
-            }
-            $values[$key] = $attribute;
+        [$changes, $secretErrors] = IdentitySourceService::secretInput($request->post);
+        $errors += $secretErrors;
+        if ($values['sso_domain'] !== ''
+            && !IdentitySourceService::willHaveSecret('sso_join_password', $changes, $service->secretStates(null))) {
+            $errors['sso_join_password'] ??= 'Bitte das Passwort des Kontos für den Domänenbeitritt angeben.';
         }
 
         if ($errors !== []) {
@@ -124,12 +62,128 @@ final class LdapController extends AdminController
             return $this->render($errors, $values, 422);
         }
 
+        $ssoChanged = $this->ssoFingerprint(null) !== $this->ssoFingerprint($values, $changes);
         Container::settings()->update($values);
+        $service->savePrimarySecrets($changes);
         app_logger()->info('AD-Konfiguration geändert.', [
             'admin' => Container::auth()->username(),
-            'host' => $values['ldap_host'],
+            'source' => $values['ldap_label'],
+            'host' => str_replace("\n", ', ', $values['ldap_host']),
+            'passwords_changed' => array_keys($changes),
         ]);
-        Session::flash('success', 'Die AD-Einstellungen wurden gespeichert.');
+        Session::flash('success', 'Die AD-Einstellungen wurden gespeichert.' . ($ssoChanged ? self::SSO_RESTART_HINT : ''));
+
+        return $this->redirect('/admin/ad');
+    }
+
+    public function createSource(Request $request): Response
+    {
+        return $this->renderSource(null, IdentitySourceService::formValues(null));
+    }
+
+    public function storeSource(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        return $this->saveSource(null, $request);
+    }
+
+    public function editSource(Request $request): Response
+    {
+        $row = Container::identitySources()->find($request->queryInt('id', 0));
+        if ($row === null) {
+            Session::flash('error', 'Identitätsquelle nicht gefunden.');
+
+            return $this->redirect('/admin/ad');
+        }
+
+        return $this->renderSource($row, IdentitySourceService::formValues($row));
+    }
+
+    public function updateSource(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $id = $request->inputInt('id', 0);
+        if (Container::identitySources()->find($id) === null) {
+            Session::flash('error', 'Identitätsquelle nicht gefunden.');
+
+            return $this->redirect('/admin/ad');
+        }
+
+        return $this->saveSource($id, $request);
+    }
+
+    public function deleteSource(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $service = Container::identitySources();
+        $row = $service->find($request->inputInt('id', 0));
+        if ($row === null) {
+            Session::flash('error', 'Identitätsquelle nicht gefunden.');
+
+            return $this->redirect('/admin/ad');
+        }
+
+        $service->delete((int) $row['id']);
+        app_logger()->info('Identitätsquelle gelöscht.', [
+            'admin' => Container::auth()->username(),
+            'source' => (string) $row['source_key'],
+        ]);
+        Session::flash('success', sprintf('Die Identitätsquelle „%s“ wurde gelöscht; ihre Einträge sind ausgeblendet.', (string) $row['label']));
+
+        return $this->redirect('/admin/ad');
+    }
+
+    /**
+     * Prueft jeden Server einer Quelle einzeln (0 = Hauptquelle).
+     */
+    public function testSource(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        if (!LdapClient::isSupported()) {
+            Session::flash('error', 'Die PHP-Erweiterung "ldap" ist nicht verfügbar.');
+
+            return $this->redirect('/admin/ad');
+        }
+
+        $id = $request->inputInt('id', 0);
+        $config = null;
+        foreach (Container::identitySources()->configs(false) as $candidate) {
+            if ((int) $candidate['id'] === $id) {
+                $config = $candidate;
+                break;
+            }
+        }
+
+        if ($config === null || !IdentitySourceService::isConfigured($config)) {
+            Session::flash('error', 'Die Identitätsquelle ist nicht vollständig konfiguriert (Server und Base DN erforderlich).');
+
+            return $this->redirect('/admin/ad');
+        }
+
+        $results = (new LdapClient($config))->testHosts();
+        $lines = [];
+        $reachable = 0;
+        foreach ($results as $host => $error) {
+            if ($error === null) {
+                $reachable++;
+                $lines[] = $host . ': erreichbar';
+            } else {
+                $lines[] = $host . ': ' . $error;
+            }
+        }
+
+        $message = sprintf(
+            'Verbindungstest „%s“: %d von %d Servern erreichbar. %s',
+            (string) $config['label'],
+            $reachable,
+            count($results),
+            implode(' · ', $lines)
+        );
+        Session::flash($reachable === count($results) ? 'success' : 'error', $message);
 
         return $this->redirect('/admin/ad');
     }
@@ -144,29 +198,48 @@ final class LdapController extends AdminController
             return $this->redirect('/admin/ad');
         }
 
-        if (!Container::settings()->isLdapConfigured()) {
+        if (!Container::identitySources()->isAnyConfigured()) {
             Session::flash('error', 'Bitte zuerst LDAP-Server und Base DN konfigurieren.');
 
             return $this->redirect('/admin/ad');
         }
 
         $result = Container::adSync()->run();
+        $multiple = count($result['sources']) > 1;
 
-        if ($result['status'] === 'success') {
-            $message = sprintf(
-                'Synchronisation erfolgreich: %d Einträge aktualisiert, %d deaktiviert.',
-                $result['processed'],
-                $result['deactivated']
-            );
-            if (($result['groups'] ?? null) !== null) {
-                $message .= sprintf(' %d AD-Gruppen für die Rechtevergabe übernommen.', $result['groups']);
-            } elseif (Container::settings()->ldapConfig()['group_base_dns'] !== []) {
-                $message .= ' Die AD-Gruppen konnten nicht gelesen werden (siehe Log); der bisherige Gruppenbestand bleibt erhalten.';
-            }
-            Session::flash('success', $message);
-        } else {
+        if ($result['status'] === 'error' && !$multiple) {
             Session::flash('error', 'Die Synchronisation ist fehlgeschlagen. Details stehen im Log. Der letzte gültige Datenbestand bleibt erhalten.');
+
+            return $this->redirect('/admin/ad');
         }
+
+        $message = sprintf(
+            '%s: %d Einträge aktualisiert, %d deaktiviert.',
+            match ($result['status']) {
+                'success' => 'Synchronisation erfolgreich',
+                'partial' => 'Synchronisation unvollständig',
+                default => 'Synchronisation fehlgeschlagen',
+            },
+            $result['processed'],
+            $result['deactivated']
+        );
+        if (($result['groups'] ?? null) !== null) {
+            $message .= sprintf(' %d AD-Gruppen für die Rechtevergabe übernommen.', $result['groups']);
+        } elseif (!$multiple && Container::settings()->ldapConfig()['group_base_dns'] !== []) {
+            $message .= ' Die AD-Gruppen konnten nicht gelesen werden (siehe Log); der bisherige Gruppenbestand bleibt erhalten.';
+        }
+
+        if ($multiple) {
+            $parts = [];
+            foreach ($result['sources'] as $source) {
+                $parts[] = $source['status'] === 'success'
+                    ? sprintf('%s: %d aktualisiert, %d deaktiviert', $source['label'], $source['processed'], $source['deactivated'])
+                    : sprintf('%s: fehlgeschlagen – letzter Stand bleibt erhalten', $source['label']);
+            }
+            $message .= ' ' . implode(' · ', $parts) . '.';
+        }
+
+        Session::flash($result['status'] === 'success' ? 'success' : 'error', $message);
 
         return $this->redirect('/admin/ad');
     }
@@ -197,6 +270,74 @@ final class LdapController extends AdminController
             ->withHeader('Cache-Control', 'no-store');
     }
 
+    private function saveSource(?int $id, Request $request): Response
+    {
+        $service = Container::identitySources();
+        [$values, $errors] = $service->validateAdditional($request->post, $id);
+        $row = $id === null ? null : $service->find($id);
+
+        if ($errors !== []) {
+            Session::flash('error', 'Bitte prüfen Sie die Angaben zur Identitätsquelle.');
+
+            return $this->renderSource($row, $values, $errors, 422);
+        }
+
+        [$changes] = IdentitySourceService::secretInput($request->post);
+        $before = $row === null ? null : $this->ssoFingerprint($row);
+        $savedId = $service->saveAdditional($id, $values, $changes);
+        $after = $this->ssoFingerprint((array) $service->find($savedId));
+        app_logger()->info($id === null ? 'Identitätsquelle angelegt.' : 'Identitätsquelle geändert.', [
+            'admin' => Container::auth()->username(),
+            'source' => $values['ldap_key'],
+            'host' => str_replace("\n", ', ', $values['ldap_host']),
+            'passwords_changed' => array_keys($changes),
+        ]);
+
+        $message = sprintf('Die Identitätsquelle „%s“ wurde gespeichert.', $values['ldap_label']);
+        if ($service->secretStates($service->find($savedId))['ldap_bind_password'] !== 'set' && $values['ldap_bind_dn'] !== '') {
+            $message .= ' Hinweis: Für das Dienstkonto ist noch kein Passwort hinterlegt.';
+        }
+        $ssoRelevant = !empty($row['sso_enabled']) || $values['sso_enabled'] === '1';
+        if ($ssoRelevant && ($before ?? $this->ssoFingerprint([])) !== $after) {
+            $message .= self::SSO_RESTART_HINT;
+        }
+        Session::flash('success', $message);
+
+        return $this->redirect('/admin/ad');
+    }
+
+    /**
+     * Kennwert der fuer die auth-Container relevanten Angaben einer Quelle
+     * (null = Hauptquelle aus den Einstellungen), um nach dem Speichern auf
+     * einen noetigen Neustart hinzuweisen.
+     *
+     * @param array<string,mixed>|null $data  Datensatz, Formularwerte oder null
+     * @param array<string,string>     $changes Passwort-Aenderungen
+     */
+    private function ssoFingerprint(?array $data, array $changes = []): string
+    {
+        if ($data === null) {
+            $settings = Container::settings();
+            $data = [];
+            foreach (['sso_domain', 'sso_dcs', 'sso_join_user'] as $key) {
+                $data[$key] = $settings->get($key);
+            }
+            $data['sso_join_password'] = $settings->get('sso_join_password');
+        } elseif (isset($data['ldap_key']) || isset($data['ldap_label'])) {
+            // Formularwerte der Hauptquelle
+            $data['sso_join_password'] = array_key_exists('sso_join_password', $changes)
+                ? 'neu:' . hash('sha256', $changes['sso_join_password'])
+                : Container::settings()->get('sso_join_password');
+        }
+
+        $parts = [];
+        foreach (['source_key', 'active', 'sso_enabled', 'sso_domain', 'sso_dcs', 'sso_join_user', 'sso_join_password', 'sso_networks', 'sso_hostnames'] as $key) {
+            $parts[] = (string) ($data[$key] ?? '');
+        }
+
+        return hash('sha256', implode("\0", $parts));
+    }
+
     private function safeGroupCount(): ?int
     {
         try {
@@ -207,14 +348,50 @@ final class LdapController extends AdminController
     }
 
     /**
+     * @return array<int,int>
+     */
+    private function safeCountsBySource(): array
+    {
+        try {
+            return Container::phonebookRepository()->countActiveBySource();
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * @param array<string,mixed>|null $row
+     * @param array<string,string> $values
+     * @param array<string,string> $errors
+     */
+    private function renderSource(?array $row, array $values, array $errors = [], int $status = 200): Response
+    {
+        return $this->adminView('admin.ldap.source', [
+            'pageTitle' => $row === null ? 'Neue Identitätsquelle' : 'Identitätsquelle bearbeiten',
+            'activeNav' => 'ldap',
+            'sourceId' => $row === null ? null : (int) $row['id'],
+            'values' => $values,
+            'errors' => $errors,
+            'attributeKeys' => IdentitySourceService::ATTRIBUTE_KEYS,
+            'secretStates' => Container::identitySources()->secretStates($row),
+            'primary' => false,
+            'ssoEnabled' => (bool) Config::get('sso.enabled', false),
+            'serviceName' => ($values['ldap_key'] ?? '') !== '' ? IdentitySourceService::serviceName((string) $values['ldap_key']) : '',
+        ], $status);
+    }
+
+    /**
      * @param array<string,string> $errors
      * @param array<string,string> $values
      */
     private function render(array $errors = [], array $values = [], int $status = 200): Response
     {
         $settings = Container::settings();
+        $service = Container::identitySources();
+        $primary = $settings->ldapConfig();
         $current = [
-            'ldap_host' => $settings->get('ldap_host'),
+            'ldap_label' => (string) $primary['label'],
+            'ldap_host' => implode("\n", $primary['hosts']),
             'ldap_port' => (string) $settings->int('ldap_port', 636),
             'ldap_use_tls' => $settings->bool('ldap_use_tls') ? '1' : '0',
             'ldap_verify_cert' => $settings->bool('ldap_verify_cert') ? '1' : '0',
@@ -226,10 +403,51 @@ final class LdapController extends AdminController
             'ldap_group_base_dn' => implode("\n", SettingsService::splitDnList($settings->get('ldap_group_base_dn'))),
             'ldap_group_filter' => $settings->get('ldap_group_filter'),
             'ldap_group_name_attribute' => $settings->get('ldap_group_name_attribute'),
+            'sso_domain' => $settings->get('sso_domain'),
+            'sso_dcs' => $settings->get('sso_dcs'),
+            'sso_join_user' => $settings->get('sso_join_user'),
         ];
 
-        foreach (array_keys(self::ATTRIBUTE_KEYS) as $key) {
+        foreach (array_keys(IdentitySourceService::ATTRIBUTE_KEYS) as $key) {
             $current[$key] = $settings->get($key);
+        }
+
+        $counts = $this->safeCountsBySource();
+        $sources = [[
+            'id' => 0,
+            'key' => '',
+            'label' => (string) $primary['label'],
+            'hosts' => $primary['hosts'],
+            'base_dn' => (string) $primary['base_dn'],
+            'active' => true,
+            'primary' => true,
+            'configured' => IdentitySourceService::isConfigured($primary),
+            'password_state' => $service->secretStates(null)['ldap_bind_password'],
+            'sso' => $settings->get('sso_domain') !== '' ? $settings->get('sso_domain') : null,
+            'users' => $counts[0] ?? 0,
+        ]];
+        $rows = [];
+        foreach ($service->additionalRows(false) as $row) {
+            $rows[(int) $row['id']] = $row;
+        }
+        foreach ($service->configs(false) as $config) {
+            if ((int) $config['id'] === 0) {
+                continue;
+            }
+            $row = $rows[(int) $config['id']] ?? [];
+            $sources[] = [
+                'id' => (int) $config['id'],
+                'key' => (string) $config['key'],
+                'label' => (string) $config['label'],
+                'hosts' => $config['hosts'],
+                'base_dn' => (string) $config['base_dn'],
+                'active' => (bool) $config['active'],
+                'primary' => false,
+                'configured' => IdentitySourceService::isConfigured($config),
+                'password_state' => $service->secretState((string) ($row['bind_password'] ?? '')),
+                'sso' => !empty($row['sso_enabled']) ? (string) ($row['sso_domain'] ?? '') : null,
+                'users' => $counts[(int) $config['id']] ?? 0,
+            ];
         }
 
         return $this->adminView('admin.ldap', [
@@ -237,9 +455,12 @@ final class LdapController extends AdminController
             'activeNav' => 'ldap',
             'values' => array_merge($current, $values),
             'errors' => $errors,
-            'attributeKeys' => self::ATTRIBUTE_KEYS,
-            'hasBindPassword' => (string) Config::get('ldap.password', '') !== '',
+            'attributeKeys' => IdentitySourceService::ATTRIBUTE_KEYS,
+            'secretStates' => $service->secretStates(null),
+            'primary' => true,
+            'ssoEnabled' => (bool) Config::get('sso.enabled', false),
             'ldapExtensionAvailable' => LdapClient::isSupported(),
+            'sources' => $sources,
             'syncRuns' => Container::syncLogRepository()->recent(10),
             'phonebookCount' => Container::phonebook()->countActive(),
             'groupCount' => $this->safeGroupCount(),

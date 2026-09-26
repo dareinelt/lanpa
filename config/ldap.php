@@ -7,18 +7,23 @@ use App\Core\Env;
 /**
  * Basiswerte fuer die Active-Directory-Anbindung.
  *
- * Alle Werte ausser dem Bind-Passwort koennen im Adminbereich ueberschrieben
- * werden (Tabelle `settings`). Das Bind-Passwort kommt ausschliesslich aus der
- * Umgebung bzw. aus einem Docker-Secret (LDAP_PASSWORD / LDAP_PASSWORD_FILE).
+ * Alle Werte koennen im Adminbereich ueberschrieben werden (Tabelle
+ * `settings`). Das Bind-Passwort wird ausschliesslich im Adminbereich gepflegt
+ * und verschluesselt gespeichert (kein Eintrag in der .env).
  */
 return [
+    // Beschriftung der Hauptquelle (z. B. "Zentrale"), sichtbar im Adminbereich
+    // und – bei mehreren Identitaetsquellen – in der Telefonliste.
+    'label' => Env::get('LDAP_LABEL', 'Zentrale'),
+    // Ein oder mehrere Server (IP oder Hostname, getrennt durch Komma,
+    // Semikolon oder Leerzeichen). Sie werden der Reihe nach versucht, falls
+    // ein Server nicht erreichbar ist.
     'host' => Env::get('LDAP_HOST', ''),
     'port' => Env::int('LDAP_PORT', 636),
     'use_tls' => Env::bool('LDAP_USE_TLS', true),
     'verify_cert' => Env::bool('LDAP_VERIFY_CERT', true),
     'base_dn' => Env::get('LDAP_BASE_DN', ''),
     'bind_dn' => Env::get('LDAP_BIND_DN', ''),
-    'password' => Env::get('LDAP_PASSWORD', ''),
     'filter' => Env::get('LDAP_FILTER', '(&(objectClass=user)(objectCategory=person))'),
     'timeout' => Env::int('LDAP_TIMEOUT', 10),
     'page_size' => Env::int('LDAP_PAGE_SIZE', 500),

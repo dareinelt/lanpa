@@ -29,7 +29,7 @@ while (true) {
 
         if (!LdapClient::isSupported()) {
             fwrite(STDERR, 'Die PHP-Erweiterung "ldap" fehlt – Synchronisation wird übersprungen.' . PHP_EOL);
-        } elseif (!$settings->isLdapConfigured()) {
+        } elseif (!Container::identitySources()->isAnyConfigured()) {
             fwrite(STDOUT, 'LDAP ist noch nicht konfiguriert – warte auf Konfiguration.' . PHP_EOL);
         } else {
             $result = Container::adSync()->run();
@@ -44,6 +44,11 @@ while (true) {
                     PHP_EOL
                 )
             );
+            foreach ($result['status'] === 'success' ? [] : $result['sources'] as $source) {
+                if ($source['status'] !== 'success') {
+                    fwrite(STDERR, sprintf('[%s] Identitätsquelle „%s“ fehlgeschlagen.%s', date('c'), $source['label'], PHP_EOL));
+                }
+            }
         }
     } catch (Throwable $exception) {
         // Der Dienst darf nie sterben – Fehler werden protokolliert.

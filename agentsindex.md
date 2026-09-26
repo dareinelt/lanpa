@@ -81,6 +81,8 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 | `create_admin.php` | Legt ein Administrationskonto an |
 | `sync_ad.php` | Einmaliger AD-Abgleich |
 | `sync_worker.php` | Dauerlauf der AD-Synchronisation (Container `sync`) |
+| `credentials.php` | Schlüssel für gespeicherte Zugangsdaten anlegen (`--key`), Alt-Werte aus der `.env` verschlüsselt übernehmen (Standard, beim App-Start), `--set-primary` (stdin `NAME=base64`, von `install.sh`), `--ldap-password` (für `office-setup.sh`), `--sso-sources` (für `sso-domains.sh`) |
+| `sso-domains.sh` | Erzeugt `docker-compose.sso.yml` mit je einer auth-Instanz `auth-<kennung>` pro weiterer Domäne mit Windows-Anmeldung (ohne Zugangsdaten) |
 | `purge_clicks.php` | Löscht Klickdaten älter als N Tage (Standard `CLICK_RETENTION_DAYS=400`) |
 | `install.sh` | Assistierte Komplettinstallation (whiptail/dialog/Text): prüft und installiert Abhängigkeiten, kopiert `.env.example`, fragt Passwörter/Secrets ab, startet und prüft die Container, schreibt Abschlussbericht nach `install-reports/` (Doku: `docs/installation.md`) |
 | `install-systemd-service.sh` | Installiert die Landingpage als systemd-Service (Ubuntu ≥ 22.04; Autostart beim Boot, `docker compose up/down`) |
@@ -190,6 +192,7 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 `Office\OfficeAppService` + `Office\OfficeAppCatalog` (Office-Apps unter der Kachel: Euro-Office-Webapps, Dateien, OWA; Freigabe per AD-Gruppe/App-Paket, ohne Zuordnung/ohne SSO keine Apps),
 `EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
 `LdapAttributeMapper`, `LdapClient`, `LogoService`, `NavigationService`,
+`IdentitySourceService` (Identitätsquellen: Hauptquelle ID 0 aus `settings`, weitere aus `identity_sources`; Validierung, Ver-/Entschlüsselung der Zugangsdaten, SSO-Routen/Worker, `authEnvironment()` für `/internal/sso-config`),
 `PhonebookService`, `SettingsService`, `SmsCodeService`, `StatisticsService`, `ThemeService`.
 
 Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
@@ -201,12 +204,15 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 `ActivationNumberRepository`, `AdminUserRepository`, `AlarmGroupRepository`,
 `AlarmLogRepository`, `AnnouncementRepository`, `ClickRepository`,
 `EmergencyNumberRepository`, `ImportantLinkRepository`, `NavigationRepository`,
-`PhonebookRepository`, `SettingsRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), plus Basis `Repository`
+`PhonebookRepository`, `SettingsRepository`, `IdentitySourceRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), plus Basis `Repository`
 (stellt `PDO $pdo` bereit; Test kann eine eigene `PDO`-Instanz injizieren).
 
 ### Security (`app/Security/`)
 
 - `SsoAuth` – Windows-Benutzer aus dem Header des `auth`-Containers (nur von `SSO_TRUSTED_PROXY`) bzw. simulierte Anmeldung im Testmodus (`SSO_FAKE_USER`, nicht in `APP_ENV=production`); der erkannte Benutzer erscheint im Kopf (`views/layouts/base.php`, `.site-user`) und wird beim Wechsel nach Nextcloud per Einmal-Token (`OfficeJwt::ssoToken`, `OfficeConfigService::ssoEntryUrl`) an `apps/intranet_integration/sso` (`SsoController`) weitergereicht – siehe `docs/office.md`.
+- `SecretBox` – libsodium-Verschlüsselung (`enc:v1:…`) der AD-Zugangsdaten; Schlüssel `SECRETS_KEY_FILE` (Standard `storage/keys/secrets.key`, 0600, wird automatisch erzeugt). Entschlüsselung liefert `null` bei falschem Schlüssel/Manipulation (Oberfläche: „ungültig“).
+- `SsoAuth` ohne Anmeldepflicht: `resolve()` = Header (nur an `/sso/anmelden`) oder Sitzung (`sso_identity`, Ablauf `SSO_SESSION_LIFETIME`, bei jeder Anfrage gegen das Telefonbuch geprüft); `shouldAttempt()` steuert den automatischen Versuch einmal je Sitzung (Middleware `$ssoAttempt` für `/`, `/unterseite`, `/seite`, `/office-starten`, `/office-app`; `SSO_AUTO_LOGIN`); `safeTarget()` erlaubt nur lokale Rücksprungziele.
+- `SsoAuth` bei mehreren Domänen: `SSO_TRUSTED_PROXY`-Einträge `host=KENNUNG` binden eine auth-Instanz an ihre Quelle; Benutzer werden nur in dieser Quelle gesucht (`name@kennung` für Nextcloud).
 - `Auth` – Session-Authentifizierung, Rollen `admin`/`redaktion`, Login-Lockout (5 Versuche / 300 s), Idle-Timeout, Session-Regeneration.
 - `Csrf` – Token-Erzeugung/-Validierung.
 - `Session` – Session-Verwaltung (Start, Flash, Regenerate).
@@ -251,6 +257,10 @@ auf `/zugriff` umgeleitet, bis sie für die Sitzung freigeschaltet sind.
 | GET | `/hintergrundbild` | `BackgroundImageController::show` |
 | GET | `/wichtige-links/icon` | `ImportantLinkIconController::show` |
 | GET | `/health` | `HealthController::index` |
+| GET | `/sso?ziel=…` | `SsoController::start` – merkt Ziel + Versuch in der Sitzung, leitet zu `/sso/anmelden` |
+| GET | `/sso/anmelden` | `SsoController::login` – einziger Pfad mit NTLM im auth-Container; übernimmt den Header-Benutzer in die Sitzung (`SsoAuth::remember`) |
+| GET | `/sso/nicht-erkannt` | `SsoController::notRecognized` – ErrorDocument 401/500 des Anmeldepunkts (Status 401, Meta-Refresh zum Ziel) |
+| GET | `/internal/sso-config?source=KEY` | `InternalController::ssoConfig` – Domänen-Konfiguration inkl. entschlüsselter Zugangsdaten für die auth-Container; nur mit Token (`X-Intranet-Sso-Token`, Datei im Volume `sso_token`), ohne `X-Forwarded-*` und nur vom passenden auth-Container; im auth-Proxy per 404 gesperrt |
 | GET/POST | `/admin/login` | `AuthController::showLogin` / `login` |
 
 ### Admin (Middleware `$requireAuth`, angemeldet)
@@ -284,7 +294,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | --- | --- | --- |
 | `navigation_items` | Kacheln/Unterseiten/Textseiten/Alarmierungen | `type` (external/internal/subpage/page/alarm), `parent_id`, `content`, `alarm_text`, `alarm_group_id`, `protected_access`, `background_color`, `background_opacity`, `override_background`, `sort_order`, `active` |
 | `settings` | Schlüssel-Wert-Einstellungen | `setting_key` (unique), `setting_value` |
-| `phonebook` | AD-synchronisierte Telefonliste | `external_id` (unique), Name, `phone`, `phone_digits`, `mobile`, `department`, `active` |
+| `phonebook` | AD-synchronisierte Telefonliste | `external_id` (unique), `identity_source_id` (0 = Hauptquelle), Name, `phone`, `phone_digits`, `mobile`, `department`, `active` |
 | `click_events` | Klickstatistik | `navigation_id` (FK, SET NULL), `clicked_at` |
 | `admin_users` | Administrationskonten | `username` (unique), `password_hash`, `role` (admin/redaktion), `active` |
 | `sync_log` | Protokoll der AD-Läufe | `status` (running/success/error), `processed`, `deactivated`, `message` |
@@ -300,6 +310,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `ad_group_members` | Mitglieder (verschachtelt aufgelöst) | `group_id`, `phonebook_id` |
 | `office_app_packages` | App-Pakete für Office-Apps | `name` (unique), `description` |
 | `office_app_package_apps` | Apps eines Pakets | `package_id`, `app_key` |
+| `identity_sources` | Weitere AD-Quellen (Zweigstellen, Tochtergesellschaften) | `source_key` (unique), `label`, `hosts` (je Zeile ein Server, Ausfallreserve), LDAP-Felder, `bind_password` (verschlüsselt), `sso_enabled`, `sso_domain`, `sso_dcs`, `sso_join_user`, `sso_join_password` (verschlüsselt), `sso_networks`, `sso_hostnames`, `sort_order`, `active` |
 | `office_app_permissions` | Freigabe von Apps/Paketen für AD-Gruppen | `group_name`, `app_key` oder `package_id` |
 
 **Konventionen:** `InnoDB`, `utf8mb4`/`utf8mb4_unicode_ci`, `TIMESTAMP`-Spalten `created_at`/`updated_at`, `TINYINT(1)` für Booleans (`active`), Fremdschlüssel mit `ON DELETE SET NULL`/`ON UPDATE CASCADE`.
@@ -308,7 +319,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 ## 10. Konfiguration
 
-**Vorrangregel: Umgebungsvariablen liefern die Grundeinstellung, die Tabelle `settings` überschreibt sie** (außer dem LDAP-Bind-Passwort, das nur aus ENV/Docker-Secret kommt).
+**Vorrangregel: Umgebungsvariablen liefern die Grundeinstellung, die Tabelle `settings` überschreibt sie** AD-Zugangsdaten (Bind-Passwörter, Domänenbeitritt) stehen ausschließlich verschlüsselt in der Datenbank (`settings`: `ldap_bind_password`, `sso_join_password` verschlüsselt, `sso_domain`, `sso_dcs`, `sso_join_user`; `identity_sources`) und werden im Adminbereich gepflegt – nicht in der `.env`. Alt-Werte aus der `.env` übernimmt `scripts/credentials.php` beim Start.
 
 - `config/app.php`, `config/database.php`, `config/ldap.php`, `config/alarm.php`, `config/snmp.php` lesen die Werte über `Env::get()`.
 - `config/snmp.php` liefert `community`, `sys_location`, `sys_contact` – alle im Adminbereich (Tabelle `settings`) pflegbar; der am Host veröffentlichte UDP-Port (`SNMP_PORT`) ist ausschließlich über die Umgebung (Docker-Port-Mapping) konfigurierbar.
@@ -331,6 +342,8 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - **URL-Validierung:** nur `http`, `https` und interne Pfade (kein `javascript:`, `data:`, `//host`).
 - **Zugangscode-Schutz:** geschützte Elemente (`protected_access`) verlangen einen täglich wechselnden, per SMS zugestellten Code (HMAC-Ableitung aus `sms_code_secret`, Hash-Vergleich, 5 Fehlversuche).
 - **Logging:** Passwörter/Tokens werden im Log maskiert.
+- **AD-Zugangsdaten:** verschlüsselt gespeichert, nie ausgegeben (Formular: leer = unverändert); nicht in Sicherungen (`BackupService`), beim Import bleiben lokale Werte erhalten.
+- **Mehrere Quellen:** Gruppennamen bilden einen gemeinsamen Namensraum über alle Quellen (gleichnamige Gruppen erhalten dieselben Rechte).
 
 ---
 
@@ -340,9 +353,14 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 1. `storage/logs`, `storage/uploads` anlegen + Rechte.
 2. Auf die Datenbank warten (bis 60 × 2 s).
-3. Rolle `app`: `migrate.php` → ggf. `seed.php` (`SEED_ON_START`) → ggf. `create_admin.php`.
-4. Rolle `sync`: kurz warten (Migrationen abwarten), dann `sync_worker.php` (Dauerschleife).
+3. Rolle `app`: `migrate.php` → `credentials.php` (Schlüssel, Alt-Import) → Token für `/internal/sso-config` in `/run/intranet-sso/token` (Volume `sso_token`) → ggf. `seed.php` (`SEED_ON_START`) → ggf. `create_admin.php`.
+4. Rolle `sync`: kurz warten (Migrationen abwarten), `credentials.php --key`, dann `sync_worker.php` (Dauerschleife).
 5. `exec "$@"` (App: `apache2-foreground`; Sync: `php scripts/sync_worker.php`).
+
+### auth-Container (`docker/auth/entrypoint.sh`)
+
+- Ruft beim Start `/internal/sso-config?source=<SSO_SOURCE>` von `app` ab (Token aus `sso_token`, Wiederholungen) und tritt damit der Domäne bei; Änderungen erfordern einen Neustart (`docker compose restart auth auth-<kennung>`).
+- Hauptinstanz `auth`: HAProxy verteilt per `SSO_ROUTES` (Hostname/Client-Netz) an die Worker `auth-<kennung>` (`sso-routes.sh`, Fallback auf die Hauptinstanz, wenn ein Worker ausfällt); Worker aus `docker-compose.sso.yml` (`scripts/sso-domains.sh`).
 
 ### SNMP-Container-Startup (`docker/snmp/entrypoint.sh`)
 
@@ -358,6 +376,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - **Datensicherheit:** nicht erreichbares/leeres AD → *kein* Schreiben, letzter Stand bleibt aktiv.
 - Nicht mehr vorhandene Personen → `active = 0` (kein Löschen); deaktivierte AD-Konten (`ACCOUNTDISABLE`) werden übersprungen/deaktiviert.
 - Jeder Lauf wird in `sync_log` protokolliert und im Adminbereich angezeigt.
+- Mehrere Quellen: jede Quelle wird getrennt synchronisiert (`AdSyncService`), Server je Quelle der Reihe nach versucht; fällt eine Quelle aus, bleibt ihr Stand erhalten (Status `partial`, `sync_ad.php` Exit 4).
 - Gruppen: `LdapClient::fetchGroups()` liest Gruppen unter `ldap_group_base_dn` und löst Mitglieder per `LDAP_MATCHING_RULE_IN_CHAIN` auf; `AdGroupRepository::replaceAll()` schreibt sie in derselben Transaktion. Fehler beim Gruppenabruf lassen den alten Gruppenstand unverändert. `SsoAuth` ergänzt die Gruppen des angemeldeten Benutzers aus diesem Bestand (keine Live-Abfrage des AD).
 
 ### Tests

@@ -142,8 +142,10 @@ aufrufen.
 
 ### Anmeldung
 
-- **Intranet:** Bei aktivem SSO (`SSO_ENABLED=true`) liefert `auth` den
-  Windows-Anmeldenamen. Das Intranet ordnet ihn über den synchronisierten
+- **Intranet:** Bei aktivem SSO (`SSO_ENABLED=true`) liefert `auth` am
+  Anmeldepunkt `/sso/anmelden` den Windows-Anmeldenamen (keine Anmeldepflicht,
+  siehe README „Windows-Anmeldung ohne Anmeldepflicht“); die Anwendung merkt
+  ihn sich in der Sitzung. Das Intranet ordnet ihn über den synchronisierten
   `sAMAccountName` dem Telefonbucheintrag zu und ergänzt die Gruppen aus dem
   synchronisierten Bestand.
 - **Nextcloud:** Mit `--with-ad` nutzt Nextcloud `user_ldap` (gleiche
@@ -154,6 +156,15 @@ aufrufen.
   erkannte Benutzer wird beim Wechsel nach Nextcloud bzw. in eine Office-App
   **immer** weitergereicht (siehe unten). Er erscheint dezent im Kopf der
   Startseite (Initialen und Name, Tooltip mit Anmeldenamen).
+- **Mehrere Identitätsquellen:** Nextcloud (`user_ldap`) ist nur an die
+  Hauptquelle angebunden; das Bind-Passwort erhält es über das Secret
+  `secrets/nextcloud_ldap_password`, das `office-setup.sh` aus der
+  verschlüsselt gespeicherten Konfiguration der Anwendung schreibt. Benutzer
+  weiterer Quellen (Zweigstellen, Tochtergesellschaften) werden im Token als
+  `name@kennung` übergeben und kollidieren so nicht mit gleichnamigen Konten der
+  Zentrale.
+  Die direkte NTLM-Anmeldung über `user_saml` ist in deren auth-Instanzen
+  gesperrt; die Anmeldung erfolgt über die Office-Kachel des Intranets.
 
 ### Automatische Anmeldung in Nextcloud (Intranet-SSO)
 

@@ -48,9 +48,37 @@ final class InternalController
             return $this->deny(404);
         }
 
-        // Je Zeile NAME=base64(wert): keine Shell-Interpretation beim Einlesen.
+        return $this->lines($environment);
+    }
+
+    /**
+     * HTTPS-Konfiguration fuer die Hauptinstanz des auth-Containers
+     * (aktives Zertifikat bzw. Notfall-Zertifikat, Schluessel, Quellnetze fuer
+     * reines HTTP). Wird regelmaessig abgerufen (docker/auth/tls-sync.sh);
+     * dabei wird vermerkt, welches Zertifikat im Einsatz ist.
+     */
+    public function tlsConfig(Request $request): Response
+    {
+        if (!$this->authorized($request, '')) {
+            app_logger()->warning('Abruf der TLS-Konfiguration abgelehnt.', [
+                'remote' => (string) ($request->server['REMOTE_ADDR'] ?? ''),
+            ]);
+
+            return $this->deny(403);
+        }
+
+        return $this->lines(Container::tlsCertificates()->authConfig());
+    }
+
+    /**
+     * Je Zeile NAME=base64(wert): keine Shell-Interpretation beim Einlesen.
+     *
+     * @param array<string,string> $values
+     */
+    private function lines(array $values): Response
+    {
         $lines = [];
-        foreach ($environment as $name => $value) {
+        foreach ($values as $name => $value) {
             $lines[] = $name . '=' . base64_encode($value);
         }
 

@@ -13,9 +13,22 @@
 # NTLM ist verbindungsgebunden: HAProxy arbeitet im HTTP-Modus mit
 # Keep-Alive und bindet Server-Verbindungen nach einer NTLM-/Negotiate-
 # Aufforderung automatisch exklusiv an die Client-Verbindung.
+#
+# TLS (TLS_ENABLED=true, Dateien von tls-sync.sh in TLS_DIR): HAProxy
+# terminiert HTTPS auf :443 (nur HTTP/1.1, NTLM ist verbindungsgebunden) und
+# leitet HTTP auf HTTPS um - im Modus "fallback" ausser fuer die
+# freigegebenen Quellnetze.
 set -eu
 
 routes="${1:-}"
+tls_dir="${TLS_DIR:-/etc/intranet-tls}"
+https_port="${HTTPS_PUBLIC_PORT:-443}"
+public_scheme="${OFFICE_PUBLIC_SCHEME:-http}"
+
+tls=false
+case "$(printf '%s' "${TLS_ENABLED:-false}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) [ -s "${tls_dir}/server.pem" ] && tls=true ;;
+esac
 
 cat <<'CFG'
 global
@@ -39,6 +52,9 @@ resolvers docker
 
 frontend web
     bind :80
+CFG
+[ "$tls" = true ] && printf '    bind :443 ssl crt %s alpn http/1.1 ssl-min-ver TLSv1.2\n' "${tls_dir}/server.pem"
+cat <<'CFG'
     # Identitaets-Header werden nie vom Client uebernommen.
     http-request del-header X-Remote-User
     http-request del-header X-Remote-Groups
@@ -46,6 +62,31 @@ frontend web
     # Hostname ohne Port (IPv6-Literale werden nie zugeordnet).
     http-request set-var(txn.host) req.hdr(host),lower,field(1,:)
 CFG
+
+if [ "$tls" = true ]; then
+    echo "    http-request set-header X-Forwarded-Proto https if { ssl_fc }"
+    echo "    http-request set-header X-Forwarded-Proto ${public_scheme} if !{ ssl_fc }"
+
+    mode="$(cat "${tls_dir}/mode" 2>/dev/null || echo fallback)"
+    tls_nets=""
+    if [ "$mode" != "strict" ]; then
+        for net in $(cat "${tls_dir}/networks" 2>/dev/null || true); do
+            if printf '%s' "$net" | grep -Eq '^[0-9A-Fa-f:.]+/[0-9]{1,3}$'; then
+                tls_nets="${tls_nets} ${net}"
+            fi
+        done
+    fi
+    port_suffix=""
+    [ "$https_port" = "443" ] || port_suffix=":${https_port}"
+    if ! printf '%s' "$https_port" | grep -Eq '^[0-9]{1,5}$'; then
+        echo "sso-routes: ungueltiger HTTPS_PUBLIC_PORT '${https_port}'" >&2
+        exit 1
+    fi
+    exempt=""
+    [ -n "$tls_nets" ] && exempt=" !{ src${tls_nets} }"
+    # Umleitung ohne IPv6-Literale (deren Host kann HAProxy hier nicht sauber trennen).
+    echo "    http-request redirect location https://%[var(txn.host)]${port_suffix}%[pathq] code 302 if !{ ssl_fc } !{ path /auth-health } !{ req.hdr(host) -m beg [ }${exempt}"
+fi
 
 backends=""
 host_rules=""

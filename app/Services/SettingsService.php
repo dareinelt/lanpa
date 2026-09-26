@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Core\Config;
 use App\Repositories\SettingsRepository;
 use App\Services\Office\OfficeConfigService;
+use App\Services\Tls\TlsCertificateService;
 use App\Support\Validator;
 
 /**
@@ -87,6 +88,8 @@ final class SettingsService
             'sms_code_template' => 'Ihr Zugangscode: {code}',
             'sms_code_timeout' => '120',
             'sms_code_secret' => '',
+            // Quellnetze mit reinem HTTP-Zugriff, solange kein gueltiges Zertifikat aktiv ist ('none' = keine).
+            'tls_http_networks' => TlsCertificateService::DEFAULT_HTTP_NETWORKS,
         ];
     }
 

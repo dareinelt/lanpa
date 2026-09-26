@@ -14,6 +14,7 @@ use App\Controllers\Admin\ActivationNumberController;
 use App\Controllers\Admin\AlarmController;
 use App\Controllers\Admin\AlarmGroupController;
 use App\Controllers\Admin\AnnouncementController;
+use App\Controllers\Admin\CertificateController;
 use App\Controllers\Admin\DashboardController;
 use App\Controllers\Admin\DescriptionController;
 use App\Controllers\Admin\DesignController;
@@ -117,6 +118,7 @@ $router->group([$requireUnlocked, $ssoAttempt], static function (Router $router)
 
 // Interne Schnittstelle fuer die auth-Container (Token + Absenderpruefung).
 $router->get('/internal/sso-config', [InternalController::class, 'ssoConfig']);
+$router->get('/internal/tls-config', [InternalController::class, 'tlsConfig']);
 
 // Office-Integration: Hinweisseite (auch Fehlerseite des auth-Proxys) und
 // Endpunkte fuer die Fusszeile in Nextcloud bzw. den Kachelstatus.
@@ -236,6 +238,17 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/office/apps/paket', [OfficeAppsAdminController::class, 'editPackage']);
         $router->post('/admin/office/apps/paket', [OfficeAppsAdminController::class, 'savePackage']);
         $router->post('/admin/office/apps/paket/loeschen', [OfficeAppsAdminController::class, 'deletePackage']);
+
+        $router->get('/admin/zertifikate', [CertificateController::class, 'index']);
+        $router->post('/admin/zertifikate/csr', [CertificateController::class, 'createRequest']);
+        $router->get('/admin/zertifikate/csr', [CertificateController::class, 'downloadCsr']);
+        $router->post('/admin/zertifikate/import/pruefen', [CertificateController::class, 'previewImport']);
+        $router->post('/admin/zertifikate/import/bestaetigen', [CertificateController::class, 'confirmImport']);
+        $router->post('/admin/zertifikate/import/verwerfen', [CertificateController::class, 'discardImport']);
+        $router->post('/admin/zertifikate/aktivieren', [CertificateController::class, 'activate']);
+        $router->post('/admin/zertifikate/deaktivieren', [CertificateController::class, 'deactivate']);
+        $router->post('/admin/zertifikate/loeschen', [CertificateController::class, 'delete']);
+        $router->post('/admin/zertifikate/http-netze', [CertificateController::class, 'updateNetworks']);
 
         $router->get('/admin/snmp', [SnmpController::class, 'index']);
         $router->post('/admin/snmp', [SnmpController::class, 'update']);

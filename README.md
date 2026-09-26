@@ -55,7 +55,9 @@ cp .env.example .env      # Werte anpassen (mindestens DB_PASSWORD und DB_ROOT_P
 docker compose up -d
 ```
 
-Danach ist die Seite unter `http://<host>:8080` erreichbar (Port über `APP_PORT` konfigurierbar).
+Danach ist die Seite unter `http://<host>:8080` erreichbar (Port über `APP_PORT` konfigurierbar), HTTPS unter
+`https://<host>:8443` (`APP_HTTPS_PORT`). Bis ein Zertifikat importiert ist, gilt ein selbstsigniertes
+Notfall-Zertifikat, siehe [HTTPS und Zertifikate](#https-und-zertifikate).
 
 Beim ersten Start führt der Container automatisch aus:
 
@@ -109,7 +111,7 @@ installieren, nicht starten).
 | `sync` | Dauerlauf der AD-Synchronisation (`scripts/sync_worker.php`) | – |
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
-| `auth` | Apache als Einstieg/Reverse-Proxy, optional NTLM-Anmeldung; leitet `/office/` und `/eurooffice/` weiter | `GET /auth-health` |
+| `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional NTLM-Anmeldung; leitet `/office/` und `/eurooffice/` weiter; Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
 | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
 
 ---
@@ -149,6 +151,8 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | Variable | Bedeutung | Standard |
 | --- | --- | --- |
 | `APP_URL` | Öffentliche Adresse der Seite | `http://localhost:8080` |
+| `APP_PORT`, `APP_HTTPS_PORT` | Am Host veröffentlichte Ports des `auth`-Containers (HTTP/HTTPS); `APP_HTTPS_PORT` ist auch Ziel der Umleitung auf HTTPS | `8080` / `8443` |
+| `TLS_ENABLED` | HTTPS im `auth`-Container (`false` z. B. hinter einem externen TLS-Proxy) | `true` |
 | `APP_DEBUG` | Fehlerdetails anzeigen (nur Entwicklung) | `false` |
 | `APP_FORCE_SECURE_COOKIES` | Session-Cookie nur über HTTPS | `false` |
 | `APP_SESSION_IDLE_TIMEOUT` | Automatische Abmeldung nach Inaktivität (Sekunden) | `3600` |
@@ -185,6 +189,7 @@ Jede Variable unterstützt zusätzlich die Datei-Variante `<NAME>_FILE` für Doc
 - `DB_PASSWORD`, `DB_ROOT_PASSWORD` – eigene, starke Passwörter
 - `ADMIN_USERNAME` / `ADMIN_PASSWORD` bzw. das automatisch erzeugte Passwort sofort ändern
 - `APP_URL` auf die reale Adresse setzen, `APP_FORCE_SECURE_COOKIES=true` bei HTTPS
+- ein Zertifikat unter **Zertifikate (HTTPS)** beantragen und importieren (sonst gilt das Notfall-Zertifikat) und die freigegebenen HTTP-Quellnetze prüfen
 - das produktive Active Directory im Adminbereich einrichten (Server, Base DN, Bind DN und Passwort des Dienstkontos)
 - die Platzhalter-URLs `https://*.example.internal` der Kacheln im Adminbereich durch die echten Anwendungsadressen ersetzen
 - `SEED_ON_START=false` setzen, sobald die Navigation gepflegt ist
@@ -210,6 +215,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Office-Apps/App-Pakete und OWA-Link, lokale KI (Endpunkt, Modell, Audio-/Bildfunktionen in Nextcloud), Sicherung ([docs/office.md](docs/office.md)) |
 | Alarmierung | SMS-Gateway konfigurieren (Host, Benutzername; Passwort nur über Umgebung), Alarmgruppen/-rufnummern verwalten, Verlauf einsehen |
 | Aktivierungs-Rufnummern | Für den geschützten Zugriffsmodus erlaubte Rufnummern pflegen |
+| Zertifikate (HTTPS) | Request (CSR) für den `auth`-Container erstellen und herunterladen, von der CA ausgestelltes Zertifikat (PEM/CRT) mit Vorschau importieren, aktives Zertifikat wählen, Verlauf aller Requests und Zertifikate, Quellnetze für HTTP ohne gültiges Zertifikat |
 | SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |
 | Benutzer | Benutzerverwaltung: Konten anlegen/bearbeiten/deaktivieren/löschen, Rollenvergabe (nur für Administratoren) |
@@ -296,6 +302,57 @@ auth-<kennung>`. Jede Instanz darf nur Benutzer ihrer eigenen Quelle melden.
   werden beim Start einmalig verschlüsselt übernommen (`php scripts/credentials.php`) und können
   danach aus der `.env` entfernt werden.
 
+### HTTPS und Zertifikate
+
+Der `auth`-Container (einziger Container mit veröffentlichten Ports) liefert die Seite über HTTP
+(`APP_PORT`) und HTTPS (`APP_HTTPS_PORT`, intern 443) aus. Das Zertifikat wird im Adminbereich unter
+**Zertifikate (HTTPS)** verwaltet:
+
+1. **Request erstellen** – Hostname (Common Name), weitere Namen/IP-Adressen (SAN), Schlüsseltyp
+   (RSA 3072 empfohlen, RSA 2048/4096, ECDSA P-256/P-384) und optional Organisationsangaben. Der private
+   Schlüssel entsteht in der Anwendung und wird verschlüsselt gespeichert (`secrets.key`); er verlässt die
+   Anwendung nur in Richtung `auth`-Container.
+2. **CSR herunterladen oder kopieren** und von der Zertifizierungsstelle signieren lassen
+   (z. B. AD CS, Vorlage „Webserver“).
+3. **Zertifikat importieren** – Datei (`.pem`, `.crt`, `.cer`; PEM, Base64 oder DER) hochladen oder den
+   Inhalt einfügen. Enthaltene Zwischenzertifikate werden als Kette übernommen. Das Zertifikat wird über den
+   öffentlichen Schlüssel automatisch dem passenden Request zugeordnet; ein Overlay zeigt Inhaber, Namen,
+   Aussteller, Gültigkeit, Fingerabdruck, Kette und Warnungen (z. B. Hostname nicht enthalten, läuft bald
+   ab). Erst mit **Importieren** wird es übernommen – wahlweise direkt als aktives Zertifikat.
+
+Die Tabelle **Requests und Zertifikate** zeigt alle Requests mit Zeitstempel, das jeweils hochgeladene
+Zertifikat (Aussteller, Gültigkeit, Details) sowie den Status (**Aktiv**, gültig/läuft ab/abgelaufen,
+**im Einsatz** = zuletzt vom `auth`-Container verwendet). Aktiv ist immer genau ein Zertifikat; gewählt
+wird es über **Aktivieren** (mit Rückfrage), **Deaktivieren** schaltet zurück auf das Notfall-Zertifikat.
+Requests ohne Zertifikat lassen sich löschen; Requests mit Zertifikat bleiben zur Nachvollziehbarkeit erhalten.
+
+| Zustand | HTTPS | HTTP |
+| --- | --- | --- |
+| Gültiges Zertifikat aktiv | aktives Zertifikat inkl. Kette | Umleitung (302) auf HTTPS |
+| Kein gültiges Zertifikat (keins aktiv, abgelaufen) | selbstsigniertes **Notfall-Zertifikat** | erlaubt aus den hinterlegten Quellnetzen (Standard `192.168.200.0/21`), sonst Umleitung auf HTTPS |
+
+Das Notfall-Zertifikat erzeugt die Anwendung selbst (RSA 2048, ein Jahr, CN aus `APP_URL`, vor Ablauf
+automatisch erneuert). Sobald es verwendet wurde, erscheint es mit Zeitraum der Nutzung in der Tabelle.
+Die Quellnetze (CIDR, eines je Zeile, leer = keines) werden auf derselben Seite unter **HTTP-Zugriff ohne
+gültiges Zertifikat** gepflegt.
+
+Der `auth`-Container ruft Zertifikat, Schlüssel und Richtlinie beim Start und danach jede Minute über
+`/internal/tls-config` ab (Token wie bei `/internal/sso-config`, `docker/auth/tls-sync.sh`) und lädt
+Apache bzw. – mit Verteiler für weitere Domänen – HAProxy nur bei Änderungen unterbrechungsfrei neu.
+Passen Zertifikat und Schlüssel nicht zusammen, bleibt die bisherige Konfiguration aktiv. Ist die Anwendung
+beim Start nicht erreichbar, erzeugt der Container ein eigenes selbstsigniertes Zertifikat (30 Tage) im
+Notfallmodus. Die Seite warnt, wenn der letzte Abruf länger als fünf Minuten zurückliegt.
+
+Hinweise:
+
+- `APP_URL` nach der Aktivierung auf `https://…` umstellen (Links, Office) und `APP_FORCE_SECURE_COOKIES=true` setzen.
+- Die Umleitung ist bewusst temporär (302, kein HSTS), da der Zustand bei Ablauf des Zertifikats wechseln kann.
+- HTTPS spricht nur HTTP/1.1 (NTLM ist verbindungsgebunden); TLS 1.2 und 1.3.
+- Hinter einem externen TLS-Proxy `TLS_ENABLED=false` setzen; `X-Forwarded-Proto` folgt dann wie bisher `APP_URL`.
+- Schlüssel sind an `storage/keys/secrets.key` gebunden und nicht Teil der ZIP-Sicherung. Nach einer
+  Wiederherstellung ohne diesen Schlüssel neuen Request erstellen und das Zertifikat neu ausstellen lassen.
+- Die Gültigkeit des aktiven Zertifikats liefert SNMP (`tls_certificate`, Index 11 und 12).
+
 ### SNMP-Überwachung
 
 Der Container `snmp` stellt den Zustand der Dienste und des AD-Synchronisations-
@@ -329,12 +386,22 @@ Die Werte liegen in der NET-SNMP-Tabelle `UCD-SNMP-MIB::extTable`
 | `nextcloud_redis` (Redis, optional) | `.1.3.6.1.4.1.2021.8.1.100.8` | `.1.3.6.1.4.1.2021.8.1.101.8` |
 | `eurooffice` (DocumentServer, optional) | `.1.3.6.1.4.1.2021.8.1.100.9` | `.1.3.6.1.4.1.2021.8.1.101.9` |
 | `office_workflow` (Nextcloud + DocumentServer erreichbar) | `.1.3.6.1.4.1.2021.8.1.100.10` | `.1.3.6.1.4.1.2021.8.1.101.10` |
+| `tls_certificate` (Gültigkeit des aktiven HTTPS-Zertifikats) | `.1.3.6.1.4.1.2021.8.1.100.11` | `.1.3.6.1.4.1.2021.8.1.101.11` |
+| `tls_certificate_days` (Resttage als Zahl) | `.1.3.6.1.4.1.2021.8.1.100.12` | `.1.3.6.1.4.1.2021.8.1.101.12` |
 
 Exit-Codes: `0` OK, `1` WARNING (startend/laufend/veraltet), `2` CRITICAL
 (gestoppt/fehlgeschlagen), `3` UNKNOWN (z. B. phpMyAdmin nicht bereitgestellt).
 `sync_workflow` meldet `0`, wenn der letzte Lauf `success` und jünger als
 `2 × LDAP_SYNC_INTERVAL` ist; `1` bei laufender oder veralteter, `2` bei
 fehlgeschlagener Synchronisation.
+`tls_certificate` meldet `0`, wenn das aktive Zertifikat noch mehr als 30 Tage gültig ist
+(`TLS_WARN_DAYS`), `1`, wenn es innerhalb dieser Frist abläuft oder kein Zertifikat aktiv ist
+(Notfall-Zertifikat), und `2`, wenn es abgelaufen oder noch nicht gültig ist; der Text nennt Hostname
+und Ablaufdatum (UTC), z. B. `tls_certificate: intranet.firma.local gueltig bis 2027-10-28 17:52 UTC (396 Tage)`.
+`tls_certificate_days` liefert dieselben Exit-Codes und als Text nur die Resttage (negativ = abgelaufen,
+`-9999` = kein Zertifikat aktiv) – geeignet für Schwellwerte im Monitoring.
+Datenbankabfragen laufen direkt über den MariaDB-Client; unterstützt dieser das Anmeldeverfahren des
+MySQL-Servers nicht (`caching_sha2_password`), führt der Agent sie über den Docker-Socket im `db`-Container aus.
 
 Abfragen (Beispiel, Port ggf. über `SNMP_PORT` anpassen):
 
@@ -443,7 +510,8 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 - CSRF-Schutz für alle schreibenden Anfragen (HTTP 419 bei ungültigem Token)
 - Sicherheitsheader: `Content-Security-Policy` (`script-src 'self'`, Nonce für das Farbschema),
   `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`
-- Session-Cookies: `HttpOnly`, `SameSite=Lax`, optional `Secure`
+- Session-Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` bei HTTPS (bzw. erzwungen über `APP_FORCE_SECURE_COOKIES`)
+- HTTPS über den `auth`-Container; private Schlüssel der Zertifikate werden in der Anwendung erzeugt und verschlüsselt gespeichert, der Import prüft Zuordnung zum Request, Gültigkeit und Kette vor der Übernahme
 - Uploads landen außerhalb des DocumentRoots und werden über `/logo` mit geprüftem MIME-Typ ausgeliefert
 - URL-Prüfung erlaubt ausschließlich `http`, `https` und interne Pfade (kein `javascript:`, `data:` oder `//host`)
 - AD-Zugangsdaten verschlüsselt gespeichert (Schlüssel außerhalb der Datenbank), nie an den Browser ausgegeben
@@ -500,6 +568,12 @@ aus der Anwendung heraus verlinkt (`public/manuals/`); die Anzeige lässt sich i
 | Active Directory | <img src="docs/screenshots/19-admin-ad.png" alt="Active Directory" width="520"> |
 | Statistik | <img src="docs/screenshots/20-admin-statistik.png" alt="Statistik" width="520"> |
 | Benutzer | <img src="docs/screenshots/21-admin-benutzer.png" alt="Benutzer" width="520"> |
+| Zertifikate (HTTPS) | <img src="docs/screenshots/60-admin-zertifikate-uebersicht.png" alt="Zertifikate Übersicht" width="520"> |
+| Zertifikate: neuer Request (CSR) | <img src="docs/screenshots/61-admin-zertifikate-csr.png" alt="Neuer CSR" width="520"> |
+| Zertifikate: Vorschau beim Import | <img src="docs/screenshots/62-admin-zertifikate-vorschau.png" alt="Import-Vorschau" width="520"> |
+| Zertifikate: Requests und Zertifikate | <img src="docs/screenshots/63-admin-zertifikate-tabelle.png" alt="Tabelle Requests und Zertifikate" width="520"> |
+| Zertifikate: Notfallmodus | <img src="docs/screenshots/64-admin-zertifikate-notfallmodus.png" alt="Notfallmodus" width="520"> |
+| Zertifikate: HTTP-Quellnetze | <img src="docs/screenshots/65-admin-zertifikate-http-netze.png" alt="HTTP-Quellnetze" width="520"> |
 | AD-Gruppen-Pfad | <img src="docs/screenshots/41-admin-ad-gruppenpfad.png" alt="AD-Gruppen-Pfad" width="520"> |
 | Berechtigungen mit Gruppenvorschlägen | <img src="docs/screenshots/40-admin-ad-gruppen-vorschlaege.png" alt="Gruppenvorschläge" width="520"> |
 

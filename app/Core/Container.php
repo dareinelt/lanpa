@@ -19,6 +19,7 @@ use App\Repositories\OfficeAppRepository;
 use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\SyncLogRepository;
+use App\Repositories\TlsCertificateRepository;
 use App\Security\Auth;
 use App\Security\SecretBox;
 use App\Security\SsoAuth;
@@ -49,6 +50,7 @@ use App\Services\SettingsService;
 use App\Services\SmsCodeService;
 use App\Services\StatisticsService;
 use App\Services\ThemeService;
+use App\Services\Tls\TlsCertificateService;
 
 /**
  * Sehr einfacher Service-Container (Singletons pro Request).
@@ -125,6 +127,19 @@ final class Container
         return self::make(
             SecretBox::class,
             static fn (): SecretBox => new SecretBox((string) Env::get('SECRETS_KEY_FILE', BASE_PATH . '/storage/keys/secrets.key'))
+        );
+    }
+
+    public static function tlsCertificates(): TlsCertificateService
+    {
+        return self::make(
+            TlsCertificateService::class,
+            static fn (): TlsCertificateService => new TlsCertificateService(
+                new TlsCertificateRepository(),
+                self::settings(),
+                self::secretBox(),
+                (string) Config::get('app.url', 'http://localhost:8080')
+            )
         );
     }
 

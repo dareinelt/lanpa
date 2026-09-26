@@ -11,7 +11,7 @@
 <div class="cover">
   <p class="kicker">Administratorhandbuch</p>
   <h1>Intranet-Landingpage</h1>
-  <p class="subtitle">Betrieb, Konfiguration und Verwaltung: Installation, Navigation, Inhalte, Design, Active Directory, Alarmierung, Zugangscode, SNMP, Statistik, Benutzerverwaltung und Sicherung.</p>
+  <p class="subtitle">Betrieb, Konfiguration und Verwaltung: Installation, Navigation, Inhalte, Design, Active Directory, Alarmierung, Zugangscode, SNMP, Statistik, Zertifikate (HTTPS), Benutzerverwaltung und Sicherung.</p>
   <div class="meta">
     Version 1.0 &middot; Stand: September 2026<br>
     Zielgruppe: IT-Administration und Redaktion
@@ -39,7 +39,8 @@
     <li><a href="#ch15"><span class="num">15</span> Statistik</a></li>
     <li><a href="#ch16"><span class="num">16</span> Benutzerverwaltung</a></li>
     <li><a href="#ch17"><span class="num">17</span> Sicherung (Export/Import)</a></li>
-    <li><a href="#ch18"><span class="num">18</span> Anhang: Konfigurationsreferenz</a></li>
+    <li><a href="#ch18"><span class="num">18</span> Zertifikate und HTTPS</a></li>
+    <li><a href="#ch19"><span class="num">19</span> Anhang: Konfigurationsreferenz</a></li>
   </ol>
 </nav>
 
@@ -66,6 +67,7 @@
       <tr><td>Active Directory</td><td>LDAP-Anbindung und Synchronisation</td><td>Admin</td></tr>
       <tr><td>Alarmierung</td><td>SMS-Gateway und Alarm-Kacheln (Gruppen/Rufnummern, Verlauf)</td><td>Admin</td></tr>
       <tr><td>Aktivierungs-Rufnummern</td><td>Für den Zugangscode freigeschaltete Rufnummern</td><td>Admin</td></tr>
+      <tr><td>Zertifikate (HTTPS)</td><td>CSR erstellen, Zertifikat importieren und aktivieren, HTTP-Quellnetze</td><td>Admin</td></tr>
       <tr><td>SNMP</td><td>Überwachung der Dienste per SNMP (Community, Standort, Kontakt)</td><td>Admin</td></tr>
       <tr><td>Statistik</td><td>Klickzahlen je Kachel über Zeiträume</td><td>Admin</td></tr>
       <tr><td>Benutzer</td><td>Verwaltung der Admin-Konten</td><td>Admin</td></tr>
@@ -103,7 +105,7 @@
 
   <h2>2.2&ensp;Konfiguration anlegen</h2>
   <p>Legen Sie im Projektverzeichnis eine Datei <code>.env</code> an. Eine vollständige Referenz aller
-  Variablen finden Sie in Kapitel 18. Pflichtfelder sind insbesondere die Datenbankpasswörter:</p>
+  Variablen finden Sie in Kapitel 19. Pflichtfelder sind insbesondere die Datenbankpasswörter:</p>
 
   <pre>DB_PASSWORD=geheimes-passwort
 DB_ROOT_PASSWORD=geheimes-root-passwort
@@ -389,7 +391,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
 
   <h2>11.1&ensp;Konfiguration</h2>
   <p>Die Verbindungsdaten (Server, Port, TLS, Basis-DN, Bind-Benutzer, Suchfilter, Attribut-Zuordnung)
-  werden über die Umgebungsvariablen <code>LDAP_*</code> gesetzt (siehe Kapitel 18). Änderungen erfordern
+  werden über die Umgebungsvariablen <code>LDAP_*</code> gesetzt (siehe Kapitel 19). Änderungen erfordern
   einen Neustart des <code>sync</code>-Dienstes.</p>
 
   <h2>11.2&ensp;Synchronisation</h2>
@@ -492,6 +494,20 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
   </ul>
 
   <p>Geänderte Werte werden nach einem Neustart des <code>snmp</code>-Containers wirksam.</p>
+
+  <h2>14.2&ensp;Gültigkeit des HTTPS-Zertifikats</h2>
+  <p>Die Prüfungen <code>tls_certificate</code> (Index 11) und <code>tls_certificate_days</code> (Index 12) melden die
+  Gültigkeit des aktiven Zertifikats (Kapitel 18) in <code>UCD-SNMP-MIB::extTable</code>:</p>
+  <table>
+    <thead><tr><th>Exit-Code (<code>extResult</code>)</th><th>Bedeutung</th></tr></thead>
+    <tbody>
+      <tr><td><code>0</code></td><td>gültig, noch mehr als 30 Tage</td></tr>
+      <tr><td><code>1</code></td><td>läuft innerhalb von 30 Tagen ab oder kein Zertifikat aktiv (Notfall-Zertifikat)</td></tr>
+      <tr><td><code>2</code></td><td>abgelaufen oder noch nicht gültig</td></tr>
+    </tbody>
+  </table>
+  <p><code>extOutput.11</code> nennt Hostname und Ablaufdatum, <code>extOutput.12</code> nur die Resttage als Zahl
+  (negativ = abgelaufen, <code>-9999</code> = kein Zertifikat aktiv), z. B. für Schwellwerte im Monitoring.</p>
 </section>
 
 <!-- ===================== 15 ===================== -->
@@ -567,11 +583,127 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
 
 <!-- ===================== 18 ===================== -->
 <section class="chapter" id="ch18">
-  <h1 class="chapter-title">18&ensp;Anhang: Konfigurationsreferenz</h1>
+  <h1 class="chapter-title">18&ensp;Zertifikate und HTTPS</h1>
+
+  <p>Das Intranet ist über HTTP und HTTPS erreichbar. Im Modul <strong>Zertifikate (HTTPS)</strong> beantragen
+  Sie das Serverzertifikat, importieren es und legen fest, welches Zertifikat aktiv ist. Der Einstiegs-Container
+  (<code>auth</code>) übernimmt Änderungen spätestens nach einer Minute – ohne Neustart.</p>
+
+  <figure>
+    <img src="../screenshots/60-admin-zertifikate-uebersicht.png" alt="Seite Zertifikate (HTTPS)">
+    <figcaption><span class="fig-label">Abb. 14</span> Zertifikatsverwaltung mit Zustand, Ablauf, Request, Import und Verlauf.</figcaption>
+  </figure>
+
+  <h2>18.1&ensp;Zustand und Ablauf</h2>
+  <p>Oben zeigt die Seite den aktuellen Zustand:</p>
+  <ul>
+    <li><strong>HTTPS erzwungen</strong> – ein gültiges Zertifikat ist aktiv; jeder Aufruf über HTTP wird auf HTTPS umgeleitet.</li>
+    <li><strong>Notfallmodus</strong> – kein gültiges Zertifikat aktiv (keins gewählt oder abgelaufen). HTTPS verwendet ein
+    selbstsigniertes Notfall-Zertifikat (Browserwarnung); reines HTTP ist nur aus den freigegebenen Quellnetzen erlaubt.</li>
+  </ul>
+  <p>Darunter führen drei Schritte durch den Ablauf: <em>Request erstellen</em> → <em>CSR von der CA signieren
+  lassen</em> → <em>Zertifikat importieren und aktivieren</em>. Erledigte Schritte sind grün markiert.</p>
+
+  <figure>
+    <img src="../screenshots/64-admin-zertifikate-notfallmodus.png" alt="Zustand im Notfallmodus">
+    <figcaption><span class="fig-label">Abb. 15</span> Zustand im Notfallmodus mit freigegebenen Quellnetzen.</figcaption>
+  </figure>
+
+  <h2>18.2&ensp;Request (CSR) erstellen</h2>
+  <ol>
+    <li>Tragen Sie den <strong>Hostnamen</strong> ein, unter dem das Intranet aufgerufen wird (vorbelegt aus <code>APP_URL</code>).</li>
+    <li>Ergänzen Sie unter <strong>Weitere Namen (SAN)</strong> alle weiteren Hostnamen oder IP-Adressen – eine je Zeile.</li>
+    <li>Wählen Sie den <strong>Schlüssel</strong> (empfohlen RSA 3072 Bit) und optional die Angaben zur Organisation.</li>
+    <li>Klicken Sie auf <strong>CSR erstellen</strong>. Der CSR wird angezeigt und kann heruntergeladen oder kopiert werden.</li>
+    <li>Reichen Sie den CSR bei Ihrer Zertifizierungsstelle ein (z. B. AD CS, Vorlage „Webserver“).</li>
+  </ol>
+
+  <figure>
+    <img src="../screenshots/61-admin-zertifikate-csr.png" alt="Neu erstellter CSR">
+    <figcaption><span class="fig-label">Abb. 16</span> Neu erstellter Request mit Download und Kopierfunktion.</figcaption>
+  </figure>
+
+  <div class="note">
+    <span class="label">Hinweis</span>
+    Der private Schlüssel wird in der Anwendung erzeugt und verschlüsselt gespeichert. Er wird nie angezeigt oder
+    heruntergeladen und verlässt die Anwendung nur in Richtung <code>auth</code>-Container.
+  </div>
+
+  <h2>18.3&ensp;Zertifikat importieren</h2>
+  <ol>
+    <li>Wählen Sie unter <strong>Zertifikat importieren</strong> die Datei der CA (<code>.pem</code>, <code>.crt</code>
+    oder <code>.cer</code>; PEM, Base64 oder DER) oder fügen Sie den Inhalt ein. Zwischenzertifikate in der Datei werden
+    als Kette übernommen.</li>
+    <li>Klicken Sie auf <strong>Prüfen und Vorschau anzeigen</strong>. Das Zertifikat wird automatisch dem passenden
+    Request zugeordnet.</li>
+    <li>Prüfen Sie im Overlay Inhaber, Namen, Aussteller, Gültigkeit, Fingerabdruck und Kette. Hinweise (z. B. Hostname
+    fehlt, Zertifikat läuft bald ab, Kette unvollständig) werden hervorgehoben.</li>
+    <li>Bestätigen Sie mit <strong>Importieren</strong> – bei Bedarf mit „Direkt als aktives Zertifikat verwenden“ –
+    oder verwerfen Sie den Import mit <strong>Abbrechen</strong> (Taste <kbd>Esc</kbd>).</li>
+  </ol>
+
+  <figure>
+    <img src="../screenshots/62-admin-zertifikate-vorschau.png" alt="Vorschau beim Import">
+    <figcaption><span class="fig-label">Abb. 17</span> Vorschau des Zertifikats vor der Übernahme.</figcaption>
+  </figure>
+
+  <div class="warn">
+    <span class="label">Achtung</span>
+    Abgelehnt werden Dateien mit privatem Schlüssel, CSRs, CA-Zertifikate und Zertifikate, zu denen kein Request
+    existiert. Ohne den Request (und dessen Schlüssel) lässt sich ein Zertifikat nicht verwenden.
+  </div>
+
+  <h2>18.4&ensp;Requests und Zertifikate, aktives Zertifikat</h2>
+  <p>Die Tabelle listet alle Requests mit Zeitstempel und Ersteller, das jeweils hochgeladene Zertifikat (Aussteller,
+  Gültigkeitszeitraum, Details) und den Status:</p>
+  <ul>
+    <li><strong>● Aktiv</strong> – das gewählte Zertifikat (immer höchstens eines);</li>
+    <li><strong>gültig</strong>, <strong>läuft in … Tagen ab</strong> (≤ 30 Tage), <strong>abgelaufen</strong>, <strong>noch nicht gültig</strong>;</li>
+    <li><strong>im Einsatz</strong> – zuletzt vom <code>auth</code>-Container ausgeliefert.</li>
+  </ul>
+  <p>Mit <strong>Aktivieren</strong> (nach Rückfrage) wird ein gültiges Zertifikat zum aktiven; das bisherige wird dabei
+  abgelöst. <strong>Deaktivieren</strong> schaltet auf das Notfall-Zertifikat zurück. Requests ohne Zertifikat können
+  gelöscht werden; Requests mit Zertifikat bleiben zur Nachvollziehbarkeit erhalten. Das
+  <strong>Notfall-Zertifikat</strong> erscheint in der Tabelle, sobald es verwendet wurde (mit Zeitraum der Nutzung).</p>
+
+  <figure>
+    <img src="../screenshots/63-admin-zertifikate-tabelle.png" alt="Tabelle Requests und Zertifikate">
+    <figcaption><span class="fig-label">Abb. 18</span> Verlauf mit aktivem Zertifikat, weiterem Zertifikat und Notfall-Zertifikat.</figcaption>
+  </figure>
+
+  <div class="tip">
+    <span class="label">Tipp</span>
+    Beantragen Sie rechtzeitig vor Ablauf einen neuen Request, importieren Sie das neue Zertifikat und aktivieren Sie es.
+    Die SNMP-Prüfung <code>tls_certificate</code> warnt 30 Tage vor Ablauf (Kapitel 14.2).
+  </div>
+
+  <h2>18.5&ensp;HTTP-Zugriff ohne gültiges Zertifikat</h2>
+  <p>Solange kein gültiges Zertifikat aktiv ist, dürfen Clients aus den hinterlegten <strong>Quellnetzen</strong>
+  (CIDR, eines je Zeile, Standard <code>192.168.200.0/21</code>) das Intranet über reines HTTP aufrufen; alle anderen
+  werden auf HTTPS mit dem Notfall-Zertifikat umgeleitet. Ein leeres Feld erlaubt HTTP für kein Netz. Ist ein gültiges
+  Zertifikat aktiv, wird jeder HTTP-Aufruf auf HTTPS umgeleitet.</p>
+
+  <figure>
+    <img src="../screenshots/65-admin-zertifikate-http-netze.png" alt="HTTP-Quellnetze">
+    <figcaption><span class="fig-label">Abb. 19</span> Quellnetze für HTTP ohne gültiges Zertifikat.</figcaption>
+  </figure>
+
+  <div class="note">
+    <span class="label">Hinweis</span>
+    Stellen Sie nach der Aktivierung <code>APP_URL</code> auf <code>https://…</code> um und setzen Sie
+    <code>APP_FORCE_SECURE_COOKIES=true</code>. Der HTTPS-Port wird über <code>APP_HTTPS_PORT</code> veröffentlicht
+    (Standard <code>8443</code>, produktiv meist <code>443</code>). Die Schlüssel sind an
+    <code>storage/keys/secrets.key</code> gebunden und nicht Teil der ZIP-Sicherung.
+  </div>
+</section>
+
+<!-- ===================== 19 ===================== -->
+<section class="chapter" id="ch19">
+  <h1 class="chapter-title">19&ensp;Anhang: Konfigurationsreferenz</h1>
 
   <p>Die Konfiguration erfolgt über die Datei <code>.env</code>. Die wichtigsten Variablen:</p>
 
-  <h2>18.1&ensp;Allgemein und Datenbank</h2>
+  <h2>19.1&ensp;Allgemein und Datenbank</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
@@ -586,7 +718,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     </tbody>
   </table>
 
-  <h2>18.2&ensp;Admin-Konto</h2>
+  <h2>19.2&ensp;Admin-Konto</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
@@ -594,7 +726,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     </tbody>
   </table>
 
-  <h2>18.3&ensp;LDAP / Active Directory</h2>
+  <h2>19.3&ensp;LDAP / Active Directory</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
@@ -608,7 +740,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     </tbody>
   </table>
 
-  <h2>18.4&ensp;Sonstiges</h2>
+  <h2>19.4&ensp;Sonstiges</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
@@ -620,7 +752,7 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     </tbody>
   </table>
 
-  <h2>18.5&ensp;Alarmierung / SMS-Gateway</h2>
+  <h2>19.5&ensp;Alarmierung / SMS-Gateway</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
@@ -629,13 +761,22 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
     </tbody>
   </table>
 
-  <h2>18.6&ensp;SNMP</h2>
+  <h2>19.6&ensp;SNMP</h2>
   <table>
     <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
     <tbody>
       <tr><td><code>SNMP_COMMUNITY</code></td><td>Community-String des SNMP-Agenten.</td></tr>
       <tr><td><code>SNMP_SYS_LOCATION</code>, <code>SNMP_SYS_CONTACT</code></td><td>Standort und Kontakt des Agents.</td></tr>
       <tr><td><code>SNMP_PORT</code></td><td>Am Host veröffentlichter UDP-Port (nur Docker-Port-Mapping).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>19.7&ensp;HTTPS</h2>
+  <table>
+    <thead><tr><th>Variable</th><th>Beschreibung</th></tr></thead>
+    <tbody>
+      <tr><td><code>APP_HTTPS_PORT</code></td><td>Am Host veröffentlichter HTTPS-Port (Standard <code>8443</code>); Ziel der Umleitung von HTTP auf HTTPS.</td></tr>
+      <tr><td><code>TLS_ENABLED</code></td><td><code>true</code> (Standard): HTTPS im <code>auth</code>-Container; <code>false</code> z. B. hinter einem externen TLS-Proxy.</td></tr>
     </tbody>
   </table>
 

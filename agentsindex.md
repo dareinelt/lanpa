@@ -17,7 +17,7 @@
 - einen **vollständigen Administrationsbereich** (CRUD, Design, AD-Konfiguration, Statistik, Benutzer)
 - optionale **Alarmierungen** per SMS-Gateway (an Gruppen oder Einzelrufnummern) und einen per SMS-Code **geschützten Zugriffsmodus**
 - einen **SNMP-Agenten** (Container `snmp`) zur Überwachung der Dienste und des AD-Synchronisations-Workflows
-- optional **Office** (Profil `office`): Nextcloud + Euro-Office DocumentServer hinter dem `auth`-Container, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, Sicherung – Details in `docs/office.md`
+- optional **Office** (Profil `office`): Nextcloud + Euro-Office DocumentServer hinter dem `auth`-Container, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, lokale KI für alle Benutzer (Nextcloud-Assistent, KI-Plugin der Editoren; Audio/Bilder im Adminbereich schaltbar), Sicherung – Details in `docs/office.md`
 
 Grundprinzip: **komplett ohne Frameworks, ohne CDNs, ohne externe Abhängigkeiten.**
 Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst geschrieben.
@@ -32,7 +32,7 @@ Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst ges
 | Frontend | Vanilla JavaScript + handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons) |
 | Datenbank | MySQL 8 / MariaDB 11 (utf8mb4) |
 | Web | Apache mit `mod_rewrite`, DocumentRoot `public/` |
-| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`) |
+| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`) |
 | Monitoring | net-snmp-Agent im Container `snmp` (UDP 161, read-only Docker-Socket + `sync_log`) |
 | Abhängigkeiten | **keine** – kein Composer, kein npm, kein CDN |
 
@@ -186,7 +186,7 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 
 `ActivationNumberService`, `AdSyncService`, `AdminUserService`, `AlarmGroupService`,
 `AlarmService`, `AnnouncementService`, `BackgroundImageService`, `BackupService`,
-`Office\OfficeConfigService` (Einstellungen Fußzeile/Kachel), `Office\OfficeHealthService` (Status/Diagnose, Probe per `OfficeProbeInterface`), `Office\OfficeBackupService` (Steuerung des Containers `office-backup`),
+`Office\OfficeConfigService` (Einstellungen Fußzeile/Kachel), `Office\OfficeHealthService` (Status/Diagnose, Probe per `OfficeProbeInterface`), `Office\OfficeBackupService` (Steuerung des Containers `office-backup`), `Office\OfficeAiService` (lokale KI: Einstellungen inkl. Audio/Bilder, `runtime.json` für Euro-Office, signierte Übergabe an `intranet_integration/api/ai`),
 `Office\OfficeAppService` + `Office\OfficeAppCatalog` (Office-Apps unter der Kachel: Euro-Office-Webapps, Dateien, OWA; Freigabe per AD-Gruppe/App-Paket, ohne Zuordnung/ohne SSO keine Apps),
 `EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
 `LdapAttributeMapper`, `LdapClient`, `LogoService`, `NavigationService`,
@@ -264,7 +264,7 @@ Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
 (inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `snmp`, `statistik`
 (+ `admin/api/statistik`), `benutzer`, `sicherung` (Export/Import), `office`
 (inkl. `office/pruefen`, `office/sicherung`, `office/kachel`, `office/kachel/gestaltung`,
-`office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
+`office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`, `office/ki`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
 
 Office öffentlich: `GET /office-starten` (Übersicht der freigegebenen Office-Apps), `GET /office-app?app=…` (Start einer App, prüft Freigabe), `GET /office-nicht-verfuegbar`,
 `GET /api/office/footer` (Konfiguration der Fußzeile), `GET /api/office/status` (Verfügbarkeit für die Kachel).
@@ -416,6 +416,6 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 - `README.md` – ausführliche Projektdokumentation (Funktionsumfang, Docker, Konfiguration, Betrieb, Sicherheit).
 - `docs/manuals/anwenderhandbuch.pdf` / `administratorhandbuch.pdf` (Quellen als HTML unter `docs/manuals/`).
-- `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche (30–52: Office, Office-Apps und AD-Gruppen).
+- `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche (30–56: Office, Office-Apps, AD-Gruppen und lokale KI).
 - `docs/installation.md` – Assistierte Installation mit `scripts/install.sh`: Ablauf, Optionen, Bedienung, abgefragte Variablen, Abschlussbericht, Fehlerbehebung.
-- `docs/office.md` – Office-Erweiterung: Einrichtung, Architektur, Updates, AD-Gruppen/SSO, Kachel, Sicherung, SNMP.
+- `docs/office.md` – Office-Erweiterung: Einrichtung, Architektur, Updates, AD-Gruppen/SSO, Kachel, lokale KI, Sicherung, SNMP.

@@ -224,5 +224,21 @@ if app_present eurooffice; then
     fi
 fi
 
+# --- Lokale KI (integration_openai, assistant) ------------------------------
+# Nur installieren, nicht aktivieren: Aktivierung und Einrichtung uebernimmt
+# das Intranet (Admin > Office > Lokale KI) ueber intranet_integration, damit
+# ein Neustart die dort gewaehlte Einstellung nicht ueberschreibt.
+if is_true "${NEXTCLOUD_AI_APPS:-true}"; then
+    for app in integration_openai assistant; do
+        if ! app_present "$app"; then
+            log "Installiere App $app (deaktiviert) aus dem Nextcloud-App-Store ..."
+            occ app:install --keep-disabled "$app" >/dev/null \
+                || warn "App $app konnte nicht installiert werden (Internetzugang zum App-Store?)."
+        fi
+    done
+    # Stand beim naechsten Abgleich des Intranets neu uebertragen.
+    occ config:app:delete intranet_integration ai_fingerprint >/dev/null 2>&1 || true
+fi
+
 log "Fertig."
 exit 0

@@ -19,6 +19,10 @@ use App\Support\Html;
 /** @var array<string,string> $tileStatusModes */
 /** @var list<string> $tileIcons */
 /** @var array<string,mixed> $previewConfig */
+/** @var array<string,string> $aiValues */
+/** @var array<string,string> $aiErrors */
+/** @var bool $aiHasKey */
+/** @var bool $aiKeyFromSecret */
 
 $badge = static function (string $status): string {
     return match ($status) {
@@ -143,6 +147,12 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
         <?php if ($apps !== []) { ?>
             <li><span>AD-Anbindung (user_ldap)</span><?= !empty($apps['user_ldap']) ? '<span class="badge badge--ok">aktiv</span>' : '<span class="badge badge--muted">inaktiv</span>' ?></li>
             <li><span>Windows-Anmeldung (user_saml, SSO)</span><?= !empty($apps['user_saml']) ? '<span class="badge badge--ok">aktiv</span>' : '<span class="badge badge--muted">inaktiv</span>' ?></li>
+            <li><span>KI-Anbindung (integration_openai)</span><?= !empty($apps['integration_openai']) ? '<span class="badge badge--ok">aktiv</span>' : '<span class="badge badge--muted">inaktiv</span>' ?></li>
+            <li><span>KI-Assistent (assistant)</span><?= !empty($apps['assistant']) ? '<span class="badge badge--ok">aktiv</span>' : '<span class="badge badge--muted">inaktiv</span>' ?></li>
+            <?php if (is_array($diagnostics['ai'] ?? null) && !empty($apps['assistant'])) { ?>
+                <li><span>Assistent: Mit Audio arbeiten</span><?= !empty($diagnostics['ai']['audio']) ? '<span class="badge badge--ok">angeboten</span>' : '<span class="badge badge--muted">ausgeblendet</span>' ?></li>
+                <li><span>Assistent: Mit Bildern arbeiten</span><?= !empty($diagnostics['ai']['images']) ? '<span class="badge badge--ok">angeboten</span>' : '<span class="badge badge--muted">ausgeblendet</span>' ?></li>
+            <?php } ?>
         <?php } ?>
     </ul>
     <p class="card__hint">
@@ -210,6 +220,104 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
 
         <div class="form__actions">
             <button type="submit" class="button button--primary">Speichern</button>
+        </div>
+    </form>
+</section>
+
+<?php
+$aiField = static function (string $name) use ($aiErrors): string {
+    return isset($aiErrors[$name]) ? 'aria-invalid="true" aria-describedby="' . Html::e($name) . '-error"' : '';
+};
+$aiFieldError = static function (string $name) use ($aiErrors): string {
+    return isset($aiErrors[$name])
+        ? '<p class="field__error" id="' . Html::e($name) . '-error">' . Html::e($aiErrors[$name]) . '</p>'
+        : '';
+};
+?>
+<section class="card" id="ki" aria-labelledby="office-ai-title">
+    <h2 class="card__title" id="office-ai-title">Lokale KI</h2>
+    <p class="card__hint">
+        Ein lokaler, OpenAI-kompatibler KI-Endpunkt (z.&nbsp;B. Ollama, vLLM, LocalAI, LM Studio) wird
+        allen Benutzern bereitgestellt: in Nextcloud über den Assistenten (Text, Zusammenfassung,
+        Übersetzung) und in Euro-Office über das KI-Plugin der Editoren. Anfragen aus den Editoren
+        laufen über den DocumentServer; der API-Schlüssel verlässt den Server nicht.
+    </p>
+    <form method="post" action="/admin/office/ki" class="form form--wide">
+        <?= Csrf::field() ?>
+
+        <div class="field field--check">
+            <input type="checkbox" id="office_ai_enabled" name="office_ai_enabled" value="1" <?= $aiValues['office_ai_enabled'] === '1' ? 'checked' : '' ?>>
+            <label for="office_ai_enabled">KI für alle Benutzer in Nextcloud und Euro-Office bereitstellen</label>
+        </div>
+
+        <div class="field-row">
+            <div class="field">
+                <label for="office_ai_name">Anzeigename</label>
+                <input type="text" id="office_ai_name" name="office_ai_name" maxlength="60"
+                       value="<?= Html::e($aiValues['office_ai_name']) ?>" placeholder="Lokale KI" <?= $aiField('office_ai_name') ?>>
+                <?= $aiFieldError('office_ai_name') ?>
+            </div>
+
+            <div class="field">
+                <label for="office_ai_timeout">Zeitlimit je Anfrage (Sekunden)</label>
+                <input type="number" id="office_ai_timeout" name="office_ai_timeout" min="10" max="900" step="1"
+                       value="<?= Html::e($aiValues['office_ai_timeout']) ?>" <?= $aiField('office_ai_timeout') ?>>
+                <?= $aiFieldError('office_ai_timeout') ?>
+            </div>
+        </div>
+
+        <div class="field">
+            <label for="office_ai_url">Adresse des Endpunkts (inkl. <code>/v1</code>)</label>
+            <input type="url" id="office_ai_url" name="office_ai_url" maxlength="2048"
+                   value="<?= Html::e($aiValues['office_ai_url']) ?>" placeholder="http://ki-server:11434/v1" <?= $aiField('office_ai_url') ?>>
+            <p class="field__hint">Muss von den Containern Nextcloud und Euro-Office aus erreichbar sein.</p>
+            <?= $aiFieldError('office_ai_url') ?>
+        </div>
+
+        <div class="field">
+            <label for="office_ai_model">Modell</label>
+            <input type="text" id="office_ai_model" name="office_ai_model" maxlength="200"
+                   value="<?= Html::e($aiValues['office_ai_model']) ?>" placeholder="z. B. llama3.1:8b" <?= $aiField('office_ai_model') ?>>
+            <p class="field__hint">Name, wie ihn der Endpunkt unter <code>/v1/models</code> meldet.</p>
+            <?= $aiFieldError('office_ai_model') ?>
+        </div>
+
+        <div class="field">
+            <label for="office_ai_api_key">API-Schlüssel (optional)</label>
+            <?php if ($aiKeyFromSecret) { ?>
+                <p class="field__hint">Der Schlüssel wird aus dem Secret <code>OFFICE_AI_API_KEY</code> gelesen und kann hier nicht geändert werden.</p>
+            <?php } else { ?>
+                <input type="password" id="office_ai_api_key" name="office_ai_api_key" maxlength="500" autocomplete="new-password"
+                       placeholder="<?= $aiHasKey ? 'gespeichert – leer lassen, um ihn zu behalten' : 'leer = ohne Schlüssel' ?>" <?= $aiField('office_ai_api_key') ?>>
+                <?= $aiFieldError('office_ai_api_key') ?>
+                <?php if ($aiHasKey) { ?>
+                    <div class="field field--check">
+                        <input type="checkbox" id="office_ai_api_key_clear" name="office_ai_api_key_clear" value="1">
+                        <label for="office_ai_api_key_clear">Gespeicherten Schlüssel entfernen</label>
+                    </div>
+                <?php } ?>
+            <?php } ?>
+        </div>
+
+        <fieldset class="fieldset">
+            <legend>Funktionen im Nextcloud-Assistenten</legend>
+            <p class="field__hint">
+                Text, Zusammenfassung und Übersetzung sind immer verfügbar. Audio- und Bildfunktionen nur
+                aktivieren, wenn der Endpunkt sie unterstützt; sonst werden die Schaltflächen
+                „Mit Audio arbeiten“ und „Mit Bildern arbeiten“ für alle Benutzer ausgeblendet.
+            </p>
+            <div class="field field--check">
+                <input type="checkbox" id="office_ai_audio" name="office_ai_audio" value="1" <?= ($aiValues['office_ai_audio'] ?? '0') === '1' ? 'checked' : '' ?>>
+                <label for="office_ai_audio">„Mit Audio arbeiten“ anbieten (Transkription, Sprachausgabe, Audio-Chat)</label>
+            </div>
+            <div class="field field--check">
+                <input type="checkbox" id="office_ai_images" name="office_ai_images" value="1" <?= ($aiValues['office_ai_images'] ?? '0') === '1' ? 'checked' : '' ?>>
+                <label for="office_ai_images">„Mit Bildern arbeiten“ anbieten (Bilderzeugung, Bildanalyse, Sticker)</label>
+            </div>
+        </fieldset>
+
+        <div class="form__actions">
+            <button type="submit" class="button button--primary">Speichern und übertragen</button>
         </div>
     </form>
 </section>

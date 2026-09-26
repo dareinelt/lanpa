@@ -3,8 +3,8 @@
       xsi:noNamespaceSchemaLocation="https://apps.nextcloud.com/schema/apps/info.xsd">
     <id>intranet_integration</id>
     <name>Intranet-Integration</name>
-    <summary>Intranet-Fusszeile, automatische Anmeldung und Diagnose fuer Euro-Office</summary>
-    <description>Meldet den im Intranet erkannten Benutzer automatisch an (signiertes Einmal-Token), blendet auf allen Nextcloud- und Euro-Office-Seiten die Fusszeile des Intranets ein (Inhalt und Darstellung stammen aus dem Intranet) und stellt einen signierten Diagnose-Endpunkt fuer den Intranet-Adminbereich bereit.</description>
+    <summary>Intranet-Fusszeile, automatische Anmeldung, lokale KI und Diagnose fuer Euro-Office</summary>
+    <description>Meldet den im Intranet erkannten Benutzer automatisch an (signiertes Einmal-Token), blendet auf allen Nextcloud- und Euro-Office-Seiten die Fusszeile des Intranets ein (Inhalt und Darstellung stammen aus dem Intranet) richtet den im Intranet hinterlegten lokalen KI-Endpunkt fuer alle Benutzer ein (integration_openai, assistant) und stellt einen signierten Diagnose-Endpunkt fuer den Intranet-Adminbereich bereit.</description>
     <version>1.0.0</version>
     <licence>agpl</licence>
     <author>Intranet</author>

@@ -270,11 +270,12 @@ final class ImportService
         $existingPassword = $this->settingsRepository->get('alarm_password');
         $existingSinglePassword = $this->settingsRepository->get('alarm_single_password');
         $existingSecret = $this->settingsRepository->get('sms_code_secret');
+        $existingAiKey = $this->settingsRepository->get('office_ai_api_key');
 
         $this->settingsRepository->deleteAll();
 
         foreach ($settings as $key => $value) {
-            if (in_array($key, ['alarm_password', 'alarm_single_password', 'sms_code_secret'], true)) {
+            if (in_array($key, ['alarm_password', 'alarm_single_password', 'sms_code_secret', 'office_ai_api_key'], true)) {
                 continue;
             }
             $this->settingsRepository->insert((string) $key, (string) $value);
@@ -290,6 +291,10 @@ final class ImportService
 
         if (is_string($existingSecret) && $existingSecret !== '') {
             $this->settingsRepository->insert('sms_code_secret', $existingSecret);
+        }
+
+        if (is_string($existingAiKey) && $existingAiKey !== '') {
+            $this->settingsRepository->insert('office_ai_api_key', $existingAiKey);
         }
     }
 

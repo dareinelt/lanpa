@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\IntranetIntegration\Controller;
 
 use OCA\IntranetIntegration\AppInfo\Application;
+use OCA\IntranetIntegration\Service\AiConfigService;
 use OCA\IntranetIntegration\Service\TokenVerifier;
 use OCP\App\IAppManager;
 use OCP\AppFramework\Controller;
@@ -30,6 +31,7 @@ class DiagnosticsController extends Controller {
         private IAppManager $appManager,
         private ServerVersion $serverVersion,
         private TokenVerifier $verifier,
+        private AiConfigService $ai,
         private LoggerInterface $logger,
     ) {
         parent::__construct(Application::APP_ID, $request);
@@ -78,7 +80,10 @@ class DiagnosticsController extends Controller {
                 'user_ldap' => $this->appManager->isEnabledForAnyone('user_ldap'),
                 'user_saml' => $this->appManager->isEnabledForAnyone('user_saml'),
                 'intranet_integration' => true,
+                'integration_openai' => $this->appManager->isEnabledForAnyone(AiConfigService::PROVIDER_APP),
+                'assistant' => $this->appManager->isEnabledForAnyone(AiConfigService::UI_APP),
             ],
+            'ai' => $this->ai->status(),
         ];
 
         if ($check === '1' && $enabled) {

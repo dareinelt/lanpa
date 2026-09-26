@@ -21,6 +21,8 @@ x-nextcloud-env: &nextcloud-env
   EUROOFFICE_JWT_HEADER: AuthorizationJwt
   NEXTCLOUD_EXTRA_TRUSTED_DOMAINS: ${NEXTCLOUD_EXTRA_TRUSTED_DOMAINS:-}
   NEXTCLOUD_OFFICE_GROUPS: ${NEXTCLOUD_OFFICE_GROUPS:-}
+  # Apps fuer die lokale KI installieren (aktiviert werden sie vom Intranet).
+  NEXTCLOUD_AI_APPS: ${NEXTCLOUD_AI_APPS:-true}
   # Automatische Anmeldung des im Intranet erkannten Benutzers.
   NEXTCLOUD_SSO_LOGIN_REDIRECT: ${NEXTCLOUD_SSO_LOGIN_REDIRECT:-true}
   NEXTCLOUD_SSO_AUTOPROVISION: ${NEXTCLOUD_SSO_AUTOPROVISION:-false}
@@ -101,6 +103,8 @@ services:
       - office_jwt_secret
     volumes:
       - app_storage:/var/www/html/storage
+      # KI-Einstellungen fuer Euro-Office (runtime.json, siehe eurooffice).
+      - office_ai:/var/www/html/storage/office-ai
     healthcheck:
       test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1/health') !== false ? 0 : 1);"]
       interval: 30s
@@ -295,16 +299,35 @@ services:
       - office
       - office_backend
 
+  # Fuehrt KI-Aufgaben von Nextcloud (Assistant) sofort statt nur per Cron aus.
+  nextcloud-ai-worker:
+    image: nextcloud:${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
+    profiles: ["office"]
+    restart: unless-stopped
+    user: www-data
+    entrypoint: ["/bin/sh", "/opt/intranet/ai-worker.sh"]
+    depends_on:
+      nextcloud:
+        condition: service_healthy
+    environment: *nextcloud-env
+    secrets: *nextcloud-secrets
+    volumes:
+      - nextcloud_html:/var/www/html
+      - nextcloud_data:/var/www/html/data
+      - ./docker/nextcloud/ai-worker.sh:/opt/intranet/ai-worker.sh:ro
+    networks:
+      - office
+      - office_backend
+
   eurooffice:
     image: ghcr.io/euro-office/documentserver:${EUROOFFICE_IMAGE_TAG:-v9.3.4-hotfix.1}
     profiles: ["office"]
     restart: unless-stopped
     # Das Image liest das JWT-Secret nur aus JWT_SECRET: aus dem Docker-Secret
     # uebernehmen, damit es weder in .env noch in docker inspect steht.
-    entrypoint:
-      - /bin/sh
-      - -c
-      - JWT_SECRET="$$(cat /run/secrets/office_jwt_secret)"; export JWT_SECRET; exec /entrypoint.sh
+    # Startskript: kopiert das KI-Plugin aus dem AdminPanel nach sdkjs-plugins
+    # (EUROOFFICE_AI_PLUGIN=false: nicht anbieten), siehe docs/office.md.
+    entrypoint: ["/bin/sh", "/intranet/entrypoint.sh"]
     environment:
       JWT_ENABLED: "true"
       JWT_HEADER: AuthorizationJwt
@@ -313,10 +336,16 @@ services:
       ALLOW_PRIVATE_IP_ADDRESS: "true"
       USE_UNAUTHORIZED_STORAGE: "false"
       WOPI_ENABLED: "false"
+      EUROOFFICE_AI_PLUGIN: ${EUROOFFICE_AI_PLUGIN:-true}
     secrets:
       - office_jwt_secret
     volumes:
       - eurooffice_data:/var/www/euro-office/Data
+      # Lokale KI: Das Intranet schreibt runtime.json (aiSettings), der
+      # DocumentServer uebernimmt Aenderungen ohne Neustart.
+      - ./docker/eurooffice/entrypoint.sh:/intranet/entrypoint.sh:ro
+      - ./docker/eurooffice/local-production-linux.json:/etc/euro-office/documentserver/local-production-linux.json:ro
+      - office_ai:/var/lib/intranet-ai:ro
       - eurooffice_db:/var/lib/postgresql
       - eurooffice_logs:/var/log/euro-office
     healthcheck:
@@ -372,6 +401,7 @@ volumes:
   eurooffice_data:
   eurooffice_db:
   eurooffice_logs:
+  office_ai:
 
 networks:
   intranet:

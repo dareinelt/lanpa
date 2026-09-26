@@ -10,6 +10,7 @@ namespace OCA\IntranetIntegration\Service;
 class TokenVerifier {
     public const AUDIENCE = 'intranet_integration';
     public const SSO_AUDIENCE = 'intranet_integration_sso';
+    public const AI_AUDIENCE = 'intranet_integration_ai';
     public const MAX_LIFETIME = 120;
 
     public function verify(string $token, string $secret, ?int $now = null): bool {

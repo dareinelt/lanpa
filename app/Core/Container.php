@@ -35,6 +35,7 @@ use App\Services\BackgroundImageService;
 use App\Services\LdapClient;
 use App\Services\LogoService;
 use App\Services\NavigationService;
+use App\Services\Office\OfficeAiService;
 use App\Services\Office\OfficeAppService;
 use App\Services\Office\OfficeBackupService;
 use App\Services\Office\OfficeConfigService;
@@ -390,7 +391,21 @@ final class Container
                 self::officeConfig(),
                 new StreamOfficeProbe(),
                 (string) Config::get('office.health_cache_file', BASE_PATH . '/storage/cache/office_health.json'),
-                (int) Config::get('office.health_cache_ttl', 30)
+                (int) Config::get('office.health_cache_ttl', 30),
+                self::officeAi()
+            )
+        );
+    }
+
+    public static function officeAi(): OfficeAiService
+    {
+        return self::make(
+            OfficeAiService::class,
+            static fn (): OfficeAiService => new OfficeAiService(
+                self::settings(),
+                self::officeConfig(),
+                new StreamOfficeProbe(),
+                (array) Config::get('office', [])
             )
         );
     }

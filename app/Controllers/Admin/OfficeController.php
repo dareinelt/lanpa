@@ -10,6 +10,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Exceptions\ValidationException;
 use App\Security\Session;
+use App\Services\Office\OfficeAiService;
 use App\Services\Office\OfficeConfigService;
 use RuntimeException;
 
@@ -48,6 +49,50 @@ final class OfficeController extends AdminController
         Session::flash('success', 'Die Office-Einstellungen wurden gespeichert.');
 
         return $this->redirect('/admin/office');
+    }
+
+    /**
+     * Lokaler KI-Endpunkt fuer alle Benutzer von Nextcloud und Euro-Office.
+     * Nach dem Speichern wird der Stand sofort weitergereicht und der
+     * Endpunkt geprueft; Fehler dabei verhindern das Speichern nicht.
+     */
+    public function updateAi(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $result = OfficeAiService::validate($request->post);
+        if ($result['errors'] !== []) {
+            Session::flash('error', 'Bitte prüfen Sie die KI-Einstellungen.');
+
+            return $this->render(status: 422, aiErrors: $result['errors'], aiValues: $result['values']);
+        }
+
+        Container::settings()->update($result['values']);
+        app_logger()->info('KI-Einstellungen geändert.', [
+            'admin' => Container::auth()->username(),
+            'enabled' => $result['values']['office_ai_enabled'],
+            'audio' => $result['values']['office_ai_audio'],
+            'images' => $result['values']['office_ai_images'],
+            'api_key_changed' => array_key_exists('office_ai_api_key', $result['values']),
+        ]);
+
+        $ai = Container::officeAi();
+        $applied = $ai->apply();
+        $messages = ['Die KI-Einstellungen wurden gespeichert.'];
+        $ok = true;
+        foreach (['eurooffice' => 'Euro-Office', 'nextcloud' => 'Nextcloud'] as $key => $label) {
+            $messages[] = $label . ': ' . $applied[$key]['message'];
+            $ok = $ok && $applied[$key]['ok'];
+        }
+        if ($ai->isActive()) {
+            $endpoint = $ai->testEndpoint();
+            $messages[] = $endpoint['message'];
+            $ok = $ok && $endpoint['ok'];
+        }
+
+        Session::flash($ok ? 'success' : 'error', implode(' ', $messages));
+
+        return $this->redirect('/admin/office#ki');
     }
 
     public function check(Request $request): Response
@@ -258,9 +303,19 @@ final class OfficeController extends AdminController
      * @param array<string,string> $values
      * @param array<string,string> $tileErrors
      * @param array<string,mixed>|null $tileValues
+     * @param array<string,string> $aiErrors
+     * @param array<string,string> $aiValues
      */
-    private function render(array $errors = [], array $values = [], int $status = 200, array $tileErrors = [], ?array $tileValues = null): Response
-    {
+    private function render(
+        array $errors = [],
+        array $values = [],
+        int $status = 200,
+        array $tileErrors = [],
+        ?array $tileValues = null,
+        array $aiErrors = [],
+        array $aiValues = []
+    ): Response {
+        $ai = Container::officeAi();
         $office = Container::officeConfig();
         $health = $office->isEnabled() ? Container::officeHealth()->cached() : null;
         $tile = Container::navigationRepository()->findActiveInternalByUrl(PublicOfficeController::ENTRY_PATH);
@@ -290,6 +345,11 @@ final class OfficeController extends AdminController
             'tileErrors' => $tileErrors,
             'tileStatusModes' => OfficeConfigService::TILE_STATUS_MODES,
             'tileIcons' => self::TILE_ICONS,
+            'aiValues' => array_merge($ai->formValues(), array_diff_key($aiValues, ['office_ai_api_key' => true])),
+            'aiErrors' => $aiErrors,
+            'aiHasKey' => $ai->hasApiKey(),
+            'aiKeyFromSecret' => $ai->apiKeyFromSecret(),
+            'aiActive' => $ai->isActive(),
             'previewConfig' => $previewConfig,
             'pageScript' => 'admin-office.js',
         ], $status);

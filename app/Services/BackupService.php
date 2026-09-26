@@ -47,15 +47,15 @@ final class BackupService
     }
 
     /**
-     * Exportiert die Einstellungen ohne das SMS-Gateway-Passwort. Das Passwort
-     * ist ein Secret und darf weder angezeigt noch in einer Sicherung landen.
+     * Exportiert die Einstellungen ohne das SMS-Gateway-Passwort (und weitere
+     * Secrets wie den KI-API-Schluessel). Das Passwort ist ein Secret und darf weder angezeigt noch in einer Sicherung landen.
      *
      * @return array<string,string>
      */
     private function exportSettings(): array
     {
         $settings = $this->settingsRepository->all();
-        unset($settings['alarm_password'], $settings['alarm_single_password'], $settings['sms_code_secret']);
+        unset($settings['alarm_password'], $settings['alarm_single_password'], $settings['sms_code_secret'], $settings['office_ai_api_key']);
 
         return $settings;
     }

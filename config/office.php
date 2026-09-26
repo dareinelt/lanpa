@@ -44,4 +44,12 @@ return [
 
     // Gueltigkeit des Intranet-Einstiegs (Direktzugriffsmodus "redirect").
     'entry_lifetime' => Env::int('OFFICE_ENTRY_LIFETIME', 43200),
+
+    // Lokaler KI-Endpunkt (Einstellungen im Adminbereich unter Office -> KI).
+    // Der API-Schluessel kann alternativ als Secret gesetzt werden
+    // (OFFICE_AI_API_KEY bzw. OFFICE_AI_API_KEY_FILE) und hat dann Vorrang.
+    'ai_api_key' => (string) Env::get('OFFICE_AI_API_KEY', ''),
+    // Austauschverzeichnis mit dem DocumentServer (Volume office_ai,
+    // dort als Laufzeitkonfiguration runtime.json eingebunden).
+    'ai_config_dir' => Env::get('OFFICE_AI_CONFIG_DIR', BASE_PATH . '/storage/office-ai'),
 ];

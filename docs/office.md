@@ -57,6 +57,7 @@ flowchart LR
 | `nextcloud`, `nextcloud-cron` | Offizielles Image `nextcloud` (Apache). Ein Hook richtet bei jedem Start Pfade, vertrauenswürdige Domains, den Connector, AD und SSO ein (idempotent). |
 | `eurooffice` | Offizielles Image `ghcr.io/euro-office/documentserver`, abgesichert per JWT. |
 | `nextcloud-db`, `nextcloud-redis` | PostgreSQL und Redis (Passwort aus Secret), nur im internen Netz. |
+| `nextcloud-ai-worker` | Führt KI-Aufgaben von Nextcloud (Assistant) sofort aus statt nur alle 5 Minuten per Cron ([Abschnitt 6a](#6a-lokale-ki)). |
 | `office-backup` | Sicherung/Wiederherstellung, vom Adminbereich aus steuerbar. |
 
 **Warum kein zusätzlicher `reverse`-/`entry`-Container?** Die NTLM-Anmeldung ist
@@ -302,6 +303,7 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 | Status | Gesamtzustand, letzte Prüfung, „Jetzt prüfen“ |
 | Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector |
 | Fußzeile und Einstieg | Text, Transparenz, Logo, „Zurück“, Ziel „Zum Intranet“, direkter Aufruf |
+| Lokale KI | KI-Endpunkt für alle Benutzer in Nextcloud und Euro-Office ([Abschnitt 6a](#6a-lokale-ki)) |
 | Vorschau der Fußzeile | Live-Vorschau mit demselben Stylesheet/Skript wie in Nextcloud |
 | Kachel im Intranet | Gestaltung, Status-Darstellung, Berechtigungen |
 | Office-Apps | Link zur Outlook Web App, Freigaben je App (AD-Gruppen), App-Pakete ([Abschnitt 5a](#5a-office-apps-und-app-pakete)) |
@@ -311,6 +313,82 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 | --- | --- |
 | ![Status](screenshots/33-admin-office-status.png) | ![Diagnose](screenshots/34-admin-office-diagnose.png) |
 | ![Fußzeile](screenshots/35-admin-office-fusszeile.png) | ![Vorschau](screenshots/36-admin-office-vorschau.png) |
+
+---
+
+## 6a. Lokale KI
+
+Unter **Admin → Office → Lokale KI** (`/admin/office#ki`) wird ein lokaler,
+OpenAI-kompatibler KI-Endpunkt hinterlegt (z. B. Ollama, vLLM, LocalAI,
+LM Studio). Er steht danach **allen Benutzern** in Nextcloud und Euro-Office
+zur Verfügung; die Option „KI für alle Benutzer bereitstellen“ ist
+standardmäßig aktiviert.
+
+| Feld | Bedeutung |
+| --- | --- |
+| Anzeigename | Name des Anbieters in Nextcloud und im KI-Plugin der Editoren |
+| Adresse | Basisadresse **inklusive** `/v1`, z. B. `http://ki-server:11434/v1` (muss aus den Containern `nextcloud` und `eurooffice` erreichbar sein) |
+| Modell | Modell-ID, wie sie `GET /v1/models` meldet (z. B. `llama3.1:8b`) |
+| Zeitlimit | Maximale Dauer je Anfrage (10–900 s) |
+| API-Schlüssel | Optional; wird nie angezeigt. Das Secret `OFFICE_AI_API_KEY` (bzw. `OFFICE_AI_API_KEY_FILE`) hat Vorrang. |
+| „Mit Audio arbeiten“ anbieten | Transkription, Sprachausgabe und Audio-Chat im Nextcloud-Assistenten (Standard: aus) |
+| „Mit Bildern arbeiten“ anbieten | Bilderzeugung, Bildanalyse, Texterkennung und Sticker im Nextcloud-Assistenten (Standard: aus) |
+
+| Admin: Lokale KI | Diagnose |
+| --- | --- |
+| ![Lokale KI im Adminbereich](screenshots/53-admin-office-ki.png) | ![KI-Apps und Audio/Bilder in der Diagnose](screenshots/54-admin-office-ki-status.png) |
+
+Beim Speichern werden die Einstellungen sofort weitergereicht und der Endpunkt
+geprüft (`GET /models`, Modell vorhanden?):
+
+- **Euro-Office:** Das Intranet schreibt `runtime.json` (`aiSettings`) in das
+  gemeinsame Volume `office_ai`; der DocumentServer liest die Datei über
+  `docker/eurooffice/local-production-linux.json` (`runtimeConfig.filePath`) und
+  übernimmt Änderungen ohne Neustart. Das KI-Plugin der Editoren läuft damit im
+  Servermodus: Anfragen gehen über den DocumentServer (`/ai-proxy`, JWT-geprüft),
+  der API-Schlüssel erreicht den Browser nicht, Benutzer müssen nichts einrichten.
+  Belegt werden die Aktionen Chat, Zusammenfassung, Übersetzung und Textanalyse.
+  Das Plugin liegt im Image nur im AdminPanel; `docker/eurooffice/entrypoint.sh`
+  kopiert es beim Start samt Plugin-SDK nach `sdkjs-plugins`, und
+  `local-production-linux.json` startet es automatisch (Reiter „AI“ in allen
+  Editoren). Ist es das einzige Plugin, legen die Editoren die Schaltfläche für
+  Hintergrund-Plugins nicht an und die Registrierung bricht ab; das Startskript
+  korrigiert dies in den `app.js` der Editoren. `EUROOFFICE_AI_PLUGIN=false`
+  entfernt das Plugin.
+  Hinweis: Die KI-Einstellungen im AdminPanel des DocumentServers sind damit
+  ohne Wirkung.
+- **Nextcloud:** Signierter Aufruf (`/apps/intranet_integration/api/ai`, JWT mit
+  eigener Audience, an den Inhalt gebunden). `intranet_integration` aktiviert
+  und konfiguriert `integration_openai` (Text, Zusammenfassung, Übersetzung)
+  und `assistant` für alle Benutzer; erreichbar über das Stern-Symbol in der
+  Kopfzeile. Die Aufgaben verarbeitet der Dienst `nextcloud-ai-worker`
+  (startet jede Minute neu, damit er neu aktivierte Apps kennt). Der Hook installiert
+  beide Apps beim Start (deaktiviert, `NEXTCLOUD_AI_APPS=true`); aktiviert
+  bzw. deaktiviert werden sie ausschließlich über das Intranet.
+  Ab `integration_openai` 6 wird ein eigener Dienst angelegt; weitere dort
+  eingerichtete Dienste bleiben unberührt.
+- **Audio und Bilder:** Ohne Freigabe schaltet `intranet_integration` die
+  Audio- und Bildanbieter von `integration_openai` ab und blendet die
+  zugehörigen Aufgabentypen für alle Benutzer aus (Nextcloud-Einstellung
+  `ai.taskprocessing_type_preferences`, auch Typen anderer Apps wie die Sticker
+  des Assistenten). Damit fehlen die Schaltflächen „Mit Audio arbeiten“ und
+  „Mit Bildern arbeiten“ im Assistenten. Mit Freigabe werden die Anbieter
+  eingeschaltet (der Endpunkt muss dann z. B. `/v1/audio/*` bzw.
+  `/v1/images/*` beherrschen) und nur die vom Intranet ausgeblendeten Typen
+  wieder freigegeben; eigene Einstellungen der Nextcloud-Admins bleiben
+  erhalten. Euro-Office ist davon nicht betroffen.
+- **Abgleich:** Die Office-Statusprüfung vergleicht einen Fingerabdruck
+  (HMAC) des Stands mit Nextcloud und schreibt `runtime.json` bei Bedarf neu;
+  Abweichungen (z. B. nach einer Neuinstallation) werden automatisch
+  übertragen. „Jetzt prüfen“ fragt zusätzlich den Endpunkt ab. Die Zeile
+  „KI (lokaler Endpunkt)“ beeinflusst den Office-Gesamtstatus nicht.
+
+Wird die KI deaktiviert, schaltet Nextcloud `integration_openai` und
+`assistant` ab und Euro-Office erhält keine KI-Vorgabe mehr.
+
+| Nextcloud-Assistent (nur Text, Audio/Bilder ausgeblendet) | Euro-Office-Editor mit KI-Plugin |
+| --- | --- |
+| ![Nextcloud-Assistent mit lokaler KI](screenshots/55-nextcloud-assistant-ki.png) | ![KI-Plugin in Euro-Office](screenshots/56-eurooffice-ki-plugin.png) |
 
 ---
 

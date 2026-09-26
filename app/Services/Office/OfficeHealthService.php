@@ -20,6 +20,10 @@ use Throwable;
  *                   vollstaendige Pruefung inkl. DocumentServer -> Nextcloud)
  *   redis           TCP + PING
  *   postgres        TCP + SSLRequest
+ *   ai              lokaler KI-Endpunkt: Stand in Euro-Office (runtime.json)
+ *                   und Nextcloud (Fingerabdruck), bei Abweichung wird neu
+ *                   uebertragen; vollstaendige Pruefung fragt den Endpunkt ab.
+ *                   Nur informativ, beeinflusst den Office-Status nicht.
  *
  * Das Ergebnis wird kurz zwischengespeichert, damit oeffentliche Abfragen
  * (Kachelstatus) die Dienste nicht belasten.
@@ -38,16 +42,21 @@ final class OfficeHealthService
         'connector' => 'Nextcloud-Connector (eurooffice)',
         'redis' => 'Redis (Nextcloud-Cache)',
         'postgres' => 'PostgreSQL (Nextcloud-Datenbank)',
+        'ai' => 'KI (lokaler Endpunkt)',
     ];
 
     /** Komponenten, ohne die Office nicht nutzbar ist. */
     private const CRITICAL = ['nextcloud', 'eurooffice', 'connector'];
 
+    /** Komponenten, die den Gesamtstatus nicht beeinflussen. */
+    private const INFORMATIONAL = ['ai'];
+
     public function __construct(
         private readonly OfficeConfigService $config,
         private readonly OfficeProbeInterface $probe,
         private readonly string $cacheFile,
-        private readonly int $cacheTtl = 30
+        private readonly int $cacheTtl = 30,
+        private readonly ?OfficeAiService $ai = null
     ) {
     }
 
@@ -78,6 +87,9 @@ final class OfficeHealthService
         );
         $components['redis'] = $this->checkRedis((string) ($infra['redis_host'] ?? ''), (int) ($infra['redis_port'] ?? 6379), $timeout);
         $components['postgres'] = $this->checkPostgres((string) ($infra['postgres_host'] ?? ''), (int) ($infra['postgres_port'] ?? 5432), $timeout);
+        if ($this->ai !== null) {
+            $components['ai'] = $this->checkAi($components['nextcloud']['status'] !== self::ERROR, $deep, $diagnostics);
+        }
 
         $result = $this->finish($components, $diagnostics);
         $this->store($result);
@@ -142,6 +154,9 @@ final class OfficeHealthService
         if ($state === null) {
             $state = 'ok';
             foreach ($components as $name => $component) {
+                if (in_array($name, self::INFORMATIONAL, true)) {
+                    continue;
+                }
                 if ($component['status'] === self::ERROR && in_array($name, self::CRITICAL, true)) {
                     $state = 'down';
                     break;
@@ -312,6 +327,9 @@ final class OfficeHealthService
         $connector = is_array($data['connector'] ?? null) ? $data['connector'] : [];
         $diagnostics['connector'] = $connector;
         $diagnostics['apps'] = is_array($data['apps'] ?? null) ? $data['apps'] : [];
+        if (is_array($data['ai'] ?? null)) {
+            $diagnostics['ai'] = $data['ai'];
+        }
 
         if (empty($connector['installed'])) {
             return $this->component('connector', self::ERROR, 'Connector eurooffice ist nicht installiert.');
@@ -339,6 +357,69 @@ final class OfficeHealthService
 
         return $this->component('connector', self::OK, 'Version ' . (string) ($connector['version'] ?? '')
             . ($deep ? ' – vollständige Prüfung erfolgreich.' : ' – aktiv.'));
+    }
+
+    /**
+     * Gleicht den KI-Stand mit Euro-Office und Nextcloud ab (selbstheilend).
+     *
+     * @param array<string,mixed> $diagnostics
+     *
+     * @return array{label:string,status:string,message:string}
+     */
+    private function checkAi(bool $nextcloudReachable, bool $deep, array &$diagnostics): array
+    {
+        $ai = $this->ai;
+        if ($ai === null) {
+            return $this->component('ai', self::WARN, 'Nicht verfügbar.');
+        }
+
+        $eurooffice = $ai->writeEuroOfficeConfig();
+        $nextcloud = ['ok' => true, 'message' => ''];
+        $remote = is_array($diagnostics['ai'] ?? null) ? $diagnostics['ai'] : [];
+        $inSync = hash_equals($ai->fingerprint(), (string) ($remote['fingerprint'] ?? ''));
+
+        if (!$nextcloudReachable) {
+            $nextcloud = ['ok' => false, 'message' => 'Nextcloud nicht erreichbar.'];
+        } elseif (!$inSync) {
+            $nextcloud = $ai->pushToNextcloud();
+            $inSync = $nextcloud['ok'];
+            $diagnostics['ai_pushed'] = true;
+        } elseif (($remote['error'] ?? '') !== '') {
+            $nextcloud = ['ok' => false, 'message' => 'Nextcloud: ' . (string) $remote['error']];
+        }
+        $diagnostics['ai_in_sync'] = $inSync;
+
+        $problems = [];
+        if (!$eurooffice['ok']) {
+            $problems[] = 'Euro-Office: ' . $eurooffice['message'];
+        }
+        if (!$nextcloud['ok']) {
+            $problems[] = $nextcloud['message'];
+        }
+
+        if (!$ai->enabled()) {
+            return $problems === []
+                ? $this->component('ai', 'disabled', 'Deaktiviert – in Nextcloud und Euro-Office abgeschaltet.')
+                : $this->component('ai', self::WARN, 'Deaktiviert, Abgleich unvollständig: ' . implode(' ', $problems));
+        }
+        if (!$ai->isConfigured()) {
+            return $this->component('ai', self::WARN, 'Nicht eingerichtet – Adresse und Modell unter „Lokale KI“ hinterlegen.');
+        }
+
+        if ($deep) {
+            $endpoint = $ai->testEndpoint();
+            $diagnostics['ai_endpoint'] = $endpoint;
+            if (!$endpoint['ok']) {
+                $problems[] = $endpoint['message'];
+            }
+        }
+
+        if ($problems !== []) {
+            return $this->component('ai', self::ERROR, implode(' ', $problems));
+        }
+
+        return $this->component('ai', self::OK, $ai->name() . ' (' . $ai->model() . ') – für alle Benutzer in Nextcloud und Euro-Office aktiv.'
+            . ($deep ? ' Endpunkt erreichbar.' : ''));
     }
 
     /**

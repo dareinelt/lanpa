@@ -62,7 +62,7 @@ final class OfficeConfigService
             'office_direct_access' => 'footer',
             'office_tile_status' => 'full',
             'office_owa_url' => '',
-        ];
+        ] + OfficeAiService::defaults();
     }
 
     public function isEnabled(): bool

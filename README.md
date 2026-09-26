@@ -18,7 +18,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | Landingpage | Kacheln aller aktiven Navigationselemente, Kurz- und Langbeschreibung, Klickzählung; Unterseiten mit weiteren Kacheln im selben Stil sowie formatierte Textseiten (Rich-Text-Editor im Adminbereich); aufklappbarer Bereich „Wichtige Links“ (automatisch alphabetisch sortiert, mit automatisch ermitteltem Favicon) |
 | Telefonliste | Suche über Name, Vorname, Nachname, Abteilung und Telefonnummer (Live-Suche, Paginierung); Einträge ohne E-Mail-Adresse sind nur für angemeldete Administratoren sichtbar; einzelne Einträge lassen sich im Adminbereich ein-/ausblenden (Standard: eingeblendet) |
 | AD-Synchronisation | LDAP/LDAPS-Abgleich in die lokale Datenbank, konfigurierbares Intervall und Attribut-Mapping; optional AD-Gruppen aus konfigurierbaren Pfaden (inkl. verschachtelter Mitgliedschaften) für die Rechtevergabe |
-| Office (optional) | Nextcloud mit Euro-Office DocumentServer hinter demselben Einstieg, Einrichtung per Einzeiler, Updates aus den offiziellen Quellen, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, gestaltbare Kachel mit Verfügbarkeitsstatus, Office-Apps (Euro-Office-Webapps, Dateien, Outlook Web App) mit Freigabe per AD-Gruppe/App-Paket, verschlüsselte Sicherung – siehe [docs/office.md](docs/office.md) |
+| Office (optional) | Nextcloud mit Euro-Office DocumentServer hinter demselben Einstieg, Einrichtung per Einzeiler, Updates aus den offiziellen Quellen, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, gestaltbare Kachel mit Verfügbarkeitsstatus, Office-Apps (Euro-Office-Webapps, Dateien, Outlook Web App) mit Freigabe per AD-Gruppe/App-Paket, lokaler KI-Endpunkt für alle Benutzer (Nextcloud-Assistent, KI-Plugin der Editoren; Audio/Bilder optional), verschlüsselte Sicherung – siehe [docs/office.md](docs/office.md) |
 | Notfallnummern | Eigene, farblich abgesetzte Kacheln für Notfallnummern (z. B. Werkschutz, Feuerwehr), im Adminbereich pflegbar |
 | Mitteilungen | Aufklappbares Mitteilungs-Overlay auf der Startseite, im Adminbereich pflegbar |
 | Alarmierungen | Alarm-Kacheln, die per Klick eine SMS über ein konfigurierbares SMS-Gateway auslösen – an eine Gruppe oder eine einzelne Rufnummer, mit Verlauf |
@@ -110,7 +110,7 @@ installieren, nicht starten).
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
 | `auth` | Apache als Einstieg/Reverse-Proxy, optional NTLM-Anmeldung; leitet `/office/` und `/eurooffice/` weiter | `GET /auth-health` |
-| `nextcloud`, `nextcloud-cron`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
+| `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
 
 ---
 
@@ -163,6 +163,7 @@ Alles außer dem LDAP-Bind-Passwort ist im Administrationsbereich pflegbar.
 | `OFFICE_ENABLED`, `COMPOSE_PROFILES=office` | Office-Erweiterung aktivieren (setzt `scripts/office-setup.sh`) | `false` |
 | `EUROOFFICE_IMAGE_TAG`, `NEXTCLOUD_IMAGE_TAG` | Versionen aus den offiziellen Quellen (`scripts/office-update.sh`) | siehe `.env.example` |
 | `NEXTCLOUD_LDAP_*`, `NEXTCLOUD_OFFICE_GROUPS` | AD-Anbindung und Gruppenbeschränkung in Nextcloud | – |
+| `NEXTCLOUD_AI_APPS`, `EUROOFFICE_AI_PLUGIN`, `OFFICE_AI_API_KEY` | Lokale KI: Nextcloud-Apps installieren, KI-Plugin der Editoren, optionaler API-Schlüssel (Einstellungen unter Admin → Office → Lokale KI) | `true` / `true` / – |
 | `OFFICE_BACKUP_DIR`, `OFFICE_BACKUP_RETENTION`, `OFFICE_BACKUP_SCHEDULE_HOUR` | Office-Sicherung | `./backups` / `7` / – |
 | `SEED_ON_START` | Beispielnavigation beim Containerstart anlegen | `true` |
 | `CLICK_RETENTION_DAYS` | Aufbewahrung der Klickdaten für `purge_clicks.php` | `400` |
@@ -200,7 +201,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
 | Active Directory | Server, Verschlüsselung, Base DN, Bind DN, Filter, Attributzuordnung, Gruppen-Pfade für die Rechtevergabe, Intervall, manueller Testlauf |
 | Navigation → Berechtigungen | Kacheln auf Benutzer und AD-Gruppen beschränken; Gruppennamen werden beim Tippen aus dem synchronisierten Bestand vorgeschlagen (Inline-Ergänzung und Liste, keine Live-Abfrage des AD) |
-| Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Office-Apps/App-Pakete und OWA-Link, Sicherung ([docs/office.md](docs/office.md)) |
+| Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Office-Apps/App-Pakete und OWA-Link, lokale KI (Endpunkt, Modell, Audio-/Bildfunktionen in Nextcloud), Sicherung ([docs/office.md](docs/office.md)) |
 | Alarmierung | SMS-Gateway konfigurieren (Host, Benutzername; Passwort nur über Umgebung), Alarmgruppen/-rufnummern verwalten, Verlauf einsehen |
 | Aktivierungs-Rufnummern | Für den geschützten Zugriffsmodus erlaubte Rufnummern pflegen |
 | SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
@@ -454,6 +455,9 @@ aus der Anwendung heraus verlinkt (`public/manuals/`); die Anzeige lässt sich i
 | Office-Kachel, nur Farbpunkt | <img src="docs/screenshots/43-landing-office-kachel-kompakt.png" alt="Office-Kachel kompakt" width="360"> |
 | Office-Apps nach Klick auf die Kachel | <img src="docs/screenshots/44-office-apps-uebersicht.png" alt="Office-Apps" width="520"> |
 | Textdokument aus der Office-App | <img src="docs/screenshots/49-office-app-textdokument.png" alt="Euro-Office Document Editor" width="520"> |
+| Admin: Lokale KI | <img src="docs/screenshots/53-admin-office-ki.png" alt="Lokale KI" width="520"> |
+| Nextcloud-Assistent mit lokaler KI | <img src="docs/screenshots/55-nextcloud-assistant-ki.png" alt="Nextcloud-Assistent" width="520"> |
+| KI-Plugin in Euro-Office | <img src="docs/screenshots/56-eurooffice-ki-plugin.png" alt="KI-Plugin" width="520"> |
 | Admin: Office-Apps und Berechtigungen | <img src="docs/screenshots/45-admin-office-apps.png" alt="Office-Apps und Berechtigungen" width="520"> |
 | Admin: App-Paket | <img src="docs/screenshots/46-admin-office-app-paket.png" alt="App-Paket" width="520"> |
 | Admin: Status | <img src="docs/screenshots/33-admin-office-status.png" alt="Office Status" width="520"> |

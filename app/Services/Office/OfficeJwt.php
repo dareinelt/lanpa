@@ -13,6 +13,7 @@ final class OfficeJwt
     public const DIAGNOSTICS_AUDIENCE = 'intranet_integration';
     public const SSO_AUDIENCE = 'intranet_integration_sso';
     public const SSO_LIFETIME = 60;
+    public const AI_AUDIENCE = 'intranet_integration_ai';
 
     /**
      * @param array<string,mixed> $claims
@@ -35,6 +36,22 @@ final class OfficeJwt
 
         return self::encode([
             'aud' => self::DIAGNOSTICS_AUDIENCE,
+            'iat' => $now,
+            'exp' => $now + 60,
+        ], $secret);
+    }
+
+    /**
+     * Kurzlebiges Token fuer die Uebergabe der KI-Einstellungen an Nextcloud.
+     * Es ist an den Inhalt gebunden (SHA-256 des Anfragekoerpers).
+     */
+    public static function aiConfigToken(string $secret, string $body, ?int $now = null): string
+    {
+        $now ??= time();
+
+        return self::encode([
+            'aud' => self::AI_AUDIENCE,
+            'body' => hash('sha256', $body),
             'iat' => $now,
             'exp' => $now + 60,
         ], $secret);

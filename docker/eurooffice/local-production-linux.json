@@ -1,0 +1,12 @@
+{
+  "runtimeConfig": {
+    "filePath": "/var/lib/intranet-ai/runtime.json"
+  },
+  "services": {
+    "CoAuthoring": {
+      "plugins": {
+        "autostart": ["asc.{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}"]
+      }
+    }
+  }
+}

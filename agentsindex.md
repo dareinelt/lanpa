@@ -31,7 +31,7 @@ Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst ges
 | --- | --- |
 | Backend | PHP 8.5 (mindestens 8.4), PDO/MySQL |
 | Frontend | Vanilla JavaScript + handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons) |
-| Datenbank | MySQL 8 / MariaDB 11 (utf8mb4) |
+| Datenbank | MySQL 9.7 LTS (utf8mb4, Image `mysql:${DB_IMAGE_TAG:-9.7.2}`) |
 | Web | Apache mit `mod_rewrite`, DocumentRoot `public/` |
 | Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`) |
 | Monitoring | net-snmp-Agent im Container `snmp` (UDP 161, read-only Docker-Socket + `sync_log`) |
@@ -86,6 +86,7 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 | `sso-domains.sh` | Erzeugt `docker-compose.sso.yml` mit je einer auth-Instanz `auth-<kennung>` pro weiterer Domäne mit Windows-Anmeldung (ohne Zugangsdaten) |
 | `purge_clicks.php` | Löscht Klickdaten älter als N Tage (Standard `CLICK_RETENTION_DAYS=400`) |
 | `install.sh` | Assistierte Komplettinstallation (whiptail/dialog/Text): prüft und installiert Abhängigkeiten, kopiert `.env.example`, fragt Passwörter/Secrets ab, startet und prüft die Container, schreibt Abschlussbericht nach `install-reports/` (Doku: `docs/installation.md`) |
+| `mysql-upgrade.sh` | Hebt ein bestehendes MySQL-8.0-Volume über einen temporären `mysql:8.4`-Container an (LTS-Pfad 8.0 → 8.4 → 9.7), sichert vorher nach `backups/mysql/`, stellt `mysql_native_password`-Konten um; `--check` (Exit 10 = nötig). Neue Installationen brauchen es nicht; `install.sh` ruft es bei vorhandenem 8.0-Volume auf |
 | `install-systemd-service.sh` | Installiert die Landingpage als systemd-Service (Ubuntu ≥ 22.04; Autostart beim Boot, `docker compose up/down`) |
 
 ---
@@ -144,7 +145,7 @@ database/
   migrations/   SQL-Migrationen (001…018)
 docker/         Dockerfiles, Entrypoints, PHP-/MySQL-Konfiguration, SNMP-Agent
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
-scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation)
+scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation, MySQL-Upgrade)
 storage/        logs/ und uploads/ (außerhalb des DocumentRoot)
 tests/          Dependency-freier Testrunner + Unit-Tests
 views/          PHP-Templates (admin, errors, landing, layouts, pages, partials, phonebook)

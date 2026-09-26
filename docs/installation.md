@@ -188,6 +188,10 @@ fragt, ob die Installation durchgeführt werden soll.
 > bereits, weist der Assistent darauf hin und schlägt die vorhandenen Werte vor.
 > Ändern Sie sie nur, wenn das Volume vorher gelöscht wurde
 > (`docker compose down -v` – **löscht alle Daten**).
+>
+> Stammt das Volume noch von MySQL 8.0, hebt der Assistent es vor dem Start mit
+> `scripts/mysql-upgrade.sh` über MySQL 8.4 auf 9.7 LTS an (Sicherung unter
+> `backups/mysql/`). Neue Installationen starten direkt mit MySQL 9.7 LTS.
 
 ---
 
@@ -248,5 +252,6 @@ Inhalt des Berichts:
 | „Docker-Dienst nicht erreichbar“ | `sudo systemctl status docker`; unter macOS Docker Desktop starten |
 | Healthcheck schlägt fehl | `docker compose ps` und `docker compose logs app auth db` prüfen, danach Skript erneut ausführen |
 | Datenbank nach Passwortänderung nicht erreichbar | Alte Werte aus `.env.bak-*` wiederherstellen oder (Datenverlust!) `docker compose down -v` |
+| `db` startet nicht: „Cannot upgrade from 80xxx to 907xx“ | Datenbestand stammt von MySQL 8.0: `./scripts/mysql-upgrade.sh` ausführen (Zwischenschritt 8.4 LTS) |
 | Admin-Passwort vergessen | `docker compose exec app php scripts/create_admin.php <name>` erzeugt ein neues Passwort – oder das Skript erneut ausführen |
 | Port belegt | Das Skript fragt einen anderen Port ab; alternativ `APP_PORT`/`SNMP_PORT` in der `.env` ändern |

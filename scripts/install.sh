@@ -1185,6 +1185,27 @@ $LOG_FILE"
         return 1
     fi
 
+    # Bestehende MySQL-8.0-Daten vor dem Start von 9.7 ueber 8.4 LTS anheben
+    # (neue Installationen starten direkt mit 9.7 LTS).
+    if existing_db_volume; then
+        rc=0
+        env DOCKER="$DOCKER" COMPOSE="$COMPOSE" sh scripts/mysql-upgrade.sh --check \
+            --project "$(project_name)" >> "$LOG_FILE" 2>&1 || rc=$?
+        if [ "$rc" = "10" ]; then
+            ui_info "$t" "Hebe die bestehende Datenbank von MySQL 8.0 ueber 8.4 auf 9.7 LTS an (mit Sicherung unter backups/mysql/) ..."
+            if ! run_logged env DOCKER="$DOCKER" COMPOSE="$COMPOSE" sh scripts/mysql-upgrade.sh \
+                --yes --no-start --project "$(project_name)"; then
+                ui_msg "$t - Fehler" "Das MySQL-Upgrade ist fehlgeschlagen. Details:
+$LOG_FILE"
+                return 1
+            fi
+        elif [ "$rc" != "0" ]; then
+            ui_msg "$t - Fehler" "Der Datenbestand konnte nicht geprueft werden. Details:
+$LOG_FILE"
+            return 1
+        fi
+    fi
+
     maxs=600; [ "$M_OFFICE" = "1" ] && maxs=1200
     if run_with_gauge "$t" "Lade Images, baue und starte die Container (erster Lauf: einige Minuten) ..." "$maxs" \
         $COMPOSE $COMPOSE_UP_OPTS up -d --build --remove-orphans; then

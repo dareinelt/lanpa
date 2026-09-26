@@ -63,7 +63,8 @@ x-nextcloud-secrets: &nextcloud-secrets
 
 services:
   db:
-    image: mysql:8.0
+    # MySQL 9.7 LTS. Upgrade bestehender 8.0-Datenbestaende: siehe docs/installation.md.
+    image: mysql:${DB_IMAGE_TAG:-9.7.2}
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${DB_NAME:-intranet}

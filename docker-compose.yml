@@ -129,6 +129,9 @@ services:
       context: .
       dockerfile: docker/auth/Dockerfile
     restart: unless-stopped
+    # Fester Computername fuer den Domaenenbeitritt (NetBIOS, max. 15 Zeichen);
+    # der Beitritt bleibt im Volume sso_samba erhalten.
+    hostname: ${SSO_NETBIOS_NAME:-lanpa-sso}
     depends_on:
       app:
         condition: service_healthy
@@ -149,6 +152,7 @@ services:
       HTTPS_PUBLIC_PORT: ${APP_HTTPS_PORT:-8443}
     volumes:
       - sso_token:/run/intranet-sso:ro
+      - sso_samba:/var/lib/samba
     ports:
       - "${APP_PORT:-8080}:80"
       - "${APP_HTTPS_PORT:-8443}:443"
@@ -406,6 +410,7 @@ volumes:
   db_data:
   app_storage:
   sso_token:
+  sso_samba:
   nextcloud_html:
   nextcloud_data:
   nextcloud_db:

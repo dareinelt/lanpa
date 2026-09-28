@@ -28,6 +28,7 @@ if ! sources="$(docker compose exec -T app php scripts/credentials.php --sso-sou
 fi
 
 services=""
+volumes=""
 keys=""
 while read -r key service; do
     [ -z "${key:-}" ] && continue
@@ -37,12 +38,16 @@ while read -r key service; do
         exit 1
     fi
     keys="${keys:+$keys }${key}"
+    volume="$(printf '%s' "$service" | tr '-' '_')_samba"
+    volumes="${volumes}
+  ${volume}:"
     services="${services}
   ${service}:
     build:
       context: .
       dockerfile: docker/auth/Dockerfile
     restart: unless-stopped
+    hostname: \${SSO_NETBIOS_NAME:-lanpa-sso}
     depends_on:
       app:
         condition: service_healthy
@@ -54,6 +59,7 @@ while read -r key service; do
       APP_URL: \${APP_URL:-http://localhost:8080}
     volumes:
       - sso_token:/run/intranet-sso:ro
+      - ${volume}:/var/lib/samba
     networks:
       - intranet
       - office
@@ -83,6 +89,7 @@ cat > "$OUT_FILE" <<YAML
 # Die Konfiguration (inkl. Zugangsdaten) ruft jede Instanz beim Start von der
 # Anwendung ab; sie wird in der Verwaltung gepflegt.
 services:${services}
+volumes:${volumes}
 YAML
 
 echo "Erzeugt: $OUT_FILE (Domaenen: ${keys})"

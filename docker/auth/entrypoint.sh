@@ -150,6 +150,9 @@ if is_true "$SSO_ENABLED"; then
    server string = Intranet Auth
    security = domain
 ${password_server}
+   # AD-Domaenen ohne Kerberos/LDAP: nur RPC (sonst verlangt "net rpc join"
+   # einen gesetzten realm).
+   winbind rpc only = yes
    winbind use default domain = yes
    winbind offline logon = yes
    winbind enum users = no

@@ -7,6 +7,9 @@
 #                        SSO_DC darf mehrere Domaenencontroller enthalten
 #                        (Leerzeichen/Komma getrennt); SSO_DC_IP die passenden
 #                        IP-Adressen in derselben Reihenfolge.
+#                        Computername im AD: SSO_NETBIOS_NAME (sonst der
+#                        Hostname); der Beitritt liegt in /var/lib/samba
+#                        (Volume) und wird bei jedem Start wiederverwendet.
 # - SSO_SOURCE=KENNUNG:  Instanz fuer eine weitere Identitaetsquelle (eigene
 #                        Domaene ohne Vertrauensstellung). Setzt den Header
 #                        X-Remote-Source auf die Kennung (-D SSO_WORKER).
@@ -137,6 +140,14 @@ fi
 if is_true "$SSO_ENABLED"; then
     mkdir -p /var/run/samba /var/lib/samba/winbindd_privileged
 
+    # Fester Computername im AD (NetBIOS, max. 15 Zeichen). Ohne ihn waere es
+    # die Container-ID und jeder Neuaufbau legte ein neues Computerkonto an.
+    NETBIOS_NAME="$(printf '%s' "${SSO_NETBIOS_NAME:-$(hostname)}" | tr '[:lower:]' '[:upper:]')"
+    if ! printf '%s' "$NETBIOS_NAME" | grep -Eq '^[A-Z0-9][A-Z0-9-]{0,14}$'; then
+        echo "[auth] FEHLER: Ungueltiger Computername '${NETBIOS_NAME}' (SSO_NETBIOS_NAME: A-Z, 0-9, -, max. 15 Zeichen)." >&2
+        exit 1
+    fi
+
     DCS="$(split_list "${SSO_DC:-}")"
     DC_IPS="$(split_list "${SSO_DC_IP:-}")"
 
@@ -147,6 +158,7 @@ if is_true "$SSO_ENABLED"; then
     cat > /etc/samba/smb.conf <<CONF
 [global]
    workgroup = ${SSO_DOMAIN}
+   netbios name = ${NETBIOS_NAME}
    server string = Intranet Auth
    security = domain
 ${password_server}
@@ -185,11 +197,11 @@ CONF
         joined=false
         for dc in ${DCS}; do
             if net rpc testjoin -S "${dc}" >/dev/null 2>&1; then
-                echo "[auth] Domaenenbeitritt ${SSO_DOMAIN} besteht bereits (${dc})."
+                echo "[auth] Domaenenbeitritt ${SSO_DOMAIN} als ${NETBIOS_NAME} besteht bereits (${dc})."
                 joined=true
                 break
             fi
-            echo "[auth] Tritt der Domaene ${SSO_DOMAIN} ueber ${dc} bei ..."
+            echo "[auth] Tritt der Domaene ${SSO_DOMAIN} als ${NETBIOS_NAME} ueber ${dc} bei ..."
             if net rpc join -U "${SSO_JOIN_USER}%${SSO_JOIN_PASSWORD}" -S "${dc}"; then
                 joined=true
                 break

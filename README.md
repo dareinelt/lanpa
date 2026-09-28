@@ -180,6 +180,7 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | `SNMP_PORT` | Am Host veröffentlichter UDP-Port des SNMP-Agenten (nur Docker-Port-Mapping) | `161` |
 | `SSO_ENABLED` | Windows-Anmeldung (NTLM) global ein-/ausschalten; Domänen werden im Adminbereich gepflegt | `false` |
 | `SSO_AUTO_LOGIN` | Automatischer Windows-Anmeldeversuch einmal je Sitzung (sonst nur über „Mit Windows anmelden“) | `true` |
+| `SSO_NETBIOS_NAME` | Computername des auth-Containers im AD (max. 15 Zeichen, je Installation eindeutig); der Beitritt bleibt im Volume `sso_samba` erhalten | `lanpa-sso` |
 | `SSO_SESSION_LIFETIME` | Gültigkeit der erkannten Windows-Anmeldung in der Sitzung (Sekunden, `0` = Sitzungsende) | `28800` |
 | `SECRETS_KEY_FILE` | Schlüssel für gespeicherte Zugangsdaten | `storage/keys/secrets.key` |
 

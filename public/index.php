@@ -194,6 +194,7 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
 
         $router->get('/admin/telefonliste', [PhonebookAdminController::class, 'index']);
         $router->post('/admin/telefonliste/status', [PhonebookAdminController::class, 'toggle']);
+        $router->post('/admin/telefonliste/export', [PhonebookAdminController::class, 'export']);
 
         $router->get('/admin/mitteilungen', [AnnouncementController::class, 'index']);
         $router->get('/admin/mitteilungen/neu', [AnnouncementController::class, 'create']);

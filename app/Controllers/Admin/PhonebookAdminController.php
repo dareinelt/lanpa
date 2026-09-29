@@ -27,6 +27,22 @@ final class PhonebookAdminController extends AdminController
         ]);
     }
 
+    /**
+     * CSV-Export aller Eintraege, die in der Telefonliste auch fuer nicht
+     * angemeldete Besucher sichtbar sind.
+     */
+    public function export(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $contents = Container::phonebook()->csvExport();
+        $filename = 'telefonliste-' . gmdate('Y-m-d') . '.csv';
+
+        app_logger()->info('Telefonliste exportiert.', ['admin' => Container::auth()->username()]);
+
+        return Response::download($contents, $filename, 'text/csv; charset=utf-8');
+    }
+
     public function toggle(Request $request): Response
     {
         $this->requireValidCsrf($request);

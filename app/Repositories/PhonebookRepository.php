@@ -363,6 +363,28 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     }
 
     /**
+     * Eintraege, die in der Telefonliste auch fuer nicht angemeldete Besucher
+     * sichtbar sind (aktiv, eingeblendet und mit E-Mail-Adresse) – die
+     * Grundlage fuer den CSV-Export im Adminbereich.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function visibleForExport(): array
+    {
+        $sql = 'SELECT display_name, department, phone, email
+                  FROM phonebook
+                 WHERE active = 1 AND visible = 1 AND ' . self::EMAIL_CONDITION . '
+                 ORDER BY last_name ASC, first_name ASC, display_name ASC';
+
+        $statement = $this->pdo->query($sql);
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement === false ? [] : $statement->fetchAll();
+
+        return $rows;
+    }
+
+    /**
      * Setzt die Sichtbarkeit eines Eintrags. Liefert false, wenn der Eintrag
      * nicht existiert.
      */

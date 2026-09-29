@@ -44,6 +44,16 @@ use App\Support\Html;
     </fieldset>
 </form>
 
+<form method="post" action="/admin/telefonliste/export" class="phonebook__export">
+    <?= Csrf::field() ?>
+    <button type="submit" class="button button--primary">
+        CSV-Export (eingeblendete Einträge)
+    </button>
+    <p class="search__hint">
+        Exportiert alle Einträge, die auch in der Telefonliste für nicht angemeldete Besucher sichtbar sind (Name, Bereich, Telefonnummer, Mail-Adresse).
+    </p>
+</form>
+
 <?php if ($items === []) { ?>
     <p class="empty-state">Keine Einträge gefunden.</p>
 <?php } else { ?>

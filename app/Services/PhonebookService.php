@@ -128,4 +128,40 @@ final class PhonebookService
             throw new ValidationException(['id' => 'Eintrag nicht gefunden.']);
         }
     }
+
+    /**
+     * CSV-Inhalt aller Eintraege, die auch fuer nicht angemeldete Besucher in
+     * der Telefonliste sichtbar sind. Spalten: Name, Bereich, Telefonnummer,
+     * Mail-Adresse. Getrennt mit Semikolon und mit UTF-8-BOM, damit die Datei
+     * in deutschsprachigem Excel korrekt geoeffnet wird.
+     */
+    public function csvExport(): string
+    {
+        $rows = $this->repository->visibleForExport();
+
+        $lines = ['Name;Bereich;Telefonnummer;Mail-Adresse'];
+
+        foreach ($rows as $row) {
+            $lines[] = implode(';', array_map(
+                $this->csvCell(...),
+                [
+                    (string) ($row['display_name'] ?? ''),
+                    (string) ($row['department'] ?? ''),
+                    (string) ($row['phone'] ?? ''),
+                    (string) ($row['email'] ?? ''),
+                ]
+            ));
+        }
+
+        return "\xEF\xBB\xBF" . implode("\r\n", $lines) . "\r\n";
+    }
+
+    /**
+     * Umschliesst einen CSV-Wert mit Anfuehrungszeichen und verdoppelt darin
+     * enthaltene Anfuehrungszeichen (RFC-4180-Entsprechung).
+     */
+    private function csvCell(string $value): string
+    {
+        return '"' . str_replace('"', '""', $value) . '"';
+    }
 }

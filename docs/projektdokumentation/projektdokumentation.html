@@ -89,8 +89,7 @@
 <section class="chapter" id="k2">
   <h1 class="chapter-title">2&ensp;Ist-Analyse</h1>
 
-  <p>Die Ist-Analyse wurde durch Interviews mit Stationsleitungen, Sekretariaten, Verwaltung und IT, durch
-  Auswertung der Störungstickets sowie durch Messungen am Bestandssystem durchgeführt. Abbildung&nbsp;1
+  <p>Die Ist-Analyse wurde durch Auswertung der Störungstickets sowie durch Messungen am Bestandssystem durchgeführt. Abbildung&nbsp;1
   zeigt die vereinfachte Ausgangsarchitektur.</p>
 
   <figure class="diagram">
@@ -128,18 +127,16 @@
     zur Verfügung – ein Widerspruch zur Forderung nach dem „Stand der Technik“ (§&nbsp;391 SGB&nbsp;V, B3S).</li>
     <li><strong>Pflegeaufwand:</strong> Die IE-Modus-Siteliste muss zentral per Gruppenrichtlinie gepflegt werden;
     jede neue oder verschobene Seite erzeugt Aufwand und Fehlerquellen.</li>
-    <li><strong>Eingeschränkte Endgeräte:</strong> Mobile Geräte (z.&nbsp;B. Visitenwagen-Tablets), Thin Clients mit
+    <li><strong>Eingeschränkte Endgeräte:</strong> Mobile Geräte, Thin Clients mit
     anderen Browsern und künftige Windows-Versionen können die betroffenen Module nicht nutzen.</li>
-    <li><strong>Know-how-Verlust:</strong> Die ursprünglichen Entwickler stehen nicht mehr zur Verfügung;
-    Änderungen an den ActiveX-Modulen sind praktisch nicht mehr möglich.</li>
+    <li><strong>Know-how-Verlust:</strong> Änderungen an den ActiveX-Modulen sind praktisch nicht mehr möglich.</li>
   </ul>
 
   <h2 id="k2-2">2.2&ensp;Performance</h2>
   <p>Die Antwortzeiten sind durchgängig unbefriedigend. Besonders kritisch ist das Telefonverzeichnis: Eine
   Suche dauert <strong>mindestens 15&nbsp;Sekunden</strong>, zu Stoßzeiten (Schichtwechsel, Visite) auch deutlich
   länger. Ursache ist, dass jede Suche das Verzeichnis ohne geeignete Indizierung durchsucht bzw. live an
-  Backend-Systeme weitergereicht wird. Im Klinikalltag – etwa bei der Suche nach dem diensthabenden
-  Konsiliararzt, der Blutbank oder der Haustechnik – ist diese Wartezeit nicht akzeptabel. Beschäftigte weichen
+  Backend-Systeme weitergereicht wird. Im Klinikalltag ist diese Wartezeit nicht akzeptabel. Beschäftigte weichen
   deshalb auf ausgedruckte, oft veraltete Telefonlisten aus.</p>
 
   <h2 id="k2-3">2.3&ensp;Verfügbarkeit und Stabilität</h2>
@@ -153,7 +150,7 @@
   <p>Die Navigation ist über Jahre gewachsen. Inhalte sind auf verschiedene Navigationselemente verteilt –
   Hauptmenü, Seitenleisten, Linklisten einzelner Abteilungen und Schnellzugriffe auf der Startseite. Gleiche
   Ziele sind mehrfach und unter verschiedenen Bezeichnungen verlinkt, andere nur über mehrere Klickebenen
-  erreichbar. Neue Beschäftigte, Rotationsassistenten und Springerkräfte finden benötigte Inhalte nur schwer.
+  erreichbar. Neue Beschäftigte finden benötigte Inhalte nur schwer.
   Eine zentrale Pflege fehlt; Änderungen erfordern häufig die IT, und tote Links bleiben lange bestehen.
   Nutzungszahlen, die eine Priorisierung der Inhalte erlauben würden, liegen nicht vor.</p>
 
@@ -162,15 +159,14 @@
   erweiterte Support endete am 14.&nbsp;Oktober&nbsp;2025; seitdem erscheinen keine Sicherheitsupdates mehr.
   Dokumente werden lokal oder auf Netzlaufwerken bearbeitet und per E-Mail-Anhang ausgetauscht. Gleichzeitiges
   Bearbeiten ist nicht möglich, was zu Versionskonflikten und Kopien („Dienstplan_final_v3_neu.xlsx“) führt.
-  Die Verteilung von Updates und Add-ins erfolgt über die Softwareverteilung und bindet IT-Kapazität.</p>
+  Die Verteilung von Updates und Add-ins erfolgt im besten Fall über die Softwareverteilung und bindet IT-Kapazität.</p>
 
   <h2 id="k2-6">2.6&ensp;Dateiablage und Berechtigungen</h2>
   <p>Die Dateiablage besteht aus Netzlaufwerken (SMB-Freigaben) je Abteilung. Die abteilungsübergreifende
-  Zusammenarbeit – etwa zwischen Stationen, Hygiene, Qualitätsmanagement, Medizincontrolling und Einkauf – wird
-  über Verknüpfungen auf fremde Freigaben und/oder über die Zuordnung zu AD-Gruppen realisiert. Beides wird
+  Zusammenarbeit wird über Verknüpfungen auf fremde Freigaben und/oder über die Zuordnung zu AD-Gruppen realisiert. Beides wird
   ausschließlich von der IT auf Ticketanforderung eingerichtet.</p>
   <ul>
-    <li>Die Einrichtung dauert je nach Auslastung Tage; Projektgruppen behelfen sich mit E-Mail-Anhängen oder USB-Sticks.</li>
+    <li>Die Einrichtung dauert je nach Auslastung Tage; Projektgruppen behelfen sich etwa mit E-Mail-Anhängen.</li>
     <li>Berechtigungen werden selten zurückgenommen („Berechtigungsdrift“); wer worauf Zugriff hat, ist nur mit Aufwand nachvollziehbar – ein Risiko bei Audits und für die Vertraulichkeit sensibler Unterlagen.</li>
     <li>Ein Zugriff außerhalb des Arbeitsplatz-PCs (z.&nbsp;B. per Browser oder Tablet) ist nicht vorgesehen.</li>
   </ul>
@@ -178,7 +174,7 @@
   <h2 id="k2-7">2.7&ensp;Fragmentierte Organisationsstruktur</h2>
   <p>Neben dem Klinikum selbst gehören zwei Tochtergesellschaften und weitere, historisch gewachsene Einheiten
   zum Verbund. Diese Struktur spiegelt sich in der IT wider: Inhalte, Linklisten und Ablagen existieren je
-  Gesellschaft bzw. Einheit getrennt, teils mit abweichenden Bezeichnungen und Verantwortlichkeiten. Eine
+  Gesellschaft bzw. Einheit getrennt oder gar nicht, teils mit abweichenden Bezeichnungen und Verantwortlichkeiten. Eine
   gesellschaftsübergreifende Sicht – etwa ein gemeinsames Telefonverzeichnis oder verbundweit gültige
   Verfahrensanweisungen – gibt es nicht oder nur als manuell gepflegte Kopien.</p>
   <ul>
@@ -271,7 +267,7 @@
   <table class="compact">
     <thead><tr><th class="id">ID</th><th>Anforderung</th><th style="width:9%">Prio.</th><th style="width:10%">Bezug</th></tr></thead>
     <tbody>
-      <tr><td>N01</td><td>Antwortzeit der Telefonsuche &lt;&nbsp;1&nbsp;s, Seitenaufbau &lt;&nbsp;2&nbsp;s, ausgelegt für ca. 1.300 Beschäftigte</td><td>M</td><td>S3</td></tr>
+      <tr><td>N01</td><td>Antwortzeit der Telefonsuche &lt;&nbsp;1&nbsp;s, Seitenaufbau &lt;&nbsp;2&nbsp;s, ausgelegt für 1.500+ Beschäftigte</td><td>M</td><td>S3</td></tr>
       <tr><td>N02</td><td>Lauffähig in allen aktuellen Browsern, keine Plug-ins, kein IE-Modus</td><td>M</td><td>S1, S2</td></tr>
       <tr><td>N03</td><td>Betrieb vollständig im eigenen Rechenzentrum, keine Abhängigkeit von Internet oder Cloud</td><td>M</td><td>S10</td></tr>
       <tr><td>N04</td><td>Überwachung aller Dienste per SNMP, automatischer Neustart, verschlüsselte Sicherung</td><td>M</td><td>S4</td></tr>
@@ -428,7 +424,7 @@
       <div class="layer"><div class="layer-name">Infrastruktur im Klinikum</div><div class="boxes">
         <div class="box"><b>Active Directory</b><span>Personen und Gruppen aller Gesellschaften</span></div>
         <div class="box ok-box"><b>Lokaler KI-Server</b><span>z. B. Ollama oder vLLM mit offenen Modellen</span></div>
-        <div class="box"><b>Monitoring</b><span>z. B. PRTG, Icinga, LibreNMS</span></div>
+        <div class="box"><b>Monitoring</b><span>PRTG</span></div>
       </div></div>
     </div>
     <figcaption>Soll-Architektur: alle Dienste als Container im Rechenzentrum des Klinikums, ohne Cloud-Abhängigkeit.</figcaption>

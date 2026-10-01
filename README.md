@@ -272,8 +272,14 @@ bei jeder Anfrage erneut gegen das Telefonbuch.
   Seite `/sso/nicht-erkannt`, die sofort zurückführt; manche Browser zeigen vorher einmal einen
   Anmeldedialog – „Abbrechen“ führt ohne Anmeldung weiter.
 - Mit `SSO_AUTO_LOGIN=false` erfolgt die Anmeldung nur über den Link „Mit Windows anmelden“ im Kopf.
-- Voraussetzung für die unbemerkte Anmeldung: Die Adresse des Intranets liegt bei den Clients in der
-  Zone „Lokales Intranet“ bzw. ist per Richtlinie (`AuthServerAllowlist`) freigegeben.
+- **Voraussetzung für die unbemerkte Anmeldung (ohne Anmeldedialog):** Die Adresse des Intranets liegt
+  bei den Clients in der Zone „Lokales Intranet“ bzw. ist per Richtlinie (`AuthServerAllowlist`)
+  freigegeben. Windows stuft einen Hostnamen mit Punkten (`intranet.firma.local`) ohne diese Freigabe
+  als „Internet“ ein – Edge/Chrome/IE fragen dann bei jedem Besuch nach Benutzername und Passwort,
+  obwohl die Anmeldung mit AD-Zugangsdaten funktioniert. Das lässt sich nicht serverseitig lösen,
+  sondern nur auf den Clients (siehe „Anmeldedialog vermeiden“ unten). Ein Hostname ohne Punkt
+  (`http://intranet`, per DNS-Suffix auflösbar, als Alias in `SSO_SPN_HOSTS`) gilt automatisch als
+  Intranet.
 - Kerberos: Der auth-Container tritt der Domäne per ADS bei (Realm wird am Domänencontroller
   ermittelt, optional `SSO_REALM`), registriert den Service Principal `HTTP/<Hostname aus APP_URL>`
   am Computerkonto `SSO_NETBIOS_NAME` und erzeugt daraus die Keytab. Weitere Hostnamen, unter denen
@@ -325,7 +331,9 @@ per LDAP, Domänenbeitritt des auth-Containers und unbemerkte Browser-Anmeldung 
    Steht dort nur „NTLM“, nennt die Zeile davor die Ursache (Realm nicht ermittelt, SPN belegt,
    Beitrittskonto darf keine SPNs setzen). Das Computerkonto erscheint jetzt im AD; der Beitritt
    bleibt im Volume `sso_samba` erhalten.
-5. **Clients vorbereiten** (per Gruppenrichtlinie):
+5. **Clients vorbereiten – Anmeldedialog vermeiden** (per Gruppenrichtlinie oder mit
+   `scripts/sso-client-setup.ps1`, siehe unten). Ohne diesen Schritt erscheint bei jedem Besuch ein
+   Anmeldedialog, weil der Browser die Windows-Anmeldung nicht automatisch an „Internet“-Adressen sendet:
    - Edge/Chrome/IE: `https://intranet.firma.local` in die Zone „Lokales Intranet“ aufnehmen
      (Siteszuordnung) oder die Richtlinie `AuthServerAllowlist` = `intranet.firma.local` setzen.
    - Firefox: `network.negotiate-auth.trusted-uris` (und für NTLM
@@ -338,6 +346,43 @@ per LDAP, Domänenbeitritt des auth-Containers und unbemerkte Browser-Anmeldung 
    `HTTP/intranet.firma.local` = Kerberos aktiv). Bei einem Anmeldedialog: Hostname statt IP
    verwendet? Zone/Allowlist gesetzt? Uhren synchron (`w32tm /query /status`, Protokoll des
    auth-Containers)? Benutzer im Telefonbuch (LDAP-Synchronisation) vorhanden?
+
+### Anmeldedialog vermeiden: Clients für die unbemerkte Anmeldung freigeben
+
+Erscheint beim Öffnen der Seite ein Anmeldedialog des Browsers, obwohl die Anmeldung mit
+AD-Benutzername und -Passwort funktioniert, fehlt auf dem Client die Freigabe für die automatische
+Windows-Anmeldung. Der Server kann das nicht beeinflussen – der Browser entscheidet anhand der
+Internetzone bzw. seiner Richtlinien, ob er die Anmeldung des Windows-Benutzers mitsendet.
+
+**Variante A – Skript (Test auf einzelnen PCs oder als GPO-Startskript):** `scripts/sso-client-setup.ps1`
+als Administrator ausführen; es setzt die Zone „Lokales Intranet“ und `AuthServerAllowlist` in `HKLM`
+(alle Benutzer des Geräts), optional auch Firefox:
+
+```powershell
+.\sso-client-setup.ps1 -HostName intranet.firma.local            # Edge, Chrome, IE
+.\sso-client-setup.ps1 -HostName intranet.firma.local -Firefox   # zusätzlich Firefox
+.\sso-client-setup.ps1 -HostName intranet.firma.local -Remove    # wieder entfernen
+```
+
+**Variante B – Gruppenrichtlinie (empfohlen für alle Domänen-PCs):**
+
+| Browser | Richtlinie | Wert |
+|---|---|---|
+| Edge, Chrome, IE (Zone) | Computerkonfiguration → Administrative Vorlagen → Windows-Komponenten → Internet Explorer → Internetsystemsteuerung → Sicherheitsseite → **Liste der Site zu Zonenzuweisungen** | Name `https://intranet.firma.local`, Wert `1` (Lokales Intranet) |
+| Microsoft Edge | Microsoft Edge → HTTP-Authentifizierung → **Zulassungsliste für Authentifizierungsserver konfigurieren** (`AuthServerAllowlist`) | `intranet.firma.local` |
+| Google Chrome | Google Chrome → HTTP-Authentifizierung → **Zulassungsliste für Authentifizierungsserver** (`AuthServerAllowlist`) | `intranet.firma.local` |
+| Firefox | Mozilla Firefox → Authentication → **SPNEGO** und **NTLM** (`network.negotiate-auth.trusted-uris`, `network.automatic-ntlm-auth.trusted-uris`) | `https://intranet.firma.local` |
+
+Registry-Entsprechung der Zone (per GPO-Einstellung „Registrierung“ verteilbar):
+`HKLM\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings\ZoneMap\Domains\firma.local\intranet`,
+DWORD `https` = `1` (und `http` = `1`, falls ohne TLS).
+
+Hinweise: Nach dem Setzen den Browser neu starten. Mehrere Hostnamen (Aliasse aus `SSO_SPN_HOSTS`)
+jeweils eintragen. Die Zone „Lokales Intranet“ muss ihre Standardeinstellung „Automatische Anmeldung
+nur in der Intranetzone“ behalten. Ein Hostname **ohne Punkt** (z. B. `http://intranet`) liegt
+automatisch in der Intranetzone – als Alternative `SSO_SPN_HOSTS=intranet` setzen und die Clients
+diesen Namen aufrufen lassen (Auflösung über das DNS-Suffix der Domäne). Zugriffe per IP-Adresse
+gelten nie als Intranet.
 
 Weitere Domänen ohne Vertrauensstellung siehe nächster Abschnitt.
 

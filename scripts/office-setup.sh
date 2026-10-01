@@ -14,6 +14,10 @@
 #   --no-encryption   Sicherungen nicht verschluesseln (kein Backup-Passwort)
 #   --with-ad         AD-Anbindung von Nextcloud aktivieren (LDAP_* aus .env)
 #   --with-sso        zusaetzlich automatische Windows-Anmeldung (NTLM)
+#
+# Ist das Intranet der Domaene beigetreten (SSO_ENABLED=true in der .env),
+# wird die AD-Anbindung von Nextcloud automatisch aktiviert - auch wenn
+# Office bereits vor dem Domaenenbeitritt eingerichtet wurde.
 set -eu
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -35,6 +39,13 @@ for arg in "$@"; do
 done
 
 info() { printf '\033[1m[office-setup]\033[0m %s\n' "$*"; }
+
+is_true() {
+    case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 random_secret() {
     # 48 Zeichen [A-Za-z0-9] - frei von Sonderzeichen fuer .env/Shell/URLs.
@@ -71,6 +82,14 @@ for key in DB_PASSWORD DB_ROOT_PASSWORD; do
         ''|bitte-aendern*) env_set "$key" "$(random_secret)"; info "$key wurde zufaellig gesetzt." ;;
     esac
 done
+
+# AD-Anbindung: per --with-ad/--with-sso, bereits aktiviert oder automatisch,
+# sobald das Intranet der Domaene beigetreten ist (SSO_ENABLED).
+if [ -z "$WITH_AD" ] && is_true "$(env_get SSO_ENABLED)"; then
+    WITH_AD=1
+    info "Domaenenbeitritt aktiv (SSO_ENABLED=true) - AD-Anbindung von Nextcloud wird aktiviert."
+fi
+[ -z "$WITH_AD" ] && is_true "$(env_get NEXTCLOUD_LDAP_ENABLED)" && WITH_AD=1
 
 # --- 2. Secrets ------------------------------------------------------------------
 SECRETS_DIR="./secrets"
@@ -111,7 +130,7 @@ if [ -n "$ldap_pw" ]; then
     (umask 077 && printf '%s' "$ldap_pw" > "$SECRETS_DIR/nextcloud_ldap_password")
 elif [ ! -f "$SECRETS_DIR/nextcloud_ldap_password" ]; then
     : > "$SECRETS_DIR/nextcloud_ldap_password"
-    if [ "$(env_get NEXTCLOUD_LDAP_ENABLED)" = "true" ]; then
+    if [ -n "$WITH_AD" ]; then
         info "Hinweis: Kein AD-Bind-Passwort gefunden. Nach dem Eintragen unter Verwaltung -> Active Directory dieses Skript erneut ausfuehren."
     fi
 fi

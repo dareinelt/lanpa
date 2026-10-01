@@ -27,7 +27,9 @@ Das Skript kann beliebig oft ausgeführt werden. Es
 4. baut bzw. startet alle Container und wartet, bis Nextcloud bereit ist.
 
 Weitere Optionen: `--no-start` (nur konfigurieren), `--no-encryption`
-(Sicherungen unverschlüsselt). Anschließend im Adminbereich unter **Office**
+(Sicherungen unverschlüsselt). Ist das Intranet der Domäne beigetreten
+(`SSO_ENABLED=true`), setzt das Skript `NEXTCLOUD_LDAP_ENABLED=true` automatisch;
+`--with-ad` ist dann nicht nötig. Anschließend im Adminbereich unter **Office**
 die Kachel anlegen und Rechte vergeben (siehe Abschnitt 4).
 
 ---
@@ -149,7 +151,11 @@ aufrufen.
   `sAMAccountName` dem Telefonbucheintrag zu und ergänzt die Gruppen aus dem
   synchronisierten Bestand.
 - **Nextcloud:** Mit `--with-ad` nutzt Nextcloud `user_ldap` (gleiche
-  `LDAP_*`-Werte). Mit `--with-sso` meldet `user_saml` (Umgebungsvariablen-Modus)
+  `LDAP_*`-Werte). Nach dem Domänenbeitritt (`SSO_ENABLED=true`) geschieht das
+  automatisch – `office-setup.sh` setzt `NEXTCLOUD_LDAP_ENABLED=true`, und der
+  Nextcloud-Hook aktiviert `user_ldap` beim Containerstart auch dann, wenn
+  Office bereits vor dem Beitritt eingerichtet wurde (`docker compose up -d`
+  genügt). Mit `--with-sso` meldet `user_saml` (Umgebungsvariablen-Modus)
   den per NTLM erkannten Benutzer automatisch an; `…/login?direct=1` bleibt als
   Rückfall für Nicht-Domänen-Clients.
 - **Wechsel ins Office ohne erneute Kennworteingabe:** Der auf der Startseite

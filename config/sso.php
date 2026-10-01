@@ -46,6 +46,12 @@ return [
     // danach wird sie erneut geprueft. 0 = bis zum Ende der Browsersitzung.
     'session_lifetime' => Env::int('SSO_SESSION_LIFETIME', 28800),
 
+    // Weitere Hostnamen (Kerberos-SPNs) und Computername des auth-Containers
+    // im AD; zusammen mit der DNS-Domaene ergibt sich der Name des
+    // Computerkontos (<name>.<domaene>), unter dem Nextcloud erreichbar sein muss.
+    'spn_hosts' => Env::get('SSO_SPN_HOSTS', ''),
+    'netbios_name' => Env::get('SSO_NETBIOS_NAME', 'lanpa-sso'),
+
     // Testmodus: simuliert eine bestehende Windows-Anmeldung dieses Benutzers
     // (SamAccountName) ohne NTLM/Domaene. In APP_ENV=production wirkungslos.
     'fake_user' => Env::get('SSO_FAKE_USER', ''),

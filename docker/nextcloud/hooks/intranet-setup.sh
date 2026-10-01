@@ -69,16 +69,22 @@ occ config:system:set htaccess.RewriteBase --value=/office >/dev/null
 occ maintenance:update:htaccess >/dev/null || warn ".htaccess konnte nicht aktualisiert werden."
 
 # --- Vertrauenswuerdige Domains ---------------------------------------------
-public_host=$(printf '%s' "${APP_URL:-http://localhost}" | sed -E 's#^[a-zA-Z]+://##; s#/.*$##')
+# Grundbestand aus APP_URL und NEXTCLOUD_EXTRA_TRUSTED_DOMAINS. Die vollstaendige
+# Liste (Domaenenbeitritt, Kerberos-SPNs, HTTPS-Zertifikat, weitere Domaenen)
+# uebertraegt das Intranet laufend an die App intranet_integration (/api/hosts);
+# bereits eingetragene Hostnamen bleiben deshalb beim Neustart erhalten.
+public_host=$(printf '%s' "${APP_URL:-http://localhost}" | sed -E 's#^[a-zA-Z]+://##; s#[/:?].*$##' | tr '[:upper:]' '[:lower:]')
+existing=$(occ config:system:get trusted_domains 2>/dev/null | tr '[:upper:]' '[:lower:]')
 i=0
-for domain in "$public_host" nextcloud $(printf '%s' "${NEXTCLOUD_EXTRA_TRUSTED_DOMAINS:-}" | tr ',;' '  '); do
-    [ -n "$domain" ] || continue
-    occ config:system:set trusted_domains "$i" --value="$domain" >/dev/null
+while occ config:system:get trusted_domains "$i" >/dev/null 2>&1; do
     i=$((i + 1))
 done
-# Ueberzaehlige alte Eintraege entfernen.
-while occ config:system:get trusted_domains "$i" >/dev/null 2>&1; do
-    occ config:system:delete trusted_domains "$i" >/dev/null
+for domain in nextcloud "$public_host" $(printf '%s' "${NEXTCLOUD_EXTRA_TRUSTED_DOMAINS:-}" | tr ',;' '  ' | tr '[:upper:]' '[:lower:]'); do
+    [ -n "$domain" ] && [ "$domain" != "localhost" ] || continue
+    printf '%s\n' "$existing" | grep -qxF "$domain" && continue
+    occ config:system:set trusted_domains "$i" --value="$domain" >/dev/null
+    existing="${existing}
+${domain}"
     i=$((i + 1))
 done
 

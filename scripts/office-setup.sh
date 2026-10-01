@@ -97,8 +97,13 @@ ensure_secret nextcloud_redis_password "$(random_secret)"
 # gepflegt (verschluesselt gespeichert) und hier vom laufenden app-Container
 # gelesen. Fallback fuer Altinstallationen: LDAP_PASSWORD(_FILE) der .env.
 ldap_pw=""
+ldap_cfg=""
 if docker compose ps --status running --services 2>/dev/null | grep -qx app; then
     ldap_pw="$(docker compose exec -T app php scripts/credentials.php --ldap-password 2>/dev/null || true)"
+    # Verbindungsdaten (Host, Bind-DN, ...) ebenfalls aus der Verwaltung, damit
+    # Nextcloud denselben Bind-DN wie das Intranet nutzt - nicht die ggf.
+    # veralteten LDAP_*-Werte der .env.
+    ldap_cfg="$(docker compose exec -T app php scripts/credentials.php --nextcloud-ldap 2>/dev/null || true)"
 fi
 if [ -z "$ldap_pw" ]; then
     ldap_pw="$(env_get LDAP_PASSWORD)"
@@ -116,6 +121,12 @@ elif [ ! -f "$SECRETS_DIR/nextcloud_ldap_password" ]; then
     fi
 fi
 chmod 644 "$SECRETS_DIR/nextcloud_ldap_password"
+if [ -n "$ldap_cfg" ]; then
+    (umask 077 && printf '%s\n' "$ldap_cfg" > "$SECRETS_DIR/nextcloud_ldap_config")
+elif [ ! -f "$SECRETS_DIR/nextcloud_ldap_config" ]; then
+    : > "$SECRETS_DIR/nextcloud_ldap_config"
+fi
+chmod 644 "$SECRETS_DIR/nextcloud_ldap_config"
 
 if [ "$ENCRYPT" = "1" ]; then
     ensure_secret office_backup_passphrase "$(random_secret)"

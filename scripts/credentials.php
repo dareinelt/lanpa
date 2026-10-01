@@ -11,6 +11,10 @@ declare(strict_types=1);
  *   php scripts/credentials.php --key           nur Schluessel sicherstellen
  *   php scripts/credentials.php --ldap-password Bind-Passwort der Hauptquelle
  *                                               ausgeben (fuer office-setup.sh)
+ *   php scripts/credentials.php --nextcloud-ldap Verbindungsdaten der Hauptquelle
+ *                                               (Host, Port, TLS, Basis-/Bind-DN)
+ *                                               als NAME=wert-Zeilen ausgeben
+ *                                               (fuer office-setup.sh)
  *   php scripts/credentials.php --set-primary   Zugangsdaten der Hauptquelle
  *                                               von stdin setzen (Zeilen
  *                                               NAME=base64(wert); NAME:
@@ -51,6 +55,27 @@ if ($mode === '--key') {
 
 if ($mode === '--ldap-password') {
     fwrite(STDOUT, (string) $service->primaryConfig()['password']);
+    exit(0);
+}
+
+if ($mode === '--nextcloud-ldap') {
+    // Effektive Verbindungsdaten der Hauptquelle (Verwaltung vor .env) fuer
+    // die Nextcloud-LDAP-Anbindung: Bind-DN und Passwort muessen zusammenpassen.
+    $config = $service->primaryConfig();
+    $hosts = array_values((array) ($config['hosts'] ?? []));
+    $values = [
+        'LDAP_HOST' => (string) ($hosts[0] ?? ''),
+        'LDAP_BACKUP_HOST' => (string) ($hosts[1] ?? ''),
+        'LDAP_PORT' => (string) (int) ($config['port'] ?? 636),
+        'LDAP_USE_TLS' => !empty($config['use_tls']) ? 'true' : 'false',
+        'LDAP_VERIFY_CERT' => !empty($config['verify_cert']) ? 'true' : 'false',
+        'LDAP_BASE_DN' => (string) ($config['base_dn'] ?? ''),
+        'LDAP_BIND_DN' => (string) ($config['bind_dn'] ?? ''),
+        'LDAP_GROUP_BASE_DN' => implode(';', (array) ($config['group_base_dns'] ?? [])),
+    ];
+    foreach ($values as $key => $value) {
+        fwrite(STDOUT, $key . '=' . str_replace(["\r", "\n"], '', $value) . PHP_EOL);
+    }
     exit(0);
 }
 

@@ -30,6 +30,9 @@ x-nextcloud-env: &nextcloud-env
   SSO_ENABLED: ${SSO_ENABLED:-false}
   NEXTCLOUD_LDAP_ENABLED: ${NEXTCLOUD_LDAP_ENABLED:-false}
   NEXTCLOUD_LDAP_PASSWORD_FILE: /run/secrets/nextcloud_ldap_password
+  # Verbindungsdaten der Hauptquelle aus der Verwaltung (office-setup.sh);
+  # haben Vorrang vor den LDAP_*-Werten unten.
+  NEXTCLOUD_LDAP_CONFIG_FILE: /run/secrets/nextcloud_ldap_config
   NEXTCLOUD_LDAP_ALLOWED_GROUPS: ${NEXTCLOUD_LDAP_ALLOWED_GROUPS:-}
   NEXTCLOUD_LDAP_ADMIN_GROUP: ${NEXTCLOUD_LDAP_ADMIN_GROUP:-}
   NEXTCLOUD_LDAP_USER_FILTER: ${NEXTCLOUD_LDAP_USER_FILTER:-}
@@ -59,6 +62,7 @@ x-nextcloud-secrets: &nextcloud-secrets
   - nextcloud_admin_password
   - nextcloud_redis_password
   - nextcloud_ldap_password
+  - nextcloud_ldap_config
   - office_jwt_secret
 
 services:
@@ -457,5 +461,7 @@ secrets:
     file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/nextcloud_redis_password
   nextcloud_ldap_password:
     file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/nextcloud_ldap_password
+  nextcloud_ldap_config:
+    file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/nextcloud_ldap_config
   office_backup_passphrase:
     file: ${OFFICE_SECRETS_DIR:-./docker/office/unconfigured}/office_backup_passphrase

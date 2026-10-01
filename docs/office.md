@@ -240,7 +240,8 @@ sequenceDiagram
   nicht zusammen (z. B. Bind-DN in der Verwaltung geändert, `.env` veraltet):
   `./scripts/office-setup.sh` erneut ausführen, damit Nextcloud die aktuelle
   Konfiguration erhält (das Skript liest sie nach dem Neubau der Container
-  erneut aus und startet Nextcloud bei Änderungen neu), und mit
+  erneut aus und übernimmt Änderungen im laufenden Nextcloud; manuell:
+  `docker compose restart nextcloud`), und mit
   `occ ldap:test-config s01` prüfen. Ist `secrets/nextcloud_ldap_config` leer,
   lief beim Export noch ein altes app-Image – Skript einfach erneut ausführen.
 - `NEXTCLOUD_SSO_LOGIN_REDIRECT=false` schaltet die Umleitung der

@@ -156,7 +156,10 @@ write_if_changed() {
     return $result
 }
 
-export_ldap_secrets || true
+# Merkt sich Aenderungen: "docker compose up" erstellt Nextcloud nicht neu,
+# wenn sich nur der Inhalt eines Secrets aendert.
+ldap_changed=0
+export_ldap_secrets && ldap_changed=1
 if [ -n "$WITH_AD" ] && [ ! -s "$SECRETS_DIR/nextcloud_ldap_password" ]; then
     info "Hinweis: Kein AD-Bind-Passwort gefunden. Nach dem Eintragen unter Verwaltung -> Active Directory dieses Skript erneut ausfuehren."
 fi
@@ -202,10 +205,7 @@ for _ in 1 2 3 4 5 6; do
     app_running && break
     sleep 5
 done
-if export_ldap_secrets; then
-    info "AD-Zugangsdaten fuer Nextcloud aktualisiert - Nextcloud wird neu gestartet."
-    docker compose restart nextcloud >/dev/null
-fi
+export_ldap_secrets && ldap_changed=1
 
 info "Warte auf Nextcloud und Euro-Office ..."
 deadline=$(( $(date +%s) + 900 ))
@@ -221,6 +221,14 @@ while :; do
     fi
     sleep 10
 done
+
+# Geaenderte AD-Zugangsdaten im laufenden Nextcloud uebernehmen (der Hook ist
+# idempotent; die Secrets sind als Datei eingebunden und sofort sichtbar).
+if [ "$ldap_changed" = "1" ]; then
+    info "AD-Zugangsdaten fuer Nextcloud geaendert - werden uebernommen ..."
+    docker compose exec -T -u www-data nextcloud sh /docker-entrypoint-hooks.d/before-starting/50-intranet-setup.sh >/dev/null \
+        || info "Uebernahme fehlgeschlagen - bitte \"docker compose restart nextcloud\" ausfuehren."
+fi
 
 app_url="$(env_get APP_URL)"
 info "Fertig. Office: ${app_url:-http://localhost:8080}/office/"

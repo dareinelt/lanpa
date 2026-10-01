@@ -57,6 +57,9 @@ while read -r key service; do
       SSO_PROXY_PROTOCOL: \"true\"
       OFFICE_ENABLED: \${OFFICE_ENABLED:-false}
       APP_URL: \${APP_URL:-http://localhost:8080}
+      # Kerberos-SPNs wie die Hauptinstanz (Hostname aus APP_URL, SSO_SPN_HOSTS);
+      # der Realm dieser Domaene wird am Domaenencontroller ermittelt.
+      SSO_SPN_HOSTS: \${SSO_SPN_HOSTS:-}
     volumes:
       - sso_token:/run/intranet-sso:ro
       - ${volume}:/var/lib/samba

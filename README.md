@@ -111,7 +111,7 @@ installieren, nicht starten).
 | `sync` | Dauerlauf der AD-Synchronisation (`scripts/sync_worker.php`) | – |
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
-| `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional NTLM-Anmeldung; leitet `/office/` und `/eurooffice/` weiter; Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
+| `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter; Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
 | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
 
 ---
@@ -178,7 +178,9 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | `ALARM_PASSWORD` / `ALARM_PASSWORD_FILE` | Gateway-Passwort (nur ENV bzw. Docker-Secret) | – |
 | `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` | SNMP-Agent (Community-String, Standort, Kontakt) | `public` / `Intranet` / `admin@example.internal` |
 | `SNMP_PORT` | Am Host veröffentlichter UDP-Port des SNMP-Agenten (nur Docker-Port-Mapping) | `161` |
-| `SSO_ENABLED` | Windows-Anmeldung (NTLM) global ein-/ausschalten; Domänen werden im Adminbereich gepflegt | `false` |
+| `SSO_ENABLED` | Windows-Anmeldung (Kerberos/NTLM) global ein-/ausschalten; Domänen werden im Adminbereich gepflegt | `false` |
+| `SSO_REALM` | Kerberos-Realm der Hauptdomäne; leer = automatisch vom Domänencontroller ermittelt | leer |
+| `SSO_SPN_HOSTS` | Weitere Hostnamen (kommagetrennt), unter denen das Intranet aufgerufen wird (Kerberos-SPNs zusätzlich zum Hostnamen aus `APP_URL`) | leer |
 | `SSO_AUTO_LOGIN` | Automatischer Windows-Anmeldeversuch einmal je Sitzung (sonst nur über „Mit Windows anmelden“) | `true` |
 | `SSO_NETBIOS_NAME` | Computername des auth-Containers im AD (max. 15 Zeichen, je Installation eindeutig); der Beitritt bleibt im Volume `sso_samba` erhalten | `lanpa-sso` |
 | `SSO_SESSION_LIFETIME` | Gültigkeit der erkannten Windows-Anmeldung in der Sitzung (Sekunden, `0` = Sitzungsende) | `28800` |
@@ -261,8 +263,9 @@ Sitzungserneuerung nach der Anmeldung, automatische Abmeldung bei Inaktivität, 
 
 Die Seite bleibt ohne Anmeldung nutzbar: Öffentliche Kacheln, Telefonliste und Links sind immer
 sichtbar, berechtigungsbeschränkte Kacheln erst nach erkannter Windows-Anmeldung. Der auth-Container
-verlangt NTLM nur am Anmeldepunkt `/sso/anmelden`; die Anwendung merkt sich den erkannten Benutzer in
-der Sitzung (`SSO_SESSION_LIFETIME`) und prüft ihn bei jeder Anfrage erneut gegen das Telefonbuch.
+verlangt die Anmeldung (HTTP Negotiate: Kerberos, sonst NTLM) nur am Anmeldepunkt `/sso/anmelden`;
+die Anwendung merkt sich den erkannten Benutzer in der Sitzung (`SSO_SESSION_LIFETIME`) und prüft ihn
+bei jeder Anfrage erneut gegen das Telefonbuch.
 
 - Mit `SSO_AUTO_LOGIN=true` (Standard) wird jeder Browser einmal je Sitzung über den Anmeldepunkt
   geleitet: Domänen-PCs kommen unbemerkt angemeldet zurück. Browser außerhalb der Domäne erhalten die
@@ -271,6 +274,14 @@ der Sitzung (`SSO_SESSION_LIFETIME`) und prüft ihn bei jeder Anfrage erneut geg
 - Mit `SSO_AUTO_LOGIN=false` erfolgt die Anmeldung nur über den Link „Mit Windows anmelden“ im Kopf.
 - Voraussetzung für die unbemerkte Anmeldung: Die Adresse des Intranets liegt bei den Clients in der
   Zone „Lokales Intranet“ bzw. ist per Richtlinie (`AuthServerAllowlist`) freigegeben.
+- Kerberos: Der auth-Container tritt der Domäne per ADS bei (Realm wird am Domänencontroller
+  ermittelt, optional `SSO_REALM`), registriert den Service Principal `HTTP/<Hostname aus APP_URL>`
+  am Computerkonto `SSO_NETBIOS_NAME` und erzeugt daraus die Keytab. Weitere Hostnamen, unter denen
+  das Intranet aufgerufen wird: `SSO_SPN_HOSTS`. Voraussetzungen: Die Clients erreichen das Intranet
+  unter genau diesem DNS-Namen (kein IP-Zugriff, kein CNAME auf einen anderen SPN), die Uhren von
+  Clients, DC und Docker-Host weichen weniger als 5 Minuten ab, und das Beitrittskonto darf SPNs am
+  Computerkonto setzen. Ist kein Kerberos möglich (SPN belegt, Realm unbekannt), bleibt NTLM.
+  Beim Zugriff per IP-Adresse oder ohne Ticket fällt der Browser auf NTLM zurück.
 
 ### Windows-Anmeldung für mehrere Domänen
 

@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Support\Html;
 
 /**
- * Windows-Anmeldung (NTLM) einer Identitaetsquelle: Domaene, Domaenen-
- * controller und Konto fuer den Domaenenbeitritt des auth-Containers.
+ * Windows-Anmeldung (Kerberos/NTLM) einer Identitaetsquelle: Domaene,
+ * Domaenencontroller und Konto fuer den Domaenenbeitritt des auth-Containers.
  */
 
 /** @var array<string,string> $values */
@@ -65,6 +65,7 @@ $ssoInvalid = static function (string $field) use ($errors): string {
         <label for="sso_join_user">Konto für den Domänenbeitritt</label>
         <input type="text" id="sso_join_user" name="sso_join_user" maxlength="255" value="<?= Html::e($values['sso_join_user'] ?? '') ?>"
                placeholder="svc-intranet-join" autocomplete="off" <?= $ssoInvalid('sso_join_user') ?>>
+        <p class="field__hint">Das Konto legt das Computerkonto des auth-Containers an und registriert daran den Kerberos-Dienstnamen HTTP/&lt;Hostname der Intranet-Adresse&gt; (Recht „Computer der Domäne hinzufügen“ bzw. Schreibrecht auf servicePrincipalName).</p>
         <?= $ssoError('sso_join_user') ?>
     </div>
 

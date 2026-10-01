@@ -1,0 +1,13 @@
+--- a/src/gss_creds.c	2026-10-01 18:31:57
++++ b/src/gss_creds.c	2026-10-01 18:31:57
+@@ -481,7 +481,9 @@
+             goto done;
+         }
+ 
+-        if (cred_store != GSS_C_NO_CRED_STORE) {
++        /* A cred store without an acceptor name (e.g. a krb5 keytab
++         * handed down via SPNEGO) must still yield a server credential. */
++        if (cred_store != GSS_C_NO_CRED_STORE && name != NULL) {
+             retmin = get_creds_from_store(name, cred, cred_store);
+         } else {
+             retmin = get_server_creds(name, cred);

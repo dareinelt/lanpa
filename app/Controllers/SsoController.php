@@ -11,11 +11,11 @@ use App\Security\Session;
 use App\Security\SsoAuth;
 
 /**
- * Freiwillige Windows-Anmeldung (NTLM). Die Seite ist ohne Anmeldung nutzbar;
- * nur /sso/anmelden verlangt im auth-Container NTLM.
+ * Freiwillige Windows-Anmeldung (Kerberos/NTLM). Die Seite ist ohne Anmeldung
+ * nutzbar; nur /sso/anmelden verlangt im auth-Container die Anmeldung.
  *
- *   /sso?ziel=…        merkt sich das Ziel (ohne NTLM) und leitet weiter
- *   /sso/anmelden      NTLM im auth-Container; uebernimmt den erkannten Benutzer
+ *   /sso?ziel=…        merkt sich das Ziel (ohne Anmeldung) und leitet weiter
+ *   /sso/anmelden      Anmeldung im auth-Container; uebernimmt den erkannten Benutzer
  *   /sso/nicht-erkannt Fehlerseite (401) des auth-Containers fuer Browser ohne
  *                      Domaenenanmeldung: sofort zurueck zum Ziel
  */
@@ -53,12 +53,15 @@ final class SsoController extends Controller
     }
 
     /**
-     * Status 401 bleibt erhalten, damit Domaenen-Clients die NTLM-Aufforderung
-     * des auth-Containers (WWW-Authenticate) weiterhin beantworten.
+     * Status 401 bleibt erhalten, damit Domaenen-Clients die Aufforderung des
+     * auth-Containers (WWW-Authenticate) weiterhin beantworten. Der auth-
+     * Container liefert diese Seite auch waehrend eines noch laufenden
+     * Handshakes (jede 401-Antwort); das Ziel bleibt daher gespeichert, bis
+     * /sso/anmelden es uebernimmt.
      */
     public function notRecognized(Request $request): Response
     {
-        $target = $this->takeTarget();
+        $target = SsoAuth::safeTarget((string) Session::get(SsoAuth::RETURN_KEY, '/'));
 
         return $this->noStore($this->view('pages.sso_not_recognized', [
             'pageTitle' => 'Ohne Windows-Anmeldung',

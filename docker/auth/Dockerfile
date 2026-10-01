@@ -2,11 +2,13 @@
 # Vorgelagerter Einstiegs-/Authentifizierungs-Container (einziger Container
 # mit veroeffentlichtem HTTP-Port).
 #
-# 1. NTLM-Anmeldung (HTTP Negotiate) OHNE Kerberos: Apache + mod_auth_gssapi
-#    mit dem GSSAPI-Mechanismus gss-ntlmssp, der die NTLM-Antworten ueber
-#    winbind gegen den Domaenencontroller prueft. Der identifizierte
-#    SamAccountName wird als Header "X-Remote-User" an die Anwendung (app)
-#    weitergereicht. Nur aktiv bei SSO_ENABLED=true.
+# 1. Windows-Anmeldung (HTTP Negotiate/SPNEGO) per Kerberos oder NTLM:
+#    Apache + mod_auth_gssapi. Kerberos-Tickets werden gegen die Keytab des
+#    Computerkontos geprueft (Service Principal HTTP/<Hostname der URL>),
+#    NTLM-Antworten ueber den GSSAPI-Mechanismus gss-ntlmssp via winbind
+#    gegen den Domaenencontroller. Der identifizierte Benutzer wird als Header
+#    "X-Remote-User" an die Anwendung (app) weitergereicht. Nur aktiv bei
+#    SSO_ENABLED=true.
 #    (Das frueher verwendete Paket libapache2-mod-auth-ntlm-winbind ist in
 #    Debian bookworm nicht mehr enthalten.)
 #    Weitere Domaenen ohne Vertrauensstellung (Zweigstellen, Toechter, ...)
@@ -16,6 +18,30 @@
 # 2. HTTPS mit dem Zertifikat aus der Zertifikatsverwaltung (tls-sync.sh).
 # 3. Reverse-Proxy fuer Euro-Office: /office/ -> nextcloud, /eurooffice/ ->
 #    eurooffice (inkl. WebSockets). Nur aktiv bei OFFICE_ENABLED=true.
+
+# --- Stufe 1: gss-ntlmssp aus den Debian-Quellen mit Patches bauen ----------
+# Das Debian-Paket gss-ntlmssp 1.2.0 weist NTLM-NEGOTIATE-Nachrichten ohne
+# optionales Versionsfeld (32 Byte) als ungueltig ab - genau diese schicken
+# der eingebaute NTLM-Client von Chromium/Firefox und curl. Ausserdem liefert
+# es bei gesetztem GssapiCredStore (Keytab fuer Kerberos) ohne expliziten
+# Acceptor-Namen kein Server-Credential ("Not a server credential type").
+# Beides wird hier per Quellpatch behoben (docker/auth/patches/).
+FROM debian:bookworm-slim AS gssntlmssp-build
+
+ENV DEBIAN_FRONTEND=noninteractive
+COPY docker/auth/patches/ /tmp/patches/
+RUN set -eux; \
+    sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/debian.sources; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends dpkg-dev devscripts equivs patch; \
+    apt-get build-dep -y gss-ntlmssp; \
+    cd /tmp && apt-get source gss-ntlmssp; \
+    cd /tmp/gss-ntlmssp-*/; \
+    for p in /tmp/patches/*.patch; do patch -p1 < "$p"; done; \
+    DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage -b -uc -us; \
+    mkdir -p /out && cp /tmp/gss-ntlmssp_*.deb /out/
+
+# --- Stufe 2: Laufzeit-Image ------------------------------------------------
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -27,6 +53,7 @@ RUN set -eux; \
         libapache2-mod-auth-gssapi \
         gss-ntlmssp \
         winbind \
+        krb5-user \
         haproxy \
         samba-common-bin \
         ca-certificates \
@@ -34,6 +61,12 @@ RUN set -eux; \
         openssl \
     ; \
     rm -rf /var/lib/apt/lists/*
+
+# Gepatchtes gss-ntlmssp (siehe Stufe 1) ueber das Debian-Paket installieren.
+RUN --mount=type=bind,from=gssntlmssp-build,source=/out,target=/tmp/gss-out \
+    set -eux; \
+    dpkg -i /tmp/gss-out/gss-ntlmssp_*.deb; \
+    apt-mark hold gss-ntlmssp
 
 # Apache-Module; Apache (www-data) benoetigt fuer die NTLM-Pruefung Zugriff
 # auf die privilegierte winbind-Pipe (Gruppe winbindd_priv).

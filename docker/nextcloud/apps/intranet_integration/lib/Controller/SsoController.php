@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\IntranetIntegration\Controller;
 
 use OC\Authentication\Token\IProvider;
+use OC\User\Manager as OCUserManager;
 use OC\User\Session as OCUserSession;
 use OCA\IntranetIntegration\AppInfo\Application;
 use OCA\IntranetIntegration\Service\TokenVerifier;
@@ -147,8 +148,17 @@ class SsoController extends Controller {
             return $user;
         }
 
-        // user_ldap legt die Zuordnung erst bei einer Suche an; interne
-        // Namen koennen sich in der Grossschreibung unterscheiden.
+        // user_ldap kennt ein AD-Konto erst nach dem ersten Kontakt (Zuordnung
+        // DN -> Benutzername). Wie beim Anmeldeformular wird der Anmeldename
+        // deshalb ueber den Login-Filter (sAMAccountName/UPN/mail) aufgeloest;
+        // dabei entsteht die Zuordnung, auch wenn das Konto nie aufgelistet wurde.
+        $user = $this->resolveLoginName($uid);
+        if ($user !== null) {
+            return $user;
+        }
+
+        // Suche ueber die konfigurierten Suchattribute; interne Namen koennen
+        // sich in der Grossschreibung unterscheiden.
         foreach ($this->userManager->search($uid, 10) as $candidate) {
             if (strcasecmp($candidate->getUID(), $uid) === 0) {
                 return $candidate;
@@ -162,6 +172,39 @@ class SsoController extends Controller {
             $matches = $this->userManager->getByEmail($email);
             if (count($matches) === 1) {
                 return $matches[0];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Anmeldename -> interner Benutzername ueber die Benutzer-Backends
+     * (user_ldap: Login-Filter mit sAMAccountName, userPrincipalName, mail).
+     */
+    private function resolveLoginName(string $uid): ?IUser {
+        if (!$this->userManager instanceof OCUserManager) {
+            return null;
+        }
+
+        foreach ($this->userManager->getBackends() as $backend) {
+            if (!method_exists($backend, 'loginName2UserName')) {
+                continue;
+            }
+            try {
+                $internal = $backend->loginName2UserName($uid);
+            } catch (\Throwable $e) {
+                $this->logger->info('Intranet-SSO: Aufloesung des Anmeldenamens fehlgeschlagen.', [
+                    'app' => Application::APP_ID,
+                    'exception' => $e,
+                ]);
+                continue;
+            }
+            if (is_string($internal) && $internal !== '') {
+                $user = $this->userManager->get($internal);
+                if ($user !== null) {
+                    return $user;
+                }
             }
         }
 

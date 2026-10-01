@@ -172,6 +172,9 @@ if is_true "${NEXTCLOUD_LDAP_ENABLED:-false}" && [ -n "${LDAP_HOST:-}" ]; then
     set_ldap ldapGroupFilterMode 1
     set_ldap ldapUserDisplayName "${LDAP_ATTR_DISPLAY_NAME:-displayName}"
     set_ldap ldapEmailAttribute "${LDAP_ATTR_EMAIL:-mail}"
+    # Benutzersuche (Teilen-Dialog, Intranet-SSO) auch ueber Anmeldename und
+    # E-Mail, nicht nur ueber den Anzeigenamen.
+    set_ldap ldapAttributesForUserSearch "$(printf '%s\n%s\n%s\n%s' "$uid_attr" "${LDAP_ATTR_DISPLAY_NAME:-displayName}" "${LDAP_ATTR_EMAIL:-mail}" userPrincipalName)"
     set_ldap ldapGroupDisplayName cn
     set_ldap ldapGroupMemberAssocAttr member
     set_ldap useMemberOfToDetectMembership 1

@@ -114,6 +114,21 @@ if app_present eurooffice; then
 fi
 
 # --- Active Directory (user_ldap) --------------------------------------------
+# Verbindungsdaten der Hauptquelle aus der Intranet-Verwaltung (von
+# office-setup.sh exportiert) haben Vorrang vor den LDAP_*-Werten der .env:
+# Bind-DN und Bind-Passwort stammen so aus derselben Quelle.
+ldap_cfg_file="${NEXTCLOUD_LDAP_CONFIG_FILE:-}"
+if [ -n "$ldap_cfg_file" ] && [ -s "$ldap_cfg_file" ]; then
+    while IFS='=' read -r key value; do
+        value=$(printf '%s' "$value" | tr -d '\r')
+        [ -n "$value" ] || continue
+        case "$key" in
+            LDAP_HOST|LDAP_BACKUP_HOST|LDAP_PORT|LDAP_USE_TLS|LDAP_VERIFY_CERT|LDAP_BASE_DN|LDAP_BIND_DN|LDAP_GROUP_BASE_DN)
+                eval "$key=\$value" ;;
+        esac
+    done < "$ldap_cfg_file"
+fi
+
 # Explizit (NEXTCLOUD_LDAP_ENABLED) oder automatisch, sobald das Intranet der
 # Domaene beigetreten ist (SSO_ENABLED) - auch wenn Nextcloud schon vor dem
 # Beitritt eingerichtet wurde und die .env noch "false" enthaelt.
@@ -133,11 +148,11 @@ if is_true "$NEXTCLOUD_LDAP_ENABLED" && [ -n "${LDAP_HOST:-}" ]; then
 
     port="${LDAP_PORT:-636}"
     starttls=0
+    scheme="ldap://"
     if is_true "${LDAP_USE_TLS:-true}"; then
-        if [ "$port" = "636" ]; then host="ldaps://${LDAP_HOST}"; else host="ldap://${LDAP_HOST}"; starttls=1; fi
-    else
-        host="ldap://${LDAP_HOST}"
+        if [ "$port" = "636" ]; then scheme="ldaps://"; else starttls=1; fi
     fi
+    host="${scheme}${LDAP_HOST}"
     certcheck=0
     is_true "${LDAP_VERIFY_CERT:-true}" || certcheck=1
 
@@ -163,6 +178,12 @@ if is_true "$NEXTCLOUD_LDAP_ENABLED" && [ -n "${LDAP_HOST:-}" ]; then
     set_ldap() { occ ldap:set-config "$prefix" "$1" "$2" >/dev/null || warn "LDAP-Einstellung $1 fehlgeschlagen."; }
     set_ldap ldapHost "$host"
     set_ldap ldapPort "$port"
+    if [ -n "${LDAP_BACKUP_HOST:-}" ]; then
+        set_ldap ldapBackupHost "${scheme}${LDAP_BACKUP_HOST}"
+        set_ldap ldapBackupPort "$port"
+    else
+        set_ldap ldapBackupHost ""
+    fi
     set_ldap ldapTLS "$starttls"
     set_ldap turnOffCertCheck "$certcheck"
     set_ldap ldapAgentName "${LDAP_BIND_DN:-}"

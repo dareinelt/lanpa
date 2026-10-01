@@ -84,8 +84,20 @@ class SsoController extends Controller {
             return new RedirectResponse($target);
         }
 
-        $user = $this->findUser($uid, (string) ($claims['email'] ?? ''))
-            ?? $this->provision($uid, (string) ($claims['name'] ?? ''), (string) ($claims['email'] ?? ''));
+        $email = (string) ($claims['email'] ?? '');
+        try {
+            $user = $this->findUser($uid, $email)
+                ?? $this->provision($uid, (string) ($claims['name'] ?? ''), $email);
+        } catch (\Throwable $e) {
+            // z. B. "LDAP Operations error" bei fehlgeschlagenem Bind: kein
+            // Serverfehler, sondern Anmeldeformular; Ursache steht im Protokoll.
+            $this->logger->error('Intranet-SSO: Kontosuche fuer {uid} fehlgeschlagen (Verzeichnis nicht erreichbar oder Bind-Zugangsdaten ungueltig?).', [
+                'app' => Application::APP_ID,
+                'uid' => $uid,
+                'exception' => $e,
+            ]);
+            return $this->fallback($target);
+        }
         if ($user === null || !$user->isEnabled()) {
             $this->logger->warning('Intranet-SSO: Konto {uid} ist in Nextcloud nicht vorhanden oder deaktiviert.', [
                 'app' => Application::APP_ID,
@@ -112,6 +124,20 @@ class SsoController extends Controller {
             return false;
         }
 
+        try {
+            return $this->completeLogin($user);
+        } catch (\Throwable $e) {
+            $this->logger->error('Intranet-SSO: Anmeldung von {uid} fehlgeschlagen.', [
+                'app' => Application::APP_ID,
+                'uid' => $user->getUID(),
+                'exception' => $e,
+            ]);
+            return false;
+        }
+    }
+
+    private function completeLogin(IUser $user): bool {
+        assert($this->userSession instanceof OCUserSession);
         $uid = $user->getUID();
         $backend = $user->getBackend();
         $this->dispatcher->dispatchTyped(new BeforeUserLoggedInEvent($uid, null, $backend instanceof IUserBackend ? $backend : null));

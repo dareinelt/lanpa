@@ -163,9 +163,13 @@ aufrufen.
   **immer** weitergereicht (siehe unten). Er erscheint dezent im Kopf der
   Startseite (Initialen und Name, Tooltip mit Anmeldenamen).
 - **Mehrere Identitätsquellen:** Nextcloud (`user_ldap`) ist nur an die
-  Hauptquelle angebunden; das Bind-Passwort erhält es über das Secret
-  `secrets/nextcloud_ldap_password`, das `office-setup.sh` aus der
-  verschlüsselt gespeicherten Konfiguration der Anwendung schreibt. Benutzer
+  Hauptquelle angebunden; Bind-Passwort und Verbindungsdaten (Server, Bind-DN,
+  Basis-DN) erhält es über die Secrets `secrets/nextcloud_ldap_password` und
+  `secrets/nextcloud_ldap_config`, die `office-setup.sh` aus der in der
+  Verwaltung gepflegten (verschlüsselt gespeicherten) Konfiguration schreibt.
+  Die `LDAP_*`-Werte der `.env` gelten nur als Startwerte. Nach Änderungen
+  unter *Verwaltung → Active Directory* daher `./scripts/office-setup.sh`
+  erneut ausführen. Benutzer
   weiterer Quellen (Zweigstellen, Tochtergesellschaften) werden im Token als
   `name@kennung` übergeben und kollidieren so nicht mit gleichnamigen Konten der
   Zentrale.
@@ -231,6 +235,11 @@ sequenceDiagram
   Benutzer den Benutzerfilter erfüllt (`NEXTCLOUD_LDAP_ALLOWED_GROUPS`) und
   `docker compose exec -u www-data nextcloud php occ ldap:check-user <SamAccountName>`
   ausführen; Details stehen im Nextcloud-Protokoll (`Intranet-SSO: …`).
+  Meldet das Protokoll `Bind failed: 49: Invalid credentials` bzw.
+  `LDAP Operations error`, passen Bind-DN und Bind-Passwort von `user_ldap`
+  nicht zusammen (z. B. Bind-DN in der Verwaltung geändert, `.env` veraltet):
+  `./scripts/office-setup.sh` erneut ausführen, damit Nextcloud die aktuelle
+  Konfiguration erhält, und mit `occ ldap:test-config s01` prüfen.
 - `NEXTCLOUD_SSO_LOGIN_REDIRECT=false` schaltet die Umleitung der
   Anmeldeseite ab; `NEXTCLOUD_SSO_AUTOPROVISION=true` legt unbekannte Konten
   lokal an (nur ohne AD bzw. zum Testen sinnvoll).

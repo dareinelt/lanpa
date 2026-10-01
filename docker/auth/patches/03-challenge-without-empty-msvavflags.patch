@@ -1,0 +1,20 @@
+Upstream: https://github.com/gssapi/gss-ntlmssp/pull/98 (enthalten ab 1.3.1)
+
+gss-ntlmssp 1.2.0 traegt in die TargetInfo der CHALLENGE-Nachricht ein leeres
+MsvAvFlags-Feld (Wert 0) ein. Windows (SSPI) beruecksichtigt dieses Feld bei
+der Berechnung des MIC in der AUTHENTICATE-Nachricht nicht; die MIC-Pruefung
+im Server schlaegt dann fehl ("Invalid token was supplied (Permission
+denied)") und der Browser zeigt trotz Intranetzone einen Anmeldedialog.
+
+--- a/src/gss_sec_ctx.c
++++ b/src/gss_sec_ctx.c
+@@ -756,7 +756,8 @@
+                                          nb_domain_name,
+                                          server_name->data.server.name,
+                                          NULL, NULL,
+-                                         &av_flags, &timestamp,
++                                         av_flags ? &av_flags : NULL, /* don't include empty MsvAvFlags */
++                                         &timestamp,
+                                          NULL,
+                                          server_name->data.server.spn,
+                                          NULL,

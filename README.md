@@ -350,9 +350,19 @@ per LDAP, Domänenbeitritt des auth-Containers und unbemerkte Browser-Anmeldung 
 ### Anmeldedialog vermeiden: Clients für die unbemerkte Anmeldung freigeben
 
 Erscheint beim Öffnen der Seite ein Anmeldedialog des Browsers, obwohl die Anmeldung mit
-AD-Benutzername und -Passwort funktioniert, fehlt auf dem Client die Freigabe für die automatische
-Windows-Anmeldung. Der Server kann das nicht beeinflussen – der Browser entscheidet anhand der
-Internetzone bzw. seiner Richtlinien, ob er die Anmeldung des Windows-Benutzers mitsendet.
+AD-Benutzername und -Passwort funktioniert, gibt es zwei Ursachen – das Protokoll des auth-Containers
+(`docker compose logs auth`) unterscheidet sie:
+
+- **Keine Zeile `auth_gssapi:error` beim Aufruf:** Der Browser hat gar nicht erst versucht, die
+  Windows-Anmeldung zu senden – auf dem Client fehlt die Freigabe für die automatische Anmeldung
+  (Zone „Lokales Intranet“ / `AuthServerAllowlist`). Der Server kann das nicht beeinflussen; Abhilfe
+  siehe Varianten A und B unten.
+- **`GSS ERROR In Negotiate Auth: gss_accept_sec_context() failed: [Invalid token was supplied
+  (Permission denied)]`:** Der Browser hat die Anmeldung automatisch gesendet, der auth-Container hat
+  die NTLM-Nachricht aber abgelehnt (MIC-Prüfung). Ursache ist ein Fehler in gss-ntlmssp 1.2.0
+  (Debian bookworm), der seit dem Patch `docker/auth/patches/03-challenge-without-empty-msvavflags.patch`
+  behoben ist: `docker compose build auth && docker compose up -d auth`. Nach manueller Eingabe der
+  Zugangsdaten klappte die Anmeldung bisher, weil Windows die Nachricht dann anders aufbaut.
 
 **Variante A – Skript (Test auf einzelnen PCs oder als GPO-Startskript):** `scripts/sso-client-setup.ps1`
 als Administrator ausführen; es setzt die Zone „Lokales Intranet“ und `AuthServerAllowlist` in `HKLM`

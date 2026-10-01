@@ -114,7 +114,15 @@ if app_present eurooffice; then
 fi
 
 # --- Active Directory (user_ldap) --------------------------------------------
-if is_true "${NEXTCLOUD_LDAP_ENABLED:-false}" && [ -n "${LDAP_HOST:-}" ]; then
+# Explizit (NEXTCLOUD_LDAP_ENABLED) oder automatisch, sobald das Intranet der
+# Domaene beigetreten ist (SSO_ENABLED) - auch wenn Nextcloud schon vor dem
+# Beitritt eingerichtet wurde und die .env noch "false" enthaelt.
+NEXTCLOUD_LDAP_ENABLED="${NEXTCLOUD_LDAP_ENABLED:-false}"
+if ! is_true "$NEXTCLOUD_LDAP_ENABLED" && is_true "${SSO_ENABLED:-false}" && [ -n "${LDAP_HOST:-}" ]; then
+    NEXTCLOUD_LDAP_ENABLED=true
+    log "Domaenenbeitritt aktiv (SSO_ENABLED) - AD-Anbindung wird automatisch aktiviert."
+fi
+if is_true "$NEXTCLOUD_LDAP_ENABLED" && [ -n "${LDAP_HOST:-}" ]; then
     log "Konfiguriere AD-Anbindung (user_ldap) ..."
     occ app:enable user_ldap >/dev/null
 
@@ -197,7 +205,7 @@ else
 fi
 
 # --- Automatische Windows-Anmeldung (NTLM ueber den auth-Container) ---------
-if is_true "${SSO_ENABLED:-false}" && is_true "${NEXTCLOUD_LDAP_ENABLED:-false}"; then
+if is_true "${SSO_ENABLED:-false}" && is_true "$NEXTCLOUD_LDAP_ENABLED"; then
     log "Aktiviere NTLM-Anmeldung (user_saml, Umgebungsvariable) ..."
     ensure_app user_saml
     if app_present user_saml; then

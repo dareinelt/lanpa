@@ -10,7 +10,10 @@
 #                        HTTP/<Hostname aus APP_URL> und HTTP/<SSO_SPN_HOSTS>.
 #                        SSO_DC darf mehrere Domaenencontroller enthalten
 #                        (Leerzeichen/Komma getrennt); SSO_DC_IP die passenden
-#                        IP-Adressen in derselben Reihenfolge.
+#                        IP-Adressen in derselben Reihenfolge. SSO_NTP:
+#                        Zeitserver (leer = die Domaenencontroller); mit
+#                        CAP_SYS_TIME stellt chronyd die Uhr des Containers,
+#                        sonst wird die Abweichung nur gemessen und gemeldet.
 #                        Computername im AD: SSO_NETBIOS_NAME (sonst der
 #                        Hostname); der Beitritt liegt in /var/lib/samba
 #                        (Volume) und wird bei jedem Start wiederverwendet.
@@ -108,7 +111,7 @@ fetch_config() {
 
     while IFS='=' read -r name value || [ -n "$name" ]; do
         case "$name" in
-            SSO_CONFIGURED|SSO_ENABLED|SSO_DOMAIN|SSO_DC|SSO_DC_IP|SSO_JOIN_USER|SSO_JOIN_PASSWORD|SSO_ROUTES) ;;
+            SSO_CONFIGURED|SSO_ENABLED|SSO_DOMAIN|SSO_DC|SSO_DC_IP|SSO_NTP|SSO_JOIN_USER|SSO_JOIN_PASSWORD|SSO_ROUTES) ;;
             *) continue ;;
         esac
         decoded="$(printf '%s' "$value" | base64 -d 2>/dev/null)" || continue
@@ -126,6 +129,7 @@ if fetch_config; then
         SSO_DOMAIN="${FETCHED_SSO_DOMAIN:-}"
         SSO_DC="${FETCHED_SSO_DC:-}"
         SSO_DC_IP="${FETCHED_SSO_DC_IP:-}"
+        SSO_NTP="${FETCHED_SSO_NTP:-}"
         SSO_JOIN_USER="${FETCHED_SSO_JOIN_USER:-}"
         SSO_JOIN_PASSWORD="${FETCHED_SSO_JOIN_PASSWORD:-}"
         echo "[auth] Konfiguration aus der Verwaltung uebernommen."
@@ -133,7 +137,7 @@ if fetch_config; then
         echo "[auth] WARNUNG: In der Verwaltung ist keine Domaene fuer die Windows-Anmeldung hinterlegt (Active Directory -> Hauptquelle)." >&2
     fi
     unset FETCHED_SSO_JOIN_PASSWORD FETCHED_SSO_CONFIGURED FETCHED_SSO_ENABLED FETCHED_SSO_DOMAIN \
-        FETCHED_SSO_DC FETCHED_SSO_DC_IP FETCHED_SSO_JOIN_USER FETCHED_SSO_ROUTES
+        FETCHED_SSO_DC FETCHED_SSO_DC_IP FETCHED_SSO_NTP FETCHED_SSO_JOIN_USER FETCHED_SSO_ROUTES
 elif [ -n "$SSO_SOURCE" ]; then
     # Ohne Konfiguration kann eine Zweigstellen-Instanz keiner Domaene beitreten.
     echo "[auth] WARNUNG: Instanz ${SSO_SOURCE} ohne Konfiguration - Windows-Anmeldung deaktiviert." >&2
@@ -169,6 +173,41 @@ if is_true "$SSO_ENABLED"; then
                 echo "${ip} ${dc}" >> /etc/hosts
             fi
         done
+    fi
+
+    # Zeitabgleich: Kerberos toleriert hoechstens 5 Minuten Abweichung zwischen
+    # Client, DC und diesem Container. Zeitserver aus SSO_NTP, sonst die DCs
+    # (AD-Domaenencontroller sind immer auch NTP-Server). Mit CAP_SYS_TIME
+    # (cap_add: SYS_TIME) wird die Uhr sofort gestellt und chronyd haelt sie
+    # laufend nach; ohne die Berechtigung wird die Abweichung nur gemessen.
+    NTP_SERVERS="$(split_list "${SSO_NTP:-}")"
+    [ -z "$NTP_SERVERS" ] && NTP_SERVERS="$DCS"
+    if [ -n "$NTP_SERVERS" ]; then
+        mkdir -p /run/chrony /var/lib/chrony
+        {
+            for s in ${NTP_SERVERS}; do echo "server ${s} iburst"; done
+            echo "makestep 1 -1"
+            echo "driftfile /var/lib/chrony/drift"
+            echo "cmdport 0"
+        } > /etc/chrony/chrony.conf
+        if chronyd -q -t 15 -f /etc/chrony/chrony.conf >/tmp/chrony.log 2>&1; then
+            echo "[auth] Uhrzeit mit ${NTP_SERVERS} abgeglichen: $(grep -o 'System clock wrong by [^ ]* seconds' /tmp/chrony.log | tail -1)."
+            chronyd -f /etc/chrony/chrony.conf || echo "[auth] WARNUNG: chronyd konnte nicht gestartet werden." >&2
+        elif grep -q 'CAP_SYS_TIME not present' /tmp/chrony.log; then
+            if chronyd -Q -t 15 -f /etc/chrony/chrony.conf >/tmp/chrony.log 2>&1 \
+                && offset="$(grep -o 'System clock wrong by [^ ]* seconds' /tmp/chrony.log | tail -1 | awk '{print $5}')" && [ -n "$offset" ]; then
+                if awk -v o="$offset" 'BEGIN { exit ((o < 0 ? -o : o) > 300) ? 0 : 1 }'; then
+                    echo "[auth] WARNUNG: Uhrzeit weicht um ${offset} s von ${NTP_SERVERS} ab - Kerberos wird fehlschlagen. Uhr des Docker-Hosts stellen oder dem auth-Dienst cap_add: SYS_TIME geben." >&2
+                else
+                    echo "[auth] Uhrzeit geprueft (Abweichung ${offset} s zu ${NTP_SERVERS}); Stellen der Uhr nicht erlaubt (cap_add: SYS_TIME fehlt)."
+                fi
+            else
+                echo "[auth] WARNUNG: Zeitserver ${NTP_SERVERS} nicht erreichbar - Uhrzeit nicht geprueft." >&2
+            fi
+        else
+            echo "[auth] WARNUNG: Zeitserver ${NTP_SERVERS} nicht erreichbar - Uhrzeit nicht abgeglichen." >&2
+        fi
+        rm -f /tmp/chrony.log
     fi
 
     # Kerberos-Realm der Domaene ermitteln (SSO_REALM oder CLDAP-Abfrage am

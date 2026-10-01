@@ -16,7 +16,7 @@ final class IdentitySourceRepository extends Repository implements IdentitySourc
     private const FIELDS = [
         'source_key', 'label', 'hosts', 'port', 'use_tls', 'verify_cert', 'timeout', 'base_dn', 'bind_dn',
         'bind_password', 'user_filter', 'group_base_dn', 'group_filter', 'group_name_attribute', 'attributes',
-        'sso_enabled', 'sso_domain', 'sso_dcs', 'sso_join_user', 'sso_join_password', 'sso_networks',
+        'sso_enabled', 'sso_domain', 'sso_dcs', 'sso_ntp_servers', 'sso_join_user', 'sso_join_password', 'sso_networks',
         'sso_hostnames', 'sort_order', 'active',
     ];
 

@@ -132,6 +132,12 @@ services:
     # Fester Computername fuer den Domaenenbeitritt (NetBIOS, max. 15 Zeichen);
     # der Beitritt bleibt im Volume sso_samba erhalten.
     hostname: ${SSO_NETBIOS_NAME:-lanpa-sso}
+    # Erlaubt dem Container, seine Uhr mit den Zeitservern aus der SSO-
+    # Konfiguration (sonst den Domaenencontrollern) zu stellen - Kerberos
+    # toleriert hoechstens 5 Minuten Abweichung. Ohne diese Berechtigung wird
+    # die Abweichung beim Start nur gemessen und im Protokoll gemeldet.
+    cap_add:
+      - SYS_TIME
     depends_on:
       app:
         condition: service_healthy

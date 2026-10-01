@@ -372,6 +372,7 @@ final class IdentitySourceService
             'sso_enabled' => (string) (int) ($row['sso_enabled'] ?? 0),
             'sso_domain' => (string) ($row['sso_domain'] ?? ''),
             'sso_dcs' => (string) ($row['sso_dcs'] ?? ''),
+            'sso_ntp_servers' => (string) ($row['sso_ntp_servers'] ?? ''),
             'sso_join_user' => (string) ($row['sso_join_user'] ?? ''),
             'sso_networks' => (string) ($row['sso_networks'] ?? ''),
             'sso_hostnames' => (string) ($row['sso_hostnames'] ?? ''),
@@ -560,6 +561,20 @@ final class IdentitySourceService
         }
         $values['sso_dcs'] = implode("\n", $lines);
 
+        $ntpServers = [];
+        foreach (self::splitList((string) ($input['sso_ntp_servers'] ?? '')) as $server) {
+            $server = strtolower($server);
+            if (!Validator::isHostname($server) && filter_var($server, FILTER_VALIDATE_IP) === false) {
+                $errors['sso_ntp_servers'] = 'Ungültiger Zeitserver: ' . $server . ' (Hostname oder IP-Adresse).';
+                break;
+            }
+            $ntpServers[] = $server;
+        }
+        if (count($ntpServers) > self::MAX_DCS) {
+            $errors['sso_ntp_servers'] = sprintf('Es sind höchstens %d Zeitserver möglich.', self::MAX_DCS);
+        }
+        $values['sso_ntp_servers'] = implode("\n", array_values(array_unique($ntpServers)));
+
         $joinUser = trim((string) ($input['sso_join_user'] ?? ''));
         if ($joinUser !== '' && (mb_strlen($joinUser) > 255 || preg_match('/[\x00-\x1F\x7F%"]/', $joinUser) === 1)) {
             $errors['sso_join_user'] = 'Ungültiger Kontoname (ohne Steuerzeichen, % und Anführungszeichen).';
@@ -695,6 +710,7 @@ final class IdentitySourceService
             'sso_enabled' => ($values['sso_enabled'] ?? '0') === '1',
             'sso_domain' => $values['sso_domain'] ?? '',
             'sso_dcs' => $values['sso_dcs'] ?? '',
+            'sso_ntp_servers' => $values['sso_ntp_servers'] ?? '',
             'sso_join_user' => $values['sso_join_user'] ?? '',
             'sso_networks' => $values['sso_networks'] ?? '',
             'sso_hostnames' => $values['sso_hostnames'] ?? '',
@@ -788,6 +804,7 @@ final class IdentitySourceService
                 $env += $this->ssoDomainEnvironment(
                     $domain,
                     $this->settings->get('sso_dcs'),
+                    $this->settings->get('sso_ntp_servers'),
                     $this->settings->get('sso_join_user'),
                     $this->settings->get('sso_join_password')
                 );
@@ -812,6 +829,7 @@ final class IdentitySourceService
         ] + $this->ssoDomainEnvironment(
             (string) ($row['sso_domain'] ?? ''),
             (string) ($row['sso_dcs'] ?? ''),
+            (string) ($row['sso_ntp_servers'] ?? ''),
             (string) ($row['sso_join_user'] ?? ''),
             (string) ($row['sso_join_password'] ?? '')
         );
@@ -820,7 +838,7 @@ final class IdentitySourceService
     /**
      * @return array<string,string>
      */
-    private function ssoDomainEnvironment(string $domain, string $dcs, string $joinUser, string $encryptedPassword): array
+    private function ssoDomainEnvironment(string $domain, string $dcs, string $ntpServers, string $joinUser, string $encryptedPassword): array
     {
         $hosts = [];
         $ips = [];
@@ -833,6 +851,7 @@ final class IdentitySourceService
             'SSO_DOMAIN' => $domain !== '' ? $domain : 'WORKGROUP',
             'SSO_DC' => implode(' ', $hosts),
             'SSO_DC_IP' => in_array(true, array_map(static fn (string $ip): bool => $ip !== '-', $ips), true) ? implode(' ', $ips) : '',
+            'SSO_NTP' => implode(' ', self::splitList($ntpServers)),
             'SSO_JOIN_USER' => $joinUser,
             'SSO_JOIN_PASSWORD' => $this->decryptSecret($encryptedPassword),
         ];

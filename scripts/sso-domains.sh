@@ -48,6 +48,8 @@ while read -r key service; do
       dockerfile: docker/auth/Dockerfile
     restart: unless-stopped
     hostname: \${SSO_NETBIOS_NAME:-lanpa-sso}
+    cap_add:
+      - SYS_TIME
     depends_on:
       app:
         condition: service_healthy

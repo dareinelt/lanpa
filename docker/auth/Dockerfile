@@ -54,6 +54,7 @@ RUN set -eux; \
         gss-ntlmssp \
         winbind \
         krb5-user \
+        chrony \
         haproxy \
         samba-common-bin \
         ca-certificates \

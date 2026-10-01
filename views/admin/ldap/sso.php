@@ -62,6 +62,14 @@ $ssoInvalid = static function (string $field) use ($errors): string {
     </div>
 
     <div class="field">
+        <label for="sso_ntp_servers">Zeitserver (NTP, optional)</label>
+        <textarea id="sso_ntp_servers" name="sso_ntp_servers" rows="2" <?= $ssoInvalid('sso_ntp_servers') ?>
+                  placeholder="ntp.example.internal"><?= Html::e($values['sso_ntp_servers'] ?? '') ?></textarea>
+        <p class="field__hint">Je Zeile ein Hostname oder eine IP-Adresse. Kerberos verlangt eine Abweichung unter 5 Minuten; der auth-Container gleicht seine Uhr beim Start und laufend mit diesen Servern ab – leer = mit den Domänencontrollern.</p>
+        <?= $ssoError('sso_ntp_servers') ?>
+    </div>
+
+    <div class="field">
         <label for="sso_join_user">Konto für den Domänenbeitritt</label>
         <input type="text" id="sso_join_user" name="sso_join_user" maxlength="255" value="<?= Html::e($values['sso_join_user'] ?? '') ?>"
                placeholder="svc-intranet-join" autocomplete="off" <?= $ssoInvalid('sso_join_user') ?>>

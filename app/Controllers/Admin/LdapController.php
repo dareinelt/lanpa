@@ -319,7 +319,7 @@ final class LdapController extends AdminController
         if ($data === null) {
             $settings = Container::settings();
             $data = [];
-            foreach (['sso_domain', 'sso_dcs', 'sso_join_user'] as $key) {
+            foreach (['sso_domain', 'sso_dcs', 'sso_ntp_servers', 'sso_join_user'] as $key) {
                 $data[$key] = $settings->get($key);
             }
             $data['sso_join_password'] = $settings->get('sso_join_password');
@@ -331,7 +331,7 @@ final class LdapController extends AdminController
         }
 
         $parts = [];
-        foreach (['source_key', 'active', 'sso_enabled', 'sso_domain', 'sso_dcs', 'sso_join_user', 'sso_join_password', 'sso_networks', 'sso_hostnames'] as $key) {
+        foreach (['source_key', 'active', 'sso_enabled', 'sso_domain', 'sso_dcs', 'sso_ntp_servers', 'sso_join_user', 'sso_join_password', 'sso_networks', 'sso_hostnames'] as $key) {
             $parts[] = (string) ($data[$key] ?? '');
         }
 
@@ -405,6 +405,7 @@ final class LdapController extends AdminController
             'ldap_group_name_attribute' => $settings->get('ldap_group_name_attribute'),
             'sso_domain' => $settings->get('sso_domain'),
             'sso_dcs' => $settings->get('sso_dcs'),
+            'sso_ntp_servers' => $settings->get('sso_ntp_servers'),
             'sso_join_user' => $settings->get('sso_join_user'),
         ];
 

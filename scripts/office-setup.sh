@@ -112,40 +112,54 @@ ensure_secret nextcloud_db_password "$(random_secret)"
 ensure_secret nextcloud_admin_password "$(random_secret)"
 ensure_secret nextcloud_redis_password "$(random_secret)"
 
-# AD-Bind-Passwort fuer die Nextcloud-LDAP-Anbindung: wird in der Verwaltung
-# gepflegt (verschluesselt gespeichert) und hier vom laufenden app-Container
-# gelesen. Fallback fuer Altinstallationen: LDAP_PASSWORD(_FILE) der .env.
-ldap_pw=""
-ldap_cfg=""
-if docker compose ps --status running --services 2>/dev/null | grep -qx app; then
-    ldap_pw="$(docker compose exec -T app php scripts/credentials.php --ldap-password 2>/dev/null || true)"
-    # Verbindungsdaten (Host, Bind-DN, ...) ebenfalls aus der Verwaltung, damit
-    # Nextcloud denselben Bind-DN wie das Intranet nutzt - nicht die ggf.
-    # veralteten LDAP_*-Werte der .env.
-    ldap_cfg="$(docker compose exec -T app php scripts/credentials.php --nextcloud-ldap 2>/dev/null || true)"
-fi
-if [ -z "$ldap_pw" ]; then
-    ldap_pw="$(env_get LDAP_PASSWORD)"
-    ldap_pw_file="$(env_get LDAP_PASSWORD_FILE)"
-    if [ -z "$ldap_pw" ] && [ -n "$ldap_pw_file" ] && [ -r "$ldap_pw_file" ]; then
-        ldap_pw="$(cat "$ldap_pw_file")"
+# AD-Bind-Passwort und Verbindungsdaten (Host, Bind-DN, ...) fuer die
+# Nextcloud-LDAP-Anbindung: werden in der Verwaltung gepflegt (verschluesselt
+# gespeichert) und hier vom laufenden app-Container gelesen, damit Nextcloud
+# denselben Bind-DN wie das Intranet nutzt - nicht die ggf. veralteten
+# LDAP_*-Werte der .env. Fallback fuer Altinstallationen: LDAP_PASSWORD(_FILE).
+app_running() { docker compose ps --status running --services 2>/dev/null | grep -qx app; }
+
+# Schreibt beide Secrets; Rueckgabe 0, wenn sich eines geaendert hat.
+export_ldap_secrets() {
+    changed=1
+    ldap_pw=""
+    ldap_cfg=""
+    if app_running; then
+        ldap_pw="$(docker compose exec -T app php scripts/credentials.php --ldap-password 2>/dev/null || true)"
+        ldap_cfg="$(docker compose exec -T app php scripts/credentials.php --nextcloud-ldap 2>/dev/null || true)"
     fi
-fi
-if [ -n "$ldap_pw" ]; then
-    (umask 077 && printf '%s' "$ldap_pw" > "$SECRETS_DIR/nextcloud_ldap_password")
-elif [ ! -f "$SECRETS_DIR/nextcloud_ldap_password" ]; then
-    : > "$SECRETS_DIR/nextcloud_ldap_password"
-    if [ -n "$WITH_AD" ]; then
-        info "Hinweis: Kein AD-Bind-Passwort gefunden. Nach dem Eintragen unter Verwaltung -> Active Directory dieses Skript erneut ausfuehren."
+    if [ -z "$ldap_pw" ]; then
+        ldap_pw="$(env_get LDAP_PASSWORD)"
+        ldap_pw_file="$(env_get LDAP_PASSWORD_FILE)"
+        if [ -z "$ldap_pw" ] && [ -n "$ldap_pw_file" ] && [ -r "$ldap_pw_file" ]; then
+            ldap_pw="$(cat "$ldap_pw_file")"
+        fi
     fi
+    write_if_changed "$SECRETS_DIR/nextcloud_ldap_password" "$ldap_pw" && changed=0
+    write_if_changed "$SECRETS_DIR/nextcloud_ldap_config" "$ldap_cfg" && changed=0
+    return $changed
+}
+
+# Schreibt $2 nach $1, wenn $2 nicht leer und abweichend ist; legt fehlende
+# Dateien leer an (Compose braucht sie). Rueckgabe 0 bei Aenderung.
+write_if_changed() {
+    file="$1"; content="$2"; result=1
+    if [ -n "$content" ]; then
+        if [ ! -f "$file" ] || [ "$(cat "$file")" != "$content" ]; then
+            (umask 077 && printf '%s\n' "$content" > "$file")
+            result=0
+        fi
+    elif [ ! -f "$file" ]; then
+        : > "$file"
+    fi
+    chmod 644 "$file"
+    return $result
+}
+
+export_ldap_secrets || true
+if [ -n "$WITH_AD" ] && [ ! -s "$SECRETS_DIR/nextcloud_ldap_password" ]; then
+    info "Hinweis: Kein AD-Bind-Passwort gefunden. Nach dem Eintragen unter Verwaltung -> Active Directory dieses Skript erneut ausfuehren."
 fi
-chmod 644 "$SECRETS_DIR/nextcloud_ldap_password"
-if [ -n "$ldap_cfg" ]; then
-    (umask 077 && printf '%s\n' "$ldap_cfg" > "$SECRETS_DIR/nextcloud_ldap_config")
-elif [ ! -f "$SECRETS_DIR/nextcloud_ldap_config" ]; then
-    : > "$SECRETS_DIR/nextcloud_ldap_config"
-fi
-chmod 644 "$SECRETS_DIR/nextcloud_ldap_config"
 
 if [ "$ENCRYPT" = "1" ]; then
     ensure_secret office_backup_passphrase "$(random_secret)"
@@ -181,6 +195,17 @@ fi
 # --- 4. Start ----------------------------------------------------------------------
 info "Starte Container (erster Start laedt Images und installiert Nextcloud, ca. 3-10 Minuten) ..."
 docker compose up -d --build --remove-orphans
+
+# Nach dem Neubau liefert der app-Container ggf. aktuellere Werte (z. B. wenn
+# vorher noch ein aelteres Image lief, das --nextcloud-ldap nicht kannte).
+for _ in 1 2 3 4 5 6; do
+    app_running && break
+    sleep 5
+done
+if export_ldap_secrets; then
+    info "AD-Zugangsdaten fuer Nextcloud aktualisiert - Nextcloud wird neu gestartet."
+    docker compose restart nextcloud >/dev/null
+fi
 
 info "Warte auf Nextcloud und Euro-Office ..."
 deadline=$(( $(date +%s) + 900 ))

@@ -239,7 +239,10 @@ sequenceDiagram
   `LDAP Operations error`, passen Bind-DN und Bind-Passwort von `user_ldap`
   nicht zusammen (z. B. Bind-DN in der Verwaltung geändert, `.env` veraltet):
   `./scripts/office-setup.sh` erneut ausführen, damit Nextcloud die aktuelle
-  Konfiguration erhält, und mit `occ ldap:test-config s01` prüfen.
+  Konfiguration erhält (das Skript liest sie nach dem Neubau der Container
+  erneut aus und startet Nextcloud bei Änderungen neu), und mit
+  `occ ldap:test-config s01` prüfen. Ist `secrets/nextcloud_ldap_config` leer,
+  lief beim Export noch ein altes app-Image – Skript einfach erneut ausführen.
 - `NEXTCLOUD_SSO_LOGIN_REDIRECT=false` schaltet die Umleitung der
   Anmeldeseite ab; `NEXTCLOUD_SSO_AUTOPROVISION=true` legt unbekannte Konten
   lokal an (nur ohne AD bzw. zum Testen sinnvoll).

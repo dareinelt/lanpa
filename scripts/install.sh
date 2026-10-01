@@ -914,6 +914,8 @@ kann spaeter unter Verwaltung -> Active Directory geaendert werden." "$(env_prev
     env_set LDAP_GROUP_BASE_DN "$REPLY"
     ask_input "$t" "Synchronisationsintervall in Sekunden:" "$(env_or LDAP_SYNC_INTERVAL 3600)"
     env_set LDAP_SYNC_INTERVAL "$REPLY"
+    # Nextcloud (falls aktiv oder spaeter aktiviert) nutzt dieselbe AD-Anbindung.
+    env_set NEXTCLOUD_LDAP_ENABLED true
 }
 
 config_sso() {

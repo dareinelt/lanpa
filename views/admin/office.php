@@ -78,7 +78,8 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
         <p class="card__hint">
             Mit AD-Anbindung: <code>./scripts/office-setup.sh --with-ad</code>, zusätzlich mit
             automatischer Windows-Anmeldung: <code>./scripts/office-setup.sh --with-ad --with-sso</code>.
-            Details siehe <code>docs/office.md</code>.
+            Ist das Intranet der Domäne beigetreten (<code>SSO_ENABLED=true</code>), wird die
+            AD-Anbindung automatisch aktiviert. Details siehe <code>docs/office.md</code>.
         </p>
     </section>
 <?php } ?>

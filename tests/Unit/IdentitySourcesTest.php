@@ -238,7 +238,7 @@ function identityServicePdo(): PDO
             timeout INTEGER NOT NULL DEFAULT 10, base_dn TEXT NOT NULL DEFAULT '', bind_dn TEXT NOT NULL DEFAULT '',
             bind_password TEXT NULL, user_filter TEXT NOT NULL DEFAULT '', group_base_dn TEXT NOT NULL DEFAULT '',
             group_filter TEXT NOT NULL DEFAULT '', group_name_attribute TEXT NOT NULL DEFAULT '', attributes TEXT NULL,
-            sso_enabled INTEGER NOT NULL DEFAULT 0, sso_domain TEXT NOT NULL DEFAULT '', sso_dcs TEXT NULL,
+            sso_enabled INTEGER NOT NULL DEFAULT 0, sso_domain TEXT NOT NULL DEFAULT '', sso_dcs TEXT NULL, sso_ntp_servers TEXT NULL,
             sso_join_user TEXT NOT NULL DEFAULT '', sso_join_password TEXT NULL, sso_networks TEXT NULL, sso_hostnames TEXT NULL,
             sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -263,6 +263,7 @@ function hamburgSourceInput(array $overrides = []): array
         'sso_enabled' => '1',
         'sso_domain' => 'hh',
         'sso_dcs' => "dc01.hh.local 10.20.0.10\ndc02.hh.local",
+        'sso_ntp_servers' => "NTP1.hh.local, 10.20.0.123",
         'sso_join_user' => 'svc-join',
         'sso_join_password' => 'Join-Geheim!2',
         'sso_networks' => "10.20.0.0/16, 10.21.5.7",
@@ -320,15 +321,17 @@ Runner::test('Windows-Anmeldung einer Quelle wird geprüft und normalisiert', st
     Assert::same("dc01.hh.local 10.20.0.10\ndc02.hh.local", $values['sso_dcs']);
     Assert::same("10.20.0.0/16\n10.21.5.7/32", $values['sso_networks']);
     Assert::same('intranet-hh.hh.local', $values['sso_hostnames']);
+    Assert::same("ntp1.hh.local\n10.20.0.123", $values['sso_ntp_servers']);
 
     [, $errors] = IdentitySourceService::validateSso(hamburgSourceInput([
         'sso_domain' => 'VIEL-ZU-LANGER-NAME',
         'sso_dcs' => 'dc01 kein-ip',
+        'sso_ntp_servers' => 'ntp_host!',
         'sso_join_user' => 'a%b',
         'sso_networks' => '10.0.0.0/33',
         'sso_hostnames' => 'bad_host',
     ]), true);
-    foreach (['sso_domain', 'sso_dcs', 'sso_join_user', 'sso_networks', 'sso_hostnames'] as $field) {
+    foreach (['sso_domain', 'sso_dcs', 'sso_ntp_servers', 'sso_join_user', 'sso_networks', 'sso_hostnames'] as $field) {
         Assert::true(isset($errors[$field]), $field);
     }
 
@@ -385,6 +388,7 @@ Runner::test('Quelle speichert Passwörter nur verschlüsselt und liefert die au
     Assert::same('HH', $env['SSO_DOMAIN']);
     Assert::same('dc01.hh.local dc02.hh.local', $env['SSO_DC']);
     Assert::same('10.20.0.10 -', $env['SSO_DC_IP']);
+    Assert::same('ntp1.hh.local 10.20.0.123', $env['SSO_NTP']);
     Assert::same('svc-join', $env['SSO_JOIN_USER']);
     Assert::same('Join-Geheim!2', $env['SSO_JOIN_PASSWORD']);
     Assert::same('1', $env['SSO_CONFIGURED']);
@@ -392,6 +396,7 @@ Runner::test('Quelle speichert Passwörter nur verschlüsselt und liefert die au
     $primary = $service->authEnvironment('');
     Assert::same('FIRMA', $primary['SSO_DOMAIN']);
     Assert::same('', $primary['SSO_DC_IP']);
+    Assert::same('', $primary['SSO_NTP']);
     Assert::same('', $primary['SSO_JOIN_PASSWORD']);
     Assert::same($service->ssoRoutes(), $primary['SSO_ROUTES']);
 

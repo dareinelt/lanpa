@@ -5,10 +5,11 @@ declare(strict_types=1);
 use App\Core\Env;
 
 /**
- * Automatische Windows-Authentifizierung (NTLM / HTTP Negotiate) ohne Kerberos.
+ * Automatische Windows-Authentifizierung (HTTP Negotiate: Kerberos oder NTLM).
  *
- * Der vorgelagerte `auth`-Container fuehrt den NTLM-Handshake durch und reicht
- * den identifizierten SamAccountName per Header an die Anwendung weiter. Die
+ * Der vorgelagerte `auth`-Container fuehrt die Anmeldung durch und reicht den
+ * identifizierten Benutzer (DOMAIN\name oder name@REALM) per Header an die
+ * Anwendung weiter. Die
  * Anwendung vertraut diesem Header nur, wenn SSO aktiviert ist UND die Anfrage
  * von einem konfigurierten, vertrauenswuerdigen Proxy (dem auth-Container)
  * stammt. Dadurch kann ein direkter Client den Header nicht faelschen.

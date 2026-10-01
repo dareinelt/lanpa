@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Support\Html;
 
 /**
- * Windows-Anmeldung (NTLM) einer Identitaetsquelle: Domaene, Domaenen-
- * controller und Konto fuer den Domaenenbeitritt des auth-Containers.
+ * Windows-Anmeldung (Kerberos/NTLM) einer Identitaetsquelle: Domaene,
+ * Domaenencontroller und Konto fuer den Domaenenbeitritt des auth-Containers.
  */
 
 /** @var array<string,string> $values */
@@ -62,9 +62,18 @@ $ssoInvalid = static function (string $field) use ($errors): string {
     </div>
 
     <div class="field">
+        <label for="sso_ntp_servers">Zeitserver (NTP, optional)</label>
+        <textarea id="sso_ntp_servers" name="sso_ntp_servers" rows="2" <?= $ssoInvalid('sso_ntp_servers') ?>
+                  placeholder="ntp.example.internal"><?= Html::e($values['sso_ntp_servers'] ?? '') ?></textarea>
+        <p class="field__hint">Je Zeile ein Hostname oder eine IP-Adresse. Kerberos verlangt eine Abweichung unter 5 Minuten; der auth-Container gleicht seine Uhr beim Start und laufend mit diesen Servern ab – leer = mit den Domänencontrollern.</p>
+        <?= $ssoError('sso_ntp_servers') ?>
+    </div>
+
+    <div class="field">
         <label for="sso_join_user">Konto für den Domänenbeitritt</label>
         <input type="text" id="sso_join_user" name="sso_join_user" maxlength="255" value="<?= Html::e($values['sso_join_user'] ?? '') ?>"
                placeholder="svc-intranet-join" autocomplete="off" <?= $ssoInvalid('sso_join_user') ?>>
+        <p class="field__hint">Das Konto legt das Computerkonto des auth-Containers an und registriert daran den Kerberos-Dienstnamen HTTP/&lt;Hostname der Intranet-Adresse&gt; (Recht „Computer der Domäne hinzufügen“ bzw. Schreibrecht auf servicePrincipalName).</p>
         <?= $ssoError('sso_join_user') ?>
     </div>
 

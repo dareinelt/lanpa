@@ -111,7 +111,7 @@ installieren, nicht starten).
 | `sync` | Dauerlauf der AD-Synchronisation (`scripts/sync_worker.php`) | – |
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
-| `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional NTLM-Anmeldung; leitet `/office/` und `/eurooffice/` weiter; Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
+| `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter; Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
 | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
 
 ---
@@ -178,7 +178,9 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | `ALARM_PASSWORD` / `ALARM_PASSWORD_FILE` | Gateway-Passwort (nur ENV bzw. Docker-Secret) | – |
 | `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` | SNMP-Agent (Community-String, Standort, Kontakt) | `public` / `Intranet` / `admin@example.internal` |
 | `SNMP_PORT` | Am Host veröffentlichter UDP-Port des SNMP-Agenten (nur Docker-Port-Mapping) | `161` |
-| `SSO_ENABLED` | Windows-Anmeldung (NTLM) global ein-/ausschalten; Domänen werden im Adminbereich gepflegt | `false` |
+| `SSO_ENABLED` | Windows-Anmeldung (Kerberos/NTLM) global ein-/ausschalten; Domänen werden im Adminbereich gepflegt | `false` |
+| `SSO_REALM` | Kerberos-Realm der Hauptdomäne; leer = automatisch vom Domänencontroller ermittelt | leer |
+| `SSO_SPN_HOSTS` | Weitere Hostnamen (kommagetrennt), unter denen das Intranet aufgerufen wird (Kerberos-SPNs zusätzlich zum Hostnamen aus `APP_URL`) | leer |
 | `SSO_AUTO_LOGIN` | Automatischer Windows-Anmeldeversuch einmal je Sitzung (sonst nur über „Mit Windows anmelden“) | `true` |
 | `SSO_NETBIOS_NAME` | Computername des auth-Containers im AD (max. 15 Zeichen, je Installation eindeutig); der Beitritt bleibt im Volume `sso_samba` erhalten | `lanpa-sso` |
 | `SSO_SESSION_LIFETIME` | Gültigkeit der erkannten Windows-Anmeldung in der Sitzung (Sekunden, `0` = Sitzungsende) | `28800` |
@@ -212,7 +214,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Mitteilungen | Mitteilungs-Overlay der Startseite anlegen, bearbeiten, ein-/ausblenden |
 | Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`), Handbuch-Links ein-/ausblenden |
 | Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
-| Active Directory | Identitätsquellen (Hauptquelle und weitere AD von Zweigstellen/Tochtergesellschaften, je mit Beschriftung und mehreren Servern als Ausfallreserve): Server, Verschlüsselung, Base DN, Bind DN und Passwort (verschlüsselt gespeichert), Filter, Attributzuordnung, Gruppen-Pfade, Windows-Anmeldung je Domäne (Domänencontroller, Beitrittskonto, Client-Netze/Hostnamen), Verbindungstest je Server, Intervall, manueller Testlauf |
+| Active Directory | Identitätsquellen (Hauptquelle und weitere AD von Zweigstellen/Tochtergesellschaften, je mit Beschriftung und mehreren Servern als Ausfallreserve): Server, Verschlüsselung, Base DN, Bind DN und Passwort (verschlüsselt gespeichert), Filter, Attributzuordnung, Gruppen-Pfade, Windows-Anmeldung je Domäne (Domänencontroller, Zeitserver, Beitrittskonto, Client-Netze/Hostnamen), Verbindungstest je Server, Intervall, manueller Testlauf |
 | Navigation → Berechtigungen | Kacheln auf Benutzer und AD-Gruppen beschränken; Gruppennamen werden beim Tippen aus dem synchronisierten Bestand vorgeschlagen (Inline-Ergänzung und Liste, keine Live-Abfrage des AD) |
 | Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Office-Apps/App-Pakete und OWA-Link, lokale KI (Endpunkt, Modell, Audio-/Bildfunktionen in Nextcloud), Sicherung ([docs/office.md](docs/office.md)) |
 | Alarmierung | SMS-Gateway konfigurieren (Host, Benutzername; Passwort nur über Umgebung), Alarmgruppen/-rufnummern verwalten, Verlauf einsehen |
@@ -261,8 +263,9 @@ Sitzungserneuerung nach der Anmeldung, automatische Abmeldung bei Inaktivität, 
 
 Die Seite bleibt ohne Anmeldung nutzbar: Öffentliche Kacheln, Telefonliste und Links sind immer
 sichtbar, berechtigungsbeschränkte Kacheln erst nach erkannter Windows-Anmeldung. Der auth-Container
-verlangt NTLM nur am Anmeldepunkt `/sso/anmelden`; die Anwendung merkt sich den erkannten Benutzer in
-der Sitzung (`SSO_SESSION_LIFETIME`) und prüft ihn bei jeder Anfrage erneut gegen das Telefonbuch.
+verlangt die Anmeldung (HTTP Negotiate: Kerberos, sonst NTLM) nur am Anmeldepunkt `/sso/anmelden`;
+die Anwendung merkt sich den erkannten Benutzer in der Sitzung (`SSO_SESSION_LIFETIME`) und prüft ihn
+bei jeder Anfrage erneut gegen das Telefonbuch.
 
 - Mit `SSO_AUTO_LOGIN=true` (Standard) wird jeder Browser einmal je Sitzung über den Anmeldepunkt
   geleitet: Domänen-PCs kommen unbemerkt angemeldet zurück. Browser außerhalb der Domäne erhalten die
@@ -271,6 +274,72 @@ der Sitzung (`SSO_SESSION_LIFETIME`) und prüft ihn bei jeder Anfrage erneut geg
 - Mit `SSO_AUTO_LOGIN=false` erfolgt die Anmeldung nur über den Link „Mit Windows anmelden“ im Kopf.
 - Voraussetzung für die unbemerkte Anmeldung: Die Adresse des Intranets liegt bei den Clients in der
   Zone „Lokales Intranet“ bzw. ist per Richtlinie (`AuthServerAllowlist`) freigegeben.
+- Kerberos: Der auth-Container tritt der Domäne per ADS bei (Realm wird am Domänencontroller
+  ermittelt, optional `SSO_REALM`), registriert den Service Principal `HTTP/<Hostname aus APP_URL>`
+  am Computerkonto `SSO_NETBIOS_NAME` und erzeugt daraus die Keytab. Weitere Hostnamen, unter denen
+  das Intranet aufgerufen wird: `SSO_SPN_HOSTS`. Voraussetzungen: Die Clients erreichen das Intranet
+  unter genau diesem DNS-Namen (kein IP-Zugriff, kein CNAME auf einen anderen SPN), die Uhren von
+  Clients, DC und auth-Container weichen weniger als 5 Minuten ab, und das Beitrittskonto darf SPNs am
+  Computerkonto setzen. Ist kein Kerberos möglich (SPN belegt, Realm unbekannt), bleibt NTLM.
+  Beim Zugriff per IP-Adresse oder ohne Ticket fällt der Browser auf NTLM zurück.
+- Zeitabgleich: Der auth-Container stellt seine Uhr beim Start (chrony) nach den Zeitservern aus
+  der AD-Konfiguration (Adminbereich → Active Directory → „Zeitserver (NTP)“; leer = die
+  Domänencontroller) und hält sie laufend nach. Dafür hat der Dienst in `docker-compose.yml` die
+  Berechtigung `cap_add: SYS_TIME`; fehlt sie, wird die Abweichung nur gemessen und im Protokoll
+  gemeldet (Warnung ab 5 Minuten).
+
+### Schritt für Schritt: Frische Installation in eine Windows-Domäne heben
+
+Ausgangslage: Das Intranet läuft per Docker (Abschnitt 2), noch ohne AD-Anbindung. Ziel: AD-Telefonbuch
+per LDAP, Domänenbeitritt des auth-Containers und unbemerkte Browser-Anmeldung (Kerberos/NTLM).
+
+1. **Vorbereitung im AD / Netzwerk**
+   - DNS: A-Eintrag für den Hostnamen des Intranets (z. B. `intranet.firma.local` → IP des
+     Docker-Hosts). Kein CNAME, kein Zugriff per IP – der Name muss zum späteren `APP_URL` passen.
+   - Beitrittskonto anlegen (normales Benutzerkonto reicht), das in der Ziel-OU Computerkonten
+     anlegen/zurücksetzen und deren Attribut `servicePrincipalName` schreiben darf (bei einem Konto
+     mit der Vorgabe „Arbeitsstationen zur Domäne hinzufügen“ fehlt in der Regel das SPN-Recht –
+     dann Delegierung in der OU: „Computerobjekte erstellen“ + „Alle Eigenschaften schreiben“).
+     Alternativ ein Domänen-Admin nur für den Beitritt.
+   - Lesekonto für LDAP (Bind-Konto; nur lesen).
+   - Firewall vom Docker-Host zu allen Domänencontrollern: TCP/UDP 53, 88, 123 (NTP), 135, 389,
+     445, 464, 636, 3268/3269 sowie der dynamische RPC-Bereich (TCP 49152–65535).
+   - Der SPN `HTTP/intranet.firma.local` darf noch an keinem anderen Konto hängen
+     (`setspn -Q HTTP/intranet.firma.local` auf einem DC muss „Kein solcher SPN gefunden“ melden).
+2. **`.env` anpassen** (danach `docker compose up -d --build`):
+   - `APP_URL=https://intranet.firma.local` (Hostname wie im DNS; HTTPS empfohlen, siehe
+     „HTTPS und Zertifikate“).
+   - `SSO_ENABLED=true`, `SSO_NETBIOS_NAME=` eindeutiger Computername (max. 15 Zeichen; Standard
+     `lanpa-sso` – pro Domäne nur einmal verwenden).
+   - Optional `SSO_SPN_HOSTS=` weitere Hostnamen (Aliasse), `SSO_REALM=` nur falls die automatische
+     Ermittlung des Realms fehlschlägt.
+3. **Adminbereich → Active Directory** (Hauptquelle):
+   - LDAP: Server (mehrere als Ausfallreserve), Verschlüsselung, Base DN, Bind DN + Passwort, ggf.
+     Gruppen-Pfad; „Verbindung testen“, dann speichern und einen Testlauf der Synchronisation starten.
+   - Windows-Anmeldung: Domäne (NetBIOS, z. B. `FIRMA`), Domänencontroller je Zeile `host [ip]`
+     (FQDN; IP nur nötig, wenn der Docker-Host die DCs nicht per DNS auflöst), Zeitserver (leer =
+     DCs), Beitrittskonto und Passwort. Speichern.
+4. **auth-Container neu starten und prüfen:** `docker compose restart auth`, danach
+   `docker compose logs -f auth`. Erwartet werden „Uhrzeit mit … abgeglichen“, der Domänenbeitritt
+   und abschließend `Windows-Anmeldung aktiv: Kerberos (SPNs: HTTP/intranet.firma.local) und NTLM`.
+   Steht dort nur „NTLM“, nennt die Zeile davor die Ursache (Realm nicht ermittelt, SPN belegt,
+   Beitrittskonto darf keine SPNs setzen). Das Computerkonto erscheint jetzt im AD; der Beitritt
+   bleibt im Volume `sso_samba` erhalten.
+5. **Clients vorbereiten** (per Gruppenrichtlinie):
+   - Edge/Chrome/IE: `https://intranet.firma.local` in die Zone „Lokales Intranet“ aufnehmen
+     (Siteszuordnung) oder die Richtlinie `AuthServerAllowlist` = `intranet.firma.local` setzen.
+   - Firefox: `network.negotiate-auth.trusted-uris` (und für NTLM
+     `network.automatic-ntlm-auth.trusted-uris`) auf `https://intranet.firma.local`.
+   - Bei eigenem/selbstsigniertem Zertifikat: Zertifikat bzw. ausstellende CA als vertrauenswürdige
+     Stammzertifizierungsstelle verteilen – sonst zeigt der Browser eine Zertifikatswarnung und
+     verweigert u. U. die unbemerkte Anmeldung.
+6. **Testen:** Von einem Domänen-PC aus `https://intranet.firma.local` öffnen; der angemeldete
+   Benutzer erscheint ohne Dialog im Kopf. Prüfung auf dem Client mit `klist` (Ticket
+   `HTTP/intranet.firma.local` = Kerberos aktiv). Bei einem Anmeldedialog: Hostname statt IP
+   verwendet? Zone/Allowlist gesetzt? Uhren synchron (`w32tm /query /status`, Protokoll des
+   auth-Containers)? Benutzer im Telefonbuch (LDAP-Synchronisation) vorhanden?
+
+Weitere Domänen ohne Vertrauensstellung siehe nächster Abschnitt.
 
 ### Windows-Anmeldung für mehrere Domänen
 
@@ -281,8 +350,8 @@ eine Instanz nicht erreichbar, bedient die Hauptinstanz die Anfrage (ohne automa
 
 1. `SSO_ENABLED=true` in der `.env`.
 2. Adminbereich → Active Directory: bei der Hauptquelle und jeder weiteren Quelle Domäne,
-   Domänencontroller (je Zeile `host [ip]`, mehrere als Ausfallreserve), Beitrittskonto und
-   Passwort eintragen; bei weiteren Quellen zusätzlich Client-Netze bzw. Hostnamen.
+   Domänencontroller (je Zeile `host [ip]`, mehrere als Ausfallreserve), optional Zeitserver,
+   Beitrittskonto und Passwort eintragen; bei weiteren Quellen zusätzlich Client-Netze bzw. Hostnamen.
 3. `./scripts/sso-domains.sh` erzeugt `docker-compose.sso.yml` mit den Instanzen (ohne
    Zugangsdaten), anschließend `COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml` in der
    `.env` setzen und `docker compose up -d --build --remove-orphans && docker compose restart auth`.

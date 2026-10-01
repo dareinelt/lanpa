@@ -151,7 +151,7 @@ Anführungszeichen gesetzt, damit Docker Compose und die Anwendung sie wörtlich
 | Modul | Abgefragte Werte |
 | --- | --- |
 | **Active Directory / LDAP** | `LDAP_HOST`, TLS (`LDAP_USE_TLS`, `LDAP_VERIFY_CERT`), `LDAP_PORT` (636/389), `LDAP_BASE_DN`, `LDAP_BIND_DN`, `LDAP_GROUP_BASE_DN`, `LDAP_SYNC_INTERVAL`; Passwort des Dienstkontos (verschlüsselt in der Datenbank) |
-| **Windows-Anmeldung (NTLM)** | `SSO_ENABLED=true`; Domäne (NetBIOS), Domänencontroller (mehrere als Ausfallreserve, optional mit IP), Beitrittskonto und Passwort (verschlüsselt in der Datenbank) – aktiviert automatisch auch LDAP. Weitere Domänen (Zweigstellen, Tochtergesellschaften) werden danach im Adminbereich angelegt, siehe README „Windows-Anmeldung für mehrere Domänen“ |
+| **Windows-Anmeldung (Kerberos/NTLM)** | `SSO_ENABLED=true`; Domäne (NetBIOS), Domänencontroller (mehrere als Ausfallreserve, optional mit IP), Beitrittskonto und Passwort (verschlüsselt in der Datenbank) – aktiviert automatisch auch LDAP. Zeitserver (NTP) optional später im Adminbereich; Schritt-für-Schritt-Anleitung siehe README „Frische Installation in eine Windows-Domäne heben“. Weitere Domänen (Zweigstellen, Tochtergesellschaften) werden danach im Adminbereich angelegt, siehe README „Windows-Anmeldung für mehrere Domänen“ |
 | **SMS-Gateway** | `ALARM_HOST`, `ALARM_USERNAME`, `ALARM_PASSWORD` |
 | **Office** | `NEXTCLOUD_ADMIN_USER`, `NEXTCLOUD_EXTRA_TRUSTED_DOMAINS`, `OFFICE_BACKUP_DIR`, Verschlüsselung der Sicherungen. Danach wird `scripts/office-setup.sh --no-start` (ggf. mit `--with-ad`/`--with-sso`/`--no-encryption`) ausgeführt, das die Secrets unter `./secrets/` erzeugt – siehe [office.md](office.md). |
 | **phpMyAdmin** | `PMA_PORT`; wird nach dem Start mit `--profile tools` gestartet |

@@ -1,0 +1,14 @@
+--- a/src/ntlm.c	2026-10-01 18:31:57
++++ b/src/ntlm.c	2026-10-01 18:31:57
+@@ -863,7 +863,10 @@
+ 
+     switch (msg_type) {
+     case NEGOTIATE_MESSAGE:
+-        if (buffer->length < sizeof(struct wire_neg_msg)) {
++        /* The version field is optional (MS-NLMP 2.2.1.1); clients such as
++         * Chromium's and Firefox's built-in NTLM or curl omit it. */
++        if (buffer->length <
++                sizeof(struct wire_neg_msg) - sizeof(struct wire_version)) {
+             return ERR_DECODE;
+         }
+         break;

@@ -25,7 +25,10 @@
 # der eingebaute NTLM-Client von Chromium/Firefox und curl. Ausserdem liefert
 # es bei gesetztem GssapiCredStore (Keytab fuer Kerberos) ohne expliziten
 # Acceptor-Namen kein Server-Credential ("Not a server credential type").
-# Beides wird hier per Quellpatch behoben (docker/auth/patches/).
+# Ausserdem sendet es in der CHALLENGE ein leeres MsvAvFlags-Feld, das Windows
+# bei der MIC-Berechnung ignoriert - die MIC-Pruefung schlaegt fehl und der
+# Browser zeigt trotz Intranetzone einen Anmeldedialog (upstream #98, 1.3.1).
+# Alles wird hier per Quellpatch behoben (docker/auth/patches/).
 FROM debian:bookworm-slim AS gssntlmssp-build
 
 ENV DEBIAN_FRONTEND=noninteractive

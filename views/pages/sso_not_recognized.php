@@ -18,6 +18,8 @@ use App\Support\Html;
             Zone „Lokales Intranet“ liegen bzw. in der Richtlinie <code>AuthServerAllowlist</code>
             (Edge/Chrome) oder <code>network.negotiate-auth.trusted-uris</code> (Firefox) freigegeben
             sein – per Gruppenrichtlinie oder mit <code>scripts/sso-client-setup.ps1</code>
-            (siehe README, „Anmeldedialog vermeiden“).</p>
+            (siehe README, „Anmeldedialog vermeiden“). Meldet das Protokoll des auth-Containers
+            dabei <code>Invalid token was supplied (Permission denied)</code>, wurde die Anmeldung
+            gesendet, aber serverseitig abgelehnt – auth-Container neu bauen (Patch gss-ntlmssp).</p>
     </details>
 </section>

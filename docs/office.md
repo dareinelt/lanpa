@@ -166,6 +166,32 @@ aufrufen.
   Die direkte NTLM-Anmeldung über `user_saml` ist in deren auth-Instanzen
   gesperrt; die Anmeldung erfolgt über die Office-Kachel des Intranets.
 
+### Hostnamen nach dem Domänenbeitritt (trusted_domains)
+
+Nextcloud beantwortet Anfragen nur unter Hostnamen aus `trusted_domains`;
+sonst erscheint „Zugriff über eine nicht vertrauenswürdige Domain“. Damit
+Nextcloud und Euro-Office nach dem Domänenbeitritt unter jedem Namen
+funktionieren, unter dem das Intranet erreichbar ist, pflegt das Intranet die
+Liste selbst und überträgt sie signiert an die App `intranet_integration`
+(`/apps/intranet_integration/api/hosts`, JWT mit eigener Audience, an den
+Inhalt gebunden). Enthalten sind:
+
+- Hostname aus `APP_URL`, `NEXTCLOUD_EXTRA_TRUSTED_DOMAINS` und `SSO_SPN_HOSTS`
+- je Domäne mit Windows-Anmeldung der DNS-Name des Computerkontos
+  (`<SSO_NETBIOS_NAME>.<DNS-Domäne aus dem Base DN>`, z. B. `lanpa-sso.firma.local`)
+  sowie die in der Verwaltung hinterlegten Hostnamen weiterer Quellen
+- Common Name und alternative Namen des aktiven HTTPS-Zertifikats
+- der interne Containername `nextcloud` (Healthcheck)
+
+Die Diagnose vergleicht den Stand in Nextcloud bei jeder Prüfung (Komponente
+„Vertrauenswürdige Hostnamen“) und überträgt bei Abweichung erneut – ohne
+Neustart, spätestens 30 Sekunden nach einem Domänenbeitritt, einem neuen
+Zertifikat oder einer weiteren Domäne. Der Port spielt keine Rolle (Nextcloud
+vergleicht ohne Port); die Rechte in Nextcloud und Euro-Office richten sich
+weiterhin nach `NEXTCLOUD_LDAP_ALLOWED_GROUPS` bzw. `NEXTCLOUD_OFFICE_GROUPS`.
+Beim Containerstart ergänzt `hooks/intranet-setup.sh` nur fehlende
+Grundeinträge und entfernt keine vorhandenen Hostnamen.
+
 ### Automatische Anmeldung in Nextcloud (Intranet-SSO)
 
 ```mermaid
@@ -312,7 +338,7 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 | Bereich | Inhalt |
 | --- | --- |
 | Status | Gesamtzustand, letzte Prüfung, „Jetzt prüfen“ |
-| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector |
+| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector, vertrauenswürdige Hostnamen (Abgleich von `trusted_domains`) |
 | Fußzeile und Einstieg | Text, Transparenz, Logo, „Zurück“, Ziel „Zum Intranet“, direkter Aufruf |
 | Lokale KI | KI-Endpunkt für alle Benutzer in Nextcloud und Euro-Office ([Abschnitt 6a](#6a-lokale-ki)) |
 | Vorschau der Fußzeile | Live-Vorschau mit demselben Stylesheet/Skript wie in Nextcloud |

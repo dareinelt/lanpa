@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Core\Config;
 use App\Repositories\IdentitySourceRepository;
 use App\Security\SecretBox;
+use App\Services\Office\OfficeTrustedDomainsService;
 use App\Support\Validator;
 
 /**
@@ -780,6 +781,40 @@ final class IdentitySourceService
         }
 
         return implode(';', $routes);
+    }
+
+    /**
+     * Hostnamen, unter denen das Intranet nach dem Domaenenbeitritt erreichbar
+     * ist: der DNS-Name des Computerkontos (<Computername>.<DNS-Domaene aus dem
+     * Base DN>) jeder Domaene mit Windows-Anmeldung sowie die in der
+     * Verwaltung hinterlegten Hostnamen weiterer Quellen.
+     *
+     * @return list<string>
+     */
+    public function ssoHostnames(string $netbiosName): array
+    {
+        $netbiosName = strtolower(trim($netbiosName));
+        $hosts = [];
+        $computer = static function (string $baseDn) use ($netbiosName): ?string {
+            $domain = OfficeTrustedDomainsService::dnsDomainFromBaseDn($baseDn);
+
+            return $netbiosName !== '' && $domain !== '' ? $netbiosName . '.' . $domain : null;
+        };
+
+        if ($this->settings->get('sso_domain') !== '') {
+            $hosts[] = $computer($this->settings->get('ldap_base_dn'));
+        }
+        foreach ($this->additionalRows(true) as $row) {
+            if (empty($row['sso_enabled'])) {
+                continue;
+            }
+            $hosts[] = $computer((string) ($row['base_dn'] ?? ''));
+            foreach (self::splitList((string) ($row['sso_hostnames'] ?? '')) as $hostname) {
+                $hosts[] = $hostname;
+            }
+        }
+
+        return array_values(array_filter($hosts, static fn (?string $host): bool => $host !== null && $host !== ''));
     }
 
     /**

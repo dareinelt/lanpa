@@ -18,6 +18,10 @@ use Throwable;
  *   connector       Diagnose der Nextcloud-App intranet_integration
  *                   (Connector installiert/aktiv, URLs, JWT; optional
  *                   vollstaendige Pruefung inkl. DocumentServer -> Nextcloud)
+ *   hosts           vertrauenswuerdige Hostnamen (trusted_domains) in
+ *                   Nextcloud; weicht der Stand von der Liste des Intranets
+ *                   ab (Domaenenbeitritt, Zertifikat, weitere Domaene), wird
+ *                   sie neu uebertragen.
  *   redis           TCP + PING
  *   postgres        TCP + SSLRequest
  *   ai              lokaler KI-Endpunkt: Stand in Euro-Office (runtime.json)
@@ -40,6 +44,7 @@ final class OfficeHealthService
         'webapps' => 'Euro-Office-Webapps (Editoren)',
         'eurooffice_jwt' => 'JWT (Intranet ↔ DocumentServer)',
         'connector' => 'Nextcloud-Connector (eurooffice)',
+        'hosts' => 'Vertrauenswürdige Hostnamen (Nextcloud)',
         'redis' => 'Redis (Nextcloud-Cache)',
         'postgres' => 'PostgreSQL (Nextcloud-Datenbank)',
         'ai' => 'KI (lokaler Endpunkt)',
@@ -56,7 +61,8 @@ final class OfficeHealthService
         private readonly OfficeProbeInterface $probe,
         private readonly string $cacheFile,
         private readonly int $cacheTtl = 30,
-        private readonly ?OfficeAiService $ai = null
+        private readonly ?OfficeAiService $ai = null,
+        private readonly ?OfficeTrustedDomainsService $trustedDomains = null
     ) {
     }
 
@@ -85,6 +91,12 @@ final class OfficeHealthService
             $deep ? max($timeout, 20) : $timeout,
             $diagnostics
         );
+        if ($this->trustedDomains !== null) {
+            $components['hosts'] = $this->checkHosts(
+                $components['nextcloud']['status'] !== self::ERROR && $components['connector']['status'] !== self::ERROR,
+                $diagnostics
+            );
+        }
         $components['redis'] = $this->checkRedis((string) ($infra['redis_host'] ?? ''), (int) ($infra['redis_port'] ?? 6379), $timeout);
         $components['postgres'] = $this->checkPostgres((string) ($infra['postgres_host'] ?? ''), (int) ($infra['postgres_port'] ?? 5432), $timeout);
         if ($this->ai !== null) {
@@ -330,6 +342,9 @@ final class OfficeHealthService
         if (is_array($data['ai'] ?? null)) {
             $diagnostics['ai'] = $data['ai'];
         }
+        if (is_array($data['hosts'] ?? null)) {
+            $diagnostics['hosts'] = $data['hosts'];
+        }
 
         if (empty($connector['installed'])) {
             return $this->component('connector', self::ERROR, 'Connector eurooffice ist nicht installiert.');
@@ -357,6 +372,49 @@ final class OfficeHealthService
 
         return $this->component('connector', self::OK, 'Version ' . (string) ($connector['version'] ?? '')
             . ($deep ? ' – vollständige Prüfung erfolgreich.' : ' – aktiv.'));
+    }
+
+    /**
+     * Gleicht die vertrauenswuerdigen Hostnamen mit Nextcloud ab (selbstheilend).
+     *
+     * @param array<string,mixed> $diagnostics
+     *
+     * @return array{label:string,status:string,message:string}
+     */
+    private function checkHosts(bool $connectorReachable, array &$diagnostics): array
+    {
+        $service = $this->trustedDomains;
+        if ($service === null) {
+            return $this->component('hosts', self::WARN, 'Nicht verfügbar.');
+        }
+
+        $domains = $service->domains();
+        $diagnostics['hosts_expected'] = $domains;
+        $summary = implode(', ', $domains);
+
+        if (!$connectorReachable) {
+            return $this->component('hosts', self::WARN, 'Nicht prüfbar (Nextcloud-App nicht erreichbar). Erwartet: ' . $summary);
+        }
+
+        $remote = is_array($diagnostics['hosts'] ?? null) ? $diagnostics['hosts'] : null;
+        if ($remote === null) {
+            return $this->component('hosts', self::WARN, 'Nextcloud-App intranet_integration ist veraltet – Hostnamen werden nicht abgeglichen (docker compose restart nextcloud).');
+        }
+
+        if ($service->inSync($remote['trusted_domains'] ?? null)) {
+            $diagnostics['hosts_in_sync'] = true;
+
+            return $this->component('hosts', self::OK, $summary);
+        }
+
+        $result = $service->pushToNextcloud();
+        $diagnostics['hosts_pushed'] = true;
+        $diagnostics['hosts_in_sync'] = $result['ok'];
+        if (!$result['ok']) {
+            return $this->component('hosts', self::WARN, 'Abgleich fehlgeschlagen: ' . $result['message']);
+        }
+
+        return $this->component('hosts', self::OK, 'Aktualisiert: ' . $summary);
     }
 
     /**

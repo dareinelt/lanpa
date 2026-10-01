@@ -52,4 +52,9 @@ return [
     // Austauschverzeichnis mit dem DocumentServer (Volume office_ai,
     // dort als Laufzeitkonfiguration runtime.json eingebunden).
     'ai_config_dir' => Env::get('OFFICE_AI_CONFIG_DIR', BASE_PATH . '/storage/office-ai'),
+
+    // Vertrauenswuerdige Hostnamen von Nextcloud (trusted_domains): zusaetzlich
+    // zu APP_URL, den Domaenen mit Windows-Anmeldung und dem HTTPS-Zertifikat.
+    // Die Liste wird vom Intranet an Nextcloud uebertragen (selbstheilend).
+    'extra_trusted_domains' => Env::get('NEXTCLOUD_EXTRA_TRUSTED_DOMAINS', ''),
 ];

@@ -14,6 +14,7 @@ final class OfficeJwt
     public const SSO_AUDIENCE = 'intranet_integration_sso';
     public const SSO_LIFETIME = 60;
     public const AI_AUDIENCE = 'intranet_integration_ai';
+    public const HOSTS_AUDIENCE = 'intranet_integration_hosts';
 
     /**
      * @param array<string,mixed> $claims
@@ -51,6 +52,22 @@ final class OfficeJwt
 
         return self::encode([
             'aud' => self::AI_AUDIENCE,
+            'body' => hash('sha256', $body),
+            'iat' => $now,
+            'exp' => $now + 60,
+        ], $secret);
+    }
+
+    /**
+     * Kurzlebiges Token fuer die Uebergabe der vertrauenswuerdigen Hostnamen
+     * (trusted_domains) an Nextcloud, an den Inhalt gebunden.
+     */
+    public static function hostsConfigToken(string $secret, string $body, ?int $now = null): string
+    {
+        $now ??= time();
+
+        return self::encode([
+            'aud' => self::HOSTS_AUDIENCE,
             'body' => hash('sha256', $body),
             'iat' => $now,
             'exp' => $now + 60,

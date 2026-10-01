@@ -44,6 +44,7 @@ use App\Services\Office\OfficeAppService;
 use App\Services\Office\OfficeBackupService;
 use App\Services\Office\OfficeConfigService;
 use App\Services\Office\OfficeHealthService;
+use App\Services\Office\OfficeTrustedDomainsService;
 use App\Services\Office\StreamOfficeProbe;
 use App\Services\PhonebookService;
 use App\Services\SettingsService;
@@ -494,7 +495,42 @@ final class Container
                 new StreamOfficeProbe(),
                 (string) Config::get('office.health_cache_file', BASE_PATH . '/storage/cache/office_health.json'),
                 (int) Config::get('office.health_cache_ttl', 30),
-                self::officeAi()
+                self::officeAi(),
+                self::officeTrustedDomains()
+            )
+        );
+    }
+
+    public static function officeTrustedDomains(): OfficeTrustedDomainsService
+    {
+        return self::make(
+            OfficeTrustedDomainsService::class,
+            static fn (): OfficeTrustedDomainsService => new OfficeTrustedDomainsService(
+                self::officeConfig(),
+                new StreamOfficeProbe(),
+                [
+                    'app_url' => (string) Config::get('app.url', 'http://localhost:8080'),
+                    'extra_trusted_domains' => (string) Config::get('office.extra_trusted_domains', ''),
+                    'spn_hosts' => (string) Config::get('sso.spn_hosts', ''),
+                ],
+                static function (): array {
+                    $hosts = self::identitySources()->ssoHostnames((string) Config::get('sso.netbios_name', 'lanpa-sso'));
+                    try {
+                        $certificate = (new TlsCertificateRepository())->findActive();
+                    } catch (\PDOException) {
+                        $certificate = null;
+                    }
+                    if ($certificate !== null) {
+                        $hosts[] = (string) ($certificate['common_name'] ?? '');
+                        foreach (['san', 'cert_san'] as $key) {
+                            foreach (preg_split('/\s+/', (string) ($certificate[$key] ?? '')) ?: [] as $name) {
+                                $hosts[] = $name;
+                            }
+                        }
+                    }
+
+                    return $hosts;
+                }
             )
         );
     }

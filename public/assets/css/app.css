@@ -918,6 +918,21 @@ code {
     color: var(--color-muted);
 }
 
+.sso-hint {
+    margin-top: 2rem;
+    text-align: left;
+    font-size: .9rem;
+    color: var(--color-muted);
+}
+
+.sso-hint summary {
+    cursor: pointer;
+}
+
+.sso-hint code {
+    word-break: break-all;
+}
+
 /* Overlay-Mitteilung */
 .announcement-overlay {
     position: fixed;

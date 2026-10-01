@@ -210,7 +210,9 @@ sequenceDiagram
   Ziel. Es ist mit einem vom Euro-Office-Secret **abgeleiteten** Schlüssel
   signiert (`HMAC(secret, "intranet_integration_sso")`), 60 Sekunden gültig
   und nur einmal verwendbar (Replay-Schutz über Redis).
-- Nextcloud sucht das Konto lokal bzw. über `user_ldap` (Groß-/Kleinschreibung
+- Nextcloud löst das Konto wie beim Anmeldeformular über den Login-Filter von
+  `user_ldap` auf (SamAccountName, UPN oder E-Mail) – auch wenn das AD-Konto
+  dort noch nie aufgelistet wurde; danach lokale Suche (Groß-/Kleinschreibung
   egal, notfalls per E-Mail). Ist bereits ein anderes Konto angemeldet, wird es
   abgemeldet – maßgeblich ist die Identität des Intranets. Die Sitzung benötigt
   keine Kennwortbestätigung für sensible Aktionen.
@@ -218,6 +220,11 @@ sequenceDiagram
   Intranet-Einstieg (`/office-starten?ziel=…`), der den Benutzer ebenso
   weiterreicht. Wird er dort nicht erkannt oder ist das Token ungültig,
   erscheint das normale Anmeldeformular (`…/login?direct=1`, keine Schleife).
+- Erscheint das Anmeldeformular trotz erkanntem Benutzer, wurde das Konto in
+  Nextcloud nicht gefunden: `NEXTCLOUD_LDAP_ENABLED=true` prüfen, ob der
+  Benutzer den Benutzerfilter erfüllt (`NEXTCLOUD_LDAP_ALLOWED_GROUPS`) und
+  `docker compose exec -u www-data nextcloud php occ ldap:check-user <SamAccountName>`
+  ausführen; Details stehen im Nextcloud-Protokoll (`Intranet-SSO: …`).
 - `NEXTCLOUD_SSO_LOGIN_REDIRECT=false` schaltet die Umleitung der
   Anmeldeseite ab; `NEXTCLOUD_SSO_AUTOPROVISION=true` legt unbekannte Konten
   lokal an (nur ohne AD bzw. zum Testen sinnvoll).

@@ -77,6 +77,9 @@ Konfiguration bleibt beim Einzeiler oben.
   „Zum Intranet“ und „Zurück“. Sie ist im Ruhezustand transparent, wird bei
   Mauszeiger, Tastaturfokus oder Antippen deckend und lässt sich einklappen.
   Im Editor wird der Platz reserviert, sodass die Statusleiste sichtbar bleibt.
+- Ist ein Dokument geöffnet, fragen „Zurück“ und „Zum Intranet“ zuerst, ob die
+  Datei gespeichert wurde: **Ja** führt die Aktion aus, **Nein** (oder Escape)
+  kehrt zum Dokument zurück.
 - Direkter Aufruf von `/office/` ohne Intranet: wahlweise erlaubt (mit
   Fußzeile) oder einmalig über den Intranet-Einstieg geleitet.
 

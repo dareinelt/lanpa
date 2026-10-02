@@ -15,6 +15,7 @@ class TokenVerifier {
     public const QUOTA_AUDIENCE = 'intranet_integration_quota';
     public const ADMINS_AUDIENCE = 'intranet_integration_admins';
     public const DRIVES_AUDIENCE = 'intranet_integration_drives';
+    public const APPSTORE_AUDIENCE = 'intranet_integration_appstore';
     public const MAX_LIFETIME = 120;
 
     public function verify(string $token, string $secret, ?int $now = null): bool {

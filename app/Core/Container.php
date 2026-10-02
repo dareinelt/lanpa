@@ -50,6 +50,7 @@ use App\Services\Office\OfficeBackupService;
 use App\Services\Office\OfficeConfigService;
 use App\Services\Office\OfficeHealthService;
 use App\Services\Office\NextcloudAdminService;
+use App\Services\Office\NextcloudAppStoreService;
 use App\Services\Office\OfficeTrustedDomainsService;
 use App\Services\Office\NetworkDriveService;
 use App\Services\Office\StorageQuotaService;
@@ -568,7 +569,20 @@ final class Container
                 self::officeTrustedDomains(),
                 self::storageQuotas(),
                 self::nextcloudAdmins(),
-                self::networkDrives()
+                self::networkDrives(),
+                self::nextcloudAppStore()
+            )
+        );
+    }
+
+    public static function nextcloudAppStore(): NextcloudAppStoreService
+    {
+        return self::make(
+            NextcloudAppStoreService::class,
+            static fn (): NextcloudAppStoreService => new NextcloudAppStoreService(
+                self::settings(),
+                self::officeConfig(),
+                new StreamOfficeProbe()
             )
         );
     }

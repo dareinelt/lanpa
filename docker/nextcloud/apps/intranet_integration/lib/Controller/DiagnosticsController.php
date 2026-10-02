@@ -7,6 +7,7 @@ namespace OCA\IntranetIntegration\Controller;
 use OCA\IntranetIntegration\AppInfo\Application;
 use OCA\IntranetIntegration\Service\AdminsService;
 use OCA\IntranetIntegration\Service\AiConfigService;
+use OCA\IntranetIntegration\Service\AppStoreService;
 use OCA\IntranetIntegration\Service\NetworkDriveService;
 use OCA\IntranetIntegration\Service\QuotaService;
 use OCA\IntranetIntegration\Service\TokenVerifier;
@@ -40,6 +41,7 @@ class DiagnosticsController extends Controller {
         private QuotaService $quota,
         private AdminsService $admins,
         private NetworkDriveService $drives,
+        private AppStoreService $appStore,
         private LoggerInterface $logger,
     ) {
         parent::__construct(Application::APP_ID, $request);
@@ -96,6 +98,7 @@ class DiagnosticsController extends Controller {
             'quota' => $this->quota->status(),
             'admins' => $this->admins->status(),
             'drives' => $this->drives->status(),
+            'appstore' => $this->appStore->status(),
         ];
 
         if ($check === '1' && $enabled) {

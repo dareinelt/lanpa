@@ -10,6 +10,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Exceptions\ValidationException;
 use App\Security\Session;
+use App\Services\Office\NextcloudAppStoreService;
 use App\Services\Office\OfficeAiService;
 use App\Services\Office\OfficeConfigService;
 use RuntimeException;
@@ -93,6 +94,34 @@ final class OfficeController extends AdminController
         Session::flash($ok ? 'success' : 'error', implode(' ', $messages));
 
         return $this->redirect('/admin/office#ki');
+    }
+
+    /**
+     * App-Store in Nextcloud ein- bzw. ausblenden. Der Stand wird sofort
+     * uebertragen; schlaegt das fehl, gleicht die Diagnose spaeter ab.
+     */
+    public function updateAppStore(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $result = NextcloudAppStoreService::validate($request->post);
+        Container::settings()->update($result['values']);
+        $enabled = $result['values'][NextcloudAppStoreService::SETTING] === '1';
+        app_logger()->info('Nextcloud-App-Store ' . ($enabled ? 'eingeblendet' : 'ausgeblendet') . '.', [
+            'admin' => Container::auth()->username(),
+        ]);
+
+        $message = $enabled
+            ? 'Der App-Store wird in Nextcloud angezeigt.'
+            : 'Der App-Store wird in Nextcloud ausgeblendet.';
+        $pushed = Container::nextcloudAppStore()->pushIfEnabled();
+        if ($pushed === null) {
+            Session::flash('success', $message . ' Die Einstellung wird übertragen, sobald Office aktiviert ist.');
+        } else {
+            Session::flash($pushed['ok'] ? 'success' : 'error', $message . ' Nextcloud: ' . $pushed['message']);
+        }
+
+        return $this->redirect('/admin/office#app-store');
     }
 
     public function check(Request $request): Response
@@ -350,6 +379,7 @@ final class OfficeController extends AdminController
             'aiHasKey' => $ai->hasApiKey(),
             'aiKeyFromSecret' => $ai->apiKeyFromSecret(),
             'aiActive' => $ai->isActive(),
+            'appStoreValues' => Container::nextcloudAppStore()->formValues(),
             'previewConfig' => $previewConfig,
             'pageScript' => 'admin-office.js',
         ], $status);

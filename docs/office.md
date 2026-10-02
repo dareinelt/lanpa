@@ -108,6 +108,9 @@ Vor jedem Update wird automatisch gesichert (`--no-backup` überspringt das).
 Die Versionen stehen in `.env` (`EUROOFFICE_IMAGE_TAG`, `NEXTCLOUD_IMAGE_TAG`)
 und sind damit reproduzierbar. Nextcloud nur **eine Hauptversion nach der
 anderen** aktualisieren; `occ upgrade` führt das offizielle Image selbst aus.
+Ist der App-Store ausgeblendet ([Abschnitt 6b](#6b-nextcloud-app-store-ausblenden)),
+gibt das Skript ihn für die App-Updates kurzzeitig frei und sperrt ihn danach
+wieder.
 
 ---
 
@@ -487,9 +490,10 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 | Bereich | Inhalt |
 | --- | --- |
 | Status | Gesamtzustand, letzte Prüfung, „Jetzt prüfen“ |
-| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector, vertrauenswürdige Hostnamen (Abgleich von `trusted_domains`), Speicherplatz-Kontingente (Abgleich mit `files/default_quota` und Benutzer-Quota), Administratoren aus AD-Gruppen (Abgleich der Gruppe `admin`), Netzlaufwerke (Abgleich der externen SMB-Speicher, Anzahl der Benutzer mit „Netzlaufwerke anzeigen“) |
+| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector, vertrauenswürdige Hostnamen (Abgleich von `trusted_domains`), Speicherplatz-Kontingente (Abgleich mit `files/default_quota` und Benutzer-Quota), Administratoren aus AD-Gruppen (Abgleich der Gruppe `admin`), Netzlaufwerke (Abgleich der externen SMB-Speicher, Anzahl der Benutzer mit „Netzlaufwerke anzeigen“), App-Store (Abgleich von `appstoreenabled`) |
 | Fußzeile und Einstieg | Text, Transparenz, Logo, „Zurück“, Ziel „Zum Intranet“, direkter Aufruf |
 | Lokale KI | KI-Endpunkt für alle Benutzer in Nextcloud und Euro-Office ([Abschnitt 6a](#6a-lokale-ki)) |
+| Nextcloud-App-Store | App-Store in Nextcloud anzeigen oder ausblenden ([Abschnitt 6b](#6b-nextcloud-app-store-ausblenden)) |
 | Vorschau der Fußzeile | Live-Vorschau mit demselben Stylesheet/Skript wie in Nextcloud |
 | Kachel im Intranet | Gestaltung, Status-Darstellung, Berechtigungen |
 | Office-Apps | Link zur Outlook Web App, Freigaben je App (AD-Gruppen), App-Pakete ([Abschnitt 5a](#5a-office-apps-und-app-pakete)) |
@@ -575,6 +579,29 @@ Wird die KI deaktiviert, schaltet Nextcloud `integration_openai` und
 | Nextcloud-Assistent (nur Text, Audio/Bilder ausgeblendet) | Euro-Office-Editor mit KI-Plugin |
 | --- | --- |
 | ![Nextcloud-Assistent mit lokaler KI](screenshots/55-nextcloud-assistant-ki.png) | ![KI-Plugin in Euro-Office](screenshots/56-eurooffice-ki-plugin.png) |
+
+---
+
+## 6b. Nextcloud-App-Store ausblenden
+
+Unter **Admin → Office → Nextcloud-App-Store** (`/admin/office#app-store`)
+lässt sich der App-Store von Nextcloud deaktivieren (Schalter „App-Store in
+Nextcloud anzeigen“, Standard: an). Die Einstellung (`office_appstore_enabled`)
+wird sofort signiert an `intranet_integration` übertragen
+(`/apps/intranet_integration/api/appstore`, JWT mit eigener Audience, an den
+Inhalt gebunden), die in Nextcloud `appstoreenabled` setzt:
+
+| Stand | Wirkung in Nextcloud |
+| --- | --- |
+| angezeigt | `appstoreenabled` entfernt (Nextcloud-Standard), App-Store wie gewohnt |
+| ausgeblendet | `appstoreenabled = false`: unter „Apps“ nur noch die installierten Apps (aktivieren/deaktivieren weiterhin möglich); Entdecken, Kategorien, App-Pakete sowie Installation und Aktualisierung über die Oberfläche entfallen |
+
+Die Diagnose (Komponente „App-Store (Nextcloud)“, nur informativ) vergleicht
+den Stand bei jeder Prüfung und überträgt bei Abweichung erneut – auch wenn
+`appstoreenabled` von Hand geändert wurde. Die Einrichtung beim Containerstart
+(`hooks/intranet-setup.sh`) und `./scripts/office-update.sh` geben den
+App-Store nur für das Installieren bzw. Aktualisieren der benötigten Apps
+kurzzeitig frei und blenden ihn danach wieder aus.
 
 ---
 

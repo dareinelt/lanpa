@@ -31,6 +31,24 @@ read_secret() {
 
 app_present() { occ app:getpath "$1" >/dev/null 2>&1; }
 
+# Ist der App-Store im Intranet ausgeblendet (appstoreenabled=false), wird er
+# fuer Installationen kurzzeitig freigegeben und beim Beenden wieder gesperrt.
+appstore_reopened=0
+appstore_open() {
+    [ "$appstore_reopened" = 1 ] && return 0
+    if [ "$(occ config:system:get appstoreenabled 2>/dev/null)" = "false" ]; then
+        occ config:system:set appstoreenabled --type=boolean --value=true >/dev/null && appstore_reopened=1
+    fi
+}
+appstore_restore() {
+    if [ "$appstore_reopened" = 1 ]; then
+        occ config:system:set appstoreenabled --type=boolean --value=false >/dev/null \
+            || warn "App-Store konnte nicht wieder ausgeblendet werden (das Intranet gleicht dies ab)."
+        appstore_reopened=0
+    fi
+}
+trap appstore_restore EXIT
+
 # Installiert eine App aus dem offiziellen App-Store bzw. aktiviert sie.
 ensure_app() {
     app="$1"
@@ -38,6 +56,7 @@ ensure_app() {
         occ app:enable "$app" >/dev/null 2>&1 || warn "App $app konnte nicht aktiviert werden."
     else
         log "Installiere App $app aus dem Nextcloud-App-Store ..."
+        appstore_open
         occ app:install "$app" || warn "App $app konnte nicht installiert werden (Internetzugang zum App-Store?)."
     fi
 }
@@ -273,6 +292,7 @@ if is_true "${NEXTCLOUD_AI_APPS:-true}"; then
     for app in integration_openai assistant; do
         if ! app_present "$app"; then
             log "Installiere App $app (deaktiviert) aus dem Nextcloud-App-Store ..."
+            appstore_open
             occ app:install --keep-disabled "$app" >/dev/null \
                 || warn "App $app konnte nicht installiert werden (Internetzugang zum App-Store?)."
         fi
@@ -281,5 +301,6 @@ if is_true "${NEXTCLOUD_AI_APPS:-true}"; then
     occ config:app:delete intranet_integration ai_fingerprint >/dev/null 2>&1 || true
 fi
 
+appstore_restore
 log "Fertig."
 exit 0

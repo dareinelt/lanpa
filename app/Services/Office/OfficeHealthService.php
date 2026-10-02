@@ -28,6 +28,8 @@ use Throwable;
  *                   bei Abweichung neu uebertragen; nur informativ).
  *   drives          Netzlaufwerke der Windows-Clients (Fingerabdruck), bei
  *                   Abweichung wird neu uebertragen. Nur informativ.
+ *   appstore        App-Store in Nextcloud ein-/ausgeblendet (appstoreenabled),
+ *                   bei Abweichung neu uebertragen. Nur informativ.
  *   redis           TCP + PING
  *   postgres        TCP + SSLRequest
  *   ai              lokaler KI-Endpunkt: Stand in Euro-Office (runtime.json)
@@ -54,6 +56,7 @@ final class OfficeHealthService
         'quota' => 'Speicherplatz-Kontingente (Nextcloud)',
         'admins' => 'Administratoren aus AD-Gruppen (Nextcloud)',
         'drives' => 'Netzlaufwerke (Nextcloud)',
+        'appstore' => 'App-Store (Nextcloud)',
         'redis' => 'Redis (Nextcloud-Cache)',
         'postgres' => 'PostgreSQL (Nextcloud-Datenbank)',
         'ai' => 'KI (lokaler Endpunkt)',
@@ -63,7 +66,7 @@ final class OfficeHealthService
     private const CRITICAL = ['nextcloud', 'eurooffice', 'connector'];
 
     /** Komponenten, die den Gesamtstatus nicht beeinflussen. */
-    private const INFORMATIONAL = ['ai', 'quota', 'admins', 'drives'];
+    private const INFORMATIONAL = ['ai', 'quota', 'admins', 'drives', 'appstore'];
 
     public function __construct(
         private readonly OfficeConfigService $config,
@@ -74,7 +77,8 @@ final class OfficeHealthService
         private readonly ?OfficeTrustedDomainsService $trustedDomains = null,
         private readonly ?StorageQuotaService $quotas = null,
         private readonly ?NextcloudAdminService $admins = null,
-        private readonly ?NetworkDriveService $drives = null
+        private readonly ?NetworkDriveService $drives = null,
+        private readonly ?NextcloudAppStoreService $appStore = null
     ) {
     }
 
@@ -123,6 +127,12 @@ final class OfficeHealthService
         }
         if ($this->drives !== null) {
             $components['drives'] = $this->checkDrives(
+                $components['nextcloud']['status'] !== self::ERROR && $components['connector']['status'] !== self::ERROR,
+                $diagnostics
+            );
+        }
+        if ($this->appStore !== null) {
+            $components['appstore'] = $this->checkAppStore(
                 $components['nextcloud']['status'] !== self::ERROR && $components['connector']['status'] !== self::ERROR,
                 $diagnostics
             );
@@ -384,6 +394,9 @@ final class OfficeHealthService
         if (is_array($data['drives'] ?? null)) {
             $diagnostics['drives'] = $data['drives'];
         }
+        if (is_array($data['appstore'] ?? null)) {
+            $diagnostics['appstore'] = $data['appstore'];
+        }
 
         if (empty($connector['installed'])) {
             return $this->component('connector', self::ERROR, 'Connector eurooffice ist nicht installiert.');
@@ -617,6 +630,47 @@ final class OfficeHealthService
         }
 
         return $this->component('drives', $remark === '' ? self::OK : self::WARN, 'Aktualisiert: ' . $summary . $remark);
+    }
+
+    /**
+     * Gleicht die Sichtbarkeit des App-Stores mit Nextcloud ab (selbstheilend,
+     * z. B. wenn appstoreenabled von Hand oder durch ein Skript geaendert wurde).
+     *
+     * @param array<string,mixed> $diagnostics
+     *
+     * @return array{label:string,status:string,message:string}
+     */
+    private function checkAppStore(bool $connectorReachable, array &$diagnostics): array
+    {
+        $service = $this->appStore;
+        if ($service === null) {
+            return $this->component('appstore', self::WARN, 'Nicht verfügbar.');
+        }
+
+        $summary = $service->enabled() ? 'Eingeblendet' : 'Ausgeblendet (nur installierte Apps verwaltbar)';
+        if (!$connectorReachable) {
+            return $this->component('appstore', self::WARN, 'Nicht prüfbar (Nextcloud-App nicht erreichbar). Soll: ' . $summary);
+        }
+
+        $remote = is_array($diagnostics['appstore'] ?? null) ? $diagnostics['appstore'] : null;
+        if ($remote === null) {
+            return $this->component('appstore', self::WARN, 'Nextcloud-App intranet_integration ist veraltet – App-Store wird nicht abgeglichen (docker compose restart nextcloud).');
+        }
+
+        if ($service->inSync($remote)) {
+            $diagnostics['appstore_in_sync'] = true;
+
+            return $this->component('appstore', self::OK, $summary);
+        }
+
+        $result = $service->pushToNextcloud();
+        $diagnostics['appstore_pushed'] = true;
+        $diagnostics['appstore_in_sync'] = $result['ok'];
+        if (!$result['ok']) {
+            return $this->component('appstore', self::WARN, 'Abgleich fehlgeschlagen: ' . $result['message']);
+        }
+
+        return $this->component('appstore', self::OK, 'Aktualisiert: ' . $summary);
     }
 
     /**

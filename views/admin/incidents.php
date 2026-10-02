@@ -9,7 +9,7 @@ use App\Support\Dates;
 use App\Support\Html;
 
 /** @var list<array<string,mixed>> $incidents */
-/** @var array{count:int,users:list<string>,target:string,title:string,message:string}|null $alert */
+/** @var array{count:int,users:list<string>,target:string,freeze:bool,title:string,message:string}|null $alert */
 /** @var array<string,mixed>|null $confirm */
 /** @var IncidentSettings $settings */
 /** @var array<int,string> $targets */
@@ -35,6 +35,7 @@ $field = static function (string $key, string $text, string $hint, string $unit 
 };
 $kindLabel = ['extension' => 'Ransomware-Endung', 'content' => 'verschlüsselt wirkend', 'changed' => 'überschrieben'];
 $openCount = count(array_filter($incidents, static fn (array $i): bool => $i['open']));
+$freezeTarget = ($current['incident_freeze_target'] ?? '1') === '1';
 ?>
 <div class="incidents-page">
 <p class="card__hint">
@@ -57,7 +58,11 @@ $openCount = count(array_filter($incidents, static fn (array $i): bool => $i['op
                 <h3>Was ist jetzt eingeschränkt?</h3>
                 <ul>
                     <li><strong>Betroffene Benutzer</strong> (<?= Html::e(implode(', ', $alert['users'])) ?>) können ihre Dateien in Nextcloud nur noch öffnen und herunterladen – nicht ändern, hochladen, umbenennen oder löschen. Sie sehen einen Hinweis, sich beim Support zu melden.</li>
+                    <?php if (!$alert['freeze']) { ?>
+                    <li><strong>Speicherziele</strong>: werden weiter synchronisiert – laut Einstellung wird nur der Benutzer eingeschränkt, kein Cold-Ziel geschützt.</li>
+                    <?php } else { ?>
                     <li><strong>Geschütztes Speicherziel</strong>: <?= $alert['target'] !== '' ? '„' . Html::e($alert['target']) . '“ ist schreibgeschützt (read-only) eingebunden und wird nicht synchronisiert. Dort bleibt der Stand von vor dem Vorfall erhalten.' : 'Kein aktives Speicherziel vorhanden – es konnte kein Datenbestand geschützt werden.' ?></li>
+                    <?php } ?>
                     <li>Alle übrigen Benutzer und Speicherziele arbeiten normal weiter.</li>
                 </ul>
             </div>
@@ -65,8 +70,13 @@ $openCount = count(array_filter($incidents, static fn (array $i): bool => $i['op
                 <h3>Was ist zu tun?</h3>
                 <ol>
                     <li>Gerät des Benutzers vom Netz trennen und prüfen (Virenscanner, IT-Sicherheit informieren).</li>
+                    <?php if ($alert['target'] !== '') { ?>
                     <li>Betroffene Dateien in Nextcloud prüfen (siehe „Details“) und ggf. aus Nextcloud-Versionen oder dem geschützten Speicherziel wiederherstellen.</li>
                     <li>Erst danach den Vorfall als „Erledigt“ markieren – die Einschränkung wird aufgehoben und das Speicherziel wieder synchronisiert. <strong>Achtung:</strong> Danach überträgt storage-sync den aktuellen Stand auch auf das geschützte Ziel.</li>
+                    <?php } else { ?>
+                    <li>Betroffene Dateien in Nextcloud prüfen (siehe „Details“) und ggf. aus Nextcloud-Versionen oder einer Sicherung wiederherstellen.</li>
+                    <li>Erst danach den Vorfall als „Erledigt“ markieren – die Einschränkung des Benutzers wird aufgehoben.</li>
+                    <?php } ?>
                 </ol>
             </div>
         </div>
@@ -204,8 +214,21 @@ $openCount = count(array_filter($incidents, static fn (array $i): bool => $i['op
             <input type="hidden" name="incident_detection_enabled" value="0">
             <input type="checkbox" id="incident_detection_enabled" name="incident_detection_enabled" value="1"<?= ($current['incident_detection_enabled'] ?? '1') === '1' ? ' checked' : '' ?>>
             <label for="incident_detection_enabled">Auffälliges Überschreiben erkennen</label>
-            <p class="field__hint">Bei einem Vorfall darf der Benutzer nur noch lesen und ein Speicherziel des Cold-Tiers wird schreibgeschützt, bis der Vorfall erledigt ist.</p>
+            <p class="field__hint">Bei einem Vorfall darf der auslösende Benutzer (bzw. der Eigentümer des Ordners) nur noch lesen, bis der Vorfall erledigt ist.</p>
         </div>
+        <fieldset class="fieldset">
+            <legend>Maßnahmen bei einem Vorfall</legend>
+            <div class="field field--check">
+                <input type="radio" id="incident_freeze_target_1" name="incident_freeze_target" value="1"<?= $freezeTarget ? ' checked' : '' ?> aria-describedby="incident_freeze_target_1-hint">
+                <label for="incident_freeze_target_1">Benutzer einschränken <strong>und</strong> ein Speicherziel des Cold-Tiers aus dem Sync nehmen (empfohlen)</label>
+                <p class="field__hint" id="incident_freeze_target_1-hint">Das Speicherziel wird schreibgeschützt eingebunden und bis zur Erledigung nicht synchronisiert – dort bleibt der Datenbestand von vor dem Vorfall erhalten. Die Hochverfügbarkeit ist so lange eingeschränkt.</p>
+            </div>
+            <div class="field field--check">
+                <input type="radio" id="incident_freeze_target_0" name="incident_freeze_target" value="0"<?= $freezeTarget ? '' : ' checked' ?> aria-describedby="incident_freeze_target_0-hint">
+                <label for="incident_freeze_target_0">Nur den Benutzer einschränken</label>
+                <p class="field__hint" id="incident_freeze_target_0-hint">Alle Speicherziele werden weiter synchronisiert. Veränderte Dateien gelangen damit auch in den Cold-Tier. Wird die Einstellung bei einem offenen Vorfall gewählt, wird ein geschütztes Ziel sofort wieder synchronisiert.</p>
+            </div>
+        </fieldset>
         <div class="storage-fields">
             <?= $field('incident_window_minutes', 'Zeitfenster', 'Zeitraum, in dem die Dateien je Benutzer gezählt werden.', 'Minuten') ?>
             <?= $field('incident_overwrite_files', 'Überschriebene Dateien', 'Ab so vielen geänderten Dateien eines Benutzers im Zeitfenster wird ein Vorfall ausgelöst.', 'Anzahl') ?>
@@ -213,7 +236,7 @@ $openCount = count(array_filter($incidents, static fn (array $i): bool => $i['op
             <?= $field('incident_extension_files', 'Dateien mit Ransomware-Endung', 'Ab so vielen Dateien mit einer Endung bzw. einem Namen aus der Liste unten (1 = sofort).', 'Anzahl') ?>
         </div>
         <div class="field">
-            <label for="incident_protect_target">Geschütztes Speicherziel bei einem Vorfall</label>
+            <label for="incident_protect_target">Geschütztes Speicherziel bei einem Vorfall (nur bei „… und Speicherziel aus dem Sync nehmen“)</label>
             <select id="incident_protect_target" name="incident_protect_target" aria-describedby="incident_protect_target-hint">
                 <option value="0">Automatisch (synchrones, nicht primäres Ziel bevorzugt)</option>
                 <?php foreach ($targets as $targetId => $targetLabel) { ?>

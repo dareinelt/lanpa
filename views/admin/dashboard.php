@@ -8,7 +8,7 @@ use App\Support\Html;
 
 /** @var array<string,mixed>|null $lastSync */
 /** @var array<string,mixed>|null $lastSuccessfulSync */
-/** @var array{count:int,users:list<string>,target:string,title:string,message:string}|null $incidentAlert */
+/** @var array{count:int,users:list<string>,target:string,freeze:bool,title:string,message:string}|null $incidentAlert */
 $incidentAlert = $incidentAlert ?? null;
 ?>
 <?php if ($incidentAlert !== null) { ?>

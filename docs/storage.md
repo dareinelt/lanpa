@@ -221,13 +221,21 @@ gilt der Eigentümer des Ordners.
    ein roter Hinweis: „Der Zugriff auf Ihre Dateien wurde aus
    Sicherheitsgründen vorübergehend eingeschränkt. Bitte melden Sie sich beim
    Support.“ (optional mit Support-Kontakt aus den Einstellungen).
-2. **Cold-Ziel geschützt:** Ein Speicherziel des Cold-Tiers wird aus der
+2. **Cold-Ziel geschützt** (abschaltbar, siehe unten): Ein Speicherziel des Cold-Tiers wird aus der
    Synchronisation genommen und **nur lesend** eingebunden. So bleibt ein
    unveränderter Stand der Daten erhalten. Gewählt wird das in den
    Einstellungen festgelegte Ziel, sonst ein synchrones, nicht primäres Ziel.
    Der HA-Status zeigt in dieser Zeit „eingeschränkt“.
 3. **Meldung im Adminbereich:** Dashboard, Speicher (HA) und der Menüpunkt
    **Vorfälle** (mit Zähler) weisen auf den offenen Vorfall hin.
+
+Unter **Einstellungen → Maßnahmen bei einem Vorfall** ist wählbar, ob
+**nur der Benutzer** (auslösender Benutzer bzw. Eigentümer des Ordners)
+eingeschränkt wird oder **zusätzlich ein Cold-Ziel** aus dem Sync genommen
+wird (Standard, empfohlen; Einstellung `incident_freeze_target`). Bei „nur
+Benutzer“ werden alle Speicherziele weiter synchronisiert; ein bei einem
+offenen Vorfall bereits geschütztes Ziel wird beim nächsten Durchlauf wieder
+freigegeben und synchronisiert.
 
 **Vorfälle-Seite:** Tabelle aller Vorfälle mit Zeitpunkt, Status, Benutzer
 (Wer), Regeln und Beispieldateien (Was), Anzahl Dateien/Datenmenge (Wie viel),

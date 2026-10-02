@@ -284,6 +284,25 @@ Runner::test('Vorfälle: Repository und Erledigung heben die Einschränkung auf'
     $alert = $service->dashboardAlert();
     Assert::same(['alice', 'bob'], $alert['users']);
     Assert::same('NAS B', $alert['target']);
+    Assert::true($alert['freeze']);
+
+    // Einstellung "nur Benutzer einschraenken": kein Schutzziel, Sync laeuft weiter.
+    $pdo->exec("INSERT INTO settings (setting_key, setting_value) VALUES ('incident_freeze_target', '0')");
+    $userOnly = new IncidentService($repository, new StorageRepository($pdo), new SettingsService(new SettingsRepository($pdo)));
+    Assert::false($userOnly->settings()->freezeTarget());
+    $alert = $userOnly->dashboardAlert();
+    Assert::false($alert['freeze']);
+    Assert::same('', $alert['target']);
+    Assert::contains('weiter synchronisiert', $alert['message']);
+    $repository->releaseFrozenTarget();
+    foreach ($repository->open() as $row) {
+        Assert::null($row['frozen_target_id']);
+        Assert::same('', (string) $row['frozen_target_label']);
+    }
+    $repository->assignFrozenTarget(2, 'NAS B');
+    $pdo->exec("DELETE FROM settings WHERE setting_key = 'incident_freeze_target'");
+    Assert::same(['incident_freeze_target' => '1'], array_intersect_key(IncidentSettings::validate(['incident_freeze_target' => '1'])['values'], ['incident_freeze_target' => 1]));
+    Assert::same('0', IncidentSettings::validate(['incident_freeze_target' => '0'])['values']['incident_freeze_target']);
 
     $list = $service->list();
     Assert::same($id, $list[1]['id'] === $id ? $list[1]['id'] : $list[0]['id']);
@@ -335,7 +354,7 @@ Runner::test('Vorfälle: Adminseite mit Tabelle und Bestätigungs-Overlay', stat
     ]);
     $data = [
         'incidents' => [$incident],
-        'alert' => ['count' => 1, 'users' => ['alice<x>'], 'target' => 'NAS B', 'title' => 'Sicherheitsvorfall', 'message' => 'Text'],
+        'alert' => ['count' => 1, 'users' => ['alice<x>'], 'target' => 'NAS B', 'freeze' => true, 'title' => 'Sicherheitsvorfall', 'message' => 'Text'],
         'confirm' => null,
         'settings' => new IncidentSettings([]),
         'targets' => [2 => 'NAS B'],
@@ -352,6 +371,16 @@ Runner::test('Vorfälle: Adminseite mit Tabelle und Bestätigungs-Overlay', stat
     Assert::contains('name="incident_extensions"', $html);
     Assert::false(str_contains($html, 'data-incident-overlay'));
     Assert::false(str_contains($html, 'style="'));
+    Assert::contains('id="incident_freeze_target_1" name="incident_freeze_target" value="1" checked', $html);
+    Assert::contains('Nur den Benutzer einschränken', $html);
+
+    $userOnly = View::render('admin.incidents', [
+        'alert' => ['count' => 1, 'users' => ['alice'], 'target' => '', 'freeze' => false, 'title' => 'Sicherheitsvorfall', 'message' => 'Text'],
+        'settings' => new IncidentSettings(['incident_freeze_target' => '0']),
+    ] + $data);
+    Assert::contains('value="0" checked', $userOnly);
+    Assert::contains('werden weiter synchronisiert', $userOnly);
+    Assert::false(str_contains($userOnly, 'Geschütztes Speicherziel</strong>'));
 
     $html = View::render('admin.incidents', ['confirm' => $incident] + $data);
     Assert::contains('Event wirklich als erledigt markieren?', $html);

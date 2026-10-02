@@ -267,7 +267,8 @@ final class Agent
                     $lastSparseCheck = time();
                     $this->catalog()->setMeta('sparse_supported', $sparse ? '1' : '0');
                 }
-                $this->monitorPass($settings, $metrics, $previous, $sparse, self::frozenTargetId($open));
+                $frozen = $this->incidentSettings()->freezeTarget() ? self::frozenTargetId($open) : null;
+                $this->monitorPass($settings, $metrics, $previous, $sparse, $frozen);
                 if (time() - $lastTrim > 3600) {
                     $this->repository()->trimEvents();
                     $lastTrim = time();
@@ -666,7 +667,19 @@ final class Agent
                 $open = $repository->open();
             }
             $frozen = self::frozenTargetId($open);
-            if ($open === []) {
+            if ($open !== [] && !$detector->settings()->freezeTarget()) {
+                // Nur Benutzer einschraenken: kein Cold-Ziel aus dem Sync nehmen (bzw. ein geschuetztes wieder freigeben).
+                if ($frozen !== null) {
+                    $repository->releaseFrozenTarget();
+                }
+                if ($this->catalog()->meta('incident_frozen', '') !== '') {
+                    $this->catalog()->setMeta('incident_frozen', '');
+                    $this->event('info', 'incident', 'Schutz des Speicherziels bei Sicherheitsvorfällen ist abgeschaltet – '
+                        . ($frozen !== null ? '„' . self::targetLabel($rows, $frozen) . '“ wird wieder synchronisiert. ' : '')
+                        . 'Eingeschränkt bleiben nur die betroffenen Benutzer.', $frozen);
+                }
+                $frozen = null;
+            } elseif ($open === []) {
                 if ($this->catalog()->meta('incident_frozen', '') !== '') {
                     $this->catalog()->setMeta('incident_frozen', '');
                     $this->event('info', 'incident', 'Alle Sicherheitsvorfälle erledigt – die Synchronisation aller Speicherziele wird fortgesetzt.');

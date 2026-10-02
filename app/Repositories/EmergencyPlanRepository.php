@@ -77,6 +77,28 @@ final class EmergencyPlanRepository extends Repository
         });
     }
 
+    /**
+     * Legt importierte Pläne als neue, unveröffentlichte Entwürfe an (eine Transaktion).
+     *
+     * @param list<array<string,mixed>> $definitions geprüfte Definitionen
+     * @return list<int>
+     */
+    public function importPlans(array $definitions, string $actor): array
+    {
+        return $this->transaction(function () use ($definitions, $actor): array {
+            $ids = [];
+            foreach ($definitions as $definition) {
+                $this->execute('INSERT INTO emergency_plans (title, definition, updated_by, updated_at, contributors) VALUES (?, ?, ?, ?, ?)',
+                    [$definition['title'], self::json($definition), $actor, gmdate('Y-m-d H:i:s'), self::json([$actor])]);
+                $id = (int) $this->pdo->lastInsertId();
+                $this->reviewLog($id, 1, $actor, 'imported', 'Aus Exportdatei importiert. Veröffentlichung benötigt eine Vier-Augen-Freigabe.');
+                $ids[] = $id;
+            }
+
+            return $ids;
+        });
+    }
+
     public function submit(int $id, int $revision, string $actor): void
     {
         $this->transaction(function () use ($id, $revision, $actor): void {

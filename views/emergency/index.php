@@ -26,6 +26,32 @@ use App\Support\Html;
         </form>
     </details>
     <?php if (!$smtpEnabled) { ?><p class="flash flash--error">SMTP ist deaktiviert. Automatische KAEP-E-Mails können nicht versendet werden. Ein Administrator muss E-Mail (SMTP) konfigurieren.</p><?php } ?>
+    <?php if ($canTransfer) { ?>
+        <details class="card">
+            <summary>Export und Import (nur Administratoren)</summary>
+            <form action="<?= $base ?>/plaene/export" method="post" class="form">
+                <?= Csrf::field() ?>
+                <fieldset>
+                    <legend>Notfallpläne exportieren</legend>
+                    <?php foreach ($plans as $plan) { ?>
+                        <label><input type="checkbox" name="plans[]" value="<?= (int) $plan['id'] ?>" checked> <?= Html::e($plan['title']) ?> (Entwurf <?= (int) $plan['revision'] ?>)</label>
+                    <?php } ?>
+                    <?php if ($plans === []) { ?><p>Keine Notfallpläne vorhanden.</p><?php } ?>
+                </fieldset>
+                <p>Exportiert wird jeweils der aktuelle Entwurf als JSON-Datei – ohne Freigabehistorie und Ereignisse. Die Datei enthält Ansprechpartner und Telefonnummern; bitte vertraulich behandeln.</p>
+                <button class="button button--primary" <?= $plans === [] ? 'disabled' : '' ?>>Ausgewählte Pläne exportieren</button>
+            </form>
+            <form action="<?= $base ?>/plaene/import" method="post" enctype="multipart/form-data" class="form">
+                <?= Csrf::field() ?>
+                <div class="field">
+                    <label for="ep-import">Notfallpläne importieren (Exportdatei, höchstens 2 MB)</label>
+                    <input id="ep-import" type="file" name="file" accept=".json,application/json" required>
+                </div>
+                <p>Jeder Plan wird als neuer, unveröffentlichter Entwurf angelegt; vorhandene Pläne bleiben unverändert. SMS-Elemente werden über den Titel den aktiven Alarmierungen dieses Systems zugeordnet – fehlt eine Vorlage, wird nichts importiert. Die Veröffentlichung benötigt wie immer eine Vier-Augen-Freigabe.</p>
+                <button class="button button--primary">Datei importieren</button>
+            </form>
+        </details>
+    <?php } ?>
     <script src="/assets/js/admin-group-autocomplete.js?v=<?= Html::e($assetVersion) ?>" defer></script>
 <?php } ?>
 <h2><?= $manager ? 'Planbibliothek' : 'Notfallplan auswählen' ?></h2>

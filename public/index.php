@@ -189,7 +189,7 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         }
         return null;
     };
-    $router->group([$requireKaep], static function (Router $router): void {
+    $router->group([$requireKaep], static function (Router $router) use ($requireAdmin): void {
         foreach (['' => 'index', '/bearbeiten' => 'edit', '/gruppen' => 'groups', '/ereignis' => 'event', '/stand' => 'status', '/export' => 'export', '/anleitung' => 'guide'] as $path => $method) {
             $router->get('/admin/notfallplan' . $path, [\App\Controllers\EmergencyPlanController::class, $method]);
         }
@@ -199,6 +199,11 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/notfallplan/vorschau', [\App\Controllers\EmergencyPlanController::class, 'previewRender']);
         $router->post('/admin/notfallplan/freigabe', [\App\Controllers\EmergencyPlanController::class, 'review']);
         $router->post('/admin/notfallplan/massnahme', [\App\Controllers\EmergencyPlanController::class, 'update']);
+        // Export/Import von Notfallplänen nur für Administratoren, nicht für das KAEP-Team.
+        $router->group([$requireAdmin], static function (Router $router): void {
+            $router->post('/admin/notfallplan/plaene/export', [\App\Controllers\EmergencyPlanController::class, 'exportPlans']);
+            $router->post('/admin/notfallplan/plaene/import', [\App\Controllers\EmergencyPlanController::class, 'importPlans']);
+        });
     });
     $router->post('/admin/logout', [AuthController::class, 'logout']);
 

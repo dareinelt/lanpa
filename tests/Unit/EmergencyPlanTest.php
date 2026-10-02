@@ -356,3 +356,81 @@ Runner::test('Notfallplan: Rücknahme durch Prüfer erzeugt keine künstliche Mi
     $repo->review($id, 2, 'ad:reviewer', true, 'Erneut geprüft.');
     Assert::same(2, (int) $repo->publishedPlan($id)['revision']);
 });
+
+function emergencyAlarmTables(PDO $pdo, array $alarms): void
+{
+    $pdo->exec('CREATE TABLE alarm_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, group_number TEXT, description TEXT, type TEXT)');
+    $pdo->exec('CREATE TABLE navigation_items (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, url TEXT, type TEXT, parent_id INTEGER, icon TEXT, background_color TEXT, background_opacity INTEGER, override_background INTEGER, short_description TEXT, description TEXT, content TEXT, alarm_text TEXT, alarm_group_id INTEGER, protected_access INTEGER, sort_order INTEGER, active INTEGER, created_at TEXT, updated_at TEXT)');
+    foreach ($alarms as [$title, $text, $number]) {
+        $pdo->prepare("INSERT INTO alarm_groups (group_number, description, type) VALUES (?, '', 'group')")->execute([$number]);
+        $pdo->prepare("INSERT INTO navigation_items (title, type, alarm_text, alarm_group_id, active, sort_order) VALUES (?, 'alarm', ?, ?, 1, 0)")
+            ->execute([$title, $text, (int) $pdo->lastInsertId()]);
+    }
+}
+
+function emergencyImportRejected(EmergencyPlanService $service, string $contents): string
+{
+    try {
+        $service->importPlans($contents, 'local:admin');
+    } catch (ValidationException $exception) {
+        return implode(' ', $exception->errors());
+    }
+    throw new RuntimeException('Import hätte abgelehnt werden müssen.');
+}
+
+Runner::test('Notfallplan: Export und Import zwischen Systemen als neue Entwürfe', static function (): void {
+    $sourcePdo = emergencyPdo();
+    emergencyAlarmTables($sourcePdo, [['Werkschutz', 'Brand im Werk', '100']]);
+    $source = emergencyService($sourcePdo);
+    $definition = emergencyDefinition();
+    $definition['nodes'][] = array_replace(emergencyNode('sms', 'sms', [['id' => 'ende', 'when' => 'always']]), ['alarm_id' => 1, 'phone' => '0800 112']);
+    $id = $source->save(0, 0, $definition, 'local:autor');
+    $source->repository->submit($id, 1, 'local:autor');
+    $source->repository->review($id, 1, 'local:pruefer', true, 'Geprüft.');
+    $file = $source->exportPlans([$id]);
+    $data = json_decode($file, true, 64, JSON_THROW_ON_ERROR);
+    Assert::same(EmergencyPlanService::EXPORT_FORMAT, $data['format']);
+    Assert::same('Werkschutz', $data['plans'][0]['definition']['nodes'][4]['alarm']['title']);
+
+    // Zielsystem mit anderer ID der gleichnamigen Alarmierung.
+    $targetPdo = emergencyPdo();
+    emergencyAlarmTables($targetPdo, [['Andere', 'x', '1'], ['werkschutz ', 'Brand im Werk (neu)', '200']]);
+    $target = emergencyService($targetPdo);
+    $target->repository->savePlan(0, 0, emergencyDefinition(), 'local:bestand');
+    $ids = $target->importPlans("\xEF\xBB\xBF" . $file, 'local:admin');
+    Assert::same([2], $ids);
+    $plan = $target->repository->plan(2);
+    Assert::same('Brandfall', $plan['title']);
+    Assert::same('draft', $plan['review_state']);
+    Assert::same(0, (int) $plan['published']);
+    Assert::same(['local:admin'], $plan['contributors']);
+    Assert::same(2, $plan['definition']['nodes'][4]['alarm_id']);
+    Assert::same('200', $plan['definition']['nodes'][4]['alarm']['alarm_group_number']);
+    Assert::same('0800 112', $plan['definition']['nodes'][4]['phone']);
+    Assert::same('imported', $target->repository->reviews(2)[0]['action']);
+    Assert::same('Brandfall', $target->repository->plan(1)['title'], 'Bestehende Pläne bleiben unverändert.');
+    emergencyThrows(fn () => $target->repository->review(2, 1, 'local:admin', true, ''), 403);
+});
+
+Runner::test('Notfallplan: Import prüft Format, Inhalt und Alarmvorlagen vollständig', static function (): void {
+    $pdo = emergencyPdo();
+    emergencyAlarmTables($pdo, [['Doppelt', 'a', '1'], ['Doppelt', 'b', '2']]);
+    $service = emergencyService($pdo);
+    $wrap = static fn (array $plans, array $extra = []): string => json_encode($extra + ['format' => EmergencyPlanService::EXPORT_FORMAT, 'version' => 1, 'plans' => $plans]);
+    $valid = ['definition' => emergencyDefinition()];
+    Assert::true(str_contains(emergencyImportRejected($service, 'kein json'), 'JSON'));
+    Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid], ['format' => 'andere'])), 'keine Notfallplan-Exportdatei'));
+    Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid], ['version' => 2])), 'Version'));
+    Assert::true(str_contains(emergencyImportRejected($service, $wrap([])), '1 bis'));
+    $broken = ['definition' => ['title' => 'Kaputt', 'nodes' => [emergencyNode('x') + ['link' => 'javascript:alert(1)']]]];
+    Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid, $broken])), 'Plan „Kaputt“'));
+    $sms = static fn (string $title, array $alarm): array => ['definition' => ['title' => $title, 'nodes' => [array_replace(emergencyNode('s', 'sms'), ['alarm' => $alarm])]]];
+    $message = emergencyImportRejected($service, $wrap([$valid, $sms('A', ['title' => 'Fehlt']), $sms('B', ['title' => 'Doppelt', 'alarm_text' => 'c', 'alarm_group_number' => '3'])]));
+    Assert::true(str_contains($message, '„Fehlt“') && str_contains($message, '„Doppelt“'));
+    Assert::same([], $service->repository->plans(), 'Fehlerhafter Import legt nichts an.');
+    Assert::same([1], $service->importPlans($wrap([$sms('C', ['title' => 'Doppelt', 'alarm_text' => 'b', 'alarm_group_number' => '2'])]), 'local:admin'));
+    Assert::same(2, $service->repository->plan(1)['definition']['nodes'][0]['alarm_id']);
+    $rejected = false;
+    try { $service->exportPlans([]); } catch (ValidationException) { $rejected = true; }
+    Assert::true($rejected);
+});

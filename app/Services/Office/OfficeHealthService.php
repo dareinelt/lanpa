@@ -45,6 +45,7 @@ final class OfficeHealthService
         'eurooffice_jwt' => 'JWT (Intranet ↔ DocumentServer)',
         'connector' => 'Nextcloud-Connector (eurooffice)',
         'hosts' => 'Vertrauenswürdige Hostnamen (Nextcloud)',
+        'quota' => 'Speicherplatz-Kontingente (Nextcloud)',
         'redis' => 'Redis (Nextcloud-Cache)',
         'postgres' => 'PostgreSQL (Nextcloud-Datenbank)',
         'ai' => 'KI (lokaler Endpunkt)',
@@ -54,7 +55,7 @@ final class OfficeHealthService
     private const CRITICAL = ['nextcloud', 'eurooffice', 'connector'];
 
     /** Komponenten, die den Gesamtstatus nicht beeinflussen. */
-    private const INFORMATIONAL = ['ai'];
+    private const INFORMATIONAL = ['ai', 'quota'];
 
     public function __construct(
         private readonly OfficeConfigService $config,
@@ -62,7 +63,8 @@ final class OfficeHealthService
         private readonly string $cacheFile,
         private readonly int $cacheTtl = 30,
         private readonly ?OfficeAiService $ai = null,
-        private readonly ?OfficeTrustedDomainsService $trustedDomains = null
+        private readonly ?OfficeTrustedDomainsService $trustedDomains = null,
+        private readonly ?StorageQuotaService $quotas = null
     ) {
     }
 
@@ -93,6 +95,12 @@ final class OfficeHealthService
         );
         if ($this->trustedDomains !== null) {
             $components['hosts'] = $this->checkHosts(
+                $components['nextcloud']['status'] !== self::ERROR && $components['connector']['status'] !== self::ERROR,
+                $diagnostics
+            );
+        }
+        if ($this->quotas !== null) {
+            $components['quota'] = $this->checkQuota(
                 $components['nextcloud']['status'] !== self::ERROR && $components['connector']['status'] !== self::ERROR,
                 $diagnostics
             );
@@ -345,6 +353,9 @@ final class OfficeHealthService
         if (is_array($data['hosts'] ?? null)) {
             $diagnostics['hosts'] = $data['hosts'];
         }
+        if (is_array($data['quota'] ?? null)) {
+            $diagnostics['quota'] = $data['quota'];
+        }
 
         if (empty($connector['installed'])) {
             return $this->component('connector', self::ERROR, 'Connector eurooffice ist nicht installiert.');
@@ -415,6 +426,56 @@ final class OfficeHealthService
         }
 
         return $this->component('hosts', self::OK, 'Aktualisiert: ' . $summary);
+    }
+
+    /**
+     * Gleicht die Speicherplatz-Kontingente mit Nextcloud ab (selbstheilend,
+     * z. B. nach geaenderten Gruppenmitgliedschaften durch die AD-Synchronisation).
+     *
+     * @param array<string,mixed> $diagnostics
+     *
+     * @return array{label:string,status:string,message:string}
+     */
+    private function checkQuota(bool $connectorReachable, array &$diagnostics): array
+    {
+        $service = $this->quotas;
+        if ($service === null) {
+            return $this->component('quota', self::WARN, 'Nicht verfügbar.');
+        }
+
+        try {
+            $payload = $service->payload();
+        } catch (Throwable) {
+            return $this->component('quota', self::WARN, 'Kontingente nicht ermittelbar (Datenbank-Migration ausstehend?).');
+        }
+        $summary = 'Standard ' . StorageQuotaService::formatMb($payload['default_mb'])
+            . ', ' . count($payload['users']) . ' abweichende Benutzer';
+
+        if (!$connectorReachable) {
+            return $this->component('quota', self::WARN, 'Nicht prüfbar (Nextcloud-App nicht erreichbar). ' . $summary);
+        }
+
+        $remote = is_array($diagnostics['quota'] ?? null) ? $diagnostics['quota'] : null;
+        if ($remote === null) {
+            return $this->component('quota', self::WARN, 'Nextcloud-App intranet_integration ist veraltet – Kontingente werden nicht abgeglichen (docker compose restart nextcloud).');
+        }
+
+        if ($service->inSync($remote['fingerprint'] ?? null)) {
+            $diagnostics['quota_in_sync'] = true;
+            $pending = (int) ($remote['pending'] ?? 0);
+
+            return $this->component('quota', self::OK, $summary
+                . ($pending > 0 ? ' (' . $pending . ' davon noch nie in Nextcloud angemeldet, Übernahme bei der ersten Anmeldung)' : ''));
+        }
+
+        $result = $service->pushToNextcloud();
+        $diagnostics['quota_pushed'] = true;
+        $diagnostics['quota_in_sync'] = $result['ok'];
+        if (!$result['ok']) {
+            return $this->component('quota', self::WARN, 'Abgleich fehlgeschlagen: ' . $result['message']);
+        }
+
+        return $this->component('quota', self::OK, 'Aktualisiert: ' . $summary);
     }
 
     /**

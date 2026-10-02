@@ -223,13 +223,20 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Zertifikate (HTTPS) | Request (CSR) für den `auth`-Container erstellen und herunterladen, von der CA ausgestelltes Zertifikat (PEM/CRT) mit Vorschau importieren, aktives Zertifikat wählen, Verlauf aller Requests und Zertifikate, Quellnetze für HTTP ohne gültiges Zertifikat |
 | SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |
-| Benutzer | Benutzerverwaltung: Konten anlegen/bearbeiten/deaktivieren/löschen, Rollenvergabe (nur für Administratoren) |
+| Benutzer | Benutzerverwaltung: Konten anlegen/bearbeiten/deaktivieren/löschen, Rollenvergabe (nur für Administratoren); **Administratoren aus AD-Gruppen**: Mitglieder festzulegender AD-Gruppen werden Intranet-Administratoren (Anmeldung per Windows-Anmeldung) bzw. Nextcloud-Administratoren ([docs/office.md](docs/office.md#nextcloud-administratoren-aus-ad-gruppen)) |
 | Sicherung | Vollständige Sicherung als ZIP exportieren und wieder einspielen |
 
 Rollen: **Administrator** darf den gesamten Adminbereich verwalten, inkl. Benutzerverwaltung. Die Gruppe
 **Redaktion** darf ausschließlich die „Wichtigen Links“ bearbeiten; alle anderen Admin-Bereiche sind für sie
 nicht sichtbar und nicht aufrufbar (HTTP 403). Die Landingpage und Telefonliste bleiben weiterhin ohne
 Anmeldung erreichbar.
+
+Administratoren aus AD-Gruppen: Unter **Benutzer → Intranet-Administratoren** eingetragene AD-Gruppen
+berechtigen ihre Mitglieder (auch verschachtelt, Stand der AD-Synchronisation) zum gesamten Adminbereich –
+ohne lokales Konto. Die Anmeldeseite bietet dafür „Mit Windows-Anmeldung anmelden“ (`/admin/login/windows`,
+setzt die Windows-Anmeldung/SSO voraus). Die Mitgliedschaft wird bei jeder Anfrage erneut geprüft; wer aus
+der Gruppe fällt oder deaktiviert wird, verliert den Zugriff sofort. Lokale Konten bleiben unverändert nutzbar
+(Notzugang, falls SSO ausfällt).
 
 Sicherheitsmerkmale: CSRF-Token bei jedem Formular, Anmeldesperre nach fünf Fehlversuchen (300 s),
 Sitzungserneuerung nach der Anmeldung, automatische Abmeldung bei Inaktivität, Passwörter als `password_hash`.

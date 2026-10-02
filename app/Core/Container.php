@@ -10,6 +10,7 @@ use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AlarmLogRepository;
 use App\Repositories\AnnouncementRepository;
 use App\Repositories\AdGroupRepository;
+use App\Repositories\AdminGroupRepository;
 use App\Repositories\ClickRepository;
 use App\Repositories\EmergencyNumberRepository;
 use App\Repositories\IdentitySourceRepository;
@@ -26,6 +27,7 @@ use App\Security\SecretBox;
 use App\Security\SsoAuth;
 use App\Services\AdSyncService;
 use App\Services\ActivationNumberService;
+use App\Services\AdminGroupService;
 use App\Services\AdminUserService;
 use App\Services\AlarmGroupService;
 use App\Services\AlarmService;
@@ -45,6 +47,7 @@ use App\Services\Office\OfficeAppService;
 use App\Services\Office\OfficeBackupService;
 use App\Services\Office\OfficeConfigService;
 use App\Services\Office\OfficeHealthService;
+use App\Services\Office\NextcloudAdminService;
 use App\Services\Office\OfficeTrustedDomainsService;
 use App\Services\Office\StorageQuotaService;
 use App\Services\Office\StreamOfficeProbe;
@@ -319,8 +322,68 @@ final class Container
     {
         return self::make(
             Auth::class,
-            static fn (): Auth => new Auth(self::adminUserRepository(), (int) Config::get('app.session_idle_timeout', 3600))
+            static fn (): Auth => new Auth(
+                self::adminUserRepository(),
+                (int) Config::get('app.session_idle_timeout', 3600),
+                // AD-Administratoren: Windows-Anmeldung muss weiterhin zur
+                // Sitzung passen und eine berechtigte AD-Gruppe enthalten.
+                static function (array $identity): ?string {
+                    $user = self::sso()->resolve(Request::fromGlobals());
+                    if (
+                        $user === null
+                        || strcasecmp($user['username'], $identity['username']) !== 0
+                        || strtoupper($user['source_key']) !== strtoupper($identity['source_key'])
+                    ) {
+                        return null;
+                    }
+
+                    return self::adminGroups()->intranetRole($user['groups']);
+                }
+            )
         );
+    }
+
+    public static function adminGroups(): AdminGroupService
+    {
+        return self::make(
+            AdminGroupService::class,
+            static fn (): AdminGroupService => new AdminGroupService(
+                new AdminGroupRepository(),
+                static fn (): array => self::identitySourceMap()
+            )
+        );
+    }
+
+    public static function nextcloudAdmins(): NextcloudAdminService
+    {
+        return self::make(
+            NextcloudAdminService::class,
+            static fn (): NextcloudAdminService => new NextcloudAdminService(
+                self::adminGroups(),
+                self::settings(),
+                self::officeConfig(),
+                new StreamOfficeProbe()
+            )
+        );
+    }
+
+    /**
+     * Identitaetsquellen fuer Nextcloud-Kennungen (ID => Kennung klein,
+     * Beschriftung); 0 = Hauptquelle.
+     *
+     * @return array<int,array{key:string,label:string}>
+     */
+    private static function identitySourceMap(): array
+    {
+        $sources = [0 => ['key' => '', 'label' => (string) (self::identitySources()->labels()[0] ?? '')]];
+        foreach (self::identitySources()->additionalRows(false) as $row) {
+            $sources[(int) $row['id']] = [
+                'key' => strtolower((string) $row['source_key']),
+                'label' => (string) ($row['label'] ?? $row['source_key']),
+            ];
+        }
+
+        return $sources;
     }
 
     public static function sso(): SsoAuth
@@ -499,7 +562,8 @@ final class Container
                 (int) Config::get('office.health_cache_ttl', 30),
                 self::officeAi(),
                 self::officeTrustedDomains(),
-                self::storageQuotas()
+                self::storageQuotas(),
+                self::nextcloudAdmins()
             )
         );
     }
@@ -547,17 +611,7 @@ final class Container
                 self::settings(),
                 self::officeConfig(),
                 new StreamOfficeProbe(),
-                static function (): array {
-                    $sources = [0 => ['key' => '', 'label' => (string) (self::identitySources()->labels()[0] ?? '')]];
-                    foreach (self::identitySources()->additionalRows(false) as $row) {
-                        $sources[(int) $row['id']] = [
-                            'key' => strtolower((string) $row['source_key']),
-                            'label' => (string) ($row['label'] ?? $row['source_key']),
-                        ];
-                    }
-
-                    return $sources;
-                }
+                static fn (): array => self::identitySourceMap()
             )
         );
     }

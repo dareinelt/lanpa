@@ -22,6 +22,10 @@ use Throwable;
  *                   Nextcloud; weicht der Stand von der Liste des Intranets
  *                   ab (Domaenenbeitritt, Zertifikat, weitere Domaene), wird
  *                   sie neu uebertragen.
+ *   quota           Speicherplatz-Kontingente in Nextcloud (Fingerabdruck,
+ *                   bei Abweichung neu uebertragen; nur informativ).
+ *   admins          Nextcloud-Administratoren aus AD-Gruppen (Fingerabdruck,
+ *                   bei Abweichung neu uebertragen; nur informativ).
  *   redis           TCP + PING
  *   postgres        TCP + SSLRequest
  *   ai              lokaler KI-Endpunkt: Stand in Euro-Office (runtime.json)
@@ -46,6 +50,7 @@ final class OfficeHealthService
         'connector' => 'Nextcloud-Connector (eurooffice)',
         'hosts' => 'Vertrauenswürdige Hostnamen (Nextcloud)',
         'quota' => 'Speicherplatz-Kontingente (Nextcloud)',
+        'admins' => 'Administratoren aus AD-Gruppen (Nextcloud)',
         'redis' => 'Redis (Nextcloud-Cache)',
         'postgres' => 'PostgreSQL (Nextcloud-Datenbank)',
         'ai' => 'KI (lokaler Endpunkt)',
@@ -55,7 +60,7 @@ final class OfficeHealthService
     private const CRITICAL = ['nextcloud', 'eurooffice', 'connector'];
 
     /** Komponenten, die den Gesamtstatus nicht beeinflussen. */
-    private const INFORMATIONAL = ['ai', 'quota'];
+    private const INFORMATIONAL = ['ai', 'quota', 'admins'];
 
     public function __construct(
         private readonly OfficeConfigService $config,
@@ -64,7 +69,8 @@ final class OfficeHealthService
         private readonly int $cacheTtl = 30,
         private readonly ?OfficeAiService $ai = null,
         private readonly ?OfficeTrustedDomainsService $trustedDomains = null,
-        private readonly ?StorageQuotaService $quotas = null
+        private readonly ?StorageQuotaService $quotas = null,
+        private readonly ?NextcloudAdminService $admins = null
     ) {
     }
 
@@ -101,6 +107,12 @@ final class OfficeHealthService
         }
         if ($this->quotas !== null) {
             $components['quota'] = $this->checkQuota(
+                $components['nextcloud']['status'] !== self::ERROR && $components['connector']['status'] !== self::ERROR,
+                $diagnostics
+            );
+        }
+        if ($this->admins !== null) {
+            $components['admins'] = $this->checkAdmins(
                 $components['nextcloud']['status'] !== self::ERROR && $components['connector']['status'] !== self::ERROR,
                 $diagnostics
             );
@@ -356,6 +368,9 @@ final class OfficeHealthService
         if (is_array($data['quota'] ?? null)) {
             $diagnostics['quota'] = $data['quota'];
         }
+        if (is_array($data['admins'] ?? null)) {
+            $diagnostics['admins'] = $data['admins'];
+        }
 
         if (empty($connector['installed'])) {
             return $this->component('connector', self::ERROR, 'Connector eurooffice ist nicht installiert.');
@@ -476,6 +491,55 @@ final class OfficeHealthService
         }
 
         return $this->component('quota', self::OK, 'Aktualisiert: ' . $summary);
+    }
+
+    /**
+     * Gleicht die Nextcloud-Administratoren aus AD-Gruppen ab (selbstheilend,
+     * z. B. nach geaenderten Gruppenmitgliedschaften durch die AD-Synchronisation).
+     *
+     * @param array<string,mixed> $diagnostics
+     *
+     * @return array{label:string,status:string,message:string}
+     */
+    private function checkAdmins(bool $connectorReachable, array &$diagnostics): array
+    {
+        $service = $this->admins;
+        if ($service === null) {
+            return $this->component('admins', self::WARN, 'Nicht verfügbar.');
+        }
+
+        try {
+            $payload = $service->payload();
+        } catch (Throwable) {
+            return $this->component('admins', self::WARN, 'Administratoren nicht ermittelbar (Datenbank-Migration ausstehend?).');
+        }
+        $summary = count($payload['users']) . ' Administrator(en) aus AD-Gruppen';
+
+        if (!$connectorReachable) {
+            return $this->component('admins', self::WARN, 'Nicht prüfbar (Nextcloud-App nicht erreichbar). ' . $summary);
+        }
+
+        $remote = is_array($diagnostics['admins'] ?? null) ? $diagnostics['admins'] : null;
+        if ($remote === null) {
+            return $this->component('admins', self::WARN, 'Nextcloud-App intranet_integration ist veraltet – Administratoren werden nicht abgeglichen (docker compose restart nextcloud).');
+        }
+
+        if ($service->inSync($remote['fingerprint'] ?? null)) {
+            $diagnostics['admins_in_sync'] = true;
+            $pending = (int) ($remote['pending'] ?? 0);
+
+            return $this->component('admins', self::OK, $summary
+                . ($pending > 0 ? ' (' . $pending . ' davon noch nie in Nextcloud angemeldet, Übernahme bei der ersten Anmeldung)' : ''));
+        }
+
+        $result = $service->pushToNextcloud();
+        $diagnostics['admins_pushed'] = true;
+        $diagnostics['admins_in_sync'] = $result['ok'];
+        if (!$result['ok']) {
+            return $this->component('admins', self::WARN, 'Abgleich fehlgeschlagen: ' . $result['message']);
+        }
+
+        return $this->component('admins', self::OK, 'Aktualisiert: ' . $summary);
     }
 
     /**

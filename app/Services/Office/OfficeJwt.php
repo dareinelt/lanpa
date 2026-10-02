@@ -16,6 +16,7 @@ final class OfficeJwt
     public const AI_AUDIENCE = 'intranet_integration_ai';
     public const HOSTS_AUDIENCE = 'intranet_integration_hosts';
     public const QUOTA_AUDIENCE = 'intranet_integration_quota';
+    public const ADMINS_AUDIENCE = 'intranet_integration_admins';
 
     /**
      * @param array<string,mixed> $claims
@@ -85,6 +86,22 @@ final class OfficeJwt
 
         return self::encode([
             'aud' => self::QUOTA_AUDIENCE,
+            'body' => hash('sha256', $body),
+            'iat' => $now,
+            'exp' => $now + 60,
+        ], $secret);
+    }
+
+    /**
+     * Kurzlebiges Token fuer die Uebergabe der Nextcloud-Administratoren (aus
+     * AD-Gruppen) an Nextcloud, an den Inhalt gebunden.
+     */
+    public static function adminsConfigToken(string $secret, string $body, ?int $now = null): string
+    {
+        $now ??= time();
+
+        return self::encode([
+            'aud' => self::ADMINS_AUDIENCE,
             'body' => hash('sha256', $body),
             'iat' => $now,
             'exp' => $now + 60,

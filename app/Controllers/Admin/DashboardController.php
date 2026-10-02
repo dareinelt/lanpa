@@ -34,6 +34,7 @@ final class DashboardController extends AdminController
             'clicks30' => $statistics->clicksLastDays(30),
             'ldapConfigured' => $settings->isLdapConfigured(),
             'ldapExtensionAvailable' => LdapClient::isSupported(),
+            'incidentAlert' => Container::incidents()->dashboardAlert(),
         ]);
     }
 }

@@ -69,3 +69,33 @@
 .intranet-recall__item--done .intranet-recall__text {
     color: var(--color-success-text, #2d7b41);
 }
+
+/* Sicherheitsvorfall: Zugriff nur lesend */
+.intranet-restricted {
+    position: fixed;
+    /* direkt unter der Kopfzeile, damit die Navigation bedienbar bleibt */
+    top: var(--header-height, 50px);
+    left: 0;
+    right: 0;
+    z-index: 10060;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: baseline;
+    justify-content: center;
+    padding: 10px 16px;
+    background: #b42318;
+    color: #fff;
+    font-size: 15px;
+    line-height: 1.4;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
+}
+
+.intranet-restricted__title {
+    font-weight: 700;
+}
+
+.intranet-restricted__title::before {
+    content: "\26A0\FE0E  ";
+}

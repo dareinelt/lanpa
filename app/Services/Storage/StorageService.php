@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Storage;
 
 use App\Exceptions\ValidationException;
+use App\Repositories\IncidentRepository;
 use App\Repositories\StorageRepository;
 use App\Security\SecretBox;
 use App\Services\Office\NetworkDriveService;
@@ -34,8 +35,35 @@ final class StorageService
         private readonly StorageRepository $repository,
         private readonly SettingsService $settings,
         private readonly SecretBox $secrets,
-        private readonly bool $officeEnabled
+        private readonly bool $officeEnabled,
+        private readonly ?IncidentRepository $incidents = null
     ) {
+    }
+
+    /**
+     * Schreibgeschuetztes Schutzziel offener Sicherheitsvorfaelle.
+     *
+     * @return array{target_id:?int,open:int}
+     */
+    private function incidentState(): array
+    {
+        if ($this->incidents === null) {
+            return ['target_id' => null, 'open' => 0];
+        }
+        try {
+            $open = $this->incidents->open();
+        } catch (\PDOException) {
+            return ['target_id' => null, 'open' => 0];
+        }
+        $target = null;
+        foreach ($open as $incident) {
+            if ($incident['frozen_target_id'] !== null) {
+                $target = (int) $incident['frozen_target_id'];
+                break;
+            }
+        }
+
+        return ['target_id' => $target, 'open' => count($open)];
     }
 
     public function officeEnabled(): bool
@@ -176,6 +204,7 @@ final class StorageService
         $settings = $this->settings();
         $status = $this->repository->status();
         $rows = $this->repository->targets();
+        $incident = $this->incidentState();
 
         $targets = [];
         foreach ($rows as $row) {
@@ -215,6 +244,7 @@ final class StorageService
                 'synced_bytes' => (int) ($row['synced_bytes'] ?? 0),
                 'state_since' => (string) ($row['state_since'] ?? ''),
                 'last_sync_at' => (string) ($row['last_sync_at'] ?? ''),
+                'frozen' => (int) $row['id'] === $incident['target_id'],
             ];
         }
 
@@ -270,6 +300,7 @@ final class StorageService
             'mode_reason' => (string) ($status['mode_reason'] ?? ''),
             'forecast' => $forecast,
             'forecast_text' => self::forecastText($forecast, $localFree),
+            'incidents_open' => $incident['open'],
         ];
     }
 

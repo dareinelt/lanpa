@@ -21,6 +21,7 @@ use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\NetworkDriveRepository;
 use App\Repositories\StorageQuotaRepository;
+use App\Repositories\IncidentRepository;
 use App\Repositories\StorageRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\TlsCertificateRepository;
@@ -59,6 +60,7 @@ use App\Services\PhonebookService;
 use App\Services\SettingsService;
 use App\Services\SmsCodeService;
 use App\Services\StatisticsService;
+use App\Services\Storage\IncidentService;
 use App\Services\Storage\StorageService;
 use App\Services\ThemeService;
 use App\Services\Tls\TlsCertificateService;
@@ -684,7 +686,25 @@ final class Container
                 self::storageRepository(),
                 self::settings(),
                 self::secretBox(),
-                self::officeConfig()->isEnabled()
+                self::officeConfig()->isEnabled(),
+                self::incidentRepository()
+            )
+        );
+    }
+
+    public static function incidentRepository(): IncidentRepository
+    {
+        return self::make(IncidentRepository::class, static fn (): IncidentRepository => new IncidentRepository());
+    }
+
+    public static function incidents(): IncidentService
+    {
+        return self::make(
+            IncidentService::class,
+            static fn (): IncidentService => new IncidentService(
+                self::incidentRepository(),
+                self::storageRepository(),
+                self::settings()
             )
         );
     }

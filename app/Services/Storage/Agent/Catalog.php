@@ -441,7 +441,7 @@ final class Catalog
     public function reset(): void
     {
         $this->transaction(function (): void {
-            foreach (['files', 'target_files', 'ops', 'access'] as $table) {
+            foreach (['files', 'target_files', 'ops', 'access', 'activity', 'writes', 'clients'] as $table) {
                 $this->pdo->exec('DELETE FROM ' . $table);
             }
             $this->pdo->exec("DELETE FROM meta WHERE key IN ('last_full_scan', 'blocked', 'confirm_deletes', 'mode', 'mode_reason')");
@@ -495,6 +495,30 @@ final class Catalog
             write_ops INTEGER NOT NULL DEFAULT 0
         )');
         $this->pdo->exec('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+        // Erkennung auffaelligen Ueberschreibens (ThreatDetector)
+        $this->pdo->exec('CREATE TABLE IF NOT EXISTS activity (
+            id INTEGER PRIMARY KEY,
+            owner TEXT NOT NULL,
+            at INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            path TEXT NOT NULL,
+            size INTEGER NOT NULL DEFAULT 0,
+            detail TEXT NOT NULL DEFAULT \'\',
+            changed INTEGER NOT NULL DEFAULT 0
+        )');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS activity_at ON activity (at)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS activity_path ON activity (path)');
+        $this->pdo->exec('CREATE TABLE IF NOT EXISTS writes (path TEXT PRIMARY KEY, uid TEXT NOT NULL, ip TEXT NOT NULL, ua TEXT NOT NULL, at INTEGER NOT NULL)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS writes_at ON writes (at)');
+        $this->pdo->exec('CREATE TABLE IF NOT EXISTS clients (
+            uid TEXT NOT NULL,
+            ip TEXT NOT NULL,
+            ua TEXT NOT NULL,
+            first_at INTEGER NOT NULL,
+            last_at INTEGER NOT NULL,
+            writes INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (uid, ip, ua)
+        )');
     }
 
     /**

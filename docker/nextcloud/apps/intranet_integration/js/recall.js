@@ -6,6 +6,9 @@
  * Rueckholung durch storage-sync. Diese Anzeige fragt den Fortschritt ab
  * (/apps/intranet_integration/api/recall) und zeigt je Datei einen
  * Fortschrittsbalken.
+ *
+ * Ist der Zugriff wegen eines Sicherheitsvorfalls eingeschraenkt (nur
+ * lesen), erscheint oben ein dauerhafter, gut sichtbarer Hinweis.
  */
 (function () {
     'use strict';
@@ -31,6 +34,33 @@
     var box = null;
     var list = null;
     var failures = 0;
+    var banner = null;
+
+    function showRestriction(message) {
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.className = 'intranet-restricted';
+            banner.setAttribute('role', 'alert');
+            var title = document.createElement('strong');
+            title.className = 'intranet-restricted__title';
+            title.textContent = 'Zugriff vorübergehend eingeschränkt';
+            var text = document.createElement('span');
+            text.className = 'intranet-restricted__text';
+            banner.appendChild(title);
+            banner.appendChild(text);
+            document.body.appendChild(banner);
+            document.body.classList.add('intranet-restricted-active');
+        }
+        banner.querySelector('.intranet-restricted__text').textContent = message;
+    }
+
+    function hideRestriction() {
+        if (banner && banner.parentNode) {
+            banner.parentNode.removeChild(banner);
+        }
+        banner = null;
+        document.body.classList.remove('intranet-restricted-active');
+    }
 
     function token() {
         if (window.OC && window.OC.requestToken) {
@@ -148,7 +178,13 @@
                 failures = 0;
                 if (!data.enabled) {
                     removeBox();
+                    hideRestriction();
                     return;
+                }
+                if (data.restricted) {
+                    showRestriction(data.message || 'Der Zugriff auf Ihre Dateien wurde aus Sicherheitsgründen vorübergehend eingeschränkt. Bitte melden Sie sich beim Support.');
+                } else {
+                    hideRestriction();
                 }
                 var recalls = Array.isArray(data.recalls) ? data.recalls : [];
                 render(recalls);

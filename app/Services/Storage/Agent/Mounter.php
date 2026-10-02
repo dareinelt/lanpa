@@ -30,11 +30,12 @@ final class Mounter
     }
 
     /**
-     * @param array<string,mixed> $target Zeile aus storage_targets
+     * @param array<string,mixed> $target   Zeile aus storage_targets
+     * @param bool                $readOnly Nur lesend einbinden (Schutzziel bei einem Sicherheitsvorfall)
      *
      * @return array{state:string,message:string,total_bytes:int,free_bytes:int,root:string,share:string}
      */
-    public function check(array $target, bool $forceRemount = false): array
+    public function check(array $target, bool $forceRemount = false, bool $readOnly = false): array
     {
         $id = (int) $target['id'];
         $mountPoint = $this->mountPoint($id);
@@ -47,11 +48,12 @@ final class Mounter
 
             return $result;
         }
-        if ($forceRemount) {
+        // Wechsel zwischen lesend und schreibend erfordert eine neue Einbindung.
+        if ($forceRemount || (($current = self::mountedReadOnly($mountPoint)) !== null && $current !== $readOnly)) {
             $this->unmount($id);
         }
         if (!self::isMounted($mountPoint)) {
-            $error = $this->mount($target);
+            $error = $this->mount($target, $readOnly);
             if ($error !== null) {
                 $result['message'] = $error;
 
@@ -70,7 +72,7 @@ final class Mounter
         $result['total_bytes'] = (int) $m[1] * (int) $m[3];
         $result['free_bytes'] = (int) $m[2] * (int) $m[3];
 
-        $markerError = $this->checkMarker($mountPoint, (string) $target['label']);
+        $markerError = $this->checkMarker($mountPoint, (string) $target['label'], $readOnly);
         if ($markerError !== null) {
             $result['state'] = 'invalid';
             $result['message'] = $markerError;
@@ -109,18 +111,28 @@ final class Mounter
 
     public static function isMounted(string $mountPoint, string $mountInfo = '/proc/self/mountinfo'): bool
     {
+        return self::mountedReadOnly($mountPoint, $mountInfo) !== null;
+    }
+
+    /**
+     * null = nicht eingebunden, sonst ob die Einbindung nur lesend ist.
+     */
+    public static function mountedReadOnly(string $mountPoint, string $mountInfo = '/proc/self/mountinfo'): ?bool
+    {
         $raw = @file_get_contents($mountInfo);
         if ($raw === false) {
-            return false;
+            return null;
         }
+        $result = null;
         foreach (explode("\n", $raw) as $line) {
             $fields = explode(' ', $line);
             if (isset($fields[4]) && self::unescape($fields[4]) === $mountPoint) {
-                return true;
+                // Spaetere Eintraege ueberdecken fruehere (gestapelte Einbindungen).
+                $result = in_array('ro', explode(',', $fields[5] ?? ''), true);
             }
         }
 
-        return false;
+        return $result;
     }
 
     /**
@@ -142,9 +154,10 @@ final class Mounter
      *
      * @param array<string,mixed> $target
      */
-    public function options(array $target, ?string $credentialFile): string
+    public function options(array $target, ?string $credentialFile, bool $readOnly = false): string
     {
         $options = [
+            $readOnly ? 'ro' : 'rw',
             $credentialFile === null ? 'guest' : 'credentials=' . $credentialFile,
             'uid=' . $this->uid,
             'gid=' . $this->gid,
@@ -168,7 +181,7 @@ final class Mounter
     /**
      * @param array<string,mixed> $target
      */
-    private function mount(array $target): ?string
+    private function mount(array $target, bool $readOnly = false): ?string
     {
         $id = (int) $target['id'];
         $device = StorageService::mountDevice((string) $target['unc_path']);
@@ -207,7 +220,7 @@ final class Mounter
             @chmod($credentialFile, 0600);
         }
 
-        $run = Shell::run(['mount', '-t', 'cifs', $device, $mountPoint, '-o', $this->options($target, $credentialFile)], 30);
+        $run = Shell::run(['mount', '-t', 'cifs', $device, $mountPoint, '-o', $this->options($target, $credentialFile, $readOnly)], 30);
         if ($run['code'] === 0) {
             return null;
         }
@@ -245,7 +258,7 @@ final class Mounter
     /**
      * Kennungsdatei pruefen bzw. anlegen. Liefert eine Fehlermeldung oder null.
      */
-    private function checkMarker(string $root, string $label): ?string
+    private function checkMarker(string $root, string $label, bool $readOnly = false): ?string
     {
         $file = $root . '/' . PathRules::TARGET_MARKER;
         $raw = @file_get_contents($file);
@@ -259,6 +272,10 @@ final class Mounter
             if ($instance !== '') {
                 return null;
             }
+        }
+        if ($readOnly) {
+            // Schreibgeschuetzt eingebunden: Kennung kann nicht angelegt werden.
+            return $raw === false ? null : 'Kennungsdatei der Freigabe ist ungültig.';
         }
         $data = ['instance' => $this->instanceId, 'created_at' => gmdate('c'), 'label' => $label];
         if (@file_put_contents($file, json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) === false) {

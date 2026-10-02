@@ -38,10 +38,14 @@ final class SyncEngine
 
     private \Closure $clock;
 
+    /** Erkennung auffaelligen Ueberschreibens fuer die aktuell erfasste Quelle aktiv? */
+    private bool $detecting = false;
+
     /**
      * @param array<string,string> $sources Quelle => absolutes Verzeichnis
      * @param (callable(string,string,string,?int):void)|null $event (Stufe, Kategorie, Text, Ziel)
      * @param (callable():int)|null $clock
+     * @param ThreatDetector|null $detector Erkennung auffaelligen Ueberschreibens (Ransomware)
      */
     public function __construct(
         private readonly Catalog $catalog,
@@ -50,7 +54,8 @@ final class SyncEngine
         private readonly FileCopier $copier,
         private readonly array $sources,
         ?callable $event = null,
-        ?callable $clock = null
+        ?callable $clock = null,
+        private readonly ?ThreatDetector $detector = null
     ) {
         $this->event = $event !== null ? \Closure::fromCallable($event) : static function (): void {
         };
@@ -79,6 +84,8 @@ final class SyncEngine
             /** @var array<int,int> $fresh Inode => Katalog-ID neu erfasster Dateien */
             $fresh = [];
             $vanished = [];
+            // Der erste Abgleich (leerer Katalog) erfasst den Bestand und ist kein Ueberschreiben.
+            $this->detecting = $this->detector !== null && $this->catalog->count($source) > 0;
             if ($hints === null) {
                 if (!$this->sourceAvailable($source, $root)) {
                     continue;
@@ -238,6 +245,9 @@ final class SyncEngine
             $id = $this->catalog->insert($source, $rel, $size, $mtime, $inode, $now, $generation, $state, $sha);
             $fresh[$inode] = $id;
             $stats['new']++;
+            if ($state === Catalog::STATE_LOCAL) {
+                $this->detect($source, $rel, $size, true);
+            }
 
             return;
         }
@@ -270,6 +280,7 @@ final class SyncEngine
             }
             $this->catalog->changed($id, $size, $mtime, $inode, $now, $generation);
             $stats['changed']++;
+            $this->detect($source, $rel, $size, false);
 
             return;
         }
@@ -277,10 +288,18 @@ final class SyncEngine
         if ((int) $row['size'] !== $size || (int) $row['mtime'] !== $mtime) {
             $this->catalog->changed($id, $size, $mtime, $inode, $now, $generation);
             $stats['changed']++;
+            $this->detect($source, $rel, $size, false);
 
             return;
         }
         $this->catalog->touchSeen($id, $inode, $generation);
+    }
+
+    private function detect(string $source, string $rel, int $size, bool $isNew): void
+    {
+        if ($this->detecting && $this->detector !== null) {
+            $this->detector->observe($source, $rel, $this->sources[$source] . '/' . $rel, $size, $isNew);
+        }
     }
 
     /**

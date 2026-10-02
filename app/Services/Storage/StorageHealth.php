@@ -28,13 +28,13 @@ final class StorageHealth
         'in_sync' => 0, 'syncing' => 0, 'lagging' => 1, 'paused' => 1, 'error' => 2, 'blocked' => 2];
 
     /**
-     * @param list<array{id:int,label:string,active:bool,state:string,in_sync:bool,lag_seconds:int}> $targets
+     * @param list<array{id:int,label:string,active:bool,state:string,in_sync:bool,lag_seconds:int,frozen?:bool}> $targets
      * @param array{sync_state?:string,sync_message?:string,pending_files?:int,lag_seconds?:int} $status
      *
      * @return array{
      *   ha:array{state:string,message:string,exit:int},
      *   sync:array{state:string,message:string,exit:int},
-     *   active:int,online:int,remote_unavailable:bool,partial:bool,offline_labels:list<string>,agent_running:bool
+     *   active:int,online:int,remote_unavailable:bool,partial:bool,offline_labels:list<string>,frozen_labels:list<string>,agent_running:bool
      * }
      */
     public static function evaluate(
@@ -61,6 +61,7 @@ final class StorageHealth
             'remote_unavailable' => false,
             'partial' => false,
             'offline_labels' => $offlineLabels,
+            'frozen_labels' => [],
             'agent_running' => $agentRunning,
         ];
 
@@ -96,7 +97,7 @@ final class StorageHealth
         } else {
             $lagging = array_values(array_filter(
                 $online,
-                static fn (array $t): bool => !$t['in_sync'] && $t['lag_seconds'] > $lagWarnSeconds
+                static fn (array $t): bool => !($t['frozen'] ?? false) && !$t['in_sync'] && $t['lag_seconds'] > $lagWarnSeconds
             ));
             if ($lagging !== []) {
                 $result['ha'] = self::state('degraded', 'Nicht aktuell: ' . implode(', ', array_map(
@@ -105,12 +106,23 @@ final class StorageHealth
                 )) . '.');
             } elseif (count($active) === 1) {
                 $result['ha'] = self::state('degraded', 'Nur ein Speicherziel im Cold-Tier – keine Redundanz außerhalb der VM.');
-            } elseif (array_filter($online, static fn (array $t): bool => !$t['in_sync']) !== []) {
+            } elseif (array_filter($online, static fn (array $t): bool => !($t['frozen'] ?? false) && !$t['in_sync']) !== []) {
                 $result['ha'] = self::state('degraded', 'Alle Speicherziele sind erreichbar, aber noch nicht vollständig synchron.');
             } else {
                 $result['ha'] = self::state('ok', sprintf('Alle %d Speicherziele des Cold-Tiers erreichbar und synchron.', count($active)));
             }
         }
+
+        // Schutzziel bei einem Sicherheitsvorfall: schreibgeschuetzt, ohne Synchronisation.
+        $frozen = array_values(array_map(
+            static fn (array $t): string => $t['label'],
+            array_filter($active, static fn (array $t): bool => (bool) ($t['frozen'] ?? false))
+        ));
+        if ($frozen !== [] && $result['ha']['state'] !== 'critical') {
+            $message = 'Speicherziel ' . implode(', ', $frozen) . ' wegen Sicherheitsvorfall schreibgeschützt (keine Synchronisation).';
+            $result['ha'] = self::state('degraded', $result['ha']['state'] === 'degraded' ? $message . ' ' . $result['ha']['message'] : $message);
+        }
+        $result['frozen_labels'] = $frozen;
 
         $syncState = (string) ($status['sync_state'] ?? '');
         $pending = (int) ($status['pending_files'] ?? 0);

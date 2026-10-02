@@ -8,7 +8,16 @@ use App\Support\Html;
 
 /** @var array<string,mixed>|null $lastSync */
 /** @var array<string,mixed>|null $lastSuccessfulSync */
+/** @var array{count:int,users:list<string>,target:string,title:string,message:string}|null $incidentAlert */
+$incidentAlert = $incidentAlert ?? null;
 ?>
+<?php if ($incidentAlert !== null) { ?>
+    <section class="incident-alert" role="alert">
+        <h2 class="incident-alert__title"><?= Html::e($incidentAlert['title']) ?></h2>
+        <p><?= Html::e($incidentAlert['message']) ?></p>
+        <p><a class="button button--danger" href="/admin/vorfaelle">Vorfälle prüfen</a></p>
+    </section>
+<?php } ?>
 <div class="cards">
     <section class="card">
         <h2 class="card__title">Systemstatus</h2>

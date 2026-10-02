@@ -350,6 +350,45 @@ final class TieringStore
     }
 
     /**
+     * Schreibprotokoll von Nextcloud uebernehmen und leeren (wer hat welche
+     * Datei geschrieben; Grundlage fuer die Zuordnung von Vorfaellen).
+     *
+     * @return list<array{t:int,u:string,ip:string,ua:string,p:string}>
+     */
+    public function takeWriteLog(int $limit = 200000): array
+    {
+        $log = $this->base . '/access/writes.log';
+        if (!is_file($log) || filesize($log) === 0) {
+            return [];
+        }
+        $taken = $log . '.' . getmypid() . '.work';
+        if (!@rename($log, $taken)) {
+            return [];
+        }
+        $result = [];
+        $handle = @fopen($taken, 'rb');
+        if ($handle !== false) {
+            while (($line = fgets($handle)) !== false && count($result) < $limit) {
+                $data = json_decode(rtrim($line, "\r\n"), true);
+                if (!is_array($data) || !is_string($data['p'] ?? null) || !is_string($data['u'] ?? null) || $data['p'] === '') {
+                    continue;
+                }
+                $result[] = [
+                    't' => (int) ($data['t'] ?? 0),
+                    'u' => mb_substr($data['u'], 0, 191),
+                    'ip' => mb_substr(is_string($data['ip'] ?? null) ? $data['ip'] : '', 0, 64),
+                    'ua' => mb_substr(is_string($data['ua'] ?? null) ? $data['ua'] : '', 0, 200),
+                    'p' => ltrim($data['p'], '/'),
+                ];
+            }
+            fclose($handle);
+        }
+        @unlink($taken);
+
+        return $result;
+    }
+
+    /**
      * @param array<string,mixed> $data
      */
     private function writeJson(string $file, array $data, int $mode): void

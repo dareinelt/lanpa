@@ -14,7 +14,8 @@ use OCP\IUserSession;
 
 /**
  * Fortschritt der Rueckholungen aus dem Cold-Tier (SMB-Tier) fuer den
- * angemeldeten Benutzer (Fortschrittsbalken in js/recall.js).
+ * angemeldeten Benutzer (Fortschrittsbalken in js/recall.js) und Hinweis auf
+ * eine Einschraenkung wegen eines Sicherheitsvorfalls.
  */
 class RecallController extends Controller {
     public function __construct(
@@ -41,6 +42,9 @@ class RecallController extends Controller {
             'enabled' => true,
             'available' => $tiering->agentAlive(),
             'recalls' => $tiering->recallsFor($user->getUID()),
+            // Sicherheitsvorfall: nur lesender Zugriff (Hinweis im Browser)
+            'restricted' => $tiering->isRestricted($user->getUID()),
+            'message' => $tiering->isRestricted($user->getUID()) ? $tiering->restrictionMessage() : '',
         ]);
         $response->cacheFor(0);
 

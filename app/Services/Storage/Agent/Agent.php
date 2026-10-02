@@ -6,7 +6,9 @@ namespace App\Services\Storage\Agent;
 
 use App\Core\Container;
 use App\Core\Database;
+use App\Repositories\IncidentRepository;
 use App\Repositories\StorageRepository;
+use App\Services\Storage\IncidentSettings;
 use App\Services\Storage\StorageHealth;
 use App\Services\Storage\StorageSettings;
 use PDOException;
@@ -105,7 +107,7 @@ final class Agent
         return $this->copier ??= new FileCopier($this->catalog());
     }
 
-    public function engine(): SyncEngine
+    public function engine(?ThreatDetector $detector = null): SyncEngine
     {
         return new SyncEngine(
             $this->catalog(),
@@ -115,8 +117,15 @@ final class Agent
             $this->sources(),
             function (string $level, string $category, string $message, ?int $targetId): void {
                 $this->event($level, $category, $message, $targetId);
-            }
+            },
+            null,
+            $detector
         );
+    }
+
+    public function detector(): ThreatDetector
+    {
+        return new ThreatDetector($this->catalog(), $this->incidentSettings());
     }
 
     public function recaller(): Recaller
@@ -134,6 +143,71 @@ final class Agent
         Container::settings()->resetCache();
 
         return new StorageSettings(Container::settings()->all());
+    }
+
+    private function incidentSettings(): IncidentSettings
+    {
+        return new IncidentSettings(Container::settings()->all());
+    }
+
+    private function incidents(): IncidentRepository
+    {
+        return Container::incidentRepository();
+    }
+
+    /**
+     * Offene Sicherheitsvorfaelle (leer, falls die Tabelle noch fehlt).
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function openIncidents(): array
+    {
+        try {
+            return $this->incidents()->open();
+        } catch (PDOException $exception) {
+            $this->log('error', 'Sicherheitsvorfälle können nicht gelesen werden: ' . $exception->getMessage());
+
+            return [];
+        }
+    }
+
+    /**
+     * Schreibgeschuetztes Schutzziel der offenen Vorfaelle.
+     *
+     * @param list<array<string,mixed>> $open
+     */
+    private static function frozenTargetId(array $open): ?int
+    {
+        foreach ($open as $incident) {
+            if ($incident['frozen_target_id'] !== null) {
+                return (int) $incident['frozen_target_id'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Konfiguration fuer Nextcloud (TieringWrapper): Tiering aktiv,
+     * Wartezeit fuer Rueckholungen und eingeschraenkte Benutzer.
+     *
+     * @param list<array<string,mixed>> $open
+     */
+    private function publishTieringConfig(StorageSettings $settings, array $open): void
+    {
+        $restricted = [];
+        foreach ($open as $incident) {
+            if ((int) $incident['user_restricted'] === 1 && (string) $incident['uid'] !== '') {
+                $restricted[(string) $incident['uid']] = true;
+            }
+        }
+        $this->store()->writeConfig([
+            'enabled' => $settings->enabled(),
+            'recall_timeout' => $settings->recallTimeout(),
+            'updated' => time(),
+            'restricted' => array_keys($restricted),
+            'restriction_message' => $this->incidentSettings()->userMessage(),
+        ]);
     }
 
     private function event(string $level, string $category, string $message, ?int $targetId = null): void
@@ -186,17 +260,14 @@ final class Agent
                 $settings = $this->settings();
                 $store = $this->store();
                 $store->prepare();
-                $store->writeConfig([
-                    'enabled' => $settings->enabled(),
-                    'recall_timeout' => $settings->recallTimeout(),
-                    'updated' => time(),
-                ]);
+                $open = $this->openIncidents();
+                $this->publishTieringConfig($settings, $open);
                 if ($sparse === null || time() - $lastSparseCheck > 3600) {
                     $sparse = $store->sparseSupported();
                     $lastSparseCheck = time();
                     $this->catalog()->setMeta('sparse_supported', $sparse ? '1' : '0');
                 }
-                $this->monitorPass($settings, $metrics, $previous, $sparse);
+                $this->monitorPass($settings, $metrics, $previous, $sparse, self::frozenTargetId($open));
                 if (time() - $lastTrim > 3600) {
                     $this->repository()->trimEvents();
                     $lastTrim = time();
@@ -212,7 +283,7 @@ final class Agent
     /**
      * @param array<int,string> $previous Letzter Zustand je Ziel
      */
-    private function monitorPass(StorageSettings $settings, Metrics $metrics, array &$previous, bool $sparse): void
+    private function monitorPass(StorageSettings $settings, Metrics $metrics, array &$previous, bool $sparse, ?int $frozen = null): void
     {
         $repository = $this->repository();
         $instance = $settings->instanceId();
@@ -236,7 +307,7 @@ final class Agent
                 $mounter->unmount($id);
                 $check = ['state' => 'disabled', 'message' => 'Speicher-Tiering ist nicht aktiviert.', 'total_bytes' => 0, 'free_bytes' => 0, 'root' => $mounter->mountPoint($id), 'share' => ''];
             } else {
-                $check = $mounter->check($row, in_array(0, $remount, true) || in_array($id, $remount, true));
+                $check = $mounter->check($row, in_array(0, $remount, true) || in_array($id, $remount, true), $id === $frozen);
             }
 
             $key = $check['share'] !== '' && isset($cifs[$check['share']]) ? 'cifs:' . $check['share'] : 'agent:' . $id;
@@ -284,6 +355,7 @@ final class Agent
                 'state' => $check['state'],
                 'in_sync' => (int) ($row['in_sync'] ?? 0) === 1,
                 'lag_seconds' => (int) ($row['lag_seconds'] ?? 0),
+                'frozen' => $id === $frozen,
             ];
         }
         $this->targetMap()->write($map);
@@ -382,8 +454,11 @@ final class Agent
     {
         $repository = $this->repository();
         $catalog = $this->catalog();
-        $engine = $this->engine();
+        $detector = $this->detector();
+        $engine = $this->engine($detector);
         $now = time();
+        // Wer hat welche Datei geschrieben (Zuordnung von Vorfaellen)?
+        $detector->ingestWrites($this->store()->takeWriteLog());
 
         $fullScan = false;
         while (($request = $repository->claimRequest(['sync_now', 'full_scan', 'confirm_deletes'])) !== null) {
@@ -429,12 +504,17 @@ final class Agent
 
         $rows = $repository->targets();
         $catalog->forgetTargets(array_map(static fn (array $r): int => (int) $r['id'], $rows));
+        $frozen = $this->handleIncidents($detector, $settings, $rows);
         $online = $this->targetMap()->online();
         $onlineIds = array_map(static fn (array $t): int => $t['id'], $online);
 
         $more = false;
         $errors = [];
         foreach ($online as $target) {
+            if ($target['id'] === $frozen) {
+                // Schutzziel bei einem Sicherheitsvorfall: keine Schreibvorgaenge.
+                continue;
+            }
             $result = $engine->syncTarget($target, 20);
             $more = $more || $result['more'];
             if ($result['error'] !== null) {
@@ -472,6 +552,9 @@ final class Agent
                 'synced_bytes' => $synced['bytes'],
                 'sync_updated_at' => StorageRepository::NOW,
             ]);
+            if ($id === $frozen) {
+                continue;
+            }
             $maxPending = max($maxPending, $pending['files']);
             $maxPendingBytes = max($maxPendingBytes, $pending['bytes']);
             $maxLag = max($maxLag, $lag);
@@ -486,6 +569,10 @@ final class Agent
             [$state, $message] = ['syncing', $onlineIds === [] ? 'Kein Speicherziel erreichbar.' : ''];
         } else {
             [$state, $message] = ['in_sync', ''];
+        }
+        if ($frozen !== null && in_array($state, ['in_sync', 'syncing'], true)) {
+            $label = self::targetLabel($rows, $frozen);
+            $message = trim($message . ' Speicherziel „' . $label . '“ wegen Sicherheitsvorfall schreibgeschützt – wird nicht synchronisiert.');
         }
 
         $totals = $catalog->totals();
@@ -517,6 +604,203 @@ final class Agent
         }
 
         return $more || $tier['rehydrate'] > 0;
+    }
+
+    /**
+     * Wertet die Erkennung aus: legt Vorfaelle an bzw. aktualisiert sie,
+     * waehlt das Schutzziel und veroeffentlicht die Einschraenkungen.
+     *
+     * @param list<array<string,mixed>> $rows Speicherziele
+     *
+     * @return int|null Schreibgeschuetztes Schutzziel (nicht synchronisieren)
+     */
+    private function handleIncidents(ThreatDetector $detector, StorageSettings $settings, array $rows): ?int
+    {
+        try {
+            $repository = $this->incidents();
+            $now = time();
+            $open = $repository->open();
+            $byUser = [];
+            foreach ($open as $incident) {
+                $byUser[(string) $incident['uid']] ??= $incident;
+            }
+            $floors = [];
+            foreach ($repository->resolvedSince(date('Y-m-d H:i:s', $now - ThreatDetector::RETENTION_SECONDS)) as $uid => $resolvedAt) {
+                $floors[$uid] = (int) strtotime($resolvedAt) + 1;
+            }
+
+            $changed = false;
+            foreach ($detector->evaluate($floors) as $user => $finding) {
+                $incident = $byUser[$user] ?? null;
+                if ($incident === null) {
+                    $id = $repository->create(self::incidentValues($finding, $finding['rules']) + [
+                        'uid' => $user,
+                        'source' => PathRules::SOURCE_NEXTCLOUD_DATA,
+                        'user_restricted' => 1,
+                    ]);
+                    $this->event('error', 'incident', sprintf(
+                        'Sicherheitsvorfall Nr. %d: %s Der Benutzer „%s“ darf bis zur Erledigung nur noch lesen.',
+                        $id,
+                        self::summary($finding['rules'], $finding),
+                        $user
+                    ));
+                    $changed = true;
+                    continue;
+                }
+                // Laufenden Vorfall fortschreiben (Umfang seit Beginn).
+                $since = $incident['first_seen'] !== null ? (int) strtotime((string) $incident['first_seen']) : $now - ThreatDetector::RETENTION_SECONDS;
+                $stats = $detector->stats($user, max($since, (int) ($floors[$user] ?? 0)));
+                $stats['changed'] = max($stats['changed'], (int) $incident['files_changed']);
+                $stats['suspicious'] = max($stats['suspicious'], (int) $incident['files_suspicious']);
+                $stats['extension'] = max($stats['extension'], (int) $incident['files_extension']);
+                $stats['bytes'] = max($stats['bytes'], (int) $incident['bytes']);
+                $stats['first'] = $stats['first'] === null ? $since : min($stats['first'], $since);
+                $rules = array_values(array_unique(array_merge(
+                    array_filter(explode(',', (string) $incident['rules'])),
+                    $finding['rules']
+                )));
+                $repository->update((int) $incident['id'], self::incidentValues($stats, $rules));
+            }
+
+            if ($changed) {
+                $open = $repository->open();
+            }
+            $frozen = self::frozenTargetId($open);
+            if ($open === []) {
+                if ($this->catalog()->meta('incident_frozen', '') !== '') {
+                    $this->catalog()->setMeta('incident_frozen', '');
+                    $this->event('info', 'incident', 'Alle Sicherheitsvorfälle erledigt – die Synchronisation aller Speicherziele wird fortgesetzt.');
+                }
+            } else {
+                $stillActive = array_filter($rows, static fn (array $r): bool => (int) $r['id'] === $frozen && (int) $r['active'] === 1) !== [];
+                if ($frozen === null || !$stillActive) {
+                    $target = self::chooseProtectTarget($rows, $detector->settings()->protectTargetId());
+                    if ($target !== null) {
+                        $frozen = (int) $target['id'];
+                        $repository->assignFrozenTarget($frozen, (string) $target['label']);
+                    } else {
+                        $frozen = null;
+                    }
+                } else {
+                    $repository->assignFrozenTarget($frozen, self::targetLabel($rows, $frozen));
+                }
+                if ($frozen !== null && $this->catalog()->meta('incident_frozen', '') !== (string) $frozen) {
+                    $this->catalog()->setMeta('incident_frozen', (string) $frozen);
+                    $this->event('warning', 'incident', 'Speicherziel „' . self::targetLabel($rows, $frozen)
+                        . '“ ist wegen eines Sicherheitsvorfalls schreibgeschützt und wird bis zur Erledigung nicht synchronisiert (unveränderter Datenbestand).', $frozen);
+                }
+            }
+            if ($changed) {
+                $this->publishTieringConfig($settings, $open);
+            }
+
+            return $frozen;
+        } catch (PDOException $exception) {
+            $this->log('error', 'Sicherheitsvorfälle: ' . $exception->getMessage());
+
+            return null;
+        }
+    }
+
+    /**
+     * Schutzziel waehlen: eingestelltes Ziel, sonst ein erreichbares,
+     * synchrones Ziel (bevorzugt nicht das primaere), sonst das mit dem
+     * geringsten Rueckstand.
+     *
+     * @param list<array<string,mixed>> $rows
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function chooseProtectTarget(array $rows, int $preferred = 0): ?array
+    {
+        $active = array_values(array_filter($rows, static fn (array $r): bool => (int) $r['active'] === 1));
+        if ($active === []) {
+            return null;
+        }
+        foreach ($active as $row) {
+            if ($preferred > 0 && (int) $row['id'] === $preferred) {
+                return $row;
+            }
+        }
+        $online = array_values(array_filter($active, static fn (array $r): bool => ($r['state'] ?? '') === 'online'));
+        $synced = array_values(array_filter($online, static fn (array $r): bool => (int) ($r['in_sync'] ?? 0) === 1));
+        foreach ($synced as $row) {
+            if ((int) ($row['is_primary'] ?? 0) !== 1) {
+                return $row;
+            }
+        }
+        if ($synced !== []) {
+            return $synced[0];
+        }
+        if ($online !== []) {
+            usort($online, static fn (array $a, array $b): int => (int) ($a['lag_seconds'] ?? 0) <=> (int) ($b['lag_seconds'] ?? 0));
+
+            return $online[0];
+        }
+
+        return $active[0];
+    }
+
+    /**
+     * @param list<string> $rules
+     *
+     * @return array<string,mixed>
+     */
+    public static function incidentValues(array $stats, array $rules): array
+    {
+        $details = [
+            'samples' => $stats['samples'] ?? [],
+            'patterns' => $stats['patterns'] ?? [],
+            'reasons' => $stats['reasons'] ?? [],
+            'owners' => $stats['owners'] ?? [],
+            'clients' => $stats['clients'] ?? [],
+        ];
+
+        return [
+            'attribution' => (string) ($stats['attribution'] ?? 'owner'),
+            'rules' => implode(',', $rules),
+            'summary' => mb_substr(self::summary($rules, $stats), 0, 500),
+            'files_changed' => (int) ($stats['changed'] ?? 0),
+            'files_suspicious' => (int) ($stats['suspicious'] ?? 0),
+            'files_extension' => (int) ($stats['extension'] ?? 0),
+            'bytes' => (int) ($stats['bytes'] ?? 0),
+            'first_seen' => isset($stats['first']) ? date('Y-m-d H:i:s', (int) $stats['first']) : null,
+            'last_seen' => isset($stats['last']) ? date('Y-m-d H:i:s', (int) $stats['last']) : null,
+            'details' => json_encode($details, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) ?: '{}',
+        ];
+    }
+
+    /**
+     * @param list<string> $rules
+     */
+    public static function summary(array $rules, array $stats): string
+    {
+        $parts = [];
+        if (in_array('extension', $rules, true)) {
+            $parts[] = sprintf('%d Datei(en) mit Ransomware-Endung (%s)', (int) ($stats['extension'] ?? 0), implode(', ', array_slice(array_keys($stats['patterns'] ?? []), 0, 3)));
+        }
+        if (in_array('content', $rules, true)) {
+            $parts[] = sprintf('%d Datei(en) mit verschlüsselt wirkendem Inhalt', (int) ($stats['suspicious'] ?? 0));
+        }
+        if (in_array('overwrite', $rules, true)) {
+            $parts[] = sprintf('%d Datei(en) in kurzer Zeit überschrieben', (int) ($stats['changed'] ?? 0));
+        }
+
+        return ($parts === [] ? 'Auffälliges Überschreiben' : implode('; ', $parts)) . '.';
+    }
+
+    /**
+     * @param list<array<string,mixed>> $rows
+     */
+    private static function targetLabel(array $rows, int $id, string $fallback = '#'): string
+    {
+        foreach ($rows as $row) {
+            if ((int) $row['id'] === $id) {
+                return (string) $row['label'];
+            }
+        }
+
+        return $fallback === '#' ? '#' . $id : $fallback;
     }
 
     private function dumpDatabase(): void

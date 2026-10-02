@@ -8,12 +8,14 @@ namespace OCA\IntranetIntegration\Storage;
  * Gegenstueck zu App\Services\Storage\Agent\TieringStore (Container
  * storage-sync) im gemeinsamen Volume storage_tiering:
  *
- *   config.json             {enabled, recall_timeout}
+ *   config.json             {enabled, recall_timeout, restricted, restriction_message}
  *   agent.alive             Lebenszeichen der Rueckholung (alle 0,25 s)
  *   stubs/<pfad>.json       Kennzeichen ausgelagerter Dateien (Cold-Tier)
  *   recall/queue/<id>.json  Rueckhol-Auftraege {path, uid, requested_at}
  *   recall/status/<id>.json Fortschritt {path, uid, request, state, bytes, total, ...}
  *   access/access.log       Zugriffe "<unix-zeit> <pfad>"
+ *   access/writes.log       Schreibvorgaenge (JSON je Zeile {t, u, ip, ua, p}),
+ *                           Zuordnung von Sicherheitsvorfaellen zum Benutzer
  *
  * Pfade sind relativ zum Nextcloud-Datenverzeichnis. Eine ausgelagerte Datei
  * ist im Hot-Tier ein "sparse" Platzhalter gleicher Groesse.
@@ -28,9 +30,14 @@ class TieringClient {
     /** Nur diese Pfade koennen ausgelagert sein (wie PathRules::TIERED). */
     private const TIERED = '#^[^/]+/(files|files_versions|files_trashbin)/#';
 
+    /** Schreibprotokoll nicht weiter fuellen, wenn storage-sync es nicht abholt. */
+    public const WRITE_LOG_MAX_BYTES = 64 * 1024 * 1024;
+
     private ?array $config = null;
     /** @var array<string,true> */
     private array $logged = [];
+    /** @var array<string,true> */
+    private array $writes = [];
     /** @var callable(int):void */
     private $sleeper;
     /** @var callable():int */
@@ -75,6 +82,50 @@ class TieringClient {
         $timeout = (int) ($this->config()['recall_timeout'] ?? 600);
 
         return max(30, min(7200, $timeout));
+    }
+
+    /**
+     * Wegen eines Sicherheitsvorfalls nur lesender Zugriff fuer diesen Benutzer?
+     */
+    public function isRestricted(string $uid): bool {
+        $restricted = $this->config()['restricted'] ?? [];
+
+        return $uid !== '' && is_array($restricted) && in_array($uid, $restricted, true);
+    }
+
+    public function restrictionMessage(): string {
+        $message = $this->config()['restriction_message'] ?? '';
+
+        return is_string($message) && $message !== ''
+            ? $message
+            : 'Der Zugriff auf Ihre Dateien wurde aus Sicherheitsgründen vorübergehend eingeschränkt. Bitte melden Sie sich beim Support.';
+    }
+
+    /**
+     * Schreibvorgang protokollieren (wer hat welche Datei geschrieben),
+     * einmal je Pfad und Anfrage. Grundlage fuer die Zuordnung eines
+     * Sicherheitsvorfalls zum angemeldeten Benutzer und dessen Client.
+     */
+    public function logWrite(string $rel, string $uid, string $ip = '', string $userAgent = ''): void {
+        if ($uid === '' || preg_match('#^[^/]+/files/.#', $rel) !== 1 || isset($this->writes[$rel]) || str_contains($rel, "\n")) {
+            return;
+        }
+        $this->writes[$rel] = true;
+        $log = $this->base . '/access/writes.log';
+        clearstatcache(true, $log);
+        if ((int) @filesize($log) > self::WRITE_LOG_MAX_BYTES) {
+            return;
+        }
+        $line = json_encode([
+            't' => ($this->clock)(),
+            'u' => $uid,
+            'ip' => mb_substr($ip, 0, 64),
+            'ua' => mb_substr(preg_replace('/[\x00-\x1F\x7F]+/', ' ', $userAgent) ?? '', 0, 200),
+            'p' => $rel,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($line !== false) {
+            @file_put_contents($log, $line . "\n", FILE_APPEND | LOCK_EX);
+        }
     }
 
     public function agentAlive(): bool {

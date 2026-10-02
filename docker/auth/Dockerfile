@@ -90,7 +90,9 @@ COPY docker/auth/office.conf /etc/apache2/intranet/office.conf
 COPY docker/auth/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/auth/sso-routes.sh /usr/local/bin/sso-routes.sh
 COPY docker/auth/tls-sync.sh /usr/local/bin/tls-sync.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/sso-routes.sh /usr/local/bin/tls-sync.sh
+COPY docker/auth/backend-watch.sh /usr/local/bin/backend-watch.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/sso-routes.sh /usr/local/bin/tls-sync.sh \
+        /usr/local/bin/backend-watch.sh
 
 EXPOSE 80 443
 

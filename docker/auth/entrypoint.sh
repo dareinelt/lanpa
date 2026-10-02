@@ -486,4 +486,11 @@ if is_true "$TLS_ENABLED"; then
     echo "[auth] HTTPS aktiv (Port 443, oeffentlich ${HTTPS_PUBLIC_PORT})."
 fi
 
+# Neu erstellte Backend-Container erhalten oft eine neue Adresse; mod_proxy
+# behaelt die alte bis zum Neuladen (siehe backend-watch.sh).
+backend_hosts="app"
+is_true "$OFFICE_ENABLED" && backend_hosts="${backend_hosts} nextcloud eurooffice"
+# shellcheck disable=SC2086
+/usr/local/bin/backend-watch.sh $backend_hosts &
+
 exec "$@"

@@ -238,6 +238,67 @@ erneut – so werden auch geänderte AD-Gruppenmitgliedschaften nach der
 AD-Synchronisation automatisch nachgezogen. Fällt ein Benutzer aus allen
 Regeln heraus, setzt Nextcloud ihn wieder auf den Standard zurück – aber nur,
 wenn sein Kontingent nicht zwischenzeitlich direkt in Nextcloud geändert wurde.
+Netzlaufwerke (nächster Abschnitt) sind externe Speicher und zählen **nicht**
+zum Kontingent.
+
+### Netzlaufwerke der Windows-Clients
+
+Die auf dem Windows-Client gemappten Netzlaufwerke (z. B. `H:` →
+`\\fs01\home\amueller`) können in Nextcloud unter „Dateien“ als Ordner
+„Laufwerk H (amueller)“ erscheinen. Ablauf:
+
+1. **Meldung:** Ein Anmeldeskript (`scripts/network-drives-report.ps1`) läuft
+   bei jeder Windows-Anmeldung im Benutzerkontext, wartet kurz auf die per
+   Gruppenrichtlinie verbundenen Laufwerke und meldet alle Netzlaufwerke
+   (Buchstabe → UNC-Pfad, Domäne, Computername) per Windows-Anmeldung
+   (Kerberos/NTLM, kein Kennwort) an `POST /sso/laufwerke`. Jede Meldung
+   ersetzt den bisherigen Stand des Benutzers. Protokoll auf dem Client:
+   `%LOCALAPPDATA%\Intranet\netzlaufwerke.log`.
+2. **Ausschlussliste:** Adminbereich **Netzlaufwerke** pflegt die Laufwerke,
+   die **nie** weitergereicht werden (Standard `B:/, G:/`; leeres Feld = keine
+   Ausnahme). Ausgeschlossene Laufwerke werden zur Information angezeigt,
+   verlassen das Intranet aber nie (die Nextcloud-App verwirft sie zusätzlich).
+   Dort lässt sich die Weitergabe auch ganz ausschalten.
+3. **Übergabe:** Das Intranet überträgt die Laufwerke signiert an
+   `intranet_integration` (`/apps/intranet_integration/api/drives`, JWT mit
+   eigener Audience, an den Inhalt gebunden) – bei jeder Änderung, über
+   „Jetzt an Nextcloud übertragen“ und bei Abweichung durch die Diagnose
+   (Komponente „Netzlaufwerke (Nextcloud)“, nur informativ).
+4. **Opt-in je Benutzer:** In Nextcloud unter **Dateien → Einstellungen**
+   (Zahnrad unten links) aktiviert jeder Benutzer selbst
+   **„Netzlaufwerke anzeigen“**. Erst dann bindet Nextcloud seine Laufwerke
+   als externe Speicher (`files_external`, Backend SMB) ein – je Laufwerk ein
+   Speicher, der nur für die Benutzer gilt, die genau dieses Laufwerk gemeldet
+   und die Anzeige aktiviert haben.
+5. **Kennwort einmalig:** Der Zugriff auf die Dateiserver erfolgt mit dem
+   Windows-Konto des Benutzers. Das Windows-Kennwort wird einmal in derselben
+   Einstellung hinterlegt (oder beim ersten Öffnen eines Laufwerks abgefragt)
+   und gilt für alle seine Laufwerke („Globale Anmeldedaten, vom Benutzer
+   eingegeben“, verschlüsselt in Nextcloud). Nach einer Kennwortänderung in
+   Windows dort erneut speichern. Die NTFS-Berechtigungen des Dateiservers
+   gelten unverändert.
+
+**Einrichtung:**
+
+- Adminbereich **Netzlaufwerke** → „Anmeldeskript herunterladen“ (die Meldeadresse
+  aus `APP_URL` ist bereits eingetragen) und per Gruppenrichtlinie verteilen:
+  *Benutzerkonfiguration → Richtlinien → Windows-Einstellungen → Skripts →
+  Anmelden → PowerShell-Skripts*. Alternativ als geplante Aufgabe bei der
+  Anmeldung: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File
+  netzlaufwerke-melden.ps1`.
+- Voraussetzung ist die Windows-Anmeldung am Intranet (`SSO_NTLM_ENABLED`,
+  Container `auth`); `/sso/laufwerke` verlangt sie zwingend.
+- Nextcloud benötigt `smbclient`: Das Compose-File baut dafür ein eigenes
+  Image (`docker/nextcloud/Dockerfile`, offizielles Image plus `smbclient`),
+  der Hook aktiviert die App `files_external`. Nach dem Update einmal
+  `docker compose up -d --build` ausführen (`scripts/office-update.sh` baut das
+  Image bei jedem Update neu).
+- Nextcloud muss die Dateiserver per SMB (TCP 445) erreichen; das Netz
+  `office` ist dafür nicht intern.
+
+Netzlaufwerke zählen nicht zum Speicherplatz-Kontingent. Freigaben aus
+Netzlaufwerken heraus sind abgeschaltet (`enable_sharing`), damit Dateien des
+Dateiservers nicht an Dritte weitergegeben werden.
 
 ### Automatische Anmeldung in Nextcloud (Intranet-SSO)
 
@@ -401,7 +462,7 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 | Bereich | Inhalt |
 | --- | --- |
 | Status | Gesamtzustand, letzte Prüfung, „Jetzt prüfen“ |
-| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector, vertrauenswürdige Hostnamen (Abgleich von `trusted_domains`), Speicherplatz-Kontingente (Abgleich mit `files/default_quota` und Benutzer-Quota) |
+| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector, vertrauenswürdige Hostnamen (Abgleich von `trusted_domains`), Speicherplatz-Kontingente (Abgleich mit `files/default_quota` und Benutzer-Quota), Netzlaufwerke (Abgleich der externen SMB-Speicher, Anzahl der Benutzer mit „Netzlaufwerke anzeigen“) |
 | Fußzeile und Einstieg | Text, Transparenz, Logo, „Zurück“, Ziel „Zum Intranet“, direkter Aufruf |
 | Lokale KI | KI-Endpunkt für alle Benutzer in Nextcloud und Euro-Office ([Abschnitt 6a](#6a-lokale-ki)) |
 | Vorschau der Fußzeile | Live-Vorschau mit demselben Stylesheet/Skript wie in Nextcloud |
@@ -538,6 +599,13 @@ Einträge `UNKNOWN` (3). OIDs: siehe README, Abschnitt SNMP-Überwachung.
   Das Intranet wertet sie nur von `SSO_TRUSTED_PROXY` aus.
 - Vorschau- und Vorschlags-Endpunkte sind nur für angemeldete Administratoren
   erreichbar und werden nicht zwischengespeichert.
+- Netzlaufwerke: Die Meldung (`/sso/laufwerke`) gilt nur für den per
+  Windows-Anmeldung erkannten Benutzer und nur mit dem Header
+  `X-Intranet-Client: netzlaufwerke` ohne `Origin` – fremde Webseiten können
+  sie also nicht per Formular auslösen. Server-, Freigabe- und Pfadnamen werden
+  im Intranet und in Nextcloud streng geprüft. Ausgeschlossene Laufwerke
+  verlassen das Intranet nie. Windows-Kennwörter liegen nur verschlüsselt in
+  Nextcloud (Credentials-Manager), nie im Intranet.
 
 ---
 
@@ -552,3 +620,8 @@ Einträge `UNKNOWN` (3). OIDs: siehe README, Abschnitt SNMP-Überwachung.
   (Attribut `cn` bzw. `LDAP_GROUP_NAME_ATTRIBUTE`).
 - Nextcloud schreibt beim Start zusammengeführte Werte in `config.php` zurück;
   maßgeblich bleiben die vom Hook verwalteten Einstellungen.
+- Netzlaufwerke werden bei der Windows-Anmeldung gemeldet; nachträglich
+  verbundene Laufwerke erscheinen erst nach der nächsten Anmeldung (oder einem
+  erneuten Skriptlauf). Bei mehreren Geräten gilt die letzte Meldung.
+  Kerberos-Delegation an die Dateiserver wird nicht genutzt – daher die
+  einmalige Kennworteingabe.

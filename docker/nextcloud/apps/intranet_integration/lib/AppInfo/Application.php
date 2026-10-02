@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\IntranetIntegration\AppInfo;
 
 use OCA\IntranetIntegration\Listener\FooterListener;
+use OCA\IntranetIntegration\Listener\NetworkDrivesScriptListener;
 use OCA\IntranetIntegration\Listener\QuotaLoginListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -32,6 +33,8 @@ class Application extends App implements IBootstrap {
         $context->registerEventListener(BeforeLoginTemplateRenderedEvent::class, FooterListener::class);
         // Speicherplatz-Kontingente aus dem Intranet fuer neu bekannte Konten.
         $context->registerEventListener(PostLoginEvent::class, QuotaLoginListener::class);
+        // Einstellung "Netzlaufwerke anzeigen" im Dateien-App.
+        $context->registerEventListener('OCA\\Files\\Event\\LoadAdditionalScriptsEvent', NetworkDrivesScriptListener::class);
     }
 
     public function boot(IBootContext $context): void {

@@ -22,6 +22,8 @@ use Throwable;
  *                   Nextcloud; weicht der Stand von der Liste des Intranets
  *                   ab (Domaenenbeitritt, Zertifikat, weitere Domaene), wird
  *                   sie neu uebertragen.
+ *   drives          Netzlaufwerke der Windows-Clients (Fingerabdruck), bei
+ *                   Abweichung wird neu uebertragen. Nur informativ.
  *   redis           TCP + PING
  *   postgres        TCP + SSLRequest
  *   ai              lokaler KI-Endpunkt: Stand in Euro-Office (runtime.json)
@@ -46,6 +48,7 @@ final class OfficeHealthService
         'connector' => 'Nextcloud-Connector (eurooffice)',
         'hosts' => 'Vertrauenswürdige Hostnamen (Nextcloud)',
         'quota' => 'Speicherplatz-Kontingente (Nextcloud)',
+        'drives' => 'Netzlaufwerke (Nextcloud)',
         'redis' => 'Redis (Nextcloud-Cache)',
         'postgres' => 'PostgreSQL (Nextcloud-Datenbank)',
         'ai' => 'KI (lokaler Endpunkt)',
@@ -55,7 +58,7 @@ final class OfficeHealthService
     private const CRITICAL = ['nextcloud', 'eurooffice', 'connector'];
 
     /** Komponenten, die den Gesamtstatus nicht beeinflussen. */
-    private const INFORMATIONAL = ['ai', 'quota'];
+    private const INFORMATIONAL = ['ai', 'quota', 'drives'];
 
     public function __construct(
         private readonly OfficeConfigService $config,
@@ -64,7 +67,8 @@ final class OfficeHealthService
         private readonly int $cacheTtl = 30,
         private readonly ?OfficeAiService $ai = null,
         private readonly ?OfficeTrustedDomainsService $trustedDomains = null,
-        private readonly ?StorageQuotaService $quotas = null
+        private readonly ?StorageQuotaService $quotas = null,
+        private readonly ?NetworkDriveService $drives = null
     ) {
     }
 
@@ -101,6 +105,12 @@ final class OfficeHealthService
         }
         if ($this->quotas !== null) {
             $components['quota'] = $this->checkQuota(
+                $components['nextcloud']['status'] !== self::ERROR && $components['connector']['status'] !== self::ERROR,
+                $diagnostics
+            );
+        }
+        if ($this->drives !== null) {
+            $components['drives'] = $this->checkDrives(
                 $components['nextcloud']['status'] !== self::ERROR && $components['connector']['status'] !== self::ERROR,
                 $diagnostics
             );
@@ -356,6 +366,9 @@ final class OfficeHealthService
         if (is_array($data['quota'] ?? null)) {
             $diagnostics['quota'] = $data['quota'];
         }
+        if (is_array($data['drives'] ?? null)) {
+            $diagnostics['drives'] = $data['drives'];
+        }
 
         if (empty($connector['installed'])) {
             return $this->component('connector', self::ERROR, 'Connector eurooffice ist nicht installiert.');
@@ -476,6 +489,70 @@ final class OfficeHealthService
         }
 
         return $this->component('quota', self::OK, 'Aktualisiert: ' . $summary);
+    }
+
+    /**
+     * Gleicht die Netzlaufwerke mit Nextcloud ab (selbstheilend, z. B. wenn
+     * Nextcloud bei einer Meldung nicht erreichbar war).
+     *
+     * @param array<string,mixed> $diagnostics
+     *
+     * @return array{label:string,status:string,message:string}
+     */
+    private function checkDrives(bool $connectorReachable, array &$diagnostics): array
+    {
+        $service = $this->drives;
+        if ($service === null) {
+            return $this->component('drives', self::WARN, 'Nicht verfügbar.');
+        }
+
+        try {
+            $payload = $service->payload();
+        } catch (Throwable) {
+            return $this->component('drives', self::WARN, 'Netzlaufwerke nicht ermittelbar (Datenbank-Migration ausstehend?).');
+        }
+        if (!$payload['enabled']) {
+            $summary = 'Weitergabe ausgeschaltet';
+        } else {
+            $count = array_sum(array_map('count', $payload['users']));
+            $summary = $count . ' Laufwerk(e) von ' . count($payload['users']) . ' Benutzer(n)'
+                . ($payload['excluded'] !== [] ? ', nie weitergereicht: ' . NetworkDriveService::formatLetters($payload['excluded']) : '');
+        }
+
+        if (!$connectorReachable) {
+            return $this->component('drives', self::WARN, 'Nicht prüfbar (Nextcloud-App nicht erreichbar). ' . $summary);
+        }
+
+        $remote = is_array($diagnostics['drives'] ?? null) ? $diagnostics['drives'] : null;
+        if ($remote === null) {
+            return $this->component('drives', self::WARN, 'Nextcloud-App intranet_integration ist veraltet – Netzlaufwerke werden nicht abgeglichen (docker compose restart nextcloud).');
+        }
+
+        $remark = '';
+        if ($payload['enabled'] && $payload['users'] !== []) {
+            if (empty($remote['files_external'])) {
+                $remark = ' – App „Externer Speicher“ (files_external) in Nextcloud nicht aktiv';
+            } elseif (empty($remote['smb_available'])) {
+                $remark = ' – SMB-Unterstützung (smbclient) fehlt im Nextcloud-Image (docker compose build nextcloud)';
+            }
+        }
+
+        if ($service->inSync($remote['fingerprint'] ?? null)) {
+            $diagnostics['drives_in_sync'] = true;
+            $optedIn = (int) ($remote['opted_in'] ?? 0);
+
+            return $this->component('drives', $remark === '' ? self::OK : self::WARN, $summary
+                . ($payload['enabled'] ? ', „Netzlaufwerke anzeigen“ aktiv bei ' . $optedIn . ' Benutzer(n)' : '') . $remark);
+        }
+
+        $result = $service->pushToNextcloud();
+        $diagnostics['drives_pushed'] = true;
+        $diagnostics['drives_in_sync'] = $result['ok'];
+        if (!$result['ok']) {
+            return $this->component('drives', self::WARN, 'Abgleich fehlgeschlagen: ' . $result['message']);
+        }
+
+        return $this->component('drives', $remark === '' ? self::OK : self::WARN, 'Aktualisiert: ' . $summary . $remark);
     }
 
     /**

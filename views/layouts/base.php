@@ -131,6 +131,9 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
                 <a href="/manuals/anwenderhandbuch.pdf" target="_blank" rel="noopener">Anwenderhandbuch</a>
             <?php } ?>
             <a href="/admin">Administration</a>
+            <?php if (!empty($kaepDashboardVisible)) { ?>
+                <a href="/kaep-dashboard" target="_blank" rel="noopener">KAEP-Dashboard</a>
+            <?php } ?>
         </nav>
     </div>
 </footer>

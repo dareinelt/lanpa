@@ -25,6 +25,7 @@ $hiddenFields = static function () use ($event): void { ?>
         <a class="button button--ghost" href="<?= $base ?>/anleitung">Kurzanleitung</a>
         <?php } ?>
         <button class="button button--ghost" type="button" data-ep-print>Drucken</button>
+        <?php if ($manager && !$preview) { ?><a class="button button--ghost" href="/kaep-dashboard?id=<?= (int) $event['id'] ?>" target="_blank" rel="noopener">Im KAEP-Dashboard öffnen</a><?php } ?>
         <?php if ($manager) { ?><a class="button button--ghost" href="<?= $base ?>/export?id=<?= (int) $event['id'] ?>">Protokoll als CSV</a><?php } ?>
     </div>
     <?php if (!$manager) { ?><h1><?= $preview ? 'Simulation' : '#' . (int) $event['id'] ?> <?= Html::e($event['title']) ?></h1><?php } ?>

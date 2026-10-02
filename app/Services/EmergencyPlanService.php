@@ -44,6 +44,18 @@ final class EmergencyPlanService
         return 'ad:' . mb_strtolower($user['office_uid']);
     }
 
+    public static function dashboardActor(?array $user, ?string $directoryRole, ?string $localRole, ?string $localName): ?string
+    {
+        if ($user !== null && empty($user['fake']) && self::isManager($directoryRole)) {
+            return self::actor($user);
+        }
+        if (self::isManager($localRole) && $localName !== null) {
+            return $user !== null && empty($user['fake']) ? self::actor($user) : 'local:' . mb_strtolower($localName);
+        }
+
+        return null;
+    }
+
     public function alarmOptions(): array
     {
         $items = [];

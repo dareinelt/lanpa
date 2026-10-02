@@ -19,7 +19,7 @@ function emergencyPdo(): PDO
     $pdo->exec('CREATE TABLE settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL)');
     $pdo->exec("CREATE TABLE emergency_plans (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, published INTEGER DEFAULT 0, revision INTEGER DEFAULT 1, definition TEXT, updated_by TEXT, updated_at TEXT, review_state TEXT DEFAULT 'draft', contributors TEXT, submitted_by TEXT, submitted_at TEXT, published_definition TEXT, published_revision INTEGER)");
     $pdo->exec("CREATE TABLE emergency_plan_reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER, revision INTEGER, actor TEXT, action TEXT, comment TEXT, created_at TEXT)");
-    $pdo->exec("CREATE TABLE emergency_events (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER, title TEXT, actor TEXT, request_key TEXT UNIQUE, snapshot TEXT, state TEXT, revision INTEGER DEFAULT 1, status TEXT DEFAULT 'active', started_at TEXT, closed_at TEXT)");
+    $pdo->exec("CREATE TABLE emergency_events (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER, title TEXT, actor TEXT, request_key TEXT UNIQUE, snapshot TEXT, state TEXT, coordination TEXT, revision INTEGER DEFAULT 1, status TEXT DEFAULT 'active', started_at TEXT, closed_at TEXT)");
     $pdo->exec("CREATE TABLE emergency_log (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER, node_id TEXT, actor TEXT, action TEXT, message TEXT, created_at TEXT)");
     $pdo->exec("CREATE TABLE emergency_sms (event_id INTEGER, node_id TEXT, status TEXT, message TEXT, PRIMARY KEY (event_id, node_id))");
     $pdo->exec("CREATE TABLE emergency_password_attempts (actor TEXT PRIMARY KEY, window_start INTEGER, attempts INTEGER)");

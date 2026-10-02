@@ -143,6 +143,10 @@ foreach (['/notfallplan' => 'index', '/notfallplan/plan' => 'plan', '/notfallpla
 }
 $router->post('/notfallplan/start', [\App\Controllers\EmergencyPlanController::class, 'start']);
 $router->post('/notfallplan/massnahme', [\App\Controllers\EmergencyPlanController::class, 'update']);
+foreach (['' => 'index', '/daten' => 'data', '/live' => 'stream', '/journal' => 'journal'] as $path => $method) {
+    $router->get('/kaep-dashboard' . $path, [\App\Controllers\KaepDashboardController::class, $method]);
+}
+$router->post('/kaep-dashboard/aktion', [\App\Controllers\KaepDashboardController::class, 'update']);
 $router->post('/admin/login', [AuthController::class, 'login']);
 $router->get(AuthController::WINDOWS_LOGIN_PATH, [AuthController::class, 'windowsLogin']);
 

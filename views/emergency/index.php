@@ -8,6 +8,7 @@ use App\Support\Html;
 <div class="toolbar">
     <?php if ($manager) { ?><a class="button button--primary" href="<?= $base ?>/bearbeiten">Neuen Notfallplan entwerfen</a><?php } ?>
     <a class="button button--ghost" href="<?= $base ?>/anleitung">Kurzanleitung</a>
+    <?php if ($manager) { ?><a class="button button--ghost" href="/kaep-dashboard" target="_blank" rel="noopener">KAEP-Dashboard</a><?php } ?>
 </div>
 <p class="ep-warning">Bei unmittelbarer Gefahr zuerst den örtlich festgelegten Notruf und Meldeweg nutzen. Diese Anwendung ersetzt weder Notruf noch Einsatzleitung.</p>
 <?php if ($manager) { ?>

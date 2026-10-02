@@ -12,7 +12,8 @@ final class Response
     public function __construct(
         private readonly string $body = '',
         private readonly int $status = 200,
-        private array $headers = []
+        private array $headers = [],
+        private readonly ?\Closure $stream = null
     ) {
     }
 
@@ -44,6 +45,15 @@ final class Response
     public static function noContent(): self
     {
         return new self('', 204);
+    }
+
+    public static function eventStream(\Closure $stream): self
+    {
+        return new self('', 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-store, no-transform',
+            'X-Accel-Buffering' => 'no',
+        ], $stream);
     }
 
     /**
@@ -88,6 +98,15 @@ final class Response
 
     public function send(): void
     {
+        if ($this->stream !== null) {
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_write_close();
+            }
+            ini_set('zlib.output_compression', '0');
+            while (ob_get_level() > 0) {
+                ob_end_flush();
+            }
+        }
         if (!headers_sent()) {
             http_response_code($this->status);
             foreach ($this->headers as $name => $value) {
@@ -95,6 +114,10 @@ final class Response
             }
         }
 
-        echo $this->body;
+        if ($this->stream !== null) {
+            ($this->stream)();
+        } else {
+            echo $this->body;
+        }
     }
 }

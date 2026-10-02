@@ -26,8 +26,10 @@ automatische Alarmierung bei Fristüberschreitung.
    werden dabei **zurückgezogen**, weil ihnen der zweite Freigabenachweis fehlt.
    Sie müssen vor erneuter Nutzung eingereicht und unabhängig freigegeben werden.
    Historische/laufende Ereignisse bleiben unverändert.
+   Migration 028 ergänzt die Einsatzkoordination des KAEP-Dashboards; vorhandene
+   Ereignisse erhalten zunächst eine leere Koordination, ihr Plan bleibt unverändert.
 3. Bei Docker den neuen Dienst starten:
-   `docker compose up -d --build app mail`.
+   `docker compose up -d --build app auth mail`.
 4. Ohne Docker `php scripts/mail_worker.php` als überwachten Dienst betreiben.
    Alternativ mindestens minütlich `php scripts/mail_worker.php --once` ausführen.
 5. HTTPS bereitstellen. Die AD-Kennwortbestätigung benötigt LDAPS oder StartTLS
@@ -186,13 +188,122 @@ manipulationssicheres externes Auditarchiv; Datenbankadministratoren bleiben
 technisch in der Lage, Daten zu verändern.
 
 Transaktionen und Revisionsvergleich verhindern verlorene Änderungen.
-Die Anzeige prüft alle zehn Sekunden auf Änderungen, lädt aber nicht über
+Die klassische Ereignisansicht prüft alle zehn Sekunden auf Änderungen, lädt aber nicht über
 ungespeicherte Eingaben hinweg neu. Verbindungsfehler werden sichtbar angezeigt.
 Historische Ereignisse lassen sich nach Zeitraum/Status filtern; Details zeigen
 Dauer, Maßnahmenstände und Zeitverlauf. CSV-Export schützt gegen
 Tabellenformel-Injektion. Abschluss mit offenen Maßnahmen benötigt eine Begründung.
 Abgeschlossene Ereignisse sind schreibgeschützt; ausstehende technische
 Versandergebnisse können weiterhin ins Protokoll einlaufen.
+
+## KAEP-Dashboard: gemeinsames Lagebild
+
+Der Link **KAEP-Dashboard** steht für berechtigte KAEP-Mitglieder und Administratoren
+im Fuß neben **Administration** und öffnet einen neuen Tab. Er ist außerdem in der
+KAEP-Einsatzübersicht und bei einzelnen Ereignissen erreichbar. Echte erkannte
+Windows-Anmeldungen mit entsprechender Gruppenrolle benötigen keinen zusätzlichen
+Adminlogin. Auf Tablets ohne Windows-SSO kann ein persönliches lokales KAEP-Konto
+über **Administration** angemeldet werden. Die Freigabegruppe zum *Auslösen* eines
+Plans allein berechtigt nicht zum Dashboard. Simuliertes SSO erhält keinen Zugriff.
+
+Das Dashboard zeigt laufende und abgeschlossene Ereignisse, einen mehrtägigen
+Einsatztimer, Fortschritt, überfällige und blockierte Maßnahmen sowie Alarm- und
+E-Mail-Ergebnisse. Die Maßnahmen sind nach Status angeordnet, mit Such- und
+Dringlichkeitsfiltern. Voraussetzungen und entfallene Entscheidungszweige bleiben
+sichtbar. Durch Antippen lassen sich Details, Checklisten, Entscheidungen und
+separat bestätigte SMS bedienen. Alle Statusregeln entsprechen der klassischen
+Ereignisansicht.
+
+Zusätzliche Koordination pro Einsatz:
+
+- **Zuständigkeit, Priorität und Zielzeit** je Maßnahme mit optionaler Begründung.
+  Freie Personen-/Teamnamen erlauben auch externe Kräfte; dies vergibt keine
+  Systemberechtigungen und verschickt keine zusätzliche Alarmierung.
+  Leere Zuständigkeit/Zielzeit verwendet wieder die Planvorgabe.
+- **Lageübersicht** mit nächster Lagebesprechung; **Einsatz- und Bereichsleitungen**
+  im einklappbaren Menü, einschließlich Erreichbarkeit. Derselbe Bereich wird
+  aktualisiert; leere Person entfernt die Besetzung. Maximal 30 Bereiche.
+- **Notizen und Schichtübergaben** im gemeinsamen, unveränderlichen Einsatzjournal,
+  wahlweise einer Maßnahme zugeordnet. Neue Lageübersichten und Änderungen von
+  Zuständigkeit/Leitung bleiben dort mit Person und Zeitpunkt nachvollziehbar.
+  Das Journal zeigt jeweils höchstens 100 Einträge; ältere Einträge sind ohne
+  zeitliche Begrenzung seitenweise lesbar. Historische Ausschnitte bleiben beim
+  Lesen stehen; **Zurück zum Live-Journal** zeigt wieder die neuesten Einträge.
+  Die Maßnahmenlage bleibt auch beim Lesen der Historie live. Die Elementsuche
+  erfolgt serverseitig, die Textsuche durchsucht den angezeigten Ausschnitt.
+
+Angezeigte Zeitpunkte verwenden die Gerätezeitzone und enthalten das Datum.
+Eingaben für Zielzeiten und Lagebesprechungen sind ausdrücklich **UTC**.
+Der Timer richtet sich nach der Serverzeit. **TV-Ansicht** blendet Navigation und
+Bearbeitungsleisten aus; der Modus und das ausgewählte Ereignis stehen in der URL
+(`?id=123&tv=1`). Ein TV benötigt weiterhin ein berechtigtes Konto. **Drucken**
+druckt das sichtbare Lagebild und die geladenen Journaleinträge; das vollständige
+Protokoll bleibt über den bisherigen CSV-Export der Ereignisansicht verfügbar.
+
+### Anordnung je Client
+
+**Anordnung bearbeiten** blendet am Rand jedes Abschnitts einen Ziehgriff,
+Pfeile nach oben/unten und eine Pinnadel ein. Auch die Kennzahlen sind ein eigener
+Abschnitt. Am Griff lässt sich ein Abschnitt mit Maus oder Touch verschieben;
+am Bildschirmrand scrollt die Seite beim Ziehen mit. Alternativ die Pfeilbuttons
+oder auf dem fokussierten Griff die Pfeiltasten verwenden. Escape bricht Ziehen ab.
+
+Die **Pinnadel** verschiebt einen Abschnitt sofort an den Anfang. Angeheftete
+Abschnitte bleiben vor allen anderen und lassen sich innerhalb dieser Gruppe
+sortieren. Das ist eine feste Position in der Reihenfolge, kein überlagerndes
+„Sticky“-Fenster beim Scrollen. Erneutes Anklicken löst die Fixierung.
+**Standardanordnung** setzt Reihenfolge und Pinnadeln nach Bestätigung zurück.
+
+Die Anordnung wird ausschließlich im `sessionStorage` **dieses Browser-Tabs**
+gespeichert: unabhängig von Konto, PC und anderen Clients, sogar von weiteren
+Tabs desselben Browserprofils. Neuladen und Wechsel des Ereignisses erhalten sie;
+ein neu geöffneter Tab beginnt mit dem Standardlayout. Es werden keine
+Layoutänderungen an andere Geräte übertragen. Einsatzdaten bleiben unverändert
+geräteübergreifend live. Bei gesperrtem Browserspeicher erscheint ein Hinweis;
+die Anordnung funktioniert dann nur bis zum Neuladen. Auch die TV-Ansicht lässt
+sich so individuell einrichten.
+
+### Live-Betrieb und Konflikte
+
+Das Dashboard nutzt **Server-Sent Events (SSE)** statt Seitenneuladungen.
+Eine offene Verbindung meldet neue Daten an alle verbundenen Dashboards,
+einschließlich Änderungen aus der klassischen Ereignisansicht und Ergebnissen
+des Mailworkers. Der Server prüft die gemeinsamen Datenbankrevisionen alle
+200 Millisekunden; der Browser lädt nur bei Änderung einen konsistenten Stand.
+Unter normaler Last erfolgt die Anzeige damit typischerweise innerhalb einer
+Sekunde, zuzüglich Netzwerk- und Renderzeit. Eine physikalisch verzögerungsfreie
+oder bei Netzausfall garantierte Zustellung ist nicht möglich.
+
+Ein Heartbeat kommt alle fünf Sekunden. Verbindungsfehler werden sofort, fehlende
+Heartbeats spätestens nach zwölf Sekunden sichtbar markiert; Speichern ist dann
+gesperrt. Wiederverbindung und Abgleich erfolgen automatisch. Jede Verbindung
+endet nach 25 Sekunden und prüft beim Neuaufbau Anmeldung und Gruppenrechte erneut.
+Änderungen der AD-Mitgliedschaft setzen weiterhin einen erfolgreichen AD-Abgleich
+voraus. Das Dashboard ist keine offlinefähige Schreibanwendung.
+
+Offene Eingabedialoge werden nicht durch Live-Daten ersetzt. Bei Änderungen
+erscheint ein Hinweis mit aktuellem Stand. Ein veralteter Schreibversuch wird
+serverseitig abgewiesen; erst nach bewusstem Vergleich kann die neue Revision
+übernommen werden. Textentwürfe bleiben erhalten; Status, Entscheidung und
+Prüfpunkte werden beim Übernehmen auf den aktuellen Stand gesetzt, damit keine
+fremden Bestätigungen versehentlich zurückgenommen werden. Unklare Ergebnisse
+zuerst im Journal prüfen, niemals blind erneut alarmieren.
+
+SSE benötigt ungepufferte Antworten. Die Anwendung löst die PHP-Sitzungssperre
+vor dem Stream, sendet `no-store, no-transform` und `X-Accel-Buffering: no`;
+Kompression ist für `/kaep-dashboard/live` in den mitgelieferten Apache-Regeln
+ausgenommen. Zusätzliche Reverse-Proxys dürfen diesen Pfad nicht puffern oder
+zwischenspeichern und benötigen mindestens 30 Sekunden Lesetimeout.
+Nach Änderungen an der Proxy-Konfiguration auch den Auth-Container neu bauen.
+Jeder offene Dashboard-Tab belegt im PHP/Apache-Betrieb einen Worker und eine
+Datenbankverbindung. Worker-/Verbindungslimits mit Reserve für Schreib- und
+normale Webanfragen dimensionieren; vor Einsatz die erwartete Zahl gleichzeitiger
+Tablets und TVs über die tatsächliche Proxy-Kette prüfen. Der PHP-Einprozess-
+Entwicklungsserver ist für gleichzeitige SSE-Verbindungen nicht geeignet.
+
+Koordination und Journal liegen in der Datenbank (`emergency_events.coordination`,
+`emergency_log`). Für mehrtägige Einsätze vollständige Datenbanksicherungen verwenden;
+die allgemeine Anwendungsexportdatei enthält diese Einsatzdaten nicht.
 
 ## SMS
 

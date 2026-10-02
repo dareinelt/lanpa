@@ -43,6 +43,7 @@ abstract class Controller
         ];
         $shared += $this->ssoShared();
         $shared['emergencyPlanVisible'] = Container::emergencyPlans()->canView($shared['ssoUser']);
+        $shared['kaepDashboardVisible'] = $this->kaepActor(Request::fromGlobals()) !== null;
 
         return Response::html(View::render($template, array_merge($shared, $data), $layout), $status);
     }
@@ -90,6 +91,19 @@ abstract class Controller
         }
 
         return $version;
+    }
+
+    protected function kaepActor(Request $request): ?string
+    {
+        $user = Container::sso()->resolve($request);
+        $directoryRole = $user !== null && empty($user['fake'])
+            ? Container::adminGroups()->intranetRole($user['groups']) : null;
+        $auth = Container::auth();
+        $local = $auth->check() && !$auth->isDirectoryUser();
+
+        return \App\Services\EmergencyPlanService::dashboardActor(
+            $user, $directoryRole, $local ? $auth->role() : null, $local ? $auth->username() : null
+        );
     }
 
     protected function requireValidCsrf(Request $request): void

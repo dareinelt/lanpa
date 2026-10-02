@@ -164,6 +164,7 @@ final class EmergencyPlanRepository extends Repository
         foreach (['snapshot', 'state'] as $field) {
             $row[$field] = json_decode($row[$field], true, 64, JSON_THROW_ON_ERROR);
         }
+        $row['coordination'] = json_decode($row['coordination'] ?? '{}', true, 64, JSON_THROW_ON_ERROR);
         $row['sms'] = [];
         $statement = $this->pdo->prepare('SELECT node_id, status, message FROM emergency_sms WHERE event_id = ?');
         $statement->execute([$id]);
@@ -179,6 +180,59 @@ final class EmergencyPlanRepository extends Repository
         $row = $this->one('SELECT id FROM emergency_events WHERE request_key = ? AND actor = ?', [$key, $actor]);
 
         return $row === null ? null : (int) $row['id'];
+    }
+
+    public function dashboardToken(): string
+    {
+        $row = $this->pdo->query('SELECT COUNT(*) AS total, COALESCE(SUM(revision), 0) AS revision FROM emergency_events')->fetch(PDO::FETCH_ASSOC);
+
+        return $row['total'] . ':' . $row['revision'];
+    }
+
+    public function dashboard(int $id, string $status, int $page): array
+    {
+        return $this->transaction(function () use ($id, $status, $page): array {
+            $token = $this->dashboardToken();
+            $events = $this->events(null, $status, '', '', $page);
+            $id = $id ?: (int) ($events['items'][0]['id'] ?? 0);
+            $event = $id > 0 ? $this->event($id) : null;
+
+            return [
+                'token' => $token, 'events' => $events, 'event' => $event,
+                'ready' => $event === null ? [] : \App\Services\EmergencyPlanDefinition::readiness($event['snapshot'], $event['state']),
+                'logs' => $id > 0 ? $this->journal($id) : [],
+                'notifications' => $id > 0 ? $this->notifications($id) : [],
+                'serverTime' => gmdate('c'),
+            ];
+        });
+    }
+
+    public function journal(int $id, int $before = 0, string $node = ''): array
+    {
+        $sql = 'SELECT * FROM emergency_log WHERE event_id = ?';
+        $params = [$id];
+        if ($before > 0) {
+            $sql .= ' AND id < ?';
+            $params[] = $before;
+        }
+        if ($node !== '') {
+            $sql .= ' AND node_id = ?';
+            $params[] = $node;
+        }
+        $statement = $this->pdo->prepare($sql . ' ORDER BY id DESC LIMIT 100');
+        $statement->execute($params);
+
+        return $statement->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function coordinate(array $event, array $change, string $actor): void
+    {
+        $this->transaction(function () use ($event, $change, $actor): void {
+            $count = $this->execute("UPDATE emergency_events SET coordination = ?, revision = revision + 1 WHERE id = ? AND revision = ? AND status = 'active'",
+                [self::json($change['coordination']), $event['id'], $event['revision']]);
+            $this->assertChanged($count);
+            $this->append((int) $event['id'], $change['node'], $actor, $change['action'], $change['message']);
+        });
     }
 
     public function start(array $plan, string $actor, string $key, array $recipients, int $missing, string $baseUrl): int

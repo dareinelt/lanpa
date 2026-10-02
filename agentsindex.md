@@ -201,6 +201,12 @@ Auch Administratoren dürfen eigene/mitbearbeitete Entwürfe nicht freigeben.
 Veröffentlichte Definitionen und Ereignissnapshots bleiben von Entwurfsänderungen
 unberührt; Freigabemetadaten gehören zum Snapshot. Migration 027 zieht alte
 Veröffentlichungen ohne zweiten Freigabenachweis zurück.
+Export/Import (`POST /admin/notfallplan/plaene/export` bzw. `…/plaene/import`,
+nur Rolle `admin` per `$requireAdmin`): `EmergencyPlanService::exportPlans()` schreibt
+JSON (`format` `lanpa-notfallplaene`, `version` 1, aktuelle Entwürfe);
+`importPlans()` prüft alles, ordnet SMS-Elemente per Alarmtitel lokalen Vorlagen zu
+und legt per `EmergencyPlanRepository::importPlans()` in einer Transaktion neue
+Entwürfe an (Freigabeprotokoll `imported`, Importierende als Autor).
 
 `SmtpController`, `SmtpService`, `MailQueueService` und `scripts/mail_worker.php`
 verwalten SMTP und die dauerhafte Versandwarteschlange. SMTP-Konfiguration nur

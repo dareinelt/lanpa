@@ -78,6 +78,7 @@ final class EmergencyPlanController extends AdminController
             'enabled' => Container::settings()->bool('emergency_plan_enabled'),
             'group' => Container::settings()->get('emergency_plan_group'),
             'smtpEnabled' => Container::settings()->bool('smtp_enabled'),
+            'canTransfer' => $access['manager'] && Container::auth()->isAdmin(),
         ]);
     }
 
@@ -292,6 +293,60 @@ final class EmergencyPlanController extends AdminController
         fclose($stream);
 
         return Response::download("\xEF\xBB\xBF" . $csv, 'notfallereignis-' . $event['id'] . '.csv', 'text/csv; charset=utf-8');
+    }
+
+    public function exportPlans(Request $request): Response
+    {
+        $access = $this->access($request, true);
+        $this->requireAdminRole();
+        $this->requireValidCsrf($request);
+        $ids = $request->post['plans'] ?? [];
+        $ids = is_array($ids) ? array_map(static fn ($id) => is_string($id) && ctype_digit($id) ? (int) $id : 0, array_values($ids)) : [];
+        try {
+            $contents = Container::emergencyPlans()->exportPlans($ids);
+        } catch (ValidationException $exception) {
+            Session::flash('error', implode(' ', $exception->errors()));
+
+            return $this->redirect('/admin/notfallplan');
+        }
+        app_logger()->info('Notfallpläne exportiert.', ['actor' => $access['actor'], 'ids' => $ids]);
+
+        return Response::download($contents, 'notfallplaene-' . gmdate('Y-m-d') . '.json', 'application/json; charset=utf-8')
+            ->withHeader('Cache-Control', 'no-store');
+    }
+
+    public function importPlans(Request $request): Response
+    {
+        $access = $this->access($request, true);
+        $this->requireAdminRole();
+        $this->requireValidCsrf($request);
+        $file = $request->files['file'] ?? ['error' => UPLOAD_ERR_NO_FILE];
+        $tmpName = is_array($file) && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK ? (string) ($file['tmp_name'] ?? '') : '';
+        $contents = $tmpName !== '' && is_uploaded_file($tmpName) && filesize($tmpName) <= EmergencyPlanService::IMPORT_MAX_BYTES
+            ? file_get_contents($tmpName) : false;
+        if ($contents === false) {
+            Session::flash('error', 'Bitte eine gültige Notfallplan-Exportdatei (höchstens 2 MB) auswählen.');
+
+            return $this->redirect('/admin/notfallplan');
+        }
+        try {
+            $ids = Container::emergencyPlans()->importPlans($contents, $access['actor']);
+        } catch (ValidationException $exception) {
+            Session::flash('error', implode(' ', $exception->errors()));
+
+            return $this->redirect('/admin/notfallplan');
+        }
+        Session::flash('success', count($ids) . (count($ids) === 1 ? ' Notfallplan wurde' : ' Notfallpläne wurden')
+            . ' als neuer Entwurf importiert. Bestehende Pläne bleiben unverändert; die Veröffentlichung benötigt eine Vier-Augen-Freigabe.');
+
+        return $this->redirect('/admin/notfallplan');
+    }
+
+    private function requireAdminRole(): void
+    {
+        if (!Container::auth()->isAdmin()) {
+            throw new HttpException(403, 'Nur Administratoren dürfen Notfallpläne exportieren und importieren.');
+        }
     }
 
     public function guide(Request $request): Response

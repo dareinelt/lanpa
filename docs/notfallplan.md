@@ -44,8 +44,8 @@ automatische Alarmierung bei Fristüberschreitung.
 
 | Rolle / Voraussetzung | Umfang |
 | --- | --- |
-| Administrator | Alle bisherigen Adminbereiche sowie Notfallpläne und SMTP |
-| KAEP-Team | Ausschließlich Notfallplan-Verwaltung, Freigabeeinstellungen, Einsatzübersicht und historische Auswertung; kein SMTP-, AD-, Benutzer- oder anderer Adminbereich |
+| Administrator | Alle bisherigen Adminbereiche sowie Notfallpläne, Export/Import von Notfallplänen und SMTP |
+| KAEP-Team | Ausschließlich Notfallplan-Verwaltung, Freigabeeinstellungen, Einsatzübersicht und historische Auswertung; kein Export/Import von Notfallplänen, kein SMTP-, AD-, Benutzer- oder anderer Adminbereich |
 | Redaktion | Bestehender Zugriff auf wichtige Links; kein Notfallplan-Adminzugriff |
 | Angemeldeter AD-Benutzer in der Freigabegruppe | Veröffentlichte Pläne ansehen und nach AD-Kennwortbestätigung auslösen; eigene Ereignisse bearbeiten |
 | Keine Freigabegruppe, deaktivierter Button oder fehlende Mitgliedschaft | Kein Button und kein Zugriff auf Benutzerinhalte, auch nicht per Direktlink |
@@ -356,10 +356,37 @@ Ereignis. Bleiben Mails auf „queued“, Mail-Dienst und Datenbank prüfen.
 Bei „failed“ Team anderweitig benachrichtigen, Ursache beheben und Testmail
 versenden. Es erfolgt kein unbegrenzter Wiederholungsversuch.
 
+## Export und Import von Notfallplänen
+
+Notfallpläne lassen sich als Datei exportieren und auf einem anderen System
+(z. B. Test → Produktion oder an einem weiteren Standort) wieder importieren.
+Beides ist **nur Administratoren** erlaubt; das KAEP-Team erhält HTTP 403.
+
+- **Export:** Unter **Notfallplan / KAEP → Export und Import** die gewünschten
+  Pläne auswählen und **Ausgewählte Pläne exportieren** wählen. Es entsteht
+  `notfallplaene-JJJJ-MM-TT.json` (Format `lanpa-notfallplaene`, Version 1) mit dem
+  jeweils aktuellen Entwurf jedes Plans. Freigabehistorie, Ereignisse, Protokolle
+  und E-Mail-Queue sind nicht enthalten. Die Datei enthält Zuständigkeiten,
+  Telefonnummern und SMS-Daten: vertraulich behandeln.
+- **Import:** Auf dem Zielsystem die Datei (höchstens 2 MB, bis zu 100 Pläne)
+  hochladen. Alle Pläne werden vollständig geprüft wie beim Speichern im Editor
+  und in einer Transaktion als **neue, unveröffentlichte Entwürfe** angelegt –
+  alles oder nichts. Vorhandene Pläne werden nie überschrieben.
+- **SMS-Elemente:** Alarmierungs-IDs unterscheiden sich zwischen Systemen. Beim
+  Import wird jedes SMS-Element über den Titel (ohne Groß-/Kleinschreibung) einer
+  aktiven Alarmierung des Zielsystems zugeordnet; bei mehreren gleichnamigen
+  entscheiden Alarmtext und Zielrufnummer. Fehlt eine Vorlage oder ist sie nicht
+  eindeutig, wird nichts importiert und die fehlenden Titel werden genannt.
+  SMS-Text und Empfänger stammen danach aus der Vorlage des Zielsystems.
+- **Vier-Augen-Prinzip:** Die importierende Person gilt als Autor des Entwurfs
+  (Freigabeprotokoll: „Importiert“) und darf ihn nicht selbst freigeben. Vor der
+  Veröffentlichung prüft eine zweite, unbeteiligte Person insbesondere die
+  SMS-Ziele des Zielsystems.
+
 ## Sicherung, Datenschutz und Übungen
 
 Pläne, Ereignisse, Protokoll und Mail-Queue sind neue Datenbanktabellen.
-Die bisherige Anwendungssicherung ist ein Konfigurationsexport, **keine vollständige
+Die bisherige Anwendungssicherung und der Notfallplan-Export sind **keine vollständige
 Notfallplan-/Ereignissicherung**. Für diese Funktion MySQL vollständig und
 konsistent sichern, außerdem `storage/keys/secrets.key` sicher verwahren.
 Wiederherstellung und AD-/SMTP-Konfiguration regelmäßig testen.

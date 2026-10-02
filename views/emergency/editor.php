@@ -81,6 +81,6 @@ $canReview = $plan['review_state'] === 'pending' && !in_array($actor, $plan['con
         </form>
     <?php } ?>
     <h3>Freigabeprotokoll</h3>
-    <ol class="ep-log"><?php foreach ($reviews as $review) { ?><li><?= Html::e($review['created_at']) ?> UTC · <?= Html::e($review['actor']) ?> · Version <?= (int) $review['revision'] ?> · <strong><?= Html::e(['saved' => 'Entwurf gespeichert', 'submitted' => 'Freigabe angefordert', 'approved' => 'Freigegeben', 'rejected' => 'Abgelehnt', 'withdrawn' => 'Zurückgezogen'][$review['action']] ?? $review['action']) ?></strong><p><?= Html::e($review['comment']) ?></p></li><?php } ?></ol>
+    <ol class="ep-log"><?php foreach ($reviews as $review) { ?><li><?= Html::e($review['created_at']) ?> UTC · <?= Html::e($review['actor']) ?> · Version <?= (int) $review['revision'] ?> · <strong><?= Html::e(['saved' => 'Entwurf gespeichert', 'submitted' => 'Freigabe angefordert', 'approved' => 'Freigegeben', 'rejected' => 'Abgelehnt', 'withdrawn' => 'Zurückgezogen', 'imported' => 'Importiert'][$review['action']] ?? $review['action']) ?></strong><p><?= Html::e($review['comment']) ?></p></li><?php } ?></ol>
 </section>
 <noscript><p class="flash flash--error">Der Planeditor benötigt JavaScript. Ohne JavaScript können keine Pläne bearbeitet werden.</p></noscript>

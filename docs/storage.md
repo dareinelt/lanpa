@@ -194,6 +194,62 @@ Prüfung und Klick auf **Löschungen übernehmen** werden sie beim nächsten
 vollständigen Abgleich auf die Ziele übertragen. Bis dahin bleiben die Kopien
 im Cold-Tier vollständig erhalten.
 
+### Schutz vor Ransomware und verdächtigem Überschreiben (Vorfälle)
+
+`storage-sync` prüft bei jedem Abgleich, ob Dateien auffällig verändert
+werden. Ein **Vorfall** entsteht, sobald innerhalb des Zeitfensters
+(Standard 10 Minuten) eine der folgenden Regeln je Benutzer greift:
+
+| Regel | Auslöser (Standard) |
+| --- | --- |
+| Ransomware-Dateiendung | ≥ 1 Datei mit bekannter Endung (`*.makop`, `*.crypt`, `*.locky`, …) |
+| Verschlüsselter Inhalt | ≥ 20 überschriebene Dateien, deren Inhalt nicht mehr zum Typ passt (z. B. DOCX ohne ZIP-Kennung) oder sehr hohe Entropie (≥ 7,2 Bit/Byte) hat |
+| Massenhaftes Überschreiben | ≥ 200 überschriebene Dateien |
+
+Schwellwerte, Zeitfenster und die Liste der Dateiendungen (Platzhalter `*`,
+`?`, z. B. `*.id-*.[*@*].*`) sind unter **Adminbereich → Vorfälle →
+Einstellungen** änderbar; „Standardliste wiederherstellen“ setzt die Liste
+zurück. Der Verursacher wird über das Schreibprotokoll der Nextcloud-App
+`intranet_integration` ermittelt (Kennung, IP-Adresse, Client); fehlt es,
+gilt der Eigentümer des Ordners.
+
+**Maßnahmen bei einem Vorfall:**
+
+1. **Benutzer schreibgeschützt:** Der betroffene Benutzer kann Dateien weiter
+   öffnen und herunterladen, aber nicht mehr hochladen, ändern, umbenennen
+   oder löschen (auch nicht per Desktop-Client/WebDAV). In Nextcloud erscheint
+   ein roter Hinweis: „Der Zugriff auf Ihre Dateien wurde aus
+   Sicherheitsgründen vorübergehend eingeschränkt. Bitte melden Sie sich beim
+   Support.“ (optional mit Support-Kontakt aus den Einstellungen).
+2. **Cold-Ziel geschützt:** Ein Speicherziel des Cold-Tiers wird aus der
+   Synchronisation genommen und **nur lesend** eingebunden. So bleibt ein
+   unveränderter Stand der Daten erhalten. Gewählt wird das in den
+   Einstellungen festgelegte Ziel, sonst ein synchrones, nicht primäres Ziel.
+   Der HA-Status zeigt in dieser Zeit „eingeschränkt“.
+3. **Meldung im Adminbereich:** Dashboard, Speicher (HA) und der Menüpunkt
+   **Vorfälle** (mit Zähler) weisen auf den offenen Vorfall hin.
+
+**Vorfälle-Seite:** Tabelle aller Vorfälle mit Zeitpunkt, Status, Benutzer
+(Wer), Regeln und Beispieldateien (Was), Anzahl Dateien/Datenmenge (Wie viel),
+Quelle (IP-Adresse, Client), Maßnahmen und Details. Nach Prüfung und
+Bereinigung wird ein Vorfall über **Erledigt** und die Rückfrage „Event
+wirklich als erledigt markieren?“ → **Ja** abgeschlossen. Danach:
+
+- wird die Einschränkung des Benutzers innerhalb weniger Sekunden aufgehoben
+  (sofern kein weiterer offener Vorfall für ihn besteht),
+- wird das geschützte Cold-Ziel wieder beschreibbar eingebunden und die
+  Synchronisation fortgesetzt, sobald kein Vorfall mehr offen ist. Dabei wird
+  der aktuelle Stand übertragen – Daten, die vom geschützten Ziel
+  wiederhergestellt werden sollen, vorher sichern (siehe Abschnitt 7).
+
+Aktivität vor dem Zeitpunkt der Erledigung löst keinen neuen Vorfall aus.
+Die Erkennung arbeitet nur bei eingeschaltetem Speicher-Tiering.
+
+Technik: Die Nextcloud-App schreibt Schreibzugriffe nach
+`access/writes.log` (JSON-Zeilen, max. 64 MB); `storage-sync` veröffentlicht
+eingeschränkte Kennungen in `config.json` (`restricted`,
+`restriction_message`). Vorfälle liegen in der Tabelle `storage_incidents`.
+
 ---
 
 ## 5. Zurückholen in Nextcloud (Fortschrittsbalken)

@@ -78,6 +78,19 @@ $check = static function (string $key, string $text, string $hint) use ($current
 <?php if (!$overview['office_enabled']) { ?>
     <p class="flash flash--info">Office ist nicht aktiviert (<code>OFFICE_ENABLED</code>). Ohne Nextcloud und Euro-Office gibt es keine Daten zu synchronisieren.</p>
 <?php } ?>
+<?php if ((int) ($overview['incidents_open'] ?? 0) > 0) {
+    $frozenLabels = array_map(static fn (array $t): string => $t['label'], array_filter($targets, static fn (array $t): bool => !empty($t['frozen']))); ?>
+    <div class="incident-alert" role="alert">
+        <h2 class="incident-alert__title">Sicherheitsvorfall – Cold-Tier teilweise eingefroren</h2>
+        <p>
+            Es <?= (int) $overview['incidents_open'] === 1 ? 'ist ein Sicherheitsvorfall' : 'sind ' . (int) $overview['incidents_open'] . ' Sicherheitsvorfälle' ?> offen.
+            <?php if ($frozenLabels !== []) { ?>
+                Das Speicherziel „<?= Html::e(implode('“, „', $frozenLabels)) ?>“ ist schreibgeschützt eingebunden und wird nicht synchronisiert, damit der Datenbestand von vor dem Vorfall unverändert erhalten bleibt.
+            <?php } ?>
+        </p>
+        <p><a class="button button--danger" href="/admin/vorfaelle">Zu den Vorfällen</a></p>
+    </div>
+<?php } ?>
 <div class="flash flash--<?= ($alert['level'] ?? '') === 'error' ? 'error' : 'info' ?>" data-storage-alert role="alert" <?= $alert === null ? 'hidden' : '' ?>>
     <strong data-live="alert-title"><?= Html::e($alert['title'] ?? '') ?></strong>
     <span data-live="alert-message"><?= Html::e($alert['message'] ?? '') ?></span>
@@ -190,6 +203,7 @@ $check = static function (string $key, string $text, string $hint) use ($current
                         </div>
                         <div>
                             <?php if ($target['is_primary']) { ?><span class="badge badge--active">primär</span><?php } ?>
+                            <?php if (!empty($target['frozen'])) { ?><span class="badge badge--error" title="Wegen eines Sicherheitsvorfalls schreibgeschützt eingebunden – keine Synchronisation bis zur Erledigung">schreibgeschützt (Vorfall)</span><?php } ?>
                             <?php if (!$target['active']) { ?><span class="badge badge--muted">deaktiviert</span><?php } ?>
                             <p class="storage-target__path"><code><?= Html::e($target['unc_path']) ?></code></p>
                             <div class="table__hint">

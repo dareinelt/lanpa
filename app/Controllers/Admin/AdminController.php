@@ -29,6 +29,7 @@ abstract class AdminController extends Controller
             'assetVersion' => $this->assetVersion(),
             'errors' => [],
             'old' => [],
+            'openIncidents' => Container::auth()->isAdmin() ? Container::incidents()->openCount() : 0,
         ];
 
         return Response::html(

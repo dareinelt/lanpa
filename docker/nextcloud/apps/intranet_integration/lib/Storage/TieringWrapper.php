@@ -7,8 +7,10 @@ namespace OCA\IntranetIntegration\Storage;
 use OC\Files\Storage\Local;
 use OC\Files\Storage\Wrapper\Jail;
 use OC\Files\Storage\Wrapper\Wrapper;
+use OCP\Files\ForbiddenException;
 use OCP\Files\Storage\IStorage;
 use OCP\Files\StorageNotAvailableException;
+use OCP\IRequest;
 use OCP\ISession;
 use OCP\IUserSession;
 use OCP\Server;
@@ -27,6 +29,11 @@ use OCP\Server;
  * - Lesezugriffe landen im Zugriffsprotokoll ("haeufig genutzt").
  * - Vorschaubilder holen keine Dateien zurueck (sonst wuerde schon das
  *   Durchblaettern eines Ordners alles in den Hot-Tier laden).
+ * - Sicherheitsvorfall (auffaelliges Ueberschreiben, erkannt von
+ *   storage-sync): Der betroffene Benutzer darf bis zur Erledigung nur
+ *   lesen; Schreiben, Hochladen, Umbenennen und Loeschen werden abgewiesen.
+ * - Schreibvorgaenge werden mit Benutzer, IP-Adresse und Client
+ *   protokolliert (Zuordnung eines Vorfalls).
  */
 class TieringWrapper extends Wrapper {
     private TieringClient $tiering;
@@ -60,6 +67,9 @@ class TieringWrapper extends Wrapper {
 
     public function fopen(string $path, string $mode) {
         $write = strpbrk($mode, 'waxc+') !== false;
+        if ($write) {
+            $this->guardWrite($path);
+        }
         if (!$write || strpbrk($mode, 'ac') !== false || str_starts_with($mode, 'r')) {
             // Lesen, Anhaengen und Aendern brauchen den echten Inhalt.
             $this->prepareRead($path);
@@ -67,6 +77,7 @@ class TieringWrapper extends Wrapper {
         $result = parent::fopen($path, $mode);
         if ($result !== false && $write) {
             $this->dropMarker($path);
+            $this->noteWrite($path);
         }
 
         return $result;
@@ -79,17 +90,21 @@ class TieringWrapper extends Wrapper {
     }
 
     public function file_put_contents(string $path, mixed $data): int|float|false {
+        $this->guardWrite($path);
         $result = parent::file_put_contents($path, $data);
         if ($result !== false) {
             $this->dropMarker($path);
+            $this->noteWrite($path);
         }
 
         return $result;
     }
 
     public function writeStream(string $path, $stream, ?int $size = null): int {
+        $this->guardWrite($path);
         $result = parent::writeStream($path, $stream, $size);
         $this->dropMarker($path);
+        $this->noteWrite($path);
 
         return $result;
     }
@@ -106,28 +121,47 @@ class TieringWrapper extends Wrapper {
         return parent::getLocalFile($path);
     }
 
+    public function touch(string $path, ?int $mtime = null): bool {
+        $this->guardWrite($path);
+
+        return parent::touch($path, $mtime);
+    }
+
+    public function mkdir(string $path): bool {
+        $this->guardWrite($path);
+
+        return parent::mkdir($path);
+    }
+
     public function copy(string $source, string $target): bool {
+        $this->guardWrite($target);
         $this->prepareCopy($this->rel($source));
         $result = parent::copy($source, $target);
         if ($result) {
             $this->dropMarker($target, true);
+            $this->noteWrite($target);
         }
 
         return $result;
     }
 
     public function rename(string $source, string $target): bool {
+        $this->guardWrite($source, $target);
         $from = $this->rel($source);
         $to = $this->rel($target);
         $result = parent::rename($source, $target);
         if ($result && $from !== null && $to !== null) {
             $this->tiering->move($from, $to);
         }
+        if ($result) {
+            $this->noteWrite($target);
+        }
 
         return $result;
     }
 
     public function unlink(string $path): bool {
+        $this->guardWrite($path);
         $result = parent::unlink($path);
         if ($result) {
             $this->dropMarker($path, true);
@@ -137,6 +171,7 @@ class TieringWrapper extends Wrapper {
     }
 
     public function rmdir(string $path): bool {
+        $this->guardWrite($path);
         $result = parent::rmdir($path);
         if ($result && ($rel = $this->rel($path)) !== null) {
             $this->tiering->removeTree($rel);
@@ -149,11 +184,13 @@ class TieringWrapper extends Wrapper {
         if ($sourceStorage === $this) {
             return $this->copy($sourceInternalPath, $targetInternalPath);
         }
+        $this->guardWrite($targetInternalPath);
         // Local kopiert zwischen lokalen Speichern direkt auf Dateisystemebene.
         $this->prepareCopy($this->foreignRel($sourceStorage, $sourceInternalPath));
         $result = parent::copyFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
         if ($result) {
             $this->dropMarker($targetInternalPath, true);
+            $this->noteWrite($targetInternalPath);
         }
 
         return $result;
@@ -163,7 +200,11 @@ class TieringWrapper extends Wrapper {
         if ($sourceStorage === $this) {
             return $this->rename($sourceInternalPath, $targetInternalPath);
         }
+        $this->guardWrite($targetInternalPath);
         $from = $this->foreignRel($sourceStorage, $sourceInternalPath);
+        if ($from !== null && self::isUserFile($from) && $this->tiering->isRestricted($this->uid())) {
+            throw new ForbiddenException($this->tiering->restrictionMessage(), false);
+        }
         $to = $this->rel($targetInternalPath);
         $result = parent::moveFromStorage($sourceStorage, $sourceInternalPath, $targetInternalPath);
         if ($result && $to !== null) {
@@ -172,6 +213,7 @@ class TieringWrapper extends Wrapper {
             } else {
                 $this->dropMarker($targetInternalPath, true);
             }
+            $this->noteWrite($targetInternalPath);
         }
 
         return $result;
@@ -235,6 +277,51 @@ class TieringWrapper extends Wrapper {
         } catch (TieringException $exception) {
             throw new StorageNotAvailableException($exception->getMessage(), 0, $exception);
         }
+    }
+
+    /**
+     * Sicherheitsvorfall: Schreibzugriffe des betroffenen Benutzers auf
+     * Benutzerdateien abweisen (Lesen bleibt moeglich).
+     *
+     * @throws ForbiddenException
+     */
+    private function guardWrite(string ...$paths): void {
+        $uid = $this->uid();
+        if ($uid === '' || !$this->tiering->isRestricted($uid)) {
+            return;
+        }
+        foreach ($paths as $path) {
+            $rel = $this->rel($path);
+            if ($rel !== null && self::isUserFile($rel)) {
+                throw new ForbiddenException($this->tiering->restrictionMessage(), false);
+            }
+        }
+    }
+
+    /**
+     * Dateien, Versionen, Papierkorb und Uploads der Benutzer (nicht appdata).
+     */
+    private static function isUserFile(string $rel): bool {
+        return preg_match('#^[^/]+/(files|files_versions|files_trashbin|uploads)(/|$)#', $rel) === 1;
+    }
+
+    private function noteWrite(string $path): void {
+        $uid = $this->uid();
+        $rel = $uid === '' ? null : $this->rel($path);
+        if ($rel === null) {
+            return;
+        }
+        $ip = '';
+        $agent = '';
+        if (PHP_SAPI !== 'cli') {
+            try {
+                $request = Server::get(IRequest::class);
+                $ip = $request->getRemoteAddress();
+                $agent = (string) $request->getHeader('User-Agent');
+            } catch (\Throwable) {
+            }
+        }
+        $this->tiering->logWrite($rel, $uid, $ip, $agent);
     }
 
     private function dropMarker(string $path, bool $tree = false): void {

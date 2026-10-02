@@ -13,6 +13,7 @@ $flashes = $flashes ?? [];
 $adminUser = $adminUser ?? null;
 $adminRole = $adminRole ?? 'admin';
 $documentationEnabled = $documentationEnabled ?? false;
+$openIncidents = (int) ($openIncidents ?? 0);
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 
 $isAdmin = $adminRole === 'admin';
@@ -33,6 +34,7 @@ $navItems = $isAdmin ? [
     'quota' => ['/admin/speicherplatz', 'Speicherplatz (Quota)'],
     'drives' => ['/admin/netzlaufwerke', 'Netzlaufwerke'],
     'storage' => ['/admin/speicher-ha', 'Speicher (HA)'],
+    'incidents' => ['/admin/vorfaelle', 'Vorfälle'],
     'certificates' => ['/admin/zertifikate', 'Zertifikate (HTTPS)'],
     'snmp' => ['/admin/snmp', 'SNMP'],
     'statistics' => ['/admin/statistik', 'Statistik'],
@@ -87,6 +89,9 @@ $navItems = $isAdmin ? [
                 <li>
                     <a href="<?= Html::e($href) ?>" class="admin-nav__link<?= $activeNav === $key ? ' is-active' : '' ?>"<?= $activeNav === $key ? ' aria-current="page"' : '' ?>>
                         <?= Html::e($label) ?>
+                        <?php if ($key === 'incidents' && $openIncidents > 0) { ?>
+                            <span class="admin-nav__badge" title="Offene Sicherheitsvorfälle"><?= $openIncidents ?><span class="visually-hidden"> offen</span></span>
+                        <?php } ?>
                     </a>
                 </li>
             <?php } ?>

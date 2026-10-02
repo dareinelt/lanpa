@@ -21,6 +21,7 @@ use App\Controllers\Admin\DesignController;
 use App\Controllers\Admin\EmergencyNumberController;
 use App\Controllers\Admin\ImportExportController;
 use App\Controllers\Admin\ImportantLinkController;
+use App\Controllers\Admin\IncidentController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\NetworkDriveController as NetworkDriveAdminController;
@@ -269,6 +270,9 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/speicher-ha/ziel', [StorageAdminController::class, 'saveTarget']);
         $router->post('/admin/speicher-ha/ziel/loeschen', [StorageAdminController::class, 'deleteTarget']);
         $router->post('/admin/speicher-ha/auftrag', [StorageAdminController::class, 'request']);
+        $router->get('/admin/vorfaelle', [IncidentController::class, 'index']);
+        $router->post('/admin/vorfaelle/erledigt', [IncidentController::class, 'resolve']);
+        $router->post('/admin/vorfaelle/einstellungen', [IncidentController::class, 'updateSettings']);
 
         $router->get('/admin/zertifikate', [CertificateController::class, 'index']);
         $router->post('/admin/zertifikate/csr', [CertificateController::class, 'createRequest']);

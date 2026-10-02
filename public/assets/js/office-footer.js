@@ -77,6 +77,94 @@
         root.style.setProperty('--iof-rest-opacity', String((100 - transparency) / 100));
     }
 
+    // Ein Euro-Office-Dokument (Editor oder Viewer) ist geoeffnet.
+    function documentOpen() {
+        return !!document.querySelector('.eurooffice-iframe-container, #content.app-eurooffice, .eurooffice-inviewer');
+    }
+
+    function focusDocument() {
+        var frame = document.querySelector('.eurooffice-iframe-container iframe, .eurooffice-inviewer iframe, #content.app-eurooffice #app iframe');
+        if (frame) {
+            try {
+                frame.focus();
+                if (frame.contentWindow) {
+                    frame.contentWindow.focus();
+                }
+            } catch (e) { /* ignorieren */ }
+        }
+    }
+
+    var openDialog = null;
+
+    /*
+     * Ja/Nein-Abfrage vor dem Verlassen eines Dokuments.
+     * Ja: onYes wird ausgefuehrt. Nein/Escape: zurueck zum Dokument.
+     */
+    function confirmSaved(config, onYes) {
+        if (openDialog) {
+            return;
+        }
+        var overlay = el('div', 'iof-dialog');
+        var box = el('div', 'iof-dialog__box');
+        box.setAttribute('role', 'alertdialog');
+        box.setAttribute('aria-modal', 'true');
+        var titleId = 'iof-dialog-title-' + Math.random().toString(36).slice(2, 8);
+        var textId = titleId + '-text';
+        box.setAttribute('aria-labelledby', titleId);
+        box.setAttribute('aria-describedby', textId);
+
+        var title = el('h2', 'iof-dialog__title', 'Datei gespeichert?');
+        title.id = titleId;
+        var text = el('p', 'iof-dialog__text', 'Wurde die Datei gespeichert? Nicht gespeicherte Änderungen gehen beim Verlassen verloren.');
+        text.id = textId;
+
+        var buttons = el('div', 'iof-dialog__actions');
+        var yes = el('button', 'iof-dialog__btn iof-dialog__btn--yes', 'Ja');
+        yes.type = 'button';
+        var no = el('button', 'iof-dialog__btn iof-dialog__btn--no', 'Nein');
+        no.type = 'button';
+        buttons.appendChild(yes);
+        buttons.appendChild(no);
+
+        box.appendChild(title);
+        box.appendChild(text);
+        box.appendChild(buttons);
+        overlay.appendChild(box);
+        applyStyle(overlay, config);
+
+        function close() {
+            document.removeEventListener('keydown', onKey, true);
+            overlay.remove();
+            openDialog = null;
+        }
+
+        function onKey(event) {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                close();
+                focusDocument();
+            } else if (event.key === 'Tab') {
+                event.preventDefault();
+                (document.activeElement === yes ? no : yes).focus();
+            }
+        }
+
+        yes.addEventListener('click', function () {
+            close();
+            onYes();
+        });
+        no.addEventListener('click', function () {
+            close();
+            focusDocument();
+        });
+        document.addEventListener('keydown', onKey, true);
+
+        document.body.appendChild(overlay);
+        openDialog = overlay;
+        no.focus();
+    }
+
     function build(config, host) {
         var embedded = host !== document.body;
         var root = el('div', 'iof' + (embedded ? ' iof--embedded' : ''));
@@ -105,10 +193,17 @@
                 if (config.preview) {
                     return;
                 }
-                if (window.history.length > 1) {
-                    window.history.back();
+                var goBack = function () {
+                    if (window.history.length > 1) {
+                        window.history.back();
+                    } else {
+                        window.location.href = safeUrl(config.home_url) ? config.home_url : '/';
+                    }
+                };
+                if (documentOpen()) {
+                    confirmSaved(config, goBack);
                 } else {
-                    window.location.href = safeUrl(config.home_url) ? config.home_url : '/';
+                    goBack();
                 }
             });
             actions.appendChild(back);
@@ -116,9 +211,20 @@
 
         var home = el('a', 'iof__link iof__link--home', config.home_label || 'Zum Intranet');
         home.href = safeUrl(config.home_url) ? config.home_url : '/';
-        if (config.preview) {
-            home.addEventListener('click', function (event) { event.preventDefault(); });
-        }
+        home.addEventListener('click', function (event) {
+            if (config.preview) {
+                event.preventDefault();
+                return;
+            }
+            // Oeffnen in neuem Tab/Fenster verlaesst das Dokument nicht.
+            if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !documentOpen()) {
+                return;
+            }
+            event.preventDefault();
+            confirmSaved(config, function () {
+                window.location.href = home.href;
+            });
+        });
         actions.appendChild(home);
 
         var collapse = el('button', 'iof__toggle');

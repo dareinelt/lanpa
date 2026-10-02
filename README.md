@@ -20,6 +20,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | AD-Synchronisation | LDAP/LDAPS-Abgleich in die lokale Datenbank, konfigurierbares Intervall und Attribut-Mapping; optional AD-Gruppen aus konfigurierbaren Pfaden (inkl. verschachtelter Mitgliedschaften) für die Rechtevergabe |
 | Office (optional) | Nextcloud mit Euro-Office DocumentServer hinter demselben Einstieg, Einrichtung per Einzeiler, Updates aus den offiziellen Quellen, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, gestaltbare Kachel mit Verfügbarkeitsstatus, Office-Apps (Euro-Office-Webapps, Dateien, Outlook Web App) mit Freigabe per AD-Gruppe/App-Paket, lokaler KI-Endpunkt für alle Benutzer (Nextcloud-Assistent, KI-Plugin der Editoren; Audio/Bilder optional), Speicherplatz-Kontingente je Benutzer (Standard 500 MB, je AD-Gruppe, individuell mit Begründung und Verlauf), Netzlaufwerke der Windows-Clients in „Dateien“ (Opt-in je Benutzer, Ausschlussliste im Adminbereich), App-Store im Adminbereich abschaltbar, verschlüsselte Sicherung – siehe [docs/office.md](docs/office.md) |
 | Notfallnummern | Eigene, farblich abgesetzte Kacheln für Notfallnummern (z. B. Werkschutz, Feuerwehr), im Adminbereich pflegbar |
+| Notfallpläne / KAEP | Roter Button mit AD-Gruppenfreigabe, visueller Ablaufeditor, AD-Kennwortbestätigung, Maßnahmenstatus/Kommentare, separat bestätigte SMS, automatische KAEP-E-Mails und historische Auswertung; [Einrichtung](docs/notfallplan.md), [bebilderte Einsatzanleitung](docs/notfallplan-anleitung.md) |
 | Mitteilungen | Aufklappbares Mitteilungs-Overlay auf der Startseite, im Adminbereich pflegbar |
 | Alarmierungen | Alarm-Kacheln, die per Klick eine SMS über ein konfigurierbares SMS-Gateway auslösen – an eine Gruppe oder eine einzelne Rufnummer, mit Verlauf |
 | Geschützter Zugriffsmodus | Interne Elemente, Unterseiten und Textseiten optional mit einem per SMS zugestellten, täglich wechselnden Zugangscode schützen |
@@ -109,6 +110,7 @@ installieren, nicht starten).
 | `app` | PHP 8.5 + Apache, DocumentRoot `public/` | `GET /health` |
 | `db` | MySQL 9.7 LTS (`DB_IMAGE_TAG`, Standard `9.7.2`), benanntes Volume `db_data` | `mysqladmin ping` |
 | `sync` | Dauerlauf der AD-Synchronisation (`scripts/sync_worker.php`) | – |
+| `mail` | Dauerhafter SMTP-Versand der KAEP-Benachrichtigungen; Konfiguration nur durch Admins unter E-Mail (SMTP) | Versandstatus im Adminbereich |
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
 | `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter; Zertifikat aus Admin → Zertifikate | `GET /auth-health` |

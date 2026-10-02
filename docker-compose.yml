@@ -127,6 +127,24 @@ services:
       - office
       - office_backend
 
+  mail:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    restart: unless-stopped
+    command: ["php", "scripts/mail_worker.php"]
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: mail
+    env_file:
+      - .env
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks:
+      - intranet
+
   # Vorgelagerter Authentifizierungs-Container (HTTP Negotiate: Kerberos
   # ueber die Keytab des Computerkontos, sonst NTLM ueber winbind). Reicht
   # den erkannten Benutzer als Header "X-Remote-User" an die Hauptanwendung

@@ -41,7 +41,7 @@ final class AdminUserService
     /**
      * @param array<string,mixed> $input
      *
-     * @return array{username:string,role:string,password:?string,active:bool}
+     * @return array{username:string,email:string,role:string,password:?string,active:bool}
      */
     private function validate(array $input, ?int $id): array
     {
@@ -60,6 +60,11 @@ final class AdminUserService
         }
 
         $password = (string) ($input['password'] ?? '');
+        $email = trim((string) ($input['email'] ?? ''));
+        if (($email !== '' && (strlen($email) > 254 || filter_var($email, FILTER_VALIDATE_EMAIL) === false))
+            || ($role === AdminUserRepository::ROLE_KAEP && $email === '')) {
+            $errors['email'] = 'Bitte eine gültige E-Mail-Adresse angeben (für KAEP-Team erforderlich).';
+        }
         if ($id === null && $password === '') {
             $errors['password'] = 'Bitte ein Passwort vergeben.';
         }
@@ -73,6 +78,7 @@ final class AdminUserService
 
         return [
             'username' => $username,
+            'email' => $email,
             'role' => $role,
             'password' => $password === '' ? null : $password,
             'active' => !empty($input['active']),
@@ -89,6 +95,7 @@ final class AdminUserService
         /** @var string $password */
         $password = $data['password'];
         $id = $this->repository->create($data['username'], password_hash($password, PASSWORD_DEFAULT), $data['role']);
+        $this->repository->setEmail($id, $data['email']);
 
         if (!$data['active']) {
             $this->repository->setActive($id, false);
@@ -117,6 +124,7 @@ final class AdminUserService
         }
 
         $this->repository->updateUsernameAndRole($id, $data['username'], $data['role']);
+        $this->repository->setEmail($id, $data['email']);
         $this->repository->setActive($id, $data['active']);
 
         if ($data['password'] !== null) {

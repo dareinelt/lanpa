@@ -73,6 +73,37 @@ Runner::test('Benutzer der Gruppe Redaktion werden nicht als Administrator erkan
     Assert::false($auth->isAdmin());
 });
 
+Runner::test('Lokale KAEP-Rechte werden bei jeder Anfrage erneut geprüft', static function (): void {
+    $_SESSION = [];
+    $user = ['id' => 8, 'username' => 'kaep', 'password_hash' => password_hash('sicheres-passwort', PASSWORD_DEFAULT), 'role' => 'admin', 'active' => 1];
+    $auth = new Auth(new FakeAdminUserStore($user));
+    Assert::true($auth->attempt('kaep', 'sicheres-passwort'));
+
+    $auth = new Auth(new FakeAdminUserStore(array_replace($user, ['role' => 'kaep'])));
+    Assert::true($auth->check());
+    Assert::same('kaep', $auth->role());
+    Assert::false($auth->isAdmin());
+
+    $auth = new Auth(new FakeAdminUserStore(array_replace($user, ['role' => 'redaktion'])));
+    Assert::true($auth->check());
+    Assert::same('redaktion', $auth->role());
+
+    $auth = new Auth(new FakeAdminUserStore());
+    Assert::false($auth->check());
+    Assert::null($auth->role());
+    Assert::null($auth->id());
+});
+
+Runner::test('Ein neu angelegtes Konto gleichen Namens übernimmt keine alte Sitzung', static function (): void {
+    $_SESSION = [];
+    $user = ['id' => 8, 'username' => 'kaep', 'password_hash' => password_hash('sicheres-passwort', PASSWORD_DEFAULT), 'role' => 'kaep', 'active' => 1];
+    $auth = new Auth(new FakeAdminUserStore($user));
+    Assert::true($auth->attempt('kaep', 'sicheres-passwort'));
+    $replacement = new Auth(new FakeAdminUserStore(array_replace($user, ['id' => 9])));
+    Assert::false($replacement->check());
+    Assert::null($replacement->id());
+});
+
 Runner::test('Falsches Passwort und unbekannter Benutzer werden abgelehnt', static function (): void {
     $_SESSION = [];
     $store = new FakeAdminUserStore([

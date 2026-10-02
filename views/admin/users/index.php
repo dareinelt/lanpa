@@ -12,13 +12,14 @@ $currentUserId = $currentUserId ?? null;
 $roleLabels = [
     'admin' => 'Administrator',
     'redaktion' => 'Redaktion',
+    'kaep' => 'KAEP-Team',
 ];
 ?>
 <div class="toolbar">
     <a class="button button--primary" href="/admin/benutzer/neu">Neuer Benutzer</a>
 </div>
 
-<p class="field__hint">Administratoren dürfen den gesamten Adminbereich verwalten. Die Gruppe „Redaktion“ darf ausschließlich die wichtigen Links bearbeiten.</p>
+<p class="field__hint">Administratoren dürfen den gesamten Adminbereich verwalten. „Redaktion“ darf nur wichtige Links bearbeiten, „KAEP-Team“ ausschließlich Notfallpläne verwalten und Ereignisse auswerten.</p>
 
 <?php if ($items === []) { ?>
     <p class="empty-state">Es sind noch keine Benutzer vorhanden.</p>
@@ -180,6 +181,18 @@ $groupSection = static function (string $target, string $title, string $intro, a
         $directory['intranet_rules'],
         $directory['intranet_members'],
         'Benutzer dürfen sich derzeit per Windows-Anmeldung am Adminbereich anmelden'
+    );
+    ?>
+    </section>
+
+    <?php
+    $groupSection(
+        'kaep',
+        'KAEP-Team',
+        'Mitglieder dürfen ausschließlich Notfallpläne, deren Einstellungen und Ereignisse verwalten. Die Freigabe zum Auslösen erfolgt separat im Bereich Notfallplan. Anmeldung über Windows; Administratorrechte haben Vorrang.',
+        $directory['kaep_rules'],
+        $directory['kaep_members'],
+        'Benutzer gehören zum KAEP-Team'
     );
     ?>
     </section>

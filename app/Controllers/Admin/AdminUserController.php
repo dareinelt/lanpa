@@ -204,6 +204,8 @@ final class AdminUserController extends AdminController
             $directory = [
                 'intranet_rules' => $groups->rules(AdminGroupService::TARGET_INTRANET),
                 'intranet_members' => $groups->members(AdminGroupService::TARGET_INTRANET),
+                'kaep_rules' => $groups->rules(AdminGroupService::TARGET_KAEP),
+                'kaep_members' => $groups->members(AdminGroupService::TARGET_KAEP),
                 'nextcloud_rules' => $groups->rules(AdminGroupService::TARGET_NEXTCLOUD),
                 'nextcloud_members' => $groups->members(AdminGroupService::TARGET_NEXTCLOUD),
                 'nextcloud_last_push' => $nextcloud->lastPush(),
@@ -251,6 +253,7 @@ final class AdminUserController extends AdminController
     {
         return [
             'username' => (string) $request->input('username', ''),
+            'email' => (string) $request->input('email', ''),
             'role' => (string) $request->input('role', ''),
             'password' => (string) $request->input('password', ''),
             'active' => $request->has('active'),

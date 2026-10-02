@@ -138,11 +138,24 @@ $router->group([$ssoAttempt], static function (Router $router): void {
 });
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
+foreach (['/notfallplan' => 'index', '/notfallplan/plan' => 'plan', '/notfallplan/ereignis' => 'event', '/notfallplan/stand' => 'status', '/notfallplan/anleitung' => 'guide'] as $path => $method) {
+    $router->get($path, [\App\Controllers\EmergencyPlanController::class, $method]);
+}
+$router->post('/notfallplan/start', [\App\Controllers\EmergencyPlanController::class, 'start']);
+$router->post('/notfallplan/massnahme', [\App\Controllers\EmergencyPlanController::class, 'update']);
 $router->post('/admin/login', [AuthController::class, 'login']);
 $router->get(AuthController::WINDOWS_LOGIN_PATH, [AuthController::class, 'windowsLogin']);
 
 $requireAuth = static function (Request $request): ?Response {
     if (Container::auth()->check()) {
+        if (Container::auth()->role() === \App\Security\Auth::ROLE_KAEP) {
+            if ($request->path === '/admin') {
+                return Response::redirect('/admin/notfallplan');
+            }
+            if ($request->path !== '/admin/logout' && !str_starts_with($request->path, '/admin/notfallplan')) {
+                throw new HttpException(403, 'Das KAEP-Team hat ausschließlich Zugriff auf Notfallpläne.');
+            }
+        }
         return null;
     }
 
@@ -166,6 +179,21 @@ $requireAdmin = static function (Request $request): ?Response {
 };
 
 $router->group([$requireAuth], static function (Router $router) use ($requireAdmin): void {
+    $requireKaep = static function (Request $request): ?Response {
+        if (!\App\Services\EmergencyPlanService::isManager(Container::auth()->role())) {
+            throw new HttpException(403, 'Nur Administratoren und das KAEP-Team haben Zugriff.');
+        }
+        return null;
+    };
+    $router->group([$requireKaep], static function (Router $router): void {
+        foreach (['' => 'index', '/bearbeiten' => 'edit', '/gruppen' => 'groups', '/ereignis' => 'event', '/stand' => 'status', '/export' => 'export', '/anleitung' => 'guide'] as $path => $method) {
+            $router->get('/admin/notfallplan' . $path, [\App\Controllers\EmergencyPlanController::class, $method]);
+        }
+        $router->post('/admin/notfallplan/einstellungen', [\App\Controllers\EmergencyPlanController::class, 'settings']);
+        $router->post('/admin/notfallplan/speichern', [\App\Controllers\EmergencyPlanController::class, 'save']);
+        $router->post('/admin/notfallplan/freigabe', [\App\Controllers\EmergencyPlanController::class, 'review']);
+        $router->post('/admin/notfallplan/massnahme', [\App\Controllers\EmergencyPlanController::class, 'update']);
+    });
     $router->post('/admin/logout', [AuthController::class, 'logout']);
 
     $router->get('/admin', [DashboardController::class, 'index']);
@@ -179,6 +207,9 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
     $router->post('/admin/wichtige-links/status', [ImportantLinkController::class, 'toggle']);
 
     $router->group([$requireAdmin], static function (Router $router): void {
+        $router->get('/admin/smtp', [\App\Controllers\Admin\SmtpController::class, 'index']);
+        $router->post('/admin/smtp', [\App\Controllers\Admin\SmtpController::class, 'save']);
+        $router->post('/admin/smtp/test', [\App\Controllers\Admin\SmtpController::class, 'test']);
         $router->get('/admin/navigation', [NavigationController::class, 'index']);
         $router->get('/admin/navigation/neu', [NavigationController::class, 'create']);
         $router->post('/admin/navigation/neu', [NavigationController::class, 'store']);

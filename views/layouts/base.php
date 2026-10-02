@@ -45,7 +45,7 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
 <?php } ?>
 
 <header class="site-header">
-    <div class="container site-header__inner">
+    <div class="container site-header__inner<?= !empty($emergencyPlanVisible) ? ' site-header__inner--emergency' : '' ?>">
         <a class="brand" href="/">
             <?php if ($hasLogo) { ?>
                 <img class="brand__logo" src="/logo" alt="<?= Html::e($siteTitle ?? $appName) ?>">
@@ -60,6 +60,9 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
             </span>
         </a>
 
+        <?php if (!empty($emergencyPlanVisible)) { ?>
+            <a class="button emergency-plan-button" href="/notfallplan">Notfallplan</a>
+        <?php } ?>
         <nav class="site-nav" aria-label="Hauptnavigation">
             <?php if ($announcements !== []) { ?>
                 <details class="site-nav__dropdown" data-announcement-menu>

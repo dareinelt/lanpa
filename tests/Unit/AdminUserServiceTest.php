@@ -20,6 +20,7 @@ function adminUsersTestPdo(): PDO
         'CREATE TABLE admin_users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username VARCHAR(64) NOT NULL,
+            email VARCHAR(254) NOT NULL DEFAULT "",
             password_hash VARCHAR(255) NOT NULL,
             role VARCHAR(16) NOT NULL DEFAULT "admin",
             active INTEGER NOT NULL DEFAULT 1,

@@ -119,6 +119,7 @@ function backupImportPdo(): PDO
     );
     $pdo->exec(
         'CREATE TABLE admin_users (
+            email VARCHAR(254) NOT NULL DEFAULT "",
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username VARCHAR(64) NOT NULL,
             password_hash VARCHAR(255) NOT NULL,

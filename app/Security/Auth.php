@@ -30,6 +30,7 @@ final class Auth
     public const LOCK_SECONDS = 300;
     public const ROLE_ADMIN = 'admin';
     public const ROLE_REDAKTION = 'redaktion';
+    public const ROLE_KAEP = 'kaep';
 
     /** Berechtigung eines AD-Administrators nur einmal je Anfrage pruefen. */
     private bool $directoryVerified = false;
@@ -92,7 +93,7 @@ final class Auth
     public function loginDirectory(array $identity, string $role): void
     {
         $username = trim((string) $identity['username']);
-        if ($username === '' || !in_array($role, [self::ROLE_ADMIN, self::ROLE_REDAKTION], true)) {
+        if ($username === '' || !in_array($role, [self::ROLE_ADMIN, self::ROLE_REDAKTION, self::ROLE_KAEP], true)) {
             return;
         }
         $sourceKey = strtoupper(trim((string) $identity['source_key']));
@@ -128,6 +129,16 @@ final class Auth
             $this->logout();
 
             return false;
+        }
+
+        if (is_int($id)) {
+            $current = $this->users->findActiveByUsername((string) $this->username());
+            if ($current === null || (int) $current['id'] !== $id) {
+                $this->logout();
+
+                return false;
+            }
+            Session::put(self::ROLE_KEY, (string) ($current['role'] ?? self::ROLE_ADMIN));
         }
 
         if (!is_int($id) && is_array($directory)) {
@@ -222,7 +233,7 @@ final class Auth
             return null;
         }
 
-        return in_array($role, [self::ROLE_ADMIN, self::ROLE_REDAKTION], true) ? $role : null;
+        return in_array($role, [self::ROLE_ADMIN, self::ROLE_REDAKTION, self::ROLE_KAEP], true) ? $role : null;
     }
 
     public function isLockedOut(): bool

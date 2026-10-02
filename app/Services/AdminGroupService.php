@@ -28,7 +28,8 @@ final class AdminGroupService
 {
     public const TARGET_INTRANET = 'intranet';
     public const TARGET_NEXTCLOUD = 'nextcloud';
-    public const TARGETS = [self::TARGET_INTRANET, self::TARGET_NEXTCLOUD];
+    public const TARGET_KAEP = 'kaep';
+    public const TARGETS = [self::TARGET_INTRANET, self::TARGET_NEXTCLOUD, self::TARGET_KAEP];
 
     /** Gleiches Muster wie die Nextcloud-App (SamAccountName[@kennung]). */
     public const UID_PATTERN = '/^[a-zA-Z0-9._-]{1,64}(@[a-z0-9_]{1,32})?$/';
@@ -115,6 +116,12 @@ final class AdminGroupService
             }
         }
 
+        foreach ($this->repository->rules(self::TARGET_KAEP) as $rule) {
+            if (in_array(mb_strtolower($rule['group_name']), $groups, true)) {
+                return Auth::ROLE_KAEP;
+            }
+        }
+
         return null;
     }
 
@@ -150,6 +157,7 @@ final class AdminGroupService
                 'uid' => $uid,
                 'display_name' => $row['display_name'] !== '' ? $row['display_name'] : $uid,
                 'department' => $row['department'],
+                'email' => $row['email'],
                 'source_label' => $row['identity_source_id'] > 0 ? $source['label'] : '',
                 'groups' => $groups,
             ];

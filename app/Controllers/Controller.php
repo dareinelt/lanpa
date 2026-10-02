@@ -42,6 +42,7 @@ abstract class Controller
             'officeTileStatusMode' => Container::officeConfig()->tileStatusMode(),
         ];
         $shared += $this->ssoShared();
+        $shared['emergencyPlanVisible'] = Container::emergencyPlans()->canView($shared['ssoUser']);
 
         return Response::html(View::render($template, array_merge($shared, $data), $layout), $status);
     }

@@ -33,6 +33,7 @@ $role = (string) ($item['role'] ?? 'admin');
                 <?= isset($errors['role']) ? 'aria-invalid="true" aria-describedby="role-error"' : 'aria-describedby="role-hint"' ?>>
             <option value="admin" <?= $role === 'admin' ? 'selected' : '' ?>>Administrator (voller Zugriff)</option>
             <option value="redaktion" <?= $role === 'redaktion' ? 'selected' : '' ?>>Redaktion (nur wichtige Links)</option>
+            <option value="kaep" <?= $role === 'kaep' ? 'selected' : '' ?>>KAEP-Team (nur Notfallplan)</option>
         </select>
         <p class="field__hint" id="role-hint">Die Gruppe „Redaktion“ darf ausschließlich die wichtigen Links bearbeiten und sieht keinen anderen Bereich der Administration.</p>
         <?php if (isset($errors['role'])) { ?>
@@ -49,6 +50,13 @@ $role = (string) ($item['role'] ?? 'admin');
         <?php if (isset($errors['password'])) { ?>
             <p class="field__error" id="password-error"><?= Html::e($errors['password']) ?></p>
         <?php } ?>
+    </div>
+
+    <div class="field">
+        <label for="email">E-Mail-Adresse (für KAEP-Team erforderlich)</label>
+        <input type="email" id="email" name="email" maxlength="254" value="<?= Html::e((string) ($item['email'] ?? '')) ?>">
+        <p class="field__hint">Hierhin gehen automatische Benachrichtigungen bei Notfallereignissen.</p>
+        <?php if (isset($errors['email'])) { ?><p class="field__error"><?= Html::e($errors['email']) ?></p><?php } ?>
     </div>
 
     <div class="field field--check">

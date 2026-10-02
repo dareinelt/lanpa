@@ -44,26 +44,7 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
     <div class="site-watermark" aria-hidden="true"></div>
 <?php } ?>
 
-<header class="site-header">
-    <div class="container site-header__inner<?= !empty($emergencyPlanVisible) ? ' site-header__inner--emergency' : '' ?>">
-        <a class="brand" href="/">
-            <?php if ($hasLogo) { ?>
-                <img class="brand__logo" src="/logo" alt="<?= Html::e($siteTitle ?? $appName) ?>">
-            <?php } else { ?>
-                <span class="brand__mark" aria-hidden="true"><?= Html::e(mb_substr((string) ($siteTitle ?? $appName), 0, 2)) ?></span>
-            <?php } ?>
-            <span class="brand__text">
-                <span class="brand__title"><?= Html::e($siteTitle ?? $appName) ?></span>
-                <?php if (($siteSubtitleVisible ?? true) && ($siteSubtitle ?? '') !== '') { ?>
-                    <span class="brand__subtitle"><?= Html::e($siteSubtitle) ?></span>
-                <?php } ?>
-            </span>
-        </a>
-
-        <?php if (!empty($emergencyPlanVisible)) { ?>
-            <a class="button emergency-plan-button" href="/notfallplan">Notfallplan</a>
-        <?php } ?>
-        <nav class="site-nav" aria-label="Hauptnavigation">
+<?php ob_start(); ?>
             <?php if ($announcements !== []) { ?>
                 <details class="site-nav__dropdown" data-announcement-menu>
                     <summary class="site-nav__link site-nav__summary">
@@ -86,6 +67,31 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
                     </ul>
                 </details>
             <?php } ?>
+<?php $announcementMenu = (string) ob_get_clean(); ?>
+<header class="site-header">
+    <div class="site-header__inner<?= !empty($emergencyPlanVisible) ? ' site-header__inner--emergency' : '' ?>">
+        <a class="brand" href="/">
+            <?php if ($hasLogo) { ?>
+                <img class="brand__logo" src="/logo" alt="<?= Html::e($siteTitle ?? $appName) ?>">
+            <?php } else { ?>
+                <span class="brand__mark" aria-hidden="true"><?= Html::e(mb_substr((string) ($siteTitle ?? $appName), 0, 2)) ?></span>
+            <?php } ?>
+            <span class="brand__text">
+                <span class="brand__title"><?= Html::e($siteTitle ?? $appName) ?></span>
+                <?php if (($siteSubtitleVisible ?? true) && ($siteSubtitle ?? '') !== '') { ?>
+                    <span class="brand__subtitle"><?= Html::e($siteSubtitle) ?></span>
+                <?php } ?>
+            </span>
+        </a>
+
+        <?php if (!empty($emergencyPlanVisible)) { ?>
+            <div class="site-header__center">
+                <?= $announcementMenu ?>
+                <a class="button emergency-plan-button" href="/notfallplan">Notfallplan</a>
+            </div>
+        <?php } ?>
+        <nav class="site-nav" aria-label="Hauptnavigation">
+            <?php if (empty($emergencyPlanVisible)) { echo $announcementMenu; } ?>
             <a class="site-nav__link<?= $activeNav === 'home' ? ' is-active' : '' ?>" href="/"<?= $activeNav === 'home' ? ' aria-current="page"' : '' ?>>Start</a>
             <a class="site-nav__link<?= $activeNav === 'phonebook' ? ' is-active' : '' ?>" href="/telefonliste"<?= $activeNav === 'phonebook' ? ' aria-current="page"' : '' ?>>Telefonliste</a>
             <?php if ($ssoUser !== null) {

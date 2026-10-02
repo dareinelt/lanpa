@@ -143,6 +143,71 @@ Runner::test('KAEP-Dashboard: Journal über mehrere Tage ist lückenlos paginier
     Assert::same(['entscheidung'], array_values(array_unique(array_column($nodeRows, 'node_id'))));
 });
 
+Runner::test('KAEP-Dashboard: Wiedervorlagen und geplante Ablösungen für mehrtägige Einsätze', static function (): void {
+    $service = emergencyService(emergencyPdo());
+    $repo = $service->repository;
+    $id = emergencyStart($service);
+    $apply = static function (array $input) use ($repo, $id): array {
+        $event = $repo->event($id);
+        $repo->coordinate($event, KaepDashboard::change($event, $input + ['revision' => $event['revision']]), 'local:kaep');
+
+        return $repo->event($id);
+    };
+    $event = $apply(['action' => 'leadership', 'role' => 'Einsatzleitung', 'person' => 'Person A', 'phone' => '123', 'until' => '2026-10-03T06:00']);
+    Assert::same('2026-10-03 06:00:00', $event['coordination']['leadership']['Einsatzleitung']['until']);
+    Assert::contains('Ablösung geplant (UTC):  → 2026-10-03 06:00:00', $repo->journal($id)[0]['message']);
+
+    $event = $apply(['action' => 'reminder', 'mode' => 'add', 'title' => 'Rückruf Leitstelle', 'due' => '2026-10-02T14:30', 'node' => 'entscheidung', 'comment' => 'Zusage abwarten']);
+    $reminder = $event['coordination']['reminders'][0];
+    Assert::same('Rückruf Leitstelle', $reminder['title']);
+    Assert::same('2026-10-02 14:30:00', $reminder['due']);
+    Assert::same('entscheidung', $reminder['node']);
+    Assert::false($reminder['done']);
+    Assert::same(12, strlen($reminder['key']));
+    Assert::same('entscheidung', $repo->journal($id)[0]['node_id']);
+    Assert::contains('Zusage abwarten', $repo->journal($id)[0]['message']);
+
+    $event = $apply(['action' => 'reminder', 'mode' => 'add', 'title' => 'Kontrollgang Nachtschicht', 'due' => '2026-10-03T02:00']);
+    Assert::same(2, count($event['coordination']['reminders']));
+    $event = $apply(['action' => 'reminder', 'mode' => 'done', 'key' => $reminder['key']]);
+    Assert::true($event['coordination']['reminders'][0]['done']);
+    Assert::same('entscheidung', $repo->journal($id)[0]['node_id']);
+    emergencyThrows(fn () => KaepDashboard::change($event, ['revision' => $event['revision'], 'action' => 'reminder', 'mode' => 'done', 'key' => $reminder['key']]), 409);
+    emergencyThrows(fn () => KaepDashboard::change($event, ['revision' => $event['revision'], 'action' => 'reminder', 'mode' => 'done', 'key' => 'unbekannt']), 422);
+    emergencyThrows(fn () => KaepDashboard::change($event, ['revision' => $event['revision'], 'action' => 'reminder', 'mode' => 'kaputt', 'key' => $reminder['key']]), 422);
+    $second = $event['coordination']['reminders'][1]['key'];
+    $event = $apply(['action' => 'reminder', 'mode' => 'remove', 'key' => $second]);
+    Assert::same(1, count($event['coordination']['reminders']));
+    Assert::contains('Wiedervorlage entfernt: Kontrollgang Nachtschicht', $repo->journal($id)[0]['message']);
+
+    foreach ([
+        ['action' => 'reminder', 'mode' => 'add', 'title' => '', 'due' => '2026-10-02T14:30'],
+        ['action' => 'reminder', 'mode' => 'add', 'title' => 'Ohne Zeit', 'due' => ''],
+        ['action' => 'reminder', 'mode' => 'add', 'title' => 'Falsche Zeit', 'due' => '14:30'],
+        ['action' => 'leadership', 'role' => 'Pflege', 'person' => 'X', 'until' => 'morgen'],
+    ] as $input) {
+        $rejected = false;
+        try { KaepDashboard::change($event, $input + ['revision' => $event['revision']]); } catch (ValidationException) { $rejected = true; }
+        Assert::true($rejected);
+    }
+    for ($i = 1; $i <= KaepDashboard::REMINDER_LIMIT; $i++) {
+        $event['coordination'] = KaepDashboard::change($event, ['revision' => $event['revision'], 'action' => 'reminder', 'mode' => 'add', 'title' => 'W' . $i, 'due' => '2026-10-04T10:00'])['coordination'];
+    }
+    $rejected = false;
+    try { KaepDashboard::change($event, ['revision' => $event['revision'], 'action' => 'reminder', 'mode' => 'add', 'title' => 'Zu viel', 'due' => '2026-10-04T10:00']); } catch (ValidationException) { $rejected = true; }
+    Assert::true($rejected);
+});
+
+Runner::test('KAEP-Dashboard: Unbekannte Ereignis-ID fällt auf das neueste Ereignis zurück', static function (): void {
+    $service = emergencyService(emergencyPdo());
+    $repo = $service->repository;
+    $first = emergencyStart($service);
+    $second = emergencyStart($service);
+    Assert::same($second, (int) $repo->dashboard(999999, 'active', 1)['event']['id']);
+    Assert::same($first, (int) $repo->dashboard($first, 'active', 1)['event']['id']);
+    Assert::same([], $repo->dashboard(999999, 'closed', 1)['logs']);
+});
+
 Runner::test('KAEP-Dashboard: 30 Leitungsbereiche sind möglich, bestehende bleiben änderbar', static function (): void {
     $service = emergencyService(emergencyPdo());
     $id = emergencyStart($service);
@@ -209,8 +274,10 @@ Runner::test('KAEP-Dashboard: Footer ist rollenabhängig und Dashboard enthält 
     $dashboard = View::render('emergency.dashboard', ['assetVersion' => '1', 'actor' => 'local:<script>']);
     Assert::contains('data-actor="local:&lt;script&gt;"', $dashboard);
     Assert::contains('<dialog', $dashboard);
-    Assert::same(8, substr_count($dashboard, 'data-kd-panel='));
+    Assert::same(9, substr_count($dashboard, 'data-kd-panel='));
     Assert::contains('data-kd-panel="metrics"', $dashboard);
+    Assert::contains('data-kd-panel="schedule"', $dashboard);
+    Assert::contains('id="kd-journal-type"', $dashboard);
     Assert::contains('/assets/js/kaep-dashboard-layout.js', $dashboard);
     Assert::false(str_contains($dashboard, 'https://'));
     $response = Response::eventStream(static function (): void {});

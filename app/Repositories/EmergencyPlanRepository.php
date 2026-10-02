@@ -216,6 +216,10 @@ final class EmergencyPlanRepository extends Repository
         return $this->transaction(function () use ($id, $status, $page): array {
             $token = $this->dashboardToken();
             $events = $this->events(null, $status, '', '', $page);
+            // Unbekannte oder gelöschte IDs (z. B. alte Lesezeichen) fallen auf das neueste Ereignis zurück.
+            if ($id > 0 && $this->one('SELECT id FROM emergency_events WHERE id = ?', [$id]) === null) {
+                $id = 0;
+            }
             $id = $id ?: (int) ($events['items'][0]['id'] ?? 0);
             $event = $id > 0 ? $this->event($id) : null;
 

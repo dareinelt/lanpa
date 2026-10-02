@@ -221,8 +221,17 @@ Zusätzliche Koordination pro Einsatz:
   Systemberechtigungen und verschickt keine zusätzliche Alarmierung.
   Leere Zuständigkeit/Zielzeit verwendet wieder die Planvorgabe.
 - **Lageübersicht** mit nächster Lagebesprechung; **Einsatz- und Bereichsleitungen**
-  im einklappbaren Menü, einschließlich Erreichbarkeit. Derselbe Bereich wird
+  im einklappbaren Menü, einschließlich Erreichbarkeit und optional **geplanter
+  Ablösung** (Zeitpunkt der nächsten Schichtübergabe). Derselbe Bereich wird
   aktualisiert; leere Person entfernt die Besetzung. Maximal 30 Bereiche.
+- **Zeitplan und Wiedervorlagen**: ein Abschnitt bündelt chronologisch die nächste
+  Lagebesprechung, geplante Ablösungen, Zielzeiten offener Maßnahmen und freie
+  Wiedervorlagen („Blutbank in 6 Std. zurückrufen“, „Dienstplan für morgen prüfen“),
+  wahlweise einer Maßnahme zugeordnet. Überfällige Punkte werden hervorgehoben.
+  Wiedervorlagen werden als erledigt markiert oder entfernt; beides steht im
+  Journal. Höchstens 50 offene Wiedervorlagen je Ereignis. Es gibt **keine**
+  automatische Alarmierung bei Fälligkeit; der Abschnitt ist eine Sichtkontrolle
+  für die Leitung, kein Erinnerungsdienst.
 - **Notizen und Schichtübergaben** im gemeinsamen, unveränderlichen Einsatzjournal,
   wahlweise einer Maßnahme zugeordnet. Neue Lageübersichten und Änderungen von
   Zuständigkeit/Leitung bleiben dort mit Person und Zeitpunkt nachvollziehbar.
@@ -231,9 +240,18 @@ Zusätzliche Koordination pro Einsatz:
   Lesen stehen; **Zurück zum Live-Journal** zeigt wieder die neuesten Einträge.
   Die Maßnahmenlage bleibt auch beim Lesen der Historie live. Die Elementsuche
   erfolgt serverseitig, die Textsuche durchsucht den angezeigten Ausschnitt.
+  Einträge sind nach Tagen gruppiert und lassen sich nach Art (Übergabe, Notiz,
+  Lage, Leitung, Zuständigkeit, Wiedervorlage, Status, SMS, System) filtern.
 
 Angezeigte Zeitpunkte verwenden die Gerätezeitzone und enthalten das Datum.
-Eingaben für Zielzeiten und Lagebesprechungen sind ausdrücklich **UTC**.
+Auch Eingaben für Zielzeiten, Lagebesprechungen, Ablösungen und Wiedervorlagen
+erfolgen in der **Gerätezeitzone**; die verwendete Zone wird im Dialog und im
+Journalkopf angezeigt. Gespeichert und protokolliert wird in UTC, Geräte in
+anderen Zeitzonen sehen denselben Zeitpunkt in ihrer Ortszeit. Die Gerätezeit
+der Tablets und TVs muss daher korrekt eingestellt sein.
+Der Browsertab zeigt im Titel die Zahl überfälliger und blockierter Maßnahmen,
+damit das Ereignis auch in Hintergrundtabs auffällt. Eine unbekannte Ereignis-ID
+in der URL fällt auf das neueste Ereignis zurück.
 Der Timer richtet sich nach der Serverzeit. **TV-Ansicht** blendet Navigation und
 Bearbeitungsleisten aus; der Modus und das ausgewählte Ereignis stehen in der URL
 (`?id=123&tv=1`). Ein TV benötigt weiterhin ein berechtigtes Konto. **Drucken**
@@ -300,6 +318,12 @@ Datenbankverbindung. Worker-/Verbindungslimits mit Reserve für Schreib- und
 normale Webanfragen dimensionieren; vor Einsatz die erwartete Zahl gleichzeitiger
 Tablets und TVs über die tatsächliche Proxy-Kette prüfen. Der PHP-Einprozess-
 Entwicklungsserver ist für gleichzeitige SSE-Verbindungen nicht geeignet.
+
+Die klassische Ereignisansicht zeigt die Dashboard-Koordination schreibgeschützt
+(Lage, nächste Besprechung, Leitungen, offene Wiedervorlagen) sowie je Maßnahme
+die abweichende Zuständigkeit, Priorität und Zielzeit mit Datum; Bearbeitung
+erfolgt nur im Dashboard. Abgeschlossene Ereignisse zeigen ihre Dauer in Tagen
+und Stunden.
 
 Koordination und Journal liegen in der Datenbank (`emergency_events.coordination`,
 `emergency_log`). Für mehrtägige Einsätze vollständige Datenbanksicherungen verwenden;

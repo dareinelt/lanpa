@@ -45,8 +45,14 @@ use App\Support\Html;
                     <summary>Einsatz- und Bereichsleitungen</summary>
                     <div id="kd-leaders" class="kd-leaders"></div>
                     <button type="button" class="button kd-edit" data-dialog="leadership">Leitung / Bereich besetzen</button>
-                    <p>Organisatorische Zuordnung, keine Änderung von Zugriffsrechten. Erreichbarkeit und Schichtwechsel bitte dokumentieren.</p>
+                    <p>Organisatorische Zuordnung, keine Änderung von Zugriffsrechten. Erreichbarkeit, geplante Ablösung und Schichtwechsel bitte dokumentieren.</p>
                 </details>
+                <section class="kd-panel kd-schedule" aria-labelledby="kd-schedule-title" data-kd-panel="schedule" data-kd-label="Zeitplan und Wiedervorlagen">
+                    <div class="kd-section-title"><h2 id="kd-schedule-title">Zeitplan und Wiedervorlagen</h2><button type="button" class="button kd-edit" data-dialog="reminder">Wiedervorlage anlegen</button></div>
+                    <p class="kd-hint">Nächste Lagebesprechung, Zielzeiten offener Maßnahmen, geplante Ablösungen und Wiedervorlagen in zeitlicher Reihenfolge. Keine automatische Alarmierung bei Fristüberschreitung.</p>
+                    <ol id="kd-schedule" class="kd-timeline"></ol>
+                    <details id="kd-reminders-done-wrap" hidden><summary id="kd-reminders-done-summary">Erledigte Wiedervorlagen</summary><ul id="kd-reminders-done"></ul></details>
+                </section>
                 <section class="kd-measures-section" aria-labelledby="kd-measures-title" data-kd-panel="measures" data-kd-label="Maßnahmenlage">
                     <div class="kd-section-title"><h2 id="kd-measures-title">Maßnahmenlage</h2><span id="kd-updated"></span></div>
                     <div class="kd-filters">
@@ -62,9 +68,10 @@ use App\Support\Html;
                 </details>
                 <section class="kd-panel" aria-labelledby="kd-journal-title" data-kd-panel="journal" data-kd-label="Einsatzjournal">
                     <div class="kd-section-title"><h2 id="kd-journal-title">Einsatzjournal</h2><div class="kd-tools kd-edit"><button type="button" class="button" data-dialog="journal">Notiz hinzufügen</button><button type="button" class="button" data-dialog="handover">Schichtübergabe</button></div></div>
-                    <p>Neueste zuerst · Zeiten in Ihrer Gerätezeitzone, vollständiges Datum · unveränderliches Protokoll</p>
+                    <p>Neueste zuerst · Zeiten in Ihrer Gerätezeitzone (<span id="kd-timezone"></span>), nach Tagen gegliedert · unveränderliches Protokoll</p>
                     <div class="kd-filters">
                         <label>Element<select id="kd-journal-node"><option value="">Gesamter Einsatz</option></select></label>
+                        <label>Art<select id="kd-journal-type"><option value="">Alle Einträge</option><option value="handover">Schichtübergaben</option><option value="journal">Notizen</option><option value="situation">Lageübersichten</option><option value="leadership">Leitungen</option><option value="assignment">Zuständigkeiten</option><option value="reminder">Wiedervorlagen</option><option value="status">Status / Prüfpunkte / Kommentare</option><option value="sms">SMS</option><option value="system">System / E-Mail</option></select></label>
                         <label>Einträge filtern<input type="search" id="kd-journal-search" placeholder="Person, Schichtübergabe, Inhalt"></label>
                     </div>
                     <p id="kd-journal-info" role="status"></p>

@@ -82,7 +82,10 @@ use App\Support\Html;
                 <td>#<?= (int) $event['id'] ?> <?= Html::e($event['title']) ?></td>
                 <td><?= Html::e($event['actor']) ?></td>
                 <td><?= Html::e($event['started_at']) ?></td>
-                <td><?= $event['status'] === 'active' ? 'Laufend' : 'Abgeschlossen · ' . max(0, (int) round((strtotime($event['closed_at'] . ' UTC') - strtotime($event['started_at'] . ' UTC')) / 60)) . ' Min.' ?></td>
+                <td><?php if ($event['status'] === 'active') { ?>Laufend<?php } else {
+                    $minutes = max(0, (int) round((strtotime($event['closed_at'] . ' UTC') - strtotime($event['started_at'] . ' UTC')) / 60));
+                    echo 'Abgeschlossen · ', $minutes >= 1440 ? intdiv($minutes, 1440) . ' T ' . intdiv($minutes % 1440, 60) . ' Std.' : ($minutes >= 60 ? intdiv($minutes, 60) . ' Std. ' . ($minutes % 60) . ' Min.' : $minutes . ' Min.');
+                } ?></td>
                 <td><a href="<?= $base ?>/ereignis?id=<?= (int) $event['id'] ?>">Stand öffnen</a></td>
             </tr>
         <?php } ?>

@@ -135,7 +135,7 @@ final class IncidentService
     /**
      * Meldung fuer das Admin-Dashboard (null = kein offener Vorfall).
      *
-     * @return array{count:int,users:list<string>,target:string,title:string,message:string}|null
+     * @return array{count:int,users:list<string>,target:string,freeze:bool,title:string,message:string}|null
      */
     public function dashboardAlert(): ?array
     {
@@ -156,18 +156,25 @@ final class IncidentService
             }
         }
         $count = count($open);
+        $freeze = $this->settings()->freezeTarget();
+        if (!$freeze) {
+            $target = '';
+        }
 
         return [
             'count' => $count,
             'users' => $users,
             'target' => $target,
+            'freeze' => $freeze,
             'title' => $count === 1 ? 'Sicherheitsvorfall: auffälliges Überschreiben von Dateien' : $count . ' offene Sicherheitsvorfälle: auffälliges Überschreiben von Dateien',
             'message' => sprintf(
                 'Möglicher Ransomware-Befall in Nextcloud. Betroffene Benutzer (%s) dürfen bis zur Erledigung nur noch lesen. %s',
                 implode(', ', $users),
-                $target !== ''
+                !$freeze
+                    ? 'Alle Speicherziele des Cold-Tiers werden weiter synchronisiert (Einstellung: nur Benutzer einschränken).'
+                    : ($target !== ''
                     ? 'Das Speicherziel „' . $target . '“ des Cold-Tiers ist schreibgeschützt und wird nicht synchronisiert – dort bleibt der Datenbestand von vor dem Vorfall erhalten.'
-                    : 'Es konnte kein Speicherziel des Cold-Tiers geschützt werden (kein aktives Ziel).'
+                    : 'Es konnte kein Speicherziel des Cold-Tiers geschützt werden (kein aktives Ziel).')
             ),
         ];
     }

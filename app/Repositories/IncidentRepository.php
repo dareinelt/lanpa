@@ -121,6 +121,18 @@ final class IncidentRepository extends Repository
     }
 
     /**
+     * Gibt das Schutzziel aller offenen Vorfaelle frei (Schutz des Cold-Ziels abgeschaltet).
+     */
+    public function releaseFrozenTarget(): void
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE storage_incidents SET frozen_target_id = NULL, frozen_target_label = '', updated_at = :now
+             WHERE status = :status AND (frozen_target_id IS NOT NULL OR frozen_target_label <> '')"
+        );
+        $statement->execute(['now' => self::now(), 'status' => self::STATUS_OPEN]);
+    }
+
+    /**
      * Zuletzt erledigte Vorfaelle je Benutzer seit $since.
      *
      * @return array<string,string> Benutzer => resolved_at

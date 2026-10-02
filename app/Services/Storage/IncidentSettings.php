@@ -25,6 +25,8 @@ final class IncidentSettings
 
     public const BOOLEAN = [
         'incident_detection_enabled' => '1',
+        // 1 = zusaetzlich ein Cold-Ziel schreibgeschuetzt aus dem Sync nehmen, 0 = nur den Benutzer einschraenken
+        'incident_freeze_target' => '1',
     ];
 
     public const MAX_PATTERNS = 1000;
@@ -196,6 +198,12 @@ final class IncidentSettings
     public function extensionThreshold(): int
     {
         return $this->int('incident_extension_files');
+    }
+
+    /** Soll bei einem Vorfall zusaetzlich ein Cold-Ziel schreibgeschuetzt aus dem Sync genommen werden? */
+    public function freezeTarget(): bool
+    {
+        return $this->values['incident_freeze_target'] === '1';
     }
 
     /** 0 = Schutzziel automatisch waehlen. */

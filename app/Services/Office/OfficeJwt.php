@@ -18,6 +18,7 @@ final class OfficeJwt
     public const QUOTA_AUDIENCE = 'intranet_integration_quota';
     public const ADMINS_AUDIENCE = 'intranet_integration_admins';
     public const DRIVES_AUDIENCE = 'intranet_integration_drives';
+    public const APPSTORE_AUDIENCE = 'intranet_integration_appstore';
 
     /**
      * @param array<string,mixed> $claims
@@ -119,6 +120,22 @@ final class OfficeJwt
 
         return self::encode([
             'aud' => self::DRIVES_AUDIENCE,
+            'body' => hash('sha256', $body),
+            'iat' => $now,
+            'exp' => $now + 60,
+        ], $secret);
+    }
+
+    /**
+     * Kurzlebiges Token fuer die Uebergabe der App-Store-Einstellung an
+     * Nextcloud, an den Inhalt gebunden.
+     */
+    public static function appStoreConfigToken(string $secret, string $body, ?int $now = null): string
+    {
+        $now ??= time();
+
+        return self::encode([
+            'aud' => self::APPSTORE_AUDIENCE,
             'body' => hash('sha256', $body),
             'iat' => $now,
             'exp' => $now + 60,

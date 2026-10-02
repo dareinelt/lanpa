@@ -49,6 +49,25 @@ env_set() {
 }
 occ() { docker compose exec -T -u www-data nextcloud php occ "$@"; }
 
+# Ist der App-Store im Intranet ausgeblendet (appstoreenabled=false), wird er
+# fuer App-Updates kurzzeitig freigegeben und danach wieder gesperrt.
+APPSTORE_REOPENED=0
+appstore_open() {
+    if [ "$(occ config:system:get appstoreenabled 2>/dev/null | tr -d '\r\n' || true)" = "false" ]; then
+        info "App-Store ist ausgeblendet - wird fuer die App-Updates kurzzeitig freigegeben."
+        occ config:system:set appstoreenabled --type=boolean --value=true >/dev/null
+        APPSTORE_REOPENED=1
+    fi
+}
+appstore_restore() {
+    if [ "$APPSTORE_REOPENED" = "1" ]; then
+        occ config:system:set appstoreenabled --type=boolean --value=false >/dev/null \
+            || info "App-Store konnte nicht wieder ausgeblendet werden (das Intranet gleicht dies ab)."
+        APPSTORE_REOPENED=0
+    fi
+}
+trap appstore_restore EXIT
+
 [ -f .env ] || { echo ".env fehlt - zuerst ./scripts/office-setup.sh ausfuehren." >&2; exit 1; }
 
 current_eo="$(env_get EUROOFFICE_IMAGE_TAG)"; current_eo="${current_eo:-v9.3.4-hotfix.1}"
@@ -62,7 +81,9 @@ if [ "$CHECK" = "1" ]; then
         info "Neueste DocumentServer-Version (GitHub): ${latest:-unbekannt}"
     fi
     info "Connector/Apps (App-Store):"
+    appstore_open
     occ app:update --showonly || true
+    appstore_restore
     exit 0
 fi
 
@@ -89,7 +110,9 @@ until [ "$(docker compose ps --format '{{.Health}}' nextcloud)" = "healthy" ]; d
 done
 
 info "Aktualisiere Nextcloud-Apps (inkl. Euro-Office-Connector) aus dem App-Store ..."
+appstore_open
 occ app:update --all
+appstore_restore
 occ upgrade || true
 occ maintenance:repair --include-expensive >/dev/null || true
 occ eurooffice:documentserver --check || info "Connector-Pruefung meldet einen Fehler - Intranet-Adminbereich > Office > Diagnose."

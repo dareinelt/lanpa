@@ -80,6 +80,41 @@ Ein Speicherkonflikt
 überschreibt keine zwischenzeitlichen Änderungen; der Entwurf bleibt im Browser
 erhalten und muss nach Abgleich erneut gespeichert werden.
 
+### Optionale Live-Vorschau
+
+**Live-Vorschau in neuem Tab** öffnet den aktuellen, auch ungespeicherten Entwurf
+in der Nutzeransicht. Den Tab bei Bedarf auf einen zweiten Monitor ziehen.
+Der Editor bleibt geöffnet; er wird weder neu geladen noch automatisch gespeichert.
+Auch neue Pläne und noch leere Bausteine lassen sich vor dem ersten Speichern ansehen.
+
+Mit **Ablauf jetzt simulieren** lassen sich Entscheidungen, UND-/ODER-Verbindungen,
+Checklisten, Status, Kommentare, SMS-Bestätigung und Abschluss durchspielen.
+Die Vorschau verwendet dieselben Ansichten und Zustandsregeln wie echte Ereignisse.
+Sie prüft keine AD-Kennwörter und erzeugt **keine Ereignisse, Veröffentlichungen,
+Protokolle in der Datenbank, E-Mails oder SMS**. SMS-Erfolg ist ausdrücklich simuliert,
+kein Test des Gateways. Informationslinks öffnen wie im Einsatz externe Inhalte in
+einem weiteren Tab; Aktionen auf diesen externen Seiten sind nicht Teil der Sandbox.
+
+Textänderungen werden live übernommen und behalten den Simulationsfortschritt.
+Änderungen an Bausteinen, Reihenfolge, Vorgängern, Verknüpfungen, Prüfpunkten oder
+SMS-Vorlagen setzen ausschließlich die Simulation zurück. **Simulation zurücksetzen**
+führt jederzeit zur Planansicht zurück; nach 200 simulierten Aktionen ist ein Reset nötig.
+Ungültige Zwischenstände (z. B. ein noch unvollständiger Informationslink) und
+Verbindungsfehler werden angezeigt; gegebenenfalls bleibt der letzte gültige Stand sichtbar.
+Der Entwurf im Editor bleibt dabei erhalten.
+
+Technisch verwendet die Vorschau einen zufällig getrennten `BroadcastChannel` je
+Editor und einen rollen- und CSRF-geschützten, zustandslosen Render-Endpunkt.
+Entwurf und Simulationshistorie liegen nur im Arbeitsspeicher der Tabs, nicht in
+Local Storage oder einer Vorschau-Datenbank. Der Server rekonstruiert die Simulation
+mit der nebenwirkungsfreien `EmergencyPlanRuntime`; produktive Speicherung und
+Versand verbleiben in `EmergencyPlanService`. Ein weiterer Container ist nicht nötig.
+Ein aktueller Browser mit `BroadcastChannel` im selben Browserprofil wird benötigt.
+Neuladen der Vorschau übernimmt erneut den aktuellen Editorstand und beginnt eine
+neue Simulation. Wird der Editor geschlossen, zeigt die Vorschau eine
+Verbindungswarnung. Sie ersetzt keine Entwurfssicherung: vor dem Verlassen des
+Editors weiterhin **Entwurf speichern** verwenden.
+
 ### Verbindliche Vier-Augen-Freigabe
 
 Der Workflow gilt für **alle**, einschließlich Administratoren:

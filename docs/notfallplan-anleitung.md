@@ -121,6 +121,18 @@ Protokoll lesbar, aber nicht mehr bearbeitbar.
    Der Autor liest den Kommentar im Freigabeprotokoll, korrigiert den Entwurf,
    speichert und reicht ihn erneut ein.
 
+**Optional vor dem Speichern:** **Live-Vorschau in neuem Tab** öffnen und den Tab
+auf den zweiten Monitor ziehen. Auch ungespeicherte Änderungen erscheinen dort
+live, ohne Neuladen oder Speichern des Editors. **Ablauf jetzt simulieren** erlaubt
+das Durchspielen der Maßnahmen einschließlich Entscheidungen, Checklisten,
+Kommentaren und SMS-Bestätigung – ohne echtes Ereignis, AD-Kennwort, SMS oder
+E-Mail. Der Hinweis **LIVE-VORSCHAU / SANDBOX** bleibt sichtbar.
+Textänderungen erhalten den Testfortschritt; Änderungen an Ablaufstruktur,
+Prüfpunkten oder SMS-Vorlagen setzen nur die Simulation zurück.
+**Simulation zurücksetzen** beginnt erneut bei der Planansicht.
+Bei einer Verbindungswarnung Editor offen lassen bzw. Vorschau dort erneut öffnen.
+Die Vorschau ersetzt kein Speichern des Entwurfs.
+
 ![Demo: Editor](../public/manuals/notfallplan/editor.png)
 
 *Beispielgrafik mit Demo-Daten: Bausteine, automatisches Diagramm und Eingaben.*

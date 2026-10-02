@@ -191,6 +191,8 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         }
         $router->post('/admin/notfallplan/einstellungen', [\App\Controllers\EmergencyPlanController::class, 'settings']);
         $router->post('/admin/notfallplan/speichern', [\App\Controllers\EmergencyPlanController::class, 'save']);
+        $router->get('/admin/notfallplan/vorschau', [\App\Controllers\EmergencyPlanController::class, 'preview']);
+        $router->post('/admin/notfallplan/vorschau', [\App\Controllers\EmergencyPlanController::class, 'previewRender']);
         $router->post('/admin/notfallplan/freigabe', [\App\Controllers\EmergencyPlanController::class, 'review']);
         $router->post('/admin/notfallplan/massnahme', [\App\Controllers\EmergencyPlanController::class, 'update']);
     });

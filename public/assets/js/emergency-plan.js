@@ -76,8 +76,8 @@
         container.append(svg);
     }
 
-    async function post(url, data) {
-        const response = await fetch(url, { method: 'POST', body: data, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    async function post(url, data, signal) {
+        const response = await fetch(url, { method: 'POST', body: data, signal, credentials: 'same-origin', headers: { Accept: 'application/json' } });
         if (!(response.headers.get('Content-Type') || '').includes('application/json')) {
             throw new Error('Sitzung abgelaufen oder technischer Fehler. Eingaben sichern und neu anmelden; Stand prüfen.');
         }
@@ -97,7 +97,43 @@
         const message = editor.querySelector('[data-ep-message]');
         const title = editor.querySelector('[data-ep-title]');
         const description = editor.querySelector('[data-ep-description]');
-        const mark = () => { dirty = true; message.textContent = 'Ungespeicherte Änderungen.'; };
+        const previewStatus = editor.querySelector('[data-ep-preview-status]');
+        let previewChannel = null;
+        let previewVersion = 0;
+        let previewTimer;
+        let previewOpenTimer;
+        const publishPreview = () => previewChannel?.postMessage({ type: 'definition', definition, version: previewVersion });
+        const mark = () => {
+            dirty = true; message.textContent = 'Ungespeicherte Änderungen.';
+            previewVersion++;
+            clearTimeout(previewTimer);
+            previewTimer = setTimeout(publishPreview, 150);
+        };
+        editor.querySelector('[data-ep-open-preview]').addEventListener('click', event => {
+            if (!('BroadcastChannel' in window)) {
+                event.preventDefault();
+                previewStatus.textContent = 'Dieser Browser unterstützt die Live-Vorschau nicht. Bitte einen aktuellen Browser verwenden.';
+                return;
+            }
+            if (!previewChannel) {
+                const key = crypto.randomUUID();
+                previewChannel = new BroadcastChannel('ep-preview-' + key);
+                event.currentTarget.href = '/admin/notfallplan/vorschau#' + key;
+                previewChannel.onmessage = ({ data }) => {
+                    if (data?.type !== 'sync' && data?.type !== 'ping') return;
+                    clearTimeout(previewOpenTimer);
+                    previewStatus.textContent = 'Vorschau verbunden. Änderungen werden live übertragen.';
+                    if (data.type === 'sync') publishPreview();
+                    else previewChannel.postMessage({ type: 'alive', version: previewVersion });
+                };
+            }
+            previewStatus.textContent = 'Vorschau wird in einem neuen Tab geöffnet …';
+            previewOpenTimer = setTimeout(() => {
+                previewStatus.textContent = 'Noch keine Vorschau verbunden. Neuen Tab prüfen und gegebenenfalls Pop-ups erlauben.';
+            }, 8000);
+        });
+        window.addEventListener('pagehide', () => previewChannel?.postMessage({ type: 'disconnected' }));
+        window.addEventListener('pageshow', publishPreview);
         const refreshGraph = () => diagram(editor.querySelector('[data-ep-diagram]'), definition, selected, select);
         const makeNode = type => ({ id: 'n' + crypto.randomUUID().replaceAll('-', ''), type, title: '', text: '', owner: '', phone: '', link: '', minutes: 0, checks: type === 'checklist' ? ['Prüfpunkt'] : [], dependencies: [], join: 'all', alarm_id: 0 });
         function select(id) { selected = id; render(); }
@@ -278,15 +314,205 @@
         render();
     }
 
-    const staticDiagram = document.querySelector('[data-ep-static-diagram]');
-    if (staticDiagram) {
-        const definition = JSON.parse(document.querySelector('[data-ep-definition]').value);
-        const progressInput = document.querySelector('[data-ep-state]');
+    function renderStaticDiagram(root) {
+        const staticDiagram = root.querySelector('[data-ep-static-diagram]');
+        if (!staticDiagram) return;
+        const definition = JSON.parse(root.querySelector('[data-ep-definition]').value);
+        const progressInput = root.querySelector('[data-ep-state]');
         const progress = progressInput ? JSON.parse(progressInput.value) : null;
         diagram(staticDiagram, definition, null, id => {
             const card = document.getElementById('node-' + id);
             if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); card.setAttribute('tabindex', '-1'); card.focus({ preventScroll: true }); }
         }, progress);
+    }
+    renderStaticDiagram(document);
+
+    const preview = document.querySelector('[data-ep-preview]');
+    if (preview) {
+        const content = preview.querySelector('[data-ep-preview-content]');
+        const result = preview.querySelector('[data-ep-preview-result]');
+        const connection = preview.querySelector('[data-ep-preview-connection]');
+        const key = location.hash.slice(1);
+        if (!('BroadcastChannel' in window) || !/^[a-f0-9-]{36}$/.test(key)) {
+            connection.textContent = 'Keine Editorverbindung. Bitte die Live-Vorschau aus dem Editor mit einem aktuellen Browser öffnen.';
+            return;
+        }
+        const channel = new BroadcastChannel('ep-preview-' + key);
+        let definition = null;
+        let version = -1;
+        let renderedVersion = -1;
+        let structure = '';
+        let epoch = 0;
+        let operations = [];
+        let started = false;
+        let startedAt = Math.floor(Date.now() / 1000);
+        let lastSeen = 0;
+        let busy = false;
+        let queued = false;
+        let timer;
+        let pendingAction = null;
+        let completedForm = null;
+        let notice = '';
+        const formKey = form => (form.elements.namedItem('node')?.value || '') + ':' + (form.querySelector('input[name="action"]')?.value || 'status');
+        const controls = form => [...form.querySelectorAll('textarea:not([hidden]), select, input[type="checkbox"]')];
+
+        // Only draft inputs in the preview are restored; hidden revision/CSRF fields always come from the server.
+        function replaceContent(html, submittedForm, preserve) {
+            const drafts = new Map();
+            const focused = document.activeElement;
+            const details = [...content.querySelectorAll('details')].map(item => item.open);
+            const scroll = { x: window.scrollX, y: window.scrollY };
+            if (preserve) content.querySelectorAll('form').forEach(form => {
+                const id = formKey(form);
+                if (id === submittedForm) return;
+                drafts.set(id, controls(form).map(control => ({
+                    name: control.name, value: control.value, checked: control.checked,
+                    focused: control === focused, start: control.selectionStart, end: control.selectionEnd,
+                })));
+            });
+            content.innerHTML = html;
+            renderStaticDiagram(content);
+            if (preserve) {
+                content.querySelectorAll('details').forEach((item, i) => { if (details[i] !== undefined) item.open = details[i]; });
+                content.querySelectorAll('form').forEach(form => {
+                    const saved = drafts.get(formKey(form));
+                    if (!saved) return;
+                    controls(form).forEach((control, i) => {
+                        const draft = saved[i];
+                        if (!draft || draft.name !== control.name || control.disabled) return;
+                        if (control.type === 'checkbox') control.checked = draft.checked;
+                        else control.value = draft.value;
+                        if (draft.focused) {
+                            control.focus({ preventScroll: true });
+                            if (control.setSelectionRange && draft.start !== null) control.setSelectionRange(draft.start, draft.end);
+                        }
+                    });
+                });
+                window.scrollTo(scroll.x, scroll.y);
+            }
+        }
+        function schedule() {
+            queued = true;
+            content.inert = true;
+            content.setAttribute('aria-busy', 'true');
+            clearTimeout(timer);
+            timer = setTimeout(renderPreview, 150);
+        }
+        async function renderPreview() {
+            if (busy || !queued || !definition) return;
+            busy = true; queued = false;
+            const requestVersion = version;
+            const requestEpoch = epoch;
+            const action = pendingAction;
+            pendingAction = null;
+            const candidate = action ? [...operations, action.input] : operations;
+            const data = new FormData();
+            data.set('_token', preview.querySelector('[name="_token"]').value);
+            data.set('preview', JSON.stringify({ definition, operations: candidate, started, startedAt }));
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
+            try {
+                const response = await post(preview.dataset.renderUrl, data, controller.signal);
+                if (requestEpoch === epoch) {
+                    operations = candidate;
+                    if (action) completedForm = action.form;
+                }
+                if (requestVersion === version && requestEpoch === epoch) {
+                    content.inert = false;
+                    replaceContent(response.html, completedForm, renderedVersion !== -1 && !notice);
+                    completedForm = null;
+                    renderedVersion = version;
+                    result.textContent = notice || (action ? 'Aktion simuliert. Keine produktiven Daten geändert.' : 'Vorschau aktuell – einschließlich ungespeicherter Änderungen.');
+                    notice = '';
+                } else queued = true;
+            } catch (error) {
+                if (requestVersion === version && requestEpoch === epoch) {
+                    const message = controller.signal.aborted ? 'Vorschau-Server antwortet nicht. Bitte Verbindung erneut prüfen.' : error.message;
+                    result.textContent = message + ' Der Editorentwurf bleibt erhalten. Angezeigt wird gegebenenfalls der letzte gültige Vorschau-Stand.';
+                    if (action) {
+                        const form = [...content.querySelectorAll('form')].find(form => formKey(form) === action.form);
+                        const feedback = form?.querySelector('[data-ep-result]');
+                        if (feedback) feedback.textContent = message;
+                    }
+                    content.inert = renderedVersion !== version || !!notice;
+                }
+            } finally {
+                clearTimeout(timeout);
+                busy = false;
+                content.setAttribute('aria-busy', 'false');
+                if (queued) schedule();
+            }
+        }
+        function reset(toPlan) {
+            epoch++;
+            operations = [];
+            pendingAction = null;
+            completedForm = null;
+            startedAt = Math.floor(Date.now() / 1000);
+            if (toPlan) started = false;
+            notice = 'Simulation zurückgesetzt. Der Editorentwurf ist unverändert.';
+            schedule();
+        }
+        function sync() {
+            channel.postMessage({ type: 'sync' });
+            if (definition) schedule();
+        }
+        channel.onmessage = ({ data }) => {
+            if (data?.type === 'disconnected') {
+                lastSeen = 0;
+                connection.textContent = 'Editor geschlossen oder verlassen. Letzter Stand bleibt sichtbar; zum Verbinden die Vorschau erneut aus dem Editor öffnen.';
+                return;
+            }
+            if (data?.type !== 'definition' && data?.type !== 'alive') return;
+            lastSeen = Date.now();
+            connection.textContent = 'Live mit dem Editor verbunden. Änderungen werden ohne Neuladen übernommen.';
+            if (data.type === 'alive') {
+                if (data.version !== version) channel.postMessage({ type: 'sync' });
+                return;
+            }
+            if (data.version === version) return;
+            const nextStructure = JSON.stringify(data.definition.nodes.map(node => [node.id, node.type, node.dependencies, node.join, node.checks, node.alarm_id]));
+            definition = data.definition;
+            version = data.version;
+            if (structure && nextStructure !== structure) {
+                reset(false);
+                notice = 'Ablaufstruktur geändert: Simulation zurückgesetzt. Texte und andere Editoränderungen bleiben erhalten.';
+            }
+            structure = nextStructure;
+            schedule();
+        };
+        content.addEventListener('click', event => {
+            if (event.target.closest('[data-ep-preview-start]')) {
+                started = true;
+                reset(false);
+            }
+            if (event.target.closest('[data-ep-print]')) window.print();
+        });
+        content.addEventListener('submit', event => {
+            event.preventDefault();
+            if (busy || queued || renderedVersion !== version) return;
+            const form = event.target;
+            if (!form.matches('[data-ep-update]')) return;
+            if (form.dataset.epConfirm && !window.confirm(form.dataset.epConfirm)) return;
+            const data = new FormData(form, event.submitter);
+            pendingAction = { form: formKey(form), input: {
+                action: data.get('action'), node: data.get('node') || '', status: data.get('status') || '',
+                answer: data.get('answer') || '', checks: data.getAll('checks[]'), comment: data.get('comment') || '',
+                at: Math.floor(Date.now() / 1000),
+            } };
+            schedule();
+        });
+        preview.querySelector('[data-ep-preview-reset]').addEventListener('click', () => reset(true));
+        preview.querySelector('[data-ep-preview-retry]').addEventListener('click', sync);
+        window.addEventListener('pageshow', sync);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
+        window.setInterval(() => {
+            if (!lastSeen || Date.now() - lastSeen > 15000) {
+                connection.textContent = 'Keine aktuelle Editorverbindung. Letzter Stand kann veraltet sein; Editor geöffnet lassen oder Vorschau dort erneut öffnen.';
+            }
+            channel.postMessage({ type: definition ? 'ping' : 'sync' });
+        }, 5000);
+        sync();
     }
 
     const eventView = document.querySelector('[data-ep-event]');

@@ -11,6 +11,10 @@ $done = count(array_filter($event['state'], static fn ($item) => $item['status']
 $skipped = count(array_filter($ready, static fn ($value) => $value === 'skipped'));
 $titles = array_column($event['snapshot']['nodes'], 'title', 'id');
 $mailLabels = ['queued' => 'Wartet auf Versand', 'sending' => 'Versand läuft', 'sent' => 'SMTP-Annahme bestätigt', 'failed' => 'Fehlgeschlagen'];
+$priorities = ['normal' => 'Normal', 'high' => 'Hoch', 'critical' => 'Kritisch'];
+$coordination = $event['coordination'] ?? [];
+$assignments = $coordination['assignments'] ?? [];
+$openReminders = array_values(array_filter($coordination['reminders'] ?? [], static fn (array $r) => empty($r['done'])));
 $hiddenFields = static function () use ($event): void { ?>
     <?= Csrf::field() ?>
     <input type="hidden" name="id" value="<?= (int) $event['id'] ?>">
@@ -41,6 +45,22 @@ $hiddenFields = static function () use ($event): void { ?>
     <button type="button" class="button button--primary" data-ep-refresh hidden>Aktuellen Stand laden</button>
     <?php } ?>
     <p class="ep-warning">Status und Kommentare sind Einsatzdokumentation. „SMS angenommen“ bestätigt weder Zustellung noch Reaktion. Bei Störungen Ersatzmeldeweg nutzen.</p>
+    <?php if (!$preview && (($coordination['situation'] ?? '') !== '' || !empty($coordination['leadership']) || $openReminders !== [])) { ?>
+    <details class="card" open>
+        <summary>Einsatzkoordination aus dem KAEP-Dashboard</summary>
+        <?php if (($coordination['situation'] ?? '') !== '') { ?><p><strong>Lageübersicht:</strong></p><p class="ep-pre"><?= Html::e($coordination['situation']) ?></p><?php } ?>
+        <?php if (($coordination['briefing'] ?? '') !== '') { ?><p><strong>Nächste Lagebesprechung:</strong> <?= Html::e($coordination['briefing']) ?> UTC</p><?php } ?>
+        <?php if (!empty($coordination['leadership'])) { ?>
+            <p><strong>Einsatz- und Bereichsleitungen:</strong></p>
+            <ul><?php foreach ($coordination['leadership'] as $role => $leader) { ?><li><?= Html::e($role) ?>: <?= Html::e($leader['person']) ?><?= ($leader['phone'] ?? '') !== '' ? ' · ' . Html::e($leader['phone']) : '' ?><?= ($leader['until'] ?? '') !== '' ? ' · Ablösung geplant ' . Html::e($leader['until']) . ' UTC' : '' ?></li><?php } ?></ul>
+        <?php } ?>
+        <?php if ($openReminders !== []) { ?>
+            <p><strong>Offene Wiedervorlagen:</strong></p>
+            <ul><?php foreach ($openReminders as $reminder) { ?><li><?= Html::e($reminder['due']) ?> UTC · <?= Html::e($reminder['title']) ?><?= isset($titles[$reminder['node'] ?? '']) ? ' (' . Html::e($titles[$reminder['node']]) . ')' : '' ?></li><?php } ?></ul>
+        <?php } ?>
+        <p>Bearbeitung von Lage, Leitungen und Wiedervorlagen erfolgt im KAEP-Dashboard; hier nur lesend.</p>
+    </details>
+    <?php } ?>
     <details class="card">
         <summary>KAEP-E-Mail-Benachrichtigungen (<?= count($notifications) ?>)</summary>
         <?php if ($preview) { ?><p>SIMULATION: Keine E-Mail eingeplant oder versendet.</p>
@@ -60,16 +80,22 @@ $hiddenFields = static function () use ($event): void { ?>
         $availability = $ready[$id];
         $editable = !$closed && $availability === 'ready' && $state['status'] !== 'done';
         $sms = $event['sms'][$id] ?? null;
-        $due = $node['minutes'] > 0 ? strtotime($event['started_at'] . ' UTC') + $node['minutes'] * 60 : null;
+        $assignment = $assignments[$id] ?? [];
+        $owner = ($assignment['owner'] ?? '') !== '' ? $assignment['owner'] : $node['owner'];
+        $priority = $assignment['priority'] ?? 'normal';
+        $due = ($assignment['due'] ?? '') !== '' ? strtotime($assignment['due'] . ' UTC')
+            : ($node['minutes'] > 0 ? strtotime($event['started_at'] . ' UTC') + $node['minutes'] * 60 : null);
+        $overdue = $due !== null && !$closed && $state['status'] !== 'done' && $availability !== 'skipped' && $due < time();
         ?>
         <article class="ep-measure ep-measure--<?= Html::e($state['status']) ?><?= $availability === 'skipped' ? ' ep-measure--skipped' : '' ?>" id="node-<?= Html::e($id) ?>">
             <header><span><?= Html::e($types[$node['type']]) ?></span><strong><?= $availability === 'skipped' ? 'Entfällt (anderer Zweig)' : Html::e($labels[$state['status']]) ?></strong></header>
             <h2><?= Html::e($node['title']) ?></h2>
             <p class="ep-pre"><?= Html::e($node['text']) ?></p>
-            <?php if ($node['owner'] !== '') { ?><p><strong>Zuständig:</strong> <?= Html::e($node['owner']) ?></p><?php } ?>
+            <?php if ($owner !== '') { ?><p><strong>Zuständig:</strong> <?= Html::e($owner) ?><?= ($assignment['owner'] ?? '') !== '' && $node['owner'] !== '' && $assignment['owner'] !== $node['owner'] ? ' <small>(Planvorgabe: ' . Html::e($node['owner']) . ')</small>' : '' ?></p><?php } ?>
+            <?php if ($priority !== 'normal' && $state['status'] !== 'done' && $availability !== 'skipped') { ?><p class="<?= $priority === 'critical' ? 'ep-overdue' : '' ?>"><strong>Priorität:</strong> <?= Html::e($priorities[$priority] ?? $priority) ?> (Einsatzleitung)</p><?php } ?>
             <?php if ($node['phone'] !== '') { ?><p><strong>Telefon:</strong> <?= Html::e($node['phone']) ?></p><?php } ?>
             <?php if ($node['link'] !== '') { ?><p><a href="<?= Html::e($node['link']) ?>" target="_blank" rel="noopener noreferrer">Weiterführende Information öffnen</a></p><?php } ?>
-            <?php if ($due !== null) { ?><p class="<?= !$closed && $state['status'] !== 'done' && $availability !== 'skipped' && $due < time() ? 'ep-overdue' : '' ?>">Zielzeit: <?= gmdate('H:i', $due) ?> UTC (<?= (int) $node['minutes'] ?> Min. ab Start)</p><?php } ?>
+            <?php if ($due !== null) { ?><p class="<?= $overdue ? 'ep-overdue' : '' ?>"><?= $overdue ? 'Überfällig · ' : '' ?>Zielzeit: <?= gmdate('d.m.Y H:i', $due) ?> UTC<?= ($assignment['due'] ?? '') !== '' ? ' (von der Einsatzleitung festgelegt)' : ' (' . (int) $node['minutes'] . ' Min. ab Start)' ?></p><?php } ?>
             <?php if ($node['dependencies'] !== []) { ?>
                 <p>Voraussetzungen (<?= $node['join'] === 'any' ? 'mindestens eine' : 'alle' ?>):
                     <?php foreach ($node['dependencies'] as $edge) { ?><a href="#node-<?= Html::e($edge['id']) ?>"><?= Html::e($titles[$edge['id']]) ?><?= $edge['when'] === 'always' ? '' : ' = ' . ($edge['when'] === 'yes' ? 'Ja' : 'Nein') ?></a>; <?php } ?>

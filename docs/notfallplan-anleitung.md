@@ -57,10 +57,11 @@ Nach dem Erledigen können sie nicht umgestellt werden.
 
 *Beispielgrafik mit Demo-Daten: Prüfpunkt, Status, bestätigende Person und Zeitpunkt.*
 
-**Zeitangaben:** Protokolle und Zielzeiten werden in UTC angezeigt.
-Deutschland: Winterzeit = UTC +1 Stunde, Sommerzeit = UTC +2 Stunden.
-Zielzeiten beginnen mit dem Ereignisstart; eine Überschreitung alarmiert nicht
-automatisch.
+**Zeitangaben:** Protokolle und Zielzeiten der klassischen Ereignisansicht werden
+in UTC angezeigt. Deutschland: Winterzeit = UTC +1 Stunde, Sommerzeit = UTC +2
+Stunden. Das KAEP-Dashboard zeigt und erfasst Zeiten dagegen in der Ortszeit des
+Geräts. Zielzeiten beginnen mit dem Ereignisstart; eine Überschreitung alarmiert
+nicht automatisch.
 
 ## SMS und E-Mail nicht verwechseln
 
@@ -156,6 +157,15 @@ Benutzerzugriff getrennt von der Planveröffentlichung.
 In der Einsatzübersicht **Laufend** filtern und ein Ereignis öffnen. KAEP und
 Administratoren sehen alle Ereignisse, Maßnahmenstände und Kommentare und können
 mitarbeiten. Auslösende Benutzer sehen nur ihre eigenen Ereignisse.
+
+Für längere Einsätze das **KAEP-Dashboard** (Fußzeile oder Ereignis) auf Tablets
+und einem TV öffnen: gemeinsames Live-Lagebild, Zuständigkeit/Priorität/Zielzeit
+je Maßnahme, Lageübersicht mit nächster Besprechung, Einsatz- und Bereichsleitungen
+mit geplanter Ablösung, Journal mit Schichtübergaben sowie **Zeitplan und
+Wiedervorlagen** für Rückrufe und Prüfpunkte der nächsten Stunden und Tage. Bei
+jeder Schichtübergabe: Lageübersicht aktualisieren, Leitung mit Ablösezeit
+eintragen, Übergabenotiz ins Journal schreiben und offene Wiedervorlagen durchgehen.
+Alle Zeiten dort in Ortszeit des Geräts; keine automatische Erinnerung bei Fälligkeit.
 
 Für die Nachbereitung **Abgeschlossen**, Von-/Bis-Datum (UTC) wählen. Im Ereignis
 Dauer, offene/erledigte/entfallene Maßnahmen, Zeitverlauf, Entscheidungen und

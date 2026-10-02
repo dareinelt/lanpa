@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OCA\IntranetIntegration\AppInfo;
 
+use OCA\IntranetIntegration\Listener\AdminsLoginListener;
 use OCA\IntranetIntegration\Listener\FooterListener;
 use OCA\IntranetIntegration\Listener\QuotaLoginListener;
 use OCP\AppFramework\App;
@@ -32,6 +33,8 @@ class Application extends App implements IBootstrap {
         $context->registerEventListener(BeforeLoginTemplateRenderedEvent::class, FooterListener::class);
         // Speicherplatz-Kontingente aus dem Intranet fuer neu bekannte Konten.
         $context->registerEventListener(PostLoginEvent::class, QuotaLoginListener::class);
+        // Nextcloud-Administratoren aus AD-Gruppen fuer neu bekannte Konten.
+        $context->registerEventListener(PostLoginEvent::class, AdminsLoginListener::class);
     }
 
     public function boot(IBootContext $context): void {

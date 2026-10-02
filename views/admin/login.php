@@ -7,6 +7,9 @@ use App\Support\Html;
 
 /** @var string|null $error */
 /** @var string $username */
+/** @var array{user:?string}|null $windows */
+/** @var string $windowsLoginPath */
+$windows = $windows ?? null;
 ?>
 <section class="auth-card">
     <h1 class="auth-card__title">Administration</h1>
@@ -14,6 +17,15 @@ use App\Support\Html;
 
     <?php if (($error ?? null) !== null) { ?>
         <p class="flash flash--error" role="alert"><?= Html::e($error) ?></p>
+    <?php } ?>
+
+    <?php if ($windows !== null) { ?>
+        <p>
+            <a class="button button--primary button--block" href="<?= Html::e($windowsLoginPath) ?>">
+                <?= $windows['user'] !== null ? 'Weiter als ' . Html::e($windows['user']) . ' (Windows-Anmeldung)' : 'Mit Windows-Anmeldung anmelden' ?>
+            </a>
+        </p>
+        <p class="auth-card__text">Für Mitglieder der freigegebenen AD-Gruppen. Alternativ mit einem lokalen Administrationskonto:</p>
     <?php } ?>
 
     <form method="post" action="/admin/login" class="form" autocomplete="off">

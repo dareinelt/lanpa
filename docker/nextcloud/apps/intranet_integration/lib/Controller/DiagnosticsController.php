@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\IntranetIntegration\Controller;
 
 use OCA\IntranetIntegration\AppInfo\Application;
+use OCA\IntranetIntegration\Service\AdminsService;
 use OCA\IntranetIntegration\Service\AiConfigService;
 use OCA\IntranetIntegration\Service\QuotaService;
 use OCA\IntranetIntegration\Service\TokenVerifier;
@@ -36,6 +37,7 @@ class DiagnosticsController extends Controller {
         private AiConfigService $ai,
         private TrustedDomainsService $hosts,
         private QuotaService $quota,
+        private AdminsService $admins,
         private LoggerInterface $logger,
     ) {
         parent::__construct(Application::APP_ID, $request);
@@ -90,6 +92,7 @@ class DiagnosticsController extends Controller {
             'ai' => $this->ai->status(),
             'hosts' => $this->hosts->status(),
             'quota' => $this->quota->status(),
+            'admins' => $this->admins->status(),
         ];
 
         if ($check === '1' && $enabled) {

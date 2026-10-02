@@ -132,6 +132,7 @@ $router->group([$ssoAttempt], static function (Router $router): void {
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
 $router->post('/admin/login', [AuthController::class, 'login']);
+$router->get(AuthController::WINDOWS_LOGIN_PATH, [AuthController::class, 'windowsLogin']);
 
 $requireAuth = static function (Request $request): ?Response {
     if (Container::auth()->check()) {
@@ -293,6 +294,9 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/benutzer/bearbeiten', [AdminUserController::class, 'update']);
         $router->post('/admin/benutzer/loeschen', [AdminUserController::class, 'delete']);
         $router->post('/admin/benutzer/status', [AdminUserController::class, 'toggle']);
+        $router->post('/admin/benutzer/ad-gruppen', [AdminUserController::class, 'storeGroup']);
+        $router->post('/admin/benutzer/ad-gruppen/loeschen', [AdminUserController::class, 'deleteGroup']);
+        $router->post('/admin/benutzer/nextcloud-uebertragen', [AdminUserController::class, 'pushNextcloud']);
 
         $router->get('/admin/sicherung', [ImportExportController::class, 'index']);
         $router->post('/admin/sicherung/export', [ImportExportController::class, 'export']);

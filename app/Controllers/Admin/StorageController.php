@@ -1,0 +1,186 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controllers\Admin;
+
+use App\Core\Container;
+use App\Core\Request;
+use App\Core\Response;
+use App\Exceptions\ValidationException;
+use App\Security\Session;
+use App\Services\Storage\StorageService;
+use App\Services\Storage\StorageSettings;
+
+/**
+ * Adminbereich "Speicher (HA)": Ablage der Nextcloud-/Euro-Office-Daten auf
+ * SMB-Freigaben (UNC), Speicher-Tiering, HA- und Synchronisationsstatus.
+ */
+final class StorageController extends AdminController
+{
+    private const REQUEST_LABELS = [
+        'sync_now' => 'Synchronisation angestoßen.',
+        'full_scan' => 'Vollständiger Abgleich angestoßen.',
+        'remount' => 'Neueinbindung der Speicherziele angestoßen.',
+        'confirm_deletes' => 'Löschungen bestätigt – sie werden beim nächsten vollständigen Abgleich übernommen.',
+    ];
+
+    public function index(Request $request): Response
+    {
+        return $this->render();
+    }
+
+    public function live(Request $request): Response
+    {
+        return Response::json(Container::storage()->liveData())->withHeader('Cache-Control', 'no-store');
+    }
+
+    public function updateSettings(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $input = [];
+        foreach (array_merge(array_keys(StorageSettings::NUMERIC), array_keys(StorageSettings::BOOLEAN)) as $key) {
+            $input[$key] = $request->input($key, '');
+        }
+
+        try {
+            Container::storage()->saveSettings($input);
+        } catch (ValidationException $exception) {
+            Session::flash('error', 'Bitte prüfen Sie die markierten Eingaben.');
+
+            return $this->render($exception->errors(), array_map('strval', $input), 422);
+        }
+
+        app_logger()->info('Einstellungen des Speicher-Tierings geändert.', ['admin' => $this->admin()]);
+        Session::flash('success', 'Die Einstellungen wurden gespeichert. storage-sync übernimmt sie innerhalb weniger Sekunden.');
+
+        return $this->redirect('/admin/speicher-ha#einstellungen');
+    }
+
+    public function editTarget(Request $request): Response
+    {
+        $id = $request->queryInt('id');
+        $target = $id > 0 ? Container::storage()->target($id) : null;
+        if ($id > 0 && $target === null) {
+            Session::flash('error', 'Das Speicherziel wurde nicht gefunden.');
+
+            return $this->redirect('/admin/speicher-ha#ziele');
+        }
+
+        return $this->renderTarget($target);
+    }
+
+    public function saveTarget(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $id = $request->inputInt('id');
+        $service = Container::storage();
+        $input = [
+            'label' => $request->input('label', ''),
+            'unc_path' => $request->input('unc_path', ''),
+            'username' => $request->input('username', ''),
+            'domain' => $request->input('domain', ''),
+            'password' => is_string($request->post['password'] ?? null) ? $request->post['password'] : '',
+            'password_clear' => $request->input('password_clear', '0') === '1',
+            'smb_version' => $request->input('smb_version', 'auto'),
+            'is_primary' => $request->input('is_primary', '0') === '1',
+            'active' => $request->input('active', '0') === '1',
+        ];
+
+        try {
+            if ($id > 0) {
+                $service->updateTarget($id, $input);
+            } else {
+                $id = $service->createTarget($input);
+            }
+        } catch (ValidationException $exception) {
+            Session::flash('error', $exception->errors()['target'] ?? 'Bitte prüfen Sie die markierten Eingaben.');
+            $target = $id > 0 ? $service->target($id) : null;
+            unset($input['password']);
+
+            return $this->renderTarget($target, $exception->errors(), $input, 422);
+        }
+
+        app_logger()->info('Speicherziel gespeichert.', ['admin' => $this->admin(), 'target' => $id]);
+        Session::flash('success', 'Das Speicherziel wurde gespeichert. storage-sync bindet es ein und gleicht die Daten ab.');
+
+        return $this->redirect('/admin/speicher-ha#ziele');
+    }
+
+    public function deleteTarget(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        try {
+            $label = Container::storage()->deleteTarget($request->inputInt('id'));
+        } catch (ValidationException $exception) {
+            Session::flash('error', implode(' ', $exception->errors()));
+
+            return $this->redirect('/admin/speicher-ha#ziele');
+        }
+
+        app_logger()->warning('Speicherziel entfernt.', ['admin' => $this->admin(), 'target' => $label]);
+        Session::flash('success', 'Das Speicherziel „' . $label . '“ wurde entfernt. Die Daten auf der Freigabe wurden nicht gelöscht.');
+
+        return $this->redirect('/admin/speicher-ha#ziele');
+    }
+
+    public function request(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $action = (string) $request->input('action', '');
+        $target = $request->inputInt('target_id');
+        try {
+            Container::storage()->request($action, $target > 0 ? $target : null, $this->admin());
+        } catch (ValidationException $exception) {
+            Session::flash('error', implode(' ', $exception->errors()));
+
+            return $this->redirect('/admin/speicher-ha');
+        }
+        Session::flash('success', self::REQUEST_LABELS[$action] ?? 'Auftrag übermittelt.');
+
+        return $this->redirect('/admin/speicher-ha');
+    }
+
+    /**
+     * @param array<string,string> $errors
+     * @param array<string,string> $values
+     */
+    private function render(array $errors = [], array $values = [], int $status = 200): Response
+    {
+        $service = Container::storage();
+        $overview = $service->overview();
+
+        return $this->adminView('admin.storage', [
+            'pageTitle' => 'Speicher (HA)',
+            'activeNav' => 'storage',
+            'pageScript' => 'admin-storage.js',
+            'overview' => $overview,
+            'alert' => $service->dashboardAlert($overview),
+            'events' => Container::storageRepository()->events(30),
+            'errors' => $errors,
+            'values' => $values,
+        ], $status);
+    }
+
+    /**
+     * @param array<string,mixed>|null $target
+     * @param array<string,string> $errors
+     * @param array<string,mixed> $values
+     */
+    private function renderTarget(?array $target, array $errors = [], array $values = [], int $status = 200): Response
+    {
+        return $this->adminView('admin.storage_target', [
+            'pageTitle' => $target === null ? 'Speicherziel hinzufügen' : 'Speicherziel bearbeiten',
+            'activeNav' => 'storage',
+            'target' => $target,
+            'versions' => StorageService::SMB_VERSIONS,
+            'errors' => $errors,
+            'values' => $values,
+        ], $status);
+    }
+
+    private function admin(): string
+    {
+        return (string) (Container::auth()->username() ?? '');
+    }
+}

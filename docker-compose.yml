@@ -52,6 +52,9 @@ x-nextcloud-env: &nextcloud-env
 x-nextcloud-volumes: &nextcloud-volumes
   - nextcloud_html:/var/www/html
   - nextcloud_data:/var/www/html/data
+  # Speicher-Tiering: Kennzeichen ausgelagerter Dateien und Rueckhol-Auftraege
+  # (gemeinsam mit storage-sync, siehe docs/storage.md).
+  - storage_tiering:/var/lib/lanpa-tiering
   # Werden von hooks/intranet-setup.sh nach config/ bzw. custom_apps/ kopiert
   # (verschachtelte Bind-Mounts wuerden die Verzeichnisse root-eigen machen).
   - ./docker/nextcloud/intranet.config.php:/usr/src/nextcloud/config/intranet.config.php:ro
@@ -299,6 +302,7 @@ services:
     volumes:
       - nextcloud_html:/var/www/html
       - nextcloud_data:/var/www/html/data
+      - storage_tiering:/var/lib/lanpa-tiering
       - ./docker/nextcloud/intranet.config.php:/usr/src/nextcloud/config/intranet.config.php:ro
       - ./docker/nextcloud/apps/intranet_integration:/opt/intranet/intranet_integration:ro
       - ./docker/nextcloud/apache-office.conf:/etc/apache2/conf-enabled/zz-intranet-office.conf:ro
@@ -347,6 +351,7 @@ services:
     volumes:
       - nextcloud_html:/var/www/html
       - nextcloud_data:/var/www/html/data
+      - storage_tiering:/var/lib/lanpa-tiering
       - ./docker/nextcloud/ai-worker.sh:/opt/intranet/ai-worker.sh:ro
     networks:
       - office
@@ -420,7 +425,53 @@ services:
       - nextcloud_html:/data/nextcloud-html
       - nextcloud_data:/data/nextcloud-data
       - eurooffice_data:/data/eurooffice-data
+      # Kennzeichen ausgelagerter Dateien (Platzhalter im Hot-Tier) mitsichern.
+      - storage_tiering:/data/storage-tiering
       - ${OFFICE_BACKUP_DIR:-./backups}:/backups
+    networks:
+      - intranet
+      - office_backend
+
+  # Speicher-Tiering und HA-Synchronisation (Adminbereich -> Speicher (HA)):
+  # bindet SMB-Freigaben (UNC) als Cold-Tier ein, haelt dort auf jedem Ziel
+  # eine vollstaendige Kopie der Nextcloud- und Euro-Office-Daten (inkl.
+  # Datenbanksicherung), lagert selten genutzte Dateien aus dem Hot-Tier
+  # (lokales Storage) aus und holt sie bei Zugriff zurueck. Einbinden per
+  # mount.cifs erfordert CAP_SYS_ADMIN (nur dieser Container).
+  storage-sync:
+    build:
+      context: .
+      dockerfile: docker/storage-sync/Dockerfile
+    profiles: ["office"]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      nextcloud-db:
+        condition: service_healthy
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    tmpfs:
+      # Zugangsdateien fuer mount.cifs nur im Arbeitsspeicher.
+      - /run/storage-sync:mode=0700
+    environment:
+      CONTAINER_ROLE: storage-sync
+      NEXTCLOUD_DB_PASSWORD_FILE: /run/secrets/nextcloud_db_password
+    env_file:
+      - .env
+    secrets:
+      - nextcloud_db_password
+    volumes:
+      # Schluessel fuer die verschluesselten Zugangsdaten der Speicherziele.
+      - app_storage:/var/www/html/storage
+      - nextcloud_html:/data/nextcloud-html
+      - nextcloud_data:/data/nextcloud-data
+      - eurooffice_data:/data/eurooffice-data
+      - storage_tiering:/var/lib/lanpa-tiering
+      - storage_sync_state:/var/lib/storage-sync
     networks:
       - intranet
       - office_backend
@@ -437,6 +488,8 @@ volumes:
   eurooffice_db:
   eurooffice_logs:
   office_ai:
+  storage_tiering:
+  storage_sync_state:
 
 networks:
   intranet:

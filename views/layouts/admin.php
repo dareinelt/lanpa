@@ -32,6 +32,7 @@ $navItems = $isAdmin ? [
     'office' => ['/admin/office', 'Office'],
     'quota' => ['/admin/speicherplatz', 'Speicherplatz (Quota)'],
     'drives' => ['/admin/netzlaufwerke', 'Netzlaufwerke'],
+    'storage' => ['/admin/speicher-ha', 'Speicher (HA)'],
     'certificates' => ['/admin/zertifikate', 'Zertifikate (HTTPS)'],
     'snmp' => ['/admin/snmp', 'SNMP'],
     'statistics' => ['/admin/statistik', 'Statistik'],

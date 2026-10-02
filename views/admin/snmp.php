@@ -82,7 +82,15 @@ use App\Support\Html;
             <tr><td>office_workflow (Nextcloud + DocumentServer)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.10</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.10</code></td></tr>
             <tr><td>tls_certificate (Gültigkeit des aktiven HTTPS-Zertifikats)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.11</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.11</code></td></tr>
             <tr><td>tls_certificate_days (Resttage als Zahl)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.12</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.12</code></td></tr>
+            <tr><td>storage_ha (HA-Status des Cold-Tiers, <a href="/admin/speicher-ha">Speicher (HA)</a>)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.13</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.13</code></td></tr>
+            <tr><td>storage_sync (Sync-Status, Rückstand)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.14</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.14</code></td></tr>
+            <tr><td>storage_hot_fill (Füllstand Hot-Tier, lokales Storage)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.15</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.15</code></td></tr>
+            <tr><td>storage_cold_fill (Füllstand Cold-Tier, SMB-Tier)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.16</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.16</code></td></tr>
             </tbody>
         </table>
     </div>
+    <p class="card__hint">Kennzahlen des Speicher-Tierings (Füllstand, MB/s, IOPS, Rückstand, Rückholungen, Hochrechnung) liefert
+        <code>NET-SNMP-EXTEND-MIB::nsExtendOutLine</code> zeilenweise als <code>key=value</code> unter
+        <code>"storage_metrics"</code> (gesamt, <code>hot_*</code>/<code>cold_*</code>) und <code>"storage_targets"</code>
+        (je Speicherziel), z. B. <code>snmpwalk -v2c -c &lt;community&gt; &lt;host&gt; 'NET-SNMP-EXTEND-MIB::nsExtendOutLine."storage_metrics"'</code>.</p>
 </section>

@@ -1152,3 +1152,72 @@ body.has-nav-tree-overlay {
 .cert-table tr[id] {
     scroll-margin-top: 6rem;
 }
+
+/* Speicher (HA): Hot-Tier / Cold-Tier */
+.fillbar {
+    display: block;
+    width: 100%;
+    min-width: 8rem;
+    height: .7rem;
+    margin: .35rem 0 .2rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-surface-hover);
+    overflow: hidden;
+    appearance: none;
+    -webkit-appearance: none;
+    color: #1a7f37;
+}
+
+.fillbar::-webkit-progress-bar {
+    background: var(--color-surface-hover);
+}
+
+.fillbar::-webkit-progress-value {
+    background: currentColor;
+    transition: width .4s ease;
+}
+
+.fillbar::-moz-progress-bar {
+    background: currentColor;
+}
+
+.fillbar--degraded {
+    color: #bf8700;
+}
+
+.fillbar--critical {
+    color: #cf222e;
+}
+
+.fillbar--disabled {
+    color: var(--color-muted);
+}
+
+.storage-metrics {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .15rem .75rem;
+    margin: .5rem 0 0;
+}
+
+.storage-metrics dt {
+    font-size: .82rem;
+    color: var(--color-muted);
+}
+
+.storage-metrics dd {
+    margin: 0;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.storage-alert__forecast {
+    margin: .5rem 0 0;
+    font-weight: 600;
+}
+
+.storage-live-state {
+    font-size: .82rem;
+    color: var(--color-muted);
+}

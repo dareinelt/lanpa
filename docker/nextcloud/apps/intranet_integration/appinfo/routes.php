@@ -12,6 +12,7 @@ return [
         ['name' => 'drives#update', 'url' => '/api/drives', 'verb' => 'POST'],
         ['name' => 'network_drives#show', 'url' => '/api/network-drives', 'verb' => 'GET'],
         ['name' => 'network_drives#update', 'url' => '/api/network-drives', 'verb' => 'POST'],
+        ['name' => 'recall#show', 'url' => '/api/recall', 'verb' => 'GET'],
         ['name' => 'sso#login', 'url' => '/sso', 'verb' => 'GET'],
     ],
 ];

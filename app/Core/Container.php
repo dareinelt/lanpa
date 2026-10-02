@@ -21,6 +21,7 @@ use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
 use App\Repositories\NetworkDriveRepository;
 use App\Repositories\StorageQuotaRepository;
+use App\Repositories\StorageRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\TlsCertificateRepository;
 use App\Security\Auth;
@@ -57,6 +58,7 @@ use App\Services\PhonebookService;
 use App\Services\SettingsService;
 use App\Services\SmsCodeService;
 use App\Services\StatisticsService;
+use App\Services\Storage\StorageService;
 use App\Services\ThemeService;
 use App\Services\Tls\TlsCertificateService;
 
@@ -651,6 +653,24 @@ final class Container
             OfficeBackupService::class,
             static fn (): OfficeBackupService => new OfficeBackupService(
                 (string) Config::get('office.backup_control_dir', BASE_PATH . '/storage/office-backup')
+            )
+        );
+    }
+
+    public static function storageRepository(): StorageRepository
+    {
+        return self::make(StorageRepository::class, static fn (): StorageRepository => new StorageRepository());
+    }
+
+    public static function storage(): StorageService
+    {
+        return self::make(
+            StorageService::class,
+            static fn (): StorageService => new StorageService(
+                self::storageRepository(),
+                self::settings(),
+                self::secretBox(),
+                self::officeConfig()->isEnabled()
             )
         );
     }

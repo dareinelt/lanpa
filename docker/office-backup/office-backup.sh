@@ -14,7 +14,8 @@
 #
 # Inhalt einer Sicherung (ein Archiv je Sicherung, optional verschluesselt):
 #   manifest.json, nextcloud-db.dump (pg_dump -Fc), intranet-db.sql,
-#   nextcloud-config.tar (config/, custom_apps/, themes/), nextcloud-data.tar,
+#   nextcloud-config.tar (config/, custom_apps/, themes/), nextcloud-data.tar
+#   (sparse), storage-tiering.tar (Platzhalter-Kennzeichen des Hot-Tiers),
 #   eurooffice-data.tar (ohne .private), intranet-storage.tar
 #
 # Geheimnisse werden nie protokolliert. Archive erhalten die Rechte 0600.
@@ -26,6 +27,7 @@ NC_HTML=/data/nextcloud-html
 NC_DATA=/data/nextcloud-data
 EO_DATA=/data/eurooffice-data
 APP_STORAGE=/data/intranet-storage
+TIERING=/data/storage-tiering
 CONTROL_DIR="${APP_STORAGE}/office-backup"
 RETENTION=${OFFICE_BACKUP_RETENTION:-7}
 SCHEDULE_HOUR=${OFFICE_BACKUP_SCHEDULE_HOUR:-}
@@ -136,7 +138,10 @@ do_backup() {
             || tar --numeric-owner -C "$NC_HTML" --exclude='config/intranet.config.php' \
                 --exclude='config/zz-intranet-backup.config.php' -cf "${work}/nextcloud-config.tar" config
     fi
-    [[ -d "$NC_DATA" ]] && tar --numeric-owner -C "$NC_DATA" -cf "${work}/nextcloud-data.tar" .
+    # --sparse: in den Cold-Tier ausgelagerte Dateien sind im Hot-Tier nur
+    # duenn besetzte Platzhalter und belegen so auch im Archiv keinen Platz.
+    [[ -d "$NC_DATA" ]] && tar --numeric-owner --sparse -C "$NC_DATA" -cf "${work}/nextcloud-data.tar" .
+    [[ -d "${TIERING}/stubs" ]] && tar --numeric-owner -C "$TIERING" -cf "${work}/storage-tiering.tar" stubs
     [[ -d "$EO_DATA" ]] && tar --numeric-owner -C "$EO_DATA" --exclude='./.private' -cf "${work}/eurooffice-data.tar" .
     [[ -d "$APP_STORAGE" ]] && tar --numeric-owner -C "$APP_STORAGE" --exclude='./office-backup' -cf "${work}/intranet-storage.tar" .
 
@@ -149,7 +154,7 @@ do_backup() {
     (cd "$work" && sha256sum -- * > SHA256SUMS)
     jq -n --arg name "$name" --arg created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg nc "$nc_version" \
         '{format:1, name:$name, created_at:$created, nextcloud_version:$nc,
-          parts:["nextcloud-db.dump","intranet-db.sql","nextcloud-config.tar","nextcloud-data.tar","eurooffice-data.tar","intranet-storage.tar"]}' \
+          parts:["nextcloud-db.dump","intranet-db.sql","nextcloud-config.tar","nextcloud-data.tar","storage-tiering.tar","eurooffice-data.tar","intranet-storage.tar"]}' \
         > "${work}/manifest.json"
 
     local target="${BACKUP_DIR}/${name}.tar"
@@ -220,6 +225,14 @@ do_restore() {
     if [[ -f "${work}/nextcloud-data.tar" ]]; then
         find "$NC_DATA" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
         tar --numeric-owner -C "$NC_DATA" -xf "${work}/nextcloud-data.tar"
+    fi
+    # Platzhalter-Kennzeichen passend zum Datenstand der Sicherung; ausgelagerte
+    # Inhalte liegen weiterhin auf den Speicherzielen (Cold-Tier).
+    if [[ -d "$TIERING" ]]; then
+        rm -rf "${TIERING}/stubs"
+        if [[ -f "${work}/storage-tiering.tar" ]]; then
+            tar --numeric-owner -C "$TIERING" -xf "${work}/storage-tiering.tar"
+        fi
     fi
     if [[ -f "${work}/eurooffice-data.tar" ]]; then
         find "$EO_DATA" -mindepth 1 -maxdepth 1 ! -name '.private' -exec rm -rf {} +

@@ -33,7 +33,7 @@ Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst ges
 | Frontend | Vanilla JavaScript + handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons) |
 | Datenbank | MySQL 9.7 LTS (utf8mb4, Image `mysql:${DB_IMAGE_TAG:-9.7.2}`) |
 | Web | Apache mit `mod_rewrite`, DocumentRoot `public/` |
-| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`) |
+| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`, `storage-sync` (Speicher-Tiering/HA, `docs/storage.md`)) |
 | Monitoring | net-snmp-Agent im Container `snmp` (UDP 161, read-only Docker-Socket + `sync_log`) |
 | Abhängigkeiten | **keine** – kein Composer, kein npm, kein CDN |
 
@@ -87,6 +87,9 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 | `purge_clicks.php` | Löscht Klickdaten älter als N Tage (Standard `CLICK_RETENTION_DAYS=400`) |
 | `install.sh` | Assistierte Komplettinstallation (whiptail/dialog/Text): prüft und installiert Abhängigkeiten, kopiert `.env.example`, fragt Passwörter/Secrets ab, startet und prüft die Container, schreibt Abschlussbericht nach `install-reports/` (Doku: `docs/installation.md`) |
 | `mysql-upgrade.sh` | Hebt ein bestehendes MySQL-8.0-Volume über einen temporären `mysql:8.4`-Container an (LTS-Pfad 8.0 → 8.4 → 9.7), sichert vorher nach `backups/mysql/`, stellt `mysql_native_password`-Konten um; `--check` (Exit 10 = nötig). Neue Installationen brauchen es nicht; `install.sh` ruft es bei vorhandenem 8.0-Volume auf |
+| `storage_sync.php` | Agent des Containers `storage-sync`: `monitor` | `sync` | `recall` | `restore --target=<id> [--full] [--keep-paused]` | `resume` |
+| `storage_status.php` | Werte des Speicher-Tierings für SNMP (`storage_ha`, `storage_sync`, `storage_hot_fill`, `storage_cold_fill`, `storage_metrics`, `storage_targets`) |
+| `storage-restore.sh` | Wiederherstellung der Office-Daten aus einem Speicherziel des Cold-Tiers inkl. Nextcloud-Datenbank (`docs/storage.md`) |
 | `install-systemd-service.sh` | Installiert die Landingpage als systemd-Service (Ubuntu ≥ 22.04; Autostart beim Boot, `docker compose up/down`) |
 
 ---
@@ -184,7 +187,7 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 
 - Basisklasse `Controller` stellt `view()`, `requireValidCsrf()`, `redirect()`, `assetVersion()` bereit.
 - **Öffentlich:** `LandingController`, `PageController` (Unterseiten/Textseiten), `PhonebookController`, `ClickController`, `LogoController`, `BackgroundImageController`, `ImportantLinkIconController`, `HealthController`, `AlarmTriggerController` (Alarm-Kacheln), `ProtectedAccessController` (Zugangscode-Seite), `SmsCodeController` (Code-Versand/-Prüfung), `NetworkDriveController` (`POST /sso/laufwerke`: Meldung der Netzlaufwerke durch das Anmeldeskript, nur mit Windows-Anmeldung).
-- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `CertificateController` (Zertifikate/HTTPS), `StatisticsController`, `AdminUserController`, `ImportExportController`, `OfficeController`, `OfficeAppsController`, `StorageQuotaController` (Speicherplatz/Quota), `NetworkDriveController` (Netzlaufwerke: Ausschlussliste, Übersicht, Anmeldeskript), plus Basis `AdminController`.
+- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `CertificateController` (Zertifikate/HTTPS), `StatisticsController`, `AdminUserController`, `ImportExportController`, `OfficeController`, `OfficeAppsController`, `StorageQuotaController` (Speicherplatz/Quota), `NetworkDriveController` (Netzlaufwerke: Ausschlussliste, Übersicht, Anmeldeskript), `StorageController` (Speicher (HA): Speicherziele, Einstellungen, Live-Status, Aufträge), plus Basis `AdminController`.
 
 ### Services (`app/Services/`) – Geschäftslogik
 
@@ -209,7 +212,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 `ActivationNumberRepository`, `AdminUserRepository`, `AlarmGroupRepository`,
 `AlarmLogRepository`, `AnnouncementRepository`, `ClickRepository`,
 `EmergencyNumberRepository`, `ImportantLinkRepository`, `NavigationRepository`,
-`PhonebookRepository`, `SettingsRepository`, `IdentitySourceRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), `StorageQuotaRepository` (Kontingent-Regeln, Overrides, Verlauf), `AdminGroupRepository` (AD-Gruppen für Intranet-/Nextcloud-Administratoren, Mitglieder), `NetworkDriveRepository` (gemeldete Netzlaufwerke je Benutzer), plus Basis `Repository`
+`PhonebookRepository`, `SettingsRepository`, `IdentitySourceRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), `StorageQuotaRepository` (Kontingent-Regeln, Overrides, Verlauf), `AdminGroupRepository` (AD-Gruppen für Intranet-/Nextcloud-Administratoren, Mitglieder), `NetworkDriveRepository` (gemeldete Netzlaufwerke je Benutzer), `StorageRepository` (Speicherziele, Status, Messwerte, Ereignisse, Aufträge des Speicher-Tierings), plus Basis `Repository`
 (stellt `PDO $pdo` bereit; Test kann eine eigene `PDO`-Instanz injizieren).
 
 ### Security (`app/Security/`)
@@ -281,7 +284,7 @@ Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
 (inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `zertifikate` (inkl. `zertifikate/csr` (POST erstellen, GET `?id=` herunterladen), `zertifikate/import/pruefen`, `…/import/bestaetigen`, `…/import/verwerfen`, `zertifikate/aktivieren`, `…/deaktivieren`, `…/loeschen`, `…/http-netze`), `snmp`, `statistik`
 (+ `admin/api/statistik`), `benutzer` (inkl. `benutzer/ad-gruppen`, `…/ad-gruppen/loeschen`, `…/nextcloud-uebertragen`), `sicherung` (Export/Import), `office`
 (inkl. `office/pruefen`, `office/sicherung`, `office/kachel`, `office/kachel/gestaltung`,
-`office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`, `office/ki`), `speicherplatz` (inkl. `speicherplatz/standard`, `…/gruppen`, `…/gruppen/loeschen`, `…/benutzer` (GET `?id=`/POST), `…/benutzer/entfernen`, `…/uebertragen`, `…/verlauf`), `netzlaufwerke` (inkl. `…/einstellungen`, `…/benutzer/entfernen`, `…/uebertragen`, `…/skript`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
+`office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`, `office/ki`), `speicherplatz` (inkl. `speicherplatz/standard`, `…/gruppen`, `…/gruppen/loeschen`, `…/benutzer` (GET `?id=`/POST), `…/benutzer/entfernen`, `…/uebertragen`, `…/verlauf`), `netzlaufwerke` (inkl. `…/einstellungen`, `…/benutzer/entfernen`, `…/uebertragen`, `…/skript`), `speicher-ha` (inkl. `…/status` (JSON, Live-Anzeige), `…/einstellungen`, `…/ziel` (GET `?id=`/POST), `…/ziel/loeschen`, `…/auftrag`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
 
 Office öffentlich: `GET /office-starten` (Übersicht der freigegebenen Office-Apps), `GET /office-app?app=…` (Start einer App, prüft Freigabe), `GET /office-nicht-verfuegbar`,
 `GET /api/office/footer` (Konfiguration der Fußzeile), `GET /api/office/status` (Verfügbarkeit für die Kachel).
@@ -325,6 +328,9 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `storage_quota_overrides` | Individuelles Kontingent je Nextcloud-Kennung | `user_uid` (unique), `display_name`, `quota_mb`, `reason` (Pflicht), `created_by`, `updated_by` |
 | `storage_quota_history` | Verlauf aller Kontingentänderungen | `subject_type` (user/group/default), `subject`, `action` (set/change/remove), `old_quota_mb`, `new_quota_mb`, `reason`, `admin_username` |
 | `network_drives` | Von den Windows-Clients gemeldete Netzlaufwerke | `user_uid` + `drive_letter` (unique), `display_name`, `unc_path`, `domain`, `computer_name`, `reported_at` |
+| `storage_targets` | Speicherziele des Cold-Tiers (SMB-Tier) | `label`, `unc_path`, `username`, `domain`, `password` (verschlüsselt), `smb_version`, `is_primary`, `active` |
+| `storage_target_status`, `storage_status` | Zustand je Ziel bzw. gesamt (von `storage-sync` geschrieben) | Füllstand, MB/s, IOPS, Synchronität, Rückstand, Modus, Zähler |
+| `storage_usage_samples`, `storage_events`, `storage_requests` | Verlauf (Diagramme, Hochrechnung), Ereignisse, Aufträge aus dem Adminbereich (`sync_now`, `full_scan`, `remount`, `confirm_deletes`) | |
 
 **Konventionen:** `InnoDB`, `utf8mb4`/`utf8mb4_unicode_ci`, `TIMESTAMP`-Spalten `created_at`/`updated_at`, `TINYINT(1)` für Booleans (`active`), Fremdschlüssel mit `ON DELETE SET NULL`/`ON UPDATE CASCADE`.
 
@@ -384,7 +390,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 1. Liest `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` aus der Umgebung.
 2. Überschreibt diese mit den Werten aus der Tabelle `settings` (`snmp_community`, `snmp_sys_location`, `snmp_sys_contact`), falls die Datenbank erreichbar ist.
-3. Erzeugt `snmpd.conf` und hängt die Status-Checks als `exec`-Einträge an (`UCD-SNMP-MIB::extTable`, Basis `.1.3.6.1.4.1.2021.8.1`): `app`, `db`, `sync`, `sync_workflow`, `phpmyadmin`, die Office-Dienste sowie `tls_certificate`/`tls_certificate_days`.
+3. Erzeugt `snmpd.conf` und hängt die Status-Checks als `exec`-Einträge an (`UCD-SNMP-MIB::extTable`, Basis `.1.3.6.1.4.1.2021.8.1`): `app`, `db`, `sync`, `sync_workflow`, `phpmyadmin`, die Office-Dienste sowie `tls_certificate`/`tls_certificate_days` und das Speicher-Tiering (13–16, Extends `storage_metrics`/`storage_targets`).
 4. `exec snmpd -f -Lo -C -c /etc/snmp/snmpd.conf` (lauscht auf UDP 161).
 
 ### AD-Synchronisation
@@ -412,7 +418,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 ### SNMP-Überwachung
 
 - Container `snmp` liest den Zustand der Dienste über den (read-only gemounteten) Docker-Socket und den Zustand des AD-Workflows direkt aus `sync_log`.
-- Ausgabe in `UCD-SNMP-MIB::extTable`: `extResult` (Exit-Code) unter `.1.3.6.1.4.1.2021.8.1.100.N`, `extOutput` (Text) unter `.1.3.6.1.4.1.2021.8.1.101.N`, Index `N` = 1 `app`, 2 `db`, 3 `sync`, 4 `sync_workflow`, 5 `phpmyadmin`, 6 `nextcloud`, 7 `nextcloud_db`, 8 `nextcloud_redis`, 9 `eurooffice`, 10 `office_workflow` (6–10 nur mit Profil `office`, sonst UNKNOWN), 11 `tls_certificate` (aktives HTTPS-Zertifikat: 0 > 30 Tage, 1 ≤ 30 Tage oder keins aktiv, 2 abgelaufen/noch nicht gültig), 12 `tls_certificate_days` (gleiche Exit-Codes, Text = Resttage, `-9999` = keins aktiv).
+- Ausgabe in `UCD-SNMP-MIB::extTable`: `extResult` (Exit-Code) unter `.1.3.6.1.4.1.2021.8.1.100.N`, `extOutput` (Text) unter `.1.3.6.1.4.1.2021.8.1.101.N`, Index `N` = 1 `app`, 2 `db`, 3 `sync`, 4 `sync_workflow`, 5 `phpmyadmin`, 6 `nextcloud`, 7 `nextcloud_db`, 8 `nextcloud_redis`, 9 `eurooffice`, 10 `office_workflow` (6–10 nur mit Profil `office`, sonst UNKNOWN), 11 `tls_certificate` (aktives HTTPS-Zertifikat: 0 > 30 Tage, 1 ≤ 30 Tage oder keins aktiv, 2 abgelaufen/noch nicht gültig), 12 `tls_certificate_days` (gleiche Exit-Codes, Text = Resttage, `-9999` = keins aktiv), 13 `storage_ha`, 14 `storage_sync`, 15 `storage_hot_fill`, 16 `storage_cold_fill` (per `docker exec` im `app`-Container: `scripts/storage_status.php`); mehrzeilige Messwerte über `nsExtendOutLine."storage_metrics"`/`"storage_targets"`.
 - Datenbankabfragen (`db_query`): direkt per MariaDB-Client, sonst über den Docker-Socket im `db`-Container (Alpine-Client ohne `caching_sha2_password`).
 - Exit-Codes: `0` OK, `1` WARNING, `2` CRITICAL, `3` UNKNOWN; `sync_workflow` meldet `0`, wenn der letzte Lauf `success` und jünger als `2 × LDAP_SYNC_INTERVAL` ist.
 - Community/Strings im Adminbereich unter **SNMP** pflegbar; werden erst nach Neustart des `snmp`-Containers wirksam.
@@ -458,3 +464,4 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche (30–56: Office, Office-Apps, AD-Gruppen und lokale KI).
 - `docs/installation.md` – Assistierte Installation mit `scripts/install.sh`: Ablauf, Optionen, Bedienung, abgefragte Variablen, Abschlussbericht, Fehlerbehebung.
 - `docs/office.md` – Office-Erweiterung: Einrichtung, Architektur, Updates, AD-Gruppen/SSO, Kachel, lokale KI, Sicherung, SNMP.
+- `docs/storage.md` – Speicher-Tiering und HA-Synchronisation: Hot-Tier (lokales Storage), Cold-Tier (SMB-Tier), Container `storage-sync`, Rückholung in Nextcloud, SNMP, Wiederherstellung, Vorteile.

@@ -1,0 +1,71 @@
+/* Intranet-Integration: Rueckholung aus dem Cold-Tier (SMB-Tier) */
+.intranet-recall {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 10050;
+    width: min(380px, calc(100vw - 32px));
+    padding: 12px 14px;
+    border-radius: var(--border-radius-large, 10px);
+    background: var(--color-main-background, #fff);
+    color: var(--color-main-text, #222);
+    box-shadow: 0 2px 12px var(--color-box-shadow, rgba(0, 0, 0, .25));
+    font-size: 14px;
+}
+
+.intranet-recall__title {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.intranet-recall__hint {
+    margin: 0 0 8px;
+    color: var(--color-text-maxcontrast, #666);
+    font-size: 13px;
+}
+
+.intranet-recall__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 40vh;
+    overflow: auto;
+}
+
+.intranet-recall__item {
+    display: grid;
+    gap: 2px;
+    padding: 6px 0;
+    border-top: 1px solid var(--color-border, #ddd);
+}
+
+.intranet-recall__item:first-child {
+    border-top: 0;
+}
+
+.intranet-recall__name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 500;
+}
+
+.intranet-recall__bar {
+    width: 100%;
+    height: 8px;
+    accent-color: var(--color-primary-element, #0082c9);
+}
+
+.intranet-recall__text {
+    color: var(--color-text-maxcontrast, #666);
+    font-size: 12px;
+}
+
+.intranet-recall__item--failed .intranet-recall__text {
+    color: var(--color-error-text, #c9302c);
+}
+
+.intranet-recall__item--done .intranet-recall__text {
+    color: var(--color-success-text, #2d7b41);
+}

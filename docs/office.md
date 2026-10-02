@@ -61,6 +61,7 @@ flowchart LR
 | `nextcloud-db`, `nextcloud-redis` | PostgreSQL und Redis (Passwort aus Secret), nur im internen Netz. |
 | `nextcloud-ai-worker` | Führt KI-Aufgaben von Nextcloud (Assistant) sofort aus statt nur alle 5 Minuten per Cron ([Abschnitt 6a](#6a-lokale-ki)). |
 | `office-backup` | Sicherung/Wiederherstellung, vom Adminbereich aus steuerbar. |
+| `storage-sync` | Speicher-Tiering und HA-Synchronisation: Daten von Nextcloud und Euro-Office zusätzlich auf SMB-Freigaben (Cold-Tier), lokales Volume als Cache (Hot-Tier) – siehe [docs/storage.md](storage.md). |
 
 **Warum kein zusätzlicher `reverse`-/`entry`-Container?** Die NTLM-Anmeldung ist
 an die TCP-Verbindung gebunden. Ein weiterer Proxy davor würde sie brechen. Der
@@ -623,6 +624,10 @@ kurzzeitig frei und blenden ihn danach wieder aus.
 - Ziel `OFFICE_BACKUP_DIR` (Standard `./backups`), Aufbewahrung
   `OFFICE_BACKUP_RETENTION` (Anzahl), tägliche Sicherung zur Stunde
   `OFFICE_BACKUP_SCHEDULE_HOUR` (leer = nur manuell).
+- Mit Speicher-Tiering werden ausgelagerte Dateien als Platzhalter („Sparse“)
+  gesichert und belegen im Archiv keinen Platz; die vollständigen Daten liegen
+  im Cold-Tier (SMB-Tier). Wiederherstellung aus einem Speicherziel:
+  `./scripts/storage-restore.sh` ([docs/storage.md](storage.md#7-sicherung-und-wiederherstellung)).
 
 ![Sicherung im Adminbereich](screenshots/37-admin-office-sicherung.png)
 
@@ -634,6 +639,9 @@ Der Container `snmp` meldet zusätzlich `nextcloud`, `nextcloud_db`,
 `nextcloud_redis`, `eurooffice` und `office_workflow` (Nextcloud und
 DocumentServer erreichbar). Ist Office nicht bereitgestellt, liefern die
 Einträge `UNKNOWN` (3). OIDs: siehe README, Abschnitt SNMP-Überwachung.
+Das Speicher-Tiering meldet `storage_ha`, `storage_sync`, `storage_hot_fill`
+und `storage_cold_fill` (Index 13–16) sowie `storage_metrics` und
+`storage_targets` ([docs/storage.md](storage.md#6-überwachung-per-snmp)).
 
 ---
 

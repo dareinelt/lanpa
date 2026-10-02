@@ -30,6 +30,7 @@ use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
 use App\Controllers\Admin\StatisticsController;
 use App\Controllers\Admin\StorageQuotaController;
+use App\Controllers\Admin\StorageController as StorageAdminController;
 use App\Controllers\BackgroundImageController;
 use App\Controllers\AlarmTriggerController;
 use App\Controllers\ClickController;
@@ -261,6 +262,13 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/netzlaufwerke/benutzer/entfernen', [NetworkDriveAdminController::class, 'deleteUser']);
         $router->post('/admin/netzlaufwerke/uebertragen', [NetworkDriveAdminController::class, 'push']);
         $router->get('/admin/netzlaufwerke/skript', [NetworkDriveAdminController::class, 'script']);
+        $router->get('/admin/speicher-ha', [StorageAdminController::class, 'index']);
+        $router->get('/admin/speicher-ha/status', [StorageAdminController::class, 'live']);
+        $router->post('/admin/speicher-ha/einstellungen', [StorageAdminController::class, 'updateSettings']);
+        $router->get('/admin/speicher-ha/ziel', [StorageAdminController::class, 'editTarget']);
+        $router->post('/admin/speicher-ha/ziel', [StorageAdminController::class, 'saveTarget']);
+        $router->post('/admin/speicher-ha/ziel/loeschen', [StorageAdminController::class, 'deleteTarget']);
+        $router->post('/admin/speicher-ha/auftrag', [StorageAdminController::class, 'request']);
 
         $router->get('/admin/zertifikate', [CertificateController::class, 'index']);
         $router->post('/admin/zertifikate/csr', [CertificateController::class, 'createRequest']);

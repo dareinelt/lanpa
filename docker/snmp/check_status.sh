@@ -3,7 +3,9 @@
 #
 # Verwendung: check_status.sh <app|db|sync|sync_workflow|phpmyadmin|
 #                              nextcloud|nextcloud_db|nextcloud_redis|eurooffice|office_workflow|
-#                              tls_certificate|tls_certificate_days>
+#                              tls_certificate|tls_certificate_days|
+#                              storage_ha|storage_sync|storage_hot_fill|storage_cold_fill|
+#                              storage_metrics|storage_targets>
 #
 # Rueckgabe (Exit-Code, landet als extResult in der SNMP-Tabelle):
 #   0 = OK        Dienst laeuft/gesund bzw. Workflow frisch erfolgreich
@@ -226,6 +228,28 @@ check_tls_certificate() {
     return 0
 }
 
+# Speicher-Tiering / HA (Container storage-sync, Adminbereich -> Speicher (HA)).
+# Bewertung wie im Adminbereich: scripts/storage_status.php im app-Container.
+# $1 = storage_ha|storage_sync|storage_hot_fill|storage_cold_fill|
+#      storage_metrics|storage_targets (mehrzeilig, key=value)
+check_storage() {
+    local check="$1" id out rc
+    id="$(service_ids app | head -n1)"
+    if [ -z "$id" ]; then
+        echo "${check}: app-Container nicht gefunden"
+        return 2
+    fi
+    out="$("$DOCKER_BIN" exec -u www-data -w /var/www/html "$id" php scripts/storage_status.php "$check" 2>/dev/null)"
+    rc=$?
+    if [ -z "$out" ]; then
+        echo "${check}: keine Antwort"
+        return 2
+    fi
+    printf '%s\n' "$out"
+    [ "$rc" -le 3 ] || rc=3
+    return "$rc"
+}
+
 case "${1:-}" in
     app)           check_container app 1 ;;
     db)            check_container db 1 ;;
@@ -239,5 +263,7 @@ case "${1:-}" in
     office_workflow) check_office_workflow ;;
     tls_certificate)      check_tls_certificate text ;;
     tls_certificate_days) check_tls_certificate days ;;
+    storage_ha|storage_sync|storage_hot_fill|storage_cold_fill|storage_metrics|storage_targets)
+                          check_storage "$1" ;;
     *) echo "unbekannte Pruefung: ${1:-}"; exit 3 ;;
 esac

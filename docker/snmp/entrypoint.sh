@@ -34,7 +34,7 @@ db_contact="$(setting snmp_sys_contact || true)"
 
 mkdir -p /var/lib/snmp
 
-# Hinweis: Die Reihenfolge der exec-Eintraege bestimmt den Index (1..12) der
+# Hinweis: Die Reihenfolge der exec-Eintraege bestimmt den Index (1..16) der
 # extResult-/extOutput-OIDs. Bei Aenderungen die README-Dokumentation anpassen.
 cat > /etc/snmp/snmpd.conf <<EOF
 # Erzeugt vom Entrypoint – nicht manuell bearbeiten.
@@ -55,6 +55,15 @@ exec eurooffice      /opt/snmp/check_status.sh eurooffice
 exec office_workflow /opt/snmp/check_status.sh office_workflow
 exec tls_certificate      /opt/snmp/check_status.sh tls_certificate
 exec tls_certificate_days /opt/snmp/check_status.sh tls_certificate_days
+exec storage_ha        /opt/snmp/check_status.sh storage_ha
+exec storage_sync      /opt/snmp/check_status.sh storage_sync
+exec storage_hot_fill  /opt/snmp/check_status.sh storage_hot_fill
+exec storage_cold_fill /opt/snmp/check_status.sh storage_cold_fill
+
+# Speicher-Tiering: alle Kennzahlen (key=value je Zeile) ueber NET-SNMP-EXTEND-MIB
+# (nsExtendOutLine."storage_metrics" bzw. ."storage_targets").
+extend storage_metrics /opt/snmp/check_status.sh storage_metrics
+extend storage_targets /opt/snmp/check_status.sh storage_targets
 EOF
 
 # -C: nur diese Datei lesen (sonst wird snmpd.conf doppelt geladen -> doppelte

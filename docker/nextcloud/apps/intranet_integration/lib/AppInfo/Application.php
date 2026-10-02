@@ -8,17 +8,24 @@ use OCA\IntranetIntegration\Listener\AdminsLoginListener;
 use OCA\IntranetIntegration\Listener\FooterListener;
 use OCA\IntranetIntegration\Listener\NetworkDrivesScriptListener;
 use OCA\IntranetIntegration\Listener\QuotaLoginListener;
+use OCA\IntranetIntegration\Listener\RecallScriptListener;
+use OCA\IntranetIntegration\Storage\TieringClient;
+use OCA\IntranetIntegration\Storage\TieringWrapper;
+use OC\Files\Filesystem;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
 use OCP\AppFramework\Bootstrap\IRegistrationContext;
 use OCP\AppFramework\Http\Events\BeforeLoginTemplateRenderedEvent;
 use OCP\AppFramework\Http\Events\BeforeTemplateRenderedEvent;
+use OCP\Files\Mount\IMountPoint;
+use OCP\Files\Storage\IStorage;
 use OCP\IConfig;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
 use OCP\User\Events\PostLoginEvent;
+use OCP\Util;
 
 class Application extends App implements IBootstrap {
     public const APP_ID = 'intranet_integration';
@@ -38,6 +45,48 @@ class Application extends App implements IBootstrap {
         $context->registerEventListener(PostLoginEvent::class, AdminsLoginListener::class);
         // Einstellung "Netzlaufwerke anzeigen" im Dateien-App.
         $context->registerEventListener('OCA\\Files\\Event\\LoadAdditionalScriptsEvent', NetworkDrivesScriptListener::class);
+        // Speicher-Tiering: Fortschritt der Rueckholung aus dem Cold-Tier.
+        $context->registerEventListener(BeforeTemplateRenderedEvent::class, RecallScriptListener::class);
+        // Speicher-Tiering (storage-sync): ausgelagerte Dateien bei Zugriff zurueckholen.
+        Util::connectHook('OC_Filesystem', 'preSetup', $this, 'addTieringWrapper');
+    }
+
+    /**
+     * Haengt den Tiering-Wrapper an die lokalen Speicher (Home-Verzeichnisse),
+     * sobald storage-sync das gemeinsame Verzeichnis eingerichtet hat.
+     *
+     * @internal
+     */
+    public function addTieringWrapper(): void {
+        static $added = false;
+        if ($added) {
+            return;
+        }
+        $added = true;
+        $tiering = $this->tieringClient();
+        if ($tiering === null || !$tiering->enabled()) {
+            return;
+        }
+        // Hohe Prioritaet: direkt um den lokalen Speicher (innerste Schicht).
+        Filesystem::addStorageWrapper(
+            'intranet_tiering',
+            static fn (string $mountPoint, IStorage $storage, IMountPoint $mount): IStorage => TieringWrapper::wrap($tiering, $storage),
+            1000
+        );
+    }
+
+    public function tieringClient(): ?TieringClient {
+        static $client = false;
+        if ($client !== false) {
+            return $client;
+        }
+        $config = $this->getContainer()->get(IConfig::class);
+        $settings = $config->getSystemValue(self::APP_ID, []);
+        $base = is_array($settings) && is_string($settings['tiering_dir'] ?? null) ? $settings['tiering_dir'] : TieringClient::DEFAULT_BASE;
+        $dataDir = rtrim((string) $config->getSystemValueString('datadirectory', \OC::$SERVERROOT . '/data'), '/');
+        $client = is_dir($base) && $dataDir !== '' ? new TieringClient($base, $dataDir) : null;
+
+        return $client;
     }
 
     public function boot(IBootContext $context): void {

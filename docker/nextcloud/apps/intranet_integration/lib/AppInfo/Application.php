@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OCA\IntranetIntegration\AppInfo;
 
 use OCA\IntranetIntegration\Listener\FooterListener;
+use OCA\IntranetIntegration\Listener\QuotaLoginListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
 use OCP\AppFramework\Bootstrap\IBootstrap;
@@ -15,6 +16,7 @@ use OCP\IConfig;
 use OCP\IRequest;
 use OCP\IURLGenerator;
 use OCP\IUserSession;
+use OCP\User\Events\PostLoginEvent;
 
 class Application extends App implements IBootstrap {
     public const APP_ID = 'intranet_integration';
@@ -28,6 +30,8 @@ class Application extends App implements IBootstrap {
         // Freigaben, Einstellungen ...) sowie die Anmeldeseite.
         $context->registerEventListener(BeforeTemplateRenderedEvent::class, FooterListener::class);
         $context->registerEventListener(BeforeLoginTemplateRenderedEvent::class, FooterListener::class);
+        // Speicherplatz-Kontingente aus dem Intranet fuer neu bekannte Konten.
+        $context->registerEventListener(PostLoginEvent::class, QuotaLoginListener::class);
     }
 
     public function boot(IBootContext $context): void {

@@ -142,7 +142,7 @@ app/            Anwendungscode
   Support/      Dates, Html, Sanitizer, Validator
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
-  migrations/   SQL-Migrationen (001…018)
+  migrations/   SQL-Migrationen (001…020)
 docker/         Dockerfiles, Entrypoints, PHP-/MySQL-Konfiguration, SNMP-Agent
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
 scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation, MySQL-Upgrade)
@@ -184,13 +184,14 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 
 - Basisklasse `Controller` stellt `view()`, `requireValidCsrf()`, `redirect()`, `assetVersion()` bereit.
 - **Öffentlich:** `LandingController`, `PageController` (Unterseiten/Textseiten), `PhonebookController`, `ClickController`, `LogoController`, `BackgroundImageController`, `ImportantLinkIconController`, `HealthController`, `AlarmTriggerController` (Alarm-Kacheln), `ProtectedAccessController` (Zugangscode-Seite), `SmsCodeController` (Code-Versand/-Prüfung).
-- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `CertificateController` (Zertifikate/HTTPS), `StatisticsController`, `AdminUserController`, `ImportExportController`, `OfficeController`, `OfficeAppsController`, plus Basis `AdminController`.
+- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `CertificateController` (Zertifikate/HTTPS), `StatisticsController`, `AdminUserController`, `ImportExportController`, `OfficeController`, `OfficeAppsController`, `StorageQuotaController` (Speicherplatz/Quota), plus Basis `AdminController`.
 
 ### Services (`app/Services/`) – Geschäftslogik
 
 `ActivationNumberService`, `AdSyncService`, `AdminUserService`, `AlarmGroupService`,
 `AlarmService`, `AnnouncementService`, `BackgroundImageService`, `BackupService`,
 `Office\OfficeConfigService` (Einstellungen Fußzeile/Kachel), `Office\OfficeHealthService` (Status/Diagnose, Probe per `OfficeProbeInterface`), `Office\OfficeBackupService` (Steuerung des Containers `office-backup`), `Office\OfficeAiService` (lokale KI: Einstellungen inkl. Audio/Bilder, `runtime.json` für Euro-Office, signierte Übergabe an `intranet_integration/api/ai`), `Office\OfficeTrustedDomainsService` (vertrauenswürdige Hostnamen von Nextcloud aus `APP_URL`, `SSO_SPN_HOSTS`, Domänenbeitritt (`IdentitySourceService::ssoHostnames`) und HTTPS-Zertifikat; signierte Übergabe an `intranet_integration/api/hosts`, Abgleich in der Diagnose),
+`Office\StorageQuotaService` (Speicherplatz-Kontingente in Nextcloud: Standard `office_quota_default_mb` (500 MB), Regeln je AD-Gruppe (größtes gilt), individuelle Kontingente mit Pflicht-Begründung und Verlauf; signierte Übergabe an `intranet_integration/api/quota`, Abgleich per Fingerabdruck in der Diagnose),
 `Office\OfficeAppService` + `Office\OfficeAppCatalog` (Office-Apps unter der Kachel: Euro-Office-Webapps, Dateien, OWA; Freigabe per AD-Gruppe/App-Paket, ohne Zuordnung/ohne SSO keine Apps),
 `EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
 `LdapAttributeMapper`, `LdapClient`, `LogoService`, `NavigationService`,
@@ -207,7 +208,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 `ActivationNumberRepository`, `AdminUserRepository`, `AlarmGroupRepository`,
 `AlarmLogRepository`, `AnnouncementRepository`, `ClickRepository`,
 `EmergencyNumberRepository`, `ImportantLinkRepository`, `NavigationRepository`,
-`PhonebookRepository`, `SettingsRepository`, `IdentitySourceRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), plus Basis `Repository`
+`PhonebookRepository`, `SettingsRepository`, `IdentitySourceRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), `StorageQuotaRepository` (Kontingent-Regeln, Overrides, Verlauf), plus Basis `Repository`
 (stellt `PDO $pdo` bereit; Test kann eine eigene `PDO`-Instanz injizieren).
 
 ### Security (`app/Security/`)
@@ -278,7 +279,7 @@ Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
 (inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `zertifikate` (inkl. `zertifikate/csr` (POST erstellen, GET `?id=` herunterladen), `zertifikate/import/pruefen`, `…/import/bestaetigen`, `…/import/verwerfen`, `zertifikate/aktivieren`, `…/deaktivieren`, `…/loeschen`, `…/http-netze`), `snmp`, `statistik`
 (+ `admin/api/statistik`), `benutzer`, `sicherung` (Export/Import), `office`
 (inkl. `office/pruefen`, `office/sicherung`, `office/kachel`, `office/kachel/gestaltung`,
-`office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`, `office/ki`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
+`office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`, `office/ki`), `speicherplatz` (inkl. `speicherplatz/standard`, `…/gruppen`, `…/gruppen/loeschen`, `…/benutzer` (GET `?id=`/POST), `…/benutzer/entfernen`, `…/uebertragen`, `…/verlauf`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
 
 Office öffentlich: `GET /office-starten` (Übersicht der freigegebenen Office-Apps), `GET /office-app?app=…` (Start einer App, prüft Freigabe), `GET /office-nicht-verfuegbar`,
 `GET /api/office/footer` (Konfiguration der Fußzeile), `GET /api/office/status` (Verfügbarkeit für die Kachel).
@@ -317,6 +318,9 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `identity_sources` | Weitere AD-Quellen (Zweigstellen, Tochtergesellschaften) | `source_key` (unique), `label`, `hosts` (je Zeile ein Server, Ausfallreserve), LDAP-Felder, `bind_password` (verschlüsselt), `sso_enabled`, `sso_domain`, `sso_dcs`, `sso_ntp_servers`, `sso_join_user`, `sso_join_password` (verschlüsselt), `sso_networks`, `sso_hostnames`, `sort_order`, `active` |
 | `tls_certificates` | CSR-Requests mit Schlüssel (verschlüsselt) und importiertem Zertifikat; `kind='fallback'` = selbstsigniertes Notfall-Zertifikat | `kind` (csr/fallback), `common_name`, `san`, `key_type`, `private_key`, `public_key_hash`, `csr_pem`, `certificate_pem`, `chain_pem`, `cert_*` (Details, `cert_not_before`/`cert_not_after` als Unix-Zeit), `active` (genau eins), `activated_at`, `first_used_at`/`last_used_at` |
 | `office_app_permissions` | Freigabe von Apps/Paketen für AD-Gruppen | `group_name`, `app_key` oder `package_id` |
+| `storage_quota_groups` | Speicherplatz-Kontingent je AD-Gruppe | `group_name` (unique), `quota_mb`, `reason`, `updated_by` |
+| `storage_quota_overrides` | Individuelles Kontingent je Nextcloud-Kennung | `user_uid` (unique), `display_name`, `quota_mb`, `reason` (Pflicht), `created_by`, `updated_by` |
+| `storage_quota_history` | Verlauf aller Kontingentänderungen | `subject_type` (user/group/default), `subject`, `action` (set/change/remove), `old_quota_mb`, `new_quota_mb`, `reason`, `admin_username` |
 
 **Konventionen:** `InnoDB`, `utf8mb4`/`utf8mb4_unicode_ci`, `TIMESTAMP`-Spalten `created_at`/`updated_at`, `TINYINT(1)` für Booleans (`active`), Fremdschlüssel mit `ON DELETE SET NULL`/`ON UPDATE CASCADE`.
 

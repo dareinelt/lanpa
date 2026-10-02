@@ -18,6 +18,7 @@ use App\Repositories\NavigationRepository;
 use App\Repositories\OfficeAppRepository;
 use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
+use App\Repositories\StorageQuotaRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\TlsCertificateRepository;
 use App\Security\Auth;
@@ -45,6 +46,7 @@ use App\Services\Office\OfficeBackupService;
 use App\Services\Office\OfficeConfigService;
 use App\Services\Office\OfficeHealthService;
 use App\Services\Office\OfficeTrustedDomainsService;
+use App\Services\Office\StorageQuotaService;
 use App\Services\Office\StreamOfficeProbe;
 use App\Services\PhonebookService;
 use App\Services\SettingsService;
@@ -496,7 +498,8 @@ final class Container
                 (string) Config::get('office.health_cache_file', BASE_PATH . '/storage/cache/office_health.json'),
                 (int) Config::get('office.health_cache_ttl', 30),
                 self::officeAi(),
-                self::officeTrustedDomains()
+                self::officeTrustedDomains(),
+                self::storageQuotas()
             )
         );
     }
@@ -530,6 +533,30 @@ final class Container
                     }
 
                     return $hosts;
+                }
+            )
+        );
+    }
+
+    public static function storageQuotas(): StorageQuotaService
+    {
+        return self::make(
+            StorageQuotaService::class,
+            static fn (): StorageQuotaService => new StorageQuotaService(
+                new StorageQuotaRepository(),
+                self::settings(),
+                self::officeConfig(),
+                new StreamOfficeProbe(),
+                static function (): array {
+                    $sources = [0 => ['key' => '', 'label' => (string) (self::identitySources()->labels()[0] ?? '')]];
+                    foreach (self::identitySources()->additionalRows(false) as $row) {
+                        $sources[(int) $row['id']] = [
+                            'key' => strtolower((string) $row['source_key']),
+                            'label' => (string) ($row['label'] ?? $row['source_key']),
+                        ];
+                    }
+
+                    return $sources;
                 }
             )
         );

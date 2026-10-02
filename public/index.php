@@ -28,6 +28,7 @@ use App\Controllers\Admin\OfficeAppsController as OfficeAppsAdminController;
 use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
 use App\Controllers\Admin\StatisticsController;
+use App\Controllers\Admin\StorageQuotaController;
 use App\Controllers\BackgroundImageController;
 use App\Controllers\AlarmTriggerController;
 use App\Controllers\ClickController;
@@ -239,6 +240,15 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/office/apps/paket', [OfficeAppsAdminController::class, 'editPackage']);
         $router->post('/admin/office/apps/paket', [OfficeAppsAdminController::class, 'savePackage']);
         $router->post('/admin/office/apps/paket/loeschen', [OfficeAppsAdminController::class, 'deletePackage']);
+        $router->get('/admin/speicherplatz', [StorageQuotaController::class, 'index']);
+        $router->post('/admin/speicherplatz/standard', [StorageQuotaController::class, 'updateDefault']);
+        $router->post('/admin/speicherplatz/gruppen', [StorageQuotaController::class, 'saveGroup']);
+        $router->post('/admin/speicherplatz/gruppen/loeschen', [StorageQuotaController::class, 'deleteGroup']);
+        $router->get('/admin/speicherplatz/benutzer', [StorageQuotaController::class, 'editUser']);
+        $router->post('/admin/speicherplatz/benutzer', [StorageQuotaController::class, 'saveUser']);
+        $router->post('/admin/speicherplatz/benutzer/entfernen', [StorageQuotaController::class, 'removeUser']);
+        $router->post('/admin/speicherplatz/uebertragen', [StorageQuotaController::class, 'push']);
+        $router->get('/admin/speicherplatz/verlauf', [StorageQuotaController::class, 'history']);
 
         $router->get('/admin/zertifikate', [CertificateController::class, 'index']);
         $router->post('/admin/zertifikate/csr', [CertificateController::class, 'createRequest']);

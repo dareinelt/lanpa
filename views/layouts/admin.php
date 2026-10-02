@@ -30,6 +30,7 @@ $navItems = $isAdmin ? [
     'alarm' => ['/admin/alarmierung', 'Alarmierung'],
     'activation' => ['/admin/aktivierungs-rufnummern', 'Aktivierungs-Rufnummern'],
     'office' => ['/admin/office', 'Office'],
+    'quota' => ['/admin/speicherplatz', 'Speicherplatz (Quota)'],
     'certificates' => ['/admin/zertifikate', 'Zertifikate (HTTPS)'],
     'snmp' => ['/admin/snmp', 'SNMP'],
     'statistics' => ['/admin/statistik', 'Statistik'],

@@ -205,6 +205,40 @@ weiterhin nach `NEXTCLOUD_LDAP_ALLOWED_GROUPS` bzw. `NEXTCLOUD_OFFICE_GROUPS`.
 Beim Containerstart ergänzt `hooks/intranet-setup.sh` nur fehlende
 Grundeinträge und entfernt keine vorhandenen Hostnamen.
 
+### Speicherplatz-Kontingente (Quota)
+
+Unter **Admin → Speicherplatz (Quota)** (`/admin/speicherplatz`) legen
+Administratoren fest, wie viel Speicher jeder Benutzer in Nextcloud belegen
+darf. Das wirksame Kontingent ergibt sich in dieser Reihenfolge:
+
+1. **Individuelles Kontingent** – je Benutzer, nur mit Begründung (mindestens
+   5 Zeichen); auch das Entfernen verlangt eine Begründung. Es hat immer
+   Vorrang, auch wenn es kleiner als das Gruppenkontingent ist.
+2. **AD-Gruppe** – Regeln je AD-Gruppe (Mitgliedschaften aus der
+   AD-Synchronisation, verschachtelt aufgelöst). Ist ein Benutzer in mehreren
+   Gruppen mit Regel, gilt das größte Kontingent.
+3. **Standard** – Vorgabe 500 MB (Einstellung `office_quota_default_mb`).
+
+Die Seite zeigt alle Benutzer mit mehr als dem Standard (inkl. Begründung,
+wer das Kontingent vergeben hat und wann) sowie einen vollständigen Verlauf
+aller Änderungen (`/admin/speicherplatz/verlauf`: wer wem wann wie viel
+gegeben oder entzogen hat, mit Begründung). Individuelle Kontingente
+ausgeschiedener Benutzer bleiben sichtbar, bis sie entfernt werden.
+
+Benutzer werden über ihre Nextcloud-Kennung geführt (SamAccountName bzw.
+`name@kennung` bei weiteren Identitätsquellen). Jede Änderung wird sofort
+signiert an `intranet_integration` übertragen
+(`/apps/intranet_integration/api/quota`, JWT mit eigener Audience, an den
+Inhalt gebunden): Nextcloud erhält den Standard als `files/default_quota` und
+alle abweichenden Benutzer als individuelle Quota. Benutzer, die sich noch nie
+in Nextcloud angemeldet haben, erhalten ihr Kontingent bei der ersten
+Anmeldung. Die Diagnose vergleicht den Stand per Fingerabdruck (Komponente
+„Speicherplatz-Kontingente“, nur informativ) und überträgt bei Abweichung
+erneut – so werden auch geänderte AD-Gruppenmitgliedschaften nach der
+AD-Synchronisation automatisch nachgezogen. Fällt ein Benutzer aus allen
+Regeln heraus, setzt Nextcloud ihn wieder auf den Standard zurück – aber nur,
+wenn sein Kontingent nicht zwischenzeitlich direkt in Nextcloud geändert wurde.
+
 ### Automatische Anmeldung in Nextcloud (Intranet-SSO)
 
 ```mermaid
@@ -367,7 +401,7 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 | Bereich | Inhalt |
 | --- | --- |
 | Status | Gesamtzustand, letzte Prüfung, „Jetzt prüfen“ |
-| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector, vertrauenswürdige Hostnamen (Abgleich von `trusted_domains`) |
+| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector, vertrauenswürdige Hostnamen (Abgleich von `trusted_domains`), Speicherplatz-Kontingente (Abgleich mit `files/default_quota` und Benutzer-Quota) |
 | Fußzeile und Einstieg | Text, Transparenz, Logo, „Zurück“, Ziel „Zum Intranet“, direkter Aufruf |
 | Lokale KI | KI-Endpunkt für alle Benutzer in Nextcloud und Euro-Office ([Abschnitt 6a](#6a-lokale-ki)) |
 | Vorschau der Fußzeile | Live-Vorschau mit demselben Stylesheet/Skript wie in Nextcloud |

@@ -13,6 +13,7 @@ class TokenVerifier {
     public const AI_AUDIENCE = 'intranet_integration_ai';
     public const HOSTS_AUDIENCE = 'intranet_integration_hosts';
     public const QUOTA_AUDIENCE = 'intranet_integration_quota';
+    public const ADMINS_AUDIENCE = 'intranet_integration_admins';
     public const DRIVES_AUDIENCE = 'intranet_integration_drives';
     public const MAX_LIFETIME = 120;
 

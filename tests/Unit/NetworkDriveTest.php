@@ -242,7 +242,7 @@ Runner::test('Netzlaufwerke: Gesundheitspruefung gleicht bei Abweichung ab', sta
         return $probe;
     };
     $health = static fn (FakeOfficeProbe $probe, NetworkDriveService $drives): OfficeHealthService => new OfficeHealthService(
-        officeConfig(), $probe, officeTempDir() . '/health.json', 30, null, null, null, $drives
+        officeConfig(), $probe, officeTempDir() . '/health.json', 30, null, null, null, null, $drives
     );
     $pushes = static fn (FakeOfficeProbe $probe): int => count(array_filter($probe->requests, static fn (array $r): bool => str_ends_with($r['url'], '/api/drives')));
 

@@ -10,17 +10,88 @@ use App\Core\Response;
 use App\Exceptions\ValidationException;
 use App\Repositories\AdminUserRepository;
 use App\Security\Session;
+use App\Services\AdminGroupService;
 
 final class AdminUserController extends AdminController
 {
     public function index(Request $request): Response
     {
-        return $this->adminView('admin.users.index', [
-            'pageTitle' => 'Benutzer',
-            'activeNav' => 'users',
-            'items' => Container::adminUsers()->allItems(),
-            'currentUserId' => Container::auth()->id(),
+        return $this->renderIndex();
+    }
+
+    /**
+     * Traegt eine AD-Gruppe fuer Intranet- oder Nextcloud-Administratoren ein.
+     */
+    public function storeGroup(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $target = (string) $request->input('target', '');
+        $group = (string) $request->input('group_name', '');
+
+        try {
+            Container::adminGroups()->addRule($target, $group, (string) Container::auth()->username());
+        } catch (ValidationException $exception) {
+            Session::flash('error', 'Bitte prüfen Sie die Angaben zur AD-Gruppe.');
+
+            return $this->renderIndex($exception->errors(), [$target . '_group' => $group], 422);
+        }
+
+        app_logger()->info('AD-Gruppe für Administratoren eingetragen.', [
+            'target' => $target,
+            'group' => $group,
+            'admin' => Container::auth()->username(),
         ]);
+        $message = 'Die AD-Gruppe „' . trim($group) . '“ wurde eingetragen.';
+        if ($target === AdminGroupService::TARGET_NEXTCLOUD) {
+            $this->flashNextcloud($message);
+        } else {
+            Session::flash('success', $message);
+        }
+
+        return $this->redirect('/admin/benutzer#ad-' . $target);
+    }
+
+    public function deleteGroup(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $rule = Container::adminGroups()->deleteRule($request->inputInt('id', 0));
+        if ($rule === null) {
+            Session::flash('error', 'Die AD-Gruppe wurde nicht gefunden.');
+
+            return $this->redirect('/admin/benutzer');
+        }
+
+        app_logger()->info('AD-Gruppe für Administratoren entfernt.', [
+            'target' => $rule['target'],
+            'group' => $rule['group_name'],
+            'admin' => Container::auth()->username(),
+        ]);
+        $message = 'Die AD-Gruppe „' . $rule['group_name'] . '“ wurde entfernt.';
+        if ($rule['target'] === AdminGroupService::TARGET_NEXTCLOUD) {
+            $this->flashNextcloud($message);
+        } else {
+            Session::flash('success', $message);
+        }
+
+        // Wer sich selbst den Zugriff entzogen hat, landet beim naechsten
+        // Aufruf wieder auf der Anmeldeseite.
+        return $this->redirect('/admin/benutzer#ad-' . $rule['target']);
+    }
+
+    public function pushNextcloud(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $service = Container::nextcloudAdmins();
+        if (!$service->officeEnabled()) {
+            Session::flash('error', 'Office ist nicht aktiviert (OFFICE_ENABLED) – es gibt kein Nextcloud, an das übertragen werden kann.');
+
+            return $this->redirect('/admin/benutzer#ad-nextcloud');
+        }
+
+        $result = $service->pushToNextcloud();
+        Session::flash($result['ok'] ? 'success' : 'error', $result['message']);
+
+        return $this->redirect('/admin/benutzer#ad-nextcloud');
     }
 
     public function create(Request $request): Response
@@ -119,6 +190,58 @@ final class AdminUserController extends AdminController
         }
 
         return $this->redirect('/admin/benutzer');
+    }
+
+    /**
+     * @param array<string,string> $errors
+     * @param array<string,string> $values
+     */
+    private function renderIndex(array $errors = [], array $values = [], int $status = 200): Response
+    {
+        $groups = Container::adminGroups();
+        $nextcloud = Container::nextcloudAdmins();
+        try {
+            $directory = [
+                'intranet_rules' => $groups->rules(AdminGroupService::TARGET_INTRANET),
+                'intranet_members' => $groups->members(AdminGroupService::TARGET_INTRANET),
+                'nextcloud_rules' => $groups->rules(AdminGroupService::TARGET_NEXTCLOUD),
+                'nextcloud_members' => $groups->members(AdminGroupService::TARGET_NEXTCLOUD),
+                'nextcloud_last_push' => $nextcloud->lastPush(),
+                'available' => true,
+            ];
+        } catch (\PDOException) {
+            // Migration 021 noch nicht ausgefuehrt.
+            $directory = ['available' => false];
+        }
+
+        return $this->adminView('admin.users.index', [
+            'pageTitle' => 'Benutzer',
+            'activeNav' => 'users',
+            'items' => Container::adminUsers()->allItems(),
+            'currentUserId' => Container::auth()->id(),
+            'directory' => $directory,
+            'ssoEnabled' => Container::sso()->isEnabled(),
+            'officeEnabled' => $nextcloud->officeEnabled(),
+            'errors' => $errors,
+            'values' => $values,
+            'pageScript' => 'admin-group-autocomplete.js',
+        ], $status);
+    }
+
+    /**
+     * Speichern und – bei aktivem Office – sofort an Nextcloud uebertragen.
+     */
+    private function flashNextcloud(string $message): void
+    {
+        $result = Container::nextcloudAdmins()->pushIfEnabled();
+        if ($result === null) {
+            Session::flash('success', $message);
+        } elseif ($result['ok']) {
+            Session::flash('success', $message . ' ' . $result['message']);
+        } else {
+            Session::flash('success', $message);
+            Session::flash('error', 'Übertragung an Nextcloud fehlgeschlagen: ' . $result['message'] . ' Die Gesundheitsprüfung wiederholt den Abgleich automatisch.');
+        }
     }
 
     /**

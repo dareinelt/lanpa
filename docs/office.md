@@ -300,6 +300,28 @@ Netzlaufwerke zählen nicht zum Speicherplatz-Kontingent. Freigaben aus
 Netzlaufwerken heraus sind abgeschaltet (`enable_sharing`), damit Dateien des
 Dateiservers nicht an Dritte weitergegeben werden.
 
+### Nextcloud-Administratoren aus AD-Gruppen
+
+Unter **Admin → Benutzer → Nextcloud-Administratoren** (`/admin/benutzer`)
+tragen Administratoren AD-Gruppen ein, deren Mitglieder (verschachtelt
+aufgelöst, Stand der AD-Synchronisation) in Nextcloud Mitglied der Gruppe
+`admin` werden. Die Liste der Kennungen (SamAccountName bzw. `name@kennung`)
+wird nach jeder Änderung signiert an `intranet_integration` übertragen
+(`/apps/intranet_integration/api/admins`, JWT mit eigener Audience, an den
+Inhalt gebunden). Benutzer, die sich noch nie in Nextcloud angemeldet haben,
+erhalten die Rechte bei der ersten Anmeldung. Wer aus allen eingetragenen
+Gruppen fällt, wird wieder aus `admin` entfernt – aber nur, wenn ihn das
+Intranet aufgenommen hat: der lokale Nextcloud-Admin, per
+`NEXTCLOUD_LDAP_ADMIN_GROUP` beförderte und manuell ernannte Administratoren
+bleiben unangetastet. Die Diagnose vergleicht den Stand per Fingerabdruck
+(Komponente „Administratoren aus AD-Gruppen“, nur informativ) und überträgt
+bei Abweichung erneut, z. B. nach der AD-Synchronisation; auf der Seite
+„Benutzer“ kann auch von Hand übertragen werden.
+
+Gleiche Seite, Karte **Intranet-Administratoren**: Mitglieder dieser
+AD-Gruppen dürfen per Windows-Anmeldung den Adminbereich des Intranets
+verwalten (siehe README, Abschnitt Adminbereich).
+
 ### Automatische Anmeldung in Nextcloud (Intranet-SSO)
 
 ```mermaid
@@ -365,7 +387,9 @@ synchronisierte Gruppen verwendet. Im Kopf erscheint zusätzlich die Marke
 „Test“. Kein NTLM, kein auth-Header nötig – der Testmodus ersetzt
 ausschließlich die Erkennung des Benutzers.
 - Optional in Nextcloud: `NEXTCLOUD_LDAP_ALLOWED_GROUPS` (Anmeldung nur für
-  Mitglieder), `NEXTCLOUD_LDAP_ADMIN_GROUP` (Nextcloud-Admins),
+  Mitglieder), `NEXTCLOUD_LDAP_ADMIN_GROUP` (Nextcloud-Admins über die
+  LDAP-Anbindung; alternativ/ergänzend im Adminbereich unter Benutzer →
+  Nextcloud-Administratoren, siehe oben),
   `NEXTCLOUD_OFFICE_GROUPS` (Bearbeitung mit Euro-Office nur für diese Gruppen).
 
 ---
@@ -462,7 +486,7 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 | Bereich | Inhalt |
 | --- | --- |
 | Status | Gesamtzustand, letzte Prüfung, „Jetzt prüfen“ |
-| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector, vertrauenswürdige Hostnamen (Abgleich von `trusted_domains`), Speicherplatz-Kontingente (Abgleich mit `files/default_quota` und Benutzer-Quota), Netzlaufwerke (Abgleich der externen SMB-Speicher, Anzahl der Benutzer mit „Netzlaufwerke anzeigen“) |
+| Diagnose | Nextcloud, DocumentServer (inkl. JWT-Prüfung), Euro-Office-Webapps, PostgreSQL, Redis, Connector, vertrauenswürdige Hostnamen (Abgleich von `trusted_domains`), Speicherplatz-Kontingente (Abgleich mit `files/default_quota` und Benutzer-Quota), Administratoren aus AD-Gruppen (Abgleich der Gruppe `admin`), Netzlaufwerke (Abgleich der externen SMB-Speicher, Anzahl der Benutzer mit „Netzlaufwerke anzeigen“) |
 | Fußzeile und Einstieg | Text, Transparenz, Logo, „Zurück“, Ziel „Zum Intranet“, direkter Aufruf |
 | Lokale KI | KI-Endpunkt für alle Benutzer in Nextcloud und Euro-Office ([Abschnitt 6a](#6a-lokale-ki)) |
 | Vorschau der Fußzeile | Live-Vorschau mit demselben Stylesheet/Skript wie in Nextcloud |

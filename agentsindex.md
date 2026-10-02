@@ -142,7 +142,7 @@ app/            Anwendungscode
   Support/      Dates, Html, Sanitizer, Validator
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
-  migrations/   SQL-Migrationen (001…020)
+  migrations/   SQL-Migrationen (001…021)
 docker/         Dockerfiles, Entrypoints, PHP-/MySQL-Konfiguration, SNMP-Agent
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
 scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation, MySQL-Upgrade)
@@ -191,7 +191,7 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 `ActivationNumberService`, `AdSyncService`, `AdminUserService`, `AlarmGroupService`,
 `AlarmService`, `AnnouncementService`, `BackgroundImageService`, `BackupService`,
 `Office\OfficeConfigService` (Einstellungen Fußzeile/Kachel), `Office\OfficeHealthService` (Status/Diagnose, Probe per `OfficeProbeInterface`), `Office\OfficeBackupService` (Steuerung des Containers `office-backup`), `Office\OfficeAiService` (lokale KI: Einstellungen inkl. Audio/Bilder, `runtime.json` für Euro-Office, signierte Übergabe an `intranet_integration/api/ai`), `Office\OfficeTrustedDomainsService` (vertrauenswürdige Hostnamen von Nextcloud aus `APP_URL`, `SSO_SPN_HOSTS`, Domänenbeitritt (`IdentitySourceService::ssoHostnames`) und HTTPS-Zertifikat; signierte Übergabe an `intranet_integration/api/hosts`, Abgleich in der Diagnose),
-`Office\StorageQuotaService` (Speicherplatz-Kontingente in Nextcloud: Standard `office_quota_default_mb` (500 MB), Regeln je AD-Gruppe (größtes gilt), individuelle Kontingente mit Pflicht-Begründung und Verlauf; signierte Übergabe an `intranet_integration/api/quota`, Abgleich per Fingerabdruck in der Diagnose),
+`Office\StorageQuotaService` (Speicherplatz-Kontingente in Nextcloud: Standard `office_quota_default_mb` (500 MB), Regeln je AD-Gruppe (größtes gilt), individuelle Kontingente mit Pflicht-Begründung und Verlauf; signierte Übergabe an `intranet_integration/api/quota`, Abgleich per Fingerabdruck in der Diagnose), `AdminGroupService` (Administratoren aus AD-Gruppen: Ziele `intranet` (Rolle admin per Windows-Anmeldung) und `nextcloud`; Mitglieder/Kennungen), `Office\NextcloudAdminService` (signierte Übergabe der Nextcloud-Administratoren an `intranet_integration/api/admins`, Gruppe `admin`, Abgleich per Fingerabdruck in der Diagnose),
 `Office\NetworkDriveService` (Netzlaufwerke der Windows-Clients: Meldung per `scripts/network-drives-report.ps1` an `/sso/laufwerke`, Ausschlussliste `office_network_drives_excluded` (Standard B, G; `none` = leer), Schalter `office_network_drives_enabled`; signierte Übergabe an `intranet_integration/api/drives`, Abgleich per Fingerabdruck in der Diagnose; Nextcloud bindet sie als SMB-Speicher nur für Benutzer mit „Netzlaufwerke anzeigen“ ein),
 `Office\OfficeAppService` + `Office\OfficeAppCatalog` (Office-Apps unter der Kachel: Euro-Office-Webapps, Dateien, OWA; Freigabe per AD-Gruppe/App-Paket, ohne Zuordnung/ohne SSO keine Apps),
 `EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
@@ -209,7 +209,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 `ActivationNumberRepository`, `AdminUserRepository`, `AlarmGroupRepository`,
 `AlarmLogRepository`, `AnnouncementRepository`, `ClickRepository`,
 `EmergencyNumberRepository`, `ImportantLinkRepository`, `NavigationRepository`,
-`PhonebookRepository`, `SettingsRepository`, `IdentitySourceRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), `StorageQuotaRepository` (Kontingent-Regeln, Overrides, Verlauf), `NetworkDriveRepository` (gemeldete Netzlaufwerke je Benutzer), plus Basis `Repository`
+`PhonebookRepository`, `SettingsRepository`, `IdentitySourceRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), `StorageQuotaRepository` (Kontingent-Regeln, Overrides, Verlauf), `AdminGroupRepository` (AD-Gruppen für Intranet-/Nextcloud-Administratoren, Mitglieder), `NetworkDriveRepository` (gemeldete Netzlaufwerke je Benutzer), plus Basis `Repository`
 (stellt `PDO $pdo` bereit; Test kann eine eigene `PDO`-Instanz injizieren).
 
 ### Security (`app/Security/`)
@@ -218,7 +218,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 - `SecretBox` – libsodium-Verschlüsselung (`enc:v1:…`) der AD-Zugangsdaten; Schlüssel `SECRETS_KEY_FILE` (Standard `storage/keys/secrets.key`, 0600, wird automatisch erzeugt). Entschlüsselung liefert `null` bei falschem Schlüssel/Manipulation (Oberfläche: „ungültig“).
 - `SsoAuth` ohne Anmeldepflicht: `resolve()` = Header (nur an `/sso/anmelden`) oder Sitzung (`sso_identity`, Ablauf `SSO_SESSION_LIFETIME`, bei jeder Anfrage gegen das Telefonbuch geprüft); `shouldAttempt()` steuert den automatischen Versuch einmal je Sitzung (Middleware `$ssoAttempt` für `/`, `/unterseite`, `/seite`, `/office-starten`, `/office-app`; `SSO_AUTO_LOGIN`); `safeTarget()` erlaubt nur lokale Rücksprungziele.
 - `SsoAuth` bei mehreren Domänen: `SSO_TRUSTED_PROXY`-Einträge `host=KENNUNG` binden eine auth-Instanz an ihre Quelle; Benutzer werden nur in dieser Quelle gesucht (`name@kennung` für Nextcloud).
-- `Auth` – Session-Authentifizierung, Rollen `admin`/`redaktion`, Login-Lockout (5 Versuche / 300 s), Idle-Timeout, Session-Regeneration.
+- `Auth` – Session-Authentifizierung, Rollen `admin`/`redaktion`, Login-Lockout (5 Versuche / 300 s), Idle-Timeout, Session-Regeneration. Zusätzlich Administratoren aus AD-Gruppen ohne lokales Konto (`loginDirectory()`, per Windows-Anmeldung); deren Rolle wird bei jeder Anfrage über `AdminGroupService::intranetRole()` und die aktuelle SSO-Identität neu geprüft (`id()` ist dann `null`, `username()` = Nextcloud-Kennung).
 - `Csrf` – Token-Erzeugung/-Validierung.
 - `Session` – Session-Verwaltung (Start, Flash, Regenerate).
 
@@ -268,6 +268,7 @@ auf `/zugriff` umgeleitet, bis sie für die Sitzung freigeschaltet sind.
 | GET | `/internal/tls-config` | `InternalController::tlsConfig` – `TLS_MODE` (strict/fallback), `TLS_HTTP_NETWORKS`, `TLS_CERT` (inkl. Kette), `TLS_KEY`, `TLS_ID`, `TLS_LABEL` (je `NAME=base64`) für die Hauptinstanz `auth`; Token wie `sso-config`, markiert das ausgelieferte Zertifikat als verwendet (`first_used_at`/`last_used_at`) |
 | GET | `/internal/sso-config?source=KEY` | `InternalController::ssoConfig` – Domänen-Konfiguration inkl. entschlüsselter Zugangsdaten für die auth-Container; nur mit Token (`X-Intranet-Sso-Token`, Datei im Volume `sso_token`), ohne `X-Forwarded-*` und nur vom passenden auth-Container; im auth-Proxy per 404 gesperrt |
 | GET/POST | `/admin/login` | `AuthController::showLogin` / `login` |
+| GET | `/admin/login/windows` | `AuthController::windowsLogin` – Anmeldung per Windows-Anmeldung (SSO) für Mitglieder der Intranet-Admin-AD-Gruppen; ohne erkannte Identität einmal Umweg über `/sso/anmelden` (`?versucht=1`) |
 
 ### Admin (Middleware `$requireAuth`, angemeldet)
 
@@ -278,7 +279,7 @@ auf `/zugriff` umgeleitet, bis sie für die Sitzung freigeschaltet sind.
 Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
 `mitteilungen`, `beschreibungen`, `design`, `ad`, `alarmierung`
 (inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `zertifikate` (inkl. `zertifikate/csr` (POST erstellen, GET `?id=` herunterladen), `zertifikate/import/pruefen`, `…/import/bestaetigen`, `…/import/verwerfen`, `zertifikate/aktivieren`, `…/deaktivieren`, `…/loeschen`, `…/http-netze`), `snmp`, `statistik`
-(+ `admin/api/statistik`), `benutzer`, `sicherung` (Export/Import), `office`
+(+ `admin/api/statistik`), `benutzer` (inkl. `benutzer/ad-gruppen`, `…/ad-gruppen/loeschen`, `…/nextcloud-uebertragen`), `sicherung` (Export/Import), `office`
 (inkl. `office/pruefen`, `office/sicherung`, `office/kachel`, `office/kachel/gestaltung`,
 `office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`, `office/ki`), `speicherplatz` (inkl. `speicherplatz/standard`, `…/gruppen`, `…/gruppen/loeschen`, `…/benutzer` (GET `?id=`/POST), `…/benutzer/entfernen`, `…/uebertragen`, `…/verlauf`), `netzlaufwerke` (inkl. `…/einstellungen`, `…/benutzer/entfernen`, `…/uebertragen`, `…/skript`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
 
@@ -319,6 +320,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `identity_sources` | Weitere AD-Quellen (Zweigstellen, Tochtergesellschaften) | `source_key` (unique), `label`, `hosts` (je Zeile ein Server, Ausfallreserve), LDAP-Felder, `bind_password` (verschlüsselt), `sso_enabled`, `sso_domain`, `sso_dcs`, `sso_ntp_servers`, `sso_join_user`, `sso_join_password` (verschlüsselt), `sso_networks`, `sso_hostnames`, `sort_order`, `active` |
 | `tls_certificates` | CSR-Requests mit Schlüssel (verschlüsselt) und importiertem Zertifikat; `kind='fallback'` = selbstsigniertes Notfall-Zertifikat | `kind` (csr/fallback), `common_name`, `san`, `key_type`, `private_key`, `public_key_hash`, `csr_pem`, `certificate_pem`, `chain_pem`, `cert_*` (Details, `cert_not_before`/`cert_not_after` als Unix-Zeit), `active` (genau eins), `activated_at`, `first_used_at`/`last_used_at` |
 | `office_app_permissions` | Freigabe von Apps/Paketen für AD-Gruppen | `group_name`, `app_key` oder `package_id` |
+| `admin_group_rules` | AD-Gruppen, deren Mitglieder Intranet- bzw. Nextcloud-Administratoren sind | `target` (intranet/nextcloud), `group_name` (unique je Ziel), `created_by` |
 | `storage_quota_groups` | Speicherplatz-Kontingent je AD-Gruppe | `group_name` (unique), `quota_mb`, `reason`, `updated_by` |
 | `storage_quota_overrides` | Individuelles Kontingent je Nextcloud-Kennung | `user_uid` (unique), `display_name`, `quota_mb`, `reason` (Pflicht), `created_by`, `updated_by` |
 | `storage_quota_history` | Verlauf aller Kontingentänderungen | `subject_type` (user/group/default), `subject`, `action` (set/change/remove), `old_quota_mb`, `new_quota_mb`, `reason`, `admin_username` |

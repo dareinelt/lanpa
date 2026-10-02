@@ -12,6 +12,8 @@ body[data-page="emergency_plan"] .table th, body[data-page="emergency_plan"] .ta
 .ep-pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ep-publication { font-size: .85rem; color: var(--color-muted, #566475); margin-block: .5rem 1rem; overflow-wrap: anywhere; }
 .ep-editor-bar { position: sticky; top: 0; z-index: 5; padding: 1rem; background: var(--color-background, #fff); border: 1px solid #aeb9c5; }
+.ep-preview-banner { border: 2px solid #b42318; margin-bottom: 1.5rem; }
+[data-ep-preview-content][aria-busy="true"] { opacity: .65; pointer-events: none; }
 .ep-plan-meta { display: grid; grid-template-columns: 1fr 2fr; gap: 1rem; margin-bottom: 1rem; }
 .ep-editor { display: grid; grid-template-columns: 200px minmax(280px, 1fr) minmax(280px, 340px); gap: 1rem; align-items: start; }
 .ep-editor h2 { font-size: 1.1rem; margin-top: 0; }

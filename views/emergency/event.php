@@ -2,6 +2,8 @@
 declare(strict_types=1);
 use App\Security\Csrf;
 use App\Support\Html;
+$preview = $preview ?? false;
+$updateUrl = $preview ? '/admin/notfallplan/vorschau' : $base . '/massnahme';
 $labels = ['open' => 'Offen', 'in_progress' => 'In Arbeit', 'blocked' => 'Blockiert', 'done' => 'Erledigt'];
 $types = ['action' => 'Maßnahme', 'contact' => 'Kontakt', 'decision' => 'Entscheidung', 'checklist' => 'Checkliste', 'note' => 'Hinweis', 'sms' => 'SMS-Alarmierung'];
 $closed = $event['status'] === 'closed';
@@ -16,27 +18,32 @@ $hiddenFields = static function () use ($event): void { ?>
 <?php };
 ?>
 <link rel="stylesheet" href="/assets/css/emergency-plan.css?v=<?= Html::e($assetVersion) ?>">
-<section data-ep-event data-revision="<?= (int) $event['revision'] ?>" data-status-url="<?= $base ?>/stand?id=<?= (int) $event['id'] ?>">
+<section <?= $preview ? 'data-ep-simulation' : 'data-ep-event' ?> data-revision="<?= (int) $event['revision'] ?>"<?php if (!$preview) { ?> data-status-url="<?= $base ?>/stand?id=<?= (int) $event['id'] ?>"<?php } ?>>
     <div class="toolbar">
+        <?php if (!$preview) { ?>
         <a class="button button--ghost" href="<?= $base ?>">Ereignisübersicht</a>
         <a class="button button--ghost" href="<?= $base ?>/anleitung">Kurzanleitung</a>
+        <?php } ?>
         <button class="button button--ghost" type="button" data-ep-print>Drucken</button>
         <?php if ($manager) { ?><a class="button button--ghost" href="<?= $base ?>/export?id=<?= (int) $event['id'] ?>">Protokoll als CSV</a><?php } ?>
     </div>
-    <?php if (!$manager) { ?><h1>#<?= (int) $event['id'] ?> <?= Html::e($event['title']) ?></h1><?php } ?>
-    <?php $definition = $event['snapshot']; require __DIR__ . '/publication.php'; ?>
+    <?php if (!$manager) { ?><h1><?= $preview ? 'Simulation' : '#' . (int) $event['id'] ?> <?= Html::e($event['title']) ?></h1><?php } ?>
+    <?php if (!$preview) { $definition = $event['snapshot']; require __DIR__ . '/publication.php'; } ?>
     <div class="ep-summary">
         <strong><?= $closed ? 'Abgeschlossen' : 'Laufendes Ereignis' ?></strong>
         <span><?= $done ?> / <?= count($titles) - $skipped ?> Maßnahmen erledigt · <?= $skipped ?> entfallen</span>
         <span>Start: <?= Html::e($event['started_at']) ?> UTC · <?= Html::e($event['actor']) ?></span>
         <?php if ($closed) { ?><span>Ende: <?= Html::e($event['closed_at']) ?> UTC</span><?php } ?>
     </div>
+    <?php if (!$preview) { ?>
     <div class="ep-live" role="status" aria-live="polite" data-ep-live>Stand geladen. Aktualitätsprüfung alle 10 Sekunden.</div>
     <button type="button" class="button button--primary" data-ep-refresh hidden>Aktuellen Stand laden</button>
+    <?php } ?>
     <p class="ep-warning">Status und Kommentare sind Einsatzdokumentation. „SMS angenommen“ bestätigt weder Zustellung noch Reaktion. Bei Störungen Ersatzmeldeweg nutzen.</p>
     <details class="card">
         <summary>KAEP-E-Mail-Benachrichtigungen (<?= count($notifications) ?>)</summary>
-        <?php if ($notifications === []) { ?><p class="flash flash--error">Keine E-Mail-Empfänger hinterlegt. KAEP-Team anderweitig informieren.</p><?php } ?>
+        <?php if ($preview) { ?><p>SIMULATION: Keine E-Mail eingeplant oder versendet.</p>
+        <?php } elseif ($notifications === []) { ?><p class="flash flash--error">Keine E-Mail-Empfänger hinterlegt. KAEP-Team anderweitig informieren.</p><?php } ?>
         <ul><?php foreach ($notifications as $mail) { ?><li><?= Html::e($mail['recipient']) ?>: <strong><?= Html::e($mailLabels[$mail['status']] ?? $mail['status']) ?></strong> (<?= (int) $mail['attempts'] ?>/3) – <?= Html::e($mail['message']) ?></li><?php } ?></ul>
     </details>
     <details class="card" open>
@@ -73,17 +80,17 @@ $hiddenFields = static function () use ($event): void { ?>
                 <div class="ep-sms">
                     <p><strong>SMS an <?= Html::e($node['alarm']['alarm_group_description'] ?: $node['alarm']['alarm_group_number']) ?></strong> (<?= Html::e($node['alarm']['alarm_group_number']) ?>)</p>
                     <blockquote><?= Html::e($node['alarm']['alarm_text']) ?></blockquote>
-                    <?php if ($sms !== null) { ?><p class="<?= $sms['status'] !== 'success' ? 'ep-overdue' : '' ?>"><?= Html::e($sms['message']) ?> <?= $sms['status'] === 'success' ? 'Gateway-Annahme bestätigt; keine Zustellbestätigung.' : 'Nicht erneut auslösen. Gateway prüfen und Ersatzmeldeweg dokumentieren.' ?></p><?php } ?>
+                    <?php if ($sms !== null) { ?><p class="<?= $sms['status'] !== 'success' ? 'ep-overdue' : '' ?>"><?= Html::e($sms['message']) ?> <?= $preview ? 'Kein Gateway kontaktiert.' : ($sms['status'] === 'success' ? 'Gateway-Annahme bestätigt; keine Zustellbestätigung.' : 'Nicht erneut auslösen. Gateway prüfen und Ersatzmeldeweg dokumentieren.') ?></p><?php } ?>
                     <?php if ($editable && $sms === null) { ?>
-                        <form action="<?= $base ?>/massnahme" method="post" data-ep-update data-ep-confirm="Diese SMS jetzt wirklich versenden?">
+                        <form action="<?= $updateUrl ?>" method="post" data-ep-update data-ep-confirm="<?= $preview ? 'SMS-Versand nur simulieren? Es wird keine Nachricht versendet.' : 'Diese SMS jetzt wirklich versenden?' ?>">
                             <?php $hiddenFields(); ?><input type="hidden" name="node" value="<?= Html::e($id) ?>"><input type="hidden" name="action" value="sms">
-                            <button class="button button--danger">SMS jetzt separat bestätigen und senden</button>
+                            <button class="button button--danger"><?= $preview ? 'SMS-Versand simulieren' : 'SMS jetzt separat bestätigen und senden' ?></button>
                             <p data-ep-result role="alert"></p>
                         </form>
                     <?php } ?>
                 </div>
             <?php } ?>
-            <form action="<?= $base ?>/massnahme" method="post" data-ep-update>
+            <form action="<?= $updateUrl ?>" method="post" data-ep-update>
                 <?php $hiddenFields(); ?><input type="hidden" name="node" value="<?= Html::e($id) ?>">
                 <?php if ($node['type'] === 'checklist') { ?>
                     <fieldset <?= !$editable ? 'disabled' : '' ?>><legend>Prüfpunkte</legend>
@@ -108,7 +115,7 @@ $hiddenFields = static function () use ($event): void { ?>
     <?php if (!$closed) { ?>
         <details class="card">
             <summary>Ereignis abschließen</summary>
-            <form action="<?= $base ?>/massnahme" method="post" data-ep-update data-ep-confirm="Ereignis unwiderruflich abschließen? Danach sind keine Änderungen mehr möglich.">
+            <form action="<?= $updateUrl ?>" method="post" data-ep-update data-ep-confirm="Ereignis unwiderruflich abschließen? Danach sind keine Änderungen mehr möglich.">
                 <?php $hiddenFields(); ?><input type="hidden" name="action" value="close">
                 <label>Abschlussbegründung (bei offenen Maßnahmen erforderlich)<textarea name="comment" maxlength="2000" rows="3"></textarea></label>
                 <button class="button button--danger">Ereignis abschließen</button><p data-ep-result role="alert"></p>

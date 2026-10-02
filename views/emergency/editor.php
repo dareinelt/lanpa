@@ -14,7 +14,9 @@ $canReview = $plan['review_state'] === 'pending' && !in_array($actor, $plan['con
         <a class="button button--ghost" href="<?= $base ?>">Zur Übersicht</a>
         <strong data-ep-review-status><?= Html::e($reviewLabels[$plan['review_state']]) ?></strong>
         <button type="button" class="button button--primary" data-ep-save>Entwurf speichern</button>
+        <a class="button button--ghost" href="/admin/notfallplan/vorschau" target="_blank" rel="noopener" data-ep-open-preview>Live-Vorschau in neuem Tab</a>
         <span data-ep-message role="status" aria-live="polite">Noch keine Änderungen.</span>
+        <span data-ep-preview-status role="status"></span>
     </div>
     <div class="ep-plan-meta">
         <label>Plantitel <input data-ep-title maxlength="190" required value="<?= Html::e($plan['definition']['title']) ?>" placeholder="z. B. Brandfall"></label>
@@ -25,6 +27,7 @@ $canReview = $plan['review_state'] === 'pending' && !in_array($actor, $plan['con
         <p>Element hinzufügen, im Diagramm oder in der Liste auswählen, rechts ausfüllen. Verbindungen werden automatisch gezeichnet. Mehrere Elemente ohne Vorgänger laufen parallel. Ja/Nein-Zweige sind über Entscheidungen möglich.</p>
         <p>„Alle Vorgänger“ ist eine UND-Verknüpfung; „Mindestens einer“ führt alternative Zweige wieder zusammen. Verbindungen zeigen immer von oben nach unten. Die Pfeiltasten in der Elementliste ändern die Reihenfolge.</p>
         <p>Vorlagen sind nur Beispiele und müssen fachlich geprüft und angepasst werden. Speichern ist keine SMS-Auslösung.</p>
+        <p>Die optionale Live-Vorschau übernimmt auch ungespeicherte Änderungen ohne Neuladen des Editors. Im separaten Tab können Sie den Ablauf gefahrlos durchspielen; SMS und E-Mails werden nicht versendet. Änderungen an Verbindungen, Bausteinen oder Prüfpunkten setzen nur die Simulation zurück.</p>
         <button type="button" class="button button--ghost" data-ep-template="fire">Beispiel Brandfall übernehmen</button>
         <button type="button" class="button button--ghost" data-ep-template="manf">Beispiel MANF übernehmen</button>
     </details>

@@ -2,15 +2,16 @@
 declare(strict_types=1);
 use App\Security\Csrf;
 use App\Support\Html;
+$preview = $preview ?? false;
 ?>
 <link rel="stylesheet" href="/assets/css/emergency-plan.css?v=<?= Html::e($assetVersion) ?>">
-<a href="<?= $base ?>">Zurück zur Planauswahl</a>
+<?php if (!$preview) { ?><a href="<?= $base ?>">Zurück zur Planauswahl</a><?php } ?>
 <h1><?= Html::e($plan['title']) ?></h1>
-<?php $definition = $plan['definition']; require __DIR__ . '/publication.php'; ?>
+<?php if (!$preview) { $definition = $plan['definition']; require __DIR__ . '/publication.php'; } ?>
 <p class="ep-warning">Noch kein Ereignis gestartet. Plan und angemeldetes Konto prüfen. Bei unmittelbarer Gefahr zuerst den örtlich festgelegten Notruf nutzen.</p>
 <p class="ep-pre"><?= Html::e($plan['definition']['description']) ?></p>
 <details class="card" open>
-    <summary>Ablauf prüfen (Version <?= (int) $plan['revision'] ?>)</summary>
+    <summary>Ablauf prüfen (<?= $preview ? 'ungespeicherte Vorschau' : 'Version ' . (int) $plan['revision'] ?>)</summary>
     <div class="ep-diagram" data-ep-static-diagram></div>
     <textarea hidden data-ep-definition><?= Html::e(json_encode($plan['definition'], JSON_THROW_ON_ERROR)) ?></textarea>
     <ol>
@@ -19,6 +20,14 @@ use App\Support\Html;
         <?php } ?>
     </ol>
 </details>
+<?php if ($preview) { ?>
+<div class="card form ep-start">
+    <h2>Notfallereignis simulieren</h2>
+    <p>In der echten Anwendung folgt hier die AD-Kennwortbestätigung und das KAEP-Team erhält eine E-Mail.
+        Die Vorschau überspringt beides. Bitte kein Kennwort eingeben.</p>
+    <button type="button" class="button button--danger" data-ep-preview-start>Ablauf jetzt simulieren</button>
+</div>
+<?php } else { ?>
 <form method="post" action="<?= $base ?>/start" class="card form ep-start">
     <?= Csrf::field() ?>
     <input type="hidden" name="id" value="<?= (int) $plan['id'] ?>">
@@ -34,3 +43,4 @@ use App\Support\Html;
     <input id="ep-password" type="password" name="password" required maxlength="4096" autocomplete="current-password" <?= !$secure || !empty($user['fake']) ? 'disabled' : '' ?>>
     <button class="button button--danger" <?= !$secure || !empty($user['fake']) ? 'disabled' : '' ?>>Jetzt Notfallereignis auslösen</button>
 </form>
+<?php } ?>

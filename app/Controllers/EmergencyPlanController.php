@@ -8,10 +8,12 @@ use App\Controllers\Admin\AdminController;
 use App\Core\Container;
 use App\Core\Request;
 use App\Core\Response;
+use App\Core\View;
 use App\Exceptions\HttpException;
 use App\Exceptions\ValidationException;
 use App\Security\Session;
 use App\Services\EmergencyPlanDefinition;
+use App\Services\EmergencyPlanPreview;
 use App\Services\EmergencyPlanService;
 
 final class EmergencyPlanController extends AdminController
@@ -136,6 +138,43 @@ final class EmergencyPlanController extends AdminController
             return Response::json(['error' => implode(' ', $exception->errors())], 422);
         } catch (\JsonException) {
             return Response::json(['error' => 'Ungültiger Plan.'], 422);
+        } catch (HttpException $exception) {
+            return Response::json(['error' => $exception->getMessage()], $exception->statusCode());
+        }
+    }
+
+    public function preview(Request $request): Response
+    {
+        $this->access($request, true);
+
+        return $this->view('emergency.preview', ['pageTitle' => 'Notfallplan – Live-Vorschau',
+            'activeNav' => 'emergency_plan', 'pageScript' => 'emergency-plan.js',
+            'emergencyPlanVisible' => false])->withHeader('Cache-Control', 'no-store');
+    }
+
+    public function previewRender(Request $request): Response
+    {
+        $this->access($request, true);
+        $this->requireValidCsrf($request);
+        try {
+            $json = (string) $request->input('preview', '');
+            if (strlen($json) > 1200000) {
+                throw new HttpException(422, 'Die Vorschau ist zu groß. Bitte Simulation zurücksetzen.');
+            }
+            $input = json_decode($json, true, 64, JSON_THROW_ON_ERROR);
+            if (!is_array($input) || !is_bool($input['started'] ?? null)) {
+                throw new HttpException(422, 'Ungültige Vorschau.');
+            }
+            $data = EmergencyPlanPreview::build($input, Container::emergencyPlans()->alarmOptions());
+            $html = View::render($input['started'] ? 'emergency.event' : 'emergency.plan', $data + [
+                'preview' => true, 'manager' => false, 'base' => '/admin/notfallplan/vorschau', 'assetVersion' => $this->assetVersion(),
+            ]);
+
+            return Response::json(['html' => $html]);
+        } catch (ValidationException $exception) {
+            return Response::json(['error' => implode(' ', $exception->errors())], 422);
+        } catch (\JsonException) {
+            return Response::json(['error' => 'Ungültige Vorschau.'], 422);
         } catch (HttpException $exception) {
             return Response::json(['error' => $exception->getMessage()], $exception->statusCode());
         }

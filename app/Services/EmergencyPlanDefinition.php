@@ -11,12 +11,12 @@ final class EmergencyPlanDefinition
     public const TYPES = ['action', 'contact', 'decision', 'checklist', 'note', 'sms'];
     public const STATUSES = ['open', 'in_progress', 'blocked', 'done'];
 
-    public static function validate(array $input): array
+    public static function validate(array $input, bool $preview = false): array
     {
-        $title = self::text($input['title'] ?? '', 190, 'Titel', true);
+        $title = self::text($input['title'] ?? '', 190, 'Titel', !$preview);
         $description = self::text($input['description'] ?? '', 4000, 'Beschreibung');
         $nodes = $input['nodes'] ?? null;
-        if (!is_array($nodes) || !array_is_list($nodes) || count($nodes) < 1 || count($nodes) > 80) {
+        if (!is_array($nodes) || !array_is_list($nodes) || (!$preview && count($nodes) < 1) || count($nodes) > 80) {
             self::fail('Ein Plan benötigt 1 bis 80 Elemente.');
         }
         $seen = [];
@@ -54,7 +54,7 @@ final class EmergencyPlanDefinition
                 self::fail('Ungültige Verknüpfung.');
             }
             $checks = $node['checks'] ?? [];
-            if (!is_array($checks) || !array_is_list($checks) || count($checks) > 20 || ($type === 'checklist' && $checks === [])) {
+            if (!is_array($checks) || !array_is_list($checks) || count($checks) > 20 || (!$preview && $type === 'checklist' && $checks === [])) {
                 self::fail('Checklisten benötigen 1 bis 20 Prüfpunkte.');
             }
             $checks = array_map(static fn ($item) => self::text($item, 300, 'Prüfpunkt', true), $checks);
@@ -67,12 +67,12 @@ final class EmergencyPlanDefinition
                 self::fail('Zielzeit: 0 bis 10080 Minuten ab Ereignisstart.');
             }
             $alarmId = filter_var($node['alarm_id'] ?? 0, FILTER_VALIDATE_INT);
-            if ($alarmId === false || $alarmId < 0 || ($type === 'sms' && $alarmId === 0)) {
+            if ($alarmId === false || $alarmId < 0 || (!$preview && $type === 'sms' && $alarmId === 0)) {
                 self::fail('Bitte eine SMS-Alarmvorlage auswählen.');
             }
             $result[] = [
                 'id' => $id, 'type' => $type,
-                'title' => self::text($node['title'] ?? '', 190, 'Elementtitel', true),
+                'title' => self::text($node['title'] ?? '', 190, 'Elementtitel', !$preview),
                 'text' => self::text($node['text'] ?? '', 4000, 'Anweisung'),
                 'owner' => self::text($node['owner'] ?? '', 190, 'Zuständigkeit'),
                 'phone' => self::text($node['phone'] ?? '', 100, 'Telefon'),

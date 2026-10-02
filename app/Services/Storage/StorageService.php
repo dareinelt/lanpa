@@ -9,6 +9,7 @@ use App\Repositories\StorageRepository;
 use App\Security\SecretBox;
 use App\Services\Office\NetworkDriveService;
 use App\Services\SettingsService;
+use App\Support\Dates;
 use App\Support\Validator;
 
 /**
@@ -180,8 +181,10 @@ final class StorageService
         foreach ($rows as $row) {
             $age = $row['status_age'] ?? null;
             $state = (string) ($row['state'] ?? 'unknown');
-            if ($age === null || (int) $age > StorageHealth::HEARTBEAT_STALE_SECONDS) {
-                $state = (int) $row['active'] === 1 ? 'unknown' : 'disabled';
+            if ((int) $row['active'] !== 1) {
+                $state = 'disabled';
+            } elseif ($age === null || (int) $age > StorageHealth::HEARTBEAT_STALE_SECONDS) {
+                $state = 'unknown';
             }
             $total = (int) ($row['total_bytes'] ?? 0);
             $free = (int) ($row['free_bytes'] ?? 0);
@@ -204,7 +207,7 @@ final class StorageService
                 'write_bps' => (int) ($row['write_bps'] ?? 0),
                 'read_iops' => (float) ($row['read_iops'] ?? 0),
                 'write_iops' => (float) ($row['write_iops'] ?? 0),
-                'in_sync' => (int) ($row['in_sync'] ?? 0) === 1,
+                'in_sync' => $state === 'online' && (int) ($row['in_sync'] ?? 0) === 1,
                 'pending_files' => (int) ($row['pending_files'] ?? 0),
                 'pending_bytes' => (int) ($row['pending_bytes'] ?? 0),
                 'lag_seconds' => (int) ($row['lag_seconds'] ?? 0),
@@ -326,17 +329,34 @@ final class StorageService
     /**
      * Kompakte Live-Daten fuer die Adminseite (JSON).
      *
+     * @param array<string,mixed>|null $overview
+     *
      * @return array<string,mixed>
      */
-    public function liveData(): array
+    public function liveData(?array $overview = null): array
     {
-        $overview = $this->overview();
+        $overview ??= $this->overview();
         $local = $overview['local'];
+        $status = $overview['status'];
 
         return [
             'ha' => $overview['health']['ha'],
             'sync' => $overview['health']['sync'],
+            'online' => $overview['health']['online'],
+            'active' => $overview['health']['active'],
+            'alert' => $this->dashboardAlert($overview),
+            'forecast' => $overview['forecast_text'],
+            'last_sync' => Dates::formatDateTime((string) ($status['last_sync_at'] ?? '')) ?: '–',
             'mode' => $overview['mode'],
+            'inventory' => [
+                'bytes' => StorageHealth::formatBytes((int) ($status['bytes_total'] ?? 0)),
+                'files' => number_format((int) ($status['files_total'] ?? 0), 0, ',', '.'),
+                'local' => StorageHealth::formatBytes((int) ($status['bytes_local'] ?? 0)),
+                'evicted' => StorageHealth::formatBytes((int) ($status['bytes_evicted'] ?? 0)),
+                'evicted_files' => number_format((int) ($status['files_evicted'] ?? 0), 0, ',', '.'),
+                'recalls_total' => (int) ($status['recalls_total'] ?? 0),
+                'recalls_failed' => (int) ($status['recalls_failed'] ?? 0),
+            ],
             'local' => [
                 'fill' => $local['fill'],
                 'used' => StorageHealth::formatBytes($local['used_bytes']),
@@ -348,11 +368,18 @@ final class StorageService
             'targets' => array_map(static fn (array $t): array => [
                 'id' => $t['id'],
                 'state' => $t['state'],
+                'message' => $t['message'],
+                'free' => StorageHealth::formatBytes($t['free_bytes']),
+                'total' => StorageHealth::formatBytes($t['total_bytes']),
                 'fill' => $t['fill'],
                 'read' => StorageHealth::formatRate($t['read_bps']),
                 'write' => StorageHealth::formatRate($t['write_bps']),
                 'iops' => number_format($t['read_iops'] + $t['write_iops'], 1, ',', '.'),
                 'pending' => $t['pending_files'],
+                'pending_bytes' => StorageHealth::formatBytes($t['pending_bytes']),
+                'lag' => StorageHealth::formatDuration($t['lag_seconds']),
+                'synced_files' => number_format($t['synced_files'], 0, ',', '.'),
+                'synced_bytes' => StorageHealth::formatBytes($t['synced_bytes']),
                 'in_sync' => $t['in_sync'],
             ], $overview['targets']),
             'pending_files' => (int) ($overview['status']['pending_files'] ?? 0),

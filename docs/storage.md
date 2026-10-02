@@ -142,12 +142,11 @@ Die Seite **Speicher (HA)** aktualisiert sich alle 5 Sekunden selbst
 (`/admin/speicher-ha/status`, pausiert im Hintergrund-Tab). Sie zeigt:
 
 - **HA-Status:** `ok` (alle Ziele erreichbar und synchron), `degraded`
-  (ein Ziel fehlt, Rückstand oder nur ein Ziel), `critical` (kein Ziel
+  (ein Ziel fehlt, Abgleich noch nicht vollständig, Rückstand oder nur ein Ziel), `critical` (kein Ziel
   erreichbar oder `storage-sync` meldet sich nicht), `disabled`.
 - **Synchronisation:** `in_sync`, `syncing`, `lagging`, `paused`, `error`,
   `blocked`, mit Anzahl und Größe ausstehender Dateien und Rückstand.
-- **Hot-Tier:** Füllstand, Limit, Modus, MB/s und IOPS (Lesen/Schreiben) mit
-  Verlauf.
+- **Hot-Tier:** Füllstand als Balken, Limit, Modus, MB/s und IOPS (Lesen/Schreiben).
 - **Datenbestand:** Dateien gesamt, davon ausgelagert, laufende und
   fehlgeschlagene Rückholungen.
 - **Cold-Tier:** je Ziel Zustand, Füllstand, MB/s, IOPS, Synchronität,
@@ -155,13 +154,29 @@ Die Seite **Speicher (HA)** aktualisiert sich alle 5 Sekunden selbst
   Neu einbinden, Löschen).
 - **Ereignisse** von `storage-sync`.
 
+Die Statusübersicht steht über der grafisch verbundenen Hot-/Cold-Tier-Ansicht.
+Jedes Speicherziel hat eine eigene Karte mit Füllstandsbalken und Aktionen;
+auf schmalen Bildschirmen stehen die Karten untereinander. Die Anzeige
+unterstützt das helle und dunkle Design. Einstellungen und Zugangsdaten sind
+in beschriftete Gruppen gegliedert.
+
+Auch Zielanzahl, letzter Abgleich, Datenbestand, freie Kapazität,
+Fehlermeldungen, Rückstand und Hochrechnung werden live aktualisiert.
+Ausfallhinweise und die Freigabe von blockierten Löschungen erscheinen bzw.
+verschwinden beim nächsten Statusabruf. Ereignisse zeigen ausdrücklich den
+Stand beim Laden und können über **Ereignisse neu laden** aktualisiert werden.
+Bei unterbrochener Live-Verbindung bleiben die letzten Werte sichtbar; ein
+Hinweis kennzeichnet die Unterbrechung. Ohne JavaScript ist ein Neuladen
+für aktuelle Werte erforderlich.
+
 Aktionen: **Jetzt synchronisieren**, **Vollständigen Abgleich starten**,
 **Neu einbinden**, **Löschungen übernehmen**.
 
 ### Hochrechnung bei Ausfall des Cold-Tiers
 
 Sind keine Ziele erreichbar, kann nichts ausgelagert werden. Neue Daten
-bleiben im Hot-Tier. Aus dem Verlauf der lokalen Belegung (bis 7 Tage) rechnet
+bleiben im Hot-Tier. Aus dem Wachstum des gesamten Datenbestands (Hot- und
+Cold-Tier, bis 7 Tage) rechnet
 der Dienst hoch, wie lange der freie Platz noch reicht, z. B.
 „Zuwachs ca. 3,2 GB/Tag – freier Platz reicht noch ca. 4,5 Tage
 (bis ca. 12.03.2026 14:00)“. Ist ein Limit gesetzt und wird es früher

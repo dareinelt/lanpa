@@ -105,6 +105,8 @@ final class StorageHealth
                 )) . '.');
             } elseif (count($active) === 1) {
                 $result['ha'] = self::state('degraded', 'Nur ein Speicherziel im Cold-Tier – keine Redundanz außerhalb der VM.');
+            } elseif (array_filter($online, static fn (array $t): bool => !$t['in_sync']) !== []) {
+                $result['ha'] = self::state('degraded', 'Alle Speicherziele sind erreichbar, aber noch nicht vollständig synchron.');
             } else {
                 $result['ha'] = self::state('ok', sprintf('Alle %d Speicherziele des Cold-Tiers erreichbar und synchron.', count($active)));
             }

@@ -101,6 +101,49 @@ Runner::test('Speicher-Tiering: Ausfall des Cold-Tiers wird als kritisch gemelde
     Assert::contains('reicht noch', $alert['forecast']);
 });
 
+Runner::test('Speicher-Tiering: HA meldet erst nach vollstaendigem Abgleich synchron', static function (): void {
+    $targets = storageOverviewFixture(false)['targets'];
+    $targets[] = array_replace($targets[0], ['id' => 8, 'label' => 'NAS B', 'in_sync' => false, 'lag_seconds' => 30]);
+    $health = StorageHealth::evaluate(true, $targets, 5, 5, ['pending_files' => 1], 900);
+    Assert::same('degraded', $health['ha']['state']);
+    Assert::same(1, $health['ha']['exit']);
+    Assert::contains('noch nicht vollständig synchron', $health['ha']['message']);
+    Assert::same('syncing', $health['sync']['state']);
+    $targets[1]['in_sync'] = true;
+    $health = StorageHealth::evaluate(true, $targets, 5, 5, ['pending_files' => 0], 900);
+    Assert::same('ok', $health['ha']['state']);
+    Assert::same('in_sync', $health['sync']['state']);
+});
+
+Runner::test('Speicher-Tiering: Live-Daten enthalten alle dynamischen Anzeigewerte ohne Zugangsdaten', static function (): void {
+    $overview = storageOverviewFixture(true);
+    $overview['status'] += ['bytes_local' => 1000, 'bytes_evicted' => 4000, 'files_evicted' => 8,
+        'pending_files' => 3, 'recalls_active' => 1, 'recalls_total' => 12, 'recalls_failed' => 2];
+    $service = storageService(storagePdo());
+    $data = $service->liveData($overview);
+    Assert::same(0, $data['online']);
+    Assert::same(1, $data['active']);
+    Assert::same('–', $data['last_sync']);
+    Assert::same($overview['forecast_text'], $data['forecast']);
+    Assert::same($service->dashboardAlert($overview), $data['alert']);
+    Assert::same('4,9 KB', $data['inventory']['bytes']);
+    Assert::same('8', $data['inventory']['evicted_files']);
+    Assert::same(2, $data['inventory']['recalls_failed']);
+    Assert::same('Host nicht erreichbar', $data['targets'][0]['message']);
+    Assert::same('100 B', $data['targets'][0]['free']);
+    Assert::same('1.000 B', $data['targets'][0]['total']);
+    Assert::same('10', $data['targets'][0]['synced_files']);
+    Assert::same('4,0 KB', $data['targets'][0]['synced_bytes']);
+    Assert::same(3, $data['targets'][0]['pending']);
+    Assert::same('10 min', $data['targets'][0]['lag']);
+    foreach (['username', 'domain', 'password', 'has_password', 'unc_path'] as $key) {
+        Assert::false(array_key_exists($key, $data['targets'][0]));
+    }
+    $overview['targets'][0]['state'] = 'online';
+    $overview['health'] = StorageHealth::evaluate(true, $overview['targets'], 5, 5, ['pending_files' => 0], 900);
+    Assert::null($service->liveData($overview)['alert']);
+});
+
 Runner::test('Speicher-Tiering: Speicherziel wird geprueft und Kennwort verschluesselt', static function (): void {
     $service = storageService(storagePdo());
     $values = $service->validateTarget([
@@ -133,6 +176,10 @@ Runner::test('Speicher-Tiering: Adminseite und Zielformular werden ohne Inline-S
     Assert::contains('Cold-Tier (SMB-Tier)', $html);
     Assert::contains('data-fill="target-7"', $html);
     Assert::contains('NAS &lt;A&gt;', $html);
+    Assert::contains('aria-label="Füllstand NAS &lt;A&gt;"', $html);
+    Assert::contains('class="storage-target"', $html);
+    Assert::contains('data-live="forecast"', $html);
+    Assert::contains('data-confirm-deletes hidden', $html);
     Assert::false(str_contains($html, 'style="'));
 
     $form = View::render('admin.storage_target', [
@@ -146,4 +193,28 @@ Runner::test('Speicher-Tiering: Adminseite und Zielformular werden ohne Inline-S
     Assert::contains('<option value="3.0" selected>', $form);
     Assert::contains('id="unc_path-error"', $form);
     Assert::false(str_contains($form, 'value="enc"'));
+});
+
+Runner::test('Speicher-Tiering: leere Ansicht und Validierungsfehler bleiben bedienbar', static function (): void {
+    $overview = storageOverviewFixture(false);
+    $overview['targets'] = [];
+    $overview['local']['fill'] = ['percent' => null, 'state' => 'disabled'];
+    $overview['health']['sync']['state'] = 'blocked';
+    $html = View::render('admin.storage', [
+        'overview' => $overview, 'alert' => null, 'events' => [],
+        'errors' => ['storage_local_days' => 'Ungültige Anzahl'],
+        'values' => ['storage_local_days' => '0'],
+    ]);
+    Assert::contains('Noch kein Speicherziel eingerichtet', $html);
+    Assert::contains('aria-valuetext="Keine Messwerte"', $html);
+    Assert::contains('data-storage-alert role="alert" hidden', $html);
+    Assert::false(str_contains($html, 'data-confirm-deletes hidden'));
+    Assert::contains('Löschungen übernehmen', $html);
+    Assert::contains('aria-invalid="true" aria-describedby="storage_local_days-error"', $html);
+    Assert::contains('Ungültige Anzahl', $html);
+    Assert::contains('value="0"', $html);
+    foreach (array_keys(StorageSettings::NUMERIC) as $key) {
+        Assert::contains('name="' . $key . '"', $html);
+    }
+    Assert::contains('<noscript>', $html);
 });

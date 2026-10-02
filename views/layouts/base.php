@@ -68,32 +68,7 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
                 </details>
             <?php } ?>
 <?php $announcementMenu = (string) ob_get_clean(); ?>
-<header class="site-header">
-    <div class="site-header__inner<?= !empty($emergencyPlanVisible) ? ' site-header__inner--emergency' : '' ?>">
-        <a class="brand" href="/">
-            <?php if ($hasLogo) { ?>
-                <img class="brand__logo" src="/logo" alt="<?= Html::e($siteTitle ?? $appName) ?>">
-            <?php } else { ?>
-                <span class="brand__mark" aria-hidden="true"><?= Html::e(mb_substr((string) ($siteTitle ?? $appName), 0, 2)) ?></span>
-            <?php } ?>
-            <span class="brand__text">
-                <span class="brand__title"><?= Html::e($siteTitle ?? $appName) ?></span>
-                <?php if (($siteSubtitleVisible ?? true) && ($siteSubtitle ?? '') !== '') { ?>
-                    <span class="brand__subtitle"><?= Html::e($siteSubtitle) ?></span>
-                <?php } ?>
-            </span>
-        </a>
-
-        <?php if (!empty($emergencyPlanVisible)) { ?>
-            <div class="site-header__center">
-                <?= $announcementMenu ?>
-                <a class="button emergency-plan-button" href="/notfallplan">Notfallplan</a>
-            </div>
-        <?php } ?>
-        <nav class="site-nav" aria-label="Hauptnavigation">
-            <?php if (empty($emergencyPlanVisible)) { echo $announcementMenu; } ?>
-            <a class="site-nav__link<?= $activeNav === 'home' ? ' is-active' : '' ?>" href="/"<?= $activeNav === 'home' ? ' aria-current="page"' : '' ?>>Start</a>
-            <a class="site-nav__link<?= $activeNav === 'phonebook' ? ' is-active' : '' ?>" href="/telefonliste"<?= $activeNav === 'phonebook' ? ' aria-current="page"' : '' ?>>Telefonliste</a>
+<?php ob_start(); ?>
             <?php if ($ssoUser !== null) {
                 $ssoName = trim((string) ($ssoUser['display_name'] ?? '')) ?: (string) ($ssoUser['username'] ?? '');
                 $ssoInitials = '';
@@ -116,6 +91,42 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
             <?php } elseif ($ssoLoginUrl !== '') { ?>
                 <a class="site-nav__link site-nav__link--sso" href="<?= Html::e($ssoLoginUrl) ?>" title="Mit dem Windows-Konto anmelden, um persönliche Inhalte zu sehen">Mit Windows anmelden</a>
             <?php } ?>
+<?php $ssoBlock = trim((string) ob_get_clean()); ?>
+<header class="site-header">
+    <div class="site-header__inner<?= !empty($emergencyPlanVisible) ? ' site-header__inner--emergency' : '' ?>">
+        <a class="brand" href="/">
+            <?php if ($hasLogo) { ?>
+                <img class="brand__logo" src="/logo" alt="<?= Html::e($siteTitle ?? $appName) ?>">
+            <?php } else { ?>
+                <span class="brand__mark" aria-hidden="true"><?= Html::e(mb_substr((string) ($siteTitle ?? $appName), 0, 2)) ?></span>
+            <?php } ?>
+            <span class="brand__text">
+                <span class="brand__title"><?= Html::e($siteTitle ?? $appName) ?></span>
+                <?php if (($siteSubtitleVisible ?? true) && ($siteSubtitle ?? '') !== '') { ?>
+                    <span class="brand__subtitle"><?= Html::e($siteSubtitle) ?></span>
+                <?php } ?>
+            </span>
+        </a>
+
+        <?php if (!empty($emergencyPlanVisible)) { ?>
+            <div class="site-header__center">
+                <?php if ($announcementMenu !== '') { ?><div class="site-header__desktop-only"><?= $announcementMenu ?></div><?php } ?>
+                <a class="button emergency-plan-button" href="/notfallplan">Notfallplan</a>
+            </div>
+        <?php } ?>
+        <div class="site-header__mobile">
+            <?php if ($ssoBlock !== '') { ?><span class="site-header__mobile-user"><?= $ssoBlock ?></span><?php } ?>
+            <button type="button" class="site-nav-toggle" data-nav-toggle aria-controls="site-nav" aria-expanded="false">
+                <span class="site-nav-toggle__icon" aria-hidden="true"></span>
+                <span class="visually-hidden">Menü</span>
+            </button>
+        </div>
+        <nav class="site-nav" id="site-nav" aria-label="Hauptnavigation" data-site-nav>
+            <?php if (!empty($emergencyPlanVisible) && $announcementMenu !== '') { ?><div class="site-nav__mobile-only"><?= $announcementMenu ?></div><?php } ?>
+            <?php if (empty($emergencyPlanVisible)) { echo $announcementMenu; } ?>
+            <a class="site-nav__link<?= $activeNav === 'home' ? ' is-active' : '' ?>" href="/"<?= $activeNav === 'home' ? ' aria-current="page"' : '' ?>>Start</a>
+            <a class="site-nav__link<?= $activeNav === 'phonebook' ? ' is-active' : '' ?>" href="/telefonliste"<?= $activeNav === 'phonebook' ? ' aria-current="page"' : '' ?>>Telefonliste</a>
+            <span class="site-nav__desktop-only"><?= $ssoBlock ?></span>
             <button type="button" class="theme-toggle" data-theme-toggle aria-live="polite">
                 <span class="theme-toggle__icon" aria-hidden="true"></span>
                 <span class="theme-toggle__label">Design wechseln</span>

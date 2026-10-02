@@ -58,6 +58,7 @@ final class BackupService
     {
         $settings = $this->settingsRepository->all();
         unset($settings['alarm_password'], $settings['alarm_single_password'], $settings['sms_code_secret'], $settings['office_ai_api_key']);
+        unset($settings['smtp_password']);
         // Verschluesselte AD-Zugangsdaten verlassen die Installation nicht
         // (der Schluessel liegt ohnehin nur lokal in storage/keys/).
         foreach (IdentitySourceService::PRIMARY_SECRET_SETTINGS as $key) {

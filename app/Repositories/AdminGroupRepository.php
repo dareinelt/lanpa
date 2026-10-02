@@ -97,7 +97,7 @@ final class AdminGroupRepository extends Repository
 
         $placeholders = implode(',', array_fill(0, count($names), '?'));
         $statement = $this->pdo->prepare(
-            "SELECT p.id, p.identity_source_id, p.samaccount_name, p.display_name, p.department, LOWER(g.name) AS group_name
+            "SELECT p.id, p.identity_source_id, p.samaccount_name, p.display_name, p.department, p.email, LOWER(g.name) AS group_name
                FROM phonebook p
                JOIN ad_group_members m ON m.phonebook_id = p.id
                JOIN ad_groups g ON g.id = m.group_id
@@ -118,6 +118,7 @@ final class AdminGroupRepository extends Repository
                     'samaccount_name' => (string) $row['samaccount_name'],
                     'display_name' => (string) $row['display_name'],
                     'department' => (string) ($row['department'] ?? ''),
+                    'email' => (string) ($row['email'] ?? ''),
                     'groups' => [],
                 ];
             }

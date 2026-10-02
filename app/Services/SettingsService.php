@@ -37,6 +37,8 @@ final class SettingsService
             'description_mode' => 'both',
             'phone_numbers_clickable' => '1',
             'documentation_enabled' => '1',
+            'emergency_plan_enabled' => '0',
+            'emergency_plan_group' => '',
             'nav_tree_mode' => '0',
             'color_primary' => '#1f4e79',
             'color_secondary' => '#37718e',

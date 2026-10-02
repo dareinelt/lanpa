@@ -16,6 +16,7 @@
 - **Klickstatistiken** je Kachel
 - einen **vollständigen Administrationsbereich** (CRUD, Design, AD-Konfiguration, Statistik, Benutzer)
 - optionale **Alarmierungen** per SMS-Gateway (an Gruppen oder Einzelrufnummern) und einen per SMS-Code **geschützten Zugriffsmodus**
+- **Notfallpläne / KAEP-Team**: AD-gruppenberechtigter roter Kopfbutton, visueller Ablaufeditor mit verbindlicher Vier-Augen-Freigabe, AD-Kennwortbestätigung beim Start, interaktive Maßnahmen/Checklisten, SMS-Einzelbestätigung, SMTP-Benachrichtigung und Ereignishistorie; Technik in `docs/notfallplan.md`, bebilderte Einsatzanleitung in `docs/notfallplan-anleitung.md`
 - einen **SNMP-Agenten** (Container `snmp`) zur Überwachung der Dienste, des AD-Synchronisations-Workflows und der Gültigkeit des HTTPS-Zertifikats
 - eine **Zertifikatsverwaltung** (Admin → Zertifikate (HTTPS)): CSR erstellen, Zertifikat (PEM/CRT) mit Vorschau importieren, aktives Zertifikat wählen; der `auth`-Container liefert damit HTTPS aus (sonst selbstsigniertes Notfall-Zertifikat, HTTP nur aus freigegebenen Quellnetzen)
 - optional **Office** (Profil `office`): Nextcloud + Euro-Office DocumentServer hinter dem `auth`-Container, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, lokale KI für alle Benutzer (Nextcloud-Assistent, KI-Plugin der Editoren; Audio/Bilder im Adminbereich schaltbar), Sicherung – Details in `docs/office.md`
@@ -33,7 +34,7 @@ Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst ges
 | Frontend | Vanilla JavaScript + handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons) |
 | Datenbank | MySQL 9.7 LTS (utf8mb4, Image `mysql:${DB_IMAGE_TAG:-9.7.2}`) |
 | Web | Apache mit `mod_rewrite`, DocumentRoot `public/` |
-| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`, `storage-sync` (Speicher-Tiering/HA, `docs/storage.md`)) |
+| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `mail`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`, `storage-sync` (Speicher-Tiering/HA, `docs/storage.md`)) |
 | Monitoring | net-snmp-Agent im Container `snmp` (UDP 161, read-only Docker-Socket + `sync_log`) |
 | Abhängigkeiten | **keine** – kein Composer, kein npm, kein CDN |
 
@@ -82,6 +83,7 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
 | `create_admin.php` | Legt ein Administrationskonto an |
 | `sync_ad.php` | Einmaliger AD-Abgleich |
 | `sync_worker.php` | Dauerlauf der AD-Synchronisation (Container `sync`) |
+| `mail_worker.php` | SMTP-Warteschlange abarbeiten (Container `mail`); `--once` für einen Durchlauf |
 | `credentials.php` | Schlüssel für gespeicherte Zugangsdaten anlegen (`--key`), Alt-Werte aus der `.env` verschlüsselt übernehmen (Standard, beim App-Start), `--set-primary` (stdin `NAME=base64`, von `install.sh`), `--ldap-password` (für `office-setup.sh`), `--sso-sources` (für `sso-domains.sh`) |
 | `sso-domains.sh` | Erzeugt `docker-compose.sso.yml` mit je einer auth-Instanz `auth-<kennung>` pro weiterer Domäne mit Windows-Anmeldung (ohne Zugangsdaten) |
 | `purge_clicks.php` | Löscht Klickdaten älter als N Tage (Standard `CLICK_RETENTION_DAYS=400`) |
@@ -141,11 +143,11 @@ app/            Anwendungscode
   Exceptions/   HttpException, ValidationException
   Repositories/ Datenbankzugriff (PDO)
   Security/     Auth, Csrf, Session
-  Services/     Geschäftslogik (21 Klassen)
+  Services/     Geschäftslogik
   Support/      Dates, Html, Sanitizer, Validator
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
-  migrations/   SQL-Migrationen (001…021)
+  migrations/   SQL-Migrationen (001…027)
 docker/         Dockerfiles, Entrypoints, PHP-/MySQL-Konfiguration, SNMP-Agent
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
 scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation, MySQL-Upgrade)
@@ -182,6 +184,29 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 ---
 
 ## 7. App-Schichten
+
+### Notfallplan und SMTP
+
+`EmergencyPlanController`, `EmergencyPlanService`, `EmergencyPlanDefinition` und
+`EmergencyPlanRepository` implementieren `/notfallplan` und `/admin/notfallplan`.
+Migrationen 025–027 ergänzen Rolle `kaep`, Pläne, Ereignisse, Audit,
+Kennwortbegrenzung, SMTP-Warteschlange und Freigabehistorie.
+`public/assets/js/emergency-plan.js` zeichnet das Diagramm ohne Bibliotheken;
+Vorlagen stehen unter `views/emergency/`.
+
+KAEP wird zentral im Front-Controller auf Notfallplan-Routen beschränkt.
+`AdminGroupService` kennt zusätzlich das Ziel `kaep`. Benutzerzugriff ist davon
+getrennt und benötigt aktivierte Funktion plus ausgewählte AD-Gruppe.
+Auch Administratoren dürfen eigene/mitbearbeitete Entwürfe nicht freigeben.
+Veröffentlichte Definitionen und Ereignissnapshots bleiben von Entwurfsänderungen
+unberührt; Freigabemetadaten gehören zum Snapshot. Migration 027 zieht alte
+Veröffentlichungen ohne zweiten Freigabenachweis zurück.
+
+`SmtpController`, `SmtpService`, `MailQueueService` und `scripts/mail_worker.php`
+verwalten SMTP und die dauerhafte Versandwarteschlange. SMTP-Konfiguration nur
+für Administratoren; Kennwort verschlüsselt, kein Versand innerhalb des
+Ereignisstart-Requests. Vollständige Notfallhistorie über MySQL sichern, nicht
+über den Konfigurations-ZIP-Export.
 
 ### Controller (`app/Controllers/`)
 

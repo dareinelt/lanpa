@@ -280,13 +280,13 @@ final class ImportService
         $existingSecret = $this->settingsRepository->get('sms_code_secret');
         $existingAiKey = $this->settingsRepository->get('office_ai_api_key');
         $existingAdSecrets = [];
-        foreach (IdentitySourceService::PRIMARY_SECRET_SETTINGS as $key) {
+        foreach ([...IdentitySourceService::PRIMARY_SECRET_SETTINGS, 'smtp_password'] as $key) {
             $existingAdSecrets[$key] = $this->settingsRepository->get($key);
         }
 
         $this->settingsRepository->deleteAll();
 
-        $protected = array_merge(['alarm_password', 'alarm_single_password', 'sms_code_secret', 'office_ai_api_key'], IdentitySourceService::PRIMARY_SECRET_SETTINGS);
+        $protected = array_merge(['alarm_password', 'alarm_single_password', 'sms_code_secret', 'office_ai_api_key', 'smtp_password'], IdentitySourceService::PRIMARY_SECRET_SETTINGS);
         foreach ($settings as $key => $value) {
             if (in_array($key, $protected, true)) {
                 continue;
@@ -468,6 +468,7 @@ final class ImportService
             );
 
             $this->adminUserRepository->setActive($id, !empty($row['active']));
+            $this->adminUserRepository->setEmail($id, (string) ($row['email'] ?? ''));
         }
     }
 

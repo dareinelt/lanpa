@@ -262,6 +262,55 @@ final class Container
         );
     }
 
+    public static function emergencyPlans(): \App\Services\EmergencyPlanService
+    {
+        return self::make(\App\Services\EmergencyPlanService::class, static fn () => new \App\Services\EmergencyPlanService(
+            new \App\Repositories\EmergencyPlanRepository(), self::settings(), self::navigationRepository(),
+            static function (array $user, string $password): bool {
+                foreach (self::identitySources()->configs() as $config) {
+                    if ((int) ($config['id'] ?? 0) === (int) $user['source_id']) {
+                        return (new LdapClient($config, app_logger()))->verifyUserPassword($user['username'], $password);
+                    }
+                }
+                throw new \RuntimeException('Identitätsquelle nicht verfügbar.');
+            },
+            static function (): array {
+                $members = self::adminGroups()->members(AdminGroupService::TARGET_KAEP);
+                foreach (self::adminUserRepository()->all() as $local) {
+                    if ($local['role'] === Auth::ROLE_KAEP && (int) $local['active'] === 1) {
+                        $members[] = $local;
+                    }
+                }
+                $emails = [];
+                $missing = 0;
+                foreach ($members as $member) {
+                    $email = trim((string) ($member['email'] ?? ''));
+                    if (\App\Services\SmtpService::validEmail($email)) {
+                        $emails[mb_strtolower($email)] = $email;
+                    } else {
+                        $missing++;
+                    }
+                }
+
+                return ['emails' => array_values($emails), 'missing' => $missing];
+            },
+            static fn (array $alarm) => self::alarm()->triggerDefinition($alarm),
+            (string) Config::get('app.url', '')
+        ));
+    }
+
+    public static function smtp(): \App\Services\SmtpService
+    {
+        return self::make(\App\Services\SmtpService::class, static fn () => new \App\Services\SmtpService(self::settings(), self::secretBox()));
+    }
+
+    public static function mailQueue(): \App\Services\MailQueueService
+    {
+        return self::make(\App\Services\MailQueueService::class, static fn () => new \App\Services\MailQueueService(
+            Database::connection(), self::smtp(), new \App\Repositories\EmergencyPlanRepository()
+        ));
+    }
+
     public static function announcements(): AnnouncementService
     {
         return self::make(

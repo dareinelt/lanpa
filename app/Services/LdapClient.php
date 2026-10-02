@@ -37,6 +37,43 @@ final class LdapClient implements LdapClientInterface
         ldap_unbind($connection);
     }
 
+    public function verifyUserPassword(string $username, string $password): bool
+    {
+        if ($username === '' || $password === '' || strlen($password) > 4096) {
+            return false;
+        }
+        if (empty($this->config['use_tls']) || empty($this->config['verify_cert'])) {
+            throw new RuntimeException('Die Kennwortbestätigung benötigt LDAP mit TLS und Zertifikatsprüfung.');
+        }
+        $attribute = (string) ($this->config['attributes']['samaccount_name'] ?? 'sAMAccountName');
+        if (!Validator::isLdapAttribute($attribute)) {
+            throw new RuntimeException('Ungültiges LDAP-Anmeldeattribut.');
+        }
+        $connection = $this->connect();
+        try {
+            $filter = '(&(objectClass=user)(' . $attribute . '=' . ldap_escape($username, '', LDAP_ESCAPE_FILTER)
+                . ')(!(userAccountControl:1.2.840.113556.1.4.803:=2)))';
+            $result = @ldap_search($connection, (string) $this->config['base_dn'], $filter, ['dn'], 0, 2);
+            if ($result === false) {
+                throw new RuntimeException('AD-Konto konnte nicht geprüft werden.');
+            }
+            $entries = ldap_get_entries($connection, $result);
+            if (!is_array($entries) || $entries['count'] !== 1) {
+                return false;
+            }
+            if (@ldap_bind($connection, (string) $entries[0]['dn'], $password)) {
+                return true;
+            }
+            if (ldap_errno($connection) !== self::LDAP_INVALID_CREDENTIALS) {
+                throw new RuntimeException('AD-Kennwortbestätigung derzeit nicht verfügbar.');
+            }
+
+            return false;
+        } finally {
+            @ldap_unbind($connection);
+        }
+    }
+
     /**
      * Prueft jeden konfigurierten Server einzeln (Verbindung + Bind).
      *
@@ -419,4 +456,3 @@ final class LdapClient implements LdapClientInterface
         return sprintf('%s://%s:%d', $scheme, $host, $port);
     }
 }
-

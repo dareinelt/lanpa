@@ -151,6 +151,18 @@ code {
     color: inherit;
 }
 
+.site-header__inner--emergency {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+.site-header__inner--emergency .site-nav { justify-content: flex-end; }
+.button.emergency-plan-button { background: #b42318; color: #fff; border: 2px solid #b42318; font-weight: 800; justify-self: center; }
+.emergency-plan-button:hover, .emergency-plan-button:focus-visible { background: #86190f; color: #fff; border-color: #86190f; }
+@media (max-width: 1100px) {
+    .site-header__inner--emergency { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+    .site-header__inner--emergency .site-nav { justify-content: center; }
+}
+
 .brand__mark {
     display: grid;
     place-items: center;

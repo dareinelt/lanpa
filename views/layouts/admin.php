@@ -23,12 +23,14 @@ $navItems = $isAdmin ? [
     'navigation' => ['/admin/navigation', 'Navigation'],
     'important_links' => ['/admin/wichtige-links', 'Wichtige Links'],
     'emergency' => ['/admin/notfallnummern', 'Notfallnummern'],
+    'emergency_plan' => ['/admin/notfallplan', 'Notfallplan / KAEP'],
     'phonebook' => ['/admin/telefonliste', 'Telefonliste'],
     'announcements' => ['/admin/mitteilungen', 'Mitteilungen'],
     'descriptions' => ['/admin/beschreibungen', 'Beschreibungen'],
     'design' => ['/admin/design', 'Design'],
     'ldap' => ['/admin/ad', 'Active Directory'],
     'alarm' => ['/admin/alarmierung', 'Alarmierung'],
+    'smtp' => ['/admin/smtp', 'E-Mail (SMTP)'],
     'activation' => ['/admin/aktivierungs-rufnummern', 'Aktivierungs-Rufnummern'],
     'office' => ['/admin/office', 'Office'],
     'quota' => ['/admin/speicherplatz', 'Speicherplatz (Quota)'],
@@ -40,9 +42,11 @@ $navItems = $isAdmin ? [
     'statistics' => ['/admin/statistik', 'Statistik'],
     'users' => ['/admin/benutzer', 'Benutzer'],
     'backup' => ['/admin/sicherung', 'Sicherung'],
+] : ($adminRole === 'kaep' ? [
+    'emergency_plan' => ['/admin/notfallplan', 'Notfallplan / KAEP'],
 ] : [
     'important_links' => ['/admin/wichtige-links', 'Wichtige Links'],
-];
+]);
 ?>
 <!doctype html>
 <html lang="de" data-theme="light">

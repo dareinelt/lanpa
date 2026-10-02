@@ -10,9 +10,10 @@ final class AdminUserRepository extends Repository implements AdminUserStoreInte
 {
     public const ROLE_ADMIN = 'admin';
     public const ROLE_REDAKTION = 'redaktion';
+    public const ROLE_KAEP = 'kaep';
 
     /** @var list<string> */
-    public const ROLES = [self::ROLE_ADMIN, self::ROLE_REDAKTION];
+    public const ROLES = [self::ROLE_ADMIN, self::ROLE_REDAKTION, self::ROLE_KAEP];
 
     /**
      * @return array<string,mixed>|null
@@ -34,7 +35,7 @@ final class AdminUserRepository extends Repository implements AdminUserStoreInte
     public function find(int $id): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT id, username, role, active, last_login_at, created_at FROM admin_users WHERE id = :id'
+            'SELECT id, username, email, role, active, last_login_at, created_at FROM admin_users WHERE id = :id'
         );
         $statement->execute(['id' => $id]);
         $row = $statement->fetch();
@@ -48,7 +49,7 @@ final class AdminUserRepository extends Repository implements AdminUserStoreInte
     public function all(): array
     {
         $statement = $this->pdo->query(
-            'SELECT id, username, role, active, last_login_at, created_at FROM admin_users ORDER BY username ASC'
+            'SELECT id, username, email, role, active, last_login_at, created_at FROM admin_users ORDER BY username ASC'
         );
 
         /** @var list<array<string,mixed>> $rows */
@@ -65,7 +66,7 @@ final class AdminUserRepository extends Repository implements AdminUserStoreInte
     public function allWithPasswordHash(): array
     {
         $statement = $this->pdo->query(
-            'SELECT id, username, password_hash, role, active FROM admin_users ORDER BY username ASC'
+            'SELECT id, username, email, password_hash, role, active FROM admin_users ORDER BY username ASC'
         );
 
         /** @var list<array<string,mixed>> $rows */
@@ -108,6 +109,11 @@ final class AdminUserRepository extends Repository implements AdminUserStoreInte
     {
         $statement = $this->pdo->prepare('UPDATE admin_users SET active = :active WHERE id = :id');
         $statement->execute(['active' => $active ? 1 : 0, 'id' => $id]);
+    }
+
+    public function setEmail(int $id, string $email): void
+    {
+        $this->pdo->prepare('UPDATE admin_users SET email = ? WHERE id = ?')->execute([$email, $id]);
     }
 
     public function delete(int $id): void

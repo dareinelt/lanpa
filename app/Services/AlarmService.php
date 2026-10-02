@@ -33,6 +33,12 @@ final class AlarmService
             return ['status' => 'error', 'message' => 'Alarmierung nicht gefunden oder nicht aktiv.'];
         }
 
+        return $this->triggerDefinition($item, $additionalText, $navigationId);
+    }
+
+    /** Versand einer serverseitig gespeicherten Notfallplan-Vorlage. */
+    public function triggerDefinition(array $item, string $additionalText = '', ?int $navigationId = null): array
+    {
         $title = (string) ($item['title'] ?? '');
         $text = (string) ($item['alarm_text'] ?? '');
         $target = (string) ($item['alarm_group_number'] ?? '');
@@ -143,7 +149,7 @@ final class AlarmService
     }
 
     private function log(
-        int $navigationId,
+        ?int $navigationId,
         string $title,
         string $text,
         string $target,

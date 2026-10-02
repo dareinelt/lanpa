@@ -17,6 +17,7 @@ final class OfficeJwt
     public const HOSTS_AUDIENCE = 'intranet_integration_hosts';
     public const QUOTA_AUDIENCE = 'intranet_integration_quota';
     public const ADMINS_AUDIENCE = 'intranet_integration_admins';
+    public const DRIVES_AUDIENCE = 'intranet_integration_drives';
 
     /**
      * @param array<string,mixed> $claims
@@ -102,6 +103,22 @@ final class OfficeJwt
 
         return self::encode([
             'aud' => self::ADMINS_AUDIENCE,
+            'body' => hash('sha256', $body),
+            'iat' => $now,
+            'exp' => $now + 60,
+        ], $secret);
+    }
+
+    /**
+     * Kurzlebiges Token fuer die Uebergabe der Netzlaufwerke an Nextcloud,
+     * an den Inhalt gebunden.
+     */
+    public static function drivesConfigToken(string $secret, string $body, ?int $now = null): string
+    {
+        $now ??= time();
+
+        return self::encode([
+            'aud' => self::DRIVES_AUDIENCE,
             'body' => hash('sha256', $body),
             'iat' => $now,
             'exp' => $now + 60,

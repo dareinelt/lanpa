@@ -102,6 +102,9 @@ occ app:disable firstrunwizard >/dev/null 2>&1 || true
 # --- Intranet-Integration (Fusszeile, Diagnose) -----------------------------
 occ app:enable intranet_integration >/dev/null || warn "intranet_integration konnte nicht aktiviert werden."
 
+# --- Netzlaufwerke der Clients (externe SMB-Speicher, docs/office.md) --------
+occ app:enable files_external >/dev/null 2>&1 || warn "files_external konnte nicht aktiviert werden - Netzlaufwerke sind nicht verfuegbar."
+
 # --- Euro-Office-Connector ----------------------------------------------------
 ensure_app eurooffice
 if app_present eurooffice; then

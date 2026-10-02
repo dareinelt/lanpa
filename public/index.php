@@ -23,6 +23,7 @@ use App\Controllers\Admin\ImportExportController;
 use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\NavigationController;
+use App\Controllers\Admin\NetworkDriveController as NetworkDriveAdminController;
 use App\Controllers\Admin\OfficeController as OfficeAdminController;
 use App\Controllers\Admin\OfficeAppsController as OfficeAppsAdminController;
 use App\Controllers\Admin\PhonebookAdminController;
@@ -37,6 +38,7 @@ use App\Controllers\ImportantLinkIconController;
 use App\Controllers\InternalController;
 use App\Controllers\LandingController;
 use App\Controllers\LogoController;
+use App\Controllers\NetworkDriveController;
 use App\Controllers\OfficeController;
 use App\Controllers\PageController;
 use App\Controllers\PhonebookController;
@@ -98,6 +100,9 @@ $ssoAttempt = static function (Request $request): ?Response {
 $router->get('/sso', [SsoController::class, 'start']);
 $router->get('/sso/anmelden', [SsoController::class, 'login']);
 $router->get('/sso/nicht-erkannt', [SsoController::class, 'notRecognized']);
+// Meldung der Netzlaufwerke durch das Anmeldeskript der Clients (Windows-
+// Anmeldung im auth-Container, keine Sitzung/CSRF).
+$router->post('/sso/laufwerke', [NetworkDriveController::class, 'report']);
 
 $router->group([$requireUnlocked, $ssoAttempt], static function (Router $router): void {
     $router->get('/', [LandingController::class, 'index']);
@@ -250,6 +255,11 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/speicherplatz/benutzer/entfernen', [StorageQuotaController::class, 'removeUser']);
         $router->post('/admin/speicherplatz/uebertragen', [StorageQuotaController::class, 'push']);
         $router->get('/admin/speicherplatz/verlauf', [StorageQuotaController::class, 'history']);
+        $router->get('/admin/netzlaufwerke', [NetworkDriveAdminController::class, 'index']);
+        $router->post('/admin/netzlaufwerke/einstellungen', [NetworkDriveAdminController::class, 'updateSettings']);
+        $router->post('/admin/netzlaufwerke/benutzer/entfernen', [NetworkDriveAdminController::class, 'deleteUser']);
+        $router->post('/admin/netzlaufwerke/uebertragen', [NetworkDriveAdminController::class, 'push']);
+        $router->get('/admin/netzlaufwerke/skript', [NetworkDriveAdminController::class, 'script']);
 
         $router->get('/admin/zertifikate', [CertificateController::class, 'index']);
         $router->post('/admin/zertifikate/csr', [CertificateController::class, 'createRequest']);

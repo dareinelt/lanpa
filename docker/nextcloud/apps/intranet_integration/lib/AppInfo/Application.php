@@ -6,6 +6,7 @@ namespace OCA\IntranetIntegration\AppInfo;
 
 use OCA\IntranetIntegration\Listener\AdminsLoginListener;
 use OCA\IntranetIntegration\Listener\FooterListener;
+use OCA\IntranetIntegration\Listener\NetworkDrivesScriptListener;
 use OCA\IntranetIntegration\Listener\QuotaLoginListener;
 use OCP\AppFramework\App;
 use OCP\AppFramework\Bootstrap\IBootContext;
@@ -35,6 +36,8 @@ class Application extends App implements IBootstrap {
         $context->registerEventListener(PostLoginEvent::class, QuotaLoginListener::class);
         // Nextcloud-Administratoren aus AD-Gruppen fuer neu bekannte Konten.
         $context->registerEventListener(PostLoginEvent::class, AdminsLoginListener::class);
+        // Einstellung "Netzlaufwerke anzeigen" im Dateien-App.
+        $context->registerEventListener('OCA\\Files\\Event\\LoadAdditionalScriptsEvent', NetworkDrivesScriptListener::class);
     }
 
     public function boot(IBootContext $context): void {

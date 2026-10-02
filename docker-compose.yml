@@ -282,7 +282,11 @@ services:
       - office_backend
 
   nextcloud:
-    image: nextcloud:${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
+    image: lanpa-nextcloud:${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
+    build: &nextcloud-build
+      context: ./docker/nextcloud
+      args:
+        NEXTCLOUD_IMAGE_TAG: ${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
     profiles: ["office"]
     restart: unless-stopped
     depends_on:
@@ -312,7 +316,8 @@ services:
 
   # Hintergrundjobs von Nextcloud (cron.php alle 5 Minuten).
   nextcloud-cron:
-    image: nextcloud:${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
+    image: lanpa-nextcloud:${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
+    build: *nextcloud-build
     profiles: ["office"]
     restart: unless-stopped
     entrypoint: /cron.sh
@@ -328,7 +333,8 @@ services:
 
   # Fuehrt KI-Aufgaben von Nextcloud (Assistant) sofort statt nur per Cron aus.
   nextcloud-ai-worker:
-    image: nextcloud:${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
+    image: lanpa-nextcloud:${NEXTCLOUD_IMAGE_TAG:-34.0.4-apache}
+    build: *nextcloud-build
     profiles: ["office"]
     restart: unless-stopped
     user: www-data

@@ -19,6 +19,7 @@ use App\Repositories\NavigationRepository;
 use App\Repositories\OfficeAppRepository;
 use App\Repositories\PhonebookRepository;
 use App\Repositories\SettingsRepository;
+use App\Repositories\NetworkDriveRepository;
 use App\Repositories\StorageQuotaRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\TlsCertificateRepository;
@@ -49,6 +50,7 @@ use App\Services\Office\OfficeConfigService;
 use App\Services\Office\OfficeHealthService;
 use App\Services\Office\NextcloudAdminService;
 use App\Services\Office\OfficeTrustedDomainsService;
+use App\Services\Office\NetworkDriveService;
 use App\Services\Office\StorageQuotaService;
 use App\Services\Office\StreamOfficeProbe;
 use App\Services\PhonebookService;
@@ -563,7 +565,8 @@ final class Container
                 self::officeAi(),
                 self::officeTrustedDomains(),
                 self::storageQuotas(),
-                self::nextcloudAdmins()
+                self::nextcloudAdmins(),
+                self::networkDrives()
             )
         );
     }
@@ -612,6 +615,19 @@ final class Container
                 self::officeConfig(),
                 new StreamOfficeProbe(),
                 static fn (): array => self::identitySourceMap()
+            )
+        );
+    }
+
+    public static function networkDrives(): NetworkDriveService
+    {
+        return self::make(
+            NetworkDriveService::class,
+            static fn (): NetworkDriveService => new NetworkDriveService(
+                new NetworkDriveRepository(),
+                self::settings(),
+                self::officeConfig(),
+                new StreamOfficeProbe()
             )
         );
     }

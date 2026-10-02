@@ -75,7 +75,9 @@ fi
 [ -n "$NC_TAG" ] && env_set NEXTCLOUD_IMAGE_TAG "$NC_TAG" && info "Nextcloud: ${current_nc} -> ${NC_TAG}"
 
 info "Lade Images der festgelegten Versionen ..."
-docker compose pull nextcloud nextcloud-cron eurooffice nextcloud-db nextcloud-redis
+docker compose pull eurooffice nextcloud-db nextcloud-redis
+# Nextcloud: offizielles Image plus smbclient (Netzlaufwerke), lokal gebaut.
+docker compose build --pull nextcloud nextcloud-cron nextcloud-ai-worker
 info "Starte aktualisierte Container ..."
 docker compose up -d
 

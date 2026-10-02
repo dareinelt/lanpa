@@ -183,8 +183,8 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 ### Controller (`app/Controllers/`)
 
 - Basisklasse `Controller` stellt `view()`, `requireValidCsrf()`, `redirect()`, `assetVersion()` bereit.
-- **Öffentlich:** `LandingController`, `PageController` (Unterseiten/Textseiten), `PhonebookController`, `ClickController`, `LogoController`, `BackgroundImageController`, `ImportantLinkIconController`, `HealthController`, `AlarmTriggerController` (Alarm-Kacheln), `ProtectedAccessController` (Zugangscode-Seite), `SmsCodeController` (Code-Versand/-Prüfung).
-- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `CertificateController` (Zertifikate/HTTPS), `StatisticsController`, `AdminUserController`, `ImportExportController`, `OfficeController`, `OfficeAppsController`, `StorageQuotaController` (Speicherplatz/Quota), plus Basis `AdminController`.
+- **Öffentlich:** `LandingController`, `PageController` (Unterseiten/Textseiten), `PhonebookController`, `ClickController`, `LogoController`, `BackgroundImageController`, `ImportantLinkIconController`, `HealthController`, `AlarmTriggerController` (Alarm-Kacheln), `ProtectedAccessController` (Zugangscode-Seite), `SmsCodeController` (Code-Versand/-Prüfung), `NetworkDriveController` (`POST /sso/laufwerke`: Meldung der Netzlaufwerke durch das Anmeldeskript, nur mit Windows-Anmeldung).
+- **Admin (`app/Controllers/Admin/`):** `AuthController`, `DashboardController`, `NavigationController`, `ImportantLinkController`, `EmergencyNumberController`, `PhonebookAdminController`, `AnnouncementController`, `DescriptionController`, `DesignController`, `LdapController`, `AlarmController`, `AlarmGroupController`, `ActivationNumberController`, `SnmpController`, `CertificateController` (Zertifikate/HTTPS), `StatisticsController`, `AdminUserController`, `ImportExportController`, `OfficeController`, `OfficeAppsController`, `StorageQuotaController` (Speicherplatz/Quota), `NetworkDriveController` (Netzlaufwerke: Ausschlussliste, Übersicht, Anmeldeskript), plus Basis `AdminController`.
 
 ### Services (`app/Services/`) – Geschäftslogik
 
@@ -192,6 +192,7 @@ views/          PHP-Templates (admin, errors, landing, layouts, pages, partials,
 `AlarmService`, `AnnouncementService`, `BackgroundImageService`, `BackupService`,
 `Office\OfficeConfigService` (Einstellungen Fußzeile/Kachel), `Office\OfficeHealthService` (Status/Diagnose, Probe per `OfficeProbeInterface`), `Office\OfficeBackupService` (Steuerung des Containers `office-backup`), `Office\OfficeAiService` (lokale KI: Einstellungen inkl. Audio/Bilder, `runtime.json` für Euro-Office, signierte Übergabe an `intranet_integration/api/ai`), `Office\OfficeTrustedDomainsService` (vertrauenswürdige Hostnamen von Nextcloud aus `APP_URL`, `SSO_SPN_HOSTS`, Domänenbeitritt (`IdentitySourceService::ssoHostnames`) und HTTPS-Zertifikat; signierte Übergabe an `intranet_integration/api/hosts`, Abgleich in der Diagnose),
 `Office\StorageQuotaService` (Speicherplatz-Kontingente in Nextcloud: Standard `office_quota_default_mb` (500 MB), Regeln je AD-Gruppe (größtes gilt), individuelle Kontingente mit Pflicht-Begründung und Verlauf; signierte Übergabe an `intranet_integration/api/quota`, Abgleich per Fingerabdruck in der Diagnose), `AdminGroupService` (Administratoren aus AD-Gruppen: Ziele `intranet` (Rolle admin per Windows-Anmeldung) und `nextcloud`; Mitglieder/Kennungen), `Office\NextcloudAdminService` (signierte Übergabe der Nextcloud-Administratoren an `intranet_integration/api/admins`, Gruppe `admin`, Abgleich per Fingerabdruck in der Diagnose),
+`Office\NetworkDriveService` (Netzlaufwerke der Windows-Clients: Meldung per `scripts/network-drives-report.ps1` an `/sso/laufwerke`, Ausschlussliste `office_network_drives_excluded` (Standard B, G; `none` = leer), Schalter `office_network_drives_enabled`; signierte Übergabe an `intranet_integration/api/drives`, Abgleich per Fingerabdruck in der Diagnose; Nextcloud bindet sie als SMB-Speicher nur für Benutzer mit „Netzlaufwerke anzeigen“ ein),
 `Office\OfficeAppService` + `Office\OfficeAppCatalog` (Office-Apps unter der Kachel: Euro-Office-Webapps, Dateien, OWA; Freigabe per AD-Gruppe/App-Paket, ohne Zuordnung/ohne SSO keine Apps),
 `EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
 `LdapAttributeMapper`, `LdapClient`, `LogoService`, `NavigationService`,
@@ -208,7 +209,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 `ActivationNumberRepository`, `AdminUserRepository`, `AlarmGroupRepository`,
 `AlarmLogRepository`, `AnnouncementRepository`, `ClickRepository`,
 `EmergencyNumberRepository`, `ImportantLinkRepository`, `NavigationRepository`,
-`PhonebookRepository`, `SettingsRepository`, `IdentitySourceRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), `StorageQuotaRepository` (Kontingent-Regeln, Overrides, Verlauf), `AdminGroupRepository` (AD-Gruppen für Intranet-/Nextcloud-Administratoren, Mitglieder), plus Basis `Repository`
+`PhonebookRepository`, `SettingsRepository`, `IdentitySourceRepository`, `SyncLogRepository`, `AdGroupRepository` (synchronisierte AD-Gruppen, Vorschläge), `OfficeAppRepository` (Office-App-Freigaben und App-Pakete), `StorageQuotaRepository` (Kontingent-Regeln, Overrides, Verlauf), `AdminGroupRepository` (AD-Gruppen für Intranet-/Nextcloud-Administratoren, Mitglieder), `NetworkDriveRepository` (gemeldete Netzlaufwerke je Benutzer), plus Basis `Repository`
 (stellt `PDO $pdo` bereit; Test kann eine eigene `PDO`-Instanz injizieren).
 
 ### Security (`app/Security/`)
@@ -280,7 +281,7 @@ Alle übrigen Admin-Routen: `navigation`, `notfallnummern`, `telefonliste`,
 (inkl. `alarmierung/gruppen`), `aktivierungs-rufnummern`, `zertifikate` (inkl. `zertifikate/csr` (POST erstellen, GET `?id=` herunterladen), `zertifikate/import/pruefen`, `…/import/bestaetigen`, `…/import/verwerfen`, `zertifikate/aktivieren`, `…/deaktivieren`, `…/loeschen`, `…/http-netze`), `snmp`, `statistik`
 (+ `admin/api/statistik`), `benutzer` (inkl. `benutzer/ad-gruppen`, `…/ad-gruppen/loeschen`, `…/nextcloud-uebertragen`), `sicherung` (Export/Import), `office`
 (inkl. `office/pruefen`, `office/sicherung`, `office/kachel`, `office/kachel/gestaltung`,
-`office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`, `office/ki`), `speicherplatz` (inkl. `speicherplatz/standard`, `…/gruppen`, `…/gruppen/loeschen`, `…/benutzer` (GET `?id=`/POST), `…/benutzer/entfernen`, `…/uebertragen`, `…/verlauf`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
+`office/kachel/vorschau`, `office/apps` inkl. `office/apps/owa`, `office/apps/freigaben`, `office/apps/paket`, `office/apps/paket/loeschen`, `office/ki`), `speicherplatz` (inkl. `speicherplatz/standard`, `…/gruppen`, `…/gruppen/loeschen`, `…/benutzer` (GET `?id=`/POST), `…/benutzer/entfernen`, `…/uebertragen`, `…/verlauf`), `netzlaufwerke` (inkl. `…/einstellungen`, `…/benutzer/entfernen`, `…/uebertragen`, `…/skript`), `ad/gruppen` (JSON-Vorschläge aus dem synchronisierten Bestand).
 
 Office öffentlich: `GET /office-starten` (Übersicht der freigegebenen Office-Apps), `GET /office-app?app=…` (Start einer App, prüft Freigabe), `GET /office-nicht-verfuegbar`,
 `GET /api/office/footer` (Konfiguration der Fußzeile), `GET /api/office/status` (Verfügbarkeit für die Kachel).
@@ -323,6 +324,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `storage_quota_groups` | Speicherplatz-Kontingent je AD-Gruppe | `group_name` (unique), `quota_mb`, `reason`, `updated_by` |
 | `storage_quota_overrides` | Individuelles Kontingent je Nextcloud-Kennung | `user_uid` (unique), `display_name`, `quota_mb`, `reason` (Pflicht), `created_by`, `updated_by` |
 | `storage_quota_history` | Verlauf aller Kontingentänderungen | `subject_type` (user/group/default), `subject`, `action` (set/change/remove), `old_quota_mb`, `new_quota_mb`, `reason`, `admin_username` |
+| `network_drives` | Von den Windows-Clients gemeldete Netzlaufwerke | `user_uid` + `drive_letter` (unique), `display_name`, `unc_path`, `domain`, `computer_name`, `reported_at` |
 
 **Konventionen:** `InnoDB`, `utf8mb4`/`utf8mb4_unicode_ci`, `TIMESTAMP`-Spalten `created_at`/`updated_at`, `TINYINT(1)` für Booleans (`active`), Fremdschlüssel mit `ON DELETE SET NULL`/`ON UPDATE CASCADE`.
 

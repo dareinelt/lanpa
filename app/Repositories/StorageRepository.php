@@ -16,7 +16,10 @@ final class StorageRepository extends Repository
     /** Platzhalter fuer NOW() in update*Status(). */
     public const NOW = "\0now";
 
-    private const TARGET_FIELDS = ['label', 'unc_path', 'username', 'password', 'domain', 'smb_version', 'is_primary', 'active'];
+    private const TARGET_FIELDS = [
+        'label', 'kind', 'unc_path', 'username', 'password', 'domain', 'smb_version', 's3_endpoint', 's3_region', 's3_bucket',
+        's3_prefix', 's3_path_style', 's3_verify_tls', 'capacity_bytes', 'is_primary', 'active',
+    ];
 
     private const STATUS_FIELDS = [
         'heartbeat_at', 'sync_heartbeat_at', 'ha_state', 'ha_message', 'sync_state', 'sync_message', 'mode', 'mode_reason',

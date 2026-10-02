@@ -11,7 +11,7 @@ use RecursiveIteratorIterator;
 use RuntimeException;
 
 /**
- * Wiederherstellung aus einem Speicherziel des Cold-Tiers (SMB-Tier) in den
+ * Wiederherstellung aus einem Speicherziel des Cold-Tiers (SMB-/S3-Tier) in den
  * Hot-Tier (lokales Storage). Die Nextcloud-Datenbank stellt
  * scripts/storage-restore.sh aus der mitgesicherten Datei wieder her.
  */

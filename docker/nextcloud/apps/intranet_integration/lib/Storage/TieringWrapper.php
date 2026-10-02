@@ -16,7 +16,7 @@ use OCP\IUserSession;
 use OCP\Server;
 
 /**
- * Speicher-Tiering (Hot-Tier lokales Storage / Cold-Tier SMB-Tier) fuer die
+ * Speicher-Tiering (Hot-Tier lokales Storage / Cold-Tier SMB-/S3-Tier) fuer die
  * lokalen Nextcloud-Speicher (Home-Verzeichnisse im Datenverzeichnis).
  *
  * - Lesen einer ausgelagerten Datei (Platzhalter) loest die Rueckholung durch

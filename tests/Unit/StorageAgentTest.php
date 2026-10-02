@@ -153,6 +153,42 @@ Runner::test('Storage-Agent: Mount-Optionen und Fehlermeldungen ohne Zugangsdate
     Assert::contains('Anmeldung abgelehnt', Mounter::mountError('mount error(13): Permission denied', 32));
 });
 
+Runner::test('Storage-Agent: S3-Ziele per s3fs (Optionen, Quelle, Fehlermeldungen)', static function (): void {
+    $mounter = new Mounter('/mnt/targets', '/run/storage-sync', new App\Security\SecretBox(sys_get_temp_dir() . '/k-' . bin2hex(random_bytes(4)) . '/s.key'), 'abc', s3TempDir: '/var/lib/storage-sync/s3-tmp');
+    $target = ['kind' => 's3', 's3_endpoint' => 'https://minio:9000', 's3_region' => 'eu-central-1', 's3_bucket' => 'lanpa',
+        's3_prefix' => 'intranet/prod', 's3_path_style' => 1, 's3_verify_tls' => 1, 'username' => 'AKIA', 'password' => 'geheim'];
+    Assert::true(Mounter::isS3($target));
+    Assert::false(Mounter::isS3(['kind' => 'smb']));
+    Assert::false(Mounter::isS3([]));
+    Assert::same('lanpa:/intranet/prod', Mounter::s3Source($target));
+    Assert::same('lanpa', Mounter::s3Source(['s3_bucket' => 'lanpa', 's3_prefix' => '']));
+
+    $options = $mounter->s3Options($target, '/run/storage-sync/cred-3', false, '/run/storage-sync/s3fs-3.log');
+    Assert::contains('passwd_file=/run/storage-sync/cred-3', $options);
+    Assert::contains('url=https://minio:9000', $options);
+    Assert::contains('endpoint=eu-central-1', $options);
+    Assert::contains('use_path_request_style', $options);
+    Assert::contains('tmpdir=/var/lib/storage-sync/s3-tmp', $options);
+    Assert::contains('uid=33', $options);
+    Assert::contains('compat_dir', $options);
+    Assert::false(str_contains($options, 'no_check_certificate'));
+    Assert::false(str_contains($options, 'geheim'));
+    Assert::false(str_starts_with($options, 'ro,'));
+
+    $readOnly = $mounter->s3Options(['s3_endpoint' => 'http://ceph', 's3_path_style' => 0, 's3_verify_tls' => 0], '/p', true);
+    Assert::true(str_starts_with($readOnly, 'ro,'));
+    Assert::contains('no_check_certificate', $readOnly);
+    Assert::false(str_contains($readOnly, 'use_path_request_style'));
+    Assert::false(str_contains($readOnly, 'endpoint='));
+
+    Assert::contains('Secret Access Key falsch', Mounter::s3MountError('curl.cpp:RequestPerform(2475): HTTP response code 403, returning EPERM. Body Text: <Code>SignatureDoesNotMatch</Code>', 1));
+    Assert::contains('Bucket nicht gefunden', Mounter::s3MountError('s3fs: bucket not found', 1));
+    Assert::contains('Bucket nicht gefunden', Mounter::s3MountError('[CRT] s3fs.cpp:s3fs_check_service(4498): Failed to check bucket and directory for mount point : Bucket or directory not found(host=http://minio:9000, message=The specified bucket does not exist)', 0));
+    Assert::contains('Region', Mounter::s3MountError('<Code>AuthorizationHeaderMalformed</Code>', 1));
+    Assert::contains('/dev/fuse', Mounter::s3MountError('fuse: device not found, try \'modprobe fuse\' first', 1));
+    Assert::contains('Zeitüberschreitung', Mounter::s3MountError('', 124));
+});
+
 Runner::test('Storage-Agent: Synchronisation, Umbenennung und Loeschung auf allen Zielen', static function (): void {
     $env = storageAgentEnv();
     try {

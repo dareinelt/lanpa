@@ -433,11 +433,12 @@ services:
       - office_backend
 
   # Speicher-Tiering und HA-Synchronisation (Adminbereich -> Speicher (HA)):
-  # bindet SMB-Freigaben (UNC) als Cold-Tier ein, haelt dort auf jedem Ziel
-  # eine vollstaendige Kopie der Nextcloud- und Euro-Office-Daten (inkl.
-  # Datenbanksicherung), lagert selten genutzte Dateien aus dem Hot-Tier
-  # (lokales Storage) aus und holt sie bei Zugriff zurueck. Einbinden per
-  # mount.cifs erfordert CAP_SYS_ADMIN (nur dieser Container).
+  # bindet SMB-Freigaben (UNC) und/oder S3-kompatible Buckets als Cold-Tier
+  # ein, haelt dort auf jedem Ziel eine vollstaendige Kopie der Nextcloud- und
+  # Euro-Office-Daten (inkl. Datenbanksicherung), lagert selten genutzte
+  # Dateien aus dem Hot-Tier (lokales Storage) aus und holt sie bei Zugriff
+  # zurueck. Einbinden per mount.cifs bzw. s3fs (FUSE) erfordert
+  # CAP_SYS_ADMIN und das Geraet /dev/fuse (nur dieser Container).
   storage-sync:
     build:
       context: .
@@ -452,10 +453,14 @@ services:
     cap_add:
       - SYS_ADMIN
       - DAC_READ_SEARCH
+    # FUSE fuer S3-Ziele (s3fs): /dev/fuse (c 10:229) legt der Entrypoint an;
+    # so startet der Container auch auf Hosts ohne geladenes fuse-Modul.
+    device_cgroup_rules:
+      - "c 10:229 rwm"
     security_opt:
       - apparmor:unconfined
     tmpfs:
-      # Zugangsdateien fuer mount.cifs nur im Arbeitsspeicher.
+      # Zugangsdateien fuer mount.cifs/s3fs nur im Arbeitsspeicher.
       - /run/storage-sync:mode=0700
     environment:
       CONTAINER_ROLE: storage-sync

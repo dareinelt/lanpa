@@ -85,7 +85,7 @@ use App\Support\Html;
             <tr><td>storage_ha (HA-Status des Cold-Tiers, <a href="/admin/speicher-ha">Speicher (HA)</a>)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.13</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.13</code></td></tr>
             <tr><td>storage_sync (Sync-Status, Rückstand)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.14</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.14</code></td></tr>
             <tr><td>storage_hot_fill (Füllstand Hot-Tier, lokales Storage)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.15</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.15</code></td></tr>
-            <tr><td>storage_cold_fill (Füllstand Cold-Tier, SMB-Tier)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.16</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.16</code></td></tr>
+            <tr><td>storage_cold_fill (Füllstand Cold-Tier, SMB-/S3-Tier)</td><td><code>.1.3.6.1.4.1.2021.8.1.100.16</code></td><td><code>.1.3.6.1.4.1.2021.8.1.101.16</code></td></tr>
             </tbody>
         </table>
     </div>

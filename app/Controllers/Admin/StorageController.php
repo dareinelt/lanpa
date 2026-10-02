@@ -14,7 +14,8 @@ use App\Services\Storage\StorageSettings;
 
 /**
  * Adminbereich "Speicher (HA)": Ablage der Nextcloud-/Euro-Office-Daten auf
- * SMB-Freigaben (UNC), Speicher-Tiering, HA- und Synchronisationsstatus.
+ * SMB-Freigaben (UNC) oder S3-kompatiblen Objektspeichern, Speicher-Tiering,
+ * HA- und Synchronisationsstatus.
  */
 final class StorageController extends AdminController
 {
@@ -77,12 +78,22 @@ final class StorageController extends AdminController
         $service = Container::storage();
         $input = [
             'label' => $request->input('label', ''),
+            'kind' => $request->input('kind', StorageService::KIND_SMB),
             'unc_path' => $request->input('unc_path', ''),
             'username' => $request->input('username', ''),
             'domain' => $request->input('domain', ''),
             'password' => is_string($request->post['password'] ?? null) ? $request->post['password'] : '',
             'password_clear' => $request->input('password_clear', '0') === '1',
             'smb_version' => $request->input('smb_version', 'auto'),
+            's3_endpoint' => $request->input('s3_endpoint', ''),
+            's3_region' => $request->input('s3_region', ''),
+            's3_bucket' => $request->input('s3_bucket', ''),
+            's3_prefix' => $request->input('s3_prefix', ''),
+            's3_access_key' => $request->input('s3_access_key', ''),
+            's3_secret_key' => is_string($request->post['s3_secret_key'] ?? null) ? $request->post['s3_secret_key'] : '',
+            's3_path_style' => $request->input('s3_path_style', '0') === '1',
+            's3_verify_tls' => $request->input('s3_verify_tls', '0') === '1',
+            'capacity_gb' => $request->input('capacity_gb', '0'),
             'is_primary' => $request->input('is_primary', '0') === '1',
             'active' => $request->input('active', '0') === '1',
         ];
@@ -96,7 +107,7 @@ final class StorageController extends AdminController
         } catch (ValidationException $exception) {
             Session::flash('error', $exception->errors()['target'] ?? 'Bitte prüfen Sie die markierten Eingaben.');
             $target = $id > 0 ? $service->target($id) : null;
-            unset($input['password']);
+            unset($input['password'], $input['s3_secret_key']);
 
             return $this->renderTarget($target, $exception->errors(), $input, 422);
         }
@@ -119,7 +130,7 @@ final class StorageController extends AdminController
         }
 
         app_logger()->warning('Speicherziel entfernt.', ['admin' => $this->admin(), 'target' => $label]);
-        Session::flash('success', 'Das Speicherziel „' . $label . '“ wurde entfernt. Die Daten auf der Freigabe wurden nicht gelöscht.');
+        Session::flash('success', 'Das Speicherziel „' . $label . '“ wurde entfernt. Die Daten auf der Freigabe bzw. im Bucket wurden nicht gelöscht.');
 
         return $this->redirect('/admin/speicher-ha#ziele');
     }
@@ -173,7 +184,9 @@ final class StorageController extends AdminController
             'pageTitle' => $target === null ? 'Speicherziel hinzufügen' : 'Speicherziel bearbeiten',
             'activeNav' => 'storage',
             'target' => $target,
+            'pageScript' => 'admin-storage-target.js',
             'versions' => StorageService::SMB_VERSIONS,
+            'kinds' => StorageService::KINDS,
             'errors' => $errors,
             'values' => $values,
         ], $status);

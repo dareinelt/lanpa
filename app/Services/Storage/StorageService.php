@@ -15,7 +15,7 @@ use App\Support\Validator;
 
 /**
  * Adminbereich "Speicher (HA)": Hot-Tier (lokales Storage) und Cold-Tier
- * (SMB-Tier, Speicherziele per UNC), Einstellungen des Tierings, Zustand, Hochrechnung und Auftraege an den Container storage-sync.
+ * (SMB-/S3-Tier, Speicherziele per UNC), Einstellungen des Tierings, Zustand, Hochrechnung und Auftraege an den Container storage-sync.
  */
 final class StorageService
 {
@@ -28,8 +28,24 @@ final class StorageService
 
     public const REQUEST_ACTIONS = ['sync_now', 'full_scan', 'remount', 'confirm_deletes'];
 
+    public const KIND_SMB = 'smb';
+    public const KIND_S3 = 's3';
+
+    public const KINDS = [
+        self::KIND_SMB => 'SMB-Freigabe (UNC-Pfad)',
+        self::KIND_S3 => 'S3-kompatibler Objektspeicher (Bucket)',
+    ];
+
+    /** Obergrenze der angegebenen Kapazitaet eines S3-Ziels (1 EB in GB). */
+    public const S3_MAX_CAPACITY_GB = 1073741824;
+
     private const USERNAME_PATTERN = '/^[^\x00-\x1F\x7F,=\\\\\/]{1,128}$/u';
     private const DOMAIN_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9.\-]{0,127}$/';
+    private const S3_HOST_PATTERN = '/^(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)*$/';
+    private const S3_BUCKET_PATTERN = '/^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$/';
+    private const S3_REGION_PATTERN = '/^[a-z0-9][a-z0-9\-]{0,62}$/';
+    private const S3_PREFIX_SEGMENT = '/^[A-Za-z0-9._\-]{1,100}$/';
+    private const S3_KEY_PATTERN = '/^[\x21-\x39\x3B-\x7E]{3,128}$/';
 
     public function __construct(
         private readonly StorageRepository $repository,
@@ -93,7 +109,7 @@ final class StorageService
             if ($evicted > 0) {
                 $values['storage_enabled'] = '1';
                 throw new ValidationException(['storage_enabled' => sprintf(
-                    'Es sind noch %d Datei(en) in den Cold-Tier (SMB-Tier) ausgelagert. Deaktivieren Sie zuerst „selten genutzte Dateien aus dem Hot-Tier auslagern“, '
+                    'Es sind noch %d Datei(en) in den Cold-Tier (SMB-/S3-Tier) ausgelagert. Deaktivieren Sie zuerst „selten genutzte Dateien aus dem Hot-Tier auslagern“, '
                     . 'damit storage-sync sie in den Hot-Tier (lokales Storage) zurückholt, und schalten Sie das Tiering danach ab.',
                     $evicted
                 )]);
@@ -217,13 +233,22 @@ final class StorageService
             }
             $total = (int) ($row['total_bytes'] ?? 0);
             $free = (int) ($row['free_bytes'] ?? 0);
+            $kind = (string) ($row['kind'] ?? self::KIND_SMB) === self::KIND_S3 ? self::KIND_S3 : self::KIND_SMB;
             $targets[] = [
                 'id' => (int) $row['id'],
                 'label' => (string) $row['label'],
+                'kind' => $kind,
                 'unc_path' => (string) $row['unc_path'],
                 'username' => (string) $row['username'],
                 'domain' => (string) $row['domain'],
                 'smb_version' => (string) $row['smb_version'],
+                's3_endpoint' => (string) ($row['s3_endpoint'] ?? ''),
+                's3_region' => (string) ($row['s3_region'] ?? ''),
+                's3_bucket' => (string) ($row['s3_bucket'] ?? ''),
+                's3_prefix' => (string) ($row['s3_prefix'] ?? ''),
+                'capacity_bytes' => (int) ($row['capacity_bytes'] ?? 0),
+                // S3 ohne angegebene Kapazitaet: kein Fuellstand (Objektspeicher ohne feste Groesse).
+                'unbounded' => $kind === self::KIND_S3 && (int) ($row['capacity_bytes'] ?? 0) <= 0,
                 'has_password' => (string) ($row['password'] ?? '') !== '',
                 'is_primary' => (int) $row['is_primary'] === 1,
                 'active' => (int) $row['active'] === 1,
@@ -323,12 +348,12 @@ final class StorageService
 
         if ($health['remote_unavailable']) {
             $reason = $health['agent_running']
-                ? 'Kein Speicherziel des Cold-Tiers (SMB-Tier) ist erreichbar (' . implode(', ', $health['offline_labels']) . ').'
-                : 'Der Dienst storage-sync läuft nicht – der Cold-Tier (SMB-Tier: ' . implode(', ', $health['offline_labels']) . ') wird nicht beschrieben.';
+                ? 'Kein Speicherziel des Cold-Tiers (SMB-/S3-Tier) ist erreichbar (' . implode(', ', $health['offline_labels']) . ').'
+                : 'Der Dienst storage-sync läuft nicht – der Cold-Tier (SMB-/S3-Tier: ' . implode(', ', $health['offline_labels']) . ') wird nicht beschrieben.';
 
             return [
                 'level' => 'error',
-                'title' => 'Cold-Tier (SMB-Tier) nicht verfügbar',
+                'title' => 'Cold-Tier (SMB-/S3-Tier) nicht verfügbar',
                 'message' => $reason . ' Neue und geänderte Daten aus Nextcloud und Euro-Office werden derzeit ausschließlich im Hot-Tier '
                     . '(lokales Storage auf der VM) gespeichert und sind nicht außerhalb gesichert. Ausgelagerte Dateien können bis zur '
                     . 'Wiederherstellung nicht geöffnet werden.',
@@ -338,7 +363,7 @@ final class StorageService
         if ($health['partial']) {
             return [
                 'level' => 'warning',
-                'title' => 'Cold-Tier (SMB-Tier) eingeschränkt',
+                'title' => 'Cold-Tier (SMB-/S3-Tier) eingeschränkt',
                 'message' => 'Nicht erreichbar: ' . implode(', ', $health['offline_labels']) . '. Die Daten liegen weiterhin auf den übrigen Zielen des Cold-Tiers; '
                     . 'nach der Rückkehr gleicht storage-sync die fehlenden Änderungen automatisch nach.',
                 'forecast' => '',
@@ -348,7 +373,7 @@ final class StorageService
             return [
                 'level' => 'warning',
                 'title' => 'Hot-Tier (lokales Storage) am Limit',
-                'message' => 'Neue und geänderte Daten werden nur noch im Cold-Tier (SMB-Tier) vorgehalten (' . $overview['mode_reason']
+                'message' => 'Neue und geänderte Daten werden nur noch im Cold-Tier (SMB-/S3-Tier) vorgehalten (' . $overview['mode_reason']
                     . '). Nach Erweiterung oder Freigabe von Platz im Hot-Tier kehrt storage-sync automatisch zur normalen Vorhaltung zurück.',
                 'forecast' => '',
             ];
@@ -480,16 +505,27 @@ final class StorageService
                     return ['exit' => 3, 'lines' => ['storage_cold_fill: kein aktives Speicherziel']];
                 }
                 $measured = array_values(array_filter($active, static fn (array $t): bool => $t['state'] === 'online' && $t['fill']['percent'] !== null));
+                $unbounded = array_values(array_filter($active, static fn (array $t): bool => $t['state'] === 'online' && $t['fill']['percent'] === null && !empty($t['unbounded'])));
+                $missing = count($active) - count($measured) - count($unbounded);
+                if ($measured === [] && $unbounded !== []) {
+                    return ['exit' => 0, 'lines' => [$ascii(sprintf(
+                        'storage_cold_fill: 0%% (Cold-Tier, SMB-/S3-Tier: %s ohne Kapazitaetsgrenze%s)',
+                        implode(', ', array_map(static fn (array $t): string => $t['label'], $unbounded)),
+                        $missing > 0 ? '; ' . $missing . ' Ziel(e) nicht erreichbar' : ''
+                    ))]];
+                }
                 if ($measured === []) {
                     return ['exit' => 2, 'lines' => ['storage_cold_fill: kein Speicherziel des Cold-Tiers erreichbar']];
                 }
                 usort($measured, static fn (array $a, array $b): int => $b['fill']['percent'] <=> $a['fill']['percent']);
                 $top = $measured[0];
                 $parts = array_map(static fn (array $t): string => $t['label'] . ' ' . number_format((float) $t['fill']['percent'], 1, '.', '') . '%', $measured);
-                $missing = count($active) - count($measured);
+                foreach ($unbounded as $t) {
+                    $parts[] = $t['label'] . ' ohne Grenze';
+                }
 
                 return ['exit' => StorageHealth::EXIT[$top['fill']['state']] ?? 3, 'lines' => [$ascii(sprintf(
-                    'storage_cold_fill: %s%% (Cold-Tier, SMB-Tier: %s%s)',
+                    'storage_cold_fill: %s%% (Cold-Tier, SMB-/S3-Tier: %s%s)',
                     number_format((float) $top['fill']['percent'], 1, '.', ''),
                     implode(', ', $parts),
                     $missing > 0 ? '; ' . $missing . ' Ziel(e) nicht erreichbar' : ''
@@ -554,7 +590,7 @@ final class StorageService
                 $lines = [];
                 foreach ($overview['targets'] as $t) {
                     $lines[] = $ascii(sprintf(
-                        'id=%d label=%s state=%s active=%d primary=%d fill_percent=%s total_bytes=%d free_bytes=%d read_mbps=%s write_mbps=%s read_iops=%s write_iops=%s in_sync=%d pending_files=%d lag_seconds=%d',
+                        'id=%d label=%s state=%s active=%d primary=%d fill_percent=%s total_bytes=%d free_bytes=%d read_mbps=%s write_mbps=%s read_iops=%s write_iops=%s in_sync=%d pending_files=%d lag_seconds=%d kind=%s',
                         $t['id'],
                         str_replace(' ', '_', $t['label']),
                         $t['state'],
@@ -569,7 +605,8 @@ final class StorageService
                         number_format($t['write_iops'], 1, '.', ''),
                         $t['in_sync'] ? 1 : 0,
                         $t['pending_files'],
-                        $t['lag_seconds']
+                        $t['lag_seconds'],
+                        $t['kind'] ?? self::KIND_SMB
                     ));
                 }
                 if ($lines === []) {
@@ -675,6 +712,16 @@ final class StorageService
             $errors['label'] = 'Bitte eine Bezeichnung angeben.';
         }
 
+        $kind = (string) ($input['kind'] ?? self::KIND_SMB);
+        if (!array_key_exists($kind, self::KINDS)) {
+            $errors['kind'] = 'Ungültige Art des Speicherziels.';
+            throw new ValidationException($errors);
+        }
+        if ($kind === self::KIND_S3) {
+            return $this->validateS3Target($input, $existing, $label, $errors);
+        }
+        $kindChanged = $existing !== null && (string) ($existing['kind'] ?? self::KIND_SMB) !== $kind;
+
         $parsed = NetworkDriveService::parseUnc((string) ($input['unc_path'] ?? ''));
         $unc = $parsed['unc'] ?? '';
         if ($parsed === null) {
@@ -712,20 +759,181 @@ final class StorageService
 
         $values = [
             'label' => $label,
+            'kind' => self::KIND_SMB,
             'unc_path' => $unc,
             'username' => $username,
             'domain' => $domain,
             'smb_version' => $version,
+            's3_endpoint' => '',
+            's3_region' => '',
+            's3_bucket' => '',
+            's3_prefix' => '',
+            's3_path_style' => 1,
+            's3_verify_tls' => 1,
+            'capacity_bytes' => 0,
             'is_primary' => !empty($input['is_primary']) ? 1 : 0,
             'active' => !array_key_exists('active', $input) || !empty($input['active']) ? 1 : 0,
         ];
         if ($password !== '') {
             $values['password'] = $this->secrets->encrypt($password);
-        } elseif ($clear || $existing === null) {
+        } elseif ($clear || $existing === null || $kindChanged) {
+            // Ein S3-Secret ist kein SMB-Kennwort.
             $values['password'] = null;
         }
 
         return $values;
+    }
+
+    /**
+     * Pruefung eines S3-Ziels (Endpunkt, Bucket, Praefix, Access Key, Secret).
+     *
+     * @param array<string,mixed> $input
+     * @param array<string,mixed>|null $existing
+     * @param array<string,string> $errors
+     *
+     * @return array<string,mixed>
+     *
+     * @throws ValidationException
+     */
+    private function validateS3Target(array $input, ?array $existing, string $label, array $errors): array
+    {
+        $kindChanged = $existing !== null && (string) ($existing['kind'] ?? self::KIND_SMB) !== self::KIND_S3;
+
+        $endpoint = self::normalizeS3Endpoint((string) ($input['s3_endpoint'] ?? ''));
+        if ($endpoint === null) {
+            $errors['s3_endpoint'] = 'Bitte die Adresse des S3-Endpunkts wie https://s3.example.local:9000 oder https://s3.eu-central-1.amazonaws.com angeben (ohne Pfad).';
+        }
+        $region = strtolower(trim((string) ($input['s3_region'] ?? '')));
+        if ($region !== '' && preg_match(self::S3_REGION_PATTERN, $region) !== 1) {
+            $errors['s3_region'] = 'Ungültige Region (z. B. eu-central-1 oder us-east-1).';
+        }
+        $bucket = strtolower(trim((string) ($input['s3_bucket'] ?? '')));
+        if (preg_match(self::S3_BUCKET_PATTERN, $bucket) !== 1 || str_contains($bucket, '..')) {
+            $errors['s3_bucket'] = 'Ungültiger Bucket-Name (3–63 Zeichen: Kleinbuchstaben, Ziffern, Punkt und Bindestrich).';
+        }
+        $prefix = self::normalizeS3Prefix((string) ($input['s3_prefix'] ?? ''));
+        if ($prefix === null) {
+            $errors['s3_prefix'] = 'Ungültiges Präfix: Ordnernamen aus Buchstaben, Ziffern, Punkt, Unter- und Bindestrich, getrennt durch „/“.';
+        }
+
+        $location = '';
+        if ($endpoint !== null && !isset($errors['s3_bucket']) && $prefix !== null) {
+            $location = self::s3Location($endpoint, $bucket, $prefix);
+            $other = $this->repository->findTargetByUnc($location);
+            if ($other !== null && ($existing === null || $other !== (int) $existing['id'])) {
+                $errors['s3_bucket'] = 'Dieses Ziel (Endpunkt, Bucket und Präfix) ist bereits eingerichtet.';
+            }
+        }
+
+        $accessKey = trim((string) ($input['s3_access_key'] ?? ''));
+        if (preg_match(self::S3_KEY_PATTERN, $accessKey) !== 1) {
+            $errors['s3_access_key'] = 'Bitte die Access Key ID angeben (3–128 Zeichen, ohne Leerzeichen und Doppelpunkt).';
+        }
+        $secret = (string) ($input['s3_secret_key'] ?? '');
+        $hasSecret = $existing !== null && !$kindChanged && (string) ($existing['password'] ?? '') !== '';
+        if ($secret === '' && !$hasSecret) {
+            $errors['s3_secret_key'] = 'Bitte den Secret Access Key angeben.';
+        } elseif ($secret !== '' && (strlen($secret) > 256 || preg_match('/[\x00-\x20\x7F]/', $secret) === 1)) {
+            $errors['s3_secret_key'] = 'Der Secret Access Key darf höchstens 256 Zeichen und keine Leer- oder Steuerzeichen enthalten.';
+        }
+
+        $capacity = trim((string) ($input['capacity_gb'] ?? '0'));
+        if ($capacity === '') {
+            $capacity = '0';
+        }
+        if (!ctype_digit($capacity) || (int) $capacity > self::S3_MAX_CAPACITY_GB) {
+            $errors['capacity_gb'] = 'Bitte eine ganze Zahl in GB angeben (0 = ohne Grenze).';
+        }
+
+        if ($errors !== []) {
+            throw new ValidationException($errors);
+        }
+
+        $values = [
+            'label' => $label,
+            'kind' => self::KIND_S3,
+            'unc_path' => $location,
+            'username' => $accessKey,
+            'domain' => '',
+            'smb_version' => 'auto',
+            's3_endpoint' => (string) $endpoint,
+            's3_region' => $region,
+            's3_bucket' => $bucket,
+            's3_prefix' => (string) $prefix,
+            's3_path_style' => !empty($input['s3_path_style']) ? 1 : 0,
+            's3_verify_tls' => !array_key_exists('s3_verify_tls', $input) || !empty($input['s3_verify_tls']) ? 1 : 0,
+            'capacity_bytes' => (int) $capacity * 1073741824,
+            'is_primary' => !empty($input['is_primary']) ? 1 : 0,
+            'active' => !array_key_exists('active', $input) || !empty($input['active']) ? 1 : 0,
+        ];
+        if ($secret !== '') {
+            $values['password'] = $this->secrets->encrypt($secret);
+        }
+
+        return $values;
+    }
+
+    /**
+     * Endpunkt als scheme://host[:port] (ohne Pfad, Zugangsdaten, Query).
+     */
+    public static function normalizeS3Endpoint(string $endpoint): ?string
+    {
+        $endpoint = rtrim(trim($endpoint), '/');
+        if ($endpoint === '' || strlen($endpoint) > 255 || preg_match('/[\x00-\x20\x7F]/', $endpoint) === 1) {
+            return null;
+        }
+        $parts = parse_url($endpoint);
+        if (!is_array($parts) || !isset($parts['scheme'], $parts['host'])) {
+            return null;
+        }
+        $scheme = strtolower((string) $parts['scheme']);
+        if (!in_array($scheme, ['http', 'https'], true)
+            || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])
+            || (($parts['path'] ?? '') !== '' && $parts['path'] !== '/')) {
+            return null;
+        }
+        $host = strtolower((string) $parts['host']);
+        $ipv6 = str_starts_with($host, '[') && filter_var(trim($host, '[]'), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+        if (!$ipv6 && (strlen($host) > 253 || preg_match(self::S3_HOST_PATTERN, $host) !== 1)) {
+            return null;
+        }
+        $port = isset($parts['port']) ? (int) $parts['port'] : null;
+        if ($port !== null && ($port < 1 || $port > 65535)) {
+            return null;
+        }
+
+        return $scheme . '://' . $host . ($port !== null ? ':' . $port : '');
+    }
+
+    /**
+     * Praefix (Unterordner im Bucket) ohne fuehrende/abschliessende "/".
+     */
+    public static function normalizeS3Prefix(string $prefix): ?string
+    {
+        $prefix = trim(str_replace('\\', '/', trim($prefix)), '/');
+        if ($prefix === '') {
+            return '';
+        }
+        if (strlen($prefix) > 255) {
+            return null;
+        }
+        foreach (explode('/', $prefix) as $segment) {
+            if (preg_match(self::S3_PREFIX_SEGMENT, $segment) !== 1 || $segment === '.' || $segment === '..') {
+                return null;
+            }
+        }
+
+        return $prefix;
+    }
+
+    /**
+     * Kanonischer Ort eines S3-Ziels: s3://host[:port]/bucket[/praefix].
+     */
+    public static function s3Location(string $endpoint, string $bucket, string $prefix): string
+    {
+        $host = (string) preg_replace('#^https?://#', '', $endpoint);
+
+        return 's3://' . $host . '/' . $bucket . ($prefix !== '' ? '/' . $prefix : '');
     }
 
     /**

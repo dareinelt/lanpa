@@ -10,7 +10,16 @@ if [[ $# -gt 0 ]]; then
 fi
 
 mkdir -p /var/lib/storage-sync /var/lib/lanpa-tiering /mnt/targets
-install -d -m 0700 /run/storage-sync
+install -d -m 0700 /run/storage-sync /var/lib/storage-sync/s3-tmp
+# Zwischendateien von s3fs eines vorherigen Laufs entfernen.
+find /var/lib/storage-sync/s3-tmp -mindepth 1 -delete 2>/dev/null || true
+
+# FUSE-Geraet fuer S3-Ziele (s3fs). Ohne geladenes fuse-Modul auf dem Host
+# fehlt es nur fuer S3-Ziele; SMB-Ziele bleiben nutzbar.
+if [[ ! -e /dev/fuse ]]; then
+    mknod -m 0666 /dev/fuse c 10 229 2>/dev/null \
+        || echo "storage-sync: /dev/fuse nicht verfuegbar - S3-Ziele koennen nicht eingebunden werden." >&2
+fi
 
 # Ohne Datenbank kein Start (Einstellungen, Ziele, Status).
 for _ in $(seq 1 60); do

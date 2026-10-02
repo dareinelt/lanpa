@@ -1,6 +1,6 @@
 #!/bin/sh
 # Stellt die Office-Daten (Nextcloud, Euro-Office, Nextcloud-Datenbank) aus
-# einem Speicherziel des Cold-Tiers (SMB-Tier) wieder her - z. B. nach Verlust
+# einem Speicherziel des Cold-Tiers (SMB-/S3-Tier) wieder her - z. B. nach Verlust
 # der VM oder des Hot-Tiers (lokales Storage). Siehe docs/storage.md.
 #
 #   ./scripts/storage-restore.sh                  Speicherziele anzeigen

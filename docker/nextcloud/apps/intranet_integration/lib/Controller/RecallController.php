@@ -13,7 +13,7 @@ use OCP\IRequest;
 use OCP\IUserSession;
 
 /**
- * Fortschritt der Rueckholungen aus dem Cold-Tier (SMB-Tier) fuer den
+ * Fortschritt der Rueckholungen aus dem Cold-Tier (SMB-/S3-Tier) fuer den
  * angemeldeten Benutzer (Fortschrittsbalken in js/recall.js) und Hinweis auf
  * eine Einschraenkung wegen eines Sicherheitsvorfalls.
  */

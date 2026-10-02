@@ -69,7 +69,7 @@ final class StorageHealth
             return $result;
         }
         if ($active === []) {
-            $result['ha'] = self::state('disabled', 'Im Cold-Tier (SMB-Tier) ist kein aktives Speicherziel eingerichtet.');
+            $result['ha'] = self::state('disabled', 'Im Cold-Tier (SMB-/S3-Tier) ist kein aktives Speicherziel eingerichtet.');
 
             return $result;
         }
@@ -84,7 +84,7 @@ final class StorageHealth
         }
 
         if ($online === []) {
-            $result['ha'] = self::state('critical', 'Cold-Tier (SMB-Tier) nicht erreichbar: ' . implode(', ', $offlineLabels) . '.');
+            $result['ha'] = self::state('critical', 'Cold-Tier (SMB-/S3-Tier) nicht erreichbar: ' . implode(', ', $offlineLabels) . '.');
             $result['remote_unavailable'] = true;
         } elseif (count($online) < count($active)) {
             $result['ha'] = self::state('degraded', sprintf(

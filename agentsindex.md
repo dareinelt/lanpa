@@ -328,7 +328,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `storage_quota_overrides` | Individuelles Kontingent je Nextcloud-Kennung | `user_uid` (unique), `display_name`, `quota_mb`, `reason` (Pflicht), `created_by`, `updated_by` |
 | `storage_quota_history` | Verlauf aller Kontingentänderungen | `subject_type` (user/group/default), `subject`, `action` (set/change/remove), `old_quota_mb`, `new_quota_mb`, `reason`, `admin_username` |
 | `network_drives` | Von den Windows-Clients gemeldete Netzlaufwerke | `user_uid` + `drive_letter` (unique), `display_name`, `unc_path`, `domain`, `computer_name`, `reported_at` |
-| `storage_targets` | Speicherziele des Cold-Tiers (SMB-Tier) | `label`, `unc_path`, `username`, `domain`, `password` (verschlüsselt), `smb_version`, `is_primary`, `active` |
+| `storage_targets` | Speicherziele des Cold-Tiers (SMB-/S3-Tier) | `label`, `kind` (`smb`/`s3`), `unc_path` (bei S3 kanonischer Ort `s3://host/bucket/präfix`), `username` (bei S3 Access Key), `domain`, `password` (verschlüsselt; bei S3 Secret Key), `smb_version`, `s3_endpoint`, `s3_region`, `s3_bucket`, `s3_prefix`, `s3_path_style`, `s3_verify_tls`, `capacity_bytes` (S3-Kontingent, 0 = ohne Grenze), `is_primary`, `active` |
 | `storage_target_status`, `storage_status` | Zustand je Ziel bzw. gesamt (von `storage-sync` geschrieben) | Füllstand, MB/s, IOPS, Synchronität, Rückstand, Modus, Zähler |
 | `storage_incidents` | Sicherheitsvorfälle (Ransomware/verdächtiges Überschreiben) | `status` (open/resolved), `uid`, `rules`, `files_*`, `bytes`, `source`, `details` (JSON), `user_restricted`, `frozen_target_id`, `resolved_at`, `resolved_by` |
 | `storage_usage_samples`, `storage_events`, `storage_requests` | Verlauf (Diagramme, Hochrechnung), Ereignisse, Aufträge aus dem Adminbereich (`sync_now`, `full_scan`, `remount`, `confirm_deletes`) | |
@@ -465,4 +465,4 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - `docs/screenshots/` – Screenshots der öffentlichen und Admin-Bereiche (30–56: Office, Office-Apps, AD-Gruppen und lokale KI).
 - `docs/installation.md` – Assistierte Installation mit `scripts/install.sh`: Ablauf, Optionen, Bedienung, abgefragte Variablen, Abschlussbericht, Fehlerbehebung.
 - `docs/office.md` – Office-Erweiterung: Einrichtung, Architektur, Updates, AD-Gruppen/SSO, Kachel, lokale KI, Sicherung, SNMP.
-- `docs/storage.md` – Speicher-Tiering und HA-Synchronisation: Hot-Tier (lokales Storage), Cold-Tier (SMB-Tier), Container `storage-sync`, Rückholung in Nextcloud, Schutz vor Ransomware/Vorfälle, SNMP, Wiederherstellung, Vorteile.
+- `docs/storage.md` – Speicher-Tiering und HA-Synchronisation: Hot-Tier (lokales Storage), Cold-Tier (SMB-/S3-Tier; S3-Buckets per s3fs/FUSE), Container `storage-sync`, Rückholung in Nextcloud, Schutz vor Ransomware/Vorfälle, SNMP, Wiederherstellung, Vorteile (auch von S3-Zielen).

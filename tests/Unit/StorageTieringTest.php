@@ -25,6 +25,14 @@ function storagePdo(): PDO
         password TEXT NULL,
         domain TEXT NOT NULL DEFAULT \'\',
         smb_version TEXT NOT NULL DEFAULT \'auto\',
+        kind TEXT NOT NULL DEFAULT \'smb\',
+        s3_endpoint TEXT NOT NULL DEFAULT \'\',
+        s3_region TEXT NOT NULL DEFAULT \'\',
+        s3_bucket TEXT NOT NULL DEFAULT \'\',
+        s3_prefix TEXT NOT NULL DEFAULT \'\',
+        s3_path_style INTEGER NOT NULL DEFAULT 1,
+        s3_verify_tls INTEGER NOT NULL DEFAULT 1,
+        capacity_bytes INTEGER NOT NULL DEFAULT 0,
         is_primary INTEGER NOT NULL DEFAULT 0,
         active INTEGER NOT NULL DEFAULT 1
     )');
@@ -173,7 +181,7 @@ Runner::test('Speicher-Tiering: Adminseite und Zielformular werden ohne Inline-S
         'values' => [],
     ]);
     Assert::contains('Hot-Tier (lokales Storage)', $html);
-    Assert::contains('Cold-Tier (SMB-Tier)', $html);
+    Assert::contains('Cold-Tier (SMB-/S3-Tier)', $html);
     Assert::contains('data-fill="target-7"', $html);
     Assert::contains('NAS &lt;A&gt;', $html);
     Assert::contains('aria-label="Füllstand NAS &lt;A&gt;"', $html);
@@ -217,4 +225,119 @@ Runner::test('Speicher-Tiering: leere Ansicht und Validierungsfehler bleiben bed
         Assert::contains('name="' . $key . '"', $html);
     }
     Assert::contains('<noscript>', $html);
+});
+
+Runner::test('Speicher-Tiering: S3-Ziel wird geprueft, normalisiert und Secret verschluesselt', static function (): void {
+    $pdo = storagePdo();
+    $service = storageService($pdo);
+    $input = [
+        'label' => 'MinIO', 'kind' => 's3', 's3_endpoint' => ' HTTPS://MinIO.firma.local:9000/ ', 's3_region' => 'EU-Central-1',
+        's3_bucket' => 'Lanpa-Cold', 's3_prefix' => '/intranet/prod/', 's3_access_key' => 'AKIAEXAMPLE',
+        's3_secret_key' => 'geheim/Secret+Key', 's3_path_style' => true, 's3_verify_tls' => false, 'capacity_gb' => '500',
+    ];
+    $values = $service->validateTarget($input, null);
+    Assert::same('s3', $values['kind']);
+    Assert::same('https://minio.firma.local:9000', $values['s3_endpoint']);
+    Assert::same('eu-central-1', $values['s3_region']);
+    Assert::same('lanpa-cold', $values['s3_bucket']);
+    Assert::same('intranet/prod', $values['s3_prefix']);
+    Assert::same('s3://minio.firma.local:9000/lanpa-cold/intranet/prod', $values['unc_path']);
+    Assert::same('AKIAEXAMPLE', $values['username']);
+    Assert::same(1, $values['s3_path_style']);
+    Assert::same(0, $values['s3_verify_tls']);
+    Assert::same(500 * 1073741824, $values['capacity_bytes']);
+    Assert::true(SecretBox::isEncrypted((string) $values['password']));
+
+    // Gleicher Ort darf nicht doppelt angelegt werden; Secret beim Bearbeiten optional.
+    $id = (new StorageRepository($pdo))->createTarget($values);
+    $existing = $service->target($id);
+    Assert::same('s3', $existing['kind']);
+    $kept = $service->validateTarget([
+        'label' => 'MinIO', 'kind' => 's3', 's3_endpoint' => 'https://minio.firma.local:9000', 's3_bucket' => 'lanpa-cold',
+        's3_prefix' => 'intranet/prod', 's3_access_key' => 'AKIAEXAMPLE', 's3_secret_key' => '',
+    ], $existing);
+    Assert::false(array_key_exists('password', $kept));
+    try {
+        $service->validateTarget([
+            'label' => 'Doppelt', 'kind' => 's3', 's3_endpoint' => 'http://minio.firma.local:9000', 's3_bucket' => 'lanpa-cold',
+            's3_prefix' => 'intranet/prod', 's3_access_key' => 'AKIA2', 's3_secret_key' => 'x',
+        ], null);
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::same(['s3_bucket'], array_keys($exception->errors()));
+    }
+
+    // Wechsel von S3 zu SMB verwirft das Secret.
+    $smb = $service->validateTarget(['label' => 'NAS', 'kind' => 'smb', 'unc_path' => '\\\\nas01\\backup', 'smb_version' => 'auto'], $existing);
+    Assert::null($smb['password']);
+    Assert::same('', $smb['s3_bucket']);
+    Assert::same(0, $smb['capacity_bytes']);
+
+    try {
+        $service->validateTarget([
+            'label' => 'X', 'kind' => 's3', 's3_endpoint' => 'ftp://user:pw@host/pfad', 's3_region' => 'eu central',
+            's3_bucket' => 'A_b', 's3_prefix' => '../etc', 's3_access_key' => 'a:b', 's3_secret_key' => '', 'capacity_gb' => '-1',
+        ], null);
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::same(['s3_endpoint', 's3_region', 's3_bucket', 's3_prefix', 's3_access_key', 's3_secret_key', 'capacity_gb'], array_keys($exception->errors()));
+    }
+    try {
+        $service->validateTarget(['label' => 'X', 'kind' => 'nfs'], null);
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['kind']));
+    }
+
+    Assert::same('https://[::1]:9000', StorageService::normalizeS3Endpoint('https://[::1]:9000'));
+    Assert::null(StorageService::normalizeS3Endpoint('https://s3.example.com/bucket'));
+    Assert::null(StorageService::normalizeS3Endpoint('https://s3.example.com?x=1'));
+    Assert::same('', StorageService::normalizeS3Prefix(' / '));
+});
+
+Runner::test('Speicher-Tiering: S3-Ziele in Adminseite, Formular und SNMP', static function (): void {
+    View::setViewPath(BASE_PATH . '/views');
+    $service = storageService(storagePdo());
+    $overview = storageOverviewFixture(false);
+    $s3 = array_merge($overview['targets'][0], [
+        'id' => 8, 'label' => 'MinIO', 'kind' => 's3', 'unc_path' => 's3://minio:9000/lanpa', 'username' => 'AKIAEXAMPLE',
+        's3_endpoint' => 'https://minio:9000', 's3_region' => '', 's3_bucket' => 'lanpa', 's3_prefix' => '',
+        'capacity_bytes' => 0, 'unbounded' => true, 'is_primary' => false, 'total_bytes' => 0, 'free_bytes' => 0,
+        'fill' => StorageHealth::fill(0, 0, 85, 95), 'synced_bytes' => 2048,
+    ]);
+    $overview['targets'] = [$s3];
+    $overview['health'] = StorageHealth::evaluate(true, $overview['targets'], 5, 5, ['pending_files' => 0], 900);
+
+    $html = View::render('admin.storage', ['overview' => $overview, 'alert' => null, 'events' => [], 'errors' => [], 'values' => []]);
+    Assert::contains('s3://minio:9000/lanpa', $html);
+    Assert::contains('ohne Kapazitätsgrenze', $html);
+    Assert::contains('Access Key AKIAEXAMPLE', $html);
+
+    $cold = $service->snmp('storage_cold_fill', $overview);
+    Assert::same(0, $cold['exit']);
+    Assert::contains('MinIO ohne Kapazitaetsgrenze', $cold['lines'][0]);
+    Assert::contains('kind=s3', $service->snmp('storage_targets', $overview)['lines'][0]);
+    $live = $service->liveData($overview);
+    foreach (['username', 'password', 's3_endpoint', 'unc_path'] as $key) {
+        Assert::false(array_key_exists($key, $live['targets'][0]));
+    }
+
+    $form = View::render('admin.storage_target', [
+        'target' => ['id' => 8, 'label' => 'MinIO', 'kind' => 's3', 'unc_path' => 's3://minio:9000/lanpa', 'username' => 'AKIAEXAMPLE',
+            'domain' => '', 'password' => 'enc', 'smb_version' => 'auto', 's3_endpoint' => 'https://minio:9000', 's3_region' => '',
+            's3_bucket' => 'lanpa', 's3_prefix' => '', 's3_path_style' => 1, 's3_verify_tls' => 1, 'capacity_bytes' => 2 * 1073741824,
+            'is_primary' => 0, 'active' => 1],
+        'versions' => StorageService::SMB_VERSIONS,
+        'kinds' => StorageService::KINDS,
+        'errors' => [],
+        'values' => [],
+    ]);
+    Assert::contains('<option value="s3" selected>', $form);
+    Assert::contains('value="AKIAEXAMPLE"', $form);
+    Assert::contains('value="2"', $form);
+    Assert::contains('Ein Secret Key ist gespeichert', $form);
+    Assert::false(str_contains($form, 'Ein Kennwort ist gespeichert'));
+    Assert::false(str_contains($form, 'value="s3://minio:9000/lanpa"'));
+    Assert::false(str_contains($form, 'value="enc"'));
+    Assert::false(str_contains($form, 'style="'));
 });

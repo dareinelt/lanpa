@@ -7,7 +7,7 @@ namespace App\Services\Storage\Agent;
 use RuntimeException;
 
 /**
- * Holt ausgelagerte Dateien aus dem Cold-Tier (SMB-Tier) zurueck in den
+ * Holt ausgelagerte Dateien aus dem Cold-Tier (SMB-/S3-Tier) zurueck in den
  * Hot-Tier (lokales Storage): bevorzugt vom primaeren Ziel, Pruefsumme wird
  * kontrolliert, der Platzhalter erst danach atomar ersetzt.
  */

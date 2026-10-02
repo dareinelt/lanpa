@@ -139,8 +139,8 @@ code {
     gap: 1rem;
     align-items: center;
     justify-content: space-between;
-    min-height: 72px;
-    padding-block: .75rem;
+    min-height: 64px;
+    padding: .75rem clamp(1rem, 3vw, 2rem);
 }
 
 .brand {
@@ -151,16 +151,80 @@ code {
     color: inherit;
 }
 
-.site-header__inner--emergency {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-}
-.site-header__inner--emergency .site-nav { justify-content: flex-end; }
-.button.emergency-plan-button { background: #b42318; color: #fff; border: 2px solid #b42318; font-weight: 800; justify-self: center; }
+.site-header__inner > .brand { min-width: 0; }
+.site-header__center { display: flex; align-items: center; gap: .5rem; white-space: nowrap; }
+.site-header__inner .site-nav__dropdown-list { white-space: normal; }
+.button.emergency-plan-button { background: #b42318; color: #fff; border: 2px solid #b42318; font-weight: 800; white-space: nowrap; }
 .emergency-plan-button:hover, .emergency-plan-button:focus-visible { background: #86190f; color: #fff; border-color: #86190f; }
-@media (max-width: 1100px) {
-    .site-header__inner--emergency { grid-template-columns: minmax(0, 1fr); justify-items: center; }
-    .site-header__inner--emergency .site-nav { justify-content: center; }
+/* Breite Ansicht: Marke links, Notfallplan mittig, Navigation rechts in einer Zeile */
+@media (min-width: 1100px) {
+    .site-header__inner--emergency {
+        display: grid;
+        grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+    }
+    .site-header__inner--emergency .site-nav { justify-content: flex-end; flex-wrap: nowrap; white-space: nowrap; }
+    .site-header__inner--emergency > .brand { justify-self: start; }
+    .site-header__mobile, .site-nav__mobile-only { display: none; }
+}
+
+/* Schmale Ansicht: Mitteilungen, Start, Telefonliste und Design im Burgermenü */
+.site-nav-toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+.site-nav-toggle:hover { background: var(--color-surface-hover); }
+.site-nav-toggle__icon,
+.site-nav-toggle__icon::before,
+.site-nav-toggle__icon::after {
+    display: block;
+    width: 20px;
+    height: 2px;
+    border-radius: 2px;
+    background: currentColor;
+    transition: transform var(--transition), opacity var(--transition);
+}
+.site-nav-toggle__icon { position: relative; }
+.site-nav-toggle__icon::before,
+.site-nav-toggle__icon::after { content: ""; position: absolute; left: 0; }
+.site-nav-toggle__icon::before { top: -6px; }
+.site-nav-toggle__icon::after { top: 6px; }
+.site-nav-toggle[aria-expanded="true"] .site-nav-toggle__icon { background: transparent; }
+.site-nav-toggle[aria-expanded="true"] .site-nav-toggle__icon::before { transform: translateY(6px) rotate(45deg); }
+.site-nav-toggle[aria-expanded="true"] .site-nav-toggle__icon::after { transform: translateY(-6px) rotate(-45deg); }
+
+@media (max-width: 1099.98px) {
+    .site-header__inner { flex-wrap: nowrap; position: relative; }
+    .site-header__desktop-only, .site-nav__desktop-only { display: none; }
+    .site-header__center { margin-left: auto; }
+    .site-header__inner > .brand + .site-header__mobile { margin-left: auto; }
+    .site-header__mobile { display: flex; align-items: center; gap: .25rem; flex: none; }
+    .site-header .site-nav {
+        display: none;
+        position: absolute;
+        top: calc(100% + 1px);
+        right: clamp(1rem, 3vw, 2rem);
+        width: min(20rem, calc(100vw - 2rem));
+        flex-direction: column;
+        align-items: stretch;
+        gap: .15rem;
+        padding: .5rem;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        box-shadow: var(--shadow-hover);
+        z-index: 30;
+    }
+    .site-header .site-nav.is-open { display: flex; }
+    .site-nav .site-nav__link, .site-nav .theme-toggle { width: 100%; justify-content: flex-start; }
+    .site-nav .site-nav__dropdown { width: 100%; }
+    .site-nav .site-nav__dropdown-list { position: static; min-width: 0; margin-top: .25rem; box-shadow: none; }
 }
 
 .brand__mark {

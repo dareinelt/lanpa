@@ -271,6 +271,51 @@
         });
     }
 
+    // Burgermenü der Kopfzeile (nur unterhalb von 1100px sichtbar).
+    function initNavToggle() {
+        var toggle = document.querySelector('[data-nav-toggle]');
+        var nav = document.querySelector('[data-site-nav]');
+        if (!toggle || !nav) {
+            return;
+        }
+
+        function setOpen(open) {
+            nav.classList.toggle('is-open', open);
+            toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        }
+
+        toggle.addEventListener('click', function () {
+            setOpen(!nav.classList.contains('is-open'));
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if ((event.key === 'Escape' || event.key === 'Esc') && nav.classList.contains('is-open')) {
+                setOpen(false);
+                toggle.focus();
+            }
+        });
+
+        document.addEventListener('click', function (event) {
+            if (!nav.contains(event.target) && !toggle.contains(event.target)) {
+                setOpen(false);
+            }
+        });
+
+        if (window.matchMedia) {
+            var desktop = window.matchMedia('(min-width: 1100px)');
+            var onChange = function (event) {
+                if (event.matches) {
+                    setOpen(false);
+                }
+            };
+            if (desktop.addEventListener) {
+                desktop.addEventListener('change', onChange);
+            } else if (desktop.addListener) {
+                desktop.addListener(onChange);
+            }
+        }
+    }
+
     // Theme sofort setzen, damit es keinen Farbsprung gibt.
     applyMode(readMode());
 
@@ -280,5 +325,6 @@
         initColorFields();
         initAnnouncements();
         initAnnouncementMenu();
+        initNavToggle();
     });
 })();

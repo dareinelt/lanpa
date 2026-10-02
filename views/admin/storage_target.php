@@ -29,6 +29,7 @@ $error = static function (string $key) use ($errors): string {
 $hasPassword = $target !== null && (string) ($target['password'] ?? '') !== '';
 $version = $value('smb_version', 'auto');
 ?>
+<div class="storage-page storage-target-editor">
 <p class="toolbar"><a class="button button--ghost" href="/admin/speicher-ha#ziele">Zurück zu Speicher (HA)</a></p>
 
 <p class="card__hint">
@@ -46,6 +47,9 @@ $version = $value('smb_version', 'auto');
     <?= Csrf::field() ?>
     <input type="hidden" name="id" value="<?= $isNew ? 0 : (int) $target['id'] ?>">
 
+    <fieldset class="storage-fieldset">
+    <legend>Speicherziel und Verbindung</legend>
+    <div class="storage-fields">
     <div class="field">
         <label for="label">Bezeichnung</label>
         <input type="text" id="label" name="label" maxlength="100" required value="<?= Html::e($value('label')) ?>" <?= $attrs('label') ?>>
@@ -60,7 +64,12 @@ $version = $value('smb_version', 'auto');
         <p class="field__hint" id="unc_path-hint">Freigabe und optional ein Unterordner, z. B. <code>\\nas01\backup\lanpa</code>. Der Ordner sollte ausschließlich für dieses Intranet genutzt werden.</p>
         <?= $error('unc_path') ?>
     </div>
+    </div>
+    </fieldset>
 
+    <fieldset class="storage-fieldset">
+    <legend>Zugangsdaten</legend>
+    <div class="storage-fields">
     <div class="field">
         <label for="username">Benutzername</label>
         <input type="text" id="username" name="username" maxlength="128" spellcheck="false" autocomplete="off"
@@ -94,7 +103,12 @@ $version = $value('smb_version', 'auto');
             <label for="password_clear">Gespeichertes Kennwort entfernen</label>
         </div>
     <?php } ?>
+    </div>
+    </fieldset>
 
+    <fieldset class="storage-fieldset">
+    <legend>Protokoll und Verwendung</legend>
+    <div class="storage-fields">
     <div class="field">
         <label for="smb_version">SMB-Version</label>
         <select id="smb_version" name="smb_version" <?= $attrs('smb_version') ?>>
@@ -119,9 +133,12 @@ $version = $value('smb_version', 'auto');
         <label for="active">Aktiv</label>
         <p class="field__hint">Deaktivierte Ziele werden nicht mehr beschrieben und zählen nicht zum HA-Status. Die Daten auf der Freigabe bleiben erhalten.</p>
     </div>
+    </div>
+    </fieldset>
 
     <div class="form__actions">
         <button type="submit" class="button button--primary"><?= $isNew ? 'Speicherziel hinzufügen' : 'Speichern' ?></button>
         <a class="button button--ghost" href="/admin/speicher-ha#ziele">Abbrechen</a>
     </div>
 </form>
+</div>

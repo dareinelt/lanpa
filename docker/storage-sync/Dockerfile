@@ -1,17 +1,21 @@
 # syntax=docker/dockerfile:1
-# storage-sync: Speicher-Tiering (Hot-Tier lokal / Cold-Tier SMB) und
+# storage-sync: Speicher-Tiering (Hot-Tier lokal / Cold-Tier SMB oder S3) und
 # HA-Synchronisation der Office-Daten. Siehe docs/storage.md.
 FROM php:8.5-cli
 
-# cifs-utils: Einbinden der SMB-Freigaben (UNC), inotify-tools: sofortige
-# Erkennung von Aenderungen, postgresql-client: Sicherung der Nextcloud-DB.
+# cifs-utils: Einbinden der SMB-Freigaben (UNC), s3fs (FUSE): Einbinden
+# S3-kompatibler Buckets, inotify-tools: sofortige Erkennung von Aenderungen,
+# postgresql-client: Sicherung der Nextcloud-DB.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
+        ca-certificates \
         cifs-utils \
+        fuse3 \
         inotify-tools \
         postgresql-client \
         procps \
+        s3fs \
     ; \
     docker-php-ext-install -j"$(nproc)" pdo_mysql; \
     rm -rf /var/lib/apt/lists/*

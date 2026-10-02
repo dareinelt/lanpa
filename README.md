@@ -113,7 +113,7 @@ installieren, nicht starten).
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
 | `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter; Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
 | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
-| `storage-sync` | optional, Profil `office` – Speicher-Tiering und HA-Synchronisation der Office-Daten auf SMB-Freigaben ([docs/storage.md](docs/storage.md)) | `agent.alive` jünger als 30 s |
+| `storage-sync` | optional, Profil `office` – Speicher-Tiering und HA-Synchronisation der Office-Daten auf SMB-Freigaben und S3-kompatible Objektspeicher (s3fs/FUSE) ([docs/storage.md](docs/storage.md)) | `agent.alive` jünger als 30 s |
 
 ---
 
@@ -220,7 +220,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Office-Apps/App-Pakete und OWA-Link, lokale KI (Endpunkt, Modell, Audio-/Bildfunktionen in Nextcloud), Nextcloud-App-Store ein-/ausblenden, Sicherung ([docs/office.md](docs/office.md)) |
 | Speicherplatz (Quota) | Kontingente der Benutzer in Nextcloud: Standard (500 MB), Regeln je AD-Gruppe, individuelle Kontingente mit Pflicht-Begründung, Liste aller Benutzer über dem Standard und Verlauf (wer wem wann wie viel gegeben hat) ([docs/office.md](docs/office.md#speicherplatz-kontingente-quota)) |
 | Netzlaufwerke | Weitergabe der auf den Windows-Clients gemappten Netzlaufwerke an Nextcloud: Liste der nie weitergereichten Laufwerke (Standard B:/, G:/), gemeldete Laufwerke je Benutzer, Anmeldeskript zum Herunterladen ([docs/office.md](docs/office.md#netzlaufwerke-der-windows-clients)) |
-| Speicher (HA) | Speicherziele des Cold-Tiers (SMB-Tier) per UNC-Pfad einbinden (mehrere Ziele, je vollständige Kopie), Regeln für den Hot-Tier (lokales Storage: Tage, Zugriffe, max. Dateigröße, Limit gesamt), Live-Anzeige von Füllstand, MB/s, IOPS, HA- und Sync-Status, Hochrechnung bei Ausfall des Cold-Tiers, Ereignisse ([docs/storage.md](docs/storage.md)) |
+| Speicher (HA) | Speicherziele des Cold-Tiers (SMB-/S3-Tier) per UNC-Pfad oder als Bucket eines S3-kompatiblen Objektspeichers einbinden (mehrere Ziele, je vollständige Kopie), Regeln für den Hot-Tier (lokales Storage: Tage, Zugriffe, max. Dateigröße, Limit gesamt), Live-Anzeige von Füllstand, MB/s, IOPS, HA- und Sync-Status, Hochrechnung bei Ausfall des Cold-Tiers, Ereignisse ([docs/storage.md](docs/storage.md)) |
 | Vorfälle | Erkennung von Ransomware-ähnlichem Verhalten (bekannte Dateiendungen, verschlüsselte Inhalte, massenhaftes Überschreiben): Benutzer wird schreibgeschützt, ein Cold-Ziel nur lesend aus dem Sync gehalten, Meldung im Dashboard; tabellarische Liste mit Wer/Was/Wie viel/Quelle und „Erledigt“ mit Bestätigung ([docs/storage.md](docs/storage.md#schutz-vor-ransomware-und-verdächtigem-überschreiben-vorfälle)) |
 | Alarmierung | SMS-Gateway konfigurieren (Host, Benutzername; Passwort nur über Umgebung), Alarmgruppen/-rufnummern verwalten, Verlauf einsehen |
 | Aktivierungs-Rufnummern | Für den geschützten Zugriffsmodus erlaubte Rufnummern pflegen |
@@ -529,7 +529,7 @@ Die Werte liegen in der NET-SNMP-Tabelle `UCD-SNMP-MIB::extTable`
 | `storage_ha` (HA-Status Speicher-Tiering, optional) | `.1.3.6.1.4.1.2021.8.1.100.13` | `.1.3.6.1.4.1.2021.8.1.101.13` |
 | `storage_sync` (Sync-Status, Rückstand) | `.1.3.6.1.4.1.2021.8.1.100.14` | `.1.3.6.1.4.1.2021.8.1.101.14` |
 | `storage_hot_fill` (Füllstand Hot-Tier, lokales Storage) | `.1.3.6.1.4.1.2021.8.1.100.15` | `.1.3.6.1.4.1.2021.8.1.101.15` |
-| `storage_cold_fill` (Füllstand Cold-Tier, SMB-Tier) | `.1.3.6.1.4.1.2021.8.1.100.16` | `.1.3.6.1.4.1.2021.8.1.101.16` |
+| `storage_cold_fill` (Füllstand Cold-Tier, SMB-/S3-Tier) | `.1.3.6.1.4.1.2021.8.1.100.16` | `.1.3.6.1.4.1.2021.8.1.101.16` |
 
 Messwerte des Speicher-Tierings (MB/s, IOPS, Bytes, Rückstand, Hochrechnung) und je Speicherziel
 liefern zusätzlich `NET-SNMP-EXTEND-MIB::nsExtendOutLine."storage_metrics"` bzw. `."storage_targets"`

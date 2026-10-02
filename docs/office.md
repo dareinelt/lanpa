@@ -626,7 +626,7 @@ kurzzeitig frei und blenden ihn danach wieder aus.
   `OFFICE_BACKUP_SCHEDULE_HOUR` (leer = nur manuell).
 - Mit Speicher-Tiering werden ausgelagerte Dateien als Platzhalter („Sparse“)
   gesichert und belegen im Archiv keinen Platz; die vollständigen Daten liegen
-  im Cold-Tier (SMB-Tier). Wiederherstellung aus einem Speicherziel:
+  im Cold-Tier (SMB-/S3-Tier). Wiederherstellung aus einem Speicherziel:
   `./scripts/storage-restore.sh` ([docs/storage.md](storage.md#7-sicherung-und-wiederherstellung)).
 
 ![Sicherung im Adminbereich](screenshots/37-admin-office-sicherung.png)

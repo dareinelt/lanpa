@@ -209,7 +209,7 @@ class TieringClient {
         }
         if (!$this->agentAlive()) {
             throw new TieringException(
-                'Die Datei liegt im Cold-Tier (SMB-Tier) und kann derzeit nicht zurückgeholt werden: Der Dienst storage-sync antwortet nicht.'
+                'Die Datei liegt im Cold-Tier (SMB-/S3-Tier) und kann derzeit nicht zurückgeholt werden: Der Dienst storage-sync antwortet nicht.'
             );
         }
 
@@ -226,7 +226,7 @@ class TieringClient {
             if ($current && ($status['state'] ?? '') === 'failed') {
                 $message = is_string($status['message'] ?? null) && $status['message'] !== ''
                     ? $status['message'] : 'Rückholung fehlgeschlagen.';
-                throw new TieringException('Die Datei konnte nicht aus dem Cold-Tier (SMB-Tier) zurückgeholt werden: ' . $message);
+                throw new TieringException('Die Datei konnte nicht aus dem Cold-Tier (SMB-/S3-Tier) zurückgeholt werden: ' . $message);
             }
             if (!$this->isStub($rel)) {
                 // Inzwischen anderweitig zurueckgeholt oder ersetzt.
@@ -236,7 +236,7 @@ class TieringClient {
                 throw new TieringException('Rückholung abgebrochen: Der Dienst storage-sync antwortet nicht mehr.');
             }
             if (($this->clock)() >= $deadline) {
-                throw new TieringException('Die Rückholung aus dem Cold-Tier (SMB-Tier) dauert noch an. Bitte in Kürze erneut versuchen.');
+                throw new TieringException('Die Rückholung aus dem Cold-Tier (SMB-/S3-Tier) dauert noch an. Bitte in Kürze erneut versuchen.');
             }
             ($this->sleeper)(self::POLL_MICROSECONDS);
         }

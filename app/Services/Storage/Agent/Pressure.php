@@ -9,7 +9,7 @@ namespace App\Services\Storage\Agent;
  *
  * - "normal": Vorhaltung nach Alter, Zugriffen und Dateigroesse.
  * - "remote_only": Der Hot-Tier ist voll – neue und selten genutzte Daten
- *   liegen nur noch im Cold-Tier (SMB-Tier), bis wieder genug Platz ist.
+ *   liegen nur noch im Cold-Tier (SMB-/S3-Tier), bis wieder genug Platz ist.
  *
  * Mit Limit (MB) zaehlt die Belegung der lokal vorgehaltenen Daten, ohne
  * Limit allein der freie Platz des Datentraegers.

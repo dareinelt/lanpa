@@ -13,7 +13,7 @@ use UnexpectedValueException;
 
 /**
  * Kern der Synchronisation zwischen Hot-Tier (lokales Storage) und Cold-Tier
- * (SMB-Tier):
+ * (SMB-/S3-Tier):
  *
  * 1. scan(): Aenderungen der Quellen im Katalog erfassen (neu, geaendert,
  *    umbenannt, geloescht). Ein ungewoehnlich grosser Schwund blockiert die
@@ -358,7 +358,7 @@ final class SyncEngine
             $limit = max(self::MASS_DELETE_MIN, (int) ceil($known * self::MASS_DELETE_RATIO));
             if (count($deletes) > $limit) {
                 $message = sprintf(
-                    '%d von %d Dateien in %s sind verschwunden. Löschungen werden zum Schutz der Kopien im Cold-Tier (SMB-Tier) erst nach Bestätigung übernommen.',
+                    '%d von %d Dateien in %s sind verschwunden. Löschungen werden zum Schutz der Kopien im Cold-Tier (SMB-/S3-Tier) erst nach Bestätigung übernommen.',
                     count($deletes),
                     $known,
                     $source
@@ -630,7 +630,7 @@ final class SyncEngine
                 $next['mode'] === Pressure::REMOTE_ONLY ? 'warning' : 'info',
                 'tiering',
                 $next['mode'] === Pressure::REMOTE_ONLY
-                    ? 'Hot-Tier (lokales Storage) ist voll – Daten werden nur noch im Cold-Tier (SMB-Tier) gehalten. ' . $next['reason']
+                    ? 'Hot-Tier (lokales Storage) ist voll – Daten werden nur noch im Cold-Tier (SMB-/S3-Tier) gehalten. ' . $next['reason']
                     : 'Hot-Tier (lokales Storage) hat wieder Platz – häufig genutzte Dateien werden zurückgeholt.',
                 null
             );

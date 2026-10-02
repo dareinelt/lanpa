@@ -1,6 +1,6 @@
 /*
  * Intranet-Integration: Fortschritt der Rueckholung ausgelagerter Dateien
- * aus dem Cold-Tier (SMB-Tier) in den Hot-Tier (lokales Storage).
+ * aus dem Cold-Tier (SMB-/S3-Tier) in den Hot-Tier (lokales Storage).
  *
  * Oeffnet ein Benutzer eine ausgelagerte Datei, wartet Nextcloud auf die
  * Rueckholung durch storage-sync. Diese Anzeige fragt den Fortschritt ab
@@ -91,7 +91,7 @@
         box.setAttribute('aria-label', 'Rückholung aus dem Cold-Tier');
         var title = document.createElement('h2');
         title.className = 'intranet-recall__title';
-        title.textContent = 'Datei wird aus dem Cold-Tier (SMB-Tier) geladen';
+        title.textContent = 'Datei wird aus dem Cold-Tier (SMB-/S3-Tier) geladen';
         var hint = document.createElement('p');
         hint.className = 'intranet-recall__hint';
         hint.textContent = 'Selten genutzte Dateien liegen nur auf dem Netzwerkspeicher. Die Datei öffnet sich automatisch, sobald sie bereitsteht.';

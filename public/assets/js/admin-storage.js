@@ -1,7 +1,7 @@
 /*
  * Adminbereich Speicher (HA): Live-Aktualisierung von HA-/Sync-Status,
  * Fuellstand, Datenrate und IOPS des Hot-Tiers (lokales Storage) und der
- * Speicherziele des Cold-Tiers (SMB-Tier).
+ * Speicherziele des Cold-Tiers (SMB-/S3-Tier).
  */
 (function () {
     'use strict';

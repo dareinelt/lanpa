@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Storage\Agent;
 
 /**
- * Aktueller Stand der Speicherziele des Cold-Tiers (SMB-Tier), vom Monitor
+ * Aktueller Stand der Speicherziele des Cold-Tiers (SMB-/S3-Tier), vom Monitor
  * nach jeder Pruefung geschrieben und von Synchronisation und Rueckholung
  * gelesen (state/targets.json). Nur Ziele mit "online" sind eingebunden und
  * gehoeren nachweislich zu dieser Installation.

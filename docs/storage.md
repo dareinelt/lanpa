@@ -2,7 +2,9 @@
 
 Die Daten von Nextcloud und Euro-Office liegen nicht mehr nur im Volume des
 jeweiligen Containers. Im Adminbereich unter **Speicher (HA)**
-(`/admin/speicher-ha`) werden SMB-Freigaben per UNC-Pfad eingebunden. Jedes
+(`/admin/speicher-ha`) werden SMB-Freigaben per UNC-Pfad und/oder Buckets
+S3-kompatibler Objektspeicher (MinIO, Ceph RGW, NetApp StorageGRID, AWS S3,
+Wasabi …) als Speicherziele eingebunden. Jedes
 Speicherziel enthält eine vollständige Kopie aller Daten. Der Container
 `storage-sync` übernimmt Einbindung, Synchronisation, Auslagerung und
 Rückholung.
@@ -10,7 +12,7 @@ Rückholung.
 | Begriff | Bedeutung |
 | --- | --- |
 | **Hot-Tier (lokales Storage)** | Volumes `nextcloud_data` und `eurooffice_data` auf dem Docker-Host. Cache für häufig und kürzlich genutzte Dateien. |
-| **Cold-Tier (SMB-Tier)** | Alle eingetragenen SMB-Speicherziele. Jedes Ziel hält den **vollständigen** Datenbestand. |
+| **Cold-Tier (SMB-/S3-Tier)** | Alle eingetragenen Speicherziele, SMB-Freigaben und S3-Buckets beliebig gemischt. Jedes Ziel hält den **vollständigen** Datenbestand. |
 
 ---
 
@@ -23,13 +25,16 @@ docker compose --profile office up -d --build storage-sync
 ```
 
 1. Adminbereich → **Speicher (HA)** → **Speicherziel hinzufügen**.
-2. Bezeichnung, UNC-Pfad (`\\server\freigabe\pfad`), Benutzername, Domäne,
-   Kennwort und SMB-Version (automatisch, 3.1.1, 3.0, 2.1) eintragen.
+2. Bezeichnung und **Art** des Ziels wählen:
+   - **SMB-Freigabe:** UNC-Pfad (`\\server\freigabe\pfad`), Benutzername,
+     Domäne, Kennwort und SMB-Version (automatisch, 3.1.1, 3.0, 2.1).
+   - **S3-kompatibler Objektspeicher:** siehe [Abschnitt 1a](#1a-s3-kompatible-objektspeicher).
+
    Ein Ziel kann als **primär** markiert werden. Von dort holt der Dienst
    Dateien bevorzugt zurück.
 3. Weitere Ziele (zweites NAS, anderer Standort …) genauso hinzufügen. Jedes
    aktive Ziel erhält eine vollständige Kopie.
-4. Unter **Einstellungen** „Daten im Cold-Tier (SMB-Tier) ablegen“ und
+4. Unter **Einstellungen** „Daten im Cold-Tier (SMB-/S3-Tier) ablegen“ und
    „Speicher-Tiering: selten genutzte Dateien aus dem Hot-Tier auslagern“
    setzen.
 
@@ -49,6 +54,46 @@ Aufbau eines Speicherziels:
   eurooffice-data\     Daten des DocumentServers
 ```
 
+Bei S3-Zielen liegt derselbe Aufbau als Objektschlüssel unter
+`<bucket>/<präfix>/`, z. B. `lanpa-cold/intranet/nextcloud-data/…`.
+
+### 1a. S3-kompatible Objektspeicher
+
+`storage-sync` bindet einen Bucket per [s3fs](https://github.com/s3fs-fuse/s3fs-fuse)
+(FUSE) unter `/mnt/targets/<id>` ein. Synchronisation, Rückholung,
+Vorfallschutz (schreibgeschütztes Einbinden) und Wiederherstellung arbeiten
+dadurch genau wie bei SMB-Zielen.
+
+| Feld | Bedeutung |
+| --- | --- |
+| Endpunkt | `https://host[:port]`, z. B. `https://s3.eu-central-1.amazonaws.com` oder `https://minio.firma.local:9000`. Nur Schema, Host und Port. |
+| Region | Signaturregion, z. B. `eu-central-1`. Bei MinIO/Ceph meist `us-east-1` oder leer. |
+| Bucket | Bestehender Bucket (wird nicht angelegt). |
+| Präfix | Optionaler Unterordner im Bucket, z. B. `intranet/prod`. So können mehrere Installationen einen Bucket teilen. |
+| Kapazität (GB) | Optionales Kontingent für Füllstand, Hochrechnung und SNMP. `0` = ohne Grenze. |
+| Access Key ID / Secret Access Key | Zugangsdaten. Das Secret wird verschlüsselt gespeichert und beim Bearbeiten nur bei Eingabe ersetzt. |
+| Pfad-Adressierung | `https://host/bucket` statt `https://bucket.host` – für MinIO, Ceph und die meisten lokalen Objektspeicher aktiv lassen. |
+| TLS-Zertifikat prüfen | Nur für Tests mit selbstsignierten Zertifikaten abschalten. |
+
+Hinweise:
+
+- Ein Objektspeicher meldet keine Größe. Der Füllstand ergibt sich aus der
+  synchronisierten Datenmenge und der eingetragenen Kapazität. Ohne Kapazität
+  zeigt der Adminbereich „Objektspeicher ohne Kapazitätsgrenze“ und
+  `storage_cold_fill` wertet das Ziel nicht als „voll“.
+- Die Erreichbarkeit prüft `monitor` per Verzeichnisauflistung (ein
+  `ListObjects` je Prüfzyklus). MB/s und IOPS stammen aus den Zählern des
+  Agenten statt aus der CIFS-Statistik.
+- Der Container benötigt `/dev/fuse`. Der Entrypoint legt das Gerät an; die
+  Freigabe erfolgt in `docker-compose.yml` über
+  `device_cgroup_rules: ["c 10:229 rwm"]`. Ohne FUSE-Modul auf dem Host
+  starten SMB-Ziele weiterhin, nur S3-Ziele melden einen Fehler.
+- Uploads werden in `/var/lib/storage-sync/s3-tmp` (Volume
+  `storage_sync_state`) zwischengespeichert. Dort muss Platz für die größte
+  Einzeldatei sein.
+- Mindestrechte des Schlüssels auf den Bucket bzw. das Präfix:
+  `s3:ListBucket`, `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`.
+
 ---
 
 ## 2. Architektur
@@ -60,8 +105,8 @@ flowchart LR
   NC -- Rückhol-Auftrag --> T[(storage_tiering)]
   SS[storage-sync] -- inotify + Vollabgleich --> HOT
   SS <-- Aufträge / Status --> T
-  SS -- mount.cifs --> C1[(Cold-Tier: Ziel 1)]
-  SS -- mount.cifs --> C2[(Cold-Tier: Ziel 2 …)]
+  SS -- mount.cifs --> C1[(Cold-Tier: SMB-Ziel)]
+  SS -- s3fs / HTTPS --> C2[(Cold-Tier: S3-Bucket …)]
   SS -- Messwerte, Status --> DB[(MySQL intranet)]
   ADM[Adminbereich] --> DB
   SNMP[snmp] -- docker exec --> APP[app: scripts/storage_status.php] --> DB
@@ -72,7 +117,7 @@ Container neu, und der Healthcheck schlägt fehl.
 
 | Prozess | Aufgabe |
 | --- | --- |
-| `monitor` | Bindet die Ziele ein bzw. neu ein und misst Füllstand, MB/s und IOPS (Hot-Tier über `/proc/diskstats`, Cold-Tier über die CIFS-Statistik). Ermittelt den HA-Status und schreibt Messwerte und Verlauf in die Datenbank. |
+| `monitor` | Bindet die Ziele ein bzw. neu ein und misst Füllstand, MB/s und IOPS (Hot-Tier über `/proc/diskstats`, Cold-Tier über die CIFS-Statistik, bei S3 über die Zähler des Agenten). Ermittelt den HA-Status und schreibt Messwerte und Verlauf in die Datenbank. |
 | `sync` | Erkennt Änderungen sofort (inotify) und gleicht zusätzlich in festem Abstand vollständig ab. Kopiert neue oder geänderte Dateien auf **alle** aktiven Ziele (temporäre Datei, danach Umbenennen, SHA-256-Prüfung) und übernimmt Umbenennungen und Löschungen. Erstellt den Datenbank-Abzug und lagert Dateien aus. |
 | `recall` | Holt ausgelagerte Dateien auf Anforderung von Nextcloud zurück, mehrere parallel, mit Fortschritt. |
 
@@ -299,7 +344,7 @@ Die Werte stammen aus derselben Logik wie der Adminbereich. Der
 | 13 | `storage_ha` | HA-Status, Exit 0/1/2/3 |
 | 14 | `storage_sync` | Sync-Status mit ausstehenden Dateien und Rückstand |
 | 15 | `storage_hot_fill` | Füllstand Hot-Tier (lokales Storage) in % (Volume oder Limit, der höhere Wert) und Modus |
-| 16 | `storage_cold_fill` | Füllstand Cold-Tier (SMB-Tier): höchster Füllstand der erreichbaren Ziele, Anzahl nicht erreichbarer Ziele |
+| 16 | `storage_cold_fill` | Füllstand Cold-Tier (SMB-/S3-Tier): höchster Füllstand der erreichbaren Ziele, Anzahl nicht erreichbarer Ziele |
 
 OIDs: `extResult` `.1.3.6.1.4.1.2021.8.1.100.<Index>`, `extOutput`
 `.1.3.6.1.4.1.2021.8.1.101.<Index>`.
@@ -321,7 +366,7 @@ mit mehreren Zeilen:
 - **`storage_targets`** liefert eine Zeile je Ziel: `id`, `label`, `state`,
   `active`, `primary`, `fill_percent`, `total_bytes`, `free_bytes`,
   `read_mbps`, `write_mbps`, `read_iops`, `write_iops`, `in_sync`,
-  `pending_files`, `lag_seconds`.
+  `pending_files`, `lag_seconds`, `kind` (`smb` oder `s3`).
 
 ```bash
 snmpget  -v2c -c public localhost .1.3.6.1.4.1.2021.8.1.100.13 .1.3.6.1.4.1.2021.8.1.101.13
@@ -380,17 +425,22 @@ wieder zu dieser Installation.
 ## 8. Sicherheit
 
 - Nur `storage-sync` erhält `CAP_SYS_ADMIN` und `CAP_DAC_READ_SEARCH` (für
-  `mount.cifs`). Nextcloud, Euro-Office und `app` bleiben unverändert.
+  `mount.cifs`) sowie Zugriff auf `/dev/fuse` (für `s3fs`). Nextcloud,
+  Euro-Office und `app` bleiben unverändert.
 - Kennwörter der Ziele werden verschlüsselt (Schlüssel `storage/keys/secrets.key`,
   wie die AD-Kennwörter) in `storage_targets` gespeichert und nie an den
   Browser zurückgegeben. Für
-  `mount.cifs` entsteht eine Zugangsdatei mit Rechten `0600` unter
+  `mount.cifs` bzw. `s3fs` entsteht eine Zugangsdatei mit Rechten `0600` unter
   `/run/storage-sync` (tmpfs, nur im Arbeitsspeicher des Containers), die beim
   Aushängen gelöscht wird.
 - Der Rückhol-Status in Nextcloud zeigt jedem Benutzer nur seine eigenen
   Aufträge.
 - Für die Freigaben ein eigenes Dienstkonto mit Schreibrechten nur auf den
   Zielpfad verwenden. SMB 3 mit Verschlüsselung wird empfohlen.
+- Für S3 je Bucket einen eigenen Schlüssel mit den Mindestrechten aus
+  Abschnitt 1a verwenden und den Endpunkt per HTTPS ansprechen. Versionierung
+  bzw. Object Lock im Bucket schützt zusätzlich vor Ransomware, weil auch ein
+  kompromittierter Schlüssel ältere Versionen nicht endgültig löschen kann.
 
 ---
 
@@ -400,8 +450,15 @@ wieder zu dieser Installation.
   …). Ohne diese Unterstützung wird nur gespiegelt, nicht ausgelagert.
 - Die Größenlimits beziehen sich auf die **Nextcloud-Daten** im Hot-Tier.
   Euro-Office-Daten, Konfiguration und Datenbank bleiben lokal.
-- Änderungen direkt im Cold-Tier (am NAS) werden nicht zurücksynchronisiert.
-  Der Hot-Tier ist führend.
+- Änderungen direkt im Cold-Tier (am NAS bzw. im Bucket) werden nicht
+  zurücksynchronisiert. Der Hot-Tier ist führend.
+- S3 kennt kein Umbenennen: Umbenennungen und Verschiebungen werden im Bucket
+  als Kopieren und Löschen ausgeführt und dauern bei großen Ordnern länger.
+  Jeder Zugriff ist eine Anfrage; bei Cloud-Anbietern fallen ggf.
+  Anfrage- und Egress-Kosten an (insbesondere beim Zurückholen).
+- Mit Versionierung im Bucket bleiben gelöschte und überschriebene Objekte
+  als ältere Versionen erhalten. Eine Lebenszyklusregel sollte diese nach
+  einer Frist entfernen, sonst wächst der Speicherverbrauch stetig.
 - Die erste Synchronisation eines großen Bestands dauert entsprechend der
   Bandbreite. Der Fortschritt ist unter „Synchronisation“ sichtbar.
 
@@ -410,7 +467,7 @@ wieder zu dieser Installation.
 ## Vorteile des Storage-Tierings
 
 - **Daten außerhalb der VM:** Nextcloud- und Euro-Office-Daten liegen
-  vollständig im Cold-Tier (SMB-Tier) und überstehen den Ausfall des
+  vollständig im Cold-Tier (SMB-/S3-Tier) und überstehen den Ausfall des
   Docker-Hosts oder seiner Volumes.
 - **Hochverfügbarkeit durch mehrere Ziele:** Jedes Speicherziel enthält eine
   vollständige Kopie. Fällt ein NAS aus, bleiben alle Daten verfügbar und
@@ -432,6 +489,33 @@ wieder zu dieser Installation.
 - **Schnelle Wiederherstellung:** Eine neue Installation ist aus einem
   einzigen Speicherziel mit einem Befehl wiederhergestellt, auf Wunsch zuerst
   nur mit Platzhaltern.
+- **Freie Wahl des Speichers:** SMB-Freigaben und S3-Buckets lassen sich
+  beliebig kombinieren, z. B. ein NAS im Haus als schnelles primäres Ziel und
+  ein Objektspeicher an einem zweiten Standort oder in der Cloud.
 - **Kleinere Sicherungen:** Ausgelagerte Dateien belegen im
   `office-backup`-Archiv keinen Platz. Die vollständigen Daten liegen ohnehin
   redundant im Cold-Tier.
+
+### Vorteile S3-kompatibler Objektspeicher als Speicherziel
+
+- **Externe Kopie ohne VPN-Freigaben:** S3 läuft über HTTPS (Port 443). Ein
+  Ziel an einem zweiten Standort, beim Rechenzentrumsdienstleister oder in
+  der Cloud ist ohne SMB-Ports durch Firewalls erreichbar und erfüllt die
+  3-2-1-Regel (eine Kopie außer Haus).
+- **Praktisch unbegrenzt skalierbar:** Kein Volume, das voll laufen kann;
+  der Bucket wächst mit dem Datenbestand. Eine optionale Kapazität dient nur
+  der Überwachung bzw. dem Kostenrahmen.
+- **Schutz vor Ransomware und Fehlbedienung:** Versionierung und Object Lock
+  (WORM) halten frühere Stände unveränderlich vor – zusätzlich zum
+  Vorfallschutz von `storage-sync`, der das Ziel bei Verdacht schreibgeschützt
+  einbindet.
+- **Hohe Haltbarkeit:** Objektspeicher verteilen Daten per Erasure Coding oder
+  Replikation über mehrere Platten, Knoten oder Rechenzentren.
+- **Günstige Speicherklassen:** Selten genutzte Daten – genau die, die der
+  Cold-Tier hält – lassen sich kostengünstig ablegen.
+- **Herstellerunabhängig:** Die S3-API wird von MinIO, Ceph RGW, NetApp
+  StorageGRID, Dell ECS, TrueNAS, Synology/QNAP, AWS, Wasabi, Hetzner, IONOS
+  u. v. m. angeboten. Ein Mix aus SMB und S3 verteilt das Risiko auf
+  unterschiedliche Systeme und Medien.
+- **Kein Domänenkonto nötig:** Zugriff über einen eng berechtigten
+  Schlüssel je Bucket statt über ein Windows-/AD-Dienstkonto.

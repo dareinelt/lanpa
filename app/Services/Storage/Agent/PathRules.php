@@ -6,7 +6,7 @@ namespace App\Services\Storage\Agent;
 
 /**
  * Welche Dateien synchronisiert und welche zwischen Hot-Tier (lokales
- * Storage) und Cold-Tier (SMB-Tier) verschoben werden duerfen.
+ * Storage) und Cold-Tier (SMB-/S3-Tier) verschoben werden duerfen.
  *
  * Pfade sind relativ zur jeweiligen Quelle und nutzen "/" als Trenner.
  */

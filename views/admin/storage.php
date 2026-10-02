@@ -167,7 +167,7 @@ $check = static function (string $key, string $text, string $hint) use ($current
     <p class="storage-forecast__value" data-live="forecast"><?= Html::e((string) $overview['forecast_text']) ?></p>
     <p class="card__hint">
         Grundlage ist das Wachstum des gesamten Datenbestands (Hot- und Cold-Tier) der letzten 7 Tage. Sie zeigt, wie lange
-        der Hot-Tier reicht, falls der Cold-Tier (SMB-Tier) nicht erreichbar ist und alle neuen Daten auf der VM bleiben müssen.
+        der Hot-Tier reicht, falls der Cold-Tier (SMB-/S3-Tier) nicht erreichbar ist und alle neuen Daten auf der VM bleiben müssen.
         Limit des Hot-Tiers: <?= $local['limit_auto'] ? 'automatisch (nach freiem Platz)' : Html::e(StorageHealth::formatBytes($settings->localLimitBytes())) ?>.
     </p>
 </section>
@@ -183,15 +183,15 @@ $check = static function (string $key, string $text, string $hint) use ($current
     <div class="storage-section-head">
         <div>
             <p class="storage-eyebrow">02 · Externe Kopien</p>
-            <h2 class="card__title" id="targets-title">Cold-Tier (SMB-Tier)</h2>
+            <h2 class="card__title" id="targets-title">Cold-Tier (SMB-/S3-Tier)</h2>
         </div>
         <a class="button button--primary" href="/admin/speicher-ha/ziel">Speicherziel hinzufügen</a>
     </div>
-    <p class="card__hint">Jedes aktive SMB-Ziel erhält eine vollständige Kopie. Mindestens zwei Ziele ermöglichen Redundanz außerhalb der VM.</p>
+    <p class="card__hint">Jedes aktive Ziel – SMB-Freigabe oder S3-Bucket – erhält eine vollständige Kopie. Mindestens zwei Ziele ermöglichen Redundanz außerhalb der VM, z. B. ein NAS per SMB und ein Objektspeicher an einem zweiten Standort.</p>
     <?php if ($targets === []) { ?>
         <div class="storage-empty">
             <h3>Noch kein Speicherziel eingerichtet</h3>
-            <p>Fügen Sie eine SMB-Freigabe per UNC-Pfad hinzu und aktivieren Sie anschließend die Synchronisation in den <a href="#einstellungen">Einstellungen</a>.</p>
+            <p>Fügen Sie eine SMB-Freigabe per UNC-Pfad oder einen Bucket eines S3-kompatiblen Objektspeichers hinzu und aktivieren Sie anschließend die Synchronisation in den <a href="#einstellungen">Einstellungen</a>.</p>
         </div>
     <?php } else { ?>
         <div class="storage-targets">
@@ -205,11 +205,22 @@ $check = static function (string $key, string $text, string $hint) use ($current
                             <?php if ($target['is_primary']) { ?><span class="badge badge--active">primär</span><?php } ?>
                             <?php if (!empty($target['frozen'])) { ?><span class="badge badge--error" title="Wegen eines Sicherheitsvorfalls schreibgeschützt eingebunden – keine Synchronisation bis zur Erledigung">schreibgeschützt (Vorfall)</span><?php } ?>
                             <?php if (!$target['active']) { ?><span class="badge badge--muted">deaktiviert</span><?php } ?>
-                            <p class="storage-target__path"><code><?= Html::e($target['unc_path']) ?></code></p>
-                            <div class="table__hint">
-                                <?= $target['username'] !== '' ? Html::e(($target['domain'] !== '' ? $target['domain'] . '\\' : '') . $target['username']) : 'Gastzugriff' ?>
-                                · <?= Html::e($target['smb_version'] === 'auto' ? 'SMB automatisch' : 'SMB ' . $target['smb_version']) ?>
-                            </div>
+                            <?php if (($target['kind'] ?? 'smb') === 's3') { ?>
+                                <span class="badge badge--muted">S3</span>
+                                <p class="storage-target__path"><code><?= Html::e($target['unc_path']) ?></code></p>
+                                <div class="table__hint">
+                                    <?= Html::e($target['s3_endpoint']) ?>
+                                    <?= $target['s3_region'] !== '' ? '· Region ' . Html::e($target['s3_region']) : '' ?>
+                                    · Access Key <?= Html::e($target['username']) ?>
+                                </div>
+                            <?php } else { ?>
+                                <span class="badge badge--muted">SMB</span>
+                                <p class="storage-target__path"><code><?= Html::e($target['unc_path']) ?></code></p>
+                                <div class="table__hint">
+                                    <?= $target['username'] !== '' ? Html::e(($target['domain'] !== '' ? $target['domain'] . '\\' : '') . $target['username']) : 'Gastzugriff' ?>
+                                    · <?= Html::e($target['smb_version'] === 'auto' ? 'SMB automatisch' : 'SMB ' . $target['smb_version']) ?>
+                                </div>
+                            <?php } ?>
                         </div>
                         <p class="storage-target__message" data-live="message" <?= $target['message'] === '' ? 'hidden' : '' ?>><?= Html::e($target['message']) ?></p>
                         <div>
@@ -218,7 +229,11 @@ $check = static function (string $key, string $text, string $hint) use ($current
                                 <strong data-live="fill-text"><?= $target['fill']['percent'] === null ? '–' : Html::e(number_format((float) $target['fill']['percent'], 1, ',', '.')) . ' %' ?></strong>
                             </div>
                             <?= $fillbar($target['fill'], 'target-' . $target['id'], 'Füllstand ' . $target['label']) ?>
-                            <p class="card__hint">Frei <span data-live="free"><?= Html::e(StorageHealth::formatBytes($target['free_bytes'])) ?></span> von <span data-live="total"><?= Html::e(StorageHealth::formatBytes($target['total_bytes'])) ?></span></p>
+                            <?php if (!empty($target['unbounded'])) { ?>
+                                <p class="card__hint">Objektspeicher ohne Kapazitätsgrenze · belegt <span data-live="synced-bytes"><?= Html::e(StorageHealth::formatBytes($target['synced_bytes'])) ?></span></p>
+                            <?php } else { ?>
+                                <p class="card__hint">Frei <span data-live="free"><?= Html::e(StorageHealth::formatBytes($target['free_bytes'])) ?></span> von <span data-live="total"><?= Html::e(StorageHealth::formatBytes($target['total_bytes'])) ?></span></p>
+                            <?php } ?>
                         </div>
                         <dl class="storage-metrics storage-metrics--rates">
                             <div><dt>Lesen</dt><dd data-live="read"><?= Html::e(StorageHealth::formatRate($target['read_bps'])) ?></dd></div>
@@ -247,7 +262,7 @@ $check = static function (string $key, string $text, string $hint) use ($current
                                 <?= Csrf::field() ?>
                                 <input type="hidden" name="id" value="<?= (int) $target['id'] ?>">
                                 <button type="submit" class="button button--danger"
-                                        data-confirm="Speicherziel „<?= Html::e($target['label']) ?>“ entfernen? Die Daten auf der Freigabe bleiben erhalten, werden aber nicht mehr aktualisiert.">Entfernen</button>
+                                        data-confirm="Speicherziel „<?= Html::e($target['label']) ?>“ entfernen? Die Daten auf der Freigabe bzw. im Bucket bleiben erhalten, werden aber nicht mehr aktualisiert.">Entfernen</button>
                             </form>
                         </div>
                     </article>
@@ -275,7 +290,7 @@ $check = static function (string $key, string $text, string $hint) use ($current
         <?php if (isset($errors['storage_enabled'])) { ?>
             <p class="field__error"><?= Html::e($errors['storage_enabled']) ?></p>
         <?php } ?>
-        <?= $check('storage_enabled', 'Daten im Cold-Tier (SMB-Tier) ablegen (Synchronisation aktiv)', 'Ohne Haken wird der Cold-Tier nicht mehr beschrieben. Ausgelagerte Dateien müssen vorher in den Hot-Tier zurückgeholt sein.') ?>
+        <?= $check('storage_enabled', 'Daten im Cold-Tier (SMB-/S3-Tier) ablegen (Synchronisation aktiv)', 'Ohne Haken wird der Cold-Tier nicht mehr beschrieben. Ausgelagerte Dateien müssen vorher in den Hot-Tier zurückgeholt sein.') ?>
         <?= $check('storage_eviction_enabled', 'Speicher-Tiering: selten genutzte Dateien aus dem Hot-Tier auslagern', 'Ohne Haken bleiben alle Dateien zusätzlich im Hot-Tier; der Cold-Tier ist dann eine reine Kopie.') ?>
         <fieldset class="storage-fieldset">
         <legend>Hot-Tier (lokales Storage)</legend>

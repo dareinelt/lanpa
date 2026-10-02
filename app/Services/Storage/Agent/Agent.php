@@ -17,7 +17,7 @@ use Throwable;
 /**
  * Container storage-sync: drei dauerhaft laufende Prozesse.
  *
- * - monitor: bindet die Speicherziele des Cold-Tiers (SMB-Tier) ein, misst
+ * - monitor: bindet die Speicherziele des Cold-Tiers (SMB-/S3-Tier) ein, misst
  *   Fuellstand, Datenrate und IOPS und bewertet den HA-Status (alle 5 s).
  * - sync:    erfasst Aenderungen, synchronisiert alle Ziele, sichert die
  *   Nextcloud-Datenbank und verschiebt Dateien zwischen Hot- und Cold-Tier.
@@ -288,7 +288,7 @@ final class Agent
     {
         $repository = $this->repository();
         $instance = $settings->instanceId();
-        $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $instance);
+        $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $instance, s3TempDir: $this->config['state_dir'] . '/s3-tmp');
         $rows = $repository->targets();
         $mounter->cleanup(array_map(static fn (array $r): int => (int) $r['id'], $rows));
 
@@ -1025,13 +1025,13 @@ final class Agent
         if ($instance === '') {
             $instance = bin2hex(random_bytes(16));
         }
-        $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $instance);
+        $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $instance, s3TempDir: $this->config['state_dir'] . '/s3-tmp');
         $check = $mounter->check($row);
         if ($check['state'] === 'invalid') {
             $data = json_decode((string) @file_get_contents($check['root'] . '/' . PathRules::TARGET_MARKER), true);
             $foreign = is_array($data) ? (string) ($data['instance'] ?? '') : '';
             if ($foreign !== '') {
-                $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $foreign);
+                $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $foreign, s3TempDir: $this->config['state_dir'] . '/s3-tmp');
                 $check = $mounter->check($row);
             }
         }

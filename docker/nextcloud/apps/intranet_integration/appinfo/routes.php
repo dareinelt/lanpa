@@ -10,6 +10,7 @@ return [
         ['name' => 'quota#update', 'url' => '/api/quota', 'verb' => 'POST'],
         ['name' => 'admins#update', 'url' => '/api/admins', 'verb' => 'POST'],
         ['name' => 'drives#update', 'url' => '/api/drives', 'verb' => 'POST'],
+        ['name' => 'app_store#update', 'url' => '/api/appstore', 'verb' => 'POST'],
         ['name' => 'network_drives#show', 'url' => '/api/network-drives', 'verb' => 'GET'],
         ['name' => 'network_drives#update', 'url' => '/api/network-drives', 'verb' => 'POST'],
         ['name' => 'sso#login', 'url' => '/sso', 'verb' => 'GET'],

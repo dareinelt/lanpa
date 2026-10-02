@@ -23,6 +23,7 @@ use App\Support\Html;
 /** @var array<string,string> $aiErrors */
 /** @var bool $aiHasKey */
 /** @var bool $aiKeyFromSecret */
+/** @var array<string,string> $appStoreValues */
 
 $badge = static function (string $status): string {
     return match ($status) {
@@ -153,6 +154,9 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
             <?php if (is_array($diagnostics['ai'] ?? null) && !empty($apps['assistant'])) { ?>
                 <li><span>Assistent: Mit Audio arbeiten</span><?= !empty($diagnostics['ai']['audio']) ? '<span class="badge badge--ok">angeboten</span>' : '<span class="badge badge--muted">ausgeblendet</span>' ?></li>
                 <li><span>Assistent: Mit Bildern arbeiten</span><?= !empty($diagnostics['ai']['images']) ? '<span class="badge badge--ok">angeboten</span>' : '<span class="badge badge--muted">ausgeblendet</span>' ?></li>
+            <?php } ?>
+            <?php if (is_array($diagnostics['appstore'] ?? null)) { ?>
+                <li><span>App-Store (Nextcloud)</span><?= !empty($diagnostics['appstore']['enabled']) ? '<span class="badge badge--ok">angezeigt</span>' : '<span class="badge badge--muted">ausgeblendet</span>' ?></li>
             <?php } ?>
         <?php } ?>
     </ul>
@@ -316,6 +320,29 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
                 <label for="office_ai_images">„Mit Bildern arbeiten“ anbieten (Bilderzeugung, Bildanalyse, Sticker)</label>
             </div>
         </fieldset>
+
+        <div class="form__actions">
+            <button type="submit" class="button button--primary">Speichern und übertragen</button>
+        </div>
+    </form>
+</section>
+
+<section class="card" id="app-store" aria-labelledby="office-appstore-title">
+    <h2 class="card__title" id="office-appstore-title">Nextcloud-App-Store</h2>
+    <p class="card__hint">
+        Ist der App-Store deaktiviert, zeigt Nextcloud unter „Apps“ nur noch die installierten Apps an;
+        die Kategorien des App-Stores (Entdecken, App-Pakete, Empfohlen …) sowie das Installieren und
+        Aktualisieren von Apps über die Oberfläche entfallen. Bereits installierte Apps lassen sich
+        weiterhin aktivieren und deaktivieren. Einrichtung und <code>./scripts/office-update.sh</code>
+        geben den App-Store dafür kurzzeitig frei.
+    </p>
+    <form method="post" action="/admin/office/app-store" class="form form--wide">
+        <?= Csrf::field() ?>
+
+        <div class="field field--check">
+            <input type="checkbox" id="office_appstore_enabled" name="office_appstore_enabled" value="1" <?= ($appStoreValues['office_appstore_enabled'] ?? '1') === '1' ? 'checked' : '' ?>>
+            <label for="office_appstore_enabled">App-Store in Nextcloud anzeigen</label>
+        </div>
 
         <div class="form__actions">
             <button type="submit" class="button button--primary">Speichern und übertragen</button>

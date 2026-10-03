@@ -32,14 +32,17 @@ final class EmergencyPlanController extends AdminController
             $actor = $identity !== null && empty($identity['fake']) ? EmergencyPlanService::actor($identity)
                 : ($auth->isDirectoryUser() ? 'ad:' : 'local:') . mb_strtolower((string) $auth->username());
 
-            return ['manager' => true, 'actor' => $actor, 'base' => '/admin/notfallplan'];
+            return ['manager' => true, 'restricted' => false, 'actor' => $actor, 'base' => '/admin/notfallplan'];
         }
         $user = Container::sso()->resolve($request);
-        if (!Container::emergencyPlans()->canView($user)) {
+        $level = Container::emergencyPlans()->accessLevel($user);
+        if ($level === null) {
             throw new HttpException(403, 'Notfallpläne sind nicht aktiviert oder Ihre Windows-Anmeldung ist nicht über die freigegebene AD-Gruppe berechtigt.');
         }
 
-        return ['manager' => false, 'actor' => EmergencyPlanService::actor($user), 'base' => '/notfallplan', 'user' => $user];
+        // Auslösegruppe: nur auslösen und eigene laufende Ereignisse abarbeiten, keine Historie.
+        return ['manager' => false, 'restricted' => $level === EmergencyPlanService::ACCESS_TRIGGER,
+            'actor' => EmergencyPlanService::actor($user), 'base' => '/notfallplan', 'user' => $user];
     }
 
     private function render(string $template, array $access, array $data, int $status = 200): Response
@@ -53,12 +56,12 @@ final class EmergencyPlanController extends AdminController
     public function index(Request $request): Response
     {
         $access = $this->access($request);
-        $status = $request->query('status', 'active');
+        $status = $access['restricted'] ? 'active' : $request->query('status', 'active');
         if (!in_array($status, ['', 'active', 'closed'], true)) {
             throw new HttpException(422, 'Ungültiger Ereignisstatus.');
         }
-        $from = $request->query('from', '');
-        $to = $request->query('to', '');
+        $from = $access['restricted'] ? '' : $request->query('from', '');
+        $to = $access['restricted'] ? '' : $request->query('to', '');
         foreach ([$from, $to] as $date) {
             $parsed = $date === '' ? false : \DateTimeImmutable::createFromFormat('!Y-m-d', $date);
             if ($date !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/D', $date) || $parsed === false || $parsed->format('Y-m-d') !== $date)) {
@@ -77,6 +80,7 @@ final class EmergencyPlanController extends AdminController
             'filter' => compact('status', 'from', 'to', 'page'),
             'enabled' => Container::settings()->bool('emergency_plan_enabled'),
             'group' => Container::settings()->get('emergency_plan_group'),
+            'triggerGroup' => Container::settings()->get('emergency_plan_trigger_group'),
             'smtpEnabled' => Container::settings()->bool('smtp_enabled'),
             'canTransfer' => $access['manager'] && Container::auth()->isAdmin(),
         ]);
@@ -94,11 +98,13 @@ final class EmergencyPlanController extends AdminController
         $access = $this->access($request, true);
         $this->requireValidCsrf($request);
         $group = trim((string) $request->input('group', ''), " \t,;");
-        if (mb_strlen($group) > 190 || preg_match('/[,;\r\n]/', $group)) {
-            Session::flash('error', 'Bitte genau eine AD-Gruppe auswählen.');
+        $triggerGroup = trim((string) $request->input('trigger_group', ''), " \t,;");
+        $invalid = static fn (string $value): bool => mb_strlen($value) > 190 || preg_match('/[,;\r\n]/', $value) === 1;
+        if ($invalid($group) || $invalid($triggerGroup)) {
+            Session::flash('error', 'Bitte je Feld genau eine AD-Gruppe auswählen.');
         } else {
-            Container::settings()->update(['emergency_plan_enabled' => $request->has('enabled') ? '1' : '0', 'emergency_plan_group' => $group]);
-            app_logger()->info('Notfallplan-Freigabe geändert.', ['actor' => $access['actor'], 'group' => $group, 'enabled' => $request->has('enabled')]);
+            Container::settings()->update(['emergency_plan_enabled' => $request->has('enabled') ? '1' : '0', 'emergency_plan_group' => $group, 'emergency_plan_trigger_group' => $triggerGroup]);
+            app_logger()->info('Notfallplan-Freigabe geändert.', ['actor' => $access['actor'], 'group' => $group, 'trigger_group' => $triggerGroup, 'enabled' => $request->has('enabled')]);
             Session::flash('success', 'Freigabe gespeichert. Ohne AD-Gruppe bleiben Button und Inhalte gesperrt.');
         }
 
@@ -241,6 +247,11 @@ final class EmergencyPlanController extends AdminController
         $access = $this->access($request);
         $service = Container::emergencyPlans();
         $event = $service->requireEvent($request->queryInt('id'), $access['actor'], $access['manager']);
+        if ($access['restricted'] && $event['status'] !== 'active') {
+            Session::flash('success', 'Ereignis #' . (int) $event['id'] . ' ist abgeschlossen. Die weitere Auswertung erfolgt durch das KAEP-Team.');
+
+            return $this->redirect('/notfallplan');
+        }
 
         return $this->render('emergency.event', $access, [
             'pageTitle' => 'Ereignis #' . $event['id'] . ': ' . $event['title'],
@@ -264,7 +275,7 @@ final class EmergencyPlanController extends AdminController
         $this->requireValidCsrf($request);
         try {
             $service = Container::emergencyPlans();
-            $event = $service->requireEvent($request->inputInt('id'), $access['actor'], $access['manager']);
+            $event = $service->requireEvent($request->inputInt('id'), $access['actor'], $access['manager'], $access['restricted']);
             $service->update($event, $access['actor'], $request->post);
 
             return Response::json(['message' => 'Gespeichert.']);

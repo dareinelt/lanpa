@@ -13,7 +13,7 @@ use App\Support\Html;
 <p class="ep-warning">Bei unmittelbarer Gefahr zuerst den örtlich festgelegten Notruf und Meldeweg nutzen. Diese Anwendung ersetzt weder Notruf noch Einsatzleitung.</p>
 <?php if ($manager) { ?>
     <details class="card">
-        <summary>Freigabe und Sichtbarkeit: <?= $enabled && $group !== '' ? 'aktiv' : 'gesperrt' ?></summary>
+        <summary>Freigabe und Sichtbarkeit: <?= $enabled && ($group !== '' || $triggerGroup !== '') ? 'aktiv' : 'gesperrt' ?></summary>
         <form action="<?= $base ?>/einstellungen" method="post" class="form">
             <?= Csrf::field() ?>
             <label><input type="checkbox" name="enabled" value="1" <?= $enabled ? 'checked' : '' ?>> Notfallplan-Button aktivieren</label>
@@ -21,6 +21,11 @@ use App\Support\Html;
                 <label for="ep-group">AD-Gruppe für Ansicht und Auslösung</label>
                 <input id="ep-group" name="group" maxlength="190" value="<?= Html::e($group) ?>" data-group-suggest="<?= $base ?>/gruppen" autocomplete="off">
             </div>
+            <div class="field group-suggest">
+                <label for="ep-trigger-group">Weitere AD-Gruppe nur für Auslösung und Abarbeitung (optional)</label>
+                <input id="ep-trigger-group" name="trigger_group" maxlength="190" value="<?= Html::e($triggerGroup) ?>" data-group-suggest="<?= $base ?>/gruppen" autocomplete="off">
+            </div>
+            <p>Mitglieder der weiteren Gruppe sehen den Button, können veröffentlichte Pläne auslösen und ihre eigenen laufenden Ereignisse abarbeiten. Sie erhalten keinen Zugriff auf das KAEP-Dashboard und keine abgeschlossenen bzw. vergangenen Ereignisse. Bei Mitgliedschaft in beiden Gruppen gilt die erste Gruppe.</p>
             <p>Keine Gruppe = kein Button und kein Zugriff, auch nicht für Administratoren in der Benutzeransicht. KAEP-Verwaltung und Ereignisübersicht bleiben erreichbar. Entfernen der Freigabe sperrt auch den Benutzerzugriff auf laufende Ereignisse.</p>
             <button class="button button--primary">Freigabe speichern</button>
         </form>
@@ -65,6 +70,10 @@ use App\Support\Html;
     <?php } ?>
     <?php if ($plans === []) { ?><p>Keine <?= $manager ? '' : 'veröffentlichten ' ?>Notfallpläne vorhanden.</p><?php } ?>
 </div>
+<?php if (!empty($restricted)) { ?>
+<h2>Meine laufenden Ereignisse</h2>
+<p>Hier erscheinen nur von Ihnen ausgelöste, noch laufende Ereignisse. Abgeschlossene Ereignisse wertet das KAEP-Team aus.</p>
+<?php } else { ?>
 <h2><?= $manager ? 'Einsatzübersicht und historische Auswertung' : 'Meine Ereignisse' ?></h2>
 <form method="get" class="ep-filters">
     <label>Status <select name="status"><option value="">Alle</option><option value="active" <?= $filter['status'] === 'active' ? 'selected' : '' ?>>Laufend</option><option value="closed" <?= $filter['status'] === 'closed' ? 'selected' : '' ?>>Abgeschlossen</option></select></label>
@@ -73,6 +82,7 @@ use App\Support\Html;
     <button class="button button--ghost">Filtern</button>
 </form>
 <p><?= (int) $events['total'] ?> <?= (int) $events['total'] === 1 ? 'Ereignis' : 'Ereignisse' ?> im gewählten Zeitraum. Je Ereignis: Maßnahmenstand, Zeitverlauf und <?= $manager ? 'CSV-Auswertung.' : 'Kommentare.' ?></p>
+<?php } ?>
 <div class="table-wrapper">
     <table class="table">
         <thead><tr><th>Ereignis</th><th>Ausgelöst durch</th><th>Start (UTC)</th><th>Status / Dauer</th><th>Aktion</th></tr></thead>

@@ -99,6 +99,38 @@ Runner::test('Notfallplan: Rollen und fail-closed Gruppenfreigabe', static funct
     Assert::false($disabled->canView(emergencyUser()));
 });
 
+Runner::test('Notfallplan: Auslösegruppe nur für Auslösen und laufende eigene Ereignisse', static function (): void {
+    $pdo = emergencyPdo();
+    $service = emergencyService($pdo);
+    $trigger = array_replace(emergencyUser(), ['groups' => ['Ausloeser']]);
+    Assert::same(EmergencyPlanService::ACCESS_FULL, $service->accessLevel(emergencyUser()));
+    Assert::null($service->accessLevel($trigger));
+    $pdo->exec("INSERT OR REPLACE INTO settings VALUES ('emergency_plan_trigger_group', 'AUSLOESER')");
+    $service = emergencyService($pdo);
+    Assert::same(EmergencyPlanService::ACCESS_TRIGGER, $service->accessLevel($trigger));
+    Assert::same(EmergencyPlanService::ACCESS_FULL, $service->accessLevel(array_replace(emergencyUser(), ['groups' => ['Ausloeser', 'Notfall']])));
+    Assert::null($service->accessLevel(null));
+    Assert::null(EmergencyPlanService::dashboardActor($trigger, null, null, null));
+
+    $plan = $service->repository->savePlan(0, 0, emergencyDefinition(), 'local:admin');
+    $service->repository->submit($plan, 1, 'local:admin');
+    $service->repository->review($plan, 1, 'local:reviewer', true, 'Geprüft.');
+    $id = $service->start($plan, 1, $trigger, ' correct password ', bin2hex(random_bytes(32)));
+    $event = $service->requireEvent($id, 'ad:demo@quelle', false, true);
+    $service->update($event, 'ad:demo@quelle', ['revision' => 1, 'action' => 'close', 'comment' => 'Übung beendet.']);
+    emergencyThrows(fn () => $service->requireEvent($id, 'ad:demo@quelle', false, true), 403);
+    Assert::same($id, (int) $service->requireEvent($id, 'ad:demo@quelle', false)['id']);
+    Assert::same($id, (int) $service->requireEvent($id, 'local:kaep', true, true)['id']);
+
+    $pdo->exec("UPDATE settings SET setting_value = '' WHERE setting_key = 'emergency_plan_group'");
+    $onlyTrigger = new EmergencyPlanService(new EmergencyPlanRepository($pdo), new SettingsService(new SettingsRepository($pdo)), new NavigationRepository($pdo), static fn () => true, static fn () => [], static fn () => [], '');
+    Assert::true($onlyTrigger->canView($trigger));
+    Assert::false($onlyTrigger->canView(emergencyUser()));
+    $pdo->exec("UPDATE settings SET setting_value = '0' WHERE setting_key = 'emergency_plan_enabled'");
+    $disabled = new EmergencyPlanService(new EmergencyPlanRepository($pdo), new SettingsService(new SettingsRepository($pdo)), new NavigationRepository($pdo), static fn () => true, static fn () => [], static fn () => [], '');
+    Assert::false($disabled->canView($trigger));
+});
+
 Runner::test('Notfallplan: Graphvalidierung, Grenzen und sichere Links', static function (): void {
     $cases = [
         ['title' => 'x', 'nodes' => []],

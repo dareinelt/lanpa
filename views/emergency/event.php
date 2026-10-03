@@ -25,7 +25,7 @@ $hiddenFields = static function () use ($event): void { ?>
 <section <?= $preview ? 'data-ep-simulation' : 'data-ep-event' ?> data-revision="<?= (int) $event['revision'] ?>"<?php if (!$preview) { ?> data-status-url="<?= $base ?>/stand?id=<?= (int) $event['id'] ?>"<?php } ?>>
     <div class="toolbar">
         <?php if (!$preview) { ?>
-        <a class="button button--ghost" href="<?= $base ?>">Ereignisübersicht</a>
+        <a class="button button--ghost" href="<?= $base ?>"><?= !empty($restricted) ? 'Zurück zum Notfallplan' : 'Ereignisübersicht' ?></a>
         <a class="button button--ghost" href="<?= $base ?>/anleitung">Kurzanleitung</a>
         <?php } ?>
         <button class="button button--ghost" type="button" data-ep-print>Drucken</button>

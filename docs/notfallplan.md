@@ -48,6 +48,7 @@ automatische Alarmierung bei Fristüberschreitung.
 | KAEP-Team | Ausschließlich Notfallplan-Verwaltung, Freigabeeinstellungen, Einsatzübersicht und historische Auswertung; kein Export/Import von Notfallplänen, kein SMTP-, AD-, Benutzer- oder anderer Adminbereich |
 | Redaktion | Bestehender Zugriff auf wichtige Links; kein Notfallplan-Adminzugriff |
 | Angemeldeter AD-Benutzer in der Freigabegruppe | Veröffentlichte Pläne ansehen und nach AD-Kennwortbestätigung auslösen; eigene Ereignisse bearbeiten |
+| Angemeldeter AD-Benutzer in der Auslösegruppe (optional) | Veröffentlichte Pläne ansehen und nach AD-Kennwortbestätigung auslösen; nur eigene **laufende** Ereignisse abarbeiten. Kein KAEP-Dashboard, keine abgeschlossenen oder vergangenen Ereignisse, keine Filter/Historie |
 | Keine Freigabegruppe, deaktivierter Button oder fehlende Mitgliedschaft | Kein Button und kein Zugriff auf Benutzerinhalte, auch nicht per Direktlink |
 
 Unter **Benutzer → KAEP-Team** ordnet ein Administrator eine oder mehrere
@@ -59,6 +60,11 @@ freigegebene AD-Identität erforderlich.
 
 Unter **Notfallplan / KAEP → Freigabe und Sichtbarkeit** aktivieren Admin/KAEP den
 Button und wählen **eine** AD-Gruppe wie in den bestehenden Gruppenvorschlägen.
+Optional lässt sich zusätzlich eine **weitere AD-Gruppe nur für Auslösung und
+Abarbeitung** (Auslösegruppe) hinterlegen. Deren Mitglieder sehen den Button,
+können Pläne auslösen und ihre eigenen laufenden Ereignisse bearbeiten. Nach dem
+Abschluss ist das Ereignis für sie nicht mehr einsehbar; die Auswertung erfolgt
+durch das KAEP-Team. Bei Mitgliedschaft in beiden Gruppen gilt die erste Gruppe.
 Die Verwaltungsrolle ersetzt diese Freigabe nicht. Eine leere Gruppe sperrt
 immer. Deaktivierung oder Entzug der Gruppe sperrt auch den Benutzerzugriff auf
 laufende Ereignisse; Admin/KAEP behalten den Verwaltungszugriff.

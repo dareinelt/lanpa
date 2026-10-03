@@ -17,8 +17,10 @@ angegeben – bei Abweichungen gilt der Code.
 - Drei Endlosprozesse: `monitor` (Einbindung, Messwerte, HA, alle 5 s),
   `sync` (Erfassen, Übertragen, Auslagern, DB-Abzug), `recall` (Rückholungen,
   max. 4 parallel).
-- Kommunikation: MySQL `intranet` (Admin ⇄ Agent), SQLite-Katalog
-  (Agent intern), Dateien im Volume `storage_tiering` (Agent ⇄ Nextcloud).
+- Kommunikation: MySQL `intranet` (Admin ⇄ Agent), Katalog in der eigenen
+  MySQL-Instanz `storage-sync-catalog` (Agent intern, Sperren/Zähler über
+  `storage-sync-redis`), Dateien im Volume `storage_tiering` (Agent ⇄
+  Nextcloud). Container, Netze und Betrieb: [docs/storage-stack.md](storage-stack.md).
 - Schutzmechanismen: Massenlöschsperre, SHA-256-Prüfung, Kennungsdatei je
   Ziel, Vorfallerkennung (Ransomware) mit Schreibsperre für Benutzer und
   schreibgeschütztem Schutzziel.
@@ -116,7 +118,8 @@ gehören **nicht** zu diesem Modul.
 | `TierLayout.php` | Verteilung der Dateien eines Cold-Tiers auf seine Ziele: `members()`, `locate()` (wo liegt die Datei), `copies()` (alle Kopien), `place()` (Ziel für eine neue Fassung), `placed()`/`free()` (Platzbuchhaltung), `reserve()` (Freihaltereserve). Abschnitt 14.4. |
 | `SnapshotStore.php` | Dateilayout der Snapshot-Freigabe (`versions/<quelle>/<uid[0:2]>/<uid>/data|meta.json`), Kennzeichen `.lanpa-snapshots.json`, `available()`, `write()` (Temp + `rename`, SHA-256), `verify()`, `remove()`, `cleanupTemp()`, `all()` (für Neuaufbau), `uid()`/`validUid()`. |
 | `SnapshotEngine.php` | Ablauf: `register()` (vormerken), `secure()` (sichern bzw. zurückhalten, identischen Inhalt verwerfen), `restore()` (wiederherstellen ohne neue Version), `prune()` (Aufbewahrung), `rebuild()` (Katalog aus `meta.json`), `refreshIndex()` (Versionsliste für Nextcloud). `RETRY_SECONDS = 60`, `HOLD_SECONDS = 86400`. |
-| `Catalog.php` | SQLite-Katalog (WAL): Dateien, Versionen, Stand je Ziel, Löschen/Umbenennen-Aufträge, Zugriffe, Zähler, Meta, Tabelle `snapshots` (`addSnapshot`, `pendingSnapshots`, `snapshotsFor`, `snapshotsBefore`, `snapshotsExceeding`, `retrySnapshots`, `expirePendingSnapshots`, `unmirroredSnapshots`, `relinkSnapshots`, `snapshotStats`), `restored()`. Zähler-ID `Catalog::SNAPSHOT = -1`. |
+| `Catalog.php` | Katalog in MySQL (`storage-sync-catalog`; in Tests SQLite im Arbeitsspeicher, Datei-SQLite wird abgelehnt): Dateien, Versionen, Stand je Ziel, Löschen/Umbenennen-Aufträge, Zugriffe, Meta, Vorfall-Rohdaten (`ingestWrites`, `recordActivity`, `activityByUser`, …), Stapel-Methoden `findMany()`/`touchSeenMany()`/`recordAccesses()`, `transaction($cb, $retry)`, `importLegacy()`, Tabelle `snapshots` (`addSnapshot`, `pendingSnapshots`, `snapshotsFor`, `snapshotsBefore`, `snapshotsExceeding`, `retrySnapshots`, `expirePendingSnapshots`, `unmirroredSnapshots`, `relinkSnapshots`, `snapshotStats`), `restored()`. Zähler-ID `Catalog::SNAPSHOT = -1`. |
+| `CatalogCoordinator.php`, `RedisCoordinator.php`, `LocalCoordinator.php` | Hilfsdienst des Katalogs: `exclusive()` (Sperre um Mehrzeilen-Transaktionen) und I/O-Zähler (`addCounters()`, `counters()`). `RedisCoordinator` spricht RESP direkt über einen Socket (keine PHP-Erweiterung), Lease 300 s, Wartezeit 120 s, bei Ausfall 30 s ohne Redis. `LocalCoordinator` = ohne Sperre, Zähler im Prozess (Tests). |
 | `TieringStore.php` | Gemeinsames Verzeichnis mit Nextcloud: Marker, Platzhalter (`makeStub()`), Rückhol-Warteschlange/-Status, Zugriffs- und Schreibprotokoll, `config.json`, `agent.alive`, Snapshot-Austausch (`writeSnapshotIndex()`, `snapshotRestoreIds()`/`readSnapshotRestore()`, `writeSnapshotStatus()`, `requestRescan()`). |
 | `Mounter.php` | Einbinden/Aushängen (CIFS, s3fs), Erreichbarkeit, Füllstand, Kennungsdatei, verständliche Fehlermeldungen. Konstruktorparameter `marker` erlaubt eine andere Kennungsdatei (Snapshot-Speicher: `.lanpa-snapshots.json`, eigener `mountBase` und Zugangsdatei-Ordner). |
 | `TargetMap.php` | `state/targets.json`: vom Monitor geschrieben, von `sync`/`recall` gelesen – ein Eintrag je Cold-Tier mit `members`. Älter als 120 s ⇒ alle Ziele gelten als offline. Einträge ohne `members` (alte Datei) werden zu einem Tier mit genau einem Ziel ergänzt. |
@@ -151,7 +154,8 @@ gehören **nicht** zu diesem Modul.
 | Datei | Aufgabe |
 | --- | --- |
 | `docker/storage-sync/Dockerfile` | `php:8.5-cli` + `cifs-utils`, `fuse3`, `s3fs`, `inotify-tools`, `postgresql-client`, `procps`. Healthcheck: `agent.alive` jünger als 30 s. |
-| `docker/storage-sync/entrypoint.sh` | Startet `monitor`, `sync`, `recall`; endet einer ⇒ Container beendet sich (Neustart durch `restart: unless-stopped`). Mit Argumenten: Einzelbefehl. |
+| `docker/storage-sync-catalog/my.cnf` | Tuning der Katalog-Datenbank (kein Binlog, `innodb_flush_log_at_trx_commit = 2`, `READ-COMMITTED`, Redo 1 G). |
+| `docker/storage-sync/entrypoint.sh` | Wartet auf `db`, führt `catalog-init` aus (bis 180 s, sonst Abbruch), startet `monitor`, `sync`, `recall`; endet einer ⇒ Container beendet sich (Neustart durch `restart: unless-stopped`). Mit Argumenten: Einzelbefehl. |
 | `docker/storage-sync/storage-sync.ini` | `max_execution_time = 0`, `memory_limit = 512M`. |
 | `scripts/storage_sync.php` | CLI des Agenten (siehe [Abschnitt 11](#11-fehlersuche-und-betriebsbefehle)). |
 | `scripts/storage_status.php` | SNMP-Prüfungen (läuft im `app`-Container). |
@@ -166,8 +170,12 @@ gehören **nicht** zu diesem Modul.
 
 ### Container, Volumes, Pfade
 
-`storage-sync` (Compose-Profil `office`, `depends_on` `db` und `nextcloud-db`
-healthy) erhält `CAP_SYS_ADMIN`, `CAP_DAC_READ_SEARCH`,
+Überblick über alle Container, Netze und Volumes mit Diagrammen:
+[docs/storage-stack.md](storage-stack.md).
+
+`storage-sync` (Compose-Profil `office`, `depends_on` `db`, `nextcloud-db`,
+`storage-sync-catalog` und `storage-sync-redis` healthy, Netze `intranet`,
+`office_backend`, `storage_catalog`) erhält `CAP_SYS_ADMIN`, `CAP_DAC_READ_SEARCH`,
 `device_cgroup_rules: "c 10:229 rwm"` (FUSE), `apparmor:unconfined` und ein
 tmpfs `/run/storage-sync` (0700).
 
@@ -177,7 +185,8 @@ tmpfs `/run/storage-sync` (0700).
 | `nextcloud_html` | `/data/nextcloud-html` (Konfig unter `config/`) | `nextcloud` | Quelle `nextcloud-config` (nur `*.php`, `*.json`). |
 | `eurooffice_data` | `/data/eurooffice-data` | `eurooffice` | Quelle `eurooffice-data` (ohne `.private`). |
 | `storage_tiering` | `/var/lib/lanpa-tiering` | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker` (gleicher Pfad), `office-backup` (`/data/storage-tiering`) | Austausch Agent ⇄ Nextcloud. |
-| `storage_sync_state` | `/var/lib/storage-sync` | – | `catalog.sqlite`, `targets.json`, `dumps/`, `s3-tmp/`. |
+| `storage_sync_state` | `/var/lib/storage-sync` | – | `targets.json`, `dumps/`, `s3-tmp/` (früher `catalog.sqlite`, nach Übernahme `catalog.sqlite.imported-*`). |
+| `storage_sync_catalog_data` | – (nur `storage-sync-catalog`, `/var/lib/mysql`) | – | Katalog-Datenbank `storage_sync`. |
 | `app_storage` | `/var/www/html/storage` | `app` | `keys/secrets.key` zum Entschlüsseln der Zugangsdaten. |
 | tmpfs | `/run/storage-sync` | – | `cred-<id>` (0600), `s3fs-<id>.log`. |
 | – | `/mnt/targets/<id>` | – | Einhängepunkte der Ziele. |
@@ -187,7 +196,12 @@ Pfade sind über Umgebungsvariablen änderbar (`Agent::defaults()`):
 `STORAGE_STATE_DIR`, `STORAGE_TIERING_DIR`, `STORAGE_MOUNT_BASE`,
 `STORAGE_SNAPSHOT_MOUNT_BASE`, `STORAGE_CREDENTIAL_DIR`, `STORAGE_NEXTCLOUD_DATA`, `STORAGE_NEXTCLOUD_CONFIG`,
 `STORAGE_EUROOFFICE_DATA`, `NEXTCLOUD_DB_HOST`, `NEXTCLOUD_DB_PASSWORD_FILE`,
-`STORAGE_DATA_OWNER` (Standard `33:33`), `STORAGE_SYNC_SCRIPT`.
+`STORAGE_DATA_OWNER` (Standard `33:33`), `STORAGE_SYNC_SCRIPT`,
+`STORAGE_CATALOG_DB_HOST` (`storage-sync-catalog`), `STORAGE_CATALOG_DB_PORT`
+(3306), `STORAGE_CATALOG_DB_NAME` (`storage_sync`), `STORAGE_SYNC_REDIS_HOST`
+(`storage-sync-redis`), `STORAGE_SYNC_REDIS_PORT` (6379). Benutzer/Passwort
+des Katalogs und das Redis-Passwort kommen aus `Config::get('database')`
+(`DB_USER`/`DB_PASSWORD`).
 
 ### Prozesse und Takte
 
@@ -302,21 +316,48 @@ sequenceDiagram
 | `incident_extensions` | `DEFAULT_PATTERNS` (zeilenweise) | Endungen ohne Platzhalter oder Namensmuster mit `*`/`?` (max. 1 000 Einträge à 100 Zeichen). |
 | `incident_support_contact` | leer | Wird an den Benutzerhinweis angehängt (max. 200 Zeichen). |
 
-### 4.3 SQLite-Katalog (`/var/lib/storage-sync/catalog.sqlite`)
+### 4.3 Katalog (MySQL-Container `storage-sync-catalog`, Datenbank `storage_sync`)
 
-WAL, `busy_timeout` 60 s, von allen drei Prozessen genutzt. Schema in
-`Catalog::migrate()`:
+Eigene MySQL-Instanz (InnoDB, `utf8mb4_bin`), nur im internen Netz
+`storage_catalog` erreichbar; Zugangsdaten = `DB_USER`/`DB_PASSWORD`.
+Betrieb, Tuning und Fehlersuche: [docs/storage-stack.md](storage-stack.md#6-katalog-datenbank-storage-sync-catalog).
+Schema in `Catalog::mysqlSchema()` (Tests: gleichwertiges
+`Catalog::sqliteSchema()` in `sqlite::memory:`), angelegt von
+`Catalog::migrate()` unter der Sperre `catalog-schema`; Version in
+`meta.schema_version` (`Catalog::SCHEMA_VERSION`).
+
+Grundregeln des Schemas:
+
+- Pfade sind `VARBINARY(4096)` (bytegenau wie früher SQLite `BINARY`, auch
+  ungültiges UTF-8). Eindeutigkeit und Suche über `path_hash BINARY(32)` =
+  `Catalog::hash($path)` (SHA-256 roh). `path_hash`/`client_hash` sind
+  interne Spalten und werden aus allen Ergebniszeilen entfernt
+  (`Catalog::HIDDEN`).
+- Upserts über `Catalog::upsert()` (MySQL `INSERT … AS incoming ON DUPLICATE
+  KEY UPDATE`, SQLite `ON CONFLICT … DO UPDATE`); `rowCount()` zählt bei
+  MySQL nur geänderte Zeilen.
+- Sitzung: `READ COMMITTED`, `innodb_lock_wait_timeout = 60`, strikter
+  `sql_mode`. Einzelanweisungen außerhalb von Transaktionen und
+  Transaktionen mit `$retry = true` (nur reine DB-Wirkung: `ingestWrites`,
+  `nextGeneration`, `recordAccesses`, Import) werden bei 1213/1205/40001 bis
+  zu 5× wiederholt. Transaktionen mit Dateisystem-Nebenwirkung
+  (`observeBatch`, `settleVanished`) werden nicht wiederholt; der nächste
+  Durchlauf holt sie nach.
+- Jede `transaction()` läuft unter `CatalogCoordinator::exclusive('catalog')`
+  (Redis-Sperre) – Mehrzeilen-Transaktionen laufen dadurch nacheinander und
+  können keinen Deadlock untereinander bilden.
+- I/O-Zähler liegen nicht mehr im Katalog, sondern in Redis
+  (`storage-sync:counters`); die frühere Tabelle `counters` entfällt.
 
 | Tabelle | Spalten (Auszug) | Zweck |
 | --- | --- | --- |
-| `files` | `source`, `path` (unique je Quelle), `size`, `mtime`, `inode`, `version`, `sha256`, `state` (`local`/`evicted`), `tiered`, `last_access`, `evict_reason` (`age`/`size`/`pressure`), `changed_at`, `seen` (Generation) | Bestand aller Quellen. Jede Inhaltsänderung erhöht `version` und setzt `sha256 = NULL`, `state = local`. |
+| `files` | `id`, `source`, `path_hash` + `path` (unique `(source, path_hash)`), `size`, `mtime`, `inode`, `version`, `sha256`, `state` (`local`/`evicted`), `tiered`, `last_access`, `evict_reason` (`age`/`size`/`pressure`), `changed_at`, `seen` (Generation) | Bestand aller Quellen. Jede Inhaltsänderung erhöht `version` und setzt `sha256 = NULL`, `state = local`. |
 | `target_files` | `target_id`, `file_id`, `version`, `member_id` | Welche Version liegt auf welchem Cold-Tier (`target_id` = Kennung des Basisziels). Aktuell, wenn `version = files.version`. `member_id` (tolerant ergänzt, `DEFAULT 0`): Ziel innerhalb des Tiers, auf dem die Datei liegt; `0` = Basisziel. Nur für die Anzeige/den S3-Füllstand (`memberStats()`), nicht für das Auffinden – dafür prüft `TierLayout::locate()` das Dateisystem. |
 | `ops` | `target_id`, `op` (`delete`/`rename`), `source`, `path`, `new_path` | Ausstehende Lösch-/Umbenennungsaufträge je Cold-Tier (nur für Tiers, die die Datei hatten); ausgeführt auf dem Ziel, auf dem die Datei liegt. |
 | `access` | `file_id`, `day` | Zugriffstage (31 Tage aufbewahrt). |
-| `counters` | `target_id` (0 = Hot-Tier) | Kumulierte Bytes/Operationen für MB/s und IOPS. |
-| `activity`, `writes`, `clients` | | Vorfallerkennung (24 h aufbewahrt). |
+| `activity`, `writes`, `clients` | `writes.path_hash` (PK), `clients.client_hash` = SHA-256 über uid, ip, ua (PK) | Vorfallerkennung (24 h aufbewahrt). SQL nur in `Catalog` (`ingestWrites`, `recordActivity`, `activityByUser`, `activityOf`, `pruneActivity`), nicht im `ThreatDetector`. |
 | `snapshots` | `uid` (unique), `file_id` (NULL = Datei gelöscht), `source`, `path`, `user`, `version`, `size`, `mtime`, `sha256` (NULL bis bekannt), `status` (`pending`/`complete`/`failed`/`unavailable`/`deleted`), `error`, `attempts`, `next_attempt`, `created_at`, `stored_at`, `restored_at`, `restored_by`, `mirrored` | Vormerkungen und gesicherte Versionen (Abschnitt 13). `mirrored = 0` ⇒ beim nächsten `syncPass()` nach MySQL spiegeln. |
-| `meta` | `key`, `value` | Siehe unten. |
+| `meta` | `name`, `value` | Siehe unten (früher Spalte `key`). |
 
 Meta-Schlüssel: `generation`, `last_full_scan`, `last_db_dump`, `blocked`
 (Text der Massenlöschsperre), `confirm_deletes`, `mode`, `mode_reason`,
@@ -324,7 +365,16 @@ Meta-Schlüssel: `generation`, `last_full_scan`, `last_db_dump`, `blocked`
 (`1` = Sync angehalten, Restore), `access_pruned`, `recalls_total`,
 `recalls_failed`, `last_recall`, `incident_frozen`, `snapshot_pruned`
 (letzte Aufbewahrungsprüfung, alle 600 s), `snapshot_temp_cleaned`
-(stündlich).
+(stündlich), `schema_version`, `legacy_import` (`running` während bzw.
+`done <ISO-Zeit>` nach der Übernahme eines SQLite-Katalogs).
+
+**Umstieg vom SQLite-Katalog:** `storage_sync.php catalog-init` (Entrypoint)
+ruft `Agent::catalogInit()`: liegt `state_dir/catalog.sqlite` vor und ist der
+MySQL-Katalog leer (oder `legacy_import = running`), übernimmt
+`Catalog::importLegacy()` alle Tabellen in Stapeln zu 500 mit erhaltenen
+Kennungen (`meta.key` → `name`, Hashes werden berechnet, `counters` entfällt).
+Danach wird die Datei (samt `-wal`/`-shm`) in
+`catalog.sqlite.imported-<JJJJMMTT-hhmmss>` umbenannt.
 
 Der Katalog ist **wiederherstellbar**: Geht er verloren, erfasst der nächste
 Vollabgleich alles neu; vorhandene gleiche Dateien auf Zielen (Größe und
@@ -861,11 +911,27 @@ vom Basisziel und setzt `is_primary = 0`; „aktiv“ eines Basisziels wird per
 ```bash
 php tests/run.php            # alle Tests (eigener Runner, kein PHPUnit)
 php -l <datei>               # Syntaxprüfung
+
+# Katalog-Tests zusätzlich gegen echtes MySQL und Redis (Docker):
+docker run -d --rm --name catalog-test -e MYSQL_ROOT_PASSWORD=testpw -p 33061:3306 \
+  -v "$PWD/docker/storage-sync-catalog/my.cnf:/etc/mysql/conf.d/catalog.cnf:ro" mysql:9.7.2
+docker run -d --rm --name redis-test -p 63791:6379 redis:7.4.5-alpine redis-server --requirepass testpw
+STORAGE_CATALOG_TEST_MYSQL='127.0.0.1:33061:root:testpw' \
+STORAGE_CATALOG_TEST_REDIS='127.0.0.1:63791:testpw' php tests/run.php
+docker stop catalog-test redis-test
 ```
+
+`storageTestCatalog()` (in `tests/Unit/StorageAgentTest.php`) liefert
+standardmäßig `Catalog::memory()` (SQLite im Arbeitsspeicher). Mit
+`STORAGE_CATALOG_TEST_MYSQL=host:port:user:pass` legt es je Aufruf eine
+eigene Datenbank `catalog_test_<hex>` an (am Ende gelöscht), mit
+`STORAGE_CATALOG_TEST_REDIS=host:port:pass` zusätzlich den
+`RedisCoordinator`. Alle Agent- und Snapshot-Tests laufen so unverändert
+gegen beide Dialekte.
 
 | Datei | Abdeckung |
 | --- | --- |
-| `tests/Unit/StorageAgentTest.php` | Pfadregeln, Hysterese, Raten/CIFS-Statistik, Mount-/s3fs-Optionen und Fehlermeldungen, Sync inkl. Umbenennen/Löschen, Massenlöschsperre, Auslagern/Rückholen, überschriebener Platzhalter, `remote_only` und Rückkehr, Katalogverlust. Cold-Tier-Erweiterungen: `TargetMap` mit `members`, `TierLayout::place()`/`reserve()`/`free()`, Überlauf auf die Erweiterung (volles Basisziel per injiziertem freiem Platz), Verschieben geänderter Dateien, Umbenennen/Löschen/Rückholen über Ziele hinweg, `memberStats()`, `Agent::tierMap()` (Tier nur mit allen Zielen online, Schutzziel). Helfer `storageAgentExtendedTier()`. Arbeitet mit Temp-Verzeichnissen als Ziele (ohne echte Mounts). |
+| `tests/Unit/StorageAgentTest.php` | Katalog: Ablehnung von Datei-SQLite, `schema_version`, `nextGeneration()`, bytegenaue Pfade (ungültiges UTF-8), `findMany()`/`touchSeenMany()`/`recordAccesses()` (Maximum), Umbenennen, `ingestWrites()`, Zähler über den Koordinator, `importLegacy()` (Kennungen, Meta, Snapshots, nur in leeren Katalog, Wiederaufnahme nach Abbruch). Pfadregeln, Hysterese, Raten/CIFS-Statistik, Mount-/s3fs-Optionen und Fehlermeldungen, Sync inkl. Umbenennen/Löschen, Massenlöschsperre, Auslagern/Rückholen, überschriebener Platzhalter, `remote_only` und Rückkehr, Katalogverlust. Cold-Tier-Erweiterungen: `TargetMap` mit `members`, `TierLayout::place()`/`reserve()`/`free()`, Überlauf auf die Erweiterung (volles Basisziel per injiziertem freiem Platz), Verschieben geänderter Dateien, Umbenennen/Löschen/Rückholen über Ziele hinweg, `memberStats()`, `Agent::tierMap()` (Tier nur mit allen Zielen online, Schutzziel). Helfer `storageAgentExtendedTier()`. Arbeitet mit Temp-Verzeichnissen als Ziele (ohne echte Mounts). |
 | `tests/Unit/StorageTieringTest.php` | Einstellungen, HA-Bewertung, Live-Daten ohne Zugangsdaten, Zielvalidierung (SMB/S3) und Verschlüsselung, Views ohne Inline-Styles, SNMP-Ausgabe. Cold-Tier-Erweiterungen: `extendTiers()` (alle Tiers nötig, gleiche Art, eigener Ort, Zugangsdaten übernehmen, `parent_id`), Art eines erweiterten Basisziels gesperrt, Entfernen nur leerer letzter Stufe, aggregierter Füllstand, Warnung vorher/nachher, SNMP `tier=`/`role=`, Live-Daten `members`, Kachel- und Formular-Rendering. Helfer `storageTierPdo()` (SQLite mit `NOW()`/`TIMESTAMPDIFF()`-Ersatz), `storageTierStatus()`, `storageTierViews()`. |
 | `tests/Unit/StorageIncidentTest.php` | Muster, Inhaltsprüfung, Regeln, Zuordnung über Schreibprotokoll, Schutzzielwahl, `ro`-Einbindung, Erledigung, Adminseite. |
 | `tests/Unit/StorageTieringClientTest.php` | Nextcloud-Seite: Rückholung über Warteschlange, Fehler/ausgefallener Agent, Marker bei Umbenennen/Verschieben/Löschen, Zeitstempel, Zugriffsprotokoll. |
@@ -942,9 +1008,19 @@ Prüfungen mit eigenem Index zusätzlich in `SNMP_CHECKS`,
 `storage_snapshot`.
 
 **Schemaänderung**
-Nur neue Migrationsdatei, nie bestehende ändern. SQLite-Katalog: in
-`Catalog::migrate()` ausschließlich `CREATE … IF NOT EXISTS` bzw. tolerant
-ergänzen (bestehende Kataloge werden nicht migriert).
+MySQL `intranet`: nur neue Migrationsdatei, nie bestehende ändern.
+Katalog (`storage-sync-catalog`): Tabelle/Spalte in **beiden**
+`Catalog::mysqlSchema()` und `Catalog::sqliteSchema()` ergänzen,
+`Catalog::SCHEMA_VERSION` erhöhen und in `Catalog::migrate()` für
+bestehende Kataloge einen Schritt „wenn `schema_version` < N“ mit
+`ALTER TABLE … ADD COLUMN`/`ADD INDEX` ergänzen (läuft unter der Sperre
+`catalog-schema` beim `catalog-init`). Neue Pfadspalten als `VARBINARY`
+mit eigenem `path_hash`, nie lange Pfade indizieren. Indizes an den
+tatsächlichen `WHERE`/`ORDER BY` ausrichten (`EXPLAIN` gegen den Test-
+Container). Mehrzeilige Schreibvorgänge in `transaction()` bündeln, für
+viele Zeilen Stapel-Methoden (`… IN (…)`, Mehrzeilen-`INSERT`) statt
+Einzelanweisungen in Schleifen. Danach Tests gegen SQLite **und** MySQL
+(Abschnitt 9) laufen lassen; ggf. `importLegacy()` anpassen.
 
 ---
 
@@ -959,9 +1035,12 @@ docker compose exec storage-sync grep /mnt/targets /proc/self/mountinfo
 docker compose exec app php scripts/storage_status.php storage_metrics
 docker compose exec app php scripts/storage_status.php storage_targets
 
-# Katalog lesen (kein sqlite3 im Image)
-docker compose exec storage-sync php -r '$p=new PDO("sqlite:/var/lib/storage-sync/catalog.sqlite");
-  foreach($p->query("SELECT key,value FROM meta") as $r) echo $r["key"],"=",$r["value"],PHP_EOL;'
+# Katalog und Redis-Helfer (weitere Abfragen: docs/storage-stack.md Abschnitt 10)
+docker compose exec storage-sync php scripts/storage_sync.php catalog-status
+docker compose exec storage-sync php scripts/storage_sync.php catalog-init     # Schema/Import erneut (idempotent)
+docker compose exec storage-sync-catalog sh -c 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
+  -e "SELECT name, CAST(value AS CHAR) FROM meta"'
+docker compose exec storage-sync-redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli HGETALL storage-sync:counters'
 
 # Einzelbefehle des Agenten
 docker compose exec storage-sync php scripts/storage_sync.php resume
@@ -981,7 +1060,8 @@ docker compose exec app php scripts/storage_status.php storage_snapshot
 
 | Symptom | Ursache / Prüfung |
 | --- | --- |
-| HA `critical`, „storage-sync meldet sich nicht“ | Container läuft nicht oder Monitor hängt (`heartbeat_at` > 90 s). Logs prüfen. |
+| HA `critical`, „storage-sync meldet sich nicht“ | Container läuft nicht oder Monitor hängt (`heartbeat_at` > 90 s). Logs prüfen. Startschleife mit „Katalog-Datenbank (storage-sync-catalog) nicht erreichbar“ ⇒ [docs/storage-stack.md, Abschnitt 11](storage-stack.md#11-fehlersuche). |
+| Katalog-/Redis-Fehler (`SQLSTATE…`, Deadlock, Lock wait timeout, „ohne Redis-Helfer“) | Siehe [docs/storage-stack.md, Abschnitt 11.2](storage-stack.md#112-symptome). |
 | Ziel `invalid` | Fremde Instanz-ID in `.lanpa-storage.json` (anderer Ordner/Präfix oder Restore), fehlende Schreibrechte, S3 Object Lock auf der Kennungsdatei. |
 | Ziel `offline` mit „Kennwort kann nicht entschlüsselt werden“ | `storage/keys/secrets.key` geändert ⇒ Zugangsdaten neu eingeben. |
 | S3: „FUSE ist im Container nicht verfügbar“ | `fuse`-Modul auf dem Host laden, `device_cgroup_rules` prüfen. |

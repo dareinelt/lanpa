@@ -193,47 +193,66 @@ final class SyncEngine
             return;
         }
 
-        $batch = 0;
-        $this->catalog->pdo()->exec('BEGIN IMMEDIATE');
-        try {
-            foreach ($iterator as $path => $info) {
-                /** @var \SplFileInfo $info */
-                if ($info->isLink() || !$info->isFile()) {
-                    continue;
-                }
-                $rel = PathRules::relative($root, (string) $path);
-                if ($rel === null || PathRules::isExcluded($source, $rel)) {
-                    continue;
-                }
-                $stat = @stat((string) $path);
-                if ($stat === false) {
-                    continue;
-                }
-                $this->observe($source, $rel, $stat, $generation, $stats, $fresh);
-                if (++$batch % 500 === 0) {
-                    $this->catalog->pdo()->exec('COMMIT');
-                    $this->catalog->pdo()->exec('BEGIN IMMEDIATE');
-                }
+        $batch = [];
+        foreach ($iterator as $path => $info) {
+            /** @var \SplFileInfo $info */
+            if ($info->isLink() || !$info->isFile()) {
+                continue;
             }
-            $this->catalog->pdo()->exec('COMMIT');
-        } catch (\Throwable $exception) {
-            $this->catalog->pdo()->exec('ROLLBACK');
-            throw $exception;
+            $rel = PathRules::relative($root, (string) $path);
+            if ($rel === null || PathRules::isExcluded($source, $rel)) {
+                continue;
+            }
+            $stat = @stat((string) $path);
+            if ($stat === false) {
+                continue;
+            }
+            $batch[$rel] = $stat;
+            if (count($batch) >= Catalog::BATCH) {
+                $this->observeBatch($source, $batch, $generation, $stats, $fresh);
+                $batch = [];
+            }
         }
+        if ($batch !== []) {
+            $this->observeBatch($source, $batch, $generation, $stats, $fresh);
+        }
+    }
+
+    /**
+     * Ein Stapel des Abgleichs: Katalogzeilen in einer Abfrage laden, alle
+     * Aenderungen in einer Transaktion schreiben, unveraenderte Dateien mit
+     * einer Anweisung als gesehen markieren.
+     *
+     * @param array<string,array<int|string,int>> $batch relativer Pfad => stat()
+     * @param array<string,int> $stats
+     * @param array<int,int> $fresh
+     */
+    private function observeBatch(string $source, array $batch, int $generation, array &$stats, array &$fresh): void
+    {
+        $this->catalog->transaction(function () use ($source, $batch, $generation, &$stats, &$fresh): void {
+            $rows = $this->catalog->findMany($source, array_map('strval', array_keys($batch)));
+            $unchanged = [];
+            foreach ($batch as $rel => $stat) {
+                $rel = (string) $rel;
+                $this->observe($source, $rel, $stat, $generation, $stats, $fresh, $rows[$rel] ?? null, $unchanged);
+            }
+            $this->catalog->touchSeenMany($unchanged, $generation);
+        });
     }
 
     /**
      * @param array<int|string,int> $stat
      * @param array<string,int> $stats
      * @param array<int,int> $fresh
+     * @param array<string,mixed>|null $row Katalogzeile (vorab geladen)
+     * @param list<int> $unchanged Kennungen unveraenderter Dateien (gleicher Inode)
      */
-    private function observe(string $source, string $rel, array $stat, int $generation, array &$stats, array &$fresh): void
+    private function observe(string $source, string $rel, array $stat, int $generation, array &$stats, array &$fresh, ?array $row, array &$unchanged): void
     {
         $now = ($this->clock)();
         $size = (int) $stat['size'];
         $mtime = (int) $stat['mtime'];
         $inode = (int) $stat['ino'];
-        $row = $this->catalog->find($source, $rel);
         $tieredSource = $source === PathRules::SOURCE_NEXTCLOUD_DATA;
 
         if ($row === null) {
@@ -297,6 +316,11 @@ final class SyncEngine
             $this->catalog->changed($id, $size, $mtime, $inode, $now, $generation);
             $stats['changed']++;
             $this->detect($source, $rel, $size, false);
+
+            return;
+        }
+        if ((int) $row['inode'] === $inode) {
+            $unchanged[] = $id;
 
             return;
         }

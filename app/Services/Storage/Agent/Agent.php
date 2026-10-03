@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Storage\Agent;
 
+use App\Core\Config;
 use App\Core\Container;
 use App\Core\Database;
 use App\Repositories\IncidentRepository;
@@ -60,6 +61,13 @@ final class Agent
 
         return [
             'state_dir' => $env('STORAGE_STATE_DIR', '/var/lib/storage-sync'),
+            // Katalog: eigener MySQL-Container, Zugangsdaten wie die App-Datenbank (DB_USER/DB_PASSWORD).
+            'catalog_host' => $env('STORAGE_CATALOG_DB_HOST', 'storage-sync-catalog'),
+            'catalog_port' => $env('STORAGE_CATALOG_DB_PORT', '3306'),
+            'catalog_name' => $env('STORAGE_CATALOG_DB_NAME', 'storage_sync'),
+            // Redis-Helfer (Sperren, I/O-Zaehler), Passwort = DB_PASSWORD.
+            'redis_host' => $env('STORAGE_SYNC_REDIS_HOST', 'storage-sync-redis'),
+            'redis_port' => $env('STORAGE_SYNC_REDIS_PORT', '6379'),
             'tiering_dir' => $env('STORAGE_TIERING_DIR', '/var/lib/lanpa-tiering'),
             'mount_base' => $env('STORAGE_MOUNT_BASE', '/mnt/targets'),
             'snapshot_mount_base' => $env('STORAGE_SNAPSHOT_MOUNT_BASE', '/mnt/snapshots'),
@@ -91,7 +99,101 @@ final class Agent
 
     public function catalog(): Catalog
     {
-        return $this->catalog ??= new Catalog($this->config['state_dir'] . '/catalog.sqlite');
+        return $this->catalog ??= Catalog::connect($this->catalogConfig(), $this->coordinator());
+    }
+
+    /**
+     * @return array{host:string,port:int,database:string,username:string,password:string}
+     */
+    public function catalogConfig(): array
+    {
+        /** @var array<string,mixed> $app */
+        $app = Config::get('database', []);
+
+        return [
+            'host' => $this->config['catalog_host'],
+            'port' => (int) $this->config['catalog_port'],
+            'database' => $this->config['catalog_name'],
+            'username' => (string) ($app['username'] ?? ''),
+            'password' => (string) ($app['password'] ?? ''),
+        ];
+    }
+
+    public function coordinator(): RedisCoordinator
+    {
+        /** @var array<string,mixed> $app */
+        $app = Config::get('database', []);
+
+        return new RedisCoordinator(
+            $this->config['redis_host'],
+            (int) $this->config['redis_port'],
+            (string) ($app['password'] ?? ''),
+            log: fn (string $message) => $this->log('warning', $message),
+        );
+    }
+
+    /**
+     * Start des Containers: Schema anlegen und einen alten SQLite-Katalog
+     * (catalog.sqlite im Volume storage_sync_state) einmalig uebernehmen.
+     */
+    public function catalogInit(): int
+    {
+        $catalog = $this->catalog();
+        $legacy = $this->config['state_dir'] . '/catalog.sqlite';
+        if (!is_file($legacy)) {
+            return 0;
+        }
+        $done = $legacy . '.imported-' . date('Ymd-His');
+        if ($catalog->count() > 0 && $catalog->meta('legacy_import') !== 'running') {
+            $this->log('warning', 'Alter SQLite-Katalog gefunden, MySQL-Katalog ist bereits gefüllt – nicht übernommen, abgelegt als ' . basename($done) . '.');
+        } else {
+            $this->log('info', 'Übernehme alten SQLite-Katalog nach MySQL (storage-sync-catalog) …');
+            $counts = $catalog->importLegacy(new \PDO('sqlite:' . $legacy, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]));
+            $summary = [];
+            foreach ($counts as $table => $count) {
+                $summary[] = $table . '=' . $count;
+            }
+            $this->log('info', 'SQLite-Katalog übernommen: ' . implode(', ', $summary) . '.');
+        }
+        foreach (['', '-wal', '-shm'] as $suffix) {
+            if (is_file($legacy . $suffix)) {
+                rename($legacy . $suffix, $done . $suffix);
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * Erreichbarkeit und Umfang von Katalog-Datenbank und Redis-Helfer.
+     */
+    public function catalogStatus(): int
+    {
+        $config = $this->catalogConfig();
+        $redis = $this->coordinator();
+        $redisOk = $redis->ping();
+        echo 'Redis-Helfer  ', $this->config['redis_host'], ':', $this->config['redis_port'], '  ', $redisOk ? 'erreichbar' : 'NICHT erreichbar', PHP_EOL;
+        try {
+            $catalog = Catalog::connect($config, $redis);
+        } catch (Throwable $exception) {
+            echo 'Katalog       ', $config['host'], ':', $config['port'], '/', $config['database'], '  NICHT erreichbar: ', $exception->getMessage(), PHP_EOL;
+
+            return 1;
+        }
+        $totals = $catalog->totals();
+        $snapshots = $catalog->snapshotStats();
+        echo 'Katalog       ', $config['host'], ':', $config['port'], '/', $config['database'], '  erreichbar (Schema ', $catalog->meta('schema_version', '?'), ')', PHP_EOL;
+        echo 'Dateien       ', $catalog->count(), ' (Hot-Tier ', $totals['files_local'], ', ausgelagert ', $totals['files_evicted'], ')', PHP_EOL;
+        echo 'Snapshots     ', $snapshots['complete'], ' gesichert, ', $snapshots['pending'], ' ausstehend, ', $snapshots['failed'], ' fehlgeschlagen', PHP_EOL;
+        echo 'Generation    ', $catalog->meta('generation', '0'), ', letzter Vollabgleich ', ($full = (int) $catalog->meta('last_full_scan', '0')) > 0 ? date('Y-m-d H:i:s', $full) : '–', PHP_EOL;
+        foreach (['paused' => 'Angehalten', 'blocked' => 'Löschsperre', 'mode' => 'Modus', 'incident_frozen' => 'Eingefroren'] as $key => $label) {
+            $value = $catalog->meta($key);
+            if ($value !== '') {
+                echo str_pad($label, 14), $value, PHP_EOL;
+            }
+        }
+
+        return $redisOk ? 0 : 2;
     }
 
     public function store(): TieringStore
@@ -687,12 +789,7 @@ final class Agent
             $statusUpdate['last_scan_at'] = StorageRepository::NOW;
         }
 
-        foreach ($this->store()->takeAccessLog() as $path => $time) {
-            $file = $catalog->find(PathRules::SOURCE_NEXTCLOUD_DATA, $path);
-            if ($file !== null) {
-                $catalog->recordAccess((int) $file['id'], $time);
-            }
-        }
+        $catalog->recordAccesses(PathRules::SOURCE_NEXTCLOUD_DATA, $this->store()->takeAccessLog());
         if ($catalog->meta('access_pruned') !== date('Y-m-d')) {
             $catalog->pruneAccess($now);
             $catalog->setMeta('access_pruned', date('Y-m-d'));

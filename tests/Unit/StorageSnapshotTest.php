@@ -44,7 +44,7 @@ function storageSnapshotEnv(int $targetCount = 2, bool $enabled = true): array
         file_put_contents($root . '/' . PathRules::TARGET_MARKER, '{"instance":"test"}');
         $targets[] = ['id' => $i, 'label' => 'Ziel ' . $i, 'root' => $root, 'online' => true, 'primary' => $i === 1, 'active' => true];
     }
-    $catalog = new Catalog($base . '/state/catalog.sqlite');
+    $catalog = storageTestCatalog();
     $store = new TieringStore($base . '/tiering', $sources[PathRules::SOURCE_NEXTCLOUD_DATA]);
     $store->prepare();
     $map = new TargetMap($base . '/state/targets.json');

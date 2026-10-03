@@ -609,3 +609,24 @@ Runner::test('Snapshots: Cold-Tier-Ziel darf nicht auf der Snapshot-Freigabe lie
     Assert::true($rejected);
     Assert::same('\\\\nas04\\cold', $service->validateTarget(['label' => 'Cold', 'kind' => 'smb', 'unc_path' => '\\\\nas04\\cold'], null)['unc_path']);
 });
+
+Runner::test('Snapshots: nicht erreichbarer Snapshot-Speicher erscheint als Hinweis im Dashboard', static function (): void {
+    $overview = storageOverviewFixture(false);
+    $overview['targets'][0]['state'] = 'online';
+    $overview['health'] = \App\Services\Storage\StorageHealth::evaluate(true, $overview['targets'], 5, 5, ['pending_files' => 0], 900);
+    $service = storageService(storagePdo());
+    Assert::null($service->dashboardAlert($overview));
+
+    $overview['snapshot'] = array_replace($overview['snapshot'], ['enabled' => true, 'state' => 'offline', 'unc_path' => '\\\\nas03\\snapshots', 'message' => 'mount error(113)']);
+    $alert = $service->dashboardAlert($overview);
+    Assert::same('warning', $alert['level'] ?? null);
+    Assert::contains('Snapshot-Speicher', $alert['title']);
+    Assert::contains('mount error(113)', $alert['message']);
+    Assert::contains('zurückgehalten', $alert['message']);
+
+    // Deaktiviert oder erreichbar: kein Hinweis
+    $overview['snapshot']['state'] = 'online';
+    Assert::null($service->dashboardAlert($overview));
+    $overview['snapshot'] = array_replace($overview['snapshot'], ['enabled' => false, 'state' => 'disabled']);
+    Assert::null($service->dashboardAlert($overview));
+});

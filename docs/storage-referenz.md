@@ -22,6 +22,12 @@ angegeben – bei Abweichungen gilt der Code.
 - Schutzmechanismen: Massenlöschsperre, SHA-256-Prüfung, Kennungsdatei je
   Ziel, Vorfallerkennung (Ransomware) mit Schreibsperre für Benutzer und
   schreibgeschütztem Schutzziel.
+- **Snapshot-Speicher** (optional, eigene SMB-Freigabe, `SnapshotEngine`):
+  vor jedem Überschreiben/Löschen einer Benutzerdatei im Cold-Tier wird die
+  bisherige Fassung unveränderlich dort abgelegt (`versions/<quelle>/<uid>/`);
+  Admins stellen Versionen über Intranet oder Nextcloud wieder her – ohne
+  dass dabei eine neue Version entsteht. Läuft ausschließlich im Prozess
+  `sync`, nie im Nextcloud-Request.
 
 ---
 
@@ -39,6 +45,7 @@ angegeben – bei Abweichungen gilt der Code.
 10. [Änderungsrezepte](#10-änderungsrezepte)
 11. [Fehlersuche und Betriebsbefehle](#11-fehlersuche-und-betriebsbefehle)
 12. [Bekannte Eigenheiten](#12-bekannte-eigenheiten)
+13. [Snapshot-Speicher (Dateiversionen)](#13-snapshot-speicher-dateiversionen)
 
 ---
 
@@ -58,6 +65,10 @@ angegeben – bei Abweichungen gilt der Code.
 | Vorfall | `storage_incidents`, `ThreatDetector` | Ransomware-/Überschreibverdacht. |
 | Schutzziel | `frozen_target_id` | Ziel, das bei offenem Vorfall nur lesend eingebunden und nicht synchronisiert wird. |
 | Instanz-ID | Einstellung `storage_instance_id`, `.lanpa-storage.json` | Bindet Ziele an genau eine Installation. |
+| Snapshot-Speicher (Dateiversionen) | `SnapshotStore`, `SnapshotEngine`, Einstellungen `storage_snapshot_*`, `/mnt/snapshots/0`, `.lanpa-snapshots.json` | Eigene SMB-Freigabe für Vorgängerversionen; **kein** Speicherziel. |
+| Vorgängerversion / Snapshot | Zeile in Katalog `snapshots` bzw. MySQL `storage_snapshots`, Kennung `uid` (40 Hex) | Unveränderliche Kopie einer Fassung (`data` + `meta.json`). |
+| Vormerkung | `snapshots.status = pending` | Version ist erkannt, aber noch nicht vom Cold-Tier gesichert. |
+| zurückgehalten | `SyncEngine::copyFile()` ⇒ `held` | Datei wird auf diesem Ziel nicht ersetzt, solange ihre Vormerkung nicht gesichert ist. |
 
 Nicht verwechseln: **Speicherplatz/Kontingente** (`StorageQuotaService`,
 `/admin/speicherplatz`, Tabellen `storage_quota_*`) sind Nextcloud-Quotas und
@@ -76,22 +87,26 @@ gehören **nicht** zu diesem Modul.
 | `app/Services/Storage/StorageHealth.php` | Reine Funktionen: HA-/Sync-Bewertung `evaluate()`, Hochrechnung `forecast()`, Füllstand `fill()`, Formatierung. Exit-Codes `EXIT`. |
 | `app/Services/Storage/IncidentSettings.php` | Einstellungen `incident_*`, Standardliste der Ransomware-Endungen/-Muster, `matchName()`, Benutzerhinweis. |
 | `app/Services/Storage/IncidentService.php` | Adminlogik der Vorfälle: Liste, Erledigen, Einstellungen, Dashboard-Hinweis. |
-| `app/Repositories/StorageRepository.php` | MySQL: `storage_targets`, `storage_target_status`, `storage_status`, `storage_events`, `storage_usage_samples`, `storage_requests`. `StorageRepository::NOW` = Platzhalter für `NOW()`. |
+| `app/Services/Storage/SnapshotSettings.php` | Einstellungen `storage_snapshot_*` (Defaults, Grenzen, `validate()` mit Cold-Tier-Konflikt, `mountRow()` für den `Mounter`). |
+| `app/Services/Storage/SnapshotService.php` | Adminlogik des Snapshot-Speichers: `settings()`/`saveSettings()` (Kennwort per `SecretBox`), `status()` (aus `storage_snapshot_status`), `filter()` (Listenfilter bereinigen), `list()`, `requestRestore()` (Auftrag `snapshot_restore`), `restoreResults()`. |
+| `app/Repositories/StorageRepository.php` | MySQL: `storage_targets`, `storage_target_status`, `storage_status`, `storage_events`, `storage_usage_samples`, `storage_requests`, `storage_snapshots`, `storage_snapshot_status`. `StorageRepository::NOW` = Platzhalter für `NOW()`. |
 | `app/Repositories/IncidentRepository.php` | MySQL: `storage_incidents` (offen/erledigt, Schutzziel zuweisen/freigeben). |
 | `app/Controllers/Admin/StorageController.php` | Routen `/admin/speicher-ha*` (CSRF-geprüft). |
 | `app/Controllers/Admin/IncidentController.php` | Routen `/admin/vorfaelle*`. |
-| `views/admin/storage.php`, `views/admin/storage_target.php`, `views/admin/incidents.php` | Oberflächen. |
-| `public/assets/js/admin-storage.js`, `public/assets/js/admin-storage-target.js` | Live-Aktualisierung (5 s, pausiert im Hintergrund-Tab), Zielformular (SMB/S3 umschalten). |
+| `views/admin/storage.php`, `views/admin/storage_target.php`, `views/admin/incidents.php`, `views/admin/storage_versions.php` | Oberflächen (`storage.php` enthält die Karte `#snapshots` mit Einstellungen; `storage_versions.php` die Versionsliste mit Filtern und Ja/Nein-Dialog). |
+| `public/assets/js/admin-storage.js`, `public/assets/js/admin-storage-target.js`, `public/assets/js/admin-storage-versions.js` | Live-Aktualisierung (5 s, pausiert im Hintergrund-Tab, inkl. Karte Snapshot-Speicher), Zielformular (SMB/S3 umschalten), Bestätigungsdialog der Wiederherstellung (`<dialog>`, ohne JS: normales Formular). |
 
 ### Agent (`app/Services/Storage/Agent/`, läuft nur im Container `storage-sync`)
 
 | Datei | Aufgabe |
 | --- | --- |
 | `Agent.php` | Einstieg der Prozesse `monitor()`, `sync()`, `recall()`, `recallOne()`, `restore()`, `resume()`; Vorfallbehandlung `handleIncidents()`, Schutzzielwahl `chooseProtectTarget()`, DB-Abzug `dumpDatabase()`, Veröffentlichung `config.json`. |
-| `SyncEngine.php` | Kern: `scan()` (Erfassen), `syncTarget()` (Übertragen), `tier()` (Auslagern/Rehydrieren), Massenlöschsperre. |
-| `Catalog.php` | SQLite-Katalog (WAL): Dateien, Versionen, Stand je Ziel, Löschen/Umbenennen-Aufträge, Zugriffe, Zähler, Meta. |
-| `TieringStore.php` | Gemeinsames Verzeichnis mit Nextcloud: Marker, Platzhalter (`makeStub()`), Rückhol-Warteschlange/-Status, Zugriffs- und Schreibprotokoll, `config.json`, `agent.alive`. |
-| `Mounter.php` | Einbinden/Aushängen (CIFS, s3fs), Erreichbarkeit, Füllstand, Kennungsdatei, verständliche Fehlermeldungen. |
+| `SyncEngine.php` | Kern: `scan()` (Erfassen), `syncTarget()` (Übertragen), `tier()` (Auslagern/Rehydrieren), Massenlöschsperre. Optionaler neunter Konstruktorparameter `?SnapshotEngine`: `register()` beim Erkennen, `secure()` vor dem Ersetzen/Löschen auf dem Ziel, Ergebnis `held`. |
+| `SnapshotStore.php` | Dateilayout der Snapshot-Freigabe (`versions/<quelle>/<uid[0:2]>/<uid>/data|meta.json`), Kennzeichen `.lanpa-snapshots.json`, `available()`, `write()` (Temp + `rename`, SHA-256), `verify()`, `remove()`, `cleanupTemp()`, `all()` (für Neuaufbau), `uid()`/`validUid()`. |
+| `SnapshotEngine.php` | Ablauf: `register()` (vormerken), `secure()` (sichern bzw. zurückhalten, identischen Inhalt verwerfen), `restore()` (wiederherstellen ohne neue Version), `prune()` (Aufbewahrung), `rebuild()` (Katalog aus `meta.json`), `refreshIndex()` (Versionsliste für Nextcloud). `RETRY_SECONDS = 60`, `HOLD_SECONDS = 86400`. |
+| `Catalog.php` | SQLite-Katalog (WAL): Dateien, Versionen, Stand je Ziel, Löschen/Umbenennen-Aufträge, Zugriffe, Zähler, Meta, Tabelle `snapshots` (`addSnapshot`, `pendingSnapshots`, `snapshotsFor`, `snapshotsBefore`, `snapshotsExceeding`, `retrySnapshots`, `expirePendingSnapshots`, `unmirroredSnapshots`, `relinkSnapshots`, `snapshotStats`), `restored()`. Zähler-ID `Catalog::SNAPSHOT = -1`. |
+| `TieringStore.php` | Gemeinsames Verzeichnis mit Nextcloud: Marker, Platzhalter (`makeStub()`), Rückhol-Warteschlange/-Status, Zugriffs- und Schreibprotokoll, `config.json`, `agent.alive`, Snapshot-Austausch (`writeSnapshotIndex()`, `snapshotRestoreIds()`/`readSnapshotRestore()`, `writeSnapshotStatus()`, `requestRescan()`). |
+| `Mounter.php` | Einbinden/Aushängen (CIFS, s3fs), Erreichbarkeit, Füllstand, Kennungsdatei, verständliche Fehlermeldungen. Konstruktorparameter `marker` erlaubt eine andere Kennungsdatei (Snapshot-Speicher: `.lanpa-snapshots.json`, eigener `mountBase` und Zugangsdatei-Ordner). |
 | `TargetMap.php` | `state/targets.json`: vom Monitor geschrieben, von `sync`/`recall` gelesen. Älter als 120 s ⇒ alle Ziele gelten als offline. |
 | `FileCopier.php` | Blockweise Kopie (1 MiB) über Temp-Datei + `rename`, SHA-256, `fsync`, Zähler für MB/s/IOPS. |
 | `Recaller.php` | Eine Rückholung: Ziel wählen, kopieren, Prüfsumme, Platzhalter atomar ersetzen. |
@@ -115,6 +130,9 @@ gehören **nicht** zu diesem Modul.
 | `lib/AppInfo/Application.php` | `addTieringWrapper()` (Hook `OC_Filesystem::preSetup`), `tieringClient()` (Basis `/var/lib/lanpa-tiering`, überschreibbar per Systemwert `intranet_integration.tiering_dir`). |
 | `lib/Controller/RecallController.php`, Route `GET /api/recall` | Rückholstatus des angemeldeten Benutzers + Hinweis auf Einschränkung. |
 | `lib/Listener/RecallScriptListener.php`, `js/recall.js`, `css/recall.css` | Fortschrittsbalken unten rechts. |
+| `lib/Controller/SnapshotsController.php`, Routen `GET /api/snapshots?fileId=`, `POST /api/snapshots/restore` | Vorgängerversionen einer Datei (nur Admin-Gruppe, Datei muss im Home-Storage unter `files/` liegen) und Wiederherstellungsauftrag (wartet bis 20 s, stößt `occ`-freien Rescan des Knotens an). |
+| `lib/Listener/SnapshotScriptListener.php`, `js/snapshots.js`, `css/snapshots.css` | Kontextaktion „Vorgängerversionen“ (nur Admins, `window._nc_fileactions`), Overlay mit Liste, Ja/Nein-Rückfrage. |
+| `lib/Storage/TieringClient.php` (`snapshotsFor()`, `requestSnapshotRestore()`, `waitForSnapshotRestore()`, `takeRescans()`) | Snapshot-Austausch über `storage_tiering/snapshots/*`. `RecallController::rescan()` arbeitet `takeRescans()` ab (Cron/Request-getrieben). |
 
 ### Betrieb
 
@@ -127,8 +145,8 @@ gehören **nicht** zu diesem Modul.
 | `scripts/storage_status.php` | SNMP-Prüfungen (läuft im `app`-Container). |
 | `scripts/storage-restore.sh` | Wiederherstellung auf dem Docker-Host inkl. `pg_restore`. |
 | `docker/office-backup/office-backup.sh` | Sichert `nextcloud-data` mit `tar --sparse` und die Marker als `storage-tiering.tar`. |
-| `docker/snmp/entrypoint.sh` | `exec storage_*` (Index 13–16) und `extend storage_metrics/storage_targets`. |
-| `database/migrations/022_storage_tiering.sql`, `023_storage_incidents.sql`, `024_storage_s3_targets.sql` | Schema. |
+| `docker/snmp/entrypoint.sh` | `exec storage_*` (Index 13–17) und `extend storage_metrics/storage_targets`. |
+| `database/migrations/022_storage_tiering.sql`, `023_storage_incidents.sql`, `024_storage_s3_targets.sql`, `030_storage_snapshots.sql` | Schema. |
 
 ---
 
@@ -151,10 +169,11 @@ tmpfs `/run/storage-sync` (0700).
 | `app_storage` | `/var/www/html/storage` | `app` | `keys/secrets.key` zum Entschlüsseln der Zugangsdaten. |
 | tmpfs | `/run/storage-sync` | – | `cred-<id>` (0600), `s3fs-<id>.log`. |
 | – | `/mnt/targets/<id>` | – | Einhängepunkte der Ziele. |
+| – | `/mnt/snapshots/0` | – | Einhängepunkt des Snapshot-Speichers (`STORAGE_SNAPSHOT_MOUNT_BASE`); Zugangsdatei unter `/run/storage-sync/snapshot/`. |
 
 Pfade sind über Umgebungsvariablen änderbar (`Agent::defaults()`):
 `STORAGE_STATE_DIR`, `STORAGE_TIERING_DIR`, `STORAGE_MOUNT_BASE`,
-`STORAGE_CREDENTIAL_DIR`, `STORAGE_NEXTCLOUD_DATA`, `STORAGE_NEXTCLOUD_CONFIG`,
+`STORAGE_SNAPSHOT_MOUNT_BASE`, `STORAGE_CREDENTIAL_DIR`, `STORAGE_NEXTCLOUD_DATA`, `STORAGE_NEXTCLOUD_CONFIG`,
 `STORAGE_EUROOFFICE_DATA`, `NEXTCLOUD_DB_HOST`, `NEXTCLOUD_DB_PASSWORD_FILE`,
 `STORAGE_DATA_OWNER` (Standard `33:33`), `STORAGE_SYNC_SCRIPT`.
 
@@ -162,8 +181,8 @@ Pfade sind über Umgebungsvariablen änderbar (`Agent::defaults()`):
 
 | Prozess | Takt | Schreibt | Liest |
 | --- | --- | --- | --- |
-| `monitor` | 5 s (`Agent::MONITOR_INTERVAL`) | `storage_target_status` (Zustand, Füllstand, Raten), `storage_status` (`heartbeat_at`, HA, Hot-Tier-Werte), `targets.json`, `config.json`, `storage_usage_samples` (alle 300 s), Meta `sparse_supported` (stündlich) | `storage_targets`, `storage_requests` (`remount`), offene Vorfälle |
-| `sync` | sofort nach inotify-Ereignis, sonst Warten bis 5 s (bei offener Arbeit 0,2 s) | Katalog, Ziele, Marker/Platzhalter, `storage_status` (`sync_*`, Bestand, Modus, Rückstand), `storage_target_status` (Synchronität), `storage_incidents`, `dumps/nextcloud.dump` | `targets.json`, `access.log`, `writes.log`, `storage_requests` (`sync_now`, `full_scan`, `confirm_deletes`) |
+| `monitor` | 5 s (`Agent::MONITOR_INTERVAL`) | `storage_target_status` (Zustand, Füllstand, Raten), `storage_status` (`heartbeat_at`, HA, Hot-Tier-Werte), `storage_snapshot_status` (Zustand/Füllstand/Raten der Snapshot-Freigabe), `targets.json`, `config.json`, `storage_usage_samples` (alle 300 s), Meta `sparse_supported` (stündlich) | `storage_targets`, Einstellungen `storage_snapshot_*`, `storage_requests` (`remount`, `snapshot_remount`), offene Vorfälle |
+| `sync` | sofort nach inotify-Ereignis, sonst Warten bis 5 s (bei offener Arbeit 0,2 s) | Katalog, Ziele, Marker/Platzhalter, Snapshot-Freigabe (`versions/…`), `storage_status` (`sync_*`, Bestand, Modus, Rückstand), `storage_target_status` (Synchronität), `storage_snapshots` (Spiegel), `storage_snapshot_status` (Zähler), `storage_incidents`, `dumps/nextcloud.dump`, `snapshots/index|status|rescan` | `targets.json`, `access.log`, `writes.log`, `snapshots/restore/*`, `storage_requests` (`sync_now`, `full_scan`, `confirm_deletes`, `snapshot_restore`) |
 | `recall` | 0,25 s | `agent.alive`, `recall/status/*`, Meta `recalls_*`, `storage_status.recalls_active` (alle 5 s) | `recall/queue/*` |
 | `recall-one <id>` | je Auftrag (Kindprozess, max. 4 = `Agent::MAX_RECALLS`) | Hot-Tier-Datei, Marker, Katalog, Status (alle 0,5 s) | Ziele |
 
@@ -182,13 +201,21 @@ sequenceDiagram
   participant MO as monitor
   participant DB as MySQL intranet
   participant CT as Cold-Tier (/mnt/targets/<id>)
+  participant SN as Snapshot-Speicher (/mnt/snapshots/0)
   MO->>CT: mount.cifs / s3fs, Kennungsdatei prüfen
+  MO->>SN: mount.cifs, .lanpa-snapshots.json prüfen
   MO->>TS: config.json, targets.json (state)
   MO->>DB: Zustand, Messwerte, HA
   NC->>TS: access.log, writes.log
   SY->>TS: Protokolle übernehmen
+  SY->>SN: bisherige Fassung sichern (vom Cold-Tier lesen)
   SY->>CT: Kopien, Umbenennen, Löschen
   SY->>TS: Marker + Sparse-Platzhalter (Auslagerung)
+  SY->>TS: snapshots/index/<sha1>.json (Versionsliste)
+  NC->>TS: snapshots/restore/<uid>.json (Admin)
+  SY->>SN: Version lesen, prüfen
+  SY->>TS: snapshots/status/<uid>.json, snapshots/rescan/<sha1>.json
+  SY->>DB: storage_snapshots (Spiegel)
   SY->>DB: Sync-Status, Vorfälle
   NC->>TS: recall/queue/<sha1>.json
   RC->>CT: Datei lesen
@@ -208,9 +235,11 @@ sequenceDiagram
 | `storage_target_status` | `monitor` (Zustand/Füllstand/Raten, `updated_at`), `sync` (Synchronität, `sync_updated_at`) | Admin, SNMP | `ON DELETE CASCADE`. Älter als 90 s ⇒ Anzeige `unknown`. |
 | `storage_status` (genau `id = 1`) | `monitor`, `sync`, `recall` | Admin, SNMP | Herzschläge `heartbeat_at` (Monitor) und `sync_heartbeat_at`. |
 | `storage_usage_samples` | `monitor` (alle 5 min) | Hochrechnung | Ältere als 35 Tage werden gelöscht. |
-| `storage_events` | Agent, Admin | Admin | Auf 2 000 Einträge gekürzt (stündlich). Kategorien: `sync`, `target`, `tiering`, `recall`, `restore`, `incident`, `config`. |
-| `storage_requests` | Admin | Agent (`claimRequest()` atomar über `picked_at`) | Ältere als 7 Tage werden gelöscht; Admin lehnt ab, wenn > 20 offene (letzte Stunde). |
+| `storage_events` | Agent, Admin | Admin | Auf 2 000 Einträge gekürzt (stündlich). Kategorien: `sync`, `target`, `tiering`, `recall`, `restore`, `incident`, `config`, `snapshot`. |
+| `storage_requests` | Admin | Agent (`claimRequest()` atomar über `picked_at`) | Ältere als 7 Tage werden gelöscht; Admin lehnt ab, wenn > 20 offene (letzte Stunde). Spalte `detail` (Migration 030) trägt bei `snapshot_restore` die `uid`; `recentRequestResults()` liefert Ergebnisse der letzten Stunde für die Versionsliste. |
 | `storage_incidents` | `sync` (anlegen/fortschreiben), Admin (erledigen) | Agent, Admin | `status` `open`/`resolved`. |
+| `storage_snapshots` | `sync` (`mirrorSnapshots()`: `upsertSnapshot`/`deleteSnapshot`, Statusmarkierung über Katalogspalte `mirrored`) | Admin (Liste, Filter), `requestRestore()` | Spiegel des Katalogs; `file_deleted = 1` ⇔ `file_id IS NULL` im Katalog; `path_hash = sha1(path)`; Status `complete`/`pending`/`failed`/`unavailable` (`deleted` wird gelöscht statt gespiegelt). Nie Quelle der Wahrheit – der Agent prüft jeden Auftrag erneut gegen Katalog und Freigabe. |
+| `storage_snapshot_status` (genau `id = 1`) | `monitor` (`state`, `message`, Füllstand, Raten, `state_since`, `updated_at`), `sync` (Zähler `snapshots_total/bytes`, `pending`, `failed`, `last_snapshot_at`, `last_error`) | Admin, SNMP | Älter als 90 s ⇒ Anzeige `unknown`. |
 | `settings` | Admin | Agent (bei jedem Durchlauf neu, `resetCache()`) | Schlüssel siehe 4.2. |
 
 ### 4.2 Einstellungen (`settings`)
@@ -231,6 +260,21 @@ sequenceDiagram
 | `storage_fill_warn_percent` / `storage_fill_crit_percent` | 85 / 95 | 50–99 / 50–100, warn < crit | Füllstandsbewertung Hot und Cold. |
 | `storage_recall_timeout` | 600 | 30–7200 | Wartezeit von Nextcloud (über `config.json`). |
 | `storage_instance_id` | leer | 32 Hex | Wird beim ersten Ziel bzw. Speichern der Einstellungen erzeugt; Restore kann sie übernehmen. Ohne Instanz-ID arbeitet der Agent nicht. |
+
+`SnapshotSettings` (`app/Services/Storage/SnapshotSettings.php`):
+
+| Schlüssel | Standard | Grenzen | Verwendung |
+| --- | --- | --- | --- |
+| `storage_snapshot_enabled` | `0` | bool | Aus ⇒ `SnapshotEngine` ist No-op (`register()` false, `secure()` true), Monitor hängt die Freigabe aus, `storage_snapshot` ⇒ UNKNOWN. |
+| `storage_snapshot_unc_path` | leer | UNC per `NetworkDriveService::parseUnc()`; Pflicht bei aktiv; darf keinem `storage_targets.unc_path` entsprechen (Vergleich ohne Groß/Klein, Schrägstriche normalisiert); umgekehrt lehnt `validateTarget()` die Snapshot-UNC ab | Freigabe. |
+| `storage_snapshot_username`, `storage_snapshot_domain` | leer | `StorageService::USERNAME_PATTERN` / `DOMAIN_PATTERN` | Dienstkonto. |
+| `storage_snapshot_password` | leer | ≤ 256 Zeichen, keine Zeilenumbrüche; gespeichert als `enc:v1:…` | Leer beim Speichern ⇒ beibehalten; `storage_snapshot_password_clear` ⇒ löschen. |
+| `storage_snapshot_smb_version` | `auto` | `StorageService::SMB_VERSIONS` | |
+| `storage_snapshot_retention_days` | 90 | 0–3650 (0 = unbegrenzt) | `prune()` über `snapshotsBefore()`. |
+| `storage_snapshot_max_versions` | 20 | 0–10000 (0 = unbegrenzt) | `prune()` über `snapshotsExceeding()`. |
+
+`SnapshotSettings::mountRow()` liefert eine Pseudo-Zielzeile (`id = 0`,
+`kind = smb`, `active = enabled`) für den `Mounter`.
 
 `IncidentSettings` (`app/Services/Storage/IncidentSettings.php`):
 
@@ -259,19 +303,23 @@ WAL, `busy_timeout` 60 s, von allen drei Prozessen genutzt. Schema in
 | `access` | `file_id`, `day` | Zugriffstage (31 Tage aufbewahrt). |
 | `counters` | `target_id` (0 = Hot-Tier) | Kumulierte Bytes/Operationen für MB/s und IOPS. |
 | `activity`, `writes`, `clients` | | Vorfallerkennung (24 h aufbewahrt). |
+| `snapshots` | `uid` (unique), `file_id` (NULL = Datei gelöscht), `source`, `path`, `user`, `version`, `size`, `mtime`, `sha256` (NULL bis bekannt), `status` (`pending`/`complete`/`failed`/`unavailable`/`deleted`), `error`, `attempts`, `next_attempt`, `created_at`, `stored_at`, `restored_at`, `restored_by`, `mirrored` | Vormerkungen und gesicherte Versionen (Abschnitt 13). `mirrored = 0` ⇒ beim nächsten `syncPass()` nach MySQL spiegeln. |
 | `meta` | `key`, `value` | Siehe unten. |
 
 Meta-Schlüssel: `generation`, `last_full_scan`, `last_db_dump`, `blocked`
 (Text der Massenlöschsperre), `confirm_deletes`, `mode`, `mode_reason`,
 `mode_since`, `mode_since_reported`, `sparse_supported`, `paused`
 (`1` = Sync angehalten, Restore), `access_pruned`, `recalls_total`,
-`recalls_failed`, `last_recall`, `incident_frozen`.
+`recalls_failed`, `last_recall`, `incident_frozen`, `snapshot_pruned`
+(letzte Aufbewahrungsprüfung, alle 600 s), `snapshot_temp_cleaned`
+(stündlich).
 
 Der Katalog ist **wiederherstellbar**: Geht er verloren, erfasst der nächste
 Vollabgleich alles neu; vorhandene gleiche Dateien auf Zielen (Größe und
 mtime ±1 s) werden als `adopted` übernommen, Platzhalter über ihre Marker als
 `evicted` erkannt. Der Erstabgleich (leerer Katalog je Quelle) löst keine
-Vorfälle aus.
+Vorfälle aus. Die Tabelle `snapshots` lässt sich nach Verlust über
+`snapshot-rebuild` aus den `meta.json` der Snapshot-Freigabe ergänzen.
 
 ### 4.4 Gemeinsames Verzeichnis `storage_tiering` (`/var/lib/lanpa-tiering`)
 
@@ -287,6 +335,10 @@ Format abgestimmt zwischen `TieringStore` (Agent) und `TieringClient`
 | `recall/status/<sha1(rel)>.json` | `recall-one` | `{"path","uid","request","started","state":"running|done|failed","bytes","total","message"?,"finished"?,"updated"}`; erledigte nach 600 s entfernt. |
 | `access/access.log` | Nextcloud | Zeilen `<unix-zeit> <rel>` (Lesen außer Vorschau). |
 | `access/writes.log` | Nextcloud | JSON-Zeilen `{"t","u","ip","ua","p"}`, nur `<uid>/files/…`, je Pfad und Anfrage einmal, max. 64 MB. |
+| `snapshots/index/<sha1(rel)>.json` | `sync` (`SnapshotEngine::refreshIndex()`, nach Sichern/Wiederherstellen/Aufräumen/Umbenennen) | `{"path","snapshots":[{"uid","version","size","mtime","created_at","user","restored_at"}],"updated"}`, nur Status `complete`, neueste zuerst; fehlt ⇒ keine Versionen. |
+| `snapshots/restore/<uid>.json` | Nextcloud (`requestSnapshotRestore()`, nur Admin) | `{"uid","path","user","requested_at"}`. `sync` prüft, dass `uid` zum `path` gehört (`expectedPath`). |
+| `snapshots/status/<uid>.json` | `sync` | `{"uid","state":"done|failed","path","message"?,"updated"}`; nach 600 s entfernt (`cleanupSnapshotStatus()`). |
+| `snapshots/rescan/<sha1(rel)>.json` | `sync` nach Wiederherstellung | `{"path","requested_at"}`; Nextcloud (`takeRescans()`) liest den Pfad neu ein und löscht die Datei. |
 
 `<rel>` ist immer relativ zum Nextcloud-Datenverzeichnis, z. B.
 `alice/files/Projekte/plan.docx`. Die Protokolle übernimmt `sync` per
@@ -316,6 +368,25 @@ Die Kennungsdatei dient zugleich als **Erreichbarkeitsprobe**
 (`SyncEngine::assertReachable()`): Fehlt sie während einer Übertragung, wird
 `TargetUnavailable` geworfen und das Ziel in diesem Durchlauf übersprungen.
 
+### 4.7 Aufbau des Snapshot-Speichers
+
+```
+<freigabe>/
+  .lanpa-snapshots.json                 {"instance":"<32 hex>","created_at":"…","label":"Snapshot-Speicher"}
+  versions/nextcloud-data/<uid[0:2]>/<uid>/
+    data                                 Byte-identische Kopie der Fassung (mtime = Original)
+    meta.json                            {"uid","source","path","user","version","size","mtime","sha256","created_at","stored_at"}
+```
+
+`uid = sha1(source \0 path \0 version \0 size \0 mtime)`
+(`SnapshotStore::uid()`) – dieselbe Fassung ergibt immer dieselbe Kennung,
+Wiederholungen erzeugen keine Duplikate. Geschrieben wird `data` als
+`.data.<zufall>.lanpa-tmp` + `rename`, danach `meta.json` (ebenfalls Temp +
+`rename`); eine Version **existiert** erst mit `meta.json` (`exists()`).
+Vorhandene Dateien werden nie überschrieben (`write()` bricht ab, wenn
+`data` existiert). Enthält die Freigabe `nextcloud-data/` oder
+`eurooffice-data/` (Cold-Tier-Layout), meldet der Monitor `invalid`.
+
 ---
 
 ## 5. Abläufe im Detail
@@ -328,6 +399,13 @@ Die Kennungsdatei dient zugleich als **Erreichbarkeitsprobe**
    < 1 MiB?).
 3. `Mounter::cleanup()` hängt Einbindungen gelöschter Ziele aus.
 4. Offene `remount`-Aufträge abholen (`target_id` NULL = alle).
+   Anschließend `monitorSnapshotPass()`: Snapshot-Freigabe über einen
+   eigenen `Mounter` (`/mnt/snapshots`, Zugangsdatei-Ordner
+   `/run/storage-sync/snapshot`, Kennung `.lanpa-snapshots.json`, `id = 0`)
+   einbinden bzw. bei `snapshot_remount` neu einbinden, deaktiviert ⇒
+   aushängen; Zustand/Füllstand/Raten (`cifs:<share>` bzw. Agent-Zähler
+   `Catalog::SNAPSHOT`) nach `storage_snapshot_status`; Ereignis bei
+   Zustandswechsel; `snapshotMap()` in `state/` für `sync`.
 5. Je Ziel `Mounter::check()` (bzw. `disabled`, wenn Tiering aus oder keine
    Instanz-ID); Schutzziel wird **nur lesend** (`ro`) eingebunden. Wechsel
    rw ⇄ ro erzwingt Neueinbindung.
@@ -367,6 +445,8 @@ Vorbedingungen in `Agent::sync()`: Tiering an und Instanz-ID gesetzt (sonst
 1. Schreibprotokoll übernehmen (`ThreatDetector::ingestWrites`).
 2. Aufträge `sync_now`, `full_scan`, `confirm_deletes` abholen
    (`confirm_deletes` und `full_scan` erzwingen einen Vollabgleich).
+   `SyncEngine` wird mit einer `SnapshotEngine` gebaut
+   (`enabled = storage_snapshot_enabled`).
 3. DB-Abzug fällig? ⇒ `pg_dump` nach `dumps/.nextcloud.dump.lanpa-tmp`,
    dann `rename` (Zeitlimit 1 h). Ohne inotify zusätzlich Vollabgleich.
 4. Erfassen: Vollabgleich (`scan(null)`), wenn erzwungen oder Intervall
@@ -377,7 +457,12 @@ Vorbedingungen in `Agent::sync()`: Tiering an und Instanz-ID gesetzt (sonst
 7. Vorfälle auswerten (`handleIncidents()`, 5.6) ⇒ ggf. Schutzziel.
 8. Je erreichbarem, aktivem Ziel (primäres zuerst, Schutzziel ausgenommen)
    `syncTarget($target, 20)` – Zeitbudget 20 s je Ziel und Durchlauf.
+   Summe `held` ⇒ Statusmeldung „N Datei(en) warten auf den
+   Snapshot-Speicher“.
 9. `tier()` (5.4).
+9a. `snapshotPass()` (Abschnitt 13.4): Wiederherstellungsaufträge, Aufbewahrung,
+    Temp-Bereinigung, Spiegel nach MySQL. Fehler darin brechen den
+    Durchlauf nicht ab.
 10. Rückstand je aktivem Ziel ⇒ `storage_target_status`
     (`in_sync = pending_files == 0`); Gesamtwerte = Maximum ohne Schutzziel.
 11. `sync_state`: `blocked` (Massenlöschsperre) > `error` (Zielfehler oder
@@ -386,14 +471,19 @@ Vorbedingungen in `Agent::sync()`: Tiering an und Instanz-ID gesetzt (sonst
 #### Erfassen (`SyncEngine::scan()`)
 
 - Jede Datei wird mit `stat` beobachtet (`observe()`): neu ⇒ `insert`
-  (`version 1`); Größe oder mtime geändert ⇒ `changed()` (`version + 1`).
+  (`version 1`); Größe oder mtime geändert ⇒ `changed()` (`version + 1`),
+  unmittelbar davor `SnapshotEngine::register($row)` mit der **alten**
+  Katalogzeile (Vormerkung der bisherigen Fassung).
 - Bei Platzhaltern (`evicted`): unverändert ⇒ nur `seen`; nur mtime geändert
   (Größe gleich, belegt < 4 KiB) ⇒ Marker-mtime nachziehen, **keine** neue
   Version (nie Nullen übertragen); sonst überschrieben ⇒ neue Version, Marker
   weg.
 - Verschwundene Dateien (`seen < generation`): gleicher Inode **und** gleiche
   Größe/mtime wie eine neu gesehene Datei ⇒ Umbenennung (`ops: rename`,
-  Marker verschieben), sonst Löschung (`ops: delete`, Marker entfernen).
+  Marker verschieben, Snapshots folgen über `Catalog::rename()`, Index für
+  alten und neuen Pfad neu geschrieben), sonst Löschung (`ops: delete`,
+  Marker entfernen, `register($row, deleted: true)` ⇒ Vormerkung ohne
+  `file_id`).
 - **Massenlöschsperre**: Löschungen einer Quelle > `max(1000,
   ceil(Bestand × 0,25))` (`MASS_DELETE_MIN`, `MASS_DELETE_RATIO`) werden
   verworfen, Meta `blocked` gesetzt. `confirm_deletes` hebt die Sperre für den
@@ -405,13 +495,18 @@ Vorbedingungen in `Agent::sync()`: Tiering an und Instanz-ID gesetzt (sonst
 
 #### Übertragen (`SyncEngine::syncTarget()` / `copyFile()`)
 
-1. Zuerst `ops` (Löschen/Umbenennen) in Reihenfolge. Scheitert eine
-   Umbenennung, wird die Zieldatei neu übertragen (`unsync`).
+1. Zuerst `ops` (Löschen/Umbenennen) in Reihenfolge. Vor einem `delete`
+   wird `secure()` für die Zieldatei aufgerufen; liefert es `false`, bleibt
+   die Operation stehen (`held`) und der Durchlauf endet mit `more = true`.
+   Scheitert eine Umbenennung, wird die Zieldatei neu übertragen (`unsync`).
 2. Dann ausstehende Dateien (`target_files.version < files.version`), älteste
    Änderung zuerst, seitenweise à 200.
 3. Ergebnis je Datei:
    - `adopted`: Ziel hat Größe gleich und mtime ±1 s ⇒ nur als synchron
      markieren (ohne Hash!).
+   - `held`: Ziel hat eine ältere Fassung, deren Vormerkung noch nicht auf
+     dem Snapshot-Speicher liegt (`secure()` false) ⇒ Datei auf diesem Ziel
+     nicht anfassen, nächster Durchlauf.
    - `copied` aus Hot-Tier: lokale Datei vor und nach der Kopie unverändert
      (Größe, mtime), übertragene Bytes = Größe ⇒ `markSynced` + `setHash`
      (nur wenn Version noch aktuell).
@@ -601,7 +696,11 @@ das Limit. SNMP: `forecast_days` (−1 = keine Hochrechnung).
 | `evict_reason` | `age`, `size`, `pressure` | `SyncEngine::tier()` |
 | Rückholung `state` | `running`, `done`, `failed` | `recall/status` |
 | Vorfall `status` | `open`, `resolved`; `rules` ⊂ {`extension`,`content`,`overwrite`} | `IncidentRepository` |
-| Auftrag `action` | `sync_now`, `full_scan`, `remount`, `confirm_deletes` | `StorageService::REQUEST_ACTIONS` |
+| Auftrag `action` | `sync_now`, `full_scan`, `remount`, `confirm_deletes`, `snapshot_remount`, `snapshot_restore` (`detail = uid`) | `StorageService::REQUEST_ACTIONS`, `SnapshotService::ACTION_RESTORE` |
+| Snapshot-Speicher `state` | `online`, `offline`, `invalid`, `disabled`, `unknown` | `Mounter::check()`, `SnapshotService::status()` |
+| Snapshot `status` | `pending` (vorgemerkt), `complete` (gesichert, wiederherstellbar), `failed` (aufgegeben, per `snapshot-retry` erneut), `unavailable` (Fassung lag auf keinem Ziel), `deleted` (entfernt, nur Katalog bis zur Spiegelung) | `Catalog::SNAPSHOT_*` |
+| Wiederherstellung (Nextcloud) `state` | `done`, `failed` | `snapshots/status` |
+| `storage_snapshot` Exit | 3 deaktiviert, 2 `offline`/`invalid`, sonst Füllstand (`fill()`), ≥ 1 bei `failed > 0` | `StorageService::snmp()` |
 | Füllstand | `ok` < warn ≤ `degraded` < crit ≤ `critical` | `StorageHealth::fill()` |
 
 ---
@@ -638,6 +737,26 @@ das Limit. SNMP: `forecast_days` (−1 = keine Hochrechnung).
     verloren wären (`saveSettings()`, `assertRemovable()`).
 12. Der Hot-Tier ist führend: Änderungen direkt auf einem Ziel werden nicht
     zurücksynchronisiert.
+13. **Snapshot vor Ersetzen:** Eine Datei mit offener Vormerkung (`pending`)
+    wird auf einem Ziel weder überschrieben noch gelöscht, bis die Fassung
+    auf dem Snapshot-Speicher liegt (`secure()`), höchstens aber
+    `HOLD_SECONDS` (24 h) – danach `failed` und Ereignis „Dateiversion
+    verloren“. Alle anderen Dateien laufen weiter (keine globale Blockade).
+14. **Wiederherstellung erzeugt keine Version:** `SnapshotEngine::restore()`
+    setzt über `Catalog::restored()` Größe/mtime/Inode/SHA-256 und
+    `version + 1` **ohne** `register()`; der nächste `scan()` sieht keine
+    Abweichung, `copyFile()` findet keine Vormerkung. Ein Test prüft das
+    über zwei Folgeabgleiche (`StorageSnapshotTest`).
+15. **Versionen sind unveränderlich:** `SnapshotStore::write()` überschreibt
+    nie, `data`/`meta.json` werden nur von `prune()` entfernt. Kennungen
+    werden überall mit `validUid()` (40 Hex) geprüft, bevor sie in Pfade
+    gelangen.
+16. **Keine Benutzerwartezeit durch Snapshots:** Sichern, Prüfen und
+    Wiederherstellen laufen ausschließlich im Prozess `sync`. Nextcloud
+    schreibt nur Dateien in `storage_tiering` und wartet höchstens 20 s auf
+    ein Ergebnis (`waitForSnapshotRestore()`), nie beim Speichern/Löschen.
+17. **Snapshot-Speicher ≠ Speicherziel:** gleiche UNC wird in beide
+    Richtungen abgelehnt; Cold-Tier-Layout auf der Freigabe ⇒ `invalid`.
 
 ---
 
@@ -652,13 +771,21 @@ Alle Routen hinter `$requireAdmin` (`public/index.php`), POST mit CSRF.
 | POST | `/admin/speicher-ha/einstellungen` | `::updateSettings` | `storage_*` |
 | GET/POST | `/admin/speicher-ha/ziel` (`?id=`) | `::editTarget` / `::saveTarget` | Ziel anlegen/ändern (Änderung ⇒ Auftrag `remount`) |
 | POST | `/admin/speicher-ha/ziel/loeschen` | `::deleteTarget` | Ziel entfernen (Daten auf dem Ziel bleiben) |
-| POST | `/admin/speicher-ha/auftrag` | `::request` | `sync_now`, `full_scan`, `remount`, `confirm_deletes` |
+| POST | `/admin/speicher-ha/auftrag` | `::request` | `sync_now`, `full_scan`, `remount`, `confirm_deletes`, `snapshot_remount` |
+| POST | `/admin/speicher-ha/snapshot-einstellungen` | `::updateSnapshotSettings` | `storage_snapshot_*` (`SnapshotService::saveSettings()`) |
+| GET | `/admin/speicher-ha/dateiversionen` | `::versions` | Versionsliste; Query `from`, `to`, `user`, `path`, `status`, `deleted`, `limit` (`SnapshotService::filter()`, nur gebundene Parameter, `LIKE … ESCAPE`) |
+| POST | `/admin/speicher-ha/dateiversionen/wiederherstellen` | `::restoreVersion` | `uid` + `filter_*` (Rücksprung); legt Auftrag `snapshot_restore` an |
 | GET | `/admin/vorfaelle` | `IncidentController::index` | Vorfallliste |
 | POST | `/admin/vorfaelle/erledigt` | `::resolve` | Vorfall erledigen |
 | POST | `/admin/vorfaelle/einstellungen` | `::updateSettings` | `incident_*`, Standardliste wiederherstellen |
 
 Nextcloud: `GET /office/apps/intranet_integration/api/recall` ⇒
 `{ok, enabled, recalls:[…], restricted, message}` (nur eigene Aufträge).
+`GET …/api/snapshots?fileId=` ⇒ `{ok, path, uid, snapshots:[…]}` und
+`POST …/api/snapshots/restore` (`fileId`, `uid`) ⇒ `{ok, state, message}` –
+beide nur für Mitglieder der Gruppe `admin` (`IGroupManager::isAdmin()`),
+sonst 403; die Datei muss im Home-Storage des Eigentümers unter `files/`
+liegen (`SnapshotsController`).
 
 Validierung der Ziele (`StorageService::validateTarget()`): SMB-UNC über
 `NetworkDriveService::parseUnc()`, Benutzer-/Domänenmuster, SMB-Version aus
@@ -682,11 +809,16 @@ php -l <datei>               # Syntaxprüfung
 | `tests/Unit/StorageTieringTest.php` | Einstellungen, HA-Bewertung, Live-Daten ohne Zugangsdaten, Zielvalidierung (SMB/S3) und Verschlüsselung, Views ohne Inline-Styles, SNMP-Ausgabe. |
 | `tests/Unit/StorageIncidentTest.php` | Muster, Inhaltsprüfung, Regeln, Zuordnung über Schreibprotokoll, Schutzzielwahl, `ro`-Einbindung, Erledigung, Adminseite. |
 | `tests/Unit/StorageTieringClientTest.php` | Nextcloud-Seite: Rückholung über Warteschlange, Fehler/ausgefallener Agent, Marker bei Umbenennen/Verschieben/Löschen, Zeitstempel, Zugriffsprotokoll. |
+| `tests/Unit/StorageSnapshotTest.php` | Snapshot-Speicher: Pfadregel/Kennung, Version bei Inhaltsänderung (Layout, `meta.json`, Index), keine Version bei mtime-only/Umbenennen/außerhalb `files/`/Auslagern/Zurückholen, Löschung sichert letzte Fassung und Wiederherstellung legt sie neu an, harter Akzeptanztest „Restore erzeugt keinen Snapshot“, Zurückhalten bei nicht erreichbarem Speicher mit Wiederholung (injizierte Uhr), Abbruch ohne halbe Versionen + Temp-Bereinigung, Aufbewahrung und Neuaufbau, deaktiviert, Einstellungsvalidierung, Listenfilter gegen Injektion, View-Escaping, Dashboard-Hinweis. Helfer `storageSnapshotEnv()` (wie `storageAgentEnv()` plus `SnapshotStore`/`SnapshotEngine`). |
 
-Bei Änderungen am Agenten mindestens diese vier Dateien laufen lassen (der
+Bei Änderungen am Agenten mindestens diese fünf Dateien laufen lassen (der
 Runner führt immer alle Tests aus). Neue Logik möglichst als reine Funktion
 (wie `StorageHealth`, `Pressure`) oder mit injizierbarer Uhr (`$clock` in
-`SyncEngine`, `ThreatDetector`, `TieringClient`) testbar halten.
+`SyncEngine`, `SnapshotEngine`, `ThreatDetector`, `TieringClient`) testbar
+halten. MySQL-spezifisches SQL (`NOW()`, `ON DUPLICATE KEY`) ist in den
+SQLite-Tests nicht ausführbar – `StorageSnapshotTest::storageSnapshotPdo()`
+übersetzt den Einstellungs-Upsert; Auftragsabläufe werden daher nur bis zur
+Validierung getestet.
 
 ---
 
@@ -722,6 +854,20 @@ liefert.
 **und** `InotifyWatcher::EXCLUDE` anpassen; Tests in `StorageAgentTest.php`
 („Pfadregeln“) und `StorageTieringClientTest.php`.
 
+**Snapshot-Regeln ändern (was versioniert wird)**
+`PathRules::isSnapshotted()` (nur `nextcloud-data`, `<uid>/files/**`) und
+`SnapshotEngine::register()` (Größe > 0). Auslöser bleiben `scan()`
+(Inhaltsänderung) und die Löschbehandlung; `secure()` verwirft Vormerkungen,
+deren SHA-256 dem neuen lokalen Inhalt entspricht (mtime-only). Tests in
+`StorageSnapshotTest.php` ergänzen; `docs/storage.md` Abschnitt 5a „Was wird
+gesichert“ nachziehen.
+
+**Neues Feld in `meta.json` / Versionsliste**
+`SnapshotStore::write()` (Schreiben), `SnapshotEngine::rebuild()` (Lesen),
+`refreshIndex()` + `TieringClient::snapshotsFor()` (Nextcloud-Liste),
+`Catalog::migrate()` nur additiv, `StorageRepository::upsertSnapshot()` und
+Migration für MySQL, Views `storage_versions.php` / `js/snapshots.js`.
+
 **Neue Vorfallregel**
 `ThreatDetector::observe()` (neue `kind`), Zählung in `evaluate()`/`stats()`,
 Schwelle in `IncidentSettings::NUMERIC`, Text in `Agent::summary()` und
@@ -731,8 +877,9 @@ Schwelle in `IncidentSettings::NUMERIC`, Text in `Agent::summary()` und
 Für Kennzahlen eine Zeile in `storage_metrics` (`StorageService::snmp()`)
 ergänzen – Schlüssel nie umbenennen (Monitoring-Abhängigkeiten). Neue
 Prüfungen mit eigenem Index zusätzlich in `SNMP_CHECKS`,
-`docker/snmp/entrypoint.sh`, `views/admin/snmp.php`, `agentsindex.md`
-(Abschnitt SNMP).
+`docker/snmp/entrypoint.sh`, `docker/snmp/check_status.sh`,
+`views/admin/snmp.php`, `agentsindex.md` (Abschnitt SNMP). Index 17 ist
+`storage_snapshot`.
 
 **Schemaänderung**
 Nur neue Migrationsdatei, nie bestehende ändern. SQLite-Katalog: in
@@ -759,6 +906,17 @@ docker compose exec storage-sync php -r '$p=new PDO("sqlite:/var/lib/storage-syn
 # Einzelbefehle des Agenten
 docker compose exec storage-sync php scripts/storage_sync.php resume
 docker compose exec storage-sync php scripts/storage_sync.php restore --target=<id> [--full] [--keep-paused]
+
+# Snapshot-Speicher
+docker compose exec storage-sync php scripts/storage_sync.php snapshot-status
+docker compose exec storage-sync php scripts/storage_sync.php snapshots --path=alice/files --limit=20
+docker compose exec storage-sync php scripts/storage_sync.php snapshot-restore --id=<40 hex>
+docker compose exec storage-sync php scripts/storage_sync.php snapshot-retry      # failed -> pending
+docker compose exec storage-sync php scripts/storage_sync.php snapshot-prune      # Aufbewahrung sofort
+docker compose exec storage-sync php scripts/storage_sync.php snapshot-rebuild    # Katalog aus meta.json
+docker compose exec storage-sync grep /mnt/snapshots /proc/self/mountinfo
+docker compose exec storage-sync ls /var/lib/lanpa-tiering/snapshots/restore /var/lib/lanpa-tiering/snapshots/status
+docker compose exec app php scripts/storage_status.php storage_snapshot
 ```
 
 | Symptom | Ursache / Prüfung |
@@ -773,6 +931,11 @@ docker compose exec storage-sync php scripts/storage_sync.php restore --target=<
 | Nextcloud 503 „Speicher nicht verfügbar“ | Rückholung: Agent tot, kein Ziel erreichbar, Datei fehlt/Größe falsch auf allen Zielen oder Zeitlimit. Status in `recall/status/<sha1>.json`. |
 | Benutzer kann nicht schreiben | Offener Vorfall (`config.json` → `restricted`), unter **Vorfälle** erledigen. |
 | inotify-Warnung im Log | `fs.inotify.max_user_watches` auf dem Host erhöhen; bis dahin Vollabgleich alle 5 min. |
+| Sync-Status „N Datei(en) warten auf den Snapshot-Speicher“ | Freigabe `offline`/voll/Schreibfehler: Karte Snapshot-Speicher und `storage_events` (Kategorie `snapshot`) prüfen, `snapshot_remount`. Nach 24 h werden die Vormerkungen aufgegeben (`failed`). |
+| Snapshot-Speicher `invalid` | Fremde Instanz-ID in `.lanpa-snapshots.json` oder Cold-Tier-Layout (`nextcloud-data/`) auf der Freigabe. |
+| Version in Nextcloud nicht sichtbar, im Intranet schon | Index fehlt: `snapshots/index/<sha1>.json` wird nur bei Status `complete` geschrieben; `snapshot-rebuild` schreibt alle Indizes neu. Aktion nur für Admins sichtbar. |
+| Wiederherstellung „Die Dateiversion gehört zu einer anderen Datei“ | Auftrag aus Nextcloud nennt einen Pfad, der nicht zur `uid` passt (Datei zwischenzeitlich verschoben) – Liste neu öffnen. |
+| `storage_snapshots` leer, Katalog voll | Spiegelung erfolgt je `syncPass()`; MySQL-Fehler werden protokolliert und beim nächsten Durchlauf wiederholt (`mirrored = 0`). |
 
 ---
 
@@ -792,3 +955,135 @@ docker compose exec storage-sync php scripts/storage_sync.php restore --target=<
 - `targets.json` gilt nach 120 s als veraltet – fällt nur der Monitor aus,
   stoppen Synchronisation und Rückholung, Daten bleiben unverändert.
 - Ereignisse in `storage_events` sind „best effort“ (Fehler werden ignoriert).
+- Snapshots: `register()` kennt die Vormerkung schon beim `scan()`, gesichert
+  wird aber erst in `copyFile()`/`applyOp()` – zwischen zwei Abgleichen
+  mehrfach geänderte Dateien ergeben eine Version je **übertragener**
+  Fassung. Eine Fassung, die nie auf einem Ziel lag, wird `unavailable`.
+- `secure()` hasht die neue lokale Datei nur, wenn Größe gleich und SHA-256
+  der Vormerkung bekannt ist (`adopted`-Dateien haben keinen ⇒ Version wird
+  gesichert, auch wenn der Inhalt gleich wäre).
+- `restored()` erhöht `version`, damit alle Ziele den wiederhergestellten
+  Stand übernehmen; dadurch kann dieselbe Fassung später erneut (mit neuer
+  `version`, also neuer `uid`) gesichert werden – gewollt, da die Historie
+  die Reihenfolge abbildet.
+- `storage_target_status`/`storage_snapshot_status` werden mit `NOW()`
+  geschrieben; in SQLite-Tests sind diese Pfade nicht ausführbar.
+
+---
+
+## 13. Snapshot-Speicher (Dateiversionen)
+
+Bedienung und Betrieb: [docs/storage.md, Abschnitt 5a](storage.md#5a-snapshot-speicher-dateiversionen-auf-eigener-smb-freigabe).
+
+### 13.1 Komponenten
+
+```mermaid
+flowchart LR
+  subgraph NCX[Nextcloud]
+    JS[js/snapshots.js<br>Aktion „Vorgängerversionen“]
+    SC[SnapshotsController]
+    TC[TieringClient]
+    JS --> SC --> TC
+  end
+  subgraph TIER[storage_tiering/snapshots]
+    IDX[index/*.json]
+    RST[restore/*.json]
+    STS[status/*.json]
+    RSC[rescan/*.json]
+  end
+  subgraph SYNC[storage-sync · sync]
+    SE[SyncEngine]
+    SN[SnapshotEngine]
+    CAT[(Katalog snapshots)]
+    SE -- register / secure --> SN
+    SN <--> CAT
+  end
+  SS[(SnapshotStore<br>/mnt/snapshots/0/versions)]
+  CT[(Cold-Tier /mnt/targets/id)]
+  DB[(MySQL storage_snapshots)]
+  ADM[Intranet<br>SnapshotService · storage_versions.php]
+  TC -. liest .-> IDX
+  TC -- schreibt --> RST
+  TC -. wartet .-> STS
+  SN -- schreibt --> IDX
+  SN -- liest --> RST
+  SN -- schreibt --> STS
+  SN -- schreibt --> RSC
+  TC -. Rescan .-> RSC
+  SN -- Fassung lesen --> CT
+  SN -- data + meta.json --> SS
+  SN -- mirrorSnapshots --> DB
+  ADM -- Liste, Filter --> DB
+  ADM -- storage_requests snapshot_restore --> SN
+```
+
+### 13.2 Lebenszyklus einer Version
+
+```mermaid
+stateDiagram-v2
+  [*] --> pending: register() – Fassung lag auf ≥ 1 Ziel
+  [*] --> unavailable: register() – Fassung lag auf keinem Ziel
+  pending --> complete: secure() – data+meta geschrieben, SHA-256 geprüft
+  pending --> pending: Fehler/offline – attempts+1, next_attempt = now+60 s, Datei held
+  pending --> deleted: secure() – neuer Inhalt identisch (mtime-only)
+  pending --> failed: HOLD_SECONDS (24 h) überschritten – Datei wird freigegeben
+  failed --> pending: snapshot-retry
+  complete --> complete: restore() – restored_at/by gesetzt, keine neue Version
+  complete --> deleted: prune() – Alter oder Anzahl
+  deleted --> [*]: mirrorSnapshots() löscht Zeile in MySQL und Katalog
+```
+
+### 13.3 Sichern im Detail (`SnapshotEngine::secure()`)
+
+Aufruf aus `SyncEngine::copyFile()` (mit `fileId` und lokalem Pfad) und
+`applyOp()` bei `delete` (`fileId = null`, kein lokaler Pfad). Für jede
+`pending`-Vormerkung der Datei:
+
+1. `targetVersion(target, fileId) ≠ snapshot.version` ⇒ dieses Ziel hat eine
+   andere Fassung, überspringen (ein anderes Ziel sichert sie).
+2. `stat(remote).size ≠ snapshot.size` ⇒ Kopie passt nicht, überspringen.
+3. Lokaler Pfad vorhanden, SHA-256 der Vormerkung bekannt, lokale Größe
+   gleich ⇒ lokale Datei einmal hashen; identisch ⇒ Vormerkung `deleted`
+   (keine Version ohne Inhaltsänderung).
+4. Version existiert bereits auf der Freigabe (`exists()`) ⇒ `complete`.
+5. `next_attempt > now` ⇒ warten (`held`), außer die Haltefrist ist um
+   (`expired()` ⇒ `failed`, Datei freigeben).
+6. `SnapshotStore::write(remote, …, expectedSha)` – liest **vom Ziel**, nicht
+   vom Hot-Tier; Fehler ⇒ `attempts + 1`, `next_attempt = now + 60`,
+   Ereignis beim 1., 10., 20. … Versuch, Rückgabe `false` (`held`).
+7. Erfolg ⇒ `complete`, `stored_at`, Ereignis, `refreshIndex()`.
+
+Rückgabe `true` nur, wenn keine Vormerkung dieser Datei mehr offen ist (bzw.
+alle aufgegeben wurden).
+
+### 13.4 `Agent::snapshotPass()` (nach `tier()` in jedem `syncPass()`)
+
+1. `storage_requests` mit `action = snapshot_restore` abholen (`detail =
+   uid`) ⇒ `restore(uid, requested_by)` ⇒ `finishRequest()` mit Ergebnistext
+   („Wiederhergestellt: <pfad>“ oder Fehlermeldung); die Versionsliste zeigt
+   ihn über `recentRequestResults()`.
+2. `snapshots/restore/*.json` (Nextcloud) ⇒ `restore(uid, 'nextcloud:<user>',
+   expectedPath)` ⇒ `snapshots/status/<uid>.json` `done`/`failed`.
+3. Alle 600 s (Meta `snapshot_pruned`): `prune(retentionDays, maxVersions)`,
+   `expirePendingSnapshots(now − 86400)`, `cleanupSnapshotStatus()`.
+4. Stündlich (Meta `snapshot_temp_cleaned`): `cleanupTemp()` (Temp-Dateien
+   älter als 1 h).
+5. `mirrorSnapshots()`: `unmirroredSnapshots()` ⇒ `upsertSnapshot()` bzw.
+   bei `deleted` `deleteSnapshot()` + `removeSnapshot()`; danach
+   `markSnapshotsMirrored()`. `storage_snapshot_status`-Zähler aus
+   `snapshotStats()`.
+
+### 13.5 Wiederherstellen (`SnapshotEngine::restore()`)
+
+Prüfreihenfolge mit Fehlermeldungen (werden 1:1 angezeigt): `validUid` →
+Katalogzeile vorhanden → Status `complete` → `expectedPath` passt →
+`PathRules::isSnapshotted(path)` → Freigabe erreichbar → `verify()`
+(Größe + SHA-256 der `data`). Dann: Marker entfernen (falls Platzhalter),
+Zielordner anlegen, `FileCopier::copy(data → hot, mtime = now, sha)`, in einer
+Katalog-Transaktion `restored()` (bestehende Zeile) oder `insert()`
+(gelöschte Datei), `updateSnapshot(restored_at/by, file_id)`,
+`relinkSnapshots()` (ältere Versionen der gelöschten Datei wieder an die
+neue Zeile hängen), `requestRescan(path)`, Ereignis, `refreshIndex()`.
+Der nächste `syncPass()` überträgt die Datei als neue `version` auf alle
+Ziele; `copyFile()` findet keine Vormerkung ⇒ kein Snapshot.
+

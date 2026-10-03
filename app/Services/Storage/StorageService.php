@@ -384,6 +384,19 @@ final class StorageService
                 'forecast' => '',
             ];
         }
+        $snapshot = $overview['snapshot'] ?? null;
+        if (is_array($snapshot) && $snapshot['enabled'] && in_array($snapshot['state'], ['offline', 'invalid'], true)) {
+            return [
+                'level' => 'warning',
+                'title' => 'Snapshot-Speicher (Dateiversionen) nicht verfügbar',
+                'message' => 'Der Snapshot-Speicher ' . ($snapshot['unc_path'] !== '' ? '(' . $snapshot['unc_path'] . ') ' : '')
+                    . 'ist ' . ($snapshot['state'] === 'invalid' ? 'ungültig' : 'nicht erreichbar')
+                    . ($snapshot['message'] !== '' ? ': ' . $snapshot['message'] : '.')
+                    . ' Geänderte oder gelöschte Dateien werden bis zur Rückkehr auf dem betroffenen Speicherziel zurückgehalten, '
+                    . 'damit keine Vorgängerversion verloren geht; alle übrigen Dateien werden weiter synchronisiert.',
+                'forecast' => '',
+            ];
+        }
 
         return null;
     }

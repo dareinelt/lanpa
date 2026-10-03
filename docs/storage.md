@@ -535,9 +535,10 @@ beim Zurückholen gleichberechtigt genutzt:
 - **Latenz:** Der Monitor misst bei jeder Prüfung die Antwortzeit jedes
   Ziels (gleitender Mittelwert); zusätzlich wird beim Zurückholen die
   Antwortzeit der Dateiabfrage auf dem Ziel gemessen. Der höhere Wert zählt.
-- **Fair use:** Nicht alle Anfragen gehen an dasselbe Ziel. Das zuletzt
-  verwendete Ziel setzt bei der nächsten Rückholung aus, außer die
-  Alternative ist deutlich stärker ausgelastet oder langsamer. Gleichzeitige
+- **Fair use:** Nicht alle Anfragen gehen an dasselbe Ziel. Unter den
+  nahezu gleich bewerteten Zielen kommt das am längsten nicht verwendete zum
+  Zug (reihum, auch bei drei und mehr Zielen); ein deutlich stärker
+  ausgelastetes oder langsameres Ziel bleibt außen vor. Gleichzeitige
   Rückholungen (bis zu 4) werden zusätzlich auf die Ziele verteilt.
 - Schlägt die Kopie von einem Ziel fehl, wird automatisch das nächste
   versucht. Bei gleicher Bewertung hat das primäre Ziel Vorrang.

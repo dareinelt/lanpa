@@ -14,6 +14,11 @@ Rückholung.
 | **Hot-Tier (lokales Storage)** | Volumes `nextcloud_data` und `eurooffice_data` auf dem Docker-Host. Cache für häufig und kürzlich genutzte Dateien. |
 | **Cold-Tier (SMB-/S3-Tier)** | Alle eingetragenen Speicherziele, SMB-Freigaben und S3-Buckets beliebig gemischt. Jedes Ziel hält den **vollständigen** Datenbestand. |
 
+Dieses Dokument beschreibt Einrichtung und Betrieb. Die technische Referenz
+für Entwickler und Coding-Agenten (Code-Landkarte, Prozesse, Datenformate,
+Algorithmen, Invarianten, Tests, Änderungsrezepte, Fehlersuche) steht in
+[docs/storage-referenz.md](storage-referenz.md).
+
 ---
 
 ## 1. Einrichtung
@@ -151,6 +156,7 @@ Eine Datei wird nur ausgelagert, wenn
 
 - sie seit mindestens 10 Minuten unverändert ist (laufende Bearbeitungen sind
   geschützt),
+- sie mindestens 64 KiB groß ist (kleinere Dateien bleiben immer lokal),
 - ihre aktuelle Version auf **allen** aktiven Zielen liegt (im Regelbetrieb),
 - und eine Regel greift: älter als X Tage und nicht häufig genutzt, oder
   größer als die maximale Dateigröße.
@@ -448,8 +454,9 @@ wieder zu dieser Installation.
 
 - Der Hot-Tier benötigt ein Dateisystem mit Sparse-Dateien (ext4, xfs, btrfs
   …). Ohne diese Unterstützung wird nur gespiegelt, nicht ausgelagert.
-- Die Größenlimits beziehen sich auf die **Nextcloud-Daten** im Hot-Tier.
-  Euro-Office-Daten, Konfiguration und Datenbank bleiben lokal.
+- Ausgelagert werden nur **Nextcloud-Daten**. Euro-Office-Daten,
+  Konfiguration und Datenbank bleiben lokal; Euro-Office-Daten und
+  Konfiguration zählen aber zum Füllstand des Hot-Tiers (Limit).
 - Änderungen direkt im Cold-Tier (am NAS bzw. im Bucket) werden nicht
   zurücksynchronisiert. Der Hot-Tier ist führend.
 - S3 kennt kein Umbenennen: Umbenennungen und Verschiebungen werden im Bucket

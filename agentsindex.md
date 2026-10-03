@@ -34,7 +34,7 @@ Alles (Autoloader, Router, Container, View, Migrator, Testrunner) ist selbst ges
 | Frontend | Vanilla JavaScript + handgeschriebenes CSS (keine Frameworks, keine externen Fonts/Icons) |
 | Datenbank | MySQL 9.7 LTS (utf8mb4, Image `mysql:${DB_IMAGE_TAG:-9.7.2}`) |
 | Web | Apache mit `mod_rewrite`, DocumentRoot `public/` |
-| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `mail`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`, `storage-sync` (Speicher-Tiering/HA, `docs/storage.md`)) |
+| Betrieb | Docker Compose (Dienste `app`, `db`, `sync`, `mail`, `snmp`, `auth` (Einstieg/Reverse-Proxy, optional NTLM), optional `phpmyadmin`; Profil `office`: `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup`, `storage-sync` (Speicher-Tiering/HA, `docs/storage.md`, technische Referenz `docs/storage-referenz.md`)) |
 | Monitoring | net-snmp-Agent im Container `snmp` (UDP 161, read-only Docker-Socket + `sync_log`) |
 | Abhängigkeiten | **keine** – kein Composer, kein npm, kein CDN |
 
@@ -497,3 +497,4 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - `docs/installation.md` – Assistierte Installation mit `scripts/install.sh`: Ablauf, Optionen, Bedienung, abgefragte Variablen, Abschlussbericht, Fehlerbehebung.
 - `docs/office.md` – Office-Erweiterung: Einrichtung, Architektur, Updates, AD-Gruppen/SSO, Kachel, lokale KI, Sicherung, SNMP.
 - `docs/storage.md` – Speicher-Tiering und HA-Synchronisation: Hot-Tier (lokales Storage), Cold-Tier (SMB-/S3-Tier; S3-Buckets per s3fs/FUSE), Container `storage-sync`, Rückholung in Nextcloud, Schutz vor Ransomware/Vorfälle, SNMP, Wiederherstellung, Vorteile (auch von S3-Zielen).
+- `docs/storage-referenz.md` – technische Referenz Speicher-Tiering/HA für Entwickler und Coding-Agenten: Code-Landkarte, Prozesse und Takte, Datenformate (MySQL, SQLite-Katalog, Dateischnittstelle zu Nextcloud), Algorithmen (HA-Status, Auslagerung, Rückholung, Vorfälle), Invarianten, Tests, Änderungsrezepte, Fehlersuche. **Vor Änderungen am Speichermodul lesen.**

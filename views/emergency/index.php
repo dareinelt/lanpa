@@ -6,7 +6,7 @@ use App\Support\Html;
 <link rel="stylesheet" href="/assets/css/emergency-plan.css?v=<?= Html::e($assetVersion) ?>">
 <?php if (!$manager) { ?><h1>Notfallplan</h1><?php } ?>
 <div class="toolbar">
-    <?php if ($manager) { ?><a class="button button--primary" href="<?= $base ?>/bearbeiten">Neuen Notfallplan entwerfen</a><?php } ?>
+    <?php if ($manager) { ?><a class="button button--primary" href="<?= $base ?>/bearbeiten" target="_blank" rel="noopener">Neuen Notfallplan entwerfen (neuer Tab)</a><?php } ?>
     <a class="button button--ghost" href="<?= $base ?>/anleitung">Kurzanleitung</a>
     <?php if ($manager) { ?><a class="button button--ghost" href="/kaep-dashboard" target="_blank" rel="noopener">KAEP-Dashboard</a><?php } ?>
 </div>
@@ -65,7 +65,7 @@ use App\Support\Html;
         <article class="card">
             <h3><?= Html::e($plan['title']) ?></h3>
             <p><?= (int) $plan['published'] === 1 ? 'Veröffentlicht: Version ' . (int) $plan['published_revision'] : 'Nicht veröffentlicht' ?><?php if ($manager) { ?> · Entwurf <?= (int) $plan['revision'] ?>: <?= Html::e(['draft' => 'in Bearbeitung', 'pending' => 'Freigabe ausstehend', 'rejected' => 'abgelehnt', 'approved' => 'freigegeben'][$plan['review_state']]) ?><?php } ?></p>
-            <a class="button <?= $manager ? 'button--ghost' : 'button--danger' ?>" href="<?= $base ?>/<?= $manager ? 'bearbeiten' : 'plan' ?>?id=<?= (int) $plan['id'] ?>"><?= $manager ? 'Bearbeiten / Vorschau' : 'Plan öffnen' ?></a>
+            <a class="button <?= $manager ? 'button--ghost' : 'button--danger' ?>" href="<?= $base ?>/<?= $manager ? 'bearbeiten' : 'plan' ?>?id=<?= (int) $plan['id'] ?>"<?= $manager ? ' target="_blank" rel="noopener"' : '' ?>><?= $manager ? 'Im Editor öffnen (neuer Tab)' : 'Plan öffnen' ?></a>
         </article>
     <?php } ?>
     <?php if ($plans === []) { ?><p>Keine <?= $manager ? '' : 'veröffentlichten ' ?>Notfallpläne vorhanden.</p><?php } ?>

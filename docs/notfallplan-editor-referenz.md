@@ -66,9 +66,10 @@ Abweichungen gilt der Code.
 
 | Datei | Verantwortung |
 | --- | --- |
-| `views/emergency/editor.php` | Editor-Seite: Kopfleiste, Plantitel/-beschreibung, Bedienhilfe + Beispielvorlagen, 3-Spalten-Editor (Bausteine, Diagramm, Inspector), Freigabe-Panel und Freigabeprotokoll. Übergibt Plan und Alarmvorlagen als JSON in versteckten `<textarea>` (`data-ep-initial`, `data-ep-alarms`). |
-| `public/assets/js/emergency-plan.js` | Gemeinsames Skript für Editor (`[data-ep-editor]`), statische Diagramme (`renderStaticDiagram`), Live-Vorschau (`[data-ep-preview]`), Ereignisansicht (`[data-ep-event]`) und Startformular (`.ep-start`). Hilfsfunktionen `element()`, `svgElement()`, `diagram()`, `post()`. |
-| `public/assets/css/emergency-plan.css` | Layout (`.ep-editor`-Grid, `.ep-palette`, `.ep-workspace`, `.ep-inspector`), SVG-Knotenfarben (`.ep-graph-node--<typ>/<status>`), Dark-Theme, Responsive-Umbrüche (1200 px / 650 px). |
+| `views/emergency/editor.php` | Editor-Seite im Office-Stil (eigener Browser-Tab, volle Breite): Titelleiste mit Schnellzugriff, Menüband mit vier Reitern (Start / Ablauf & Verbindungen / Prüfen & Freigabe / Ansicht), 3-Spalten-Arbeitsbereich (Schritte-Palette, Diagramm-Canvas, Eigenschaften), Statusleiste sowie `<dialog>`-Fenster für Vier-Augen-Freigabe (+ Protokoll) und Hilfe. Übergibt Plan und Alarmvorlagen als JSON in versteckten `<textarea>` (`data-ep-initial`, `data-ep-alarms`). |
+| `views/layouts/editor.php` | Schlankes Vollbild-Layout nur für den Editor (kein Admin-Menü, kein Seitenrahmen; `body.admin.ep-shell`). Wird von `EmergencyPlanController::edit()` über `adminView(..., 'layouts.editor')` gewählt. |
+| `public/assets/js/emergency-plan.js` | Gemeinsames Skript für Editor (`[data-ep-editor]`), statische Diagramme (`renderStaticDiagram`), Live-Vorschau (`[data-ep-preview]`), Ereignisansicht (`[data-ep-event]`) und Startformular (`.ep-start`). Hilfsfunktionen `element()`, `svgElement()`, `diagram()`, `post()`. Der Editor-Block enthält zusätzlich Undo/Redo-Journal, Client-Prüfung, Zoom/Pan, Suche und Drag-and-Drop. |
+| `public/assets/css/emergency-plan.css` | Office-Layout (`.ep-office`-Grid, `.ep-titlebar`, `.ep-ribbon`/`.ep-rg`/`.ep-rb`, `.ep-workspace3`, `.ep-palette`, `.ep-canvas`, `.ep-inspector`, `.ep-statusbar`, `.ep-dialog`), SVG-Knotenfarben (`.ep-graph-node--<typ>/<status>/--error/--hint`), Dark-Theme, Responsive-Umbrüche (1200 px / 900 px / 650 px). |
 | `app/Controllers/EmergencyPlanController.php` | `access()` (Rollen-/Akteursermittlung), `edit()`, `save()`, `preview()`, `previewRender()`, `review()`, `exportPlans()`, `importPlans()` sowie die Benutzer-/Ereignisaktionen. |
 | `app/Services/EmergencyPlanDefinition.php` | Reine Funktionen: `validate()` (Schema + Graphregeln), `readiness()` (Freigabe-/Wartezustand je Element), `text()` (Textprüfung). Konstanten `TYPES`, `STATUSES`. |
 | `app/Services/EmergencyPlanService.php` | `save()`, `prepare()` (Validierung + SMS-Vorlage einbetten), `alarmOptions()` (aktive Alarmkacheln für das Dropdown), `exportPlans()`, `importPlans()`, `matchAlarm()`. |
@@ -78,7 +79,7 @@ Abweichungen gilt der Code.
 | `views/emergency/preview.php` | Hülle des Vorschau-Tabs (Sandbox-Banner, Reset/Retry, Statuszeilen, `data-ep-preview-content`). |
 | `views/emergency/plan.php`, `views/emergency/event.php` | Plan- und Ereignisansicht; werden in der Vorschau mit `preview => true` gerendert. |
 | `views/emergency/publication.php` | Anzeige von Autoren/Freigeber/Version aus `definition.publication`. |
-| `views/emergency/index.php` | Planliste mit „Neuen Notfallplan entwerfen“ / „Bearbeiten / Vorschau“, Freigabeeinstellungen, Export/Import. |
+| `views/emergency/index.php` | Planliste mit „Neuen Notfallplan entwerfen (neuer Tab)“ / „Im Editor öffnen (neuer Tab)“ (`target="_blank" rel="noopener"`) / „Vorschau“, Freigabeeinstellungen, Export/Import. |
 | `database/migrations/025_emergency_plans.sql`, `027_emergency_plan_approval.sql` | Tabellen `emergency_plans`, `emergency_plan_reviews` (Freigabespalten). |
 | `public/index.php` | Routen (Gruppe `$requireKaep`, darin `$requireAdmin` für Export/Import); KAEP-Rolle wird in `$requireAuth` auf `/admin/notfallplan*` beschränkt. |
 
@@ -196,22 +197,64 @@ neue Entwürfe an (`imported`). Details: [notfallplan.md](notfallplan.md#export-
 
 ### 5.1 Seitenaufbau (`views/emergency/editor.php`)
 
-1. **Kopfleiste** `.ep-editor-bar` (sticky): „Zur Übersicht“, Freigabestatus
-   (`data-ep-review-status`), **Entwurf speichern** (`data-ep-save`),
-   **Live-Vorschau in neuem Tab** (`data-ep-open-preview`), Statusmeldungen
-   (`data-ep-message`, `aria-live`), Vorschau-Status (`data-ep-preview-status`).
-2. **Planmetadaten**: Plantitel (`data-ep-title`), Kurzbeschreibung (`data-ep-description`).
-3. **Bedienhilfe und Beispielvorlagen** (`<details>`): Erklärtext und Buttons
-   `data-ep-template="fire"` / `"manf"`.
-4. **Editor-Grid** `.ep-editor` mit drei Spalten (`200px | 1fr | 280–340px`):
-   - **Bausteine** `.ep-palette`: Typauswahl (`data-ep-add-type`),
-     „Element hinzufügen“ (`data-ep-add`), nummerierte Elementliste (`data-ep-list`).
-   - **Ablaufdiagramm** `.ep-workspace` → `data-ep-diagram` (SVG).
-   - **Element bearbeiten** `.ep-inspector` → `data-ep-fields`.
-   - ≤ 1200 px: Inspector rutscht unter die beiden anderen Spalten; ≤ 650 px: einspaltig.
-5. **Vier-Augen-Freigabe** `[data-ep-review-panel]` (serverseitig gerendert,
-   klassische Formulare mit `data-ep-review-form`) inkl. Freigabeprotokoll.
+Der Editor öffnet sich aus der Planliste in einem **eigenen Browser-Tab** und
+nutzt das Vollbild-Layout `views/layouts/editor.php` (ohne Admin-Navigation).
+Wurzel ist `.ep-office[data-ep-editor]`, ein CSS-Grid mit vier Zeilen auf
+`100vh`:
+
+1. **Titelleiste** `.ep-titlebar`: Schnellzugriff (Speichern, Rückgängig,
+   Wiederholen), Dokumenttitel (`data-ep-doc-title`) mit Ungespeichert-Punkt
+   (`data-ep-dirty-flag`), Freigabestatus (`data-ep-review-status`),
+   **Live-Vorschau** (`data-ep-open-preview`) und **Schließen** (`data-ep-close`;
+   schließt den Tab, wenn er per `window.open`/Link geöffnet wurde, sonst
+   Rücksprung zur Planliste).
+2. **Menüband** `.ep-ribbon`: Reiterleiste (`role="tablist"`, Buttons
+   `data-ep-tab`) und Panels (`data-ep-tabpanel`), gegliedert in Gruppen
+   `.ep-rg` mit großen Schaltflächen `.ep-rb` (Inline-SVG-Icon + Textlabel):
+   - **Start** – Schritt hinzufügen (`data-ep-add-type="<typ>"`, 1 Klick),
+     Bearbeiten (Rückgängig/Wiederholen `data-ep-undo`/`data-ep-redo`,
+     Duplizieren, Löschen), Reihenfolge (`data-ep-move`), Plan
+     (Plan-Angaben einblenden `data-ep-plan-toggle`, Beispielvorlagen
+     `data-ep-template`).
+   - **Ablauf & Verbindungen** – Suche (`data-ep-search`, Treffer
+     `data-ep-search-result`), Verknüpfung UND/ODER (`data-ep-join`),
+     Hinweis auf das Voraussetzungs-Fieldset im Eigenschaften-Bereich.
+   - **Prüfen & Freigabe** – Plan prüfen (`data-ep-validate`), Entwurf
+     speichern (`data-ep-save`), Freigabe & Protokoll
+     (`data-ep-open-dialog="review"`), Statuszeile.
+   - **Ansicht** – Zoom (`data-ep-zoom="in|out|fit|center|reset"`), Bereiche
+     ein-/ausblenden (`data-ep-toggle-panel="palette|inspector"`),
+     Live-Vorschau, Hilfe (`data-ep-open-dialog="help"`), Design wechseln
+     (`data-theme-toggle` aus `app.js`).
+3. **Arbeitsbereich** `.ep-workspace3` (`250px | 1fr | 360px`):
+   - **Schritte** `.ep-palette`: Baustein-Buttons (`data-ep-add-type`,
+     zusätzlich `draggable` mit `data-ep-drag-type`), Zähler
+     (`data-ep-count`), nummerierte Schrittliste (`data-ep-list`) mit
+     Typfarbe, Fehler-Badge und Suchfilter.
+   - **Ablaufdiagramm** `.ep-canvas[data-ep-canvas]` → `data-ep-diagram`
+     (SVG) auf Punktraster, Zoom-Overlay unten rechts, Drop-Zone für
+     Bausteine, Fußzeile mit Bedienhinweis.
+   - **Eigenschaften** `.ep-inspector`: aufklappbares Prüfergebnis
+     (`data-ep-issues`), Plan-Angaben (`data-ep-plan-panel`: `data-ep-title`,
+     `data-ep-description`; automatisch sichtbar, solange kein Schritt
+     gewählt ist) und Schritt bearbeiten (`data-ep-node-panel` →
+     `data-ep-fields`).
+   - ≤ 1200 px: schmalere Seitenspalten; ≤ 900 px: Spalten untereinander,
+     Seite scrollt.
+4. **Statusleiste** `.ep-statusbar`: Freigabestatus, Revision
+   (`data-ep-revision`), Schrittzahl, Prüfstatus-Button
+   (`data-ep-issue-count`), Meldungen (`data-ep-message`, `aria-live`),
+   Vorschau-Kopplung (`data-ep-preview-status`), Zoomstufe
+   (`data-ep-zoom-level`).
+5. **Dialoge**: `<dialog data-ep-dialog="review">` enthält unverändert das
+   serverseitig gerenderte Freigabe-Panel `[data-ep-review-panel]` (klassische
+   Formulare `data-ep-review-form`) und das Freigabeprotokoll;
+   `<dialog data-ep-dialog="help">` die Bedienhilfe und Tastenkürzel.
 6. `<noscript>`-Hinweis: ohne JavaScript keine Bearbeitung.
+
+Mehrere Bedienelemente mit derselben Funktion (z. B. `data-ep-save` in
+Titelleiste und Menüband) sind erlaubt; das Skript bindet immer **alle**
+Treffer (`$$()`/`setText()`).
 
 ### 5.2 Clientzustand (Block `if (editor)`)
 
@@ -219,35 +262,47 @@ neue Entwürfe an (`imported`). Details: [notfallplan.md](notfallplan.md#export-
 | --- | --- |
 | `initial` | Serverstand (`id`, `revision`, …); nach Speichern aktualisiert |
 | `definition` | **Einzige Quelle der Wahrheit** im Browser; alle Eingaben mutieren dieses Objekt direkt |
-| `selected` | ID des gewählten Elements |
-| `dirty` | ungespeicherte Änderungen (steuert `beforeunload` und Sperre der Freigabeformulare) |
+| `selected` | ID des gewählten Schritts |
+| `dirty` | ungespeicherte Änderungen (steuert `beforeunload`, Titelpunkt und Sperre der Freigabeformulare) |
+| `journal` | Undo/Redo-Journal: `past[]`/`future[]` mit JSON-Schnappschüssen (`definition` + `selected`), max. 100 Einträge; Texteingaben desselben Felds werden zusammengefasst (Coalescing). Darf nicht `history` heißen (`window.history` wird in `save()` genutzt). |
+| `issues` | Ergebnis der Client-Prüfung (`null` = noch nicht geprüft; sonst Liste `{nodeId, level, text}`) |
+| `zoom`, `filter` | Zoomfaktor des Diagramms (0,3–2,5) und Suchbegriff |
+| `planPanelPinned` | Plan-Angaben trotz gewähltem Schritt eingeblendet |
 | `previewChannel`, `previewVersion` | Live-Vorschau-Kopplung (siehe 9) |
 
 Jede Änderung ruft `mark()` auf: `dirty = true`, Meldung „Ungespeicherte
-Änderungen.“, `previewVersion++`, Vorschau-Push entprellt (150 ms).
-Rendering ist bewusst einfach: `render()` baut Liste, Diagramm und Inspector
-komplett neu; Texteingaben rufen nur `refreshGraph()` (und bei Titel
-`renderList()`) auf, damit der Fokus im Eingabefeld bleibt.
+Änderungen.“, `previewVersion++`, Vorschau-Push entprellt (150 ms); wurde
+bereits einmal geprüft, läuft `validate()` live mit. Strukturelle Änderungen
+gehen über `commit(label, fn)` (Schnappschuss ins Journal → Mutation →
+`mark()` → `render()`). Rendering ist bewusst einfach: `render()` baut Liste,
+Diagramm und Inspector komplett neu; Texteingaben rufen nur `refreshGraph()`
+(und bei Titel `renderList()`) auf, damit der Fokus im Eingabefeld bleibt.
 
 ### 5.3 Funktionen des Editors
 
 | Funktion | UI | Umsetzung / Regeln |
 | --- | --- | --- |
-| Element hinzufügen | Typ wählen → „Element hinzufügen“ | `makeNode(type)`; wird **ans Ende** gehängt und automatisch mit dem bisher letzten Element verbunden (`when: always`). Max. 80. Checklisten starten mit einem Prüfpunkt „Prüfpunkt“. |
-| Auswählen | Klick/Enter/Leertaste auf SVG-Knoten oder Listeneintrag | `select(id)` → `render()`; Listeneintrag erhält `aria-current`. |
-| Felder bearbeiten | Inspector | `inputField()` für Titel/Frage, Anweisung, Zuständigkeit, Telefon, Informationslink, Zielzeit (`type=number`, 0–10080). `maxLength` entspricht den Servergrenzen. |
+| Schritt hinzufügen | Baustein-Button (Palette oder Menüband „Start“) **oder** Baustein aufs Diagramm ziehen | `addNode(type)` → `makeNode(type)`; wird **ans Ende** gehängt und automatisch mit dem bisher letzten Schritt verbunden (`when: always`). Max. 80. Checklisten starten mit einem Prüfpunkt „Prüfpunkt“. Drag-and-Drop nutzt `dataTransfer` (`text/ep-type`) und die Drop-Zone `.ep-canvas`. |
+| Auswählen | Klick/Enter/Leertaste auf SVG-Knoten oder Listeneintrag | `select(id)` → `render()`; Listeneintrag erhält `aria-current`; Diagramm scrollt den Knoten in den sichtbaren Bereich. |
+| Felder bearbeiten | Eigenschaften-Bereich | `inputField()` für Titel/Frage, Anweisung, Zuständigkeit, Telefon, Informationslink, Zielzeit (`type=number`, 0–10080). `maxLength` entspricht den Servergrenzen. Laienfreundliche Beschriftungen („Schritt“, „Voraussetzung“, „Zielzeit“). |
 | Prüfpunkte | Textarea (nur `checklist`) | Eine Zeile = ein Punkt; Zeilen werden getrimmt, Leerzeilen verworfen. Grenze 20 prüft erst der Server. |
 | SMS-Vorlage | Dropdown (nur `sms`) | Optionen aus `alarmOptions()` (aktive Navigationselemente vom Typ `alarm`); Anzeige „An <Ziel>: <Text>“. Hinweis: Daten werden beim Speichern kopiert, im Einsatz separat bestätigt. |
-| Vorgänger | Fieldset „Vorgänger / Verbindungen“ | Checkbox je **vorherigem** Element; Bedingung `Erledigt` bzw. bei Entscheidungen zusätzlich `Antwort Ja`/`Antwort Nein`. Erstes Element: „Startpunkt: keine Vorgänger.“ |
-| Verknüpfung | Select „Freigabe der Maßnahme“ | `all` = „Alle Vorgänger (UND)“, `any` = „Mindestens ein Vorgänger (ODER)“. |
-| Reihenfolge | „↑ Nach oben“ / „↓ Nach unten“ | `move(±1)` tauscht Nachbarn und verweigert den Tausch, wenn danach eine Kante auf ein späteres Element zeigen würde („Verschieben würde eine Verbindung umkehren…“). |
-| Duplizieren | Button | `structuredClone` direkt dahinter, neue ID, Titel + „ (Kopie)“; Vorgänger werden übernommen, Nachfolger nicht. Max. 80. |
-| Löschen | Button mit `confirm` | Entfernt Element **und alle Kanten darauf**; Nachfolger ohne weitere Vorgänger werden Startpunkte. |
-| Beispielvorlagen | „Beispiel Brandfall/MANF übernehmen“ | Ersetzt den gesamten Entwurf (Rückfrage, falls nicht leer) durch eine lineare Kette; Kante nach einer Entscheidung ist `yes`. Beschreibung kennzeichnet „BEISPIEL – … fachlich freigeben“. |
-| Speichern | „Entwurf speichern“ | siehe 7. |
-| Live-Vorschau | Link | siehe 9. |
+| Voraussetzungen | Fieldset „Voraussetzungen (vorherige Schritte)“ | Checkbox je **vorherigem** Schritt; Bedingung `Erledigt` bzw. bei Entscheidungen `Antwort Ja`/`Antwort Nein`. Klartext-Zusammenfassung („Startet, sobald ALLE/MINDESTENS EINE der Voraussetzungen erledigt ist: …“). Erster Schritt: „Startpunkt: keine Voraussetzungen.“ |
+| Verknüpfung UND/ODER | Segment-Schalter „Alle (UND)“ / „Eine genügt (ODER)“ (Inspector und Menüband „Ablauf“) | `node.join` = `all` / `any`; Schalter erscheint nur bei ≥ 2 Voraussetzungen. |
+| Reihenfolge | „Nach oben“ / „Nach unten“ | `move(±1)` tauscht Nachbarn und verweigert den Tausch, wenn danach eine Kante auf einen späteren Schritt zeigen würde („Verschieben würde eine Verbindung umkehren…“). |
+| Duplizieren | Button | `structuredClone` direkt dahinter, neue ID, Titel + „ (Kopie)“; Voraussetzungen werden übernommen, Nachfolger nicht. Max. 80. |
+| Löschen | Button mit `confirm`, Taste `Entf` bei fokussiertem Diagramm | Entfernt Schritt **und alle Kanten darauf**; Nachfolger ohne weitere Voraussetzungen werden Startpunkte. |
+| Rückgängig / Wiederholen | Schnellzugriff, Menüband, `Strg+Z` / `Strg+Y` (`Strg+Umschalt+Z`) | `undo()`/`redo()` stellen den Schnappschuss aus `journal` wieder her, setzen `dirty` und rendern neu. Betrifft nur den Entwurf im Browser, nie den Serverstand. |
+| Plan prüfen | Menüband „Prüfen“, Statusleiste | `validate()` – **Komfortprüfung im Browser**, Server bleibt maßgeblich (siehe 6). Fehler: leerer Plantitel, leerer Schritttitel, Checkliste ohne Prüfpunkt, SMS ohne Vorlage, ungültiger Link. Hinweise: Schritt ohne Voraussetzung (außer dem ersten), Entscheidung ohne Folgeschritt. Betroffene Schritte werden in Liste (Badge) und Diagramm (`--error`/`--hint`) markiert; Klick auf einen Eintrag wählt den Schritt. |
+| Suchen / Filtern | Feld im Menüband „Ablauf & Verbindungen“ | Filtert die Schrittliste und dimmt nicht passende Knoten (`is-dimmed`); gesucht wird in Titel, Anweisung und Zuständigkeit. |
+| Zoom / Pan | Overlay im Diagramm, Menüband „Ansicht“, `Strg++`/`Strg+-`/`Strg+0`, Strg + Mausrad, Ziehen mit der Maus | `setZoom(f)` skaliert die SVG-Breite/-Höhe relativ zur `viewBox` (0,3–2,5); `fitZoom()` passt an die Fläche an (beim Laden), `centerSelected()` scrollt zum gewählten Knoten. |
+| Beispielvorlagen | „Beispiel Brandfall/MANF“ (Menüband „Start“) | Ersetzt den gesamten Entwurf (Rückfrage, falls nicht leer) durch eine lineare Kette; Kante nach einer Entscheidung ist `yes`. Beschreibung kennzeichnet „BEISPIEL – … fachlich freigeben“. |
+| Speichern | „Entwurf speichern“ (Titelleiste, Menüband), `Strg+S` | siehe 7. |
+| Live-Vorschau | Titelleiste, Menüband, `Alt+Umschalt+V` | öffnet neuen Tab, siehe 9. |
+| Bereiche / Design | Menüband „Ansicht“ | `ep-hide-palette`/`ep-hide-inspector` am `.ep-office`; Theme über `data-theme-toggle` aus `app.js`. |
+| Schließen | Titelleiste | `window.close()` bei geöffnetem Opener, sonst Rücksprung zur Planliste; `beforeunload` warnt bei `dirty`. |
 | Ungespeichert verlassen | – | `beforeunload`-Warnung, solange `dirty`. |
-| Freigabe mit ungespeicherten Änderungen | Formulare im Freigabe-Panel | Submit wird blockiert: „Bitte Änderungen zuerst speichern…“. |
+| Freigabe mit ungespeicherten Änderungen | Formulare im Freigabe-Dialog | Submit wird blockiert, Dialog schließt: „Bitte Änderungen zuerst speichern…“. |
 
 ### 5.4 Diagramm (`diagram(container, definition, selected, onSelect, progress)`)
 
@@ -308,7 +363,8 @@ Ablauf (`data-ep-save`-Handler → `EmergencyPlanController::save()`):
    - Protokolleintrag `saved`.
 4. Antwort `{id, revision, message}`; Client setzt `initial.id/revision`,
    `dirty = false`, ersetzt die URL per `history.replaceState` durch
-   `/admin/notfallplan/bearbeiten?id=<id>` und ersetzt das Freigabe-Panel durch
+   `/admin/notfallplan/bearbeiten?id=<id>`, aktualisiert Revision/Status in
+   Statusleiste und Titelleiste und ersetzt das Freigabe-Panel im Dialog durch
    einen Link zum Neuladen (der Antrag ist nur über die serverseitig gerenderte
    Seite möglich).
 5. Fehler (422/409/Sitzung abgelaufen = keine JSON-Antwort): Meldung +

@@ -120,8 +120,11 @@ final class EmergencyPlanController extends AdminController
             'id' => 0, 'revision' => 0, 'published' => 0, 'published_revision' => null, 'review_state' => 'draft', 'contributors' => [], 'submitted_by' => null, 'definition' => ['title' => '', 'description' => '', 'nodes' => []],
         ];
 
-        return $this->render('emergency.editor', $access, ['pageTitle' => 'Notfallplan bearbeiten', 'plan' => $plan, 'alarms' => Container::emergencyPlans()->alarmOptions(),
-            'reviews' => $id > 0 ? Container::emergencyPlans()->repository->reviews($id) : []]);
+        // Eigenständiges Vollbild-Layout: Der Editor öffnet sich in einem eigenen Tab ohne Admin-Seitenmenü.
+        $data = $access + ['activeNav' => 'emergency_plan', 'pageScript' => 'emergency-plan.js', 'pageTitle' => $plan['definition']['title'] !== '' ? $plan['definition']['title'] : 'Neuer Notfallplan',
+            'plan' => $plan, 'alarms' => Container::emergencyPlans()->alarmOptions(), 'reviews' => $id > 0 ? Container::emergencyPlans()->repository->reviews($id) : []];
+
+        return $this->adminView('emergency.editor', $data, 200, 'layouts.editor')->withHeader('Cache-Control', 'no-store');
     }
 
     public function save(Request $request): Response

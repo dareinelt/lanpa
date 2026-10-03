@@ -16,7 +16,8 @@
         return node;
     };
     let diagramCount = 0;
-    function diagram(container, definition, selected, onSelect, progress) {
+    // decorate(node, group, index) ergänzt im Editor Markierungen (Prüfhinweise, Suchfilter) ohne das Layout zu ändern.
+    function diagram(container, definition, selected, onSelect, progress, decorate) {
         container.replaceChildren();
         const nodes = definition.nodes;
         if (!nodes.length) {
@@ -71,6 +72,7 @@
             group.addEventListener('keydown', event => {
                 if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(node.id); }
             });
+            if (decorate) decorate(node, group, i);
             svg.append(group);
         });
         container.append(svg);
@@ -93,23 +95,29 @@
         let definition = initial.definition;
         let selected = definition.nodes[0]?.id;
         let dirty = false;
-        const fields = editor.querySelector('[data-ep-fields]');
-        const message = editor.querySelector('[data-ep-message]');
-        const title = editor.querySelector('[data-ep-title]');
-        const description = editor.querySelector('[data-ep-description]');
-        const previewStatus = editor.querySelector('[data-ep-preview-status]');
+        let zoom = 1;
+        let filter = '';
+        let issues = null; // null = noch nicht geprüft
+        let planPanelPinned = !definition.nodes.length;
+        const $ = selector => editor.querySelector(selector);
+        const $$ = selector => [...editor.querySelectorAll(selector)];
+        const fields = $('[data-ep-fields]');
+        const message = $('[data-ep-message]');
+        const title = $('[data-ep-title]');
+        const description = $('[data-ep-description]');
+        const canvas = $('[data-ep-canvas]');
+        const diagramHost = $('[data-ep-diagram]');
+        const previewStatus = $('[data-ep-preview-status]');
+        const setText = (selector, text) => $$(selector).forEach(node => { node.textContent = text; });
+
+        // ---- Live-Vorschau (BroadcastChannel ep-preview-<uuid>, siehe Referenz Abschnitt 9) ----
         let previewChannel = null;
         let previewVersion = 0;
         let previewTimer;
         let previewOpenTimer;
         const publishPreview = () => previewChannel?.postMessage({ type: 'definition', definition, version: previewVersion });
-        const mark = () => {
-            dirty = true; message.textContent = 'Ungespeicherte Änderungen.';
-            previewVersion++;
-            clearTimeout(previewTimer);
-            previewTimer = setTimeout(publishPreview, 150);
-        };
-        editor.querySelector('[data-ep-open-preview]').addEventListener('click', event => {
+        const previewLinks = $$('[data-ep-open-preview]');
+        previewLinks.forEach(link => link.addEventListener('click', event => {
             if (!('BroadcastChannel' in window)) {
                 event.preventDefault();
                 previewStatus.textContent = 'Dieser Browser unterstützt die Live-Vorschau nicht. Bitte einen aktuellen Browser verwenden.';
@@ -118,11 +126,12 @@
             if (!previewChannel) {
                 const key = crypto.randomUUID();
                 previewChannel = new BroadcastChannel('ep-preview-' + key);
-                event.currentTarget.href = '/admin/notfallplan/vorschau#' + key;
+                previewLinks.forEach(l => { l.href = '/admin/notfallplan/vorschau#' + key; });
                 previewChannel.onmessage = ({ data }) => {
                     if (data?.type !== 'sync' && data?.type !== 'ping') return;
                     clearTimeout(previewOpenTimer);
-                    previewStatus.textContent = 'Vorschau verbunden. Änderungen werden live übertragen.';
+                    previewStatus.textContent = 'Vorschau verbunden – Änderungen werden live übertragen.';
+                    previewStatus.classList.add('is-live');
                     if (data.type === 'sync') publishPreview();
                     else previewChannel.postMessage({ type: 'alive', version: previewVersion });
                 };
@@ -131,64 +140,316 @@
             previewOpenTimer = setTimeout(() => {
                 previewStatus.textContent = 'Noch keine Vorschau verbunden. Neuen Tab prüfen und gegebenenfalls Pop-ups erlauben.';
             }, 8000);
-        });
+        }));
         window.addEventListener('pagehide', () => previewChannel?.postMessage({ type: 'disconnected' }));
         window.addEventListener('pageshow', publishPreview);
-        const refreshGraph = () => diagram(editor.querySelector('[data-ep-diagram]'), definition, selected, select);
-        const makeNode = type => ({ id: 'n' + crypto.randomUUID().replaceAll('-', ''), type, title: '', text: '', owner: '', phone: '', link: '', minutes: 0, checks: type === 'checklist' ? ['Prüfpunkt'] : [], dependencies: [], join: 'all', alarm_id: 0 });
-        function select(id) { selected = id; render(); }
-        function inputField(label, key, multiline, max) {
-            const wrapper = element('label', label);
-            const input = element(multiline ? 'textarea' : 'input');
-            const node = definition.nodes.find(n => n.id === selected);
-            input.value = node[key];
-            if (multiline) input.rows = 3;
-            if (max) input.maxLength = max;
-            if (key === 'minutes') { input.type = 'number'; input.min = '0'; input.max = '10080'; }
-            input.addEventListener('input', () => {
-                node[key] = key === 'minutes' ? Number(input.value) : input.value;
-                mark(); refreshGraph();
-                if (key === 'title') renderList();
-            });
-            wrapper.append(input); fields.append(wrapper);
+
+        // ---- Verlauf (Rückgängig / Wiederholen): JSON-Schnappschüsse des Entwurfs ----
+        const journal = { undo: [], redo: [], key: null, at: 0 };
+        const updateHistoryButtons = () => {
+            $$('[data-ep-undo]').forEach(b => { b.disabled = !journal.undo.length; });
+            $$('[data-ep-redo]').forEach(b => { b.disabled = !journal.redo.length; });
+        };
+        // key: zusammenhängende Tipp-Eingaben im selben Feld werden zu einem Schritt zusammengefasst.
+        function snapshot(key) {
+            const now = Date.now();
+            if (key && key === journal.key && now - journal.at < 1500) { journal.at = now; return; }
+            journal.undo.push(JSON.stringify(definition));
+            if (journal.undo.length > 100) journal.undo.shift();
+            journal.redo = []; journal.key = key || null; journal.at = now;
+            updateHistoryButtons();
         }
-        function button(text, fn) {
-            const b = element('button', text, 'button button--ghost'); b.type = 'button'; b.addEventListener('click', fn); return b;
+        function restore(json) {
+            definition = JSON.parse(json);
+            title.value = definition.title; description.value = definition.description;
+            if (!definition.nodes.some(n => n.id === selected)) selected = definition.nodes[0]?.id;
+            journal.key = null; mark(); render(); updateHistoryButtons();
         }
-        function renderList() {
-            const list = editor.querySelector('[data-ep-list]'); list.replaceChildren();
+        const undo = () => { if (!journal.undo.length) return; journal.redo.push(JSON.stringify(definition)); restore(journal.undo.pop()); message.textContent = 'Rückgängig gemacht.'; };
+        const redo = () => { if (!journal.redo.length) return; journal.undo.push(JSON.stringify(definition)); restore(journal.redo.pop()); message.textContent = 'Wiederholt.'; };
+        $$('[data-ep-undo]').forEach(b => b.addEventListener('click', undo));
+        $$('[data-ep-redo]').forEach(b => b.addEventListener('click', redo));
+
+        const mark = () => {
+            dirty = true; message.textContent = 'Ungespeicherte Änderungen.';
+            $('[data-ep-dirty-flag]').hidden = false;
+            setText('[data-ep-doc-title]', definition.title || 'Neuer Notfallplan');
+            if (issues !== null) validate(false);
+            previewVersion++;
+            clearTimeout(previewTimer);
+            previewTimer = setTimeout(publishPreview, 150);
+        };
+
+        // ---- Client-Prüfung (nur Komfort – maßgeblich bleibt der Server) ----
+        const nodeName = (n, i) => `Schritt ${i + 1}${n.title ? ' „' + n.title + '“' : ''}`;
+        function validate(announce) {
+            const found = [];
+            const byId = Object.fromEntries(definition.nodes.map(n => [n.id, n]));
+            if (!definition.title.trim()) found.push({ level: 'error', text: 'Der Plan hat noch keinen Titel.' });
+            if (!definition.nodes.length) found.push({ level: 'error', text: 'Der Plan enthält noch keinen Schritt.' });
+            const seen = new Set();
             definition.nodes.forEach((n, i) => {
-                const li = element('li');
-                const pick = button(`${i + 1}. ${n.title || types[n.type]}`, () => select(n.id));
-                if (n.id === selected) pick.setAttribute('aria-current', 'true');
-                li.append(pick); list.append(li);
+                const name = nodeName(n, i);
+                if (!n.title.trim()) found.push({ level: 'error', node: n.id, text: `${name}: Titel fehlt.` });
+                if (n.type === 'checklist' && !n.checks.length) found.push({ level: 'error', node: n.id, text: `${name}: Checkliste braucht mindestens einen Prüfpunkt.` });
+                if (n.checks.length > 20) found.push({ level: 'error', node: n.id, text: `${name}: höchstens 20 Prüfpunkte.` });
+                if (n.type === 'sms' && !(Number(n.alarm_id) > 0)) found.push({ level: 'error', node: n.id, text: `${name}: SMS-Alarmvorlage wählen.` });
+                if (n.type === 'sms' && Number(n.alarm_id) > 0 && !alarms.some(a => a.id === Number(n.alarm_id))) found.push({ level: 'error', node: n.id, text: `${name}: gewählte SMS-Vorlage ist nicht mehr aktiv.` });
+                if (n.link && !/^https?:\/\/\S+$/i.test(n.link)) found.push({ level: 'error', node: n.id, text: `${name}: Link muss mit http:// oder https:// beginnen.` });
+                if (!Number.isInteger(n.minutes) || n.minutes < 0 || n.minutes > 10080) found.push({ level: 'error', node: n.id, text: `${name}: Zielzeit muss zwischen 0 und 10080 Minuten liegen.` });
+                if (n.dependencies.length > 80) found.push({ level: 'error', node: n.id, text: `${name}: zu viele Voraussetzungen.` });
+                n.dependencies.forEach(edge => {
+                    if (!seen.has(edge.id)) found.push({ level: 'error', node: n.id, text: `${name}: Voraussetzung zeigt auf einen späteren oder gelöschten Schritt.` });
+                    else if (edge.when !== 'always' && byId[edge.id]?.type !== 'decision') found.push({ level: 'error', node: n.id, text: `${name}: Antwort Ja/Nein ist nur bei einer Entscheidung als Voraussetzung möglich.` });
+                });
+                if (i > 0 && !n.dependencies.length) found.push({ level: 'hint', node: n.id, text: `${name}: hat keine Voraussetzung und startet sofort parallel zum ersten Schritt.` });
+                if (n.type === 'decision' && !definition.nodes.some(m => m.dependencies.some(e => e.id === n.id))) found.push({ level: 'hint', node: n.id, text: `${name}: Auf die Entscheidung folgt kein Schritt.` });
+                seen.add(n.id);
             });
+            issues = found;
+            const errors = found.filter(f => f.level === 'error').length;
+            const hints = found.length - errors;
+            const summary = errors ? `${errors} Problem${errors === 1 ? '' : 'e'}` : 'Keine Probleme';
+            setText('[data-ep-issue-count]', summary + (hints ? ` · ${hints} Hinweis${hints === 1 ? '' : 'e'}` : ''));
+            $$('.ep-statusbar__issues').forEach(b => b.classList.toggle('has-errors', errors > 0));
+            const panel = $('[data-ep-issues]');
+            const list = $('[data-ep-issue-list]');
+            list.replaceChildren();
+            found.forEach(issue => {
+                const li = element('li', undefined, 'ep-issue ep-issue--' + issue.level);
+                if (issue.node) {
+                    const b = element('button', issue.text, 'ep-issue__link'); b.type = 'button';
+                    b.addEventListener('click', () => { planPanelPinned = false; select(issue.node); centerSelected(); });
+                    li.append(b);
+                } else li.append(element('span', issue.text));
+                list.append(li);
+            });
+            if (!found.length) list.append(element('li', 'Alles vollständig. Der Entwurf kann gespeichert werden.', 'ep-issue ep-issue--ok'));
+            panel.hidden = false;
+            renderList(); refreshGraph();
+            if (announce) message.textContent = errors ? `Prüfung: ${summary}. Betroffene Schritte sind markiert.` : 'Prüfung abgeschlossen: keine Probleme gefunden.';
+            return errors === 0;
         }
+        $$('[data-ep-validate]').forEach(b => b.addEventListener('click', () => { validate(true); switchTab('review'); }));
+        const issueMap = () => {
+            const map = new Map();
+            (issues || []).forEach(issue => { if (issue.node && (!map.has(issue.node) || issue.level === 'error')) map.set(issue.node, issue.level); });
+            return map;
+        };
+
+        // ---- Diagramm, Zoom, Verschieben ----
+        const matchesFilter = n => !filter || [n.title, n.owner, n.text, types[n.type]].some(v => (v || '').toLowerCase().includes(filter));
+        function applyZoom() {
+            const svg = diagramHost.querySelector('svg');
+            if (svg) {
+                const [, , w, h] = svg.getAttribute('viewBox').split(' ').map(Number);
+                svg.setAttribute('width', String(Math.round(w * zoom)));
+                svg.setAttribute('height', String(Math.round(h * zoom)));
+            }
+            setText('[data-ep-zoom-level]', Math.round(zoom * 100) + ' %');
+        }
+        function refreshGraph() {
+            const marks = issueMap();
+            diagram(diagramHost, definition, selected, id => { planPanelPinned = false; select(id); }, null, (node, group) => {
+                if (marks.has(node.id)) group.classList.add('ep-graph-node--' + marks.get(node.id));
+                if (!matchesFilter(node)) group.classList.add('is-dimmed');
+            });
+            applyZoom();
+        }
+        function setZoom(next, origin) {
+            const before = zoom;
+            zoom = Math.min(2.5, Math.max(0.3, Math.round(next * 100) / 100));
+            if (zoom === before) return;
+            const rect = canvas.getBoundingClientRect();
+            const ox = origin ? origin.x - rect.left : rect.width / 2;
+            const oy = origin ? origin.y - rect.top : rect.height / 2;
+            const px = (canvas.scrollLeft + ox) / before, py = (canvas.scrollTop + oy) / before;
+            applyZoom();
+            canvas.scrollLeft = px * zoom - ox; canvas.scrollTop = py * zoom - oy;
+        }
+        function fitZoom() {
+            const svg = diagramHost.querySelector('svg');
+            if (!svg) return;
+            const [, , w, h] = svg.getAttribute('viewBox').split(' ').map(Number);
+            setZoom(Math.min((canvas.clientWidth - 32) / w, (canvas.clientHeight - 32) / h, 1.5));
+            canvas.scrollTo(0, 0);
+        }
+        function centerSelected() {
+            const rect = diagramHost.querySelector('.ep-graph-node.is-selected rect');
+            if (!rect) return;
+            const x = (Number(rect.getAttribute('x')) + 120) * zoom, y = (Number(rect.getAttribute('y')) + 46) * zoom;
+            canvas.scrollTo({ left: x - canvas.clientWidth / 2, top: y - canvas.clientHeight / 2, behavior: 'smooth' });
+        }
+        $$('[data-ep-zoom]').forEach(b => b.addEventListener('click', () => {
+            const mode = b.dataset.epZoom;
+            if (mode === 'in') setZoom(zoom * 1.2); else if (mode === 'out') setZoom(zoom / 1.2);
+            else if (mode === 'reset') setZoom(1); else if (mode === 'fit') fitZoom(); else centerSelected();
+        }));
+        canvas.addEventListener('wheel', event => {
+            if (!event.ctrlKey && !event.metaKey) return;
+            event.preventDefault();
+            setZoom(zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1), { x: event.clientX, y: event.clientY });
+        }, { passive: false });
+        let pan = null;
+        canvas.addEventListener('pointerdown', event => {
+            if (event.button !== 0 || event.target.closest('.ep-graph-node')) return;
+            pan = { x: event.clientX, y: event.clientY, left: canvas.scrollLeft, top: canvas.scrollTop, id: event.pointerId };
+            canvas.setPointerCapture(event.pointerId); canvas.classList.add('is-panning');
+        });
+        canvas.addEventListener('pointermove', event => {
+            if (!pan || pan.id !== event.pointerId) return;
+            canvas.scrollLeft = pan.left - (event.clientX - pan.x); canvas.scrollTop = pan.top - (event.clientY - pan.y);
+        });
+        const endPan = event => { if (pan && pan.id === event.pointerId) { pan = null; canvas.classList.remove('is-panning'); } };
+        canvas.addEventListener('pointerup', endPan); canvas.addEventListener('pointercancel', endPan);
+        canvas.addEventListener('click', event => { if (!event.target.closest('.ep-graph-node') && !definition.nodes.length) showPlanPanel(); });
+        // Bausteine per Drag-and-Drop aus der Palette in das Diagramm ziehen (= wie 1-Klick-Hinzufügen).
+        $$('[data-ep-drag-type]').forEach(b => b.addEventListener('dragstart', event => {
+            event.dataTransfer.setData('text/plain', b.dataset.epDragType); event.dataTransfer.effectAllowed = 'copy';
+        }));
+        canvas.addEventListener('dragover', event => { if ([...event.dataTransfer.types].includes('text/plain')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; canvas.classList.add('is-dropping'); } });
+        canvas.addEventListener('dragleave', () => canvas.classList.remove('is-dropping'));
+        canvas.addEventListener('drop', event => {
+            event.preventDefault(); canvas.classList.remove('is-dropping');
+            const type = event.dataTransfer.getData('text/plain');
+            if (types[type]) addNode(type);
+        });
+
+        // ---- Schritte ----
+        const makeNode = type => ({ id: 'n' + crypto.randomUUID().replaceAll('-', ''), type, title: '', text: '', owner: '', phone: '', link: '', minutes: 0, checks: type === 'checklist' ? ['Prüfpunkt'] : [], dependencies: [], join: 'all', alarm_id: 0 });
+        const current = () => definition.nodes.find(n => n.id === selected);
+        function select(id) { selected = id; render(); }
+        function showPlanPanel() { planPanelPinned = true; render(); title.focus(); }
+        $('[data-ep-show-plan]').addEventListener('click', showPlanPanel);
+        function addNode(type) {
+            if (definition.nodes.length >= 80) { message.textContent = 'Maximal 80 Schritte je Plan.'; return; }
+            snapshot();
+            const node = makeNode(type);
+            if (definition.nodes.length && $('[data-ep-autolink]').checked) node.dependencies = [{ id: definition.nodes.at(-1).id, when: 'always' }];
+            definition.nodes.push(node); selected = node.id; planPanelPinned = false; mark(); render();
+            fields.querySelector('input')?.focus();
+            centerSelected();
+        }
+        $$('[data-ep-add-type]').forEach(b => b.addEventListener('click', () => addNode(b.dataset.epAddType)));
         function move(offset) {
             const index = definition.nodes.findIndex(n => n.id === selected), target = index + offset;
-            if (target < 0 || target >= definition.nodes.length) return;
+            if (index < 0 || target < 0 || target >= definition.nodes.length) return;
             const copy = definition.nodes.slice();
             [copy[index], copy[target]] = [copy[target], copy[index]];
             const seen = new Set();
             const valid = copy.every(n => { const ok = n.dependencies.every(e => seen.has(e.id)); seen.add(n.id); return ok; });
-            if (!valid) { message.textContent = 'Verschieben würde eine Verbindung umkehren. Zuerst die betreffenden Vorgänger anpassen.'; return; }
-            definition.nodes = copy; mark(); render();
+            if (!valid) { message.textContent = 'Verschieben würde eine Verbindung umkehren. Zuerst die betreffenden Voraussetzungen anpassen.'; return; }
+            snapshot(); definition.nodes = copy; mark(); render();
         }
-        function render() {
-            renderList(); refreshGraph(); fields.replaceChildren();
-            const node = definition.nodes.find(n => n.id === selected);
-            if (!node) { fields.append(element('p', 'Wählen Sie ein Element.')); return; }
-            fields.append(element('p', types[node.type], 'ep-inspector-type'));
-            inputField('Titel / Frage', 'title', false, 190);
+        $$('[data-ep-move]').forEach(b => b.addEventListener('click', () => move(Number(b.dataset.epMove))));
+        function duplicate() {
+            const node = current(); if (!node) return;
+            if (definition.nodes.length >= 80) { message.textContent = 'Maximal 80 Schritte je Plan.'; return; }
+            snapshot();
+            const copy = structuredClone(node); copy.id = makeNode(node.type).id; copy.title = (copy.title + ' (Kopie)').slice(0, 190);
+            definition.nodes.splice(definition.nodes.indexOf(node) + 1, 0, copy); selected = copy.id; mark(); render();
+        }
+        function remove() {
+            const node = current(); if (!node) return;
+            if (!window.confirm('Schritt und alle zugehörigen Verbindungen löschen? Nachfolger können dadurch zu Startpunkten werden.')) return;
+            snapshot();
+            const index = definition.nodes.indexOf(node);
+            definition.nodes = definition.nodes.filter(n => n.id !== node.id);
+            definition.nodes.forEach(n => { n.dependencies = n.dependencies.filter(e => e.id !== node.id); });
+            selected = (definition.nodes[index] || definition.nodes[index - 1])?.id; mark(); render();
+        }
+        $('[data-ep-duplicate]').addEventListener('click', duplicate);
+        $('[data-ep-delete]').addEventListener('click', remove);
+        $('[data-ep-link-previous]').addEventListener('click', () => {
+            const node = current(); const index = definition.nodes.indexOf(node);
+            if (!node || index < 1) { message.textContent = 'Der erste Schritt hat keinen Vorgänger.'; return; }
+            const previous = definition.nodes[index - 1];
+            if (node.dependencies.some(e => e.id === previous.id)) { message.textContent = 'Der vorherige Schritt ist bereits Voraussetzung.'; return; }
+            snapshot(); node.dependencies.push({ id: previous.id, when: 'always' }); mark(); render();
+        });
+        $('[data-ep-unlink-all]').addEventListener('click', () => {
+            const node = current(); if (!node || !node.dependencies.length) return;
+            snapshot(); node.dependencies = []; mark(); render();
+        });
+        $$('[data-ep-join]').forEach(b => b.addEventListener('click', () => {
+            const node = current(); if (!node || node.join === b.dataset.epJoin) return;
+            snapshot(); node.join = b.dataset.epJoin; mark(); render();
+        }));
+
+        // ---- Suche ----
+        const search = $('[data-ep-search]');
+        search.addEventListener('input', () => {
+            filter = search.value.trim().toLowerCase();
+            const hits = definition.nodes.filter(matchesFilter).length;
+            $('[data-ep-search-result]').textContent = filter ? `${hits} von ${definition.nodes.length} Schritten passen` : '';
+            renderList(); refreshGraph();
+        });
+
+        // ---- Eigenschaften (Inspector) ----
+        function inputField(label, key, multiline, max, hint) {
+            const node = current();
+            const wrapper = element('label', label);
+            const input = element(multiline ? 'textarea' : 'input');
+            input.value = node[key];
+            if (multiline) input.rows = 3;
+            if (max) input.maxLength = max;
+            if (key === 'minutes') { input.type = 'number'; input.min = '0'; input.max = '10080'; input.step = '1'; }
+            if (key === 'link') { input.type = 'url'; input.placeholder = 'https://'; }
+            if (key === 'phone') input.type = 'tel';
+            input.addEventListener('input', () => {
+                snapshot(node.id + ':' + key);
+                node[key] = key === 'minutes' ? Number(input.value) : input.value;
+                mark(); refreshGraph();
+                if (key === 'title') renderList();
+            });
+            wrapper.append(input);
+            if (hint) wrapper.append(element('small', hint, 'ep-hint'));
+            fields.append(wrapper);
+        }
+        function button(text, fn, className) {
+            const b = element('button', text, className || 'button button--ghost'); b.type = 'button'; b.addEventListener('click', fn); return b;
+        }
+        function renderList() {
+            const list = $('[data-ep-list]'); list.replaceChildren();
+            const marks = issueMap();
+            definition.nodes.forEach((n, i) => {
+                const li = element('li');
+                if (!matchesFilter(n)) li.classList.add('is-hidden');
+                const pick = element('button', undefined, 'ep-element-list__item ep-element-list__item--' + n.type); pick.type = 'button';
+                pick.append(element('span', String(i + 1), 'ep-element-list__no'));
+                const text = element('span', undefined, 'ep-element-list__text');
+                text.append(element('strong', n.title || `(${types[n.type]} ohne Titel)`), element('small', types[n.type] + (n.owner ? ' · ' + n.owner : '')));
+                pick.append(text);
+                if (marks.has(n.id)) pick.append(element('span', marks.get(n.id) === 'error' ? '!' : 'i', 'ep-element-list__flag ep-element-list__flag--' + marks.get(n.id)));
+                if (n.id === selected && !planPanelPinned) pick.setAttribute('aria-current', 'true');
+                pick.addEventListener('click', () => { planPanelPinned = false; select(n.id); centerSelected(); });
+                li.append(pick); list.append(li);
+            });
+            setText('[data-ep-count]', `${definition.nodes.length} / 80`);
+        }
+        function renderInspector() {
+            const node = planPanelPinned ? null : current();
+            $('[data-ep-plan-panel]').hidden = !!node;
+            $('[data-ep-node-panel]').hidden = !node;
+            const hasNode = !!current();
+            ['[data-ep-duplicate]', '[data-ep-delete]', '[data-ep-move]', '[data-ep-link-previous]', '[data-ep-unlink-all]', '[data-ep-join]'].forEach(s => $$(s).forEach(b => { b.disabled = !hasNode; }));
+            $$('[data-ep-join]').forEach(b => b.setAttribute('aria-pressed', String(!!current() && current().join === b.dataset.epJoin)));
+            fields.replaceChildren();
+            if (!node) return;
+            const index = definition.nodes.indexOf(node);
+            const head = element('p', undefined, 'ep-inspector-type');
+            head.append(element('span', `Schritt ${index + 1} · ${types[node.type]}`));
+            fields.append(head);
+            inputField(node.type === 'decision' ? 'Frage (Ja / Nein)' : 'Titel des Schritts', 'title', false, 190);
             inputField('Anweisung / Erläuterung', 'text', true, 4000);
-            inputField('Zuständigkeit / Funktion', 'owner', false, 190);
+            inputField('Zuständigkeit / Funktion', 'owner', false, 190, 'z. B. Einsatzleitung, Pforte');
             inputField('Telefon / Durchwahl', 'phone', false, 100);
-            inputField('Informationslink (https://...)', 'link', false, 1000);
-            inputField('Zielzeit in Minuten ab Ereignisstart (0 = keine)', 'minutes', false);
+            inputField('Informationslink', 'link', false, 1000, 'Nur vollständige Adressen mit http:// oder https://');
+            inputField('Zielzeit in Minuten ab Ereignisstart', 'minutes', false, 0, '0 = keine Zielzeit, höchstens 10080 (7 Tage)');
             if (node.type === 'checklist') {
-                const label = element('label', 'Prüfpunkte (eine Zeile pro Punkt, maximal 20)');
+                const label = element('label', 'Prüfpunkte (eine Zeile pro Punkt, höchstens 20)');
                 const input = element('textarea'); input.rows = 5; input.value = node.checks.join('\n');
-                input.addEventListener('input', () => { node.checks = input.value.split('\n').map(s => s.trim()).filter(Boolean); mark(); });
+                input.addEventListener('input', () => { snapshot(node.id + ':checks'); node.checks = input.value.split('\n').map(s => s.trim()).filter(Boolean); mark(); });
                 label.append(input); fields.append(label);
             }
             if (node.type === 'sms') {
@@ -202,60 +463,74 @@
                     const alarm = alarms.find(a => a.id === Number(selectAlarm.value));
                     preview.textContent = alarm ? `An ${alarm.target || 'Ziel fehlt'}: ${alarm.text || 'Text fehlt'}` : 'Keine aktive Vorlage gewählt. Ein Administrator pflegt Vorlagen unter Navigation / Alarmierung.';
                 };
-                selectAlarm.addEventListener('change', () => { node.alarm_id = Number(selectAlarm.value); mark(); show(); });
+                selectAlarm.addEventListener('change', () => { snapshot(); node.alarm_id = Number(selectAlarm.value); mark(); show(); });
                 show(); label.append(selectAlarm); fields.append(label, preview);
-                fields.append(element('p', 'Ziel und Nachricht werden beim Speichern in den Plan kopiert. Im Einsatz ist für diese SMS eine eigene Bestätigung nötig.'));
+                fields.append(element('p', 'Ziel und Nachricht werden beim Speichern in den Plan kopiert. Im Einsatz ist für diese SMS eine eigene Bestätigung nötig.', 'ep-hint'));
             }
-            const edges = element('fieldset');
-            edges.append(element('legend', 'Vorgänger / Verbindungen'));
-            const prior = definition.nodes.slice(0, definition.nodes.indexOf(node));
-            if (!prior.length) edges.append(element('p', 'Startpunkt: keine Vorgänger.'));
-            prior.forEach(previous => {
-                const row = element('label', undefined, 'ep-dependency');
-                const check = element('input'); check.type = 'checkbox';
+
+            // Voraussetzungen: Checkbox je vorherigem Schritt, Bedingung bei Entscheidungen, UND/ODER als Schalter.
+            const edges = element('fieldset', undefined, 'ep-deps');
+            edges.append(element('legend', 'Voraussetzungen (vorherige Schritte)'));
+            const prior = definition.nodes.slice(0, index);
+            const summary = element('p', undefined, 'ep-deps__summary');
+            const updateSummary = () => {
+                if (!node.dependencies.length) { summary.textContent = index === 0 ? 'Startpunkt: Dieser Schritt beginnt sofort.' : 'Keine Voraussetzung: Dieser Schritt beginnt sofort – parallel zum Start.'; return; }
+                const names = node.dependencies.map(e => { const p = definition.nodes.find(n => n.id === e.id); const i = definition.nodes.indexOf(p); return `${i + 1}. ${p?.title || types[p?.type] || '?'}${e.when === 'yes' ? ' = Ja' : e.when === 'no' ? ' = Nein' : ''}`; });
+                summary.textContent = node.dependencies.length === 1 ? `Startet, sobald erledigt: ${names[0]}` : `Startet, sobald ${node.join === 'any' ? 'MINDESTENS EINE' : 'ALLE'} der Voraussetzungen erledigt ${node.join === 'any' ? 'ist' : 'sind'}: ${names.join(' · ')}`;
+            };
+            if (!prior.length) edges.append(element('p', 'Erster Schritt: Es gibt noch keine vorherigen Schritte, die Voraussetzung sein könnten.', 'ep-hint'));
+            prior.forEach((previous, i) => {
+                const row = element('div', undefined, 'ep-dependency');
+                const check = element('input'); check.type = 'checkbox'; check.id = 'dep-' + previous.id;
                 const edge = node.dependencies.find(e => e.id === previous.id); check.checked = !!edge;
-                row.append(check, document.createTextNode(previous.title || types[previous.type]));
+                const label = element('label', `${i + 1}. ${previous.title || types[previous.type]}`); label.htmlFor = check.id;
+                label.prepend(check);
+                row.append(label);
                 const condition = element('select');
                 const options = previous.type === 'decision' ? { always: 'Erledigt (beliebige Antwort)', yes: 'Antwort Ja', no: 'Antwort Nein' } : { always: 'Erledigt' };
                 Object.entries(options).forEach(([value, text]) => { const option = element('option', text); option.value = value; condition.append(option); });
-                condition.value = edge?.when || 'always'; condition.disabled = !check.checked;
+                condition.value = edge?.when || 'always'; condition.disabled = !check.checked; condition.setAttribute('aria-label', 'Bedingung');
+                if (previous.type !== 'decision') condition.hidden = true;
                 const change = () => {
+                    snapshot();
                     node.dependencies = node.dependencies.filter(e => e.id !== previous.id);
                     if (check.checked) node.dependencies.push({ id: previous.id, when: condition.value });
-                    condition.disabled = !check.checked; mark(); refreshGraph();
+                    condition.disabled = !check.checked; row.classList.toggle('is-active', check.checked);
+                    mark(); refreshGraph(); updateSummary(); joinWrap.hidden = node.dependencies.length < 2;
                 };
+                row.classList.toggle('is-active', check.checked);
                 check.addEventListener('change', change); condition.addEventListener('change', change);
                 row.append(condition); edges.append(row);
             });
-            const joinLabel = element('label', 'Freigabe der Maßnahme');
-            const join = element('select');
-            [['all', 'Alle Vorgänger (UND)'], ['any', 'Mindestens ein Vorgänger (ODER)']].forEach(([value, text]) => { const o = element('option', text); o.value = value; join.append(o); });
-            join.value = node.join;
-            join.addEventListener('change', () => { node.join = join.value; mark(); });
-            joinLabel.append(join); edges.append(joinLabel); fields.append(edges);
-            const actions = element('div', undefined, 'toolbar');
-            actions.append(button('↑ Nach oben', () => move(-1)), button('↓ Nach unten', () => move(1)));
-            actions.append(button('Duplizieren', () => {
-                if (definition.nodes.length >= 80) { message.textContent = 'Maximal 80 Elemente.'; return; }
-                const copy = structuredClone(node); copy.id = makeNode(node.type).id; copy.title = (copy.title + ' (Kopie)').slice(0, 190);
-                definition.nodes.splice(definition.nodes.indexOf(node) + 1, 0, copy); selected = copy.id; mark(); render();
-            }));
-            actions.append(button('Element löschen', () => {
-                if (!window.confirm('Element und alle zugehörigen Verbindungen löschen? Nachfolger können dadurch zu Startpunkten werden.')) return;
-                definition.nodes = definition.nodes.filter(n => n.id !== node.id);
-                definition.nodes.forEach(n => { n.dependencies = n.dependencies.filter(e => e.id !== node.id); });
-                selected = definition.nodes[0]?.id; mark(); render();
-            }));
+            const joinWrap = element('div', undefined, 'ep-join');
+            joinWrap.append(element('span', 'Mehrere Voraussetzungen:'));
+            const seg = element('div', undefined, 'ep-segment'); seg.setAttribute('role', 'radiogroup'); seg.setAttribute('aria-label', 'Verknüpfung');
+            [['all', 'Alle (UND)'], ['any', 'Eine genügt (ODER)']].forEach(([value, text]) => {
+                const b = element('button', text); b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(node.join === value));
+                b.addEventListener('click', () => { if (node.join === value) return; snapshot(); node.join = value; mark(); render(); });
+                seg.append(b);
+            });
+            joinWrap.append(seg, element('small', 'ODER führt Ja/Nein-Zweige wieder zusammen, sonst entfällt der Schritt, sobald ein Zweig entfällt.', 'ep-hint'));
+            joinWrap.hidden = node.dependencies.length < 2;
+            edges.append(summary, joinWrap); fields.append(edges);
+            updateSummary();
+
+            const followers = definition.nodes.filter(n => n.dependencies.some(e => e.id === node.id));
+            const next = element('p', undefined, 'ep-hint');
+            next.textContent = followers.length ? 'Danach folgt: ' + followers.map(n => `${definition.nodes.indexOf(n) + 1}. ${n.title || types[n.type]}`).join(' · ') : 'Danach folgt bisher kein Schritt.';
+            fields.append(next);
+            const actions = element('div', undefined, 'ep-inspector__actions');
+            actions.append(button('↑ Nach oben', () => move(-1)), button('↓ Nach unten', () => move(1)), button('Duplizieren', duplicate), button('Löschen', remove, 'button button--danger'));
             fields.append(actions);
         }
-        editor.querySelector('[data-ep-add]').addEventListener('click', () => {
-            if (definition.nodes.length >= 80) { message.textContent = 'Maximal 80 Elemente.'; return; }
-            const node = makeNode(editor.querySelector('[data-ep-add-type]').value);
-            if (definition.nodes.length) node.dependencies = [{ id: definition.nodes.at(-1).id, when: 'always' }];
-            definition.nodes.push(node); selected = node.id; mark(); render();
-        });
-        editor.querySelectorAll('[data-ep-template]').forEach(b => b.addEventListener('click', () => {
-            if (definition.nodes.length && !window.confirm('Aktuellen Entwurf durch Beispielvorlage ersetzen?')) return;
+        function render() { renderList(); refreshGraph(); renderInspector(); }
+
+        // ---- Plan-Angaben und Vorlagen ----
+        title.addEventListener('input', () => { snapshot('plan:title'); definition.title = title.value; mark(); });
+        description.addEventListener('input', () => { snapshot('plan:description'); definition.description = description.value; mark(); });
+        $$('[data-ep-template]').forEach(b => b.addEventListener('click', () => {
+            if (definition.nodes.length && !window.confirm('Aktuellen Entwurf durch die Beispielvorlage ersetzen? (Mit Rückgängig wiederherstellbar)')) return;
+            snapshot();
             const fire = b.dataset.epTemplate === 'fire';
             const content = fire ? [
                 ['note', 'Eigenschutz und Notruf', 'Eigenschutz beachten. Örtlichen Notruf absetzen und Lage beschreiben.', 'Alle'],
@@ -275,43 +550,101 @@
             const checklist = nodes.find(n => n.type === 'checklist');
             checklist.checks = fire ? ['Geschäftsführer alarmiert', 'Verwaltungsdirektor alarmiert', 'Pflegedirektion alarmiert'] : ['Aufnahme vorbereitet', 'Material bereitgestellt', 'Bereiche informiert'];
             definition = { title: fire ? 'Brandfall' : 'MANF', description: 'BEISPIEL – vor Veröffentlichung an örtliche Vorgaben anpassen und fachlich freigeben.', nodes };
-            title.value = definition.title; description.value = definition.description; selected = nodes[0].id; mark(); render();
+            title.value = definition.title; description.value = definition.description; selected = nodes[0].id; planPanelPinned = false; mark(); render(); fitZoom();
         }));
-        title.addEventListener('input', () => { definition.title = title.value; mark(); });
-        description.addEventListener('input', () => { definition.description = description.value; mark(); });
+
+        // ---- Ribbon-Reiter, Bereiche, Dialoge ----
+        const tabs = $$('[data-ep-tab]');
+        function switchTab(name) {
+            tabs.forEach(tab => {
+                const active = tab.dataset.epTab === name;
+                tab.setAttribute('aria-selected', String(active)); tab.tabIndex = active ? 0 : -1;
+                $(`[data-ep-tabpanel="${tab.dataset.epTab}"]`).hidden = !active;
+            });
+        }
+        tabs.forEach((tab, i) => {
+            tab.addEventListener('click', () => switchTab(tab.dataset.epTab));
+            tab.addEventListener('keydown', event => {
+                const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+                if (!delta) return;
+                event.preventDefault();
+                const next = tabs[(i + delta + tabs.length) % tabs.length];
+                switchTab(next.dataset.epTab); next.focus();
+            });
+        });
+        $$('[data-ep-toggle-panel]').forEach(b => b.addEventListener('click', () => {
+            const hidden = editor.classList.toggle('ep-hide-' + b.dataset.epTogglePanel);
+            b.setAttribute('aria-pressed', String(!hidden));
+        }));
+        $$('[data-ep-open-dialog]').forEach(b => b.addEventListener('click', () => $(`[data-ep-dialog="${b.dataset.epOpenDialog}"]`).showModal()));
+        $$('[data-ep-close-dialog]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+        $$('dialog').forEach(d => d.addEventListener('click', event => { if (event.target === d) d.close(); }));
+        $('[data-ep-close]').addEventListener('click', event => {
+            if (dirty && !window.confirm('Es gibt ungespeicherte Änderungen. Editor trotzdem schließen?')) { event.preventDefault(); return; }
+            dirty = false;
+            const fallback = event.currentTarget.href;
+            // Als eigener Tab geöffnet: Tab schließen; sonst (oder falls der Browser das verweigert) zur Übersicht.
+            if (window.opener || window.history.length <= 1) { event.preventDefault(); window.close(); setTimeout(() => { location.href = fallback; }, 250); }
+        });
+
+        // ---- Freigabe-Formulare: nur für den gespeicherten Entwurf ----
         document.querySelectorAll('[data-ep-review-form]').forEach(form => form.addEventListener('submit', event => {
             if (dirty) {
                 event.preventDefault();
                 message.textContent = 'Bitte Änderungen zuerst speichern. Der Freigabeantrag gilt nur für den gespeicherten Entwurf.';
-                message.scrollIntoView({ block: 'center' });
+                form.closest('dialog')?.close();
             }
         }));
-        editor.querySelector('[data-ep-save]').addEventListener('click', async event => {
-            const button = event.currentTarget;
+
+        // ---- Speichern (POST /admin/notfallplan/speichern, optimistische Sperre über revision) ----
+        let saving = false;
+        async function save() {
+            if (saving) return;
+            if (issues === null) validate(false);
             const data = new FormData();
-            data.set('_token', editor.querySelector('[name="_token"]').value);
+            data.set('_token', $('[name="_token"]').value);
             data.set('id', initial.id); data.set('revision', initial.revision);
             data.set('definition', JSON.stringify(definition));
-            button.disabled = true; message.textContent = 'Wird gespeichert …';
+            saving = true; message.textContent = 'Wird gespeichert …';
             // Keep editing disabled while the submitted revision is being committed.
-            const controls = [...editor.querySelectorAll('input, textarea, select, button')].filter(control => !control.disabled);
+            const controls = $$('input, textarea, select, button').filter(control => !control.disabled);
             controls.forEach(control => { control.disabled = true; });
             try {
                 const result = await post(editor.dataset.saveUrl, data);
                 initial.id = result.id; initial.revision = result.revision; dirty = false;
+                $('[data-ep-dirty-flag]').hidden = true;
                 history.replaceState(null, '', '/admin/notfallplan/bearbeiten?id=' + result.id);
-                message.textContent = result.message + ' Version ' + result.revision;
-                editor.querySelector('[data-ep-review-status]').textContent = 'Entwurf – zweite Freigabe erforderlich';
+                message.textContent = result.message + ' Version ' + result.revision + '.';
+                setText('[data-ep-review-status]', 'Entwurf – zweite Freigabe erforderlich');
+                setText('[data-ep-revision]', String(result.revision));
                 const panel = document.querySelector('[data-ep-review-panel]');
-                panel.replaceChildren(element('h2', 'Vier-Augen-Freigabe'));
-                const link = element('a', 'Gespeicherten Entwurf öffnen und Freigabe anfordern', 'button button--primary');
+                panel.replaceChildren(element('p', 'Der Entwurf wurde gespeichert. Für die Freigabe muss der gespeicherte Stand neu geladen werden.'));
+                const link = element('a', 'Gespeicherten Entwurf neu laden und Freigabe anfordern', 'button button--primary');
                 link.href = '/admin/notfallplan/bearbeiten?id=' + result.id;
                 panel.append(link);
             } catch (error) { message.textContent = error.message + ' Der Entwurf bleibt hier erhalten.'; }
-            finally { button.disabled = false; controls.forEach(control => { control.disabled = false; }); }
+            finally { saving = false; controls.forEach(control => { control.disabled = false; }); updateHistoryButtons(); renderInspector(); }
+        }
+        $$('[data-ep-save]').forEach(b => b.addEventListener('click', save));
+
+        // ---- Tastenkürzel ----
+        document.addEventListener('keydown', event => {
+            const mod = event.ctrlKey || event.metaKey;
+            const key = event.key.toLowerCase();
+            const typing = /^(input|textarea|select)$/i.test(document.activeElement?.tagName || '');
+            if (mod && key === 's') { event.preventDefault(); save(); }
+            else if (mod && !event.shiftKey && key === 'z') { if (typing) return; event.preventDefault(); undo(); }
+            else if (mod && (key === 'y' || (event.shiftKey && key === 'z'))) { if (typing) return; event.preventDefault(); redo(); }
+            else if (mod && (key === '+' || key === '=')) { event.preventDefault(); setZoom(zoom * 1.2); }
+            else if (mod && key === '-') { event.preventDefault(); setZoom(zoom / 1.2); }
+            else if (mod && key === '0') { event.preventDefault(); setZoom(1); }
+            else if (event.altKey && event.shiftKey && key === 'v') { event.preventDefault(); previewLinks[0].click(); }
+            else if ((key === 'delete' || key === 'backspace') && !typing && canvas.contains(document.activeElement)) { event.preventDefault(); remove(); }
         });
         window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
         render();
+        updateHistoryButtons();
+        if (definition.nodes.length) requestAnimationFrame(fitZoom);
     }
 
     function renderStaticDiagram(root) {

@@ -3,7 +3,11 @@
 ## Zweck und Grenzen
 
 Der mittig platzierte rote **Notfallplan**-Button öffnet freigegebene, interaktive
-Abläufe. Der Editor benötigt keine Programmierkenntnisse. Er unterstützt Maßnahmen,
+Abläufe. Der Editor benötigt keine Programmierkenntnisse; er öffnet sich in einem
+eigenen Browser-Tab im Stil einer Office-Anwendung (Menüband mit Reitern, Schritte
+links, Diagramm in der Mitte, Eigenschaften rechts, Statusleiste) und bietet
+Rückgängig/Wiederholen, Zoom, Suche und eine Prüfung vor dem Speichern.
+Er unterstützt Maßnahmen,
 Kontakte, Hinweise, Checklisten, Ja/Nein-Entscheidungen und explizit bestätigte
 SMS-Alarmierungen. Automatisches Diagrammlayout, parallele Startpunkte,
 UND-/ODER-Verbindungen, Zuständigkeiten, Informationslinks und Zielzeiten helfen
@@ -100,7 +104,7 @@ erhalten und muss nach Abgleich erneut gespeichert werden.
 
 ### Optionale Live-Vorschau
 
-**Live-Vorschau in neuem Tab** öffnet den aktuellen, auch ungespeicherten Entwurf
+**Live-Vorschau** (Titelleiste des Editors) öffnet den aktuellen, auch ungespeicherten Entwurf
 in der Nutzeransicht. Den Tab bei Bedarf auf einen zweiten Monitor ziehen.
 Der Editor bleibt geöffnet; er wird weder neu geladen noch automatisch gespeichert.
 Auch neue Pläne und noch leere Bausteine lassen sich vor dem ersten Speichern ansehen.

@@ -9,6 +9,7 @@ use App\Services\Storage\Agent\Metrics;
 use App\Services\Storage\Agent\Mounter;
 use App\Services\Storage\Agent\PathRules;
 use App\Services\Storage\Agent\Pressure;
+use App\Services\Storage\Agent\RecallBalancer;
 use App\Services\Storage\Agent\Recaller;
 use App\Services\Storage\Agent\RedisCoordinator;
 use App\Services\Storage\Agent\SyncEngine;
@@ -698,4 +699,135 @@ Runner::test('Storage-Katalog: alter SQLite-Katalog wird uebernommen', static fu
     Assert::null($catalog->find(PathRules::SOURCE_NEXTCLOUD_DATA, 'neu.txt'));
     Assert::same('4', $catalog->meta('generation'));
     Assert::true(str_starts_with($catalog->meta('legacy_import'), 'done'));
+});
+
+Runner::test('Rueckholung active-active: Bewertung nach Datenrate, IOPS, Latenz und laufenden Rueckholungen', static function (): void {
+    $tier = static fn (int $id, int $bps, float $iops, ?float $latency, bool $primary = false): array => ['id' => $id, 'primary' => $primary, 'bps' => $bps, 'iops' => $iops, 'latency_ms' => $latency];
+
+    // Primaeres Ziel stark ausgelastet: das andere wird bevorzugt.
+    $order = RecallBalancer::rank([$tier(1, 200 * 1048576, 900.0, 5.0, true), $tier(2, 0, 0.0, 5.0)]);
+    Assert::same([2, 1], array_column($order, 'id'));
+    // Gleiche Last, aber deutlich hoehere Latenz.
+    Assert::same([2, 1], array_column(RecallBalancer::rank([$tier(1, 0, 0.0, 80.0), $tier(2, 0, 0.0, 4.0)]), 'id'));
+    // Ohne Messung zaehlt die Latenz schlechter als die des langsamsten gemessenen Ziels.
+    Assert::same([2, 1], array_column(RecallBalancer::rank([$tier(1, 0, 0.0, null), $tier(2, 0, 0.0, 30.0)]), 'id'));
+    // Gleichstand: primaeres zuerst.
+    Assert::same([1, 2], array_column(RecallBalancer::rank([$tier(2, 0, 0.0, 5.0), $tier(1, 0, 0.0, 5.0, true)]), 'id'));
+    // Laufende Rueckholungen verteilen gleichzeitige Anfragen.
+    Assert::same([2, 1], array_column(RecallBalancer::rank([$tier(1, 0, 0.0, 5.0, true), $tier(2, 0, 0.0, 5.0)], [1 => 1]), 'id'));
+    // Leerlaufrauschen (unter den Mindestwerten) entscheidet nicht allein.
+    $order = RecallBalancer::rank([$tier(1, 1048576, 2.0, 5.0, true), $tier(2, 0, 0.0, 5.0)]);
+    Assert::true($order[1]['score'] - $order[0]['score'] < 0.05);
+});
+
+Runner::test('Rueckholung active-active: zuletzt verwendetes Ziel setzt aus, ausser die Alternative ist zu stark ausgelastet', static function (): void {
+    $tier = static fn (int $id, int $bps, float $latency, bool $primary = false): array => ['id' => $id, 'primary' => $primary, 'bps' => $bps, 'iops' => 0.0, 'latency_ms' => $latency];
+
+    // Ziel 1 waere besser, wurde aber zuletzt verwendet: Ziel 2 kommt zum Zug.
+    Assert::same([2, 1], array_column(RecallBalancer::rank([$tier(1, 0, 5.0, true), $tier(2, 10 * 1048576, 6.0)], [], 1), 'id'));
+    // Alternative zu stark ausgelastet: zuletzt verwendetes Ziel bleibt.
+    Assert::same([1, 2], array_column(RecallBalancer::rank([$tier(1, 0, 5.0, true), $tier(2, 200 * 1048576, 6.0)], [], 1), 'id'));
+    // Alternative zu langsam: ebenso.
+    Assert::same([1, 2], array_column(RecallBalancer::rank([$tier(1, 0, 4.0, true), $tier(2, 0, 100.0)], [], 1), 'id'));
+    // Nur ein Ziel: kein Aussetzen.
+    Assert::same([1], array_column(RecallBalancer::rank([$tier(1, 0, 5.0)], [], 1), 'id'));
+});
+
+Runner::test('Rueckholung active-active: gemeinsamer Zustand verteilt aufeinanderfolgende und gleichzeitige Rueckholungen', static function (): void {
+    $dir = sys_get_temp_dir() . '/lanpa-balance-' . bin2hex(random_bytes(5));
+    try {
+        $balancer = new RecallBalancer($dir . '/recall-balance.json');
+        $other = new RecallBalancer($dir . '/recall-balance.json');
+        $candidates = [['id' => 1, 'primary' => true, 'latency_ms' => 5.0], ['id' => 2, 'primary' => false, 'latency_ms' => 5.0]];
+
+        // Gleichzeitig: zweiter Prozess sieht die laufende Rueckholung von Ziel 1.
+        $first = $balancer->acquire($candidates);
+        $second = $other->acquire($candidates);
+        Assert::same(1, $first['order'][0]['id']);
+        Assert::same(2, $second['order'][0]['id']);
+        $balancer->release($first['token']);
+        $other->release($second['token']);
+        $state = json_decode((string) file_get_contents($dir . '/recall-balance.json'), true);
+        Assert::same([], $state['running']);
+        Assert::same(2, $state['last']);
+
+        // Nacheinander: abwechselnd.
+        $ids = [];
+        for ($i = 0; $i < 4; $i++) {
+            $choice = $balancer->acquire($candidates);
+            $ids[] = $choice['order'][0]['id'];
+            $balancer->release($choice['token']);
+        }
+        Assert::same([1, 2, 1, 2], $ids);
+
+        // Ausweichen auf ein anderes Ziel wird vermerkt.
+        $choice = $balancer->acquire($candidates);
+        $balancer->switchTo($choice['token'], 2);
+        $state = json_decode((string) file_get_contents($dir . '/recall-balance.json'), true);
+        Assert::same(2, $state['running'][$choice['token']]['id']);
+        Assert::same(2, $state['last']);
+        $balancer->release($choice['token']);
+    } finally {
+        storageAgentRemove($dir);
+    }
+});
+
+Runner::test('Rueckholung active-active: Last und Latenz je Ziel in targets.json', static function (): void {
+    $rows = [
+        ['id' => 1, 'label' => 'A', 'kind' => 'smb', 'is_primary' => 1, 'active' => 1, 'extends_target_id' => null],
+        ['id' => 2, 'label' => 'B', 'kind' => 'smb', 'is_primary' => 0, 'active' => 1, 'extends_target_id' => null],
+    ];
+    $checks = [
+        1 => ['state' => 'online', 'message' => '', 'total_bytes' => 1, 'free_bytes' => 1, 'root' => '/mnt/1', 'read_bps' => 1000, 'write_bps' => 20, 'read_iops' => 3.5, 'write_iops' => 1.0, 'latency_ms' => 4.2],
+        2 => ['state' => 'online', 'message' => '', 'total_bytes' => 1, 'free_bytes' => 1, 'root' => '/mnt/2'],
+    ];
+    [$map] = Agent::tierMap($rows, $checks, null);
+    Assert::same(1000, $map[0]['members'][0]['read_bps']);
+    Assert::same(4.2, $map[0]['members'][0]['latency_ms']);
+    Assert::null($map[1]['members'][0]['latency_ms']);
+
+    $file = sys_get_temp_dir() . '/lanpa-targets-' . bin2hex(random_bytes(5)) . '.json';
+    try {
+        (new TargetMap($file))->write($map);
+        $member = (new TargetMap($file))->all()[0]['members'][0];
+        Assert::same(1000, $member['read_bps']);
+        Assert::same(20, $member['write_bps']);
+        Assert::same(3.5, $member['read_iops']);
+        Assert::same(4.2, $member['latency_ms']);
+    } finally {
+        @unlink($file);
+    }
+});
+
+Runner::test('Rueckholung active-active: zwei Cold-Tiers teilen sich die Rueckholungen', static function (): void {
+    $env = storageAgentEnv();
+    try {
+        if (!$env['store']->sparseSupported()) {
+            return;
+        }
+        $data = $env['data'];
+        $old = time() - 60 * 86400;
+        $contents = [];
+        foreach (['a.bin', 'b.bin', 'c.bin', 'd.bin'] as $name) {
+            $contents[$name] = random_bytes(100000);
+            storageAgentFile($data . '/alice/files/' . $name, $contents[$name], $old);
+        }
+        $env['engine']->scan(null);
+        storageAgentSyncAll($env);
+        Assert::same(4, $env['engine']->tier(new StorageSettings(['storage_enabled' => '1', 'storage_local_days' => '30']), true)['evicted']);
+
+        $before = $env['catalog']->counters();
+        $recaller = new Recaller($env['catalog'], $env['store'], $env['map'], $env['copier'], null, new RecallBalancer($env['base'] . '/state/recall-balance.json'));
+        foreach ($contents as $name => $content) {
+            Assert::true($recaller->recall('alice/files/' . $name));
+            Assert::same($content, file_get_contents($data . '/alice/files/' . $name));
+        }
+        $after = $env['catalog']->counters();
+        foreach ([1, 2] as $id) {
+            $read = (int) ($after[$id]['read_bytes'] ?? 0) - (int) ($before[$id]['read_bytes'] ?? 0);
+            Assert::same(200000, $read, 'Jedes Ziel liefert zwei der vier Dateien (Ziel ' . $id . ').');
+        }
+    } finally {
+        storageAgentRemove($env['base']);
+    }
 });

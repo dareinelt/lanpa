@@ -83,6 +83,9 @@ wie bei der vorhandenen Rechteverwaltung quellenübergreifend.
 
 ## Pläne, Versionen und gleichzeitige Bearbeitung
 
+Technischer Aufbau des Editors (Datenformat, Validierung, Vorschau, Freigabe,
+Änderungsrezepte): [Editor-Referenz](notfallplan-editor-referenz.md).
+
 Ein Plan enthält 1–80 Elemente, eine Checkliste 1–20 Prüfpunkte. Verbindungen dürfen
 nur auf vorherige Elemente zeigen; Schleifen, unbekannte Vorgänger, doppelte IDs
 und ungültige Zweige werden serverseitig abgewiesen. Mehrere Elemente ohne Vorgänger

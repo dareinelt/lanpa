@@ -59,6 +59,7 @@ exec storage_ha        /opt/snmp/check_status.sh storage_ha
 exec storage_sync      /opt/snmp/check_status.sh storage_sync
 exec storage_hot_fill  /opt/snmp/check_status.sh storage_hot_fill
 exec storage_cold_fill /opt/snmp/check_status.sh storage_cold_fill
+exec storage_snapshot  /opt/snmp/check_status.sh storage_snapshot
 
 # Speicher-Tiering: alle Kennzahlen (key=value je Zeile) ueber NET-SNMP-EXTEND-MIB
 # (nsExtendOutLine."storage_metrics" bzw. ."storage_targets").

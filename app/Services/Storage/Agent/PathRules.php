@@ -29,6 +29,9 @@ final class PathRules
     /** Nur Benutzerdateien, Versionen und Papierkorb wandern in den Cold-Tier. */
     private const TIERED = '#^[^/]+/(files|files_versions|files_trashbin)/#';
 
+    /** Benutzerdateien, von denen Vorgaengerversionen gesichert werden. */
+    private const SNAPSHOTTED = '#^[^/]+/files/#';
+
     /** Dateien unter dieser Groesse bleiben immer im Hot-Tier (kein Platzgewinn). */
     public const MIN_TIER_SIZE = 65536;
 
@@ -53,6 +56,15 @@ final class PathRules
     public static function isTiered(string $source, string $path): bool
     {
         return $source === self::SOURCE_NEXTCLOUD_DATA && preg_match(self::TIERED, $path) === 1;
+    }
+
+    /**
+     * Nur Benutzerdateien aus Nextcloud erhalten Vorgaengerversionen im
+     * Snapshot-Speicher (nicht Nextclouds eigene Versions- und Papierkorbkopien).
+     */
+    public static function isSnapshotted(string $source, string $path): bool
+    {
+        return $source === self::SOURCE_NEXTCLOUD_DATA && preg_match(self::SNAPSHOTTED, $path) === 1 && !self::isExcluded($source, $path);
     }
 
     /**

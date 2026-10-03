@@ -131,6 +131,27 @@
             fillbar('target-' + target.id, target.fill);
         });
 
+        var snapshot = data.snapshot;
+        var snapshotCard = document.getElementById('snapshots');
+        if (snapshot && snapshotCard) {
+            snapshotCard.dataset.state = snapshot.state;
+            badge(snapshotCard, 'snapshot-state', snapshot.state);
+            text(snapshotCard, 'snapshot-message', snapshot.message);
+            snapshotCard.querySelector('[data-live="snapshot-message"]').hidden = !snapshot.message;
+            text(snapshotCard, 'snapshot-fill-text', percentText(snapshot.fill));
+            text(snapshotCard, 'snapshot-free', snapshot.free);
+            text(snapshotCard, 'snapshot-total', snapshot.total);
+            text(snapshotCard, 'snapshot-read', snapshot.read);
+            text(snapshotCard, 'snapshot-write', snapshot.write);
+            text(snapshotCard, 'snapshot-iops', snapshot.iops);
+            text(snapshotCard, 'snapshot-total-count', snapshot.snapshots_total);
+            text(snapshotCard, 'snapshot-bytes', snapshot.snapshots_bytes);
+            text(snapshotCard, 'snapshot-last', snapshot.last_snapshot);
+            text(snapshotCard, 'snapshot-pending', snapshot.pending);
+            text(snapshotCard, 'snapshot-failed', snapshot.failed);
+            fillbar('snapshot', snapshot.fill);
+        }
+
         var targetIds = Array.from(root.querySelectorAll('[data-target]')).map(function (node) {
             return Number(node.dataset.target);
         });

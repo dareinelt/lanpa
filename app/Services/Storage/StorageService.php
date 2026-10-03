@@ -26,7 +26,7 @@ final class StorageService
         '2.1' => 'SMB 2.1',
     ];
 
-    public const REQUEST_ACTIONS = ['sync_now', 'full_scan', 'remount', 'confirm_deletes'];
+    public const REQUEST_ACTIONS = ['sync_now', 'full_scan', 'remount', 'confirm_deletes', 'snapshot_remount'];
 
     public const KIND_SMB = 'smb';
     public const KIND_S3 = 's3';
@@ -39,8 +39,8 @@ final class StorageService
     /** Obergrenze der angegebenen Kapazitaet eines S3-Ziels (1 EB in GB). */
     public const S3_MAX_CAPACITY_GB = 1073741824;
 
-    private const USERNAME_PATTERN = '/^[^\x00-\x1F\x7F,=\\\\\/]{1,128}$/u';
-    private const DOMAIN_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9.\-]{0,127}$/';
+    public const USERNAME_PATTERN = '/^[^\x00-\x1F\x7F,=\\\\\/]{1,128}$/u';
+    public const DOMAIN_PATTERN = '/^[A-Za-z0-9][A-Za-z0-9.\-]{0,127}$/';
     private const S3_HOST_PATTERN = '/^(?:[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)*$/';
     private const S3_BUCKET_PATTERN = '/^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$/';
     private const S3_REGION_PATTERN = '/^[a-z0-9][a-z0-9\-]{0,62}$/';
@@ -326,7 +326,13 @@ final class StorageService
             'forecast' => $forecast,
             'forecast_text' => self::forecastText($forecast, $localFree),
             'incidents_open' => $incident['open'],
+            'snapshot' => $this->snapshotService()->status(),
         ];
+    }
+
+    private function snapshotService(): SnapshotService
+    {
+        return new SnapshotService($this->repository, $this->settings, $this->secrets);
     }
 
     /**
@@ -392,6 +398,7 @@ final class StorageService
     public function liveData(?array $overview = null): array
     {
         $overview ??= $this->overview();
+        $snapshot = $overview['snapshot'] ?? $this->snapshotService()->status();
         $local = $overview['local'];
         $status = $overview['status'];
 
@@ -440,10 +447,27 @@ final class StorageService
             ], $overview['targets']),
             'pending_files' => (int) ($overview['status']['pending_files'] ?? 0),
             'recalls_active' => (int) ($overview['status']['recalls_active'] ?? 0),
+            'snapshot' => [
+                'state' => $snapshot['state'],
+                'state_label' => $snapshot['state_label'],
+                'message' => $snapshot['message'],
+                'fill' => $snapshot['fill'],
+                'used' => StorageHealth::formatBytes($snapshot['used_bytes']),
+                'total' => StorageHealth::formatBytes($snapshot['total_bytes']),
+                'free' => StorageHealth::formatBytes($snapshot['free_bytes']),
+                'read' => StorageHealth::formatRate($snapshot['read_bps']),
+                'write' => StorageHealth::formatRate($snapshot['write_bps']),
+                'iops' => number_format($snapshot['read_iops'] + $snapshot['write_iops'], 1, ',', '.'),
+                'snapshots_total' => number_format($snapshot['snapshots_total'], 0, ',', '.'),
+                'snapshots_bytes' => StorageHealth::formatBytes($snapshot['snapshots_bytes']),
+                'pending' => $snapshot['pending'],
+                'failed' => $snapshot['failed'],
+                'last_snapshot' => Dates::formatDateTime($snapshot['last_snapshot_at']) ?: '–',
+            ],
         ];
     }
 
-    public const SNMP_CHECKS = ['storage_ha', 'storage_sync', 'storage_hot_fill', 'storage_cold_fill', 'storage_metrics', 'storage_targets'];
+    public const SNMP_CHECKS = ['storage_ha', 'storage_sync', 'storage_hot_fill', 'storage_cold_fill', 'storage_snapshot', 'storage_metrics', 'storage_targets'];
 
     /**
      * Werte fuer den SNMP-Dienst (scripts/storage_status.php). Die erste Zeile
@@ -529,6 +553,29 @@ final class StorageService
                     number_format((float) $top['fill']['percent'], 1, '.', ''),
                     implode(', ', $parts),
                     $missing > 0 ? '; ' . $missing . ' Ziel(e) nicht erreichbar' : ''
+                ))]];
+
+            case 'storage_snapshot':
+                $snap = $overview['snapshot'];
+                if (!$snap['enabled']) {
+                    return ['exit' => 3, 'lines' => ['storage_snapshot: Snapshot-Speicher ist nicht aktiviert']];
+                }
+                if ($snap['state'] !== 'online') {
+                    return ['exit' => 2, 'lines' => [$ascii('storage_snapshot: ' . $snap['state'] . ' - ' . ($snap['message'] !== '' ? $snap['message'] : 'nicht erreichbar'))]];
+                }
+                $exit = StorageHealth::EXIT[$snap['fill']['state']] ?? 3;
+                if ($snap['failed'] > 0) {
+                    $exit = max($exit, 1);
+                }
+
+                return ['exit' => $exit, 'lines' => [$ascii(sprintf(
+                    'storage_snapshot: %s%% (Snapshot-Speicher: %s von %s belegt, %d Versionen, %d vorgemerkt, %d fehlgeschlagen)',
+                    $snap['fill']['percent'] === null ? '0' : number_format((float) $snap['fill']['percent'], 1, '.', ''),
+                    StorageHealth::formatBytes($snap['used_bytes']),
+                    StorageHealth::formatBytes($snap['total_bytes']),
+                    $snap['snapshots_total'],
+                    $snap['pending'],
+                    $snap['failed']
                 ))]];
 
             case 'storage_metrics':
@@ -730,6 +777,10 @@ final class StorageService
             $other = $this->repository->findTargetByUnc($unc);
             if ($other !== null && ($existing === null || $other !== (int) $existing['id'])) {
                 $errors['unc_path'] = 'Dieses Ziel ist bereits eingerichtet.';
+            }
+            $snapshotUnc = $this->snapshotService()->settings()->uncPath();
+            if ($snapshotUnc !== '' && strcasecmp(rtrim($snapshotUnc, '\\'), rtrim($unc, '\\')) === 0) {
+                $errors['unc_path'] = 'Diese Freigabe ist als Snapshot-Speicher eingerichtet und kann nicht zugleich Speicherziel sein.';
             }
         }
 

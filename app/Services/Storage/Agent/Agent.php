@@ -9,6 +9,8 @@ use App\Core\Database;
 use App\Repositories\IncidentRepository;
 use App\Repositories\StorageRepository;
 use App\Services\Storage\IncidentSettings;
+use App\Services\Storage\SnapshotService;
+use App\Services\Storage\SnapshotSettings;
 use App\Services\Storage\StorageHealth;
 use App\Services\Storage\StorageSettings;
 use PDOException;
@@ -59,6 +61,7 @@ final class Agent
             'state_dir' => $env('STORAGE_STATE_DIR', '/var/lib/storage-sync'),
             'tiering_dir' => $env('STORAGE_TIERING_DIR', '/var/lib/lanpa-tiering'),
             'mount_base' => $env('STORAGE_MOUNT_BASE', '/mnt/targets'),
+            'snapshot_mount_base' => $env('STORAGE_SNAPSHOT_MOUNT_BASE', '/mnt/snapshots'),
             'credential_dir' => $env('STORAGE_CREDENTIAL_DIR', '/run/storage-sync'),
             'nextcloud_data' => $env('STORAGE_NEXTCLOUD_DATA', '/data/nextcloud-data'),
             'nextcloud_config' => $env('STORAGE_NEXTCLOUD_CONFIG', '/data/nextcloud-html/config'),
@@ -107,7 +110,35 @@ final class Agent
         return $this->copier ??= new FileCopier($this->catalog());
     }
 
-    public function engine(?ThreatDetector $detector = null): SyncEngine
+    /**
+     * Zustand des Snapshot-Speichers (vom Monitor geschrieben, ein Eintrag mit Kennung 0).
+     */
+    public function snapshotMap(): TargetMap
+    {
+        return new TargetMap($this->config['state_dir'] . '/snapshot.json');
+    }
+
+    public function snapshotStore(): SnapshotStore
+    {
+        return new SnapshotStore($this->config['snapshot_mount_base'] . '/0', $this->copier());
+    }
+
+    public function snapshots(?bool $enabled = null): SnapshotEngine
+    {
+        return new SnapshotEngine(
+            $this->catalog(),
+            $this->snapshotStore(),
+            $this->store(),
+            $this->copier(),
+            $this->sources(),
+            $enabled ?? $this->snapshotSettings()->enabled(),
+            function (string $level, string $category, string $message, ?int $targetId): void {
+                $this->event($level, $category, $message, $targetId);
+            }
+        );
+    }
+
+    public function engine(?ThreatDetector $detector = null, ?SnapshotEngine $snapshots = null): SyncEngine
     {
         return new SyncEngine(
             $this->catalog(),
@@ -119,7 +150,8 @@ final class Agent
                 $this->event($level, $category, $message, $targetId);
             },
             null,
-            $detector
+            $detector,
+            $snapshots
         );
     }
 
@@ -148,6 +180,11 @@ final class Agent
     private function incidentSettings(): IncidentSettings
     {
         return new IncidentSettings(Container::settings()->all());
+    }
+
+    private function snapshotSettings(): SnapshotSettings
+    {
+        return new SnapshotSettings(Container::settings()->all());
     }
 
     private function incidents(): IncidentRepository
@@ -269,6 +306,7 @@ final class Agent
                 }
                 $frozen = $this->incidentSettings()->freezeTarget() ? self::frozenTargetId($open) : null;
                 $this->monitorPass($settings, $metrics, $previous, $sparse, $frozen);
+                $this->monitorSnapshotPass($settings, $metrics, $previous);
                 if (time() - $lastTrim > 3600) {
                     $this->repository()->trimEvents();
                     $lastTrim = time();
@@ -399,6 +437,113 @@ final class Agent
         }
     }
 
+    // --- Snapshot-Speicher (Monitor) -----------------------------------------
+
+    /**
+     * Bindet die Snapshot-Freigabe ein (Kennung 0 unter snapshot_mount_base),
+     * misst Fuellstand und Datenrate und meldet den Zustand. Der HA-Status
+     * des Cold-Tiers bleibt davon unberuehrt.
+     *
+     * @param array<int|string,string> $previous
+     */
+    private function monitorSnapshotPass(StorageSettings $settings, Metrics $metrics, array &$previous): void
+    {
+        $repository = $this->repository();
+        $snapshot = $this->snapshotSettings();
+        $instance = $settings->instanceId();
+        $mounter = new Mounter(
+            $this->config['snapshot_mount_base'],
+            $this->config['credential_dir'] . '/snapshot',
+            Container::secretBox(),
+            $instance,
+            s3TempDir: $this->config['state_dir'] . '/s3-tmp',
+            marker: SnapshotStore::MARKER
+        );
+        @mkdir($this->config['credential_dir'] . '/snapshot', 0700, true);
+        $row = $snapshot->mountRow();
+        $remount = false;
+        while (($request = $repository->claimRequest(['snapshot_remount'])) !== null) {
+            $remount = true;
+            $repository->finishRequest((int) $request['id'], 'Neu eingebunden.');
+        }
+
+        if (!$snapshot->enabled() || !$settings->enabled() || $instance === '') {
+            $mounter->unmount(0);
+            $check = ['state' => 'disabled', 'message' => $snapshot->enabled() ? 'Speicher-Tiering ist nicht aktiviert.' : 'Snapshot-Speicher ist nicht aktiviert.',
+                'total_bytes' => 0, 'free_bytes' => 0, 'root' => $mounter->mountPoint(0), 'share' => ''];
+        } else {
+            $check = $mounter->check($row, $remount);
+            if ($check['state'] === 'online') {
+                foreach ([PathRules::SOURCE_NEXTCLOUD_DATA, PathRules::SOURCE_EUROOFFICE_DATA] as $dir) {
+                    if (is_dir($check['root'] . '/' . $dir)) {
+                        $check['state'] = 'invalid';
+                        $check['message'] = 'Die Freigabe enthält Daten des Cold-Tiers („' . $dir . '“). Bitte eine eigene Freigabe angeben.';
+                        break;
+                    }
+                }
+            }
+            if ($check['state'] === 'online') {
+                $error = $this->snapshotStore()->prepare($instance);
+                if ($error !== null) {
+                    $check['state'] = 'invalid';
+                    $check['message'] = $error;
+                }
+            }
+        }
+
+        $cifs = Metrics::cifsCounters();
+        $counters = $this->catalog()->counters();
+        $key = $check['share'] !== '' && isset($cifs[$check['share']]) ? 'cifs:' . $check['share'] : 'agent:snapshot';
+        $raw = $key === 'agent:snapshot'
+            ? array_values($counters[Catalog::SNAPSHOT] ?? ['read_bytes' => 0, 'write_bytes' => 0, 'read_ops' => 0, 'write_ops' => 0])
+            : $cifs[$check['share']];
+        $rates = $metrics->rates($key, $raw);
+
+        $old = $previous['snapshot'] ?? null;
+        if ($old !== null && $old !== $check['state'] && $check['state'] !== 'disabled') {
+            $this->event(
+                $check['state'] === 'online' ? 'info' : 'error',
+                'snapshot',
+                'Snapshot-Speicher: ' . ($check['state'] === 'online' ? 'wieder erreichbar.' : $check['message'])
+            );
+        }
+        $stats = $this->catalog()->snapshotStats();
+        $values = [
+            'state' => $check['state'],
+            'message' => $check['message'],
+            'total_bytes' => $check['total_bytes'],
+            'free_bytes' => $check['free_bytes'],
+            'snapshots_total' => $stats['complete'],
+            'snapshots_bytes' => $stats['bytes'],
+            'pending' => $stats['pending'],
+            'failed' => $stats['failed'] + $stats['unavailable'],
+            'last_snapshot_at' => $stats['last_stored_at'] !== null ? date('Y-m-d H:i:s', $stats['last_stored_at']) : null,
+            'updated_at' => StorageRepository::NOW,
+        ] + $rates;
+        if ($old !== $check['state']) {
+            $values['state_since'] = StorageRepository::NOW;
+            if ($check['state'] !== 'online') {
+                $values['last_error'] = $check['message'];
+            }
+        }
+        $previous['snapshot'] = $check['state'];
+        try {
+            $repository->updateSnapshotStatus($values);
+        } catch (PDOException $exception) {
+            // Migration 030 noch nicht eingespielt: nicht den ganzen Monitor stoppen.
+            $this->log('warning', 'Snapshot-Status kann nicht geschrieben werden: ' . $exception->getMessage());
+        }
+
+        $this->snapshotMap()->write($check['state'] === 'disabled' ? [] : [[
+            'id' => 0,
+            'label' => 'Snapshot-Speicher',
+            'root' => $check['root'],
+            'online' => $check['state'] === 'online',
+            'primary' => false,
+            'active' => true,
+        ]]);
+    }
+
     // --- Synchronisation ----------------------------------------------------
 
     public function sync(): never
@@ -456,7 +601,8 @@ final class Agent
         $repository = $this->repository();
         $catalog = $this->catalog();
         $detector = $this->detector();
-        $engine = $this->engine($detector);
+        $snapshots = $this->snapshots();
+        $engine = $this->engine($detector, $snapshots);
         $now = time();
         // Wer hat welche Datei geschrieben (Zuordnung von Vorfaellen)?
         $detector->ingestWrites($this->store()->takeWriteLog());
@@ -511,6 +657,7 @@ final class Agent
 
         $more = false;
         $errors = [];
+        $held = 0;
         foreach ($online as $target) {
             if ($target['id'] === $frozen) {
                 // Schutzziel bei einem Sicherheitsvorfall: keine Schreibvorgaenge.
@@ -518,6 +665,7 @@ final class Agent
             }
             $result = $engine->syncTarget($target, 20);
             $more = $more || $result['more'];
+            $held = max($held, $result['held']);
             if ($result['error'] !== null) {
                 $errors[] = $target['label'] . ': ' . $result['error'];
             }
@@ -531,6 +679,12 @@ final class Agent
         }
 
         $tier = $engine->tier($settings, $catalog->meta('sparse_supported', '1') === '1');
+        try {
+            $this->snapshotPass($snapshots, $now);
+        } catch (PDOException $exception) {
+            // Migration 030 fehlt oder MySQL-Spiegel nicht erreichbar: Abgleich laeuft weiter.
+            $this->log('warning', 'Snapshot-Speicher: ' . $exception->getMessage());
+        }
 
         // Rueckstand je Ziel
         $maxPending = 0;
@@ -575,6 +729,9 @@ final class Agent
             $label = self::targetLabel($rows, $frozen);
             $message = trim($message . ' Speicherziel „' . $label . '“ wegen Sicherheitsvorfall schreibgeschützt – wird nicht synchronisiert.');
         }
+        if ($held > 0 && $state !== 'blocked') {
+            $message = trim($message . ' ' . sprintf('%d Datei(en) warten auf den Snapshot-Speicher (Vorgängerversion wird zuerst gesichert).', $held));
+        }
 
         $totals = $catalog->totals();
         $repository->updateStatus($statusUpdate + [
@@ -605,6 +762,184 @@ final class Agent
         }
 
         return $more || $tier['rehydrate'] > 0;
+    }
+
+    // --- Snapshot-Speicher (Synchronisation) ---------------------------------
+
+    /**
+     * Wiederherstellungsauftraege (Intranet und Nextcloud), Aufbewahrung,
+     * Bereinigung und Spiegelung des Snapshot-Katalogs nach MySQL. Laeuft nach
+     * dem Zielabgleich im selben Prozess – es gibt daher keine Ueberschneidung
+     * mit dem Erfassen von Aenderungen.
+     */
+    private function snapshotPass(SnapshotEngine $snapshots, int $now): void
+    {
+        $repository = $this->repository();
+        $catalog = $this->catalog();
+        $store = $this->store();
+
+        // Wiederherstellung aus dem Adminbereich
+        while (($request = $repository->claimRequest([SnapshotService::ACTION_RESTORE])) !== null) {
+            $uid = (string) ($request['detail'] ?? '');
+            try {
+                $snapshot = $snapshots->restore($uid, (string) $request['requested_by']);
+                $repository->finishRequest((int) $request['id'], 'Wiederhergestellt: ' . $snapshot['path']);
+            } catch (\RuntimeException $exception) {
+                $repository->finishRequest((int) $request['id'], 'Fehler: ' . $exception->getMessage());
+                $this->event('error', 'snapshot', 'Wiederherstellung fehlgeschlagen (' . substr($uid, 0, 8) . '…): ' . $exception->getMessage());
+            }
+        }
+        // Wiederherstellung aus Nextcloud (gemeinsames Verzeichnis)
+        foreach ($store->snapshotRestoreIds() as $uid) {
+            $request = $store->snapshotRestoreRequest($uid);
+            $store->removeSnapshotRestoreRequest($uid);
+            if ($request === null) {
+                continue;
+            }
+            $by = 'nextcloud:' . (string) ($request['user'] ?? '');
+            try {
+                $snapshot = $snapshots->restore($uid, $by, isset($request['path']) ? (string) $request['path'] : null);
+                $store->writeSnapshotStatus($uid, ['state' => 'done', 'path' => $snapshot['path']]);
+            } catch (\RuntimeException $exception) {
+                $store->writeSnapshotStatus($uid, ['state' => 'failed', 'message' => $exception->getMessage()]);
+                $this->event('error', 'snapshot', 'Wiederherstellung aus Nextcloud fehlgeschlagen (' . substr($uid, 0, 8) . '…): ' . $exception->getMessage());
+            }
+        }
+
+        if ($now - (int) $catalog->meta('snapshot_pruned', '0') >= 600) {
+            $settings = $this->snapshotSettings();
+            $snapshots->prune($settings->retentionDays(), $settings->maxVersions());
+            $catalog->expirePendingSnapshots($now - SnapshotEngine::HOLD_SECONDS);
+            $store->cleanupSnapshotStatus();
+            $catalog->setMeta('snapshot_pruned', (string) $now);
+        }
+        if ($now - (int) $catalog->meta('snapshot_temp_cleaned', '0') >= 3600) {
+            $snapshots->cleanupTemp();
+            $catalog->setMeta('snapshot_temp_cleaned', (string) $now);
+        }
+
+        $this->mirrorSnapshots();
+    }
+
+    /**
+     * Spiegelt geaenderte Snapshotzeilen nach MySQL (Adminliste); endgueltig
+     * entfernte Versionen verschwinden aus beiden Katalogen.
+     */
+    private function mirrorSnapshots(): void
+    {
+        $repository = $this->repository();
+        $catalog = $this->catalog();
+        $rows = $catalog->unmirroredSnapshots();
+        if ($rows === []) {
+            return;
+        }
+        try {
+            $done = [];
+            foreach ($rows as $row) {
+                $uid = (string) $row['uid'];
+                if ($row['status'] === Catalog::SNAPSHOT_DELETED) {
+                    $repository->deleteSnapshot($uid);
+                    $catalog->removeSnapshot($uid);
+                    continue;
+                }
+                $repository->upsertSnapshot($row);
+                $done[] = $uid;
+            }
+            $catalog->markSnapshotsMirrored($done);
+        } catch (PDOException $exception) {
+            $this->log('warning', 'Dateiversionen können nicht gespiegelt werden: ' . $exception->getMessage());
+        }
+    }
+
+    /**
+     * Kommandozeile: Versionen auflisten.
+     */
+    public function snapshotList(?string $path, int $limit): int
+    {
+        foreach ($this->catalog()->snapshots($path, $limit) as $row) {
+            fwrite(STDOUT, sprintf(
+                "%s  %-11s  %s  v%-4d  %10s  %s  %s/%s%s\n",
+                $row['uid'],
+                $row['status'],
+                date('Y-m-d H:i:s', (int) $row['created_at']),
+                (int) $row['version'],
+                StorageHealth::formatBytes((int) $row['size']),
+                str_pad((string) $row['user'], 16),
+                $row['source'],
+                $row['path'],
+                $row['file_id'] === null ? '  (Datei gelöscht)' : ''
+            ));
+        }
+
+        return 0;
+    }
+
+    public function snapshotStatus(): int
+    {
+        $stats = $this->catalog()->snapshotStats();
+        $map = $this->snapshotMap()->all();
+        $entry = $map[0] ?? null;
+        fwrite(STDOUT, 'Snapshot-Speicher: ' . ($entry === null ? 'deaktiviert' : ($entry['online'] ? 'erreichbar (' . $entry['root'] . ')' : 'nicht erreichbar')) . PHP_EOL);
+        fwrite(STDOUT, sprintf(
+            "Versionen: %d (%s), vorgemerkt: %d, fehlgeschlagen: %d, nicht verfügbar: %d, letzte Sicherung: %s\n",
+            $stats['complete'],
+            StorageHealth::formatBytes($stats['bytes']),
+            $stats['pending'],
+            $stats['failed'],
+            $stats['unavailable'],
+            $stats['last_stored_at'] !== null ? date('Y-m-d H:i:s', $stats['last_stored_at']) : '–'
+        ));
+
+        return 0;
+    }
+
+    public function snapshotPrune(): int
+    {
+        $settings = $this->snapshotSettings();
+        $result = $this->snapshots(true)->prune($settings->retentionDays(), $settings->maxVersions());
+        $this->mirrorSnapshots();
+        fwrite(STDOUT, sprintf("%d Version(en) entfernt, %d nicht entfernt.\n", $result['removed'], $result['failed']));
+
+        return $result['failed'] > 0 ? 1 : 0;
+    }
+
+    public function snapshotRetry(): int
+    {
+        $count = $this->catalog()->retrySnapshots();
+        $this->mirrorSnapshots();
+        fwrite(STDOUT, $count . " fehlgeschlagene Sicherung(en) erneut eingeplant.\n");
+
+        return 0;
+    }
+
+    public function snapshotRestore(string $uid): int
+    {
+        try {
+            $snapshot = $this->snapshots(true)->restore($uid, 'cli');
+        } catch (\RuntimeException $exception) {
+            fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+
+            return 1;
+        }
+        $this->mirrorSnapshots();
+        fwrite(STDOUT, 'Wiederhergestellt: ' . $snapshot['source'] . '/' . $snapshot['path'] . ' (Version ' . $snapshot['version'] . ")\n");
+
+        return 0;
+    }
+
+    public function snapshotRebuild(): int
+    {
+        try {
+            $added = $this->snapshots(true)->rebuild();
+        } catch (\RuntimeException $exception) {
+            fwrite(STDERR, $exception->getMessage() . PHP_EOL);
+
+            return 1;
+        }
+        $this->mirrorSnapshots();
+        fwrite(STDOUT, $added . " Version(en) aus dem Snapshot-Speicher übernommen.\n");
+
+        return 0;
     }
 
     /**

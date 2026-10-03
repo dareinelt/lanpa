@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Security\Csrf;
+use App\Services\Storage\SnapshotSettings;
 use App\Services\Storage\StorageHealth;
 use App\Services\Storage\StorageSettings;
 use App\Support\Dates;
@@ -13,9 +14,13 @@ use App\Support\Html;
 /** @var list<array<string,mixed>> $events */
 /** @var array<string,string> $errors */
 /** @var array<string,string> $values */
+/** @var SnapshotSettings $snapshotSettings */
+/** @var array<string,string> $smbVersions */
 
 /** @var StorageSettings $settings */
 $settings = $overview['settings'];
+$snapshot = $overview['snapshot'];
+$snapshotCurrent = $values + $snapshotSettings->all();
 $health = $overview['health'];
 $local = $overview['local'];
 $status = $overview['status'];
@@ -47,8 +52,9 @@ $fillbar = static function (array $fill, string $id, string $name): string {
         . Html::e($name) . '" aria-valuetext="' . ($percent === null ? 'Keine Messwerte' : Html::e(number_format((float) $percent, 1, ',', '.')) . ' %') . '">'
         . ($percent === null ? '–' : Html::e(number_format((float) $percent, 1, ',', '.')) . ' %') . '</progress>';
 };
-$field = static function (string $key, string $text, string $hint, string $unit = '') use ($current, $errors): string {
-    $meta = StorageSettings::NUMERIC[$key];
+$field = static function (string $key, string $text, string $hint, string $unit = '') use ($current, $snapshotCurrent, $errors): string {
+    $meta = StorageSettings::NUMERIC[$key] ?? SnapshotSettings::NUMERIC[$key];
+    $current = isset(StorageSettings::NUMERIC[$key]) ? $current : $snapshotCurrent;
     $html = '<div class="field"><label for="' . $key . '">' . Html::e($text) . ($unit !== '' ? ' (' . Html::e($unit) . ')' : '') . '</label>'
         . '<input type="number" id="' . $key . '" name="' . $key . '" min="' . $meta['min'] . '" max="' . $meta['max'] . '" value="'
         . Html::e((string) ($current[$key] ?? $meta['default'])) . '"'
@@ -60,7 +66,9 @@ $field = static function (string $key, string $text, string $hint, string $unit 
 
     return $html . '</div>';
 };
-$check = static function (string $key, string $text, string $hint) use ($current): string {
+$check = static function (string $key, string $text, string $hint) use ($current, $snapshotCurrent): string {
+    $current = isset(StorageSettings::BOOLEAN[$key]) ? $current : $snapshotCurrent;
+
     return '<div class="field field--check"><input type="hidden" name="' . $key . '" value="0">'
         . '<input type="checkbox" id="' . $key . '" name="' . $key . '" value="1"' . (($current[$key] ?? '0') === '1' ? ' checked' : '') . '>'
         . '<label for="' . $key . '">' . Html::e($text) . '</label><p class="field__hint">' . Html::e($hint) . '</p></div>';
@@ -283,6 +291,111 @@ $check = static function (string $key, string $text, string $hint) use ($current
     </div>
 </section>
 
+<section class="card storage-snapshot" id="snapshots" aria-labelledby="snapshot-title" data-state="<?= Html::e($snapshot['state']) ?>">
+    <div class="storage-section-head">
+        <div>
+            <p class="storage-eyebrow">Dateiversionen</p>
+            <h2 class="card__title" id="snapshot-title">Snapshot-Speicher</h2>
+        </div>
+        <span class="badge <?= $badge($snapshot['state']) ?>" data-live="snapshot-state"><?= Html::e($label($snapshot['state'])) ?></span>
+    </div>
+    <p class="card__hint">Vor jeder inhaltlichen Änderung oder Löschung einer Nextcloud-Datei wird die bisherige Version unveränderlich auf einer eigenen SMB-Freigabe abgelegt – getrennt vom Cold-Tier. Die Sicherung läuft ausschließlich im Hintergrund und beeinflusst Nextcloud nicht.</p>
+    <p class="storage-target__message" data-live="snapshot-message" <?= $snapshot['message'] === '' ? 'hidden' : '' ?>><?= Html::e($snapshot['message']) ?></p>
+    <div class="storage-snapshot__grid">
+        <div>
+            <div class="storage-section-head">
+                <span class="card__hint">Füllstand</span>
+                <strong data-live="snapshot-fill-text"><?= $snapshot['fill']['percent'] === null ? '–' : Html::e(number_format((float) $snapshot['fill']['percent'], 1, ',', '.')) . ' %' ?></strong>
+            </div>
+            <?= $fillbar($snapshot['fill'], 'snapshot', 'Füllstand Snapshot-Speicher') ?>
+            <p class="card__hint">Frei <span data-live="snapshot-free"><?= Html::e(StorageHealth::formatBytes($snapshot['free_bytes'])) ?></span> von <span data-live="snapshot-total"><?= Html::e(StorageHealth::formatBytes($snapshot['total_bytes'])) ?></span></p>
+            <dl class="storage-metrics storage-metrics--rates">
+                <div><dt>Lesen</dt><dd data-live="snapshot-read"><?= Html::e(StorageHealth::formatRate($snapshot['read_bps'])) ?></dd></div>
+                <div><dt>Schreiben</dt><dd data-live="snapshot-write"><?= Html::e(StorageHealth::formatRate($snapshot['write_bps'])) ?></dd></div>
+                <div><dt>IOPS</dt><dd data-live="snapshot-iops"><?= Html::e(number_format($snapshot['read_iops'] + $snapshot['write_iops'], 1, ',', '.')) ?></dd></div>
+            </dl>
+        </div>
+        <div>
+            <p class="metric"><span data-live="snapshot-total-count"><?= number_format($snapshot['snapshots_total'], 0, ',', '.') ?></span> <span class="card__hint">Versionen</span></p>
+            <p class="card__hint">Belegt <span data-live="snapshot-bytes"><?= Html::e(StorageHealth::formatBytes($snapshot['snapshots_bytes'])) ?></span> · letzte Sicherung <span data-live="snapshot-last"><?= Html::e(Dates::formatDateTime($snapshot['last_snapshot_at'])) ?: '–' ?></span></p>
+            <p class="card__hint">Vorgemerkt: <span data-live="snapshot-pending"><?= (int) $snapshot['pending'] ?></span> · fehlgeschlagen: <span data-live="snapshot-failed"><?= (int) $snapshot['failed'] ?></span></p>
+            <p class="card__hint">Aufbewahrung: <?= $snapshot['retention_days'] === 0 ? 'unbegrenzt' : (int) $snapshot['retention_days'] . ' Tage' ?> · <?= $snapshot['max_versions'] === 0 ? 'beliebig viele' : 'höchstens ' . (int) $snapshot['max_versions'] ?> Versionen je Datei</p>
+            <div class="storage-target__actions">
+                <a class="button button--primary" href="/admin/speicher-ha/dateiversionen">Dateiversionen anzeigen</a>
+                <form method="post" action="/admin/speicher-ha/auftrag" class="inline-form">
+                    <?= Csrf::field() ?>
+                    <input type="hidden" name="action" value="snapshot_remount">
+                    <button type="submit" class="button button--ghost" <?= $snapshot['enabled'] ? '' : 'disabled' ?>>Neu einbinden</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <details class="storage-details" <?= $errors !== [] && array_intersect_key($errors, SnapshotSettings::TEXT + SnapshotSettings::NUMERIC + SnapshotSettings::BOOLEAN) !== [] ? 'open' : '' ?>>
+        <summary>Einstellungen des Snapshot-Speichers</summary>
+        <form method="post" action="/admin/speicher-ha/snapshot-einstellungen" class="form storage-settings">
+            <?= Csrf::field() ?>
+            <?= $check('storage_snapshot_enabled', 'Dateiversionen auf dem Snapshot-Speicher sichern', 'Ohne Haken werden keine Versionen gesichert; bereits gesicherte Versionen bleiben auf der Freigabe und können nach dem Einschalten wieder genutzt werden.') ?>
+            <?php $sv = static fn (string $k): string => (string) ($snapshotCurrent[$k] ?? ''); $se = static fn (string $k): string => isset($errors[$k]) ? '<p class="field__error" id="' . $k . '-error">' . Html::e($errors[$k]) . '</p>' : ''; $sa = static fn (string $k): string => isset($errors[$k]) ? 'aria-invalid="true" aria-describedby="' . $k . '-error"' : 'aria-describedby="' . $k . '-hint"'; ?>
+            <fieldset class="storage-fieldset">
+            <legend>SMB-Freigabe</legend>
+            <div class="storage-fields">
+                <div class="field">
+                    <label for="storage_snapshot_unc_path">UNC-Pfad</label>
+                    <input type="text" id="storage_snapshot_unc_path" name="storage_snapshot_unc_path" maxlength="255" spellcheck="false" autocomplete="off" placeholder="\\server\snapshots" value="<?= Html::e($sv('storage_snapshot_unc_path')) ?>" <?= $sa('storage_snapshot_unc_path') ?>>
+                    <p class="field__hint" id="storage_snapshot_unc_path-hint">Eigene Freigabe – nicht dieselbe wie ein Speicherziel des Cold-Tiers. Idealerweise mit eigenem Dienstkonto, dem nur storage-sync schreiben darf.</p>
+                    <?= $se('storage_snapshot_unc_path') ?>
+                </div>
+                <div class="field">
+                    <label for="storage_snapshot_username">Benutzername</label>
+                    <input type="text" id="storage_snapshot_username" name="storage_snapshot_username" maxlength="128" spellcheck="false" autocomplete="off" value="<?= Html::e($sv('storage_snapshot_username')) ?>" <?= $sa('storage_snapshot_username') ?>>
+                    <p class="field__hint" id="storage_snapshot_username-hint">Ohne Domäne. Leer = Gastzugriff.</p>
+                    <?= $se('storage_snapshot_username') ?>
+                </div>
+                <div class="field">
+                    <label for="storage_snapshot_domain">Domäne</label>
+                    <input type="text" id="storage_snapshot_domain" name="storage_snapshot_domain" maxlength="128" spellcheck="false" value="<?= Html::e($sv('storage_snapshot_domain')) ?>" <?= $sa('storage_snapshot_domain') ?>>
+                    <p class="field__hint" id="storage_snapshot_domain-hint">z. B. <code>FIRMA</code>; leer bei lokalen Konten.</p>
+                    <?= $se('storage_snapshot_domain') ?>
+                </div>
+                <div class="field">
+                    <label for="storage_snapshot_password">Kennwort</label>
+                    <input type="password" id="storage_snapshot_password" name="storage_snapshot_password" maxlength="256" autocomplete="new-password" value="" <?= $sa('storage_snapshot_password') ?>>
+                    <p class="field__hint" id="storage_snapshot_password-hint"><?= $snapshotSettings->hasPassword() ? 'Ein Kennwort ist gespeichert. Leer lassen, um es beizubehalten.' : 'Wird verschlüsselt gespeichert.' ?></p>
+                    <?= $se('storage_snapshot_password') ?>
+                    <?php if ($snapshotSettings->hasPassword()) { ?>
+                        <div class="field field--check">
+                            <input type="hidden" name="storage_snapshot_password_clear" value="0">
+                            <input type="checkbox" id="storage_snapshot_password_clear" name="storage_snapshot_password_clear" value="1">
+                            <label for="storage_snapshot_password_clear">Gespeichertes Kennwort entfernen</label>
+                        </div>
+                    <?php } ?>
+                </div>
+                <div class="field">
+                    <label for="storage_snapshot_smb_version">SMB-Version</label>
+                    <select id="storage_snapshot_smb_version" name="storage_snapshot_smb_version" <?= $sa('storage_snapshot_smb_version') ?>>
+                        <?php foreach ($smbVersions as $value => $text) { ?>
+                            <option value="<?= Html::e((string) $value) ?>" <?= $sv('storage_snapshot_smb_version') === (string) $value ? 'selected' : '' ?>><?= Html::e($text) ?></option>
+                        <?php } ?>
+                    </select>
+                    <p class="field__hint" id="storage_snapshot_smb_version-hint">Nur ändern, wenn der Server die automatische Aushandlung nicht unterstützt.</p>
+                    <?= $se('storage_snapshot_smb_version') ?>
+                </div>
+            </div>
+            </fieldset>
+            <fieldset class="storage-fieldset">
+            <legend>Aufbewahrung</legend>
+            <div class="storage-fields">
+                <?= $field('storage_snapshot_retention_days', 'Versionen aufbewahren für', 'Ältere Versionen werden automatisch entfernt. 0 = unbegrenzt.', 'Tage') ?>
+                <?= $field('storage_snapshot_max_versions', 'Höchstens Versionen je Datei', 'Die ältesten Versionen einer Datei werden zuerst entfernt. 0 = keine Begrenzung.', 'Stück') ?>
+            </div>
+            </fieldset>
+            <div class="form__actions">
+                <button type="submit" class="button button--primary">Snapshot-Einstellungen speichern</button>
+            </div>
+        </form>
+    </details>
+</section>
+
 <section class="card" id="einstellungen" aria-labelledby="settings-title">
     <h2 class="card__title" id="settings-title">Einstellungen</h2>
     <form method="post" action="/admin/speicher-ha/einstellungen" class="form storage-settings">
@@ -323,8 +436,8 @@ $check = static function (string $key, string $text, string $hint) use ($current
     <p class="card__hint">Der Hot-Tier hält häufig genutzte Dateien lokal. Ältere Dateien werden nach dem Abgleich als Sparse-Platzhalter vorgehalten und bei Bedarf automatisch zurückgeholt. Nextcloud zeigt dabei einen Fortschrittsbalken. Details: <code>docs/storage.md</code>.</p>
     <p class="card__hint">
         Der SNMP-Dienst liefert in der <code>extTable</code> (<code>.1.3.6.1.4.1.2021.8.1</code>) die Einträge
-        13 <code>storage_ha</code>, 14 <code>storage_sync</code>, 15 <code>storage_hot_fill</code> (Hot-Tier) und
-        16 <code>storage_cold_fill</code> (Cold-Tier) (Exit-Code 0 = OK, 1 = Warnung, 2 = kritisch, 3 = inaktiv). Alle Kennzahlen
+        13 <code>storage_ha</code>, 14 <code>storage_sync</code>, 15 <code>storage_hot_fill</code> (Hot-Tier),
+        16 <code>storage_cold_fill</code> (Cold-Tier) und 17 <code>storage_snapshot</code> (Snapshot-Speicher) (Exit-Code 0 = OK, 1 = Warnung, 2 = kritisch, 3 = inaktiv). Alle Kennzahlen
         (Füllstand, MB/s, IOPS, Rückstand, Rückholungen) stehen zusätzlich über <code>NET-SNMP-EXTEND-MIB</code> unter
         <code>storage_metrics</code> und <code>storage_targets</code> bereit – siehe <a href="/admin/snmp">SNMP</a>.
     </p>

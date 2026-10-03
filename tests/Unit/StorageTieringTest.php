@@ -8,6 +8,8 @@ use App\Repositories\SettingsRepository;
 use App\Repositories\StorageRepository;
 use App\Security\SecretBox;
 use App\Services\SettingsService;
+use App\Services\Storage\SnapshotService;
+use App\Services\Storage\SnapshotSettings;
 use App\Services\Storage\StorageHealth;
 use App\Services\Storage\StorageService;
 use App\Services\Storage\StorageSettings;
@@ -35,6 +37,26 @@ function storagePdo(): PDO
         capacity_bytes INTEGER NOT NULL DEFAULT 0,
         is_primary INTEGER NOT NULL DEFAULT 0,
         active INTEGER NOT NULL DEFAULT 1
+    )');
+    $pdo->exec('CREATE TABLE storage_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid TEXT NOT NULL UNIQUE,
+        source TEXT NOT NULL,
+        path TEXT NOT NULL,
+        path_hash TEXT NOT NULL,
+        user TEXT NOT NULL DEFAULT \'\',
+        version INTEGER NOT NULL DEFAULT 0,
+        size INTEGER NOT NULL DEFAULT 0,
+        file_mtime TEXT NULL,
+        sha256 TEXT NOT NULL DEFAULT \'\',
+        status TEXT NOT NULL DEFAULT \'pending\',
+        file_deleted INTEGER NOT NULL DEFAULT 0,
+        error TEXT NOT NULL DEFAULT \'\',
+        created_at TEXT NOT NULL,
+        stored_at TEXT NULL,
+        restored_at TEXT NULL,
+        restored_by TEXT NOT NULL DEFAULT \'\',
+        synced_at TEXT NOT NULL
     )');
 
     return $pdo;
@@ -83,6 +105,7 @@ function storageOverviewFixture(bool $offline): array
         'mode_reason' => '',
         'forecast' => $forecast,
         'forecast_text' => StorageService::forecastText($forecast, 1000 * StorageSettings::MIB),
+        'snapshot' => (new SnapshotService(new StorageRepository(storagePdo()), new SettingsService(new SettingsRepository(storagePdo())), new SecretBox(sys_get_temp_dir() . '/lanpa-snap-' . bin2hex(random_bytes(4)) . '/k.key')))->status(),
     ];
 }
 
@@ -174,6 +197,7 @@ Runner::test('Speicher-Tiering: Adminseite und Zielformular werden ohne Inline-S
     View::setViewPath(BASE_PATH . '/views');
     $overview = storageOverviewFixture(true);
     $html = View::render('admin.storage', [
+        'snapshotSettings' => new SnapshotSettings([]), 'smbVersions' => StorageService::SMB_VERSIONS,
         'overview' => $overview,
         'alert' => storageService(storagePdo())->dashboardAlert($overview),
         'events' => [['created_at' => '2026-10-01 10:00:00', 'level' => 'warning', 'message' => 'Ziel offline', 'target_label' => 'NAS']],
@@ -209,6 +233,7 @@ Runner::test('Speicher-Tiering: leere Ansicht und Validierungsfehler bleiben bed
     $overview['local']['fill'] = ['percent' => null, 'state' => 'disabled'];
     $overview['health']['sync']['state'] = 'blocked';
     $html = View::render('admin.storage', [
+        'snapshotSettings' => new SnapshotSettings([]), 'smbVersions' => StorageService::SMB_VERSIONS,
         'overview' => $overview, 'alert' => null, 'events' => [],
         'errors' => ['storage_local_days' => 'Ungültige Anzahl'],
         'values' => ['storage_local_days' => '0'],
@@ -308,7 +333,8 @@ Runner::test('Speicher-Tiering: S3-Ziele in Adminseite, Formular und SNMP', stat
     $overview['targets'] = [$s3];
     $overview['health'] = StorageHealth::evaluate(true, $overview['targets'], 5, 5, ['pending_files' => 0], 900);
 
-    $html = View::render('admin.storage', ['overview' => $overview, 'alert' => null, 'events' => [], 'errors' => [], 'values' => []]);
+    $html = View::render('admin.storage', ['overview' => $overview, 'alert' => null, 'events' => [], 'errors' => [], 'values' => [],
+        'snapshotSettings' => new SnapshotSettings([]), 'smbVersions' => StorageService::SMB_VERSIONS]);
     Assert::contains('s3://minio:9000/lanpa', $html);
     Assert::contains('ohne Kapazitätsgrenze', $html);
     Assert::contains('Access Key AKIAEXAMPLE', $html);

@@ -54,12 +54,14 @@ final class TieringStore
 
     public function prepare(): void
     {
-        foreach (['', '/stubs', '/recall', '/recall/queue', '/recall/status', '/access'] as $dir) {
+        foreach (['', '/stubs', '/recall', '/recall/queue', '/recall/status', '/access',
+            '/snapshots', '/snapshots/index', '/snapshots/restore', '/snapshots/status', '/snapshots/rescan'] as $dir) {
             $path = $this->base . $dir;
             if (!is_dir($path)) {
                 @mkdir($path, 0770, true);
             }
-            @chmod($path, $dir === '/recall/status' || $dir === '' ? 0775 : 0770);
+            $public = in_array($dir, ['', '/recall/status', '/snapshots', '/snapshots/index', '/snapshots/status', '/snapshots/rescan'], true);
+            @chmod($path, $public ? 0775 : 0770);
             $this->own($path);
         }
         $recall = $this->dataDir . '/' . PathRules::RECALL_DIR;
@@ -311,6 +313,87 @@ final class TieringStore
             $state = is_array($data) ? (string) ($data['state'] ?? '') : '';
             $updated = is_array($data) ? (int) ($data['updated'] ?? 0) : 0;
             if (($state === 'done' || $state === 'failed' || $state === '') && $updated < $limit) {
+                @unlink($file);
+            }
+        }
+    }
+
+    // --- Dateiversionen (Snapshot-Speicher) ----------------------------------
+
+    /**
+     * Versionsliste einer Datei fuer Nextcloud (wird vom Agenten geschrieben).
+     *
+     * @param list<array<string,mixed>> $snapshots
+     */
+    public function writeSnapshotIndex(string $rel, array $snapshots): void
+    {
+        $file = $this->base . '/snapshots/index/' . self::recallId($rel) . '.json';
+        if ($snapshots === []) {
+            @unlink($file);
+
+            return;
+        }
+        $this->writeJson($file, ['path' => $rel, 'snapshots' => $snapshots, 'updated' => time()], 0664);
+    }
+
+    /**
+     * @return list<string> Kennungen (uid) offener Wiederherstellungswuensche aus Nextcloud
+     */
+    public function snapshotRestoreIds(): array
+    {
+        $ids = [];
+        foreach (glob($this->base . '/snapshots/restore/*.json') ?: [] as $file) {
+            $id = basename($file, '.json');
+            if (preg_match('/^[a-f0-9]{40}$/', $id) === 1) {
+                $ids[] = $id;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    public function snapshotRestoreRequest(string $uid): ?array
+    {
+        $data = json_decode((string) @file_get_contents($this->base . '/snapshots/restore/' . $uid . '.json'), true);
+
+        return is_array($data) ? $data : null;
+    }
+
+    public function removeSnapshotRestoreRequest(string $uid): void
+    {
+        @unlink($this->base . '/snapshots/restore/' . $uid . '.json');
+    }
+
+    /**
+     * @param array<string,mixed> $status
+     */
+    public function writeSnapshotStatus(string $uid, array $status): void
+    {
+        $this->writeJson($this->base . '/snapshots/status/' . $uid . '.json', $status + ['updated' => time()], 0664);
+    }
+
+    /**
+     * Bittet Nextcloud, die Datei neu einzulesen (nach Wiederherstellung).
+     */
+    public function requestRescan(string $rel): void
+    {
+        $this->writeJson($this->base . '/snapshots/rescan/' . self::recallId($rel) . '.json', ['path' => $rel, 'requested_at' => time()], 0664);
+    }
+
+    public function cleanupSnapshotStatus(int $maxAge = 600): void
+    {
+        $limit = time() - $maxAge;
+        foreach (glob($this->base . '/snapshots/status/*.json') ?: [] as $file) {
+            $data = json_decode((string) @file_get_contents($file), true);
+            if (!is_array($data) || (int) ($data['updated'] ?? 0) < $limit) {
+                @unlink($file);
+            }
+        }
+        foreach (glob($this->base . '/snapshots/rescan/*.json') ?: [] as $file) {
+            if (@filemtime($file) < time() - 86400) {
                 @unlink($file);
             }
         }

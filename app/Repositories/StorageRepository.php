@@ -57,6 +57,18 @@ final class StorageRepository extends Repository
     }
 
     /**
+     * UNC-Pfade aller SMB-Ziele (zur Konfliktpruefung mit dem Snapshot-Speicher).
+     *
+     * @return list<string>
+     */
+    public function targetUncPaths(): array
+    {
+        $statement = $this->pdo->query("SELECT unc_path FROM storage_targets WHERE unc_path <> ''");
+
+        return $statement === false ? [] : array_map('strval', $statement->fetchAll(\PDO::FETCH_COLUMN));
+    }
+
+    /**
      * @return array<string,mixed>|null
      */
     public function findTarget(int $id): ?array
@@ -265,15 +277,27 @@ final class StorageRepository extends Repository
         return ['now' => $now, 'samples' => $samples];
     }
 
-    public function addRequest(string $action, ?int $targetId, string $requestedBy): int
+    public function addRequest(string $action, ?int $targetId, string $requestedBy, string $detail = ''): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO storage_requests (action, target_id, requested_by, created_at) VALUES (:action, :target, :by, NOW())'
+            'INSERT INTO storage_requests (action, target_id, requested_by, detail, created_at) VALUES (:action, :target, :by, :detail, NOW())'
         );
-        $statement->execute(['action' => $action, 'target' => $targetId, 'by' => mb_substr($requestedBy, 0, 100)]);
+        $statement->execute(['action' => $action, 'target' => $targetId, 'by' => mb_substr($requestedBy, 0, 100), 'detail' => mb_substr($detail, 0, 190)]);
         $this->pdo->exec('DELETE FROM storage_requests WHERE created_at < NOW() - INTERVAL 7 DAY');
 
         return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    public function request(int $id): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT * FROM storage_requests WHERE id = :id');
+        $statement->execute(['id' => $id]);
+        $row = $statement->fetch();
+
+        return $row === false ? null : $row;
     }
 
     /**
@@ -314,6 +338,181 @@ final class StorageRepository extends Repository
         $statement = $this->pdo->query('SELECT COUNT(*) FROM storage_requests WHERE finished_at IS NULL AND created_at > NOW() - INTERVAL 1 HOUR');
 
         return $statement === false ? 0 : (int) $statement->fetchColumn();
+    }
+
+    /**
+     * Juengste Auftraege einer Aktion: detail => Ergebnis ('' = noch offen).
+     *
+     * @return array<string,string>
+     */
+    public function recentRequestResults(string $action, int $maxAgeSeconds = 3600): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT detail, result, finished_at FROM storage_requests
+             WHERE action = :action AND created_at > NOW() - INTERVAL ' . max(60, $maxAgeSeconds) . ' SECOND ORDER BY id ASC'
+        );
+        $statement->execute(['action' => $action]);
+        $results = [];
+        foreach ($statement->fetchAll() as $row) {
+            $results[(string) $row['detail']] = $row['finished_at'] === null ? '' : (string) $row['result'];
+        }
+
+        return $results;
+    }
+
+    // --- Snapshot-Speicher (Dateiversionen) ----------------------------------
+
+    public const SNAPSHOT_STATUSES = ['complete', 'pending', 'failed', 'unavailable'];
+    public const SNAPSHOT_LIMITS = [10, 25, 50, 100];
+
+    private const SNAPSHOT_STATUS_FIELDS = [
+        'state', 'message', 'total_bytes', 'free_bytes', 'read_bps', 'write_bps', 'read_iops', 'write_iops',
+        'snapshots_total', 'snapshots_bytes', 'pending', 'failed', 'last_snapshot_at', 'last_error', 'state_since', 'updated_at',
+    ];
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function snapshotStatus(): array
+    {
+        $statement = $this->pdo->query('SELECT * FROM storage_snapshot_status WHERE id = 1');
+        $row = $statement === false ? false : $statement->fetch();
+
+        return $row === false ? [] : $row;
+    }
+
+    /**
+     * @param array<string,mixed> $values
+     */
+    public function updateSnapshotStatus(array $values): void
+    {
+        $values = array_intersect_key($values, array_flip(self::SNAPSHOT_STATUS_FIELDS));
+        if ($values === []) {
+            return;
+        }
+        [$assignments, $params] = $this->assignments($values);
+        $this->pdo->exec("INSERT IGNORE INTO storage_snapshot_status (id, updated_at) VALUES (1, NOW())");
+        $statement = $this->pdo->prepare('UPDATE storage_snapshot_status SET ' . implode(', ', $assignments) . ' WHERE id = 1');
+        $statement->execute($params);
+    }
+
+    /**
+     * Spiegelt eine Snapshotzeile des Agent-Katalogs (Einfuegen oder Aktualisieren).
+     *
+     * @param array<string,mixed> $row Katalogzeile (uid, source, path, user, version, size, mtime, sha256, status, error, created_at, stored_at, restored_at, restored_by, file_id)
+     */
+    public function upsertSnapshot(array $row): void
+    {
+        $values = [
+            'source' => mb_substr((string) $row['source'], 0, 32),
+            'path' => mb_substr((string) $row['path'], 0, 1024),
+            'path_hash' => sha1((string) $row['path']),
+            'user' => mb_substr((string) ($row['user'] ?? ''), 0, 100),
+            'version' => (int) $row['version'],
+            'size' => (int) $row['size'],
+            'file_mtime' => self::datetime($row['mtime'] ?? null),
+            'sha256' => (string) ($row['sha256'] ?? ''),
+            'status' => mb_substr((string) $row['status'], 0, 16),
+            'file_deleted' => ($row['file_id'] ?? null) === null ? 1 : 0,
+            'error' => mb_substr((string) ($row['error'] ?? ''), 0, 500),
+            'created_at' => self::datetime($row['created_at'] ?? null) ?? date('Y-m-d H:i:s'),
+            'stored_at' => self::datetime($row['stored_at'] ?? null),
+            'restored_at' => self::datetime($row['restored_at'] ?? null),
+            'restored_by' => mb_substr((string) ($row['restored_by'] ?? ''), 0, 100),
+            'synced_at' => date('Y-m-d H:i:s'),
+        ];
+        $exists = $this->pdo->prepare('SELECT id FROM storage_snapshots WHERE uid = :uid');
+        $exists->execute(['uid' => $row['uid']]);
+        if ($exists->fetchColumn() !== false) {
+            $sets = [];
+            foreach (array_keys($values) as $column) {
+                $sets[] = $column . ' = :' . $column;
+            }
+            $statement = $this->pdo->prepare('UPDATE storage_snapshots SET ' . implode(', ', $sets) . ' WHERE uid = :uid');
+        } else {
+            $columns = array_keys($values);
+            $statement = $this->pdo->prepare(
+                'INSERT INTO storage_snapshots (uid, ' . implode(', ', $columns) . ') VALUES (:uid, :' . implode(', :', $columns) . ')'
+            );
+        }
+        $statement->execute($values + ['uid' => (string) $row['uid']]);
+    }
+
+    public function deleteSnapshot(string $uid): void
+    {
+        $this->pdo->prepare('DELETE FROM storage_snapshots WHERE uid = :uid')->execute(['uid' => $uid]);
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    public function snapshot(string $uid): ?array
+    {
+        $statement = $this->pdo->prepare('SELECT * FROM storage_snapshots WHERE uid = :uid');
+        $statement->execute(['uid' => $uid]);
+        $row = $statement->fetch();
+
+        return $row === false ? null : $row;
+    }
+
+    /**
+     * Gefilterte Liste (neueste zuerst). Alle Filterwerte werden gebunden.
+     *
+     * @param array{limit?:int,from?:string,to?:string,user?:string,path?:string,status?:string,deleted?:bool} $filter
+     *
+     * @return array{rows:list<array<string,mixed>>,total:int}
+     */
+    public function snapshots(array $filter): array
+    {
+        $where = ["status <> 'deleted'"];
+        $params = [];
+        if (($filter['from'] ?? '') !== '') {
+            $where[] = 'created_at >= :from';
+            $params['from'] = $filter['from'] . ' 00:00:00';
+        }
+        if (($filter['to'] ?? '') !== '') {
+            $where[] = 'created_at <= :to';
+            $params['to'] = $filter['to'] . ' 23:59:59';
+        }
+        if (($filter['user'] ?? '') !== '') {
+            $where[] = 'user = :user';
+            $params['user'] = $filter['user'];
+        }
+        if (($filter['path'] ?? '') !== '') {
+            $where[] = "path LIKE :path ESCAPE '\\'";
+            $params['path'] = '%' . addcslashes((string) $filter['path'], '\\%_') . '%';
+        }
+        if (in_array($filter['status'] ?? '', self::SNAPSHOT_STATUSES, true)) {
+            $where[] = 'status = :status';
+            $params['status'] = $filter['status'];
+        }
+        if (($filter['deleted'] ?? false) === true) {
+            $where[] = 'file_deleted = 1';
+        }
+        $limit = in_array($filter['limit'] ?? 0, self::SNAPSHOT_LIMITS, true) ? (int) $filter['limit'] : 25;
+        $sql = ' FROM storage_snapshots WHERE ' . implode(' AND ', $where);
+
+        $count = $this->pdo->prepare('SELECT COUNT(*)' . $sql);
+        $count->execute($params);
+        $statement = $this->pdo->prepare('SELECT *' . $sql . ' ORDER BY created_at DESC, id DESC LIMIT ' . $limit);
+        $statement->execute($params);
+
+        return ['rows' => $statement->fetchAll() ?: [], 'total' => (int) $count->fetchColumn()];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function snapshotUsers(): array
+    {
+        $statement = $this->pdo->query("SELECT DISTINCT user FROM storage_snapshots WHERE user <> '' ORDER BY user LIMIT 500");
+
+        return $statement === false ? [] : array_map(static fn (array $r): string => (string) $r['user'], $statement->fetchAll());
+    }
+
+    private static function datetime(mixed $unix): ?string
+    {
+        return $unix === null || (int) $unix <= 0 ? null : date('Y-m-d H:i:s', (int) $unix);
     }
 
     /**

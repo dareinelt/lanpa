@@ -12,7 +12,9 @@ namespace App\Services\Storage\Agent;
  *
  * Ein Eintrag steht fuer einen Cold-Tier (Kennung und Wurzel des Basisziels);
  * "members" listet Basisziel und Erweiterungen (siehe TierLayout). Ein Tier ist
- * nur "online", wenn alle seine Ziele eingebunden sind.
+ * nur "online", wenn alle seine Ziele eingebunden sind. Je Ziel stehen dort
+ * auch Datenrate, IOPS und gemessene Latenz (Lastverteilung der Rueckholung,
+ * siehe RecallBalancer).
  */
 final class TargetMap
 {
@@ -68,6 +70,11 @@ final class TargetMap
                     'kind' => (string) ($member['kind'] ?? 'smb'),
                     'total_bytes' => (int) ($member['total_bytes'] ?? 0),
                     'free_bytes' => (int) ($member['free_bytes'] ?? 0),
+                    'read_bps' => (int) ($member['read_bps'] ?? 0),
+                    'write_bps' => (int) ($member['write_bps'] ?? 0),
+                    'read_iops' => (float) ($member['read_iops'] ?? 0.0),
+                    'write_iops' => (float) ($member['write_iops'] ?? 0.0),
+                    'latency_ms' => isset($member['latency_ms']) && !$stale ? (float) $member['latency_ms'] : null,
                 ];
             }
             $entry['members'] = $members !== [] ? $members : TierLayout::members($entry);

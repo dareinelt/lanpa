@@ -40,8 +40,10 @@ docker compose --profile office up -d --build storage-sync
      Domäne, Kennwort und SMB-Version (automatisch, 3.1.1, 3.0, 2.1).
    - **S3-kompatibler Objektspeicher:** siehe [Abschnitt 1a](#1a-s3-kompatible-objektspeicher).
 
-   Ein Ziel kann als **primär** markiert werden. Von dort holt der Dienst
-   Dateien bevorzugt zurück.
+   Ein Ziel kann als **primär** markiert werden. Bei gleicher Auslastung holt
+   der Dienst Dateien bevorzugt von dort zurück; sind mehrere Cold-Tiers
+   aktiv und erreichbar, werden sie beim Zurückholen gleichberechtigt
+   (active-active) genutzt – siehe [Lastverteilung](#lastverteilung-beim-zurückholen-active-active).
 3. Weitere Ziele (zweites NAS, anderer Standort …) genauso hinzufügen. Jedes
    aktive Ziel erhält eine vollständige Kopie.
 4. Unter **Einstellungen** „Daten im Cold-Tier (SMB-/S3-Tier) ablegen“ und
@@ -216,7 +218,7 @@ flowchart TB
   SS == "② Sync: neue Version (s3fs/HTTPS)" ==> COLD1
   SS == "② Sync: zweite Kopie, außer Haus" ==> COLD2
   SS -- "③ Vorgängerversion sichern,<br>bevor sie im Cold-Tier überschrieben<br>oder gelöscht wird (mount.cifs)" --> SNAPC
-  COLD1 -. "⑤ Rückholung (primär, sonst Ziel 2)" .-> SS
+  COLD1 -. "⑤ Rückholung (active-active mit Ziel 2)" .-> SS
   SNAPC -. "⑥ Version wiederherstellen<br>(Admin, erzeugt keine neue Version)" .-> SS
 ```
 
@@ -228,7 +230,7 @@ Datenfluss im Beispiel:
 | ② | `storage-sync` erkennt die Änderung (inotify) und kopiert die neue Version auf **beide** Cold-Tier-Ziele (temporäre Datei, Umbenennen, SHA-256). Erst wenn alle aktiven Ziele die Version haben, gilt sie als synchron. | `sync` → Cold-Tier 1 und 2 |
 | ③ | Bevor die alte Fassung im Cold-Tier überschrieben oder gelöscht wird, kopiert `sync` sie **einmal** aus dem Cold-Tier auf den Snapshot-Speicher (`versions/<quelle>/<uid>/data` + `meta.json`). Ist der Snapshot-Speicher nicht erreichbar, wird nur diese eine Datei zurückgehalten; alle anderen laufen weiter. Der Benutzer merkt davon nichts. | `sync` → Snapshot-Speicher |
 | ④ | Liegt eine Datei älter als X Tage und auf allen Zielen, wird sie lokal zum Platzhalter. Der Hot-Tier bleibt unter 600 GB. | `sync` → `nextcloud_data` |
-| ⑤ | Öffnet jemand einen Platzhalter, holt `recall` die Datei vom primären Ziel (sonst von Ziel 2) zurück; der Benutzer sieht einen Fortschrittsbalken. | Cold-Tier → `recall` → `nextcloud_data` |
+| ⑤ | Öffnet jemand einen Platzhalter, holt `recall` die Datei vom gerade weniger ausgelasteten Ziel zurück (Lastverteilung zwischen Ziel 1 und 2, fällt eines aus, vom anderen); der Benutzer sieht einen Fortschrittsbalken. | Cold-Tier → `recall` → `nextcloud_data` |
 | ⑥ | Ein Admin stellt über den Adminbereich (oder per Rechtsklick in Nextcloud) eine Vorgängerversion wieder her. Die Version wird vom Snapshot-Speicher in den Hot-Tier kopiert und wie eine normale Änderung auf die Cold-Tier-Ziele übertragen – **ohne** dass dabei eine neue Vorgängerversion entsteht. Gelöschte Dateien werden neu angelegt. | Snapshot-Speicher → `sync` → Hot-/Cold-Tier |
 
 Auslegung: Der Snapshot-Speicher braucht nur Platz für die **geänderten**
@@ -502,9 +504,9 @@ lokalen Datenspeicher:
 
 - **Öffnen, Herunterladen, Kopieren** einer ausgelagerten Datei legt einen
   Rückhol-Auftrag an und wartet (höchstens „Maximale Wartezeit beim
-  Zurückholen“). `storage-sync` kopiert die Datei vom primären bzw. einem
-  erreichbaren Ziel zurück, prüft den SHA-256 und ersetzt den Platzhalter
-  atomar.
+  Zurückholen“). `storage-sync` kopiert die Datei von einem erreichbaren
+  Ziel zurück (bei mehreren nach Lastverteilung, siehe unten), prüft den
+  SHA-256 und ersetzt den Platzhalter atomar.
 - **Fortschritt:** In der Nextcloud-Oberfläche erscheint unten rechts ein
   Hinweis mit Fortschrittsbalken je Datei (wartend, läuft mit Prozent,
   abgeschlossen, fehlgeschlagen). Quelle ist `GET
@@ -521,6 +523,24 @@ lokalen Datenspeicher:
   überschritten, antwortet Nextcloud mit „Speicher nicht verfügbar“
   (WebDAV 503). Desktop- und Mobil-Clients versuchen es später erneut. Es
   werden nie leere oder unvollständige Dateien ausgeliefert.
+
+### Lastverteilung beim Zurückholen (active-active)
+
+Sind mehrere Cold-Tiers aktiv, erreichbar und haben die Datei, werden sie
+beim Zurückholen gleichberechtigt genutzt:
+
+- **Auslastung:** Datenrate (MB/s) und IOPS je Ziel aus der laufenden
+  Messung des Monitors (alle 5 s) fließen ein – ein stark beschäftigtes Ziel
+  wird geschont.
+- **Latenz:** Der Monitor misst bei jeder Prüfung die Antwortzeit jedes
+  Ziels (gleitender Mittelwert); zusätzlich wird beim Zurückholen die
+  Antwortzeit der Dateiabfrage auf dem Ziel gemessen. Der höhere Wert zählt.
+- **Fair use:** Nicht alle Anfragen gehen an dasselbe Ziel. Das zuletzt
+  verwendete Ziel setzt bei der nächsten Rückholung aus, außer die
+  Alternative ist deutlich stärker ausgelastet oder langsamer. Gleichzeitige
+  Rückholungen (bis zu 4) werden zusätzlich auf die Ziele verteilt.
+- Schlägt die Kopie von einem Ziel fehl, wird automatisch das nächste
+  versucht. Bei gleicher Bewertung hat das primäre Ziel Vorrang.
 
 ---
 

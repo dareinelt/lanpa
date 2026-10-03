@@ -44,6 +44,9 @@ final class Agent
 
     private ?FileCopier $copier = null;
 
+    /** @var array<int,float> Geglaettete Latenz je Speicherziel (ms, Monitor) */
+    private array $latency = [];
+
     /**
      * @param array<string,string> $config Pfade (siehe defaults())
      */
@@ -265,7 +268,7 @@ final class Agent
 
     public function recaller(): Recaller
     {
-        return new Recaller($this->catalog(), $this->store(), $this->targetMap(), $this->copier());
+        return new Recaller($this->catalog(), $this->store(), $this->targetMap(), $this->copier(), null, new RecallBalancer($this->config['state_dir'] . '/recall-balance.json'));
     }
 
     private function repository(): StorageRepository
@@ -488,7 +491,7 @@ final class Agent
             }
             $previous[$id] = $check['state'];
             $repository->updateTargetStatus($id, $values);
-            $checks[$id] = $check;
+            $checks[$id] = $check + $rates + ['latency_ms' => $this->smoothLatency($id, $check['state'] === 'online' ? ($check['latency_ms'] ?? null) : null)];
         }
         [$map, $evaluated] = self::tierMap($rows, $checks, $frozen);
         $this->targetMap()->write($map);
@@ -532,12 +535,28 @@ final class Agent
     }
 
     /**
+     * Gleitender Mittelwert der gemessenen Latenz (Ausreisser einzelner
+     * Pruefungen sollen die Lastverteilung der Rueckholung nicht kippen).
+     */
+    private function smoothLatency(int $id, ?float $sample): ?float
+    {
+        if ($sample === null) {
+            unset($this->latency[$id]);
+
+            return null;
+        }
+        $previous = $this->latency[$id] ?? null;
+
+        return $this->latency[$id] = round($previous === null ? $sample : $previous * 0.7 + $sample * 0.3, 1);
+    }
+
+    /**
      * Stand der Cold-Tiers fuer targets.json und die HA-Bewertung: je Tier ein
      * Eintrag (Basisziel) mit allen Zielen unter "members". Ein Tier ist nur
      * erreichbar, wenn alle seine Ziele eingebunden sind.
      *
      * @param list<array<string,mixed>> $rows
-     * @param array<int,array{state:string,message:string,total_bytes:int,free_bytes:int,root:string}> $checks
+     * @param array<int,array{state:string,message:string,total_bytes:int,free_bytes:int,root:string,read_bps?:int,write_bps?:int,read_iops?:float,write_iops?:float,latency_ms?:float|null}> $checks
      *
      * @return array{0:list<array<string,mixed>>,1:list<array<string,mixed>>}
      */
@@ -560,6 +579,12 @@ final class Agent
                     'kind' => (string) ($row['kind'] ?? StorageService::KIND_SMB),
                     'total_bytes' => (int) $check['total_bytes'],
                     'free_bytes' => (int) $check['free_bytes'],
+                    // Aktuelle Auslastung und Latenz fuer die Lastverteilung der Rueckholung.
+                    'read_bps' => (int) ($check['read_bps'] ?? 0),
+                    'write_bps' => (int) ($check['write_bps'] ?? 0),
+                    'read_iops' => (float) ($check['read_iops'] ?? 0.0),
+                    'write_iops' => (float) ($check['write_iops'] ?? 0.0),
+                    'latency_ms' => isset($check['latency_ms']) ? (float) $check['latency_ms'] : null,
                 ];
                 if ($state === 'online' && $check['state'] !== 'online') {
                     $state = (string) $check['state'];

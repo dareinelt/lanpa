@@ -69,7 +69,7 @@ angegeben – bei Abweichungen gilt der Code.
 | Tier (einzelner Cold-Tier, eine Kachel) | `StorageService::tiers()`, Eintrag in `targets.json` mit `members`, Kennung = `id` des Basisziels | Basisziel samt Erweiterungen; eine vollständige Kopie. Katalog, Rückstand, Aufträge und Schutzziel beziehen sich auf die Tier-Kennung. |
 | Basisziel | `parent_id IS NULL`, Rolle `root` | Erstes Ziel eines Tiers; bestimmt Art, „aktiv“ und „primär“. |
 | Erweiterung (Stufe *n*) | `parent_id = <Basisziel>`, Rolle `extension`, `level` = Position im Tier | Weiteres Ziel derselben Art; nimmt neue Dateien auf, wenn die vorherigen Ziele voll sind. |
-| primäres Ziel | `is_primary = 1` | Bevorzugte Quelle für Rückholungen; genau eins (`clearPrimary`). |
+| primäres Ziel | `is_primary = 1` | Bei gleicher Bewertung bevorzugte Quelle für Rückholungen (sonst active-active, `RecallBalancer`); genau eins (`clearPrimary`). |
 | ausgelagert | `Catalog::STATE_EVICTED`, Marker `stubs/<pfad>.json` | Lokal nur Sparse-Platzhalter, Inhalt im Cold-Tier. |
 | Rückholung | `Recaller`, `recall/queue`, `recall/status` | Platzhalter wird durch echten Inhalt ersetzt. |
 | Rehydrierung | `SyncEngine::rehydrate()` | Agent holt selbst zurück, wenn Regeln/Platz es erlauben. |
@@ -124,7 +124,8 @@ gehören **nicht** zu diesem Modul.
 | `Mounter.php` | Einbinden/Aushängen (CIFS, s3fs), Erreichbarkeit, Füllstand, Kennungsdatei, verständliche Fehlermeldungen. Konstruktorparameter `marker` erlaubt eine andere Kennungsdatei (Snapshot-Speicher: `.lanpa-snapshots.json`, eigener `mountBase` und Zugangsdatei-Ordner). |
 | `TargetMap.php` | `state/targets.json`: vom Monitor geschrieben, von `sync`/`recall` gelesen – ein Eintrag je Cold-Tier mit `members`. Älter als 120 s ⇒ alle Ziele gelten als offline. Einträge ohne `members` (alte Datei) werden zu einem Tier mit genau einem Ziel ergänzt. |
 | `FileCopier.php` | Blockweise Kopie (1 MiB) über Temp-Datei + `rename`, SHA-256, `fsync`, Zähler für MB/s/IOPS. |
-| `Recaller.php` | Eine Rückholung: Tier wählen, Datei im Tier finden (`TierLayout::locate()`), kopieren, Prüfsumme, Platzhalter atomar ersetzen. |
+| `Recaller.php` | Eine Rückholung: Datei in allen Kandidaten-Tiers finden (`TierLayout::locate()`, Latenz dabei gemessen), Reihenfolge per `RecallBalancer`, kopieren (bei Fehler nächstes Tier), Prüfsumme, Platzhalter atomar ersetzen. |
+| `RecallBalancer.php` | Lastverteilung der Rückholung (active-active, Abschnitt 5.5): Bewertung nach Datenrate, IOPS, Latenz und laufenden Rückholungen, fair use (zuletzt verwendetes Tier setzt aus). Zustand in `state/recall-balance.json` (`flock`). |
 | `Restore.php` | Wiederherstellung aus einem Cold-Tier (alle Ziele des Tiers, Kopie oder Platzhalter), Katalog-Reset. |
 | `Pressure.php` | Füllstand des Hot-Tiers mit Hysterese, `bytesToFree()`, `roomFor()`. |
 | `PathRules.php` | Was synchronisiert bzw. ausgelagert werden darf; Konstanten für Sonderpfade. |
@@ -408,10 +409,17 @@ Format abgestimmt zwischen `TieringStore` (Agent) und `TieringClient`
 
 ### 4.5 Dateien in `storage_sync_state`
 
-- `targets.json`: `{"updated":ts,"targets":[{"id","label","root","online","primary","active","members":[{"id","label","root","online","kind","total_bytes","free_bytes"}]}]}`
+- `targets.json`: `{"updated":ts,"targets":[{"id","label","root","online","primary","active","members":[{"id","label","root","online","kind","total_bytes","free_bytes","read_bps","write_bps","read_iops","write_iops","latency_ms"}]}]}`
   – ein Eintrag je Cold-Tier (`id`/`root` = Basisziel), `online` nur, wenn
   **alle** `members` online sind (Abschnitt 14.3). Nur `online` + `active`
-  sind für `sync`/`recall` nutzbar; älter als 120 s ⇒ keines.
+  sind für `sync`/`recall` nutzbar; älter als 120 s ⇒ keines. Datenrate/IOPS
+  wie in `storage_targets`; `latency_ms` = Dauer der Erreichbarkeitsprüfung
+  (`stat -f` bzw. `ls` beim S3-Bucket, gleitender Mittelwert 0,7/0,3, `null`
+  wenn nicht online). Grundlage der Lastverteilung beim Zurückholen.
+- `recall-balance.json`: `{"last":tierId,"running":{token:{"id","pid","started"}}}`
+  – zuletzt gewähltes Tier und laufende Rückholungen je `recall-one`-Prozess
+  (`RecallBalancer`, mit `flock`). Einträge beendeter Prozesse bzw. älter als
+  6 h werden verworfen.
 - `dumps/nextcloud.dump`: `pg_dump -Fc` (wird als Quelle `nextcloud-db`
   synchronisiert).
 - `s3-tmp/`: Zwischenspeicher von s3fs (beim Start geleert).
@@ -687,13 +695,26 @@ Fehler ⇒ `StorageNotAvailableException` (WebDAV 503).
    entfernen, im Katalog als `local` markieren. In allen drei Fällen meldet
    der Status `done`.
 3. Kandidaten: Cold-Tiers mit aktueller Version laut Katalog + `targets` aus
-   dem Marker (Tier-Kennungen), nur online, primäres zuerst; Notfall: alle
-   Online-Tiers. Innerhalb eines Tiers wird die Datei per
-   `TierLayout::locate()` auf Basisziel und Erweiterungen gesucht.
-4. Größe auf dem Ziel muss passen; Kopie nach
+   dem Marker (Tier-Kennungen), nur online; Notfall: alle Online-Tiers.
+   Innerhalb eines Tiers wird die Datei per `TierLayout::locate()` auf
+   Basisziel und Erweiterungen gesucht; die Dauer von Suche + `stat` ist die
+   aktuell gemessene Latenz. Größe auf dem Ziel muss passen.
+4. Reihenfolge (active-active, `RecallBalancer::acquire()`), je Tier anhand
+   des Ziels, auf dem die Datei liegt:
+   `score = bps / max(bps, 50 MiB/s) + iops / max(iops, 200) + latenz / max(latenz, 20 ms) + 0,5 × laufende Rückholungen`
+   (Nenner = höchster Wert der Kandidaten, mindestens die genannten
+   Untergrenzen; bps/iops = lesen + schreiben aus `targets.json`; Latenz =
+   Maximum aus Monitor-Mittelwert und eigener Messung, ohne Messung 1,5 × die
+   höchste gemessene). Aufsteigend sortiert, Gleichstand ⇒ primäres, dann
+   kleinere Kennung. **Fair use:** Ist das beste Tier das zuletzt gewählte
+   (`last`) und liegt das zweitbeste höchstens 0,5 darüber
+   (`SKIP_TOLERANCE`), tauschen beide. Das erste Tier wird unter derselben
+   Sperre als laufend vermerkt (verteilt gleichzeitige Rückholungen),
+   Ausweichen per `switchTo()`, am Ende `release()`.
+5. Kopie (bei Fehler nächstes Tier der Reihenfolge) nach
    `<datadir>/.lanpa-recall/<id>.lanpa-tmp` mit SHA-256-Prüfung gegen den
    Marker.
-5. `replace()`: Inode des Platzhalters unverändert und Marker vorhanden?
+6. `replace()`: Inode des Platzhalters unverändert und Marker vorhanden?
    Sonst verwerfen. Rechte/Besitzer/mtime übernehmen, `rename`, Marker
    entfernen, Katalog `local` + Hash + Zugriff.
 

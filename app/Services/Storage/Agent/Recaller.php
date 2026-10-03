@@ -8,8 +8,9 @@ use RuntimeException;
 
 /**
  * Holt ausgelagerte Dateien aus dem Cold-Tier (SMB-/S3-Tier) zurueck in den
- * Hot-Tier (lokales Storage): bevorzugt vom primaeren Ziel, Pruefsumme wird
- * kontrolliert, der Platzhalter erst danach atomar ersetzt.
+ * Hot-Tier (lokales Storage). Haben mehrere aktive, erreichbare Tiers die
+ * Datei, verteilt RecallBalancer die Rueckholungen (active-active); die
+ * Pruefsumme wird kontrolliert, der Platzhalter erst danach atomar ersetzt.
  */
 final class Recaller
 {
@@ -18,7 +19,8 @@ final class Recaller
         private readonly TieringStore $store,
         private readonly TargetMap $targets,
         private readonly FileCopier $copier,
-        private readonly ?\Closure $clock = null
+        private readonly ?\Closure $clock = null,
+        private readonly ?RecallBalancer $balancer = null
     ) {
     }
 
@@ -71,23 +73,56 @@ final class Recaller
         $temp = $this->store->dataDir() . '/' . PathRules::RECALL_DIR . '/' . TieringStore::recallId($rel) . PathRules::TEMP_SUFFIX;
         FileCopier::ensureDir(dirname($temp));
         $errors = [];
+        $usable = [];
         foreach ($candidates as $target) {
             // Erweiterter Cold-Tier: die Datei liegt auf genau einem seiner Ziele.
+            $started = microtime(true);
             $found = TierLayout::locate($target, PathRules::SOURCE_NEXTCLOUD_DATA . '/' . $rel);
             $source = $found['path'] ?? $target['root'] . '/' . PathRules::SOURCE_NEXTCLOUD_DATA . '/' . $rel;
             $remote = @stat($source);
+            // Latenz jetzt gemessen (Dateiabfrage auf dem Ziel); die geglaettete
+            // Messung des Monitors faengt zwischengespeicherte Antworten ab.
+            $latency = (microtime(true) - $started) * 1000;
             if ($remote === false || (int) $remote['size'] !== $size) {
                 $errors[] = $target['label'] . ': Datei fehlt oder hat eine andere Größe';
                 continue;
             }
-            try {
-                $result = $this->copyTo($source, $temp, $marker, $target['id'], $progress);
-            } catch (RuntimeException $exception) {
-                $errors[] = $target['label'] . ': ' . $exception->getMessage();
-                continue;
-            }
+            $member = $found['member'] ?? TierLayout::members($target)[0];
+            $monitored = isset($member['latency_ms']) ? (float) $member['latency_ms'] : null;
+            $usable[] = [
+                'id' => $target['id'],
+                'primary' => $target['primary'],
+                'bps' => (int) ($member['read_bps'] ?? 0) + (int) ($member['write_bps'] ?? 0),
+                'iops' => (float) ($member['read_iops'] ?? 0.0) + (float) ($member['write_iops'] ?? 0.0),
+                'latency_ms' => round(max($latency, $monitored ?? 0.0), 1),
+                'target' => $target,
+                'source' => $source,
+            ];
+        }
+        if ($usable === []) {
+            throw new RuntimeException('Rückholung fehlgeschlagen – ' . implode('; ', $errors));
+        }
 
-            return $this->replace($rel, $abs, $temp, $before, $marker, $result['sha256']);
+        // Mehrere Tiers mit der Datei: active-active nach Last, Latenz und fair use.
+        $balancer = $this->balancer ?? new RecallBalancer();
+        $choice = $balancer->acquire($usable);
+        try {
+            foreach ($choice['order'] as $position => $candidate) {
+                $target = $candidate['target'];
+                if ($position > 0) {
+                    $balancer->switchTo($choice['token'], $target['id']);
+                }
+                try {
+                    $result = $this->copyTo($candidate['source'], $temp, $marker, $target['id'], $progress);
+                } catch (RuntimeException $exception) {
+                    $errors[] = $target['label'] . ': ' . $exception->getMessage();
+                    continue;
+                }
+
+                return $this->replace($rel, $abs, $temp, $before, $marker, $result['sha256']);
+            }
+        } finally {
+            $balancer->release($choice['token']);
         }
 
         throw new RuntimeException('Rückholung fehlgeschlagen – ' . implode('; ', $errors));

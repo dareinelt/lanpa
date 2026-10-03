@@ -45,7 +45,9 @@ final class Mounter
      * @param array<string,mixed> $target   Zeile aus storage_targets
      * @param bool                $readOnly Nur lesend einbinden (Schutzziel bei einem Sicherheitsvorfall)
      *
-     * @return array{state:string,message:string,total_bytes:int,free_bytes:int,root:string,share:string}
+     * @return array{state:string,message:string,total_bytes:int,free_bytes:int,root:string,share:string,latency_ms:float|null}
+     *
+     * latency_ms: Dauer der Erreichbarkeitspruefung (statfs bzw. Auflisten des Buckets).
      */
     public function check(array $target, bool $forceRemount = false, bool $readOnly = false): array
     {
@@ -53,7 +55,7 @@ final class Mounter
         $s3 = self::isS3($target);
         $mountPoint = $this->mountPoint($id);
         $result = ['state' => 'offline', 'message' => '', 'total_bytes' => 0, 'free_bytes' => 0, 'root' => $mountPoint,
-            'share' => $s3 ? '' : self::shareKey((string) $target['unc_path'])];
+            'share' => $s3 ? '' : self::shareKey((string) $target['unc_path']), 'latency_ms' => null];
 
         if ((int) $target['active'] !== 1) {
             $this->unmount($id);
@@ -77,7 +79,9 @@ final class Mounter
 
         if ($s3) {
             // s3fs beantwortet statfs lokal; erst ein Auflisten fragt den Bucket ab.
+            $started = microtime(true);
             $probe = Shell::run(['ls', '-A', '--', $mountPoint], 20);
+            $result['latency_ms'] = round((microtime(true) - $started) * 1000, 1);
             if ($probe['code'] !== 0) {
                 $log = $this->s3Log($id);
                 $this->unmount($id);
@@ -95,7 +99,9 @@ final class Mounter
                 $result['free_bytes'] = max(0, $capacity - (int) ($target['synced_bytes'] ?? 0));
             }
         } else {
+            $started = microtime(true);
             $probe = Shell::run(['stat', '-f', '-c', '%b %a %S', $mountPoint], 10);
+            $result['latency_ms'] = round((microtime(true) - $started) * 1000, 1);
             if ($probe['code'] !== 0 || preg_match('/^(\d+) (\d+) (\d+)/', trim($probe['out']), $m) !== 1) {
                 // Haengende Verbindung loesen, damit die naechste Pruefung neu einbindet.
                 $this->unmount($id);

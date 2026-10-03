@@ -15,6 +15,10 @@ declare(strict_types=1);
  *                                                 (--keep-paused: Synchronisation bleibt angehalten)
  *   php scripts/storage_sync.php resume           angehaltene Synchronisation fortsetzen
  *
+ * Katalog (MySQL-Container storage-sync-catalog, Redis-Helfer storage-sync-redis):
+ *   php scripts/storage_sync.php catalog-init     Schema anlegen, alten SQLite-Katalog einmalig uebernehmen
+ *   php scripts/storage_sync.php catalog-status   Erreichbarkeit und Umfang des Katalogs
+ *
  * Snapshot-Speicher (Dateiversionen):
  *   php scripts/storage_sync.php snapshots [--path=<Teilpfad>] [--limit=<n>]
  *   php scripts/storage_sync.php snapshot-status
@@ -61,6 +65,10 @@ switch ($command) {
         exit($agent->restore($options['target'], !empty($options['full']), !empty($options['keep_paused'])));
     case 'resume':
         exit($agent->resume());
+    case 'catalog-init':
+        exit($agent->catalogInit());
+    case 'catalog-status':
+        exit($agent->catalogStatus());
     case 'snapshots':
         $path = null;
         $limit = 50;
@@ -93,6 +101,6 @@ switch ($command) {
     case 'snapshot-rebuild':
         exit($agent->snapshotRebuild());
     default:
-        fwrite(STDERR, 'Aufruf: php scripts/storage_sync.php monitor|sync|recall|restore --target=<id> [--full] [--keep-paused]|resume|snapshots|snapshot-status|snapshot-prune|snapshot-retry|snapshot-restore --id=<uid>|snapshot-rebuild' . PHP_EOL);
+        fwrite(STDERR, 'Aufruf: php scripts/storage_sync.php monitor|sync|recall|restore --target=<id> [--full] [--keep-paused]|resume|catalog-init|catalog-status|snapshots|snapshot-status|snapshot-prune|snapshot-retry|snapshot-restore --id=<uid>|snapshot-rebuild' . PHP_EOL);
         exit(1);
 }

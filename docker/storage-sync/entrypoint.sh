@@ -27,6 +27,21 @@ for _ in $(seq 1 60); do
     sleep 2
 done
 
+# Katalog (Container storage-sync-catalog): Schema anlegen/aktualisieren und
+# einen alten SQLite-Katalog einmalig uebernehmen. Ohne Katalog kein Start.
+catalog_ready=0
+for _ in $(seq 1 90); do
+    if php /var/www/html/scripts/storage_sync.php catalog-init; then
+        catalog_ready=1
+        break
+    fi
+    sleep 2
+done
+if [[ $catalog_ready -ne 1 ]]; then
+    echo "storage-sync: Katalog-Datenbank (storage-sync-catalog) nicht erreichbar - Abbruch." >&2
+    exit 1
+fi
+
 pids=()
 for role in monitor sync recall; do
     php /var/www/html/scripts/storage_sync.php "$role" &

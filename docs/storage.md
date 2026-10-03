@@ -15,7 +15,11 @@ Rückholung.
 | **Cold-Tier (SMB-/S3-Tier)** | Alle eingetragenen Speicherziele, SMB-Freigaben und S3-Buckets beliebig gemischt. Jeder Cold-Tier (eine Kachel, z. B. „Cold-Tier 1“) hält den **vollständigen** Datenbestand und kann bei Platzmangel um weitere Ziele derselben Art erweitert werden ([Abschnitt 4a](#4a-cold-tiers-erweitern-mehr-kapazität)). |
 | **Snapshot-Speicher (Dateiversionen)** | Eine eigene, von den Speicherzielen getrennte SMB-Freigabe. Vor jeder inhaltlichen Änderung oder Löschung einer Benutzerdatei wird die **bisherige Version unveränderlich** dort abgelegt ([Abschnitt 5a](#5a-snapshot-speicher-dateiversionen-auf-eigener-smb-freigabe)). |
 
-Dieses Dokument beschreibt Einrichtung und Betrieb. Die technische Referenz
+Dieses Dokument beschreibt Einrichtung und Betrieb. Welche Container
+beteiligt sind, wie sie zusammenspielen (Netze, Volumes, Katalog-Datenbank
+`storage-sync-catalog`, Redis-Helfer `storage-sync-redis`), was bei einem
+Ausfall passiert und wie Störungen gefunden werden, beschreibt
+[docs/storage-stack.md](storage-stack.md). Die technische Referenz
 für Entwickler und Coding-Agenten (Code-Landkarte, Prozesse, Datenformate,
 Algorithmen, Invarianten, Tests, Änderungsrezepte, Fehlersuche) steht in
 [docs/storage-referenz.md](storage-referenz.md).
@@ -115,6 +119,8 @@ flowchart LR
   SS -- s3fs / HTTPS --> C2[(Cold-Tier: S3-Bucket …)]
   SS -- "mount.cifs: Vorgängerversionen (nur schreiben/lesen, nie ändern)" --> SNAP[(Snapshot-Speicher<br>eigene SMB-Freigabe)]
   SS -- Messwerte, Status, Versionsliste --> DB[(MySQL intranet)]
+  SS -- Katalog --> CAT[(storage-sync-catalog<br>MySQL storage_sync)]
+  SS -- Sperren, I/O-Zähler --> RED[(storage-sync-redis)]
   ADM[Adminbereich] --> DB
   SNMP[snmp] -- docker exec --> APP[app: scripts/storage_status.php] --> DB
 ```
@@ -128,8 +134,19 @@ Container neu, und der Healthcheck schlägt fehl.
 | `sync` | Erkennt Änderungen sofort (inotify) und gleicht zusätzlich in festem Abstand vollständig ab. Kopiert neue oder geänderte Dateien auf **alle** aktiven Ziele (temporäre Datei, danach Umbenennen, SHA-256-Prüfung) und übernimmt Umbenennungen und Löschungen. Sichert vorher die bisherige Version auf dem Snapshot-Speicher, führt Wiederherstellungen aus und räumt Versionen nach Aufbewahrungsregel auf. Erstellt den Datenbank-Abzug und lagert Dateien aus. |
 | `recall` | Holt ausgelagerte Dateien auf Anforderung von Nextcloud zurück, mehrere parallel, mit Fortschritt. |
 
-Zustand und Katalog liegen im Volume `storage_sync_state` (SQLite).
-Auslagerungsmarker, Rückhol-Warteschlange und die veröffentlichte
+Der **Katalog** (Datei-Bestand, Versionen je Ziel, Aufträge, Zugriffe,
+Vorgängerversionen) liegt in einer eigenen MySQL-Instanz
+**`storage-sync-catalog`** (Volume `storage_sync_catalog_data`, Zugangsdaten
+wie die Anwendungsdatenbank: `DB_USER`/`DB_PASSWORD`/`DB_ROOT_PASSWORD`).
+**`storage-sync-redis`** verhindert mit kurzen Sperren Deadlocks zwischen
+großen Katalog-Transaktionen und hält die I/O-Zähler; er speichert nichts
+dauerhaft. Beide sind nur über das interne Netz `storage_catalog` von
+`storage-sync` aus erreichbar und starten mit dem Profil `office`
+automatisch. Ein alter SQLite-Katalog wird beim ersten Start übernommen.
+Einzelheiten: [docs/storage-stack.md](storage-stack.md).
+
+Zielkarte, DB-Abzug und S3-Zwischenspeicher liegen im Volume
+`storage_sync_state`. Auslagerungsmarker, Rückhol-Warteschlange und die veröffentlichte
 Versionsliste je Datei liegen im Volume `storage_tiering`, das auch in
 `nextcloud` und `nextcloud-ai-worker` unter `/var/lib/lanpa-tiering`
 eingebunden ist.
@@ -735,6 +752,11 @@ mit Snapshots versehen werden. Frühere Fassungen einzelner Dateien liegen
 auf dem Snapshot-Speicher ([Abschnitt 5a](#5a-snapshot-speicher-dateiversionen-auf-eigener-smb-freigabe));
 er ist nicht Teil des `office-backup`-Archivs und wird nicht von
 `storage-restore.sh` benötigt.
+
+Die Katalog-Datenbank `storage-sync-catalog` wird bewusst nicht gesichert:
+Sie lässt sich jederzeit aus Hot-Tier, Markern und Zielen neu aufbauen
+(Vollabgleich bzw. `restore`, Versionsliste per `snapshot-rebuild`), siehe
+[docs/storage-stack.md, Abschnitt 13](storage-stack.md#13-sicherung-des-storage-stacks).
 
 ### Wiederherstellung aus einem Speicherziel
 

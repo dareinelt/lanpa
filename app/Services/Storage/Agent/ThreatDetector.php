@@ -95,21 +95,7 @@ final class ThreatDetector
         if ($entries === []) {
             return;
         }
-        $pdo = $this->catalog->pdo();
-        $this->catalog->transaction(static function () use ($pdo, $entries): void {
-            $write = $pdo->prepare('INSERT INTO writes (path, uid, ip, ua, at) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT (path) DO UPDATE SET uid = excluded.uid, ip = excluded.ip, ua = excluded.ua, at = excluded.at
-                WHERE excluded.at >= writes.at');
-            $client = $pdo->prepare('INSERT INTO clients (uid, ip, ua, first_at, last_at, writes) VALUES (?, ?, ?, ?, ?, 1)
-                ON CONFLICT (uid, ip, ua) DO UPDATE SET last_at = MAX(last_at, excluded.last_at), writes = writes + 1');
-            foreach ($entries as $entry) {
-                if ($entry['u'] === '' || $entry['p'] === '') {
-                    continue;
-                }
-                $write->execute([$entry['p'], $entry['u'], $entry['ip'], $entry['ua'], $entry['t']]);
-                $client->execute([$entry['u'], $entry['ip'], $entry['ua'], $entry['t'], $entry['t']]);
-            }
-        });
+        $this->catalog->ingestWrites($entries);
     }
 
     /**
@@ -128,18 +114,9 @@ final class ThreatDetector
             return [];
         }
         $since = $now - $this->settings->windowSeconds();
-        $statement = $this->catalog->pdo()->prepare(
-            "SELECT COALESCE(w.uid, a.owner) AS who,
-                    SUM(a.changed) AS changed,
-                    SUM(CASE WHEN a.kind = 'content' THEN 1 ELSE 0 END) AS content,
-                    SUM(CASE WHEN a.kind = 'extension' THEN 1 ELSE 0 END) AS extension
-             FROM activity a LEFT JOIN writes w ON w.path = a.path
-             WHERE a.at >= ? GROUP BY who"
-        );
-        $statement->execute([$since]);
         $findings = [];
-        foreach ($statement->fetchAll() as $row) {
-            $user = (string) $row['who'];
+        foreach ($this->catalog->activityByUser($since) as $row) {
+            $user = $row['who'];
             $from = $since;
             if (($floors[$user] ?? 0) > $since) {
                 $from = $floors[$user];
@@ -174,42 +151,8 @@ final class ThreatDetector
      */
     public function stats(string $user, int $since): array
     {
-        $pdo = $this->catalog->pdo();
-        $scope = 'FROM activity a LEFT JOIN writes w ON w.path = a.path WHERE a.at >= ? AND (w.uid = ? OR (w.uid IS NULL AND a.owner = ?))';
-        $params = [$since, $user, $user];
-
-        $totals = $pdo->prepare(
-            "SELECT COUNT(*) AS rows_total, COALESCE(SUM(a.changed), 0) AS changed,
-                    SUM(CASE WHEN a.kind = 'content' THEN 1 ELSE 0 END) AS content,
-                    SUM(CASE WHEN a.kind = 'extension' THEN 1 ELSE 0 END) AS extension,
-                    COALESCE(SUM(a.size), 0) AS bytes, MIN(a.at) AS first_at, MAX(a.at) AS last_at,
-                    SUM(CASE WHEN w.uid IS NOT NULL THEN 1 ELSE 0 END) AS attributed " . $scope
-        );
-        $totals->execute($params);
-        $sum = $totals->fetch() ?: [];
-
-        $samples = $pdo->prepare(
-            "SELECT a.path, a.kind, a.detail, a.size, a.at " . $scope . "
-             ORDER BY CASE a.kind WHEN 'extension' THEN 0 WHEN 'content' THEN 1 ELSE 2 END, a.at DESC LIMIT " . self::MAX_SAMPLES
-        );
-        $samples->execute($params);
-
-        $grouped = static function (string $column, string $kind) use ($pdo, $scope, $params): array {
-            $statement = $pdo->prepare(
-                'SELECT ' . $column . ' AS k, COUNT(*) AS n ' . $scope . ($kind !== '' ? ' AND a.kind = ' . $pdo->quote($kind) : '')
-                . ' GROUP BY k ORDER BY n DESC LIMIT 20'
-            );
-            $statement->execute($params);
-            $result = [];
-            foreach ($statement->fetchAll() as $row) {
-                $result[(string) $row['k']] = (int) $row['n'];
-            }
-
-            return $result;
-        };
-
-        $clients = $pdo->prepare('SELECT ip, ua, writes, last_at FROM clients WHERE uid = ? AND last_at >= ? ORDER BY writes DESC, last_at DESC LIMIT 5');
-        $clients->execute([$user, $since]);
+        $activity = $this->catalog->activityOf($user, $since, self::MAX_SAMPLES);
+        $sum = $activity['totals'];
 
         return [
             'user' => $user,
@@ -223,13 +166,13 @@ final class ThreatDetector
             'samples' => array_map(static fn (array $r): array => [
                 'path' => (string) $r['path'], 'kind' => (string) $r['kind'], 'detail' => (string) $r['detail'],
                 'size' => (int) $r['size'], 'at' => (int) $r['at'],
-            ], $samples->fetchAll()),
-            'patterns' => $grouped('a.detail', 'extension'),
-            'reasons' => $grouped('a.detail', 'content'),
-            'owners' => $grouped('a.owner', ''),
+            ], $activity['samples']),
+            'patterns' => $activity['patterns'],
+            'reasons' => $activity['reasons'],
+            'owners' => $activity['owners'],
             'clients' => array_map(static fn (array $r): array => [
                 'ip' => (string) $r['ip'], 'ua' => (string) $r['ua'], 'writes' => (int) $r['writes'], 'last' => (int) $r['last_at'],
-            ], $clients->fetchAll()),
+            ], $activity['clients']),
         ];
     }
 
@@ -321,16 +264,12 @@ final class ThreatDetector
 
     private function record(string $owner, int $at, string $kind, string $path, int $size, string $detail, bool $changed): void
     {
-        $this->catalog->pdo()->prepare('INSERT INTO activity (owner, at, kind, path, size, detail, changed) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            ->execute([$owner, $at, $kind, $path, $size, mb_substr($detail, 0, 200), $changed ? 1 : 0]);
+        $this->catalog->recordActivity($owner, $at, $kind, $path, $size, mb_substr($detail, 0, 200), $changed);
     }
 
     private function prune(int $now): void
     {
         $limit = $now - max(self::RETENTION_SECONDS, $this->settings->windowSeconds());
-        $pdo = $this->catalog->pdo();
-        $pdo->prepare('DELETE FROM activity WHERE at < ?')->execute([$limit]);
-        $pdo->prepare('DELETE FROM writes WHERE at < ?')->execute([$limit]);
-        $pdo->prepare('DELETE FROM clients WHERE last_at < ?')->execute([$limit]);
+        $this->catalog->pruneActivity($limit);
     }
 }

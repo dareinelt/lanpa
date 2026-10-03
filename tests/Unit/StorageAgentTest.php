@@ -10,6 +10,7 @@ use App\Services\Storage\Agent\Mounter;
 use App\Services\Storage\Agent\PathRules;
 use App\Services\Storage\Agent\Pressure;
 use App\Services\Storage\Agent\Recaller;
+use App\Services\Storage\Agent\RedisCoordinator;
 use App\Services\Storage\Agent\SyncEngine;
 use App\Services\Storage\Agent\TargetMap;
 use App\Services\Storage\Agent\TieringStore;
@@ -17,6 +18,33 @@ use App\Services\Storage\Agent\TierLayout;
 use App\Services\Storage\StorageSettings;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
+
+/**
+ * Katalog fuer Tests: SQLite im Arbeitsspeicher. Mit STORAGE_CATALOG_TEST_MYSQL
+ * ("host:port:benutzer:passwort", Benutzer mit CREATE/DROP DATABASE) laufen
+ * die Tests gegen echtes MySQL (je Aufruf eine eigene Datenbank), mit
+ * STORAGE_CATALOG_TEST_REDIS ("host:port:passwort") zusaetzlich mit Redis.
+ */
+function storageTestCatalog(): Catalog
+{
+    $redis = null;
+    $redisSpec = (string) getenv('STORAGE_CATALOG_TEST_REDIS');
+    if ($redisSpec !== '') {
+        [$host, $port, $password] = explode(':', $redisSpec, 3) + [1 => '6379', 2 => ''];
+        $redis = new RedisCoordinator($host, (int) $port, $password);
+    }
+    $mysql = (string) getenv('STORAGE_CATALOG_TEST_MYSQL');
+    if ($mysql === '') {
+        return Catalog::memory($redis);
+    }
+    [$host, $port, $user, $password] = explode(':', $mysql, 4) + [1 => '3306', 2 => 'root', 3 => ''];
+    $name = 'catalog_test_' . bin2hex(random_bytes(6));
+    $admin = new PDO('mysql:host=' . $host . ';port=' . $port, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $admin->exec('CREATE DATABASE ' . $name);
+    register_shutdown_function(static fn () => $admin->exec('DROP DATABASE IF EXISTS ' . $name));
+
+    return Catalog::connect(['host' => $host, 'port' => (int) $port, 'database' => $name, 'username' => $user, 'password' => $password], $redis);
+}
 
 /**
  * Testumgebung: Quellen, zwei Speicherziele (Verzeichnisse) und Katalog.
@@ -42,7 +70,7 @@ function storageAgentEnv(int $targetCount = 2): array
         file_put_contents($root . '/' . PathRules::TARGET_MARKER, '{"instance":"test"}');
         $targets[] = ['id' => $i, 'label' => 'Ziel ' . $i, 'root' => $root, 'online' => true, 'primary' => $i === 1, 'active' => true];
     }
-    $catalog = new Catalog($base . '/state/catalog.sqlite');
+    $catalog = storageTestCatalog();
     $store = new TieringStore($base . '/tiering', $sources[PathRules::SOURCE_NEXTCLOUD_DATA]);
     $store->prepare();
     $map = new TargetMap($base . '/state/targets.json');
@@ -568,4 +596,106 @@ Runner::test('Storage-Agent: Erweiterter Cold-Tier ist nur mit allen Zielen erre
     Assert::same('offline', $evaluated[1]['state']);
     Assert::true($evaluated[1]['frozen']);
     Assert::false($evaluated[0]['frozen']);
+});
+
+Runner::test('Storage-Katalog: keine SQLite-Datei, nur MySQL bzw. Arbeitsspeicher', static function (): void {
+    $file = sys_get_temp_dir() . '/lanpa-catalog-' . bin2hex(random_bytes(5)) . '.sqlite';
+    try {
+        $refused = false;
+        try {
+            new Catalog(new PDO('sqlite:' . $file));
+        } catch (RuntimeException $exception) {
+            $refused = str_contains($exception->getMessage(), 'SQLite-Datei');
+        }
+        Assert::true($refused, 'Ein Katalog in einer SQLite-Datei muss abgelehnt werden.');
+    } finally {
+        @unlink($file);
+    }
+    $catalog = Catalog::memory();
+    Assert::same((string) Catalog::SCHEMA_VERSION, $catalog->meta('schema_version'));
+    Assert::same(1, $catalog->nextGeneration());
+    Assert::same(2, $catalog->nextGeneration());
+});
+
+Runner::test('Storage-Katalog: Pfade bytegenau, Stapelabfragen und Zaehler', static function (): void {
+    $catalog = storageTestCatalog();
+    $odd = "alice/files/Gro\xDF/\xFF.bin";
+    $a = $catalog->insert(PathRules::SOURCE_NEXTCLOUD_DATA, 'alice/files/A.txt', 10, 100, 1, 200, 1);
+    $b = $catalog->insert(PathRules::SOURCE_NEXTCLOUD_DATA, 'alice/files/a.txt', 20, 100, 2, 200, 1);
+    $c = $catalog->insert(PathRules::SOURCE_NEXTCLOUD_DATA, $odd, 30, 100, 3, 200, 1);
+    Assert::true($a !== $b, 'Gross-/Kleinschreibung unterscheidet Pfade.');
+    Assert::same($c, (int) $catalog->find(PathRules::SOURCE_NEXTCLOUD_DATA, $odd)['id']);
+    Assert::same($odd, (string) $catalog->find(PathRules::SOURCE_NEXTCLOUD_DATA, $odd)['path']);
+    Assert::false(array_key_exists('path_hash', $catalog->get($a)), 'Interne Schluessel bleiben verborgen.');
+    $many = $catalog->findMany(PathRules::SOURCE_NEXTCLOUD_DATA, ['alice/files/A.txt', $odd, 'fehlt.txt']);
+    Assert::same(2, count($many));
+    $catalog->touchSeenMany([$a, $b, $c], 7);
+    Assert::same([], $catalog->unseen(PathRules::SOURCE_NEXTCLOUD_DATA, 7));
+    $catalog->recordAccesses(PathRules::SOURCE_NEXTCLOUD_DATA, ['alice/files/A.txt' => 5000, 'fehlt.txt' => 6000]);
+    $catalog->recordAccesses(PathRules::SOURCE_NEXTCLOUD_DATA, ['alice/files/A.txt' => 4000]);
+    Assert::same(5000, (int) $catalog->get($a)['last_access']);
+    $catalog->rename($b, 'alice/files/b.txt', 8);
+    Assert::null($catalog->find(PathRules::SOURCE_NEXTCLOUD_DATA, 'alice/files/a.txt'));
+    Assert::same($b, (int) $catalog->find(PathRules::SOURCE_NEXTCLOUD_DATA, 'alice/files/b.txt')['id']);
+
+    $catalog->ingestWrites([
+        ['t' => 100, 'u' => 'bob', 'ip' => '10.0.0.1', 'ua' => 'Client', 'p' => 'alice/files/A.txt'],
+        ['t' => 50, 'u' => 'eve', 'ip' => '10.0.0.2', 'ua' => 'Client', 'p' => 'alice/files/A.txt'],
+        ['t' => 120, 'u' => 'bob', 'ip' => '10.0.0.1', 'ua' => 'Client', 'p' => 'alice/files/b.txt'],
+    ]);
+    Assert::same('bob', $catalog->lastWriter('alice/files/A.txt'), 'Aeltere Eintraege ueberschreiben neuere nicht.');
+
+    $before = $catalog->counters()[1]['write_bytes'] ?? 0;
+    $catalog->addCounters(1, 0, 100, 0, 1);
+    $catalog->addCounters(1, 0, 50, 0, 1);
+    Assert::same($before + 150, $catalog->counters()[1]['write_bytes']);
+    $catalog->forgetTargets([]);
+    Assert::false(isset($catalog->counters()[1]));
+});
+
+Runner::test('Storage-Katalog: alter SQLite-Katalog wird uebernommen', static function (): void {
+    $legacy = new PDO('sqlite::memory:');
+    $legacy->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $legacy->exec('CREATE TABLE files (id INTEGER PRIMARY KEY, source TEXT, path TEXT, size INTEGER, mtime INTEGER, inode INTEGER, version INTEGER,
+        sha256 TEXT, state TEXT, tiered INTEGER, last_access INTEGER, evict_reason TEXT, changed_at INTEGER, seen INTEGER)');
+    $legacy->exec('CREATE TABLE target_files (target_id INTEGER, file_id INTEGER, version INTEGER)');
+    $legacy->exec('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)');
+    $legacy->exec('CREATE TABLE snapshots (id INTEGER PRIMARY KEY, uid TEXT, file_id INTEGER, source TEXT, path TEXT, user TEXT, version INTEGER, size INTEGER,
+        mtime INTEGER, sha256 TEXT, status TEXT, error TEXT, attempts INTEGER, next_attempt INTEGER, created_at INTEGER, stored_at INTEGER,
+        restored_at INTEGER, restored_by TEXT, mirrored INTEGER)');
+    $insert = $legacy->prepare("INSERT INTO files VALUES (?, 'nextcloud-data', ?, 10, 100, ?, 3, NULL, 'local', 1, 0, NULL, 100, 4)");
+    for ($i = 1; $i <= Catalog::BATCH + 20; $i++) {
+        $insert->execute([$i * 2, 'alice/files/f' . $i . '.txt', $i]);
+    }
+    $legacy->exec('INSERT INTO target_files VALUES (1, 2, 3)');
+    $legacy->exec("INSERT INTO meta VALUES ('generation', '4'), ('paused', '1')");
+    $legacy->exec("INSERT INTO snapshots VALUES (1, 'abc', 2, 'nextcloud-data', 'alice/files/f1.txt', 'alice', 2, 10, 90, NULL, 'complete', '', 0, 0, 80, 85, NULL, '', 1)");
+
+    $catalog = storageTestCatalog();
+    $counts = $catalog->importLegacy($legacy);
+    Assert::same(Catalog::BATCH + 20, $counts['files']);
+    Assert::same(4, (int) $catalog->find(PathRules::SOURCE_NEXTCLOUD_DATA, 'alice/files/f2.txt')['id']);
+    Assert::same([1], $catalog->targetsWithCurrent(2));
+    Assert::same('1', $catalog->meta('paused'));
+    Assert::same(5, $catalog->nextGeneration());
+    Assert::same('abc', (string) $catalog->snapshotsFor(PathRules::SOURCE_NEXTCLOUD_DATA, 'alice/files/f1.txt')[0]['uid']);
+    $id = $catalog->insert(PathRules::SOURCE_NEXTCLOUD_DATA, 'neu.txt', 1, 1, 1, 1, 1);
+    Assert::true($id > (Catalog::BATCH + 20) * 2, 'Neue Kennungen folgen auf die uebernommenen.');
+    $refused = false;
+    try {
+        $catalog->importLegacy($legacy);
+    } catch (RuntimeException) {
+        $refused = true;
+    }
+    Assert::true($refused, 'Nur in einen leeren Katalog importieren.');
+
+    // Unterbrochener Import (Neustart mittendrin): Teilstand wird verworfen, erneut uebernommen.
+    $catalog->setMeta('legacy_import', 'running');
+    $catalog->setMeta('generation', '99');
+    $counts = $catalog->importLegacy($legacy);
+    Assert::same(Catalog::BATCH + 20, $counts['files']);
+    Assert::same(Catalog::BATCH + 20, $catalog->count());
+    Assert::null($catalog->find(PathRules::SOURCE_NEXTCLOUD_DATA, 'neu.txt'));
+    Assert::same('4', $catalog->meta('generation'));
+    Assert::true(str_starts_with($catalog->meta('legacy_import'), 'done'));
 });

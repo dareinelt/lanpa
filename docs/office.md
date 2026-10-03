@@ -62,6 +62,7 @@ flowchart LR
 | `nextcloud-ai-worker` | Führt KI-Aufgaben von Nextcloud (Assistant) sofort aus statt nur alle 5 Minuten per Cron ([Abschnitt 6a](#6a-lokale-ki)). |
 | `office-backup` | Sicherung/Wiederherstellung, vom Adminbereich aus steuerbar. |
 | `storage-sync` | Speicher-Tiering und HA-Synchronisation: Daten von Nextcloud und Euro-Office zusätzlich auf SMB-Freigaben (Cold-Tier), lokales Volume als Cache (Hot-Tier) – siehe [docs/storage.md](storage.md). |
+| `storage-sync-catalog`, `storage-sync-redis` | Katalog-Datenbank (MySQL) und Redis-Helfer von `storage-sync`, nur im internen Netz `storage_catalog` – siehe [docs/storage-stack.md](storage-stack.md). |
 
 **Warum kein zusätzlicher `reverse`-/`entry`-Container?** Die NTLM-Anmeldung ist
 an die TCP-Verbindung gebunden. Ein weiterer Proxy davor würde sie brechen. Der

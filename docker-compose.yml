@@ -450,6 +450,56 @@ services:
       - intranet
       - office_backend
 
+  # Katalog des storage-sync-Agenten (Datei-Zustand, Generationen, Schnappschuesse,
+  # Schreibereignisse, Aktivitaet). Eigene MySQL-Instanz, damit Tausende
+  # Katalog-Schreibvorgaenge pro Sekunde die Anwendungsdatenbank nicht bremsen.
+  # Zugangsdaten identisch mit "db" (DB_USER/DB_PASSWORD/DB_ROOT_PASSWORD).
+  # Nur im internen Netz storage_catalog erreichbar (siehe docs/storage.md).
+  storage-sync-catalog:
+    image: mysql:${DB_IMAGE_TAG:-9.7.2}
+    profiles: ["office"]
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${STORAGE_CATALOG_DB_NAME:-storage_sync}
+      MYSQL_USER: ${DB_USER:-intranet}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD muss in .env gesetzt sein}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD muss in .env gesetzt sein}
+    command:
+      - --innodb-buffer-pool-size=${STORAGE_CATALOG_BUFFER_POOL:-512M}
+    volumes:
+      - storage_sync_catalog_data:/var/lib/mysql
+      - ./docker/storage-sync-catalog/my.cnf:/etc/mysql/conf.d/storage-sync-catalog.cnf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - storage_catalog
+
+  # Hilfsdienst des Katalogs: kurzlebige Sperren (verhindern Deadlocks zwischen
+  # Mehrzeilen-Transaktionen) und fluechtige I/O-Zaehler. Haelt keine Wahrheit:
+  # ohne Persistenz, ein Ausfall verlangsamt nur (siehe docs/storage.md).
+  # Passwort = DB_PASSWORD, ueber eine Konfigurationsdatei (nicht in der Prozessliste).
+  storage-sync-redis:
+    image: redis:${STORAGE_SYNC_REDIS_IMAGE_TAG:-7.4.5-alpine}
+    profiles: ["office"]
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD muss in .env gesetzt sein}
+    command:
+      - sh
+      - -c
+      - umask 077; printf 'requirepass "%s"\nsave ""\nappendonly no\nmaxmemory 64mb\nmaxmemory-policy noeviction\n' "$$(printf '%s' "$$REDIS_PASSWORD" | sed 's/[\\"]/\\&/g')" > /tmp/redis.conf; unset REDIS_PASSWORD; exec redis-server /tmp/redis.conf
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - storage_catalog
+
   # Speicher-Tiering und HA-Synchronisation (Adminbereich -> Speicher (HA)):
   # bindet SMB-Freigaben (UNC) und/oder S3-kompatible Buckets als Cold-Tier
   # ein, haelt dort auf jedem Ziel eine vollstaendige Kopie der Nextcloud- und
@@ -467,6 +517,10 @@ services:
       db:
         condition: service_healthy
       nextcloud-db:
+        condition: service_healthy
+      storage-sync-catalog:
+        condition: service_healthy
+      storage-sync-redis:
         condition: service_healthy
     cap_add:
       - SYS_ADMIN
@@ -498,6 +552,7 @@ services:
     networks:
       - intranet
       - office_backend
+      - storage_catalog
 
 volumes:
   db_data:
@@ -513,6 +568,7 @@ volumes:
   office_ai:
   storage_tiering:
   storage_sync_state:
+  storage_sync_catalog_data:
 
 networks:
   intranet:
@@ -526,6 +582,10 @@ networks:
         - subnet: ${OFFICE_SUBNET:-172.30.250.0/24}
   # Datenbank und Redis von Nextcloud: kein Zugang von aussen.
   office_backend:
+    driver: bridge
+    internal: true
+  # Katalog-Datenbank und Redis von storage-sync: nur storage-sync hat Zugang.
+  storage_catalog:
     driver: bridge
     internal: true
 

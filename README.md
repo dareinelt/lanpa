@@ -115,7 +115,9 @@ installieren, nicht starten).
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
 | `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter; Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
 | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
-| `storage-sync` | optional, Profil `office` – Speicher-Tiering und HA-Synchronisation der Office-Daten auf SMB-Freigaben und S3-kompatible Objektspeicher (s3fs/FUSE) ([docs/storage.md](docs/storage.md)) | `agent.alive` jünger als 30 s |
+| `storage-sync` | optional, Profil `office` – Speicher-Tiering und HA-Synchronisation der Office-Daten auf SMB-Freigaben und S3-kompatible Objektspeicher (s3fs/FUSE) ([docs/storage.md](docs/storage.md), Container-Übersicht [docs/storage-stack.md](docs/storage-stack.md)) | `agent.alive` jünger als 30 s |
+| `storage-sync-catalog` | optional, Profil `office` – MySQL-Katalog von `storage-sync` (Zugangsdaten wie `db`, nur internes Netz `storage_catalog`) | `mysqladmin ping` |
+| `storage-sync-redis` | optional, Profil `office` – Sperren und I/O-Zähler für den Katalog, ohne Persistenz (Passwort = `DB_PASSWORD`) | `redis-cli ping` |
 
 ---
 

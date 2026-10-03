@@ -13,6 +13,7 @@ Rückholung.
 | --- | --- |
 | **Hot-Tier (lokales Storage)** | Volumes `nextcloud_data` und `eurooffice_data` auf dem Docker-Host. Cache für häufig und kürzlich genutzte Dateien. |
 | **Cold-Tier (SMB-/S3-Tier)** | Alle eingetragenen Speicherziele, SMB-Freigaben und S3-Buckets beliebig gemischt. Jedes Ziel hält den **vollständigen** Datenbestand. |
+| **Snapshot-Speicher (Dateiversionen)** | Eine eigene, von den Speicherzielen getrennte SMB-Freigabe. Vor jeder inhaltlichen Änderung oder Löschung einer Benutzerdatei wird die **bisherige Version unveränderlich** dort abgelegt ([Abschnitt 5a](#5a-snapshot-speicher-dateiversionen-auf-eigener-smb-freigabe)). |
 
 Dieses Dokument beschreibt Einrichtung und Betrieb. Die technische Referenz
 für Entwickler und Coding-Agenten (Code-Landkarte, Prozesse, Datenformate,
@@ -112,7 +113,8 @@ flowchart LR
   SS <-- Aufträge / Status --> T
   SS -- mount.cifs --> C1[(Cold-Tier: SMB-Ziel)]
   SS -- s3fs / HTTPS --> C2[(Cold-Tier: S3-Bucket …)]
-  SS -- Messwerte, Status --> DB[(MySQL intranet)]
+  SS -- "mount.cifs: Vorgängerversionen (nur schreiben/lesen, nie ändern)" --> SNAP[(Snapshot-Speicher<br>eigene SMB-Freigabe)]
+  SS -- Messwerte, Status, Versionsliste --> DB[(MySQL intranet)]
   ADM[Adminbereich] --> DB
   SNMP[snmp] -- docker exec --> APP[app: scripts/storage_status.php] --> DB
 ```
@@ -123,13 +125,102 @@ Container neu, und der Healthcheck schlägt fehl.
 | Prozess | Aufgabe |
 | --- | --- |
 | `monitor` | Bindet die Ziele ein bzw. neu ein und misst Füllstand, MB/s und IOPS (Hot-Tier über `/proc/diskstats`, Cold-Tier über die CIFS-Statistik, bei S3 über die Zähler des Agenten). Ermittelt den HA-Status und schreibt Messwerte und Verlauf in die Datenbank. |
-| `sync` | Erkennt Änderungen sofort (inotify) und gleicht zusätzlich in festem Abstand vollständig ab. Kopiert neue oder geänderte Dateien auf **alle** aktiven Ziele (temporäre Datei, danach Umbenennen, SHA-256-Prüfung) und übernimmt Umbenennungen und Löschungen. Erstellt den Datenbank-Abzug und lagert Dateien aus. |
+| `sync` | Erkennt Änderungen sofort (inotify) und gleicht zusätzlich in festem Abstand vollständig ab. Kopiert neue oder geänderte Dateien auf **alle** aktiven Ziele (temporäre Datei, danach Umbenennen, SHA-256-Prüfung) und übernimmt Umbenennungen und Löschungen. Sichert vorher die bisherige Version auf dem Snapshot-Speicher, führt Wiederherstellungen aus und räumt Versionen nach Aufbewahrungsregel auf. Erstellt den Datenbank-Abzug und lagert Dateien aus. |
 | `recall` | Holt ausgelagerte Dateien auf Anforderung von Nextcloud zurück, mehrere parallel, mit Fortschritt. |
 
 Zustand und Katalog liegen im Volume `storage_sync_state` (SQLite).
-Auslagerungsmarker und Rückhol-Warteschlange liegen im Volume
-`storage_tiering`, das auch in `nextcloud` und `nextcloud-ai-worker` unter
-`/var/lib/lanpa-tiering` eingebunden ist.
+Auslagerungsmarker, Rückhol-Warteschlange und die veröffentlichte
+Versionsliste je Datei liegen im Volume `storage_tiering`, das auch in
+`nextcloud` und `nextcloud-ai-worker` unter `/var/lib/lanpa-tiering`
+eingebunden ist.
+
+### Beispielarchitektur
+
+Ein typischer Aufbau für einen Standort mit Ausweichstandort: ein kleiner,
+schneller Hot-Tier auf dem Docker-Host, zwei räumlich getrennte Cold-Tier-
+Ziele als S3-Objektspeicher und ein eigener Snapshot-Speicher für die
+Dateiversionen. Cold-Tier-Ziele und Snapshot-Speicher sind hier jeweils
+1-HE-Geräte mit vier 3,5"-Einschüben (z. B. TrueNAS/MinIO-Appliance oder
+Synology/QNAP-Rackmodell).
+
+| Rolle | Gerät | Datenträger | Nutzkapazität | Anbindung |
+| --- | --- | --- | --- | --- |
+| Hot-Tier | Docker-Host (VM oder Server) | lokale SSD, Volume `nextcloud_data` | **Limit 600 GB** („Limit des Hot-Tiers gesamt“) | lokal |
+| Cold-Tier 1 (primär) | 1 HE, 4 × 3,5" – Standort A, Serverraum | 2 × 8 TB HDD im **RAID 1** (2 Einschübe frei) | 8 TB | S3 (HTTPS) |
+| Cold-Tier 2 | 1 HE, 4 × 3,5" – Standort B, Ausweichstandort | 2 × 8 TB HDD im **RAID 1** (2 Einschübe frei) | 8 TB | S3 (HTTPS) |
+| Snapshot-Speicher | 1 HE, 4 × 3,5" – Standort A, getrennt von den Cold-Tier-Zielen | 4 × 960 GB SSD im **RAID 10** | ≈ 1,9 TB | SMB 3 |
+
+```mermaid
+flowchart TB
+  classDef host fill:#eef5ff,stroke:#3b6fb6,stroke-width:1.5px,color:#111
+  classDef site fill:#fafafa,stroke:#999,stroke-dasharray:6 4,color:#111
+  classDef chassis fill:#f0f0f0,stroke:#444,stroke-width:2px,color:#111
+  classDef hdd fill:#fff4d6,stroke:#b58900,color:#111
+  classDef ssd fill:#e8f7ee,stroke:#2e8b57,color:#111
+  classDef empty fill:#ffffff,stroke:#bbb,stroke-dasharray:4 3,color:#888
+  classDef user fill:#fff,stroke:#777,color:#111
+
+  U[Benutzer<br>Browser · Desktop-Client · Euro-Office]:::user
+
+  subgraph HOST["Docker-Host · Hot-Tier · lokale SSD · Limit 600 GB"]
+    direction LR
+    NC[nextcloud<br>+ intranet_integration]
+    HOT[(nextcloud_data<br>aktuelle und häufig genutzte Dateien,<br>Platzhalter für ausgelagerte)]
+    SS[storage-sync<br>monitor · sync · recall]
+    NC --> HOT
+    HOT <-- "④ Auslagern (Platzhalter) /<br>⑤ Zurückholen beim Öffnen" --> SS
+  end
+  class HOST host
+
+  subgraph SITE_A["Standort A · Serverraum"]
+    direction LR
+    subgraph COLD1["Cold-Tier 1 (primär) · 1 HE · 4 × 3,5-Zoll-Einschübe · 2 × 8 TB HDD RAID 1 · S3 · 8 TB nutzbar"]
+      direction LR
+      C1A[HDD 8 TB]:::hdd ~~~ C1B[HDD 8 TB]:::hdd ~~~ C1C[frei]:::empty ~~~ C1D[frei]:::empty
+    end
+    subgraph SNAPC["Snapshot-Speicher · 1 HE · 4 × 3,5-Zoll-Einschübe · 4 × 960 GB SSD RAID 10 · SMB 3 · ≈ 1,9 TB nutzbar"]
+      direction LR
+      S1[SSD 960 GB]:::ssd ~~~ S2[SSD 960 GB]:::ssd ~~~ S3[SSD 960 GB]:::ssd ~~~ S4[SSD 960 GB]:::ssd
+    end
+  end
+  class SITE_A site
+  class COLD1,SNAPC chassis
+
+  subgraph SITE_B["Standort B · Ausweichstandort (räumlich getrennt)"]
+    subgraph COLD2["Cold-Tier 2 · 1 HE · 4 × 3,5-Zoll-Einschübe · 2 × 8 TB HDD RAID 1 · S3 · 8 TB nutzbar"]
+      direction LR
+      C2A[HDD 8 TB]:::hdd ~~~ C2B[HDD 8 TB]:::hdd ~~~ C2C[frei]:::empty ~~~ C2D[frei]:::empty
+    end
+  end
+  class SITE_B site
+  class COLD2 chassis
+
+  U -- "① Schreiben / Lesen" --> NC
+  SS == "② Sync: neue Version (s3fs/HTTPS)" ==> COLD1
+  SS == "② Sync: zweite Kopie, außer Haus" ==> COLD2
+  SS -- "③ Vorgängerversion sichern,<br>bevor sie im Cold-Tier überschrieben<br>oder gelöscht wird (mount.cifs)" --> SNAPC
+  COLD1 -. "⑤ Rückholung (primär, sonst Ziel 2)" .-> SS
+  SNAPC -. "⑥ Version wiederherstellen<br>(Admin, erzeugt keine neue Version)" .-> SS
+```
+
+Datenfluss im Beispiel:
+
+| Schritt | Was passiert | Beteiligte |
+| --- | --- | --- |
+| ① | Benutzer legen Dateien an oder ändern sie; Nextcloud schreibt in den Hot-Tier. | Benutzer → nextcloud → `nextcloud_data` |
+| ② | `storage-sync` erkennt die Änderung (inotify) und kopiert die neue Version auf **beide** Cold-Tier-Ziele (temporäre Datei, Umbenennen, SHA-256). Erst wenn alle aktiven Ziele die Version haben, gilt sie als synchron. | `sync` → Cold-Tier 1 und 2 |
+| ③ | Bevor die alte Fassung im Cold-Tier überschrieben oder gelöscht wird, kopiert `sync` sie **einmal** aus dem Cold-Tier auf den Snapshot-Speicher (`versions/<quelle>/<uid>/data` + `meta.json`). Ist der Snapshot-Speicher nicht erreichbar, wird nur diese eine Datei zurückgehalten; alle anderen laufen weiter. Der Benutzer merkt davon nichts. | `sync` → Snapshot-Speicher |
+| ④ | Liegt eine Datei älter als X Tage und auf allen Zielen, wird sie lokal zum Platzhalter. Der Hot-Tier bleibt unter 600 GB. | `sync` → `nextcloud_data` |
+| ⑤ | Öffnet jemand einen Platzhalter, holt `recall` die Datei vom primären Ziel (sonst von Ziel 2) zurück; der Benutzer sieht einen Fortschrittsbalken. | Cold-Tier → `recall` → `nextcloud_data` |
+| ⑥ | Ein Admin stellt über den Adminbereich (oder per Rechtsklick in Nextcloud) eine Vorgängerversion wieder her. Die Version wird vom Snapshot-Speicher in den Hot-Tier kopiert und wie eine normale Änderung auf die Cold-Tier-Ziele übertragen – **ohne** dass dabei eine neue Vorgängerversion entsteht. Gelöschte Dateien werden neu angelegt. | Snapshot-Speicher → `sync` → Hot-/Cold-Tier |
+
+Auslegung: Der Snapshot-Speicher braucht nur Platz für die **geänderten**
+Fassungen (Standard: 90 Tage, höchstens 20 Versionen je Datei) und ist mit
+SSDs schnell genug, damit das Sichern vor dem Überschreiben die
+Synchronisation nicht aufhält. Die Cold-Tier-Ziele halten je eine
+vollständige Kopie (8 TB), die beiden freien Einschübe erlauben eine spätere
+Erweiterung. Der Ausfall eines beliebigen Geräts – Docker-Host, ein
+Cold-Tier-Ziel oder der Snapshot-Speicher – führt nicht zu Datenverlust.
 
 ---
 
@@ -340,6 +431,169 @@ lokalen Datenspeicher:
 
 ---
 
+## 5a. Snapshot-Speicher: Dateiversionen auf eigener SMB-Freigabe
+
+Der Snapshot-Speicher bewahrt die **bisherige Fassung** jeder Benutzerdatei
+auf, bevor sie durch eine inhaltliche Änderung oder eine Löschung im Cold-Tier
+ersetzt bzw. entfernt wird. Er ist unabhängig von Nextcloud-Versionen und
+Papierkorb (die vom Benutzer selbst geleert werden können) und von den
+Speicherzielen (die immer nur den aktuellen Stand spiegeln). Eine einmal
+abgelegte Version wird nie mehr verändert, nur nach der Aufbewahrungsregel
+entfernt.
+
+### Einrichtung
+
+Adminbereich → **Speicher (HA)** → Karte **Snapshot-Speicher (Dateiversionen)**
+→ **Einstellungen**:
+
+| Feld | Bedeutung |
+| --- | --- |
+| Snapshot-Speicher aktivieren | Ein/Aus. Aus = keine Versionen, keine Verzögerung, keine Überwachung. |
+| UNC-Pfad | `\\server\freigabe[\ordner]`. Muss eine **eigene** Freigabe sein; der UNC-Pfad eines Cold-Tier-Ziels wird abgelehnt (und umgekehrt). |
+| Benutzername, Domäne, Kennwort | Dienstkonto mit Schreibrecht auf die Freigabe. Das Kennwort wird verschlüsselt gespeichert; leer lassen = beibehalten, „Kennwort entfernen“ löscht es. |
+| SMB-Version | automatisch, 3.1.1, 3.0, 2.1 |
+| Aufbewahrung in Tagen | Standard 90, `0` = unbegrenzt. Ältere Versionen werden entfernt. |
+| Höchstens Versionen je Datei | Standard 20, `0` = unbegrenzt. Die ältesten darüber hinaus werden entfernt. |
+
+Beim ersten Einbinden legt `storage-sync` die Datei `.lanpa-snapshots.json`
+mit der Instanz-ID an. Eine Freigabe, die bereits Daten einer anderen
+Installation oder ein Cold-Tier-Layout (`nextcloud-data`, `eurooffice-data`)
+enthält, wird als „ungültig“ gemeldet und nicht beschrieben.
+
+Aufbau der Freigabe:
+
+```
+\\server\freigabe\
+  .lanpa-snapshots.json
+  versions\nextcloud-data\ab\ab12…cd\   (ab = erste zwei Zeichen der Kennung)
+    data        unveränderte Kopie der bisherigen Fassung
+    meta.json   Pfad, Benutzer, Version, Größe, mtime, SHA-256, Zeitpunkt
+```
+
+Empfohlen ist eine Freigabe, auf der das Dienstkonto Dateien anlegen, aber
+nicht überschreiben darf (z. B. NTFS: „Ordner auflisten“, „Dateien
+erstellen“, „Lesen“, kein „Ändern“/„Löschen“ – das Aufräumen übernimmt dann
+ein Administrator oder ein Snapshot/Retention-Mechanismus des NAS), oder ein
+NAS mit eigenen Snapshots/WORM.
+
+### Was wird gesichert
+
+- Nur Dateien unter `nextcloud-data/<benutzer>/files/**` (die eigentlichen
+  Benutzerdateien, auch in Gruppenordnern unterhalb von `files`).
+- **Nicht:** `files_versions`, `files_trashbin`, `appdata`, Vorschaubilder,
+  Konfiguration, Datenbank-Abzüge, Euro-Office-Daten.
+- Nur bei **inhaltlicher** Änderung (anderer SHA-256) oder **Löschung**.
+  Keine Version entsteht bei: Umbenennen/Verschieben (die Historie folgt der
+  Datei), reiner Änderung des Zeitstempels, Auslagern/Zurückholen, erneutem
+  Abgleich, Wiederherstellung einer Version (siehe unten) und beim Anlegen
+  einer neuen Datei.
+- Leere Dateien (0 Byte) werden nicht versioniert.
+
+### Ablauf
+
+1. `sync` erkennt im Hot-Tier eine geänderte oder gelöschte Datei und
+   **merkt die bisherige Version vor** (Kennung = SHA-1 aus Quelle, Pfad,
+   Version, Größe, mtime; dadurch keine Duplikate).
+2. Bevor die Kopie dieser Version auf einem Speicherziel überschrieben oder
+   gelöscht wird, kopiert `sync` sie **vom Speicherziel** (nicht vom Hot-Tier,
+   dort ist sie schon ersetzt) auf den Snapshot-Speicher: zuerst in eine
+   temporäre Datei, dann `meta.json`, dann atomar umbenennen. Der SHA-256 wird
+   geprüft. Erst danach wird die Datei auf dem Ziel ersetzt.
+3. Ist der Snapshot-Speicher **nicht erreichbar** oder schlägt das Kopieren
+   fehl, wird **nur diese Datei auf diesem Ziel zurückgehalten** und nach
+   60 Sekunden erneut versucht. Alle anderen Dateien werden weiter
+   synchronisiert. Der Sync-Status zeigt „N Datei(en) warten auf den
+   Snapshot-Speicher“. Nach 24 Stunden gibt der Dienst die Version auf
+   (Ereignis „Dateiversion verloren“, Status `failed`) und synchronisiert die
+   Datei, damit der Cold-Tier nicht dauerhaft veraltet.
+4. Nach erfolgreicher Sicherung wird die Versionsliste der Datei im Volume
+   `storage_tiering` veröffentlicht (für Nextcloud) und in die Tabelle
+   `storage_snapshots` gespiegelt (für den Adminbereich).
+
+Benutzer merken davon nichts: Hochladen, Bearbeiten und Löschen in Nextcloud
+und Euro-Office laufen unverändert; alles passiert nachgelagert in
+`storage-sync`.
+
+### Anzeige im Adminbereich
+
+Die Karte **Snapshot-Speicher (Dateiversionen)** auf **Speicher (HA)** zeigt
+Zustand (erreichbar / nicht erreichbar / ungültig / deaktiviert), Füllstand,
+MB/s und IOPS, Anzahl und Umfang der Versionen, vorgemerkte und
+fehlgeschlagene Sicherungen, den Zeitpunkt der letzten Sicherung und die
+Aktion **Neu einbinden**. Sie aktualisiert sich live mit der Seite. Ist der
+Speicher aktiviert, aber nicht erreichbar, erscheint zusätzlich ein Hinweis
+im Dashboard des Adminbereichs.
+
+**Dateiversionen anzeigen** (`/admin/speicher-ha/dateiversionen`) listet alle
+gesicherten Versionen: Zeitpunkt der Sicherung, Benutzer (letzter Schreiber
+laut Schreibprotokoll, sonst Eigentümer), Pfad, Version, Größe, Änderungsdatum
+der Fassung, Status, Kennzeichen **Datei gelöscht** und Hinweis auf eine
+frühere Wiederherstellung. Filter: Zeitraum, Benutzer, Pfad (Teiltext),
+Status, „nur gelöschte Dateien“, Anzahl je Seite. Alle Filter werden gebunden
+(kein SQL aus Eingaben).
+
+**Wiederherstellen:** Schaltfläche je Version → Dialog „Version X vom … von
+`<pfad>` wiederherstellen? Dabei entsteht keine neue Dateiversion.“ → **Ja**
+/ **Nein**. Mit **Ja** entsteht ein Auftrag für `storage-sync`; die Liste
+zeigt „Wiederherstellung läuft“ und anschließend das Ergebnis. Der Auftrag
+wird protokolliert (Ereignis, Kategorie `snapshot`, mit Admin-Kennung).
+
+### Wiederherstellung – Regeln
+
+- Die gesicherte Fassung wird in den Hot-Tier kopiert (temporär, SHA-256,
+  atomar) und ersetzt die aktuelle Datei. **Gelöschte Dateien werden am
+  ursprünglichen Pfad neu angelegt** (inkl. Ordner). Nextcloud wird zum
+  erneuten Einlesen des Pfads aufgefordert.
+- Die wiederhergestellte Datei wird anschließend wie jede Änderung auf alle
+  Speicherziele übertragen. Dabei entsteht **keine** neue Vorgängerversion
+  (weder vom überschriebenen aktuellen Stand noch von der wiederhergestellten
+  Fassung); die bestehende Version bleibt erhalten und ist als
+  „wiederhergestellt am … durch …“ markiert.
+- Gelöschte Dateien lassen sich nur über den Adminbereich wiederherstellen
+  (in Nextcloud existiert kein Eintrag mehr).
+- Nur Versionen mit Status `complete` sind wiederherstellbar.
+
+### Rechtsklick in Nextcloud: „Vorgängerversionen“
+
+Nextcloud-Administratoren sehen im Kontextmenü (⋯) einer Datei den Eintrag
+**Vorgängerversionen**. Ein Fenster listet die gesicherten Fassungen (Zeit,
+Größe, Benutzer, Version). **Wiederherstellen** fragt „Version X vom …
+wiederherstellen? Dabei entsteht keine neue Dateiversion.“ → **Ja** / **Nein**,
+beauftragt `storage-sync`, wartet bis zu 20 Sekunden und aktualisiert die
+Ansicht. Für andere Benutzer ist der Eintrag unsichtbar; die Endpunkte
+`GET /office/apps/intranet_integration/api/snapshots` und
+`POST …/api/snapshots/restore` prüfen die Admin-Gruppe serverseitig.
+
+### Aufbewahrung und Pflege
+
+`sync` prüft alle 10 Minuten die Aufbewahrung (Tage, Versionen je Datei),
+gibt zu lange zurückgehaltene Vormerkungen auf und räumt stündlich verwaiste
+temporäre Dateien auf. Entfernte Versionen verschwinden aus Liste und
+Nextcloud-Fenster.
+
+Befehle im Container `storage-sync` (`php scripts/storage_sync.php …`):
+
+| Befehl | Wirkung |
+| --- | --- |
+| `snapshot-status` | Zustand der Freigabe und Zähler |
+| `snapshots [--path=<teiltext>] [--limit=50]` | Versionen auflisten |
+| `snapshot-restore --id=<kennung>` | Version wiederherstellen (wie im Adminbereich) |
+| `snapshot-retry` | fehlgeschlagene Sicherungen erneut einplanen |
+| `snapshot-prune` | Aufbewahrung sofort anwenden |
+| `snapshot-rebuild` | Katalog aus den `meta.json` der Freigabe ergänzen (nach Verlust des Katalogs) |
+
+### Störungen
+
+| Situation | Verhalten |
+| --- | --- |
+| Freigabe nicht erreichbar | Karte rot, SNMP `storage_snapshot` CRITICAL, Dashboard-Hinweis. Betroffene Dateien werden zurückgehalten (siehe Ablauf), alle anderen laufen weiter. |
+| Freigabe voll | Sicherungen schlagen fehl → wie „nicht erreichbar“ für die betroffenen Dateien; Füllstand ab 85 %/95 % WARNING/CRITICAL. |
+| Abbruch beim Schreiben (Netz, Neustart) | Es bleiben nur temporäre Dateien (`.*.lanpa-tmp`) zurück, die automatisch entfernt werden. Eine Version zählt erst mit vollständiger `data` + `meta.json`. |
+| Katalog von `storage-sync` verloren | `snapshot-rebuild` liest alle `meta.json` ein; die Versionen sind weiterhin wiederherstellbar. |
+| Snapshot-Speicher deaktiviert | Keine Versionen, keine Verzögerung; bestehende Versionen bleiben auf der Freigabe und werden nach erneutem Aktivieren wieder angezeigt. |
+
+---
+
 ## 6. Überwachung per SNMP
 
 Die Werte stammen aus derselben Logik wie der Adminbereich. Der
@@ -351,6 +605,7 @@ Die Werte stammen aus derselben Logik wie der Adminbereich. Der
 | 14 | `storage_sync` | Sync-Status mit ausstehenden Dateien und Rückstand |
 | 15 | `storage_hot_fill` | Füllstand Hot-Tier (lokales Storage) in % (Volume oder Limit, der höhere Wert) und Modus |
 | 16 | `storage_cold_fill` | Füllstand Cold-Tier (SMB-/S3-Tier): höchster Füllstand der erreichbaren Ziele, Anzahl nicht erreichbarer Ziele |
+| 17 | `storage_snapshot` | Snapshot-Speicher: UNKNOWN (3) wenn deaktiviert, CRITICAL (2) wenn nicht erreichbar/ungültig, sonst Füllstand in % mit Anzahl Versionen, vorgemerkten und fehlgeschlagenen Sicherungen (WARNING ab 85 % oder bei Fehlschlägen) |
 
 OIDs: `extResult` `.1.3.6.1.4.1.2021.8.1.100.<Index>`, `extOutput`
 `.1.3.6.1.4.1.2021.8.1.101.<Index>`.
@@ -376,6 +631,7 @@ mit mehreren Zeilen:
 
 ```bash
 snmpget  -v2c -c public localhost .1.3.6.1.4.1.2021.8.1.100.13 .1.3.6.1.4.1.2021.8.1.101.13
+snmpget  -v2c -c public localhost .1.3.6.1.4.1.2021.8.1.100.17 .1.3.6.1.4.1.2021.8.1.101.17
 snmpwalk -v2c -c public localhost 'NET-SNMP-EXTEND-MIB::nsExtendOutLine."storage_metrics"'
 snmpwalk -v2c -c public localhost 'NET-SNMP-EXTEND-MIB::nsExtendOutLine."storage_targets"'
 ```
@@ -395,7 +651,10 @@ Ausgelagerte Platzhalter belegen darin keinen Platz. Die Marker
 dem Archiv holt `storage-sync` ausgelagerte Dateien daher wie gewohnt aus dem
 Cold-Tier. Die vollständigen Daten liegen ausschließlich im Cold-Tier. Die
 Ziele sind die eigentliche Datensicherung und sollten selbst gesichert bzw.
-mit Snapshots versehen werden.
+mit Snapshots versehen werden. Frühere Fassungen einzelner Dateien liegen
+auf dem Snapshot-Speicher ([Abschnitt 5a](#5a-snapshot-speicher-dateiversionen-auf-eigener-smb-freigabe));
+er ist nicht Teil des `office-backup`-Archivs und wird nicht von
+`storage-restore.sh` benötigt.
 
 ### Wiederherstellung aus einem Speicherziel
 
@@ -443,6 +702,11 @@ wieder zu dieser Installation.
   Aufträge.
 - Für die Freigaben ein eigenes Dienstkonto mit Schreibrechten nur auf den
   Zielpfad verwenden. SMB 3 mit Verschlüsselung wird empfohlen.
+- Der Snapshot-Speicher nutzt ein **eigenes** Dienstkonto und eine eigene
+  Zugangsdatei (`/run/storage-sync/snapshot`). Einmal geschriebene Versionen
+  werden vom Dienst nie geändert; auf dem NAS kann das Überschreiben daher
+  verboten werden. Wiederherstellungen sind nur für Administratoren möglich
+  (Intranet-Admin, Nextcloud-Admin-Gruppe) und werden protokolliert.
 - Für S3 je Bucket einen eigenen Schlüssel mit den Mindestrechten aus
   Abschnitt 1a verwenden und den Endpunkt per HTTPS ansprechen. Versionierung
   bzw. Object Lock im Bucket schützt zusätzlich vor Ransomware, weil auch ein
@@ -468,6 +732,14 @@ wieder zu dieser Installation.
   einer Frist entfernen, sonst wächst der Speicherverbrauch stetig.
 - Die erste Synchronisation eines großen Bestands dauert entsprechend der
   Bandbreite. Der Fortschritt ist unter „Synchronisation“ sichtbar.
+- Der Snapshot-Speicher sichert eine Version erst, wenn `sync` die Änderung
+  überträgt. Mehrere Speicherungen derselben Datei innerhalb weniger Sekunden
+  (z. B. automatisches Speichern in Euro-Office) ergeben daher nicht
+  zwingend eine Version je Speichervorgang, sondern eine je übertragener
+  Fassung. Eine Fassung, die nie auf einem Speicherziel lag (Datei direkt
+  wieder gelöscht), kann nicht gesichert werden (Status `unavailable`).
+- Der Snapshot-Speicher ist bewusst nur als SMB-Freigabe möglich (kein S3),
+  damit er ein eigenes, einfach abzusicherndes System bleibt.
 
 ---
 
@@ -502,6 +774,11 @@ wieder zu dieser Installation.
 - **Kleinere Sicherungen:** Ausgelagerte Dateien belegen im
   `office-backup`-Archiv keinen Platz. Die vollständigen Daten liegen ohnehin
   redundant im Cold-Tier.
+- **Unveränderliche Dateiversionen:** Jede überschriebene oder gelöschte
+  Fassung liegt auf einem getrennten Snapshot-Speicher, den Benutzer weder
+  sehen noch leeren können – auch nach Ransomware, Fehlbedienung oder
+  geleertem Papierkorb lässt sich jeder frühere Stand per Klick
+  wiederherstellen, ohne dass dabei neue Versionen entstehen.
 
 ### Vorteile S3-kompatibler Objektspeicher als Speicherziel
 

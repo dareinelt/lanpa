@@ -9,6 +9,7 @@ use OCA\IntranetIntegration\Listener\FooterListener;
 use OCA\IntranetIntegration\Listener\NetworkDrivesScriptListener;
 use OCA\IntranetIntegration\Listener\QuotaLoginListener;
 use OCA\IntranetIntegration\Listener\RecallScriptListener;
+use OCA\IntranetIntegration\Listener\SnapshotScriptListener;
 use OCA\IntranetIntegration\Storage\TieringClient;
 use OCA\IntranetIntegration\Storage\TieringWrapper;
 use OC\Files\Filesystem;
@@ -47,6 +48,8 @@ class Application extends App implements IBootstrap {
         $context->registerEventListener('OCA\\Files\\Event\\LoadAdditionalScriptsEvent', NetworkDrivesScriptListener::class);
         // Speicher-Tiering: Fortschritt der Rueckholung aus dem Cold-Tier.
         $context->registerEventListener(BeforeTemplateRenderedEvent::class, RecallScriptListener::class);
+        // Snapshot-Speicher: Rechtsklick "Vorgängerversionen" fuer Administratoren.
+        $context->registerEventListener('OCA\\Files\\Event\\LoadAdditionalScriptsEvent', SnapshotScriptListener::class);
         // Speicher-Tiering (storage-sync): ausgelagerte Dateien bei Zugriff zurueckholen.
         Util::connectHook('OC_Filesystem', 'preSetup', $this, 'addTieringWrapper');
     }

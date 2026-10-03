@@ -16,6 +16,10 @@ namespace OCA\IntranetIntegration\Storage;
  *   access/access.log       Zugriffe "<unix-zeit> <pfad>"
  *   access/writes.log       Schreibvorgaenge (JSON je Zeile {t, u, ip, ua, p}),
  *                           Zuordnung von Sicherheitsvorfaellen zum Benutzer
+ *   snapshots/index/<id>.json   gesicherte Dateiversionen je Datei (Agent -> Nextcloud)
+ *   snapshots/restore/<uid>.json Wiederherstellungsauftrag (Nextcloud -> Agent)
+ *   snapshots/status/<uid>.json  Ergebnis der Wiederherstellung
+ *   snapshots/rescan/<id>.json   Bitte um Neueinlesen einer Datei nach Wiederherstellung
  *
  * Pfade sind relativ zum Nextcloud-Datenverzeichnis. Eine ausgelagerte Datei
  * ist im Hot-Tier ein "sparse" Platzhalter gleicher Groesse.
@@ -443,6 +447,91 @@ class TieringClient {
         closedir($handle);
 
         return false;
+    }
+
+    // --- Snapshot-Speicher (Dateiversionen) ---------------------------------
+
+    /**
+     * Gesicherte Vorgaengerversionen einer Datei (neueste zuerst), wie vom
+     * Agenten veroeffentlicht.
+     *
+     * @return list<array{uid:string,version:int,size:int,mtime:int,created_at:int,user:string,restored_at:?int}>
+     */
+    public function snapshotsFor(string $rel): array {
+        $data = json_decode((string) @file_get_contents($this->base . '/snapshots/index/' . self::recallId($rel) . '.json'), true);
+        if (!is_array($data) || ($data['path'] ?? null) !== $rel || !is_array($data['snapshots'] ?? null)) {
+            return [];
+        }
+        $result = [];
+        foreach ($data['snapshots'] as $row) {
+            if (!is_array($row) || !self::validSnapshotId((string) ($row['uid'] ?? ''))) {
+                continue;
+            }
+            $result[] = [
+                'uid' => (string) $row['uid'],
+                'version' => (int) ($row['version'] ?? 0),
+                'size' => (int) ($row['size'] ?? 0),
+                'mtime' => (int) ($row['mtime'] ?? 0),
+                'created_at' => (int) ($row['created_at'] ?? 0),
+                'user' => (string) ($row['user'] ?? ''),
+                'restored_at' => isset($row['restored_at']) ? (int) $row['restored_at'] : null,
+            ];
+        }
+
+        return $result;
+    }
+
+    public static function validSnapshotId(string $uid): bool {
+        return preg_match('/^[0-9a-f]{40}$/', $uid) === 1;
+    }
+
+    /**
+     * Legt einen Wiederherstellungsauftrag an; der Agent prueft Kennung und
+     * Pfad erneut gegen seinen Katalog.
+     */
+    public function requestSnapshotRestore(string $uid, string $rel, string $by): void {
+        if (!self::validSnapshotId($uid)) {
+            throw new TieringException('Ungültige Kennung der Dateiversion.');
+        }
+        @unlink($this->base . '/snapshots/status/' . $uid . '.json');
+        $this->writeJson($this->base . '/snapshots/restore/' . $uid . '.json', ['uid' => $uid, 'path' => $rel, 'user' => $by, 'requested_at' => ($this->clock)()]);
+    }
+
+    /**
+     * Wartet kurz auf das Ergebnis der Wiederherstellung.
+     *
+     * @return array{state:string,message:string}  state: done|failed|pending
+     */
+    public function waitForSnapshotRestore(string $uid, int $seconds = 20): array {
+        $deadline = ($this->clock)() + max(1, $seconds);
+        do {
+            $data = json_decode((string) @file_get_contents($this->base . '/snapshots/status/' . $uid . '.json'), true);
+            if (is_array($data) && in_array($data['state'] ?? '', ['done', 'failed'], true)) {
+                return ['state' => (string) $data['state'], 'message' => (string) ($data['message'] ?? '')];
+            }
+            ($this->sleeper)(self::POLL_MICROSECONDS);
+        } while (($this->clock)() < $deadline);
+
+        return ['state' => 'pending', 'message' => ''];
+    }
+
+    /**
+     * Vom Agenten erbetene Neueinlesungen (nach Wiederherstellung aus dem
+     * Intranet) abholen; die Auftragsdateien werden dabei entfernt.
+     *
+     * @return list<string> relative Pfade
+     */
+    public function takeRescans(int $limit = 50): array {
+        $result = [];
+        foreach (array_slice(glob($this->base . '/snapshots/rescan/*.json') ?: [], 0, $limit) as $file) {
+            $data = json_decode((string) @file_get_contents($file), true);
+            @unlink($file);
+            if (is_array($data) && is_string($data['path'] ?? null) && $data['path'] !== '') {
+                $result[] = $data['path'];
+            }
+        }
+
+        return $result;
     }
 
     /**

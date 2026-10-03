@@ -46,6 +46,7 @@ final class SyncEngine
      * @param (callable(string,string,string,?int):void)|null $event (Stufe, Kategorie, Text, Ziel)
      * @param (callable():int)|null $clock
      * @param ThreatDetector|null $detector Erkennung auffaelligen Ueberschreibens (Ransomware)
+     * @param SnapshotEngine|null $snapshots Vorgaengerversionen (Snapshot-Speicher)
      */
     public function __construct(
         private readonly Catalog $catalog,
@@ -55,7 +56,8 @@ final class SyncEngine
         private readonly array $sources,
         ?callable $event = null,
         ?callable $clock = null,
-        private readonly ?ThreatDetector $detector = null
+        private readonly ?ThreatDetector $detector = null,
+        private readonly ?SnapshotEngine $snapshots = null
     ) {
         $this->event = $event !== null ? \Closure::fromCallable($event) : static function (): void {
         };
@@ -278,6 +280,7 @@ final class SyncEngine
 
                 return;
             }
+            $this->snapshots?->register($row);
             $this->catalog->changed($id, $size, $mtime, $inode, $now, $generation);
             $stats['changed']++;
             $this->detect($source, $rel, $size, false);
@@ -286,6 +289,7 @@ final class SyncEngine
         }
 
         if ((int) $row['size'] !== $size || (int) $row['mtime'] !== $mtime) {
+            $this->snapshots?->register($row);
             $this->catalog->changed($id, $size, $mtime, $inode, $now, $generation);
             $stats['changed']++;
             $this->detect($source, $rel, $size, false);
@@ -388,6 +392,10 @@ final class SyncEngine
                     }
                 }
                 $this->catalog->rename($oldId, (string) $new['path'], (int) $new['seen']);
+                if ($this->snapshots !== null) {
+                    $this->snapshots->refreshIndex($source, (string) $old['path']);
+                    $this->snapshots->refreshIndex($source, (string) $new['path']);
+                }
                 if ($old['state'] === Catalog::STATE_EVICTED && $source === PathRules::SOURCE_NEXTCLOUD_DATA) {
                     $this->store->moveMarker((string) $old['path'], (string) $new['path']);
                 }
@@ -396,6 +404,7 @@ final class SyncEngine
             }
             foreach ($deletes as $row) {
                 $id = (int) $row['id'];
+                $this->snapshots?->register($row, true);
                 foreach ($targetIds as $targetId) {
                     if ($this->catalog->hasOnTarget($targetId, $id)) {
                         $this->catalog->addOp($targetId, 'delete', $source, (string) $row['path'], null, $now);
@@ -426,11 +435,11 @@ final class SyncEngine
      *
      * @param array{id:int,label:string,root:string,online:bool,primary:bool,active:bool} $target
      *
-     * @return array{ops:int,copied:int,adopted:int,bytes:int,failed:int,more:bool,error:?string}
+     * @return array{ops:int,copied:int,adopted:int,bytes:int,failed:int,held:int,more:bool,error:?string}
      */
     public function syncTarget(array $target, int $budgetSeconds = 30): array
     {
-        $result = ['ops' => 0, 'copied' => 0, 'adopted' => 0, 'bytes' => 0, 'failed' => 0, 'more' => false, 'error' => null];
+        $result = ['ops' => 0, 'copied' => 0, 'adopted' => 0, 'bytes' => 0, 'failed' => 0, 'held' => 0, 'more' => false, 'error' => null];
         $deadline = microtime(true) + max(1, $budgetSeconds);
         $id = $target['id'];
         $root = rtrim($target['root'], '/');
@@ -443,7 +452,12 @@ final class SyncEngine
                     return $result;
                 }
                 $this->assertReachable($root);
-                $this->applyOp($id, $root, $op);
+                if (!$this->applyOp($id, $root, $op)) {
+                    // Vorgaengerversion noch nicht gesichert: Loeschung spaeter.
+                    $result['held']++;
+                    $result['more'] = true;
+                    continue;
+                }
                 $this->catalog->removeOp((int) $op['id']);
                 $result['ops']++;
             }
@@ -463,10 +477,12 @@ final class SyncEngine
                         $result[$outcome]++;
                         $result['bytes'] += $outcome === 'copied' ? (int) $file['size'] : 0;
                     } else {
-                        // Spaeter erneut (geaendert, Quelle fehlt oder Fehler).
+                        // Spaeter erneut (geaendert, Quelle fehlt, zurueckgehalten oder Fehler).
                         $result['more'] = true;
                         if ($outcome === 'failed') {
                             $result['failed']++;
+                        } elseif ($outcome === 'held') {
+                            $result['held']++;
                         }
                     }
                 }
@@ -481,12 +497,18 @@ final class SyncEngine
 
     /**
      * @param array<string,mixed> $op
+     *
+     * @return bool false, wenn die Operation zurueckgehalten wird
      */
-    private function applyOp(int $targetId, string $root, array $op): void
+    private function applyOp(int $targetId, string $root, array $op): bool
     {
         $base = $root . '/' . $op['source'];
         $from = $base . '/' . $op['path'];
         if ($op['op'] === 'delete') {
+            if (is_file($from) && $this->snapshots !== null
+                && !$this->snapshots->secure($targetId, $from, (string) $op['source'], (string) $op['path'], null)) {
+                return false;
+            }
             if (is_file($from) && !@unlink($from)) {
                 $this->assertReachable($root);
                 ($this->event)('warning', 'sync', 'Löschen fehlgeschlagen: ' . $op['source'] . '/' . $op['path'], $targetId);
@@ -494,7 +516,7 @@ final class SyncEngine
             $this->pruneDirs(dirname($from), $base);
             $this->copier->count($targetId, 0, 0, 0, 1);
 
-            return;
+            return true;
         }
 
         $to = $base . '/' . $op['new_path'];
@@ -513,6 +535,8 @@ final class SyncEngine
             }
         }
         $this->pruneDirs(dirname($from), $base);
+
+        return true;
     }
 
     /**
@@ -520,7 +544,7 @@ final class SyncEngine
      * @param array<string,mixed> $file
      * @param list<array{id:int,label:string,root:string,online:bool,primary:bool,active:bool}> $online
      *
-     * @return string copied|adopted|skipped|failed
+     * @return string copied|adopted|skipped|held|failed
      */
     private function copyFile(array $target, string $root, array $file, array $online): string
     {
@@ -538,6 +562,14 @@ final class SyncEngine
             $this->catalog->markSynced($target['id'], $fileId, $version);
 
             return 'adopted';
+        }
+
+        // Bisherige Version auf dem Ziel zuerst in den Snapshot-Speicher sichern.
+        if ($existing !== false && $this->snapshots !== null) {
+            $local = $file['state'] === Catalog::STATE_EVICTED ? null : $this->sources[$source] . '/' . $rel;
+            if (!$this->snapshots->secure($target['id'], $remote, $source, $rel, $fileId, $local)) {
+                return 'held';
+            }
         }
 
         if ($file['state'] === Catalog::STATE_EVICTED) {

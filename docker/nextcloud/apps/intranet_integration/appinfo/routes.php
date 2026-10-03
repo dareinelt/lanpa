@@ -14,6 +14,8 @@ return [
         ['name' => 'network_drives#show', 'url' => '/api/network-drives', 'verb' => 'GET'],
         ['name' => 'network_drives#update', 'url' => '/api/network-drives', 'verb' => 'POST'],
         ['name' => 'recall#show', 'url' => '/api/recall', 'verb' => 'GET'],
+        ['name' => 'snapshots#show', 'url' => '/api/snapshots', 'verb' => 'GET'],
+        ['name' => 'snapshots#restore', 'url' => '/api/snapshots/restore', 'verb' => 'POST'],
         ['name' => 'sso#login', 'url' => '/sso', 'verb' => 'GET'],
     ],
 ];

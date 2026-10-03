@@ -21,6 +21,17 @@ final class Catalog
     /** Zaehler-ID fuer den Hot-Tier (lokales Storage). */
     public const LOCAL = 0;
 
+    /** Zaehler-ID fuer den Snapshot-Speicher (Dateiversionen). */
+    public const SNAPSHOT = -1;
+
+    public const SNAPSHOT_PENDING = 'pending';
+    public const SNAPSHOT_COMPLETE = 'complete';
+    public const SNAPSHOT_FAILED = 'failed';
+    public const SNAPSHOT_UNAVAILABLE = 'unavailable';
+    public const SNAPSHOT_DELETED = 'deleted';
+
+    private const SNAPSHOT_FIELDS = ['file_id', 'path', 'user', 'sha256', 'status', 'error', 'attempts', 'next_attempt', 'stored_at', 'restored_at', 'restored_by'];
+
     private PDO $pdo;
 
     public function __construct(string $file)
@@ -130,6 +141,20 @@ final class Catalog
         $this->run('UPDATE files SET mtime = ?, inode = ?, seen = ? WHERE id = ?', [$mtime, $inode, $seen, $id]);
     }
 
+    /**
+     * Administrative Wiederherstellung einer Dateiversion: neue Katalogversion
+     * (damit der Cold-Tier den Stand erhaelt), Pruefsumme bekannt – ohne dass
+     * daraus eine Benutzeraenderung (und damit ein Snapshot) wird.
+     */
+    public function restored(int $id, int $size, int $mtime, int $inode, string $sha, int $now): void
+    {
+        $this->run(
+            "UPDATE files SET size = ?, mtime = ?, inode = ?, version = version + 1, sha256 = ?, state = 'local',
+                    evict_reason = NULL, changed_at = ?, seen = seen WHERE id = ?",
+            [$size, $mtime, $inode, $sha, $now, $id]
+        );
+    }
+
     public function rename(int $id, string $newPath, int $seen): void
     {
         $file = $this->get($id);
@@ -138,6 +163,8 @@ final class Catalog
             'UPDATE files SET path = ?, tiered = ?, seen = ? WHERE id = ?',
             [$newPath, PathRules::isTiered((string) ($file['source'] ?? ''), $newPath) ? 1 : 0, $seen, $id]
         );
+        // Vorgaengerversionen folgen der Datei (kein neuer Inhalts-Snapshot).
+        $this->run('UPDATE snapshots SET path = ?, mirrored = 0 WHERE file_id = ?', [$newPath, $id]);
     }
 
     public function delete(int $id): void
@@ -145,6 +172,214 @@ final class Catalog
         $this->run('DELETE FROM files WHERE id = ?', [$id]);
         $this->run('DELETE FROM target_files WHERE file_id = ?', [$id]);
         $this->run('DELETE FROM access WHERE file_id = ?', [$id]);
+        // Snapshots bleiben erhalten (Datei geloescht), verlieren nur den Bezug.
+        $this->run('UPDATE snapshots SET file_id = NULL WHERE file_id = ?', [$id]);
+    }
+
+    // --- Snapshots (Vorgaengerversionen) ------------------------------------
+
+    /**
+     * @param array<string,mixed> $row uid, file_id, source, path, user, version, size, mtime, sha256, status, error, created_at
+     */
+    public function addSnapshot(array $row): bool
+    {
+        $this->run(
+            'INSERT OR IGNORE INTO snapshots (uid, file_id, source, path, user, version, size, mtime, sha256, status, error, created_at, mirrored)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)',
+            [
+                (string) $row['uid'], $row['file_id'] ?? null, (string) $row['source'], (string) $row['path'], (string) ($row['user'] ?? ''),
+                (int) $row['version'], (int) $row['size'], (int) $row['mtime'], $row['sha256'] ?? null, (string) $row['status'],
+                (string) ($row['error'] ?? ''), (int) $row['created_at'],
+            ]
+        );
+
+        return (int) $this->value('SELECT changes()') === 1;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    public function snapshot(string $uid): ?array
+    {
+        return $this->one('SELECT * FROM snapshots WHERE uid = ?', [$uid]);
+    }
+
+    /**
+     * @param array<string,mixed> $values
+     */
+    public function updateSnapshot(string $uid, array $values): void
+    {
+        $values = array_intersect_key($values, array_flip(self::SNAPSHOT_FIELDS));
+        if ($values === []) {
+            return;
+        }
+        $sets = [];
+        $params = [];
+        foreach ($values as $column => $value) {
+            $sets[] = $column . ' = ?';
+            $params[] = $value;
+        }
+        $params[] = $uid;
+        $this->run('UPDATE snapshots SET ' . implode(', ', $sets) . ', mirrored = 0 WHERE uid = ?', $params);
+    }
+
+    /**
+     * Noch nicht gesicherte Vorgaengerversionen einer Datei (aelteste zuerst).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function pendingSnapshots(string $source, string $path): array
+    {
+        return $this->all(
+            "SELECT * FROM snapshots WHERE source = ? AND path = ? AND status = 'pending' ORDER BY version ASC",
+            [$source, $path]
+        );
+    }
+
+    /**
+     * Gesicherte Versionen einer Datei (neueste zuerst).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function snapshotsFor(string $source, string $path, int $limit = 100): array
+    {
+        return $this->all(
+            "SELECT * FROM snapshots WHERE source = ? AND path = ? AND status = 'complete' ORDER BY created_at DESC, version DESC LIMIT " . max(1, $limit),
+            [$source, $path]
+        );
+    }
+
+    /**
+     * Liste fuer die Kommandozeile (neueste zuerst, optional nach Pfad gefiltert).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function snapshots(?string $pathLike = null, int $limit = 50): array
+    {
+        if ($pathLike === null || $pathLike === '') {
+            return $this->all("SELECT * FROM snapshots WHERE status <> 'deleted' ORDER BY created_at DESC, id DESC LIMIT " . max(1, $limit));
+        }
+
+        return $this->all(
+            "SELECT * FROM snapshots WHERE status <> 'deleted' AND instr(path, ?) > 0 ORDER BY created_at DESC, id DESC LIMIT " . max(1, $limit),
+            [$pathLike]
+        );
+    }
+
+    /**
+     * Gesicherte Versionen, die aelter als der Zeitpunkt sind.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function snapshotsBefore(int $createdBefore, int $limit = 500): array
+    {
+        return $this->all(
+            "SELECT * FROM snapshots WHERE status = 'complete' AND created_at < ? ORDER BY created_at ASC LIMIT " . max(1, $limit),
+            [$createdBefore]
+        );
+    }
+
+    /**
+     * Ueberzaehlige Versionen je Datei (aelteste zuerst), wenn mehr als $keep vorhanden sind.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function snapshotsExceeding(int $keep, int $limit = 500): array
+    {
+        return $this->all(
+            "SELECT s.* FROM snapshots s
+             WHERE s.status = 'complete' AND (
+                SELECT COUNT(*) FROM snapshots n
+                WHERE n.source = s.source AND n.path = s.path AND n.status = 'complete'
+                  AND (n.created_at > s.created_at OR (n.created_at = s.created_at AND n.version > s.version))
+             ) >= " . max(0, $keep) . ' ORDER BY s.created_at ASC LIMIT ' . max(1, $limit)
+        );
+    }
+
+    /**
+     * Fehlgeschlagene Sicherungen erneut einplanen.
+     */
+    public function retrySnapshots(): int
+    {
+        $this->run("UPDATE snapshots SET status = 'pending', next_attempt = 0, error = '', mirrored = 0 WHERE status = 'failed'");
+
+        return (int) $this->value('SELECT changes()');
+    }
+
+    /**
+     * Vormerkungen, die seit der Haltefrist nicht gesichert werden konnten, aufgeben.
+     */
+    public function expirePendingSnapshots(int $createdBefore): int
+    {
+        $this->run(
+            "UPDATE snapshots SET status = 'failed', mirrored = 0,
+                    error = CASE WHEN error = '' THEN 'Die bisherige Version konnte nicht mehr gesichert werden.' ELSE error END
+             WHERE status = 'pending' AND created_at < ?",
+            [$createdBefore]
+        );
+
+        return (int) $this->value('SELECT changes()');
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function unmirroredSnapshots(int $limit = 500): array
+    {
+        return $this->all('SELECT * FROM snapshots WHERE mirrored = 0 ORDER BY id ASC LIMIT ' . max(1, $limit));
+    }
+
+    /**
+     * @param list<string> $uids
+     */
+    public function markSnapshotsMirrored(array $uids): void
+    {
+        foreach ($uids as $uid) {
+            $this->run('UPDATE snapshots SET mirrored = 1 WHERE uid = ? AND mirrored = 0', [$uid]);
+        }
+    }
+
+    public function removeSnapshot(string $uid): void
+    {
+        $this->run('DELETE FROM snapshots WHERE uid = ?', [$uid]);
+    }
+
+    /**
+     * Versionen einer (wieder angelegten) Datei erneut mit ihr verknuepfen.
+     */
+    public function relinkSnapshots(string $source, string $path, int $fileId): void
+    {
+        $this->run('UPDATE snapshots SET file_id = ?, mirrored = 0 WHERE source = ? AND path = ? AND file_id IS NULL', [$fileId, $source, $path]);
+    }
+
+    /**
+     * @return array{complete:int,bytes:int,pending:int,failed:int,unavailable:int,last_stored_at:?int}
+     */
+    public function snapshotStats(): array
+    {
+        $row = $this->one(
+            "SELECT SUM(status = 'complete') AS complete, COALESCE(SUM(CASE WHEN status = 'complete' THEN size ELSE 0 END), 0) AS bytes,
+                    SUM(status = 'pending') AS pending, SUM(status = 'failed') AS failed, SUM(status = 'unavailable') AS unavailable,
+                    MAX(stored_at) AS last_stored_at
+             FROM snapshots"
+        ) ?? [];
+
+        return [
+            'complete' => (int) ($row['complete'] ?? 0),
+            'bytes' => (int) ($row['bytes'] ?? 0),
+            'pending' => (int) ($row['pending'] ?? 0),
+            'failed' => (int) ($row['failed'] ?? 0),
+            'unavailable' => (int) ($row['unavailable'] ?? 0),
+            'last_stored_at' => isset($row['last_stored_at']) ? (int) $row['last_stored_at'] : null,
+        ];
+    }
+
+    /**
+     * Letzter bekannter Schreiber eines Pfads (Nextcloud-Schreibprotokoll).
+     */
+    public function lastWriter(string $path): string
+    {
+        return (string) ($this->value('SELECT uid FROM writes WHERE path = ?', [$path]) ?? '');
     }
 
     public function setState(int $id, string $state, ?string $reason, int $inode): void
@@ -198,6 +433,14 @@ final class Catalog
     public function hasOnTarget(int $targetId, int $fileId): bool
     {
         return $this->value('SELECT 1 FROM target_files WHERE target_id = ? AND file_id = ? AND version > 0', [$targetId, $fileId]) !== null;
+    }
+
+    /**
+     * Welche Katalogversion liegt auf dem Ziel (0 = keine)?
+     */
+    public function targetVersion(int $targetId, int $fileId): int
+    {
+        return (int) ($this->value('SELECT version FROM target_files WHERE target_id = ? AND file_id = ?', [$targetId, $fileId]) ?? 0);
     }
 
     /**
@@ -519,6 +762,31 @@ final class Catalog
             writes INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (uid, ip, ua)
         )');
+        // Vorgaengerversionen im Snapshot-Speicher (SnapshotEngine); ueberlebt reset().
+        $this->pdo->exec('CREATE TABLE IF NOT EXISTS snapshots (
+            id INTEGER PRIMARY KEY,
+            uid TEXT NOT NULL UNIQUE,
+            file_id INTEGER NULL,
+            source TEXT NOT NULL,
+            path TEXT NOT NULL,
+            user TEXT NOT NULL DEFAULT \'\',
+            version INTEGER NOT NULL,
+            size INTEGER NOT NULL DEFAULT 0,
+            mtime INTEGER NOT NULL DEFAULT 0,
+            sha256 TEXT NULL,
+            status TEXT NOT NULL DEFAULT \'pending\',
+            error TEXT NOT NULL DEFAULT \'\',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            next_attempt INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            stored_at INTEGER NULL,
+            restored_at INTEGER NULL,
+            restored_by TEXT NOT NULL DEFAULT \'\',
+            mirrored INTEGER NOT NULL DEFAULT 0
+        )');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS snapshots_path ON snapshots (source, path, status)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS snapshots_status ON snapshots (status, created_at)');
+        $this->pdo->exec('CREATE INDEX IF NOT EXISTS snapshots_mirrored ON snapshots (mirrored)');
     }
 
     /**

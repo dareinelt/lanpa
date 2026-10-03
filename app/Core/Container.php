@@ -61,6 +61,7 @@ use App\Services\SettingsService;
 use App\Services\SmsCodeService;
 use App\Services\StatisticsService;
 use App\Services\Storage\IncidentService;
+use App\Services\Storage\SnapshotService;
 use App\Services\Storage\StorageService;
 use App\Services\ThemeService;
 use App\Services\Tls\TlsCertificateService;
@@ -744,6 +745,14 @@ final class Container
     public static function incidentRepository(): IncidentRepository
     {
         return self::make(IncidentRepository::class, static fn (): IncidentRepository => new IncidentRepository());
+    }
+
+    public static function snapshots(): SnapshotService
+    {
+        return self::make(
+            SnapshotService::class,
+            static fn (): SnapshotService => new SnapshotService(self::storageRepository(), self::settings(), self::secretBox())
+        );
     }
 
     public static function incidents(): IncidentService

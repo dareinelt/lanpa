@@ -4,7 +4,7 @@
 # Verwendung: check_status.sh <app|db|sync|sync_workflow|phpmyadmin|
 #                              nextcloud|nextcloud_db|nextcloud_redis|eurooffice|office_workflow|
 #                              tls_certificate|tls_certificate_days|
-#                              storage_ha|storage_sync|storage_hot_fill|storage_cold_fill|
+#                              storage_ha|storage_sync|storage_hot_fill|storage_cold_fill|storage_snapshot|
 #                              storage_metrics|storage_targets>
 #
 # Rueckgabe (Exit-Code, landet als extResult in der SNMP-Tabelle):
@@ -230,7 +230,7 @@ check_tls_certificate() {
 
 # Speicher-Tiering / HA (Container storage-sync, Adminbereich -> Speicher (HA)).
 # Bewertung wie im Adminbereich: scripts/storage_status.php im app-Container.
-# $1 = storage_ha|storage_sync|storage_hot_fill|storage_cold_fill|
+# $1 = storage_ha|storage_sync|storage_hot_fill|storage_cold_fill|storage_snapshot|
 #      storage_metrics|storage_targets (mehrzeilig, key=value)
 check_storage() {
     local check="$1" id out rc
@@ -263,7 +263,7 @@ case "${1:-}" in
     office_workflow) check_office_workflow ;;
     tls_certificate)      check_tls_certificate text ;;
     tls_certificate_days) check_tls_certificate days ;;
-    storage_ha|storage_sync|storage_hot_fill|storage_cold_fill|storage_metrics|storage_targets)
+    storage_ha|storage_sync|storage_hot_fill|storage_cold_fill|storage_snapshot|storage_metrics|storage_targets)
                           check_storage "$1" ;;
     *) echo "unbekannte Pruefung: ${1:-}"; exit 3 ;;
 esac

@@ -23,7 +23,8 @@ final class Mounter
         private readonly string $instanceId,
         private readonly int $uid = 33,
         private readonly int $gid = 33,
-        private readonly string $s3TempDir = '/var/lib/storage-sync/s3-tmp'
+        private readonly string $s3TempDir = '/var/lib/storage-sync/s3-tmp',
+        private readonly string $marker = PathRules::TARGET_MARKER
     ) {
     }
 
@@ -489,7 +490,13 @@ final class Mounter
     private function checkMarker(string $root, string $label, bool $readOnly = false, bool $s3 = false): ?string
     {
         $place = $s3 ? 'Der Bucket' : 'Die Freigabe';
-        $file = $root . '/' . PathRules::TARGET_MARKER;
+        // Cold-Tier und Snapshot-Speicher schliessen sich gegenseitig aus.
+        $foreign = $this->marker === PathRules::TARGET_MARKER ? SnapshotStore::MARKER : PathRules::TARGET_MARKER;
+        if (is_file($root . '/' . $foreign)) {
+            return $place . ' wird bereits als ' . ($this->marker === PathRules::TARGET_MARKER ? 'Snapshot-Speicher' : 'Cold-Tier-Ziel')
+                . ' verwendet. Bitte eine eigene Freigabe bzw. einen eigenen Ordner angeben.';
+        }
+        $file = $root . '/' . $this->marker;
         $raw = @file_get_contents($file);
         if ($raw !== false) {
             $data = json_decode($raw, true);

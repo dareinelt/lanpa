@@ -9,6 +9,8 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Exceptions\ValidationException;
 use App\Security\Session;
+use App\Services\Storage\SnapshotService;
+use App\Services\Storage\SnapshotSettings;
 use App\Services\Storage\StorageService;
 use App\Services\Storage\StorageSettings;
 
@@ -24,6 +26,7 @@ final class StorageController extends AdminController
         'full_scan' => 'Vollständiger Abgleich angestoßen.',
         'remount' => 'Neueinbindung der Speicherziele angestoßen.',
         'confirm_deletes' => 'Löschungen bestätigt – sie werden beim nächsten vollständigen Abgleich übernommen.',
+        'snapshot_remount' => 'Neueinbindung des Snapshot-Speichers angestoßen.',
     ];
 
     public function index(Request $request): Response
@@ -153,6 +156,97 @@ final class StorageController extends AdminController
     }
 
     /**
+     * Einstellungen des Snapshot-Speichers (Dateiversionen).
+     */
+    public function updateSnapshotSettings(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $input = [];
+        foreach (array_merge(array_keys(SnapshotSettings::NUMERIC), array_keys(SnapshotSettings::BOOLEAN), array_keys(SnapshotSettings::TEXT)) as $key) {
+            $input[$key] = $request->input($key, '');
+        }
+        $input['storage_snapshot_password_clear'] = $request->input('storage_snapshot_password_clear', '');
+
+        try {
+            Container::snapshots()->saveSettings($input);
+        } catch (ValidationException $exception) {
+            Session::flash('error', 'Bitte prüfen Sie die markierten Eingaben.');
+            unset($input['storage_snapshot_password']);
+
+            return $this->render($exception->errors(), array_map('strval', $input), 422);
+        }
+
+        app_logger()->info('Einstellungen des Snapshot-Speichers geändert.', ['admin' => $this->admin()]);
+        Session::flash('success', 'Die Einstellungen des Snapshot-Speichers wurden gespeichert. storage-sync übernimmt sie innerhalb weniger Sekunden.');
+
+        return $this->redirect('/admin/speicher-ha#snapshots');
+    }
+
+    /**
+     * Liste der gesicherten Dateiversionen mit Filtern.
+     */
+    public function versions(Request $request): Response
+    {
+        $service = Container::snapshots();
+        $filter = SnapshotService::filter([
+            'limit' => $request->query('limit', ''),
+            'from' => $request->query('from', ''),
+            'to' => $request->query('to', ''),
+            'user' => $request->query('user', ''),
+            'path' => $request->query('path', ''),
+            'status' => $request->query('status', ''),
+            'deleted' => $request->query('deleted', ''),
+        ]);
+        $list = $service->list($filter);
+
+        return $this->adminView('admin.storage_versions', [
+            'pageTitle' => 'Dateiversionen',
+            'activeNav' => 'storage',
+            'pageScript' => 'admin-storage-versions.js',
+            'filter' => $filter,
+            'rows' => $list['rows'],
+            'total' => $list['total'],
+            'users' => $list['users'],
+            'snapshot' => $service->status(),
+            'results' => $service->restoreResults(),
+        ]);
+    }
+
+    /**
+     * Wiederherstellung einer Dateiversion anfordern (Agent fuehrt sie aus).
+     */
+    public function restoreVersion(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $uid = (string) $request->input('uid', '');
+        $back = '/admin/speicher-ha/dateiversionen' . self::filterQuery($request);
+        try {
+            $snapshot = Container::snapshots()->requestRestore($uid, $this->admin());
+        } catch (ValidationException $exception) {
+            Session::flash('error', implode(' ', $exception->errors()));
+
+            return $this->redirect($back);
+        }
+        app_logger()->info('Wiederherstellung einer Dateiversion angefordert.', ['admin' => $this->admin(), 'uid' => $uid, 'path' => $snapshot['path']]);
+        Session::flash('success', 'Wiederherstellung von „' . $snapshot['path'] . '“ (Version ' . $snapshot['version'] . ') angestoßen. Das Ergebnis erscheint in der Liste.');
+
+        return $this->redirect($back);
+    }
+
+    private static function filterQuery(Request $request): string
+    {
+        $query = [];
+        foreach (['limit', 'from', 'to', 'user', 'path', 'status', 'deleted'] as $key) {
+            $value = (string) $request->input('filter_' . $key, '');
+            if ($value !== '') {
+                $query[$key] = $value;
+            }
+        }
+
+        return $query === [] ? '' : '?' . http_build_query($query);
+    }
+
+    /**
      * @param array<string,string> $errors
      * @param array<string,string> $values
      */
@@ -168,6 +262,8 @@ final class StorageController extends AdminController
             'overview' => $overview,
             'alert' => $service->dashboardAlert($overview),
             'events' => Container::storageRepository()->events(30),
+            'snapshotSettings' => Container::snapshots()->settings(),
+            'smbVersions' => StorageService::SMB_VERSIONS,
             'errors' => $errors,
             'values' => $values,
         ], $status);

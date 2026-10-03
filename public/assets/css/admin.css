@@ -1632,3 +1632,55 @@ body.has-nav-tree-overlay {
     margin: .5rem 0;
     padding-left: 1.25rem;
 }
+
+/* Snapshot-Speicher (Dateiversionen) */
+.storage-snapshot__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1.25rem;
+    margin: 1rem 0;
+}
+
+.storage-snapshot > .storage-details {
+    margin-top: 1rem;
+    border-top: 1px solid var(--color-border);
+    padding-top: .75rem;
+}
+
+.storage-snapshot[data-state="offline"] .card__title,
+.storage-snapshot[data-state="invalid"] .card__title {
+    color: var(--storage-error);
+}
+
+.storage-versions__filter .storage-fields {
+    align-items: end;
+}
+
+.storage-versions__table code {
+    font-size: .85rem;
+}
+
+.storage-versions__result--ok {
+    color: var(--storage-ok);
+}
+
+.storage-versions__result--error {
+    color: var(--storage-error);
+}
+
+.storage-versions__dialog {
+    width: min(32rem, calc(100vw - 2rem));
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    background: var(--color-surface);
+    color: inherit;
+}
+
+.storage-versions__dialog::backdrop {
+    background: rgba(5, 18, 32, .55);
+}
+
+.storage-versions__dialog h2 {
+    margin-top: 0;
+}

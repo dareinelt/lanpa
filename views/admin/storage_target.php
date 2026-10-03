@@ -10,7 +10,11 @@ use App\Support\Html;
 /** @var array<string,string> $kinds */
 /** @var array<string,string> $errors */
 /** @var array<string,mixed> $values */
+/** @var array<string,mixed>|null $tierRoot Basisziel, wenn eine Erweiterung bearbeitet wird */
+/** @var int $tierSize Anzahl Ziele des Cold-Tiers */
 
+$tierRoot ??= null;
+$tierSize ??= 1;
 $kinds ??= \App\Services\Storage\StorageService::KINDS;
 $hasPassword = $target !== null && (string) ($target['password'] ?? '') !== '';
 $storedKind = $target !== null ? (string) ($target['kind'] ?? 'smb') : '';
@@ -47,6 +51,11 @@ $error = static function (string $key) use ($errors): string {
 $version = $value('smb_version', 'auto');
 $kind = $value('kind', 'smb');
 $kind = array_key_exists($kind, $kinds) ? $kind : 'smb';
+if ($tierRoot !== null) {
+    // Erweiterung: gleiche Art wie das Basisziel (SMB nur mit SMB, S3 nur mit S3).
+    $kind = (string) ($tierRoot['kind'] ?? 'smb') === 's3' ? 's3' : 'smb';
+}
+$kindLocked = $tierRoot !== null || $tierSize > 1;
 ?>
 <div class="storage-page storage-target-editor">
 <p class="toolbar"><a class="button button--ghost" href="/admin/speicher-ha#ziele">Zurück zu Speicher (HA)</a></p>
@@ -58,6 +67,18 @@ $kind = array_key_exists($kind, $kinds) ? $kind : 'smb';
     <code>storage-sync</code> das Ziel ein, legt die Kennungsdatei <code>.lanpa-storage.json</code> an und gleicht alle
     Daten ab – bei einem neuen Ziel kann der erste Abgleich je nach Datenmenge längere Zeit dauern.
 </p>
+
+<?php if ($tierRoot !== null) { ?>
+    <p class="flash flash--info">
+        Dieses Ziel ist eine <strong>Erweiterung des Cold-Tiers „<?= Html::e((string) $tierRoot['label']) ?>“</strong>.
+        Art, Status und Rolle folgen dem Basisziel; neue Dateien des Tiers landen hier, sobald die vorherigen Ziele voll sind.
+    </p>
+<?php } elseif ($tierSize > 1) { ?>
+    <p class="flash flash--info">
+        Dieser Cold-Tier ist um <?= $tierSize - 1 ?> Ziel(e) erweitert. Die Art kann nicht mehr geändert werden;
+        „Aktiv“ gilt für den ganzen Tier samt Erweiterungen.
+    </p>
+<?php } ?>
 
 <?php if (isset($errors['target'])) { ?>
     <p class="flash flash--error" role="alert"><?= Html::e($errors['target']) ?></p>
@@ -79,12 +100,18 @@ $kind = array_key_exists($kind, $kinds) ? $kind : 'smb';
 
     <div class="field">
         <label for="kind">Art des Speicherziels</label>
+        <?php if ($kindLocked) { ?>
+            <input type="hidden" name="kind" value="<?= Html::e($kind) ?>" data-storage-kind>
+            <input type="text" id="kind" value="<?= Html::e($kinds[$kind]) ?>" readonly <?= $attrs('kind') ?>>
+            <p class="field__hint" id="kind-hint">Ein erweiterter Cold-Tier behält seine Art: SMB wird nur mit SMB, S3 nur mit S3 erweitert.</p>
+        <?php } else { ?>
         <select id="kind" name="kind" data-storage-kind <?= $attrs('kind') ?>>
             <?php foreach ($kinds as $key => $text) { ?>
                 <option value="<?= Html::e($key) ?>" <?= $kind === $key ? 'selected' : '' ?>><?= Html::e($text) ?></option>
             <?php } ?>
         </select>
         <p class="field__hint" id="kind-hint">SMB-Freigabe eines NAS oder Fileservers bzw. Bucket eines S3-kompatiblen Objektspeichers. Ohne JavaScript werden nur die Felder der gewählten Art ausgewertet.</p>
+        <?php } ?>
         <?= $error('kind') ?>
     </div>
     </div>
@@ -245,6 +272,7 @@ $kind = array_key_exists($kind, $kinds) ? $kind : 'smb';
     </fieldset>
     </div>
 
+    <?php if ($tierRoot === null) { ?>
     <fieldset class="storage-fieldset">
     <legend>Verwendung</legend>
     <div class="storage-fields">
@@ -260,10 +288,11 @@ $kind = array_key_exists($kind, $kinds) ? $kind : 'smb';
         <input type="hidden" name="active" value="0">
         <input type="checkbox" id="active" name="active" value="1" <?= $value('active', '1') === '1' ? 'checked' : '' ?>>
         <label for="active">Aktiv</label>
-        <p class="field__hint">Deaktivierte Ziele werden nicht mehr beschrieben und zählen nicht zum HA-Status. Die Daten auf der Freigabe bzw. im Bucket bleiben erhalten.</p>
+        <p class="field__hint">Deaktivierte Ziele werden nicht mehr beschrieben und zählen nicht zum HA-Status. Die Daten auf der Freigabe bzw. im Bucket bleiben erhalten.<?= $tierSize > 1 ? ' Gilt für alle Erweiterungen dieses Cold-Tiers.' : '' ?></p>
     </div>
     </div>
     </fieldset>
+    <?php } ?>
 
     <div class="form__actions">
         <button type="submit" class="button button--primary"><?= $isNew ? 'Speicherziel hinzufügen' : 'Speichern' ?></button>

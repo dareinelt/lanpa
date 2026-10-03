@@ -44,7 +44,7 @@ final class Restore
     }
 
     /**
-     * @param array{id:int,label:string,root:string} $target
+     * @param array<string,mixed> $target Cold-Tier (Eintrag aus TargetMap, ggf. mit Erweiterungen)
      *
      * @return array{copied:int,stubbed:int,skipped:int,failed:int}
      */
@@ -57,58 +57,64 @@ final class Restore
 
         foreach ($this->sources as $source => $localRoot) {
             if ($source === PathRules::SOURCE_NEXTCLOUD_DB) {
-                $remoteDump = $target['root'] . '/' . $source . '/nextcloud.dump';
-                if (is_file($remoteDump)) {
+                $remoteDump = TierLayout::locate($target, $source . '/nextcloud.dump')['path'] ?? '';
+                if ($remoteDump !== '') {
                     FileCopier::ensureDir($localRoot);
                     $this->copier->copy($remoteDump, $localRoot . '/nextcloud.dump', (int) filemtime($remoteDump), $target['id'], Catalog::LOCAL);
                     ($this->log)('Datenbanksicherung bereitgestellt: ' . $localRoot . '/nextcloud.dump');
                 }
                 continue;
             }
-            $remoteRoot = $target['root'] . '/' . $source;
-            if (!is_dir($remoteRoot)) {
+            // Erweiterter Cold-Tier: Dateien liegen verteilt auf Basisziel und Erweiterungen.
+            $remoteRoots = array_values(array_filter(
+                array_map(static fn (array $m): string => $m['root'] . '/' . $source, TierLayout::members($target)),
+                'is_dir'
+            ));
+            if ($remoteRoots === []) {
                 continue;
             }
             FileCopier::ensureDir($localRoot);
             ($this->log)('Stelle ' . $source . ' wieder her …');
-            $iterator = new RecursiveIteratorIterator(
-                new ExcludeFilter(new RecursiveDirectoryIterator($remoteRoot, FilesystemIterator::SKIP_DOTS), $source, $remoteRoot),
-                RecursiveIteratorIterator::LEAVES_ONLY,
-                RecursiveIteratorIterator::CATCH_GET_CHILD
-            );
-            foreach ($iterator as $path => $info) {
-                /** @var \SplFileInfo $info */
-                if (!$info->isFile()) {
-                    continue;
-                }
-                $rel = PathRules::relative($remoteRoot, (string) $path);
-                if ($rel === null || PathRules::isExcluded($source, $rel)) {
-                    continue;
-                }
-                $size = (int) $info->getSize();
-                $mtime = (int) $info->getMTime();
-                $local = $localRoot . '/' . $rel;
-                $existing = @stat($local);
-                if ($existing !== false && (int) $existing['size'] === $size && abs((int) $existing['mtime'] - $mtime) <= 1) {
-                    $stats['skipped']++;
-                    continue;
-                }
-                try {
-                    if (!$full && $sparse && $source === PathRules::SOURCE_NEXTCLOUD_DATA && PathRules::isTiered($source, $rel)
-                        && $size >= PathRules::MIN_TIER_SIZE && $mtime < $cutoff) {
-                        $this->stub($rel, $local, $size, $mtime, $target['id']);
-                        $stats['stubbed']++;
-                    } else {
-                        $this->copier->copy((string) $path, $local, $mtime, $target['id'], Catalog::LOCAL);
-                        $this->store->removeMarker($rel);
-                        $stats['copied']++;
+            foreach ($remoteRoots as $remoteRoot) {
+                $iterator = new RecursiveIteratorIterator(
+                    new ExcludeFilter(new RecursiveDirectoryIterator($remoteRoot, FilesystemIterator::SKIP_DOTS), $source, $remoteRoot),
+                    RecursiveIteratorIterator::LEAVES_ONLY,
+                    RecursiveIteratorIterator::CATCH_GET_CHILD
+                );
+                foreach ($iterator as $path => $info) {
+                    /** @var \SplFileInfo $info */
+                    if (!$info->isFile()) {
+                        continue;
                     }
-                } catch (RuntimeException $exception) {
-                    $stats['failed']++;
-                    ($this->log)('Fehler: ' . $source . '/' . $rel . ' – ' . $exception->getMessage());
-                }
-                if (($stats['copied'] + $stats['stubbed']) % 1000 === 0) {
-                    ($this->log)(sprintf('… %d kopiert, %d Platzhalter', $stats['copied'], $stats['stubbed']));
+                    $rel = PathRules::relative($remoteRoot, (string) $path);
+                    if ($rel === null || PathRules::isExcluded($source, $rel)) {
+                        continue;
+                    }
+                    $size = (int) $info->getSize();
+                    $mtime = (int) $info->getMTime();
+                    $local = $localRoot . '/' . $rel;
+                    $existing = @stat($local);
+                    if ($existing !== false && (int) $existing['size'] === $size && abs((int) $existing['mtime'] - $mtime) <= 1) {
+                        $stats['skipped']++;
+                        continue;
+                    }
+                    try {
+                        if (!$full && $sparse && $source === PathRules::SOURCE_NEXTCLOUD_DATA && PathRules::isTiered($source, $rel)
+                            && $size >= PathRules::MIN_TIER_SIZE && $mtime < $cutoff) {
+                            $this->stub($rel, $local, $size, $mtime, $target['id']);
+                            $stats['stubbed']++;
+                        } else {
+                            $this->copier->copy((string) $path, $local, $mtime, $target['id'], Catalog::LOCAL);
+                            $this->store->removeMarker($rel);
+                            $stats['copied']++;
+                        }
+                    } catch (RuntimeException $exception) {
+                        $stats['failed']++;
+                        ($this->log)('Fehler: ' . $source . '/' . $rel . ' – ' . $exception->getMessage());
+                    }
+                    if (($stats['copied'] + $stats['stubbed']) % 1000 === 0) {
+                        ($this->log)(sprintf('… %d kopiert, %d Platzhalter', $stats['copied'], $stats['stubbed']));
+                    }
                 }
             }
             // Besitzer wie das Wurzelverzeichnis der Quelle (www-data bzw. Euro-Office).

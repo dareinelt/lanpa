@@ -16,9 +16,9 @@ use App\Services\Storage\StorageSettings;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
 
-function storagePdo(): PDO
+function storagePdo(?PDO $base = null): PDO
 {
-    $pdo = officePdo();
+    $pdo = $base ?? officePdo();
     $pdo->exec('CREATE TABLE storage_targets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         label TEXT NOT NULL,
@@ -365,5 +365,218 @@ Runner::test('Speicher-Tiering: S3-Ziele in Adminseite, Formular und SNMP', stat
     Assert::false(str_contains($form, 'Ein Kennwort ist gespeichert'));
     Assert::false(str_contains($form, 'value="s3://minio:9000/lanpa"'));
     Assert::false(str_contains($form, 'value="enc"'));
+    Assert::false(str_contains($form, 'style="'));
+});
+
+/**
+ * Speicherziele samt Status (SQLite mit Ersatz fuer NOW()/TIMESTAMPDIFF() aus MySQL).
+ */
+function storageTierPdo(): PDO
+{
+    // Eigene Verbindung: ab PHP 8.4 Pdo\Sqlite (createFunction), davor PDO (sqliteCreateFunction).
+    $base = class_exists(\Pdo\Sqlite::class) ? PDO::connect('sqlite::memory:') : new PDO('sqlite::memory:');
+    $base->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $base->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    $base->exec('CREATE TABLE settings (id INTEGER PRIMARY KEY AUTOINCREMENT, setting_key VARCHAR(64) NOT NULL UNIQUE,
+        setting_value TEXT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+    $pdo = storagePdo($base);
+    $pdo->exec('ALTER TABLE storage_targets ADD COLUMN parent_id INTEGER NULL DEFAULT NULL');
+    // Spalte "SECOND" nimmt das MySQL-Schluesselwort aus TIMESTAMPDIFF(SECOND, ...) auf.
+    $pdo->exec('CREATE TABLE storage_target_status (
+        target_id INTEGER PRIMARY KEY, state TEXT, message TEXT NOT NULL DEFAULT \'\', total_bytes INTEGER NOT NULL DEFAULT 0,
+        free_bytes INTEGER NOT NULL DEFAULT 0, read_bps INTEGER NOT NULL DEFAULT 0, write_bps INTEGER NOT NULL DEFAULT 0,
+        read_iops REAL NOT NULL DEFAULT 0, write_iops REAL NOT NULL DEFAULT 0, in_sync INTEGER NOT NULL DEFAULT 1,
+        pending_files INTEGER NOT NULL DEFAULT 0, pending_bytes INTEGER NOT NULL DEFAULT 0, lag_seconds INTEGER NOT NULL DEFAULT 0,
+        synced_files INTEGER NOT NULL DEFAULT 0, synced_bytes INTEGER NOT NULL DEFAULT 0, state_since TEXT NULL,
+        last_sync_at TEXT NULL, updated_at TEXT NULL, SECOND INTEGER NULL
+    )');
+    $pdo->exec('CREATE TABLE storage_events (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT, level TEXT, category TEXT, message TEXT, target_id INTEGER NULL)');
+    $register = $pdo instanceof \Pdo\Sqlite ? $pdo->createFunction(...) : $pdo->sqliteCreateFunction(...);
+    $register('NOW', static fn (): string => date('Y-m-d H:i:s'), 0);
+    $register('TIMESTAMPDIFF', static fn ($unit, $from, $to): ?int => $from === null ? null : strtotime((string) $to) - strtotime((string) $from), 3);
+
+    return $pdo;
+}
+
+function storageTierStatus(PDO $pdo, int $id, int $total, int $free, int $files = 0): void
+{
+    $pdo->prepare('INSERT OR REPLACE INTO storage_target_status (target_id, state, total_bytes, free_bytes, synced_files, synced_bytes, updated_at)
+        VALUES (?, \'online\', ?, ?, ?, ?, ?)')->execute([$id, $total, $free, $files, $files * 10, date('Y-m-d H:i:s')]);
+}
+
+/**
+ * Cold-Tiers wie in der Uebersicht (StorageService::overview()).
+ *
+ * @return list<array<string,mixed>>
+ */
+function storageTierViews(StorageService $service, PDO $pdo): array
+{
+    $views = (fn (array $rows, StorageSettings $settings): array => $this->tierViews($rows, $settings, null))
+        ->call($service, (new StorageRepository($pdo))->targets(), new StorageSettings(['storage_enabled' => '1']));
+
+    return $views;
+}
+
+Runner::test('Cold-Tier-Erweiterung: alle Tiers gemeinsam, nur gleiche Art', static function (): void {
+    $pdo = storageTierPdo();
+    $repository = new StorageRepository($pdo);
+    $service = storageService($pdo);
+    $smb = $repository->createTarget($service->validateTarget(['label' => 'NAS A', 'unc_path' => '\\\\nas01\\backup', 'username' => 'svc',
+        'domain' => 'FIRMA', 'password' => 'geheim', 'smb_version' => '3.0'], null) + ['is_primary' => 1]);
+    $s3 = $repository->createTarget($service->validateTarget(['label' => 'MinIO', 'kind' => 's3', 's3_endpoint' => 'https://minio:9000',
+        's3_bucket' => 'cold', 's3_access_key' => 'AKIA1', 's3_secret_key' => 'secret', 'capacity_gb' => '1'], null));
+
+    // Nicht alle Tiers angegeben -> nichts wird angelegt.
+    try {
+        $service->extendTiers([$smb => ['label' => 'NAS A2', 'kind' => 'smb', 'unc_path' => '\\\\nas02\\backup', 'smb_version' => 'auto']]);
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['tier_' . $s3 . '_label']));
+    }
+    // Falsche Art -> abgelehnt.
+    try {
+        $service->extendTiers([
+            $smb => ['label' => 'NAS A2', 'kind' => 's3', 's3_endpoint' => 'https://minio:9000', 's3_bucket' => 'x', 's3_access_key' => 'a', 's3_secret_key' => 'b'],
+            $s3 => ['label' => 'NAS', 'kind' => 'smb', 'unc_path' => '\\\\nas03\\x'],
+        ]);
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::contains('nur mit einer SMB-Freigabe', $exception->errors()['tier_' . $smb . '_kind']);
+        Assert::contains('nur mit einem S3-Ziel', $exception->errors()['tier_' . $s3 . '_kind']);
+    }
+    // Gleicher Ort wie ein vorhandenes Ziel -> abgelehnt.
+    try {
+        $service->extendTiers([
+            $smb => ['label' => 'NAS A2', 'kind' => 'smb', 'unc_path' => '\\\\nas01\\backup', 'smb_version' => 'auto'],
+            $s3 => ['label' => 'MinIO 2', 'kind' => 's3', 's3_endpoint' => 'https://minio:9000', 's3_bucket' => 'cold2', 'reuse_credentials' => true],
+        ]);
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['tier_' . $smb . '_unc_path']));
+    }
+    Assert::same(2, count($repository->targets()));
+
+    $ids = $service->extendTiers([
+        $smb => ['label' => 'NAS A2', 'kind' => 'smb', 'unc_path' => '\\\\nas02\\backup', 'smb_version' => '3.0', 'reuse_credentials' => true],
+        $s3 => ['label' => 'MinIO 2', 'kind' => 's3', 's3_endpoint' => 'https://minio:9000', 's3_bucket' => 'cold2', 'capacity_gb' => '2',
+            'reuse_credentials' => true, 's3_path_style' => true, 's3_verify_tls' => true],
+    ]);
+    Assert::same(2, count($ids));
+    $smbExt = $repository->findTarget($ids[0]);
+    $s3Ext = $repository->findTarget($ids[1]);
+    Assert::same($smb, (int) $smbExt['parent_id']);
+    Assert::same($s3, (int) $s3Ext['parent_id']);
+    Assert::same(0, (int) $smbExt['is_primary']);
+    Assert::same('svc', $smbExt['username']);
+    Assert::same('FIRMA', $smbExt['domain']);
+    Assert::same($repository->findTarget($smb)['password'], $smbExt['password'], 'Kennwort des Basisziels wird uebernommen.');
+    Assert::same('AKIA1', $s3Ext['username']);
+    Assert::same($repository->findTarget($s3)['password'], $s3Ext['password']);
+    Assert::same(2 * 1073741824, (int) $s3Ext['capacity_bytes']);
+
+    $tiers = StorageService::tiers($repository->targets());
+    Assert::same(2, count($tiers));
+    Assert::same([$smb, $ids[0]], array_map(static fn (array $m): int => (int) $m['id'], $tiers[0]['members']));
+    Assert::same($smb, (int) $service->tierOf($ids[0])['root']['id']);
+
+    // Basisziel mit Erweiterung behaelt seine Art.
+    try {
+        $service->updateTarget($smb, ['label' => 'NAS A', 'kind' => 's3', 's3_endpoint' => 'https://x:9000', 's3_bucket' => 'y',
+            's3_access_key' => 'a', 's3_secret_key' => 'b']);
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['kind']));
+    }
+
+    // Entfernen einer Erweiterung: nur solange sie leer ist, dann in allen Tiers.
+    storageTierStatus($pdo, $ids[1], 100, 50, 3);
+    try {
+        $service->deleteTarget($ids[0]);
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::contains('MinIO 2', $exception->errors()['target']);
+    }
+    storageTierStatus($pdo, $ids[1], 100, 50, 0);
+    $service->deleteTarget($ids[0]);
+    Assert::null($repository->findTarget($ids[0]));
+    Assert::null($repository->findTarget($ids[1]));
+    Assert::same(2, count($repository->targets()));
+});
+
+Runner::test('Cold-Tier-Erweiterung: volles Ziel bleibt voll, Warnung entfaellt nach Erweiterung', static function (): void {
+    View::setViewPath(BASE_PATH . '/views');
+    $pdo = storageTierPdo();
+    $repository = new StorageRepository($pdo);
+    $service = storageService($pdo);
+    $a = $repository->createTarget(['label' => 'NAS A', 'unc_path' => '\\\\nas01\\a', 'is_primary' => 1]);
+    $b = $repository->createTarget(['label' => 'NAS B', 'unc_path' => '\\\\nas01\\b']);
+    storageTierStatus($pdo, $a, 1000, 20, 5);
+    storageTierStatus($pdo, $b, 1000, 30, 5);
+
+    $overview = storageOverviewFixture(false);
+    $overview['targets'] = storageTierViews($service, $pdo);
+    $overview['health'] = StorageHealth::evaluate(true, $overview['targets'], 5, 5, ['pending_files' => 0], 900);
+    $alert = $service->dashboardAlert($overview);
+    Assert::same('Speicherplatz im Cold-Tier (SMB-/S3-Tier) unzureichend', $alert['title'] ?? null);
+    Assert::contains('NAS A (98,0 % belegt)', $alert['message']);
+    Assert::contains('Erweitern Sie alle Cold-Tiers', $alert['message']);
+    Assert::same(2, $service->snmp('storage_cold_fill', $overview)['exit']);
+
+    $ids = $service->extendTiers([
+        $a => ['label' => 'NAS A2', 'kind' => 'smb', 'unc_path' => '\\\\nas02\\a', 'smb_version' => 'auto'],
+        $b => ['label' => 'NAS B2', 'kind' => 'smb', 'unc_path' => '\\\\nas02\\b', 'smb_version' => 'auto'],
+    ]);
+    storageTierStatus($pdo, $ids[0], 3000, 3000);
+    storageTierStatus($pdo, $ids[1], 3000, 2900, 2);
+
+    $overview['targets'] = storageTierViews($service, $pdo);
+    $overview['health'] = StorageHealth::evaluate(true, $overview['targets'], 5, 5, ['pending_files' => 0], 900);
+    $tier = $overview['targets'][0];
+    Assert::same(2, count($overview['targets']), 'Ein Cold-Tier bleibt eine Kachel.');
+    Assert::same(4000, $tier['total_bytes']);
+    Assert::same(3020, $tier['free_bytes']);
+    Assert::same('ok', $tier['fill']['state']);
+    Assert::same('critical', $tier['members'][0]['fill']['state'], 'Das volle Ziel wird weiter als voll dargestellt.');
+    Assert::same(['root', 'extension'], array_column($tier['members'], 'role'));
+    Assert::same(25.0, StorageService::memberShare($tier, $tier['members'][0]));
+    Assert::same([], StorageService::fullTiers($overview['targets']));
+    Assert::null($service->dashboardAlert($overview));
+    Assert::same(0, $service->snmp('storage_cold_fill', $overview)['exit']);
+    Assert::contains('(2 Ziele)', implode("\n", $service->snmp('storage_cold_fill', $overview)['lines']));
+
+    $lines = $service->snmp('storage_targets', $overview)['lines'];
+    Assert::same(4, count($lines));
+    Assert::contains('tier=' . $a . ' role=root', $lines[0]);
+    Assert::contains('tier=' . $a . ' role=extension', $lines[1]);
+
+    $live = $service->liveData($overview);
+    Assert::same(2, count($live['targets']));
+    Assert::same([$a, $ids[0]], array_column($live['targets'][0]['members'], 'id'));
+    Assert::same('critical', $live['targets'][0]['members'][0]['fill']['state']);
+    Assert::same(75.0, $live['targets'][0]['members'][1]['share']);
+    foreach (['username', 'password', 'unc_path'] as $key) {
+        Assert::false(array_key_exists($key, $live['targets'][0]['members'][0]));
+    }
+
+    $html = View::render('admin.storage', ['overview' => $overview, 'alert' => null, 'events' => [], 'errors' => [], 'values' => [],
+        'snapshotSettings' => new SnapshotSettings([]), 'smbVersions' => StorageService::SMB_VERSIONS]);
+    Assert::same(2, substr_count($html, 'class="storage-target"'));
+    Assert::contains('data-stack="' . $a . '"', $html);
+    Assert::contains('data-member="' . $ids[0] . '"', $html);
+    Assert::contains('data-fill="member-' . $a . '"', $html);
+    Assert::contains('Cold-Tiers erweitern', $html);
+    Assert::contains('tier-balance--ok', $html);
+    Assert::contains('Erweiterung entfernen', $html);
+    Assert::false(str_contains($html, 'style="'));
+
+    $form = View::render('admin.storage_extend', ['tiers' => $overview['targets'], 'versions' => StorageService::SMB_VERSIONS,
+        'errors' => ['tier_' . $b . '_unc_path' => 'Falsch'], 'values' => [$b => ['label' => 'NAS B3', 'unc_path' => '\\\\x\\y']]]);
+    Assert::contains('action="/admin/speicher-ha/erweitern"', $form);
+    Assert::contains('name="tiers[' . $a . '][unc_path]"', $form);
+    Assert::contains('name="tiers[' . $b . '][reuse_credentials]"', $form);
+    Assert::contains('id="tier-' . $b . '-unc_path-error"', $form);
+    Assert::contains('value="NAS B3"', $form);
+    Assert::contains('Erweiterung 2 (neu)', $form);
+    Assert::contains('Alle 2 Cold-Tiers erweitern', $form);
     Assert::false(str_contains($form, 'style="'));
 });

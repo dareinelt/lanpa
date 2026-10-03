@@ -68,6 +68,55 @@
         node.className = 'fillbar fillbar--' + (fill.state || 'disabled');
     }
 
+    // Ziele eines erweiterten Cold-Tiers: Zustand, Fuellstand und gestapelte Leiste.
+    function renderMembers(row, target) {
+        var members = target.members || [];
+        var stack = row.querySelector('[data-stack]');
+        var equal = members.some(function (member) { return member.share === null || member.share === undefined; });
+        var x = 0;
+        members.forEach(function (member) {
+            var item = row.querySelector('[data-member="' + member.id + '"]');
+            if (item) {
+                item.dataset.state = member.state;
+                badge(item, 'member-state', member.state);
+                var message = item.querySelector('[data-live="member-message"]');
+                if (message) {
+                    message.textContent = member.message || '';
+                    message.hidden = !member.message || member.state === 'online';
+                }
+                var full = item.querySelector('[data-live="member-full"]');
+                if (full) {
+                    full.hidden = !member.fill || member.fill.state !== 'critical';
+                }
+                text(item, 'member-fill-text', percentText(member.fill));
+                text(item, 'member-free', member.free);
+                text(item, 'member-total', member.total);
+                text(item, 'member-synced-files', member.synced_files);
+                text(item, 'member-synced-bytes', member.synced_bytes);
+                fillbar('member-' + member.id, member.fill);
+            }
+            var segment = stack ? stack.querySelector('[data-segment="' + member.id + '"]') : null;
+            var width = equal ? 100 / Math.max(1, members.length) : Number(member.share);
+            if (segment) {
+                var percent = member.fill && member.fill.percent !== null && member.fill.percent !== undefined
+                    ? Math.max(0, Math.min(100, Number(member.fill.percent))) : 0;
+                var span = Math.max(0, width - 0.4);
+                segment.setAttribute('class', 'tier-stack__segment tier-stack__segment--' + ((member.fill && member.fill.state) || 'disabled'));
+                var capacity = segment.querySelector('.tier-stack__capacity');
+                var used = segment.querySelector('.tier-stack__used');
+                capacity.setAttribute('x', x.toFixed(3));
+                capacity.setAttribute('width', span.toFixed(3));
+                used.setAttribute('x', x.toFixed(3));
+                used.setAttribute('width', Math.min(span, width * percent / 100).toFixed(3));
+            }
+            x += width;
+        });
+    }
+
+    function memberKey(ids) {
+        return ids.slice().sort(function (a, b) { return a - b; }).join(',');
+    }
+
     function render(data) {
         badge(root, 'ha-state', data.ha.state);
         text(root, 'ha-message', data.ha.message);
@@ -129,6 +178,7 @@
             badge(row, 'sync', target.state === 'disabled' ? 'disabled' : (target.in_sync ? 'ok' : 'degraded'),
                 target.state === 'disabled' ? 'inaktiv' : (target.in_sync ? 'synchron' : 'ausstehend'));
             fillbar('target-' + target.id, target.fill);
+            renderMembers(row, target);
         });
 
         var snapshot = data.snapshot;
@@ -155,9 +205,18 @@
         var targetIds = Array.from(root.querySelectorAll('[data-target]')).map(function (node) {
             return Number(node.dataset.target);
         });
+        var memberIds = Array.from(root.querySelectorAll('[data-member]')).map(function (node) {
+            return Number(node.dataset.member);
+        });
+        var liveMemberIds = [];
+        data.targets.forEach(function (target) {
+            if ((target.members || []).length > 1) {
+                target.members.forEach(function (member) { liveMemberIds.push(member.id); });
+            }
+        });
         var targetsChanged = targetIds.length !== data.targets.length || data.targets.some(function (target) {
             return targetIds.indexOf(target.id) === -1;
-        });
+        }) || memberKey(memberIds) !== memberKey(liveMemberIds);
         text(root, 'updated', targetsChanged
             ? 'Speicherziele wurden geändert. Bitte Seite neu laden, um die aktuelle Konfiguration zu sehen.'
             : 'Live aktualisiert: ' + new Date().toLocaleTimeString('de-DE') + ' · alle 5 Sekunden');

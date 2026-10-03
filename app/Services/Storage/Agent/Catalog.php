@@ -416,12 +416,15 @@ final class Catalog
             : $this->value('SELECT COUNT(*) FROM files WHERE source = ?', [$source]));
     }
 
-    public function markSynced(int $targetId, int $fileId, int $version): void
+    /**
+     * @param int $memberId Ziel innerhalb des Cold-Tiers (Basisziel/Erweiterung), 0 = Basisziel
+     */
+    public function markSynced(int $targetId, int $fileId, int $version, int $memberId = 0): void
     {
         $this->run(
-            'INSERT INTO target_files (target_id, file_id, version) VALUES (?, ?, ?)
-             ON CONFLICT (target_id, file_id) DO UPDATE SET version = excluded.version',
-            [$targetId, $fileId, $version]
+            'INSERT INTO target_files (target_id, file_id, version, member_id) VALUES (?, ?, ?, ?)
+             ON CONFLICT (target_id, file_id) DO UPDATE SET version = excluded.version, member_id = excluded.member_id',
+            [$targetId, $fileId, $version, $memberId === $targetId ? 0 : $memberId]
         );
     }
 
@@ -516,6 +519,31 @@ final class Catalog
         ) ?? [];
 
         return ['files' => (int) ($row['files'] ?? 0), 'bytes' => (int) ($row['bytes'] ?? 0)];
+    }
+
+    /**
+     * Synchronisierte Dateien je Ziel eines Cold-Tiers (Kennung des Ziels;
+     * Dateien auf dem Basisziel unter der Kennung des Tiers).
+     *
+     * @return array<int,array{files:int,bytes:int}>
+     */
+    public function memberStats(int $targetId): array
+    {
+        $rows = $this->all(
+            'SELECT tf.member_id, COUNT(*) AS files, COALESCE(SUM(f.size), 0) AS bytes FROM target_files tf
+             JOIN files f ON f.id = tf.file_id AND tf.version = f.version WHERE tf.target_id = ? GROUP BY tf.member_id',
+            [$targetId]
+        );
+        $result = [];
+        foreach ($rows as $row) {
+            $member = (int) $row['member_id'] === 0 ? $targetId : (int) $row['member_id'];
+            $result[$member] = [
+                'files' => ($result[$member]['files'] ?? 0) + (int) $row['files'],
+                'bytes' => ($result[$member]['bytes'] ?? 0) + (int) $row['bytes'],
+            ];
+        }
+
+        return $result;
     }
 
     public function addOp(int $targetId, string $op, string $source, string $path, ?string $newPath, int $now): void
@@ -719,6 +747,11 @@ final class Catalog
             PRIMARY KEY (target_id, file_id)
         )');
         $this->pdo->exec('CREATE INDEX IF NOT EXISTS target_files_file ON target_files (file_id)');
+        // Ziel innerhalb eines erweiterten Cold-Tiers (0 = Basisziel), nachgeruestet.
+        $columns = array_column($this->all('PRAGMA table_info(target_files)'), 'name');
+        if (!in_array('member_id', $columns, true)) {
+            $this->pdo->exec('ALTER TABLE target_files ADD COLUMN member_id INTEGER NOT NULL DEFAULT 0');
+        }
         $this->pdo->exec('CREATE TABLE IF NOT EXISTS ops (
             id INTEGER PRIMARY KEY,
             target_id INTEGER NOT NULL,

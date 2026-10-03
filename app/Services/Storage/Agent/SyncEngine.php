@@ -48,6 +48,8 @@ final class SyncEngine
      * @param ThreatDetector|null $detector Erkennung auffaelligen Ueberschreibens (Ransomware)
      * @param SnapshotEngine|null $snapshots Vorgaengerversionen (Snapshot-Speicher)
      */
+    private readonly TierLayout $layout;
+
     public function __construct(
         private readonly Catalog $catalog,
         private readonly TieringStore $store,
@@ -57,8 +59,10 @@ final class SyncEngine
         ?callable $event = null,
         ?callable $clock = null,
         private readonly ?ThreatDetector $detector = null,
-        private readonly ?SnapshotEngine $snapshots = null
+        private readonly ?SnapshotEngine $snapshots = null,
+        ?TierLayout $layout = null
     ) {
+        $this->layout = $layout ?? new TierLayout();
         $this->event = $event !== null ? \Closure::fromCallable($event) : static function (): void {
         };
         $this->clock = $clock !== null ? \Closure::fromCallable($clock) : static fn (): int => time();
@@ -451,8 +455,8 @@ final class SyncEngine
 
                     return $result;
                 }
-                $this->assertReachable($root);
-                if (!$this->applyOp($id, $root, $op)) {
+                $this->assertReachable($target);
+                if (!$this->applyOp($target, $op)) {
                     // Vorgaengerversion noch nicht gesichert: Loeschung spaeter.
                     $result['held']++;
                     $result['more'] = true;
@@ -496,53 +500,63 @@ final class SyncEngine
     }
 
     /**
+     * @param array<string,mixed> $target Cold-Tier (Eintrag aus TargetMap)
      * @param array<string,mixed> $op
      *
      * @return bool false, wenn die Operation zurueckgehalten wird
      */
-    private function applyOp(int $targetId, string $root, array $op): bool
+    private function applyOp(array $target, array $op): bool
     {
-        $base = $root . '/' . $op['source'];
-        $from = $base . '/' . $op['path'];
+        $targetId = (int) $target['id'];
+        $relFrom = $op['source'] . '/' . $op['path'];
         if ($op['op'] === 'delete') {
-            if (is_file($from) && $this->snapshots !== null
-                && !$this->snapshots->secure($targetId, $from, (string) $op['source'], (string) $op['path'], null)) {
-                return false;
+            // Auf allen Zielen des Tiers entfernen (normalerweise liegt die Datei auf genau einem).
+            foreach (TierLayout::copies($target, $relFrom) as $copy) {
+                if ($this->snapshots !== null
+                    && !$this->snapshots->secure($targetId, $copy['path'], (string) $op['source'], (string) $op['path'], null)) {
+                    return false;
+                }
+                if (!@unlink($copy['path'])) {
+                    $this->assertReachable($target);
+                    ($this->event)('warning', 'sync', 'Löschen fehlgeschlagen: ' . $op['source'] . '/' . $op['path'], $targetId);
+                }
             }
-            if (is_file($from) && !@unlink($from)) {
-                $this->assertReachable($root);
-                ($this->event)('warning', 'sync', 'Löschen fehlgeschlagen: ' . $op['source'] . '/' . $op['path'], $targetId);
+            foreach (TierLayout::members($target) as $member) {
+                $base = $member['root'] . '/' . $op['source'];
+                $this->pruneDirs(dirname($base . '/' . $op['path']), $base);
             }
-            $this->pruneDirs(dirname($from), $base);
             $this->copier->count($targetId, 0, 0, 0, 1);
 
             return true;
         }
 
-        $to = $base . '/' . $op['new_path'];
         $moved = false;
-        if (is_file($from)) {
+        $found = TierLayout::locate($target, $relFrom);
+        if ($found !== null) {
+            // Umbenennen innerhalb des Ziels, auf dem die Datei liegt.
+            $base = $found['member']['root'] . '/' . $op['source'];
+            $to = $base . '/' . $op['new_path'];
             FileCopier::ensureDir(dirname($to));
-            $moved = @rename($from, $to);
+            $moved = @rename($found['path'], $to);
             $this->copier->count($targetId, 0, 0, 0, 1);
+            $this->pruneDirs(dirname($found['path']), $base);
         }
         if (!$moved) {
-            $this->assertReachable($root);
+            $this->assertReachable($target);
             // Datei fehlt am alten Ort: neu uebertragen.
             $file = $this->catalog->find((string) $op['source'], (string) $op['new_path']);
             if ($file !== null) {
                 $this->catalog->unsync($targetId, (int) $file['id']);
             }
         }
-        $this->pruneDirs(dirname($from), $base);
 
         return true;
     }
 
     /**
-     * @param array{id:int,label:string,root:string} $target
+     * @param array<string,mixed> $target Cold-Tier (Eintrag aus TargetMap)
      * @param array<string,mixed> $file
-     * @param list<array{id:int,label:string,root:string,online:bool,primary:bool,active:bool}> $online
+     * @param list<array<string,mixed>> $online
      *
      * @return string copied|adopted|skipped|held|failed
      */
@@ -552,43 +566,55 @@ final class SyncEngine
         $version = (int) $file['version'];
         $source = (string) $file['source'];
         $rel = (string) $file['path'];
-        $remote = $root . '/' . $source . '/' . $rel;
         $size = (int) $file['size'];
         $mtime = (int) $file['mtime'];
 
-        $existing = @stat($remote);
-        if ($existing !== false && (int) $existing['size'] === $size && abs((int) $existing['mtime'] - $mtime) <= 1) {
+        $current = TierLayout::locate($target, $source . '/' . $rel);
+        $existing = $current === null ? false : @stat($current['path']);
+        if ($current !== null && $existing !== false && (int) $existing['size'] === $size && abs((int) $existing['mtime'] - $mtime) <= 1) {
             // Ziel hat die Datei bereits (z. B. vorbefuellt oder Katalog neu aufgebaut).
-            $this->catalog->markSynced($target['id'], $fileId, $version);
+            $this->catalog->markSynced($target['id'], $fileId, $version, (int) $current['member']['id']);
 
             return 'adopted';
         }
 
         // Bisherige Version auf dem Ziel zuerst in den Snapshot-Speicher sichern.
-        if ($existing !== false && $this->snapshots !== null) {
+        if ($current !== null && $existing !== false && $this->snapshots !== null) {
             $local = $file['state'] === Catalog::STATE_EVICTED ? null : $this->sources[$source] . '/' . $rel;
-            if (!$this->snapshots->secure($target['id'], $remote, $source, $rel, $fileId, $local)) {
+            if (!$this->snapshots->secure($target['id'], $current['path'], $source, $rel, $fileId, $local)) {
                 return 'held';
             }
         }
 
+        // Erweiterter Tier: erstes Ziel mit Platz (ein volles Ziel wird uebersprungen).
+        $member = $this->layout->place($target, $size, $current);
+        $memberId = (int) $member['id'];
+        $remote = $member['root'] . '/' . $source . '/' . $rel;
+        $moved = $current !== null && $current['path'] !== $remote ? $current : null;
+
         if ($file['state'] === Catalog::STATE_EVICTED) {
-            // Nur noch im Cold-Tier: von einem anderen Ziel kopieren.
+            // Nur noch im Cold-Tier: von einem anderen Tier kopieren.
             $holders = $this->catalog->targetsWithCurrent($fileId);
             foreach ($online as $other) {
                 if ($other['id'] === $target['id'] || !in_array($other['id'], $holders, true)) {
                     continue;
                 }
-                try {
-                    $copy = $this->copier->copy($other['root'] . '/' . $source . '/' . $rel, $remote, $mtime, $other['id'], $target['id'], null, null, (string) ($file['sha256'] ?? ''));
-                } catch (RuntimeException $exception) {
-                    $this->assertReachable($root);
+                $from = TierLayout::locate($other, $source . '/' . $rel);
+                if ($from === null) {
                     continue;
                 }
-                $this->catalog->markSynced($target['id'], $fileId, $version);
+                try {
+                    $copy = $this->copier->copy($from['path'], $remote, $mtime, $other['id'], $target['id'], null, null, (string) ($file['sha256'] ?? ''));
+                } catch (RuntimeException $exception) {
+                    $this->assertReachable($target);
+                    continue;
+                }
+                $this->layout->placed($memberId, $size);
+                $this->catalog->markSynced($target['id'], $fileId, $version, $memberId);
                 if (($file['sha256'] ?? null) === null) {
                     $this->catalog->setHash($fileId, $version, $copy['sha256']);
                 }
+                $this->dropMoved($moved);
 
                 return 'copied';
             }
@@ -606,20 +632,22 @@ final class SyncEngine
         try {
             $copy = $this->copier->copy($local, $remote, $mtime, Catalog::LOCAL, $target['id']);
         } catch (RuntimeException $exception) {
-            $this->assertReachable($root);
+            $this->assertReachable($target);
             ($this->event)('warning', 'sync', 'Übertragung fehlgeschlagen: ' . $source . '/' . $rel . ' – ' . $exception->getMessage(), $target['id']);
 
             return 'failed';
         }
+        $this->layout->placed($memberId, $size);
+        $this->dropMoved($moved);
         clearstatcache(true, $local);
         $after = @stat($local);
         if ($after === false || (int) $after['size'] !== $size || (int) $after['mtime'] !== $mtime || $copy['bytes'] !== $size) {
             return 'skipped';
         }
-        $this->catalog->transaction(function () use ($target, $fileId, $version, $copy): void {
+        $this->catalog->transaction(function () use ($target, $fileId, $version, $copy, $memberId): void {
             $current = $this->catalog->get($fileId);
             if ($current !== null && (int) $current['version'] === $version) {
-                $this->catalog->markSynced($target['id'], $fileId, $version);
+                $this->catalog->markSynced($target['id'], $fileId, $version, $memberId);
                 $this->catalog->setHash($fileId, $version, $copy['sha256']);
             }
         });
@@ -627,11 +655,32 @@ final class SyncEngine
         return 'copied';
     }
 
-    private function assertReachable(string $root): void
+    /**
+     * Entfernt die bisherige Kopie, nachdem die neue Version auf einem anderen
+     * Ziel des Tiers liegt (Vorgaengerversion ist bereits gesichert).
+     *
+     * @param array{member:array<string,mixed>,path:string}|null $moved
+     */
+    private function dropMoved(?array $moved): void
     {
-        clearstatcache(true, $root . '/' . PathRules::TARGET_MARKER);
-        if (!is_file($root . '/' . PathRules::TARGET_MARKER)) {
-            throw new TargetUnavailable('Speicherziel nicht mehr erreichbar.');
+        if ($moved === null) {
+            return;
+        }
+        @unlink($moved['path']);
+    }
+
+    /**
+     * Alle Ziele des Tiers muessen eingebunden sein und zu dieser Installation gehoeren.
+     *
+     * @param array<string,mixed> $target
+     */
+    private function assertReachable(array $target): void
+    {
+        foreach (TierLayout::members($target) as $member) {
+            clearstatcache(true, $member['root'] . '/' . PathRules::TARGET_MARKER);
+            if (!is_file($member['root'] . '/' . PathRules::TARGET_MARKER)) {
+                throw new TargetUnavailable('Speicherziel nicht mehr erreichbar.');
+            }
         }
     }
 
@@ -760,8 +809,8 @@ final class SyncEngine
             // Uebernommene Kopie: Inhalt einmal pruefen, bevor die lokale Datei entfaellt.
             try {
                 $sha = $this->copier->hash($this->store->dataDir() . '/' . $rel, Catalog::LOCAL);
-                $holder = $this->targetRoot($holders[0]);
-                if ($holder === null || $this->copier->hash($holder . '/' . PathRules::SOURCE_NEXTCLOUD_DATA . '/' . $rel, $holders[0]) !== $sha) {
+                $holder = $this->holderPath($holders[0], PathRules::SOURCE_NEXTCLOUD_DATA . '/' . $rel);
+                if ($holder === null || $this->copier->hash($holder, $holders[0]) !== $sha) {
                     $this->catalog->unsync($holders[0], $id);
 
                     return false;
@@ -797,11 +846,14 @@ final class SyncEngine
         return true;
     }
 
-    private function targetRoot(int $id): ?string
+    /**
+     * Pfad einer Datei auf dem Cold-Tier $id (auf welchem seiner Ziele sie liegt).
+     */
+    private function holderPath(int $id, string $path): ?string
     {
         foreach ($this->targets->online() as $target) {
             if ($target['id'] === $id) {
-                return $target['root'];
+                return TierLayout::locate($target, $path)['path'] ?? null;
             }
         }
 

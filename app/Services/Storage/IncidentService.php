@@ -122,8 +122,13 @@ final class IncidentService
     {
         $options = [];
         try {
-            foreach ($this->storage->targets() as $row) {
-                $options[(int) $row['id']] = (string) $row['label'] . ((int) $row['active'] === 1 ? '' : ' (deaktiviert)');
+            // Geschuetzt wird immer ein ganzer Cold-Tier (Basisziel samt Erweiterungen).
+            foreach (StorageService::tiers($this->storage->targets()) as $tier) {
+                $row = $tier['root'];
+                $extensions = count($tier['members']) - 1;
+                $options[(int) $row['id']] = (string) $row['label']
+                    . ($extensions > 0 ? sprintf(' (+%d Erweiterung%s)', $extensions, $extensions === 1 ? '' : 'en') : '')
+                    . ((int) $row['active'] === 1 ? '' : ' (deaktiviert)');
             }
         } catch (PDOException) {
             return [];

@@ -311,6 +311,8 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/speicher-ha/ziel', [StorageAdminController::class, 'editTarget']);
         $router->post('/admin/speicher-ha/ziel', [StorageAdminController::class, 'saveTarget']);
         $router->post('/admin/speicher-ha/ziel/loeschen', [StorageAdminController::class, 'deleteTarget']);
+        $router->get('/admin/speicher-ha/erweitern', [StorageAdminController::class, 'extendForm']);
+        $router->post('/admin/speicher-ha/erweitern', [StorageAdminController::class, 'extend']);
         $router->post('/admin/speicher-ha/auftrag', [StorageAdminController::class, 'request']);
         $router->post('/admin/speicher-ha/snapshot-einstellungen', [StorageAdminController::class, 'updateSnapshotSettings']);
         $router->get('/admin/speicher-ha/dateiversionen', [StorageAdminController::class, 'versions']);

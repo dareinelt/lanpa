@@ -167,11 +167,28 @@ final class StorageService
         if ($existing === null) {
             throw new ValidationException(['target' => 'Das Speicherziel wurde nicht gefunden.']);
         }
+        $parentId = self::parentId($existing);
+        $tier = $this->tierOf($id);
+        if ($parentId !== null && $tier !== null) {
+            // Erweiterung: Art, Status und Rolle folgen dem Basisziel des Cold-Tiers.
+            $root = $tier['root'];
+            $input['kind'] = (string) ($root['kind'] ?? self::KIND_SMB);
+            $input['active'] = (int) $root['active'] === 1 ? '1' : '';
+            unset($input['is_primary']);
+        } elseif ($tier !== null && count($tier['members']) > 1 && (string) ($input['kind'] ?? self::KIND_SMB) !== (string) ($existing['kind'] ?? self::KIND_SMB)) {
+            throw new ValidationException(['kind' => 'Die Art eines erweiterten Cold-Tiers kann nicht geändert werden – SMB wird nur mit SMB, S3 nur mit S3 erweitert.']);
+        }
         $values = $this->validateTarget($input, $existing);
+        if ($parentId !== null) {
+            $values['is_primary'] = 0;
+        }
         if ((int) $existing['active'] === 1 && (int) $values['active'] === 0) {
             $this->assertRemovable($id, 'deaktiviert');
         }
         $this->repository->updateTarget($id, $values);
+        if ($parentId === null && (int) $existing['active'] !== (int) $values['active']) {
+            $this->repository->setTierActive($id, (int) $values['active']);
+        }
         if ((int) $values['is_primary'] === 1) {
             $this->repository->clearPrimary($id);
         }
@@ -181,6 +198,10 @@ final class StorageService
     }
 
     /**
+     * Entfernt einen Cold-Tier (Basisziel samt Erweiterungen) oder – bei einer
+     * Erweiterung – die letzte Erweiterungsstufe aller Cold-Tiers, solange sie
+     * noch keine Daten enthaelt (die Balance der Tiers bleibt erhalten).
+     *
      * @throws ValidationException
      */
     public function deleteTarget(int $id): string
@@ -189,11 +210,183 @@ final class StorageService
         if ($existing === null) {
             throw new ValidationException(['target' => 'Das Speicherziel wurde nicht gefunden.']);
         }
+        $tier = $this->tierOf($id);
+        if (self::parentId($existing) !== null && $tier !== null) {
+            return $this->deleteExtensionLevel($tier, $id);
+        }
         $this->assertRemovable($id, 'gelöscht');
-        $this->repository->deleteTarget($id);
-        $this->repository->addEvent('warning', 'config', 'Speicherziel „' . $existing['label'] . '“ entfernt. Die Daten auf der Freigabe bleiben erhalten.');
+        $members = $tier === null ? [$existing] : $tier['members'];
+        $this->repository->deleteTargets(array_reverse(array_map(static fn (array $m): int => (int) $m['id'], $members)));
+        $extensions = count($members) - 1;
+        $this->repository->addEvent('warning', 'config', 'Speicherziel „' . $existing['label'] . '“ '
+            . ($extensions > 0 ? sprintf('samt %d Erweiterung(en) ', $extensions) : '') . 'entfernt. Die Daten auf der Freigabe bleiben erhalten.');
 
         return (string) $existing['label'];
+    }
+
+    /**
+     * @param array{root:array<string,mixed>,members:list<array<string,mixed>>} $tier
+     *
+     * @throws ValidationException
+     */
+    private function deleteExtensionLevel(array $tier, int $id): string
+    {
+        $level = 0;
+        foreach ($tier['members'] as $index => $member) {
+            if ((int) $member['id'] === $id) {
+                $level = $index;
+            }
+        }
+        $tiers = self::tiers($this->repository->targets());
+        $deepest = max(array_map(static fn (array $t): int => count($t['members']) - 1, $tiers));
+        if ($level < $deepest) {
+            throw new ValidationException(['target' => sprintf(
+                'Es kann nur die letzte Erweiterungsstufe (Erweiterung %d) entfernt werden – sie wird in allen Cold-Tiers gemeinsam entfernt.',
+                $deepest
+            )]);
+        }
+        $remove = [];
+        foreach ($tiers as $other) {
+            $member = $other['members'][$level] ?? null;
+            if ($member === null) {
+                continue;
+            }
+            if ((int) ($member['synced_files'] ?? 0) > 0) {
+                throw new ValidationException(['target' => sprintf(
+                    'Die Erweiterung „%s“ enthält bereits %d synchronisierte Datei(en) des Cold-Tiers und kann nicht entfernt werden.',
+                    (string) $member['label'],
+                    (int) $member['synced_files']
+                )]);
+            }
+            $remove[] = $member;
+        }
+        $this->repository->deleteTargets(array_map(static fn (array $m): int => (int) $m['id'], $remove));
+        $labels = implode(', ', array_map(static fn (array $m): string => '„' . $m['label'] . '“', $remove));
+        $this->repository->addEvent('warning', 'config', sprintf('Erweiterung %d der Cold-Tiers entfernt: %s.', $level, $labels));
+
+        return implode(', ', array_map(static fn (array $m): string => (string) $m['label'], $remove));
+    }
+
+    /**
+     * Cold-Tier, zu dem ein Ziel gehoert.
+     *
+     * @return array{root:array<string,mixed>,members:list<array<string,mixed>>}|null
+     */
+    public function tierOf(int $id): ?array
+    {
+        foreach (self::tiers($this->repository->targets()) as $tier) {
+            foreach ($tier['members'] as $member) {
+                if ((int) $member['id'] === $id) {
+                    return $tier;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Erweitert alle Cold-Tiers gleichzeitig um je ein weiteres Ziel derselben
+     * Art (SMB nur mit SMB, S3 nur mit S3). Erwartet je Basisziel die Angaben
+     * unter $input[<id des Basisziels>]; angelegt wird nur, wenn alle gueltig sind.
+     *
+     * @param array<int|string,mixed> $input
+     *
+     * @return list<int> Kennungen der neuen Ziele
+     *
+     * @throws ValidationException
+     */
+    public function extendTiers(array $input): array
+    {
+        $tiers = self::tiers($this->repository->targets());
+        if ($tiers === []) {
+            throw new ValidationException(['tiers' => 'Es ist noch kein Cold-Tier eingerichtet.']);
+        }
+        $errors = [];
+        $create = [];
+        $locations = [];
+        foreach ($tiers as $tier) {
+            $root = $tier['root'];
+            $rootId = (int) $root['id'];
+            $fields = $input[$rootId] ?? $input[(string) $rootId] ?? null;
+            if (!is_array($fields)) {
+                $errors['tier_' . $rootId . '_label'] = 'Bitte für jeden Cold-Tier ein weiteres Ziel angeben – alle Cold-Tiers werden gemeinsam erweitert.';
+                continue;
+            }
+            $kind = (string) ($root['kind'] ?? self::KIND_SMB) === self::KIND_S3 ? self::KIND_S3 : self::KIND_SMB;
+            if (isset($fields['kind']) && (string) $fields['kind'] !== $kind) {
+                $errors['tier_' . $rootId . '_kind'] = $kind === self::KIND_S3
+                    ? 'Ein S3-Tier kann nur mit einem S3-Ziel erweitert werden.'
+                    : 'Ein SMB-Tier kann nur mit einer SMB-Freigabe erweitert werden.';
+                continue;
+            }
+            $fields['kind'] = $kind;
+            unset($fields['is_primary'], $fields['password_clear']);
+            $existing = null;
+            $reuse = !empty($fields['reuse_credentials']);
+            if ($reuse) {
+                // Zugangsdaten des Basisziels uebernehmen (Kennwort bzw. Secret bleibt verschluesselt).
+                $existing = ['id' => 0, 'kind' => $kind, 'password' => $root['password'] ?? null];
+                if ($kind === self::KIND_S3) {
+                    $fields['s3_access_key'] = (string) $root['username'];
+                    $fields['s3_secret_key'] = '';
+                } else {
+                    $fields['username'] = (string) $root['username'];
+                    $fields['domain'] = (string) $root['domain'];
+                    $fields['password'] = '';
+                }
+            }
+            try {
+                $values = $this->validateTarget($fields, $existing);
+            } catch (ValidationException $exception) {
+                foreach ($exception->errors() as $field => $message) {
+                    $errors['tier_' . $rootId . '_' . $field] = $message;
+                }
+                continue;
+            }
+            $location = strtolower(rtrim((string) $values['unc_path'], '\\/'));
+            if (isset($locations[$location])) {
+                $errors['tier_' . $rootId . '_' . ($kind === self::KIND_S3 ? 's3_bucket' : 'unc_path')] = 'Jeder Cold-Tier benötigt ein eigenes Ziel – dieses ist bereits für einen anderen Cold-Tier angegeben.';
+                continue;
+            }
+            $locations[$location] = true;
+            if ($reuse && !array_key_exists('password', $values)) {
+                $values['password'] = $root['password'] ?? null;
+            }
+            $values['parent_id'] = $rootId;
+            $values['is_primary'] = 0;
+            $values['active'] = (int) $root['active'] === 1 ? 1 : 0;
+            $create[] = $values;
+        }
+        if ($errors !== []) {
+            throw new ValidationException($errors);
+        }
+
+        $ids = $this->repository->createTargets($create);
+        foreach ($create as $index => $values) {
+            $this->repository->addEvent('info', 'config', sprintf(
+                'Cold-Tier „%s“ um „%s“ erweitert (%s).',
+                (string) $this->labelOf($tiers, (int) $values['parent_id']),
+                $values['label'],
+                $values['unc_path']
+            ), $ids[$index]);
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param list<array{root:array<string,mixed>,members:list<array<string,mixed>>}> $tiers
+     */
+    private function labelOf(array $tiers, int $rootId): string
+    {
+        foreach ($tiers as $tier) {
+            if ((int) $tier['root']['id'] === $rootId) {
+                return (string) $tier['root']['label'];
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -222,56 +415,7 @@ final class StorageService
         $rows = $this->repository->targets();
         $incident = $this->incidentState();
 
-        $targets = [];
-        foreach ($rows as $row) {
-            $age = $row['status_age'] ?? null;
-            $state = (string) ($row['state'] ?? 'unknown');
-            if ((int) $row['active'] !== 1) {
-                $state = 'disabled';
-            } elseif ($age === null || (int) $age > StorageHealth::HEARTBEAT_STALE_SECONDS) {
-                $state = 'unknown';
-            }
-            $total = (int) ($row['total_bytes'] ?? 0);
-            $free = (int) ($row['free_bytes'] ?? 0);
-            $kind = (string) ($row['kind'] ?? self::KIND_SMB) === self::KIND_S3 ? self::KIND_S3 : self::KIND_SMB;
-            $targets[] = [
-                'id' => (int) $row['id'],
-                'label' => (string) $row['label'],
-                'kind' => $kind,
-                'unc_path' => (string) $row['unc_path'],
-                'username' => (string) $row['username'],
-                'domain' => (string) $row['domain'],
-                'smb_version' => (string) $row['smb_version'],
-                's3_endpoint' => (string) ($row['s3_endpoint'] ?? ''),
-                's3_region' => (string) ($row['s3_region'] ?? ''),
-                's3_bucket' => (string) ($row['s3_bucket'] ?? ''),
-                's3_prefix' => (string) ($row['s3_prefix'] ?? ''),
-                'capacity_bytes' => (int) ($row['capacity_bytes'] ?? 0),
-                // S3 ohne angegebene Kapazitaet: kein Fuellstand (Objektspeicher ohne feste Groesse).
-                'unbounded' => $kind === self::KIND_S3 && (int) ($row['capacity_bytes'] ?? 0) <= 0,
-                'has_password' => (string) ($row['password'] ?? '') !== '',
-                'is_primary' => (int) $row['is_primary'] === 1,
-                'active' => (int) $row['active'] === 1,
-                'state' => $state,
-                'message' => (string) ($row['message'] ?? ''),
-                'total_bytes' => $total,
-                'free_bytes' => $free,
-                'fill' => StorageHealth::fill($total, $free, $settings->fillWarnPercent(), $settings->fillCritPercent()),
-                'read_bps' => (int) ($row['read_bps'] ?? 0),
-                'write_bps' => (int) ($row['write_bps'] ?? 0),
-                'read_iops' => (float) ($row['read_iops'] ?? 0),
-                'write_iops' => (float) ($row['write_iops'] ?? 0),
-                'in_sync' => $state === 'online' && (int) ($row['in_sync'] ?? 0) === 1,
-                'pending_files' => (int) ($row['pending_files'] ?? 0),
-                'pending_bytes' => (int) ($row['pending_bytes'] ?? 0),
-                'lag_seconds' => (int) ($row['lag_seconds'] ?? 0),
-                'synced_files' => (int) ($row['synced_files'] ?? 0),
-                'synced_bytes' => (int) ($row['synced_bytes'] ?? 0),
-                'state_since' => (string) ($row['state_since'] ?? ''),
-                'last_sync_at' => (string) ($row['last_sync_at'] ?? ''),
-                'frozen' => (int) $row['id'] === $incident['target_id'],
-            ];
-        }
+        $targets = $this->tierViews($rows, $settings, $incident['target_id']);
 
         $heartbeat = isset($status['heartbeat_age']) ? (int) $status['heartbeat_age'] : null;
         $syncHeartbeat = isset($status['sync_heartbeat_age']) ? (int) $status['sync_heartbeat_age'] : null;
@@ -336,6 +480,161 @@ final class StorageService
     }
 
     /**
+     * Teilt die Zeilen aus storage_targets in Cold-Tiers: je Basisziel
+     * (parent_id leer) die Mitglieder Basisziel + Erweiterungen (nach Anlage).
+     * Erweiterungen ohne vorhandenes Basisziel gelten als eigener Tier.
+     *
+     * @param list<array<string,mixed>> $rows
+     *
+     * @return list<array{root:array<string,mixed>,members:list<array<string,mixed>>}>
+     */
+    public static function tiers(array $rows): array
+    {
+        $ids = array_map(static fn (array $r): int => (int) $r['id'], $rows);
+        $tiers = [];
+        $extensions = [];
+        foreach ($rows as $row) {
+            $parent = self::parentId($row);
+            if ($parent !== null && in_array($parent, $ids, true)) {
+                $extensions[$parent][] = $row;
+            } else {
+                $tiers[(int) $row['id']] = ['root' => $row, 'members' => [$row]];
+            }
+        }
+        foreach ($extensions as $parent => $list) {
+            if (!isset($tiers[$parent])) {
+                continue;
+            }
+            usort($list, static fn (array $a, array $b): int => (int) $a['id'] <=> (int) $b['id']);
+            $tiers[$parent]['members'] = array_merge($tiers[$parent]['members'], $list);
+        }
+
+        return array_values($tiers);
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     */
+    public static function parentId(array $row): ?int
+    {
+        $parent = $row['parent_id'] ?? null;
+
+        return $parent === null || $parent === '' || (int) $parent === 0 ? null : (int) $parent;
+    }
+
+    /**
+     * Cold-Tiers fuer Adminseite, Dashboard, SNMP: je Tier die Werte des
+     * Basisziels, Fuellstand/Datenrate ueber alle Ziele des Tiers summiert und
+     * unter "members" jedes Ziel einzeln (ein volles Ziel bleibt voll).
+     *
+     * @param list<array<string,mixed>> $rows
+     *
+     * @return list<array<string,mixed>>
+     */
+    private function tierViews(array $rows, StorageSettings $settings, ?int $frozenId): array
+    {
+        $warn = $settings->fillWarnPercent();
+        $crit = $settings->fillCritPercent();
+        $result = [];
+        foreach (self::tiers($rows) as $tier) {
+            $members = [];
+            foreach ($tier['members'] as $index => $row) {
+                $members[] = $this->targetView($row, $settings) + [
+                    'role' => $index === 0 ? 'root' : 'extension',
+                    'level' => $index,
+                ];
+            }
+            $root = $members[0];
+            $root['frozen'] = $frozenId !== null && in_array($frozenId, array_column($members, 'id'), true);
+            $view = $root;
+            if (count($members) > 1) {
+                $sum = static fn (string $key): float => array_sum(array_map(static fn (array $m): float => (float) $m[$key], $members));
+                $offline = array_values(array_filter($members, static fn (array $m): bool => $m['state'] !== 'online'));
+                if ($root['state'] === 'online' && $offline !== []) {
+                    $view['state'] = $offline[0]['state'];
+                    $view['message'] = $offline[0]['label'] . ': ' . ($offline[0]['message'] !== '' ? $offline[0]['message'] : 'nicht erreichbar.');
+                }
+                $view['unbounded'] = array_filter($members, static fn (array $m): bool => $m['unbounded']) !== [];
+                $view['total_bytes'] = $view['unbounded'] ? 0 : (int) $sum('total_bytes');
+                $view['free_bytes'] = $view['unbounded'] ? 0 : (int) $sum('free_bytes');
+                $view['capacity_bytes'] = (int) $sum('capacity_bytes');
+                $view['fill'] = StorageHealth::fill($view['total_bytes'], $view['free_bytes'], $warn, $crit);
+                foreach (['read_bps', 'write_bps'] as $key) {
+                    $view[$key] = (int) $sum($key);
+                }
+                foreach (['read_iops', 'write_iops'] as $key) {
+                    $view[$key] = $sum($key);
+                }
+                $view['synced_files'] = (int) $sum('synced_files');
+                $view['synced_bytes'] = (int) $sum('synced_bytes');
+                $view['in_sync'] = $view['state'] === 'online' && $root['in_sync'];
+            }
+            $view['members'] = $members;
+            $result[] = $view;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $row
+     *
+     * @return array<string,mixed>
+     */
+    private function targetView(array $row, StorageSettings $settings): array
+    {
+        $age = $row['status_age'] ?? null;
+        $state = (string) ($row['state'] ?? 'unknown');
+        if ((int) $row['active'] !== 1) {
+            $state = 'disabled';
+        } elseif ($age === null || (int) $age > StorageHealth::HEARTBEAT_STALE_SECONDS) {
+            $state = 'unknown';
+        }
+        $total = (int) ($row['total_bytes'] ?? 0);
+        $free = (int) ($row['free_bytes'] ?? 0);
+        $kind = (string) ($row['kind'] ?? self::KIND_SMB) === self::KIND_S3 ? self::KIND_S3 : self::KIND_SMB;
+
+        return [
+            'id' => (int) $row['id'],
+            'parent_id' => self::parentId($row),
+            'label' => (string) $row['label'],
+            'kind' => $kind,
+            'unc_path' => (string) $row['unc_path'],
+            'username' => (string) $row['username'],
+            'domain' => (string) $row['domain'],
+            'smb_version' => (string) $row['smb_version'],
+            's3_endpoint' => (string) ($row['s3_endpoint'] ?? ''),
+            's3_region' => (string) ($row['s3_region'] ?? ''),
+            's3_bucket' => (string) ($row['s3_bucket'] ?? ''),
+            's3_prefix' => (string) ($row['s3_prefix'] ?? ''),
+            'capacity_bytes' => (int) ($row['capacity_bytes'] ?? 0),
+            // S3 ohne angegebene Kapazitaet: kein Fuellstand (Objektspeicher ohne feste Groesse).
+            'unbounded' => $kind === self::KIND_S3 && (int) ($row['capacity_bytes'] ?? 0) <= 0,
+            'has_password' => (string) ($row['password'] ?? '') !== '',
+            'is_primary' => (int) $row['is_primary'] === 1,
+            'active' => (int) $row['active'] === 1,
+            'state' => $state,
+            'message' => (string) ($row['message'] ?? ''),
+            'total_bytes' => $total,
+            'free_bytes' => $free,
+            'fill' => StorageHealth::fill($total, $free, $settings->fillWarnPercent(), $settings->fillCritPercent()),
+            'read_bps' => (int) ($row['read_bps'] ?? 0),
+            'write_bps' => (int) ($row['write_bps'] ?? 0),
+            'read_iops' => (float) ($row['read_iops'] ?? 0),
+            'write_iops' => (float) ($row['write_iops'] ?? 0),
+            'in_sync' => $state === 'online' && (int) ($row['in_sync'] ?? 0) === 1,
+            'pending_files' => (int) ($row['pending_files'] ?? 0),
+            'pending_bytes' => (int) ($row['pending_bytes'] ?? 0),
+            'lag_seconds' => (int) ($row['lag_seconds'] ?? 0),
+            'synced_files' => (int) ($row['synced_files'] ?? 0),
+            'synced_bytes' => (int) ($row['synced_bytes'] ?? 0),
+            'state_since' => (string) ($row['state_since'] ?? ''),
+            'last_sync_at' => (string) ($row['last_sync_at'] ?? ''),
+            'frozen' => false,
+        ];
+    }
+
+    /**
      * Meldung fuer das Dashboard (null = nichts zu melden).
      *
      * @param array<string,mixed>|null $overview
@@ -384,6 +683,19 @@ final class StorageService
                 'forecast' => '',
             ];
         }
+        $full = self::fullTiers($overview['targets']);
+        if ($full !== []) {
+            return [
+                'level' => 'warning',
+                'title' => 'Speicherplatz im Cold-Tier (SMB-/S3-Tier) unzureichend',
+                'message' => 'Kaum noch freier Speicherplatz: ' . implode(', ', array_map(
+                    static fn (array $t): string => $t['label'] . ' (' . number_format((float) $t['fill']['percent'], 1, ',', '.') . ' % belegt)',
+                    $full
+                )) . '. Erweitern Sie alle Cold-Tiers gemeinsam um je ein weiteres Ziel derselben Art (SMB mit SMB, S3 mit S3); '
+                    . 'neue Dateien werden danach auf den Erweiterungen abgelegt.',
+                'forecast' => '',
+            ];
+        }
         $snapshot = $overview['snapshot'] ?? null;
         if (is_array($snapshot) && $snapshot['enabled'] && in_array($snapshot['state'], ['offline', 'invalid'], true)) {
             return [
@@ -399,6 +711,40 @@ final class StorageService
         }
 
         return null;
+    }
+
+    /**
+     * Aktive, erreichbare Cold-Tiers, deren Gesamtkapazitaet (Basisziel und
+     * Erweiterungen) die kritische Fuellgrenze erreicht hat. Ein einzelnes volles
+     * Ziel eines erweiterten Tiers zaehlt nicht, solange der Tier Platz hat.
+     *
+     * @param list<array<string,mixed>> $targets
+     *
+     * @return list<array<string,mixed>>
+     */
+    public static function fullTiers(array $targets): array
+    {
+        return array_values(array_filter(
+            $targets,
+            static fn (array $t): bool => $t['active'] && $t['state'] === 'online' && ($t['fill']['state'] ?? '') === 'critical'
+        ));
+    }
+
+    /**
+     * Anteil eines Ziels an der Gesamtkapazitaet seines Cold-Tiers (Prozent, fuer
+     * die gestapelte Kapazitaetsleiste) – null ohne feste Kapazitaet.
+     *
+     * @param array<string,mixed> $tier
+     * @param array<string,mixed> $member
+     */
+    public static function memberShare(array $tier, array $member): ?float
+    {
+        $total = (int) ($tier['total_bytes'] ?? 0);
+        if ($total <= 0 || (int) $member['total_bytes'] <= 0) {
+            return null;
+        }
+
+        return round(100 * (int) $member['total_bytes'] / $total, 2);
     }
 
     /**
@@ -457,6 +803,19 @@ final class StorageService
                 'synced_files' => number_format($t['synced_files'], 0, ',', '.'),
                 'synced_bytes' => StorageHealth::formatBytes($t['synced_bytes']),
                 'in_sync' => $t['in_sync'],
+                'unbounded' => (bool) ($t['unbounded'] ?? false),
+                'members' => array_map(static fn (array $m): array => [
+                    'id' => $m['id'],
+                    'state' => $m['state'],
+                    'message' => $m['message'],
+                    'free' => StorageHealth::formatBytes($m['free_bytes']),
+                    'total' => StorageHealth::formatBytes($m['total_bytes']),
+                    'used' => StorageHealth::formatBytes(max(0, $m['total_bytes'] - $m['free_bytes'])),
+                    'fill' => $m['fill'],
+                    'share' => self::memberShare($t, $m),
+                    'synced_files' => number_format($m['synced_files'], 0, ',', '.'),
+                    'synced_bytes' => StorageHealth::formatBytes($m['synced_bytes']),
+                ], $t['members'] ?? []),
             ], $overview['targets']),
             'pending_files' => (int) ($overview['status']['pending_files'] ?? 0),
             'recalls_active' => (int) ($overview['status']['recalls_active'] ?? 0),
@@ -556,7 +915,9 @@ final class StorageService
                 }
                 usort($measured, static fn (array $a, array $b): int => $b['fill']['percent'] <=> $a['fill']['percent']);
                 $top = $measured[0];
-                $parts = array_map(static fn (array $t): string => $t['label'] . ' ' . number_format((float) $t['fill']['percent'], 1, '.', '') . '%', $measured);
+                // Je Cold-Tier die Gesamtbelegung aller Ziele (Basisziel + Erweiterungen).
+                $parts = array_map(static fn (array $t): string => $t['label'] . ' ' . number_format((float) $t['fill']['percent'], 1, '.', '') . '%'
+                    . (count($t['members'] ?? []) > 1 ? ' (' . count($t['members']) . ' Ziele)' : ''), $measured);
                 foreach ($unbounded as $t) {
                     $parts[] = $t['label'] . ' ohne Grenze';
                 }
@@ -648,9 +1009,17 @@ final class StorageService
             case 'storage_targets':
             default:
                 $lines = [];
-                foreach ($overview['targets'] as $t) {
+                $rows = [];
+                foreach ($overview['targets'] as $tier) {
+                    // Je physischem Ziel eine Zeile; Rueckstand/Synchronitaet gelten fuer den ganzen Tier.
+                    foreach ($tier['members'] ?? [$tier] as $member) {
+                        $rows[] = $member + ['tier_id' => $tier['id'], 'tier_in_sync' => $tier['in_sync'],
+                            'tier_pending' => $tier['pending_files'], 'tier_lag' => $tier['lag_seconds']];
+                    }
+                }
+                foreach ($rows as $t) {
                     $lines[] = $ascii(sprintf(
-                        'id=%d label=%s state=%s active=%d primary=%d fill_percent=%s total_bytes=%d free_bytes=%d read_mbps=%s write_mbps=%s read_iops=%s write_iops=%s in_sync=%d pending_files=%d lag_seconds=%d kind=%s',
+                        'id=%d label=%s state=%s active=%d primary=%d fill_percent=%s total_bytes=%d free_bytes=%d read_mbps=%s write_mbps=%s read_iops=%s write_iops=%s in_sync=%d pending_files=%d lag_seconds=%d kind=%s tier=%d role=%s',
                         $t['id'],
                         str_replace(' ', '_', $t['label']),
                         $t['state'],
@@ -663,10 +1032,12 @@ final class StorageService
                         number_format($t['write_bps'] / StorageSettings::MIB, 2, '.', ''),
                         number_format($t['read_iops'], 1, '.', ''),
                         number_format($t['write_iops'], 1, '.', ''),
-                        $t['in_sync'] ? 1 : 0,
-                        $t['pending_files'],
-                        $t['lag_seconds'],
-                        $t['kind'] ?? self::KIND_SMB
+                        $t['tier_in_sync'] ? 1 : 0,
+                        $t['tier_pending'],
+                        $t['tier_lag'],
+                        $t['kind'] ?? self::KIND_SMB,
+                        $t['tier_id'],
+                        $t['role'] ?? 'root'
                     ));
                 }
                 if ($lines === []) {
@@ -1011,8 +1382,10 @@ final class StorageService
         if ($evicted === 0) {
             return;
         }
-        foreach ($this->repository->targets() as $row) {
-            if ((int) $row['id'] !== $id && (int) $row['active'] === 1 && (int) ($row['in_sync'] ?? 0) === 1) {
+        foreach (self::tiers($this->repository->targets()) as $tier) {
+            $row = $tier['root'];
+            $ids = array_map(static fn (array $m): int => (int) $m['id'], $tier['members']);
+            if (!in_array($id, $ids, true) && (int) $row['active'] === 1 && (int) ($row['in_sync'] ?? 0) === 1) {
                 return;
             }
         }

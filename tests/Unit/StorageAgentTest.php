@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\Storage\Agent\Agent;
 use App\Services\Storage\Agent\Catalog;
 use App\Services\Storage\Agent\FileCopier;
 use App\Services\Storage\Agent\Metrics;
@@ -12,6 +13,7 @@ use App\Services\Storage\Agent\Recaller;
 use App\Services\Storage\Agent\SyncEngine;
 use App\Services\Storage\Agent\TargetMap;
 use App\Services\Storage\Agent\TieringStore;
+use App\Services\Storage\Agent\TierLayout;
 use App\Services\Storage\StorageSettings;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
@@ -405,4 +407,165 @@ Runner::test('Storage-Agent: Katalogverlust - vorhandene Kopien werden uebernomm
     } finally {
         storageAgentRemove($env['base']);
     }
+});
+
+/**
+ * Cold-Tier mit Basisziel (1) und Erweiterung (3); Basisziel voll laut $free.
+ *
+ * @param array<string,mixed> $env
+ * @param ArrayObject<string,int> $free freier Platz je Wurzel (Test)
+ *
+ * @return array{0:SyncEngine,1:string}
+ */
+function storageAgentExtendedTier(array $env, ArrayObject $free): array
+{
+    $extension = $env['base'] . '/target1-ext';
+    mkdir($extension, 0777, true);
+    file_put_contents($extension . '/' . PathRules::TARGET_MARKER, '{"instance":"test"}');
+    $root = $env['targets'][0];
+    $member = static fn (int $id, string $path): array => ['id' => $id, 'label' => 'Ziel ' . $id, 'root' => $path, 'online' => true,
+        'kind' => 'smb', 'total_bytes' => 10 * 1073741824, 'free_bytes' => 0];
+    $env['map']->write([$root + ['members' => [$member(1, $root['root']), $member(3, $extension)]]]);
+    $layout = new TierLayout(static fn (string $path): ?int => $free[$path] ?? null);
+    $engine = new SyncEngine($env['catalog'], $env['store'], $env['map'], $env['copier'], $env['sources'], null, null, null, null, $layout);
+    $free[$root['root']] = 0;
+    $free[$extension] = 5 * 1073741824;
+
+    return [$engine, $extension];
+}
+
+Runner::test('Storage-Agent: TargetMap liefert Ziele je Cold-Tier', static function (): void {
+    $env = storageAgentEnv(1);
+    try {
+        $entry = $env['map']->all()[0];
+        Assert::same(1, count($entry['members']));
+        Assert::same(1, $entry['members'][0]['id']);
+        Assert::same($env['targets'][0]['root'], $entry['members'][0]['root']);
+
+        $free = new ArrayObject();
+        [, $extension] = storageAgentExtendedTier($env, $free);
+        $members = $env['map']->all()[0]['members'];
+        Assert::same([1, 3], array_column($members, 'id'));
+        Assert::same($extension, $members[1]['root']);
+    } finally {
+        storageAgentRemove($env['base']);
+    }
+});
+
+Runner::test('Storage-Agent: TierLayout verteilt auf Erweiterungen, wenn das Basisziel voll ist', static function (): void {
+    $free = ['/a' => 10 * 1073741824, '/b' => 10 * 1073741824];
+    $layout = new TierLayout(static function (string $root) use (&$free): ?int {
+        return $free[$root] ?? null;
+    });
+    $member = static fn (int $id, string $root): array => ['id' => $id, 'label' => '', 'root' => $root, 'online' => true,
+        'kind' => 'smb', 'total_bytes' => 20 * 1073741824, 'free_bytes' => 0];
+    $tier = ['id' => 1, 'root' => '/a', 'members' => [$member(1, '/a'), $member(2, '/b')]];
+
+    // Einzelnes Ziel: immer das Basisziel, ohne Platzpruefung.
+    Assert::same(1, $layout->place(['id' => 1, 'root' => '/a'], PHP_INT_MAX, null)['id']);
+    Assert::same(1, $layout->place($tier, 1000, null)['id']);
+    // Reserve: 1 % von 20 GB, hoechstens 1 GB.
+    Assert::same(214748364, TierLayout::reserve($tier['members'][0]));
+    $free['/a'] = 214748364 + 999;
+    Assert::same(2, $layout->place($tier, 1000, null)['id'], 'Volles Basisziel -> Erweiterung.');
+    Assert::same(1, $layout->place($tier, 999, null)['id']);
+    // Kein Ziel hat Platz: das mit dem meisten freien Platz.
+    $free = ['/a' => 5, '/b' => 50];
+    Assert::same(2, $layout->place($tier, 1073741824, null)['id']);
+
+    // S3 ohne Kapazitaet gilt als unbegrenzt, mit Kapazitaet zaehlen geschriebene Bytes.
+    $s3 = ['id' => 4, 'label' => '', 'root' => '/s3', 'online' => true, 'kind' => 's3', 'total_bytes' => 0, 'free_bytes' => 0];
+    Assert::null($layout->free($s3));
+    $s3['total_bytes'] = 1000;
+    $s3['free_bytes'] = 800;
+    $layout->placed(4, 300);
+    Assert::same(500, $layout->free($s3));
+});
+
+Runner::test('Storage-Agent: Erweiterter Cold-Tier - Ueberlauf, Umbenennung, Loeschung und Rueckholung', static function (): void {
+    $env = storageAgentEnv(1);
+    try {
+        $data = $env['data'];
+        // Vor der Erweiterung: Datei liegt auf dem Basisziel.
+        storageAgentFile($data . '/alice/files/alt.txt', 'alt');
+        $env['engine']->scan(null);
+        storageAgentSyncAll($env);
+        $root = $env['targets'][0]['root'];
+        Assert::true(is_file($root . '/nextcloud-data/alice/files/alt.txt'));
+
+        $free = new ArrayObject();
+        [$engine, $extension] = storageAgentExtendedTier($env, $free);
+        $tier = $env['map']->all()[0];
+
+        storageAgentFile($data . '/alice/files/neu.bin', str_repeat('N', 300000), time() - 60 * 86400);
+        $engine->scan(null);
+        Assert::null($engine->syncTarget($tier, 30)['error']);
+        Assert::true(is_file($extension . '/nextcloud-data/alice/files/neu.bin'), 'Neue Datei landet auf der Erweiterung.');
+        Assert::false(is_file($root . '/nextcloud-data/alice/files/neu.bin'));
+        Assert::true(is_file($root . '/nextcloud-data/alice/files/alt.txt'), 'Vorhandene Dateien bleiben auf dem vollen Ziel.');
+        Assert::same(0, $env['catalog']->pendingStats(1)['files']);
+        $stats = $env['catalog']->memberStats(1);
+        Assert::same(1, $stats[1]['files']);
+        Assert::same(1, $stats[3]['files']);
+        Assert::same(300000, $stats[3]['bytes']);
+
+        // Aenderung einer Datei auf dem vollen Basisziel: neue Version wandert auf die Erweiterung.
+        storageAgentFile($data . '/alice/files/alt.txt', 'alt, aber laenger', time() + 5);
+        $engine->scan(null);
+        Assert::null($engine->syncTarget($tier, 30)['error']);
+        Assert::same('alt, aber laenger', file_get_contents($extension . '/nextcloud-data/alice/files/alt.txt'));
+        Assert::false(is_file($root . '/nextcloud-data/alice/files/alt.txt'), 'Alte Kopie wird nach dem Verschieben entfernt.');
+        Assert::same(1, count(TierLayout::copies($tier, 'nextcloud-data/alice/files/alt.txt')));
+
+        // Umbenennung auf dem Ziel, auf dem die Datei liegt.
+        rename($data . '/alice/files/neu.bin', $data . '/alice/files/umbenannt.bin');
+        $result = $engine->scan([PathRules::SOURCE_NEXTCLOUD_DATA => ['alice/files/neu.bin', 'alice/files/umbenannt.bin']]);
+        Assert::same(1, $result['renamed']);
+        Assert::null($engine->syncTarget($tier, 30)['error']);
+        Assert::true(is_file($extension . '/nextcloud-data/alice/files/umbenannt.bin'));
+        Assert::false(is_file($extension . '/nextcloud-data/alice/files/neu.bin'));
+        $located = TierLayout::locate($tier, 'nextcloud-data/alice/files/umbenannt.bin');
+        Assert::same(3, $located['member']['id']);
+
+        // Rueckholung findet die Datei auf der Erweiterung.
+        if ($env['store']->sparseSupported()) {
+            $settings = new StorageSettings(['storage_enabled' => '1', 'storage_local_days' => '30']);
+            Assert::same(1, $engine->tier($settings, true)['evicted']);
+            $recaller = new Recaller($env['catalog'], $env['store'], $env['map'], $env['copier']);
+            Assert::true($recaller->recall('alice/files/umbenannt.bin'));
+            Assert::same(str_repeat('N', 300000), file_get_contents($data . '/alice/files/umbenannt.bin'));
+        }
+
+        // Loeschung entfernt die Kopie auf jedem Ziel des Tiers.
+        unlink($data . '/alice/files/umbenannt.bin');
+        unlink($data . '/alice/files/alt.txt');
+        Assert::same(2, $engine->scan(null)['deleted']);
+        Assert::null($engine->syncTarget($tier, 30)['error']);
+        Assert::false(is_file($extension . '/nextcloud-data/alice/files/umbenannt.bin'));
+        Assert::false(is_file($extension . '/nextcloud-data/alice/files/alt.txt'));
+        Assert::same([], $env['catalog']->memberStats(1));
+    } finally {
+        storageAgentRemove($env['base']);
+    }
+});
+
+Runner::test('Storage-Agent: Erweiterter Cold-Tier ist nur mit allen Zielen erreichbar', static function (): void {
+    $rows = [
+        ['id' => 1, 'label' => 'NAS A', 'kind' => 'smb', 'is_primary' => 1, 'active' => 1, 'parent_id' => null, 'in_sync' => 1],
+        ['id' => 2, 'label' => 'NAS B', 'kind' => 'smb', 'is_primary' => 0, 'active' => 1, 'parent_id' => null, 'in_sync' => 1],
+        ['id' => 3, 'label' => 'NAS A2', 'kind' => 'smb', 'is_primary' => 0, 'active' => 1, 'parent_id' => 1],
+        ['id' => 4, 'label' => 'NAS B2', 'kind' => 'smb', 'is_primary' => 0, 'active' => 1, 'parent_id' => 2],
+    ];
+    $check = static fn (string $state, string $root): array => ['state' => $state, 'message' => '', 'total_bytes' => 100, 'free_bytes' => 10, 'root' => $root];
+    [$map, $evaluated] = Agent::tierMap($rows, [
+        1 => $check('online', '/m/1'), 2 => $check('online', '/m/2'), 3 => $check('online', '/m/3'), 4 => $check('offline', '/m/4'),
+    ], 2);
+    Assert::same([1, 2], array_column($map, 'id'));
+    Assert::same([1, 3], array_column($map[0]['members'], 'id'));
+    Assert::same('/m/3', $map[0]['members'][1]['root']);
+    Assert::true($map[0]['online']);
+    Assert::false($map[1]['online'], 'Ein nicht erreichbares Ziel macht den ganzen Tier unerreichbar.');
+    Assert::same('offline', $evaluated[1]['state']);
+    Assert::true($evaluated[1]['frozen']);
+    Assert::false($evaluated[0]['frozen']);
 });

@@ -12,7 +12,7 @@ Rückholung.
 | Begriff | Bedeutung |
 | --- | --- |
 | **Hot-Tier (lokales Storage)** | Volumes `nextcloud_data` und `eurooffice_data` auf dem Docker-Host. Cache für häufig und kürzlich genutzte Dateien. |
-| **Cold-Tier (SMB-/S3-Tier)** | Alle eingetragenen Speicherziele, SMB-Freigaben und S3-Buckets beliebig gemischt. Jedes Ziel hält den **vollständigen** Datenbestand. |
+| **Cold-Tier (SMB-/S3-Tier)** | Alle eingetragenen Speicherziele, SMB-Freigaben und S3-Buckets beliebig gemischt. Jeder Cold-Tier (eine Kachel, z. B. „Cold-Tier 1“) hält den **vollständigen** Datenbestand und kann bei Platzmangel um weitere Ziele derselben Art erweitert werden ([Abschnitt 4a](#4a-cold-tiers-erweitern-mehr-kapazität)). |
 | **Snapshot-Speicher (Dateiversionen)** | Eine eigene, von den Speicherzielen getrennte SMB-Freigabe. Vor jeder inhaltlichen Änderung oder Löschung einer Benutzerdatei wird die **bisherige Version unveränderlich** dort abgelegt ([Abschnitt 5a](#5a-snapshot-speicher-dateiversionen-auf-eigener-smb-freigabe)). |
 
 Dieses Dokument beschreibt Einrichtung und Betrieb. Die technische Referenz
@@ -402,6 +402,82 @@ eingeschränkte Kennungen in `config.json` (`restricted`,
 
 ---
 
+## 4a. Cold-Tiers erweitern (mehr Kapazität)
+
+Wird der Platz auf den Speicherzielen knapp, lässt sich jeder Cold-Tier um
+ein **weiteres Ziel** erweitern, statt ihn zu ersetzen. Regeln:
+
+- **Alle Cold-Tiers werden gleichzeitig erweitert.** Jeder Cold-Tier hält
+  eine vollständige Kopie; würde nur einer wachsen, könnten die anderen die
+  Kopie bald nicht mehr aufnehmen. Das Formular verlangt deshalb für jeden
+  Cold-Tier ein neues Ziel und legt alle gemeinsam an (alles oder nichts).
+- **Gleiche Art:** Eine SMB-Freigabe wird nur um eine SMB-Freigabe, ein
+  S3-Bucket nur um einen S3-Bucket bzw. -Präfix erweitert. Die Art eines
+  erweiterten Cold-Tiers ist danach nicht mehr änderbar.
+- **Eine Kachel je Cold-Tier:** Cold-Tier 1 und Cold-Tier 2 bleiben je eine
+  Kachel. Darin erscheinen Basisziel und Erweiterungen als Liste mit eigener
+  Füllanzeige sowie eine gestapelte Kapazitätsleiste über alle Ziele.
+- **Volles Ziel bleibt voll:** Ein volles Basisziel wird weiterhin als voll
+  angezeigt (Badge „voll“, roter Füllbalken, SNMP-Zeile je Ziel). Die
+  Meldung „Speicherplatz im Cold-Tier unzureichend“ bewertet dagegen den
+  ganzen Cold-Tier und entfällt, sobald die Erweiterung genug Platz bietet.
+
+**Ausgangslage:** Die Basisziele sind fast voll, das Dashboard warnt.
+
+![Volle Cold-Tiers](screenshots/70-admin-cold-tier-voll.png)
+
+![Warnung „Speicherplatz im Cold-Tier unzureichend“](screenshots/71-admin-cold-tier-warnung.png)
+
+**Erweitern:** In der Karte „Cold-Tier (SMB-/S3-Tier)“ auf **Cold-Tiers
+erweitern** klicken. Oben zeigt der Plan je Cold-Tier die vorhandenen Ziele
+mit Füllstand und die neue Erweiterungsstufe (die Bezeichnung wird beim
+Tippen übernommen).
+
+![Erweiterungsplan](screenshots/72-admin-cold-tier-erweitern-plan.png)
+
+Darunter steht je Cold-Tier ein Block mit den Feldern seiner Art. Mit
+„Zugangsdaten des Basisziels übernehmen“ werden Benutzer/Kennwort bzw.
+Access Key/Secret des bestehenden Ziels verwendet (bei S3 sind Endpoint und
+Region vorbelegt). Eine Schaltfläche legt alle Erweiterungen an.
+
+![Formular „Cold-Tiers erweitern“](screenshots/73-admin-cold-tier-erweitern-formular.png)
+
+**Ergebnis:** `storage-sync` bindet die neuen Ziele innerhalb weniger
+Sekunden ein (bis dahin „Unbekannt“). Die Kachel zeigt die Gesamtkapazität
+des Cold-Tiers, das Basisziel bleibt als „voll“ markiert, die Warnung im
+Dashboard ist verschwunden. Ein Hinweis bestätigt, dass alle Cold-Tiers
+gleichmäßig erweitert sind.
+
+![Erweiterte Cold-Tiers](screenshots/74-admin-cold-tier-erweitert.png)
+
+**So werden die Daten verteilt:** Ein Cold-Tier bleibt **eine** Kopie – jede
+Datei liegt auf genau einem seiner Ziele. Vorhandene Dateien bleiben, wo sie
+sind (keine Umverteilung). Neue und geänderte Dateien werden auf das erste
+Ziel mit genug Platz geschrieben; jedes Ziel behält dabei eine kleine
+Reserve (1 % der Größe, mindestens 64 MiB, höchstens 1 GiB). Passt eine
+geänderte Datei nicht mehr auf ihr bisheriges Ziel, wird sie auf eine
+Erweiterung verschoben. Zurückholen, Auslagern und Wiederherstellen finden
+die Datei auf jedem Ziel des Cold-Tiers.
+
+**Wichtig:** Ein erweiterter Cold-Tier ist nur verfügbar, wenn **alle** seine
+Ziele erreichbar sind – fällt eine Erweiterung aus, gilt der ganze Cold-Tier
+als nicht erreichbar (die übrigen Cold-Tiers übernehmen wie gewohnt).
+
+**Bearbeiten und Entfernen:** Erweiterungen werden über ihren Eintrag in der
+Kachel bearbeitet (Ort, Zugangsdaten, Kapazität); Art, „aktiv“ und „primär“
+richten sich nach dem Basisziel.
+
+![Erweiterung bearbeiten](screenshots/75-admin-cold-tier-erweiterung-bearbeiten.png)
+
+Entfernt werden kann nur die **letzte** Erweiterungsstufe, gemeinsam in allen
+Cold-Tiers und nur, solange sie noch keine Dateien enthält. Das Entfernen
+eines Basisziels entfernt den ganzen Cold-Tier samt Erweiterungen (die Daten
+auf den Freigaben/Buckets bleiben erhalten).
+
+Technische Details: [storage-referenz.md, Abschnitt 14](storage-referenz.md#14-cold-tier-erweiterungen-mehrere-ziele-je-tier).
+
+---
+
 ## 5. Zurückholen in Nextcloud (Fortschrittsbalken)
 
 Die Nextcloud-App `intranet_integration` hängt einen Storage-Wrapper vor den
@@ -604,7 +680,7 @@ Die Werte stammen aus derselben Logik wie der Adminbereich. Der
 | 13 | `storage_ha` | HA-Status, Exit 0/1/2/3 |
 | 14 | `storage_sync` | Sync-Status mit ausstehenden Dateien und Rückstand |
 | 15 | `storage_hot_fill` | Füllstand Hot-Tier (lokales Storage) in % (Volume oder Limit, der höhere Wert) und Modus |
-| 16 | `storage_cold_fill` | Füllstand Cold-Tier (SMB-/S3-Tier): höchster Füllstand der erreichbaren Ziele, Anzahl nicht erreichbarer Ziele |
+| 16 | `storage_cold_fill` | Füllstand Cold-Tier (SMB-/S3-Tier): höchster Füllstand der erreichbaren Cold-Tiers (bei erweiterten Cold-Tiers Gesamtfüllstand aller Ziele, Zusatz „(n Ziele)“), Anzahl nicht erreichbarer Ziele |
 | 17 | `storage_snapshot` | Snapshot-Speicher: UNKNOWN (3) wenn deaktiviert, CRITICAL (2) wenn nicht erreichbar/ungültig, sonst Füllstand in % mit Anzahl Versionen, vorgemerkten und fehlgeschlagenen Sicherungen (WARNING ab 85 % oder bei Fehlschlägen) |
 
 OIDs: `extResult` `.1.3.6.1.4.1.2021.8.1.100.<Index>`, `extOutput`
@@ -627,7 +703,11 @@ mit mehreren Zeilen:
 - **`storage_targets`** liefert eine Zeile je Ziel: `id`, `label`, `state`,
   `active`, `primary`, `fill_percent`, `total_bytes`, `free_bytes`,
   `read_mbps`, `write_mbps`, `read_iops`, `write_iops`, `in_sync`,
-  `pending_files`, `lag_seconds`, `kind` (`smb` oder `s3`).
+  `pending_files`, `lag_seconds`, `kind` (`smb` oder `s3`), `tier`
+  (Kennung des Basisziels des Cold-Tiers) und `role` (`root` = Basisziel,
+  `extension` = Erweiterung). Erweiterungen erscheinen als eigene Zeilen mit
+  eigenem Füllstand; `in_sync`, `pending_files` und `lag_seconds` gelten für
+  den ganzen Cold-Tier.
 
 ```bash
 snmpget  -v2c -c public localhost .1.3.6.1.4.1.2021.8.1.100.13 .1.3.6.1.4.1.2021.8.1.101.13
@@ -685,6 +765,10 @@ Installation) angezeigt. Die Wiederherstellung bindet es trotzdem ein und
 übernimmt die Instanz-ID aus `.lanpa-storage.json`. Danach gehören alle Ziele
 wieder zu dieser Installation.
 
+Bei einem erweiterten Cold-Tier müssen Basisziel und alle Erweiterungen
+eingetragen und erreichbar sein; die Nummer darf die eines beliebigen Ziels
+des Cold-Tiers sein – wiederhergestellt wird immer aus allen seinen Zielen.
+
 ---
 
 ## 8. Sicherheit
@@ -738,6 +822,9 @@ wieder zu dieser Installation.
   zwingend eine Version je Speichervorgang, sondern eine je übertragener
   Fassung. Eine Fassung, die nie auf einem Speicherziel lag (Datei direkt
   wieder gelöscht), kann nicht gesichert werden (Status `unavailable`).
+- Erweiterte Cold-Tiers verteilen vorhandene Daten nicht um; ein volles
+  Basisziel bleibt voll. Erweiterungen lassen sich nur entfernen, solange sie
+  leer sind (letzte Stufe, alle Cold-Tiers gemeinsam).
 - Der Snapshot-Speicher ist bewusst nur als SMB-Freigabe möglich (kein S3),
   damit er ein eigenes, einfach abzusicherndes System bleibt.
 

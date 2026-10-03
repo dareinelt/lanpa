@@ -121,6 +121,85 @@ final class StorageController extends AdminController
         return $this->redirect('/admin/speicher-ha#ziele');
     }
 
+    /**
+     * Formular: alle Cold-Tiers gemeinsam um je ein Ziel derselben Art erweitern.
+     */
+    public function extendForm(Request $request): Response
+    {
+        if (StorageService::tiers(Container::storage()->targets()) === []) {
+            Session::flash('error', 'Es ist noch kein Cold-Tier eingerichtet.');
+
+            return $this->redirect('/admin/speicher-ha#ziele');
+        }
+
+        return $this->renderExtend();
+    }
+
+    public function extend(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $raw = $request->post['tiers'] ?? [];
+        $input = [];
+        foreach (is_array($raw) ? $raw : [] as $rootId => $fields) {
+            if (!is_array($fields) || !ctype_digit((string) $rootId)) {
+                continue;
+            }
+            $clean = [];
+            foreach (self::EXTEND_FIELDS as $key) {
+                $value = $fields[$key] ?? '';
+                $clean[$key] = is_string($value) ? $value : '';
+            }
+            foreach (['s3_path_style', 's3_verify_tls', 'reuse_credentials'] as $flag) {
+                $clean[$flag] = $clean[$flag] === '1';
+            }
+            $input[(int) $rootId] = $clean;
+        }
+
+        try {
+            $ids = Container::storage()->extendTiers($input);
+        } catch (ValidationException $exception) {
+            Session::flash('error', $exception->errors()['tiers'] ?? 'Bitte prüfen Sie die markierten Eingaben – es wurde noch kein Cold-Tier erweitert.');
+            foreach ($input as &$fields) {
+                unset($fields['password'], $fields['s3_secret_key']);
+            }
+            unset($fields);
+
+            return $this->renderExtend($exception->errors(), $input, 422);
+        }
+
+        app_logger()->info('Cold-Tiers erweitert.', ['admin' => $this->admin(), 'targets' => $ids]);
+        Session::flash('success', sprintf(
+            'Alle Cold-Tiers wurden um je ein Ziel erweitert (%d neue Ziele). storage-sync bindet sie ein; neue Dateien werden abgelegt, sobald ein bisheriges Ziel voll ist.',
+            count($ids)
+        ));
+
+        return $this->redirect('/admin/speicher-ha#ziele');
+    }
+
+    private const EXTEND_FIELDS = [
+        'label', 'kind', 'unc_path', 'username', 'domain', 'password', 'smb_version', 's3_endpoint', 's3_region', 's3_bucket',
+        's3_prefix', 's3_access_key', 's3_secret_key', 's3_path_style', 's3_verify_tls', 'capacity_gb', 'reuse_credentials',
+    ];
+
+    /**
+     * @param array<string,string> $errors
+     * @param array<int,array<string,mixed>> $values
+     */
+    private function renderExtend(array $errors = [], array $values = [], int $status = 200): Response
+    {
+        $service = Container::storage();
+
+        return $this->adminView('admin.storage_extend', [
+            'pageTitle' => 'Cold-Tiers erweitern',
+            'activeNav' => 'storage',
+            'pageScript' => 'admin-storage-target.js',
+            'tiers' => $service->overview()['targets'],
+            'versions' => StorageService::SMB_VERSIONS,
+            'errors' => $errors,
+            'values' => $values,
+        ], $status);
+    }
+
     public function deleteTarget(Request $request): Response
     {
         $this->requireValidCsrf($request);
@@ -133,7 +212,7 @@ final class StorageController extends AdminController
         }
 
         app_logger()->warning('Speicherziel entfernt.', ['admin' => $this->admin(), 'target' => $label]);
-        Session::flash('success', 'Das Speicherziel „' . $label . '“ wurde entfernt. Die Daten auf der Freigabe bzw. im Bucket wurden nicht gelöscht.');
+        Session::flash('success', 'Entfernt: „' . $label . '“. Die Daten auf den Freigaben bzw. in den Buckets wurden nicht gelöscht.');
 
         return $this->redirect('/admin/speicher-ha#ziele');
     }
@@ -276,10 +355,15 @@ final class StorageController extends AdminController
      */
     private function renderTarget(?array $target, array $errors = [], array $values = [], int $status = 200): Response
     {
+        $tier = $target === null ? null : Container::storage()->tierOf((int) $target['id']);
+        $isExtension = $target !== null && StorageService::parentId($target) !== null && $tier !== null;
+
         return $this->adminView('admin.storage_target', [
-            'pageTitle' => $target === null ? 'Speicherziel hinzufügen' : 'Speicherziel bearbeiten',
+            'pageTitle' => $target === null ? 'Speicherziel hinzufügen' : ($isExtension ? 'Erweiterung bearbeiten' : 'Speicherziel bearbeiten'),
             'activeNav' => 'storage',
             'target' => $target,
+            'tierRoot' => $isExtension ? $tier['root'] : null,
+            'tierSize' => $tier === null ? 1 : count($tier['members']),
             'pageScript' => 'admin-storage-target.js',
             'versions' => StorageService::SMB_VERSIONS,
             'kinds' => StorageService::KINDS,

@@ -147,7 +147,7 @@ app/            Anwendungscode
   Support/      Dates, Html, Sanitizer, Validator
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
-  migrations/   SQL-Migrationen (001…027)
+  migrations/   SQL-Migrationen (001…029)
 docker/         Dockerfiles, Entrypoints, PHP-/MySQL-Konfiguration, SNMP-Agent
 public/         DocumentRoot: index.php (Front-Controller), assets, .htaccess, manuals
 scripts/        CLI-Werkzeuge (Migration, Seed, Admin, Sync, Bereinigung, systemd-Installation, MySQL-Upgrade)

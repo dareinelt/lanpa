@@ -39,6 +39,7 @@ final class SettingsService
             'documentation_enabled' => '1',
             'emergency_plan_enabled' => '0',
             'emergency_plan_group' => '',
+            'emergency_plan_trigger_group' => '',
             'nav_tree_mode' => '0',
             'color_primary' => '#1f4e79',
             'color_secondary' => '#37718e',

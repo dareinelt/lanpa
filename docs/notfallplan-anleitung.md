@@ -157,6 +157,9 @@ Benutzerzugriff getrennt von der Planveröffentlichung.
 In der Einsatzübersicht **Laufend** filtern und ein Ereignis öffnen. KAEP und
 Administratoren sehen alle Ereignisse, Maßnahmenstände und Kommentare und können
 mitarbeiten. Auslösende Benutzer sehen nur ihre eigenen Ereignisse.
+Mitglieder der optionalen Auslösegruppe sehen und bearbeiten gemeinsam die laufenden
+Ereignisse ihrer Gruppe;
+abgeschlossene Ereignisse und das KAEP-Dashboard bleiben ihnen verborgen.
 
 Für längere Einsätze das **KAEP-Dashboard** (Fußzeile oder Ereignis) auf Tablets
 und einem TV öffnen: gemeinsames Live-Lagebild, Zuständigkeit/Priorität/Zielzeit

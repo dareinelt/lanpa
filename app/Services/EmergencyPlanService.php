@@ -37,12 +37,42 @@ final class EmergencyPlanService
         return in_array($role, [Auth::ROLE_ADMIN, Auth::ROLE_KAEP], true);
     }
 
+    public const ACCESS_FULL = 'full';
+    /** Nur Auslösen und Abarbeiten eigener laufender Ereignisse, keine Ereignishistorie. */
+    public const ACCESS_TRIGGER = 'trigger';
+
     public function canView(?array $user): bool
     {
-        $group = trim($this->settings->get('emergency_plan_group'));
+        return $this->accessLevel($user) !== null;
+    }
 
-        return $user !== null && $this->settings->bool('emergency_plan_enabled') && $group !== ''
-            && in_array(mb_strtolower($group), array_map(static fn (string $name) => mb_strtolower(trim($name)), $user['groups']), true);
+    /** Benutzerzugriff über die Freigabegruppen; die volle Freigabegruppe hat Vorrang. */
+    public function accessLevel(?array $user): ?string
+    {
+        if ($user === null || !$this->settings->bool('emergency_plan_enabled')) {
+            return null;
+        }
+        $groups = array_map(static fn (string $name) => mb_strtolower(trim($name)), $user['groups']);
+        foreach (['emergency_plan_group' => self::ACCESS_FULL, 'emergency_plan_trigger_group' => self::ACCESS_TRIGGER] as $key => $level) {
+            $group = mb_strtolower(trim($this->settings->get($key)));
+            if ($group !== '' && in_array($group, $groups, true)) {
+                return $level;
+            }
+        }
+
+        return null;
+    }
+
+    /** Normalisierte Auslösegruppe, falls der Benutzer ihr angehört (für gemeinsame Ereignisse). */
+    public function triggerGroup(?array $user): ?string
+    {
+        if ($user === null || !$this->settings->bool('emergency_plan_enabled')) {
+            return null;
+        }
+        $group = mb_strtolower(trim($this->settings->get('emergency_plan_trigger_group')));
+        $groups = array_map(static fn (string $name) => mb_strtolower(trim($name)), $user['groups']);
+
+        return $group !== '' && in_array($group, $groups, true) ? $group : null;
     }
 
     public static function actor(array $user): string
@@ -276,7 +306,7 @@ final class EmergencyPlanService
         }
         $recipients = ($this->recipients)();
         try {
-            return $this->repository->start($plan, $actor, $key, $recipients['emails'], $recipients['missing'], $this->baseUrl);
+            return $this->repository->start($plan, $actor, $key, $recipients['emails'], $recipients['missing'], $this->baseUrl, $this->triggerGroup($user));
         } catch (PDOException $exception) {
             $existing = $this->repository->existingRequest($key, $actor);
             if ($existing !== null) {
@@ -286,11 +316,15 @@ final class EmergencyPlanService
         }
     }
 
-    public function requireEvent(int $id, string $actor, bool $manager): array
+    public function requireEvent(int $id, string $actor, bool $manager, bool $activeOnly = false, ?string $triggerGroup = null): array
     {
         $event = $this->repository->event($id);
-        if (!$manager && $event['actor'] !== $actor) {
-            throw new HttpException(403, 'Nur die auslösende Person und das KAEP-Team dürfen dieses Ereignis öffnen.');
+        $shared = $triggerGroup !== null && $triggerGroup !== '' && ($event['trigger_group'] ?? null) === $triggerGroup;
+        if (!$manager && $event['actor'] !== $actor && !$shared) {
+            throw new HttpException(403, 'Nur die auslösende Person, Mitglieder ihrer Auslösegruppe und das KAEP-Team dürfen dieses Ereignis öffnen.');
+        }
+        if (!$manager && $activeOnly && $event['status'] !== 'active') {
+            throw new HttpException(403, 'Abgeschlossene Ereignisse sind nur für das KAEP-Team einsehbar.');
         }
 
         return $event;

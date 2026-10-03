@@ -17,7 +17,7 @@ final class StorageRepository extends Repository
     public const NOW = "\0now";
 
     private const TARGET_FIELDS = [
-        'label', 'kind', 'unc_path', 'username', 'password', 'domain', 'smb_version', 's3_endpoint', 's3_region', 's3_bucket',
+        'label', 'kind', 'parent_id', 'unc_path', 'username', 'password', 'domain', 'smb_version', 's3_endpoint', 's3_region', 's3_bucket',
         's3_prefix', 's3_path_style', 's3_verify_tls', 'capacity_bytes', 'is_primary', 'active',
     ];
 
@@ -132,6 +132,61 @@ final class StorageRepository extends Repository
     {
         $this->pdo->prepare('DELETE FROM storage_target_status WHERE target_id = :id')->execute(['id' => $id]);
         $this->pdo->prepare('DELETE FROM storage_targets WHERE id = :id')->execute(['id' => $id]);
+    }
+
+    /**
+     * Legt mehrere Ziele gemeinsam an (alles oder nichts), z. B. die
+     * Erweiterung aller Cold-Tiers um je ein Ziel.
+     *
+     * @param list<array<string,mixed>> $rows
+     *
+     * @return list<int>
+     */
+    public function createTargets(array $rows): array
+    {
+        return $this->atomic(function () use ($rows): array {
+            return array_map(fn (array $values): int => $this->createTarget($values), $rows);
+        });
+    }
+
+    /**
+     * Entfernt mehrere Ziele gemeinsam (alles oder nichts).
+     *
+     * @param list<int> $ids
+     */
+    public function deleteTargets(array $ids): void
+    {
+        $this->atomic(function () use ($ids): void {
+            foreach ($ids as $id) {
+                $this->deleteTarget($id);
+            }
+        });
+    }
+
+    /**
+     * Uebernimmt "aktiv" des Basisziels fuer alle Erweiterungen eines Cold-Tiers.
+     */
+    public function setTierActive(int $rootId, int $active): void
+    {
+        $this->pdo->prepare('UPDATE storage_targets SET active = :active WHERE parent_id = :id')
+            ->execute(['active' => $active, 'id' => $rootId]);
+    }
+
+    private function atomic(callable $operation): mixed
+    {
+        if ($this->pdo->inTransaction()) {
+            return $operation();
+        }
+        $this->pdo->beginTransaction();
+        try {
+            $result = $operation();
+            $this->pdo->commit();
+
+            return $result;
+        } catch (\Throwable $exception) {
+            $this->pdo->rollBack();
+            throw $exception;
+        }
     }
 
     /**

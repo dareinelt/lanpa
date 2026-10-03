@@ -9,6 +9,10 @@ namespace App\Services\Storage\Agent;
  * nach jeder Pruefung geschrieben und von Synchronisation und Rueckholung
  * gelesen (state/targets.json). Nur Ziele mit "online" sind eingebunden und
  * gehoeren nachweislich zu dieser Installation.
+ *
+ * Ein Eintrag steht fuer einen Cold-Tier (Kennung und Wurzel des Basisziels);
+ * "members" listet Basisziel und Erweiterungen (siehe TierLayout). Ein Tier ist
+ * nur "online", wenn alle seine Ziele eingebunden sind.
  */
 final class TargetMap
 {
@@ -17,7 +21,7 @@ final class TargetMap
     }
 
     /**
-     * @param list<array{id:int,label:string,root:string,online:bool,primary:bool,active:bool}> $targets
+     * @param list<array{id:int,label:string,root:string,online:bool,primary:bool,active:bool,members?:list<array<string,mixed>>}> $targets
      */
     public function write(array $targets): void
     {
@@ -28,7 +32,7 @@ final class TargetMap
     }
 
     /**
-     * @return list<array{id:int,label:string,root:string,online:bool,primary:bool,active:bool}>
+     * @return list<array{id:int,label:string,root:string,online:bool,primary:bool,active:bool,members?:list<array<string,mixed>>}>
      */
     public function all(): array
     {
@@ -43,7 +47,7 @@ final class TargetMap
             if (!is_array($target) || !isset($target['id'], $target['root'])) {
                 continue;
             }
-            $result[] = [
+            $entry = [
                 'id' => (int) $target['id'],
                 'label' => (string) ($target['label'] ?? ''),
                 'root' => (string) $target['root'],
@@ -51,6 +55,23 @@ final class TargetMap
                 'primary' => !empty($target['primary']),
                 'active' => !empty($target['active']),
             ];
+            $members = [];
+            foreach (is_array($target['members'] ?? null) ? $target['members'] : [] as $member) {
+                if (!is_array($member) || !isset($member['id'], $member['root'])) {
+                    continue;
+                }
+                $members[] = [
+                    'id' => (int) $member['id'],
+                    'label' => (string) ($member['label'] ?? ''),
+                    'root' => rtrim((string) $member['root'], '/'),
+                    'online' => !$stale && !empty($member['online']),
+                    'kind' => (string) ($member['kind'] ?? 'smb'),
+                    'total_bytes' => (int) ($member['total_bytes'] ?? 0),
+                    'free_bytes' => (int) ($member['free_bytes'] ?? 0),
+                ];
+            }
+            $entry['members'] = $members !== [] ? $members : TierLayout::members($entry);
+            $result[] = $entry;
         }
 
         return $result;
@@ -59,7 +80,7 @@ final class TargetMap
     /**
      * Erreichbare, aktive Ziele (primaeres zuerst).
      *
-     * @return list<array{id:int,label:string,root:string,online:bool,primary:bool,active:bool}>
+     * @return list<array{id:int,label:string,root:string,online:bool,primary:bool,active:bool,members?:list<array<string,mixed>>}>
      */
     public function online(): array
     {

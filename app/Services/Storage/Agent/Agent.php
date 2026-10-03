@@ -12,6 +12,7 @@ use App\Services\Storage\IncidentSettings;
 use App\Services\Storage\SnapshotService;
 use App\Services\Storage\SnapshotSettings;
 use App\Services\Storage\StorageHealth;
+use App\Services\Storage\StorageService;
 use App\Services\Storage\StorageSettings;
 use PDOException;
 use Throwable;
@@ -336,17 +337,24 @@ final class Agent
             $repository->finishRequest((int) $request['id'], 'Neu eingebunden.');
         }
 
-        $map = [];
         $cifs = Metrics::cifsCounters();
         $counters = $this->catalog()->counters();
-        $evaluated = [];
+        // Ziel -> Basisziel seines Cold-Tiers (Erweiterungen folgen dem Tier).
+        $tierOf = [];
+        foreach (StorageService::tiers($rows) as $tier) {
+            foreach ($tier['members'] as $member) {
+                $tierOf[(int) $member['id']] = (int) $tier['root']['id'];
+            }
+        }
+        $checks = [];
         foreach ($rows as $row) {
             $id = (int) $row['id'];
+            $tierId = $tierOf[$id] ?? $id;
             if (!$settings->enabled() || $instance === '') {
                 $mounter->unmount($id);
                 $check = ['state' => 'disabled', 'message' => 'Speicher-Tiering ist nicht aktiviert.', 'total_bytes' => 0, 'free_bytes' => 0, 'root' => $mounter->mountPoint($id), 'share' => ''];
             } else {
-                $check = $mounter->check($row, in_array(0, $remount, true) || in_array($id, $remount, true), $id === $frozen);
+                $check = $mounter->check($row, in_array(0, $remount, true) || in_array($id, $remount, true), $tierId === $frozen);
             }
 
             $key = $check['share'] !== '' && isset($cifs[$check['share']]) ? 'cifs:' . $check['share'] : 'agent:' . $id;
@@ -378,25 +386,9 @@ final class Agent
             }
             $previous[$id] = $check['state'];
             $repository->updateTargetStatus($id, $values);
-
-            $map[] = [
-                'id' => $id,
-                'label' => (string) $row['label'],
-                'root' => $check['root'],
-                'online' => $check['state'] === 'online',
-                'primary' => (int) $row['is_primary'] === 1,
-                'active' => (int) $row['active'] === 1,
-            ];
-            $evaluated[] = [
-                'id' => $id,
-                'label' => (string) $row['label'],
-                'active' => (int) $row['active'] === 1,
-                'state' => $check['state'],
-                'in_sync' => (int) ($row['in_sync'] ?? 0) === 1,
-                'lag_seconds' => (int) ($row['lag_seconds'] ?? 0),
-                'frozen' => $id === $frozen,
-            ];
+            $checks[$id] = $check;
         }
+        [$map, $evaluated] = self::tierMap($rows, $checks, $frozen);
         $this->targetMap()->write($map);
 
         // Hot-Tier (lokales Storage)
@@ -435,6 +427,63 @@ final class Agent
             $totals = $this->catalog()->totals();
             $repository->addSample($total - $free, $free, $totals['bytes_total'], $totals['bytes_local'], $health['online']);
         }
+    }
+
+    /**
+     * Stand der Cold-Tiers fuer targets.json und die HA-Bewertung: je Tier ein
+     * Eintrag (Basisziel) mit allen Zielen unter "members". Ein Tier ist nur
+     * erreichbar, wenn alle seine Ziele eingebunden sind.
+     *
+     * @param list<array<string,mixed>> $rows
+     * @param array<int,array{state:string,message:string,total_bytes:int,free_bytes:int,root:string}> $checks
+     *
+     * @return array{0:list<array<string,mixed>>,1:list<array<string,mixed>>}
+     */
+    public static function tierMap(array $rows, array $checks, ?int $frozen): array
+    {
+        $map = [];
+        $evaluated = [];
+        foreach (StorageService::tiers($rows) as $tier) {
+            $root = $tier['root'];
+            $id = (int) $root['id'];
+            $members = [];
+            $state = 'online';
+            foreach ($tier['members'] as $row) {
+                $check = $checks[(int) $row['id']] ?? ['state' => 'unknown', 'total_bytes' => 0, 'free_bytes' => 0, 'root' => ''];
+                $members[] = [
+                    'id' => (int) $row['id'],
+                    'label' => (string) $row['label'],
+                    'root' => (string) $check['root'],
+                    'online' => $check['state'] === 'online',
+                    'kind' => (string) ($row['kind'] ?? StorageService::KIND_SMB),
+                    'total_bytes' => (int) $check['total_bytes'],
+                    'free_bytes' => (int) $check['free_bytes'],
+                ];
+                if ($state === 'online' && $check['state'] !== 'online') {
+                    $state = (string) $check['state'];
+                }
+            }
+            $map[] = [
+                'id' => $id,
+                'label' => (string) $root['label'],
+                'root' => $members[0]['root'],
+                'online' => $state === 'online',
+                'primary' => (int) $root['is_primary'] === 1,
+                'active' => (int) $root['active'] === 1,
+                'members' => $members,
+            ];
+            $evaluated[] = [
+                'id' => $id,
+                'label' => (string) $root['label'],
+                'active' => (int) $root['active'] === 1,
+                'state' => $state,
+                'in_sync' => (int) ($root['in_sync'] ?? 0) === 1,
+                'lag_seconds' => (int) ($root['lag_seconds'] ?? 0),
+                'frozen' => $id === $frozen,
+            ];
+        }
+
+        return [$map, $evaluated];
     }
 
     // --- Snapshot-Speicher (Monitor) -----------------------------------------
@@ -650,8 +699,10 @@ final class Agent
         }
 
         $rows = $repository->targets();
-        $catalog->forgetTargets(array_map(static fn (array $r): int => (int) $r['id'], $rows));
-        $frozen = $this->handleIncidents($detector, $settings, $rows);
+        $tiers = StorageService::tiers($rows);
+        $roots = array_map(static fn (array $t): array => $t['root'], $tiers);
+        $catalog->forgetTargets(array_map(static fn (array $r): int => (int) $r['id'], $roots));
+        $frozen = $this->handleIncidents($detector, $settings, $roots);
         $online = $this->targetMap()->online();
         $onlineIds = array_map(static fn (array $t): int => $t['id'], $online);
 
@@ -690,23 +741,28 @@ final class Agent
         $maxPending = 0;
         $maxPendingBytes = 0;
         $maxLag = 0;
-        foreach ($rows as $row) {
+        foreach ($tiers as $tier) {
+            $row = $tier['root'];
             $id = (int) $row['id'];
             if ((int) $row['active'] !== 1) {
                 continue;
             }
             $pending = $catalog->pendingStats($id);
-            $synced = $catalog->syncedStats($id);
+            $synced = $catalog->memberStats($id);
             $lag = $pending['oldest'] === null ? 0 : max(0, time() - $pending['oldest']);
-            $repository->updateTargetStatus($id, [
-                'in_sync' => $pending['files'] === 0 ? 1 : 0,
-                'pending_files' => $pending['files'],
-                'pending_bytes' => $pending['bytes'],
-                'lag_seconds' => $lag,
-                'synced_files' => $synced['files'],
-                'synced_bytes' => $synced['bytes'],
-                'sync_updated_at' => StorageRepository::NOW,
-            ]);
+            // Rueckstand gilt fuer den ganzen Tier, belegte Daten je Ziel (Fuellstand von S3-Zielen).
+            foreach ($tier['members'] as $member) {
+                $memberId = (int) $member['id'];
+                $repository->updateTargetStatus($memberId, [
+                    'in_sync' => $pending['files'] === 0 ? 1 : 0,
+                    'pending_files' => $pending['files'],
+                    'pending_bytes' => $pending['bytes'],
+                    'lag_seconds' => $lag,
+                    'synced_files' => $synced[$memberId]['files'] ?? 0,
+                    'synced_bytes' => $synced[$memberId]['bytes'] ?? 0,
+                    'sync_updated_at' => StorageRepository::NOW,
+                ]);
+            }
             if ($id === $frozen) {
                 continue;
             }
@@ -1300,7 +1356,9 @@ final class Agent
     {
         $target = null;
         foreach ($this->targetMap()->all() as $candidate) {
-            if ($candidate['id'] === $targetId && $candidate['online']) {
+            // Auch die Kennung einer Erweiterung waehlt ihren ganzen Cold-Tier.
+            $ids = array_map(static fn (array $m): int => (int) $m['id'], $candidate['members'] ?? []);
+            if (($candidate['id'] === $targetId || in_array($targetId, $ids, true)) && $candidate['online']) {
                 $target = $candidate;
             }
         }
@@ -1338,51 +1396,69 @@ final class Agent
     }
 
     /**
-     * Bindet ein Ziel fuer die Wiederherstellung direkt ein. Auf einer neu
-     * aufgesetzten Installation gehoert die Freigabe zu einer anderen
-     * Instanz-ID ("invalid"); deren Kennung wird dann uebernommen.
+     * Bindet den Cold-Tier eines Ziels (Basisziel und alle Erweiterungen) fuer
+     * die Wiederherstellung direkt ein. Auf einer neu aufgesetzten Installation
+     * gehoert die Freigabe zu einer anderen Instanz-ID ("invalid"); deren
+     * Kennung wird dann uebernommen.
      *
-     * @return array{id:int,label:string,root:string,online:bool,primary:bool,active:bool}|null
+     * @return array<string,mixed>|null
      */
     private function adoptTarget(int $targetId): ?array
     {
-        $row = null;
-        foreach ($this->repository()->targets() as $candidate) {
-            if ((int) $candidate['id'] === $targetId) {
-                $row = $candidate;
+        $tier = null;
+        foreach (StorageService::tiers($this->repository()->targets()) as $candidate) {
+            foreach ($candidate['members'] as $member) {
+                if ((int) $member['id'] === $targetId) {
+                    $tier = $candidate;
+                }
             }
         }
-        if ($row === null) {
+        if ($tier === null) {
             return null;
         }
-        $row['active'] = 1;
         $instance = $this->settings()->instanceId();
         if ($instance === '') {
             $instance = bin2hex(random_bytes(16));
         }
-        $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $instance, s3TempDir: $this->config['state_dir'] . '/s3-tmp');
-        $check = $mounter->check($row);
-        if ($check['state'] === 'invalid') {
-            $data = json_decode((string) @file_get_contents($check['root'] . '/' . PathRules::TARGET_MARKER), true);
-            $foreign = is_array($data) ? (string) ($data['instance'] ?? '') : '';
-            if ($foreign !== '') {
-                $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $foreign, s3TempDir: $this->config['state_dir'] . '/s3-tmp');
-                $check = $mounter->check($row);
+        $members = [];
+        foreach ($tier['members'] as $row) {
+            $row['active'] = 1;
+            $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $instance, s3TempDir: $this->config['state_dir'] . '/s3-tmp');
+            $check = $mounter->check($row);
+            if ($check['state'] === 'invalid') {
+                $data = json_decode((string) @file_get_contents($check['root'] . '/' . PathRules::TARGET_MARKER), true);
+                $foreign = is_array($data) ? (string) ($data['instance'] ?? '') : '';
+                if ($foreign !== '') {
+                    $instance = $foreign;
+                    $mounter = new Mounter($this->config['mount_base'], $this->config['credential_dir'], Container::secretBox(), $foreign, s3TempDir: $this->config['state_dir'] . '/s3-tmp');
+                    $check = $mounter->check($row);
+                }
             }
-        }
-        if ($check['state'] !== 'online') {
-            $this->log('error', 'Speicherziel ' . $targetId . ': ' . ($check['message'] !== '' ? $check['message'] : 'nicht erreichbar.'));
+            if ($check['state'] !== 'online') {
+                $this->log('error', 'Speicherziel ' . (int) $row['id'] . ' („' . $row['label'] . '“): ' . ($check['message'] !== '' ? $check['message'] : 'nicht erreichbar.'));
 
-            return null;
+                return null;
+            }
+            $members[] = [
+                'id' => (int) $row['id'],
+                'label' => (string) $row['label'],
+                'root' => $check['root'],
+                'online' => true,
+                'kind' => (string) ($row['kind'] ?? StorageService::KIND_SMB),
+                'total_bytes' => (int) $check['total_bytes'],
+                'free_bytes' => (int) $check['free_bytes'],
+            ];
         }
+        $root = $tier['root'];
 
         return [
-            'id' => $targetId,
-            'label' => (string) $row['label'],
-            'root' => $check['root'],
+            'id' => (int) $root['id'],
+            'label' => (string) $root['label'],
+            'root' => $members[0]['root'],
             'online' => true,
-            'primary' => (int) ($row['is_primary'] ?? 0) === 1,
+            'primary' => (int) ($root['is_primary'] ?? 0) === 1,
             'active' => true,
+            'members' => $members,
         ];
     }
 

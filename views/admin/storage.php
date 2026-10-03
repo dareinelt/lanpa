@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Security\Csrf;
 use App\Services\Storage\SnapshotSettings;
 use App\Services\Storage\StorageHealth;
+use App\Services\Storage\StorageService;
 use App\Services\Storage\StorageSettings;
 use App\Support\Dates;
 use App\Support\Html;
@@ -52,6 +53,34 @@ $fillbar = static function (array $fill, string $id, string $name): string {
         . Html::e($name) . '" aria-valuetext="' . ($percent === null ? 'Keine Messwerte' : Html::e(number_format((float) $percent, 1, ',', '.')) . ' %') . '">'
         . ($percent === null ? '–' : Html::e(number_format((float) $percent, 1, ',', '.')) . ' %') . '</progress>';
 };
+// Gestapelte Kapazitaetsleiste eines Cold-Tiers (SVG, ohne Inline-Styles): je Ziel
+// ein Abschnitt nach seinem Anteil an der Gesamtkapazitaet, darin die Belegung.
+$tierStack = static function (array $target): string {
+    $members = $target['members'] ?? [];
+    $shares = array_map(static fn (array $m): ?float => StorageService::memberShare($target, $m), $members);
+    $equal = in_array(null, $shares, true);
+    $x = 0.0;
+    $parts = [];
+    $names = [];
+    foreach ($members as $index => $member) {
+        $width = $equal ? 100 / max(1, count($members)) : (float) $shares[$index];
+        $percent = $member['fill']['percent'] ?? null;
+        $used = $width * min(100, max(0, (float) ($percent ?? 0))) / 100;
+        $parts[] = '<g class="tier-stack__segment tier-stack__segment--' . Html::e((string) $member['fill']['state']) . '" data-segment="' . (int) $member['id'] . '">'
+            . '<rect class="tier-stack__capacity" x="' . round($x, 3) . '" y="0" width="' . round(max(0, $width - 0.4), 3) . '" height="10"/>'
+            . '<rect class="tier-stack__used" x="' . round($x, 3) . '" y="0" width="' . round(max(0, min($used, $width - 0.4)), 3) . '" height="10" data-used="' . round($width - 0.4, 3) . '"/>'
+            . '</g>';
+        $names[] = $member['label'] . ': ' . ($percent === null ? 'ohne Füllstand' : number_format((float) $percent, 1, ',', '.') . ' % belegt');
+        $x += $width;
+    }
+
+    return '<svg class="tier-stack" viewBox="0 0 100 10" preserveAspectRatio="none" role="img" focusable="false" aria-label="'
+        . Html::e('Kapazität je Ziel – ' . implode('; ', $names)) . '" data-stack="' . (int) $target['id'] . '">' . implode('', $parts) . '</svg>';
+};
+$memberRole = static fn (array $member): string => ($member['role'] ?? 'root') === 'root' ? 'Basisziel' : 'Erweiterung ' . (int) ($member['level'] ?? 0);
+$tierSizes = array_map(static fn (array $t): int => count($t['members'] ?? [$t]), $targets);
+$maxLevel = $tierSizes === [] ? 0 : max($tierSizes) - 1;
+$balanced = $tierSizes === [] || count(array_unique($tierSizes)) === 1;
 $field = static function (string $key, string $text, string $hint, string $unit = '') use ($current, $snapshotCurrent, $errors): string {
     $meta = StorageSettings::NUMERIC[$key] ?? SnapshotSettings::NUMERIC[$key];
     $current = isset(StorageSettings::NUMERIC[$key]) ? $current : $snapshotCurrent;
@@ -193,9 +222,22 @@ $check = static function (string $key, string $text, string $hint) use ($current
             <p class="storage-eyebrow">02 · Externe Kopien</p>
             <h2 class="card__title" id="targets-title">Cold-Tier (SMB-/S3-Tier)</h2>
         </div>
-        <a class="button button--primary" href="/admin/speicher-ha/ziel">Speicherziel hinzufügen</a>
+        <div class="storage-target__actions">
+            <?php if ($targets !== []) { ?>
+                <a class="button button--primary" href="/admin/speicher-ha/erweitern">Cold-Tiers erweitern</a>
+            <?php } ?>
+            <a class="button <?= $targets === [] ? 'button--primary' : 'button--ghost' ?>" href="/admin/speicher-ha/ziel">Speicherziel hinzufügen</a>
+        </div>
     </div>
-    <p class="card__hint">Jedes aktive Ziel – SMB-Freigabe oder S3-Bucket – erhält eine vollständige Kopie. Mindestens zwei Ziele ermöglichen Redundanz außerhalb der VM, z. B. ein NAS per SMB und ein Objektspeicher an einem zweiten Standort.</p>
+    <p class="card__hint">Jeder Cold-Tier – SMB-Freigabe oder S3-Bucket – erhält eine vollständige Kopie. Mindestens zwei Cold-Tiers ermöglichen Redundanz außerhalb der VM, z. B. ein NAS per SMB und ein Objektspeicher an einem zweiten Standort.
+        Reicht der Platz nicht mehr, werden <strong>alle Cold-Tiers gemeinsam</strong> um je ein weiteres Ziel derselben Art erweitert (SMB mit SMB, S3 mit S3); neue Dateien landen dann auf der Erweiterung.</p>
+    <?php if ($targets !== [] && $maxLevel > 0) { ?>
+        <p class="tier-balance <?= $balanced ? 'tier-balance--ok' : 'tier-balance--warn' ?>">
+            <?= $balanced
+                ? 'Alle Cold-Tiers sind gleichmäßig erweitert: je ' . (int) ($maxLevel + 1) . ' Ziele (Basisziel + ' . (int) $maxLevel . ' Erweiterung' . ($maxLevel === 1 ? '' : 'en') . ').'
+                : 'Die Cold-Tiers sind unterschiedlich erweitert (' . Html::e(implode(' / ', $tierSizes)) . ' Ziele). Neu hinzugefügte Cold-Tiers sollten genug Platz für eine vollständige Kopie haben.' ?>
+        </p>
+    <?php } ?>
     <?php if ($targets === []) { ?>
         <div class="storage-empty">
             <h3>Noch kein Speicherziel eingerichtet</h3>
@@ -213,6 +255,7 @@ $check = static function (string $key, string $text, string $hint) use ($current
                             <?php if ($target['is_primary']) { ?><span class="badge badge--active">primär</span><?php } ?>
                             <?php if (!empty($target['frozen'])) { ?><span class="badge badge--error" title="Wegen eines Sicherheitsvorfalls schreibgeschützt eingebunden – keine Synchronisation bis zur Erledigung">schreibgeschützt (Vorfall)</span><?php } ?>
                             <?php if (!$target['active']) { ?><span class="badge badge--muted">deaktiviert</span><?php } ?>
+                            <?php if (count($target['members'] ?? []) > 1) { ?><span class="badge badge--active">erweitert · <?= count($target['members']) ?> Ziele</span><?php } ?>
                             <?php if (($target['kind'] ?? 'smb') === 's3') { ?>
                                 <span class="badge badge--muted">S3</span>
                                 <p class="storage-target__path"><code><?= Html::e($target['unc_path']) ?></code></p>
@@ -240,9 +283,62 @@ $check = static function (string $key, string $text, string $hint) use ($current
                             <?php if (!empty($target['unbounded'])) { ?>
                                 <p class="card__hint">Objektspeicher ohne Kapazitätsgrenze · belegt <span data-live="synced-bytes"><?= Html::e(StorageHealth::formatBytes($target['synced_bytes'])) ?></span></p>
                             <?php } else { ?>
-                                <p class="card__hint">Frei <span data-live="free"><?= Html::e(StorageHealth::formatBytes($target['free_bytes'])) ?></span> von <span data-live="total"><?= Html::e(StorageHealth::formatBytes($target['total_bytes'])) ?></span></p>
+                                <p class="card__hint">Frei <span data-live="free"><?= Html::e(StorageHealth::formatBytes($target['free_bytes'])) ?></span> von <span data-live="total"><?= Html::e(StorageHealth::formatBytes($target['total_bytes'])) ?></span><?= count($target['members'] ?? []) > 1 ? ' (alle Ziele des Tiers)' : '' ?></p>
                             <?php } ?>
                         </div>
+                        <?php if (count($target['members'] ?? []) > 1) { ?>
+                            <div class="tier-members">
+                                <div class="storage-section-head">
+                                    <strong>Ziele dieses Cold-Tiers</strong>
+                                    <span class="card__hint">Neue Dateien → erstes Ziel mit freiem Platz</span>
+                                </div>
+                                <?= $tierStack($target) ?>
+                                <ol class="tier-members__list">
+                                    <?php foreach ($target['members'] as $member) { ?>
+                                        <?php $full = ($member['fill']['state'] ?? '') === 'critical'; ?>
+                                        <li class="tier-member" data-member="<?= (int) $member['id'] ?>" data-state="<?= Html::e($member['state']) ?>">
+                                            <div class="storage-section-head">
+                                                <span>
+                                                    <span class="tier-member__role"><?= Html::e($memberRole($member)) ?></span>
+                                                    <strong><?= Html::e($member['label']) ?></strong>
+                                                </span>
+                                                <span>
+                                                    <span class="badge badge--error" data-live="member-full" <?= $full ? '' : 'hidden' ?> title="Dieses Ziel ist voll – neue Dateien des Tiers werden auf den Erweiterungen abgelegt.">voll</span>
+                                                    <span class="badge <?= $badge($member['state']) ?>" data-live="member-state"><?= Html::e($label($member['state'])) ?></span>
+                                                </span>
+                                            </div>
+                                            <p class="storage-target__path"><code><?= Html::e($member['unc_path']) ?></code></p>
+                                            <p class="storage-target__message" data-live="member-message" <?= $member['message'] === '' || $member['state'] === 'online' ? 'hidden' : '' ?>><?= Html::e($member['message']) ?></p>
+                                            <?= $fillbar($member['fill'], 'member-' . $member['id'], 'Füllstand ' . $member['label']) ?>
+                                            <p class="card__hint">
+                                                <?php if (!empty($member['unbounded'])) { ?>
+                                                    ohne Kapazitätsgrenze
+                                                <?php } else { ?>
+                                                    <span data-live="member-fill-text"><?= $member['fill']['percent'] === null ? '–' : Html::e(number_format((float) $member['fill']['percent'], 1, ',', '.')) . ' %' ?></span>
+                                                    · frei <span data-live="member-free"><?= Html::e(StorageHealth::formatBytes($member['free_bytes'])) ?></span>
+                                                    von <span data-live="member-total"><?= Html::e(StorageHealth::formatBytes($member['total_bytes'])) ?></span>
+                                                <?php } ?>
+                                                · <span data-live="member-synced-files"><?= number_format($member['synced_files'], 0, ',', '.') ?></span> Dateien
+                                                (<span data-live="member-synced-bytes"><?= Html::e(StorageHealth::formatBytes($member['synced_bytes'])) ?></span>)
+                                            </p>
+                                            <?php if (($member['role'] ?? 'root') !== 'root') { ?>
+                                                <div class="storage-target__actions">
+                                                    <a class="button button--ghost" href="/admin/speicher-ha/ziel?id=<?= (int) $member['id'] ?>">Bearbeiten</a>
+                                                    <?php if ((int) $member['level'] === $maxLevel) { ?>
+                                                        <form method="post" action="/admin/speicher-ha/ziel/loeschen" class="inline-form">
+                                                            <?= Csrf::field() ?>
+                                                            <input type="hidden" name="id" value="<?= (int) $member['id'] ?>">
+                                                            <button type="submit" class="button button--danger"
+                                                                    data-confirm="Erweiterung <?= (int) $member['level'] ?> aus allen Cold-Tiers entfernen? Das ist nur möglich, solange sie noch keine Dateien enthält.">Erweiterung entfernen</button>
+                                                        </form>
+                                                    <?php } ?>
+                                                </div>
+                                            <?php } ?>
+                                        </li>
+                                    <?php } ?>
+                                </ol>
+                            </div>
+                        <?php } ?>
                         <dl class="storage-metrics storage-metrics--rates">
                             <div><dt>Lesen</dt><dd data-live="read"><?= Html::e(StorageHealth::formatRate($target['read_bps'])) ?></dd></div>
                             <div><dt>Schreiben</dt><dd data-live="write"><?= Html::e(StorageHealth::formatRate($target['write_bps'])) ?></dd></div>
@@ -270,7 +366,7 @@ $check = static function (string $key, string $text, string $hint) use ($current
                                 <?= Csrf::field() ?>
                                 <input type="hidden" name="id" value="<?= (int) $target['id'] ?>">
                                 <button type="submit" class="button button--danger"
-                                        data-confirm="Speicherziel „<?= Html::e($target['label']) ?>“ entfernen? Die Daten auf der Freigabe bzw. im Bucket bleiben erhalten, werden aber nicht mehr aktualisiert.">Entfernen</button>
+                                        data-confirm="Speicherziel „<?= Html::e($target['label']) ?>“<?= count($target['members'] ?? []) > 1 ? ' samt ' . (count($target['members']) - 1) . ' Erweiterung(en)' : '' ?> entfernen? Die Daten auf der Freigabe bzw. im Bucket bleiben erhalten, werden aber nicht mehr aktualisiert.">Entfernen</button>
                             </form>
                         </div>
                     </article>

@@ -28,6 +28,13 @@ angegeben – bei Abweichungen gilt der Code.
   Admins stellen Versionen über Intranet oder Nextcloud wieder her – ohne
   dass dabei eine neue Version entsteht. Läuft ausschließlich im Prozess
   `sync`, nie im Nextcloud-Request.
+- **Cold-Tier-Erweiterungen** (Migration 031, `storage_targets.parent_id`,
+  `TierLayout`): Ein Cold-Tier besteht aus einem Basisziel und beliebig
+  vielen Erweiterungen derselben Art (SMB nur mit SMB, S3 nur mit S3). Er
+  bleibt **eine** logische Kopie – jede Datei liegt auf genau einem Ziel des
+  Tiers; neue Dateien laufen über, sobald die bisherigen Ziele voll sind.
+  Alle Cold-Tiers werden gemeinsam erweitert (`extendTiers()`), Füllstand
+  und Warnungen gelten für den ganzen Tier (Abschnitt 14).
 
 ---
 
@@ -46,6 +53,7 @@ angegeben – bei Abweichungen gilt der Code.
 11. [Fehlersuche und Betriebsbefehle](#11-fehlersuche-und-betriebsbefehle)
 12. [Bekannte Eigenheiten](#12-bekannte-eigenheiten)
 13. [Snapshot-Speicher (Dateiversionen)](#13-snapshot-speicher-dateiversionen)
+14. [Cold-Tier-Erweiterungen (mehrere Ziele je Tier)](#14-cold-tier-erweiterungen-mehrere-ziele-je-tier)
 
 ---
 
@@ -54,8 +62,11 @@ angegeben – bei Abweichungen gilt der Code.
 | Oberfläche / Doku | Code | Bedeutung |
 | --- | --- | --- |
 | Hot-Tier (lokales Storage) | `nextcloud_data`, `eurooffice_data`, `Catalog::STATE_LOCAL` | Lokale Docker-Volumes; Datei liegt mit Inhalt lokal. |
-| Cold-Tier (SMB-/S3-Tier) | `storage_targets`, `Mounter`, `/mnt/targets/<id>` | Alle Speicherziele; jedes hält den vollständigen Bestand. |
+| Cold-Tier (SMB-/S3-Tier) | `storage_targets`, `Mounter`, `/mnt/targets/<id>` | Alle Speicherziele; jeder **Tier** (Basisziel + Erweiterungen) hält den vollständigen Bestand. |
 | Speicherziel | Zeile in `storage_targets`, `kind` = `smb`/`s3` | Eine SMB-Freigabe oder ein S3-Bucket (+ Präfix). |
+| Tier (einzelner Cold-Tier, eine Kachel) | `StorageService::tiers()`, Eintrag in `targets.json` mit `members`, Kennung = `id` des Basisziels | Basisziel samt Erweiterungen; eine vollständige Kopie. Katalog, Rückstand, Aufträge und Schutzziel beziehen sich auf die Tier-Kennung. |
+| Basisziel | `parent_id IS NULL`, Rolle `root` | Erstes Ziel eines Tiers; bestimmt Art, „aktiv“ und „primär“. |
+| Erweiterung (Stufe *n*) | `parent_id = <Basisziel>`, Rolle `extension`, `level` = Position im Tier | Weiteres Ziel derselben Art; nimmt neue Dateien auf, wenn die vorherigen Ziele voll sind. |
 | primäres Ziel | `is_primary = 1` | Bevorzugte Quelle für Rückholungen; genau eins (`clearPrimary`). |
 | ausgelagert | `Catalog::STATE_EVICTED`, Marker `stubs/<pfad>.json` | Lokal nur Sparse-Platzhalter, Inhalt im Cold-Tier. |
 | Rückholung | `Recaller`, `recall/queue`, `recall/status` | Platzhalter wird durch echten Inhalt ersetzt. |
@@ -82,7 +93,7 @@ gehören **nicht** zu diesem Modul.
 
 | Datei | Aufgabe |
 | --- | --- |
-| `app/Services/Storage/StorageService.php` | Adminlogik: Ziele anlegen/ändern/löschen (Validierung SMB/S3, Verschlüsselung per `SecretBox`), Einstellungen speichern, Aufträge (`request()`), Gesamtbild `overview()`, Live-JSON `liveData()`, Dashboard-Hinweis `dashboardAlert()`, SNMP-Ausgabe `snmp()`, Hochrechnungstext `forecastText()`. |
+| `app/Services/Storage/StorageService.php` | Adminlogik: Ziele anlegen/ändern/löschen (Validierung SMB/S3, Verschlüsselung per `SecretBox`), Cold-Tiers bilden (`tiers()`, `tierOf()`, `tierViews()`) und gemeinsam erweitern (`extendTiers()`, `deleteExtensionLevel()`), volle Tiers (`fullTiers()`), Kapazitätsanteil (`memberShare()`), Einstellungen speichern, Aufträge (`request()`), Gesamtbild `overview()`, Live-JSON `liveData()`, Dashboard-Hinweis `dashboardAlert()`, SNMP-Ausgabe `snmp()`, Hochrechnungstext `forecastText()`. |
 | `app/Services/Storage/StorageSettings.php` | Einstellungen `storage_*` (Defaults, Grenzen, Validierung), `GRACE_SECONDS = 600`. |
 | `app/Services/Storage/StorageHealth.php` | Reine Funktionen: HA-/Sync-Bewertung `evaluate()`, Hochrechnung `forecast()`, Füllstand `fill()`, Formatierung. Exit-Codes `EXIT`. |
 | `app/Services/Storage/IncidentSettings.php` | Einstellungen `incident_*`, Standardliste der Ransomware-Endungen/-Muster, `matchName()`, Benutzerhinweis. |
@@ -93,24 +104,25 @@ gehören **nicht** zu diesem Modul.
 | `app/Repositories/IncidentRepository.php` | MySQL: `storage_incidents` (offen/erledigt, Schutzziel zuweisen/freigeben). |
 | `app/Controllers/Admin/StorageController.php` | Routen `/admin/speicher-ha*` (CSRF-geprüft). |
 | `app/Controllers/Admin/IncidentController.php` | Routen `/admin/vorfaelle*`. |
-| `views/admin/storage.php`, `views/admin/storage_target.php`, `views/admin/incidents.php`, `views/admin/storage_versions.php` | Oberflächen (`storage.php` enthält die Karte `#snapshots` mit Einstellungen; `storage_versions.php` die Versionsliste mit Filtern und Ja/Nein-Dialog). |
-| `public/assets/js/admin-storage.js`, `public/assets/js/admin-storage-target.js`, `public/assets/js/admin-storage-versions.js` | Live-Aktualisierung (5 s, pausiert im Hintergrund-Tab, inkl. Karte Snapshot-Speicher), Zielformular (SMB/S3 umschalten), Bestätigungsdialog der Wiederherstellung (`<dialog>`, ohne JS: normales Formular). |
+| `views/admin/storage.php`, `views/admin/storage_target.php`, `views/admin/storage_extend.php`, `views/admin/incidents.php`, `views/admin/storage_versions.php` | Oberflächen (`storage.php` enthält die Cold-Tier-Kacheln mit gestapelter Kapazitätsleiste und Zielliste sowie die Karte `#snapshots`; `storage_extend.php` das Formular „Cold-Tiers erweitern“; `storage_versions.php` die Versionsliste mit Filtern und Ja/Nein-Dialog). |
+| `public/assets/js/admin-storage.js`, `public/assets/js/admin-storage-target.js`, `public/assets/js/admin-storage-versions.js` | Live-Aktualisierung (5 s, pausiert im Hintergrund-Tab, inkl. Ziele je Tier und Karte Snapshot-Speicher), Zielformular (SMB/S3 umschalten) und Erweiterungsformular (Vorschau, Zugangsdaten übernehmen), Bestätigungsdialog der Wiederherstellung (`<dialog>`, ohne JS: normales Formular). |
 
 ### Agent (`app/Services/Storage/Agent/`, läuft nur im Container `storage-sync`)
 
 | Datei | Aufgabe |
 | --- | --- |
 | `Agent.php` | Einstieg der Prozesse `monitor()`, `sync()`, `recall()`, `recallOne()`, `restore()`, `resume()`; Vorfallbehandlung `handleIncidents()`, Schutzzielwahl `chooseProtectTarget()`, DB-Abzug `dumpDatabase()`, Veröffentlichung `config.json`. |
-| `SyncEngine.php` | Kern: `scan()` (Erfassen), `syncTarget()` (Übertragen), `tier()` (Auslagern/Rehydrieren), Massenlöschsperre. Optionaler neunter Konstruktorparameter `?SnapshotEngine`: `register()` beim Erkennen, `secure()` vor dem Ersetzen/Löschen auf dem Ziel, Ergebnis `held`. |
+| `SyncEngine.php` | Kern: `scan()` (Erfassen), `syncTarget()` (Übertragen, je Cold-Tier über alle Ziele), `tier()` (Auslagern/Rehydrieren), Massenlöschsperre. Optionaler neunter Konstruktorparameter `?SnapshotEngine`: `register()` beim Erkennen, `secure()` vor dem Ersetzen/Löschen auf dem Ziel, Ergebnis `held`. Optionaler zehnter Parameter `?TierLayout` (Tests: injizierter freier Platz). |
+| `TierLayout.php` | Verteilung der Dateien eines Cold-Tiers auf seine Ziele: `members()`, `locate()` (wo liegt die Datei), `copies()` (alle Kopien), `place()` (Ziel für eine neue Fassung), `placed()`/`free()` (Platzbuchhaltung), `reserve()` (Freihaltereserve). Abschnitt 14.4. |
 | `SnapshotStore.php` | Dateilayout der Snapshot-Freigabe (`versions/<quelle>/<uid[0:2]>/<uid>/data|meta.json`), Kennzeichen `.lanpa-snapshots.json`, `available()`, `write()` (Temp + `rename`, SHA-256), `verify()`, `remove()`, `cleanupTemp()`, `all()` (für Neuaufbau), `uid()`/`validUid()`. |
 | `SnapshotEngine.php` | Ablauf: `register()` (vormerken), `secure()` (sichern bzw. zurückhalten, identischen Inhalt verwerfen), `restore()` (wiederherstellen ohne neue Version), `prune()` (Aufbewahrung), `rebuild()` (Katalog aus `meta.json`), `refreshIndex()` (Versionsliste für Nextcloud). `RETRY_SECONDS = 60`, `HOLD_SECONDS = 86400`. |
 | `Catalog.php` | SQLite-Katalog (WAL): Dateien, Versionen, Stand je Ziel, Löschen/Umbenennen-Aufträge, Zugriffe, Zähler, Meta, Tabelle `snapshots` (`addSnapshot`, `pendingSnapshots`, `snapshotsFor`, `snapshotsBefore`, `snapshotsExceeding`, `retrySnapshots`, `expirePendingSnapshots`, `unmirroredSnapshots`, `relinkSnapshots`, `snapshotStats`), `restored()`. Zähler-ID `Catalog::SNAPSHOT = -1`. |
 | `TieringStore.php` | Gemeinsames Verzeichnis mit Nextcloud: Marker, Platzhalter (`makeStub()`), Rückhol-Warteschlange/-Status, Zugriffs- und Schreibprotokoll, `config.json`, `agent.alive`, Snapshot-Austausch (`writeSnapshotIndex()`, `snapshotRestoreIds()`/`readSnapshotRestore()`, `writeSnapshotStatus()`, `requestRescan()`). |
 | `Mounter.php` | Einbinden/Aushängen (CIFS, s3fs), Erreichbarkeit, Füllstand, Kennungsdatei, verständliche Fehlermeldungen. Konstruktorparameter `marker` erlaubt eine andere Kennungsdatei (Snapshot-Speicher: `.lanpa-snapshots.json`, eigener `mountBase` und Zugangsdatei-Ordner). |
-| `TargetMap.php` | `state/targets.json`: vom Monitor geschrieben, von `sync`/`recall` gelesen. Älter als 120 s ⇒ alle Ziele gelten als offline. |
+| `TargetMap.php` | `state/targets.json`: vom Monitor geschrieben, von `sync`/`recall` gelesen – ein Eintrag je Cold-Tier mit `members`. Älter als 120 s ⇒ alle Ziele gelten als offline. Einträge ohne `members` (alte Datei) werden zu einem Tier mit genau einem Ziel ergänzt. |
 | `FileCopier.php` | Blockweise Kopie (1 MiB) über Temp-Datei + `rename`, SHA-256, `fsync`, Zähler für MB/s/IOPS. |
-| `Recaller.php` | Eine Rückholung: Ziel wählen, kopieren, Prüfsumme, Platzhalter atomar ersetzen. |
-| `Restore.php` | Wiederherstellung aus einem Ziel (Kopie oder Platzhalter), Katalog-Reset. |
+| `Recaller.php` | Eine Rückholung: Tier wählen, Datei im Tier finden (`TierLayout::locate()`), kopieren, Prüfsumme, Platzhalter atomar ersetzen. |
+| `Restore.php` | Wiederherstellung aus einem Cold-Tier (alle Ziele des Tiers, Kopie oder Platzhalter), Katalog-Reset. |
 | `Pressure.php` | Füllstand des Hot-Tiers mit Hysterese, `bytesToFree()`, `roomFor()`. |
 | `PathRules.php` | Was synchronisiert bzw. ausgelagert werden darf; Konstanten für Sonderpfade. |
 | `ThreatDetector.php` | Vorfallerkennung (Endung, Inhalt/Entropie, Massenüberschreiben), Zuordnung über Schreibprotokoll. |
@@ -231,8 +243,8 @@ sequenceDiagram
 
 | Tabelle | Schreiber | Leser | Hinweise |
 | --- | --- | --- | --- |
-| `storage_targets` | Adminbereich | Agent, Admin | `password` per `SecretBox` (`enc:v1:…`), wird nie an den Browser gegeben. `unc_path` eindeutig; bei S3 kanonisch `s3://host[:port]/bucket[/präfix]`. |
-| `storage_target_status` | `monitor` (Zustand/Füllstand/Raten, `updated_at`), `sync` (Synchronität, `sync_updated_at`) | Admin, SNMP | `ON DELETE CASCADE`. Älter als 90 s ⇒ Anzeige `unknown`. |
+| `storage_targets` | Adminbereich | Agent, Admin | `password` per `SecretBox` (`enc:v1:…`), wird nie an den Browser gegeben. `unc_path` eindeutig; bei S3 kanonisch `s3://host[:port]/bucket[/präfix]`. `parent_id` (Migration 031, Index `idx_storage_targets_parent`): `NULL` = Basisziel eines Cold-Tiers, sonst Kennung des Basisziels (Erweiterung). Kein Fremdschlüssel – das Entfernen eines Tiers löscht Basisziel und Erweiterungen gemeinsam (`deleteTargets()`, Transaktion). |
+| `storage_target_status` | `monitor` (Zustand/Füllstand/Raten, `updated_at`), `sync` (Synchronität, `sync_updated_at`) | Admin, SNMP | Eine Zeile je **physischem** Ziel (auch Erweiterungen). `in_sync`, `pending_*`, `lag_seconds` gelten für den Tier und werden auf alle Ziele des Tiers geschrieben; `synced_files`/`synced_bytes` je Ziel (`Catalog::memberStats()`). `ON DELETE CASCADE`. Älter als 90 s ⇒ Anzeige `unknown`. |
 | `storage_status` (genau `id = 1`) | `monitor`, `sync`, `recall` | Admin, SNMP | Herzschläge `heartbeat_at` (Monitor) und `sync_heartbeat_at`. |
 | `storage_usage_samples` | `monitor` (alle 5 min) | Hochrechnung | Ältere als 35 Tage werden gelöscht. |
 | `storage_events` | Agent, Admin | Admin | Auf 2 000 Einträge gekürzt (stündlich). Kategorien: `sync`, `target`, `tiering`, `recall`, `restore`, `incident`, `config`, `snapshot`. |
@@ -298,8 +310,8 @@ WAL, `busy_timeout` 60 s, von allen drei Prozessen genutzt. Schema in
 | Tabelle | Spalten (Auszug) | Zweck |
 | --- | --- | --- |
 | `files` | `source`, `path` (unique je Quelle), `size`, `mtime`, `inode`, `version`, `sha256`, `state` (`local`/`evicted`), `tiered`, `last_access`, `evict_reason` (`age`/`size`/`pressure`), `changed_at`, `seen` (Generation) | Bestand aller Quellen. Jede Inhaltsänderung erhöht `version` und setzt `sha256 = NULL`, `state = local`. |
-| `target_files` | `target_id`, `file_id`, `version` | Welche Version liegt auf welchem Ziel. Aktuell, wenn `version = files.version`. |
-| `ops` | `target_id`, `op` (`delete`/`rename`), `source`, `path`, `new_path` | Ausstehende Lösch-/Umbenennungsaufträge je Ziel (nur für Ziele, die die Datei hatten). |
+| `target_files` | `target_id`, `file_id`, `version`, `member_id` | Welche Version liegt auf welchem Cold-Tier (`target_id` = Kennung des Basisziels). Aktuell, wenn `version = files.version`. `member_id` (tolerant ergänzt, `DEFAULT 0`): Ziel innerhalb des Tiers, auf dem die Datei liegt; `0` = Basisziel. Nur für die Anzeige/den S3-Füllstand (`memberStats()`), nicht für das Auffinden – dafür prüft `TierLayout::locate()` das Dateisystem. |
+| `ops` | `target_id`, `op` (`delete`/`rename`), `source`, `path`, `new_path` | Ausstehende Lösch-/Umbenennungsaufträge je Cold-Tier (nur für Tiers, die die Datei hatten); ausgeführt auf dem Ziel, auf dem die Datei liegt. |
 | `access` | `file_id`, `day` | Zugriffstage (31 Tage aufbewahrt). |
 | `counters` | `target_id` (0 = Hot-Tier) | Kumulierte Bytes/Operationen für MB/s und IOPS. |
 | `activity`, `writes`, `clients` | | Vorfallerkennung (24 h aufbewahrt). |
@@ -346,9 +358,10 @@ Format abgestimmt zwischen `TieringStore` (Agent) und `TieringClient`
 
 ### 4.5 Dateien in `storage_sync_state`
 
-- `targets.json`: `{"updated":ts,"targets":[{"id","label","root","online","primary","active"}]}`.
-  Nur `online` + `active` sind für `sync`/`recall` nutzbar; älter als 120 s ⇒
-  keines.
+- `targets.json`: `{"updated":ts,"targets":[{"id","label","root","online","primary","active","members":[{"id","label","root","online","kind","total_bytes","free_bytes"}]}]}`
+  – ein Eintrag je Cold-Tier (`id`/`root` = Basisziel), `online` nur, wenn
+  **alle** `members` online sind (Abschnitt 14.3). Nur `online` + `active`
+  sind für `sync`/`recall` nutzbar; älter als 120 s ⇒ keines.
 - `dumps/nextcloud.dump`: `pg_dump -Fc` (wird als Quelle `nextcloud-db`
   synchronisiert).
 - `s3-tmp/`: Zwischenspeicher von s3fs (beim Start geleert).
@@ -367,6 +380,10 @@ Format abgestimmt zwischen `TieringStore` (Agent) und `TieringClient`
 Die Kennungsdatei dient zugleich als **Erreichbarkeitsprobe**
 (`SyncEngine::assertReachable()`): Fehlt sie während einer Übertragung, wird
 `TargetUnavailable` geworfen und das Ziel in diesem Durchlauf übersprungen.
+Bei erweiterten Tiers trägt **jedes** Ziel dieses Layout und eine eigene
+Kennungsdatei derselben Instanz; der Inhalt ist auf die Ziele verteilt
+(dieselbe relative Datei liegt im Regelfall auf genau einem Ziel), geprüft
+werden die Kennungen aller Ziele des Tiers.
 
 ### 4.7 Aufbau des Snapshot-Speichers
 
@@ -411,7 +428,10 @@ Vorhandene Dateien werden nie überschrieben (`write()` bricht ab, wenn
    rw ⇄ ro erzwingt Neueinbindung.
 6. Raten: SMB aus `/proc/fs/cifs/Stats` (Schlüssel `host\share`), sonst
    Agent-Zähler. Zustandswechsel ⇒ Ereignis (`target`).
-7. `targets.json` schreiben.
+7. `targets.json` schreiben – über `Agent::tierMap()` je Cold-Tier ein
+   Eintrag mit allen Zielen; ein Tier ist nur `online`, wenn alle seine Ziele
+   `online` sind, und wird mit diesem Zustand bewertet (Schritt 9). Ist der
+   Tier Schutzziel, werden **alle** seine Ziele `ro` eingebunden.
 8. Hot-Tier: `disk_total_space`/`disk_free_space` des Datenverzeichnisses,
    Raten aus dem Blockgerät (`metrics_source = blockdev`) oder Agent-Zählern.
 9. `StorageHealth::evaluate()` ⇒ `ha_state`/`ha_message`.
@@ -453,18 +473,22 @@ Vorbedingungen in `Agent::sync()`: Tiering an und Instanz-ID gesetzt (sonst
    abgelaufen, sonst nur inotify-Hinweise (`scan($hints)`).
 5. Zugriffsprotokoll übernehmen ⇒ `last_access`, `access`-Tage (täglich
    bereinigt).
-6. `forgetTargets()` – Stand gelöschter Ziele entfernen.
-7. Vorfälle auswerten (`handleIncidents()`, 5.6) ⇒ ggf. Schutzziel.
-8. Je erreichbarem, aktivem Ziel (primäres zuerst, Schutzziel ausgenommen)
-   `syncTarget($target, 20)` – Zeitbudget 20 s je Ziel und Durchlauf.
+6. `forgetTargets()` – Stand gelöschter Tiers entfernen (behalten werden die
+   Kennungen der Basisziele).
+7. Vorfälle auswerten (`handleIncidents()`, 5.6, nur mit Basiszielen) ⇒ ggf.
+   Schutzziel (immer ein ganzer Tier).
+8. Je erreichbarem, aktivem Cold-Tier (primäres zuerst, Schutzziel
+   ausgenommen) `syncTarget($tier, 20)` – Zeitbudget 20 s je Tier und
+   Durchlauf.
    Summe `held` ⇒ Statusmeldung „N Datei(en) warten auf den
    Snapshot-Speicher“.
 9. `tier()` (5.4).
 9a. `snapshotPass()` (Abschnitt 13.4): Wiederherstellungsaufträge, Aufbewahrung,
     Temp-Bereinigung, Spiegel nach MySQL. Fehler darin brechen den
     Durchlauf nicht ab.
-10. Rückstand je aktivem Ziel ⇒ `storage_target_status`
-    (`in_sync = pending_files == 0`); Gesamtwerte = Maximum ohne Schutzziel.
+10. Rückstand je aktivem Tier ⇒ `storage_target_status` aller Ziele des Tiers
+    (`in_sync = pending_files == 0`), belegte Dateien/Bytes je Ziel aus
+    `memberStats()`; Gesamtwerte = Maximum ohne Schutzziel.
 11. `sync_state`: `blocked` (Massenlöschsperre) > `error` (Zielfehler oder
     fehlgeschlagene Dateien) > `syncing` (ausstehend) > `in_sync`.
 
@@ -498,10 +522,18 @@ Vorbedingungen in `Agent::sync()`: Tiering an und Instanz-ID gesetzt (sonst
 1. Zuerst `ops` (Löschen/Umbenennen) in Reihenfolge. Vor einem `delete`
    wird `secure()` für die Zieldatei aufgerufen; liefert es `false`, bleibt
    die Operation stehen (`held`) und der Durchlauf endet mit `more = true`.
-   Scheitert eine Umbenennung, wird die Zieldatei neu übertragen (`unsync`).
+   Gelöscht werden alle Kopien im Tier (`TierLayout::copies()`), leere
+   Verzeichnisse auf jedem Ziel entfernt. Umbenannt wird auf dem Ziel, auf
+   dem die Datei liegt (`locate()`); scheitert das, wird die Zieldatei neu
+   übertragen (`unsync`).
 2. Dann ausstehende Dateien (`target_files.version < files.version`), älteste
    Änderung zuerst, seitenweise à 200.
-3. Ergebnis je Datei:
+3. Ablageort: vorhandene Kopie per `locate()`, neues Ziel per
+   `TierLayout::place()` (Abschnitt 14.4). Liegt die neue Fassung auf einem
+   anderen Ziel als die alte, wird die alte Kopie nach erfolgreicher
+   Übertragung entfernt (`dropMoved()`), sodass jede Datei nur einmal je Tier
+   liegt.
+4. Ergebnis je Datei:
    - `adopted`: Ziel hat Größe gleich und mtime ±1 s ⇒ nur als synchron
      markieren (ohne Hash!).
    - `held`: Ziel hat eine ältere Fassung, deren Vormerkung noch nicht auf
@@ -566,7 +598,8 @@ mindestens ein Ziel online. Kandidaten (`Catalog::evictable()`): `tiered = 1`,
    Online-Ziel ⇒ auslagern mit Grund `pressure`.
 4. `evict()`: Ohne gespeicherten Hash (übernommene Kopie) wird lokale Datei
    **und** Kopie auf dem ersten Halter gehasht und verglichen; Abweichung ⇒
-   `unsync`, keine Auslagerung. Dann Marker schreiben, `makeStub()`:
+   `unsync`, keine Auslagerung (der Halterpfad wird per `locate()` im Tier
+   ermittelt, `holderPath()`). Dann Marker schreiben, `makeStub()`:
    Temp-Datei mit `ftruncate(size)`, Rechte/Besitzer/mtime übernehmen, vor dem
    `rename` erneut prüfen (Inode, Größe, mtime unverändert), sonst Abbruch.
 
@@ -603,8 +636,10 @@ Fehler ⇒ `StorageNotAvailableException` (WebDAV 503).
    entfernen. Datei kein Platzhalter mehr (neu geschrieben) ⇒ Marker
    entfernen, im Katalog als `local` markieren. In allen drei Fällen meldet
    der Status `done`.
-3. Kandidaten: Ziele mit aktueller Version laut Katalog + `targets` aus dem
-   Marker, nur online, primäres zuerst; Notfall: alle Online-Ziele.
+3. Kandidaten: Cold-Tiers mit aktueller Version laut Katalog + `targets` aus
+   dem Marker (Tier-Kennungen), nur online, primäres zuerst; Notfall: alle
+   Online-Tiers. Innerhalb eines Tiers wird die Datei per
+   `TierLayout::locate()` auf Basisziel und Erweiterungen gesucht.
 4. Größe auf dem Ziel muss passen; Kopie nach
    `<datadir>/.lanpa-recall/<id>.lanpa-tmp` mit SHA-256-Prüfung gegen den
    Marker.
@@ -663,10 +698,14 @@ KI-Worker, Euro-Office ⇒ startet `storage-sync` ⇒ wartet auf `targets.json` 
 
 `Agent::restore()`:
 
-1. Ziel aus `targets.json` (online) oder `adoptTarget()`: direkt einbinden;
-   bei `invalid` die fremde Instanz-ID aus `.lanpa-storage.json` verwenden.
+1. Tier aus `targets.json` (online) oder `adoptTarget()`: alle Ziele des
+   Tiers direkt einbinden; bei `invalid` die fremde Instanz-ID aus
+   `.lanpa-storage.json` verwenden. `--target` darf auch die Kennung einer
+   Erweiterung sein – es wird immer der ganze Tier verwendet; ist ein Ziel
+   des Tiers nicht erreichbar, bricht die Wiederherstellung ab.
 2. Meta `paused = 1`, Instanz-ID des Ziels übernehmen.
-3. `Restore::run()`: je Quelle alle Dateien des Ziels; gleiche lokale Datei
+3. `Restore::run()`: je Quelle alle Dateien aller Ziele des Tiers (Basisziel
+   zuerst; eine schon übernommene Datei wird wie jede gleiche lokale Datei übersprungen); gleiche lokale Datei
    (Größe, mtime ±1 s) ⇒ `skipped`; ohne `--full`, Sparse vorhanden,
    `nextcloud-data`, ausgelagerter Pfad, ≥ 64 KiB und älter als
    `storage_local_days` ⇒ Platzhalter + Marker (`sha256 = null`,
@@ -702,6 +741,8 @@ das Limit. SNMP: `forecast_days` (−1 = keine Hochrechnung).
 | Wiederherstellung (Nextcloud) `state` | `done`, `failed` | `snapshots/status` |
 | `storage_snapshot` Exit | 3 deaktiviert, 2 `offline`/`invalid`, sonst Füllstand (`fill()`), ≥ 1 bei `failed > 0` | `StorageService::snmp()` |
 | Füllstand | `ok` < warn ≤ `degraded` < crit ≤ `critical` | `StorageHealth::fill()` |
+| Rolle eines Ziels | `root` (Basisziel), `extension` (Erweiterung, `level` ≥ 1) | `StorageService::tierViews()`, SNMP `storage_targets` |
+| Tier-Zustand | erster nicht `online`-Zustand seiner Ziele, sonst `online`; Meldung „<Ziel>: <Meldung>“ | `tierViews()`, `Agent::tierMap()` |
 
 ---
 
@@ -757,6 +798,20 @@ das Limit. SNMP: `forecast_days` (−1 = keine Hochrechnung).
     ein Ergebnis (`waitForSnapshotRestore()`), nie beim Speichern/Löschen.
 17. **Snapshot-Speicher ≠ Speicherziel:** gleiche UNC wird in beide
     Richtungen abgelehnt; Cold-Tier-Layout auf der Freigabe ⇒ `invalid`.
+18. **Ein Tier = eine vollständige Kopie:** Katalog, `ops`, Marker-`targets`,
+    Rückstand und Schutzziel verwenden ausschließlich die Kennung des
+    Basisziels. Erweiterungen sind nie eigenständige Kopien und erscheinen
+    nicht als eigene Kachel, in `health.active`/`online` oder in der
+    Vorfall-Zielauswahl.
+19. **Gleiche Art im Tier:** Erweiterungen haben immer die Art des
+    Basisziels (`extendTiers()`/`updateTarget()` erzwingen das); die Art eines
+    erweiterten Basisziels ist nicht änderbar.
+20. **Balance:** Erweitert wird nur gemeinsam (alle Tiers, alles oder nichts,
+    eine Transaktion); entfernt wird nur die letzte Stufe in allen Tiers und
+    nur, solange sie leer ist (`synced_files = 0`).
+21. **Volle Ziele bleiben voll angezeigt:** Füllstand je Ziel wird nie
+    geschönt; nur die Warnung „Speicherplatz unzureichend“ und
+    `storage_cold_fill` bewerten den Tier gesamt.
 
 ---
 
@@ -770,7 +825,9 @@ Alle Routen hinter `$requireAdmin` (`public/index.php`), POST mit CSRF.
 | GET | `/admin/speicher-ha/status` | `::live` | Live-JSON (`StorageService::liveData()`, `Cache-Control: no-store`, ohne Zugangsdaten) |
 | POST | `/admin/speicher-ha/einstellungen` | `::updateSettings` | `storage_*` |
 | GET/POST | `/admin/speicher-ha/ziel` (`?id=`) | `::editTarget` / `::saveTarget` | Ziel anlegen/ändern (Änderung ⇒ Auftrag `remount`) |
-| POST | `/admin/speicher-ha/ziel/loeschen` | `::deleteTarget` | Ziel entfernen (Daten auf dem Ziel bleiben) |
+| POST | `/admin/speicher-ha/ziel/loeschen` | `::deleteTarget` | Basisziel ⇒ ganzen Cold-Tier samt Erweiterungen entfernen; Erweiterung ⇒ letzte Erweiterungsstufe in allen Tiers entfernen (nur leer). Daten auf den Zielen bleiben. |
+| GET | `/admin/speicher-ha/erweitern` | `::extendForm` | Formular „Cold-Tiers erweitern“ (ohne Tier ⇒ Rücksprung mit Fehlermeldung) |
+| POST | `/admin/speicher-ha/erweitern` | `::extend` | Felder `tiers[<id Basisziel>][<feld>]` ⇒ `StorageService::extendTiers()`; Fehler ⇒ 422 mit Formular (Kennwort/Secret werden nicht zurückgegeben) |
 | POST | `/admin/speicher-ha/auftrag` | `::request` | `sync_now`, `full_scan`, `remount`, `confirm_deletes`, `snapshot_remount` |
 | POST | `/admin/speicher-ha/snapshot-einstellungen` | `::updateSnapshotSettings` | `storage_snapshot_*` (`SnapshotService::saveSettings()`) |
 | GET | `/admin/speicher-ha/dateiversionen` | `::versions` | Versionsliste; Query `from`, `to`, `user`, `path`, `status`, `deleted`, `limit` (`SnapshotService::filter()`, nur gebundene Parameter, `LIKE … ESCAPE`) |
@@ -793,6 +850,9 @@ Validierung der Ziele (`StorageService::validateTarget()`): SMB-UNC über
 Präfixsegmente `[A-Za-z0-9._-]`, Region, Kapazität ≤ `S3_MAX_CAPACITY_GB`.
 Leeres Kennwort/Secret beim Bearbeiten ⇒ bisheriger Wert bleibt (nicht bei
 Wechsel der Art SMB ⇄ S3). Das erste Ziel wird automatisch primär.
+Beim Bearbeiten einer Erweiterung übernimmt `updateTarget()` Art und „aktiv“
+vom Basisziel und setzt `is_primary = 0`; „aktiv“ eines Basisziels wird per
+`setTierActive()` auf alle Erweiterungen übertragen.
 
 ---
 
@@ -805,8 +865,8 @@ php -l <datei>               # Syntaxprüfung
 
 | Datei | Abdeckung |
 | --- | --- |
-| `tests/Unit/StorageAgentTest.php` | Pfadregeln, Hysterese, Raten/CIFS-Statistik, Mount-/s3fs-Optionen und Fehlermeldungen, Sync inkl. Umbenennen/Löschen, Massenlöschsperre, Auslagern/Rückholen, überschriebener Platzhalter, `remote_only` und Rückkehr, Katalogverlust. Arbeitet mit Temp-Verzeichnissen als Ziele (ohne echte Mounts). |
-| `tests/Unit/StorageTieringTest.php` | Einstellungen, HA-Bewertung, Live-Daten ohne Zugangsdaten, Zielvalidierung (SMB/S3) und Verschlüsselung, Views ohne Inline-Styles, SNMP-Ausgabe. |
+| `tests/Unit/StorageAgentTest.php` | Pfadregeln, Hysterese, Raten/CIFS-Statistik, Mount-/s3fs-Optionen und Fehlermeldungen, Sync inkl. Umbenennen/Löschen, Massenlöschsperre, Auslagern/Rückholen, überschriebener Platzhalter, `remote_only` und Rückkehr, Katalogverlust. Cold-Tier-Erweiterungen: `TargetMap` mit `members`, `TierLayout::place()`/`reserve()`/`free()`, Überlauf auf die Erweiterung (volles Basisziel per injiziertem freiem Platz), Verschieben geänderter Dateien, Umbenennen/Löschen/Rückholen über Ziele hinweg, `memberStats()`, `Agent::tierMap()` (Tier nur mit allen Zielen online, Schutzziel). Helfer `storageAgentExtendedTier()`. Arbeitet mit Temp-Verzeichnissen als Ziele (ohne echte Mounts). |
+| `tests/Unit/StorageTieringTest.php` | Einstellungen, HA-Bewertung, Live-Daten ohne Zugangsdaten, Zielvalidierung (SMB/S3) und Verschlüsselung, Views ohne Inline-Styles, SNMP-Ausgabe. Cold-Tier-Erweiterungen: `extendTiers()` (alle Tiers nötig, gleiche Art, eigener Ort, Zugangsdaten übernehmen, `parent_id`), Art eines erweiterten Basisziels gesperrt, Entfernen nur leerer letzter Stufe, aggregierter Füllstand, Warnung vorher/nachher, SNMP `tier=`/`role=`, Live-Daten `members`, Kachel- und Formular-Rendering. Helfer `storageTierPdo()` (SQLite mit `NOW()`/`TIMESTAMPDIFF()`-Ersatz), `storageTierStatus()`, `storageTierViews()`. |
 | `tests/Unit/StorageIncidentTest.php` | Muster, Inhaltsprüfung, Regeln, Zuordnung über Schreibprotokoll, Schutzzielwahl, `ro`-Einbindung, Erledigung, Adminseite. |
 | `tests/Unit/StorageTieringClientTest.php` | Nextcloud-Seite: Rückholung über Warteschlange, Fehler/ausgefallener Agent, Marker bei Umbenennen/Verschieben/Löschen, Zeitstempel, Zugriffsprotokoll. |
 | `tests/Unit/StorageSnapshotTest.php` | Snapshot-Speicher: Pfadregel/Kennung, Version bei Inhaltsänderung (Layout, `meta.json`, Index), keine Version bei mtime-only/Umbenennen/außerhalb `files/`/Auslagern/Zurückholen, Löschung sichert letzte Fassung und Wiederherstellung legt sie neu an, harter Akzeptanztest „Restore erzeugt keinen Snapshot“, Zurückhalten bei nicht erreichbarem Speicher mit Wiederholung (injizierte Uhr), Abbruch ohne halbe Versionen + Temp-Bereinigung, Aufbewahrung und Neuaufbau, deaktiviert, Einstellungsvalidierung, Listenfilter gegen Injektion, View-Escaping, Dashboard-Hinweis. Helfer `storageSnapshotEnv()` (wie `storageAgentEnv()` plus `SnapshotStore`/`SnapshotEngine`). |
@@ -948,7 +1008,12 @@ docker compose exec app php scripts/storage_status.php storage_snapshot
 - S3 meldet keinen Plattenplatz; Füllstand = synchronisierte Bytes /
   `capacity_bytes`. Ohne Kapazität zählt das Ziel in `storage_cold_fill` als
   „ohne Grenze“ (Exit 0).
-- `storage_metrics.cold_*` summiert nur aktive Online-Ziele.
+- `storage_metrics.cold_*` summiert nur aktive Online-Tiers (bei erweiterten
+  Tiers bereits über alle Ziele summiert).
+- Erweiterte Tiers: Erweiterungen erhalten erst nach dem nächsten Monitor-
+  Durchlauf einen Status. Bis dahin ist der Tier `unknown` (Anzeige) bzw.
+  nicht `online` (`targets.json`) – kurz nach dem Erweitern kann deshalb die
+  Meldung „Cold-Tier nicht verfügbar“ erscheinen.
 - Die Konfiguration (`nextcloud-config`), Euro-Office-Daten und der DB-Abzug
   werden nie ausgelagert; `bytes_local`/Limits beziehen sich auf alle lokal
   vorgehaltenen Katalogdateien außer dem DB-Abzug.
@@ -1087,3 +1152,199 @@ neue Zeile hängen), `requestRescan(path)`, Ereignis, `refreshIndex()`.
 Der nächste `syncPass()` überträgt die Datei als neue `version` auf alle
 Ziele; `copyFile()` findet keine Vormerkung ⇒ kein Snapshot.
 
+
+---
+
+## 14. Cold-Tier-Erweiterungen (mehrere Ziele je Tier)
+
+Reicht der Platz eines Cold-Tiers nicht mehr, wird er um ein weiteres Ziel
+**derselben Art** erweitert – eine SMB-Freigabe nur um eine SMB-Freigabe,
+ein S3-Bucket nur um einen S3-Bucket/-Präfix. Damit jeder Cold-Tier weiterhin
+eine vollständige Kopie aufnehmen kann, werden **alle** Cold-Tiers in einem
+Schritt erweitert (Balance). Ein erweiterter Cold-Tier bleibt eine logische
+Kopie und eine Kachel; die Ziele erscheinen innerhalb der Kachel.
+
+| Vorher (Basisziele zu 97,5 % belegt) | Warnung im Dashboard |
+| --- | --- |
+| ![Volle Cold-Tiers](screenshots/70-admin-cold-tier-voll.png) | ![Warnung Speicherplatz](screenshots/71-admin-cold-tier-warnung.png) |
+
+### 14.1 Datenmodell
+
+```mermaid
+flowchart LR
+    subgraph T1["Cold-Tier 1 (SMB) – Kennung 1"]
+        R1["Basisziel #1<br/>parent_id = NULL"] --> E1["Erweiterung 1: #3<br/>parent_id = 1"] --> E1b["Erweiterung 2: #5<br/>parent_id = 1"]
+    end
+    subgraph T2["Cold-Tier 2 (S3) – Kennung 2"]
+        R2["Basisziel #2<br/>parent_id = NULL"] --> E2["Erweiterung 1: #4<br/>parent_id = 2"] --> E2b["Erweiterung 2: #6<br/>parent_id = 2"]
+    end
+```
+
+- Migration `031_storage_tier_extensions.sql`: `storage_targets.parent_id INT
+  UNSIGNED NULL` + Index. Bestehende Ziele bleiben Basisziele (`NULL`) –
+  keine Datenmigration.
+- `StorageService::tiers($rows)` bildet die Tiers: Basisziele in
+  Tabellenreihenfolge, je Tier `members` = Basisziel + Erweiterungen nach
+  `id` aufsteigend. Die Position in `members` ist die **Erweiterungsstufe**
+  (`level`, 0 = Basisziel). Eine Zeile, deren `parent_id` auf kein vorhandenes Ziel
+  zeigt, gilt als eigenständiger Tier (defensiv; entsteht durch die
+  Löschregeln nicht). `StorageService::parentId()` liest `parent_id` tolerant (Zeilen ohne
+  Spalte ⇒ Basisziel).
+- `tierOf($id)` liefert zu jeder Ziel-ID den Tier (Controller: Bearbeiten /
+  Entfernen einer Erweiterung).
+- Basisziel bestimmt `kind`, `active` und `is_primary` des Tiers. Erweiterungen
+  haben eigene Zugangsdaten, eigenen Ort und – bei S3 – eigene Kapazität.
+- Jedes Ziel wird einzeln eingebunden (`/mnt/targets/<id>`, eigene
+  `.lanpa-storage.json`, eigene Zeile in `storage_target_status`).
+
+### 14.2 Erweitern (`StorageService::extendTiers()`)
+
+Eingabe `tiers[<id Basisziel>][<feld>]` mit denselben Feldern wie das
+Zielformular (`label`, `unc_path`/`username`/`domain`/`password`/
+`smb_version` bzw. `s3_endpoint`/`s3_region`/`s3_bucket`/`s3_prefix`/
+`s3_access_key`/`s3_secret_key`/`capacity_gb`) plus `reuse_credentials`.
+
+| Regel | Fehlerschlüssel / Verhalten |
+| --- | --- |
+| Kein Tier vorhanden | `tiers` („Es ist noch kein Cold-Tier eingerichtet.“); Formular-GET leitet mit Fehlermeldung zurück. |
+| Für jeden Tier ein Ziel | fehlender Block ⇒ `tier_<id>_label` („alle Cold-Tiers werden gemeinsam erweitert“). |
+| Gleiche Art | `kind` wird vom Basisziel übernommen; abweichendes `kind` ⇒ `tier_<id>_kind`. Das Formular sendet die Art als verstecktes Feld und zeigt keine Auswahl. |
+| Normale Zielprüfung | `validateTarget()` (UNC/Bucket, Zugangsdaten, Eindeutigkeit gegen bestehende Ziele, Snapshot-UNC). Fehler ⇒ `tier_<id>_<feld>`. |
+| Eigenes Ziel je Tier | Gleicher Ort (UNC bzw. kanonische S3-URL, ohne Groß/Klein, ohne abschließenden Schrägstrich) in zwei Tiers ⇒ `tier_<id>_unc_path` bzw. `tier_<id>_s3_bucket`. |
+| Zugangsdaten übernehmen | `reuse_credentials` ⇒ Benutzer/Domäne bzw. Access Key und das **verschlüsselte** Kennwort/Secret des Basisziels werden kopiert (kein Entschlüsseln). Felder im Formular per JS gesperrt. |
+| Alles oder nichts | Erst nach fehlerfreier Prüfung aller Tiers: `StorageRepository::createTargets()` legt alle Ziele in **einer Transaktion** an (`parent_id`, `is_primary = 0`, `active` wie Basisziel). |
+| Protokoll | je Ziel ein `storage_events`-Eintrag (`config`, „Cold-Tier „…“ um „…“ erweitert (…)“). |
+
+Die neuen Ziele werden beim nächsten Monitor-Durchlauf eingebunden; bis
+dahin ist der Tier `unknown` (siehe 12).
+
+![Erweiterungsplan](screenshots/72-admin-cold-tier-erweitern-plan.png)
+
+![Formular „Cold-Tiers erweitern“](screenshots/73-admin-cold-tier-erweitern-formular.png)
+
+### 14.3 Bearbeiten und Entfernen
+
+- **Erweiterung bearbeiten** (`/admin/speicher-ha/ziel?id=<Erweiterung>`):
+  Hinweis „Erweiterung n von Cold-Tier …“, Art gesperrt, keine Felder
+  „aktiv“/„primär“. `updateTarget()` erzwingt Art/aktiv des Basisziels und
+  `is_primary = 0`. Jede Änderung stellt einen `remount`-Auftrag ein.
+- **Basisziel bearbeiten**: Art nicht mehr änderbar, sobald Erweiterungen
+  existieren (Fehler `kind`). „aktiv“ wird per
+  `StorageRepository::setTierActive()` auf alle Erweiterungen übertragen.
+- **Basisziel entfernen** ⇒ ganzer Tier (`deleteTargets()`, alle Ziele in
+  einer Transaktion; Daten auf den Zielen bleiben).
+- **Erweiterung entfernen** ⇒ `deleteExtensionLevel()`: nur die **letzte**
+  Stufe (höchstes `level` über alle Tiers), gemeinsam in allen Tiers, und nur
+  wenn keines dieser Ziele synchronisierte Dateien hat (`synced_files = 0`).
+  Ältere Stufen oder belegte Erweiterungen werden mit Fehlermeldung
+  abgelehnt – ein Umschichten von Daten findet nicht statt.
+
+![Erweiterung bearbeiten](screenshots/75-admin-cold-tier-erweiterung-bearbeiten.png)
+
+### 14.4 Verteilung der Dateien (`TierLayout`)
+
+Ein Tier ist für den Agenten ein Ziel mit mehreren Wurzeln. Jede Datei liegt
+unter demselben relativen Pfad (`<quelle>/<pfad>`) auf **genau einem** Ziel
+des Tiers.
+
+| Methode | Verhalten |
+| --- | --- |
+| `members($target)` | Ziele aus `targets.json` (`members`), sonst ein Ziel aus `id`/`root`. |
+| `locate($target, $rel)` | Erstes Ziel (Basisziel zuerst), auf dem `<root>/<rel>` als Datei existiert ⇒ `{member, path}` oder `null`. |
+| `copies($target, $rel)` | Alle vorhandenen Kopien (zum Löschen; Überbleibsel abgebrochener Verschiebungen). |
+| `place($target, $size, $current)` | Ein Ziel ⇒ immer dieses (keine Prüfung, Verhalten wie bisher). Sonst: bisheriges Ziel bevorzugt, wenn dort `frei − Reserve ≥ size − bisherige Größe`; danach erstes Ziel in Stufenreihenfolge mit `frei − Reserve ≥ size`; Ziel ohne Grenze (S3 ohne Kapazität) wird sofort genommen; passt nichts, das Ziel mit dem meisten freien Platz (die Übertragung scheitert dann regulär und wird wiederholt). |
+| `free($member)` | SMB: live `disk_free_space()` des Einhängepunkts (Fallback `free_bytes` − in diesem Durchlauf geschrieben). S3: `free_bytes` aus `targets.json` (Kapazität − synchronisiert) − in diesem Durchlauf geschrieben; ohne Kapazität `null` (= unbegrenzt). |
+| `placed($id, $bytes)` | Bucht geschriebene Bytes (S3 meldet keinen Live-Platz). |
+| `reserve($member)` | `min(1 GiB, max(64 MiB, total / 100))` – freigehaltener Puffer, damit ein Ziel nicht bis aufs letzte Byte gefüllt wird. |
+
+Folge: Ein Basisziel füllt sich bis knapp unter die Reserve, danach laufen neue
+Dateien auf Erweiterung 1, dann 2 usw. Bestehende Dateien werden **nicht**
+umverteilt; nur eine geänderte Datei, deren neue Fassung auf ihrem bisherigen
+Ziel keinen Platz hat, wandert (`dropMoved()` entfernt die alte Kopie nach
+erfolgreicher Übertragung).
+
+### 14.5 Agent
+
+| Bereich | Verhalten bei erweiterten Tiers |
+| --- | --- |
+| Monitor | Jedes Ziel wird einzeln geprüft/eingebunden und erhält seinen Status. `Agent::tierMap()` fasst sie je Tier zusammen: `online` nur, wenn alle Ziele online; Zustand = erster abweichender Zustand. Schutzziel ⇒ alle Ziele des Tiers `ro`. HA-Bewertung je Tier. |
+| `targets.json` | Ein Eintrag je Tier mit `members` (Format 4.5). `TargetMap::read()` ergänzt fehlende `members` (alte Datei) zu einem Ziel. |
+| Sync | `syncTarget()` je Tier; Kopie auf `place()`-Ziel, `target_files.member_id` = tatsächliches Ziel (0 = Basisziel). `assertReachable()` prüft bei Fehlern die Kennungen aller Ziele. |
+| `ops` | `delete`: alle Kopien (`copies()`), leere Verzeichnisse je Ziel bereinigt. `rename`: auf dem Ziel, auf dem die Datei liegt. |
+| Rückstand / Status | je Tier berechnet, auf alle Ziele geschrieben; `synced_files/bytes` je Ziel aus `Catalog::memberStats($tierId)` (Grundlage des S3-Füllstands `capacity − synced_bytes`). |
+| Auslagern | Halter = `locate()` im Tier (`holderPath()`), Größen-/mtime-Prüfung dort. Marker `targets` enthält Tier-Kennungen. |
+| Rückholung | `Recaller` sucht die Datei per `locate()` auf allen Zielen des Tiers. |
+| Wiederherstellung | `adoptTarget()` bindet alle Ziele des Tiers ein (fremde Instanz-ID wird übernommen); `Restore::run()` liest alle Wurzeln, DB-Abzug per `locate()`. |
+| Vorfälle | Schutzziel und Zielauswahl nur über Basisziele (= Tiers). |
+
+### 14.6 Füllstand, Warnungen, Monitoring
+
+- `overview()['targets']` enthält **je Tier einen Eintrag** (`tierViews()`):
+  bei mehreren Zielen Summen von `total_bytes`, `free_bytes`,
+  `capacity_bytes`, Raten, `synced_*`; `fill` über die Summe; `unbounded`,
+  sobald ein Ziel ohne Grenze ist (dann kein Gesamt-Füllstand). `members`
+  enthält jede Zielansicht mit `role`/`level` und eigenem `fill`.
+- **Volles Ziel bleibt voll:** Füllstand und Zustand je Ziel werden
+  unverändert angezeigt (Füllbalken, Badge „voll“ ab kritischer Grenze, SNMP
+  `storage_targets`).
+- **Warnung entfällt nach Erweiterung:** `fullTiers()` bewertet nur den
+  Gesamt-Füllstand aktiver, erreichbarer Tiers. Die Dashboard-Meldung
+  „Speicherplatz im Cold-Tier (SMB-/S3-Tier) unzureichend“ (Stufe `warning`,
+  nach „nicht verfügbar“/„eingeschränkt“/„Hot-Tier am Limit“, vor
+  „Snapshot-Speicher nicht verfügbar“) erscheint nur, solange ein Tier
+  insgesamt kritisch belegt ist.
+- SNMP `storage_cold_fill`: Wert je Tier (Gesamtfüllstand), Zusatz
+  „(n Ziele)“ bei erweiterten Tiers; Exit-Code nach dem höchsten Tier.
+- SNMP `storage_targets`: eine Zeile je **physischem** Ziel; angehängt
+  `tier=<Kennung Basisziel> role=root|extension`. `in_sync`,
+  `pending_files`, `lag_seconds` sind die Werte des Tiers. Bestehende
+  Schlüssel unverändert.
+- `storage_metrics.cold_*`: Summen über die Tiers (also über alle Ziele).
+- `liveData()`: je Tier `members` mit Zustand, Meldung, `fill`, frei/gesamt,
+  `synced_*` und `share` (Anteil an der Gesamtkapazität, `memberShare()`),
+  damit `admin-storage.js` (`renderMembers()`) Zielliste, Badge „voll“ und
+  Kapazitätsleiste live aktualisiert. Ändert sich die Zielmenge eines Tiers,
+  zeigt die Seite „Speicherziele wurden geändert. Bitte Seite neu laden …“.
+
+### 14.7 Oberfläche
+
+- **Kachel** (`views/admin/storage.php`): Bei mehr als einem Ziel zeigt die
+  Kachel eine gestapelte Kapazitätsleiste (SVG, Segmentbreite = Anteil des
+  Ziels an der Gesamtkapazität, Füllung = Belegung, Farbe nach Füllstand) und
+  eine Zielliste (`.tier-members`) mit Rolle („Basisziel“/„Erweiterung n“),
+  Ort, Zustand, Badge „voll“, Füllbalken und Bearbeiten-Link. Kopfzeile und
+  Gesamtwerte gelten für den Tier.
+- **Balance-Hinweis** (`.tier-balance`): grün, wenn alle Tiers gleich viele
+  Ziele haben; sonst Warnung mit „a / b Ziele“ (z. B. nach dem Hinzufügen
+  eines neuen Tiers).
+- **Schaltfläche** „Cold-Tiers erweitern“ in der Kartenkopfzeile (nur mit
+  mindestens einem Tier).
+- **Formular** (`views/admin/storage_extend.php`): Plan je Tier
+  (`ol.tier-plan` – vorhandene Ziele mit Füllstand, neue Stufe hervorgehoben,
+  Bezeichnung live aus dem Formular), darunter je Tier ein `fieldset` mit den
+  Feldern seiner Art (S3: Endpoint/Region vom Basisziel vorbelegt) und
+  „Zugangsdaten des Basisziels übernehmen“. Eine Schaltfläche legt alle
+  Erweiterungen an.
+
+![Erweiterte Cold-Tiers](screenshots/74-admin-cold-tier-erweitert.png)
+
+### 14.8 Änderungsrezepte
+
+**Weitere Felder für Erweiterungen** – `validateTarget()` (gemeinsam), Felder
+in `storage_extend.php` (`tiers[<id>][feld]`, ids `tier-<id>-<feld>`, Fehler
+`tier_<id>_<feld>`), `StorageController::extend()` (Kennwort/Secret nie
+zurückgeben).
+
+**Andere Verteilungsstrategie** – ausschließlich `TierLayout::place()`
+(z. B. gleichmäßig nach freiem Platz). `locate()` muss unabhängig von der
+Strategie funktionieren (Suche im Dateisystem); `member_id` dient nur der
+Statistik. Tests „Cold-Tier-Erweiterung“ in `StorageAgentTest.php` anpassen.
+
+**Umverteilen / Ziel leeren** (nicht vorhanden) – müsste Dateien je Tier per
+`copyFile()` auf ein anderes Ziel kopieren, `member_id` setzen und erst dann
+die Quelle löschen; Auslagerungs-Marker bleiben gültig, weil sie Tier-
+Kennungen enthalten.
+
+**Neue Anzeige je Ziel** – `targetView()` (Wert), `tierViews()` (Summe für
+den Tier, falls sinnvoll), `liveData()` → `members`, `renderMembers()` in
+`admin-storage.js`.

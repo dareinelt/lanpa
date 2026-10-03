@@ -72,7 +72,9 @@ final class Recaller
         FileCopier::ensureDir(dirname($temp));
         $errors = [];
         foreach ($candidates as $target) {
-            $source = $target['root'] . '/' . PathRules::SOURCE_NEXTCLOUD_DATA . '/' . $rel;
+            // Erweiterter Cold-Tier: die Datei liegt auf genau einem seiner Ziele.
+            $found = TierLayout::locate($target, PathRules::SOURCE_NEXTCLOUD_DATA . '/' . $rel);
+            $source = $found['path'] ?? $target['root'] . '/' . PathRules::SOURCE_NEXTCLOUD_DATA . '/' . $rel;
             $remote = @stat($source);
             if ($remote === false || (int) $remote['size'] !== $size) {
                 $errors[] = $target['label'] . ': Datei fehlt oder hat eine andere Größe';

@@ -19,7 +19,7 @@ function emergencyPdo(): PDO
     $pdo->exec('CREATE TABLE settings (setting_key TEXT PRIMARY KEY, setting_value TEXT NOT NULL)');
     $pdo->exec("CREATE TABLE emergency_plans (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, published INTEGER DEFAULT 0, revision INTEGER DEFAULT 1, definition TEXT, updated_by TEXT, updated_at TEXT, review_state TEXT DEFAULT 'draft', contributors TEXT, submitted_by TEXT, submitted_at TEXT, published_definition TEXT, published_revision INTEGER)");
     $pdo->exec("CREATE TABLE emergency_plan_reviews (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER, revision INTEGER, actor TEXT, action TEXT, comment TEXT, created_at TEXT)");
-    $pdo->exec("CREATE TABLE emergency_events (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER, title TEXT, actor TEXT, request_key TEXT UNIQUE, snapshot TEXT, state TEXT, coordination TEXT, revision INTEGER DEFAULT 1, status TEXT DEFAULT 'active', started_at TEXT, closed_at TEXT)");
+    $pdo->exec("CREATE TABLE emergency_events (id INTEGER PRIMARY KEY AUTOINCREMENT, plan_id INTEGER, title TEXT, actor TEXT, request_key TEXT UNIQUE, snapshot TEXT, state TEXT, coordination TEXT, revision INTEGER DEFAULT 1, status TEXT DEFAULT 'active', started_at TEXT, closed_at TEXT, trigger_group TEXT)");
     $pdo->exec("CREATE TABLE emergency_log (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER, node_id TEXT, actor TEXT, action TEXT, message TEXT, created_at TEXT)");
     $pdo->exec("CREATE TABLE emergency_sms (event_id INTEGER, node_id TEXT, status TEXT, message TEXT, PRIMARY KEY (event_id, node_id))");
     $pdo->exec("CREATE TABLE emergency_password_attempts (actor TEXT PRIMARY KEY, window_start INTEGER, attempts INTEGER)");
@@ -121,6 +121,23 @@ Runner::test('Notfallplan: Auslösegruppe nur für Auslösen und laufende eigene
     emergencyThrows(fn () => $service->requireEvent($id, 'ad:demo@quelle', false, true), 403);
     Assert::same($id, (int) $service->requireEvent($id, 'ad:demo@quelle', false)['id']);
     Assert::same($id, (int) $service->requireEvent($id, 'local:kaep', true, true)['id']);
+    Assert::same('ausloeser', $service->repository->event($id)['trigger_group']);
+
+    // Gemeinsame Abarbeitung: andere Mitglieder der Auslösegruppe sehen laufende Ereignisse.
+    $colleague = array_replace($trigger, ['office_uid' => 'kollege@quelle']);
+    Assert::same('ausloeser', $service->triggerGroup($colleague));
+    Assert::null($service->triggerGroup(emergencyUser()));
+    $shared = $service->start($plan, 1, $trigger, ' correct password ', bin2hex(random_bytes(32)));
+    $own = $service->start($plan, 1, emergencyUser(), ' correct password ', bin2hex(random_bytes(32)));
+    $sharedEvent = $service->requireEvent($shared, 'ad:kollege@quelle', false, true, 'ausloeser');
+    $service->update($sharedEvent, 'ad:kollege@quelle', ['revision' => 1, 'node' => 'entscheidung', 'action' => 'comment', 'comment' => 'Übernommen.']);
+    emergencyThrows(fn () => $service->requireEvent($shared, 'ad:kollege@quelle', false, true), 403);
+    emergencyThrows(fn () => $service->requireEvent($shared, 'ad:kollege@quelle', false, true, 'andere'), 403);
+    emergencyThrows(fn () => $service->requireEvent($own, 'ad:kollege@quelle', false, true, 'ausloeser'), 403);
+    emergencyThrows(fn () => $service->requireEvent($id, 'ad:kollege@quelle', false, true, 'ausloeser'), 403);
+    $list = $service->repository->events('ad:kollege@quelle', 'active', '', '', 1, 'ausloeser');
+    Assert::same([$shared], array_map(static fn (array $row) => (int) $row['id'], $list['items']));
+    Assert::same(0, $service->repository->events('ad:kollege@quelle', 'active', '', '', 1)['total']);
 
     $pdo->exec("UPDATE settings SET setting_value = '' WHERE setting_key = 'emergency_plan_group'");
     $onlyTrigger = new EmergencyPlanService(new EmergencyPlanRepository($pdo), new SettingsService(new SettingsRepository($pdo)), new NavigationRepository($pdo), static fn () => true, static fn () => [], static fn () => [], '');

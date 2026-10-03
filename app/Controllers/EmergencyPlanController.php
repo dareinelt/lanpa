@@ -42,7 +42,8 @@ final class EmergencyPlanController extends AdminController
 
         // Auslösegruppe: nur auslösen und eigene laufende Ereignisse abarbeiten, keine Historie.
         return ['manager' => false, 'restricted' => $level === EmergencyPlanService::ACCESS_TRIGGER,
-            'actor' => EmergencyPlanService::actor($user), 'base' => '/notfallplan', 'user' => $user];
+            'actor' => EmergencyPlanService::actor($user), 'base' => '/notfallplan', 'user' => $user,
+            'sharedGroup' => Container::emergencyPlans()->triggerGroup($user)];
     }
 
     private function render(string $template, array $access, array $data, int $status = 200): Response
@@ -76,7 +77,7 @@ final class EmergencyPlanController extends AdminController
 
         return $this->render('emergency.index', $access, [
             'pageTitle' => 'Notfallplan', 'plans' => $service->repository->plans(!$access['manager']),
-            'events' => $service->repository->events($access['manager'] ? null : $access['actor'], $status, $from, $to, $page),
+            'events' => $service->repository->events($access['manager'] ? null : $access['actor'], $status, $from, $to, $page, $access['sharedGroup'] ?? null),
             'filter' => compact('status', 'from', 'to', 'page'),
             'enabled' => Container::settings()->bool('emergency_plan_enabled'),
             'group' => Container::settings()->get('emergency_plan_group'),
@@ -246,7 +247,7 @@ final class EmergencyPlanController extends AdminController
     {
         $access = $this->access($request);
         $service = Container::emergencyPlans();
-        $event = $service->requireEvent($request->queryInt('id'), $access['actor'], $access['manager']);
+        $event = $service->requireEvent($request->queryInt('id'), $access['actor'], $access['manager'], false, $access['sharedGroup'] ?? null);
         if ($access['restricted'] && $event['status'] !== 'active') {
             Session::flash('success', 'Ereignis #' . (int) $event['id'] . ' ist abgeschlossen. Die weitere Auswertung erfolgt durch das KAEP-Team.');
 
@@ -264,7 +265,7 @@ final class EmergencyPlanController extends AdminController
     public function status(Request $request): Response
     {
         $access = $this->access($request);
-        $event = Container::emergencyPlans()->requireEvent($request->queryInt('id'), $access['actor'], $access['manager']);
+        $event = Container::emergencyPlans()->requireEvent($request->queryInt('id'), $access['actor'], $access['manager'], false, $access['sharedGroup'] ?? null);
 
         return Response::json(['revision' => (int) $event['revision'], 'status' => $event['status'], 'at' => gmdate('c')]);
     }
@@ -275,7 +276,7 @@ final class EmergencyPlanController extends AdminController
         $this->requireValidCsrf($request);
         try {
             $service = Container::emergencyPlans();
-            $event = $service->requireEvent($request->inputInt('id'), $access['actor'], $access['manager'], $access['restricted']);
+            $event = $service->requireEvent($request->inputInt('id'), $access['actor'], $access['manager'], $access['restricted'], $access['sharedGroup'] ?? null);
             $service->update($event, $access['actor'], $request->post);
 
             return Response::json(['message' => 'Gespeichert.']);

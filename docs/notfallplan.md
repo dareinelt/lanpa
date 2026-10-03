@@ -28,6 +28,8 @@ automatische Alarmierung bei Fristüberschreitung.
    Historische/laufende Ereignisse bleiben unverändert.
    Migration 028 ergänzt die Einsatzkoordination des KAEP-Dashboards; vorhandene
    Ereignisse erhalten zunächst eine leere Koordination, ihr Plan bleibt unverändert.
+   Migration 029 ordnet Ereignisse der optionalen Auslösegruppe zu; ältere Ereignisse
+   bleiben ohne Zuordnung und damit nur der auslösenden Person und dem KAEP-Team sichtbar.
 3. Bei Docker den neuen Dienst starten:
    `docker compose up -d --build app auth mail`.
 4. Ohne Docker `php scripts/mail_worker.php` als überwachten Dienst betreiben.
@@ -48,7 +50,7 @@ automatische Alarmierung bei Fristüberschreitung.
 | KAEP-Team | Ausschließlich Notfallplan-Verwaltung, Freigabeeinstellungen, Einsatzübersicht und historische Auswertung; kein Export/Import von Notfallplänen, kein SMTP-, AD-, Benutzer- oder anderer Adminbereich |
 | Redaktion | Bestehender Zugriff auf wichtige Links; kein Notfallplan-Adminzugriff |
 | Angemeldeter AD-Benutzer in der Freigabegruppe | Veröffentlichte Pläne ansehen und nach AD-Kennwortbestätigung auslösen; eigene Ereignisse bearbeiten |
-| Angemeldeter AD-Benutzer in der Auslösegruppe (optional) | Veröffentlichte Pläne ansehen und nach AD-Kennwortbestätigung auslösen; nur eigene **laufende** Ereignisse abarbeiten. Kein KAEP-Dashboard, keine abgeschlossenen oder vergangenen Ereignisse, keine Filter/Historie |
+| Angemeldeter AD-Benutzer in der Auslösegruppe (optional) | Veröffentlichte Pläne ansehen und nach AD-Kennwortbestätigung auslösen; eigene und von anderen Mitgliedern der Auslösegruppe ausgelöste **laufende** Ereignisse gemeinsam abarbeiten. Kein KAEP-Dashboard, keine abgeschlossenen oder vergangenen Ereignisse, keine Filter/Historie |
 | Keine Freigabegruppe, deaktivierter Button oder fehlende Mitgliedschaft | Kein Button und kein Zugriff auf Benutzerinhalte, auch nicht per Direktlink |
 
 Unter **Benutzer → KAEP-Team** ordnet ein Administrator eine oder mehrere
@@ -62,9 +64,14 @@ Unter **Notfallplan / KAEP → Freigabe und Sichtbarkeit** aktivieren Admin/KAEP
 Button und wählen **eine** AD-Gruppe wie in den bestehenden Gruppenvorschlägen.
 Optional lässt sich zusätzlich eine **weitere AD-Gruppe nur für Auslösung und
 Abarbeitung** (Auslösegruppe) hinterlegen. Deren Mitglieder sehen den Button,
-können Pläne auslösen und ihre eigenen laufenden Ereignisse bearbeiten. Nach dem
+können Pläne auslösen und laufende Ereignisse bearbeiten. Ereignisse, die ein
+Mitglied der Auslösegruppe startet, werden der Gruppe zugeordnet; alle Mitglieder
+sehen und bearbeiten sie gemeinsam (Protokoll mit der jeweiligen Person). Nach dem
 Abschluss ist das Ereignis für sie nicht mehr einsehbar; die Auswertung erfolgt
-durch das KAEP-Team. Bei Mitgliedschaft in beiden Gruppen gilt die erste Gruppe.
+durch das KAEP-Team. Bei Mitgliedschaft in beiden Gruppen gelten die Rechte der
+ersten Gruppe; gemeinsame Ereignisse der Auslösegruppe bleiben zusätzlich sichtbar.
+Die Zuordnung erfolgt beim Start (Migration 029) – eine spätere Umbenennung der
+Auslösegruppe teilt bereits gestartete Ereignisse nicht mit der neuen Gruppe.
 Die Verwaltungsrolle ersetzt diese Freigabe nicht. Eine leere Gruppe sperrt
 immer. Deaktivierung oder Entzug der Gruppe sperrt auch den Benutzerzugriff auf
 laufende Ereignisse; Admin/KAEP behalten den Verwaltungszugriff.

@@ -63,6 +63,18 @@ final class EmergencyPlanService
         return null;
     }
 
+    /** Normalisierte Auslösegruppe, falls der Benutzer ihr angehört (für gemeinsame Ereignisse). */
+    public function triggerGroup(?array $user): ?string
+    {
+        if ($user === null || !$this->settings->bool('emergency_plan_enabled')) {
+            return null;
+        }
+        $group = mb_strtolower(trim($this->settings->get('emergency_plan_trigger_group')));
+        $groups = array_map(static fn (string $name) => mb_strtolower(trim($name)), $user['groups']);
+
+        return $group !== '' && in_array($group, $groups, true) ? $group : null;
+    }
+
     public static function actor(array $user): string
     {
         return 'ad:' . mb_strtolower($user['office_uid']);
@@ -294,7 +306,7 @@ final class EmergencyPlanService
         }
         $recipients = ($this->recipients)();
         try {
-            return $this->repository->start($plan, $actor, $key, $recipients['emails'], $recipients['missing'], $this->baseUrl);
+            return $this->repository->start($plan, $actor, $key, $recipients['emails'], $recipients['missing'], $this->baseUrl, $this->triggerGroup($user));
         } catch (PDOException $exception) {
             $existing = $this->repository->existingRequest($key, $actor);
             if ($existing !== null) {
@@ -304,11 +316,12 @@ final class EmergencyPlanService
         }
     }
 
-    public function requireEvent(int $id, string $actor, bool $manager, bool $activeOnly = false): array
+    public function requireEvent(int $id, string $actor, bool $manager, bool $activeOnly = false, ?string $triggerGroup = null): array
     {
         $event = $this->repository->event($id);
-        if (!$manager && $event['actor'] !== $actor) {
-            throw new HttpException(403, 'Nur die auslösende Person und das KAEP-Team dürfen dieses Ereignis öffnen.');
+        $shared = $triggerGroup !== null && $triggerGroup !== '' && ($event['trigger_group'] ?? null) === $triggerGroup;
+        if (!$manager && $event['actor'] !== $actor && !$shared) {
+            throw new HttpException(403, 'Nur die auslösende Person, Mitglieder ihrer Auslösegruppe und das KAEP-Team dürfen dieses Ereignis öffnen.');
         }
         if (!$manager && $activeOnly && $event['status'] !== 'active') {
             throw new HttpException(403, 'Abgeschlossene Ereignisse sind nur für das KAEP-Team einsehbar.');

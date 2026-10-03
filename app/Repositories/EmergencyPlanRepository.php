@@ -157,10 +157,16 @@ final class EmergencyPlanRepository extends Repository
             [$id, $revision, $actor, $action, $comment, gmdate('Y-m-d H:i:s')]);
     }
 
-    public function events(?string $actor, string $status, string $from, string $to, int $page): array
+    public function events(?string $actor, string $status, string $from, string $to, int $page, ?string $triggerGroup = null): array
     {
         $where = ['1 = 1'];
         $params = [];
+        if ($actor !== null && $triggerGroup !== null && $triggerGroup !== '') {
+            // Gemeinsame Ereignisse der Auslösegruppe zusätzlich zu den eigenen.
+            $where[] = '(actor = ? OR trigger_group = ?)';
+            array_push($params, $actor, $triggerGroup);
+            $actor = null;
+        }
         foreach (['actor = ?' => $actor, 'status = ?' => $status === '' ? null : $status,
             'started_at >= ?' => $from === '' ? null : $from . ' 00:00:00',
             'started_at <= ?' => $to === '' ? null : $to . ' 23:59:59'] as $clause => $value) {
@@ -261,9 +267,9 @@ final class EmergencyPlanRepository extends Repository
         });
     }
 
-    public function start(array $plan, string $actor, string $key, array $recipients, int $missing, string $baseUrl): int
+    public function start(array $plan, string $actor, string $key, array $recipients, int $missing, string $baseUrl, ?string $triggerGroup = null): int
     {
-        return $this->transaction(function () use ($plan, $actor, $key, $recipients, $missing, $baseUrl): int {
+        return $this->transaction(function () use ($plan, $actor, $key, $recipients, $missing, $baseUrl, $triggerGroup): int {
             // Lock/compare the plan before storing its immutable execution snapshot.
             $this->execute('UPDATE emergency_plans SET revision = revision WHERE id = ? AND published_revision = ? AND published = 1', [$plan['id'], $plan['revision']]);
             // MySQL reports unchanged rows as zero, so read under the acquired row lock.
@@ -271,8 +277,8 @@ final class EmergencyPlanRepository extends Repository
             if ((int) $current['revision'] !== (int) $plan['revision'] || !(bool) $current['published']) {
                 throw new HttpException(409, 'Der Plan wurde geändert. Bitte neu öffnen und prüfen.');
             }
-            $this->execute('INSERT INTO emergency_events (plan_id, title, actor, request_key, snapshot, state, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                [$plan['id'], $plan['title'], $actor, $key, self::json($plan['definition']), '{}', gmdate('Y-m-d H:i:s')]);
+            $this->execute('INSERT INTO emergency_events (plan_id, title, actor, request_key, snapshot, state, started_at, trigger_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                [$plan['id'], $plan['title'], $actor, $key, self::json($plan['definition']), '{}', gmdate('Y-m-d H:i:s'), $triggerGroup]);
             $id = (int) $this->pdo->lastInsertId();
             $this->append($id, '', $actor, 'started', 'Ereignis gestartet; Planversion ' . $plan['revision'] . '.');
             foreach ($recipients as $recipient) {

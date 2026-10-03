@@ -15,12 +15,13 @@ namespace App\Services\Storage\Agent;
  *   Datenrate (lesen + schreiben) + IOPS (lesen + schreiben) + Latenz
  *   + INFLIGHT_WEIGHT je laufender Rueckholung von diesem Tier
  *
- * Fair use: Das zuletzt gewaehlte Tier setzt aus und das naechstbeste kommt
- * zum Zug, ausser dessen Bewertung liegt um mehr als SKIP_TOLERANCE hoeher
- * (Alternative zu stark ausgelastet oder zu langsam).
+ * Fair use: Unter den Tiers, deren Bewertung weniger als SKIP_TOLERANCE ueber
+ * der besten liegt, kommt das am laengsten nicht gewaehlte zum Zug (Reihum;
+ * eine deutlich staerker ausgelastete oder langsamere Alternative bleibt
+ * aussen vor).
  *
- * Laufende Rueckholungen und das zuletzt gewaehlte Tier teilen sich alle
- * recall-one-Prozesse ueber eine Zustandsdatei (mit flock geschuetzt).
+ * Laufende Rueckholungen und die Reihenfolge der letzten Wahlen teilen sich
+ * alle recall-one-Prozesse ueber eine Zustandsdatei (mit flock geschuetzt).
  */
 final class RecallBalancer
 {
@@ -50,7 +51,7 @@ final class RecallBalancer
         $token = bin2hex(random_bytes(8));
         $order = [];
         $this->update(function (array $state) use ($candidates, $token, &$order): array {
-            $order = self::rank($candidates, self::inflight($state), isset($state['last']) ? (int) $state['last'] : null);
+            $order = self::rank($candidates, self::inflight($state), self::used($state));
             if ($order !== []) {
                 $state = self::assign($state, $token, (int) $order[0]['id'], $this->now());
             }
@@ -81,10 +82,11 @@ final class RecallBalancer
     /**
      * @param list<array{id:int,primary?:bool,bps?:int,iops?:float,latency_ms?:float|null}> $candidates
      * @param array<int,int> $inflight Laufende Rueckholungen je Tier
+     * @param array<int,int> $used     Laufende Nummer der letzten Wahl je Tier (groesser = juenger)
      *
      * @return list<array<string,mixed>>
      */
-    public static function rank(array $candidates, array $inflight = [], ?int $last = null): array
+    public static function rank(array $candidates, array $inflight = [], array $used = []): array
     {
         if ($candidates === []) {
             return [];
@@ -107,12 +109,41 @@ final class RecallBalancer
         }
         usort($candidates, static fn (array $a, array $b): int => [$a['score'], empty($a['primary']), (int) $a['id']] <=> [$b['score'], empty($b['primary']), (int) $b['id']]);
 
-        if ($last !== null && count($candidates) > 1 && (int) $candidates[0]['id'] === $last
-            && $candidates[1]['score'] - $candidates[0]['score'] <= self::SKIP_TOLERANCE) {
-            [$candidates[0], $candidates[1]] = [$candidates[1], $candidates[0]];
+        // Fair use: Unter den nahezu gleich bewerteten Tiers das am laengsten
+        // nicht gewaehlte nach vorn (auch bei drei und mehr Tiers reihum).
+        $pick = 0;
+        foreach ($candidates as $i => $candidate) {
+            if ($candidate['score'] - $candidates[0]['score'] >= self::SKIP_TOLERANCE) {
+                break;
+            }
+            if (($used[(int) $candidate['id']] ?? 0) < ($used[(int) $candidates[$pick]['id']] ?? 0)) {
+                $pick = $i;
+            }
+        }
+        if ($pick > 0) {
+            array_unshift($candidates, ...array_splice($candidates, $pick, 1));
         }
 
         return array_values($candidates);
+    }
+
+    /**
+     * @param array<string,mixed> $state
+     *
+     * @return array<int,int>
+     */
+    private static function used(array $state): array
+    {
+        $result = [];
+        foreach ((array) ($state['used'] ?? []) as $id => $seq) {
+            $result[(int) $id] = (int) $seq;
+        }
+        if ($result === [] && isset($state['last'])) {
+            // Stand vor Einfuehrung von "used".
+            $result[(int) $state['last']] = 1;
+        }
+
+        return $result;
     }
 
     /**
@@ -139,7 +170,11 @@ final class RecallBalancer
     private static function assign(array $state, string $token, int $id, int $now): array
     {
         $state['running'][$token] = ['id' => $id, 'pid' => (int) getmypid(), 'started' => (int) ($state['running'][$token]['started'] ?? $now)];
-        $state['last'] = $id;
+        $state['used'] = self::used($state);
+        $seq = max((int) ($state['seq'] ?? 0), ...($state['used'] !== [] ? $state['used'] : [0])) + 1;
+        $state['seq'] = $seq;
+        $state['used'][$id] = $seq;
+        unset($state['last']);
 
         return $state;
     }

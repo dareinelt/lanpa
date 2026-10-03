@@ -70,10 +70,11 @@ final class TargetMap
                     'kind' => (string) ($member['kind'] ?? 'smb'),
                     'total_bytes' => (int) ($member['total_bytes'] ?? 0),
                     'free_bytes' => (int) ($member['free_bytes'] ?? 0),
-                    'read_bps' => (int) ($member['read_bps'] ?? 0),
-                    'write_bps' => (int) ($member['write_bps'] ?? 0),
-                    'read_iops' => (float) ($member['read_iops'] ?? 0.0),
-                    'write_iops' => (float) ($member['write_iops'] ?? 0.0),
+                    // Veralteter Stand: keine Last- und Latenzwerte uebernehmen.
+                    'read_bps' => $stale ? 0 : (int) ($member['read_bps'] ?? 0),
+                    'write_bps' => $stale ? 0 : (int) ($member['write_bps'] ?? 0),
+                    'read_iops' => $stale ? 0.0 : (float) ($member['read_iops'] ?? 0.0),
+                    'write_iops' => $stale ? 0.0 : (float) ($member['write_iops'] ?? 0.0),
                     'latency_ms' => isset($member['latency_ms']) && !$stale ? (float) $member['latency_ms'] : null,
                 ];
             }

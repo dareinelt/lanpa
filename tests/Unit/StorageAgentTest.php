@@ -724,13 +724,19 @@ Runner::test('Rueckholung active-active: zuletzt verwendetes Ziel setzt aus, aus
     $tier = static fn (int $id, int $bps, float $latency, bool $primary = false): array => ['id' => $id, 'primary' => $primary, 'bps' => $bps, 'iops' => 0.0, 'latency_ms' => $latency];
 
     // Ziel 1 waere besser, wurde aber zuletzt verwendet: Ziel 2 kommt zum Zug.
-    Assert::same([2, 1], array_column(RecallBalancer::rank([$tier(1, 0, 5.0, true), $tier(2, 10 * 1048576, 6.0)], [], 1), 'id'));
+    Assert::same([2, 1], array_column(RecallBalancer::rank([$tier(1, 0, 5.0, true), $tier(2, 10 * 1048576, 6.0)], [], [1 => 1]), 'id'));
     // Alternative zu stark ausgelastet: zuletzt verwendetes Ziel bleibt.
-    Assert::same([1, 2], array_column(RecallBalancer::rank([$tier(1, 0, 5.0, true), $tier(2, 200 * 1048576, 6.0)], [], 1), 'id'));
+    Assert::same([1, 2], array_column(RecallBalancer::rank([$tier(1, 0, 5.0, true), $tier(2, 200 * 1048576, 6.0)], [], [1 => 1]), 'id'));
     // Alternative zu langsam: ebenso.
-    Assert::same([1, 2], array_column(RecallBalancer::rank([$tier(1, 0, 4.0, true), $tier(2, 0, 100.0)], [], 1), 'id'));
+    Assert::same([1, 2], array_column(RecallBalancer::rank([$tier(1, 0, 4.0, true), $tier(2, 0, 100.0)], [], [1 => 1]), 'id'));
+    // Alternative hat bereits eine laufende Rueckholung (Grenzfall genau SKIP_TOLERANCE): kein Aussetzen.
+    Assert::same([1, 2], array_column(RecallBalancer::rank([$tier(1, 0, 5.0, true), $tier(2, 0, 5.0)], [2 => 1], [1 => 1]), 'id'));
     // Nur ein Ziel: kein Aussetzen.
-    Assert::same([1], array_column(RecallBalancer::rank([$tier(1, 0, 5.0)], [], 1), 'id'));
+    Assert::same([1], array_column(RecallBalancer::rank([$tier(1, 0, 5.0)], [], [1 => 1]), 'id'));
+    // Drei gleichwertige Ziele: das am laengsten nicht gewaehlte zuerst (reihum, keines geht leer aus).
+    $three = [$tier(1, 0, 5.0, true), $tier(2, 0, 5.0), $tier(3, 0, 5.0)];
+    Assert::same([3, 1, 2], array_column(RecallBalancer::rank($three, [], [1 => 1, 2 => 2]), 'id'));
+    Assert::same([1, 2, 3], array_column(RecallBalancer::rank($three, [], [1 => 1, 2 => 2, 3 => 3]), 'id'));
 });
 
 Runner::test('Rueckholung active-active: gemeinsamer Zustand verteilt aufeinanderfolgende und gleichzeitige Rueckholungen', static function (): void {
@@ -749,7 +755,7 @@ Runner::test('Rueckholung active-active: gemeinsamer Zustand verteilt aufeinande
         $other->release($second['token']);
         $state = json_decode((string) file_get_contents($dir . '/recall-balance.json'), true);
         Assert::same([], $state['running']);
-        Assert::same(2, $state['last']);
+        Assert::same([1 => 1, 2 => 2], $state['used']);
 
         // Nacheinander: abwechselnd.
         $ids = [];
@@ -765,8 +771,28 @@ Runner::test('Rueckholung active-active: gemeinsamer Zustand verteilt aufeinande
         $balancer->switchTo($choice['token'], 2);
         $state = json_decode((string) file_get_contents($dir . '/recall-balance.json'), true);
         Assert::same(2, $state['running'][$choice['token']]['id']);
-        Assert::same(2, $state['last']);
+        Assert::same(2, array_search(max($state['used']), $state['used'], true));
         $balancer->release($choice['token']);
+
+        // Drei Tiers reihum, keines geht leer aus.
+        $three = $candidates;
+        $three[] = ['id' => 3, 'primary' => false, 'latency_ms' => 5.0];
+        $ids = [];
+        for ($i = 0; $i < 6; $i++) {
+            $choice = $balancer->acquire($three);
+            $ids[] = $choice['order'][0]['id'];
+            $balancer->release($choice['token']);
+        }
+        Assert::same([3, 1, 2, 3, 1, 2], $ids);
+
+        // Zustand aus einer frueheren Fassung ("last" statt "used"): zuletzt gewaehltes setzt aus.
+        file_put_contents($dir . '/recall-balance.json', json_encode(['last' => 1, 'running' => []]));
+        $choice = $balancer->acquire($candidates);
+        Assert::same(2, $choice['order'][0]['id']);
+        $balancer->release($choice['token']);
+        $state = json_decode((string) file_get_contents($dir . '/recall-balance.json'), true);
+        Assert::false(isset($state['last']));
+        Assert::same([1 => 1, 2 => 2], $state['used']);
     } finally {
         storageAgentRemove($dir);
     }
@@ -794,6 +820,15 @@ Runner::test('Rueckholung active-active: Last und Latenz je Ziel in targets.json
         Assert::same(20, $member['write_bps']);
         Assert::same(3.5, $member['read_iops']);
         Assert::same(4.2, $member['latency_ms']);
+
+        // Veralteter Stand: weder Last noch Latenz uebernehmen.
+        $data = json_decode((string) file_get_contents($file), true);
+        $data['updated'] = time() - 600;
+        file_put_contents($file, json_encode($data));
+        $member = (new TargetMap($file))->all()[0]['members'][0];
+        Assert::same(0, $member['read_bps']);
+        Assert::same(0.0, $member['read_iops']);
+        Assert::null($member['latency_ms']);
     } finally {
         @unlink($file);
     }

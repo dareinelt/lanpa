@@ -416,10 +416,11 @@ Format abgestimmt zwischen `TieringStore` (Agent) und `TieringClient`
   wie in `storage_targets`; `latency_ms` = Dauer der Erreichbarkeitsprüfung
   (`stat -f` bzw. `ls` beim S3-Bucket, gleitender Mittelwert 0,7/0,3, `null`
   wenn nicht online). Grundlage der Lastverteilung beim Zurückholen.
-- `recall-balance.json`: `{"last":tierId,"running":{token:{"id","pid","started"}}}`
-  – zuletzt gewähltes Tier und laufende Rückholungen je `recall-one`-Prozess
-  (`RecallBalancer`, mit `flock`). Einträge beendeter Prozesse bzw. älter als
-  6 h werden verworfen.
+- `recall-balance.json`: `{"seq":n,"used":{tierId:n},"running":{token:{"id","pid","started"}}}`
+  – laufende Nummer der letzten Wahl je Tier (fair use, reihum) und laufende
+  Rückholungen je `recall-one`-Prozess (`RecallBalancer`, mit `flock`).
+  Einträge beendeter Prozesse bzw. älter als 6 h werden verworfen. Ein
+  älteres `{"last":tierId}` wird beim nächsten Zugriff übernommen.
 - `dumps/nextcloud.dump`: `pg_dump -Fc` (wird als Quelle `nextcloud-db`
   synchronisiert).
 - `s3-tmp/`: Zwischenspeicher von s3fs (beim Start geleert).
@@ -706,9 +707,11 @@ Fehler ⇒ `StorageNotAvailableException` (WebDAV 503).
    Untergrenzen; bps/iops = lesen + schreiben aus `targets.json`; Latenz =
    Maximum aus Monitor-Mittelwert und eigener Messung, ohne Messung 1,5 × die
    höchste gemessene). Aufsteigend sortiert, Gleichstand ⇒ primäres, dann
-   kleinere Kennung. **Fair use:** Ist das beste Tier das zuletzt gewählte
-   (`last`) und liegt das zweitbeste höchstens 0,5 darüber
-   (`SKIP_TOLERANCE`), tauschen beide. Das erste Tier wird unter derselben
+   kleinere Kennung. **Fair use:** Unter den Tiers, die weniger als 0,5
+   (`SKIP_TOLERANCE`) über dem besten liegen, rückt das am längsten nicht
+   gewählte (`used`) nach vorn; so kommen auch drei und mehr gleichwertige
+   Tiers reihum dran. Bei veraltetem `targets.json` (älter als 120 s) zählen
+   Last und Latenz als unbekannt. Das erste Tier wird unter derselben
    Sperre als laufend vermerkt (verteilt gleichzeitige Rückholungen),
    Ausweichen per `switchTo()`, am Ende `release()`.
 5. Kopie (bei Fehler nächstes Tier der Reihenfolge) nach

@@ -171,6 +171,7 @@ zwischen lokalem Konto und SSO kein „zweites Augenpaar“.
 | `node.checks` | Liste ≤ 20 Texte (je Pflicht, ≤ 300); bei `checklist` mind. 1 |
 | `node.dependencies` | Liste ≤ 80 von `{id, when}`; `id` muss ein **vorheriges** Element sein, keine Duplikate; `when` ∈ `always`, `yes`, `no` – `yes`/`no` nur, wenn der Vorgänger eine `decision` ist |
 | `node.join` | `all` (UND, Standard) oder `any` (ODER) |
+| `node.x`, `node.y` | optional, nur gemeinsam: Ganzzahlen 0–100000 (`MAX_COORDINATE`), Diagrammposition aus dem Drag-and-Drop im Editor; fehlen beide, wird automatisch angeordnet. Reines Layout ohne Einfluss auf den Ablauf |
 | `node.alarm_id` | Ganzzahl ≥ 0; bei `sms` mit `sms_mode = template` Pflicht (> 0), sonst auf `0` normalisiert |
 | `node.sms_mode` | nur `sms`: `template` (Alarmvorlage, Standard – auch für alte Pläne ohne Feld) oder `numbers` (einzelne Rufnummern); andere Typen → `template` |
 | `node.sms_numbers` | nur bei `numbers`: Liste 1–20 Rufnummern (`Validator::isPhoneNumber`, ≤ 64, getrimmt, Leerzeilen verworfen, entdoppelt); sonst `[]` |
@@ -308,8 +309,10 @@ Diagramm und Inspector komplett neu; Texteingaben rufen nur `refreshGraph()`
 | SMS an einzelne Rufnummern | Textarea Rufnummern (eine pro Zeile), Textarea SMS-Text (`maxLength` 255) mit Zähler `x/255` (`.ep-sms-counter`, `is-over` bei Überschreitung), Textbaustein-Schaltflächen und Beispielvorschau (nur Modus `numbers`) | Bausteine (`SMS_PLACEHOLDERS`, synchron zu `EmergencyPlanSms::PLACEHOLDERS`) werden per `setRangeText` an der Cursorposition eingefügt. Der Zähler nutzt `smsLength()` (gleiche Regel wie der Server) und wird über `smsRefresh` aus `mark()` aktualisiert, damit auch Änderungen am Plan- oder Schritttitel sofort zählen. |
 | Voraussetzungen | Fieldset „Voraussetzungen (vorherige Schritte)“ | Checkbox je **vorherigem** Schritt; Bedingung `Erledigt` bzw. bei Entscheidungen `Antwort Ja`/`Antwort Nein`. Klartext-Zusammenfassung („Startet, sobald ALLE/MINDESTENS EINE der Voraussetzungen erledigt ist: …“). Erster Schritt: „Startpunkt: keine Voraussetzungen.“ |
 | Verknüpfung UND/ODER | Segment-Schalter „Alle (UND)“ / „Eine genügt (ODER)“ (Inspector und Menüband „Ablauf“) | `node.join` = `all` / `any`; Schalter erscheint nur bei ≥ 2 Voraussetzungen. |
+| Schritt im Diagramm ziehen | Knoten mit der Maus ziehen (Schwelle 5 px, sonst normaler Klick) | Pointer-Events am `.ep-canvas` (`nodeDrag`). Beim ersten Ziehen werden die gerenderten Positionen **aller** Schritte als `node.x`/`node.y` festgeschrieben; der Knoten folgt live (`is-dragging`). **Loslassen auf freier Fläche**: nur Layout, Position auf 20-px-Raster gerundet, ein Journal-Schritt. **Loslassen auf einem anderen Schritt** (`is-drop-target`): `linkTo(id, ziel)` – Position bleibt unverändert, das Ziel wird **einzige** Voraussetzung (`when` bleibt erhalten, falls schon verbunden, sonst `always`), danach `dependencyOrder()` (stabile topologische Sortierung, damit Kanten weiter nach vorne zeigen). Ist das Ziel bereits (indirekter) Nachfolger, wird mit „Verbinden nicht möglich“ abgebrochen. `pointercancel` stellt den Ausgangszustand wieder her. |
+| Automatisch anordnen | Menüband „Ansicht“ → „Automatisch anordnen“ (`data-ep-auto-layout`) | Entfernt `x`/`y` aller Schritte (ein Journal-Schritt); danach gilt wieder das Ebenen-Layout. |
 | Reihenfolge | „Nach oben“ / „Nach unten“ | `move(±1)` tauscht Nachbarn und verweigert den Tausch, wenn danach eine Kante auf einen späteren Schritt zeigen würde („Verschieben würde eine Verbindung umkehren…“). |
-| Duplizieren | Button | `structuredClone` direkt dahinter, neue ID, Titel + „ (Kopie)“; Voraussetzungen werden übernommen, Nachfolger nicht. Max. 80. |
+| Duplizieren | Button | `structuredClone` direkt dahinter, neue ID, Titel + „ (Kopie)“, ohne `x`/`y`; Voraussetzungen werden übernommen, Nachfolger nicht. Max. 80. |
 | Löschen | Button mit `confirm`, Taste `Entf` bei fokussiertem Diagramm | Entfernt Schritt **und alle Kanten darauf**; Nachfolger ohne weitere Voraussetzungen werden Startpunkte. |
 | Rückgängig / Wiederholen | Schnellzugriff, Menüband, `Strg+Z` / `Strg+Y` (`Strg+Umschalt+Z`) | `undo()`/`redo()` stellen den Schnappschuss aus `journal` wieder her, setzen `dirty` und rendern neu. Betrifft nur den Entwurf im Browser, nie den Serverstand. |
 | Plan prüfen | Menüband „Prüfen“, Statusleiste | `validate()` – **Komfortprüfung im Browser**, Server bleibt maßgeblich (siehe 6). Fehler: leerer Plantitel, leerer Schritttitel, Checkliste ohne Prüfpunkt, SMS ohne Vorlage, SMS an einzelne Rufnummern ohne/mit ungültiger/zu vielen Rufnummern, ohne Text oder über 255 Zeichen, ungültiger Link. Hinweise: Schritt ohne Voraussetzung (außer dem ersten), Entscheidung ohne Folgeschritt. Betroffene Schritte werden in Liste (Badge) und Diagramm (`--error`/`--hint`) markiert; Klick auf einen Eintrag wählt den Schritt. |
@@ -328,9 +331,17 @@ Diagramm und Inspector komplett neu; Texteingaben rufen nur `refreshGraph()`
 - **Layout**: Ebene eines Elements = `max(Ebene der Vorgänger) + 1`, Start = 0.
   Innerhalb einer Ebene in Listenreihenfolge nebeneinander, zentriert.
   Raster: Knoten 240 × 92 px, Spaltenbreite 280 px, Zeilenhöhe 148 px;
-  SVG-Breite `max(340, maxSpalten × 280)`. Kein manuelles Positionieren –
-  Layout ergibt sich ausschließlich aus Reihenfolge und Kanten.
-- **Kanten**: kubische Bézierkurve von Knotenunterkante zu Oberkante mit
+  SVG-Breite `max(340, maxSpalten × 280)`. Gilt, solange kein Schritt eine
+  gespeicherte Position hat.
+- **Manuelles Layout**: Sobald ein Schritt `x`/`y` besitzt (Drag-and-Drop im
+  Editor), werden diese Koordinaten (linke obere Ecke, SVG-Einheiten) genutzt.
+  Schritte ohne Position (neu, dupliziert, eingefügt) landen unter ihrem
+  ersten Vorgänger bzw. oben links und weichen belegten Plätzen nach rechts
+  aus. SVG-Größe = größte Ausdehnung + Rand. Die Positionen sind reines
+  Layout und beeinflussen Reihenfolge und Ablauf nicht.
+- **Kanten**: kubische Bézierkurve von Knotenunterkante zu Oberkante (im
+  manuellen Layout: liegt das Ziel daneben oder höher, seitlich von Kante zu
+  Kante, sonst entsprechend weiter ausgebogen) mit
   Pfeil-Marker (eindeutige ID `ep-arrow-N` je Diagramm); `yes`/`no` erhalten
   ein Label „Ja“/„Nein“.
 - **Knoten**: `<g role="button" tabindex="0">` mit `aria-label` „N. Titel“;

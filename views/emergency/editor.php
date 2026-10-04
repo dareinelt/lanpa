@@ -198,6 +198,12 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
             </div>
             <div class="ep-rg">
                 <div class="ep-rg__items">
+                    <?= $rb('template', 'Automatisch anordnen', 'data-ep-auto-layout title="Per Drag-and-Drop gesetzte Positionen verwerfen"') ?>
+                </div>
+                <div class="ep-rg__label">Layout</div>
+            </div>
+            <div class="ep-rg">
+                <div class="ep-rg__items">
                     <?= $rb('panel-left', 'Schritte-Liste', 'data-ep-toggle-panel="palette" aria-pressed="true"') ?>
                     <?= $rb('panel-right', 'Eigenschaften', 'data-ep-toggle-panel="inspector" aria-pressed="true"') ?>
                 </div>
@@ -230,7 +236,7 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
             <div class="ep-canvas" data-ep-canvas tabindex="0" aria-describedby="ep-canvas-hint">
                 <div class="ep-diagram" data-ep-diagram></div>
             </div>
-            <p id="ep-canvas-hint" class="ep-canvas__hint">Automatisches Layout · Schritt anklicken zum Bearbeiten · Ziehen zum Verschieben der Ansicht · Strg + Mausrad zum Zoomen · Baustein aus der linken Spalte hierher ziehen</p>
+            <p id="ep-canvas-hint" class="ep-canvas__hint">Schritt anklicken zum Bearbeiten · Schritt ziehen zum Verschieben, auf einen anderen Schritt ziehen macht diesen zur Voraussetzung · Hintergrund ziehen verschiebt die Ansicht · Strg + Mausrad zum Zoomen · Baustein aus der linken Spalte hierher ziehen</p>
             <div class="ep-canvas__zoom" role="toolbar" aria-label="Zoom">
                 <button type="button" class="ep-qb" data-ep-zoom="out" title="Verkleinern"><?= $icon('zoom-out') ?></button>
                 <span data-ep-zoom-level>100 %</span>
@@ -314,7 +320,9 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
             <h3>Schritte bearbeiten</h3>
             <p>Einen Schritt im Diagramm oder in der Liste anklicken. Rechts unter <strong>Eigenschaften</strong> Titel, Anweisung, Zuständigkeit, Telefon, Link und Zielzeit ausfüllen. Checklisten erhalten Prüfpunkte. SMS-Schritte gehen an eine bestehende Alarmvorlage (Gruppe) oder an einzelne Rufnummern mit eigenem Text (max. 255 Zeichen); Textbausteine wie Name des Notfallplans, Datum und Uhrzeit der Auslösung werden per Klick eingefügt und beim Auslösen ersetzt. Ein <strong>Rechtsklick</strong> auf einen Schritt im Diagramm öffnet ein Menü mit <em>Duplizieren, Kopieren, Einfügen, Rückgängig</em> und <em>Löschen</em>. Eingefügt wird hinter dem markierten Schritt – auch in einen anderen Plan.</p>
             <h3>Verbindungen (Voraussetzungen)</h3>
-            <p>Ein Schritt startet, wenn seine Voraussetzungen erfüllt sind. Rechts lassen sich vorherige Schritte als Voraussetzung anhaken; bei Entscheidungen zusätzlich die Antwort <em>Ja</em> oder <em>Nein</em>. <strong>UND</strong> = alle Voraussetzungen müssen erledigt sein, <strong>ODER</strong> = eine genügt (führt Ja/Nein-Zweige wieder zusammen). Verbindungen zeigen immer von oben nach unten; die Reihenfolge ändern Sie mit <em>Nach oben/unten</em>.</p>
+            <p>Ein Schritt startet, wenn seine Voraussetzungen erfüllt sind. Rechts lassen sich vorherige Schritte als Voraussetzung anhaken; bei Entscheidungen zusätzlich die Antwort <em>Ja</em> oder <em>Nein</em>. <strong>UND</strong> = alle Voraussetzungen müssen erledigt sein, <strong>ODER</strong> = eine genügt (führt Ja/Nein-Zweige wieder zusammen). Die Reihenfolge ändern Sie mit <em>Nach oben/unten</em>.</p>
+            <h3>Drag-and-Drop im Diagramm</h3>
+            <p>Einen Schritt im Diagramm mit der Maus ziehen und auf freier Fläche loslassen, um ihn zu verschieben – das ändert nur die Darstellung, nicht den Ablauf. Wird der Schritt auf einen <strong>anderen Schritt</strong> gezogen, wird dieser zur (einzigen) Voraussetzung: Der Ablaufpfeil wird umgehängt und die Reihenfolge bei Bedarf angepasst. <em>Ansicht → Automatisch anordnen</em> verwirft die eigenen Positionen.</p>
             <h3>Prüfen, speichern, freigeben</h3>
             <p><strong>Plan prüfen</strong> markiert unvollständige Schritte. <strong>Speichern</strong> legt immer nur einen Entwurf an – veröffentlicht wird ausschließlich über die <strong>Vier-Augen-Freigabe</strong> durch eine unbeteiligte Person. Speichern löst keine SMS aus.</p>
             <h3>Live-Vorschau</h3>

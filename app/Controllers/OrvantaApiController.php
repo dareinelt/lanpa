@@ -77,6 +77,14 @@ final class OrvantaApiController extends Controller
         });
     }
 
+    /**
+     * Rohe Internet-Kopfzeilen einer Nachricht (Kontextmenue „Info“).
+     */
+    public function messageHeaders(Request $request): Response
+    {
+        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->messageHeaders($access['impersonate'], $this->requireId($request->query('id'))));
+    }
+
     public function send(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {

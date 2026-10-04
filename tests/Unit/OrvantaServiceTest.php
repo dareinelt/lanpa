@@ -277,6 +277,17 @@ Runner::test('Orvanta: Nachrichtenliste und Nachricht werden gelesen', function 
     Assert::false(str_contains($message['body_html'], '<script'), 'Skripte werden entfernt.');
 });
 
+Runner::test('Orvanta: Info liefert rohe Kopfzeilen aus dem MIME-Inhalt', function (): void {
+    $parts = orvantaExchange();
+    $info = $parts['exchange']->messageHeaders('demo@demo.local', 'demo-msg-1');
+    Assert::same('demo-msg-1', $info['id']);
+    Assert::same('mime', $info['source']);
+    Assert::contains('item:MimeContent', $parts['transport']->last());
+    Assert::true(str_starts_with($info['headers'], 'Received: '), 'Kopf beginnt mit Received.');
+    Assert::contains("\r\nMessage-ID: <demo-msg-1@", $info['headers']);
+    Assert::false(str_contains($info['headers'], '<div'), 'Nachrichtentext ist nicht enthalten.');
+});
+
 Runner::test('Orvanta: Senden erzeugt CreateItem mit Empfaengern', function (): void {
     $parts = orvantaExchange();
     $parts['exchange']->send('demo@demo.local', [

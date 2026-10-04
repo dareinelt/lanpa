@@ -137,10 +137,10 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     /**
      * @param array<string,mixed> $message
      */
-    private function messageXml(array $message, bool $full = false): string
+    private function messageXml(array $message, bool $full = false, string $extra = ''): string
     {
         $e = static fn (string $value): string => EwsXml::escape($value);
-        $xml = '<t:Message><t:ItemId Id="' . $message['id'] . '" ChangeKey="CK1"/><t:ItemClass>IPM.Note</t:ItemClass><t:Subject>' . $e($message['subject']) . '</t:Subject>'
+        $xml = '<t:Message>' . $extra . '<t:ItemId Id="' . $message['id'] . '" ChangeKey="CK1"/><t:ItemClass>IPM.Note</t:ItemClass><t:Subject>' . $e($message['subject']) . '</t:Subject>'
             . '<t:Importance>' . ($message['importance'] ?? 'Normal') . '</t:Importance><t:DateTimeReceived>' . EwsXml::dateTime((int) $message['received']) . '</t:DateTimeReceived><t:DateTimeSent>' . EwsXml::dateTime((int) $message['received'] - 60) . '</t:DateTimeSent>'
             . '<t:Size>' . (12000 + strlen($message['subject']) * 97) . '</t:Size><t:HasAttachments>' . ($message['att'] ? 'true' : 'false') . '</t:HasAttachments>'
             . ($full ? '<t:Body BodyType="HTML">' . $e($this->bodyFor($message)) . '</t:Body>' : '')
@@ -176,6 +176,28 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             . '</t:Attachments>';
     }
 
+    /**
+     * Beispielhafter MIME-Quelltext (nur Kopf + kurzer Text) fuer „Info“.
+     *
+     * @param array<string,mixed> $message
+     */
+    private function mimeFor(array $message): string
+    {
+        $date = gmdate('D, d M Y H:i:s', (int) $message['received'] - 60) . ' +0000';
+        $host = substr(strrchr($message['from'][1], '@') ?: '@example.org', 1);
+
+        return "Received: from mail.example.org (mail.example.org [192.0.2.10])\r\n\tby exchange.example.org with ESMTPS id " . substr(sha1($message['id']), 0, 12) . ";\r\n\t" . $date . "\r\n"
+            . 'Received: from ' . $host . ' ([198.51.100.7]) by mail.example.org with ESMTP; ' . $date . "\r\n"
+            . 'Authentication-Results: exchange.example.org; spf=pass smtp.mailfrom=' . $host . "; dkim=pass; dmarc=pass\r\n"
+            . 'From: "' . $message['from'][0] . '" <' . $message['from'][1] . ">\r\n"
+            . "To: Ich <ich@example.org>\r\nCc: Team Intranet <team-intranet@example.org>\r\n"
+            . 'Subject: =?UTF-8?B?' . base64_encode($message['subject']) . "?=\r\n"
+            . 'Date: ' . $date . "\r\nMessage-ID: <" . $message['id'] . '@' . $host . ">\r\n"
+            . 'X-Priority: ' . (($message['importance'] ?? 'Normal') === 'High' ? '1 (Highest)' : '3 (Normal)') . "\r\n"
+            . "X-Mailer: Orvanta Demo\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"
+            . $this->bodyFor($message) . "\r\n";
+    }
+
     private function getItem(string $xml): string
     {
         preg_match('/<t:ItemId Id="([^"]+)"/', $xml, $m);
@@ -198,7 +220,9 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
         }
         foreach (array_merge($this->sampleMessages(), [['id' => 'demo-sent-1', 'subject' => 'AW: Protokoll Dienstbesprechung', 'from' => ['Ich', 'ich@example.org'], 'received' => time() - 5400, 'read' => true, 'att' => false, 'preview' => 'Danke, ich habe die Maßnahmen in den Notfallplan übernommen.']]) as $message) {
             if ($message['id'] === $id) {
-                return $this->envelope('<m:GetItemResponse><m:ResponseMessages><m:GetItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items>' . $this->messageXml($message, true) . '</m:Items></m:GetItemResponseMessage></m:ResponseMessages></m:GetItemResponse>');
+                $mime = str_contains($xml, 'item:MimeContent') ? '<t:MimeContent CharacterSet="UTF-8">' . base64_encode($this->mimeFor($message)) . '</t:MimeContent>' : '';
+
+                return $this->envelope('<m:GetItemResponse><m:ResponseMessages><m:GetItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items>' . $this->messageXml($message, true, $mime) . '</m:Items></m:GetItemResponseMessage></m:ResponseMessages></m:GetItemResponse>');
             }
         }
 

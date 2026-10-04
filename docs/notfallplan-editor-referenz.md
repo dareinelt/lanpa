@@ -261,6 +261,12 @@ Wurzel ist `.ep-office[data-ep-editor]`, ein CSS-Grid mit vier Zeilen auf
    serverseitig gerenderte Freigabe-Panel `[data-ep-review-panel]` (klassische
    Formulare `data-ep-review-form`) und das Freigabeprotokoll;
    `<dialog data-ep-dialog="help">` die Bedienhilfe und Tastenkürzel.
+   Nur bei neuen Plänen (`id = 0`) zusätzlich `<dialog data-ep-setup>`: Pflicht-
+   Overlay für Plantitel (`data-ep-setup-title`) und Kurzbeschreibung
+   (`data-ep-setup-description`), das beim Öffnen modal erscheint, sich nicht
+   per Esc/Hintergrundklick schließen lässt und die Werte nach `definition`
+   sowie in die Plan-Angaben übernimmt; *Abbrechen* (`data-ep-setup-cancel`)
+   löst `data-ep-close` aus.
 6. `<noscript>`-Hinweis: ohne JavaScript keine Bearbeitung.
 
 Mehrere Bedienelemente mit derselben Funktion (z. B. `data-ep-save` in

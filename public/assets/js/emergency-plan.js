@@ -787,7 +787,7 @@
         }));
         $$('[data-ep-open-dialog]').forEach(b => b.addEventListener('click', () => $(`[data-ep-dialog="${b.dataset.epOpenDialog}"]`).showModal()));
         $$('[data-ep-close-dialog]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
-        $$('dialog').forEach(d => d.addEventListener('click', event => { if (event.target === d) d.close(); }));
+        $$('dialog:not([data-ep-setup])').forEach(d => d.addEventListener('click', event => { if (event.target === d) d.close(); }));
         $('[data-ep-close]').addEventListener('click', async event => {
             const fallback = event.currentTarget.href;
             const standalone = window.opener || window.history.length <= 1;
@@ -866,6 +866,38 @@
         render();
         updateHistoryButtons();
         if (definition.nodes.length) requestAnimationFrame(fitZoom);
+
+        // ---- Neuer Plan: Plan-Angaben als Pflicht-Overlay vor der ersten Bearbeitung ----
+        const setup = $('[data-ep-setup]');
+        if (setup && !definition.title.trim()) {
+            const setupTitle = setup.querySelector('[data-ep-setup-title]');
+            const setupDescription = setup.querySelector('[data-ep-setup-description]');
+            setupTitle.value = definition.title; setupDescription.value = definition.description;
+            let completed = false;
+            [setupTitle, setupDescription].forEach(field => field.addEventListener('input', () => field.setCustomValidity('')));
+            setup.querySelector('[data-ep-setup-form]').addEventListener('submit', event => {
+                const empty = [setupTitle, setupDescription].find(field => !field.value.trim());
+                if (empty) {
+                    event.preventDefault();
+                    empty.setCustomValidity('Bitte ausfüllen.'); empty.reportValidity();
+                    return;
+                }
+                completed = true;
+                definition.title = setupTitle.value.trim(); definition.description = setupDescription.value.trim();
+                title.value = definition.title; description.value = definition.description;
+                mark(); render();
+                message.textContent = 'Plan-Angaben übernommen. Fügen Sie jetzt die ersten Schritte hinzu.';
+            });
+            // Esc schließt das Overlay nicht – ohne Angaben ist keine Bearbeitung möglich.
+            setup.addEventListener('cancel', event => event.preventDefault());
+            setup.addEventListener('close', () => { if (!completed) setup.showModal(); });
+            setup.querySelector('[data-ep-setup-cancel]').addEventListener('click', () => {
+                completed = true; setup.close();
+                $('[data-ep-close]').click();
+            });
+            setup.showModal();
+            setupTitle.focus();
+        }
     }
 
     function renderStaticDiagram(root) {

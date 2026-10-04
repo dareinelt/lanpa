@@ -329,5 +329,21 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
             <p class="ep-hint">Beispielvorlagen (Brandfall, MANV) sind nur Ausgangspunkte und müssen fachlich geprüft werden.</p>
         </div>
     </dialog>
+
+    <?php if ((int) $plan['id'] === 0) { ?>
+    <!-- Overlay: Plan-Angaben beim Anlegen eines neuen Plans (Pflicht vor der Bearbeitung) -->
+    <dialog class="ep-dialog ep-alert ep-setup" data-ep-setup aria-labelledby="ep-setup-heading" aria-describedby="ep-setup-text">
+        <form method="dialog" data-ep-setup-form>
+            <h2 id="ep-setup-heading" class="ep-alert__heading">Neuen Notfallplan anlegen</h2>
+            <p id="ep-setup-text" class="ep-alert__text">Bitte zuerst Plantitel und Kurzbeschreibung angeben. Beides lässt sich später unter <strong>Plan-Angaben</strong> ändern.</p>
+            <label>Plantitel <input data-ep-setup-title maxlength="190" required placeholder="z. B. Brandfall" autocomplete="off"></label>
+            <label>Kurzbeschreibung / erste Hinweise <textarea data-ep-setup-description rows="4" maxlength="4000" required placeholder="Was Einsatzkräfte zuerst wissen müssen"></textarea></label>
+            <div class="ep-alert__actions">
+                <button type="submit" class="button button--primary">Bearbeitung beginnen</button>
+                <button type="button" class="button button--ghost" data-ep-setup-cancel>Abbrechen</button>
+            </div>
+        </form>
+    </dialog>
+    <?php } ?>
 </div>
 <noscript><p class="flash flash--error">Der Planeditor benötigt JavaScript. Ohne JavaScript können keine Pläne bearbeitet werden.</p></noscript>

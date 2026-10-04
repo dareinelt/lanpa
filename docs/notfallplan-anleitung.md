@@ -104,6 +104,10 @@ Protokoll lesbar, aber nicht mehr bearbeitbar.
    Menüband mit den Reitern **Start**, **Ablauf & Verbindungen**,
    **Prüfen & Freigabe** und **Ansicht**, darunter links die Schritte, in der
    Mitte das Ablaufdiagramm, rechts die Eigenschaften des gewählten Schritts.
+   Beim Öffnen erscheint zuerst ein Overlay für **Plantitel** und
+   **Kurzbeschreibung / erste Hinweise**; erst danach ist die Bearbeitung
+   möglich (später änderbar über **Plan-Angaben**, *Abbrechen* schließt den
+   Editor).
    Optional im Reiter **Start** Beispiel Brandfall/MANV übernehmen; örtliche
    Vorgaben vollständig einarbeiten.
 3. Schritte hinzufügen: Maßnahme, Kontakt, Entscheidung, Checkliste, Hinweis,

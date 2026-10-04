@@ -1,0 +1,620 @@
+# Orvanta – technische Referenz (für Entwickler und Coding-Agenten)
+
+Ergänzt [docs/orvanta.md](orvanta.md) (Funktionsumfang, Oberfläche,
+Einrichtung, Admin-Einstellungen, Sicherheit aus Betreibersicht). Dieses
+Dokument beschreibt, **wie** die Mail- und Kalender-App unter `/office/orvanta`
+aufgebaut ist: Dateien, Zugriffsprüfung, JSON-API, EWS-Anbindung,
+Datenhaltung, Anhänge und Zwischenspeicher, Terminerinnerungen, Frontend,
+Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
+`Datei` + Symbol angegeben – bei Abweichungen gilt der Code.
+
+**Kurzfassung (TL;DR)**
+
+- Orvanta ist ein **zustandsloser EWS-Client**: Mails, Termine, Kontakte,
+  Aufgaben und Notizen liegen ausschließlich in Exchange. Lokal (MySQL) gibt es
+  nur Einstellungen (`orvanta_settings`), Erinnerungszustände
+  (`orvanta_reminders`) und den Bestand des Anhang-Zwischenspeichers
+  (`orvanta_cache_items`).
+- Jeder Exchange-Zugriff läuft über `OrvantaExchangeService::call()` →
+  `EwsXml::envelope()` (SOAP mit `ExchangeImpersonation` des SSO-Benutzers) →
+  `ExchangeTransportInterface::post()` (`CurlExchangeTransport` bzw.
+  `DemoExchangeTransport` bei `exchange_host = demo` außerhalb der Produktion).
+- Zugriff: `OrvantaController::authorize()` – SSO-Benutzer, Exchange aktiv,
+  App-Freigabe `orvanta`, Office-Kachel zugänglich, Postfachadresse vorhanden.
+  Jede API-Route ruft diese Prüfung über `OrvantaApiController::handle()` auf.
+- API: `/api/orvanta/*`, JSON rein/raus, POST mit CSRF (`X-CSRF-Token` oder
+  `_token`), Fehler immer als `{"error": "…"}` mit HTTP-Status.
+- Anhänge werden über **signierte Kurzzeit-Tokens** (5 Min., JWT mit aus
+  `SecretBox` abgeleitetem Schlüssel) geöffnet: Euro-Office-Viewer, Browser
+  oder Download. Geöffnete Anhänge landen im Nextcloud-Bereich des Benutzers
+  (Zwischenspeicher mit eigenem Quota, FIFO-Verdrängung).
+- Erinnerungen: Server gleicht höchstens alle 5 Minuten die Termine der
+  nächsten 48 h mit `orvanta_reminders` ab; jeder Poll liefert fällige
+  Erinnerungen **genau einmal** (`due`, danach `delivered`) plus alle aktiven.
+- Frontend: Vanilla-JS ohne Build (`public/assets/js/orvanta.js`), strikte CSP
+  (keine Inline-Styles) – HTML-Mails werden serverseitig bereinigt und
+  clientseitig per `inlineStylesToCssom()` auf CSSOM umgestellt.
+
+## Inhalt
+
+1. Begriffe
+2. Code-Landkarte
+3. Routen, Zugriff und API-Rahmen
+4. Datenhaltung
+5. Exchange-Anbindung (EWS)
+6. API-Verträge und Grenzwerte
+7. Anhänge, Viewer und Zwischenspeicher
+8. Terminerinnerungen
+9. Frontend
+10. HTML-Bereinigung und CSP
+11. Invarianten (nicht brechen!)
+12. Tests
+13. Änderungsrezepte
+14. Bekannte Eigenheiten
+
+---
+
+## 1. Begriffe
+
+| Begriff (UI) | Code | Bedeutung |
+| --- | --- | --- |
+| Benutzer-ID | `$access['uid']` = `office_uid` ?? `username` | Schlüssel für lokale Tabellen und Nextcloud-Bereich |
+| Postfach / Impersonation | `$access['impersonate']`, `OrvantaConfigService::impersonationAddress()` | SMTP-Adresse aus dem AD (`exchange_identity = smtp`) oder `username@<exchange_upn_domain>` (`upn`); im Demo-Modus ersatzweise `username@demo.local` |
+| Dienstkonto | `exchange_service_user` / `exchange_service_password` | Konto mit `ApplicationImpersonation`; Kennwort mit `SecretBox` verschlüsselt |
+| Element-ID | `id` + `change_key` | EWS-`ItemId` (Base64, opak); `change_key` wird nur bei `updateEvent()` mitgesendet |
+| Ordnerschlüssel | `folderKey()` (JS), `EwsXml::folderId()` | Systemordner als Kleinbuchstaben-Name (`inbox`, `drafts`, …), eigene Ordner als `FolderId` |
+| Zwischenspeicher | `orvanta_cache_items`, `OrvantaAttachmentService::cache()` | Kopie geöffneter Anhänge im Nextcloud-Ordner `<cache_folder>/` mit Quota `cache_quota_mb` |
+| Erinnerung | `orvanta_reminders`-Zeile | Lokaler Zustand einer Exchange-Terminerinnerung (`pending` → `delivered` → `dismissed`/`snoozed`) |
+| Demo-Modus | `OrvantaConfigService::isDemo()` | `exchange_host = demo` und `APP_ENV ≠ production` → `DemoExchangeTransport` |
+
+## 2. Code-Landkarte
+
+| Datei | Verantwortung |
+| --- | --- |
+| `app/Controllers/OrvantaController.php` | `index()` (App-Seite im Layout `layouts.editor`, Konfiguration als `$orvanta`), `openAttachment()` (Viewer/Inline/Download), `attachmentFile()` (Rohdatei für den DocumentServer), statisch `authorize()` (gemeinsame Zugriffsprüfung), `inlineType()` (sichere Inline-Typen) |
+| `app/Controllers/OrvantaApiController.php` | JSON-API; Rahmen `handle()` (Zugriff, Body, CSRF, Fehlerabbildung), Hilfen `readBody()`, `mailPayload()`, `addresses()`, `ids()`, `requireId()`, `str()/int()/bool()`, `resync()` |
+| `app/Controllers/Admin/OfficeController.php` | `updateOrvanta()` (Formular → `OrvantaConfigService::save()`), `testOrvanta()` (`testConnection()`), `render()` übergibt `orvanta*`-Variablen an `views/admin/office.php` |
+| `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()` |
+| `app/Services/Orvanta/OrvantaExchangeService.php` | Fachlogik je Modul (siehe Abschnitt 5), `call()` (SOAP + Fehlerbehandlung), `translate()` (EWS-Fehlercodes → deutsche Meldung), Mapper `messageSummary()`, `calendarSummary()`, `contactData()`, `taskData()`, `attachmentList()` |
+| `app/Services/Orvanta/EwsXml.php` | `envelope()`, `parse()`, `error()`, `text()/attr()/bool()/elements()`, `itemId()/itemIds()`, `mailbox()/mailboxes()/recipients()`, `folderId()`, `dateTime()` (UTC), `timestamp()`, `escape()` |
+| `app/Contracts/ExchangeTransportInterface.php` | `post(url, xml, options): {status, body, error}` |
+| `app/Services/Orvanta/CurlExchangeTransport.php` | cURL-POST, Auth `negotiate` (`CURLAUTH_NEGOTIATE \| NTLM`, ohne Konto `:` = Keytab), `ntlm`, `basic`; keine Redirects, nur HTTP(S) |
+| `app/Services/Orvanta/DemoExchangeTransport.php` | Beispieldaten; erkennt die Operation per `str_contains()` am SOAP-Text; schreibende Aufrufe werden bestätigt, nicht gespeichert |
+| `app/Services/Orvanta/MailHtmlSanitizer.php` | `clean(html): {html, blocked_images}` – Whitelist für Tags/Attribute (Abschnitt 10) |
+| `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()` |
+| `app/Services/Orvanta/OrvantaNotificationService.php` | `sync()`, `poll()`, `dismiss()`, `snooze()`, `relative()` |
+| `app/Services/Orvanta/OrvantaException.php` | Fehler mit anzeigbarer Meldung und HTTP-Status (`status()`, Standard 502) |
+| `app/Repositories/OrvantaRepository.php` | Einstellungen, Erinnerungen (`syncReminders()`, `dueReminders()`, `activeReminders()`, `markDelivered()`, `dismissReminder()`, `snoozeReminder()`, `purgeReminders()`), Zwischenspeicher (`cacheUsage()`, `findCacheItem()`, `addCacheItem()`, `oldestCacheItems()`, `deleteCacheItem()`, `cacheItems()`, `cacheUsagePerUser()`); SQL kompatibel zu MySQL und SQLite |
+| `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchange()`, `orvantaAttachments()`, `orvantaNotifications()`; `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
+| `app/Controllers/Controller.php` | `orvantaRemindersVisible()` → View-Variable `$orvantaReminders` (Kopfzeilen-Erinnerungen auf allen Seiten) |
+| `app/Services/Office/OfficeAppCatalog.php` | App `orvanta` (`kind = intranet`), `ORVANTA_PATH = '/office/orvanta'` |
+| `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`, `MAX_BYTES` (16 MiB) |
+| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste, `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, profile, settings, help, reminder) |
+| `views/orvanta/viewer.php` | Euro-Office-Viewer `.ov-viewer[data-orvanta-viewer]` mit `data-api`, `data-config`, `data-download` und Download-Fallback |
+| `views/admin/office.php` | Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer) |
+| `views/layouts/base.php` | Mitteilungsmenü mit `data-orvanta-reminders` / `data-orvanta-reminder-list`, lädt `orvanta-reminders.js` (mit `data-csrf`) |
+| `public/assets/js/orvanta.js` | App (Abschnitt 9) |
+| `public/assets/js/orvanta-reminders.js` | Erinnerungen in der Kopfzeile aller übrigen Seiten |
+| `public/assets/js/orvanta-viewer.js` | Lädt `api.js` des DocumentServers und startet `DocsAPI.DocEditor` |
+| `public/assets/css/orvanta.css` | Präfix `.ov-*`, Grid-Layout, Breakpoints 1200/900 px, Druck |
+| `database/migrations/033_create_orvanta_tables.sql` | Drei Tabellen (Abschnitt 4) |
+| `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
+| `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
+
+## 3. Routen, Zugriff und API-Rahmen
+
+### 3.1 Routen
+
+Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
+`public/index.php`; die Prüfung erfolgt im Controller.
+
+| Methode | Pfad | Controller | Zweck |
+| --- | --- | --- | --- |
+| GET | `/office/orvanta[?modul=…&termin=…]` | `OrvantaController::index` | App |
+| GET | `/office/orvanta/anhang/oeffnen?token=` | `openAttachment` | Anhang öffnen (Session + Token, `uid` muss passen) |
+| GET | `/office/orvanta/anhang/datei?token=` | `attachmentFile` | Rohdatei für den DocumentServer (**nur Token**, keine Session) |
+| GET | `/api/orvanta/status` | `status` | Benutzer, Demo, Host, Zwischenspeicher, Serverzeit |
+| GET | `/api/orvanta/mail/ordner` | `folders` | Ordnerbaum |
+| GET | `/api/orvanta/mail?ordner=&offset=&limit=&q=` | `messages` | Nachrichtenliste |
+| GET | `/api/orvanta/mail/nachricht?id=` | `message` | Nachricht inkl. bereinigtem HTML |
+| POST | `/api/orvanta/mail/senden` | `send` | Neue Nachricht |
+| POST | `/api/orvanta/mail/entwurf` | `draft` | Entwurf anlegen |
+| POST | `/api/orvanta/mail/antworten` | `respond` | `mode` = `reply`/`replyall`/`forward` |
+| POST | `/api/orvanta/mail/aktion` | `mailAction` | `action` = `read`/`unread`/`flag`/`unflag`/`move`/`delete`/`delete_permanent` |
+| POST | `/api/orvanta/anhang/link` | `attachmentLink` | Signierte URL + Öffnungsmodus |
+| POST | `/api/orvanta/anhang/nextcloud` | `attachmentToNextcloud` | Dauerhaft in Nextcloud speichern |
+| GET | `/api/orvanta/zwischenspeicher` | `cacheUsage` | Belegung |
+| POST | `/api/orvanta/zwischenspeicher/leeren` | `cacheClear` | Zwischenspeicher leeren |
+| GET | `/api/orvanta/kalender?start=&end=` | `calendar` | Termine im Zeitraum (≤ 100 Tage) |
+| GET / POST | `/api/orvanta/kalender/termin` | `event` / `saveEvent` | Termin lesen / anlegen oder ändern |
+| POST | `/api/orvanta/kalender/termin/loeschen` | `deleteEvent` | Termin löschen (mit Absage an Teilnehmer) |
+| POST | `/api/orvanta/kalender/antwort` | `meetingResponse` | `response` = `accept`/`tentative`/`decline` |
+| GET | `/api/orvanta/kontakte?q=` | `contacts` | Kontaktliste |
+| GET / POST | `/api/orvanta/kontakte/kontakt` | `contact` / `saveContact` | Kontakt lesen / speichern |
+| POST | `/api/orvanta/kontakte/loeschen` | `deleteContact` | Kontakt(e) löschen |
+| GET | `/api/orvanta/aufgaben?erledigt=0\|1` | `tasks` | Aufgabenliste |
+| GET / POST | `/api/orvanta/aufgaben/aufgabe` | `task` / `saveTask` | Aufgabe lesen / speichern |
+| POST | `/api/orvanta/aufgaben/loeschen` | `deleteTask` | Aufgabe(n) löschen |
+| GET | `/api/orvanta/notizen` | `notes` | Notizen |
+| GET / POST | `/api/orvanta/notizen/notiz` | `note` / `saveNote` | Notiz lesen / speichern |
+| POST | `/api/orvanta/notizen/loeschen` | `deleteNote` | Notiz(en) löschen |
+| GET | `/api/orvanta/erinnerungen[?sync=1]` | `reminders` | Fällige und aktive Erinnerungen |
+| POST | `/api/orvanta/erinnerungen/erledigt` | `dismissReminder` | Erinnerung schließen |
+| POST | `/api/orvanta/erinnerungen/spaeter` | `snoozeReminder` | Erinnerung verschieben (`minutes` 1–1440, Standard 5) |
+| POST | `/admin/office/orvanta` | `Admin\OfficeController::updateOrvanta` | Einstellungen (`$requireAdmin`, CSRF) |
+| POST | `/admin/office/orvanta/pruefen` | `testOrvanta` | Verbindungstest, optional `mailbox` |
+
+### 3.2 Zugriffsprüfung (`OrvantaController::authorize()`)
+
+Reihenfolge und Antwort bei Fehlschlag:
+
+1. `Container::sso()->resolve()` liefert keinen Benutzer → **403**.
+2. `orvantaConfig()->isEnabled()` falsch (`exchange_enabled ≠ 1` oder keine EWS-URL) → **404**.
+3. `officeApps()->findAllowed('orvanta', $ssoUser)` ist `null` (keine Freigabe per AD-Gruppe/App-Paket) → **403**.
+4. Aktive Office-Kachel (`OfficeController::ENTRY_PATH`) für den Benutzer nicht zugänglich → **403**.
+5. Keine Postfachadresse (`impersonationAddress()` leer) und kein Demo-Modus → **403**.
+
+Rückgabe: `{user, uid, impersonate}`. Der Browser bestimmt die Identität nie
+selbst – `impersonate` stammt ausschließlich aus SSO + Konfiguration.
+
+### 3.3 API-Rahmen (`OrvantaApiController::handle()`)
+
+```
+authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Response::json(...) + Vary: Cookie
+     │                  │                         │
+     └──── Fehler ──────┴─────────────────────────┴─▶ {"error": "..."} mit Status
+```
+
+- `readBody()`: bei `Content-Type: application/json` wird `php://input`
+  gelesen (≤ 20 MB, `MAX_BODY`, sonst 413), sonst `$request->post`.
+- CSRF: `_token` im Body oder Header `X-CSRF-Token`; ungültig → **419**.
+- Fehlerabbildung: `OrvantaException` → `status()`; `ValidationException` → 422
+  (Meldungen verkettet); `HttpException` → deren Status; alles andere → 500
+  mit generischer Meldung und Logeintrag `Orvanta: Unerwarteter Fehler.`
+- GET-Routen sind lesend und ohne CSRF; **jede schreibende Route ist POST mit
+  `$write = true`**.
+
+## 4. Datenhaltung
+
+### 4.1 Tabellen (Migration 033)
+
+| Tabelle | Spalten (Auszug) | Hinweise |
+| --- | --- | --- |
+| `orvanta_settings` | `setting_key` (unique), `setting_value` (TEXT) | Schlüssel/Wert; fehlende Schlüssel → `OrvantaConfigService::DEFAULTS` |
+| `orvanta_reminders` | `user_uid`, `item_id` (≤ 512), `item_hash` = `sha1(item_id)`, `subject`, `location`, `starts_at`, `remind_at`, `state` ∈ `pending\|delivered\|dismissed\|snoozed`, `delivered_at`, `dismissed_at` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `state`, `remind_at`) |
+| `orvanta_cache_items` | `user_uid`, `kind` ∈ `attachment\|message`, `item_hash` = `sha1(attachment_id)`, `name` (Dateiname in Nextcloud), `path`, `content_type`, `size_bytes` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `created_at`) für FIFO |
+
+Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
+(Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
+
+### 4.2 Einstellungen (`orvanta_settings`)
+
+Vollständige Liste und Bedeutung: [orvanta.md](orvanta.md#admin-einstellungen-adminofficeorvanta).
+Validierung in `OrvantaConfigService::save()`:
+
+| Schlüssel | Regel |
+| --- | --- |
+| `exchange_host` | leer, `demo` oder `Validator::isHostname()` |
+| `exchange_ews_url`, `exchange_owa_url` | leer oder `isHttpsUrl()` (http/https, Host, ≤ 2048, keine Steuerzeichen/Backslashes) |
+| `exchange_enabled = 1` | verlangt Host **oder** EWS-URL |
+| `exchange_version` | Schlüssel aus `VERSIONS`, sonst `Exchange2016` |
+| `exchange_auth` | `negotiate`/`ntlm`/`basic`; `basic` nur mit `https://`-EWS-URL |
+| `exchange_service_password` | leer = unverändert; `exchange_service_password_clear` löscht; ≤ 500 Byte; gespeichert `SecretBox::encrypt()` |
+| `exchange_identity` / `exchange_upn_domain` | `smtp`/`upn`; `upn` verlangt gültige Domäne |
+| `exchange_timeout` | 3–120 |
+| `cache_quota_mb` | 0–1 048 576 (0 = Zwischenspeicher aus) |
+| `cache_folder` | `NextcloudFilesService::isSafeSegment()` (ein Pfadsegment) |
+| `reminder_lead_minutes` | 0–1440 |
+| `poll_interval` | 15–900 |
+| `default_folder` | Schlüssel aus `DEFAULT_FOLDERS`, sonst `inbox` |
+
+`OrvantaConfigService` cacht `all()` je Instanz; `save()` setzt den Cache
+zurück. Vor Ausführung der Migration liefert `all()` nur die Defaults
+(`PDOException` wird abgefangen) – damit ist Orvanta dann deaktiviert.
+
+### 4.3 Weitere Zustände
+
+| Ort | Schlüssel | Inhalt |
+| --- | --- | --- |
+| PHP-Session | `orvanta_sync_<uid>` | Zeitpunkt des letzten Exchange-Abgleichs der Erinnerungen |
+| `localStorage` | `orvanta.prefs` | `{dense, preview, images, notify, sound, folders, reading}` |
+| `sessionStorage` | `orvanta.header.notified` | IDs, für die `orvanta-reminders.js` bereits eine Desktop-Benachrichtigung gezeigt hat |
+| Nextcloud (Benutzerbereich) | `<cache_folder>/<sha1-Präfix 12>_<Name>` | Zwischenspeicher |
+| Nextcloud (Benutzerbereich) | `<cache_folder>/Anhänge[/<Unterordner>]/<Name>` | „In Nextcloud speichern“ (nicht im Orvanta-Quota) |
+
+## 5. Exchange-Anbindung (EWS)
+
+### 5.1 Aufrufkette
+
+```
+OrvantaExchangeService::<operation>()
+  └─ call($body, $impersonate, $strict = true)
+       ├─ ewsUrl() leer → OrvantaException 503
+       ├─ EwsXml::envelope($body, exchange_version, $impersonate)
+       │     Header: RequestServerVersion, ExchangeImpersonation/ConnectingSID
+       │             (PrimarySmtpAddress bei '@', sonst PrincipalName),
+       │             TimeZoneContext "W. Europe Standard Time"
+       ├─ transport->post(url, xml, transportOptions())
+       ├─ error ≠ '' → 502 „Exchange ist nicht erreichbar: …“
+       ├─ HTTP 401/403 → 502 „Exchange hat die Anmeldung abgelehnt …“
+       ├─ EwsXml::parse() null → 502 „ungültige Antwort“
+       └─ EwsXml::error() ≠ null → translate() → 502
+            ($strict = false: nur, wenn SOAP-Fault oder alle ResponseMessages fehlschlagen)
+```
+
+`translate()` übersetzt u. a. `ErrorImpersonateUserDenied`/`ErrorImpersonationDenied`,
+`ErrorNonExistentMailbox`, `ErrorItemNotFound`, `ErrorFolderNotFound`,
+`ErrorAccessDenied`, `ErrorSchemaValidation`; alles andere „Exchange-Fehler: …“.
+**Alle** Exchange-Fehler erscheinen in der API als HTTP 502 (fachliche
+Vorprüfungen des Service als 422/404).
+
+### 5.2 Operationen
+
+| Methode | EWS-Operation | Besonderheiten |
+| --- | --- | --- |
+| `testConnection()` | `GetFolder` inbox | ohne Impersonation = Dienstkonto selbst; liest `ServerVersionInfo` |
+| `folders()` | `GetFolder` (Systemordner, `$strict = false`) + `FindFolder` Deep ab `msgfolderroot` (≤ 500) | nur `FolderClass` `IPF.Note*`; Sortierung Systemordner (`MAIL_FOLDERS`) vor Namen |
+| `messages()` | `FindItem` Shallow, `IndexedPageItemView`, absteigend nach `DateTimeReceived`, optional `QueryString` (AQS) | `limit` 1–200 (API: 1–100), `has_more` aus `IncludesLastItemInRange` |
+| `message()` | `GetItem` mit `BodyType = HTML` | Text-Body → `nl2br(htmlspecialchars())`, sonst `MailHtmlSanitizer::clean()` |
+| `send()` | ohne Anhänge `CreateItem SendAndSaveCopy`; mit Anhängen `CreateItem SaveOnly` (drafts) → `CreateAttachment` → `SendItem` mit `RootItemChangeKey` | mind. ein Empfänger in to/cc/bcc |
+| `saveDraft()` | `CreateItem SaveOnly` in drafts | legt immer einen **neuen** Entwurf an; Anhänge werden nicht übernommen |
+| `respond()` | `CreateItem` mit `ReplyToItem`/`ReplyAllToItem`/`ForwardItem` + `NewBodyContent` | nur `ToRecipients`; `forward` verlangt Empfänger |
+| `markRead()`, `flag()` | `UpdateItem` `AlwaysOverwrite` | Lesebestätigungen unterdrückt |
+| `move()` | `MoveItem` | Zielordner per `EwsXml::folderId()` |
+| `delete()` | `DeleteItem` `MoveToDeletedItems` bzw. `HardDelete` | `SendMeetingCancellations = SendToNone`; genutzt für Mail, Kontakte, Aufgaben, Notizen |
+| `attachment()` | `GetAttachment` | `FileAttachment` → Base64-Inhalt; `ItemAttachment` → Body als `<Name>.html` (`text/html`) |
+| `calendar()` | `FindItem` mit `CalendarView` (≤ 500) | Serien als Einzelvorkommen; nach Start sortiert |
+| `event()` | `GetItem` (HTML-Body bereinigt, Teilnehmer, Anhänge, `recurring`) | |
+| `createEvent()` | `CreateItem` | Body wird bereinigt; Einladungen `SendToAllAndSaveCopy` nur mit Teilnehmern; `reminder < 0` = keine Erinnerung |
+| `updateEvent()` | `UpdateItem` `AlwaysOverwrite`, `SendToChangedAndSaveCopy` | Teilnehmer werden **nicht** geändert; `change_key` optional |
+| `deleteEvent()` | `DeleteItem` mit `SendToAllAndSaveCopy` | Absagen an Teilnehmer |
+| `respondToMeeting()` | `AcceptItem`/`TentativelyAcceptItem`/`DeclineItem` | |
+| `upcomingReminders()` | über `calendar()` (`from − 1 h` … `from + hours`) | nur Termine mit `ReminderIsSet` |
+| `contacts()`, `contact()` | `FindItem`/`GetItem` `AllProperties` (≤ 500, nach `FileAs`) | `email` = erste Adresse ohne `smtp:`/`sip:` |
+| `createContact()`, `updateContact()` | `CreateItem` / `UpdateItem` (`SetItemField` je Feld) | mind. Vor-, Nachname oder Firma |
+| `tasks()`, `task()`, `createTask()`, `updateTask()` | `FindItem` (optional ohne `Completed`), `GetItem`, `CreateItem`, `UpdateItem` | `updateTask()` setzt nur übergebene Felder; Status `Completed` → 100 %, `NotStarted` → 0 % |
+| `notes()`, `note()`, `createNote()`, `updateNote()` | Ordner `notes`, `ItemClass IPM.StickyNote` | Betreff = erste Zeile (≤ 80 Zeichen); Farbe aus Property `0x8B00` |
+
+### 5.3 IDs, Ordner und Zeit
+
+- EWS-IDs sind opak; der Server prüft nur „nicht leer, ≤ 2048 Zeichen“
+  (`requireId()`) und escaped sie in XML. Zugriffsschutz entsteht durch die
+  Impersonation – fremde IDs scheitern an Exchange.
+- `EwsXml::folderId()`: `^[a-z]+$` → `DistinguishedFolderId`, sonst `FolderId`.
+  Echte `FolderId`s (Base64 mit Großbuchstaben/`=`) treffen das Muster nie.
+- Zeiten: API und Frontend arbeiten mit **Unix-Sekunden**; an EWS gehen
+  UTC-Zeitstempel (`EwsXml::dateTime()`), Antworten werden mit `strtotime()`
+  gelesen. Die Zeitzone im SOAP-Kopf ist fest `W. Europe Standard Time`.
+
+## 6. API-Verträge und Grenzwerte
+
+| Endpunkt | Eingabe (JSON) | Antwort |
+| --- | --- | --- |
+| `status` | – | `{user{name,email}, demo, host, cache{used,quota,items,folder,percent}, server_time}` |
+| `mail/ordner` | – | `{folders[{id,name,parent,total,unread,kind,class}]}` |
+| `mail` | Query `ordner`, `offset`, `limit` (1–100), `q` | `{items[], total, offset, has_more}`; Element: `id, change_key, subject, preview, from{name,email}, to[], received, sent, is_read, has_attachments, size, importance, flagged, categories[], item_class, is_meeting_request` |
+| `mail/nachricht` | Query `id` | wie Listenelement + `body_html, blocked_images, cc, bcc, reply_to, sender, internet_message_id, attachments[{id,name,content_type,size,inline,is_item}]` |
+| `mail/senden`, `mail/entwurf` | `to, cc, bcc` (Strings oder `{name,email}`), `subject, body, html, importance, attachments[{name, content_type, content(Base64)}]` | `{id, message}` |
+| `mail/antworten` | `id, mode, body, to, html` | `{message}` |
+| `mail/aktion` | `action, ids[]` (oder `id`), bei `move` zusätzlich `folder` | `{ok, count}` |
+| `anhang/link` | `attachment_id, name` | `{url, mode, expires_in}` |
+| `anhang/nextcloud` | `attachment_id, folder` (optionaler Unterordner) | `{ok, message, path, target}` (Fehler → 502) |
+| `kalender` | Query `start`, `end` (Standard: aktuelle Woche) | `{items[], start, end}`; Element: `id, change_key, subject, start, end, all_day, location, organizer, free_busy, type, reminder_set, reminder_minutes, is_meeting, my_response, categories` |
+| `kalender/termin` (POST) | `id` (leer = neu), `change_key, subject, start, end, all_day, location, body, reminder` (Standard 15, < 0 = aus), `free_busy, required[], optional[]` | `{id[, change_key], message}`; löst `resync()` aus |
+| `kontakte/kontakt` (POST) | `id, given_name, surname, company, job_title, department, email, phone, mobile, notes` | `{id, message}` |
+| `aufgaben/aufgabe` (POST) | `id, subject, body, importance, status` und optional `due, start, reminder, percent` (Unix-Sekunden bzw. %) | `{id, message}` |
+| `notizen/notiz` (POST) | `id, body` (nicht leer) | `{id, message}` |
+| `erinnerungen` | Query `sync=1` erzwingt Abgleich | `{due[], active[], server_time, warning}`; Element: `id, item_id, subject, location, start, remind_at, state, relative` |
+
+Grenzwerte (Server maßgeblich):
+
+| Grenze | Wert | Stelle |
+| --- | --- | --- |
+| Request-Body | 20 MB | `OrvantaApiController::MAX_BODY` |
+| Anhänge je Nachricht (dekodiert, Summe) | 15 MB | `mailPayload()`; Client prüft 15 MB je Datei (`addComposeFiles()`) |
+| IDs je Sammelaktion | 1–200 | `ids()` |
+| Element-ID | ≤ 2048 Zeichen | `requireId()` |
+| Kalenderzeitraum | `end > start`, ≤ 100 Tage | `calendar()` |
+| Adressen | `FILTER_VALIDATE_EMAIL`, getrennt durch `;`, `,`, Leerraum; entdoppelt | `addresses()` |
+| Snooze | 1–1440 Minuten | `snoozeReminder()`, `OrvantaNotificationService::snooze()` |
+| Anhang-Token | 300 s | `OrvantaAttachmentService::TOKEN_LIFETIME` |
+| Datei im Zwischenspeicher / in Nextcloud | ≤ 16 MiB und ≤ Quota | `NextcloudFilesService::MAX_BYTES` |
+
+## 7. Anhänge, Viewer und Zwischenspeicher
+
+### 7.1 Öffnen
+
+```
+Klick in orvanta.js
+  ├─ window.open('', '_blank') sofort (Popup-Blocker), Platzhaltertext
+  ├─ POST /api/orvanta/anhang/link {attachment_id, name}
+  │     token = JWT {aud: orvanta_attachment, sub: uid, imp, att, name, iat, exp = iat + 300}
+  │     Schlüssel = SecretBox::deriveKey('orvanta_attachment')
+  └─ Popup → /office/orvanta/anhang/oeffnen?token=…
+        verify() + claims.uid === aktueller uid (sonst 403)
+        openMode(name):
+          office  + officeAvailable() → views/orvanta/viewer.php (DocEditor, mode=view)
+          browser oder (office ohne DocumentServer, aber browserCapable) → inline
+          sonst → Download
+```
+
+- `openMode()`: Endungen aus `OFFICE_TYPES` → `office` (Word/Zelle/Folie/PDF
+  inkl. `pdf`, `txt`, `csv`, `html`); `BROWSER_TYPES` (`png jpg jpeg gif webp
+  bmp svg txt pdf`) → `browser`; sonst `download`. `pdf` und `txt` sind damit
+  `office`, fallen ohne DocumentServer aber auf Inline zurück.
+- Inline-Auslieferung: `inlineType()` erzwingt für bekannte Endungen einen
+  festen MIME-Typ; Header `nosniff`, `Cache-Control: private, no-store` und
+  CSP `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox`
+  (gilt auch für SVG).
+- Viewer: `viewerConfig()` baut die DocEditor-Konfiguration (`documentType`
+  aus `OFFICE_TYPES`, `document.key` = 20 Zeichen aus `sha1(attachment_id|token)`,
+  `document.url` = `appInternalUrl()` + `office/orvanta/anhang/datei?token=…`,
+  `permissions.edit = false`, `editorConfig.mode = view`) und signiert sie mit
+  dem Office-JWT-Secret (`exp` 1 h). `orvanta-viewer.js` lädt `api_url`
+  (`euroOfficePublicPath()` + `web-apps/apps/api/documents/api.js`), setzt
+  Größe und `onError`/`onRequestClose` und zeigt nach 20 s ohne iframe den
+  Download-Fallback.
+- `attachmentFile()` prüft **nur** das Token (der DocumentServer hat keine
+  Intranet-Session) und lädt die Datei für `claims.uid`/`claims.impersonate`.
+
+### 7.2 Laden und Zwischenspeicher (`OrvantaAttachmentService`)
+
+```
+load(uid, impersonate, attachmentId)
+  hash = sha1(attachmentId)
+  Eintrag in orvanta_cache_items und Quota > 0?
+     ja → nextcloud->fetch(uid, cache_folder, name)
+            ok + Inhalt → zurück (cached = true)
+            sonst       → Eintrag löschen, weiter mit Exchange
+  exchange->attachment() → cache(uid, hash, attachment) → zurück (cached = false)
+
+cache(): nur wenn Quota > 0, 0 < Größe ≤ Quota, ≤ MAX_BYTES, Nextcloud verfügbar
+         und noch nicht vorhanden → evict(uid, quota − size)
+         → upload(<sha1[0..12]>_<segment(name)>) → addCacheItem()
+         Fehler werden verschluckt (Rückgabe false)
+
+evict(uid, limit): löscht älteste Einträge (created_at, id) in Zehnerblöcken
+                   in Nextcloud und Tabelle, bis cacheUsage ≤ limit
+clear(uid) = evict(uid, −1)
+```
+
+- `usage()` liefert `{used, quota, items, folder, percent}`; die Statusleiste
+  der App und der Adminbereich (`cacheUsagePerUser()`, Top 100) lesen daraus.
+- `saveToNextcloud()` lädt über `load()` (füllt also ggf. den
+  Zwischenspeicher) und lädt nach `<cache_folder>/Anhänge[/<segment(folder)>]/`
+  hoch; Ergebnis enthält `target` für `/office-starten?ziel=…`.
+- Die Übertragung nach Nextcloud läuft über die Nextcloud-App
+  `intranet_integration` (`/index.php/apps/intranet_integration/api/files`)
+  mit einem JWT aus `OfficeJwt::filesToken()` – kein WebDAV-Kennwort des
+  Benutzers.
+
+## 8. Terminerinnerungen
+
+### 8.1 Server
+
+```
+GET /api/orvanta/erinnerungen
+  ├─ ?sync=1 oder letzter Abgleich (Session orvanta_sync_<uid>) ≥ 300 s:
+  │     OrvantaNotificationService::sync(uid, impersonate)
+  │       upcomingReminders(now, 48 h) → je Termin mit Erinnerung:
+  │         remind_at = start − ReminderMinutesBeforeStart
+  │         reminder_lead_minutes > 0 → remind_at = min(remind_at, start − lead)
+  │         bereits beendete Termine werden übersprungen
+  │       OrvantaRepository::syncReminders(uid, items)
+  │       purgeReminders(starts_at < now − 7 Tage)   (alle Benutzer)
+  │       Exchange-Fehler → Rückgabe als warning (kein HTTP-Fehler)
+  └─ poll(uid):
+        due    = pending/snoozed mit remind_at ≤ now (≤ 20) → markDelivered()
+        active = alle delivered (≤ 20)
+```
+
+Nach `saveEvent`, `deleteEvent` und `meetingResponse` ruft der Controller
+`resync()` auf (sofortiger Abgleich, Session-Zeitstempel wird gesetzt).
+
+### 8.2 Zustandsautomat (`orvanta_reminders.state`)
+
+```
+             sync (neu)            poll: remind_at ≤ now
+ (Exchange) ───────────▶ pending ─────────────────────────▶ delivered ──dismiss──▶ dismissed
+                           ▲  ▲                              │   ▲                     │
+                           │  └──────── poll ───── snoozed ◀─┘   │                     │
+                           │            (remind_at ≤ now)  snooze│                     │
+                           └──── sync: Startzeit geändert ───────┴─────────────────────┘
+```
+
+- `syncReminders()` (Transaktion): neue Termine → `pending`; vorhandene
+  übernehmen Betreff/Ort/Zeiten; geänderte **Startzeit** setzt
+  `delivered`/`dismissed` zurück auf `pending`; bei `snoozed` bleibt
+  `remind_at` erhalten. Nicht mehr gelieferte Termine werden **nur** in den
+  Zuständen `pending`/`snoozed` gelöscht.
+- `snooze` ist aus jedem Zustand möglich und setzt `remind_at = now + minutes`.
+- `dismiss`/`snooze` filtern immer zusätzlich auf `user_uid`.
+
+### 8.3 Clients
+
+| | `orvanta.js` (App) | `orvanta-reminders.js` (alle anderen Seiten) |
+| --- | --- | --- |
+| Aktiv, wenn | `[data-orvanta]` vorhanden | `$orvantaReminders` (Exchange aktiv, `reminder_header = 1`, App freigegeben) und **kein** `[data-orvanta]` |
+| Takt | `poll_interval` (≥ 15 s); zusätzlich alle 5 Min. und beim Start `sync=1`; bei `visibilitychange` | 60 s; erster und jeder 5. Poll mit `sync=1`; bei `visibilitychange` |
+| Anzeige | Dialog `reminder` (Öffnen, Später mit Minutenwahl, Schließen, Sammelaktionen), Glocke/Popover, Desktop-Benachrichtigung (`tag: orvanta-reminder-<id>`, `requireInteraction`), optional Ton (880 Hz) | Einträge im Mitteilungsmenü („5 Min. später“, „Schließen“), Desktop-Benachrichtigung (`tag: orvanta-<id>`) |
+| Doppelte Anzeige | `shownReminderIds` (nur im Speicher) | `sessionStorage` `orvanta.header.notified` |
+| Berechtigung | `Notification.requestPermission()` nur auf Benutzeraktion (Hinweis-Toast beim Start bzw. Einstellungen) | nutzt vorhandene Berechtigung |
+
+Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
+
+## 9. Frontend
+
+### 9.1 `orvanta.js`
+
+- IIFE, startet nur bei `[data-orvanta]`; liest `data-config` (JSON aus
+  `OrvantaController::index()`: `user{name,email,username}`, `defaultModule`,
+  `pollInterval`, `reminderLead`, `officeAvailable`, `nextcloudAvailable`,
+  `cacheFolder`, `cacheQuota`, `demo`, `owaUrl`) und `data-csrf`.
+- Zentraler Zustand `state` (`module`, `folders`/`folder`, `messages`/`total`/`hasMore`,
+  `selected`/`selectedIds`, `filter`/`search`, `calView` (`day`/`workweek`/`week`/`month`/`agenda`),
+  `calDate`/`events`, `contacts`, `tasks`/`tasksCompleted`, `notes`/`noteDraft`,
+  `reminders`, `compose`, `online`, `prefs`).
+- Module: `switchModule()` → `loadModule()`; URL per `history.replaceState`
+  auf `?modul=<name>`; Startmodul: `?modul=` vor `data-module` (in
+  `views/orvanta/index.php` über `$moduleFor` aus `default_folder` abgeleitet,
+  `inbox` → `mail`); `?modul=calendar&termin=<id>` öffnet einen Termin (`init()`).
+- `api(path, {query, body})`: `credentials: same-origin`, `Accept: application/json`,
+  `X-CSRF-Token`; mit `body` automatisch POST + JSON. Nicht-JSON → „Ungültige
+  Antwort des Servers.“; HTTP-Fehler → `Error(data.error)`. Netzwerkfehler und
+  502/503/504 setzen den Offline-Status (`setOnline(false)`), Erfolg wieder
+  online. **Kein Timeout/AbortController.**
+- Verfassen: `openCompose(mode, message)` (`new`/`reply`/`replyall`/`forward`),
+  `contenteditable`-Editor, `composePayload()`, `sendCompose(form, asDraft)`:
+  - Entwurf → `mail/entwurf`;
+  - Antwort/Weiterleitung **ohne** neue Anhänge → `mail/antworten` (Exchange
+    hängt Zitat und Bezug an);
+  - neue Nachricht oder Antwort **mit** Anhängen → `mail/senden` (neue
+    Nachricht, Zitat stammt aus dem Editor).
+- Mail-Anzeige: `body.innerHTML = inlineStylesToCssom(message.body_html)`,
+  danach `data-ov-style` → `node.style.cssText`; Links erhalten
+  `target=_blank` und `rel="noopener noreferrer nofollow"`.
+- Tastatur (außerhalb von Eingabefeldern/Dialogen): `1`–`5` Module, `/` Suche,
+  `N` Neu, `R` Antworten, `Entf` Löschen (je Modul), Pfeile hoch/runter in der
+  Liste, `Esc` schließt das Erinnerungs-Popover.
+- Ansicht-Einstellungen (`orvanta.prefs`) setzt `applyPrefs()` als Klassen
+  am Wurzelelement (u. a. `ov--no-folders`, `ov--no-reading`).
+- Statusleiste: Verbindung, letzte Aktualisierung (`markSync()`), Quota
+  (`loadQuota()`/`renderQuota()`, Warnfarbe ab 80 %).
+
+### 9.2 Gestaltung
+
+`orvanta.css` übernimmt Farbpalette, Ribbon und Statusleiste des
+Notfallplan-Editors, ist aber vollständig eigenständig (`.ov-*`, eigene
+Variablen `--ov-*` auf Basis der globalen `--color-*`). Grid: Titelleiste /
+Menüband / Arbeitsbereich / Statusleiste; Arbeitsbereich mit Modulleiste,
+Ordnern, Liste und Detail; Detail nur sichtbar mit `ov--detail-open`.
+Breakpoints 1200 px und 900 px, eigenes Drucklayout.
+
+## 10. HTML-Bereinigung und CSP
+
+- `MailHtmlSanitizer::clean()` parst mit `DOMDocument` (`LIBXML_NONET`) und
+  arbeitet mit Whitelists:
+  - `DROP_TAGS` (inkl. Inhalt entfernt): `script`, `style`, `iframe`,
+    `object`, `embed`, `svg`, `math`, `form`-Elemente, `link`, `meta`, `base`,
+    `audio`, `video`, …
+  - unbekannte Tags werden ausgepackt, ihre Kinder erneut geprüft;
+  - `ALLOWED_ATTRIBUTES` (kein `id`, keine `on*`, keine `data-*`); `style`
+    wird verworfen bei `expression`, `url(`, `javascript`, `behavior`,
+    `@import`, `position: fixed`;
+  - `a[href]` nur `http`, `https`, `mailto`, `tel`, `#…`; erhält `target`/`rel`;
+  - `img[src]` nur `data:image/…` – alles andere (auch `cid:`) wird entfernt,
+    gezählt (`blocked_images`) und das Bild durch `span.orv-img-blocked` ersetzt.
+- Angewendet auf: empfangene Mails (`message()`), Terminbeschreibungen
+  (`event()`), ausgehende HTML-Bodys (`messageXml()`, `createEvent()`,
+  `updateEvent()`). `respond()` sendet `NewBodyContent` **unbereinigt**
+  (nur XML-escaped) an Exchange.
+- Die Seiten-CSP (`public/index.php`) erlaubt `style-src 'self' 'nonce-…'` –
+  `style`-Attribute würden blockiert. Deshalb ersetzt `inlineStylesToCssom()`
+  per Regex `style="…"` durch `data-ov-style="…"` (bewusst ohne
+  `DOMParser`, da auch inerte Dokumente CSP-Verstöße melden). Das setzt
+  serverseitig serialisiertes HTML mit gequoteten Attributen voraus.
+
+## 11. Invarianten (nicht brechen!)
+
+1. **Identität nur vom Server.** `impersonate` und `uid` kommen ausschließlich
+   aus `authorize()`; kein Endpunkt akzeptiert ein Postfach aus dem Request.
+2. **Jede Route ruft `authorize()`** (App, API über `handle()`,
+   `openAttachment()`); einzige Ausnahme ist `attachmentFile()`, die
+   stattdessen ein gültiges Token verlangt.
+3. **Schreibende Endpunkte sind POST mit CSRF** (`handle(..., true)`).
+4. **Exchange ist führend.** Lokale Tabellen enthalten keine Inhalte außer
+   Erinnerungs-Metadaten; der Zwischenspeicher ist verwerfbar und Fehler darin
+   dürfen nie eine Anfrage scheitern lassen.
+5. **Alle Werte in SOAP über `EwsXml::escape()`**, Zeiten über
+   `EwsXml::dateTime()`, Ordner über `EwsXml::folderId()`.
+6. **HTML aus Exchange erreicht den Browser nur über `MailHtmlSanitizer`**;
+   `innerHTML` nur für `body_html` vom Server, alle übrigen Werte per
+   `textContent`/`el()`.
+7. **Keine Inline-Styles im Frontend** – nur Klassen oder CSSOM
+   (`node.style.cssText`).
+8. **Anhang-Tokens sind kurzlebig, zweckgebunden (`aud`) und benutzergebunden**;
+   `openAttachment()` vergleicht `claims.uid` mit dem angemeldeten Benutzer.
+9. **Quota-Einhaltung vor dem Upload** (`evict()` vor `upload()`); Quota 0
+   deaktiviert Lesen **und** Schreiben des Zwischenspeichers.
+10. **Erinnerungen werden genau einmal als `due` geliefert** (`markDelivered()`
+    im selben Poll); `dismiss`/`snooze` immer mit `user_uid` filtern.
+11. **Demo nie in Produktion** – `isDemo()` prüft `app.env`; der Transport wird
+    ausschließlich in `Container::exchangeTransport()` gewählt.
+12. Repository-SQL muss auf MySQL **und** SQLite laufen (Tests).
+13. Grenzwerte in Client (15 MB je Datei, Poll ≥ 15 s) und Server synchron halten.
+
+## 12. Tests
+
+Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
+`find . -name "*.php" -print0 | xargs -0 -n1 php -l`).
+
+| Datei | Inhalt |
+| --- | --- |
+| `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration |
+
+Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
+`DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
+**parallel zur Migration pflegen**), `orvantaConfig()`, `orvantaExchange()`,
+`orvantaAttachments()`. `FakeOfficeProbe` und `officeConfig()` stammen aus
+`tests/Unit/OfficeTest.php` (wird wegen alphabetischer Ladereihenfolge vorher
+geladen).
+
+Controller und JavaScript haben keine automatisierten Tests. Manuell im
+Demo-Modus prüfen (`exchange_host = demo`, `APP_ENV ≠ production`,
+`SSO_FAKE_USER`, siehe `docs/office.md` „Testmodus“): alle Module,
+Verfassen/Antworten mit und ohne Anhang, Anhang öffnen (Viewer, Browser,
+Download), Erinnerung in App und Kopfzeile, Statusleiste/Quota.
+
+## 13. Änderungsrezepte
+
+| Aufgabe | Vorgehen |
+| --- | --- |
+| **Neue Einstellung** | `OrvantaConfigService::DEFAULTS` + Validierung in `save()` + ggf. Getter mit Klammerung; Formularfeld in `views/admin/office.php` (Karte `#orvanta`, `$ovField`/`$ovFieldError`); bei Frontend-Bedarf in `OrvantaController::index()` → `$orvanta`; Test in `OrvantaServiceTest.php`; Tabelle in `docs/orvanta.md`. Keine Migration nötig (Schlüssel/Wert). |
+| **Neuer API-Endpunkt** | Methode in `OrvantaApiController` über `handle()` (schreibend: `true`), Route in `public/index.php` beim Orvanta-Block, Aufruf über `api()` in `orvanta.js`; Routenliste in `docs/orvanta.md` und `agentsindex.md` ergänzen. |
+| **Neues Feld eines Exchange-Elements** | `FieldURI` in `MESSAGE_FIELDS`/`CALENDAR_FIELDS` bzw. Abfrage, Mapper (`messageSummary()` …) erweitern, beim Schreiben `SetItemField` in `update*()` und Element in `create*()` (EWS verlangt die **Schema-Reihenfolge** der Kindelemente!), Demo-Antworten in `DemoExchangeTransport` ergänzen, Frontend-Anzeige/-Formular, Test. |
+| **Neue EWS-Operation** | In `OrvantaExchangeService` über `call()` (nie direkt am Transport), Werte mit `EwsXml::escape()`; neuen Fehlercode ggf. in `translate()`; `DemoExchangeTransport::post()` um Erkennung erweitern, sonst antwortet die Demo mit generischem Erfolg. |
+| **Neuer Anhangs-Öffnungsmodus / Dateityp** | `OFFICE_TYPES` bzw. `BROWSER_TYPES`, bei Inline zusätzlich `OrvantaController::inlineType()`; Test „Oeffnungsart je Dateityp“. |
+| **Zwischenspeicher für Nachrichten** (`kind = message`) | Spalte existiert; `OrvantaAttachmentService::cache(..., 'message')` mit eigenem Hash-Schema verwenden, damit keine Kollision mit `sha1(attachment_id)` entsteht. |
+| **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()` (Zustandsübergänge Abschnitt 8.2); beide Clients prüfen; Tests „Erinnerungen …“, „Repository-Sync …“. |
+| **Neues Modul** | `DEFAULT_FOLDERS`, Modulliste/Menüband/Dialog in `views/orvanta/index.php`, `switchModule()`/`loadModule()`/Tastenkürzel in `orvanta.js`, Service-Methoden + API, Demo-Daten, Doku. |
+
+Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
+`docs/orvanta.md` und `agentsindex.md` aktualisieren.
+
+## 14. Bekannte Eigenheiten
+
+- `reminder_lead_minutes` wirkt nur als **Mindestvorlauf** für Termine mit
+  gesetzter Exchange-Erinnerung; Termine ohne Erinnerung
+  (`ReminderIsSet = false`) werden von `upcomingReminders()` übersprungen und
+  erzeugen keine Benachrichtigung (abweichend vom Hinweis im Adminformular
+  „Gilt, wenn ein Termin keine eigene Erinnerung hinterlegt hat.“ und
+  `orvanta.md`).
+- Die Einstellung „externe Bilder laden“ (`prefs.images`) und „Bilder anzeigen“
+  haben keine Wirkung: der Sanitizer entfernt `src` vollständig, das Frontend
+  sucht nach `data-blocked-src`, das der Server nie setzt. Auch eingebettete
+  `cid:`-Bilder werden blockiert.
+- Antworten mit Anhängen werden als **neue** Nachricht über `mail/senden`
+  verschickt (kein Bezug/Threading zur Originalnachricht). `respond()`
+  übernimmt nur `to`; vom Client mitgesendete `cc` werden ignoriert.
+- `saveDraft()` legt bei jedem Speichern einen neuen Entwurf an; Entwürfe
+  werden nicht aktualisiert und Anhänge nicht gespeichert.
+- Schreibende EWS-Aufrufe nutzen `ConflictResolution="AlwaysOverwrite"`; es
+  gibt keine optimistische Sperre (letzte Änderung gewinnt).
+  `updateEvent()` ändert keine Teilnehmer.
+- Fällige Erinnerungen erscheinen nur in dem Tab/Client, dessen Poll sie
+  zuerst abholt; andere sehen sie nur noch als `active`.
+- `purgeReminders()` löscht beim Abgleich eines Benutzers alte Einträge
+  **aller** Benutzer (Starttermin älter als 7 Tage).
+- Die Zeitzone im SOAP-Kopf ist fest `W. Europe Standard Time`; ganztägige
+  Termine und Serien hängen davon ab.
+- Die Liste lädt höchstens 100 Nachrichten je Abruf (Service erlaubt 200);
+  Kontakte, Aufgaben, Notizen und Kalenderansichten sind auf 500 Elemente
+  begrenzt, ohne Nachladen.
+- Inline-Bilder einer Mail (`inline = true`) werden im Frontend aus der
+  Anhangliste gefiltert, aber wegen der Blockierung auch nicht angezeigt.
+- `usage()` zählt Einträge über `cacheItems(uid, 10000)` (Obergrenze der Zählung).
+- Der Anhang-Viewer bekommt ein Token mit 5 Minuten Laufzeit; lädt der
+  DocumentServer die Datei später erneut (z. B. nach Neuladen), ist der Link
+  abgelaufen und der Anhang muss in Orvanta neu geöffnet werden.
+- `api()` in `orvanta.js` hat kein Zeitlimit; hängende Exchange-Aufrufe enden
+  erst mit `exchange_timeout` auf dem Server.

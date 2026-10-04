@@ -7,6 +7,10 @@ und spricht über **Exchange Web Services (EWS)** mit einem Exchange-Server
 On-Premise ab Version 2016/2019 (inkl. Subscription Edition). Der Zugriff
 erfolgt im Namen des per Windows-Anmeldung (SSO) erkannten Benutzers.
 
+Technische Details für Entwickler und Coding-Agenten (Code-Landkarte,
+API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
+[docs/orvanta-referenz.md](orvanta-referenz.md).
+
 ![Orvanta – Posteingang](screenshots/80-orvanta-mail.png)
 
 ---

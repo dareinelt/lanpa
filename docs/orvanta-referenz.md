@@ -94,7 +94,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/Controller.php` | `orvantaRemindersVisible()` → View-Variable `$orvantaReminders` (Kopfzeilen-Erinnerungen auf allen Seiten) |
 | `app/Services/Office/OfficeAppCatalog.php` | App `orvanta` (`kind = intranet`), `ORVANTA_PATH = '/office/orvanta'` |
 | `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`, `MAX_BYTES` (16 MiB) |
-| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, profile, settings, help, reminder, ai), KI-Kontextmenü `[data-ov-ai-menu]` |
+| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, profile, settings, help, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Mail-Liste, Textfelder, KI; Einträge per JS) |
 | `views/orvanta/viewer.php` | Euro-Office-Viewer `.ov-viewer[data-orvanta-viewer]` mit `data-api`, `data-config`, `data-download` und Download-Fallback |
 | `views/admin/office.php` | Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer, KI-Nutzungsbericht `#orvanta-ki`) |
 | `views/layouts/base.php` | Mitteilungsmenü mit `data-orvanta-reminders` / `data-orvanta-reminder-list`, lädt `orvanta-reminders.js` (mit `data-csrf`) |
@@ -620,9 +620,25 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 - Originaltexte für „Auf Original zurücksetzen“ liegen nur im JS-Zustand
   (`ai.originals`) und werden beim Schließen des Dialogs verworfen; Blöcke aus
   wieder geöffneten Entwürfen sind daher nur noch verfeinerbar/entmarkierbar.
-- Das KI-Kontextmenü (`[data-ov-ai-menu]`) wird beim Öffnen in den `<dialog>`
-  des aktiven Editors verschoben, weil modale Dialoge in der Top-Layer liegen
-  und ein `position: fixed`-Element im `body` sonst verdeckt bliebe.
+- Das App-Kontextmenü (`[data-ov-ctx-menu]`, Abschnitt „App-Kontextmenue“ in
+  `orvanta.js`) ersetzt das Browser-Menü an zwei Stellen: auf Zeilen der
+  Mail-Liste (Öffnen/Entwurf bearbeiten, Antworten, Allen antworten,
+  Weiterleiten, gelesen/ungelesen, Kennzeichnen, Verschieben, Archivieren,
+  Löschen – bei angehakten Zeilen für alle markierten) und in Textfeldern
+  (`input`, `textarea`, `contenteditable`: Rückgängig, Wiederholen,
+  Ausschneiden, Kopieren, Einfügen, Alles auswählen; KI-Einträge davor, sofern
+  Markierung bzw. KI-Block). Überall sonst (z. B. Lesebereich) bleibt das
+  Browser-Menü. Rechtsklick auf eine nicht ausgewählte Zeile wählt sie aus wie
+  ein Linksklick; Antworten/Weiterleiten laden die Nachricht zuvor vollständig
+  (`withFullMessage()`).
+- „Einfügen“ nutzt `navigator.clipboard.readText()` (nur sicherer Kontext,
+  Browser kann nachfragen oder ablehnen → Hinweis-Toast auf Strg+V);
+  Ausschneiden/Kopieren/Rückgängig laufen über `document.execCommand`. Die
+  Auswahl im Feld wird beim Öffnen gesichert und vor jedem Befehl
+  wiederhergestellt (`mousedown` im Menü ist `preventDefault`).
+- Das Menü wird beim Öffnen in den `<dialog>` des Ursprungselements
+  verschoben, weil modale Dialoge in der Top-Layer liegen und ein
+  `position: fixed`-Element im `body` sonst verdeckt bliebe.
 - Schreibende EWS-Aufrufe nutzen `ConflictResolution="AlwaysOverwrite"`; es
   gibt keine optimistische Sperre (letzte Änderung gewinnt).
   `updateEvent()` ändert keine Teilnehmer.
@@ -657,7 +673,7 @@ Browser kennt den Endpunkt nicht.
 ### 15.1 Ablauf
 
 ```
-Rechtsklick auf Markierung ──► [data-ov-ai-menu] ──► Dialog "ai" (prompt)
+Rechtsklick auf Markierung ──► [data-ov-ctx-menu] (KI-Einträge) ──► Dialog "ai" (prompt)
    └─ aiSubmit(): POST /api/orvanta/ki/verbessern {mode, text, prompt, previous_text?, context}
         OrvantaApiController::aiImprove() ─► OrvantaAiService::improve()
             ├─ Validierung (422), isActive() (503)

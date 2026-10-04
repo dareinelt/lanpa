@@ -850,9 +850,9 @@
         updateActionState();
         var loading = el('div', { 'class': 'ov-mail ov-mail--loading', text: 'Nachricht wird geladen …' });
         showDetail(loading);
-        api('/mail/nachricht', { query: { id: summary.id } }).then(function (message) {
+        return api('/mail/nachricht', { query: { id: summary.id } }).then(function (message) {
             if (!state.selected || state.selected.id !== message.id) {
-                return;
+                return null;
             }
             state.selected = message;
             showDetail(renderMessage(message));
@@ -864,9 +864,22 @@
                     renderMessages();
                 }).catch(function () { /* still */ });
             }
+            return message;
         }).catch(function (error) {
             showDetail(el('div', { 'class': 'ov-mail ov-mail--error', text: error.message }));
+            return null;
         });
+    }
+
+    /**
+     * Vollstaendige Nachricht (mit Body) fuer Antworten/Weiterleiten liefern;
+     * laedt sie bei Bedarf nach und zeigt sie dabei im Lesebereich an.
+     */
+    function withFullMessage(summary) {
+        if (state.selected && state.selected.id === summary.id && state.selected.body_html !== undefined) {
+            return Promise.resolve(state.selected);
+        }
+        return openMessage(summary);
     }
 
     function patchFolderUnread(delta) {
@@ -1074,8 +1087,9 @@
         });
     }
 
-    function openMoveDialog() {
-        if (!currentMailIds().length) {
+    function openMoveDialog(ids) {
+        ids = ids || currentMailIds();
+        if (!ids.length) {
             toast('Bitte zuerst eine Nachricht auswählen.', 'info');
             return;
         }
@@ -1090,7 +1104,7 @@
                 var button = el('button', { type: 'button', 'class': 'ov-folder', text: (FOLDER_ICONS[folder.kind] || FOLDER_ICONS.folder) + ' ' + (FOLDER_LABELS[folder.kind] || folder.name) });
                 button.addEventListener('click', function () {
                     closeDialog('move');
-                    mailAction('move', null, key);
+                    mailAction('move', ids, key);
                 });
                 list.appendChild(button);
             });
@@ -3013,6 +3027,404 @@
     // ------------------------------------------------------------------
 
     // ------------------------------------------------------------------
+    // App-Kontextmenue (Mail-Liste, Textfelder, KI-Unterstuetzung)
+    // ------------------------------------------------------------------
+
+    var MOD_KEY = /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘' : 'Strg+';
+
+    var ctx = {
+        menu: null,
+        origin: null        // Element, von dem aus das Menue geoeffnet wurde (Fokusrueckgabe)
+    };
+
+    function ctxHide() {
+        if (ctx.menu && !ctx.menu.hidden) {
+            ctx.menu.hidden = true;
+            ctx.menu.innerHTML = '';
+        }
+    }
+
+    /**
+     * Menue mit Eintraegen { label, run, icon?, key?, title?, disabled?, ai? }
+     * bzw. { separator: true } an der Mausposition anzeigen. Liegt der Ursprung
+     * in einem modalen Dialog (Top-Layer), wandert das Menue dort hinein.
+     */
+    function ctxShow(event, items, origin) {
+        var menu = ctx.menu;
+        if (!menu) {
+            return false;
+        }
+        var cleaned = [];
+        items.forEach(function (item) {
+            if (!item) {
+                return;
+            }
+            if (item.separator) {
+                if (cleaned.length && !cleaned[cleaned.length - 1].separator) {
+                    cleaned.push(item);
+                }
+                return;
+            }
+            cleaned.push(item);
+        });
+        while (cleaned.length && cleaned[cleaned.length - 1].separator) {
+            cleaned.pop();
+        }
+        if (!cleaned.length) {
+            return false;
+        }
+        menu.innerHTML = '';
+        cleaned.forEach(function (item) {
+            if (item.separator) {
+                menu.appendChild(el('div', { 'class': 'ov-ctx-menu__sep', role: 'separator' }));
+                return;
+            }
+            var icon = typeof item.icon === 'string' || !item.icon
+                ? el('span', { 'class': 'ov-ctx-menu__icon', 'aria-hidden': 'true', text: item.icon || '' })
+                : item.icon;
+            var button = el('button', { type: 'button', role: 'menuitem', 'class': 'ov-ctx-menu__item' + (item.ai ? ' ov-ctx-menu__item--ai' : ''), title: item.title || null }, [
+                icon,
+                el('span', { 'class': 'ov-ctx-menu__label', text: item.label }),
+                item.key ? el('span', { 'class': 'ov-ctx-menu__key', 'aria-hidden': 'true', text: item.key }) : null
+            ]);
+            button.disabled = !!item.disabled;
+            button.addEventListener('click', function () {
+                ctxHide();
+                item.run();
+            });
+            menu.appendChild(button);
+        });
+        ctx.origin = origin || null;
+        var host = (origin && origin.closest && origin.closest('dialog')) || document.body;
+        if (menu.parentNode !== host) {
+            host.appendChild(menu);
+        }
+        menu.hidden = false;
+        var x = event.clientX;
+        var y = event.clientY;
+        if (!x && !y && origin && origin.getBoundingClientRect) {
+            // Tastatur (Shift+F10 / Menuetaste): am Ursprungselement ausrichten.
+            var rect = origin.getBoundingClientRect();
+            x = rect.left + Math.min(rect.width / 2, 24);
+            y = Math.min(rect.bottom, window.innerHeight - 8);
+        }
+        // Innerhalb des Fensters halten; Position ueber das CSSOM (CSP).
+        var width = menu.offsetWidth || 220;
+        var height = menu.offsetHeight || 120;
+        var left = Math.min(x, window.innerWidth - width - 8);
+        var top = Math.min(y, window.innerHeight - height - 8);
+        menu.style.cssText = 'left:' + Math.max(8, left) + 'px;top:' + Math.max(8, top) + 'px;';
+        return true;
+    }
+
+    function ctxEditableField(target) {
+        if (!target || target.nodeType !== 1) {
+            return null;
+        }
+        var field = target.closest('input, textarea, [contenteditable]');
+        if (!field) {
+            return null;
+        }
+        if (field.tagName === 'INPUT') {
+            var type = (field.getAttribute('type') || 'text').toLowerCase();
+            return ['text', 'search', 'email', 'url', 'tel', 'password', 'number'].indexOf(type) === -1 ? null : field;
+        }
+        return field.tagName === 'TEXTAREA' || field.isContentEditable ? field : null;
+    }
+
+    /**
+     * Auswahl sichern: Beim Klick ins Menue darf die Markierung im Feld nicht
+     * verloren gehen, sonst greifen Ausschneiden/Kopieren ins Leere.
+     */
+    function ctxSelectionSnapshot(field) {
+        if (field.isContentEditable) {
+            var selection = window.getSelection();
+            if (selection && selection.rangeCount && field.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+                var range = selection.getRangeAt(0).cloneRange();
+                return { range: range, text: range.toString() };
+            }
+            return { range: null, text: '' };
+        }
+        var start = null;
+        var end = null;
+        try {
+            start = field.selectionStart;
+            end = field.selectionEnd;
+        } catch (e) {
+            // z. B. type=number: keine Auswahl-API
+        }
+        return { start: start, end: end, text: start !== null && end !== null ? String(field.value).slice(start, end) : '' };
+    }
+
+    function ctxRestoreSelection(field, snapshot) {
+        field.focus();
+        if (field.isContentEditable) {
+            if (snapshot.range) {
+                var selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(snapshot.range);
+            }
+        } else if (snapshot.start !== null && snapshot.start !== undefined) {
+            try {
+                field.setSelectionRange(snapshot.start, snapshot.end);
+            } catch (e) { /* nicht unterstuetzt */ }
+        }
+    }
+
+    function ctxExec(command, field, snapshot) {
+        ctxRestoreSelection(field, snapshot);
+        try {
+            return document.execCommand(command);
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function ctxInsertText(field, text) {
+        var ok = false;
+        try {
+            // insertText erhaelt die Rueckgaengig-Historie des Browsers.
+            ok = document.execCommand('insertText', false, text);
+        } catch (e) {
+            ok = false;
+        }
+        if (ok) {
+            return;
+        }
+        if (field.isContentEditable) {
+            var selection = window.getSelection();
+            if (selection && selection.rangeCount) {
+                var range = selection.getRangeAt(0);
+                range.deleteContents();
+                var node = document.createTextNode(text);
+                range.insertNode(node);
+                range.setStartAfter(node);
+                range.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(range);
+            } else {
+                field.appendChild(document.createTextNode(text));
+            }
+        } else {
+            var start = field.selectionStart;
+            var end = field.selectionEnd;
+            if (start === null || start === undefined) {
+                field.value += text;
+            } else {
+                field.setRangeText(text, start, end, 'end');
+            }
+        }
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function ctxPaste(field, snapshot) {
+        if (!(navigator.clipboard && navigator.clipboard.readText)) {
+            ctxRestoreSelection(field, snapshot);
+            toast('Einfügen über das Menü wird von diesem Browser nicht unterstützt – bitte ' + MOD_KEY + 'V verwenden.', 'info');
+            return;
+        }
+        navigator.clipboard.readText().then(function (text) {
+            ctxRestoreSelection(field, snapshot);
+            if (text !== '') {
+                ctxInsertText(field, text);
+            }
+        }).catch(function () {
+            ctxRestoreSelection(field, snapshot);
+            toast('Der Browser hat den Zugriff auf die Zwischenablage nicht erlaubt – bitte ' + MOD_KEY + 'V verwenden.', 'info');
+        });
+    }
+
+    function ctxSelectAll(field) {
+        field.focus();
+        if (field.isContentEditable) {
+            var range = document.createRange();
+            range.selectNodeContents(field);
+            var selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        } else {
+            field.select();
+        }
+    }
+
+    function editMenuItems(field) {
+        var snapshot = ctxSelectionSnapshot(field);
+        var hasText = snapshot.text !== '';
+        var editable = field.isContentEditable || !(field.readOnly || field.disabled);
+        var secret = field.tagName === 'INPUT' && (field.getAttribute('type') || '').toLowerCase() === 'password';
+        var hasContent = field.isContentEditable ? (field.textContent || '').trim() !== '' : String(field.value) !== '';
+        return [
+            { label: 'Rückgängig', key: MOD_KEY + 'Z', disabled: !editable, run: function () { ctxExec('undo', field, snapshot); } },
+            { label: 'Wiederholen', key: MOD_KEY + 'Y', disabled: !editable, run: function () { ctxExec('redo', field, snapshot); } },
+            { separator: true },
+            { label: 'Ausschneiden', key: MOD_KEY + 'X', disabled: !editable || !hasText || secret, run: function () { ctxExec('cut', field, snapshot); } },
+            { label: 'Kopieren', key: MOD_KEY + 'C', disabled: !hasText || secret, run: function () { ctxExec('copy', field, snapshot); } },
+            { label: 'Einfügen', key: MOD_KEY + 'V', disabled: !editable, run: function () { ctxPaste(field, snapshot); } },
+            { separator: true },
+            { label: 'Alles auswählen', key: MOD_KEY + 'A', disabled: !hasContent, run: function () { ctxSelectAll(field); } }
+        ];
+    }
+
+    function mailMenuItems(row) {
+        var id = row.getAttribute('data-id');
+        var message = state.messages.filter(function (m) { return m.id === id; })[0];
+        if (!message) {
+            return [];
+        }
+        var checked = state.selectedIds.indexOf(id) !== -1;
+        if (!checked && !(state.selected && state.selected.id === id)) {
+            openMessage(message); // Rechtsklick waehlt die Nachricht wie ein Linksklick aus.
+        }
+        var ids = checked ? state.selectedIds.slice() : [id];
+        var targets = state.messages.filter(function (m) { return ids.indexOf(m.id) !== -1; });
+        var many = ids.length > 1;
+        var suffix = many ? ' (' + ids.length + ')' : '';
+        var drafts = state.folder === 'drafts';
+        var trash = state.folder === 'deleteditems';
+        var anyUnread = targets.some(function (m) { return !m.is_read; });
+        var anyUnflagged = targets.some(function (m) { return !m.flagged; });
+        var compose = function (mode) {
+            return function () {
+                withFullMessage(message).then(function (full) {
+                    if (full) {
+                        openCompose(mode, full);
+                    }
+                });
+            };
+        };
+        var items = [];
+        if (drafts) {
+            items.push({ label: 'Entwurf bearbeiten', icon: '📝', disabled: many, run: compose('draft') });
+        } else {
+            items.push({ label: 'Öffnen', icon: '📨', disabled: many, run: function () { openMessage(message); } });
+            items.push({ separator: true });
+            items.push({ label: 'Antworten', icon: '↩', key: 'R', disabled: many, run: compose('reply') });
+            items.push({ label: 'Allen antworten', icon: '↩', disabled: many, run: compose('replyall') });
+            items.push({ label: 'Weiterleiten', icon: '↪', disabled: many, run: compose('forward') });
+        }
+        items.push({ separator: true });
+        items.push({ label: (anyUnread ? 'Als gelesen markieren' : 'Als ungelesen markieren') + suffix, icon: anyUnread ? '✉' : '📩', run: function () { mailAction(anyUnread ? 'read' : 'unread', ids); } });
+        items.push({ label: (anyUnflagged ? 'Kennzeichnen' : 'Kennzeichnung entfernen') + suffix, icon: '⚑', run: function () { mailAction(anyUnflagged ? 'flag' : 'unflag', ids); } });
+        items.push({ separator: true });
+        items.push({ label: 'Verschieben …' + suffix, icon: '📁', run: function () { openMoveDialog(ids); } });
+        if (!trash) {
+            items.push({ label: 'Archivieren' + suffix, icon: '🗄', run: function () {
+                var archive = state.folders.filter(function (f) { return /^archiv/i.test(f.name); })[0];
+                if (archive) {
+                    mailAction('move', ids, folderKey(archive));
+                } else {
+                    openMoveDialog(ids);
+                }
+            } });
+        }
+        items.push({ label: (trash ? 'Endgültig löschen' : 'Löschen') + suffix, icon: '🗑', key: 'Entf', run: function () { mailAction(trash ? 'delete_permanent' : 'delete', ids); } });
+        return items;
+    }
+
+    function onContextMenu(event) {
+        if (!ctx.menu || event.defaultPrevented) {
+            return;
+        }
+        var target = event.target && event.target.nodeType === 1 ? event.target : (event.target && event.target.parentNode);
+        if (!target) {
+            return;
+        }
+        if (ctx.menu.contains(target)) {
+            event.preventDefault();
+            return;
+        }
+        var items = [];
+        var origin = null;
+        var field = ctxEditableField(target);
+        if (field) {
+            // KI-Eintraege (nur bei Markierung bzw. KI-Block) vor den Standardbefehlen.
+            items = aiMenuItems(event);
+            if (items.length) {
+                items.push({ separator: true });
+            }
+            items = items.concat(editMenuItems(field));
+            origin = field;
+        } else if (state.module === 'mail') {
+            var row = target.closest('.ov-item');
+            var list = hook('list-body');
+            if (row && list && list.contains(row)) {
+                items = mailMenuItems(row);
+                origin = row;
+            }
+        }
+        if (!items.length) {
+            ctxHide();
+            return; // Browser-Menue unveraendert lassen (z. B. Links im Lesebereich).
+        }
+        event.preventDefault();
+        if (!ctxShow(event, items, origin)) {
+            ctxHide();
+        }
+    }
+
+    function ctxOnKeydown(event) {
+        var menu = ctx.menu;
+        if (!menu || menu.hidden) {
+            return;
+        }
+        var buttons = $$('button:not(:disabled)', menu);
+        var index = buttons.indexOf(document.activeElement);
+        var inside = menu.contains(document.activeElement);
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            ctxHide();
+            if (ctx.origin && ctx.origin.focus) {
+                ctx.origin.focus();
+            }
+            return;
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!buttons.length) {
+                return;
+            }
+            var next;
+            if (event.key === 'Home') {
+                next = 0;
+            } else if (event.key === 'End') {
+                next = buttons.length - 1;
+            } else if (index === -1) {
+                next = event.key === 'ArrowDown' ? 0 : buttons.length - 1;
+            } else {
+                next = (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+            }
+            buttons[next].focus();
+            return;
+        }
+        if (event.key === 'Tab' || (!inside && ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].indexOf(event.key) === -1)) {
+            ctxHide(); // Weitertippen im Feld bzw. Tab schliesst das Menue.
+        }
+    }
+
+    function initContextMenu() {
+        ctx.menu = hook('ctx-menu');
+        if (!ctx.menu) {
+            return;
+        }
+        root.addEventListener('contextmenu', onContextMenu);
+        // Kein Fokuswechsel beim Klick ins Menue: Markierung im Textfeld bleibt erhalten.
+        ctx.menu.addEventListener('mousedown', function (event) {
+            event.preventDefault();
+        });
+        document.addEventListener('mousedown', function (event) {
+            if (!ctx.menu.hidden && !ctx.menu.contains(event.target)) {
+                ctxHide();
+            }
+        });
+        document.addEventListener('keydown', ctxOnKeydown, true);
+        window.addEventListener('scroll', ctxHide, true);
+        window.addEventListener('resize', ctxHide);
+        window.addEventListener('blur', ctxHide);
+    }
+
+    // ------------------------------------------------------------------
     // KI-Unterstuetzung (Kontextmenue im Editor, hellblau markierte Bloecke)
     // ------------------------------------------------------------------
 
@@ -3022,7 +3434,6 @@
 
     var ai = {
         available: !!config.aiAvailable,
-        menu: null,
         dialog: null,
         editor: null,       // Editor, in dem das Menue geoeffnet wurde
         range: null,        // gesicherte Auswahl (Range) fuer "verbessern"
@@ -3093,64 +3504,39 @@
         return text;
     }
 
-    function aiHideMenu() {
-        if (ai.menu) {
-            ai.menu.hidden = true;
-        }
-    }
-
-    function aiShowMenu(x, y, options) {
-        var menu = ai.menu;
-        if (!menu) {
-            return;
-        }
-        $$('[data-ov-ai-menu-item]', menu).forEach(function (item) {
-            var key = item.getAttribute('data-ov-ai-menu-item');
-            item.hidden = !options[key];
-        });
-        // Modale Dialoge liegen in der Top-Layer; das Menue muss daher in den
-        // Dialog des aktiven Editors wandern, sonst bleibt es dahinter verdeckt.
-        var host = (ai.editor && ai.editor.closest('dialog')) || document.body;
-        if (menu.parentNode !== host) {
-            host.appendChild(menu);
-        }
-        menu.hidden = false;
-        // Innerhalb des Fensters halten; Position ueber das CSSOM (CSP).
-        var width = menu.offsetWidth || 220;
-        var height = menu.offsetHeight || 120;
-        var left = Math.min(x, window.innerWidth - width - 8);
-        var top = Math.min(y, window.innerHeight - height - 8);
-        menu.style.cssText = 'left:' + Math.max(8, left) + 'px;top:' + Math.max(8, top) + 'px;';
-        var first = menu.querySelector('[data-ov-ai-menu-item]:not([hidden])');
-        if (first) {
-            first.focus();
-        }
-    }
-
-    function aiOnContextMenu(event) {
-        if (!ai.available) {
-            return;
+    /**
+     * KI-Eintraege fuer das App-Kontextmenue (nur in den KI-faehigen Editoren
+     * und nur bei Markierung bzw. Klick auf einen KI-Block).
+     */
+    function aiMenuItems(event) {
+        if (!ai.available || !ai.dialog) {
+            return [];
         }
         var editor = event.target.closest('[data-ov-compose-body], [data-ov-event-body]');
         if (!editor || aiEditors().indexOf(editor) === -1) {
-            aiHideMenu();
-            return;
+            return [];
         }
         var block = event.target.closest('.' + AI_BLOCK_CLASS);
         var range = aiSelectionIn(editor);
         if (!block && !range) {
-            return; // Browser-Menue (z. B. Rechtschreibung) unveraendert lassen.
+            return [];
         }
-        event.preventDefault();
         ai.editor = editor;
         ai.block = block && editor.contains(block) ? block : null;
         ai.range = range;
-        aiShowMenu(event.clientX, event.clientY, {
-            improve: !!range && !ai.block,
-            refine: !!ai.block,
-            reset: !!ai.block && ai.originals[ai.block.getAttribute('data-ov-ai-id')] !== undefined,
-            unmark: !!ai.block
-        });
+        var robot = el('img', { src: '/assets/images/orvanta-ai-robot-small.png', srcset: '/assets/images/orvanta-ai-robot-small@2x.png 2x', width: '12', height: '16', alt: '' });
+        var items = [];
+        if (range && !ai.block) {
+            items.push({ label: 'Mit KI verbessern …', icon: robot, ai: true, run: function () { aiMenuAction('improve'); } });
+        }
+        if (ai.block) {
+            items.push({ label: 'Weiter verfeinern …', icon: robot, ai: true, run: function () { aiMenuAction('refine'); } });
+            if (ai.originals[ai.block.getAttribute('data-ov-ai-id')] !== undefined) {
+                items.push({ label: 'Auf Original zurücksetzen', ai: true, run: function () { aiMenuAction('reset'); } });
+            }
+            items.push({ label: 'Markierung entfernen', ai: true, run: function () { aiMenuAction('unmark'); } });
+        }
+        return items;
     }
 
     function aiOpenDialog(kind) {
@@ -3303,7 +3689,6 @@
     }
 
     function aiMenuAction(action) {
-        aiHideMenu();
         var block = ai.block;
         if (action === 'improve') {
             aiOpenDialog('improve');
@@ -3324,29 +3709,11 @@
     }
 
     function initAi() {
-        ai.menu = hook('ai-menu');
         ai.dialog = $('[data-ov-dialog="ai"]');
-        if (!ai.available || !ai.menu || !ai.dialog) {
+        if (!ai.available || !ai.dialog) {
+            ai.dialog = null;
             return;
         }
-        root.addEventListener('contextmenu', aiOnContextMenu);
-        ai.menu.addEventListener('click', function (event) {
-            var item = event.target.closest('[data-ov-ai-menu-item]');
-            if (item) {
-                aiMenuAction(item.getAttribute('data-ov-ai-menu-item'));
-            }
-        });
-        document.addEventListener('mousedown', function (event) {
-            if (!ai.menu.hidden && !ai.menu.contains(event.target)) {
-                aiHideMenu();
-            }
-        });
-        document.addEventListener('keydown', function (event) {
-            if (event.key === 'Escape' && !ai.menu.hidden) {
-                aiHideMenu();
-            }
-        });
-        window.addEventListener('scroll', aiHideMenu, true);
         var form = hook('form-ai');
         form.addEventListener('submit', function (event) {
             event.preventDefault();
@@ -3387,6 +3754,7 @@
     function init() {
         applyPrefs();
         bindEvents();
+        initContextMenu();
         initAi();
         updateNotifyState();
         setOnline(true);

@@ -573,8 +573,11 @@
 .ov-noteeditor__foot { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .5rem 1rem; border-top: 1px solid rgba(0, 0, 0, .1); background: rgba(255, 255, 255, .45); }
 .ov-noteeditor__meta { font-size: .78rem; opacity: .8; }
 
-/* Zwischenspeicher-Quota */
+/* Speicheranzeigen (Postfach, Zwischenspeicher-Quota) */
 .ov-quota { display: flex; flex-direction: column; gap: .25rem; width: 100%; }
+.ov-quota--large { flex-direction: row; }
+.ov-quota--large .ov-quota__bar { flex: 1 1 auto; }
+.ov-quota--large > span:last-child { white-space: nowrap; }
 .ov-quota__text { font-size: .66rem; color: var(--ov-muted); }
 .ov-quota--large .ov-quota__text { font-size: .85rem; }
 .ov-quota__fill--warn { background: #d97706; }

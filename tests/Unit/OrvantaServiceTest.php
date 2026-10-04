@@ -379,6 +379,27 @@ Runner::test('Orvanta: Kalender, Kontakte, Aufgaben und Notizen liefern Elemente
     Assert::contains('Raum 1', $parts['transport']->last());
 });
 
+Runner::test('Orvanta: Postfachbelegung wird aus dem Stammordner gelesen (Quota in KB)', function (): void {
+    $parts = orvantaExchange();
+    $usage = $parts['exchange']->mailboxUsage('demo@demo.local');
+    Assert::contains('DistinguishedFolderId Id="root"', $parts['transport']->last());
+    Assert::contains('PropertyTag="0x0E08"', $parts['transport']->last());
+    Assert::same(1449551462, $usage['used']);
+    Assert::same(2097152 * 1024, $usage['quota']);
+    Assert::same(1992294 * 1024, $usage['warning']);
+    Assert::same(2411724 * 1024, $usage['receive_limit']);
+    Assert::same(67, $usage['percent']);
+
+    // Ohne Grenzen: nur Groesse, Prozent 0
+    $parts['transport']->forced = ['status' => 200, 'error' => null, 'body' => '<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types">'
+        . '<m:GetFolderResponse><m:ResponseMessages><m:GetFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Folders><t:Folder><t:FolderId Id="r" ChangeKey="A"/>'
+        . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0xe08" PropertyType="Long"/><t:Value>4096</t:Value></t:ExtendedProperty></t:Folder></m:Folders></m:GetFolderResponseMessage></m:ResponseMessages></m:GetFolderResponse></s:Body></s:Envelope>'];
+    $usage = $parts['exchange']->mailboxUsage('demo@demo.local');
+    Assert::same(4096, $usage['used']);
+    Assert::same(0, $usage['quota']);
+    Assert::same(0, $usage['percent']);
+});
+
 Runner::test('Orvanta: EwsXml-Hilfsfunktionen', function (): void {
     Assert::same('<t:DistinguishedFolderId Id="inbox"/>', EwsXml::folderId('inbox'));
     Assert::contains('<t:FolderId Id="AAMk', EwsXml::folderId('AAMkAGI2'));

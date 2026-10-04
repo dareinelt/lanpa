@@ -199,7 +199,7 @@ final class OrvantaApiController extends Controller
 
     public function cacheUsage(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaAttachments()->usage($access['uid']));
+        return $this->handle($request, fn (array $access): array => Container::orvantaAttachments()->usage($access['uid']) + ['mailbox' => $this->mailboxUsage($access)]);
     }
 
     public function cacheClear(Request $request): Response
@@ -207,8 +207,24 @@ final class OrvantaApiController extends Controller
         return $this->handle($request, function (array $access): array {
             $removed = Container::orvantaAttachments()->clear($access['uid']);
 
-            return Container::orvantaAttachments()->usage($access['uid']) + ['removed' => $removed, 'message' => 'Der Zwischenspeicher wurde geleert.'];
+            return Container::orvantaAttachments()->usage($access['uid']) + ['mailbox' => $this->mailboxUsage($access), 'removed' => $removed, 'message' => 'Der Zwischenspeicher wurde geleert.'];
         }, true);
+    }
+
+    /**
+     * Postfachbelegung auf dem Exchange; Fehler blockieren die Anzeige des
+     * Zwischenspeichers nicht (null = nicht ermittelbar).
+     *
+     * @param array<string,mixed> $access
+     * @return array{used:int,quota:int,warning:int,receive_limit:int,percent:int}|null
+     */
+    private function mailboxUsage(array $access): ?array
+    {
+        try {
+            return Container::orvantaExchange()->mailboxUsage($access['impersonate']);
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     // ------------------------------------------------------------------

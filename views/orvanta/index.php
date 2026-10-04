@@ -428,13 +428,8 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         </div>
     </dialog>
 
-    <!-- KI-Unterstuetzung: Kontextmenue im Editor -->
-    <div class="ov-ai-menu" data-ov-ai-menu role="menu" aria-label="KI-Unterstützung" hidden>
-        <button type="button" role="menuitem" data-ov-ai-menu-item="improve"><img src="/assets/images/orvanta-ai-robot-small.png" srcset="/assets/images/orvanta-ai-robot-small@2x.png 2x" width="12" height="16" alt=""> Mit KI verbessern …</button>
-        <button type="button" role="menuitem" data-ov-ai-menu-item="refine" hidden>Weiter verfeinern …</button>
-        <button type="button" role="menuitem" data-ov-ai-menu-item="reset" hidden>Auf Original zurücksetzen</button>
-        <button type="button" role="menuitem" data-ov-ai-menu-item="unmark" hidden>Markierung entfernen</button>
-    </div>
+    <!-- App-Kontextmenue (Mail-Liste, Textfelder, KI-Unterstuetzung); Eintraege werden per JS gefuellt -->
+    <div class="ov-ctx-menu" data-ov-ctx-menu role="menu" aria-label="Kontextmenü" hidden></div>
 
     <!-- Dialog: KI-Anweisung -->
     <dialog class="ov-dialog ov-dialog--small ov-dialog--ai" data-ov-dialog="ai">

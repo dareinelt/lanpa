@@ -248,6 +248,9 @@ body[data-page="emergency_plan"] .table th, body[data-page="emergency_plan"] .ta
 .ep-alert__text { margin: 0 0 1.2rem; line-height: 1.5; }
 .ep-alert__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; }
 .ep-alert__actions .button { min-width: 7rem; }
+.ep-setup { width: min(620px, 94vw); }
+.ep-setup label { display: block; margin-bottom: .9rem; font-size: .9rem; font-weight: 600; }
+.ep-setup input, .ep-setup textarea { box-sizing: border-box; display: block; width: 100%; margin-top: .3rem; padding: .55rem; border: 1px solid #8796a6; border-radius: .35rem; background: var(--color-background, #fff); color: inherit; font: inherit; font-weight: 400; }
 .ep-context-menu { position: fixed; z-index: 1000; min-width: 220px; padding: .3rem; border: 1px solid var(--ep-line); border-radius: .5rem; background: var(--color-background); color: var(--color-text); box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
 .ep-context-menu__item { display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; width: 100%; padding: .45rem .7rem; border: none; border-radius: .3rem; background: transparent; color: inherit; font: inherit; font-size: .88rem; text-align: left; cursor: pointer; }
 .ep-context-menu__item:hover:not(:disabled), .ep-context-menu__item:focus-visible { background: var(--ep-accent-soft); outline: none; }

@@ -200,71 +200,75 @@ final class OrvantaExchangeService
     }
 
     /**
-     * Neue E-Mail senden (mit Kopie in „Gesendete Elemente“).
+     * Neue E-Mail senden (mit Kopie in „Gesendete Elemente“). Mit $draftId wird
+     * ein vorhandener Entwurf aktualisiert und anschliessend gesendet; mit
+     * $mail['reference'] (id, mode) entsteht eine Antwort/Weiterleitung mit
+     * Bezug zur Originalnachricht.
      *
-     * @param array{to:list<string>,cc?:list<string>,bcc?:list<string>,subject:string,body:string,html?:bool,importance?:string,attachments?:list<array{name:string,content_type:string,content:string}>} $mail
+     * @param array{to?:list<string>,cc?:list<string>,bcc?:list<string>,subject?:string,body?:string,html?:bool,importance?:string,attachments?:list<array{name:string,content_type:string,content:string}>,reference?:array{id:string,mode:string}} $mail
      * @return array{id:string}
      */
-    public function send(string $user, array $mail): array
+    public function send(string $user, array $mail, string $draftId = '', string $changeKey = ''): array
     {
-        if (($mail['to'] ?? []) === [] && ($mail['cc'] ?? []) === [] && ($mail['bcc'] ?? []) === []) {
-            throw new OrvantaException('Bitte mindestens einen Empfänger angeben.', 422);
+        $reference = $this->reference($mail);
+        $hasRecipients = ($mail['to'] ?? []) !== [] || ($mail['cc'] ?? []) !== [] || ($mail['bcc'] ?? []) !== [];
+        if (!$hasRecipients && ($reference === null || $reference['mode'] === 'forward')) {
+            throw new OrvantaException($reference !== null ? 'Bitte einen Empfänger für die Weiterleitung angeben.' : 'Bitte mindestens einen Empfänger angeben.', 422);
         }
-        $attachments = $mail['attachments'] ?? [];
-        $message = $this->messageXml($mail);
-        if ($attachments === []) {
-            $xpath = $this->call('<m:CreateItem MessageDisposition="SendAndSaveCopy"><m:SavedItemFolderId><t:DistinguishedFolderId Id="sentitems"/></m:SavedItemFolderId><m:Items>' . $message . '</m:Items></m:CreateItem>', $user);
+        if ($draftId === '' && ($mail['attachments'] ?? []) === []) {
+            $xpath = $this->call('<m:CreateItem MessageDisposition="SendAndSaveCopy"><m:SavedItemFolderId><t:DistinguishedFolderId Id="sentitems"/></m:SavedItemFolderId><m:Items>' . $this->outgoingXml($mail, $reference) . '</m:Items></m:CreateItem>', $user);
 
             return ['id' => EwsXml::attr($xpath, '//m:Items/t:Message/t:ItemId', 'Id')];
         }
 
-        $xpath = $this->call('<m:CreateItem MessageDisposition="SaveOnly"><m:SavedItemFolderId><t:DistinguishedFolderId Id="drafts"/></m:SavedItemFolderId><m:Items>' . $message . '</m:Items></m:CreateItem>', $user);
-        $id = EwsXml::itemId($xpath, EwsXml::elements($xpath, '//m:Items/t:Message')[0] ?? $xpath->document);
-        $changeKey = $this->addAttachments($user, $id, $attachments);
+        $draft = $this->saveDraft($user, $mail, $draftId, $changeKey);
         $this->call(
-            '<m:SendItem SaveItemToFolder="true">' . EwsXml::itemIds([['id' => $id['id'], 'change_key' => $changeKey]])
+            '<m:SendItem SaveItemToFolder="true">' . EwsXml::itemIds([$draft])
             . '<m:SavedItemFolderId><t:DistinguishedFolderId Id="sentitems"/></m:SavedItemFolderId></m:SendItem>',
             $user
         );
 
-        return ['id' => $id['id']];
+        return ['id' => $draft['id']];
     }
 
     /**
-     * Entwurf speichern.
+     * Entwurf speichern: ohne $draftId wird ein neuer Entwurf angelegt (bei
+     * $mail['reference'] als Antwort/Weiterleitung mit Bezug), sonst der
+     * vorhandene aktualisiert. Neue Anhaenge werden angehaengt.
      *
      * @param array<string,mixed> $mail
-     * @return array{id:string}
+     * @return array{id:string,change_key:string}
      */
-    public function saveDraft(string $user, array $mail): array
+    public function saveDraft(string $user, array $mail, string $draftId = '', string $changeKey = ''): array
     {
-        $xpath = $this->call('<m:CreateItem MessageDisposition="SaveOnly"><m:SavedItemFolderId><t:DistinguishedFolderId Id="drafts"/></m:SavedItemFolderId><m:Items>' . $this->messageXml($mail) . '</m:Items></m:CreateItem>', $user);
+        if ($draftId === '') {
+            $xpath = $this->call('<m:CreateItem MessageDisposition="SaveOnly"><m:SavedItemFolderId><t:DistinguishedFolderId Id="drafts"/></m:SavedItemFolderId><m:Items>' . $this->outgoingXml($mail, $this->reference($mail)) . '</m:Items></m:CreateItem>', $user);
+            $node = EwsXml::elements($xpath, '//m:Items/t:Message')[0] ?? null;
+            $item = $node !== null ? EwsXml::itemId($xpath, $node) : ['id' => '', 'change_key' => ''];
+            if ($item['id'] === '') {
+                throw new OrvantaException('Exchange hat den Entwurf nicht angelegt.', 502);
+            }
+        } else {
+            $item = $this->updateDraft($user, $draftId, $changeKey, $mail);
+        }
+        $attachments = $mail['attachments'] ?? [];
+        if ($attachments !== []) {
+            $item['change_key'] = $this->addAttachments($user, $item, $attachments);
+        }
 
-        return ['id' => EwsXml::attr($xpath, '//m:Items/t:Message/t:ItemId', 'Id')];
+        return $item;
     }
 
     /**
-     * Antwort oder Weiterleitung auf eine vorhandene Nachricht.
+     * Antwort oder Weiterleitung auf eine vorhandene Nachricht senden.
      *
      * @param 'reply'|'replyall'|'forward' $mode
-     * @param list<string> $to
+     * @param array<string,mixed> $mail to, cc, bcc, subject, body, html, attachments
+     * @return array{id:string}
      */
-    public function respond(string $user, string $id, string $mode, string $body, array $to = [], bool $html = true): void
+    public function respond(string $user, string $id, string $mode, array $mail): array
     {
-        $element = match ($mode) {
-            'reply' => 'ReplyToItem',
-            'replyall' => 'ReplyAllToItem',
-            'forward' => 'ForwardItem',
-            default => throw new OrvantaException('Unbekannte Antwortart.', 422),
-        };
-        if ($mode === 'forward' && $to === []) {
-            throw new OrvantaException('Bitte einen Empfänger für die Weiterleitung angeben.', 422);
-        }
-        $xml = '<t:' . $element . '><t:ReferenceItemId Id="' . EwsXml::escape($id) . '"/>'
-            . '<t:NewBodyContent BodyType="' . ($html ? 'HTML' : 'Text') . '">' . EwsXml::escape($body) . '</t:NewBodyContent>'
-            . EwsXml::recipients('ToRecipients', $to)
-            . '</t:' . $element . '>';
-        $this->call('<m:CreateItem MessageDisposition="SendAndSaveCopy"><m:SavedItemFolderId><t:DistinguishedFolderId Id="sentitems"/></m:SavedItemFolderId><m:Items>' . $xml . '</m:Items></m:CreateItem>', $user);
+        return $this->send($user, ['reference' => ['id' => $id, 'mode' => $mode]] + $mail);
     }
 
     /**
@@ -412,7 +416,7 @@ final class OrvantaExchangeService
         $hasAttendees = ($event['required'] ?? []) !== [] || ($event['optional'] ?? []) !== [];
         $xml = '<t:CalendarItem>'
             . '<t:Subject>' . EwsXml::escape($event['subject']) . '</t:Subject>'
-            . '<t:Body BodyType="HTML">' . EwsXml::escape(MailHtmlSanitizer::clean((string) ($event['body'] ?? ''))['html']) . '</t:Body>'
+            . '<t:Body BodyType="HTML">' . EwsXml::escape(MailHtmlSanitizer::clean((string) ($event['body'] ?? ''), false)['html']) . '</t:Body>'
             . '<t:ReminderIsSet>' . (($event['reminder'] ?? -1) >= 0 ? 'true' : 'false') . '</t:ReminderIsSet>'
             . '<t:ReminderMinutesBeforeStart>' . max(0, (int) ($event['reminder'] ?? 15)) . '</t:ReminderMinutesBeforeStart>'
             . '<t:Start>' . EwsXml::dateTime($event['start']) . '</t:Start><t:End>' . EwsXml::dateTime($event['end']) . '</t:End>'
@@ -444,7 +448,7 @@ final class OrvantaExchangeService
             . $set('item:ReminderIsSet', '<t:ReminderIsSet>' . (($event['reminder'] ?? -1) >= 0 ? 'true' : 'false') . '</t:ReminderIsSet>')
             . $set('item:ReminderMinutesBeforeStart', '<t:ReminderMinutesBeforeStart>' . max(0, (int) ($event['reminder'] ?? 15)) . '</t:ReminderMinutesBeforeStart>');
         if (array_key_exists('body', $event)) {
-            $updates .= $set('item:Body', '<t:Body BodyType="HTML">' . EwsXml::escape(MailHtmlSanitizer::clean((string) $event['body'])['html']) . '</t:Body>');
+            $updates .= $set('item:Body', '<t:Body BodyType="HTML">' . EwsXml::escape(MailHtmlSanitizer::clean((string) $event['body'], false)['html']) . '</t:Body>');
         }
         $this->call(
             '<m:UpdateItem ConflictResolution="AlwaysOverwrite" SendMeetingInvitationsOrCancellations="SendToChangedAndSaveCopy"><m:ItemChanges><t:ItemChange>'
@@ -476,24 +480,23 @@ final class OrvantaExchangeService
     }
 
     /**
-     * Anstehende Termine mit gesetzter Erinnerung fuer den Erinnerungsdienst.
+     * Anstehende Termine fuer den Erinnerungsdienst (mit und ohne eigene
+     * Exchange-Erinnerung; remind_at = 0, wenn keine gesetzt ist).
      *
-     * @return list<array{id:string,subject:string,location:string,start:int,end:int,remind_at:int}>
+     * @return list<array{id:string,subject:string,location:string,start:int,end:int,reminder_set:bool,remind_at:int}>
      */
     public function upcomingReminders(string $user, int $from, int $hours = 48): array
     {
         $result = [];
         foreach ($this->calendar($user, $from - 3600, $from + $hours * 3600) as $event) {
-            if (!$event['reminder_set']) {
-                continue;
-            }
             $result[] = [
                 'id' => $event['id'],
                 'subject' => $event['subject'],
                 'location' => $event['location'],
                 'start' => $event['start'],
                 'end' => $event['end'],
-                'remind_at' => $event['start'] - $event['reminder_minutes'] * 60,
+                'reminder_set' => (bool) $event['reminder_set'],
+                'remind_at' => $event['reminder_set'] ? $event['start'] - $event['reminder_minutes'] * 60 : 0,
             ];
         }
 
@@ -835,7 +838,7 @@ final class OrvantaExchangeService
     }
 
     /**
-     * @return list<array{id:string,name:string,content_type:string,size:int,inline:bool,is_item:bool}>
+     * @return list<array{id:string,name:string,content_type:string,content_id:string,size:int,inline:bool,is_item:bool}>
      */
     private function attachmentList(DOMXPath $xpath, DOMElement $item): array
     {
@@ -845,6 +848,7 @@ final class OrvantaExchangeService
                 'id' => EwsXml::attr($xpath, 't:AttachmentId', 'Id', $attachment),
                 'name' => EwsXml::text($xpath, 't:Name', $attachment),
                 'content_type' => EwsXml::text($xpath, 't:ContentType', $attachment),
+                'content_id' => trim(EwsXml::text($xpath, 't:ContentId', $attachment), '<>'),
                 'size' => (int) EwsXml::text($xpath, 't:Size', $attachment),
                 'inline' => EwsXml::bool($xpath, 't:IsInline', $attachment),
                 'is_item' => $attachment->localName === 'ItemAttachment',
@@ -1026,20 +1030,119 @@ final class OrvantaExchangeService
      */
     private function messageXml(array $mail): string
     {
-        $html = $mail['html'] ?? true;
-        $body = (string) ($mail['body'] ?? '');
-        if ($html) {
-            $body = MailHtmlSanitizer::clean($body)['html'];
-        }
+        return '<t:Message>' . $this->messageFieldsXml($mail) . '</t:Message>';
+    }
 
-        return '<t:Message>'
-            . '<t:Subject>' . EwsXml::escape((string) ($mail['subject'] ?? '')) . '</t:Subject>'
-            . '<t:Body BodyType="' . ($html ? 'HTML' : 'Text') . '">' . EwsXml::escape($body) . '</t:Body>'
-            . '<t:Importance>' . self::importance((string) ($mail['importance'] ?? 'Normal')) . '</t:Importance>'
+    /**
+     * Antwort-/Weiterleitungsobjekt (ReplyToItem, ReplyAllToItem, ForwardItem).
+     * Reihenfolge laut Schema: Item-Felder, Empfaenger, ReferenceItemId,
+     * NewBodyContent. Der Text wandert in NewBodyContent, Exchange haengt die
+     * Originalnachricht an und setzt den Bezug (Konversation, In-Reply-To).
+     *
+     * @param array<string,mixed> $mail
+     * @param array{id:string,mode:string} $reference
+     */
+    private function responseXml(array $mail, array $reference): string
+    {
+        $element = match ($reference['mode']) {
+            'reply' => 'ReplyToItem',
+            'replyall' => 'ReplyAllToItem',
+            'forward' => 'ForwardItem',
+            default => throw new OrvantaException('Unbekannte Antwortart.', 422),
+        };
+        $html = $mail['html'] ?? true;
+        $subject = trim((string) ($mail['subject'] ?? ''));
+
+        return '<t:' . $element . '>'
+            . ($subject !== '' ? '<t:Subject>' . EwsXml::escape($subject) . '</t:Subject>' : '')
             . EwsXml::recipients('ToRecipients', $mail['to'] ?? [])
             . EwsXml::recipients('CcRecipients', $mail['cc'] ?? [])
             . EwsXml::recipients('BccRecipients', $mail['bcc'] ?? [])
-            . '</t:Message>';
+            . '<t:ReferenceItemId Id="' . EwsXml::escape($reference['id']) . '"/>'
+            . '<t:NewBodyContent BodyType="' . ($html ? 'HTML' : 'Text') . '">' . EwsXml::escape($this->outgoingBody($mail)) . '</t:NewBodyContent>'
+            . '</t:' . $element . '>';
+    }
+
+    /**
+     * @param array<string,mixed> $mail
+     * @param array{id:string,mode:string}|null $reference
+     */
+    private function outgoingXml(array $mail, ?array $reference): string
+    {
+        return $reference !== null ? $this->responseXml($mail, $reference) : $this->messageXml($mail);
+    }
+
+    /**
+     * @param array<string,mixed> $mail
+     * @return array{id:string,mode:string}|null
+     */
+    private function reference(array $mail): ?array
+    {
+        $reference = $mail['reference'] ?? null;
+        if (!is_array($reference) || trim((string) ($reference['id'] ?? '')) === '') {
+            return null;
+        }
+
+        return ['id' => (string) $reference['id'], 'mode' => (string) ($reference['mode'] ?? 'reply')];
+    }
+
+    /**
+     * Kindelemente einer Message in Schema-Reihenfolge.
+     *
+     * @param array<string,mixed> $mail
+     */
+    private function messageFieldsXml(array $mail): string
+    {
+        $html = $mail['html'] ?? true;
+
+        return '<t:Subject>' . EwsXml::escape((string) ($mail['subject'] ?? '')) . '</t:Subject>'
+            . '<t:Body BodyType="' . ($html ? 'HTML' : 'Text') . '">' . EwsXml::escape($this->outgoingBody($mail)) . '</t:Body>'
+            . '<t:Importance>' . self::importance((string) ($mail['importance'] ?? 'Normal')) . '</t:Importance>'
+            . EwsXml::recipients('ToRecipients', $mail['to'] ?? [])
+            . EwsXml::recipients('CcRecipients', $mail['cc'] ?? [])
+            . EwsXml::recipients('BccRecipients', $mail['bcc'] ?? []);
+    }
+
+    /**
+     * @param array<string,mixed> $mail
+     */
+    private function outgoingBody(array $mail): string
+    {
+        $body = (string) ($mail['body'] ?? '');
+
+        return ($mail['html'] ?? true) ? MailHtmlSanitizer::clean($body, false)['html'] : $body;
+    }
+
+    /**
+     * Vorhandenen Entwurf mit den Formularwerten ueberschreiben.
+     *
+     * @param array<string,mixed> $mail
+     * @return array{id:string,change_key:string}
+     */
+    private function updateDraft(string $user, string $id, string $changeKey, array $mail): array
+    {
+        $html = $mail['html'] ?? true;
+        $set = static fn (string $field, string $inner): string => '<t:SetItemField><t:FieldURI FieldURI="' . $field . '"/><t:Message>' . $inner . '</t:Message></t:SetItemField>';
+        $recipients = static function (string $field, string $element, array $addresses) use ($set): string {
+            return $addresses !== []
+                ? $set($field, EwsXml::recipients($element, $addresses))
+                : '<t:DeleteItemField><t:FieldURI FieldURI="' . $field . '"/></t:DeleteItemField>';
+        };
+        $updates = $set('item:Subject', '<t:Subject>' . EwsXml::escape((string) ($mail['subject'] ?? '')) . '</t:Subject>')
+            . $set('item:Body', '<t:Body BodyType="' . ($html ? 'HTML' : 'Text') . '">' . EwsXml::escape($this->outgoingBody($mail)) . '</t:Body>')
+            . $set('item:Importance', '<t:Importance>' . self::importance((string) ($mail['importance'] ?? 'Normal')) . '</t:Importance>')
+            . $recipients('message:ToRecipients', 'ToRecipients', $mail['to'] ?? [])
+            . $recipients('message:CcRecipients', 'CcRecipients', $mail['cc'] ?? [])
+            . $recipients('message:BccRecipients', 'BccRecipients', $mail['bcc'] ?? []);
+        $xpath = $this->call(
+            '<m:UpdateItem ConflictResolution="AlwaysOverwrite" MessageDisposition="SaveOnly"><m:ItemChanges><t:ItemChange>'
+            . '<t:ItemId Id="' . EwsXml::escape($id) . '"' . ($changeKey !== '' ? ' ChangeKey="' . EwsXml::escape($changeKey) . '"' : '') . '/>'
+            . '<t:Updates>' . $updates . '</t:Updates></t:ItemChange></m:ItemChanges></m:UpdateItem>',
+            $user
+        );
+        $newKey = EwsXml::attr($xpath, '//m:Items/t:Message/t:ItemId', 'ChangeKey');
+
+        return ['id' => $id, 'change_key' => $newKey !== '' ? $newKey : $changeKey];
     }
 
     /**

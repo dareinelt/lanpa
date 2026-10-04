@@ -11,11 +11,19 @@ use DOMNode;
 /**
  * Bereinigt HTML-Nachrichtentexte aus Exchange fuer die Anzeige in Orvanta.
  * Im Unterschied zum Rich-Text-Sanitizer bleiben Tabellen und einfache
- * Layoutattribute erhalten; Skripte, Formulare, Styles mit Ausdruecken,
- * externe Bilder (Tracking) und Event-Handler werden entfernt.
+ * Layoutattribute erhalten; Skripte, Formulare, Styles mit Ausdruecken und
+ * Event-Handler werden entfernt.
+ *
+ * Bilder: Externe Quellen (Tracking) wandern fuer die Anzeige in
+ * data-blocked-src (der Client laedt sie erst auf Wunsch), eingebettete
+ * cid:-Bilder werden mit data-cid markiert und vom Anhangsdienst aufgeloest.
+ * Fuer ausgehende Nachrichten (clean(..., false)) bleiben Quellen erhalten
+ * bzw. werden aus diesen Markierungen zurueckgewonnen.
  */
 final class MailHtmlSanitizer
 {
+    public const ATTR_BLOCKED = 'data-blocked-src';
+    public const ATTR_CID = 'data-cid';
     /** @var list<string> */
     private const ALLOWED_TAGS = [
         'p', 'div', 'span', 'br', 'hr', 'strong', 'b', 'em', 'i', 'u', 's', 'strike', 'del', 'ins',
@@ -37,9 +45,10 @@ final class MailHtmlSanitizer
     ];
 
     /**
+     * @param bool $blockExternal true = Anzeige (externe Bilder blockieren), false = Versand
      * @return array{html:string,blocked_images:int}
      */
-    public static function clean(string $html): array
+    public static function clean(string $html, bool $blockExternal = true): array
     {
         $html = trim($html);
         if ($html === '') {
@@ -60,7 +69,7 @@ final class MailHtmlSanitizer
             return ['html' => '', 'blocked_images' => 0];
         }
         $blocked = 0;
-        self::walk($root, $blocked);
+        self::walk($root, $blocked, $blockExternal);
 
         $out = '';
         foreach ($root->childNodes as $child) {
@@ -70,14 +79,14 @@ final class MailHtmlSanitizer
         return ['html' => $out, 'blocked_images' => $blocked];
     }
 
-    private static function walk(DOMNode $node, int &$blocked): void
+    private static function walk(DOMNode $node, int &$blocked, bool $blockExternal): void
     {
         $children = [];
         foreach ($node->childNodes as $child) {
             $children[] = $child;
         }
         foreach ($children as $child) {
-            self::cleanChild($node, $child, $blocked);
+            self::cleanChild($node, $child, $blocked, $blockExternal);
         }
     }
 
@@ -86,7 +95,7 @@ final class MailHtmlSanitizer
      * Elemente auspacken (die ausgepackten Kinder werden erneut geprueft),
      * erlaubte Elemente von gefaehrlichen Attributen befreien.
      */
-    private static function cleanChild(DOMNode $parent, DOMNode $child, int &$blocked): void
+    private static function cleanChild(DOMNode $parent, DOMNode $child, int &$blocked, bool $blockExternal): void
     {
         if (!$child instanceof DOMElement) {
             if ($child->nodeType === XML_COMMENT_NODE || $child->nodeType === XML_PI_NODE || $child->nodeType === XML_CDATA_SECTION_NODE) {
@@ -106,27 +115,28 @@ final class MailHtmlSanitizer
             }
             $parent->removeChild($child);
             foreach ($moved as $node) {
-                self::cleanChild($parent, $node, $blocked);
+                self::cleanChild($parent, $node, $blocked, $blockExternal);
             }
             return;
         }
-        self::cleanAttributes($child, $tag, $blocked);
-        if ($tag === 'img' && !$child->hasAttribute('src')) {
+        self::cleanAttributes($child, $tag, $blocked, $blockExternal);
+        if ($tag === 'img' && !$child->hasAttribute('src') && !$child->hasAttribute(self::ATTR_BLOCKED) && !$child->hasAttribute(self::ATTR_CID)) {
             $placeholder = $child->ownerDocument?->createElement('span');
             if ($placeholder !== null) {
                 $placeholder->setAttribute('class', 'orv-img-blocked');
-                $placeholder->setAttribute('title', 'Externes Bild blockiert');
+                $placeholder->setAttribute('title', 'Bild entfernt');
                 $placeholder->appendChild($child->ownerDocument->createTextNode('🖼'));
                 $parent->replaceChild($placeholder, $child);
             }
             return;
         }
-        self::walk($child, $blocked);
+        self::walk($child, $blocked, $blockExternal);
     }
 
-    private static function cleanAttributes(DOMElement $element, string $tag, int &$blocked): void
+    private static function cleanAttributes(DOMElement $element, string $tag, int &$blocked, bool $blockExternal): void
     {
         $remove = [];
+        $source = null;
         foreach ($element->attributes as $attribute) {
             $name = strtolower($attribute->nodeName);
             $value = trim($attribute->nodeValue ?? '');
@@ -136,11 +146,15 @@ final class MailHtmlSanitizer
                 }
                 continue;
             }
-            if ($tag === 'img' && $name === 'src') {
-                if (!str_starts_with(strtolower($value), 'data:image/')) {
-                    $remove[] = $attribute->nodeName;
-                    $blocked++;
+            if ($tag === 'img' && ($name === 'src' || $name === self::ATTR_BLOCKED || $name === self::ATTR_CID)) {
+                // Markierungen aus einer frueheren Bereinigung (zitierte Mail) wieder als Quelle lesen.
+                if ($name === self::ATTR_CID) {
+                    $value = 'cid:' . $value;
                 }
+                if ($source === null || $name === self::ATTR_CID) {
+                    $source = $value;
+                }
+                $remove[] = $attribute->nodeName;
                 continue;
             }
             if (!in_array($name, self::ALLOWED_ATTRIBUTES, true)) {
@@ -157,6 +171,45 @@ final class MailHtmlSanitizer
         if ($tag === 'a' && $element->hasAttribute('href')) {
             $element->setAttribute('target', '_blank');
             $element->setAttribute('rel', 'noopener noreferrer nofollow');
+        }
+        if ($tag === 'img' && $source !== null) {
+            self::applyImageSource($element, $source, $blocked, $blockExternal);
+        }
+    }
+
+    /**
+     * Bildquelle einordnen: data:image bleibt, cid: wird markiert, http(s)
+     * wird fuer die Anzeige blockiert (data-blocked-src) oder fuer den
+     * Versand uebernommen; alles andere wird verworfen.
+     */
+    private static function applyImageSource(DOMElement $element, string $source, int &$blocked, bool $blockExternal): void
+    {
+        $lower = strtolower($source);
+        if (str_starts_with($lower, 'data:image/')) {
+            $element->setAttribute('src', $source);
+            return;
+        }
+        if (str_starts_with($lower, 'cid:')) {
+            $cid = trim(substr($source, 4), " \t<>");
+            if ($cid === '') {
+                return;
+            }
+            if ($blockExternal) {
+                $element->setAttribute(self::ATTR_CID, $cid);
+            } else {
+                $element->setAttribute('src', 'cid:' . $cid);
+            }
+            return;
+        }
+        $scheme = strtolower((string) parse_url($source, PHP_URL_SCHEME));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return;
+        }
+        if ($blockExternal) {
+            $element->setAttribute(self::ATTR_BLOCKED, $source);
+            $blocked++;
+        } else {
+            $element->setAttribute('src', $source);
         }
     }
 

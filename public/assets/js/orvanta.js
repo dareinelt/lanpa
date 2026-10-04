@@ -880,6 +880,16 @@
         ]);
         wrap.appendChild(head);
 
+        if (state.folder === 'drafts') {
+            var draftBar = el('div', { 'class': 'ov-mail__meeting' }, [el('span', { text: 'Entwurf – ' })]);
+            var edit = el('button', { type: 'button', 'class': 'button button--ghost', text: 'Entwurf bearbeiten' });
+            edit.addEventListener('click', function () {
+                openCompose('draft', message);
+            });
+            draftBar.appendChild(edit);
+            wrap.appendChild(draftBar);
+        }
+
         if (message.is_meeting_request) {
             var bar = el('div', { 'class': 'ov-mail__meeting' }, [el('span', { text: 'Besprechungsanfrage – ' })]);
             [['Accept', 'Zusagen'], ['Tentative', 'Mit Vorbehalt'], ['Decline', 'Ablehnen']].forEach(function (pair) {
@@ -1080,21 +1090,30 @@
             return;
         }
         form.reset();
-        state.compose = { mode: mode || 'new', attachments: [], replyTo: message ? message.id : null };
+        var isDraft = mode === 'draft';
+        state.compose = {
+            mode: isDraft ? 'new' : (mode || 'new'),
+            attachments: [],
+            replyTo: message && !isDraft ? message.id : null,
+            draftId: isDraft && message ? message.id : null,
+            changeKey: isDraft && message ? (message.change_key || '') : ''
+        };
         var body = hook('compose-body');
         var attachList = hook('attach-list');
         if (attachList) {
             attachList.innerHTML = '';
         }
         var title = hook('compose-title', form.closest('dialog'));
-        var titles = { 'new': 'Neue Nachricht', reply: 'Antworten', replyall: 'Allen antworten', forward: 'Weiterleiten' };
+        var titles = { 'new': 'Neue Nachricht', reply: 'Antworten', replyall: 'Allen antworten', forward: 'Weiterleiten', draft: 'Entwurf bearbeiten' };
         if (title) {
-            title.textContent = titles[state.compose.mode] || 'Neue Nachricht';
+            title.textContent = titles[mode] || 'Neue Nachricht';
         }
         if (body) {
             body.innerHTML = '<p><br></p>';
         }
-        if (message) {
+        if (isDraft && message) {
+            fillComposeFromDraft(form, body, message);
+        } else if (message) {
             var subject = message.subject || '';
             var prefix = mode === 'forward' ? 'WG: ' : 'AW: ';
             if (!/^(AW|RE|WG|FW|FWD):/i.test(subject)) {
@@ -1128,8 +1147,45 @@
         }
     }
 
+    /**
+     * Gespeicherten Entwurf in das Formular laden; vorhandene Anhaenge bleiben
+     * am Entwurf und werden nur angezeigt.
+     */
+    function fillComposeFromDraft(form, body, message) {
+        form.elements.to.value = (message.to || []).map(mailboxFull).join('; ');
+        form.elements.cc.value = (message.cc || []).map(mailboxFull).join('; ');
+        if (form.elements.bcc) {
+            form.elements.bcc.value = (message.bcc || []).map(mailboxFull).join('; ');
+        }
+        form.elements.subject.value = message.subject || '';
+        if (form.elements.importance && message.importance) {
+            form.elements.importance.value = message.importance;
+        }
+        if (body) {
+            body.innerHTML = inlineStylesToCssom(message.body_html || '<p><br></p>');
+            body.querySelectorAll('[data-ov-style]').forEach(function (node) {
+                node.style.cssText = node.getAttribute('data-ov-style');
+                node.removeAttribute('data-ov-style');
+            });
+            body.querySelectorAll('[data-blocked-src]').forEach(function (img) {
+                img.setAttribute('src', img.getAttribute('data-blocked-src'));
+            });
+        }
+        var list = hook('attach-list');
+        (message.attachments || []).filter(function (a) { return !a.inline; }).forEach(function (attachment) {
+            var entry = { name: attachment.name, content_type: attachment.content_type, content: '', size: attachment.size, uploaded: true };
+            state.compose.attachments.push(entry);
+            if (list) {
+                list.appendChild(el('span', { 'class': 'ov-attachment ov-attachment--compose', title: 'Bereits am Entwurf gespeichert' }, [
+                    el('span', { text: attachmentIcon(attachment.name) + ' ' + attachment.name + ' (' + fmtBytes(attachment.size) + ')' })
+                ]));
+            }
+        });
+    }
+
     function composePayload(form) {
         var body = hook('compose-body');
+        var compose = state.compose || {};
         return {
             to: parseRecipients(form.elements.to.value),
             cc: parseRecipients(form.elements.cc.value),
@@ -1138,13 +1194,17 @@
             body: body ? body.innerHTML : '',
             html: true,
             importance: form.elements.importance ? form.elements.importance.value : 'Normal',
-            attachments: state.compose ? state.compose.attachments : []
+            attachments: (compose.attachments || []).filter(function (a) { return !a.uploaded; }),
+            draft_id: compose.draftId || '',
+            change_key: compose.changeKey || ''
         };
     }
 
     function sendCompose(form, asDraft) {
         var payload = composePayload(form);
-        if (!asDraft && !payload.to.length) {
+        var compose = state.compose || {};
+        var isReply = compose.mode !== 'new' && !!compose.replyTo;
+        if (!asDraft && !payload.to.length && !(isReply && compose.mode !== 'forward' && (payload.cc.length || payload.bcc.length))) {
             formError(form, 'Bitte mindestens einen Empfänger angeben.');
             return;
         }
@@ -1155,19 +1215,35 @@
             formError(form, 'Ungültige Adresse: ' + invalid[0].email);
             return;
         }
+        formError(form, '');
         var buttons = $$('button', form);
         buttons.forEach(function (b) { b.disabled = true; });
         setStatus(asDraft ? 'Entwurf wird gespeichert …' : 'Nachricht wird gesendet …');
         var request;
         if (asDraft) {
+            payload.reply_id = isReply ? compose.replyTo : '';
+            payload.mode = isReply ? compose.mode : 'new';
             request = api('/mail/entwurf', { body: payload });
-        } else if (state.compose && state.compose.mode !== 'new' && state.compose.replyTo && !payload.attachments.length) {
-            request = api('/mail/antworten', { body: { id: state.compose.replyTo, mode: state.compose.mode, body: payload.body, to: payload.to, cc: payload.cc, html: true } });
+        } else if (isReply && !compose.draftId) {
+            payload.id = compose.replyTo;
+            payload.mode = compose.mode;
+            request = api('/mail/antworten', { body: payload });
         } else {
             request = api('/mail/senden', { body: payload });
         }
-        request.then(function () {
-            closeDialog('compose');
+        request.then(function (result) {
+            if (asDraft) {
+                // Entwurf bleibt geoeffnet; weitere Speicherungen aktualisieren ihn.
+                state.compose.draftId = result && result.id ? result.id : state.compose.draftId;
+                state.compose.changeKey = result && result.change_key ? result.change_key : '';
+                payload.attachments.forEach(function (a) { a.uploaded = true; });
+                var title = hook('compose-title', form.closest('dialog'));
+                if (title && state.compose.mode === 'new') {
+                    title.textContent = 'Entwurf bearbeiten';
+                }
+            } else {
+                closeDialog('compose');
+            }
             toast(asDraft ? 'Entwurf gespeichert.' : 'Nachricht gesendet.', 'success');
             setStatus('');
             loadFolders().then(loadMessages);

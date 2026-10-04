@@ -255,10 +255,10 @@ Vorprüfungen des Service als 422/404).
 | `testConnection()` | `GetFolder` inbox | ohne Impersonation = Dienstkonto selbst; liest `ServerVersionInfo` |
 | `folders()` | `GetFolder` (Systemordner, `$strict = false`) + `FindFolder` Deep ab `msgfolderroot` (≤ 500) | nur `FolderClass` `IPF.Note*`; Sortierung Systemordner (`MAIL_FOLDERS`) vor Namen |
 | `messages()` | `FindItem` Shallow, `IndexedPageItemView`, absteigend nach `DateTimeReceived`, optional `QueryString` (AQS) | `limit` 1–200 (API: 1–100), `has_more` aus `IncludesLastItemInRange` |
-| `message()` | `GetItem` mit `BodyType = HTML` | Text-Body → `nl2br(htmlspecialchars())`, sonst `MailHtmlSanitizer::clean()` |
-| `send()` | ohne Anhänge `CreateItem SendAndSaveCopy`; mit Anhängen `CreateItem SaveOnly` (drafts) → `CreateAttachment` → `SendItem` mit `RootItemChangeKey` | mind. ein Empfänger in to/cc/bcc |
-| `saveDraft()` | `CreateItem SaveOnly` in drafts | legt immer einen **neuen** Entwurf an; Anhänge werden nicht übernommen |
-| `respond()` | `CreateItem` mit `ReplyToItem`/`ReplyAllToItem`/`ForwardItem` + `NewBodyContent` | nur `ToRecipients`; `forward` verlangt Empfänger |
+| `message()` | `GetItem` mit `BodyType = HTML` | Text-Body → `nl2br(htmlspecialchars())`, sonst `MailHtmlSanitizer::clean()`; externe Bilder landen in `data-blocked-src`, eingebettete in `data-cid` (Anhänge liefern `content_id`) |
+| `send(user, mail, draftId, changeKey)` | ohne Entwurf und Anhänge `CreateItem SendAndSaveCopy`; sonst `saveDraft()` → `SendItem SaveItemToFolder` | mind. ein Empfänger in to/cc/bcc (außer `reference` mit `reply`/`replyall`); `mail.reference = {id, mode}` erzeugt `ReplyToItem`/`ReplyAllToItem`/`ForwardItem` statt `Message` |
+| `saveDraft(user, mail, draftId, changeKey)` | neu: `CreateItem SaveOnly` in drafts; bestehend: `UpdateItem SaveOnly` (Subject, Body, Importance, To/Cc/Bcc) | anschließend `CreateAttachment` für neue Anhänge; liefert `{id, change_key}` |
+| `respond()` | `send()` mit `reference` | übernimmt `to`, `cc`, `bcc`, `subject`, `importance`, Anhänge; `forward` verlangt Empfänger |
 | `markRead()`, `flag()` | `UpdateItem` `AlwaysOverwrite` | Lesebestätigungen unterdrückt |
 | `move()` | `MoveItem` | Zielordner per `EwsXml::folderId()` |
 | `delete()` | `DeleteItem` `MoveToDeletedItems` bzw. `HardDelete` | `SendMeetingCancellations = SendToNone`; genutzt für Mail, Kontakte, Aufgaben, Notizen |
@@ -293,9 +293,10 @@ Vorprüfungen des Service als 422/404).
 | `status` | – | `{user{name,email}, demo, host, cache{used,quota,items,folder,percent}, server_time}` |
 | `mail/ordner` | – | `{folders[{id,name,parent,total,unread,kind,class}]}` |
 | `mail` | Query `ordner`, `offset`, `limit` (1–100), `q` | `{items[], total, offset, has_more}`; Element: `id, change_key, subject, preview, from{name,email}, to[], received, sent, is_read, has_attachments, size, importance, flagged, categories[], item_class, is_meeting_request` |
-| `mail/nachricht` | Query `id` | wie Listenelement + `body_html, blocked_images, cc, bcc, reply_to, sender, internet_message_id, attachments[{id,name,content_type,size,inline,is_item}]` |
-| `mail/senden`, `mail/entwurf` | `to, cc, bcc` (Strings oder `{name,email}`), `subject, body, html, importance, attachments[{name, content_type, content(Base64)}]` | `{id, message}` |
-| `mail/antworten` | `id, mode, body, to, html` | `{message}` |
+| `mail/nachricht` | Query `id` | wie Listenelement + `body_html, blocked_images, cc, bcc, reply_to, sender, internet_message_id, attachments[{id,name,content_type,content_id,size,inline,is_item}]`; `cid:`-Bilder zeigen per `src` auf `anhang/oeffnen?token=…` |
+| `mail/senden` | `to, cc, bcc` (Strings oder `{name,email}`), `subject, body, html, importance, attachments[{name, content_type, content(Base64)}]`, optional `draft_id, change_key` (gespeicherten Entwurf senden) | `{id, message}` |
+| `mail/entwurf` | wie `mail/senden`; `draft_id, change_key` aktualisieren einen bestehenden Entwurf; `reply_id, mode` legen einen Antwort-Entwurf an | `{id, change_key, message}` |
+| `mail/antworten` | `id, mode` + Felder wie `mail/senden` (inkl. `cc`, `bcc`, Anhänge) | `{id, message}` |
 | `mail/aktion` | `action, ids[]` (oder `id`), bei `move` zusätzlich `folder` | `{ok, count}` |
 | `anhang/link` | `attachment_id, name` | `{url, mode, expires_in}` |
 | `anhang/nextcloud` | `attachment_id, folder` (optionaler Unterordner) | `{ok, message, path, target}` (Fehler → 502) |
@@ -396,9 +397,10 @@ clear(uid) = evict(uid, −1)
 GET /api/orvanta/erinnerungen
   ├─ ?sync=1 oder letzter Abgleich (Session orvanta_sync_<uid>) ≥ 300 s:
   │     OrvantaNotificationService::sync(uid, impersonate)
-  │       upcomingReminders(now, 48 h) → je Termin mit Erinnerung:
-  │         remind_at = start − ReminderMinutesBeforeStart
-  │         reminder_lead_minutes > 0 → remind_at = min(remind_at, start − lead)
+  │       upcomingReminders(now, 48 h) → je Termin:
+  │         eigene Erinnerung → remind_at = start − ReminderMinutesBeforeStart
+  │         keine Erinnerung, reminder_lead_minutes > 0 → remind_at = start − lead
+  │         keine Erinnerung, lead = 0 → übersprungen
   │         bereits beendete Termine werden übersprungen
   │       OrvantaRepository::syncReminders(uid, items)
   │       purgeReminders(starts_at < now − 7 Tage)   (alle Benutzer)
@@ -463,13 +465,16 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   Antwort des Servers.“; HTTP-Fehler → `Error(data.error)`. Netzwerkfehler und
   502/503/504 setzen den Offline-Status (`setOnline(false)`), Erfolg wieder
   online. **Kein Timeout/AbortController.**
-- Verfassen: `openCompose(mode, message)` (`new`/`reply`/`replyall`/`forward`),
-  `contenteditable`-Editor, `composePayload()`, `sendCompose(form, asDraft)`:
-  - Entwurf → `mail/entwurf`;
-  - Antwort/Weiterleitung **ohne** neue Anhänge → `mail/antworten` (Exchange
-    hängt Zitat und Bezug an);
-  - neue Nachricht oder Antwort **mit** Anhängen → `mail/senden` (neue
-    Nachricht, Zitat stammt aus dem Editor).
+- Verfassen: `openCompose(mode, message)` (`new`/`reply`/`replyall`/`forward`/
+  `draft`), `contenteditable`-Editor, `composePayload()` (nur noch nicht
+  hochgeladene Anhänge, `draft_id`, `change_key`), `sendCompose(form, asDraft)`:
+  - Entwurf → `mail/entwurf` (mit `reply_id`/`mode` bei Antworten); der Dialog
+    bleibt offen, `state.compose.draftId/changeKey` werden gesetzt, weitere
+    Speicherungen aktualisieren denselben Entwurf;
+  - Antwort/Weiterleitung ohne gespeicherten Entwurf → `mail/antworten`
+    (mit Cc/Bcc und Anhängen; Exchange hängt Zitat und Bezug an);
+  - neue Nachricht oder gespeicherter Entwurf → `mail/senden`.
+  Im Ordner „Entwürfe“ bietet die Nachrichtenansicht „Entwurf bearbeiten“.
 - Mail-Anzeige: `body.innerHTML = inlineStylesToCssom(message.body_html)`,
   danach `data-ov-style` → `node.style.cssText`; Links erhalten
   `target=_blank` und `rel="noopener noreferrer nofollow"`.
@@ -583,21 +588,14 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 
 ## 14. Bekannte Eigenheiten
 
-- `reminder_lead_minutes` wirkt nur als **Mindestvorlauf** für Termine mit
-  gesetzter Exchange-Erinnerung; Termine ohne Erinnerung
-  (`ReminderIsSet = false`) werden von `upcomingReminders()` übersprungen und
-  erzeugen keine Benachrichtigung (abweichend vom Hinweis im Adminformular
-  „Gilt, wenn ein Termin keine eigene Erinnerung hinterlegt hat.“ und
-  `orvanta.md`).
-- Die Einstellung „externe Bilder laden“ (`prefs.images`) und „Bilder anzeigen“
-  haben keine Wirkung: der Sanitizer entfernt `src` vollständig, das Frontend
-  sucht nach `data-blocked-src`, das der Server nie setzt. Auch eingebettete
-  `cid:`-Bilder werden blockiert.
-- Antworten mit Anhängen werden als **neue** Nachricht über `mail/senden`
-  verschickt (kein Bezug/Threading zur Originalnachricht). `respond()`
-  übernimmt nur `to`; vom Client mitgesendete `cc` werden ignoriert.
-- `saveDraft()` legt bei jedem Speichern einen neuen Entwurf an; Entwürfe
-  werden nicht aktualisiert und Anhänge nicht gespeichert.
+- `reminder_lead_minutes` gilt **nur** für Termine ohne eigene Exchange-
+  Erinnerung; eine gesetzte Erinnerung wird nicht vorgezogen.
+- Eingebettete `cid:`-Bilder werden über den Anhang-Endpunkt
+  (`anhang/oeffnen?token=…`, 5 Minuten gültig) geladen; wird eine Nachricht
+  länger offen gehalten, kann das Bild beim erneuten Rendern ablaufen.
+- Antworten senden den Editorinhalt als `NewBodyContent`; Exchange hängt die
+  Originalnachricht selbst an. Wird im Editor zusätzlich zitiert, erscheint
+  das Zitat doppelt.
 - Schreibende EWS-Aufrufe nutzen `ConflictResolution="AlwaysOverwrite"`; es
   gibt keine optimistische Sperre (letzte Änderung gewinnt).
   `updateEvent()` ändert keine Teilnehmer.
@@ -611,7 +609,7 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
   Kontakte, Aufgaben, Notizen und Kalenderansichten sind auf 500 Elemente
   begrenzt, ohne Nachladen.
 - Inline-Bilder einer Mail (`inline = true`) werden im Frontend aus der
-  Anhangliste gefiltert, aber wegen der Blockierung auch nicht angezeigt.
+  Anhangliste gefiltert und nur im Nachrichtentext angezeigt.
 - `usage()` zählt Einträge über `cacheItems(uid, 10000)` (Obergrenze der Zählung).
 - Der Anhang-Viewer bekommt ein Token mit 5 Minuten Laufzeit; lädt der
   DocumentServer die Datei später erneut (z. B. nach Neuladen), ist der Link

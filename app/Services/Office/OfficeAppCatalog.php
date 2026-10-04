@@ -12,6 +12,8 @@ namespace App\Services\Office;
  *   (GET apps/eurooffice/new). Die Datei landet in den eigenen Dateien.
  * - kind "files":  eigene Dateien in Nextcloud.
  * - kind "external": frei konfigurierbarer Link (Outlook Web App).
+ * - kind "intranet": im Intranet selbst laufende App (Orvanta: Mail und
+ *   Kalender an Exchange On-Premise), erscheint nur bei aktivierter Anbindung.
  */
 final class OfficeAppCatalog
 {
@@ -63,7 +65,16 @@ final class OfficeAppCatalog
             'icon' => 'mail',
             'kind' => 'external',
         ],
+        'orvanta' => [
+            'title' => 'Orvanta',
+            'short_description' => 'Mail, Kalender, Kontakte, Aufgaben und Notizen (Exchange)',
+            'icon' => 'orvanta',
+            'kind' => 'intranet',
+        ],
     ];
+
+    /** Pfad der Mail- und Kalender-App Orvanta im Intranet. */
+    public const ORVANTA_PATH = '/office/orvanta';
 
     public static function exists(string $key): bool
     {

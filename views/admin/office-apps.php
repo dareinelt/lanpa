@@ -95,12 +95,14 @@ $owaKey = OfficeAppService::OWA_SETTING;
                                     Euro-Office-Webapp <code><?= Html::e((string) $app['webapp']) ?></code>
                                 <?php } elseif ($key === 'files') { ?>
                                     Eigene Dateien in Nextcloud
+                                <?php } elseif ($app['kind'] === 'intranet') { ?>
+                                    Intranet-App (Exchange-Anbindung unter <a href="/admin/office#orvanta">Office → Orvanta</a>)
                                 <?php } else { ?>
                                     Externer Link
                                 <?php } ?>
                             </div>
                             <?php if (!$app['configured']) { ?>
-                                <span class="badge badge--muted">kein Link hinterlegt</span>
+                                <span class="badge badge--muted"><?= $app['kind'] === 'intranet' ? 'Exchange nicht aktiviert' : 'kein Link hinterlegt' ?></span>
                             <?php } ?>
                         </th>
                         <td>

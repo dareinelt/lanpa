@@ -44,6 +44,7 @@ abstract class Controller
         $shared += $this->ssoShared();
         $shared['emergencyPlanVisible'] = Container::emergencyPlans()->canView($shared['ssoUser']);
         $shared['kaepDashboardVisible'] = $this->kaepActor(Request::fromGlobals()) !== null;
+        $shared['orvantaReminders'] = $this->orvantaRemindersVisible($shared['ssoUser']);
 
         return Response::html(View::render($template, array_merge($shared, $data), $layout), $status);
     }
@@ -54,6 +55,28 @@ abstract class Controller
      *
      * @return array{ssoUser:?array<string,mixed>,ssoLoginUrl:string}
      */
+    /**
+     * Terminerinnerungen aus Orvanta werden nur fuer berechtigte Exchange-Nutzer
+     * in die Kopfzeilen-Mitteilungen eingeblendet.
+     *
+     * @param array<string,mixed>|null $ssoUser
+     */
+    private function orvantaRemindersVisible(?array $ssoUser): bool
+    {
+        if ($ssoUser === null) {
+            return false;
+        }
+        try {
+            $config = Container::orvantaConfig();
+
+            return $config->isEnabled()
+                && $config->reminderHeaderEnabled()
+                && Container::officeApps()->findAllowed('orvanta', $ssoUser) !== null;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
     private function ssoShared(): array
     {
         try {

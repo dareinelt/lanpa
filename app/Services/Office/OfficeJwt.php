@@ -164,6 +164,25 @@ final class OfficeJwt
     }
 
     /**
+     * Kurzlebiges Token zum Abrufen (fetch) oder Loeschen (delete) einer zuvor
+     * abgelegten Datei eines Benutzers (Orvanta-Zwischenspeicher).
+     */
+    public static function fileActionToken(string $secret, string $uid, string $folder, string $name, string $action, ?int $now = null): string
+    {
+        $now ??= time();
+
+        return self::encode([
+            'aud' => self::FILES_AUDIENCE,
+            'sub' => $uid,
+            'folder' => $folder,
+            'name' => $name,
+            'action' => $action,
+            'iat' => $now,
+            'exp' => $now + 60,
+        ], $secret);
+    }
+
+    /**
      * Schluessel fuer Anmelde-Tokens: vom gemeinsamen Secret abgeleitet
      * (Domaenentrennung), damit ein Euro-Office-Token nie als Anmeldung gilt.
      */

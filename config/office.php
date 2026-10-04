@@ -30,6 +30,9 @@ return [
     // Interne Adressen im Docker-Netz (nur fuer Health-/Diagnoseabfragen).
     'nextcloud_internal_url' => Env::get('OFFICE_NEXTCLOUD_INTERNAL_URL', 'http://nextcloud/office/'),
     'eurooffice_internal_url' => Env::get('OFFICE_EUROOFFICE_INTERNAL_URL', 'http://eurooffice/'),
+    // Adresse des Intranets aus Sicht des DocumentServers (Abruf von
+    // E-Mail-Anhaengen der Mail-App Orvanta ueber signierte Links).
+    'app_internal_url' => Env::get('OFFICE_APP_INTERNAL_URL', 'http://app/'),
     'redis_host' => Env::get('OFFICE_REDIS_HOST', 'nextcloud-redis'),
     'redis_port' => Env::int('OFFICE_REDIS_PORT', 6379),
     'postgres_host' => Env::get('OFFICE_POSTGRES_HOST', 'nextcloud-db'),

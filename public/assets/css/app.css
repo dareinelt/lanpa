@@ -363,6 +363,65 @@ code {
     color: var(--color-primary);
 }
 
+/* Terminerinnerungen aus Orvanta im Mitteilungen-Menue */
+.site-nav__dropdown[hidden] {
+    display: none;
+}
+
+.site-nav__dropdown-reminders:not(:last-child) {
+    margin-bottom: .35rem;
+    padding-bottom: .35rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.site-nav__dropdown-heading {
+    display: block;
+    padding: .35rem .75rem .15rem;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--color-text-muted, inherit);
+    opacity: .8;
+}
+
+.site-nav__reminder {
+    display: grid;
+    gap: .1rem;
+}
+
+.site-nav__reminder-meta {
+    font-size: .8rem;
+    opacity: .75;
+}
+
+.site-nav__reminder-actions {
+    display: flex;
+    gap: .35rem;
+    padding: 0 .75rem .4rem;
+}
+
+.site-nav__reminder-action {
+    padding: .2rem .55rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: .78rem;
+    cursor: pointer;
+}
+
+.site-nav__reminder-action:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-primary);
+}
+
+.site-nav__summary-count--alert {
+    background: #c0392b;
+    color: #fff;
+}
+
 .theme-toggle {
     display: inline-flex;
     align-items: center;

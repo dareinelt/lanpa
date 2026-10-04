@@ -13,7 +13,10 @@ use App\Security\Session;
 use App\Services\Office\NextcloudAppStoreService;
 use App\Services\Office\OfficeAiService;
 use App\Services\Office\OfficeConfigService;
+use App\Services\Orvanta\OrvantaConfigService;
+use App\Services\Orvanta\OrvantaException;
 use RuntimeException;
+use Throwable;
 
 /**
  * Adminbereich "Office": Konfiguration, Gesundheit/Diagnose, Fusszeilen-
@@ -122,6 +125,67 @@ final class OfficeController extends AdminController
         }
 
         return $this->redirect('/admin/office#app-store');
+    }
+
+    /**
+     * Orvanta (Mail & Kalender): Exchange-Server, Anmeldeverfahren, Identitaet
+     * der Benutzer, Zwischenspeicher-Quota und Erinnerungen.
+     */
+    public function updateOrvanta(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        try {
+            Container::orvantaConfig()->save($request->post);
+        } catch (ValidationException $exception) {
+            Session::flash('error', 'Bitte prüfen Sie die Orvanta-Einstellungen.');
+            $values = array_diff_key($request->post, ['_token' => true, 'exchange_service_password' => true]);
+
+            return $this->render(status: 422, orvantaErrors: $exception->errors(), orvantaValues: array_map('strval', array_filter($values, 'is_scalar')));
+        }
+
+        $config = Container::orvantaConfig();
+        app_logger()->info('Orvanta-Einstellungen geändert.', [
+            'admin' => Container::auth()->username(),
+            'enabled' => $config->isEnabled(),
+            'host' => $config->get('exchange_host'),
+            'auth' => $config->get('exchange_auth'),
+            'demo' => $config->isDemo(),
+        ]);
+        Session::flash('success', 'Die Orvanta-Einstellungen wurden gespeichert.' . ($config->isDemo() ? ' Der Demo-Modus mit Beispieldaten ist aktiv.' : ''));
+
+        return $this->redirect('/admin/office#orvanta');
+    }
+
+    /**
+     * Verbindungstest zum Exchange-Server (optional im Namen eines Postfachs).
+     */
+    public function testOrvanta(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        $config = Container::orvantaConfig();
+        if (!$config->isEnabled()) {
+            Session::flash('error', 'Orvanta ist nicht aktiviert. Bitte zuerst die Exchange-Anbindung aktivieren und speichern.');
+
+            return $this->redirect('/admin/office#orvanta');
+        }
+        $mailbox = trim((string) $request->input('mailbox', ''));
+        if ($mailbox !== '' && filter_var($mailbox, FILTER_VALIDATE_EMAIL) === false) {
+            Session::flash('error', 'Bitte eine gültige E-Mail-Adresse für den Test angeben.');
+
+            return $this->redirect('/admin/office#orvanta');
+        }
+        try {
+            $result = Container::orvantaExchange()->testConnection($mailbox);
+            Session::flash('success', $result['message'] . ($result['server_version'] !== '' ? ' Serverversion: ' . $result['server_version'] . '.' : ''));
+        } catch (OrvantaException $exception) {
+            Session::flash('error', 'Verbindungstest fehlgeschlagen: ' . $exception->getMessage());
+        } catch (Throwable $exception) {
+            app_logger()->error('Orvanta: Verbindungstest fehlgeschlagen.', ['error' => $exception->getMessage()]);
+            Session::flash('error', 'Verbindungstest fehlgeschlagen: ' . $exception->getMessage());
+        }
+
+        return $this->redirect('/admin/office#orvanta');
     }
 
     public function check(Request $request): Response
@@ -334,6 +398,8 @@ final class OfficeController extends AdminController
      * @param array<string,mixed>|null $tileValues
      * @param array<string,string> $aiErrors
      * @param array<string,string> $aiValues
+     * @param array<string,string> $orvantaErrors
+     * @param array<string,string> $orvantaValues
      */
     private function render(
         array $errors = [],
@@ -342,8 +408,11 @@ final class OfficeController extends AdminController
         array $tileErrors = [],
         ?array $tileValues = null,
         array $aiErrors = [],
-        array $aiValues = []
+        array $aiValues = [],
+        array $orvantaErrors = [],
+        array $orvantaValues = []
     ): Response {
+        $orvanta = Container::orvantaConfig();
         $ai = Container::officeAi();
         $office = Container::officeConfig();
         $health = $office->isEnabled() ? Container::officeHealth()->cached() : null;
@@ -380,6 +449,19 @@ final class OfficeController extends AdminController
             'aiKeyFromSecret' => $ai->apiKeyFromSecret(),
             'aiActive' => $ai->isActive(),
             'appStoreValues' => Container::nextcloudAppStore()->formValues(),
+            'orvantaValues' => array_merge($orvanta->formValues(), $orvantaValues),
+            'orvantaErrors' => $orvantaErrors,
+            'orvantaHasPassword' => $orvanta->hasServicePassword(),
+            'orvantaEnabled' => $orvanta->isEnabled(),
+            'orvantaDemo' => $orvanta->isDemo(),
+            'orvantaEwsUrl' => $orvanta->ewsUrl(),
+            'orvantaCacheUsage' => Container::orvantaRepository()->cacheUsagePerUser(),
+            'orvantaOptions' => [
+                'auth' => OrvantaConfigService::AUTH_MODES,
+                'identity' => OrvantaConfigService::IDENTITY_MODES,
+                'versions' => OrvantaConfigService::VERSIONS,
+                'folders' => OrvantaConfigService::DEFAULT_FOLDERS,
+            ],
             'previewConfig' => $previewConfig,
             'pageScript' => 'admin-office.js',
         ], $status);

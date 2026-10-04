@@ -427,6 +427,71 @@ final class Container
         );
     }
 
+    // ------------------------------------------------------------------ Orvanta (Mail & Kalender)
+
+    public static function orvantaRepository(): \App\Repositories\OrvantaRepository
+    {
+        return self::make(\App\Repositories\OrvantaRepository::class, static fn (): \App\Repositories\OrvantaRepository => new \App\Repositories\OrvantaRepository());
+    }
+
+    public static function orvantaConfig(): \App\Services\Orvanta\OrvantaConfigService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaConfigService::class,
+            static fn (): \App\Services\Orvanta\OrvantaConfigService => new \App\Services\Orvanta\OrvantaConfigService(self::orvantaRepository(), self::secretBox())
+        );
+    }
+
+    /**
+     * EWS-Transport: cURL (Negotiate/NTLM/Basic) oder Demomodus mit
+     * Beispieldaten (Exchange-Server „demo“, nicht im Produktionsmodus).
+     */
+    public static function exchangeTransport(): \App\Contracts\ExchangeTransportInterface
+    {
+        return self::make(\App\Contracts\ExchangeTransportInterface::class, static function (): \App\Contracts\ExchangeTransportInterface {
+            if (self::orvantaConfig()->isDemo()) {
+                return new \App\Services\Orvanta\DemoExchangeTransport();
+            }
+
+            return new \App\Services\Orvanta\CurlExchangeTransport();
+        });
+    }
+
+    public static function orvantaExchange(): \App\Services\Orvanta\OrvantaExchangeService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaExchangeService::class,
+            static fn (): \App\Services\Orvanta\OrvantaExchangeService => new \App\Services\Orvanta\OrvantaExchangeService(self::exchangeTransport(), self::orvantaConfig())
+        );
+    }
+
+    public static function orvantaAttachments(): \App\Services\Orvanta\OrvantaAttachmentService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaAttachmentService::class,
+            static fn (): \App\Services\Orvanta\OrvantaAttachmentService => new \App\Services\Orvanta\OrvantaAttachmentService(
+                self::orvantaRepository(),
+                self::orvantaConfig(),
+                self::officeConfig(),
+                self::nextcloudFiles(),
+                self::orvantaExchange(),
+                self::secretBox()
+            )
+        );
+    }
+
+    public static function orvantaNotifications(): \App\Services\Orvanta\OrvantaNotificationService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaNotificationService::class,
+            static fn (): \App\Services\Orvanta\OrvantaNotificationService => new \App\Services\Orvanta\OrvantaNotificationService(
+                self::orvantaRepository(),
+                self::orvantaExchange(),
+                self::orvantaConfig()
+            )
+        );
+    }
+
     public static function nextcloudAdmins(): NextcloudAdminService
     {
         return self::make(
@@ -790,7 +855,8 @@ final class Container
             static fn (): OfficeAppService => new OfficeAppService(
                 new OfficeAppRepository(),
                 self::officeConfig(),
-                self::settings()
+                self::settings(),
+                static fn (): bool => self::orvantaConfig()->isEnabled()
             )
         );
     }

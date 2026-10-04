@@ -131,6 +131,12 @@ final class OfficeConfigService
         return self::normalizePath((string) ($this->config['eurooffice_public_path'] ?? '/eurooffice/'), '/eurooffice/');
     }
 
+    /** Adresse des Intranets im Docker-Netz (fuer Rueckrufe des DocumentServers). */
+    public function appInternalUrl(): string
+    {
+        return rtrim((string) ($this->config['app_internal_url'] ?? 'http://app/'), '/') . '/';
+    }
+
     /**
      * @return array<string,mixed>
      */

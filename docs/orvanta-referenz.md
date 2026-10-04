@@ -51,6 +51,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 12. Tests
 13. Änderungsrezepte
 14. Bekannte Eigenheiten
+15. KI-Unterstützung
 
 ---
 
@@ -84,22 +85,29 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()` |
 | `app/Services/Orvanta/OrvantaNotificationService.php` | `sync()`, `poll()`, `dismiss()`, `snooze()`, `relative()` |
 | `app/Services/Orvanta/OrvantaException.php` | Fehler mit anzeigbarer Meldung und HTTP-Status (`status()`, Standard 502) |
-| `app/Repositories/OrvantaRepository.php` | Einstellungen, Erinnerungen (`syncReminders()`, `dueReminders()`, `activeReminders()`, `markDelivered()`, `dismissReminder()`, `snoozeReminder()`, `purgeReminders()`), Zwischenspeicher (`cacheUsage()`, `findCacheItem()`, `addCacheItem()`, `oldestCacheItems()`, `deleteCacheItem()`, `cacheItems()`, `cacheUsagePerUser()`); SQL kompatibel zu MySQL und SQLite |
-| `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchange()`, `orvantaAttachments()`, `orvantaNotifications()`; `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
+| `app/Services/Orvanta/OrvantaAiService.php` | KI-Unterstützung (Abschnitt 15): `isAvailable()` (globale KI aktiv + `GET /models`, Datei-Cache 60 s), `resetAvailability()`, `improve()` (`POST /chat/completions`, Systemprompt je `MODES`, Verfeinern per Assistenten-Turn), `recordUsage()`, statisch `stripMarkers()`; Konstanten `MODES`, `MAX_TEXT`, `MAX_PROMPT`, `MAX_CONTEXT`, `MAX_OUTPUT_TOKENS`, `MARKER_CLASS`, `MARKER_ATTR_PREFIX` |
+| `app/Services/Orvanta/OrvantaAiCharts.php` | Anonymisierter Nutzungsbericht für den Adminbereich: `period()`, `report(days)`, SVG-Erzeuger `usersChart()`, `daysChart()`, `tokensChart()` (Präsentationsattribute, kein `style`) |
+| `app/Contracts/AiTransportInterface.php` | `request(method, url, headers, body, timeout): {status, body, error}` |
+| `app/Services/Orvanta/CurlAiTransport.php` | cURL zum OpenAI-kompatiblen Endpunkt; keine Redirects, nur HTTP(S), in Produktion (`$production`) nur HTTPS |
+| `app/Repositories/OrvantaRepository.php` | Einstellungen, Erinnerungen (`syncReminders()`, `dueReminders()`, `activeReminders()`, `markDelivered()`, `dismissReminder()`, `snoozeReminder()`, `purgeReminders()`), Zwischenspeicher (`cacheUsage()`, `findCacheItem()`, `addCacheItem()`, `oldestCacheItems()`, `deleteCacheItem()`, `cacheItems()`, `cacheUsagePerUser()`), KI-Nutzung (`recordAiUsage()`, `aiUsagePerUser()` (Pseudonyme „Benutzer n“), `aiUsagePerDay()`, `aiTokenTotals()`); SQL kompatibel zu MySQL und SQLite |
+| `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchange()`, `orvantaAttachments()`, `orvantaNotifications()`, `orvantaAiCharts()`, `aiTransport()`, `orvantaAi()` (nutzt `officeAi()`); `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
 | `app/Controllers/Controller.php` | `orvantaRemindersVisible()` → View-Variable `$orvantaReminders` (Kopfzeilen-Erinnerungen auf allen Seiten) |
 | `app/Services/Office/OfficeAppCatalog.php` | App `orvanta` (`kind = intranet`), `ORVANTA_PATH = '/office/orvanta'` |
 | `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`, `MAX_BYTES` (16 MiB) |
-| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste, `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, profile, settings, help, reminder) |
+| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, profile, settings, help, reminder, ai), KI-Kontextmenü `[data-ov-ai-menu]` |
 | `views/orvanta/viewer.php` | Euro-Office-Viewer `.ov-viewer[data-orvanta-viewer]` mit `data-api`, `data-config`, `data-download` und Download-Fallback |
-| `views/admin/office.php` | Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer) |
+| `views/admin/office.php` | Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer, KI-Nutzungsbericht `#orvanta-ki`) |
 | `views/layouts/base.php` | Mitteilungsmenü mit `data-orvanta-reminders` / `data-orvanta-reminder-list`, lädt `orvanta-reminders.js` (mit `data-csrf`) |
 | `public/assets/js/orvanta.js` | App (Abschnitt 9) |
 | `public/assets/js/orvanta-reminders.js` | Erinnerungen in der Kopfzeile aller übrigen Seiten |
 | `public/assets/js/orvanta-viewer.js` | Lädt `api.js` des DocumentServers und startet `DocsAPI.DocEditor` |
-| `public/assets/css/orvanta.css` | Präfix `.ov-*`, Grid-Layout, Breakpoints 1200/900 px, Druck |
+| `public/assets/css/orvanta.css` | Präfix `.ov-*`, Grid-Layout, Breakpoints 1200/900 px, Druck; `.ov-ai-*` (Indikator, Menü, Dialog, Block) |
+| `public/assets/images/orvanta-ai-robot*.png` | Roboter-Grafiken (klein 36×48/72×96 für Statusleiste/Menü, groß 180×240/360×480 für Hilfe und Admin) |
 | `database/migrations/033_create_orvanta_tables.sql` | Drei Tabellen (Abschnitt 4) |
+| `database/migrations/034_create_orvanta_ai_usage.sql` | Tabelle `orvanta_ai_usage` (Abschnitt 4.1) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
+| `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
 
 ## 3. Routen, Zugriff und API-Rahmen
 
@@ -141,6 +149,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | GET | `/api/orvanta/erinnerungen[?sync=1]` | `reminders` | Fällige und aktive Erinnerungen |
 | POST | `/api/orvanta/erinnerungen/erledigt` | `dismissReminder` | Erinnerung schließen |
 | POST | `/api/orvanta/erinnerungen/spaeter` | `snoozeReminder` | Erinnerung verschieben (`minutes` 1–1440, Standard 5) |
+| POST | `/api/orvanta/ki/verbessern` | `aiImprove` | KI-Unterstützung: `mode`, `text`, `prompt`, optional `previous_text`, `context{subject, recipients}` → `{text, usage{input_tokens, output_tokens}}` (Abschnitt 15) |
 | POST | `/admin/office/orvanta` | `Admin\OfficeController::updateOrvanta` | Einstellungen (`$requireAdmin`, CSRF) |
 | POST | `/admin/office/orvanta/pruefen` | `testOrvanta` | Verbindungstest, optional `mailbox` |
 
@@ -183,6 +192,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_settings` | `setting_key` (unique), `setting_value` (TEXT) | Schlüssel/Wert; fehlende Schlüssel → `OrvantaConfigService::DEFAULTS` |
 | `orvanta_reminders` | `user_uid`, `item_id` (≤ 512), `item_hash` = `sha1(item_id)`, `subject`, `location`, `starts_at`, `remind_at`, `state` ∈ `pending\|delivered\|dismissed\|snoozed`, `delivered_at`, `dismissed_at` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `state`, `remind_at`) |
 | `orvanta_cache_items` | `user_uid`, `kind` ∈ `attachment\|message`, `item_hash` = `sha1(attachment_id)`, `name` (Dateiname in Nextcloud), `path`, `content_type`, `size_bytes` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `created_at`) für FIFO |
+| `orvanta_ai_usage` (Migration 034) | `user_uid`, `kind` ∈ `mail_compose\|mail_reply\|mail_forward\|event\|reminder`, `model`, `input_tokens`, `output_tokens`, `created_at` | Nur Zähler, nie Texte; Index (`created_at`), (`user_uid`, `created_at`) |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -320,6 +330,8 @@ Grenzwerte (Server maßgeblich):
 | Snooze | 1–1440 Minuten | `snoozeReminder()`, `OrvantaNotificationService::snooze()` |
 | Anhang-Token | 300 s | `OrvantaAttachmentService::TOKEN_LIFETIME` |
 | Datei im Zwischenspeicher / in Nextcloud | ≤ 16 MiB und ≤ Quota | `NextcloudFilesService::MAX_BYTES` |
+| KI: markierter Text / Anweisung / Kontextfelder | ≤ 8 000 / ≤ 1 000 / ≤ 300 Zeichen; Antwort ≤ 1 200 Token | `OrvantaAiService::MAX_*`; Client spiegelt `AI_MAX_TEXT`/`AI_MAX_PROMPT` |
+| KI: Zeitlimits | Erreichbarkeit 3 s (Cache 60 s), Anfrage `ORVANTA_AI_TIMEOUT` (5–120 s, Standard 30) | `AVAILABILITY_TIMEOUT`, `AVAILABILITY_TTL`, `Container::orvantaAi()` |
 
 ## 7. Anhänge, Viewer und Zwischenspeicher
 
@@ -555,7 +567,8 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 
 | Datei | Inhalt |
 | --- | --- |
-| `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration |
+| `tests/Unit/OrvantaAiTest.php` | `RecordingAiTransport`; Verfügbarkeit ohne Konfiguration (keine Anfrage), `GET /models` mit Datei-Cache und Fingerabdruck (URL\|Modell), `improve()` (Anfrageaufbau, Kontext, Token, `max_tokens`), Verfeinern (Assistenten-Turn), Bearer-Schlüssel, Validierung 422, 503 ohne KI, 502 bei Timeout/500/401/ungültigem JSON/leeren `choices`, `stripMarkers()`, Zähler und pseudonyme Auswertung (keine SIDs), `OrvantaAiCharts` (Zeitraum, SVG ohne `style`, leere Daten) |
+| `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
@@ -582,6 +595,8 @@ Download), Erinnerung in App und Kopfzeile, Statusleiste/Quota.
 | **Zwischenspeicher für Nachrichten** (`kind = message`) | Spalte existiert; `OrvantaAttachmentService::cache(..., 'message')` mit eigenem Hash-Schema verwenden, damit keine Kollision mit `sha1(attachment_id)` entsteht. |
 | **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()` (Zustandsübergänge Abschnitt 8.2); beide Clients prüfen; Tests „Erinnerungen …“, „Repository-Sync …“. |
 | **Neues Modul** | `DEFAULT_FOLDERS`, Modulliste/Menüband/Dialog in `views/orvanta/index.php`, `switchModule()`/`loadModule()`/Tastenkürzel in `orvanta.js`, Service-Methoden + API, Demo-Daten, Doku. |
+| **KI-Unterstützung in weiterem Editor** | Editor mit `contenteditable` und eigenem `data-ov-…-body`-Hook; in `orvanta.js` `aiEditors()`, `aiMode()` und `aiContext()` erweitern; neuer Wert in `OrvantaAiService::MODES` + ENUM in `orvanta_ai_usage.kind` (Migration) + Systemprompt in `messages()`; serverseitig `stripMarkers()` vor dem Sanitizer aufrufen; Test. |
+| **KI-Prompt oder Modellparameter ändern** | Nur `OrvantaAiService::messages()` bzw. `improve()` (Temperatur, `max_tokens`); nie Modell/URL in Orvanta speichern – sie stammen aus `OfficeAiService`. |
 
 Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 `docs/orvanta.md` und `agentsindex.md` aktualisieren.
@@ -596,6 +611,18 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 - Antworten senden den Editorinhalt als `NewBodyContent`; Exchange hängt die
   Originalnachricht selbst an. Wird im Editor zusätzlich zitiert, erscheint
   das Zitat doppelt.
+- Die Terminbeschreibung ist seit der KI-Unterstützung ein
+  `contenteditable`-Editor (`[data-ov-event-body]`), der HTML sendet; der
+  Server bereinigt wie bei Mails (`eventBody()`: `stripMarkers()` →
+  `MailHtmlSanitizer`). Ältere reine Textbeschreibungen bleiben lesbar.
+- „Erinnerung“ als KI-Einsatzort (`reminder`) bedeutet: Termin mit gesetzter
+  Erinnerung (Auswahl ≠ „Keine“); es gibt keinen eigenen Erinnerungs-Editor.
+- Originaltexte für „Auf Original zurücksetzen“ liegen nur im JS-Zustand
+  (`ai.originals`) und werden beim Schließen des Dialogs verworfen; Blöcke aus
+  wieder geöffneten Entwürfen sind daher nur noch verfeinerbar/entmarkierbar.
+- Das KI-Kontextmenü (`[data-ov-ai-menu]`) wird beim Öffnen in den `<dialog>`
+  des aktiven Editors verschoben, weil modale Dialoge in der Top-Layer liegen
+  und ein `position: fixed`-Element im `body` sonst verdeckt bliebe.
 - Schreibende EWS-Aufrufe nutzen `ConflictResolution="AlwaysOverwrite"`; es
   gibt keine optimistische Sperre (letzte Änderung gewinnt).
   `updateEvent()` ändert keine Teilnehmer.
@@ -616,3 +643,62 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
   abgelaufen und der Anhang muss in Orvanta neu geöffnet werden.
 - `api()` in `orvanta.js` hat kein Zeitlimit; hängende Exchange-Aufrufe enden
   erst mit `exchange_timeout` auf dem Server.
+
+---
+
+## 15. KI-Unterstützung
+
+**Grundsatz:** Orvanta besitzt keine eigene KI-Konfiguration. Modell, Adresse,
+Schlüssel und Aktivierung kommen aus `OfficeAiService` (Adminbereich Office →
+Lokale KI, Tabelle `settings`). Dem Frontend wird nur `aiAvailable` (bool)
+übergeben. Jeder Aufruf geht Browser → Intranet-Server → KI-Endpunkt; der
+Browser kennt den Endpunkt nicht.
+
+### 15.1 Ablauf
+
+```
+Rechtsklick auf Markierung ──► [data-ov-ai-menu] ──► Dialog "ai" (prompt)
+   └─ aiSubmit(): POST /api/orvanta/ki/verbessern {mode, text, prompt, previous_text?, context}
+        OrvantaApiController::aiImprove() ─► OrvantaAiService::improve()
+            ├─ Validierung (422), isActive() (503)
+            ├─ POST {url}/chat/completions  (CurlAiTransport, Bearer falls Schlüssel)
+            ├─ Fehler → 502 ohne Rohantwort in der Meldung
+            └─ recordUsage(uid, mode, tokens, model)  → orvanta_ai_usage
+   ◄─ {text, usage}  → aiWrapRange()/aiFillBlock(): <span class="ov-ai-block" data-ov-ai-id="…">
+Senden/Entwurf/Termin: OrvantaExchangeService → OrvantaAiService::stripMarkers() → MailHtmlSanitizer
+```
+
+### 15.2 Verträge
+
+- `mode` ∈ `MODES` (`mail_compose`, `mail_reply`, `mail_forward`, `event`,
+  `reminder`); Client: `aiMode()` aus `state.compose.mode` bzw. Erinnerungs-
+  Auswahl im Termindialog.
+- `context`: nur `subject` (≤ 300 Zeichen) und `recipients` (Anzahl). Keine
+  Adressen, kein weiterer Nachrichteninhalt.
+- `previous_text` (Verfeinern): wird als Assistenten-Nachricht mitgegeben;
+  `text` bleibt das Original aus `ai.originals` (Fallback: Blocktext).
+- Antwort `text` ist Klartext (Zeilenumbrüche erlaubt); `cleanOutput()`
+  entfernt Codezäune, Präfixe („Text:“) und umschließende Anführungszeichen.
+  Der Client setzt ihn als Textknoten mit `<br>` ein – nie als HTML.
+- Marker: Klasse `ov-ai-block` (+ `ov-ai-block--fresh` kurz nach Einfügen),
+  Attribut `data-ov-ai-id`, `title`. `stripMarkers()` entfernt Klassen
+  `ov-ai*`, Attribute `data-ov-ai*`, `title` markierter Elemente,
+  Kommentare mit `ov-ai`, und löst attributlose `<span>` auf.
+
+### 15.3 Datenschutz und Bericht
+
+- `orvanta_ai_usage` enthält nur Zähler. `aiUsagePerUser()` liefert Pseudonyme
+  in Reihenfolge des ersten Auftretens im Zeitraum; `user_uid` wird nicht
+  zurückgegeben, die Zuordnung nicht gespeichert.
+- SVGs (`OrvantaAiCharts`) nutzen ausschließlich Präsentationsattribute
+  (`fill`, `stroke`, `font-size`) – kein `style`, kein Skript (CSP).
+- Zeitraum per `GET /admin/office?ki_zeitraum=7|30|90` (`period()` normiert).
+
+### 15.4 Testendpunkt
+
+`docker compose --profile ki up -d` startet `ghcr.io/ggml-org/llama.cpp:server`
+mit `Qwen/Qwen2.5-0.5B-Instruct-GGUF` (Volume `ki_models`, Port `KI_PORT`).
+`scripts/seed.php` trägt bei gesetztem `OFFICE_AI_SEED_URL` die Werte
+`office_ai_url`/`office_ai_model` per `INSERT IGNORE` ein. Im Container heißt
+der Endpunkt `http://ki:8080/v1`; in `APP_ENV=production` würde HTTP vom
+Transport abgewiesen.

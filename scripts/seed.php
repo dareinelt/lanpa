@@ -118,6 +118,16 @@ $settingStatement = $pdo->prepare(
     'INSERT IGNORE INTO settings (setting_key, setting_value) VALUES (:key, :value)'
 );
 
+// Optional: lokalen KI-Endpunkt (z. B. Testdienst "ki" aus docker-compose.yml)
+// voreintragen - nur wenn noch keine KI-Einstellungen vorhanden sind.
+$aiUrl = trim((string) getenv('OFFICE_AI_SEED_URL'));
+if ($aiUrl !== '') {
+    $settings['office_ai_enabled'] = '1';
+    $settings['office_ai_name'] = (string) (getenv('OFFICE_AI_SEED_NAME') ?: 'Lokale KI (Test)');
+    $settings['office_ai_url'] = rtrim($aiUrl, '/');
+    $settings['office_ai_model'] = (string) (getenv('OFFICE_AI_SEED_MODEL') ?: 'qwen2.5-0.5b-instruct');
+}
+
 foreach ($settings as $key => $value) {
     $settingStatement->execute(['key' => $key, 'value' => $value]);
 }

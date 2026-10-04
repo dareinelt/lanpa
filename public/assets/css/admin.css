@@ -1886,3 +1886,86 @@ body.has-nav-tree-overlay {
     text-align: right !important;
     white-space: nowrap;
 }
+
+/* Orvanta: anonymisierter Nutzungsbericht der KI-Unterstuetzung */
+.orvanta-ai-report {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e2e8f0;
+}
+
+.orvanta-ai-report__head {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.orvanta-ai-report__robot {
+    flex: 0 0 auto;
+    width: 45px;
+    height: 60px;
+}
+
+.orvanta-ai-report__period {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin: 0.75rem 0;
+}
+
+.orvanta-ai-report__button {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+}
+
+.orvanta-ai-report__totals {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin: 0 0 1rem;
+}
+
+.orvanta-ai-report__totals div {
+    padding: 0.5rem 0.75rem;
+    background: #f1f5f9;
+    border-radius: 6px;
+}
+
+.orvanta-ai-report__totals dt {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.orvanta-ai-report__totals dd {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.orvanta-ai-report__charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.orvanta-ai-report__chart {
+    margin: 0;
+    padding: 0.5rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.orvanta-ai-report__chart figcaption {
+    font-size: 0.8125rem;
+    color: #475569;
+    margin-bottom: 0.25rem;
+}
+
+.ov-ai-chart {
+    display: block;
+    width: 100%;
+    height: auto;
+}

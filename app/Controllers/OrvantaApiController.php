@@ -11,6 +11,7 @@ use App\Exceptions\HttpException;
 use App\Exceptions\ValidationException;
 use App\Security\Csrf;
 use App\Security\Session;
+use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
 use Throwable;
 
@@ -418,6 +419,39 @@ final class OrvantaApiController extends Controller
             Container::orvantaNotifications()->snooze($access['uid'], $this->int('id'), max(1, min(1440, $this->int('minutes', 5))));
 
             return ['ok' => true];
+        }, true);
+    }
+
+    // ------------------------------------------------------------------
+    // KI-Textunterstuetzung
+    // ------------------------------------------------------------------
+
+    /**
+     * Markierten Text nach Anweisung umformulieren bzw. (mit previous_text)
+     * eine erzeugte Fassung verfeinern. Gespeichert werden nur Zaehler.
+     */
+    public function aiImprove(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            $ai = Container::orvantaAi();
+            $mode = $this->str('mode');
+            if (!in_array($mode, OrvantaAiService::MODES, true)) {
+                throw new OrvantaException('Unbekannter Einsatzort der KI-Unterstützung.', 422);
+            }
+            $text = $this->str('text');
+            $prompt = $this->str('prompt');
+            $previous = $this->str('previous_text');
+            if (strlen($text) > OrvantaAiService::MAX_TEXT * 4 || strlen($previous) > OrvantaAiService::MAX_TEXT * 4 || strlen($prompt) > OrvantaAiService::MAX_PROMPT * 4) {
+                throw new OrvantaException('Der Text oder die Anweisung ist zu lang.', 422);
+            }
+            $context = is_array($this->body['context'] ?? null) ? $this->body['context'] : [];
+            $result = $ai->improve($text, $prompt, $mode, $previous !== '' ? $previous : null, [
+                'subject' => is_scalar($context['subject'] ?? null) ? (string) $context['subject'] : '',
+                'recipients' => is_numeric($context['recipients'] ?? null) ? (int) $context['recipients'] : 0,
+            ]);
+            $ai->recordUsage($access['uid'], $mode, $result['usage']['input_tokens'], $result['usage']['output_tokens'], $result['model']);
+
+            return ['text' => $result['text'], 'usage' => $result['usage']];
         }, true);
     }
 

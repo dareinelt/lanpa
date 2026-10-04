@@ -13,6 +13,7 @@ use App\Security\Session;
 use App\Services\Office\NextcloudAppStoreService;
 use App\Services\Office\OfficeAiService;
 use App\Services\Office\OfficeConfigService;
+use App\Services\Orvanta\OrvantaAiCharts;
 use App\Services\Orvanta\OrvantaConfigService;
 use App\Services\Orvanta\OrvantaException;
 use RuntimeException;
@@ -34,7 +35,7 @@ final class OfficeController extends AdminController
     private const TILE_DESIGN_KEYS = ['title', 'short_description', 'description', 'icon', 'background_color', 'background_opacity'];
     public function index(Request $request): Response
     {
-        return $this->render();
+        return $this->render(aiPeriod: OrvantaAiCharts::period($request->query['ki_zeitraum'] ?? null));
     }
 
     public function update(Request $request): Response
@@ -82,6 +83,7 @@ final class OfficeController extends AdminController
 
         $ai = Container::officeAi();
         $applied = $ai->apply();
+        Container::orvantaAi()->resetAvailability();
         $messages = ['Die KI-Einstellungen wurden gespeichert.'];
         $ok = true;
         foreach (['eurooffice' => 'Euro-Office', 'nextcloud' => 'Nextcloud'] as $key => $label) {
@@ -400,6 +402,7 @@ final class OfficeController extends AdminController
      * @param array<string,string> $aiValues
      * @param array<string,string> $orvantaErrors
      * @param array<string,string> $orvantaValues
+     * @param int $aiPeriod Zeitraum des KI-Nutzungsberichts in Tagen
      */
     private function render(
         array $errors = [],
@@ -410,7 +413,8 @@ final class OfficeController extends AdminController
         array $aiErrors = [],
         array $aiValues = [],
         array $orvantaErrors = [],
-        array $orvantaValues = []
+        array $orvantaValues = [],
+        int $aiPeriod = OrvantaAiCharts::DEFAULT_PERIOD
     ): Response {
         $orvanta = Container::orvantaConfig();
         $ai = Container::officeAi();
@@ -456,6 +460,8 @@ final class OfficeController extends AdminController
             'orvantaDemo' => $orvanta->isDemo(),
             'orvantaEwsUrl' => $orvanta->ewsUrl(),
             'orvantaCacheUsage' => Container::orvantaRepository()->cacheUsagePerUser(),
+            'orvantaAiReport' => Container::orvantaAiCharts()->report($aiPeriod),
+            'orvantaAiPeriods' => OrvantaAiCharts::PERIODS,
             'orvantaOptions' => [
                 'auth' => OrvantaConfigService::AUTH_MODES,
                 'identity' => OrvantaConfigService::IDENTITY_MODES,

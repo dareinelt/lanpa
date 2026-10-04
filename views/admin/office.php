@@ -25,6 +25,8 @@ use App\Support\Html;
 /** @var bool $orvantaDemo */
 /** @var string $orvantaEwsUrl */
 /** @var list<array{user_uid:string,items:int,bytes:int}> $orvantaCacheUsage */
+/** @var array{period:int,from:string,to:string,totals:array<string,int>,users:list<array<string,mixed>>,days:list<array<string,mixed>>,svg:array<string,string>} $orvantaAiReport */
+/** @var list<int> $orvantaAiPeriods */
 /** @var array{auth:array<string,string>,identity:array<string,string>,versions:array<string,string>,folders:array<string,string>} $orvantaOptions */
 /** @var array<string,mixed> $previewConfig */
 /** @var array<string,string> $aiValues */
@@ -607,6 +609,61 @@ $ov = $orvantaValues;
             </tbody>
         </table>
     <?php } ?>
+
+    <div class="orvanta-ai-report" id="orvanta-ki">
+        <div class="orvanta-ai-report__head">
+            <img src="/assets/images/orvanta-ai-robot.png" srcset="/assets/images/orvanta-ai-robot@2x.png 2x" width="45" height="60" alt="" class="orvanta-ai-report__robot">
+            <div>
+                <h3 class="card__subtitle">KI-Unterstützung – Nutzung</h3>
+                <p class="form__hint">
+                    Orvanta nutzt das unter <a href="#ki">Lokale KI</a> hinterlegte Modell<?= $aiActive ? '' : ' (derzeit nicht aktiv – die Funktion wird den Benutzern nicht angeboten)' ?>.
+                    Der Bericht ist anonymisiert: Benutzer erscheinen nur als „Benutzer 1…n“, die Zuordnung wird nicht gespeichert; Texte und Anweisungen werden nie protokolliert.
+                </p>
+            </div>
+        </div>
+        <form method="get" action="/admin/office" class="orvanta-ai-report__period" aria-label="Zeitraum des Berichts">
+            <span>Zeitraum:</span>
+            <?php foreach ($orvantaAiPeriods as $days) { ?>
+                <button type="submit" name="ki_zeitraum" value="<?= (int) $days ?>" class="button orvanta-ai-report__button<?= $days === $orvantaAiReport['period'] ? ' button--primary' : '' ?>" formaction="/admin/office#orvanta-ki"><?= (int) $days ?> Tage</button>
+            <?php } ?>
+            <span class="form__hint"><?= Html::e($orvantaAiReport['from']) ?> bis <?= Html::e($orvantaAiReport['to']) ?></span>
+        </form>
+        <dl class="orvanta-ai-report__totals">
+            <div><dt>Anfragen</dt><dd><?= (int) $orvantaAiReport['totals']['requests'] ?></dd></div>
+            <div><dt>Benutzer</dt><dd><?= (int) $orvantaAiReport['totals']['users'] ?></dd></div>
+            <div><dt>Eingabe-Token</dt><dd><?= number_format((int) $orvantaAiReport['totals']['input_tokens'], 0, ',', '.') ?></dd></div>
+            <div><dt>Ausgabe-Token</dt><dd><?= number_format((int) $orvantaAiReport['totals']['output_tokens'], 0, ',', '.') ?></dd></div>
+        </dl>
+        <div class="orvanta-ai-report__charts">
+            <figure class="orvanta-ai-report__chart">
+                <figcaption>Anfragen je Benutzer (anonymisiert)</figcaption>
+                <?= $orvantaAiReport['svg']['users'] ?>
+            </figure>
+            <figure class="orvanta-ai-report__chart">
+                <figcaption>Anfragen je Tag</figcaption>
+                <?= $orvantaAiReport['svg']['requests'] ?>
+            </figure>
+            <figure class="orvanta-ai-report__chart">
+                <figcaption>Token je Tag (hell: Eingabe, dunkel: Ausgabe)</figcaption>
+                <?= $orvantaAiReport['svg']['tokens'] ?>
+            </figure>
+        </div>
+        <?php if ($orvantaAiReport['users'] !== []) { ?>
+            <table class="table table--compact">
+                <thead><tr><th>Benutzer</th><th class="table__num">Anfragen</th><th class="table__num">Eingabe-Token</th><th class="table__num">Ausgabe-Token</th></tr></thead>
+                <tbody>
+                <?php foreach ($orvantaAiReport['users'] as $row) { ?>
+                    <tr>
+                        <td><?= Html::e((string) $row['label']) ?></td>
+                        <td class="table__num"><?= (int) $row['requests'] ?></td>
+                        <td class="table__num"><?= number_format((int) $row['input_tokens'], 0, ',', '.') ?></td>
+                        <td class="table__num"><?= number_format((int) $row['output_tokens'], 0, ',', '.') ?></td>
+                    </tr>
+                <?php } ?>
+                </tbody>
+            </table>
+        <?php } ?>
+    </div>
 </section>
 
 <section class="card" id="kachel" aria-labelledby="office-tile-title">

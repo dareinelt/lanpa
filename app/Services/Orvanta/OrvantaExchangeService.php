@@ -416,7 +416,7 @@ final class OrvantaExchangeService
         $hasAttendees = ($event['required'] ?? []) !== [] || ($event['optional'] ?? []) !== [];
         $xml = '<t:CalendarItem>'
             . '<t:Subject>' . EwsXml::escape($event['subject']) . '</t:Subject>'
-            . '<t:Body BodyType="HTML">' . EwsXml::escape(MailHtmlSanitizer::clean((string) ($event['body'] ?? ''), false)['html']) . '</t:Body>'
+            . '<t:Body BodyType="HTML">' . EwsXml::escape($this->eventBody((string) ($event['body'] ?? ''))) . '</t:Body>'
             . '<t:ReminderIsSet>' . (($event['reminder'] ?? -1) >= 0 ? 'true' : 'false') . '</t:ReminderIsSet>'
             . '<t:ReminderMinutesBeforeStart>' . max(0, (int) ($event['reminder'] ?? 15)) . '</t:ReminderMinutesBeforeStart>'
             . '<t:Start>' . EwsXml::dateTime($event['start']) . '</t:Start><t:End>' . EwsXml::dateTime($event['end']) . '</t:End>'
@@ -448,7 +448,7 @@ final class OrvantaExchangeService
             . $set('item:ReminderIsSet', '<t:ReminderIsSet>' . (($event['reminder'] ?? -1) >= 0 ? 'true' : 'false') . '</t:ReminderIsSet>')
             . $set('item:ReminderMinutesBeforeStart', '<t:ReminderMinutesBeforeStart>' . max(0, (int) ($event['reminder'] ?? 15)) . '</t:ReminderMinutesBeforeStart>');
         if (array_key_exists('body', $event)) {
-            $updates .= $set('item:Body', '<t:Body BodyType="HTML">' . EwsXml::escape(MailHtmlSanitizer::clean((string) $event['body'], false)['html']) . '</t:Body>');
+            $updates .= $set('item:Body', '<t:Body BodyType="HTML">' . EwsXml::escape($this->eventBody((string) $event['body'])) . '</t:Body>');
         }
         $this->call(
             '<m:UpdateItem ConflictResolution="AlwaysOverwrite" SendMeetingInvitationsOrCancellations="SendToChangedAndSaveCopy"><m:ItemChanges><t:ItemChange>'
@@ -1108,9 +1108,18 @@ final class OrvantaExchangeService
      */
     private function outgoingBody(array $mail): string
     {
-        $body = (string) ($mail['body'] ?? '');
+        // KI-Marker des Editors duerfen den Empfaenger nie erreichen.
+        $body = OrvantaAiService::stripMarkers((string) ($mail['body'] ?? ''));
 
         return ($mail['html'] ?? true) ? MailHtmlSanitizer::clean($body, false)['html'] : $body;
+    }
+
+    /**
+     * Terminbeschreibung fuer EWS: KI-Marker entfernen, dann bereinigen.
+     */
+    private function eventBody(string $body): string
+    {
+        return MailHtmlSanitizer::clean(OrvantaAiService::stripMarkers($body), false)['html'];
     }
 
     /**

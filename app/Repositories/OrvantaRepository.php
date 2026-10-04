@@ -9,8 +9,9 @@ use PDO;
 /**
  * Orvanta: lokale Einstellungen (Tabelle orvanta_settings), zwischengespeicherte
  * Terminerinnerungen (orvanta_reminders) und der Bestand des Zwischenspeichers im
- * Nextcloud-Bereich der Benutzer (orvanta_cache_items). SQL ist so gehalten, dass
- * es sowohl auf MySQL als auch auf SQLite (Tests) laeuft.
+ * Nextcloud-Bereich der Benutzer (orvanta_cache_items) sowie die Zaehler der
+ * KI-Textunterstuetzung (orvanta_ai_usage). SQL ist so gehalten, dass es sowohl
+ * auf MySQL als auch auf SQLite (Tests) laeuft.
  */
 final class OrvantaRepository extends Repository
 {
@@ -258,5 +259,83 @@ final class OrvantaRepository extends Repository
             'items' => (int) $row['items'],
             'bytes' => (int) $row['bytes'],
         ], $rows);
+    }
+
+    // ------------------------------------------------------------------ KI-Nutzung (nur Zaehler)
+
+    public function recordAiUsage(string $uid, string $kind, int $inputTokens, int $outputTokens, string $model, string $createdAt): void
+    {
+        $statement = $this->pdo->prepare('INSERT INTO orvanta_ai_usage (user_uid, kind, model, input_tokens, output_tokens, created_at) VALUES (:uid, :kind, :model, :input, :output, :created)');
+        $statement->execute([
+            'uid' => $uid,
+            'kind' => $kind,
+            'model' => mb_substr($model, 0, 100),
+            'input' => max(0, $inputTokens),
+            'output' => max(0, $outputTokens),
+            'created' => $createdAt,
+        ]);
+    }
+
+    /**
+     * Nutzung je Benutzer im Zeitraum - anonymisiert: Die Rueckgabe enthaelt
+     * keine user_uid, sondern fortlaufende Pseudonyme in der Reihenfolge der
+     * ersten Nutzung im Zeitraum ("Benutzer 1", "Benutzer 2", ...).
+     *
+     * @return list<array{label:string,requests:int,input_tokens:int,output_tokens:int}>
+     */
+    public function aiUsagePerUser(string $from, string $to, int $limit = 50): array
+    {
+        $statement = $this->pdo->prepare('SELECT user_uid, COUNT(*) AS requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens, MIN(created_at) AS first_seen
+            FROM orvanta_ai_usage WHERE created_at >= :from AND created_at < :to GROUP BY user_uid ORDER BY first_seen ASC, user_uid ASC LIMIT ' . max(1, $limit));
+        $statement->execute(['from' => $from, 'to' => $to]);
+
+        $rows = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $index => $row) {
+            $rows[] = [
+                'label' => 'Benutzer ' . ($index + 1),
+                'requests' => (int) $row['requests'],
+                'input_tokens' => (int) $row['input_tokens'],
+                'output_tokens' => (int) $row['output_tokens'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Aufrufe und Token je Kalendertag (Datum in der Zeitzone des PHP-Prozesses).
+     *
+     * @return list<array{day:string,requests:int,input_tokens:int,output_tokens:int}>
+     */
+    public function aiUsagePerDay(string $from, string $to): array
+    {
+        $statement = $this->pdo->prepare('SELECT SUBSTR(created_at, 1, 10) AS day, COUNT(*) AS requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens
+            FROM orvanta_ai_usage WHERE created_at >= :from AND created_at < :to GROUP BY SUBSTR(created_at, 1, 10) ORDER BY day ASC');
+        $statement->execute(['from' => $from, 'to' => $to]);
+
+        return array_map(static fn (array $row): array => [
+            'day' => (string) $row['day'],
+            'requests' => (int) $row['requests'],
+            'input_tokens' => (int) $row['input_tokens'],
+            'output_tokens' => (int) $row['output_tokens'],
+        ], $statement->fetchAll(PDO::FETCH_ASSOC) ?: []);
+    }
+
+    /**
+     * @return array{requests:int,users:int,input_tokens:int,output_tokens:int}
+     */
+    public function aiTokenTotals(string $from, string $to): array
+    {
+        $statement = $this->pdo->prepare('SELECT COUNT(*) AS requests, COUNT(DISTINCT user_uid) AS users, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens
+            FROM orvanta_ai_usage WHERE created_at >= :from AND created_at < :to');
+        $statement->execute(['from' => $from, 'to' => $to]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        return [
+            'requests' => (int) ($row['requests'] ?? 0),
+            'users' => (int) ($row['users'] ?? 0),
+            'input_tokens' => (int) ($row['input_tokens'] ?? 0),
+            'output_tokens' => (int) ($row['output_tokens'] ?? 0),
+        ];
     }
 }

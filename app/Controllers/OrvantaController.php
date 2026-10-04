@@ -56,6 +56,8 @@ final class OrvantaController extends Controller
                 'cacheQuota' => $config->cacheQuotaBytes(),
                 'demo' => $config->isDemo(),
                 'owaUrl' => $config->owaUrl(),
+                // Nur das Flag - Modell, Adresse und Schluessel bleiben auf dem Server.
+                'aiAvailable' => Container::orvantaAi()->isAvailable(),
             ],
         ], 'layouts.editor')->withHeader('Cache-Control', 'no-store')->withHeader('Vary', 'Cookie');
     }

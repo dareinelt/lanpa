@@ -225,6 +225,11 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         <span data-ov-status-count></span>
         <span class="ov-statusbar__grow" data-ov-status-text></span>
         <span class="ov-statusbar__credit">Orvanta Mail-App by Daniel-André Reinelt</span>
+        <?php if (!empty($orvanta['aiAvailable'])) { ?>
+            <button type="button" class="ov-ai-indicator" data-ov-ai-indicator title="KI-Unterstützung verfügbar – Text markieren und Rechtsklick" aria-label="KI-Unterstützung verfügbar: Hinweise anzeigen">
+                <img src="/assets/images/orvanta-ai-robot-small.png" srcset="/assets/images/orvanta-ai-robot-small@2x.png 2x" width="18" height="24" alt="">
+            </button>
+        <?php } ?>
         <span data-ov-status-sync title="Letzte Aktualisierung">–</span>
         <span><?= $icon('user') ?> <?= Html::e((string) $orvanta['user']['email']) ?></span>
     </footer>
@@ -292,7 +297,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
                 </div>
                 <label class="ov-field"><span>Teilnehmer (erforderlich)</span><input type="text" name="required" placeholder="name@firma.de; …" data-ov-recipients></label>
                 <label class="ov-field"><span>Teilnehmer (optional)</span><input type="text" name="optional" data-ov-recipients></label>
-                <label class="ov-field"><span>Beschreibung</span><textarea name="body" rows="5"></textarea></label>
+                <div class="ov-field"><span id="ov-event-body-label">Beschreibung</span><div class="ov-editor ov-editor--event" contenteditable="true" data-ov-event-body aria-labelledby="ov-event-body-label"></div></div>
                 <p class="ov-form-error" data-ov-form-error hidden></p>
             </div>
             <div class="ov-dialog__foot">
@@ -407,10 +412,52 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
                 <p><strong>Module</strong> wechseln Sie links: Mail, Kalender, Kontakte, Aufgaben, Notizen. Die mittlere Spalte listet die Elemente, rechts erscheint das Detail.</p>
                 <p><strong>Anhänge</strong> öffnen sich per Klick in einem neuen Tab in Euro-Office (Word, Excel, PowerPoint, PDF). Mit „In Nextcloud speichern“ legen Sie den Anhang dauerhaft in Ihrem Nextcloud-Ordner ab.</p>
                 <p><strong>Erinnerungen</strong> zu Terminen erscheinen als Desktop-Benachrichtigung, als Hinweis in Orvanta und in den Mitteilungen des Intranets. Sie können sie verschieben („Später“) oder schließen.</p>
+                <?php if (!empty($orvanta['aiAvailable'])) { ?>
+                    <div class="ov-help__ai" id="ov-help-ai">
+                        <img src="/assets/images/orvanta-ai-robot.png" srcset="/assets/images/orvanta-ai-robot@2x.png 2x" width="90" height="120" alt="" class="ov-help__robot">
+                        <div>
+                            <p><strong>KI-Unterstützung</strong> beim Schreiben: Markieren Sie in einer E-Mail, einem Termin oder einer Erinnerung einen Textabschnitt und öffnen Sie mit der <strong>rechten Maustaste</strong> das Menü „Mit KI verbessern“. Beschreiben Sie kurz, was geändert werden soll (z.&nbsp;B. „höflicher“, „kürzer“, „als Aufzählung“).</p>
+                            <p>Der erzeugte Text erscheint <span class="ov-ai-block ov-ai-block--sample">hellblau umrandet</span>. Per Rechtsklick darauf können Sie ihn weiter verfeinern, auf den ursprünglichen Text zurücksetzen oder die Markierung entfernen. Beim Senden bzw. Speichern wird die Markierung automatisch entfernt – Empfänger sehen nur den Text.</p>
+                            <p class="ov-muted">Es wird nur der markierte Abschnitt übertragen (dazu Betreff und Anzahl der Empfänger), nie das gesamte Postfach. Verarbeitet wird im lokalen KI-Dienst des Intranets.</p>
+                        </div>
+                    </div>
+                <?php } ?>
                 <p><strong>Tastatur:</strong> <kbd>N</kbd> neues Element · <kbd>R</kbd> antworten · <kbd>Entf</kbd> löschen · <kbd>/</kbd> Suche · <kbd>Esc</kbd> Dialog schließen · <kbd>1</kbd>–<kbd>5</kbd> Modul wechseln.</p>
             </div>
             <div class="ov-dialog__foot"><button type="button" class="button button--primary" data-ov-dialog-close>Schließen</button></div>
         </div>
+    </dialog>
+
+    <!-- KI-Unterstuetzung: Kontextmenue im Editor -->
+    <div class="ov-ai-menu" data-ov-ai-menu role="menu" aria-label="KI-Unterstützung" hidden>
+        <button type="button" role="menuitem" data-ov-ai-menu-item="improve"><img src="/assets/images/orvanta-ai-robot-small.png" srcset="/assets/images/orvanta-ai-robot-small@2x.png 2x" width="12" height="16" alt=""> Mit KI verbessern …</button>
+        <button type="button" role="menuitem" data-ov-ai-menu-item="refine" hidden>Weiter verfeinern …</button>
+        <button type="button" role="menuitem" data-ov-ai-menu-item="reset" hidden>Auf Original zurücksetzen</button>
+        <button type="button" role="menuitem" data-ov-ai-menu-item="unmark" hidden>Markierung entfernen</button>
+    </div>
+
+    <!-- Dialog: KI-Anweisung -->
+    <dialog class="ov-dialog ov-dialog--small ov-dialog--ai" data-ov-dialog="ai">
+        <form method="dialog" class="ov-dialog__form" data-ov-form="ai">
+            <div class="ov-dialog__head"><h2><img src="/assets/images/orvanta-ai-robot-small.png" srcset="/assets/images/orvanta-ai-robot-small@2x.png 2x" width="15" height="20" alt="" class="ov-ai-dialog__icon"> <span data-ov-ai-title>Mit KI verbessern</span></h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
+            <div class="ov-dialog__body">
+                <p class="ov-ai-dialog__excerpt"><span class="ov-muted">Markierter Text:</span> <span data-ov-ai-excerpt></span></p>
+                <label class="ov-field"><span>Was soll geändert werden?</span><textarea name="prompt" rows="3" maxlength="1000" placeholder="z. B. höflicher formulieren, kürzer fassen, Rechtschreibung korrigieren …" required data-ov-ai-prompt></textarea></label>
+                <div class="ov-ai-dialog__chips" data-ov-ai-chips>
+                    <button type="button" data-ov-ai-chip="Formuliere den Text höflicher und professioneller.">Höflicher</button>
+                    <button type="button" data-ov-ai-chip="Fasse den Text deutlich kürzer.">Kürzer</button>
+                    <button type="button" data-ov-ai-chip="Korrigiere Rechtschreibung und Grammatik, ändere sonst nichts.">Korrigieren</button>
+                    <button type="button" data-ov-ai-chip="Strukturiere den Text als klare Aufzählung.">Aufzählung</button>
+                    <button type="button" data-ov-ai-chip="Übersetze den Text ins Englische.">Englisch</button>
+                </div>
+                <p class="ov-muted" data-ov-ai-note>Übertragen werden nur dieser Abschnitt, Betreff und Empfängeranzahl.</p>
+                <p class="ov-form-error" data-ov-form-error hidden></p>
+            </div>
+            <div class="ov-dialog__foot">
+                <button type="submit" class="button button--primary" data-ov-ai-submit>Vorschlag erzeugen</button>
+                <button type="button" class="button button--ghost" data-ov-dialog-close>Abbrechen</button>
+            </div>
+        </form>
     </dialog>
 
     <!-- Dialog: Erinnerung -->

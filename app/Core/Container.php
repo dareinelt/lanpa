@@ -492,6 +492,43 @@ final class Container
         );
     }
 
+    public static function orvantaAiCharts(): \App\Services\Orvanta\OrvantaAiCharts
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaAiCharts::class,
+            static fn (): \App\Services\Orvanta\OrvantaAiCharts => new \App\Services\Orvanta\OrvantaAiCharts(self::orvantaRepository())
+        );
+    }
+
+    /**
+     * Transport zum KI-Endpunkt (OpenAI-kompatibel); in Produktion nur HTTPS.
+     */
+    public static function aiTransport(): \App\Contracts\AiTransportInterface
+    {
+        return self::make(
+            \App\Contracts\AiTransportInterface::class,
+            static fn (): \App\Contracts\AiTransportInterface => new \App\Services\Orvanta\CurlAiTransport((string) Config::get('app.env', 'production') === 'production')
+        );
+    }
+
+    /**
+     * KI-Textunterstuetzung in Orvanta; das Modell stammt aus den globalen
+     * KI-Einstellungen (officeAi()), Orvanta selbst haelt keine Modellwerte.
+     */
+    public static function orvantaAi(): \App\Services\Orvanta\OrvantaAiService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaAiService::class,
+            static fn (): \App\Services\Orvanta\OrvantaAiService => new \App\Services\Orvanta\OrvantaAiService(
+                self::officeAi(),
+                self::aiTransport(),
+                self::orvantaRepository(),
+                (string) Config::get('office.ai_availability_cache_file', BASE_PATH . '/storage/cache/orvanta_ai.json'),
+                min(120, max(5, (int) Config::get('office.ai_request_timeout', 30)))
+            )
+        );
+    }
+
     public static function nextcloudAdmins(): NextcloudAdminService
     {
         return self::make(

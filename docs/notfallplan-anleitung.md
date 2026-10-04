@@ -119,7 +119,11 @@ Protokoll lesbar, aber nicht mehr bearbeitbar.
    Voraussetzungen (vorherige Schritte) und Bedingungen anhaken; die
    Klartext-Zusammenfassung zeigt, wann der Schritt startet. Die Anordnung
    entsteht automatisch; Schritte können dupliziert oder mit Nach oben/unten
-   verschoben werden, sofern Verbindungen gültig bleiben. Zoom, Suche und
+   verschoben werden, sofern Verbindungen gültig bleiben. Im Diagramm lässt
+   sich ein Schritt per **Drag-and-Drop** frei verschieben (nur Darstellung).
+   Wird er auf einen anderen Schritt gezogen, wird dieser zu seiner
+   Voraussetzung und der Ablaufpfeil entsprechend umgehängt. **Ansicht →
+   Automatisch anordnen** stellt das automatische Layout wieder her. Zoom, Suche und
    Bereiche finden sich in den Reitern **Ansicht** bzw. **Ablauf & Verbindungen**.
 5. **Alle Vorgänger (UND)**: alle ausgewählten Aufgaben müssen erfüllt sein.
    **Mindestens einer (ODER)**: mindestens ein zutreffender Vorgänger genügt.

@@ -11,6 +11,7 @@ final class EmergencyPlanDefinition
 {
     public const TYPES = ['action', 'contact', 'decision', 'checklist', 'note', 'sms'];
     public const STATUSES = ['open', 'in_progress', 'blocked', 'done'];
+    public const MAX_COORDINATE = 100000;
 
     public static function validate(array $input, bool $preview = false): array
     {
@@ -88,6 +89,16 @@ final class EmergencyPlanDefinition
                         . ' Zeichen, erlaubt sind höchstens ' . EmergencyPlanSms::MAX_LENGTH . '.');
                 }
             }
+            // Optionale, im Editor per Drag-and-Drop gesetzte Diagrammposition (reines Layout, ohne Einfluss auf den Ablauf).
+            $layout = [];
+            if (($node['x'] ?? null) !== null || ($node['y'] ?? null) !== null) {
+                $x = filter_var($node['x'] ?? null, FILTER_VALIDATE_INT);
+                $y = filter_var($node['y'] ?? null, FILTER_VALIDATE_INT);
+                if ($x === false || $y === false || $x < 0 || $y < 0 || $x > self::MAX_COORDINATE || $y > self::MAX_COORDINATE) {
+                    self::fail('Ungültige Position im Ablaufdiagramm.');
+                }
+                $layout = ['x' => $x, 'y' => $y];
+            }
             $result[] = [
                 'id' => $id, 'type' => $type,
                 'title' => $nodeTitle,
@@ -98,7 +109,7 @@ final class EmergencyPlanDefinition
                 'dependencies' => array_map(static fn ($edge) => ['id' => $edge['id'], 'when' => $edge['when']], $dependencies),
                 'join' => $join, 'alarm_id' => $type === 'sms' && !$numbersMode ? $alarmId : 0,
                 'sms_mode' => $smsMode, 'sms_numbers' => $smsNumbers, 'sms_text' => $smsText,
-            ];
+            ] + $layout;
             $seen[$id] = $type;
         }
 

@@ -160,6 +160,10 @@ Runner::test('Notfallplan: Graphvalidierung, Grenzen und sichere Links', static 
         ['title' => 'x', 'nodes' => [emergencyNode('x') + ['minutes' => -1]]],
         ['title' => 'x', 'nodes' => [array_replace(emergencyNode('x', 'checklist'), ['checks' => []])]],
         ['title' => 'x', 'nodes' => [array_replace(emergencyNode('x', 'sms'), ['alarm_id' => 0])]],
+        ['title' => 'x', 'nodes' => [emergencyNode('x') + ['x' => 20]]],
+        ['title' => 'x', 'nodes' => [emergencyNode('x') + ['x' => -1, 'y' => 0]]],
+        ['title' => 'x', 'nodes' => [emergencyNode('x') + ['x' => 'links', 'y' => 0]]],
+        ['title' => 'x', 'nodes' => [emergencyNode('x') + ['x' => 0, 'y' => EmergencyPlanDefinition::MAX_COORDINATE + 1]]],
     ];
     foreach ($cases as $input) {
         $rejected = false;
@@ -167,6 +171,10 @@ Runner::test('Notfallplan: Graphvalidierung, Grenzen und sichere Links', static 
         Assert::true($rejected);
     }
     Assert::same('https://example.test/info', EmergencyPlanDefinition::validate(['title' => 'x', 'nodes' => [emergencyNode('x') + ['link' => 'https://example.test/info']]])['nodes'][0]['link']);
+
+    $positioned = EmergencyPlanDefinition::validate(['title' => 'x', 'nodes' => [emergencyNode('x') + ['x' => 40, 'y' => 160], emergencyNode('y') + ['x' => null, 'y' => null]]])['nodes'];
+    Assert::same([40, 160], [$positioned[0]['x'], $positioned[0]['y']]);
+    Assert::false(array_key_exists('x', $positioned[1]) || array_key_exists('y', $positioned[1]));
 });
 
 Runner::test('Notfallplan: Ja/Nein-Zweige und ODER-Zusammenführung', static function (): void {

@@ -25,16 +25,37 @@
             return;
         }
         const positions = {};
-        const levels = [];
-        nodes.forEach(node => {
-            const level = node.dependencies.reduce((max, edge) => Math.max(max, (positions[edge.id]?.level ?? -1) + 1), 0);
-            levels[level] ||= [];
-            positions[node.id] = { level, index: levels[level].length };
-            levels[level].push(node);
-        });
-        const columns = Math.max(...levels.map(level => level.length));
-        const width = Math.max(340, columns * 280);
-        const height = levels.length * 148 + 30;
+        const placed = n => Number.isFinite(n.x) && Number.isFinite(n.y);
+        let width, height;
+        if (nodes.some(placed)) {
+            // Manuelles Layout (Drag-and-Drop im Editor): Schritte ohne Position werden unter ihre Vorgänger gesetzt.
+            const taken = nodes.filter(placed).map(n => ({ x: n.x, y: n.y }));
+            nodes.forEach(node => {
+                if (placed(node)) { positions[node.id] = { x: node.x, y: node.y }; return; }
+                const previous = node.dependencies.map(edge => positions[edge.id]).filter(Boolean);
+                const p = { x: previous.length ? previous[0].x : 20, y: previous.length ? Math.max(...previous.map(q => q.y)) + 148 : 20 };
+                while (taken.some(q => Math.abs(q.x - p.x) < 260 && Math.abs(q.y - p.y) < 112)) p.x += 280;
+                positions[node.id] = p; taken.push(p);
+            });
+            width = Math.max(340, ...Object.values(positions).map(p => p.x + 260));
+            height = Math.max(...Object.values(positions).map(p => p.y + 122));
+        } else {
+            const levels = [];
+            nodes.forEach(node => {
+                const level = node.dependencies.reduce((max, edge) => Math.max(max, (positions[edge.id]?.level ?? -1) + 1), 0);
+                levels[level] ||= [];
+                positions[node.id] = { level, index: levels[level].length };
+                levels[level].push(node);
+            });
+            const columns = Math.max(...levels.map(level => level.length));
+            width = Math.max(340, columns * 280);
+            height = levels.length * 148 + 30;
+            nodes.forEach(node => {
+                const p = positions[node.id];
+                p.x = (width - levels[p.level].length * 280) / 2 + p.index * 280 + 20;
+                p.y = p.level * 148 + 20;
+            });
+        }
         const svg = svgElement('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'group', 'aria-label': 'Ablaufdiagramm: Elemente auswählen' });
         const markerId = 'ep-arrow-' + (++diagramCount);
         const defs = svgElement('defs', {});
@@ -42,16 +63,21 @@
         marker.append(svgElement('path', { d: 'M0,0 L8,4 L0,8 Z', class: 'ep-arrow' }));
         defs.append(marker);
         svg.append(defs);
-        nodes.forEach(node => {
-            const p = positions[node.id];
-            p.x = (width - levels[p.level].length * 280) / 2 + p.index * 280 + 20;
-            p.y = p.level * 148 + 20;
-        });
         nodes.forEach(node => node.dependencies.forEach(edge => {
             const from = positions[edge.id], to = positions[node.id];
             if (!from) return;
-            const sx = from.x + 120, sy = from.y + 92, tx = to.x + 120, ty = to.y;
-            svg.append(svgElement('path', { d: `M${sx},${sy} C${sx},${sy + 28} ${tx},${ty - 28} ${tx},${ty}`, class: 'ep-edge', 'marker-end': `url(#${markerId})` }));
+            let sx = from.x + 120, sy = from.y + 92, tx = to.x + 120, ty = to.y, d;
+            if (ty < sy + 10 && Math.abs(to.x - from.x) >= 260) {
+                // Manuelles Layout: Ziel liegt daneben oder höher – seitlich verbinden.
+                const dir = to.x > from.x ? 1 : -1;
+                sx = from.x + (dir > 0 ? 240 : 0); sy = from.y + 46; tx = to.x + (dir > 0 ? 0 : 240); ty = to.y + 46;
+                const bend = Math.max(28, Math.abs(tx - sx) / 2);
+                d = `M${sx},${sy} C${sx + dir * bend},${sy} ${tx - dir * bend},${ty} ${tx},${ty}`;
+            } else {
+                const bend = Math.max(28, (sy - ty) / 2 + 28);
+                d = `M${sx},${sy} C${sx},${sy + bend} ${tx},${ty - bend} ${tx},${ty}`;
+            }
+            svg.append(svgElement('path', { d, class: 'ep-edge', 'marker-end': `url(#${markerId})` }));
             if (edge.when !== 'always') svg.append(svgElement('text', { x: (sx + tx) / 2 + 8, y: (sy + ty) / 2, class: 'ep-edge-label' }, edge.when === 'yes' ? 'Ja' : 'Nein'));
         }));
         nodes.forEach((node, i) => {
@@ -100,6 +126,7 @@
         let zoom = 1;
         let filter = '';
         let issues = null; // null = noch nicht geprüft
+        let nodeDrag = null; // Schritt, der gerade im Diagramm gezogen wird
         let planPanelPinned = !definition.nodes.length;
         // SMS an einzelne Rufnummern – Grenzen und Textbausteine synchron zu App\Services\EmergencyPlanSms halten.
         const SMS_MAX_LENGTH = 255;
@@ -201,10 +228,11 @@
             $$('[data-ep-redo]').forEach(b => { b.disabled = !journal.redo.length; });
         };
         // key: zusammenhängende Tipp-Eingaben im selben Feld werden zu einem Schritt zusammengefasst.
-        function snapshot(key) {
+        // before: optional bereits gesicherter Stand (z. B. vor einem Drag-and-Drop mit Live-Vorschau im Diagramm).
+        function snapshot(key, before) {
             const now = Date.now();
             if (key && key === journal.key && now - journal.at < 1500) { journal.at = now; return; }
-            journal.undo.push(JSON.stringify(definition));
+            journal.undo.push(before ?? JSON.stringify(definition));
             if (journal.undo.length > 100) journal.undo.shift();
             journal.redo = []; journal.key = key || null; journal.at = now;
             updateHistoryButtons();
@@ -314,6 +342,8 @@
                 group.dataset.epNode = node.id;
                 if (marks.has(node.id)) group.classList.add('ep-graph-node--' + marks.get(node.id));
                 if (!matchesFilter(node)) group.classList.add('is-dimmed');
+                if (nodeDrag?.active && nodeDrag.id === node.id) group.classList.add('is-dragging');
+                if (nodeDrag?.target === node.id) group.classList.add('is-drop-target');
             });
             applyZoom();
         }
@@ -363,6 +393,80 @@
         });
         const endPan = event => { if (pan && pan.id === event.pointerId) { pan = null; canvas.classList.remove('is-panning'); } };
         canvas.addEventListener('pointerup', endPan); canvas.addEventListener('pointercancel', endPan);
+
+        // ---- Schritte im Diagramm per Drag-and-Drop verschieben ----
+        // Loslassen auf freier Fläche ändert nur das Layout (x/y). Loslassen auf einem anderen Schritt macht diesen
+        // zur einzigen Voraussetzung des gezogenen Schritts; der Schritt behält dabei seine bisherige Position.
+        const GRID = 20;
+        const renderedPositions = () => Object.fromEntries([...diagramHost.querySelectorAll('.ep-graph-node')].map(group => {
+            const rect = group.querySelector('rect');
+            return [group.dataset.epNode, { x: Number(rect.getAttribute('x')), y: Number(rect.getAttribute('y')) }];
+        }));
+        const dropTargetAt = (x, y) => document.elementsFromPoint(x, y)
+            .map(el => el.closest?.('.ep-graph-node'))
+            .find(group => group && diagramHost.contains(group) && group.dataset.epNode !== nodeDrag.id)?.dataset.epNode || null;
+        let suppressClick = false;
+        canvas.addEventListener('pointerdown', event => {
+            const group = event.target.closest('.ep-graph-node');
+            if (event.button !== 0 || !group || !diagramHost.contains(group)) return;
+            nodeDrag = { id: group.dataset.epNode, pointer: event.pointerId, x: event.clientX, y: event.clientY, active: false, target: null };
+        });
+        canvas.addEventListener('pointermove', event => {
+            if (!nodeDrag || nodeDrag.pointer !== event.pointerId) return;
+            const dx = (event.clientX - nodeDrag.x) / zoom, dy = (event.clientY - nodeDrag.y) / zoom;
+            if (!nodeDrag.active) {
+                if (Math.hypot(event.clientX - nodeDrag.x, event.clientY - nodeDrag.y) < 5) return;
+                // Beim ersten Verschieben wird das aktuelle Layout aller Schritte festgeschrieben.
+                const positions = renderedPositions();
+                nodeDrag.before = JSON.stringify(definition);
+                nodeDrag.origin = definition.nodes.map(n => ({ node: n, x: n.x, y: n.y }));
+                nodeDrag.start = positions[nodeDrag.id];
+                definition.nodes.forEach(n => { if (positions[n.id]) Object.assign(n, positions[n.id]); });
+                nodeDrag.active = true;
+                // Fläche während des Ziehens nicht schrumpfen lassen, sonst springt die Scrollposition.
+                const area = diagramHost.querySelector('svg').getBoundingClientRect();
+                diagramHost.style.minWidth = `max(100%, ${Math.ceil(area.width)}px)`; diagramHost.style.minHeight = Math.ceil(area.height) + 'px';
+                canvas.setPointerCapture(event.pointerId); canvas.classList.add('is-dragging-node');
+                closeContextMenu(false);
+            }
+            const node = definition.nodes.find(n => n.id === nodeDrag.id);
+            if (!node) return;
+            node.x = Math.max(0, Math.round(nodeDrag.start.x + dx));
+            node.y = Math.max(0, Math.round(nodeDrag.start.y + dy));
+            nodeDrag.target = dropTargetAt(event.clientX, event.clientY);
+            refreshGraph();
+        });
+        const restoreLayout = origin => origin.forEach(({ node, x, y }) => {
+            if (x === undefined) { delete node.x; delete node.y; } else Object.assign(node, { x, y });
+        });
+        const endNodeDrag = (event, cancelled) => {
+            if (!nodeDrag || nodeDrag.pointer !== event.pointerId) return;
+            const drag = nodeDrag;
+            nodeDrag = null;
+            if (!drag.active) return;
+            suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
+            canvas.classList.remove('is-dragging-node');
+            diagramHost.style.minWidth = ''; diagramHost.style.minHeight = '';
+            if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+            const node = definition.nodes.find(n => n.id === drag.id);
+            if (cancelled || !node) { restoreLayout(drag.origin); refreshGraph(); return; }
+            if (drag.target) { restoreLayout(drag.origin); linkTo(drag.id, drag.target); return; }
+            node.x = Math.round(node.x / GRID) * GRID; node.y = Math.round(node.y / GRID) * GRID;
+            if (Math.abs(node.x - drag.start.x) < GRID && Math.abs(node.y - drag.start.y) < GRID) { restoreLayout(drag.origin); refreshGraph(); return; }
+            snapshot(undefined, drag.before);
+            selected = drag.id; planPanelPinned = false; mark(); render();
+            message.textContent = `Schritt „${node.title || types[node.type]}“ verschoben.`;
+        };
+        canvas.addEventListener('pointerup', event => endNodeDrag(event, false));
+        canvas.addEventListener('pointercancel', event => endNodeDrag(event, true));
+        canvas.addEventListener('lostpointercapture', event => { if (nodeDrag?.active) endNodeDrag(event, true); });
+        canvas.addEventListener('click', event => { if (suppressClick) { event.stopPropagation(); event.preventDefault(); suppressClick = false; } }, true);
+        $$('[data-ep-auto-layout]').forEach(b => b.addEventListener('click', () => {
+            if (!definition.nodes.some(n => n.x !== undefined)) { message.textContent = 'Das Diagramm wird bereits automatisch angeordnet.'; return; }
+            snapshot();
+            definition.nodes.forEach(n => { delete n.x; delete n.y; });
+            mark(); render(); message.textContent = 'Schritte automatisch angeordnet.';
+        }));
         canvas.addEventListener('click', event => { if (!event.target.closest('.ep-graph-node') && !definition.nodes.length) showPlanPanel(); });
         // Bausteine per Drag-and-Drop aus der Palette in das Diagramm ziehen (= wie 1-Klick-Hinzufügen).
         $$('[data-ep-drag-type]').forEach(b => b.addEventListener('dragstart', event => {
@@ -403,11 +507,49 @@
             snapshot(); definition.nodes = copy; mark(); render();
         }
         $$('[data-ep-move]').forEach(b => b.addEventListener('click', () => move(Number(b.dataset.epMove))));
+        // Stabile topologische Sortierung: Voraussetzungen stehen vor ihren Nachfolgern, sonst bleibt die Reihenfolge erhalten.
+        function dependencyOrder(nodes) {
+            const known = new Set(nodes.map(n => n.id)), done = new Set(), rest = nodes.slice(), result = [];
+            while (rest.length) {
+                const i = rest.findIndex(n => n.dependencies.every(e => done.has(e.id) || !known.has(e.id)));
+                if (i < 0) return null;
+                const [n] = rest.splice(i, 1);
+                result.push(n); done.add(n.id);
+            }
+            return result;
+        }
+        // Drag-and-Drop auf einen anderen Schritt: target wird einzige Voraussetzung von id (Ablaufpfeil wird umgehängt).
+        function linkTo(id, targetId) {
+            const node = definition.nodes.find(n => n.id === id), target = definition.nodes.find(n => n.id === targetId);
+            if (!node || !target || id === targetId) return;
+            const name = n => `„${n.title || types[n.type]}“`;
+            if (node.dependencies.length === 1 && node.dependencies[0].id === targetId) { message.textContent = `${name(target)} ist bereits die Voraussetzung von ${name(node)}.`; refreshGraph(); return; }
+            const followers = new Set([id]);
+            for (let grew = true; grew;) {
+                grew = false;
+                definition.nodes.forEach(n => { if (!followers.has(n.id) && n.dependencies.some(e => followers.has(e.id))) { followers.add(n.id); grew = true; } });
+            }
+            if (followers.has(targetId)) {
+                refreshGraph();
+                notify(`${name(target)} folgt im Ablauf bereits auf ${name(node)}. Ein Schritt kann nicht Voraussetzung seines eigenen Vorgängers sein.`, 'Verbinden nicht möglich');
+                return;
+            }
+            const before = JSON.stringify(definition);
+            const previous = node.dependencies;
+            node.dependencies = [{ id: targetId, when: previous.find(e => e.id === targetId)?.when || 'always' }];
+            const order = dependencyOrder(definition.nodes);
+            if (!order) { node.dependencies = previous; refreshGraph(); notify('Die Verbindung würde einen Kreislauf erzeugen.', 'Verbinden nicht möglich'); return; }
+            snapshot(undefined, before);
+            definition.nodes = order;
+            selected = id; planPanelPinned = false; mark(); render();
+            message.textContent = `${name(node)} folgt jetzt auf ${name(target)}.`;
+        }
         function duplicate() {
             const node = current(); if (!node) return;
             if (definition.nodes.length >= 80) { notify('Maximal 80 Schritte je Plan.'); return; }
             snapshot();
             const copy = structuredClone(node); copy.id = makeNode(node.type).id; copy.title = (copy.title + ' (Kopie)').slice(0, 190);
+            delete copy.x; delete copy.y;
             definition.nodes.splice(definition.nodes.indexOf(node) + 1, 0, copy); selected = copy.id; mark(); render();
         }
         // Zwischenablage: im Speicher und – sofern erlaubt – im localStorage, damit auch zwischen Plänen in anderen Tabs eingefügt werden kann.
@@ -429,6 +571,7 @@
             snapshot();
             const node = Object.assign(makeNode(source.type), structuredClone(source));
             node.id = makeNode(source.type).id;
+            delete node.x; delete node.y;
             const anchor = current();
             const index = anchor ? definition.nodes.indexOf(anchor) + 1 : definition.nodes.length;
             // Nur Voraussetzungen behalten, die in diesem Plan vor der Einfügestelle liegen.

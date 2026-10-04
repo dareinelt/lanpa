@@ -46,7 +46,7 @@ use App\Support\Html;
     <h2>5. KAEP-Team: Pläne vorbereiten</h2>
     <ol>
         <li>Administration öffnen und per Windows-Anmeldung oder zugeteiltem lokalen KAEP-Konto anmelden. Das KAEP-Team sieht nur <strong>Notfallplan / KAEP</strong>.</li>
-        <li>Neuen Plan entwerfen oder bestehenden bearbeiten. Beispiel Brandfall/MANF nur als Ausgangspunkt verwenden.</li>
+        <li>Neuen Plan entwerfen oder bestehenden bearbeiten. Beispiel Brandfall/MANV nur als Ausgangspunkt verwenden.</li>
         <li>Bausteine hinzufügen: Maßnahme, Kontakt, Entscheidung, Checkliste, Hinweis oder SMS. Titel kurz und eindeutig; Zuständigkeiten und konkrete Arbeitsanweisungen ergänzen.</li>
         <li>Vorgänger auswählen. Mehrere Startpunkte ermöglichen paralleles Arbeiten. „Alle“ verbindet Pflichten; „Mindestens einer“ führt alternative Zweige zusammen. Ja/Nein nur nach Entscheidungen. Das Layout entsteht automatisch.</li>
         <li>SMS-Vorlage aus der vorhandenen Alarmierung auswählen. Fehlende Vorlagen muss ein Administrator anlegen. Empfänger und Nachricht werden beim Speichern in den Plan kopiert.</li>

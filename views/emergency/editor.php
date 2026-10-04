@@ -120,7 +120,7 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
                     <?= $rb('plan', 'Plan-Angaben', 'data-ep-show-plan title="Titel und Kurzbeschreibung des Plans"') ?>
                     <div class="ep-rg__stack">
                         <?= $rb('template', 'Beispiel Brandfall', 'data-ep-template="fire"', 'button', true) ?>
-                        <?= $rb('template', 'Beispiel MANF', 'data-ep-template="manf"', 'button', true) ?>
+                        <?= $rb('template', 'Beispiel MANV', 'data-ep-template="manv"', 'button', true) ?>
                     </div>
                 </div>
                 <div class="ep-rg__label">Plan</div>
@@ -324,7 +324,7 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
                 <li><kbd>Strg</kbd>+<kbd>+</kbd> / <kbd>−</kbd> / <kbd>0</kbd> Zoom · <kbd>Alt</kbd>+<kbd>Umschalt</kbd>+<kbd>V</kbd> Live-Vorschau</li>
                 <li><kbd>Entf</kbd> löscht den markierten Schritt (wenn das Diagramm den Fokus hat) · <kbd>Esc</kbd> schließt Dialoge</li>
             </ul>
-            <p class="ep-hint">Beispielvorlagen (Brandfall, MANF) sind nur Ausgangspunkte und müssen fachlich geprüft werden.</p>
+            <p class="ep-hint">Beispielvorlagen (Brandfall, MANV) sind nur Ausgangspunkte und müssen fachlich geprüft werden.</p>
         </div>
     </dialog>
 </div>

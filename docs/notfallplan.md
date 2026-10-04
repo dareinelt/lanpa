@@ -11,7 +11,7 @@ Er unterstützt Maßnahmen,
 Kontakte, Hinweise, Checklisten, Ja/Nein-Entscheidungen und explizit bestätigte
 SMS-Alarmierungen. Automatisches Diagrammlayout, parallele Startpunkte,
 UND-/ODER-Verbindungen, Zuständigkeiten, Informationslinks und Zielzeiten helfen
-bei der Planung. Die Vorlagen Brandfall und MANF sind **keine fachlich freigegebenen
+bei der Planung. Die Vorlagen Brandfall und MANV sind **keine fachlich freigegebenen
 Einsatzpläne**.
 
 Die Anwendung ersetzt weder Notruf, Einsatzleitung noch verbindliche klinische

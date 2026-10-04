@@ -299,3 +299,46 @@ body[data-page="emergency_plan"] .table th, body[data-page="emergency_plan"] .ta
     .ep-statusbar { flex-wrap: wrap; white-space: normal; }
     .ep-titlebar__actions .ep-qb--text span { display: none; }
 }
+
+/* Anhänge: Büroklammer in Kacheln/Diagramm, Overlay im Stil der App-Mitteilungen, Editor-Verwaltung */
+.ep-measure__status { display: inline-flex; align-items: flex-start; gap: .5rem; }
+.ep-clip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; padding: 0; border: 1px solid var(--color-border, #c3ccd6); border-radius: .4rem; background: var(--color-surface, #fff); color: var(--color-primary, #1f4e8c); cursor: pointer; vertical-align: middle; flex: none; }
+.ep-clip:hover { background: color-mix(in srgb, var(--color-primary, #1f4e8c) 12%, var(--color-surface, #fff)); }
+.ep-clip:focus-visible { outline: 3px solid var(--color-primary, #1f4e8c); outline-offset: 2px; }
+.ep-clip__count { position: absolute; top: -.45rem; right: -.45rem; min-width: 1.1rem; height: 1.1rem; padding: 0 .25rem; border-radius: 999px; background: var(--color-primary, #1f4e8c); color: #fff; font-size: .7rem; line-height: 1.1rem; font-weight: 700; }
+.ep-node-clip { cursor: pointer; }
+.ep-node-clip .ep-node-clip__hit { fill: var(--color-surface, #fff); stroke: currentColor; stroke-opacity: .35; }
+.ep-node-clip .ep-node-clip__icon { fill: none; stroke: var(--color-primary, #1f4e8c); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.ep-node-clip:hover .ep-node-clip__hit { stroke-opacity: .8; }
+.ep-viewer { padding: 0; border: 0; background: transparent; color: var(--color-text, inherit); width: min(64rem, calc(100vw - 3rem)); max-width: none; max-height: calc(100vh - 3rem); overflow: visible; }
+.ep-viewer::backdrop { background: rgba(0, 0, 0, .55); }
+.ep-viewer .ep-viewer__box { max-width: none; padding: 0; display: flex; flex-direction: column; max-height: calc(100vh - 3rem); overflow: hidden; }
+.ep-viewer__tabs { display: flex; gap: .25rem; overflow-x: auto; padding: .6rem 1rem 0; border-bottom: 1px solid var(--color-border, #c3ccd6); flex: none; }
+.ep-viewer__tab { max-width: 16rem; margin-bottom: -1px; padding: .45rem .85rem; border: 1px solid transparent; border-bottom: 0; border-radius: .45rem .45rem 0 0; background: transparent; color: inherit; font: inherit; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.ep-viewer__tab:hover { background: color-mix(in srgb, var(--color-primary, #1f4e8c) 10%, transparent); }
+.ep-viewer__tab[aria-selected="true"] { border-color: var(--color-border, #c3ccd6); background: var(--color-surface, #fff); font-weight: 700; }
+.ep-viewer__tab:focus-visible { outline: 3px solid var(--color-primary, #1f4e8c); outline-offset: -3px; }
+.ep-viewer__body { display: flex; flex-direction: column; min-height: 0; padding: 1.25rem 1.75rem 1.5rem; }
+.ep-viewer__title { overflow-wrap: anywhere; }
+.ep-viewer__panel { display: flex; align-items: center; justify-content: center; min-height: 8rem; overflow: auto; }
+.ep-viewer__image { display: block; max-width: 100%; max-height: calc(100vh - 15rem); object-fit: contain; }
+.ep-viewer__pdf { display: block; width: 100%; height: calc(100vh - 15rem); min-height: 20rem; border: 1px solid var(--color-border, #c3ccd6); border-radius: .35rem; background: #fff; }
+.ep-viewer__actions { gap: .5rem; flex-wrap: wrap; }
+.ep-attachments { list-style: none; margin: 0 0 .6rem; padding: 0; display: grid; gap: .35rem; }
+.ep-attachments__empty { font-size: .85rem; color: var(--color-muted, #5b6b7c); }
+.ep-attachments__item { display: flex; align-items: center; gap: .4rem; padding: .35rem .45rem; border: 1px solid var(--ep-line, #c3ccd6); border-radius: .35rem; }
+.ep-attachments__info { display: flex; align-items: baseline; gap: .4rem; min-width: 0; flex: 1; }
+.ep-attachments__info strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; }
+.ep-attachments__info small { flex: none; color: var(--color-muted, #5b6b7c); }
+.ep-attachments__kind { flex: none; padding: 0 .3rem; border-radius: .25rem; background: var(--ep-accent-soft, #e3eaf4); font-size: .7rem; font-weight: 700; }
+.ep-attachments .button { min-height: 30px; padding: .15rem .5rem; font-size: .78rem; flex: none; }
+.ep-attachments__delete { color: #b42318; font-weight: 700; }
+[data-theme="dark"] .ep-attachments__delete { color: #ff9b8a; }
+.ep-attach-field.is-dropping, .ep-dropzone.is-dropping { border-color: var(--ep-accent, #1f4e8c); background: var(--ep-accent-soft, #e3eaf4); }
+.ep-attach-add { min-height: 34px; padding: .3rem .7rem; font-size: .85rem; }
+.ep-attach-dialog { width: min(600px, 94vw); }
+.ep-dropzone { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: .75rem; margin-bottom: 1rem; padding: 1.5rem 1rem; border: 2px dashed var(--ep-line, #c3ccd6); border-radius: .5rem; text-align: center; }
+.ep-attach-status { min-height: 1.3em; margin: 0 0 1rem; font-size: .9rem; }
+.ep-attach-status.is-error { color: #b42318; }
+.ep-attach-manage { max-height: 50vh; overflow-y: auto; margin-bottom: 1rem; }
+@media print { .ep-clip, .ep-node-clip { display: none !important; } }

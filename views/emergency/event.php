@@ -88,7 +88,7 @@ $hiddenFields = static function () use ($event): void { ?>
         $overdue = $due !== null && !$closed && $state['status'] !== 'done' && $availability !== 'skipped' && $due < time();
         ?>
         <article class="ep-measure ep-measure--<?= Html::e($state['status']) ?><?= $availability === 'skipped' ? ' ep-measure--skipped' : '' ?>" id="node-<?= Html::e($id) ?>">
-            <header><span><?= Html::e($types[$node['type']]) ?></span><strong><?= $availability === 'skipped' ? 'Entfällt (anderer Zweig)' : Html::e($labels[$state['status']]) ?></strong></header>
+            <header><span><?= Html::e($types[$node['type']]) ?></span><span class="ep-measure__status"><strong><?= $availability === 'skipped' ? 'Entfällt (anderer Zweig)' : Html::e($labels[$state['status']]) ?></strong><?php require __DIR__ . '/attachment-button.php'; ?></span></header>
             <h2><?= Html::e($node['title']) ?></h2>
             <p class="ep-pre"><?= Html::e($node['text']) ?></p>
             <?php if ($owner !== '') { ?><p><strong>Zuständig:</strong> <?= Html::e($owner) ?><?= ($assignment['owner'] ?? '') !== '' && $node['owner'] !== '' && $assignment['owner'] !== $node['owner'] ? ' <small>(Planvorgabe: ' . Html::e($node['owner']) . ')</small>' : '' ?></p><?php } ?>

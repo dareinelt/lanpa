@@ -423,6 +423,20 @@ Ereignis. Bleiben Mails auf „queued“, Mail-Dienst und Datenbank prüfen.
 Bei „failed“ Team anderweitig benachrichtigen, Ursache beheben und Testmail
 versenden. Es erfolgt kein unbegrenzter Wiederholungsversuch.
 
+## Anhänge an Schritten
+
+Schritte vom Typ Maßnahme, Kontakt, Entscheidung und Hinweis können bis zu
+10 Anhänge (PDF, PNG, JPEG, GIF, WebP; je höchstens 20 MB) erhalten – im Editor
+über den Bereich „Anhänge“ der Eigenschaften (oberhalb des Informationslinks) oder
+per Rechtsklick „Anhang hinzufügen“ / „Anhänge verwalten“. Im Diagramm, in der
+Planansicht und in den Einsatzkacheln erscheint dann oben rechts eine
+Büroklammer; sie öffnet die Anhänge in einem Overlay, mehrere Anhänge als Tabs.
+Anhänge werden base64-kodiert in `emergency_plan_attachments` gespeichert
+(Migration 032), sind unveränderlich und werden auch nach dem Entfernen aus einem
+Plan nicht gelöscht, damit veröffentlichte Fassungen und Ereignisse vollständig
+bleiben. PHP erlaubt dafür Uploads bis 20 MB (`docker/php/php.ini`:
+`upload_max_filesize = 20M`, `post_max_size = 24M`).
+
 ## Export und Import von Notfallplänen
 
 Notfallpläne lassen sich als Datei exportieren und auf einem anderen System
@@ -431,11 +445,12 @@ Beides ist **nur Administratoren** erlaubt; das KAEP-Team erhält HTTP 403.
 
 - **Export:** Unter **Notfallplan / KAEP → Export und Import** die gewünschten
   Pläne auswählen und **Ausgewählte Pläne exportieren** wählen. Es entsteht
-  `notfallplaene-JJJJ-MM-TT.json` (Format `lanpa-notfallplaene`, Version 1) mit dem
-  jeweils aktuellen Entwurf jedes Plans. Freigabehistorie, Ereignisse, Protokolle
+  `notfallplaene-JJJJ-MM-TT.json` (Format `lanpa-notfallplaene`, Version 2) mit dem
+  jeweils aktuellen Entwurf jedes Plans und allen zugehörigen Anhängen (base64).
+  Dateien der Version 1 bleiben importierbar. Freigabehistorie, Ereignisse, Protokolle
   und E-Mail-Queue sind nicht enthalten. Die Datei enthält Zuständigkeiten,
   Telefonnummern und SMS-Daten: vertraulich behandeln.
-- **Import:** Auf dem Zielsystem die Datei (höchstens 2 MB, bis zu 100 Pläne)
+- **Import:** Auf dem Zielsystem die Datei (höchstens 20 MB inkl. Anhänge, bis zu 100 Pläne)
   hochladen. Alle Pläne werden vollständig geprüft wie beim Speichern im Editor
   und in einer Transaktion als **neue, unveröffentlichte Entwürfe** angelegt –
   alles oder nichts. Vorhandene Pläne werden nie überschrieben.

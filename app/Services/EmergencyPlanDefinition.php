@@ -109,6 +109,7 @@ final class EmergencyPlanDefinition
                 'dependencies' => array_map(static fn ($edge) => ['id' => $edge['id'], 'when' => $edge['when']], $dependencies),
                 'join' => $join, 'alarm_id' => $type === 'sms' && !$numbersMode ? $alarmId : 0,
                 'sms_mode' => $smsMode, 'sms_numbers' => $smsNumbers, 'sms_text' => $smsText,
+                'attachments' => EmergencyPlanAttachments::validateList($node['attachments'] ?? null, $type),
             ] + $layout;
             $seen[$id] = $type;
         }

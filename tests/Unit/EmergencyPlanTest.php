@@ -24,6 +24,7 @@ function emergencyPdo(): PDO
     $pdo->exec("CREATE TABLE emergency_log (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER, node_id TEXT, actor TEXT, action TEXT, message TEXT, created_at TEXT)");
     $pdo->exec("CREATE TABLE emergency_sms (event_id INTEGER, node_id TEXT, status TEXT, message TEXT, PRIMARY KEY (event_id, node_id))");
     $pdo->exec("CREATE TABLE emergency_password_attempts (actor TEXT PRIMARY KEY, window_start INTEGER, attempts INTEGER)");
+    $pdo->exec("CREATE TABLE emergency_plan_attachments (id TEXT PRIMARY KEY, mime TEXT, size INTEGER, data TEXT, created_by TEXT, created_at TEXT)");
     $pdo->exec("CREATE TABLE mail_outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER, recipient TEXT, subject TEXT, body TEXT, available_at INTEGER, created_at TEXT, status TEXT DEFAULT 'queued', attempts INTEGER DEFAULT 0, message TEXT DEFAULT '')");
 
     return $pdo;
@@ -478,7 +479,7 @@ Runner::test('Notfallplan: Import prüft Format, Inhalt und Alarmvorlagen vollst
     $valid = ['definition' => emergencyDefinition()];
     Assert::true(str_contains(emergencyImportRejected($service, 'kein json'), 'JSON'));
     Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid], ['format' => 'andere'])), 'keine Notfallplan-Exportdatei'));
-    Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid], ['version' => 2])), 'Version'));
+    Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid], ['version' => 3])), 'Version'));
     Assert::true(str_contains(emergencyImportRejected($service, $wrap([])), '1 bis'));
     $broken = ['definition' => ['title' => 'Kaputt', 'nodes' => [emergencyNode('x') + ['link' => 'javascript:alert(1)']]]];
     Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid, $broken])), 'Plan „Kaputt“'));
@@ -575,4 +576,103 @@ Runner::test('Notfallplan: Import übernimmt SMS an einzelne Rufnummern ohne Ala
     $node = $target->repository->plan(1)['definition']['nodes'][0];
     Assert::same(['+49 171 1234567', '0171/7654321'], $node['sms_numbers']);
     Assert::same('Alarm {Notfallplan} am {Datum} um {Uhrzeit}', $node['alarm']['alarm_text']);
+});
+
+function emergencyPng(string $salt = ''): string
+{
+    return "\x89PNG\r\n\x1A\n" . 'testbild' . $salt;
+}
+
+Runner::test('Notfallplan: Anhänge – Dateitypen, Grenzen und erlaubte Schritttypen', static function (): void {
+    Assert::same('application/pdf', \App\Services\EmergencyPlanAttachments::detectMime("%PDF-1.7\n"));
+    Assert::same('image/png', \App\Services\EmergencyPlanAttachments::detectMime(emergencyPng()));
+    Assert::same('image/jpeg', \App\Services\EmergencyPlanAttachments::detectMime("\xFF\xD8\xFF\xE0xx"));
+    Assert::same('image/webp', \App\Services\EmergencyPlanAttachments::detectMime('RIFF1234WEBPVP8 '));
+    Assert::same(null, \App\Services\EmergencyPlanAttachments::detectMime('<svg onload="alert(1)">'));
+    Assert::same('Anhang', \App\Services\EmergencyPlanAttachments::name("../\x01"));
+    Assert::same('plan.pdf', \App\Services\EmergencyPlanAttachments::name('C:\\temp\\plan.pdf'));
+
+    $attachment = ['id' => hash('sha256', 'x'), 'name' => 'Lageplan.pdf', 'mime' => 'application/pdf', 'size' => 10];
+    foreach (['action', 'contact', 'decision', 'note'] as $type) {
+        $node = EmergencyPlanDefinition::validate(['title' => 'x', 'nodes' => [emergencyNode('a', $type) + ['attachments' => [$attachment]]]])['nodes'][0];
+        Assert::same([$attachment], $node['attachments']);
+    }
+    Assert::same([], EmergencyPlanDefinition::validate(['title' => 'x', 'nodes' => [emergencyNode('a')]])['nodes'][0]['attachments'], 'Alte Pläne ohne Feld.');
+    Assert::contains('nur bei', emergencyRejected(['title' => 'x', 'nodes' => [emergencyNode('c', 'checklist') + ['attachments' => [$attachment]]]]));
+    Assert::contains('nur bei', emergencyRejected(['title' => 'x', 'nodes' => [emergencyNode('s', 'sms') + ['attachments' => [$attachment]]]]));
+    Assert::contains('Ungültiger Anhang', emergencyRejected(['title' => 'x', 'nodes' => [emergencyNode('a') + ['attachments' => [['id' => '../x'] + $attachment]]]]));
+    Assert::contains('Ungültiger Anhang', emergencyRejected(['title' => 'x', 'nodes' => [emergencyNode('a') + ['attachments' => [['mime' => 'image/svg+xml'] + $attachment]]]]));
+    Assert::contains('Ungültiger Anhang', emergencyRejected(['title' => 'x', 'nodes' => [emergencyNode('a') + ['attachments' => [$attachment, $attachment]]]]));
+    $many = array_map(static fn (int $i) => ['id' => hash('sha256', (string) $i)] + $attachment, range(1, 11));
+    Assert::contains('höchstens 10', emergencyRejected(['title' => 'x', 'nodes' => [emergencyNode('a') + ['attachments' => $many]]]));
+});
+
+Runner::test('Notfallplan: Anhänge base64 in der Datenbank, Snapshot und Speicherprüfung', static function (): void {
+    $pdo = emergencyPdo();
+    $service = emergencyService($pdo);
+    $rejected = false;
+    try { $service->uploadAttachment('<html>', 'x.html', 'local:admin'); } catch (ValidationException) { $rejected = true; }
+    Assert::true($rejected, 'Nur PDF und Bilder.');
+    $meta = $service->uploadAttachment(emergencyPng(), 'Lageplan.png', 'local:admin');
+    Assert::same(hash('sha256', emergencyPng()), $meta['id']);
+    Assert::same('image/png', $meta['mime']);
+    Assert::same($meta, $service->uploadAttachment(emergencyPng(), 'Lageplan.png', 'local:admin'), 'Gleiche Datei wird nur einmal gespeichert.');
+    Assert::same(1, (int) $pdo->query('SELECT COUNT(*) FROM emergency_plan_attachments')->fetchColumn());
+    Assert::same(base64_encode(emergencyPng()), $service->repository->attachment($meta['id'])['data']);
+
+    $definition = ['title' => 'Anhang', 'nodes' => [emergencyNode('a', 'note') + ['attachments' => [array_replace($meta, ['mime' => 'application/pdf', 'size' => 99])]]]];
+    $id = $service->save(0, 0, $definition, 'local:admin');
+    Assert::same([$meta], $service->repository->plan($id)['definition']['nodes'][0]['attachments'], 'Typ und Größe stammen aus der Datenbank.');
+    $missing = $definition;
+    $missing['nodes'][0]['attachments'][0]['id'] = hash('sha256', 'fehlt');
+    $rejected = false;
+    try { $service->save($id, 1, $missing, 'local:admin'); } catch (ValidationException $exception) { $rejected = str_contains(implode(' ', $exception->errors()), 'nicht (mehr) vorhanden'); }
+    Assert::true($rejected);
+
+    $service->repository->submit($id, 1, 'local:admin');
+    $service->repository->review($id, 1, 'local:reviewer', true, 'Geprüft.');
+    $event = $service->repository->event($service->start($id, 1, emergencyUser(), ' correct password ', bin2hex(random_bytes(32))));
+    Assert::same([$meta], $event['snapshot']['nodes'][0]['attachments']);
+});
+
+Runner::test('Notfallplan: Export und Import übernehmen Anhänge', static function (): void {
+    $sourcePdo = emergencyPdo();
+    emergencyAlarmTables($sourcePdo, []);
+    $source = emergencyService($sourcePdo);
+    $png = $source->uploadAttachment(emergencyPng('a'), 'Bild.png', 'local:autor');
+    $pdf = $source->uploadAttachment("%PDF-1.4\nInhalt", 'Plan.pdf', 'local:autor');
+    $id = $source->save(0, 0, ['title' => 'Mit Anhängen', 'nodes' => [
+        emergencyNode('a') + ['attachments' => [$png, $pdf]],
+        emergencyNode('b', 'decision', [['id' => 'a', 'when' => 'always']]) + ['attachments' => [$pdf]],
+    ]], 'local:autor');
+    $file = $source->exportPlans([$id]);
+    $data = json_decode($file, true, 64, JSON_THROW_ON_ERROR);
+    Assert::same(EmergencyPlanService::EXPORT_VERSION, $data['version']);
+    Assert::same([$png['id'], $pdf['id']], array_keys($data['attachments']));
+    Assert::same(base64_encode("%PDF-1.4\nInhalt"), $data['attachments'][$pdf['id']]['data']);
+
+    $targetPdo = emergencyPdo();
+    emergencyAlarmTables($targetPdo, []);
+    $target = emergencyService($targetPdo);
+    $ids = $target->importPlans($file, 'local:admin');
+    $plan = $target->repository->plan($ids[0]);
+    Assert::same([$png, $pdf], $plan['definition']['nodes'][0]['attachments']);
+    Assert::same(base64_encode(emergencyPng('a')), $target->repository->attachment($png['id'])['data']);
+    Assert::same(2, (int) $targetPdo->query('SELECT COUNT(*) FROM emergency_plan_attachments')->fetchColumn());
+
+    // Manipulierte oder fehlende Anhänge: nichts wird importiert.
+    $broken = $data;
+    $broken['attachments'][$pdf['id']]['data'] = base64_encode('%PDF-1.4 anders');
+    $empty = emergencyPdo();
+    emergencyAlarmTables($empty, []);
+    $emptyService = emergencyService($empty);
+    Assert::contains('beschädigt', emergencyImportRejected($emptyService, json_encode($broken)));
+    $without = $data;
+    unset($without['attachments'][$pdf['id']]);
+    Assert::contains('nicht (mehr) vorhanden', emergencyImportRejected($emptyService, json_encode($without)));
+    Assert::same([], $emptyService->repository->plans());
+    Assert::same(0, (int) $empty->query('SELECT COUNT(*) FROM emergency_plan_attachments')->fetchColumn());
+
+    // Version 1 (ohne Anhänge) bleibt importierbar.
+    Assert::same([1], $emptyService->importPlans(json_encode(['format' => EmergencyPlanService::EXPORT_FORMAT, 'version' => 1, 'plans' => [['definition' => emergencyDefinition()]]]), 'local:admin'));
 });

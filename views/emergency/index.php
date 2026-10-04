@@ -43,13 +43,13 @@ use App\Support\Html;
                     <?php } ?>
                     <?php if ($plans === []) { ?><p>Keine Notfallpläne vorhanden.</p><?php } ?>
                 </fieldset>
-                <p>Exportiert wird jeweils der aktuelle Entwurf als JSON-Datei – ohne Freigabehistorie und Ereignisse. Die Datei enthält Ansprechpartner und Telefonnummern; bitte vertraulich behandeln.</p>
+                <p>Exportiert wird jeweils der aktuelle Entwurf als JSON-Datei einschließlich der Anhänge (Bilder/PDF) – ohne Freigabehistorie und Ereignisse. Die Datei enthält Ansprechpartner und Telefonnummern; bitte vertraulich behandeln.</p>
                 <button class="button button--primary" <?= $plans === [] ? 'disabled' : '' ?>>Ausgewählte Pläne exportieren</button>
             </form>
             <form action="<?= $base ?>/plaene/import" method="post" enctype="multipart/form-data" class="form">
                 <?= Csrf::field() ?>
                 <div class="field">
-                    <label for="ep-import">Notfallpläne importieren (Exportdatei, höchstens 2 MB)</label>
+                    <label for="ep-import">Notfallpläne importieren (Exportdatei, höchstens <?= Html::e(\App\Services\EmergencyPlanService::IMPORT_MAX_LABEL) ?>)</label>
                     <input id="ep-import" type="file" name="file" accept=".json,application/json" required>
                 </div>
                 <p>Jeder Plan wird als neuer, unveröffentlichter Entwurf angelegt; vorhandene Pläne bleiben unverändert. SMS-Elemente werden über den Titel den aktiven Alarmierungen dieses Systems zugeordnet – fehlt eine Vorlage, wird nichts importiert. Die Veröffentlichung benötigt wie immer eine Vier-Augen-Freigabe.</p>

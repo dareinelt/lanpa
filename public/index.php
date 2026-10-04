@@ -138,7 +138,7 @@ $router->group([$ssoAttempt], static function (Router $router): void {
 });
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
-foreach (['/notfallplan' => 'index', '/notfallplan/plan' => 'plan', '/notfallplan/ereignis' => 'event', '/notfallplan/stand' => 'status', '/notfallplan/anleitung' => 'guide'] as $path => $method) {
+foreach (['/notfallplan' => 'index', '/notfallplan/plan' => 'plan', '/notfallplan/ereignis' => 'event', '/notfallplan/stand' => 'status', '/notfallplan/anleitung' => 'guide', '/notfallplan/anhang' => 'attachment'] as $path => $method) {
     $router->get($path, [\App\Controllers\EmergencyPlanController::class, $method]);
 }
 $router->post('/notfallplan/start', [\App\Controllers\EmergencyPlanController::class, 'start']);
@@ -190,10 +190,11 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         return null;
     };
     $router->group([$requireKaep], static function (Router $router) use ($requireAdmin): void {
-        foreach (['' => 'index', '/bearbeiten' => 'edit', '/gruppen' => 'groups', '/ereignis' => 'event', '/stand' => 'status', '/export' => 'export', '/anleitung' => 'guide'] as $path => $method) {
+        foreach (['' => 'index', '/bearbeiten' => 'edit', '/gruppen' => 'groups', '/ereignis' => 'event', '/stand' => 'status', '/export' => 'export', '/anleitung' => 'guide', '/anhang' => 'attachment'] as $path => $method) {
             $router->get('/admin/notfallplan' . $path, [\App\Controllers\EmergencyPlanController::class, $method]);
         }
         $router->post('/admin/notfallplan/einstellungen', [\App\Controllers\EmergencyPlanController::class, 'settings']);
+        $router->post('/admin/notfallplan/anhang', [\App\Controllers\EmergencyPlanController::class, 'uploadAttachment']);
         $router->post('/admin/notfallplan/speichern', [\App\Controllers\EmergencyPlanController::class, 'save']);
         $router->get('/admin/notfallplan/vorschau', [\App\Controllers\EmergencyPlanController::class, 'preview']);
         $router->post('/admin/notfallplan/vorschau', [\App\Controllers\EmergencyPlanController::class, 'previewRender']);
@@ -387,8 +388,11 @@ try {
     $response = renderError(500, 'Es ist ein technischer Fehler aufgetreten.');
 }
 
+// Von Controllern gesetzte Sicherheitsheader (z. B. eigene CSP für ausgelieferte Dateien) bleiben erhalten.
 foreach (securityHeaders($nonce) as $name => $value) {
-    $response = $response->withHeader($name, $value);
+    if (!array_key_exists($name, $response->headers())) {
+        $response = $response->withHeader($name, $value);
+    }
 }
 
 $response->send();

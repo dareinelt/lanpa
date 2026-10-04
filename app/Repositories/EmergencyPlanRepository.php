@@ -82,11 +82,15 @@ final class EmergencyPlanRepository extends Repository
      * Legt importierte Pläne als neue, unveröffentlichte Entwürfe an (eine Transaktion).
      *
      * @param list<array<string,mixed>> $definitions geprüfte Definitionen
+     * @param array<string,array{bytes:string,mime:string}> $attachments geprüfte Anhänge aus der Exportdatei
      * @return list<int>
      */
-    public function importPlans(array $definitions, string $actor): array
+    public function importPlans(array $definitions, string $actor, array $attachments = []): array
     {
-        return $this->transaction(function () use ($definitions, $actor): array {
+        return $this->transaction(function () use ($definitions, $actor, $attachments): array {
+            foreach ($attachments as $attachment) {
+                $this->storeAttachment($attachment['bytes'], $attachment['mime'], $actor);
+            }
             $ids = [];
             foreach ($definitions as $definition) {
                 $this->execute('INSERT INTO emergency_plans (title, definition, updated_by, updated_at, contributors) VALUES (?, ?, ?, ?, ?)',
@@ -98,6 +102,59 @@ final class EmergencyPlanRepository extends Repository
 
             return $ids;
         });
+    }
+
+    /**
+     * Speichert einen Anhang base64-kodiert (inhaltsadressiert; identische Dateien werden nur einmal abgelegt).
+     *
+     * @return string Anhangs-ID (SHA-256 der Rohdaten)
+     */
+    public function storeAttachment(string $bytes, string $mime, string $actor): string
+    {
+        $id = hash('sha256', $bytes);
+        if ($this->one('SELECT id FROM emergency_plan_attachments WHERE id = ?', [$id]) !== null) {
+            return $id;
+        }
+        try {
+            $this->execute('INSERT INTO emergency_plan_attachments (id, mime, size, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                [$id, $mime, strlen($bytes), base64_encode($bytes), $actor, gmdate('Y-m-d H:i:s')]);
+        } catch (PDOException $exception) {
+            // Gleichzeitiger Upload derselben Datei.
+            if ($this->one('SELECT id FROM emergency_plan_attachments WHERE id = ?', [$id]) === null) {
+                throw $exception;
+            }
+        }
+
+        return $id;
+    }
+
+    /** @return array{id:string,mime:string,size:int,data:string}|null data = base64 */
+    public function attachment(string $id): ?array
+    {
+        $row = $this->one('SELECT id, mime, size, data FROM emergency_plan_attachments WHERE id = ?', [$id]);
+        if ($row !== null) {
+            $row['size'] = (int) $row['size'];
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param list<string> $ids
+     * @return array<string,array{mime:string,size:int}> Metadaten der vorhandenen Anhänge
+     */
+    public function attachmentMeta(array $ids): array
+    {
+        $result = [];
+        foreach (array_chunk(array_values(array_unique($ids)), 200) as $chunk) {
+            $statement = $this->pdo->prepare('SELECT id, mime, size FROM emergency_plan_attachments WHERE id IN (' . implode(',', array_fill(0, count($chunk), '?')) . ')');
+            $statement->execute($chunk);
+            foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $result[$row['id']] = ['mime' => $row['mime'], 'size' => (int) $row['size']];
+            }
+        }
+
+        return $result;
     }
 
     public function submit(int $id, int $revision, string $actor): void

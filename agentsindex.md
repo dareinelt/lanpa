@@ -205,11 +205,18 @@ unberührt; Freigabemetadaten gehören zum Snapshot. Migration 027 zieht alte
 Veröffentlichungen ohne zweiten Freigabenachweis zurück.
 Export/Import (`POST /admin/notfallplan/plaene/export` bzw. `…/plaene/import`,
 nur Rolle `admin` per `$requireAdmin`): `EmergencyPlanService::exportPlans()` schreibt
-JSON (`format` `lanpa-notfallplaene`, `version` 1, aktuelle Entwürfe);
+JSON (`format` `lanpa-notfallplaene`, `version` 2, aktuelle Entwürfe inkl.
+base64-Anhängen; Import akzeptiert 1 und 2, ≤ 20 MB);
 `importPlans()` prüft alles, ordnet SMS-Elemente per Alarmtitel lokalen Vorlagen zu
 (SMS an einzelne Rufnummern werden unverändert übernommen) und legt per
 `EmergencyPlanRepository::importPlans()` in einer Transaktion neue
 Entwürfe an (Freigabeprotokoll `imported`, Importierende als Autor).
+Schritt-Anhänge (Maßnahme/Kontakt/Entscheidung/Hinweis, PDF/Bilder ≤ 20 MB, ≤ 10 je
+Schritt): Tabelle `emergency_plan_attachments` (Migration 032, SHA-256-ID, base64,
+unveränderlich), Regeln in `EmergencyPlanAttachments`, Upload
+`POST /admin/notfallplan/anhang`, Auslieferung `GET /notfallplan/anhang` bzw.
+`/admin/notfallplan/anhang`; Büroklammer-Overlay in `emergency-plan.js`
+(`showAttachments`) und `views/emergency/attachment-button.php`.
 SMS-Schritte gehen an eine Alarmvorlage oder an einzelne Rufnummern
 (`sms_mode`/`sms_numbers`/`sms_text`); `EmergencyPlanSms` bündelt Textbausteine
 (`{Notfallplan}`, `{Datum}`, `{Uhrzeit}`, `{Schritt}`, beim Ereignisstart ersetzt) und

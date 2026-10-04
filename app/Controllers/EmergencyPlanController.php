@@ -12,6 +12,7 @@ use App\Core\View;
 use App\Exceptions\HttpException;
 use App\Exceptions\ValidationException;
 use App\Security\Session;
+use App\Services\EmergencyPlanAttachments;
 use App\Services\EmergencyPlanDefinition;
 use App\Services\EmergencyPlanPreview;
 use App\Services\EmergencyPlanService;
@@ -340,7 +341,7 @@ final class EmergencyPlanController extends AdminController
         $contents = $tmpName !== '' && is_uploaded_file($tmpName) && filesize($tmpName) <= EmergencyPlanService::IMPORT_MAX_BYTES
             ? file_get_contents($tmpName) : false;
         if ($contents === false) {
-            Session::flash('error', 'Bitte eine gültige Notfallplan-Exportdatei (höchstens 2 MB) auswählen.');
+            Session::flash('error', 'Bitte eine gültige Notfallplan-Exportdatei (höchstens ' . EmergencyPlanService::IMPORT_MAX_LABEL . ') auswählen.');
 
             return $this->redirect('/admin/notfallplan');
         }
@@ -355,6 +356,62 @@ final class EmergencyPlanController extends AdminController
             . ' als neuer Entwurf importiert. Bestehende Pläne bleiben unverändert; die Veröffentlichung benötigt eine Vier-Augen-Freigabe.');
 
         return $this->redirect('/admin/notfallplan');
+    }
+
+    /** Upload eines Anhangs aus dem Editor (JSON-Antwort mit den Metadaten für node.attachments). */
+    public function uploadAttachment(Request $request): Response
+    {
+        $access = $this->access($request, true);
+        $this->requireValidCsrf($request);
+        $file = $request->files['file'] ?? ['error' => UPLOAD_ERR_NO_FILE];
+        $error = is_array($file) ? (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
+        if (in_array($error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+            return Response::json(['error' => 'Anhänge dürfen höchstens ' . EmergencyPlanAttachments::maxLabel() . ' groß sein.'], 422);
+        }
+        $tmpName = $error === UPLOAD_ERR_OK ? (string) ($file['tmp_name'] ?? '') : '';
+        if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+            return Response::json(['error' => 'Bitte eine Datei auswählen.'], 422);
+        }
+        if (filesize($tmpName) > EmergencyPlanAttachments::MAX_BYTES) {
+            return Response::json(['error' => 'Anhänge dürfen höchstens ' . EmergencyPlanAttachments::maxLabel() . ' groß sein.'], 422);
+        }
+        $bytes = file_get_contents($tmpName);
+        try {
+            if ($bytes === false) {
+                throw new HttpException(422, 'Die Datei konnte nicht gelesen werden.');
+            }
+
+            return Response::json(Container::emergencyPlans()->uploadAttachment($bytes, (string) ($file['name'] ?? ''), $access['actor']));
+        } catch (ValidationException $exception) {
+            return Response::json(['error' => implode(' ', $exception->errors())], 422);
+        } catch (HttpException $exception) {
+            return Response::json(['error' => $exception->getMessage()], $exception->statusCode());
+        }
+    }
+
+    /** Liefert einen Anhang zur Anzeige im Overlay (Bild bzw. PDF, inline). */
+    public function attachment(Request $request): Response
+    {
+        $this->access($request);
+        $id = (string) $request->query('id', '');
+        $attachment = preg_match('/^[a-f0-9]{64}$/D', $id) === 1 ? Container::emergencyPlans()->repository->attachment($id) : null;
+        if ($attachment === null || !in_array($attachment['mime'], EmergencyPlanAttachments::MIMES, true)) {
+            throw new HttpException(404, 'Anhang nicht gefunden.');
+        }
+        $etag = '"' . $id . '"';
+        $response = ($request->server['HTTP_IF_NONE_MATCH'] ?? '') === $etag ? new Response('', 304)
+            : new Response((string) base64_decode($attachment['data'], true), 200);
+        $name = EmergencyPlanAttachments::name((string) $request->query('name', ''));
+        $ascii = preg_replace('/[^A-Za-z0-9._ -]/', '_', $name) ?? 'Anhang';
+
+        // Inhalte sind unveränderlich (ID = SHA-256). Eigene CSP ohne Skripte; der PDF-Viewer des Browsers braucht object-src.
+        return $response
+            ->withHeader('Content-Type', $attachment['mime'])
+            ->withHeader('Content-Disposition', 'inline; filename="' . $ascii . '"; filename*=UTF-8\'\'' . rawurlencode($name))
+            ->withHeader('Cache-Control', 'private, max-age=86400, immutable')
+            ->withHeader('ETag', $etag)
+            ->withHeader('X-Content-Type-Options', 'nosniff')
+            ->withHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'; object-src 'self'; frame-ancestors 'self'");
     }
 
     private function requireAdminRole(): void

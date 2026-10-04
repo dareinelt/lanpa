@@ -15,6 +15,83 @@
         if (text !== undefined) node.textContent = text;
         return node;
     };
+
+    // ---- Anhänge (Bilder/PDF): Anzeige als Overlay im Stil der App-Mitteilungen, mehrere Anhänge als Tabs ----
+    // Grenzen synchron zu App\Services\EmergencyPlanAttachments halten.
+    const ATTACHMENT_TYPES = ['action', 'contact', 'decision', 'note'];
+    const ATTACHMENT_MAX = 10;
+    const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+    const ATTACHMENT_ACCEPT = '.pdf,.png,.jpg,.jpeg,.gif,.webp,application/pdf,image/png,image/jpeg,image/gif,image/webp';
+    const ATTACHMENT_MIMES = ['application/pdf', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+    const attachmentBase = location.pathname.startsWith('/admin/') ? '/admin/notfallplan/anhang' : '/notfallplan/anhang';
+    const attachmentUrl = a => `${attachmentBase}?id=${encodeURIComponent(a.id)}&name=${encodeURIComponent(a.name)}`;
+    const formatSize = bytes => bytes >= 1048576 ? (bytes / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
+    const attachmentLabel = list => `${list.length === 1 ? 'Anhang' : list.length + ' Anhänge'} anzeigen: ${list.map(a => a.name).join(', ')}`;
+    function showAttachments(list, start = 0, opener = document.activeElement) {
+        if (!Array.isArray(list) || !list.length) return;
+        const id = 'ep-viewer-' + Math.random().toString(36).slice(2);
+        const dialog = element('dialog', undefined, 'ep-viewer');
+        dialog.setAttribute('aria-labelledby', id + '-title');
+        const box = element('div', undefined, 'announcement-overlay__box ep-viewer__box');
+        const tabs = element('div', undefined, 'ep-viewer__tabs');
+        tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Anhänge');
+        const body = element('div', undefined, 'ep-viewer__body');
+        const heading = element('h2', '', 'announcement-overlay__title ep-viewer__title'); heading.id = id + '-title';
+        const panel = element('div', undefined, 'ep-viewer__panel'); panel.id = id + '-panel'; panel.setAttribute('role', 'tabpanel');
+        const actions = element('div', undefined, 'announcement-overlay__actions ep-viewer__actions');
+        const external = element('a', 'In neuem Tab öffnen', 'button button--ghost'); external.target = '_blank'; external.rel = 'noopener';
+        const close = element('button', 'Schließen', 'button button--primary'); close.type = 'button';
+        close.addEventListener('click', () => dialog.close());
+        actions.append(external, close);
+        const buttons = list.map((attachment, i) => {
+            const tab = element('button', attachment.name, 'ep-viewer__tab'); tab.type = 'button';
+            tab.id = `${id}-tab-${i}`; tab.title = attachment.name;
+            tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', panel.id);
+            tab.addEventListener('click', () => show(i));
+            tab.addEventListener('keydown', event => {
+                const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+                const target = event.key === 'Home' ? 0 : event.key === 'End' ? list.length - 1 : delta ? (i + delta + list.length) % list.length : null;
+                if (target === null) return;
+                event.preventDefault(); show(target); buttons[target].focus();
+            });
+            tabs.append(tab);
+            return tab;
+        });
+        function show(index) {
+            const attachment = list[index];
+            buttons.forEach((tab, i) => { tab.setAttribute('aria-selected', String(i === index)); tab.tabIndex = i === index ? 0 : -1; });
+            if (list.length > 1) panel.setAttribute('aria-labelledby', buttons[index].id);
+            heading.textContent = attachment.name;
+            external.href = attachmentUrl(attachment);
+            if (attachment.mime === 'application/pdf') {
+                const frame = element('iframe', undefined, 'ep-viewer__pdf'); frame.title = attachment.name; frame.src = attachmentUrl(attachment);
+                panel.replaceChildren(frame);
+            } else {
+                const image = element('img', undefined, 'ep-viewer__image'); image.alt = attachment.name; image.src = attachmentUrl(attachment);
+                image.addEventListener('error', () => panel.replaceChildren(element('p', 'Der Anhang konnte nicht geladen werden.', 'ep-overdue')));
+                panel.replaceChildren(image);
+            }
+        }
+        if (list.length > 1) box.append(tabs);
+        body.append(heading, panel, actions);
+        box.append(body);
+        dialog.append(box);
+        dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+        dialog.addEventListener('close', () => { dialog.remove(); document.body.classList.remove('has-announcement-overlay'); opener?.focus?.({ preventScroll: true }); });
+        document.body.append(dialog);
+        show(Math.min(Math.max(0, start), list.length - 1));
+        document.body.classList.add('has-announcement-overlay');
+        dialog.showModal();
+        (list.length > 1 ? buttons[Math.min(Math.max(0, start), list.length - 1)] : close).focus();
+    }
+    // Büroklammer oben rechts in den Schrittkacheln (Plan-, Ereignis- und Vorschauansicht).
+    document.addEventListener('click', event => {
+        const trigger = event.target.closest?.('[data-ep-attachments]');
+        if (!trigger) return;
+        event.preventDefault();
+        try { showAttachments(JSON.parse(trigger.dataset.epAttachments), 0, trigger); } catch { /* ungültige Daten: nichts anzeigen */ }
+    });
+
     // decorate(node, group, index) ergänzt im Editor Markierungen (Prüfhinweise, Suchfilter) ohne das Layout zu ändern.
     function diagram(container, definition, selected, onSelect, progress, decorate) {
         container.replaceChildren();
@@ -109,6 +186,16 @@
             });
             const hint = progress ? (availability === 'skipped' ? 'Entfällt' : availability === 'waiting' ? 'Wartet auf Vorgänger' : statuses[state]) : node.owner;
             group.append(svgElement('text', { x: p.x + 12, y: p.y + 81, class: 'ep-node-type' }, (hint || '').slice(0, 33)));
+            if (Array.isArray(node.attachments) && node.attachments.length) {
+                // Büroklammer oben rechts: öffnet die Anhänge als Overlay (Tastatur: über die Schrittkachel bzw. den Inspector).
+                const clip = svgElement('g', { class: 'ep-node-clip', transform: `translate(${p.x + 214} ${p.y + 8})` });
+                clip.append(svgElement('title', {}, attachmentLabel(node.attachments)));
+                clip.append(svgElement('rect', { x: -4, y: -2, width: 24, height: 24, rx: 5, class: 'ep-node-clip__hit' }));
+                clip.append(svgElement('path', { d: 'M14.5 6.5 7.6 13.4a2 2 0 0 0 2.8 2.8l7.3-7.3a3.6 3.6 0 0 0-5.1-5.1L5.1 11.3a5.2 5.2 0 0 0 7.4 7.4l6.4-6.4', class: 'ep-node-clip__icon' }));
+                clip.addEventListener('pointerdown', event => event.stopPropagation());
+                clip.addEventListener('click', event => { event.stopPropagation(); showAttachments(node.attachments, 0, group); });
+                group.append(clip);
+            }
             group.addEventListener('click', () => onSelect(node.id));
             group.addEventListener('keydown', event => {
                 if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(node.id); }
@@ -136,7 +223,7 @@
         const alarms = JSON.parse(editor.querySelector('[data-ep-alarms]').value);
         let definition = initial.definition;
         // Ältere Pläne kennen die Felder für SMS an einzelne Rufnummern noch nicht.
-        definition.nodes.forEach(n => { n.sms_mode ||= 'template'; n.sms_numbers ||= []; n.sms_text ??= ''; });
+        definition.nodes.forEach(n => { n.sms_mode ||= 'template'; n.sms_numbers ||= []; n.sms_text ??= ''; n.attachments ||= []; });
         let selected = definition.nodes[0]?.id;
         let dirty = false;
         let zoom = 1;
@@ -497,7 +584,7 @@
         });
 
         // ---- Schritte ----
-        const makeNode = type => ({ id: 'n' + crypto.randomUUID().replaceAll('-', ''), type, title: '', text: '', owner: '', phone: '', link: '', minutes: 0, checks: type === 'checklist' ? ['Prüfpunkt'] : [], dependencies: [], join: 'all', alarm_id: 0, sms_mode: 'template', sms_numbers: [], sms_text: '' });
+        const makeNode = type => ({ id: 'n' + crypto.randomUUID().replaceAll('-', ''), type, title: '', text: '', owner: '', phone: '', link: '', minutes: 0, checks: type === 'checklist' ? ['Prüfpunkt'] : [], dependencies: [], join: 'all', alarm_id: 0, sms_mode: 'template', sms_numbers: [], sms_text: '', attachments: [] });
         const current = () => definition.nodes.find(n => n.id === selected);
         function select(id) { selected = id; render(); }
         function showPlanPanel() { planPanelPinned = true; render(); title.focus(); }
@@ -609,6 +696,171 @@
         $('[data-ep-duplicate]').addEventListener('click', duplicate);
         $('[data-ep-delete]').addEventListener('click', remove);
 
+        // ---- Anhänge (Bilder/PDF) an Maßnahme, Kontakt, Entscheidung und Hinweis ----
+        // Upload sofort (POST /admin/notfallplan/anhang), Referenz {id, name, mime, size} im Entwurf; übernommen wird sie mit „Entwurf speichern“.
+        const nodeById = id => definition.nodes.find(n => n.id === id);
+        const nodeLabel = n => `„${n.title || types[n.type]}“`;
+        // report(text): Fortschritt; Ergebnis: Anzahl hinzugefügter Anhänge und Fehlermeldungen.
+        async function uploadAttachments(nodeId, files, report = () => {}) {
+            const list = [...files];
+            const errors = [];
+            let added = 0;
+            for (const file of list) {
+                const node = nodeById(nodeId);
+                if (!node) { errors.push('Der Schritt existiert nicht mehr.'); break; }
+                if (node.attachments.length >= ATTACHMENT_MAX) { errors.push(`Höchstens ${ATTACHMENT_MAX} Anhänge je Schritt.`); break; }
+                if (file.size > ATTACHMENT_MAX_BYTES) { errors.push(`„${file.name}“ ist größer als ${formatSize(ATTACHMENT_MAX_BYTES)}.`); continue; }
+                if (!file.size) { errors.push(`„${file.name}“ ist leer.`); continue; }
+                if (file.type && !ATTACHMENT_MIMES.includes(file.type)) { errors.push(`„${file.name}“: Erlaubt sind nur PDF-Dateien und Bilder (PNG, JPEG, GIF, WebP).`); continue; }
+                report(`„${file.name}“ wird hochgeladen …`);
+                const data = new FormData();
+                data.set('_token', $('[name="_token"]').value);
+                data.set('file', file, file.name);
+                try {
+                    const result = await post(attachmentBase, data);
+                    const target = nodeById(nodeId);
+                    if (!target) { errors.push('Der Schritt existiert nicht mehr.'); break; }
+                    if (target.attachments.some(a => a.id === result.id)) { errors.push(`„${file.name}“ ist diesem Schritt bereits angehängt.`); continue; }
+                    if (target.attachments.length >= ATTACHMENT_MAX) { errors.push(`Höchstens ${ATTACHMENT_MAX} Anhänge je Schritt.`); break; }
+                    snapshot();
+                    target.attachments.push({ id: result.id, name: result.name, mime: result.mime, size: result.size });
+                    added++; mark(); render();
+                } catch (error) { errors.push(`„${file.name}“: ${error.message}`); }
+            }
+            if (added) message.textContent = `${added === 1 ? 'Anhang' : added + ' Anhänge'} hinzugefügt. Mit „Entwurf speichern“ übernehmen.`;
+            return { added, errors };
+        }
+        async function removeAttachment(nodeId, attachmentId) {
+            const attachment = nodeById(nodeId)?.attachments.find(a => a.id === attachmentId);
+            if (!attachment) return false;
+            const ok = await overlay({ heading: 'Anhang löschen?', text: `Anhang „${attachment.name}“ wirklich aus diesem Schritt entfernen?`, confirm: 'Ja', cancel: 'Nein', danger: true });
+            const node = nodeById(nodeId);
+            if (!ok || !node) return false;
+            snapshot();
+            node.attachments = node.attachments.filter(a => a.id !== attachmentId);
+            mark(); render();
+            message.textContent = `Anhang „${attachment.name}“ entfernt. Mit „Entwurf speichern“ übernehmen.`;
+            return true;
+        }
+        // Liste mit Vorschau und „X“ (Löschen nach Rückfrage Ja/Nein).
+        function attachmentList(nodeId, onChange) {
+            const node = nodeById(nodeId);
+            const list = element('ul', undefined, 'ep-attachments');
+            if (!node?.attachments.length) { list.append(element('li', 'Noch keine Anhänge.', 'ep-attachments__empty')); return list; }
+            node.attachments.forEach((attachment, i) => {
+                const item = element('li', undefined, 'ep-attachments__item');
+                const info = element('span', undefined, 'ep-attachments__info');
+                info.append(element('span', attachment.mime === 'application/pdf' ? 'PDF' : 'Bild', 'ep-attachments__kind'), element('strong', attachment.name), element('small', formatSize(attachment.size)));
+                info.title = attachment.name;
+                const view = element('button', 'Vorschau', 'button button--ghost ep-attachments__view'); view.type = 'button';
+                view.setAttribute('aria-label', `Vorschau: ${attachment.name}`);
+                view.addEventListener('click', () => showAttachments(nodeById(nodeId)?.attachments || [], i, view));
+                const remove = element('button', '✕', 'button button--ghost ep-attachments__delete'); remove.type = 'button';
+                remove.title = 'Anhang löschen'; remove.setAttribute('aria-label', `Anhang „${attachment.name}“ löschen`);
+                remove.addEventListener('click', async () => { if (await removeAttachment(nodeId, attachment.id)) onChange?.(); });
+                item.append(info, view, remove);
+                list.append(item);
+            });
+            return list;
+        }
+        function fileInput(onFiles) {
+            const input = element('input'); input.type = 'file'; input.multiple = true; input.accept = ATTACHMENT_ACCEPT; input.hidden = true;
+            input.addEventListener('change', () => { const files = [...input.files]; input.value = ''; if (files.length) onFiles(files); });
+            return input;
+        }
+        function dropTarget(zone, onFiles) {
+            const hasFiles = event => [...(event.dataTransfer?.types || [])].includes('Files');
+            zone.addEventListener('dragover', event => { if (!hasFiles(event)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; zone.classList.add('is-dropping'); });
+            zone.addEventListener('dragleave', () => zone.classList.remove('is-dropping'));
+            zone.addEventListener('drop', event => { if (!hasFiles(event)) return; event.preventDefault(); zone.classList.remove('is-dropping'); onFiles([...event.dataTransfer.files]); });
+        }
+        function attachmentDialog(heading, text) {
+            const dialog = element('dialog', undefined, 'ep-dialog ep-alert ep-attach-dialog');
+            const id = 'ep-attach-' + crypto.randomUUID();
+            dialog.setAttribute('aria-labelledby', id + '-h'); dialog.setAttribute('aria-describedby', id + '-t');
+            const h = element('h2', heading, 'ep-alert__heading'); h.id = id + '-h';
+            const p = element('p', text, 'ep-alert__text'); p.id = id + '-t';
+            const actions = element('div', undefined, 'ep-alert__actions');
+            const close = element('button', 'Schließen', 'button button--ghost'); close.type = 'button';
+            close.addEventListener('click', () => dialog.close());
+            dialog.addEventListener('click', event => { if (event.target === dialog && !dialog.hasAttribute('aria-busy')) dialog.close(); });
+            dialog.addEventListener('cancel', event => { if (dialog.hasAttribute('aria-busy')) event.preventDefault(); });
+            dialog.addEventListener('close', () => { dialog.remove(); focusSelected(); });
+            dialog.append(h, p);
+            return { dialog, actions, close };
+        }
+        // Kontextmenü „Anhang hinzufügen“: Upload über ein Overlay (Dateiauswahl oder Drag-and-Drop).
+        function openUploadDialog(nodeId) {
+            const node = nodeById(nodeId);
+            if (!node) return;
+            const { dialog, actions, close } = attachmentDialog(`Anhang hinzufügen – ${nodeLabel(node)}`,
+                `PDF oder Bild (PNG, JPEG, GIF, WebP), höchstens ${formatSize(ATTACHMENT_MAX_BYTES)} je Datei und ${ATTACHMENT_MAX} Anhänge je Schritt. Im Einsatz erscheint oben rechts in der Kachel des Schritts eine Büroklammer.`);
+            const zone = element('div', undefined, 'ep-dropzone');
+            const status = element('p', '', 'ep-attach-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+            const pick = element('button', 'Datei auswählen …', 'button button--primary'); pick.type = 'button';
+            const run = async files => {
+                if (dialog.hasAttribute('aria-busy')) return;
+                dialog.setAttribute('aria-busy', 'true'); pick.disabled = true; close.disabled = true; status.classList.remove('is-error');
+                const result = await uploadAttachments(nodeId, files, text => { status.textContent = text; });
+                dialog.removeAttribute('aria-busy'); pick.disabled = false; close.disabled = false;
+                if (!result.errors.length) { dialog.close(); return; }
+                status.textContent = (result.added ? `${result.added} hinzugefügt. ` : '') + result.errors.join(' ');
+                status.classList.add('is-error'); pick.focus();
+            };
+            const input = fileInput(run);
+            pick.addEventListener('click', () => input.click());
+            zone.append(element('span', 'Dateien hierher ziehen oder'), pick, input);
+            dropTarget(zone, run);
+            actions.append(close);
+            dialog.append(zone, status, actions);
+            editor.append(dialog);
+            dialog.showModal();
+            pick.focus();
+        }
+        // Kontextmenü „Anhänge verwalten“: Liste mit Vorschau und „X“ zum Löschen (Rückfrage Ja/Nein).
+        function openManageDialog(nodeId) {
+            const node = nodeById(nodeId);
+            if (!node) return;
+            const { dialog, actions, close } = attachmentDialog(`Anhänge verwalten – ${nodeLabel(node)}`,
+                '„Vorschau“ zeigt den Anhang an, „✕“ entfernt ihn nach Rückfrage aus dem Schritt. Änderungen mit „Entwurf speichern“ übernehmen.');
+            const host = element('div', undefined, 'ep-attach-manage');
+            const add = element('button', 'Anhang hinzufügen …', 'button button--primary'); add.type = 'button';
+            add.addEventListener('click', () => { dialog.close(); openUploadDialog(nodeId); });
+            const refresh = () => {
+                const target = nodeById(nodeId);
+                if (!target) { dialog.close(); return; }
+                host.replaceChildren(attachmentList(nodeId, () => { refresh(); (host.querySelector('.ep-attachments__delete') || close).focus(); }));
+                add.disabled = target.attachments.length >= ATTACHMENT_MAX;
+            };
+            refresh();
+            actions.append(add, close);
+            dialog.append(host, actions);
+            editor.append(dialog);
+            dialog.showModal();
+            (host.querySelector('.ep-attachments__view') || close).focus();
+        }
+        // Inspector: Upload-Bereich oberhalb des Informationslinks.
+        function attachmentField(node) {
+            const box = element('fieldset', undefined, 'ep-attach-field');
+            box.append(element('legend', `Anhänge (${node.attachments.length} / ${ATTACHMENT_MAX})`));
+            box.append(attachmentList(node.id));
+            let busy = false;
+            const add = element('button', 'Anhang hinzufügen …', 'button button--ghost ep-attach-add'); add.type = 'button';
+            add.disabled = node.attachments.length >= ATTACHMENT_MAX;
+            const upload = async files => {
+                if (busy) return;
+                busy = true; add.disabled = true;
+                const result = await uploadAttachments(node.id, files, text => { message.textContent = text; });
+                busy = false; add.disabled = (nodeById(node.id)?.attachments.length || 0) >= ATTACHMENT_MAX;
+                if (result.errors.length) notify((result.added ? `${result.added} Anhang/Anhänge hinzugefügt. ` : '') + result.errors.join(' '), 'Anhang nicht hinzugefügt');
+            };
+            const input = fileInput(upload);
+            add.addEventListener('click', () => input.click());
+            dropTarget(box, upload);
+            box.append(add, input, element('small', `PDF oder Bild (PNG, JPEG, GIF, WebP), höchstens ${formatSize(ATTACHMENT_MAX_BYTES)} je Datei. Dateien können auch hierher gezogen werden. Im Einsatz erscheint oben rechts in der Kachel eine Büroklammer.`, 'ep-hint'));
+            fields.append(box);
+        }
+
         // ---- Kontextmenü (Rechtsklick, Kontextmenü-Taste oder Umschalt+F10 auf einem Schritt im Diagramm) ----
         let contextMenu = null;
         const focusSelected = () => diagramHost.querySelector('.ep-graph-node.is-selected')?.focus({ preventScroll: true });
@@ -620,17 +872,25 @@
         function openContextMenu(x, y) {
             closeContextMenu(false);
             const full = definition.nodes.length >= 80;
+            const node = current();
+            const attachable = !!node && ATTACHMENT_TYPES.includes(node.type);
             const entries = [
                 ['Duplizieren', 'Strg+D', duplicate, full],
                 ['Kopieren', 'Strg+C', copyNode, false],
                 ['Einfügen', 'Strg+V', pasteNode, full || !readClipboard()],
                 ['Rückgängig', 'Strg+Z', undo, !journal.undo.length],
-                ['Löschen', 'Entf', remove, false, true],
             ];
+            if (attachable) {
+                entries.push(
+                    ['Anhang hinzufügen', '', () => openUploadDialog(node.id), node.attachments.length >= ATTACHMENT_MAX, false, true],
+                    [`Anhänge verwalten${node.attachments.length ? ' (' + node.attachments.length + ')' : ''}`, '', () => openManageDialog(node.id), !node.attachments.length],
+                );
+            }
+            entries.push(['Löschen', 'Entf', remove, false, true]);
             const menu = element('div', undefined, 'ep-context-menu');
             menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Schritt bearbeiten');
-            entries.forEach(([label, shortcut, action, disabled, danger], i) => {
-                if (danger) menu.append(element('div', undefined, 'ep-context-menu__sep'));
+            entries.forEach(([label, shortcut, action, disabled, danger, separator]) => {
+                if (danger || separator) menu.append(element('div', undefined, 'ep-context-menu__sep'));
                 const item = element('button', undefined, 'ep-context-menu__item' + (danger ? ' ep-context-menu__item--danger' : ''));
                 item.type = 'button'; item.setAttribute('role', 'menuitem'); item.tabIndex = -1; item.disabled = disabled;
                 item.append(element('span', label), element('kbd', shortcut));
@@ -755,6 +1015,7 @@
             inputField('Anweisung / Erläuterung', 'text', true, 4000);
             inputField('Zuständigkeit / Funktion', 'owner', false, 190, 'z. B. Einsatzleitung, Pforte');
             inputField('Telefon / Durchwahl', 'phone', false, 100);
+            if (ATTACHMENT_TYPES.includes(node.type)) attachmentField(node);
             inputField('Informationslink', 'link', false, 1000, 'Nur vollständige Adressen mit http:// oder https://');
             inputField('Zielzeit in Minuten ab Ereignisstart', 'minutes', false, 0, '0 = keine Zielzeit, höchstens 10080 (7 Tage)');
             if (node.type === 'checklist') {

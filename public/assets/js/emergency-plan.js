@@ -540,7 +540,7 @@
                 ['decision', 'Räumung erforderlich?', 'Entscheidung der Einsatzleitung dokumentieren.', 'Einsatzleitung'],
                 ['action', 'Räumung koordinieren', 'Gemäß örtlichem Räumungskonzept handeln.', 'Bereichsleitung'],
             ] : [
-                ['note', 'MANF-Lage bestätigen', 'Meldung, Umfang und Erstmaßnahmen dokumentieren.', 'Einsatzleitung'],
+                ['note', 'MANV-Lage bestätigen', 'Meldung, Umfang und Erstmaßnahmen dokumentieren.', 'Einsatzleitung'],
                 ['action', 'Verkehrsregelung anpassen lassen', 'Zufahrten und Einbahnstraßenprinzip abstimmen.', 'Pforte / Sicherheitsdienst'],
                 ['contact', 'Zusätzliches Personal alarmieren', 'Funktionen und benötigte Anzahl abstimmen.', 'Personalkoordination'],
                 ['checklist', 'Versorgung vorbereiten', 'Bereitschaft der Bereiche rückmelden.', 'Medizinische Leitung'],
@@ -549,7 +549,7 @@
             nodes.forEach((n, i) => { if (i) n.dependencies = [{ id: nodes[i - 1].id, when: nodes[i - 1].type === 'decision' ? 'yes' : 'always' }]; });
             const checklist = nodes.find(n => n.type === 'checklist');
             checklist.checks = fire ? ['Geschäftsführer alarmiert', 'Verwaltungsdirektor alarmiert', 'Pflegedirektion alarmiert'] : ['Aufnahme vorbereitet', 'Material bereitgestellt', 'Bereiche informiert'];
-            definition = { title: fire ? 'Brandfall' : 'MANF', description: 'BEISPIEL – vor Veröffentlichung an örtliche Vorgaben anpassen und fachlich freigeben.', nodes };
+            definition = { title: fire ? 'Brandfall' : 'MANV', description: 'BEISPIEL – vor Veröffentlichung an örtliche Vorgaben anpassen und fachlich freigeben.', nodes };
             title.value = definition.title; description.value = definition.description; selected = nodes[0].id; planPanelPinned = false; mark(); render(); fitZoom();
         }));
 

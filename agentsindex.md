@@ -203,12 +203,18 @@ Auch Administratoren dürfen eigene/mitbearbeitete Entwürfe nicht freigeben.
 Veröffentlichte Definitionen und Ereignissnapshots bleiben von Entwurfsänderungen
 unberührt; Freigabemetadaten gehören zum Snapshot. Migration 027 zieht alte
 Veröffentlichungen ohne zweiten Freigabenachweis zurück.
-Export/Import (`POST /admin/notfallplan/plaene/export` bzw. `…/plaene/import`,
-nur Rolle `admin` per `$requireAdmin`): `EmergencyPlanService::exportPlans()` schreibt
-JSON (`format` `lanpa-notfallplaene`, `version` 2, aktuelle Entwürfe inkl.
-base64-Anhängen; Import akzeptiert 1 und 2, ≤ 20 MB);
-`importPlans()` prüft alles, ordnet SMS-Elemente per Alarmtitel lokalen Vorlagen zu
-(SMS an einzelne Rufnummern werden unverändert übernommen) und legt per
+Export/Import (Rollen `admin` und `kaep`; Übersicht und Editor-Reiter Start →
+Exportieren): `EmergencyPlanTransfer` erzeugt Export-Sätze (`format`
+`lanpa-notfallplaene`, `version` 3, Teildateien ≤ 15 MB mit `set{id,part,parts}`,
+Inhaltsverzeichnis in Teil 1, Anhänge als base64-Abschnitte) in
+`storage/emergency-transfer`; Download (`GET …/plaene/export/datei`) oder Ablage in den
+eigenen Nextcloud-Dateien (`POST …/plaene/export/nextcloud` →
+`NextcloudFilesService` → NC-App `POST /api/files`, Ordner `Notfallpläne/…`).
+Import: Teile einzeln hochladen (`POST …/plaene/import`, Stand fehlender Teile),
+`POST …/plaene/import/abschluss` prüft Vollständigkeit und Prüfsummen und ruft
+`EmergencyPlanService::importDefinitions()` (Einzeldateien v1/v2 über `importPlans()`),
+das SMS-Elemente per Alarmtitel lokalen Vorlagen zuordnet
+(SMS an einzelne Rufnummern werden unverändert übernommen) und per
 `EmergencyPlanRepository::importPlans()` in einer Transaktion neue
 Entwürfe an (Freigabeprotokoll `imported`, Importierende als Autor).
 Schritt-Anhänge (Maßnahme/Kontakt/Entscheidung/Hinweis, PDF/Bilder ≤ 20 MB, ≤ 10 je

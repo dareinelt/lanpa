@@ -189,7 +189,7 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         }
         return null;
     };
-    $router->group([$requireKaep], static function (Router $router) use ($requireAdmin): void {
+    $router->group([$requireKaep], static function (Router $router): void {
         foreach (['' => 'index', '/bearbeiten' => 'edit', '/gruppen' => 'groups', '/ereignis' => 'event', '/stand' => 'status', '/export' => 'export', '/anleitung' => 'guide', '/anhang' => 'attachment'] as $path => $method) {
             $router->get('/admin/notfallplan' . $path, [\App\Controllers\EmergencyPlanController::class, $method]);
         }
@@ -200,11 +200,12 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/notfallplan/vorschau', [\App\Controllers\EmergencyPlanController::class, 'previewRender']);
         $router->post('/admin/notfallplan/freigabe', [\App\Controllers\EmergencyPlanController::class, 'review']);
         $router->post('/admin/notfallplan/massnahme', [\App\Controllers\EmergencyPlanController::class, 'update']);
-        // Export/Import von Notfallplänen nur für Administratoren, nicht für das KAEP-Team.
-        $router->group([$requireAdmin], static function (Router $router): void {
-            $router->post('/admin/notfallplan/plaene/export', [\App\Controllers\EmergencyPlanController::class, 'exportPlans']);
-            $router->post('/admin/notfallplan/plaene/import', [\App\Controllers\EmergencyPlanController::class, 'importPlans']);
-        });
+        // Export-Sätze (Teildateien ≤ 15 MB, Download oder Nextcloud) und Import für Administratoren und KAEP-Team.
+        $router->post('/admin/notfallplan/plaene/export', [\App\Controllers\EmergencyPlanController::class, 'exportPlans']);
+        $router->get('/admin/notfallplan/plaene/export/datei', [\App\Controllers\EmergencyPlanController::class, 'exportPart']);
+        $router->post('/admin/notfallplan/plaene/export/nextcloud', [\App\Controllers\EmergencyPlanController::class, 'exportNextcloud']);
+        $router->post('/admin/notfallplan/plaene/import', [\App\Controllers\EmergencyPlanController::class, 'importPlans']);
+        $router->post('/admin/notfallplan/plaene/import/abschluss', [\App\Controllers\EmergencyPlanController::class, 'importFinish']);
     });
     $router->post('/admin/logout', [AuthController::class, 'logout']);
 

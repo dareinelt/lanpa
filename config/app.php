@@ -17,6 +17,8 @@ return [
     'log_level' => Env::get('APP_LOG_LEVEL', 'info'),
     'log_file' => BASE_PATH . '/storage/logs/app.log',
     'upload_path' => BASE_PATH . '/storage/uploads',
+    // Arbeitsverzeichnis für Notfallplan-Export-Sätze und hochgeladene Importteile (Ablauf nach 2 Stunden).
+    'emergency_transfer_path' => BASE_PATH . '/storage/emergency-transfer',
     'max_logo_bytes' => Env::int('APP_MAX_LOGO_BYTES', 512 * 1024),
     'allow_svg_logo' => Env::bool('APP_ALLOW_SVG_LOGO', true),
     'max_background_bytes' => Env::int('APP_MAX_BACKGROUND_BYTES', 2 * 1024 * 1024),

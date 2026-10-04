@@ -8,6 +8,7 @@ storage/logs/*
 storage/uploads/*
 !storage/uploads/.gitkeep
 storage/office-ai/
+storage/emergency-transfer/
 
 # Werkzeuge / Editoren
 .idea/

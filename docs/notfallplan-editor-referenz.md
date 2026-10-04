@@ -27,7 +27,7 @@ Abweichungen gilt der Code.
   zustandsloses Rendern über `EmergencyPlanPreview` + `EmergencyPlanRuntime`
   (keine DB-Schreibzugriffe, kein Versand).
 - Zugriff nur Rollen `admin` und `kaep` (`EmergencyPlanService::isManager()`),
-  Export/Import nur `admin`.
+  auch für Export/Import.
 
 ## Inhalt
 
@@ -70,19 +70,21 @@ Abweichungen gilt der Code.
 | `views/layouts/editor.php` | Schlankes Vollbild-Layout nur für den Editor (kein Admin-Menü, kein Seitenrahmen; `body.admin.ep-shell`). Wird von `EmergencyPlanController::edit()` über `adminView(..., 'layouts.editor')` gewählt. |
 | `public/assets/js/emergency-plan.js` | Gemeinsames Skript für Editor (`[data-ep-editor]`), statische Diagramme (`renderStaticDiagram`), Live-Vorschau (`[data-ep-preview]`), Ereignisansicht (`[data-ep-event]`) und Startformular (`.ep-start`). Hilfsfunktionen `element()`, `svgElement()`, `diagram()`, `post()`. Der Editor-Block enthält zusätzlich Undo/Redo-Journal, Client-Prüfung, Zoom/Pan, Suche und Drag-and-Drop. |
 | `public/assets/css/emergency-plan.css` | Office-Layout (`.ep-office`-Grid, `.ep-titlebar`, `.ep-ribbon`/`.ep-rg`/`.ep-rb`, `.ep-workspace3`, `.ep-palette`, `.ep-canvas`, `.ep-inspector`, `.ep-statusbar`, `.ep-dialog`), SVG-Knotenfarben (`.ep-graph-node--<typ>/<status>/--error/--hint`), Dark-Theme, Responsive-Umbrüche (1200 px / 900 px / 650 px). |
-| `app/Controllers/EmergencyPlanController.php` | `access()` (Rollen-/Akteursermittlung), `edit()`, `save()`, `preview()`, `previewRender()`, `review()`, `exportPlans()`, `importPlans()` sowie die Benutzer-/Ereignisaktionen. |
+| `app/Controllers/EmergencyPlanController.php` | `access()` (Rollen-/Akteursermittlung), `edit()`, `save()`, `preview()`, `previewRender()`, `review()`, `exportPlans()`, `exportPart()`, `exportNextcloud()`, `importPlans()`, `importFinish()` sowie die Benutzer-/Ereignisaktionen. |
 | `app/Services/EmergencyPlanDefinition.php` | Reine Funktionen: `validate()` (Schema + Graphregeln), `readiness()` (Freigabe-/Wartezustand je Element), `text()` (Textprüfung). Konstanten `TYPES`, `STATUSES`. |
 | `app/Services/EmergencyPlanSms.php` | SMS an einzelne Rufnummern: Konstanten (`MAX_LENGTH`, `MAX_NUMBERS`, `PLACEHOLDERS`), `length()`, `render()`, `alarm()` (eingebettete Versanddaten), `resolve()` (Bausteine im Ereignis-Snapshot ersetzen). Versand je Rufnummer: `AlarmService::triggerEmergency()`. |
-| `app/Services/EmergencyPlanService.php` | `save()`, `prepare()` (Validierung + SMS-Vorlage einbetten), `alarmOptions()` (aktive Alarmkacheln für das Dropdown), `exportPlans()`, `importPlans()`, `matchAlarm()`. |
+| `app/Services/EmergencyPlanService.php` | `save()`, `prepare()` (Validierung + SMS-Vorlage einbetten), `alarmOptions()` (aktive Alarmkacheln für das Dropdown), `importPlans()` (Einzeldateien v1/v2), `importDefinitions()`, `matchAlarm()`. |
+| `app/Services/EmergencyPlanTransfer.php` | Export-Sätze (Format v3): `createExport()` (Teildateien ≤ `PART_MAX_BYTES` = 15 MB, Anhänge in Abschnitten), `exportPart()`, `stageImport()` (Teil hochladen, Stand fehlender Teile), `importStaged()` (Vollständigkeitsprüfung, dann `importDefinitions()`); Arbeitsverzeichnis `storage/emergency-transfer`. |
+| `app/Services/Office/NextcloudFilesService.php` | Ablage einer Datei in den Nextcloud-Dateien einer Person (signiertes Token `OfficeJwt::filesToken()`). |
 | `app/Repositories/EmergencyPlanRepository.php` | `plan()`, `plans()`, `publishedPlan()`, `savePlan()`, `importPlans()`, `submit()`, `review()`, `withdraw()`, `reviews()`, `reviewLog()`; Transaktionen und `assertChanged()` (HTTP 409). |
 | `app/Services/EmergencyPlanPreview.php` | Baut aus Entwurf + simulierten Aktionen ein flüchtiges Ereignis (ohne Repository, ohne Versand). |
 | `app/Services/EmergencyPlanRuntime.php` | Nebenwirkungsfreie Zustandsübergänge (`change()`), gemeinsam genutzt von Einsatz und Vorschau. |
 | `views/emergency/preview.php` | Hülle des Vorschau-Tabs (Sandbox-Banner, Reset/Retry, Statuszeilen, `data-ep-preview-content`). |
 | `views/emergency/plan.php`, `views/emergency/event.php` | Plan- und Ereignisansicht; werden in der Vorschau mit `preview => true` gerendert. |
 | `views/emergency/publication.php` | Anzeige von Autoren/Freigeber/Version aus `definition.publication`. |
-| `views/emergency/index.php` | Planliste mit „Neuen Notfallplan entwerfen (neuer Tab)“ / „Im Editor öffnen (neuer Tab)“ (`target="_blank" rel="noopener"`) / „Vorschau“, Freigabeeinstellungen, Export/Import. |
+| `views/emergency/index.php` | Planliste mit „Neuen Notfallplan entwerfen (neuer Tab)“ / „Im Editor öffnen (neuer Tab)“ (`target="_blank" rel="noopener"`) / „Vorschau“, Freigabeeinstellungen, Export (Download/Nextcloud) und mehrteiliger Import. |
 | `database/migrations/025_emergency_plans.sql`, `027_emergency_plan_approval.sql` | Tabellen `emergency_plans`, `emergency_plan_reviews` (Freigabespalten). |
-| `public/index.php` | Routen (Gruppe `$requireKaep`, darin `$requireAdmin` für Export/Import); KAEP-Rolle wird in `$requireAuth` auf `/admin/notfallplan*` beschränkt. |
+| `public/index.php` | Routen (Gruppe `$requireKaep`, auch für Export/Import); KAEP-Rolle wird in `$requireAuth` auf `/admin/notfallplan*` beschränkt. |
 
 ## 3. Routen und Rechte
 
@@ -98,8 +100,11 @@ Alle Editor-Routen liegen in `public/index.php` in der Gruppe
 | GET | `/admin/notfallplan/vorschau#<uuid>` | `preview` | Vorschau-Tab (Hülle) |
 | POST | `/admin/notfallplan/vorschau` | `previewRender` | Vorschau rendern (JSON `{html}` bzw. `{error}`) |
 | POST | `/admin/notfallplan/freigabe` | `review` | `action` = `submit` / `approve` / `reject` / `withdraw`; Redirect zurück in den Editor |
-| POST | `/admin/notfallplan/plaene/export` | `exportPlans` | nur `admin` |
-| POST | `/admin/notfallplan/plaene/import` | `importPlans` | nur `admin` |
+| POST | `/admin/notfallplan/plaene/export` | `exportPlans` | Export-Satz erzeugen (`plans[]`), JSON `{set, plans, parts[{part,name,bytes,url}], nextcloud{available,reason,folder,url}}` |
+| GET | `/admin/notfallplan/plaene/export/datei?set=&part=` | `exportPart` | Teildatei herunterladen (nur eigener Satz) |
+| POST | `/admin/notfallplan/plaene/export/nextcloud` | `exportNextcloud` | Teildatei (`set`, `part`) in den eigenen Nextcloud-Dateien ablegen |
+| POST | `/admin/notfallplan/plaene/import` | `importPlans` | eine Datei (`file`) hochladen; JSON-Stand `{set, parts, received, missing, complete, plans}` |
+| POST | `/admin/notfallplan/plaene/import/abschluss` | `importFinish` | vollständigen Satz (`set`) prüfen und importieren |
 | POST | `/admin/notfallplan/anhang` | `uploadAttachment` | Anhang hochladen (Formfeld `file`, JSON `{id,name,mime,size}`) |
 | GET | `/admin/notfallplan/anhang?id=<sha256>&name=…` | `attachment` | Anhang ausliefern (Editor/Vorschau) |
 | GET | `/notfallplan/anhang?id=<sha256>&name=…` | `attachment` | Anhang ausliefern (Planansicht/Einsatz, jede Person mit Notfallplan-Zugriff) |
@@ -217,11 +222,15 @@ Controller gesetzte Sicherheitsheader nicht mehr.
 
 ### 4.3 Exportformat
 
-`{"format": "lanpa-notfallplaene", "version": 2, "exported_at": …, "plans": [{title, source_id, source_revision, definition}], "attachments": {"<sha256>": {mime, size, data(base64)}}}` –
-immer der **Entwurf**, ≤ 100 Pläne, ≤ 20 MB (inkl. base64-Anhänge). Import
-akzeptiert Version 1 (ohne Anhänge) und 2; jeder Anhang wird gegen seine
-SHA-256-ID und die Typ-/Größenregeln geprüft, jeder referenzierte Anhang muss in
-der Datei oder bereits lokal vorhanden sein, und Anhänge werden in derselben
+Export-Satz (Version 3) aus 1…200 Teildateien, je ≤ 15 MB (`EmergencyPlanTransfer::PART_MAX_BYTES`):
+`{"format": "lanpa-notfallplaene", "version": 3, "exported_at": …, "set": {id, part, parts}, "manifest": {plans: [{title, sha256}], attachments: {"<sha256>": {mime, size, chunks}}}, "plans": [{index, title, source_id, source_revision, definition}], "chunks": [{attachment, index, data(base64-Abschnitt)}]}` –
+`manifest` nur in Teil 1; ist eine Datei voll, folgt die nächste. Immer der
+**Entwurf**, ≤ 100 Pläne. Der Import sammelt die Teile je Person und Satz
+(`stageImport()`), meldet fehlende Teile und importiert erst nach vollständiger
+Prüfung (alle Teile, Satz-ID/Teilanzahl/Exportzeit, Plan-Prüfsummen, alle Abschnitte
+genau einmal, Anhang-SHA-256/Größe/Typ). Einzeldateien Version 1 (ohne Anhänge) und
+2 (`attachments` mit `data`) bleiben importierbar. Jeder referenzierte Anhang muss im
+Satz oder bereits lokal vorhanden sein; Anhänge werden in derselben
 Transaktion wie die Pläne gespeichert. Import ordnet SMS-Elemente über
 `definition.nodes[].alarm.title` (case-insensitive, bei Mehrdeutigkeit zusätzlich
 Text + Zielrufnummer) lokalen Vorlagen zu und legt alles in einer Transaktion als
@@ -564,7 +573,7 @@ Konflikt durch zweiten Tab, Live-Vorschau inkl. Strukturänderung).
 | **Neue Beispielvorlage** | Button `data-ep-template="<key>"` in `editor.php`, Inhalt im Template-Handler in `emergency-plan.js`; Vorlage als „BEISPIEL“ kennzeichnen. |
 | **Layout des Diagramms** | Nur `diagram()` ändern; wird auch für Plan-, Ereignis- und Vorschauansicht genutzt. Rastermaße konsistent halten (Kantenanker `+120`/`+92`). |
 | **Freigabeworkflow ändern** | `EmergencyPlanRepository::submit/review/withdraw/savePlan`, Panel in `editor.php`, Tests „Vier-Augen…“. Invariante 5 nicht aufweichen. |
-| **Exportformat ändern** | `EXPORT_VERSION` erhöhen und Import abwärtskompatibel halten; Tests „Export und Import…“. |
+| **Exportformat ändern** | `EmergencyPlanTransfer::VERSION` erhöhen und Import abwärtskompatibel halten (`EmergencyPlanService::IMPORT_VERSIONS` für Einzeldateien); Tests „Export und Import…“, „Export-Satz …“. |
 
 Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 `docs/notfallplan.md` und `agentsindex.md` aktualisieren.

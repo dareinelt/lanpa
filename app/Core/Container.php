@@ -263,6 +263,14 @@ final class Container
         );
     }
 
+    public static function emergencyPlanTransfer(): \App\Services\EmergencyPlanTransfer
+    {
+        return self::make(\App\Services\EmergencyPlanTransfer::class, static fn () => new \App\Services\EmergencyPlanTransfer(
+            self::emergencyPlans(),
+            (string) Config::get('app.emergency_transfer_path', BASE_PATH . '/storage/emergency-transfer')
+        ));
+    }
+
     public static function emergencyPlans(): \App\Services\EmergencyPlanService
     {
         return self::make(\App\Services\EmergencyPlanService::class, static fn () => new \App\Services\EmergencyPlanService(
@@ -408,6 +416,14 @@ final class Container
                 new AdminGroupRepository(),
                 static fn (): array => self::identitySourceMap()
             )
+        );
+    }
+
+    public static function nextcloudFiles(): \App\Services\Office\NextcloudFilesService
+    {
+        return self::make(
+            \App\Services\Office\NextcloudFilesService::class,
+            static fn (): \App\Services\Office\NextcloudFilesService => new \App\Services\Office\NextcloudFilesService(self::officeConfig(), new StreamOfficeProbe())
         );
     }
 

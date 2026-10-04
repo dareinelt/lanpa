@@ -176,6 +176,18 @@ Veröffentlichung braucht wiederum eine zweite Freigabe.
 Die Freigabegruppe und der Aktivierungsschalter steuern den
 Benutzerzugriff getrennt von der Planveröffentlichung.
 
+### Pläne exportieren und importieren
+
+Im Editor unter **Start → Exportieren** den gespeicherten Plan **herunterladen**
+oder **in Nextcloud speichern** (Ordner `Notfallpläne` in Ihren eigenen
+Nextcloud-Dateien; nur mit Windows-Anmeldung). Mehrere Pläne exportieren Sie in
+der Übersicht unter **Export und Import**. Eine Exportdatei ist höchstens 15 MB
+groß; bei größeren Plänen oder vielen Anhängen entstehen mehrere Dateien
+(„Teil 1 von 3“ …), die zusammengehören. Zum Import in der Übersicht **alle**
+Dateien eines Exports auswählen. Die Übersicht zeigt fehlende Teile; importiert
+wird erst, wenn alles vollständig und unverändert ist. Importierte Pläne sind
+neue Entwürfe und brauchen eine Vier-Augen-Freigabe.
+
 ## KAEP-Team: laufende Lage und historische Auswertung
 
 In der Einsatzübersicht **Laufend** filtern und ein Ereignis öffnen. KAEP und

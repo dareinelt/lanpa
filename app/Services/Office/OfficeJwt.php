@@ -19,6 +19,7 @@ final class OfficeJwt
     public const ADMINS_AUDIENCE = 'intranet_integration_admins';
     public const DRIVES_AUDIENCE = 'intranet_integration_drives';
     public const APPSTORE_AUDIENCE = 'intranet_integration_appstore';
+    public const FILES_AUDIENCE = 'intranet_integration_files';
 
     /**
      * @param array<string,mixed> $claims
@@ -136,6 +137,26 @@ final class OfficeJwt
 
         return self::encode([
             'aud' => self::APPSTORE_AUDIENCE,
+            'body' => hash('sha256', $body),
+            'iat' => $now,
+            'exp' => $now + 60,
+        ], $secret);
+    }
+
+    /**
+     * Kurzlebiges Token fuer das Ablegen einer Datei in den Nextcloud-Dateien
+     * eines Benutzers (z. B. Notfallplan-Export). Gebunden an Benutzer,
+     * Zielordner, Dateiname und Inhalt (SHA-256 des Anfragekoerpers).
+     */
+    public static function filesToken(string $secret, string $uid, string $folder, string $name, string $body, ?int $now = null): string
+    {
+        $now ??= time();
+
+        return self::encode([
+            'aud' => self::FILES_AUDIENCE,
+            'sub' => $uid,
+            'folder' => $folder,
+            'name' => $name,
             'body' => hash('sha256', $body),
             'iat' => $now,
             'exp' => $now + 60,

@@ -55,6 +55,10 @@ return [
     // Austauschverzeichnis mit dem DocumentServer (Volume office_ai,
     // dort als Laufzeitkonfiguration runtime.json eingebunden).
     'ai_config_dir' => Env::get('OFFICE_AI_CONFIG_DIR', BASE_PATH . '/storage/office-ai'),
+    // KI-Textunterstuetzung in Orvanta: Zeitlimit je Anfrage (Sekunden) und
+    // Cache der Erreichbarkeitspruefung (hoechstens alle 60 s ein GET /models).
+    'ai_request_timeout' => Env::int('ORVANTA_AI_TIMEOUT', 30),
+    'ai_availability_cache_file' => BASE_PATH . '/storage/cache/orvanta_ai.json',
 
     // Vertrauenswuerdige Hostnamen von Nextcloud (trusted_domains): zusaetzlich
     // zu APP_URL, den Domaenen mit Windows-Anmeldung und dem HTTPS-Zertifikat.

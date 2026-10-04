@@ -25,6 +25,7 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 | **Aufgaben** ✓ | Liste mit Fälligkeit/Priorität, Erledigt-Schalter, Anlegen/Bearbeiten/Löschen |
 | **Notizen** 📝 | Kachelansicht, Anlegen/Bearbeiten/Löschen |
 | **Erinnerungen** | Terminerinnerungen als Dialog in der App, als Browser-Benachrichtigung (HTML5 Notifications API) und in den **Mitteilungen** der Intranet-Kopfzeile |
+| **KI-Unterstützung** 🤖 | Markierten Text per Rechtsklick vom lokalen KI-Modell (Office → Lokale KI) umformulieren lassen – in E-Mails, Terminen und Erinnerungen; Vorschläge hellblau markiert, verfeinerbar, zurücksetzbar; Marker werden vor dem Senden entfernt (Abschnitt 7) |
 
 ![Kalender – Wochenansicht](screenshots/81-orvanta-kalender.png)
 
@@ -51,8 +52,10 @@ Typografie, Statusleiste):
 - **Rechte Spalte:** Detailansicht (Nachricht mit Kopf und Anhängen, Termin,
   Kontakt …); wird nur geöffnet, wenn ein Element gewählt ist
   (Root-Klasse `ov--detail-open`).
-- **Statusleiste:** Verbindungsstatus, Belegung des Zwischenspeichers (Quota)
-  und Autoren-Hinweis „Orvanta Mail-App by Daniel-André Reinelt“.
+- **Statusleiste:** Verbindungsstatus, Belegung des Zwischenspeichers (Quota),
+  Autoren-Hinweis „Orvanta Mail-App by Daniel-André Reinelt“ und – sobald die
+  KI-Unterstützung verfügbar ist – ein kleines Roboter-Symbol (Klick öffnet die
+  Kurzanleitung, siehe Abschnitt 7).
 
 Alle Styles liegen in `public/assets/css/orvanta.css`. Da die Content Security
 Policy inline-`style`-Attribute verbietet, setzt das Frontend Styles
@@ -105,6 +108,7 @@ flowchart LR
 | `orvanta_settings` | Einstellungen (Schlüssel/Wert) | `setting_key` (unique), `setting_value` |
 | `orvanta_reminders` | Lokal zwischengespeicherte Terminerinnerungen je Benutzer | `user_uid`, `item_hash` (unique je Benutzer), `subject`, `location`, `starts_at`, `remind_at`, `state` (pending/delivered/dismissed/snoozed) |
 | `orvanta_cache_items` | Bestand des Zwischenspeichers im Nextcloud-Bereich des Benutzers | `user_uid`, `kind` (attachment/message), `item_hash`, `name`, `path`, `content_type`, `size_bytes` |
+| `orvanta_ai_usage` | Zähler der KI-Unterstützung (Migration 034) – nur Metadaten, nie Texte | `user_uid`, `kind` (mail_compose/mail_reply/mail_forward/event/reminder), `model`, `input_tokens`, `output_tokens`, `created_at` |
 
 ### Routen
 
@@ -120,7 +124,7 @@ flowchart LR
   `kontakte/loeschen`, `aufgaben`, `aufgaben/aufgabe` (GET/POST),
   `aufgaben/loeschen`, `notizen`, `notizen/notiz` (GET/POST),
   `notizen/loeschen`, `erinnerungen`, `erinnerungen/erledigt`,
-  `erinnerungen/spaeter`.
+  `erinnerungen/spaeter`, `ki/verbessern` (POST, KI-Unterstützung).
 - Admin (`$requireAdmin`): `POST /admin/office/orvanta`,
   `POST /admin/office/orvanta/pruefen`.
 
@@ -247,7 +251,92 @@ sequenceDiagram
 
 ---
 
-## 7. Demo-Modus und Tests
+## 7. KI-Unterstützung beim Schreiben
+
+Orvanta kann markierte Textabschnitte in E-Mails, Terminen und Erinnerungen
+durch das **unter Office → Lokale KI hinterlegte Modell** umformulieren lassen.
+Es gibt keine eigene KI-Konfiguration in Orvanta: Adresse, Modell und
+API-Schlüssel stammen ausschließlich aus den globalen Einstellungen
+(`OfficeAiService`). Ist dort kein Modell aktiv oder der Endpunkt nicht
+erreichbar, bleibt Orvanta unverändert – weder Roboter-Symbol noch
+Kontextmenü erscheinen.
+
+![KI-Unterstützung – Kontextmenü im Editor](assets/orvanta-ai/03-kontextmenue.png)
+
+### Bedienung
+
+1. Text im Editor markieren (neue Nachricht, Antwort, Weiterleitung,
+   Terminbeschreibung) und mit der **rechten Maustaste** das Menü
+   „Mit KI verbessern …“ öffnen. Ohne Markierung bleibt das normale
+   Browser-Menü (z. B. Rechtschreibung) erhalten.
+2. Im Dialog die Anweisung eingeben („höflicher“, „kürzer“, „als Aufzählung“,
+   „ins Englische“); die Vorschlagschips füllen das Feld. Angezeigt wird ein
+   Auszug des markierten Textes und der Hinweis, was übertragen wird.
+3. Der erzeugte Text ersetzt die Markierung und ist **hellblau umrandet**
+   (`span.ov-ai-block`). Rechtsklick auf den Block bietet:
+   *Weiter verfeinern …* (neue Anweisung, die KI kennt Original und bisherige
+   Fassung), *Auf Original zurücksetzen* (nur solange der Dialog offen ist;
+   der Originaltext liegt ausschließlich im Browser-Speicher) und
+   *Markierung entfernen*.
+4. Beim Senden, Entwurf speichern und Termin speichern werden alle Marker
+   **serverseitig** entfernt (`OrvantaAiService::stripMarkers()` vor dem
+   Sanitizer). Empfänger sehen nur den Text, ohne Klassen, Attribute oder
+   Rahmen.
+
+![KI-Unterstützung – Dialog mit Anweisung](assets/orvanta-ai/04-dialog.png)
+
+![KI-Unterstützung – hellblau markierter Vorschlag](assets/orvanta-ai/05-block.png)
+
+### Was übertragen wird
+
+- Nur der markierte Abschnitt (max. 8 000 Zeichen), die Anweisung
+  (max. 1 000 Zeichen), bei Verfeinerung die bisherige Fassung sowie als
+  Kontext der Betreff (gekürzt) und die **Anzahl** der Empfänger – nie
+  Adressen, nie die restliche Nachricht oder das Postfach.
+- Der Aufruf geht vom Server an `POST {office_ai_url}/chat/completions`
+  (OpenAI-kompatibel, Bearer-Schlüssel falls hinterlegt). Der Browser spricht
+  nie direkt mit dem KI-Endpunkt. In `APP_ENV=production` akzeptiert der
+  Transport nur HTTPS.
+- Protokolliert werden ausschließlich Zähler (`orvanta_ai_usage`): Benutzer,
+  Einsatzort, Modell, Eingabe-/Ausgabe-Token, Zeitpunkt. Texte und Anweisungen
+  werden weder gespeichert noch geloggt.
+
+### Nutzungsbericht im Adminbereich
+
+Unter `/admin/office#orvanta-ki` zeigt die Orvanta-Karte den anonymisierten
+Bericht: Anfragen je Benutzer (Pseudonyme „Benutzer 1…n“, Zuordnung wird nicht
+gespeichert und wechselt je Zeitraum), Anfragen je Tag und Token je Tag, jeweils
+als serverseitig erzeugtes SVG ohne JavaScript und ohne `style`-Attribute
+(CSP). Zeitraum: 7, 30 oder 90 Tage (`?ki_zeitraum=`).
+
+![Adminbereich – KI-Nutzung](assets/orvanta-ai/08-admin-bericht.png)
+
+### Lokaler Testendpunkt (Docker)
+
+```bash
+docker compose --profile ki up -d          # llama.cpp-Server, Port KI_PORT (8089)
+# .env: OFFICE_AI_SEED_URL=http://ki:8080/v1  OFFICE_AI_SEED_MODEL=qwen2.5-0.5b-instruct
+```
+
+Der Dienst `ki` lädt beim ersten Start ein kleines Modell
+(`Qwen/Qwen2.5-0.5B-Instruct-GGUF`, ca. 400 MB) in das Volume `ki_models`.
+Es reicht für den Funktionstest; brauchbare deutsche Texte liefert erst ein
+größeres Modell, z. B. `KI_MODEL_REPO=unsloth/Qwen3.5-9B-GGUF`,
+`KI_MODEL_FILE=Qwen3.5-9B-Q4_K_M.gguf`, `KI_MODEL_ALIAS=qwen3.5-9b` (ca. 6 GB,
+mindestens 8 GB RAM für Docker; Denkmodus über `KI_REASONING` steuerbar,
+Standard `off`). Mit den Screenshots unten wurde dieses Modell verwendet.
+`scripts/seed.php` trägt den Endpunkt ein, sofern `OFFICE_AI_SEED_URL` gesetzt
+ist und noch keine KI-Einstellungen existieren; alternativ im Adminbereich
+unter Office → Lokale KI eintragen. Zeitlimit je Anfrage: `ORVANTA_AI_TIMEOUT`
+(Standard 30 s). Die Erreichbarkeit wird höchstens alle 60 s per `GET /models`
+geprüft (Cache `storage/cache/orvanta_ai.json`, wird beim Speichern der
+KI-Einstellungen zurückgesetzt).
+
+Screenshots aller Schritte: [docs/assets/orvanta-ai/README.md](assets/orvanta-ai/README.md).
+
+---
+
+## 8. Demo-Modus und Tests
 
 - `exchange_host = demo` (nur bei `APP_ENV ≠ production`) aktiviert
   `DemoExchangeTransport` mit Beispieldaten für alle Module. Änderungen werden
@@ -256,8 +345,13 @@ sequenceDiagram
   aus dem Demo-Modus mit `SSO_FAKE_USER`, siehe `docs/office.md`, Abschnitt
   „Testmodus“).
 - `tests/Unit/OrvantaServiceTest.php` prüft Konfiguration, EWS-XML-Aufbau,
-  Sanitizer, Anhang-Modi/Signaturen, Quota-Bereinigung und
-  Erinnerungslogik mit Fakes (`RecordingExchangeTransport`, Repository-Fakes).
+  Sanitizer, Anhang-Modi/Signaturen, Quota-Bereinigung, Erinnerungslogik und
+  das Entfernen der KI-Marker beim Senden mit Fakes
+  (`RecordingExchangeTransport`, Repository-Fakes).
+- `tests/Unit/OrvantaAiTest.php` prüft die KI-Unterstützung mit
+  `RecordingAiTransport`: Verfügbarkeit und Cache, Aufbau der
+  `chat/completions`-Anfrage, Verfeinern, Validierung (422), Fehlerbilder
+  (503/502), `stripMarkers()`, anonymisierte Auswertung und SVG-Bericht.
 
   ```bash
   php tests/run.php
@@ -266,10 +360,14 @@ sequenceDiagram
 
 ---
 
-## 8. Sicherheit
+## 9. Sicherheit
 
 - Alle Routen setzen einen SSO-Benutzer mit App-Freigabe voraus; schreibende
   API-Aufrufe prüfen das CSRF-Token.
+- KI-Unterstützung: Nur der markierte Abschnitt verlässt den Browser (an den
+  Intranet-Server, von dort an den lokalen KI-Endpunkt); KI-Marker werden vor
+  dem Versand entfernt; gespeichert werden nur Zähler, der Adminbericht ist
+  pseudonymisiert.
 - Exchange-Zugriff ausschließlich per Impersonation des angemeldeten Benutzers;
   das Dienstkonto-Kennwort liegt verschlüsselt in der Datenbank und wird nie
   an den Browser übertragen.
@@ -281,7 +379,7 @@ sequenceDiagram
 
 ---
 
-## 9. Grenzen und Hinweise
+## 10. Grenzen und Hinweise
 
 - Keine Exchange-Online-/Graph-Anbindung; Ziel ist On-Premise ab 2016/2019.
 - Serienregeln werden angezeigt und als Vorkommen geladen, aber nicht als

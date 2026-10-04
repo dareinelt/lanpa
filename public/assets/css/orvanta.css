@@ -581,3 +581,42 @@
 @media (max-width: 900px) {
     .ov-workspace, .ov-office.ov--no-folders .ov-workspace, .ov-office.ov--no-reading .ov-workspace { grid-template-columns: 4.2rem 0 minmax(0, 1fr) 0; }
 }
+
+/* ---------------------------------------------------------------- */
+/* KI-Unterstuetzung: Indikator, Kontextmenue, Dialog, markierte Bloecke */
+/* ---------------------------------------------------------------- */
+:root { --ov-ai: #7cc4ff; --ov-ai-soft: rgba(124, 196, 255, .14); }
+.ov-ai-indicator { display: inline-flex; align-items: center; padding: 0 .15rem; border: 0; background: transparent; cursor: pointer; line-height: 0; }
+.ov-ai-indicator img { height: 24px; width: auto; filter: drop-shadow(0 0 2px rgba(255, 255, 255, .6)); transition: transform .15s; }
+.ov-ai-indicator:hover img, .ov-ai-indicator:focus-visible img { transform: scale(1.12); }
+.ov-ai-indicator:focus-visible { outline: 2px solid #fff; outline-offset: 1px; border-radius: .3rem; }
+
+.ov-editor--event { min-height: 110px; max-height: 30vh; border-radius: .4rem; }
+.ov-field > span#ov-event-body-label { display: block; }
+
+/* Vom KI-Dienst erzeugter Text: duenner hellblauer Rahmen, keine Hintergrundfarbe im Mail-HTML noetig */
+.ov-editor .ov-ai-block, .ov-ai-block--sample { border: 1px solid var(--ov-ai); border-radius: .25rem; padding: 0 .15rem; background: var(--ov-ai-soft); box-decoration-break: clone; -webkit-box-decoration-break: clone; cursor: context-menu; }
+.ov-editor .ov-ai-block:hover { background: rgba(124, 196, 255, .26); }
+.ov-editor .ov-ai-block--fresh { animation: ov-ai-pulse 1.2s ease-out; }
+@keyframes ov-ai-pulse { 0% { box-shadow: 0 0 0 0 rgba(124, 196, 255, .8); } 100% { box-shadow: 0 0 0 10px rgba(124, 196, 255, 0); } }
+
+.ov-ai-menu { position: fixed; z-index: 1200; min-width: 220px; padding: .25rem; border: 1px solid var(--ov-line); border-radius: .4rem; background: var(--color-background, #fff); box-shadow: 0 8px 24px rgba(0, 0, 0, .18); display: flex; flex-direction: column; }
+.ov-ai-menu[hidden] { display: none; }
+.ov-ai-menu button { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .45rem .7rem; border: 0; border-radius: .3rem; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ov-ai-menu button:hover, .ov-ai-menu button:focus-visible { background: var(--ov-ai-soft); outline: none; }
+.ov-ai-menu button img { height: 16px; width: auto; }
+
+.ov-dialog--ai .ov-dialog__head h2 { display: inline-flex; align-items: center; gap: .45rem; }
+.ov-ai-dialog__icon { height: 20px; width: auto; }
+.ov-ai-dialog__excerpt { margin: 0 0 .6rem; padding: .45rem .6rem; border-left: 3px solid var(--ov-ai); background: var(--ov-ai-soft); font-size: .85rem; line-height: 1.4; max-height: 6em; overflow: hidden; }
+.ov-ai-dialog__chips { display: flex; flex-wrap: wrap; gap: .35rem; margin: .4rem 0; }
+.ov-ai-dialog__chips button { padding: .2rem .6rem; border: 1px solid var(--ov-ai); border-radius: 999px; background: transparent; color: inherit; font-size: .78rem; cursor: pointer; }
+.ov-ai-dialog__chips button:hover { background: var(--ov-ai-soft); }
+.ov-dialog--ai form.is-busy .ov-dialog__body { opacity: .7; }
+.ov-dialog--ai form.is-busy [data-ov-ai-submit] { position: relative; }
+.ov-dialog--ai form.is-busy [data-ov-ai-submit]::after { content: ''; display: inline-block; width: .8em; height: .8em; margin-left: .5em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: middle; animation: ov-ai-spin .8s linear infinite; }
+@keyframes ov-ai-spin { to { transform: rotate(360deg); } }
+
+.ov-help__ai { display: flex; gap: 1rem; align-items: flex-start; margin: .6rem 0; padding: .7rem; border: 1px solid var(--ov-ai); border-radius: .5rem; background: var(--ov-ai-soft); }
+.ov-help__robot { flex: 0 0 auto; width: 90px; height: 120px; }
+@media (max-width: 600px) { .ov-help__ai { flex-direction: column; } .ov-help__robot { width: 60px; height: 80px; } }

@@ -93,6 +93,15 @@ function orvantaPdo(): PDO
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE (user_uid, item_hash)
     )');
+    $pdo->exec('CREATE TABLE orvanta_ai_usage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_uid VARCHAR(100) NOT NULL,
+        kind VARCHAR(20) NOT NULL,
+        model VARCHAR(100) NOT NULL DEFAULT \'\',
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME NOT NULL
+    )');
 
     return $pdo;
 }
@@ -284,6 +293,28 @@ Runner::test('Orvanta: Senden erzeugt CreateItem mit Empfaengern', function (): 
     Assert::contains('max@example.local', $xml);
     Assert::contains('Testbetreff', $xml);
     Assert::contains('SendAndSaveCopy', $xml);
+});
+
+Runner::test('Orvanta: KI-Markierungen verlassen den Editor nie - weder beim Senden noch im Termin', function (): void {
+    $parts = orvantaExchange();
+    $marked = '<p>Hallo <span class="ov-ai-block" data-ov-ai-id="ai7" title="Von der KI erzeugter Text">liebe <b>Welt</b></span></p>';
+    $parts['exchange']->send('demo@demo.local', [
+        'to' => ['max@example.local'], 'cc' => [], 'bcc' => [], 'subject' => 'KI', 'body' => $marked, 'html' => true, 'attachments' => [],
+    ]);
+    $xml = html_entity_decode($parts['transport']->last());
+    Assert::false(str_contains($xml, 'ov-ai'), 'Marker-Klasse im gesendeten HTML: ' . $xml);
+    Assert::false(str_contains($xml, 'data-ov-ai'));
+    Assert::contains('Hallo liebe <b>Welt</b>', $xml);
+
+    $parts['exchange']->saveDraft('demo@demo.local', ['to' => [], 'cc' => [], 'bcc' => [], 'subject' => 'E', 'body' => $marked, 'html' => true, 'attachments' => []]);
+    Assert::false(str_contains(html_entity_decode($parts['transport']->last()), 'ov-ai'), 'Auch Entwuerfe tragen keine Marker.');
+
+    $now = time();
+    $parts['exchange']->createEvent('demo@demo.local', [
+        'subject' => 'T', 'body' => $marked, 'location' => '', 'start' => $now + 3600, 'end' => $now + 7200,
+        'all_day' => false, 'free_busy' => 'Busy', 'reminder_minutes' => 15, 'required' => [], 'optional' => [],
+    ]);
+    Assert::false(str_contains(html_entity_decode($parts['transport']->last()), 'ov-ai'), 'Termine tragen keine Marker.');
 });
 
 Runner::test('Orvanta: Fehler des Transports werden als OrvantaException gemeldet', function (): void {

@@ -61,7 +61,7 @@ final class CurlExchangeTransport implements ExchangeTransportInterface
         $body = curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         $error = curl_errno($handle) !== 0 ? curl_error($handle) : null;
-        curl_close($handle);
+        unset($handle); // curl_close() ist seit PHP 8.5 veraltet
 
         return ['status' => $status, 'body' => is_string($body) ? $body : '', 'error' => $error];
     }

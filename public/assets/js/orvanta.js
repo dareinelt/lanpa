@@ -80,6 +80,29 @@
         return String(html).replace(/\sstyle=("[^"]*"|'[^']*')/gi, ' data-ov-style=$1');
     }
 
+    /**
+     * Bereinigtes HTML in einen contenteditable-Editor laden (Inline-Styles
+     * ueber das CSSOM setzen) bzw. den Inhalt zurueckgeben.
+     */
+    function setEditorHtml(editor, html) {
+        if (!editor) {
+            return;
+        }
+        editor.innerHTML = String(html || '').trim() === '' ? '<p><br></p>' : inlineStylesToCssom(html);
+        editor.querySelectorAll('[data-ov-style]').forEach(function (node) {
+            node.style.cssText = node.getAttribute('data-ov-style');
+            node.removeAttribute('data-ov-style');
+        });
+    }
+
+    function editorHtml(editor) {
+        if (!editor) {
+            return '';
+        }
+        var text = (editor.textContent || '').replace(/\u00a0/g, ' ').trim();
+        return text === '' && !editor.querySelector('img, li') ? '' : editor.innerHTML;
+    }
+
     function el(tag, attrs, children) {
         var node = document.createElement(tag);
         Object.keys(attrs || {}).forEach(function (key) {
@@ -1748,8 +1771,9 @@
             form.elements.free_busy.value = event.free_busy || 'Busy';
             form.elements.required.value = (event.required || []).map(function (p) { return p.email; }).join('; ');
             form.elements.optional.value = (event.optional || []).map(function (p) { return p.email; }).join('; ');
-            form.elements.body.value = String(event.body_html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/p>/gi, '\n').replace(/<[^>]+>/g, '').trim();
+            setEditorHtml(hook('event-body'), event.body_html || '');
         } else {
+            setEditorHtml(hook('event-body'), '');
             var start = startDate ? new Date(startDate.getTime()) : new Date();
             if (!startDate) {
                 start.setMinutes(start.getMinutes() < 30 ? 30 : 60, 0, 0);
@@ -1800,7 +1824,7 @@
             end: end,
             all_day: allDay,
             location: form.elements.location.value.trim(),
-            body: form.elements.body.value,
+            body: editorHtml(hook('event-body')),
             reminder: parseInt(form.elements.reminder.value, 10),
             free_busy: form.elements.free_busy.value,
             required: parseRecipients(form.elements.required.value).map(function (box) { return box.email; }),
@@ -2988,9 +3012,382 @@
     // Start
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // KI-Unterstuetzung (Kontextmenue im Editor, hellblau markierte Bloecke)
+    // ------------------------------------------------------------------
+
+    var AI_MAX_TEXT = 8000;
+    var AI_MAX_PROMPT = 1000;
+    var AI_BLOCK_CLASS = 'ov-ai-block';
+
+    var ai = {
+        available: !!config.aiAvailable,
+        menu: null,
+        dialog: null,
+        editor: null,       // Editor, in dem das Menue geoeffnet wurde
+        range: null,        // gesicherte Auswahl (Range) fuer "verbessern"
+        block: null,        // angeklickter KI-Block fuer verfeinern/zuruecksetzen
+        originals: {},      // id -> urspruenglicher Text (nur im Speicher)
+        pending: false,
+        seq: 0
+    };
+
+    function aiEditors() {
+        return [hook('compose-body'), hook('event-body')].filter(Boolean);
+    }
+
+    /**
+     * Einsatzort fuer den Server: steuert Systemprompt und Statistik.
+     */
+    function aiMode(editor) {
+        if (editor && editor.hasAttribute('data-ov-event-body')) {
+            var form = hook('form-event');
+            var reminder = form && form.elements.reminder ? parseInt(form.elements.reminder.value, 10) : -1;
+            return reminder >= 0 ? 'reminder' : 'event';
+        }
+        var mode = (state.compose && state.compose.mode) || 'new';
+        if (mode === 'reply' || mode === 'replyall') {
+            return 'mail_reply';
+        }
+        return mode === 'forward' ? 'mail_forward' : 'mail_compose';
+    }
+
+    function aiContext(editor) {
+        var form = editor && editor.hasAttribute('data-ov-event-body') ? hook('form-event') : hook('form-compose');
+        if (!form) {
+            return {};
+        }
+        var recipients = 0;
+        ['to', 'cc', 'bcc', 'required', 'optional'].forEach(function (name) {
+            if (form.elements[name]) {
+                recipients += parseRecipients(form.elements[name].value).length;
+            }
+        });
+        return { subject: form.elements.subject ? form.elements.subject.value.trim().slice(0, 300) : '', recipients: recipients };
+    }
+
+    function aiSelectionIn(editor) {
+        var selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+            return null;
+        }
+        var range = selection.getRangeAt(0);
+        if (!editor.contains(range.commonAncestorContainer)) {
+            return null;
+        }
+        return range.toString().trim() === '' ? null : range.cloneRange();
+    }
+
+    // Blocktext mit Zeilenumbruechen (<br> -> \n), textContent wuerde sie verschlucken.
+    function aiBlockText(block) {
+        var text = '';
+        block.childNodes.forEach(function (node) {
+            if (node.nodeType === 3) {
+                text += node.textContent;
+            } else if (node.nodeName === 'BR') {
+                text += '\n';
+            } else if (node.nodeType === 1) {
+                text += aiBlockText(node);
+            }
+        });
+        return text;
+    }
+
+    function aiHideMenu() {
+        if (ai.menu) {
+            ai.menu.hidden = true;
+        }
+    }
+
+    function aiShowMenu(x, y, options) {
+        var menu = ai.menu;
+        if (!menu) {
+            return;
+        }
+        $$('[data-ov-ai-menu-item]', menu).forEach(function (item) {
+            var key = item.getAttribute('data-ov-ai-menu-item');
+            item.hidden = !options[key];
+        });
+        // Modale Dialoge liegen in der Top-Layer; das Menue muss daher in den
+        // Dialog des aktiven Editors wandern, sonst bleibt es dahinter verdeckt.
+        var host = (ai.editor && ai.editor.closest('dialog')) || document.body;
+        if (menu.parentNode !== host) {
+            host.appendChild(menu);
+        }
+        menu.hidden = false;
+        // Innerhalb des Fensters halten; Position ueber das CSSOM (CSP).
+        var width = menu.offsetWidth || 220;
+        var height = menu.offsetHeight || 120;
+        var left = Math.min(x, window.innerWidth - width - 8);
+        var top = Math.min(y, window.innerHeight - height - 8);
+        menu.style.cssText = 'left:' + Math.max(8, left) + 'px;top:' + Math.max(8, top) + 'px;';
+        var first = menu.querySelector('[data-ov-ai-menu-item]:not([hidden])');
+        if (first) {
+            first.focus();
+        }
+    }
+
+    function aiOnContextMenu(event) {
+        if (!ai.available) {
+            return;
+        }
+        var editor = event.target.closest('[data-ov-compose-body], [data-ov-event-body]');
+        if (!editor || aiEditors().indexOf(editor) === -1) {
+            aiHideMenu();
+            return;
+        }
+        var block = event.target.closest('.' + AI_BLOCK_CLASS);
+        var range = aiSelectionIn(editor);
+        if (!block && !range) {
+            return; // Browser-Menue (z. B. Rechtschreibung) unveraendert lassen.
+        }
+        event.preventDefault();
+        ai.editor = editor;
+        ai.block = block && editor.contains(block) ? block : null;
+        ai.range = range;
+        aiShowMenu(event.clientX, event.clientY, {
+            improve: !!range && !ai.block,
+            refine: !!ai.block,
+            reset: !!ai.block && ai.originals[ai.block.getAttribute('data-ov-ai-id')] !== undefined,
+            unmark: !!ai.block
+        });
+    }
+
+    function aiOpenDialog(kind) {
+        var dialog = ai.dialog;
+        if (!dialog) {
+            return;
+        }
+        var form = hook('form-ai');
+        form.reset();
+        form.setAttribute('data-ov-ai-kind', kind);
+        var text = kind === 'refine' && ai.block ? aiBlockText(ai.block) : (ai.range ? ai.range.toString() : '');
+        text = text.replace(/\s+/g, ' ').trim();
+        var title = hook('ai-title', dialog);
+        if (title) {
+            title.textContent = kind === 'refine' ? 'Vorschlag weiter verfeinern' : 'Mit KI verbessern';
+        }
+        var excerpt = hook('ai-excerpt', dialog);
+        if (excerpt) {
+            excerpt.textContent = text.length > 160 ? text.slice(0, 160) + ' …' : text;
+        }
+        var note = hook('ai-note', dialog);
+        if (note) {
+            note.textContent = kind === 'refine'
+                ? 'Die KI erhält den bisherigen Vorschlag und Ihre neue Anweisung.'
+                : 'Übertragen werden nur dieser Abschnitt, Betreff und Empfängeranzahl.';
+        }
+        openDialog('ai');
+        if (text.length > AI_MAX_TEXT) {
+            formError(form, 'Der markierte Text ist zu lang (höchstens ' + AI_MAX_TEXT + ' Zeichen). Bitte einen kleineren Abschnitt wählen.');
+        }
+    }
+
+    /**
+     * Markierten Bereich in einen hellblau umrandeten KI-Block umwandeln.
+     */
+    function aiWrapRange(range, text) {
+        ai.seq += 1;
+        var id = 'ai' + Date.now().toString(36) + ai.seq;
+        var span = el('span', { 'class': AI_BLOCK_CLASS, 'data-ov-ai-id': id, title: 'Von der KI erzeugter Text – Rechtsklick für Optionen' });
+        try {
+            range.surroundContents(span);
+        } catch (e) {
+            // Auswahl ueber Elementgrenzen: Inhalt herausloesen und als Block einfuegen.
+            var fragment = range.extractContents();
+            span.appendChild(fragment);
+            range.insertNode(span);
+        }
+        ai.originals[id] = text;
+        return span;
+    }
+
+    function aiFillBlock(block, text) {
+        block.innerHTML = '';
+        var lines = String(text).split(/\r?\n/);
+        lines.forEach(function (line, index) {
+            if (index > 0) {
+                block.appendChild(document.createElement('br'));
+            }
+            block.appendChild(document.createTextNode(line));
+        });
+    }
+
+    function aiSubmit(form) {
+        if (ai.pending) {
+            return;
+        }
+        var kind = form.getAttribute('data-ov-ai-kind') || 'improve';
+        var prompt = form.elements.prompt.value.trim();
+        if (prompt === '') {
+            formError(form, 'Bitte beschreiben Sie, was geändert werden soll.');
+            return;
+        }
+        if (prompt.length > AI_MAX_PROMPT) {
+            formError(form, 'Die Anweisung ist zu lang (höchstens ' + AI_MAX_PROMPT + ' Zeichen).');
+            return;
+        }
+        var editor = ai.editor;
+        var payload = { mode: aiMode(editor), prompt: prompt, context: aiContext(editor) };
+        var block = kind === 'refine' ? ai.block : null;
+        if (block) {
+            var id = block.getAttribute('data-ov-ai-id');
+            payload.text = ai.originals[id] !== undefined ? ai.originals[id] : aiBlockText(block);
+            payload.previous_text = aiBlockText(block);
+        } else {
+            if (!ai.range) {
+                formError(form, 'Bitte zuerst Text markieren.');
+                return;
+            }
+            payload.text = ai.range.toString();
+        }
+        if (payload.text.trim() === '') {
+            formError(form, 'Der markierte Text ist leer.');
+            return;
+        }
+        if (payload.text.length > AI_MAX_TEXT) {
+            formError(form, 'Der markierte Text ist zu lang (höchstens ' + AI_MAX_TEXT + ' Zeichen).');
+            return;
+        }
+        formError(form, '');
+        ai.pending = true;
+        var submit = hook('ai-submit', form);
+        var label = submit ? submit.textContent : '';
+        if (submit) {
+            submit.disabled = true;
+            submit.textContent = 'Wird erzeugt …';
+        }
+        form.classList.add('is-busy');
+        api('/ki/verbessern', { body: payload }).then(function (data) {
+            var text = String(data.text || '').trim();
+            if (text === '') {
+                throw new Error('Die KI hat keinen Vorschlag geliefert.');
+            }
+            if (!block) {
+                block = aiWrapRange(ai.range, payload.text);
+            }
+            aiFillBlock(block, text);
+            block.classList.add('ov-ai-block--fresh');
+            window.setTimeout(function () { block.classList.remove('ov-ai-block--fresh'); }, 1200);
+            closeDialog('ai');
+            toast('Vorschlag eingefügt – Rechtsklick auf den blauen Block zum Verfeinern oder Zurücksetzen.', 'success');
+            ai.range = null;
+            ai.block = null;
+            editor.focus();
+        }).catch(function (error) {
+            formError(form, error.message || 'Die KI-Anfrage ist fehlgeschlagen.');
+        }).then(function () {
+            ai.pending = false;
+            form.classList.remove('is-busy');
+            if (submit) {
+                submit.disabled = false;
+                submit.textContent = label;
+            }
+        });
+    }
+
+    function aiUnwrap(block, text) {
+        var parent = block.parentNode;
+        if (!parent) {
+            return;
+        }
+        if (text !== undefined) {
+            parent.replaceChild(document.createTextNode(text), block);
+        } else {
+            while (block.firstChild) {
+                parent.insertBefore(block.firstChild, block);
+            }
+            parent.removeChild(block);
+        }
+        parent.normalize();
+    }
+
+    function aiMenuAction(action) {
+        aiHideMenu();
+        var block = ai.block;
+        if (action === 'improve') {
+            aiOpenDialog('improve');
+        } else if (action === 'refine' && block) {
+            aiOpenDialog('refine');
+        } else if (action === 'reset' && block) {
+            var id = block.getAttribute('data-ov-ai-id');
+            aiUnwrap(block, ai.originals[id]);
+            delete ai.originals[id];
+            toast('Ursprünglicher Text wiederhergestellt.', 'info');
+        } else if (action === 'unmark' && block) {
+            delete ai.originals[block.getAttribute('data-ov-ai-id')];
+            aiUnwrap(block);
+        }
+        if (action !== 'improve' && action !== 'refine' && ai.editor) {
+            ai.editor.focus();
+        }
+    }
+
+    function initAi() {
+        ai.menu = hook('ai-menu');
+        ai.dialog = $('[data-ov-dialog="ai"]');
+        if (!ai.available || !ai.menu || !ai.dialog) {
+            return;
+        }
+        root.addEventListener('contextmenu', aiOnContextMenu);
+        ai.menu.addEventListener('click', function (event) {
+            var item = event.target.closest('[data-ov-ai-menu-item]');
+            if (item) {
+                aiMenuAction(item.getAttribute('data-ov-ai-menu-item'));
+            }
+        });
+        document.addEventListener('mousedown', function (event) {
+            if (!ai.menu.hidden && !ai.menu.contains(event.target)) {
+                aiHideMenu();
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && !ai.menu.hidden) {
+                aiHideMenu();
+            }
+        });
+        window.addEventListener('scroll', aiHideMenu, true);
+        var form = hook('form-ai');
+        form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            aiSubmit(form);
+        });
+        $$('[data-ov-ai-chip]', form).forEach(function (chip) {
+            chip.addEventListener('click', function () {
+                var field = form.elements.prompt;
+                var text = chip.getAttribute('data-ov-ai-chip');
+                field.value = field.value.trim() === '' ? text : field.value.trim() + ' ' + text;
+                field.focus();
+            });
+        });
+        var indicator = hook('ai-indicator');
+        if (indicator) {
+            indicator.addEventListener('click', function () {
+                openDialog('help');
+                var section = document.getElementById('ov-help-ai');
+                if (section) {
+                    section.scrollIntoView({ block: 'nearest' });
+                }
+            });
+        }
+        // Beim Oeffnen eines Editors Zuordnungen verwerfen (Bloecke aus Entwuerfen
+        // tragen keine Originale mehr, sind aber weiterhin umrandet).
+        aiEditors().forEach(function (editor) {
+            var dialog = editor.closest('dialog');
+            if (dialog) {
+                dialog.addEventListener('close', function () {
+                    ai.originals = {};
+                    ai.range = null;
+                    ai.block = null;
+                });
+            }
+        });
+    }
+
     function init() {
         applyPrefs();
         bindEvents();
+        initAi();
         updateNotifyState();
         setOnline(true);
         var params = new window.URLSearchParams(window.location.search);

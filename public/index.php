@@ -176,6 +176,7 @@ $router->post('/api/orvanta/notizen/loeschen', [OrvantaApiController::class, 'de
 $router->get('/api/orvanta/erinnerungen', [OrvantaApiController::class, 'reminders']);
 $router->post('/api/orvanta/erinnerungen/erledigt', [OrvantaApiController::class, 'dismissReminder']);
 $router->post('/api/orvanta/erinnerungen/spaeter', [OrvantaApiController::class, 'snoozeReminder']);
+$router->post('/api/orvanta/ki/verbessern', [OrvantaApiController::class, 'aiImprove']); // KI-Textunterstuetzung (globales Modell)
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
 foreach (['/notfallplan' => 'index', '/notfallplan/plan' => 'plan', '/notfallplan/ereignis' => 'event', '/notfallplan/stand' => 'status', '/notfallplan/anleitung' => 'guide', '/notfallplan/anhang' => 'attachment'] as $path => $method) {

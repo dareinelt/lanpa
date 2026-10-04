@@ -39,6 +39,7 @@
         reminders: { due: [], active: [] },
         snoozed: {},
         compose: null,
+        standalone: false,
         online: true,
         noteDraft: false,
         prefs: loadPrefs()
@@ -1213,11 +1214,31 @@
             var entry = { name: attachment.name, content_type: attachment.content_type, content: '', size: attachment.size, uploaded: true };
             state.compose.attachments.push(entry);
             if (list) {
-                list.appendChild(el('span', { 'class': 'ov-attachment ov-attachment--compose', title: 'Bereits am Entwurf gespeichert' }, [
-                    el('span', { text: attachmentIcon(attachment.name) + ' ' + attachment.name + ' (' + fmtBytes(attachment.size) + ')' })
-                ]));
+                list.appendChild(renderAttachmentChip(entry));
             }
         });
+    }
+
+    /**
+     * Anhang-Chip im Verfassen-Dialog; bereits am Entwurf gespeicherte Anhaenge
+     * werden nur angezeigt, neue lassen sich entfernen.
+     */
+    function renderAttachmentChip(entry) {
+        var chip = el('span', { 'class': 'ov-attachment ov-attachment--compose', title: entry.uploaded ? 'Bereits am Entwurf gespeichert' : null }, [
+            el('span', { text: attachmentIcon(entry.name) + ' ' + entry.name + ' (' + fmtBytes(entry.size) + ')' })
+        ]);
+        if (!entry.uploaded) {
+            var remove = el('button', { type: 'button', 'class': 'ov-attachment__action', 'aria-label': 'Entfernen', text: '×' });
+            remove.addEventListener('click', function () {
+                var index = state.compose ? state.compose.attachments.indexOf(entry) : -1;
+                if (index !== -1) {
+                    state.compose.attachments.splice(index, 1);
+                }
+                chip.remove();
+            });
+            chip.appendChild(remove);
+        }
+        return chip;
     }
 
     function composePayload(form) {
@@ -1303,25 +1324,267 @@
             reader.onload = function () {
                 var base64 = String(reader.result).split(',')[1] || '';
                 var entry = { name: file.name, content_type: file.type || 'application/octet-stream', content: base64, size: file.size };
+                if (!state.compose) {
+                    return;
+                }
                 state.compose.attachments.push(entry);
                 if (list) {
-                    var chip = el('span', { 'class': 'ov-attachment ov-attachment--compose' }, [
-                        el('span', { text: attachmentIcon(file.name) + ' ' + file.name + ' (' + fmtBytes(file.size) + ')' })
-                    ]);
-                    var remove = el('button', { type: 'button', 'class': 'ov-attachment__action', 'aria-label': 'Entfernen', text: '×' });
-                    remove.addEventListener('click', function () {
-                        var index = state.compose.attachments.indexOf(entry);
-                        if (index !== -1) {
-                            state.compose.attachments.splice(index, 1);
-                        }
-                        chip.remove();
-                    });
-                    chip.appendChild(remove);
-                    list.appendChild(chip);
+                    list.appendChild(renderAttachmentChip(entry));
                 }
             };
             reader.readAsDataURL(file);
         });
+    }
+
+    // ------------------------------------------------------------------
+    // Mail: Verfassen in eigenem Tab
+    // ------------------------------------------------------------------
+
+    var COMPOSE_CHANNEL = 'orvanta-compose';
+    var COMPOSE_HANDOFF_KEY = 'orvanta.compose.handoff.';
+    var COMPOSE_HANDOFF_STORAGE_MAX = 1.5 * 1024 * 1024;
+    var composeHandoffs = {};
+    var composeChannel = null;
+
+    function composeChannelOpen() {
+        if (composeChannel === null && typeof window.BroadcastChannel === 'function') {
+            composeChannel = new window.BroadcastChannel(COMPOSE_CHANNEL);
+            composeChannel.addEventListener('message', onComposeChannelMessage);
+        }
+        return composeChannel;
+    }
+
+    /**
+     * Vollstaendiger Zustand des Verfassen-Dialogs (Felder, Text, Anhaenge,
+     * Antwort-/Entwurfsbezug) fuer die Uebergabe an einen anderen Tab.
+     */
+    function composeSnapshot(form) {
+        var compose = state.compose || {};
+        var body = hook('compose-body');
+        var title = hook('compose-title', form.closest('dialog'));
+        return {
+            mode: compose.mode || 'new',
+            replyTo: compose.replyTo || null,
+            draftId: compose.draftId || null,
+            changeKey: compose.changeKey || '',
+            attachments: (compose.attachments || []).map(function (a) {
+                return { name: a.name, content_type: a.content_type, content: a.content || '', size: a.size, uploaded: !!a.uploaded };
+            }),
+            title: title ? title.textContent : '',
+            fields: {
+                to: form.elements.to.value,
+                cc: form.elements.cc.value,
+                bcc: form.elements.bcc ? form.elements.bcc.value : '',
+                subject: form.elements.subject.value,
+                importance: form.elements.importance ? form.elements.importance.value : 'Normal'
+            },
+            body: body ? body.innerHTML : ''
+        };
+    }
+
+    function restoreCompose(snapshot) {
+        var form = hook('form-compose');
+        if (!form || !snapshot) {
+            return;
+        }
+        form.reset();
+        state.compose = {
+            mode: snapshot.mode || 'new',
+            attachments: [],
+            replyTo: snapshot.replyTo || null,
+            draftId: snapshot.draftId || null,
+            changeKey: snapshot.changeKey || ''
+        };
+        var fields = snapshot.fields || {};
+        form.elements.to.value = fields.to || '';
+        form.elements.cc.value = fields.cc || '';
+        if (form.elements.bcc) {
+            form.elements.bcc.value = fields.bcc || '';
+        }
+        form.elements.subject.value = fields.subject || '';
+        if (form.elements.importance && fields.importance) {
+            form.elements.importance.value = fields.importance;
+        }
+        var title = hook('compose-title', form.closest('dialog'));
+        if (title && snapshot.title) {
+            title.textContent = snapshot.title;
+        }
+        setEditorHtml(hook('compose-body'), snapshot.body || '');
+        var list = hook('attach-list');
+        if (list) {
+            list.innerHTML = '';
+        }
+        (snapshot.attachments || []).forEach(function (entry) {
+            state.compose.attachments.push(entry);
+            if (list) {
+                list.appendChild(renderAttachmentChip(entry));
+            }
+        });
+        openDialog('compose');
+    }
+
+    /**
+     * Verschiebt den geoeffneten Verfassen-Dialog in einen neuen Tab. Der neue
+     * Tab fordert den Zustand ueber einen BroadcastChannel an (grosse Anhaenge
+     * moeglich); kleine Zustaende liegen zusaetzlich im localStorage, damit die
+     * Uebergabe auch ohne Channel funktioniert. Erst nach bestaetigtem Empfang
+     * wird der Dialog hier geschlossen.
+     */
+    function detachCompose() {
+        var form = hook('form-compose');
+        if (!form || !state.compose) {
+            return;
+        }
+        var key = String(Date.now().toString(36)) + Math.random().toString(36).slice(2, 10);
+        var snapshot = composeSnapshot(form);
+        var channel = composeChannelOpen();
+        var stored = false;
+        try {
+            var json = JSON.stringify(snapshot);
+            if (json.length <= COMPOSE_HANDOFF_STORAGE_MAX) {
+                window.localStorage.setItem(COMPOSE_HANDOFF_KEY + key, json);
+                stored = true;
+            }
+        } catch (e) {
+            stored = false;
+        }
+        if (!channel && !stored) {
+            toast('Der Entwurf ist zu groß für die Übergabe an einen neuen Tab. Bitte zuerst als Entwurf speichern.', 'error');
+            return;
+        }
+        var opened = window.open('/office/orvanta?modul=mail&verfassen=' + encodeURIComponent(key), '_blank');
+        if (!opened) {
+            try { window.localStorage.removeItem(COMPOSE_HANDOFF_KEY + key); } catch (e) { /* ignorieren */ }
+            toast('Der neue Tab konnte nicht geöffnet werden (Popup-Blocker?).', 'error');
+            return;
+        }
+        var buttons = $$('button', form);
+        buttons.forEach(function (b) { b.disabled = true; });
+        setStatus('Nachricht wird in neuen Tab verschoben …');
+        composeHandoffs[key] = {
+            snapshot: snapshot,
+            timer: window.setTimeout(function () {
+                if (!composeHandoffs[key]) {
+                    return;
+                }
+                delete composeHandoffs[key];
+                buttons.forEach(function (b) { b.disabled = false; });
+                setStatus('');
+                toast('Der neue Tab hat den Entwurf nicht übernommen. Die Nachricht bleibt hier geöffnet.', 'error');
+            }, 20000),
+            done: function () {
+                window.clearTimeout(composeHandoffs[key].timer);
+                delete composeHandoffs[key];
+                try { window.localStorage.removeItem(COMPOSE_HANDOFF_KEY + key); } catch (e) { /* ignorieren */ }
+                buttons.forEach(function (b) { b.disabled = false; });
+                setStatus('');
+                state.compose = null;
+                closeDialog('compose');
+                toast('Die Nachricht wird im neuen Tab bearbeitet.', 'info');
+            }
+        };
+        // Ohne Channel kann der neue Tab keinen Empfang melden: Uebergabe per
+        // localStorage gilt mit dem Loeschen des Eintrags als abgeschlossen.
+        if (!channel && stored) {
+            window.addEventListener('storage', function onStorage(event) {
+                if (event.key === COMPOSE_HANDOFF_KEY + key && event.newValue === null && composeHandoffs[key]) {
+                    window.removeEventListener('storage', onStorage);
+                    composeHandoffs[key].done();
+                }
+            });
+        }
+    }
+
+    function onComposeChannelMessage(event) {
+        var data = event.data || {};
+        var key = data.key || '';
+        if (data.type === 'request' && composeHandoffs[key]) {
+            composeChannel.postMessage({ type: 'payload', key: key, snapshot: composeHandoffs[key].snapshot });
+        } else if (data.type === 'received' && composeHandoffs[key]) {
+            composeHandoffs[key].done();
+        } else if (data.type === 'payload' && state.standalone && state.standalone.key === key && !state.standalone.received) {
+            state.standalone.received = true;
+            window.clearTimeout(state.standalone.timer);
+            composeChannel.postMessage({ type: 'received', key: key });
+            restoreCompose(data.snapshot);
+        }
+    }
+
+    /**
+     * Neuer Tab: Zustand aus localStorage oder ueber den Channel uebernehmen.
+     */
+    function startStandaloneCompose(key) {
+        state.standalone = { key: key, received: false, timer: null };
+        root.classList.add('ov--compose-standalone');
+        var dialog = $('[data-ov-dialog="compose"]');
+        if (dialog) {
+            dialog.addEventListener('close', function () {
+                finishStandaloneCompose();
+            });
+        }
+        window.addEventListener('beforeunload', function (event) {
+            if (state.standalone && state.compose && dialog && dialog.open) {
+                event.preventDefault();
+                event.returnValue = '';
+            }
+        });
+        var json = null;
+        try {
+            json = window.localStorage.getItem(COMPOSE_HANDOFF_KEY + key);
+            if (json !== null) {
+                window.localStorage.removeItem(COMPOSE_HANDOFF_KEY + key);
+            }
+        } catch (e) {
+            json = null;
+        }
+        if (json !== null) {
+            state.standalone.received = true;
+            try {
+                restoreCompose(JSON.parse(json));
+            } catch (e) {
+                json = null;
+                state.standalone.received = false;
+            }
+        }
+        var channel = composeChannelOpen();
+        if (json !== null) {
+            if (channel) {
+                channel.postMessage({ type: 'received', key: key });
+            }
+            return;
+        }
+        if (!channel) {
+            showStandaloneDone('Der Entwurf konnte nicht übernommen werden. Bitte im ursprünglichen Tab weiterarbeiten.');
+            return;
+        }
+        channel.postMessage({ type: 'request', key: key });
+        state.standalone.timer = window.setTimeout(function () {
+            if (!state.standalone.received) {
+                showStandaloneDone('Der Entwurf konnte nicht übernommen werden. Bitte im ursprünglichen Tab weiterarbeiten.');
+            }
+        }, 8000);
+    }
+
+    function showStandaloneDone(message) {
+        var done = hook('standalone-done');
+        var text = hook('standalone-done-text');
+        if (text && message) {
+            text.textContent = message;
+        }
+        if (done) {
+            done.hidden = false;
+        }
+    }
+
+    /**
+     * Nach Senden/Verwerfen im eigenen Tab: Tab schliessen, sonst Hinweis.
+     */
+    function finishStandaloneCompose() {
+        state.compose = null;
+        window.setTimeout(function () {
+            window.close();
+            showStandaloneDone('Dieses Fenster kann geschlossen werden.');
+        }, 150);
     }
 
     function applyFormat(command, value) {
@@ -2805,6 +3068,7 @@
             case 'cache-clear': clearCache(); break;
             case 'send': sendCompose(hook('form-compose'), false); break;
             case 'save-draft': sendCompose(hook('form-compose'), true); break;
+            case 'compose-detach': detachCompose(); break;
             case 'snooze-all': {
                 var minutes = snoozeMinutes();
                 Promise.all(dialogReminderIds().map(function (id) { return snoozeReminder(id, minutes); })).then(function () { closeDialog('reminder'); });
@@ -3766,6 +4030,12 @@
         }
         state.module = '';
         switchModule(module);
+        // Verfassen in eigenem Tab: Zustand vom urspruenglichen Tab uebernehmen.
+        var handoff = params.get('verfassen') || '';
+        if (handoff !== '') {
+            startStandaloneCompose(handoff);
+            return;
+        }
         // Deep-Link aus den Kopfzeilen-Mitteilungen: Termin direkt oeffnen.
         var eventId = params.get('termin') || '';
         if (module === 'calendar' && eventId !== '') {

@@ -118,7 +118,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 
 | Methode | Pfad | Controller | Zweck |
 | --- | --- | --- | --- |
-| GET | `/office/orvanta[?modul=…&termin=…]` | `OrvantaController::index` | App |
+| GET | `/office/orvanta[?modul=…&termin=…&verfassen=…]` | `OrvantaController::index` | App (`verfassen=<key>`: Verfassen-Dialog in eigenem Tab, Abschnitt 9.1) |
 | GET | `/office/orvanta/anhang/oeffnen?token=` | `openAttachment` | Anhang öffnen (Session + Token, `uid` muss passen) |
 | GET | `/office/orvanta/anhang/datei?token=` | `attachmentFile` | Rohdatei für den DocumentServer (**nur Token**, keine Session) |
 | GET | `/api/orvanta/status` | `status` | Benutzer, Demo, Host, Zwischenspeicher, Serverzeit |
@@ -487,6 +487,19 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
     (mit Cc/Bcc und Anhängen; Exchange hängt Zitat und Bezug an);
   - neue Nachricht oder gespeicherter Entwurf → `mail/senden`.
   Im Ordner „Entwürfe“ bietet die Nachrichtenansicht „Entwurf bearbeiten“.
+- Verfassen in eigenem Tab: `detachCompose()` (Schaltfläche
+  `data-ov-action="compose-detach"`) erstellt mit `composeSnapshot()` den
+  vollständigen Zustand (Felder, Editor-HTML, Anhänge inkl. Base64, `mode`,
+  `replyTo`, `draftId`, `changeKey`, Titel) und öffnet
+  `/office/orvanta?modul=mail&verfassen=<key>`. Übergabe: bis 1,5 MB JSON
+  zusätzlich in `localStorage` (`orvanta.compose.handoff.<key>`), sonst nur
+  über `BroadcastChannel('orvanta-compose')` (`request` → `payload` →
+  `received`). Der Ursprungs-Tab schließt den Dialog erst nach bestätigtem
+  Empfang (Timeout 20 s, sonst bleibt die Nachricht dort geöffnet). Der neue
+  Tab (`startStandaloneCompose()`, Klasse `ov--compose-standalone`, kein
+  Erinnerungs-Polling) stellt den Zustand mit `restoreCompose()` wieder her;
+  Senden/Verwerfen schließt den Tab (`finishStandaloneCompose()`), ein
+  `beforeunload`-Hinweis schützt ungesendete Inhalte.
 - Mail-Anzeige: `body.innerHTML = inlineStylesToCssom(message.body_html)`,
   danach `data-ov-style` → `node.style.cssText`; Links erhalten
   `target=_blank` und `rel="noopener noreferrer nofollow"`.

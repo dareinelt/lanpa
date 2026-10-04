@@ -161,3 +161,19 @@ Runner::test('Meldung über 255 Zeichen wird abgelehnt', static function (): voi
     Assert::same(255, mb_strlen((string) $rows[0]['alarm_text']));
     Assert::contains('255', (string) $rows[0]['message']);
 });
+
+Runner::test('Notfallplan-SMS an einzelne Rufnummern wird je Rufnummer ausgelöst und protokolliert', static function (): void {
+    $pdo = alarmServicePdo();
+    $service = alarmServiceInstance($pdo);
+
+    // Gateway ist nicht konfiguriert – jede Rufnummer wird einzeln als Fehler protokolliert.
+    $result = $service->triggerEmergency(['title' => 'Haustechnik', 'alarm_text' => 'Gasaustritt', 'alarm_group_number' => '0171 1, 0171 2',
+        'alarm_group_description' => 'Einzelne Rufnummern', 'alarm_group_type' => 'number', 'numbers' => ['0171 1', '0171 2']]);
+
+    Assert::same('error', $result['status']);
+    Assert::contains('2 von 2', $result['message']);
+    $rows = $pdo->query('SELECT group_number, mode, alarm_text FROM alarm_log ORDER BY id')->fetchAll();
+    Assert::same(['0171 1', '0171 2'], array_map(static fn (array $row) => (string) $row['group_number'], $rows));
+    Assert::same(['number', 'number'], array_map(static fn (array $row) => (string) $row['mode'], $rows));
+    Assert::same('Gasaustritt', (string) $rows[1]['alarm_text']);
+});

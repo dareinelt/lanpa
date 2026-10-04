@@ -93,12 +93,31 @@
         const initial = JSON.parse(editor.querySelector('[data-ep-initial]').value);
         const alarms = JSON.parse(editor.querySelector('[data-ep-alarms]').value);
         let definition = initial.definition;
+        // Ältere Pläne kennen die Felder für SMS an einzelne Rufnummern noch nicht.
+        definition.nodes.forEach(n => { n.sms_mode ||= 'template'; n.sms_numbers ||= []; n.sms_text ??= ''; });
         let selected = definition.nodes[0]?.id;
         let dirty = false;
         let zoom = 1;
         let filter = '';
         let issues = null; // null = noch nicht geprüft
         let planPanelPinned = !definition.nodes.length;
+        // SMS an einzelne Rufnummern – Grenzen und Textbausteine synchron zu App\Services\EmergencyPlanSms halten.
+        const SMS_MAX_LENGTH = 255;
+        const SMS_MAX_NUMBERS = 20;
+        const PHONE_PATTERN = /^[0-9+*#/\-\s()]{2,64}$/;
+        const SMS_PLACEHOLDERS = [
+            ['{Notfallplan}', 'Name des Notfallplans'],
+            ['{Datum}', 'Ausgelöst am (Datum)'],
+            ['{Uhrzeit}', 'Ausgelöst um (Uhrzeit)'],
+            ['{Schritt}', 'Titel des Schritts'],
+        ];
+        const fillPlaceholders = (text, node, date, time) => {
+            const values = { Notfallplan: definition.title.trim(), Datum: date, Uhrzeit: time, Schritt: node.title.trim() };
+            return text.replace(/\{(Notfallplan|Datum|Uhrzeit|Schritt)\}/g, (match, key) => values[key]);
+        };
+        // Datum (10) und Uhrzeit (5 Zeichen) haben feste Längen; die Zählung entspricht der Serverprüfung.
+        const smsLength = node => [...fillPlaceholders(node.sms_text.trim(), node, '00.00.0000', '00:00')].length;
+        let smsRefresh = null;
         const $ = selector => editor.querySelector(selector);
         const $$ = selector => [...editor.querySelectorAll(selector)];
         const fields = $('[data-ep-fields]');
@@ -205,6 +224,7 @@
             dirty = true; message.textContent = 'Ungespeicherte Änderungen.';
             $('[data-ep-dirty-flag]').hidden = false;
             setText('[data-ep-doc-title]', definition.title || 'Neuer Notfallplan');
+            if (smsRefresh) smsRefresh();
             if (issues !== null) validate(false);
             previewVersion++;
             clearTimeout(previewTimer);
@@ -224,8 +244,17 @@
                 if (!n.title.trim()) found.push({ level: 'error', node: n.id, text: `${name}: Titel fehlt.` });
                 if (n.type === 'checklist' && !n.checks.length) found.push({ level: 'error', node: n.id, text: `${name}: Checkliste braucht mindestens einen Prüfpunkt.` });
                 if (n.checks.length > 20) found.push({ level: 'error', node: n.id, text: `${name}: höchstens 20 Prüfpunkte.` });
-                if (n.type === 'sms' && !(Number(n.alarm_id) > 0)) found.push({ level: 'error', node: n.id, text: `${name}: SMS-Alarmvorlage wählen.` });
-                if (n.type === 'sms' && Number(n.alarm_id) > 0 && !alarms.some(a => a.id === Number(n.alarm_id))) found.push({ level: 'error', node: n.id, text: `${name}: gewählte SMS-Vorlage ist nicht mehr aktiv.` });
+                if (n.type === 'sms' && n.sms_mode !== 'numbers' && !(Number(n.alarm_id) > 0)) found.push({ level: 'error', node: n.id, text: `${name}: SMS-Alarmvorlage wählen.` });
+                if (n.type === 'sms' && n.sms_mode !== 'numbers' && Number(n.alarm_id) > 0 && !alarms.some(a => a.id === Number(n.alarm_id))) found.push({ level: 'error', node: n.id, text: `${name}: gewählte SMS-Vorlage ist nicht mehr aktiv.` });
+                if (n.type === 'sms' && n.sms_mode === 'numbers') {
+                    if (!n.sms_numbers.length) found.push({ level: 'error', node: n.id, text: `${name}: mindestens eine Rufnummer eintragen.` });
+                    if (n.sms_numbers.length > SMS_MAX_NUMBERS) found.push({ level: 'error', node: n.id, text: `${name}: höchstens ${SMS_MAX_NUMBERS} Rufnummern.` });
+                    const invalid = n.sms_numbers.filter(number => !PHONE_PATTERN.test(number));
+                    if (invalid.length) found.push({ level: 'error', node: n.id, text: `${name}: ungültige Rufnummer ${invalid.join(', ')}.` });
+                    if (!n.sms_text.trim()) found.push({ level: 'error', node: n.id, text: `${name}: SMS-Text fehlt.` });
+                    const length = smsLength(n);
+                    if (length > SMS_MAX_LENGTH) found.push({ level: 'error', node: n.id, text: `${name}: SMS-Text ist mit Textbausteinen ${length} Zeichen lang (höchstens ${SMS_MAX_LENGTH}).` });
+                }
                 if (n.link && !/^https?:\/\/\S+$/i.test(n.link)) found.push({ level: 'error', node: n.id, text: `${name}: Link muss mit http:// oder https:// beginnen.` });
                 if (!Number.isInteger(n.minutes) || n.minutes < 0 || n.minutes > 10080) found.push({ level: 'error', node: n.id, text: `${name}: Zielzeit muss zwischen 0 und 10080 Minuten liegen.` });
                 if (n.dependencies.length > 80) found.push({ level: 'error', node: n.id, text: `${name}: zu viele Voraussetzungen.` });
@@ -348,7 +377,7 @@
         });
 
         // ---- Schritte ----
-        const makeNode = type => ({ id: 'n' + crypto.randomUUID().replaceAll('-', ''), type, title: '', text: '', owner: '', phone: '', link: '', minutes: 0, checks: type === 'checklist' ? ['Prüfpunkt'] : [], dependencies: [], join: 'all', alarm_id: 0 });
+        const makeNode = type => ({ id: 'n' + crypto.randomUUID().replaceAll('-', ''), type, title: '', text: '', owner: '', phone: '', link: '', minutes: 0, checks: type === 'checklist' ? ['Prüfpunkt'] : [], dependencies: [], join: 'all', alarm_id: 0, sms_mode: 'template', sms_numbers: [], sms_text: '' });
         const current = () => definition.nodes.find(n => n.id === selected);
         function select(id) { selected = id; render(); }
         function showPlanPanel() { planPanelPinned = true; render(); title.focus(); }
@@ -557,6 +586,7 @@
             ['[data-ep-duplicate]', '[data-ep-delete]', '[data-ep-move]', '[data-ep-link-previous]', '[data-ep-unlink-all]', '[data-ep-join]'].forEach(s => $$(s).forEach(b => { b.disabled = !hasNode; }));
             $$('[data-ep-join]').forEach(b => b.setAttribute('aria-pressed', String(!!current() && current().join === b.dataset.epJoin)));
             fields.replaceChildren();
+            smsRefresh = null;
             if (!node) return;
             const index = definition.nodes.indexOf(node);
             const head = element('p', undefined, 'ep-inspector-type');
@@ -575,6 +605,17 @@
                 label.append(input); fields.append(label);
             }
             if (node.type === 'sms') {
+                const modeWrap = element('div', undefined, 'ep-join ep-sms-mode');
+                modeWrap.append(element('span', 'Empfänger der SMS:'));
+                const modeSeg = element('div', undefined, 'ep-segment'); modeSeg.setAttribute('role', 'radiogroup'); modeSeg.setAttribute('aria-label', 'Empfänger der SMS');
+                [['template', 'Alarmvorlage (Gruppe)'], ['numbers', 'Einzelne Rufnummern']].forEach(([value, text]) => {
+                    const b = element('button', text); b.type = 'button'; b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(node.sms_mode === value));
+                    b.addEventListener('click', () => { if (node.sms_mode === value) return; snapshot(); node.sms_mode = value; mark(); render(); });
+                    modeSeg.append(b);
+                });
+                modeWrap.append(modeSeg); fields.append(modeWrap);
+            }
+            if (node.type === 'sms' && node.sms_mode !== 'numbers') {
                 const label = element('label', 'Bestehende SMS-Alarmvorlage');
                 const selectAlarm = element('select');
                 const placeholder = element('option', 'Bitte wählen'); placeholder.value = '0'; selectAlarm.append(placeholder);
@@ -588,6 +629,52 @@
                 selectAlarm.addEventListener('change', () => { snapshot(); node.alarm_id = Number(selectAlarm.value); mark(); show(); });
                 show(); label.append(selectAlarm); fields.append(label, preview);
                 fields.append(element('p', 'Ziel und Nachricht werden beim Speichern in den Plan kopiert. Im Einsatz ist für diese SMS eine eigene Bestätigung nötig.', 'ep-hint'));
+            }
+            if (node.type === 'sms' && node.sms_mode === 'numbers') {
+                const numbersLabel = element('label', `Rufnummern (eine pro Zeile, höchstens ${SMS_MAX_NUMBERS})`);
+                const numbers = element('textarea'); numbers.rows = 3; numbers.value = node.sms_numbers.join('\n');
+                numbers.placeholder = '+49 171 1234567'; numbers.setAttribute('inputmode', 'tel'); numbers.setAttribute('autocomplete', 'off');
+                numbers.addEventListener('input', () => { snapshot(node.id + ':sms_numbers'); node.sms_numbers = numbers.value.split('\n').map(s => s.trim()).filter(Boolean); mark(); });
+                numbersLabel.append(numbers, element('small', 'Erlaubt: Ziffern, +, *, #, /, -, Leerzeichen und Klammern. Jede Rufnummer erhält eine eigene SMS.', 'ep-hint'));
+                fields.append(numbersLabel);
+
+                const textLabel = element('label', 'SMS-Text');
+                const text = element('textarea', undefined, 'ep-sms-text'); text.rows = 4; text.maxLength = SMS_MAX_LENGTH; text.value = node.sms_text;
+                const counterId = 'ep-sms-counter-' + node.id;
+                text.setAttribute('aria-describedby', counterId);
+                textLabel.append(text); fields.append(textLabel);
+
+                const counter = element('p', '', 'ep-sms-counter'); counter.id = counterId; counter.setAttribute('aria-live', 'polite');
+                const blocks = element('div', undefined, 'ep-sms-blocks'); blocks.setAttribute('role', 'group'); blocks.setAttribute('aria-label', 'Textbausteine einfügen');
+                blocks.append(element('span', 'Textbausteine:'));
+                SMS_PLACEHOLDERS.forEach(([token, label]) => {
+                    const b = button(label, () => {
+                        if (text.value.length + token.length > SMS_MAX_LENGTH) { message.textContent = `Textbaustein passt nicht mehr: höchstens ${SMS_MAX_LENGTH} Zeichen.`; text.focus(); return; }
+                        snapshot();
+                        const start = text.selectionStart ?? text.value.length;
+                        text.setRangeText(token, start, text.selectionEnd ?? start, 'end');
+                        node.sms_text = text.value; text.focus(); mark();
+                    }, 'button button--ghost ep-sms-block');
+                    b.title = `Fügt ${token} an der Cursorposition ein`;
+                    blocks.append(b);
+                });
+                const sample = element('p', '', 'ep-sms');
+                fields.append(counter, blocks, sample);
+                fields.append(element('p', 'Textbausteine werden beim Auslösen des Ereignisses ersetzt; Datum (TT.MM.JJJJ) und Uhrzeit (HH:MM) in Ortszeit. Der Zähler berücksichtigt die eingesetzten Werte. Im Einsatz ist für diese SMS eine eigene Bestätigung nötig.', 'ep-hint'));
+
+                smsRefresh = () => {
+                    const length = smsLength(node);
+                    const over = length > SMS_MAX_LENGTH;
+                    counter.textContent = `${length}/${SMS_MAX_LENGTH} Zeichen${node.sms_text !== fillPlaceholders(node.sms_text, node, '', '') ? ' (inkl. Textbausteine)' : ''}${over ? ' – zu lang' : ''}`;
+                    counter.classList.toggle('is-over', over);
+                    text.setAttribute('aria-invalid', String(over));
+                    const now = new Date();
+                    const pad = v => String(v).padStart(2, '0');
+                    const filled = fillPlaceholders(node.sms_text.trim(), node, `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()}`, `${pad(now.getHours())}:${pad(now.getMinutes())}`);
+                    sample.textContent = filled ? `Beispiel an ${node.sms_numbers.length || 'keine'} Rufnummer${node.sms_numbers.length === 1 ? '' : 'n'}: ${filled}` : 'Noch kein SMS-Text eingetragen.';
+                };
+                text.addEventListener('input', () => { snapshot(node.id + ':sms_text'); node.sms_text = text.value; mark(); });
+                smsRefresh();
             }
 
             // Voraussetzungen: Checkbox je vorherigem Schritt, Bedingung bei Entscheidungen, UND/ODER als Schalter.
@@ -938,7 +1025,7 @@
                 return;
             }
             if (data.version === version) return;
-            const nextStructure = JSON.stringify(data.definition.nodes.map(node => [node.id, node.type, node.dependencies, node.join, node.checks, node.alarm_id]));
+            const nextStructure = JSON.stringify(data.definition.nodes.map(node => [node.id, node.type, node.dependencies, node.join, node.checks, node.alarm_id, node.sms_mode || 'template', node.sms_numbers || []]));
             definition = data.definition;
             version = data.version;
             if (structure && nextStructure !== structure) {

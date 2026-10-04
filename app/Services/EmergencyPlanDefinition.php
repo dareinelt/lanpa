@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\ValidationException;
+use App\Support\Validator;
 
 final class EmergencyPlanDefinition
 {
@@ -66,19 +67,37 @@ final class EmergencyPlanDefinition
             if ($minutes === false || $minutes < 0 || $minutes > 10080) {
                 self::fail('Zielzeit: 0 bis 10080 Minuten ab Ereignisstart.');
             }
+            $smsMode = $type === 'sms' ? ($node['sms_mode'] ?? EmergencyPlanSms::MODE_TEMPLATE) : EmergencyPlanSms::MODE_TEMPLATE;
+            if (!in_array($smsMode, [EmergencyPlanSms::MODE_TEMPLATE, EmergencyPlanSms::MODE_NUMBERS], true)) {
+                self::fail('Ungültige SMS-Empfängerart.');
+            }
+            $numbersMode = $type === 'sms' && $smsMode === EmergencyPlanSms::MODE_NUMBERS;
             $alarmId = filter_var($node['alarm_id'] ?? 0, FILTER_VALIDATE_INT);
-            if ($alarmId === false || $alarmId < 0 || (!$preview && $type === 'sms' && $alarmId === 0)) {
+            if ($alarmId === false || $alarmId < 0 || (!$preview && $type === 'sms' && !$numbersMode && $alarmId === 0)) {
                 self::fail('Bitte eine SMS-Alarmvorlage auswählen.');
+            }
+            $nodeTitle = self::text($node['title'] ?? '', 190, 'Elementtitel', !$preview);
+            $smsNumbers = [];
+            $smsText = '';
+            if ($numbersMode) {
+                $smsNumbers = self::phoneNumbers($node['sms_numbers'] ?? [], $preview);
+                $smsText = self::text($node['sms_text'] ?? '', EmergencyPlanSms::MAX_LENGTH, 'SMS-Text', !$preview);
+                $length = EmergencyPlanSms::length($smsText, $title, $nodeTitle);
+                if ($length > EmergencyPlanSms::MAX_LENGTH) {
+                    self::fail('SMS-Text „' . $nodeTitle . '“: nach Einsetzen der Textbausteine ' . $length
+                        . ' Zeichen, erlaubt sind höchstens ' . EmergencyPlanSms::MAX_LENGTH . '.');
+                }
             }
             $result[] = [
                 'id' => $id, 'type' => $type,
-                'title' => self::text($node['title'] ?? '', 190, 'Elementtitel', !$preview),
+                'title' => $nodeTitle,
                 'text' => self::text($node['text'] ?? '', 4000, 'Anweisung'),
                 'owner' => self::text($node['owner'] ?? '', 190, 'Zuständigkeit'),
                 'phone' => self::text($node['phone'] ?? '', 100, 'Telefon'),
                 'link' => $link, 'minutes' => $minutes, 'checks' => $checks,
                 'dependencies' => array_map(static fn ($edge) => ['id' => $edge['id'], 'when' => $edge['when']], $dependencies),
-                'join' => $join, 'alarm_id' => $type === 'sms' ? $alarmId : 0,
+                'join' => $join, 'alarm_id' => $type === 'sms' && !$numbersMode ? $alarmId : 0,
+                'sms_mode' => $smsMode, 'sms_numbers' => $smsNumbers, 'sms_text' => $smsText,
             ];
             $seen[$id] = $type;
         }
@@ -117,6 +136,31 @@ final class EmergencyPlanDefinition
         }
 
         return trim($value);
+    }
+
+    /** @return list<string> bereinigte, eindeutige Rufnummern */
+    private static function phoneNumbers(mixed $numbers, bool $preview): array
+    {
+        if (!is_array($numbers) || !array_is_list($numbers)) {
+            self::fail('Ungültige Rufnummern.');
+        }
+        $result = [];
+        foreach ($numbers as $number) {
+            $number = self::text($number, 64, 'Rufnummer');
+            if ($number === '') {
+                continue;
+            }
+            if (!Validator::isPhoneNumber($number) || preg_match('/[\t\r\n]/', $number) === 1) {
+                self::fail('Ungültige Rufnummer „' . $number . '“. Erlaubt sind Ziffern, +, *, #, /, -, Leerzeichen und Klammern.');
+            }
+            $result[$number] = $number;
+        }
+        $result = array_values($result);
+        if ((!$preview && $result === []) || count($result) > EmergencyPlanSms::MAX_NUMBERS) {
+            self::fail('SMS an einzelne Rufnummern: bitte 1 bis ' . EmergencyPlanSms::MAX_NUMBERS . ' Rufnummern angeben.');
+        }
+
+        return $result;
     }
 
     private static function fail(string $message): never

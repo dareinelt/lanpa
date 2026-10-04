@@ -72,6 +72,7 @@ Abweichungen gilt der Code.
 | `public/assets/css/emergency-plan.css` | Office-Layout (`.ep-office`-Grid, `.ep-titlebar`, `.ep-ribbon`/`.ep-rg`/`.ep-rb`, `.ep-workspace3`, `.ep-palette`, `.ep-canvas`, `.ep-inspector`, `.ep-statusbar`, `.ep-dialog`), SVG-Knotenfarben (`.ep-graph-node--<typ>/<status>/--error/--hint`), Dark-Theme, Responsive-Umbrüche (1200 px / 900 px / 650 px). |
 | `app/Controllers/EmergencyPlanController.php` | `access()` (Rollen-/Akteursermittlung), `edit()`, `save()`, `preview()`, `previewRender()`, `review()`, `exportPlans()`, `importPlans()` sowie die Benutzer-/Ereignisaktionen. |
 | `app/Services/EmergencyPlanDefinition.php` | Reine Funktionen: `validate()` (Schema + Graphregeln), `readiness()` (Freigabe-/Wartezustand je Element), `text()` (Textprüfung). Konstanten `TYPES`, `STATUSES`. |
+| `app/Services/EmergencyPlanSms.php` | SMS an einzelne Rufnummern: Konstanten (`MAX_LENGTH`, `MAX_NUMBERS`, `PLACEHOLDERS`), `length()`, `render()`, `alarm()` (eingebettete Versanddaten), `resolve()` (Bausteine im Ereignis-Snapshot ersetzen). Versand je Rufnummer: `AlarmService::triggerEmergency()`. |
 | `app/Services/EmergencyPlanService.php` | `save()`, `prepare()` (Validierung + SMS-Vorlage einbetten), `alarmOptions()` (aktive Alarmkacheln für das Dropdown), `exportPlans()`, `importPlans()`, `matchAlarm()`. |
 | `app/Repositories/EmergencyPlanRepository.php` | `plan()`, `plans()`, `publishedPlan()`, `savePlan()`, `importPlans()`, `submit()`, `review()`, `withdraw()`, `reviews()`, `reviewLog()`; Transaktionen und `assertChanged()` (HTTP 409). |
 | `app/Services/EmergencyPlanPreview.php` | Baut aus Entwurf + simulierten Aktionen ein flüchtiges Ereignis (ohne Repository, ohne Versand). |
@@ -170,7 +171,10 @@ zwischen lokalem Konto und SSO kein „zweites Augenpaar“.
 | `node.checks` | Liste ≤ 20 Texte (je Pflicht, ≤ 300); bei `checklist` mind. 1 |
 | `node.dependencies` | Liste ≤ 80 von `{id, when}`; `id` muss ein **vorheriges** Element sein, keine Duplikate; `when` ∈ `always`, `yes`, `no` – `yes`/`no` nur, wenn der Vorgänger eine `decision` ist |
 | `node.join` | `all` (UND, Standard) oder `any` (ODER) |
-| `node.alarm_id` | Ganzzahl ≥ 0; bei `sms` Pflicht (> 0), bei anderen Typen auf `0` normalisiert |
+| `node.alarm_id` | Ganzzahl ≥ 0; bei `sms` mit `sms_mode = template` Pflicht (> 0), sonst auf `0` normalisiert |
+| `node.sms_mode` | nur `sms`: `template` (Alarmvorlage, Standard – auch für alte Pläne ohne Feld) oder `numbers` (einzelne Rufnummern); andere Typen → `template` |
+| `node.sms_numbers` | nur bei `numbers`: Liste 1–20 Rufnummern (`Validator::isPhoneNumber`, ≤ 64, getrimmt, Leerzeilen verworfen, entdoppelt); sonst `[]` |
+| `node.sms_text` | nur bei `numbers`: Pflicht, ≤ 255; zusätzlich ≤ 255 **nach Einsetzen der Textbausteine** (`EmergencyPlanSms::length()`: `{Notfallplan}` = Plantitel, `{Schritt}` = Elementtitel, `{Datum}` = 10, `{Uhrzeit}` = 5 Zeichen); sonst `''` |
 
 Alle Texte: Steuerzeichen außer Tab/LF/CR verboten, Werte werden getrimmt.
 Unbekannte Felder werden von `validate()` verworfen (Whitelist-Ausgabe).
@@ -181,7 +185,14 @@ Unbekannte Felder werden von `validate()` verworfen (Whitelist-Ausgabe).
   Kopie der Alarmvorlage (`title`, `alarm_text`, `alarm_group_number`,
   `alarm_group_description`, `alarm_group_type`). Wird bei jedem Speichern neu
   aus der Navigation kopiert; der Editor sendet das Feld ggf. mit, es wird
-  verworfen und neu erzeugt.
+  verworfen und neu erzeugt. Bei `sms_mode = numbers` erzeugt
+  `EmergencyPlanSms::alarm()` das Feld aus dem Element (`alarm_text` = Rohtext mit
+  Textbausteinen, `alarm_group_number` = Rufnummern kommagetrennt,
+  `alarm_group_type = number`, zusätzlich `numbers` und `placeholders = true`).
+  `EmergencyPlanRepository::start()` ersetzt die Textbausteine einmalig im
+  Ereignis-Snapshot (`EmergencyPlanSms::resolve()`, Zeitpunkt = `started_at` in
+  `APP_TIMEZONE`) und entfernt `placeholders`; Entwurf und veröffentlichte
+  Fassung behalten die Bausteine.
 - `publication` – nur in `published_definition`: `authors`, `approved_by`,
   `approved_at`, `revision` (`EmergencyPlanRepository::review()`).
 
@@ -286,14 +297,16 @@ Diagramm und Inspector komplett neu; Texteingaben rufen nur `refreshGraph()`
 | Auswählen | Klick/Enter/Leertaste auf SVG-Knoten oder Listeneintrag | `select(id)` → `render()`; Listeneintrag erhält `aria-current`; Diagramm scrollt den Knoten in den sichtbaren Bereich. |
 | Felder bearbeiten | Eigenschaften-Bereich | `inputField()` für Titel/Frage, Anweisung, Zuständigkeit, Telefon, Informationslink, Zielzeit (`type=number`, 0–10080). `maxLength` entspricht den Servergrenzen. Laienfreundliche Beschriftungen („Schritt“, „Voraussetzung“, „Zielzeit“). |
 | Prüfpunkte | Textarea (nur `checklist`) | Eine Zeile = ein Punkt; Zeilen werden getrimmt, Leerzeilen verworfen. Grenze 20 prüft erst der Server. |
-| SMS-Vorlage | Dropdown (nur `sms`) | Optionen aus `alarmOptions()` (aktive Navigationselemente vom Typ `alarm`); Anzeige „An <Ziel>: <Text>“. Hinweis: Daten werden beim Speichern kopiert, im Einsatz separat bestätigt. |
+| SMS-Empfänger | Segment-Schalter „Alarmvorlage (Gruppe)“ / „Einzelne Rufnummern“ (nur `sms`) | setzt `node.sms_mode`; Wechsel ist ein Journal-Schritt und rendert den Inspector neu. |
+| SMS-Vorlage | Dropdown (nur `sms`, Modus `template`) | Optionen aus `alarmOptions()` (aktive Navigationselemente vom Typ `alarm`); Anzeige „An <Ziel>: <Text>“. Hinweis: Daten werden beim Speichern kopiert, im Einsatz separat bestätigt. |
+| SMS an einzelne Rufnummern | Textarea Rufnummern (eine pro Zeile), Textarea SMS-Text (`maxLength` 255) mit Zähler `x/255` (`.ep-sms-counter`, `is-over` bei Überschreitung), Textbaustein-Schaltflächen und Beispielvorschau (nur Modus `numbers`) | Bausteine (`SMS_PLACEHOLDERS`, synchron zu `EmergencyPlanSms::PLACEHOLDERS`) werden per `setRangeText` an der Cursorposition eingefügt. Der Zähler nutzt `smsLength()` (gleiche Regel wie der Server) und wird über `smsRefresh` aus `mark()` aktualisiert, damit auch Änderungen am Plan- oder Schritttitel sofort zählen. |
 | Voraussetzungen | Fieldset „Voraussetzungen (vorherige Schritte)“ | Checkbox je **vorherigem** Schritt; Bedingung `Erledigt` bzw. bei Entscheidungen `Antwort Ja`/`Antwort Nein`. Klartext-Zusammenfassung („Startet, sobald ALLE/MINDESTENS EINE der Voraussetzungen erledigt ist: …“). Erster Schritt: „Startpunkt: keine Voraussetzungen.“ |
 | Verknüpfung UND/ODER | Segment-Schalter „Alle (UND)“ / „Eine genügt (ODER)“ (Inspector und Menüband „Ablauf“) | `node.join` = `all` / `any`; Schalter erscheint nur bei ≥ 2 Voraussetzungen. |
 | Reihenfolge | „Nach oben“ / „Nach unten“ | `move(±1)` tauscht Nachbarn und verweigert den Tausch, wenn danach eine Kante auf einen späteren Schritt zeigen würde („Verschieben würde eine Verbindung umkehren…“). |
 | Duplizieren | Button | `structuredClone` direkt dahinter, neue ID, Titel + „ (Kopie)“; Voraussetzungen werden übernommen, Nachfolger nicht. Max. 80. |
 | Löschen | Button mit `confirm`, Taste `Entf` bei fokussiertem Diagramm | Entfernt Schritt **und alle Kanten darauf**; Nachfolger ohne weitere Voraussetzungen werden Startpunkte. |
 | Rückgängig / Wiederholen | Schnellzugriff, Menüband, `Strg+Z` / `Strg+Y` (`Strg+Umschalt+Z`) | `undo()`/`redo()` stellen den Schnappschuss aus `journal` wieder her, setzen `dirty` und rendern neu. Betrifft nur den Entwurf im Browser, nie den Serverstand. |
-| Plan prüfen | Menüband „Prüfen“, Statusleiste | `validate()` – **Komfortprüfung im Browser**, Server bleibt maßgeblich (siehe 6). Fehler: leerer Plantitel, leerer Schritttitel, Checkliste ohne Prüfpunkt, SMS ohne Vorlage, ungültiger Link. Hinweise: Schritt ohne Voraussetzung (außer dem ersten), Entscheidung ohne Folgeschritt. Betroffene Schritte werden in Liste (Badge) und Diagramm (`--error`/`--hint`) markiert; Klick auf einen Eintrag wählt den Schritt. |
+| Plan prüfen | Menüband „Prüfen“, Statusleiste | `validate()` – **Komfortprüfung im Browser**, Server bleibt maßgeblich (siehe 6). Fehler: leerer Plantitel, leerer Schritttitel, Checkliste ohne Prüfpunkt, SMS ohne Vorlage, SMS an einzelne Rufnummern ohne/mit ungültiger/zu vielen Rufnummern, ohne Text oder über 255 Zeichen, ungültiger Link. Hinweise: Schritt ohne Voraussetzung (außer dem ersten), Entscheidung ohne Folgeschritt. Betroffene Schritte werden in Liste (Badge) und Diagramm (`--error`/`--hint`) markiert; Klick auf einen Eintrag wählt den Schritt. |
 | Suchen / Filtern | Feld im Menüband „Ablauf & Verbindungen“ | Filtert die Schrittliste und dimmt nicht passende Knoten (`is-dimmed`); gesucht wird in Titel, Anweisung und Zuständigkeit. |
 | Zoom / Pan | Overlay im Diagramm, Menüband „Ansicht“, `Strg++`/`Strg+-`/`Strg+0`, Strg + Mausrad, Ziehen mit der Maus | `setZoom(f)` skaliert die SVG-Breite/-Höhe relativ zur `viewBox` (0,3–2,5); `fitZoom()` passt an die Fläche an (beim Laden), `centerSelected()` scrollt zum gewählten Knoten. |
 | Beispielvorlagen | „Beispiel Brandfall/MANV“ (Menüband „Start“) | Ersetzt den gesamten Entwurf (Rückfrage, falls nicht leer) durch eine lineare Kette; Kante nach einer Entscheidung ist `yes`. Beschreibung kennzeichnet „BEISPIEL – … fachlich freigeben“. |
@@ -333,10 +346,10 @@ einer einzigen Prüfung („`isset($seen[$edge['id']])`“) ausgeschlossen.
 
 Mit `$preview = true` (nur Live-Vorschau) sind gelockert: leerer Plantitel,
 leere Elementliste, leere Elementtitel, Checkliste ohne Prüfpunkte, SMS ohne
-Vorlage. Alle übrigen Regeln (Längen, IDs, Graph, Links, Zielzeit) gelten
+Vorlage bzw. ohne Rufnummern/Text. Alle übrigen Regeln (Längen, IDs, Graph, Links, Zielzeit) gelten
 unverändert – ungültige Zwischenstände erscheinen als Fehlermeldung in der Vorschau.
 
-`EmergencyPlanService::prepare()` prüft zusätzlich jede SMS-Vorlage: muss
+`EmergencyPlanService::prepare()` prüft zusätzlich jede SMS-Vorlage (nur Modus `template`): muss
 existieren, Typ `alarm`, aktiv, Text nicht leer und ≤ 255 Zeichen,
 Zielrufnummer nicht leer, `alarm_group_type` ∈ `group|number`.
 
@@ -422,7 +435,7 @@ Zustandsautomat von `review_state` (alle Übergänge transaktional mit
   SMS-Vorlagen aus `alarmOptions()` ein und spielt `operations` (≤ 200) über
   `EmergencyPlanRuntime::change()` nach. SMS werden als „SIMULATION“ markiert.
   Kein Repository, kein Versand, keine Kennwortprüfung.
-- „Strukturänderung“ = Änderung an `[id, type, dependencies, join, checks, alarm_id]`
+- „Strukturänderung“ = Änderung an `[id, type, dependencies, join, checks, alarm_id, sms_mode, sms_numbers]`
   irgendeines Elements → Simulation wird zurückgesetzt; reine Textänderungen
   behalten den Fortschritt.
 - Rendering ist versions- und epochengesichert (`version`, `epoch`), entprellt
@@ -464,6 +477,8 @@ Ja/Nein-Zweig braucht `join = any`, sonst entfällt er, sobald ein Zweig entfäl
    **nie** verändert.
 7. SMS-Daten werden beim Speichern aus der Vorlage **kopiert**; spätere
    Vorlagenänderungen wirken erst nach erneutem Speichern + Freigabe.
+   Textbausteine werden ausschließlich beim Ereignisstart ersetzt (nie im Entwurf
+   oder in `published_definition`).
 8. Vorschau ist **nebenwirkungsfrei**: kein Repository-Zugriff, kein Versand,
    gleiche Zustandsregeln wie Einsatz (`EmergencyPlanRuntime`).
 9. Ausgaben im DOM ausschließlich über `textContent`/`Html::e()`; das Diagramm

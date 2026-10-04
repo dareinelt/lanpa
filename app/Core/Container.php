@@ -295,7 +295,7 @@ final class Container
 
                 return ['emails' => array_values($emails), 'missing' => $missing];
             },
-            static fn (array $alarm) => self::alarm()->triggerDefinition($alarm),
+            static fn (array $alarm) => self::alarm()->triggerEmergency($alarm),
             (string) Config::get('app.url', '')
         ));
     }

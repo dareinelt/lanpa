@@ -207,6 +207,12 @@ body[data-page="emergency_plan"] .table th, body[data-page="emergency_plan"] .ta
 .ep-segment button { border: none; background: transparent; color: var(--ep-accent); font: inherit; font-size: .82rem; font-weight: 600; padding: .35rem .7rem; cursor: pointer; }
 .ep-segment button + button { border-left: 1px solid var(--ep-accent); }
 .ep-segment button[aria-checked="true"] { background: var(--ep-accent); color: #fff; }
+.ep-sms-mode { margin-bottom: .75rem; }
+.ep-sms-counter { margin: .2rem 0 .4rem; font-size: .8rem; font-variant-numeric: tabular-nums; text-align: right; color: var(--color-muted, #5b6b7c); }
+.ep-sms-counter.is-over { font-weight: 700; color: #b42318; }
+[data-theme="dark"] .ep-sms-counter.is-over { color: #ffad9f; }
+.ep-sms-blocks { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; font-size: .8rem; font-weight: 600; }
+.ep-sms-blocks .ep-sms-block { min-height: 30px; padding: .2rem .5rem; font-size: .78rem; }
 .ep-inspector__actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: 1rem; }
 .ep-inspector__actions .button { min-height: 36px; padding: .35rem .7rem; font-size: .85rem; }
 .ep-issues { margin: 0 0 .9rem; border: 1px solid var(--ep-line); border-radius: .45rem; background: var(--color-background); }

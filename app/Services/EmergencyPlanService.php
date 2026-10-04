@@ -197,6 +197,10 @@ final class EmergencyPlanService
                 if (!is_array($node) || ($node['type'] ?? null) !== 'sms') {
                     continue;
                 }
+                if (($node['sms_mode'] ?? null) === EmergencyPlanSms::MODE_NUMBERS) {
+                    unset($node['alarm']);
+                    continue;
+                }
                 $match = self::matchAlarm(is_array($node['alarm'] ?? null) ? $node['alarm'] : [], $alarms);
                 if (is_string($match)) {
                     $missing[$match] = true;
@@ -252,12 +256,16 @@ final class EmergencyPlanService
         throw new ValidationException(['import' => $message]);
     }
 
-    /** Prüft die Definition und hängt die aktuellen Daten der SMS-Alarmvorlagen an. */
+    /** Prüft die Definition und hängt die Versanddaten der SMS-Elemente an (Vorlage kopiert bzw. einzelne Rufnummern). */
     private function prepare(array $input): array
     {
         $definition = EmergencyPlanDefinition::validate($input);
         foreach ($definition['nodes'] as &$node) {
             if ($node['type'] !== 'sms') {
+                continue;
+            }
+            if ($node['sms_mode'] === EmergencyPlanSms::MODE_NUMBERS) {
+                $node['alarm'] = EmergencyPlanSms::alarm($node);
                 continue;
             }
             $alarm = $this->navigation->find($node['alarm_id']);

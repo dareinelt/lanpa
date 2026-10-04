@@ -15,7 +15,6 @@
         if (text !== undefined) node.textContent = text;
         return node;
     };
-    let diagramCount = 0;
     // decorate(node, group, index) ergänzt im Editor Markierungen (Prüfhinweise, Suchfilter) ohne das Layout zu ändern.
     function diagram(container, definition, selected, onSelect, progress, decorate) {
         container.replaceChildren();
@@ -57,28 +56,44 @@
             });
         }
         const svg = svgElement('svg', { viewBox: `0 0 ${width} ${height}`, width, height, role: 'group', 'aria-label': 'Ablaufdiagramm: Elemente auswählen' });
-        const markerId = 'ep-arrow-' + (++diagramCount);
-        const defs = svgElement('defs', {});
-        const marker = svgElement('marker', { id: markerId, markerWidth: 8, markerHeight: 8, refX: 7, refY: 4, orient: 'auto' });
-        marker.append(svgElement('path', { d: 'M0,0 L8,4 L0,8 Z', class: 'ep-arrow' }));
-        defs.append(marker);
-        svg.append(defs);
+        // Kanten werden nach den Knoten eingefügt (Vordergrund), damit man ihnen durchgehend folgen kann.
+        const edgeLayer = svgElement('g', { class: 'ep-edges', 'aria-hidden': 'true' });
+        const NODE_W = 240, NODE_H = 92, ARROW_LEN = 10, ARROW_HALF = 6, GAP = 2 * ARROW_LEN + 4;
         nodes.forEach(node => node.dependencies.forEach(edge => {
             const from = positions[edge.id], to = positions[node.id];
             if (!from) return;
-            let sx = from.x + 120, sy = from.y + 92, tx = to.x + 120, ty = to.y, d;
-            if (ty < sy + 10 && Math.abs(to.x - from.x) >= 260) {
-                // Manuelles Layout: Ziel liegt daneben oder höher – seitlich verbinden.
-                const dir = to.x > from.x ? 1 : -1;
-                sx = from.x + (dir > 0 ? 240 : 0); sy = from.y + 46; tx = to.x + (dir > 0 ? 0 : 240); ty = to.y + 46;
-                const bend = Math.max(28, Math.abs(tx - sx) / 2);
-                d = `M${sx},${sy} C${sx + dir * bend},${sy} ${tx - dir * bend},${ty} ${tx},${ty}`;
+            // Anschlüsse: Startpunkt + Austrittsrichtung, Pfeilspitze + Eintrittsrichtung (immer achsenparallel).
+            let start, out, tip, dir;
+            if (to.y >= from.y + NODE_H + GAP) {
+                start = { x: from.x + NODE_W / 2, y: from.y + NODE_H }; out = { x: 0, y: 1 };
+                tip = { x: to.x + NODE_W / 2, y: to.y }; dir = { x: 0, y: 1 };
+            } else if (to.y + NODE_H + GAP <= from.y) {
+                start = { x: from.x + NODE_W / 2, y: from.y }; out = { x: 0, y: -1 };
+                tip = { x: to.x + NODE_W / 2, y: to.y + NODE_H }; dir = { x: 0, y: -1 };
+            } else if (to.x >= from.x + NODE_W + GAP || to.x + NODE_W + GAP <= from.x) {
+                const s = to.x > from.x ? 1 : -1;
+                start = { x: from.x + (s > 0 ? NODE_W : 0), y: from.y + NODE_H / 2 }; out = { x: s, y: 0 };
+                tip = { x: to.x + (s > 0 ? 0 : NODE_W), y: to.y + NODE_H / 2 }; dir = { x: s, y: 0 };
             } else {
-                const bend = Math.max(28, (sy - ty) / 2 + 28);
-                d = `M${sx},${sy} C${sx},${sy + bend} ${tx},${ty - bend} ${tx},${ty}`;
+                // Knoten überlappen: von unten um die Quelle herum auf die Oberkante des Ziels.
+                start = { x: from.x + NODE_W / 2, y: from.y + NODE_H }; out = { x: 0, y: 1 };
+                tip = { x: to.x + NODE_W / 2, y: to.y }; dir = { x: 0, y: 1 };
             }
-            svg.append(svgElement('path', { d, class: 'ep-edge', 'marker-end': `url(#${markerId})` }));
-            if (edge.when !== 'always') svg.append(svgElement('text', { x: (sx + tx) / 2 + 8, y: (sy + ty) / 2, class: 'ep-edge-label' }, edge.when === 'yes' ? 'Ja' : 'Nein'));
+            // Die Linie endet exakt mittig an der Basis der Pfeilspitze und läuft dort in Pfeilrichtung ein.
+            const end = { x: tip.x - dir.x * ARROW_LEN, y: tip.y - dir.y * ARROW_LEN };
+            const span = Math.hypot(end.x - start.x, end.y - start.y);
+            const bend = Math.max(28, span / 2);
+            const c1 = { x: start.x + out.x * bend, y: start.y + out.y * bend };
+            const c2 = { x: end.x - dir.x * bend, y: end.y - dir.y * bend };
+            const d = `M${start.x},${start.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${end.x},${end.y}`;
+            edgeLayer.append(svgElement('path', { d, class: 'ep-edge' }));
+            const px = -dir.y * ARROW_HALF, py = dir.x * ARROW_HALF;
+            edgeLayer.append(svgElement('path', { d: `M${tip.x},${tip.y} L${end.x + px},${end.y + py} L${end.x - px},${end.y - py} Z`, class: 'ep-arrow' }));
+            if (edge.when !== 'always') {
+                // Beschriftung am Kurvenmittelpunkt (t = 0,5).
+                const mx = (start.x + 3 * c1.x + 3 * c2.x + end.x) / 8, my = (start.y + 3 * c1.y + 3 * c2.y + end.y) / 8;
+                edgeLayer.append(svgElement('text', { x: mx + 8, y: my, class: 'ep-edge-label' }, edge.when === 'yes' ? 'Ja' : 'Nein'));
+            }
         }));
         nodes.forEach((node, i) => {
             const p = positions[node.id];
@@ -101,6 +116,7 @@
             if (decorate) decorate(node, group, i);
             svg.append(group);
         });
+        svg.append(edgeLayer);
         container.append(svg);
     }
 

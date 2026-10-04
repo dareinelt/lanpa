@@ -339,11 +339,15 @@ Diagramm und Inspector komplett neu; Texteingaben rufen nur `refreshGraph()`
   ersten Vorgänger bzw. oben links und weichen belegten Plätzen nach rechts
   aus. SVG-Größe = größte Ausdehnung + Rand. Die Positionen sind reines
   Layout und beeinflussen Reihenfolge und Ablauf nicht.
-- **Kanten**: kubische Bézierkurve von Knotenunterkante zu Oberkante (im
-  manuellen Layout: liegt das Ziel daneben oder höher, seitlich von Kante zu
-  Kante, sonst entsprechend weiter ausgebogen) mit
-  Pfeil-Marker (eindeutige ID `ep-arrow-N` je Diagramm); `yes`/`no` erhalten
-  ein Label „Ja“/„Nein“.
+- **Kanten**: kubische Bézierkurve mit achsenparallelen Anschlüssen je nach
+  Lage des Ziels: darunter Unterkante → Oberkante, darüber Oberkante →
+  Unterkante, sonst seitlich von Kante zu Kante. Die Pfeilspitze ist ein
+  eigenes Dreieck (`.ep-arrow`, kein SVG-Marker); die Linie endet exakt
+  mittig an seiner Basis und läuft dort in Pfeilrichtung ein, sodass Pfeile
+  nie verzerrt wirken. Alle Kanten liegen in einer Gruppe `.ep-edges`
+  (`pointer-events: none`) **über** den Knoten, damit sie durchgehend
+  sichtbar bleiben; `yes`/`no` erhalten ein Label „Ja“/„Nein“ am
+  Kurvenmittelpunkt.
 - **Knoten**: `<g role="button" tabindex="0">` mit `aria-label` „N. Titel“;
   Zeile 1 „N · Typ“, Zeilen 2–3 Titel (je 28 Zeichen, danach „…“),
   Zeile 4 im Editor die Zuständigkeit, mit `progress` der Status

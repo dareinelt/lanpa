@@ -264,6 +264,7 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
         <span><span data-ep-count>0 / 80</span> Schritte</span>
         <button type="button" class="ep-statusbar__issues" data-ep-validate><span data-ep-issue-count>Noch nicht geprüft</span></button>
         <span class="ep-statusbar__grow" data-ep-message role="status" aria-live="polite">Noch keine Änderungen.</span>
+        <span class="ep-statusbar__credit">Notfallplan-Editor by Daniel-André Reinelt</span>
         <span data-ep-preview-status role="status" aria-live="polite" class="ep-statusbar__preview">Vorschau nicht verbunden</span>
         <span>Zoom <span data-ep-zoom-level>100 %</span></span>
     </footer>
@@ -293,7 +294,7 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
                 <?php } else { ?><p>Sie haben an diesem Entwurf mitgewirkt oder ihn eingereicht. Ein anderes, unbeteiligtes KAEP-Mitglied oder ein unbeteiligter Administrator muss prüfen.</p><?php } ?>
             <?php } else { ?><p><?= $plan['id'] > 0 ? 'Der Entwurf wurde bereits freigegeben.' : 'Zuerst einen Entwurf speichern.' ?></p><?php } ?>
             <?php if ((int) $plan['published'] === 1) { ?>
-                <form action="<?= $base ?>/freigabe" method="post" data-ep-review-form data-confirm="Veröffentlichten Plan sofort zurückziehen? Erneutes Veröffentlichen benötigt eine neue zweite Freigabe.">
+                <form action="<?= $base ?>/freigabe" method="post" data-ep-review-form data-ep-confirm="Veröffentlichten Plan sofort zurückziehen? Erneutes Veröffentlichen benötigt eine neue zweite Freigabe.">
                     <?= Csrf::field() ?><input type="hidden" name="id" value="<?= (int) $plan['id'] ?>"><input type="hidden" name="revision" value="<?= (int) $plan['revision'] ?>"><input type="hidden" name="action" value="withdraw">
                     <button class="button button--danger">Veröffentlichung zurückziehen</button>
                 </form>
@@ -311,7 +312,7 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
             <h3>Schritte anlegen</h3>
             <p>Im Reiter <strong>Start</strong> oder in der linken Spalte auf einen Baustein klicken – der neue Schritt wird ans Ende gesetzt und automatisch mit dem letzten Schritt verbunden. Bausteine lassen sich auch in das Diagramm ziehen.</p>
             <h3>Schritte bearbeiten</h3>
-            <p>Einen Schritt im Diagramm oder in der Liste anklicken. Rechts unter <strong>Eigenschaften</strong> Titel, Anweisung, Zuständigkeit, Telefon, Link und Zielzeit ausfüllen. Checklisten erhalten Prüfpunkte, SMS-Schritte eine bestehende Alarmvorlage.</p>
+            <p>Einen Schritt im Diagramm oder in der Liste anklicken. Rechts unter <strong>Eigenschaften</strong> Titel, Anweisung, Zuständigkeit, Telefon, Link und Zielzeit ausfüllen. Checklisten erhalten Prüfpunkte, SMS-Schritte eine bestehende Alarmvorlage. Ein <strong>Rechtsklick</strong> auf einen Schritt im Diagramm öffnet ein Menü mit <em>Duplizieren, Kopieren, Einfügen, Rückgängig</em> und <em>Löschen</em>. Eingefügt wird hinter dem markierten Schritt – auch in einen anderen Plan.</p>
             <h3>Verbindungen (Voraussetzungen)</h3>
             <p>Ein Schritt startet, wenn seine Voraussetzungen erfüllt sind. Rechts lassen sich vorherige Schritte als Voraussetzung anhaken; bei Entscheidungen zusätzlich die Antwort <em>Ja</em> oder <em>Nein</em>. <strong>UND</strong> = alle Voraussetzungen müssen erledigt sein, <strong>ODER</strong> = eine genügt (führt Ja/Nein-Zweige wieder zusammen). Verbindungen zeigen immer von oben nach unten; die Reihenfolge ändern Sie mit <em>Nach oben/unten</em>.</p>
             <h3>Prüfen, speichern, freigeben</h3>
@@ -323,6 +324,7 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
                 <li><kbd>Strg</kbd>+<kbd>S</kbd> Speichern · <kbd>Strg</kbd>+<kbd>Z</kbd> Rückgängig · <kbd>Strg</kbd>+<kbd>Y</kbd> Wiederholen</li>
                 <li><kbd>Strg</kbd>+<kbd>+</kbd> / <kbd>−</kbd> / <kbd>0</kbd> Zoom · <kbd>Alt</kbd>+<kbd>Umschalt</kbd>+<kbd>V</kbd> Live-Vorschau</li>
                 <li><kbd>Entf</kbd> löscht den markierten Schritt (wenn das Diagramm den Fokus hat) · <kbd>Esc</kbd> schließt Dialoge</li>
+                <li>Im Diagramm: <kbd>Strg</kbd>+<kbd>D</kbd> Duplizieren · <kbd>Strg</kbd>+<kbd>C</kbd> Kopieren · <kbd>Strg</kbd>+<kbd>V</kbd> Einfügen · <kbd>Umschalt</kbd>+<kbd>F10</kbd> Kontextmenü</li>
             </ul>
             <p class="ep-hint">Beispielvorlagen (Brandfall, MANV) sind nur Ausgangspunkte und müssen fachlich geprüft werden.</p>
         </div>

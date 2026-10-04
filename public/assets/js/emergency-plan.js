@@ -110,6 +110,37 @@
         const previewStatus = $('[data-ep-preview-status]');
         const setText = (selector, text) => $$(selector).forEach(node => { node.textContent = text; });
 
+        // ---- Meldungen als Overlay (ersetzt window.confirm/alert; Hintergrund wird abgedunkelt) ----
+        // cancel: null = reine Hinweismeldung mit nur einer Schaltfläche. Ergebnis: true = bestätigt.
+        function overlay({ heading, text, confirm = 'OK', cancel = 'Abbrechen', danger = false }) {
+            return new Promise(resolve => {
+                const dialog = element('dialog', undefined, 'ep-dialog ep-alert' + (danger ? ' ep-alert--danger' : ''));
+                dialog.setAttribute('role', cancel === null ? 'alertdialog' : 'dialog');
+                const id = 'ep-alert-' + crypto.randomUUID();
+                dialog.setAttribute('aria-labelledby', id + '-h'); dialog.setAttribute('aria-describedby', id + '-t');
+                const h = element('h2', heading, 'ep-alert__heading'); h.id = id + '-h';
+                const p = element('p', text, 'ep-alert__text'); p.id = id + '-t';
+                const actions = element('div', undefined, 'ep-alert__actions');
+                const ok = element('button', confirm, 'button ' + (danger ? 'button--danger' : 'button--primary')); ok.type = 'button';
+                actions.append(ok);
+                let result = false;
+                if (cancel !== null) {
+                    const no = element('button', cancel, 'button button--ghost'); no.type = 'button';
+                    no.addEventListener('click', () => dialog.close());
+                    actions.append(no);
+                }
+                ok.addEventListener('click', () => { result = true; dialog.close(); });
+                dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+                dialog.addEventListener('close', () => { dialog.remove(); resolve(result); });
+                dialog.append(h, p, actions);
+                editor.append(dialog);
+                dialog.showModal();
+                ok.focus();
+            });
+        }
+        // Hinweis in der Statusleiste und zusätzlich als Overlay, damit er nicht übersehen wird.
+        const notify = (text, heading = 'Hinweis') => { message.textContent = text; return overlay({ heading, text, cancel: null }); };
+
         // ---- Live-Vorschau (BroadcastChannel ep-preview-<uuid>, siehe Referenz Abschnitt 9) ----
         let previewChannel = null;
         let previewVersion = 0;
@@ -251,6 +282,7 @@
         function refreshGraph() {
             const marks = issueMap();
             diagram(diagramHost, definition, selected, id => { planPanelPinned = false; select(id); }, null, (node, group) => {
+                group.dataset.epNode = node.id;
                 if (marks.has(node.id)) group.classList.add('ep-graph-node--' + marks.get(node.id));
                 if (!matchesFilter(node)) group.classList.add('is-dimmed');
             });
@@ -322,7 +354,7 @@
         function showPlanPanel() { planPanelPinned = true; render(); title.focus(); }
         $('[data-ep-show-plan]').addEventListener('click', showPlanPanel);
         function addNode(type) {
-            if (definition.nodes.length >= 80) { message.textContent = 'Maximal 80 Schritte je Plan.'; return; }
+            if (definition.nodes.length >= 80) { notify('Maximal 80 Schritte je Plan.'); return; }
             snapshot();
             const node = makeNode(type);
             if (definition.nodes.length && $('[data-ep-autolink]').checked) node.dependencies = [{ id: definition.nodes.at(-1).id, when: 'always' }];
@@ -338,20 +370,48 @@
             [copy[index], copy[target]] = [copy[target], copy[index]];
             const seen = new Set();
             const valid = copy.every(n => { const ok = n.dependencies.every(e => seen.has(e.id)); seen.add(n.id); return ok; });
-            if (!valid) { message.textContent = 'Verschieben würde eine Verbindung umkehren. Zuerst die betreffenden Voraussetzungen anpassen.'; return; }
+            if (!valid) { notify('Verschieben würde eine Verbindung umkehren. Zuerst die betreffenden Voraussetzungen anpassen.', 'Verschieben nicht möglich'); return; }
             snapshot(); definition.nodes = copy; mark(); render();
         }
         $$('[data-ep-move]').forEach(b => b.addEventListener('click', () => move(Number(b.dataset.epMove))));
         function duplicate() {
             const node = current(); if (!node) return;
-            if (definition.nodes.length >= 80) { message.textContent = 'Maximal 80 Schritte je Plan.'; return; }
+            if (definition.nodes.length >= 80) { notify('Maximal 80 Schritte je Plan.'); return; }
             snapshot();
             const copy = structuredClone(node); copy.id = makeNode(node.type).id; copy.title = (copy.title + ' (Kopie)').slice(0, 190);
             definition.nodes.splice(definition.nodes.indexOf(node) + 1, 0, copy); selected = copy.id; mark(); render();
         }
-        function remove() {
+        // Zwischenablage: im Speicher und – sofern erlaubt – im localStorage, damit auch zwischen Plänen in anderen Tabs eingefügt werden kann.
+        let clipboard = null;
+        const readClipboard = () => {
+            try { const stored = JSON.parse(localStorage.getItem('ep-clipboard') || 'null'); if (stored && types[stored.type]) return stored; } catch { /* nicht verfügbar */ }
+            return clipboard;
+        };
+        function copyNode() {
             const node = current(); if (!node) return;
-            if (!window.confirm('Schritt und alle zugehörigen Verbindungen löschen? Nachfolger können dadurch zu Startpunkten werden.')) return;
+            clipboard = structuredClone(node);
+            try { localStorage.setItem('ep-clipboard', JSON.stringify(clipboard)); } catch { /* nur im Speicher */ }
+            message.textContent = `Schritt „${node.title || types[node.type]}“ kopiert.`;
+        }
+        function pasteNode() {
+            const source = readClipboard();
+            if (!source) { notify('Die Zwischenablage ist leer. Zuerst einen Schritt kopieren.'); return; }
+            if (definition.nodes.length >= 80) { notify('Maximal 80 Schritte je Plan.'); return; }
+            snapshot();
+            const node = Object.assign(makeNode(source.type), structuredClone(source));
+            node.id = makeNode(source.type).id;
+            const anchor = current();
+            const index = anchor ? definition.nodes.indexOf(anchor) + 1 : definition.nodes.length;
+            // Nur Voraussetzungen behalten, die in diesem Plan vor der Einfügestelle liegen.
+            const before = new Map(definition.nodes.slice(0, index).map(n => [n.id, n]));
+            node.dependencies = (node.dependencies || []).filter(e => before.has(e.id) && (e.when === 'always' || before.get(e.id).type === 'decision'));
+            definition.nodes.splice(index, 0, node); selected = node.id; planPanelPinned = false; mark(); render(); centerSelected();
+            message.textContent = 'Schritt eingefügt.';
+        }
+        async function remove() {
+            const node = current(); if (!node) return;
+            const ok = await overlay({ heading: 'Schritt löschen?', text: 'Schritt und alle zugehörigen Verbindungen löschen? Nachfolger können dadurch zu Startpunkten werden.', confirm: 'Löschen', danger: true });
+            if (!ok || !definition.nodes.includes(node)) return;
             snapshot();
             const index = definition.nodes.indexOf(node);
             definition.nodes = definition.nodes.filter(n => n.id !== node.id);
@@ -360,11 +420,73 @@
         }
         $('[data-ep-duplicate]').addEventListener('click', duplicate);
         $('[data-ep-delete]').addEventListener('click', remove);
+
+        // ---- Kontextmenü (Rechtsklick, Kontextmenü-Taste oder Umschalt+F10 auf einem Schritt im Diagramm) ----
+        let contextMenu = null;
+        const focusSelected = () => diagramHost.querySelector('.ep-graph-node.is-selected')?.focus({ preventScroll: true });
+        function closeContextMenu(restoreFocus) {
+            if (!contextMenu) return;
+            contextMenu.remove(); contextMenu = null;
+            if (restoreFocus) focusSelected();
+        }
+        function openContextMenu(x, y) {
+            closeContextMenu(false);
+            const full = definition.nodes.length >= 80;
+            const entries = [
+                ['Duplizieren', 'Strg+D', duplicate, full],
+                ['Kopieren', 'Strg+C', copyNode, false],
+                ['Einfügen', 'Strg+V', pasteNode, full || !readClipboard()],
+                ['Rückgängig', 'Strg+Z', undo, !journal.undo.length],
+                ['Löschen', 'Entf', remove, false, true],
+            ];
+            const menu = element('div', undefined, 'ep-context-menu');
+            menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Schritt bearbeiten');
+            entries.forEach(([label, shortcut, action, disabled, danger], i) => {
+                if (danger) menu.append(element('div', undefined, 'ep-context-menu__sep'));
+                const item = element('button', undefined, 'ep-context-menu__item' + (danger ? ' ep-context-menu__item--danger' : ''));
+                item.type = 'button'; item.setAttribute('role', 'menuitem'); item.tabIndex = -1; item.disabled = disabled;
+                item.append(element('span', label), element('kbd', shortcut));
+                item.addEventListener('click', () => { closeContextMenu(true); action(); });
+                menu.append(item);
+            });
+            menu.addEventListener('keydown', event => {
+                const items = [...menu.querySelectorAll('button:not(:disabled)')];
+                const index = items.indexOf(document.activeElement);
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+                } else if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); items.at(event.key === 'Home' ? 0 : -1)?.focus(); }
+                else if (event.key === 'Escape' || event.key === 'Tab') { event.preventDefault(); closeContextMenu(true); }
+                event.stopPropagation();
+            });
+            editor.append(menu); contextMenu = menu;
+            const { width, height } = menu.getBoundingClientRect();
+            menu.style.left = Math.max(4, Math.min(x, window.innerWidth - width - 4)) + 'px';
+            menu.style.top = Math.max(4, Math.min(y, window.innerHeight - height - 4)) + 'px';
+            menu.querySelector('button:not(:disabled)')?.focus();
+        }
+        canvas.addEventListener('contextmenu', event => {
+            const group = event.target.closest('.ep-graph-node');
+            if (!group) return;
+            event.preventDefault();
+            const id = group.dataset.epNode;
+            if (selected !== id || planPanelPinned) { planPanelPinned = false; select(id); }
+            let { clientX: x, clientY: y } = event;
+            if (!x && !y) { // per Tastatur ausgelöst: am Schritt öffnen
+                const rect = diagramHost.querySelector('.ep-graph-node.is-selected rect')?.getBoundingClientRect();
+                if (rect) { x = rect.left + 12; y = rect.bottom - 6; }
+            }
+            openContextMenu(x, y);
+        });
+        document.addEventListener('pointerdown', event => { if (contextMenu && !contextMenu.contains(event.target)) closeContextMenu(false); }, true);
+        canvas.addEventListener('scroll', () => closeContextMenu(false));
+        window.addEventListener('resize', () => closeContextMenu(false));
+        window.addEventListener('blur', () => closeContextMenu(false));
         $('[data-ep-link-previous]').addEventListener('click', () => {
             const node = current(); const index = definition.nodes.indexOf(node);
-            if (!node || index < 1) { message.textContent = 'Der erste Schritt hat keinen Vorgänger.'; return; }
+            if (!node || index < 1) { notify('Der erste Schritt hat keinen Vorgänger.'); return; }
             const previous = definition.nodes[index - 1];
-            if (node.dependencies.some(e => e.id === previous.id)) { message.textContent = 'Der vorherige Schritt ist bereits Voraussetzung.'; return; }
+            if (node.dependencies.some(e => e.id === previous.id)) { notify('Der vorherige Schritt ist bereits Voraussetzung.'); return; }
             snapshot(); node.dependencies.push({ id: previous.id, when: 'always' }); mark(); render();
         });
         $('[data-ep-unlink-all]').addEventListener('click', () => {
@@ -528,8 +650,8 @@
         // ---- Plan-Angaben und Vorlagen ----
         title.addEventListener('input', () => { snapshot('plan:title'); definition.title = title.value; mark(); });
         description.addEventListener('input', () => { snapshot('plan:description'); definition.description = description.value; mark(); });
-        $$('[data-ep-template]').forEach(b => b.addEventListener('click', () => {
-            if (definition.nodes.length && !window.confirm('Aktuellen Entwurf durch die Beispielvorlage ersetzen? (Mit Rückgängig wiederherstellbar)')) return;
+        $$('[data-ep-template]').forEach(b => b.addEventListener('click', async () => {
+            if (definition.nodes.length && !await overlay({ heading: 'Beispielvorlage laden?', text: 'Aktuellen Entwurf durch die Beispielvorlage ersetzen? (Mit Rückgängig wiederherstellbar)', confirm: 'Ersetzen' })) return;
             snapshot();
             const fire = b.dataset.epTemplate === 'fire';
             const content = fire ? [
@@ -579,21 +701,28 @@
         $$('[data-ep-open-dialog]').forEach(b => b.addEventListener('click', () => $(`[data-ep-dialog="${b.dataset.epOpenDialog}"]`).showModal()));
         $$('[data-ep-close-dialog]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
         $$('dialog').forEach(d => d.addEventListener('click', event => { if (event.target === d) d.close(); }));
-        $('[data-ep-close]').addEventListener('click', event => {
-            if (dirty && !window.confirm('Es gibt ungespeicherte Änderungen. Editor trotzdem schließen?')) { event.preventDefault(); return; }
-            dirty = false;
+        $('[data-ep-close]').addEventListener('click', async event => {
             const fallback = event.currentTarget.href;
+            const standalone = window.opener || window.history.length <= 1;
+            if (dirty || standalone) event.preventDefault();
+            if (dirty && !await overlay({ heading: 'Editor schließen?', text: 'Es gibt ungespeicherte Änderungen. Editor trotzdem schließen?', confirm: 'Schließen', danger: true })) return;
+            dirty = false;
             // Als eigener Tab geöffnet: Tab schließen; sonst (oder falls der Browser das verweigert) zur Übersicht.
-            if (window.opener || window.history.length <= 1) { event.preventDefault(); window.close(); setTimeout(() => { location.href = fallback; }, 250); }
+            if (standalone) { window.close(); setTimeout(() => { location.href = fallback; }, 250); }
+            else if (event.defaultPrevented) location.href = fallback;
         });
 
         // ---- Freigabe-Formulare: nur für den gespeicherten Entwurf ----
-        document.querySelectorAll('[data-ep-review-form]').forEach(form => form.addEventListener('submit', event => {
+        document.querySelectorAll('[data-ep-review-form]').forEach(form => form.addEventListener('submit', async event => {
             if (dirty) {
                 event.preventDefault();
-                message.textContent = 'Bitte Änderungen zuerst speichern. Der Freigabeantrag gilt nur für den gespeicherten Entwurf.';
                 form.closest('dialog')?.close();
+                notify('Bitte Änderungen zuerst speichern. Der Freigabeantrag gilt nur für den gespeicherten Entwurf.', 'Erst speichern');
+                return;
             }
+            if (!form.dataset.epConfirm) return;
+            event.preventDefault();
+            if (await overlay({ heading: 'Bitte bestätigen', text: form.dataset.epConfirm, danger: true })) form.submit();
         }));
 
         // ---- Speichern (POST /admin/notfallplan/speichern, optimistische Sperre über revision) ----
@@ -622,7 +751,7 @@
                 const link = element('a', 'Gespeicherten Entwurf neu laden und Freigabe anfordern', 'button button--primary');
                 link.href = '/admin/notfallplan/bearbeiten?id=' + result.id;
                 panel.append(link);
-            } catch (error) { message.textContent = error.message + ' Der Entwurf bleibt hier erhalten.'; }
+            } catch (error) { notify(error.message + ' Der Entwurf bleibt hier erhalten.', 'Speichern fehlgeschlagen'); }
             finally { saving = false; controls.forEach(control => { control.disabled = false; }); updateHistoryButtons(); renderInspector(); }
         }
         $$('[data-ep-save]').forEach(b => b.addEventListener('click', save));
@@ -632,7 +761,12 @@
             const mod = event.ctrlKey || event.metaKey;
             const key = event.key.toLowerCase();
             const typing = /^(input|textarea|select)$/i.test(document.activeElement?.tagName || '');
+            if (editor.querySelector('dialog.ep-alert[open]') || contextMenu) return;
+            const onCanvas = !typing && canvas.contains(document.activeElement) && !!current();
             if (mod && key === 's') { event.preventDefault(); save(); }
+            else if (mod && !event.shiftKey && key === 'd' && onCanvas) { event.preventDefault(); duplicate(); }
+            else if (mod && !event.shiftKey && key === 'c' && onCanvas && !String(window.getSelection())) { event.preventDefault(); copyNode(); }
+            else if (mod && !event.shiftKey && key === 'v' && !typing && canvas.contains(document.activeElement)) { event.preventDefault(); pasteNode(); }
             else if (mod && !event.shiftKey && key === 'z') { if (typing) return; event.preventDefault(); undo(); }
             else if (mod && (key === 'y' || (event.shiftKey && key === 'z'))) { if (typing) return; event.preventDefault(); redo(); }
             else if (mod && (key === '+' || key === '=')) { event.preventDefault(); setZoom(zoom * 1.2); }

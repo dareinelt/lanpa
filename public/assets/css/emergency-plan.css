@@ -225,6 +225,7 @@ body[data-page="emergency_plan"] .table th, body[data-page="emergency_plan"] .ta
 .ep-statusbar > span { display: inline-flex; align-items: center; gap: .3rem; }
 .ep-statusbar .ep-icon { width: 1rem; height: 1rem; }
 .ep-statusbar__grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: block !important; }
+.ep-statusbar > .ep-statusbar__credit { flex: 1; min-width: 0; justify-content: center; align-self: stretch; padding: 0 1rem; border-left: 1px solid rgba(255, 255, 255, .55); border-right: 1px solid rgba(255, 255, 255, .55); opacity: .85; }
 .ep-statusbar__issues { border: 1px solid rgba(255, 255, 255, .5); border-radius: 999px; background: transparent; color: inherit; font: inherit; padding: .05rem .6rem; cursor: pointer; }
 .ep-statusbar__issues.has-errors { background: #ffd166; color: #3a2a00; border-color: #ffd166; font-weight: 700; }
 .ep-statusbar__preview::before { content: ''; width: .6rem; height: .6rem; border-radius: 50%; background: rgba(255, 255, 255, .45); }
@@ -233,6 +234,22 @@ body[data-page="emergency_plan"] .table th, body[data-page="emergency_plan"] .ta
 /* Dialoge */
 .ep-dialog { border: 1px solid var(--ep-line); border-radius: .7rem; padding: 0; width: min(760px, 94vw); max-height: 88vh; background: var(--color-background); color: var(--color-text); box-shadow: 0 18px 60px rgba(0, 0, 0, .3); }
 .ep-dialog::backdrop { background: rgba(10, 20, 30, .45); }
+.ep-alert { width: min(520px, 92vw); padding: 1.3rem 1.5rem 1.1rem; border-top: 4px solid var(--ep-accent); background: var(--color-background, #fff); }
+.ep-alert--danger { border-top-color: #b42318; }
+.ep-alert .button--danger { background: #b42318; color: #fff; }
+.ep-alert::backdrop { background: rgba(10, 20, 30, .35); backdrop-filter: blur(1.5px); }
+.ep-alert__heading { margin: 0 0 .5rem; font-size: 1.1rem; }
+.ep-alert__text { margin: 0 0 1.2rem; line-height: 1.5; }
+.ep-alert__actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .5rem; }
+.ep-alert__actions .button { min-width: 7rem; }
+.ep-context-menu { position: fixed; z-index: 1000; min-width: 220px; padding: .3rem; border: 1px solid var(--ep-line); border-radius: .5rem; background: var(--color-background); color: var(--color-text); box-shadow: 0 10px 30px rgba(0, 0, 0, .25); }
+.ep-context-menu__item { display: flex; justify-content: space-between; align-items: center; gap: 1.5rem; width: 100%; padding: .45rem .7rem; border: none; border-radius: .3rem; background: transparent; color: inherit; font: inherit; font-size: .88rem; text-align: left; cursor: pointer; }
+.ep-context-menu__item:hover:not(:disabled), .ep-context-menu__item:focus-visible { background: var(--ep-accent-soft); outline: none; }
+.ep-context-menu__item:disabled { opacity: .45; cursor: default; }
+.ep-context-menu__item kbd { font: inherit; font-size: .75rem; color: var(--color-muted, #5b6b7c); }
+.ep-context-menu__item--danger { color: #b42318; }
+.ep-context-menu__sep { height: 1px; margin: .3rem .2rem; background: var(--ep-line); }
+[data-theme="dark"] .ep-context-menu__item--danger { color: #ff9b8a; }
 .ep-dialog__head { display: flex; justify-content: space-between; align-items: center; padding: .7rem 1rem; background: var(--ep-accent); color: #fff; }
 .ep-dialog__head h2 { margin: 0; font-size: 1.05rem; }
 .ep-dialog .ep-review, .ep-help { padding: 1rem 1.25rem; overflow-y: auto; max-height: calc(88vh - 3.5rem); }

@@ -244,7 +244,13 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
     <!-- Dialog: E-Mail schreiben -->
     <dialog class="ov-dialog ov-dialog--wide" data-ov-dialog="compose">
         <form method="dialog" class="ov-dialog__form" data-ov-form="compose">
-            <div class="ov-dialog__head"><h2 data-ov-compose-title>Neue E-Mail</h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
+            <div class="ov-dialog__head">
+                <h2 data-ov-compose-title>Neue E-Mail</h2>
+                <div class="ov-dialog__head-actions">
+                    <button type="button" class="ov-mini ov-mini--light" data-ov-action="compose-detach" title="In neuem Tab öffnen – Text und Anhänge werden übernommen" aria-label="In neuem Tab öffnen"><?= $icon('open') ?></button>
+                    <button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button>
+                </div>
+            </div>
             <div class="ov-dialog__body">
                 <input type="hidden" name="mode" value="new"><input type="hidden" name="reply_id" value="">
                 <label class="ov-field"><span>An</span><input type="text" name="to" placeholder="name@firma.de; …" autocomplete="off" required data-ov-recipients></label>
@@ -277,6 +283,10 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
             </div>
         </form>
     </dialog>
+    <div class="ov-standalone-done" data-ov-standalone-done hidden>
+        <p data-ov-standalone-done-text>Dieses Fenster kann geschlossen werden.</p>
+        <a class="button" href="/office/orvanta?modul=mail">Zu Orvanta</a>
+    </div>
 
     <!-- Dialog: Termin -->
     <dialog class="ov-dialog" data-ov-dialog="event">

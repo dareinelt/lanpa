@@ -37,6 +37,13 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 
 ![Nachricht verfassen](screenshots/85-orvanta-verfassen.png)
 
+Der Verfassen-Dialog lässt sich über die Schaltfläche „In neuem Tab öffnen“
+(Kopfzeile des Dialogs) aus dem Overlay in einen eigenen Browser-Tab
+verschieben. Empfänger, Betreff, Priorität, bereits getippter Text und
+hochgeladene Anhänge werden vollständig übernommen; der ursprüngliche Tab
+bleibt frei für die weitere Arbeit in Orvanta, ohne die Nachricht im neuen
+Tab zu beeinflussen. Senden oder Verwerfen schließt den eigenen Tab wieder.
+
 ---
 
 ## 2. Oberfläche

@@ -300,6 +300,18 @@
 .ov-dialog__head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .65rem 1rem; background: var(--ov-accent); color: #fff; }
 .ov-dialog__head h2 { margin: 0; font-size: 1.02rem; display: flex; align-items: center; gap: .5rem; }
 .ov-dialog__head .ov-icon { width: 1.2rem; height: 1.2rem; }
+.ov-dialog__head-actions { display: flex; align-items: center; gap: .25rem; }
+
+/* Verfassen in eigenem Tab (?verfassen=): nur der Dialog, keine App dahinter */
+.ov-office.ov--compose-standalone { display: block; min-height: 100vh; background: var(--ov-bar); }
+.ov--compose-standalone .ov-titlebar, .ov--compose-standalone .ov-ribbon, .ov--compose-standalone .ov-workspace,
+.ov--compose-standalone .ov-statusbar, .ov--compose-standalone .ov-reminders { display: none !important; }
+.ov--compose-standalone [data-ov-action="compose-detach"] { display: none; }
+.ov--compose-standalone .ov-dialog--wide[data-ov-dialog="compose"] { width: min(1100px, 98vw); max-height: 96vh; margin-top: 2vh; }
+.ov--compose-standalone .ov-dialog--wide[data-ov-dialog="compose"] .ov-dialog__form { max-height: 96vh; }
+.ov--compose-standalone .ov-dialog--wide[data-ov-dialog="compose"] .ov-editor { max-height: 60vh; min-height: 320px; }
+.ov--compose-standalone .ov-dialog::backdrop { background: var(--ov-bar); }
+.ov-standalone-done { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; min-height: 60vh; padding: 2rem; text-align: center; font-size: 1.05rem; }
 .ov-dialog__body { padding: .9rem 1.1rem; overflow-y: auto; display: flex; flex-direction: column; gap: .6rem; }
 .ov-dialog__foot { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; padding: .7rem 1.1rem; border-top: 1px solid var(--ov-line); background: var(--ov-bar); }
 .ov-dialog__foot .button { display: inline-flex; align-items: center; gap: .35rem; }

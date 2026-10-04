@@ -707,3 +707,111 @@ Runner::test('Orvanta: Viewer-Konfiguration fuer Euro-Office', function (): void
     Assert::same('Bericht.docx', $config['document']['title']);
     Assert::true(isset($config['token']) && $config['token'] !== '', 'JWT fuer den DocumentServer.');
 });
+
+// ----------------------------------------------------------------------
+// Empfaenger-Vorschlaege (Telefonliste + Verlauf in Nextcloud)
+// ----------------------------------------------------------------------
+
+/**
+ * @return array{service:\App\Services\Orvanta\OrvantaRecipientService,probe:FakeOfficeProbe,session:array<string,mixed>}
+ */
+function orvantaRecipients(bool $nextcloudOk = true): array
+{
+    $pdo = orvantaPdo();
+    $pdo->exec('CREATE TABLE phonebook (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, identity_source_id INTEGER NOT NULL DEFAULT 0, external_id TEXT NOT NULL DEFAULT \'\',
+        samaccount_name TEXT NULL, display_name TEXT NOT NULL, first_name TEXT NULL, last_name TEXT NULL, title TEXT NULL,
+        phone TEXT NULL, phone_digits TEXT NULL, mobile TEXT NULL, email TEXT NULL, department TEXT NULL, ad_modified TEXT NULL,
+        synced_at TEXT NULL, active INTEGER NOT NULL DEFAULT 1, visible INTEGER NOT NULL DEFAULT 1
+    )');
+    $pdo->exec("INSERT INTO phonebook (display_name, first_name, last_name, email, department) VALUES
+        ('Anna Muster', 'Anna', 'Muster', 'anna.muster@firma.de', 'Einkauf'),
+        ('Anton Meier', 'Anton', 'Meier', 'anton.meier@firma.de', 'IT'),
+        ('Ohne Mail', 'Ohne', 'Mail', NULL, 'Lager')");
+    $repository = new OrvantaRepository($pdo);
+    $repository->saveSettings(['exchange_enabled' => '1', 'exchange_host' => 'demo']);
+    $probe = new FakeOfficeProbe();
+    $files = 'http://nextcloud/office/index.php/apps/intranet_integration/api/files';
+    $probe->responses['POST ' . $files] = $nextcloudOk
+        ? ['status' => 200, 'body' => json_encode(['ok' => true]), 'error' => null]
+        : ['status' => 500, 'body' => json_encode(['ok' => false, 'message' => 'kaputt']), 'error' => null];
+    $probe->responses['GET ' . $files] = ['status' => 404, 'body' => json_encode(['ok' => false, 'message' => 'fehlt']), 'error' => null];
+    $office = officeConfig();
+    $session = [];
+    $service = new \App\Services\Orvanta\OrvantaRecipientService(
+        new OrvantaConfigService($repository, orvantaSecrets()),
+        new NextcloudFilesService($office, $probe),
+        new \App\Repositories\PhonebookRepository($pdo),
+        static function (string $key) use (&$session): mixed { return $session[$key] ?? null; },
+        static function (string $key, mixed $value) use (&$session): void { $session[$key] = $value; }
+    );
+
+    return ['service' => $service, 'probe' => $probe, 'session' => &$session];
+}
+
+Runner::test('Orvanta: Empfaenger-Vorschlaege aus Telefonliste, Verlauf zuerst und ohne Dubletten', function (): void {
+    $parts = orvantaRecipients();
+    $service = $parts['service'];
+
+    $items = $service->suggest('u1', 'an');
+    Assert::same(['anton.meier@firma.de', 'anna.muster@firma.de'], array_column($items, 'email'), 'Telefonliste sortiert nach Nachname.');
+    Assert::same('Telefonliste', $items[0]['source']);
+    Assert::same([], $service->suggest('u1', ''));
+
+    // Versand an eine fremde Adresse und an Anna (mit Anzeigename aus dem Frontend).
+    Assert::true($service->remember('u1', [['name' => 'Extern Partner', 'email' => 'partner@extern.example'], ['name' => '', 'email' => 'Anna.Muster@firma.de'], 'ungueltig', ['email' => 'partner@extern.example']], 1000));
+    $post = array_values(array_filter($parts['probe']->requests, static fn (array $r): bool => $r['method'] === 'POST'))[0];
+    $claims = json_decode(base64_decode(strtr(explode('.', substr((string) $post['headers']['Authorization'], 7))[1], '-_', '+/')), true);
+    Assert::same('.empfaenger.json', $claims['name'], 'Versteckte Datei im Orvanta-Ordner.');
+    Assert::same('Orvanta', $claims['folder']);
+    $stored = json_decode((string) $post['body'], true);
+    Assert::same(2, count($stored['items']), 'Dubletten innerhalb eines Versands zaehlen einmal.');
+
+    $items = $service->suggest('u1', 'an');
+    Assert::same('anna.muster@firma.de', $items[0]['email'], 'Gross-/Kleinschreibung der Adresse: Telefonlisten-Eintrag wird nicht doppelt gelistet.');
+    Assert::true($items[0]['recent']);
+    Assert::same('Zuletzt verwendet', $items[0]['source']);
+    Assert::same('Anna Muster', $items[0]['display_name'], 'Name der Telefonliste bleibt, wenn der Verlauf keinen Namen hat.');
+    Assert::same(['anna.muster@firma.de', 'anton.meier@firma.de'], array_column($items, 'email'));
+
+    $items = $service->suggest('u1', 'ext');
+    Assert::same([['display_name' => 'Extern Partner', 'email' => 'partner@extern.example', 'department' => '', 'source' => 'Zuletzt verwendet', 'recent' => true]], $items);
+    Assert::same(1, count($service->suggest('u1', 'partner@ex')), 'Praefix auf die Adresse.');
+    Assert::same(1, count($service->suggest('u1', 'partner extern')), 'Mehrere Suchwoerter.');
+    Assert::same([], $service->suggest('u1', 'xyz'));
+
+    // Erneuter Versand erhoeht den Zaehler und sortiert nach Verwendung.
+    Assert::true($service->remember('u1', [['name' => 'Partner, Extern', 'email' => 'partner@extern.example']], 2000));
+    $recent = $service->recent('u1');
+    Assert::same('partner@extern.example', $recent[0]['email']);
+    Assert::same(2, $recent[0]['count']);
+    Assert::same('Partner, Extern', $recent[0]['name']);
+    Assert::same(1, count(array_filter($parts['probe']->requests, static fn (array $r): bool => $r['method'] === 'GET')), 'Nextcloud wird nur einmal gelesen, danach greift der Sitzungs-Cache.');
+});
+
+Runner::test('Orvanta: Empfaenger-Verlauf wird aus Nextcloud gelesen, Fehler werden toleriert', function (): void {
+    $parts = orvantaRecipients();
+    $files = 'http://nextcloud/office/index.php/apps/intranet_integration/api/files';
+    $parts['probe']->responses['GET ' . $files] = ['status' => 200, 'error' => null, 'body' => json_encode([
+        'format' => 'lanpa-orvanta-empfaenger', 'version' => 1,
+        'items' => [['name' => 'Bob Alt', 'email' => 'bob@alt.example', 'count' => 3, 'last_used' => 5], ['email' => 'kaputt'], 'murks'],
+    ])];
+    $items = $parts['service']->suggest('u2', 'bob');
+    Assert::same([['display_name' => 'Bob Alt', 'email' => 'bob@alt.example', 'department' => '', 'source' => 'Zuletzt verwendet', 'recent' => true]], $items);
+
+    $broken = orvantaRecipients(false)['service'];
+    Assert::false($broken->remember('u3', [['email' => 'x@y.example']]));
+    Assert::same([], $broken->recent('u3'));
+    Assert::false($broken->remember('u3', []));
+
+    // Versteckte Dateinamen sind nur als Datei, nicht als Ordner zulaessig.
+    Assert::true(NextcloudFilesService::isSafeFileName('.empfaenger.json'));
+    Assert::false(NextcloudFilesService::isSafeSegment('.empfaenger.json'));
+    Assert::false(NextcloudFilesService::isSafeFileName('.'));
+    Assert::false(NextcloudFilesService::isSafeFileName('..'));
+    Assert::false(NextcloudFilesService::isSafeFileName('.a/b'));
+    require_once BASE_PATH . '/docker/nextcloud/apps/intranet_integration/lib/Service/FileTarget.php';
+    Assert::true(\OCA\IntranetIntegration\Service\FileTarget::isSafeFileName('.empfaenger.json'));
+    Assert::false(\OCA\IntranetIntegration\Service\FileTarget::isSafeFileName('..'));
+    Assert::same(null, \OCA\IntranetIntegration\Service\FileTarget::folder('.hidden'));
+});

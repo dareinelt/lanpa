@@ -18,6 +18,14 @@ class FileTarget {
     }
 
     /**
+     * Dateiname: wie ein Segment, darf aber mit einem Punkt beginnen
+     * (versteckte Dateien, z. B. Orvantas Empfaenger-Cache).
+     */
+    public static function isSafeFileName(string $name): bool {
+        return self::isSafeSegment($name) || (str_starts_with($name, '.') && self::isSafeSegment(substr($name, 1)));
+    }
+
+    /**
      * @return list<string>|null Ordnersegmente oder null bei unzulaessigem Ziel
      */
     public static function folder(string $folder): ?array {

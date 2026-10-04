@@ -69,7 +69,7 @@ class FilesController extends Controller {
         $uid = (string) ($claims['sub'] ?? '');
         $name = (string) ($claims['name'] ?? '');
         $segments = FileTarget::folder((string) ($claims['folder'] ?? ''));
-        if (preg_match(self::UID_PATTERN, $uid) !== 1 || $segments === null || !FileTarget::isSafeSegment($name)) {
+        if (preg_match(self::UID_PATTERN, $uid) !== 1 || $segments === null || !FileTarget::isSafeFileName($name)) {
             return new JSONResponse(['ok' => false, 'message' => 'Ungueltiger Benutzer, Ordner oder Dateiname.'], Http::STATUS_BAD_REQUEST);
         }
 
@@ -179,7 +179,7 @@ class FilesController extends Controller {
         $uid = (string) ($claims['sub'] ?? '');
         $name = (string) ($claims['name'] ?? '');
         $segments = FileTarget::folder((string) ($claims['folder'] ?? ''));
-        if (preg_match(self::UID_PATTERN, $uid) !== 1 || $segments === null || !FileTarget::isSafeSegment($name)) {
+        if (preg_match(self::UID_PATTERN, $uid) !== 1 || $segments === null || !FileTarget::isSafeFileName($name)) {
             return new JSONResponse(['ok' => false, 'message' => 'Ungueltiger Benutzer, Ordner oder Dateiname.'], Http::STATUS_BAD_REQUEST);
         }
         try {

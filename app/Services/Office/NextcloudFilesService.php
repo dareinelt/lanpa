@@ -48,6 +48,16 @@ final class NextcloudFilesService
     }
 
     /**
+     * Gueltiger Dateiname: wie ein Pfadsegment, darf aber mit einem Punkt
+     * beginnen (versteckte Dateien wie Orvantas Empfaenger-Cache). Ordner
+     * bleiben auf isSafeSegment() beschraenkt.
+     */
+    public static function isSafeFileName(string $name): bool
+    {
+        return self::isSafeSegment($name) || (str_starts_with($name, '.') && self::isSafeSegment(substr($name, 1)));
+    }
+
+    /**
      * Bereinigt einen frei gewaehlten Namen zu einem sicheren Pfadsegment.
      */
     public static function segment(string $value, string $fallback): string
@@ -82,7 +92,7 @@ final class NextcloudFilesService
             return ['ok' => false, 'message' => 'Für Ihre Anmeldung ist kein Nextcloud-Konto bekannt.', 'path' => ''];
         }
         $segments = explode('/', $folder);
-        if (count($segments) > 4 || in_array(false, array_map(self::isSafeSegment(...), $segments), true) || !self::isSafeSegment($name)) {
+        if (count($segments) > 4 || in_array(false, array_map(self::isSafeSegment(...), $segments), true) || !self::isSafeFileName($name)) {
             return ['ok' => false, 'message' => 'Ungültiger Ordner- oder Dateiname.', 'path' => ''];
         }
         if ($contents === '' || strlen($contents) > self::MAX_BYTES) {
@@ -161,7 +171,7 @@ final class NextcloudFilesService
             return ['message' => 'Für Ihre Anmeldung ist kein Nextcloud-Konto bekannt.'];
         }
         $segments = explode('/', $folder);
-        if (count($segments) > 4 || in_array(false, array_map(self::isSafeSegment(...), $segments), true) || !self::isSafeSegment($name)) {
+        if (count($segments) > 4 || in_array(false, array_map(self::isSafeSegment(...), $segments), true) || !self::isSafeFileName($name)) {
             return ['message' => 'Ungültiger Ordner- oder Dateiname.'];
         }
         $infra = $this->office->infrastructure();

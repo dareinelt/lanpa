@@ -4148,11 +4148,367 @@
         });
     }
 
+    // ------------------------------------------------------------------
+    // Empfaenger-Vorschlaege aus der Telefonliste
+    // ------------------------------------------------------------------
+    // Gleicher Mechanismus wie die AD-Gruppen-Vorschlaege im Adminbereich
+    // (ARIA-Combobox mit Inline-Ergaenzung und Liste). Quellen: der lokal
+    // synchronisierte Telefonlisten-Bestand und die bereits vom Benutzer
+    // angeschriebenen Adressen (Verlauf in seiner Nextcloud), serverseitig
+    // zusammengefuehrt unter /api/orvanta/empfaenger.
+
+    var RECIPIENT_SUGGEST_URL = API + '/empfaenger';
+    var RECIPIENT_SUGGEST_DEBOUNCE_MS = 150;
+    var RECIPIENT_SUGGEST_LIMIT = 8;
+    var recipientSuggestCounter = 0;
+
+    function recipientLabel(item) {
+        var name = String(item.display_name || '').trim();
+        var email = String(item.email || '').trim();
+        // Namen mit Trennzeichen wuerden parseRecipients() zerlegen.
+        if (name === '' || name === email || /[;,<>]/.test(name)) {
+            return email;
+        }
+        return name + ' <' + email + '>';
+    }
+
+    function initRecipientSuggest(input) {
+        if (!input || input.getAttribute('data-ov-recipients-ready') === '1') {
+            return;
+        }
+        input.setAttribute('data-ov-recipients-ready', '1');
+
+        var listId = 'ov-recipients-' + (++recipientSuggestCounter);
+        var list = document.createElement('ul');
+        list.id = listId;
+        list.className = 'ov-suggest__list';
+        list.setAttribute('role', 'listbox');
+        list.setAttribute('aria-label', 'Vorgeschlagene Empfänger aus Telefonliste und Verlauf');
+        list.hidden = true;
+
+        var status = document.createElement('span');
+        status.className = 'visually-hidden';
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+
+        var control = document.createElement('span');
+        control.className = 'ov-suggest';
+        input.parentNode.insertBefore(control, input);
+        control.appendChild(input);
+        control.appendChild(list);
+        control.appendChild(status);
+
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-autocomplete', 'both');
+        input.setAttribute('aria-expanded', 'false');
+        input.setAttribute('aria-controls', listId);
+
+        var items = [];
+        var active = -1;
+        var timer = null;
+        var requestId = 0;
+        var cache = {};
+        var lastInputType = '';
+
+        // Aktuelles Token (Text zwischen den Trennzeichen um die Schreibmarke).
+        function currentToken() {
+            var value = input.value;
+            var caret = input.selectionStart === null ? value.length : input.selectionStart;
+            var start = Math.max(value.lastIndexOf(';', caret - 1), value.lastIndexOf(',', caret - 1)) + 1;
+            var ends = [value.indexOf(';', caret), value.indexOf(',', caret)].filter(function (i) { return i !== -1; });
+            var end = ends.length ? Math.min.apply(null, ends) : value.length;
+            var raw = value.slice(start, end);
+            var lead = raw.length - raw.replace(/^\s+/, '').length;
+            return {
+                start: start + lead,
+                end: end,
+                text: value.slice(start + lead, caret),
+                full: raw.trim()
+            };
+        }
+
+        function chosenEmails(exceptStart) {
+            var emails = {};
+            var offset = 0;
+            input.value.split(/[;,]/).forEach(function (part) {
+                var partStart = offset + (part.length - part.replace(/^\s+/, '').length);
+                offset += part.length + 1;
+                var parsed = parseRecipients(part)[0];
+                if (parsed && partStart !== exceptStart) {
+                    emails[parsed.email.toLowerCase()] = true;
+                }
+            });
+            return emails;
+        }
+
+        function close() {
+            list.hidden = true;
+            list.innerHTML = '';
+            items = [];
+            active = -1;
+            input.setAttribute('aria-expanded', 'false');
+            input.removeAttribute('aria-activedescendant');
+        }
+
+        function setActive(index) {
+            var options = list.querySelectorAll('[role="option"]');
+            if (options.length === 0) {
+                active = -1;
+                return;
+            }
+            active = (index + options.length) % options.length;
+            Array.prototype.forEach.call(options, function (option, i) {
+                var selected = i === active;
+                option.setAttribute('aria-selected', selected ? 'true' : 'false');
+                option.classList.toggle('is-active', selected);
+                if (selected) {
+                    input.setAttribute('aria-activedescendant', option.id);
+                    option.scrollIntoView({ block: 'nearest' });
+                }
+            });
+        }
+
+        // Die Liste liegt fest im Viewport, damit der scrollbare Dialog sie nicht abschneidet.
+        function position() {
+            var rect = input.getBoundingClientRect();
+            list.style.top = (rect.bottom + 4) + 'px';
+            list.style.left = rect.left + 'px';
+            list.style.width = rect.width + 'px';
+            list.style.maxHeight = Math.max(120, window.innerHeight - rect.bottom - 16) + 'px';
+        }
+
+        function render(found, token) {
+            var chosen = chosenEmails(token.start);
+            items = found.filter(function (item) {
+                var email = String(item.email || '').trim();
+                return email !== '' && !chosen[email.toLowerCase()];
+            });
+
+            list.innerHTML = '';
+            active = -1;
+            input.removeAttribute('aria-activedescendant');
+
+            if (items.length === 0) {
+                list.hidden = true;
+                input.setAttribute('aria-expanded', 'false');
+                status.textContent = token.text === '' ? '' : 'Kein passender Empfänger in Telefonliste oder Verlauf.';
+                return;
+            }
+
+            items.forEach(function (item, index) {
+                var option = document.createElement('li');
+                option.id = listId + '-' + index;
+                option.className = 'ov-suggest__option';
+                option.setAttribute('role', 'option');
+                option.setAttribute('aria-selected', 'false');
+
+                var name = document.createElement('span');
+                name.className = 'ov-suggest__name';
+                name.textContent = item.display_name || item.email;
+                option.appendChild(name);
+
+                if (item.recent) {
+                    option.classList.add('is-recent');
+                }
+                var meta = [item.email];
+                if (item.department) {
+                    meta.push(item.department);
+                }
+                if (item.source) {
+                    meta.push(item.source);
+                }
+                var hint = document.createElement('span');
+                hint.className = 'ov-suggest__meta';
+                hint.textContent = meta.join(' · ');
+                option.appendChild(hint);
+
+                option.addEventListener('mousedown', function (event) {
+                    event.preventDefault();
+                });
+                option.addEventListener('click', function () {
+                    choose(index);
+                });
+                list.appendChild(option);
+            });
+
+            position();
+            list.hidden = false;
+            input.setAttribute('aria-expanded', 'true');
+            status.textContent = items.length === 1 ? '1 Vorschlag verfügbar.' : items.length + ' Vorschläge verfügbar.';
+
+            inlineComplete(token);
+        }
+
+        // Ergaenzt den ersten passenden Eintrag markiert hinter der Schreibmarke.
+        function inlineComplete(token) {
+            if (lastInputType !== 'insertText' || token.text === '' || items.length === 0) {
+                return;
+            }
+            var caret = input.selectionStart;
+            if (caret !== input.selectionEnd || caret !== token.start + token.text.length || token.end !== caret) {
+                return;
+            }
+            var label = recipientLabel(items[0]);
+            if (label.toLowerCase().indexOf(token.text.toLowerCase()) !== 0 || label.length === token.text.length) {
+                return;
+            }
+            var value = input.value;
+            input.value = value.slice(0, token.start) + token.text + label.slice(token.text.length) + value.slice(token.end);
+            input.setSelectionRange(caret, token.start + label.length);
+            setActive(0);
+        }
+
+        function choose(index) {
+            var item = items[index];
+            if (!item) {
+                return;
+            }
+            var token = currentToken();
+            var value = input.value;
+            var before = value.slice(0, token.start);
+            var after = value.slice(token.end).replace(/^\s*[;,]?\s*/, '');
+            var insert = recipientLabel(item) + '; ';
+            input.value = before + insert + after;
+            var caret = before.length + insert.length;
+            input.setSelectionRange(caret, caret);
+            status.textContent = (item.display_name || item.email) + ' übernommen.';
+            close();
+            input.focus();
+        }
+
+        function load() {
+            var token = currentToken();
+            var key = token.text.trim().toLowerCase();
+            if (key === '') {
+                close();
+                return;
+            }
+            if (cache[key]) {
+                render(cache[key], token);
+                return;
+            }
+
+            var id = ++requestId;
+            window.fetch(RECIPIENT_SUGGEST_URL + '?q=' + encodeURIComponent(token.text.trim()) + '&limit=' + RECIPIENT_SUGGEST_LIMIT, {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json', 'X-CSRF-Token': csrf }
+            })
+                .then(function (response) {
+                    return response.ok ? response.json() : { items: [] };
+                })
+                .then(function (data) {
+                    var found = Array.isArray(data.items) ? data.items : [];
+                    cache[key] = found;
+                    if (id === requestId && document.activeElement === input) {
+                        render(found, currentToken());
+                    }
+                })
+                .catch(function () {
+                    close();
+                });
+        }
+
+        function schedule() {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(load, RECIPIENT_SUGGEST_DEBOUNCE_MS);
+        }
+
+        input.addEventListener('input', function (event) {
+            lastInputType = event.inputType || 'insertText';
+            schedule();
+        });
+
+        input.addEventListener('click', function () {
+            lastInputType = '';
+            schedule();
+        });
+
+        input.addEventListener('keydown', function (event) {
+            var open = !list.hidden && items.length > 0;
+            switch (event.key) {
+                case 'ArrowDown':
+                    event.preventDefault();
+                    if (!open) {
+                        lastInputType = '';
+                        load();
+                        return;
+                    }
+                    setActive(active + 1);
+                    break;
+                case 'ArrowUp':
+                    if (open) {
+                        event.preventDefault();
+                        setActive(active - 1);
+                    }
+                    break;
+                case 'Enter':
+                    if (open && active >= 0) {
+                        event.preventDefault();
+                        choose(active);
+                    } else if (open) {
+                        // Enter ohne Auswahl nur die Liste schliessen, kein Formular-Submit.
+                        event.preventDefault();
+                        close();
+                    }
+                    break;
+                case 'Tab':
+                    // Tab uebernimmt nur eine sichtbare Inline-Ergaenzung.
+                    if (open && active >= 0 && input.selectionStart !== input.selectionEnd && !event.shiftKey) {
+                        event.preventDefault();
+                        choose(active);
+                    }
+                    break;
+                case 'Escape':
+                    if (open) {
+                        // Dialog offen lassen; nur die Vorschlaege schliessen.
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (input.selectionStart !== input.selectionEnd) {
+                            var start = input.selectionStart;
+                            input.value = input.value.slice(0, start) + input.value.slice(input.selectionEnd);
+                            input.setSelectionRange(start, start);
+                        }
+                        close();
+                    }
+                    break;
+                default:
+                    break;
+            }
+        });
+
+        input.addEventListener('blur', function () {
+            window.setTimeout(close, 100);
+        });
+
+        var dialog = input.closest('dialog');
+        if (dialog) {
+            dialog.addEventListener('close', close);
+            var body = dialog.querySelector('.ov-dialog__body');
+            if (body) {
+                body.addEventListener('scroll', function () {
+                    if (!list.hidden) {
+                        position();
+                    }
+                });
+            }
+        }
+        window.addEventListener('resize', function () {
+            if (!list.hidden) {
+                position();
+            }
+        });
+    }
+
+    function initRecipientSuggestAll() {
+        $$('input[data-ov-recipients]').forEach(initRecipientSuggest);
+    }
+
     function init() {
         applyPrefs();
         bindEvents();
         initContextMenu();
         initAi();
+        initRecipientSuggestAll();
         updateNotifyState();
         setOnline(true);
         var params = new window.URLSearchParams(window.location.search);

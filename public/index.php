@@ -150,6 +150,7 @@ $router->get('/api/orvanta/mail/ordner', [OrvantaApiController::class, 'folders'
 $router->get('/api/orvanta/mail', [OrvantaApiController::class, 'messages']);
 $router->get('/api/orvanta/mail/nachricht', [OrvantaApiController::class, 'message']);
 $router->post('/api/orvanta/mail/senden', [OrvantaApiController::class, 'send']);
+$router->get('/api/orvanta/empfaenger', [OrvantaApiController::class, 'recipients']); // Vorschlaege fuer An/Cc/Bcc
 $router->post('/api/orvanta/mail/entwurf', [OrvantaApiController::class, 'draft']);
 $router->post('/api/orvanta/mail/antworten', [OrvantaApiController::class, 'respond']);
 $router->post('/api/orvanta/mail/aktion', [OrvantaApiController::class, 'mailAction']);

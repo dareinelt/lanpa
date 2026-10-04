@@ -81,9 +81,23 @@ final class OrvantaApiController extends Controller
     {
         return $this->handle($request, function (array $access): array {
             $result = Container::orvantaExchange()->send($access['impersonate'], $this->withSignature($this->mailPayload(), $access), $this->str('draft_id'), $this->str('change_key'));
+            $this->rememberRecipients($access);
 
             return $result + ['message' => 'Die Nachricht wurde gesendet.'];
         }, true);
+    }
+
+    /**
+     * Empfaenger-Vorschlaege fuer An/Cc/Bcc (Telefonliste + eigener Verlauf).
+     */
+    public function recipients(Request $request): Response
+    {
+        return $this->handle($request, fn (array $access): array => ['items' => Container::orvantaRecipients()->suggest(
+            $access['uid'],
+            (string) $request->query('q', ''),
+            $request->queryInt('limit', \App\Services\Orvanta\OrvantaRecipientService::DEFAULT_LIMIT),
+            Container::auth()->check()
+        )]);
     }
 
     /**
@@ -114,6 +128,7 @@ final class OrvantaApiController extends Controller
                 $this->str('mode', 'reply'),
                 $this->withSignature($this->mailPayload(), $access)
             );
+            $this->rememberRecipients($access);
 
             return $result + ['message' => $this->str('mode') === 'forward' ? 'Die Nachricht wurde weitergeleitet.' : 'Die Antwort wurde gesendet.'];
         }, true);
@@ -548,6 +563,28 @@ final class OrvantaApiController extends Controller
         $mail['body'] = OrvantaSignatureService::append((string) ($mail['body'] ?? ''), $signature['html'] ?? '');
 
         return $mail;
+    }
+
+    /**
+     * Merkt sich die Empfaenger (mit Anzeigenamen aus dem Frontend) nach
+     * erfolgreichem Versand; Fehler der Ablage bleiben ohne Auswirkung.
+     *
+     * @param array{uid:string} $access
+     */
+    private function rememberRecipients(array $access): void
+    {
+        $recipients = [];
+        foreach (['to', 'cc', 'bcc'] as $key) {
+            $value = $this->body[$key] ?? [];
+            foreach (is_string($value) ? (preg_split('/[;,\s]+/', $value) ?: []) : (array) $value as $recipient) {
+                $recipients[] = $recipient;
+            }
+        }
+        try {
+            Container::orvantaRecipients()->remember($access['uid'], $recipients);
+        } catch (Throwable $exception) {
+            app_logger()->warning('Orvanta: Empfänger-Verlauf nicht aktualisiert.', ['error' => $exception->getMessage()]);
+        }
     }
 
     private function mailPayload(): array

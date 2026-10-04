@@ -23,6 +23,7 @@ body[data-page="emergency_plan"] .table th, body[data-page="emergency_plan"] .ta
 .ep-diagram { overflow: auto; max-height: 70vh; background: #f1f5f9; border-radius: .6rem; padding: .5rem; }
 .ep-office .ep-diagram { overflow: visible; max-height: none; background: none; border-radius: 0; padding: 0; display: inline-block; min-width: 100%; }
 .ep-diagram svg { display: block; margin-inline: auto; max-width: none; }
+.ep-edges { pointer-events: none; }
 .ep-edge { fill: none; stroke: #52667c; stroke-width: 2; }
 .ep-arrow { fill: #52667c; }
 .ep-edge-label { fill: #26384d; font-size: 12px; font-weight: 700; paint-order: stroke; stroke: #f1f5f9; stroke-width: 4px; }

@@ -27,6 +27,7 @@ use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\NetworkDriveController as NetworkDriveAdminController;
 use App\Controllers\Admin\OfficeController as OfficeAdminController;
 use App\Controllers\Admin\OfficeAppsController as OfficeAppsAdminController;
+use App\Controllers\Admin\OrvantaSignatureController;
 use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
 use App\Controllers\Admin\StatisticsController;
@@ -336,6 +337,12 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/office/apps/paket', [OfficeAppsAdminController::class, 'editPackage']);
         $router->post('/admin/office/apps/paket', [OfficeAppsAdminController::class, 'savePackage']);
         $router->post('/admin/office/apps/paket/loeschen', [OfficeAppsAdminController::class, 'deletePackage']);
+        // Orvanta: Signaturvorlagen (Zuordnung per AD-Gruppe, serverseitig angefuegt).
+        $router->get('/admin/office/signaturen', [OrvantaSignatureController::class, 'index']);
+        $router->get('/admin/office/signaturen/vorlage', [OrvantaSignatureController::class, 'edit']);
+        $router->post('/admin/office/signaturen/vorlage', [OrvantaSignatureController::class, 'save']);
+        $router->post('/admin/office/signaturen/loeschen', [OrvantaSignatureController::class, 'delete']);
+        $router->get('/admin/office/signaturen/vorschau', [OrvantaSignatureController::class, 'preview']);
         $router->get('/admin/speicherplatz', [StorageQuotaController::class, 'index']);
         $router->post('/admin/speicherplatz/standard', [StorageQuotaController::class, 'updateDefault']);
         $router->post('/admin/speicherplatz/gruppen', [StorageQuotaController::class, 'saveGroup']);

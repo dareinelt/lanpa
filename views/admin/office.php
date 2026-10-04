@@ -408,6 +408,11 @@ $ov = $orvantaValues;
         Exchange ab Version 2016/2019 und greift im Namen des per Windows-Anmeldung erkannten
         Benutzers auf dessen Postfach zu (Impersonation). Welche Benutzer die App sehen, wird wie bei
         den übrigen Office-Apps unter <a href="/admin/office/apps">Apps und Berechtigungen</a> geregelt.
+        E-Mail-Signaturen werden als <a href="/admin/office/signaturen">Signaturvorlagen</a> gepflegt und
+        den Benutzern über AD-Gruppen fest zugeordnet.
+    </p>
+    <p>
+        <a class="button" href="/admin/office/signaturen">Signaturvorlagen verwalten</a>
     </p>
     <?php if ($orvantaEnabled) { ?>
         <p class="status status--ok">

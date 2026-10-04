@@ -96,6 +96,135 @@
         });
     }
 
+    /**
+     * Fest zugeordnete Signatur in den Editor einfuegen: schreibgeschuetzter
+     * Block (contenteditable=false) vor einem Zitat bzw. am Ende. Vorhandene
+     * Bloecke (z. B. aus einem Entwurf) werden ersetzt; massgeblich ist ohnehin
+     * die serverseitig beim Senden/Speichern angefuegte Fassung.
+     */
+    function renderComposeSignature(editor) {
+        editor = editor || hook('compose-body');
+        if (!editor) {
+            return;
+        }
+        stripSignatureBlocks(editor);
+        var signature = config.signature && config.signature.html ? config.signature.html : '';
+        if (signature === '') {
+            return;
+        }
+        var holder = document.createElement('div');
+        holder.innerHTML = inlineStylesToCssom(signature);
+        holder.querySelectorAll('[data-ov-style]').forEach(function (node) {
+            node.style.cssText = node.getAttribute('data-ov-style');
+            node.removeAttribute('data-ov-style');
+        });
+        var block = holder.querySelector('.ov-signature-block') || holder.firstElementChild;
+        if (!block) {
+            return;
+        }
+        block.setAttribute('contenteditable', 'false');
+        var quote = editor.querySelector(':scope > .ov-quote');
+        if (quote) {
+            editor.insertBefore(block, quote);
+        } else {
+            editor.appendChild(block);
+        }
+        if (!block.previousElementSibling) {
+            editor.insertBefore(el('p', { html: '<br>' }), block);
+        }
+        editor.setAttribute('data-ov-signature-html', block.outerHTML);
+    }
+
+    /**
+     * Signaturbloecke aus dem Editor entfernen (vor dem erneuten Einfuegen).
+     */
+    function stripSignatureBlocks(editor) {
+        if (!editor) {
+            return;
+        }
+        editor.querySelectorAll('.ov-signature-block').forEach(function (node) { node.remove(); });
+        if (editor.innerHTML.trim() === '') {
+            editor.innerHTML = '<p><br></p>';
+        }
+    }
+
+    /**
+     * Schreibschutz der Signatur im Editor: Eingaben, die den Block beruehren,
+     * werden verworfen; wurde er dennoch entfernt (z. B. "Alles auswaehlen"
+     * + Entf), wird er wieder eingefuegt.
+     */
+    function guardComposeSignature(editor) {
+        if (!editor) {
+            return;
+        }
+        editor.addEventListener('beforeinput', function (event) {
+            var block = editor.querySelector('.ov-signature-block');
+            var selection = window.getSelection();
+            if (!block || !selection || !selection.rangeCount) {
+                return;
+            }
+            var range = selection.getRangeAt(0);
+            var inside = block.contains(range.startContainer) || block.contains(range.endContainer);
+            if (!inside && (range.collapsed || !range.intersectsNode(block))) {
+                return;
+            }
+            event.preventDefault();
+            if (range.collapsed && inside) {
+                return;
+            }
+            // Nur die Teile der Auswahl vor und hinter der Signatur bearbeiten
+            // (z. B. "Alles auswaehlen" + Entf).
+            var blockRange = document.createRange();
+            blockRange.selectNode(block);
+            var before = null;
+            var after = null;
+            if (range.compareBoundaryPoints(Range.START_TO_START, blockRange) < 0) {
+                before = range.cloneRange();
+                before.setEndBefore(block);
+            }
+            if (range.compareBoundaryPoints(Range.END_TO_END, blockRange) > 0) {
+                after = range.cloneRange();
+                after.setStartAfter(block);
+            }
+            if (after) {
+                after.deleteContents();
+            }
+            if (before) {
+                before.deleteContents();
+            }
+            editor.querySelectorAll(':scope > p:empty').forEach(function (p) { p.innerHTML = '<br>'; });
+            if (!block.previousElementSibling) {
+                editor.insertBefore(el('p', { html: '<br>' }), block);
+            }
+            var caret = document.createRange();
+            if (before) {
+                caret.setStart(before.startContainer, before.startOffset);
+            } else {
+                caret.setStart(block.previousElementSibling, 0);
+            }
+            caret.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(caret);
+            if (event.inputType === 'insertText' && typeof event.data === 'string') {
+                document.execCommand('insertText', false, event.data);
+            } else if (event.inputType === 'insertParagraph') {
+                document.execCommand('insertParagraph');
+            } else {
+                editor.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        });
+        editor.addEventListener('input', function () {
+            if (!config.signature || !config.signature.html) {
+                return;
+            }
+            var block = editor.querySelector('.ov-signature-block');
+            // Entfernt oder (z. B. per Formatierungsbefehl) veraendert: Original wiederherstellen.
+            if (!block || block.outerHTML !== editor.getAttribute('data-ov-signature-html')) {
+                renderComposeSignature(editor);
+            }
+        });
+    }
+
     function editorHtml(editor) {
         if (!editor) {
             return '';
@@ -1177,6 +1306,7 @@
                 });
             }
         }
+        renderComposeSignature();
         openDialog('compose');
         if (mode === 'new' || mode === 'forward') {
             form.elements.to.focus();
@@ -1208,6 +1338,7 @@
             body.querySelectorAll('[data-blocked-src]').forEach(function (img) {
                 img.setAttribute('src', img.getAttribute('data-blocked-src'));
             });
+            renderComposeSignature(body);
         }
         var list = hook('attach-list');
         (message.attachments || []).filter(function (a) { return !a.inline; }).forEach(function (attachment) {
@@ -1410,6 +1541,7 @@
             title.textContent = snapshot.title;
         }
         setEditorHtml(hook('compose-body'), snapshot.body || '');
+        renderComposeSignature();
         var list = hook('attach-list');
         if (list) {
             list.innerHTML = '';
@@ -3141,6 +3273,7 @@
         }
         var composeBody = hook('compose-body');
         if (composeBody) {
+            guardComposeSignature(composeBody);
             composeBody.addEventListener('paste', function (event) {
                 var text = event.clipboardData && event.clipboardData.getData('text/plain');
                 if (text) {

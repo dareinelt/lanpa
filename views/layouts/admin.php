@@ -125,5 +125,8 @@ $navItems = $isAdmin ? [
 <?php if (($pageScript ?? '') !== '') { ?>
     <script src="/assets/js/<?= Html::e($pageScript) ?>?v=<?= Html::e($assetVersion ?? '1') ?>" defer></script>
 <?php } ?>
+<?php foreach ((array) ($extraScripts ?? []) as $extraScript) { ?>
+    <script src="/assets/js/<?= Html::e((string) $extraScript) ?>?v=<?= Html::e($assetVersion ?? '1') ?>" defer></script>
+<?php } ?>
 </body>
 </html>

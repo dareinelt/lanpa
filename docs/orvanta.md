@@ -102,11 +102,14 @@ flowchart LR
 | `MailHtmlSanitizer` | `app/Services/Orvanta/` | HTML-Mails bereinigen (Skripte, externe Inhalte, Event-Handler entfernen) |
 | `OrvantaAttachmentService` | `app/Services/Orvanta/` | Anhänge: signierte Kurzzeit-Links, Öffnungsmodus (`office`/`browser`/`download`), Zwischenspeicher und Ablage in Nextcloud (WebDAV), Quota |
 | `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile |
+| `OrvantaSignatureService` | `app/Services/Orvanta/` | Signaturvorlagen (Abschnitt 4a): Validierung, Zuordnung per AD-Gruppe, E-Mail-taugliches HTML aus Vorlage + Telefonliste + Design, `append()`/`strip()` beim Senden |
+| `Admin\OrvantaSignatureController` | `app/Controllers/Admin/OrvantaSignatureController.php` | Pflege der Signaturvorlagen unter `/admin/office/signaturen` (Liste, Formular, Vorschau-iframe) |
 | `OrvantaRepository` | `app/Repositories/OrvantaRepository.php` | Zugriff auf die drei Orvanta-Tabellen |
+| `OrvantaSignatureRepository` | `app/Repositories/OrvantaSignatureRepository.php` | Tabelle `orvanta_signatures` |
 | Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer |
-| Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`) | |
-| Migration | `database/migrations/033_create_orvanta_tables.sql` | |
-| Tests | `tests/Unit/OrvantaServiceTest.php` | Fakes für den Exchange-Transport |
+| Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php` | |
+| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql` | |
+| Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php` | Fakes für den Exchange-Transport; Signaturen gegen SQLite |
 
 ### Datenbank
 
@@ -116,6 +119,7 @@ flowchart LR
 | `orvanta_reminders` | Lokal zwischengespeicherte Terminerinnerungen je Benutzer | `user_uid`, `item_hash` (unique je Benutzer), `subject`, `location`, `starts_at`, `remind_at`, `state` (pending/delivered/dismissed/snoozed) |
 | `orvanta_cache_items` | Bestand des Zwischenspeichers im Nextcloud-Bereich des Benutzers | `user_uid`, `kind` (attachment/message), `item_hash`, `name`, `path`, `content_type`, `size_bytes` |
 | `orvanta_ai_usage` | Zähler der KI-Unterstützung (Migration 034) – nur Metadaten, nie Texte | `user_uid`, `kind` (mail_compose/mail_reply/mail_forward/event/reminder), `model`, `input_tokens`, `output_tokens`, `created_at` |
+| `orvanta_signatures` | Signaturvorlagen (Migration 035) | `name`, `greeting`, `street`, `postal_city`, `phone_mode` (prefix/full), `phone_prefix`, `ad_groups` (JSON-Liste), `sort_order`, `active` |
 
 ### Routen
 
@@ -133,7 +137,10 @@ flowchart LR
   `notizen/loeschen`, `erinnerungen`, `erinnerungen/erledigt`,
   `erinnerungen/spaeter`, `ki/verbessern` (POST, KI-Unterstützung).
 - Admin (`$requireAdmin`): `POST /admin/office/orvanta`,
-  `POST /admin/office/orvanta/pruefen`.
+  `POST /admin/office/orvanta/pruefen`; Signaturvorlagen
+  `GET /admin/office/signaturen`, `GET|POST /admin/office/signaturen/vorlage`,
+  `POST /admin/office/signaturen/loeschen`,
+  `GET /admin/office/signaturen/vorschau` (iframe mit eigener CSP).
 
 ---
 
@@ -201,6 +208,57 @@ Wie alle Office-Apps wird Orvanta unter **Admin → Office → Apps und
 Berechtigungen** pro AD-Gruppe oder App-Paket freigegeben
 (`office_app_permissions`, `app_key = orvanta`). Ohne Freigabe antwortet
 `/office/orvanta` mit 403.
+
+---
+
+## 4a. Signaturvorlagen
+
+Unter **Admin → Office → Signaturvorlagen verwalten**
+(`/admin/office/signaturen`) werden beliebig viele E-Mail-Signaturen
+gepflegt. Die Zuordnung zum Benutzer erfolgt über **AD-Gruppen**; passen
+mehrere Vorlagen, gilt die mit der kleinsten Reihenfolge. Ohne passende
+Vorlage wird keine Signatur angefügt.
+
+![Übersicht der Signaturvorlagen](screenshots/89-admin-orvanta-signaturen.png)
+
+![Signaturvorlage bearbeiten](screenshots/88-admin-orvanta-signatur-vorlage.png)
+
+Aufbau der Signatur (Beispiel):
+
+```
+Mit freundlichen Grüßen
+
+[Logo]  **Daniel-André Reinelt** ■ Administrator ■ Informationstechnologie (IT / EDV)
+        Alter Weg 80 ■ 38302 Wolfenbüttel
+        T.: +49 (05331) 934 - **1849**
+```
+
+| Bestandteil | Quelle |
+|---|---|
+| Grußformel, Straße + Hausnummer, PLZ + Ort | Vorlage |
+| Name, Position, Abteilung | Active Directory (Telefonliste: `display_name`, `title`, `department`; LDAP-Attribut `LDAP_ATTR_TITLE`, Standard `title`) |
+| Rufnummer | wählbar: **Präfix aus der Vorlage + vierstellige Durchwahl** (letzte vier Ziffern der AD-Rufnummer, fett) oder **komplette Rufnummer aus dem AD** (`T.: …`); ohne AD-Rufnummer entfällt die Zeile |
+| Schriftfarbe / Farbe der Trennzeichen (■) | Designeinstellungen: „Textfarbe (hell)“ (`color_text`) / „Akzentfarbe“ (`color_accent`) |
+| Logo links neben dem Text | das im Adminbereich hochgeladene Logo (fest, als `data:`-URI eingebettet, Breite 160 px) |
+
+Verhalten in Orvanta:
+
+- Die Signatur erscheint beim Verfassen, Antworten und Weiterleiten direkt im
+  Textfeld – unterhalb des eigenen Textes bzw. oberhalb des Zitats – als
+  **schreibgeschützter Block** (`contenteditable="false"`). Eingaben, die den
+  Block berühren, werden auf den übrigen Text beschränkt; wird er dennoch
+  entfernt oder verändert (etwa über „Alles auswählen“ + Formatierung), fügt
+  der Editor ihn sofort wieder ein.
+- Maßgeblich ist die **serverseitig** beim Senden, Antworten und Speichern von
+  Entwürfen angefügte Fassung (`OrvantaSignatureService::append()`): Bereits
+  enthaltene Blöcke (z. B. aus einem Entwurf) werden ersetzt, es gibt also nie
+  zwei Signaturen und keine manipulierte Fassung.
+- Benutzer können die Signatur weder abwählen noch bearbeiten.
+
+![Verfassen-Dialog mit fest zugeordneter Signatur](screenshots/90-orvanta-verfassen-signatur.png)
+
+Die Vorschau im Adminbereich zeigt die Vorlage mit Beispieldaten
+(„Erika Musterfrau“) und aktualisiert sich beim Ändern der Felder.
 
 ---
 

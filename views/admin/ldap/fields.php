@@ -21,6 +21,7 @@ $attributeLabels = [
     'ldap_attr_mobile' => 'Mobil',
     'ldap_attr_email' => 'E-Mail',
     'ldap_attr_department' => 'Abteilung',
+    'ldap_attr_title' => 'Position',
     'ldap_attr_modified' => 'Zuletzt geändert',
     'ldap_attr_unique_id' => 'Eindeutige ID',
     'ldap_attr_samaccount_name' => 'Windows-Anmeldename',

@@ -34,6 +34,8 @@ function ssoPhonebookPdo(): PDO
             display_name TEXT NULL,
             first_name TEXT NULL,
             last_name TEXT NULL,
+            title TEXT NULL,
+            phone TEXT NULL,
             email TEXT NULL,
             department TEXT NULL,
             active INTEGER NOT NULL DEFAULT 1

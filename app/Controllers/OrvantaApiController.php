@@ -13,6 +13,7 @@ use App\Security\Csrf;
 use App\Security\Session;
 use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
+use App\Services\Orvanta\OrvantaSignatureService;
 use Throwable;
 
 /**
@@ -79,7 +80,7 @@ final class OrvantaApiController extends Controller
     public function send(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $result = Container::orvantaExchange()->send($access['impersonate'], $this->mailPayload(), $this->str('draft_id'), $this->str('change_key'));
+            $result = Container::orvantaExchange()->send($access['impersonate'], $this->withSignature($this->mailPayload(), $access), $this->str('draft_id'), $this->str('change_key'));
 
             return $result + ['message' => 'Die Nachricht wurde gesendet.'];
         }, true);
@@ -92,7 +93,7 @@ final class OrvantaApiController extends Controller
     public function draft(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $mail = $this->mailPayload();
+            $mail = $this->withSignature($this->mailPayload(), $access);
             $replyId = $this->str('reply_id');
             $mode = $this->str('mode', 'new');
             if ($replyId !== '' && in_array($mode, ['reply', 'replyall', 'forward'], true)) {
@@ -111,7 +112,7 @@ final class OrvantaApiController extends Controller
                 $access['impersonate'],
                 $this->requireId($this->str('id')),
                 $this->str('mode', 'reply'),
-                $this->mailPayload()
+                $this->withSignature($this->mailPayload(), $access)
             );
 
             return $result + ['message' => $this->str('mode') === 'forward' ? 'Die Nachricht wurde weitergeleitet.' : 'Die Antwort wurde gesendet.'];
@@ -530,6 +531,25 @@ final class OrvantaApiController extends Controller
     /**
      * @return array<string,mixed>
      */
+    /**
+     * Fuegt die per AD-Gruppe zugeordnete Signatur serverseitig an – der
+     * Benutzer kann sie im Editor weder entfernen noch veraendern.
+     *
+     * @param array<string,mixed> $mail
+     * @param array{user:array<string,mixed>,uid:string,impersonate:string} $access
+     * @return array<string,mixed>
+     */
+    private function withSignature(array $mail, array $access): array
+    {
+        if (($mail['html'] ?? true) !== true) {
+            return $mail;
+        }
+        $signature = Container::orvantaSignatures()->forUser($access['user']);
+        $mail['body'] = OrvantaSignatureService::append((string) ($mail['body'] ?? ''), $signature['html'] ?? '');
+
+        return $mail;
+    }
+
     private function mailPayload(): array
     {
         $attachments = [];

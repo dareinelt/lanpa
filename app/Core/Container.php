@@ -480,6 +480,28 @@ final class Container
         );
     }
 
+    public static function orvantaSignatureRepository(): \App\Repositories\OrvantaSignatureRepository
+    {
+        return self::make(\App\Repositories\OrvantaSignatureRepository::class, static fn (): \App\Repositories\OrvantaSignatureRepository => new \App\Repositories\OrvantaSignatureRepository());
+    }
+
+    /**
+     * Signaturvorlagen: Zuordnung per AD-Gruppe, AD-Daten aus der Telefonliste,
+     * Farben/Logo aus den Designeinstellungen.
+     */
+    public static function orvantaSignatures(): \App\Services\Orvanta\OrvantaSignatureService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaSignatureService::class,
+            static fn (): \App\Services\Orvanta\OrvantaSignatureService => new \App\Services\Orvanta\OrvantaSignatureService(
+                self::orvantaSignatureRepository(),
+                self::phonebookRepository(),
+                self::settings(),
+                static fn (): ?array => self::logo()->current()
+            )
+        );
+    }
+
     public static function orvantaNotifications(): \App\Services\Orvanta\OrvantaNotificationService
     {
         return self::make(

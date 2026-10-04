@@ -52,6 +52,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 13. Änderungsrezepte
 14. Bekannte Eigenheiten
 15. KI-Unterstützung
+16. Signaturvorlagen
 
 ---
 
@@ -84,6 +85,10 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/MailHtmlSanitizer.php` | `clean(html): {html, blocked_images}` – Whitelist für Tags/Attribute (Abschnitt 10) |
 | `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()` |
 | `app/Services/Orvanta/OrvantaNotificationService.php` | `sync()`, `poll()`, `dismiss()`, `snooze()`, `relative()` |
+| `app/Services/Orvanta/OrvantaSignatureService.php` | Signaturvorlagen (Abschnitt 16): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)` → `{id,name,html}`, `person()`, `render()`, `preview()`, statisch `extension()`, `append(body, html)`, `strip(body)`; Konstanten `MARKER_CLASS`, `QUOTE_CLASS`, `PHONE_MODES`, `EXTENSION_LENGTH`, `LOGO_WIDTH`, `SAMPLE_PERSON` |
+| `app/Repositories/OrvantaSignatureRepository.php` | `all(activeOnly)`, `find()`, `save()`, `delete()`; `ad_groups` als JSON-Liste → `groups` |
+| `app/Controllers/Admin/OrvantaSignatureController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
+| `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `public/assets/js/admin-signature.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/signaturen/vorschau`) |
 | `app/Services/Orvanta/OrvantaException.php` | Fehler mit anzeigbarer Meldung und HTTP-Status (`status()`, Standard 502) |
 | `app/Services/Orvanta/OrvantaAiService.php` | KI-Unterstützung (Abschnitt 15): `isAvailable()` (globale KI aktiv + `GET /models`, Datei-Cache 60 s), `resetAvailability()`, `improve()` (`POST /chat/completions`, Systemprompt je `MODES`, Verfeinern per Assistenten-Turn), `recordUsage()`, statisch `stripMarkers()`; Konstanten `MODES`, `MAX_TEXT`, `MAX_PROMPT`, `MAX_CONTEXT`, `MAX_OUTPUT_TOKENS`, `MARKER_CLASS`, `MARKER_ATTR_PREFIX` |
 | `app/Services/Orvanta/OrvantaAiCharts.php` | Anonymisierter Nutzungsbericht für den Adminbereich: `period()`, `report(days)`, SVG-Erzeuger `usersChart()`, `daysChart()`, `tokensChart()` (Präsentationsattribute, kein `style`) |
@@ -105,9 +110,11 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `public/assets/images/orvanta-ai-robot*.png` | Roboter-Grafiken (klein 36×48/72×96 für Statusleiste/Menü, groß 180×240/360×480 für Hilfe und Admin) |
 | `database/migrations/033_create_orvanta_tables.sql` | Drei Tabellen (Abschnitt 4) |
 | `database/migrations/034_create_orvanta_ai_usage.sql` | Tabelle `orvanta_ai_usage` (Abschnitt 4.1) |
+| `database/migrations/035_orvanta_signatures.sql` | Tabelle `orvanta_signatures` und Spalte `phonebook.title` (Abschnitt 4.1) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
+| `tests/Unit/OrvantaSignatureTest.php` | Tests der Signaturvorlagen gegen SQLite (Abschnitt 12) |
 
 ## 3. Routen, Zugriff und API-Rahmen
 
@@ -152,6 +159,10 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/api/orvanta/ki/verbessern` | `aiImprove` | KI-Unterstützung: `mode`, `text`, `prompt`, optional `previous_text`, `context{subject, recipients}` → `{text, usage{input_tokens, output_tokens}}` (Abschnitt 15) |
 | POST | `/admin/office/orvanta` | `Admin\OfficeController::updateOrvanta` | Einstellungen (`$requireAdmin`, CSRF) |
 | POST | `/admin/office/orvanta/pruefen` | `testOrvanta` | Verbindungstest, optional `mailbox` |
+| GET | `/admin/office/signaturen` | `Admin\OrvantaSignatureController::index` | Signaturvorlagen (Liste, Vorschau-iframes) |
+| GET/POST | `/admin/office/signaturen/vorlage[?id=…]` | `edit` / `save` | Vorlage anlegen/bearbeiten (CSRF) |
+| POST | `/admin/office/signaturen/loeschen` | `delete` | Vorlage löschen (`id`) |
+| GET | `/admin/office/signaturen/vorschau[?id=…\|Felder]` | `preview` | Eigenständige HTML-Seite mit eigener CSP (`img-src data:`, `style-src 'unsafe-inline'`, `frame-ancestors 'self'`) – Beispieldaten, gespeicherte oder ungespeicherte Vorlage |
 
 ### 3.2 Zugriffsprüfung (`OrvantaController::authorize()`)
 
@@ -193,6 +204,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_reminders` | `user_uid`, `item_id` (≤ 512), `item_hash` = `sha1(item_id)`, `subject`, `location`, `starts_at`, `remind_at`, `state` ∈ `pending\|delivered\|dismissed\|snoozed`, `delivered_at`, `dismissed_at` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `state`, `remind_at`) |
 | `orvanta_cache_items` | `user_uid`, `kind` ∈ `attachment\|message`, `item_hash` = `sha1(attachment_id)`, `name` (Dateiname in Nextcloud), `path`, `content_type`, `size_bytes` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `created_at`) für FIFO |
 | `orvanta_ai_usage` (Migration 034) | `user_uid`, `kind` ∈ `mail_compose\|mail_reply\|mail_forward\|event\|reminder`, `model`, `input_tokens`, `output_tokens`, `created_at` | Nur Zähler, nie Texte; Index (`created_at`), (`user_uid`, `created_at`) |
+| `orvanta_signatures` (Migration 035) | `name` (≤ 120), `greeting` (≤ 120), `street`, `postal_city` (≤ 190), `phone_mode` ∈ `prefix\|full`, `phone_prefix` (≤ 64, abschließendes Leerzeichen bleibt erhalten), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Zuordnung: erste aktive Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in den SSO-Gruppen vorkommt. Migration ergänzt zudem `phonebook.title` (Position aus dem AD, `LDAP_ATTR_TITLE`) |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -487,6 +499,18 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
     (mit Cc/Bcc und Anhängen; Exchange hängt Zitat und Bezug an);
   - neue Nachricht oder gespeicherter Entwurf → `mail/senden`.
   Im Ordner „Entwürfe“ bietet die Nachrichtenansicht „Entwurf bearbeiten“.
+- Signatur: `config.signature` (`{id, name, html}` oder `null`, aus
+  `OrvantaSignatureService::forUser()`). `renderComposeSignature(editor)`
+  entfernt vorhandene `.ov-signature-block` und fügt den Block mit
+  `contenteditable="false"` vor `:scope > .ov-quote` bzw. am Ende ein (davor
+  stets ein editierbarer Absatz); wird nach `openCompose()`,
+  `fillComposeFromDraft()` und `restoreCompose()` aufgerufen.
+  `guardComposeSignature(editor)`: `beforeinput` verwirft Eingaben im Block und
+  beschränkt Auswahlen, die ihn überlappen, auf die Teile davor/dahinter;
+  `input` stellt den Block wieder her, wenn er fehlt oder sich sein
+  `outerHTML` gegenüber `data-ov-signature-html` geändert hat (z. B. nach
+  „Alles auswählen“ + Formatierung). Maßgeblich bleibt die serverseitige
+  Fassung (Abschnitt 16).
 - Verfassen in eigenem Tab: `detachCompose()` (Schaltfläche
   `data-ov-action="compose-detach"`) erstellt mit `composeSnapshot()` den
   vollständigen Zustand (Felder, Editor-HTML, Anhänge inkl. Base64, `mode`,
@@ -572,6 +596,11 @@ Breakpoints 1200 px und 900 px, eigenes Drucklayout.
     ausschließlich in `Container::exchangeTransport()` gewählt.
 12. Repository-SQL muss auf MySQL **und** SQLite laufen (Tests).
 13. Grenzwerte in Client (15 MB je Datei, Poll ≥ 15 s) und Server synchron halten.
+14. **Signatur wird serverseitig angefügt** (`withSignature()` in `send`/`draft`/
+    `respond`, vor `stripMarkers()`/Sanitizer); der Editor-Block ist nur
+    Anzeige. Der Marker `div.ov-signature-block` darf nicht umbenannt werden
+    (Dedupe beim erneuten Öffnen von Entwürfen; Sanitizer lässt `class`,
+    `table`, `img` mit `data:`-URI und Inline-Styles ohne `url(` durch).
 
 ## 12. Tests
 
@@ -581,6 +610,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | Datei | Inhalt |
 | --- | --- |
 | `tests/Unit/OrvantaAiTest.php` | `RecordingAiTransport`; Verfügbarkeit ohne Konfiguration (keine Anfrage), `GET /models` mit Datei-Cache und Fingerabdruck (URL\|Modell), `improve()` (Anfrageaufbau, Kontext, Token, `max_tokens`), Verfeinern (Assistenten-Turn), Bearer-Schlüssel, Validierung 422, 503 ohne KI, 502 bei Timeout/500/401/ungültigem JSON/leeren `choices`, `stripMarkers()`, Zähler und pseudonyme Auswertung (keine SIDs), `OrvantaAiCharts` (Zeitraum, SVG ohne `style`, leere Daten) |
+| `tests/Unit/OrvantaSignatureTest.php` | Validierung (Pflichtfelder, Modus, Reihenfolge, Gruppen-Dedupe, Präfix-Leerzeichen), Speichern/Laden/Löschen, Zuordnung (Reihenfolge, inaktiv, Schreibweise), Darstellung (AD-Daten, Präfix + Durchwahl vs. komplette Rufnummer, Farben, Logo als `data:`-URI, Sanitizer-Durchlauf), Fallbacks (ohne Logo/Telefonbuch/inaktiver Eintrag), `extension()`, `append()` (Dedupe, vor Zitat), `strip()` |
 | `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
@@ -609,6 +639,8 @@ Download), Erinnerung in App und Kopfzeile, Statusleiste/Quota.
 | **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()` (Zustandsübergänge Abschnitt 8.2); beide Clients prüfen; Tests „Erinnerungen …“, „Repository-Sync …“. |
 | **Neues Modul** | `DEFAULT_FOLDERS`, Modulliste/Menüband/Dialog in `views/orvanta/index.php`, `switchModule()`/`loadModule()`/Tastenkürzel in `orvanta.js`, Service-Methoden + API, Demo-Daten, Doku. |
 | **KI-Unterstützung in weiterem Editor** | Editor mit `contenteditable` und eigenem `data-ov-…-body`-Hook; in `orvanta.js` `aiEditors()`, `aiMode()` und `aiContext()` erweitern; neuer Wert in `OrvantaAiService::MODES` + ENUM in `orvanta_ai_usage.kind` (Migration) + Systemprompt in `messages()`; serverseitig `stripMarkers()` vor dem Sanitizer aufrufen; Test. |
+| **Signaturaufbau ändern** (Zeilen, Trennzeichen, Logo-Breite) | Nur `OrvantaSignatureService::render()`/`phoneLine()` (E-Mail-tauglich: Tabelle, Inline-Styles ohne `url(`, Bilder nur als `data:`-URI – sonst entfernt sie `MailHtmlSanitizer`); Farben weiter aus `SettingsService::theme()`; Test „Darstellung …“ anpassen; Screenshot 88/90 erneuern. |
+| **Neues Vorlagenfeld der Signatur** | Spalte per Migration + SQLite-Schema in `OrvantaSignatureTest.php`; `OrvantaSignatureRepository` (`hydrate`, `save`), `OrvantaSignatureService::blank()/validate()/render()`, Formular `views/admin/orvanta-signature.php` (`data-signature-field`), Query in `admin-signature.js` und `OrvantaSignatureController::preview()`; Doku. |
 | **KI-Prompt oder Modellparameter ändern** | Nur `OrvantaAiService::messages()` bzw. `improve()` (Temperatur, `max_tokens`); nie Modell/URL in Orvanta speichern – sie stammen aus `OfficeAiService`. |
 
 Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
@@ -731,3 +763,34 @@ mit `Qwen/Qwen2.5-0.5B-Instruct-GGUF` (Volume `ki_models`, Port `KI_PORT`).
 `office_ai_url`/`office_ai_model` per `INSERT IGNORE` ein. Im Container heißt
 der Endpunkt `http://ki:8080/v1`; in `APP_ENV=production` würde HTTP vom
 Transport abgewiesen.
+
+## 16. Signaturvorlagen
+
+```
+Admin: /admin/office/signaturen[/vorlage|/loeschen|/vorschau]
+          └─ Admin\OrvantaSignatureController ─► OrvantaSignatureService ─► OrvantaSignatureRepository (orvanta_signatures)
+
+Seite:  OrvantaController::index() → $orvanta['signature'] = OrvantaSignatureService::forUser(user)
+          forUser(): match(user.groups) → person(user.id → phonebook.findActiveById) → render()
+Editor: renderComposeSignature() fügt den Block schreibgeschützt ein; guardComposeSignature() schützt ihn
+Senden: OrvantaApiController::withSignature(mail, access) → OrvantaSignatureService::append(body, forUser().html)
+          → OrvantaExchangeService (stripMarkers → MailHtmlSanitizer) → EWS
+```
+
+- `render()` erzeugt E-Mail-taugliches HTML: `<div class="ov-signature-block">`
+  mit optionalem Grußformel-Absatz und einer Tabelle (links Logo als
+  `data:`-URI, `LOGO_WIDTH` 160 px; rechts Name fett, Position, Abteilung,
+  Adresse, Rufnummer). Trennzeichen `&#9632;` in `color_accent`, Text in
+  `color_text` (beide aus `SettingsService::theme()`, geprüfte Hex-Werte).
+  Leere Bestandteile entfallen samt Trennzeichen.
+- Rufnummer: `prefix` → `rtrim(phone_prefix) . ' <b>' . extension(phone) . '</b>'`
+  (letzte `EXTENSION_LENGTH` Ziffern der AD-Rufnummer); `full` → `T.: ` +
+  AD-Rufnummer; keine AD-Rufnummer → keine Zeile.
+- `append()` entfernt vorhandene Marker-Blöcke (`strip()`), fügt die Signatur
+  vor dem ersten `div.ov-quote` ein, sonst am Ende; leere Signatur → Body
+  unverändert. `withSignature()` greift nur bei `html === true`.
+- Person-Fallback: ohne Telefonbuchzeile (z. B. `SSO_FAKE_USER`, `id = 0`)
+  nur `display_name`/`username`, keine Position/Abteilung/Rufnummer.
+- Logo-Loader ist eine Closure (`Container::orvantaSignatures()` →
+  `LogoService::current()`); SVG-Logos werden eingebettet, einige Mail-Clients
+  zeigen SVG jedoch nicht an – PNG/JPEG bevorzugen.

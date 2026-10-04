@@ -102,6 +102,7 @@ final class LdapAttributeMapper
             'mobile' => $this->clean($this->value($entry, $this->mapping['mobile'] ?? ''), 64),
             'email' => $this->cleanEmail($this->value($entry, $this->mapping['email'] ?? '')),
             'department' => $this->clean($this->value($entry, $this->mapping['department'] ?? ''), 120),
+            'title' => $this->clean($this->value($entry, $this->mapping['title'] ?? ''), 120),
             'ad_modified' => self::parseAdTimestamp($modified),
         ];
     }

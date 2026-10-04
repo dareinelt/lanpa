@@ -1969,3 +1969,13 @@ body.has-nav-tree-overlay {
     width: 100%;
     height: auto;
 }
+
+/* Orvanta: Vorschau der Signaturvorlagen (iframe mit eigener CSP) */
+.signature-preview {
+    display: block;
+    width: 100%;
+    height: 220px;
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    background: #fff;
+}

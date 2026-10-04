@@ -58,6 +58,8 @@ final class OrvantaController extends Controller
                 'owaUrl' => $config->owaUrl(),
                 // Nur das Flag - Modell, Adresse und Schluessel bleiben auf dem Server.
                 'aiAvailable' => Container::orvantaAi()->isAvailable(),
+                // Fest zugeordnete Signatur (nur Anzeige; angefuegt wird serverseitig).
+                'signature' => Container::orvantaSignatures()->forUser($access['user']),
             ],
         ], 'layouts.editor')->withHeader('Cache-Control', 'no-store')->withHeader('Vary', 'Cookie');
     }

@@ -93,7 +93,7 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
                     <?= $rb('decision', 'Entscheidung', 'data-ep-add-type="decision" title="Ja/Nein-Frage, verzweigt den Ablauf"') ?>
                     <?= $rb('checklist', 'Checkliste', 'data-ep-add-type="checklist" title="Mehrere Prüfpunkte abhaken"') ?>
                     <?= $rb('note', 'Hinweis', 'data-ep-add-type="note" title="Warnung oder Information ohne Aufgabe"') ?>
-                    <?= $rb('sms', 'SMS-Alarm', 'data-ep-add-type="sms" title="Bestehende SMS-Alarmvorlage auslösen"') ?>
+                    <?= $rb('sms', 'SMS-Alarm', 'data-ep-add-type="sms" title="SMS an eine Alarmvorlage (Gruppe) oder an einzelne Rufnummern"') ?>
                 </div>
                 <div class="ep-rg__label">Schritt hinzufügen</div>
             </div>
@@ -312,7 +312,7 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
             <h3>Schritte anlegen</h3>
             <p>Im Reiter <strong>Start</strong> oder in der linken Spalte auf einen Baustein klicken – der neue Schritt wird ans Ende gesetzt und automatisch mit dem letzten Schritt verbunden. Bausteine lassen sich auch in das Diagramm ziehen.</p>
             <h3>Schritte bearbeiten</h3>
-            <p>Einen Schritt im Diagramm oder in der Liste anklicken. Rechts unter <strong>Eigenschaften</strong> Titel, Anweisung, Zuständigkeit, Telefon, Link und Zielzeit ausfüllen. Checklisten erhalten Prüfpunkte, SMS-Schritte eine bestehende Alarmvorlage. Ein <strong>Rechtsklick</strong> auf einen Schritt im Diagramm öffnet ein Menü mit <em>Duplizieren, Kopieren, Einfügen, Rückgängig</em> und <em>Löschen</em>. Eingefügt wird hinter dem markierten Schritt – auch in einen anderen Plan.</p>
+            <p>Einen Schritt im Diagramm oder in der Liste anklicken. Rechts unter <strong>Eigenschaften</strong> Titel, Anweisung, Zuständigkeit, Telefon, Link und Zielzeit ausfüllen. Checklisten erhalten Prüfpunkte. SMS-Schritte gehen an eine bestehende Alarmvorlage (Gruppe) oder an einzelne Rufnummern mit eigenem Text (max. 255 Zeichen); Textbausteine wie Name des Notfallplans, Datum und Uhrzeit der Auslösung werden per Klick eingefügt und beim Auslösen ersetzt. Ein <strong>Rechtsklick</strong> auf einen Schritt im Diagramm öffnet ein Menü mit <em>Duplizieren, Kopieren, Einfügen, Rückgängig</em> und <em>Löschen</em>. Eingefügt wird hinter dem markierten Schritt – auch in einen anderen Plan.</p>
             <h3>Verbindungen (Voraussetzungen)</h3>
             <p>Ein Schritt startet, wenn seine Voraussetzungen erfüllt sind. Rechts lassen sich vorherige Schritte als Voraussetzung anhaken; bei Entscheidungen zusätzlich die Antwort <em>Ja</em> oder <em>Nein</em>. <strong>UND</strong> = alle Voraussetzungen müssen erledigt sein, <strong>ODER</strong> = eine genügt (führt Ja/Nein-Zweige wieder zusammen). Verbindungen zeigen immer von oben nach unten; die Reihenfolge ändern Sie mit <em>Nach oben/unten</em>.</p>
             <h3>Prüfen, speichern, freigeben</h3>

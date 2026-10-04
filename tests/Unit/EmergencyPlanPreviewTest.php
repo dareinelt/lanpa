@@ -192,3 +192,17 @@ Runner::test('Notfallplan-Vorschau: Controller prüft Verwaltungsrolle und CSRF'
         $instances->setValue(null, $original);
     }
 });
+
+Runner::test('Notfallplan-Vorschau: SMS an einzelne Rufnummern mit eingesetzten Textbausteinen', static function (): void {
+    $definition = ['title' => 'Übung', 'nodes' => [array_replace(emergencyNode('sms', 'sms'), ['alarm_id' => 0, 'sms_mode' => 'numbers',
+        'sms_numbers' => ['0171 1'], 'sms_text' => '{Notfallplan} {Datum} {Uhrzeit}'])]];
+    $input = emergencyPreviewInput($definition, [emergencyPreviewAction('sms', 'sms')]);
+    $preview = EmergencyPlanPreview::build($input, []);
+    $alarm = $preview['event']['snapshot']['nodes'][0]['alarm'];
+    Assert::same('Übung ' . date('d.m.Y H:i', $input['startedAt']), $alarm['alarm_text']);
+    Assert::same('0171 1', $alarm['alarm_group_number']);
+    Assert::same('SIMULATION: SMS nicht versendet.', $preview['event']['sms']['sms']['message']);
+    $definition['nodes'][0] = array_replace($definition['nodes'][0], ['sms_numbers' => [], 'sms_text' => '']);
+    $alarm = EmergencyPlanPreview::build(emergencyPreviewInput($definition), [])['event']['snapshot']['nodes'][0]['alarm'];
+    Assert::same('Noch kein SMS-Text eingetragen.', $alarm['alarm_text'], 'Unvollständige Entwürfe bleiben in der Vorschau darstellbar.');
+});

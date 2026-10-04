@@ -207,8 +207,13 @@ Export/Import (`POST /admin/notfallplan/plaene/export` bzw. `…/plaene/import`,
 nur Rolle `admin` per `$requireAdmin`): `EmergencyPlanService::exportPlans()` schreibt
 JSON (`format` `lanpa-notfallplaene`, `version` 1, aktuelle Entwürfe);
 `importPlans()` prüft alles, ordnet SMS-Elemente per Alarmtitel lokalen Vorlagen zu
-und legt per `EmergencyPlanRepository::importPlans()` in einer Transaktion neue
+(SMS an einzelne Rufnummern werden unverändert übernommen) und legt per
+`EmergencyPlanRepository::importPlans()` in einer Transaktion neue
 Entwürfe an (Freigabeprotokoll `imported`, Importierende als Autor).
+SMS-Schritte gehen an eine Alarmvorlage oder an einzelne Rufnummern
+(`sms_mode`/`sms_numbers`/`sms_text`); `EmergencyPlanSms` bündelt Textbausteine
+(`{Notfallplan}`, `{Datum}`, `{Uhrzeit}`, `{Schritt}`, beim Ereignisstart ersetzt) und
+das 255-Zeichen-Limit, `AlarmService::triggerEmergency()` versendet je Rufnummer.
 
 `SmtpController`, `SmtpService`, `MailQueueService` und `scripts/mail_worker.php`
 verwalten SMTP und die dauerhafte Versandwarteschlange. SMTP-Konfiguration nur

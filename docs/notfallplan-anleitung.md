@@ -121,8 +121,12 @@ Protokoll lesbar, aber nicht mehr bearbeitbar.
    **Mindestens einer (ODER)**: mindestens ein zutreffender Vorgänger genügt.
    Für alternative Entscheidungen Ja-/Nein-Verbindungen nutzen und danach ggf.
    mit ODER zusammenführen. Ohne Vorgänger ist ein Element sofort verfügbar.
-6. SMS-Vorlage auswählen und Empfänger/Text kontrollieren. Fehlende Vorlagen
-   durch Administratoren anlegen lassen; das Team hat keinen Gateway-Zugriff.
+6. SMS-Empfänger festlegen: **Alarmvorlage (Gruppe)** auswählen und Empfänger/Text
+   kontrollieren – fehlende Vorlagen durch Administratoren anlegen lassen; das Team
+   hat keinen Gateway-Zugriff. Oder **Einzelne Rufnummern** wählen, bis zu 20
+   Rufnummern (eine pro Zeile) und einen SMS-Text eintragen (Zähler `x/255`).
+   Schaltflächen setzen Textbausteine wie Name des Notfallplans, Datum/Uhrzeit der
+   Auslösung oder Schritttitel ein; sie werden beim Auslösen ersetzt.
 7. **Plan prüfen** (Reiter **Prüfen & Freigabe**) zeigt unvollständige Felder
    und fehlende Verbindungen direkt an. Dann **Entwurf speichern** (Strg+S),
    den gespeicherten Entwurf neu laden und über **Freigabe & Protokoll** die

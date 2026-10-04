@@ -16,9 +16,19 @@ final class EmergencyPlanPreview
             throw new ValidationException(['preview' => 'Ungültige Vorschau oder mehr als 200 Aktionen. Bitte Simulation zurücksetzen.']);
         }
         $definition = EmergencyPlanDefinition::validate($input['definition'], true);
+        $startedAt = self::timestamp($input['startedAt'] ?? null);
         $options = array_column($alarms, null, 'id');
         foreach ($definition['nodes'] as &$node) {
-            if ($node['type'] === 'sms') {
+            if ($node['type'] === 'sms' && $node['sms_mode'] === EmergencyPlanSms::MODE_NUMBERS) {
+                $node['alarm'] = EmergencyPlanSms::alarm($node);
+                if ($node['sms_numbers'] === []) {
+                    $node['alarm']['alarm_group_number'] = 'Noch keine Rufnummer eingetragen.';
+                }
+                if ($node['sms_text'] === '') {
+                    $node['alarm']['alarm_text'] = 'Noch kein SMS-Text eingetragen.';
+                    unset($node['alarm']['placeholders']);
+                }
+            } elseif ($node['type'] === 'sms') {
                 $alarm = $options[$node['alarm_id']] ?? null;
                 $node['alarm'] = ['alarm_text' => $alarm['text'] ?? 'Noch keine aktive SMS-Vorlage ausgewählt.',
                     'alarm_group_number' => $alarm['target'] ?? '', 'alarm_group_description' => $alarm['title'] ?? 'Vorschau',
@@ -26,9 +36,10 @@ final class EmergencyPlanPreview
             }
         }
         unset($node);
+        $definition = EmergencyPlanSms::resolve($definition, $startedAt);
         $event = ['id' => 0, 'revision' => 1, 'title' => $definition['title'], 'snapshot' => $definition,
             'actor' => 'Vorschau', 'state' => [], 'sms' => [], 'status' => 'active',
-            'started_at' => self::timestamp($input['startedAt'] ?? null), 'closed_at' => null];
+            'started_at' => $startedAt, 'closed_at' => null];
         $logs = [];
         foreach ($input['operations'] as $operation) {
             if (!is_array($operation)) {

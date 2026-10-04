@@ -36,6 +36,33 @@ final class AlarmService
         return $this->triggerDefinition($item, $additionalText, $navigationId);
     }
 
+    /**
+     * Versand einer SMS aus einem Notfallplan. Bei einzelnen Rufnummern (`numbers`)
+     * wird je Rufnummer eine Meldung im Modus „Einzelnummer“ ausgelöst und protokolliert.
+     *
+     * @return array{status:string,message:string}
+     */
+    public function triggerEmergency(array $item): array
+    {
+        $numbers = $item['numbers'] ?? null;
+        if (!is_array($numbers) || $numbers === []) {
+            return $this->triggerDefinition($item);
+        }
+        $failed = [];
+        foreach ($numbers as $number) {
+            $result = $this->triggerDefinition(array_replace($item, ['alarm_group_number' => (string) $number, 'alarm_group_type' => 'number']));
+            if ($result['status'] !== 'success') {
+                $failed[] = $number . ': ' . $result['message'];
+            }
+        }
+        $total = count($numbers);
+        if ($failed === []) {
+            return ['status' => 'success', 'message' => 'Die Alarmierung wurde an ' . $total . ($total === 1 ? ' Rufnummer' : ' Rufnummern') . ' ausgelöst.'];
+        }
+
+        return ['status' => 'error', 'message' => 'SMS an ' . count($failed) . ' von ' . $total . ' Rufnummern fehlgeschlagen – ' . implode('; ', $failed)];
+    }
+
     /** Versand einer serverseitig gespeicherten Notfallplan-Vorlage. */
     public function triggerDefinition(array $item, string $additionalText = '', ?int $navigationId = null): array
     {

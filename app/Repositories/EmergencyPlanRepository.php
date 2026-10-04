@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 use App\Exceptions\HttpException;
+use App\Services\EmergencyPlanSms;
 use PDO;
 use PDOException;
 use Throwable;
@@ -277,8 +278,9 @@ final class EmergencyPlanRepository extends Repository
             if ((int) $current['revision'] !== (int) $plan['revision'] || !(bool) $current['published']) {
                 throw new HttpException(409, 'Der Plan wurde geändert. Bitte neu öffnen und prüfen.');
             }
+            $startedAt = gmdate('Y-m-d H:i:s');
             $this->execute('INSERT INTO emergency_events (plan_id, title, actor, request_key, snapshot, state, started_at, trigger_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [$plan['id'], $plan['title'], $actor, $key, self::json($plan['definition']), '{}', gmdate('Y-m-d H:i:s'), $triggerGroup]);
+                [$plan['id'], $plan['title'], $actor, $key, self::json(EmergencyPlanSms::resolve($plan['definition'], $startedAt)), '{}', $startedAt, $triggerGroup]);
             $id = (int) $this->pdo->lastInsertId();
             $this->append($id, '', $actor, 'started', 'Ereignis gestartet; Planversion ' . $plan['revision'] . '.');
             foreach ($recipients as $recipient) {

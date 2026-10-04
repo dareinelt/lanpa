@@ -176,7 +176,8 @@ Freigabenachweis sind entsprechend gekennzeichnet.
 Beim Start entsteht ein unveränderlicher Snapshot des veröffentlichten Plans
 einschließlich SMS-Empfänger und -Text. Bearbeiten oder Zurückziehen des Plans
 verändert laufende/historische Ereignisse nicht. Beim erneuten Speichern eines
-Plans werden dessen SMS-Daten aus den aktuell ausgewählten Alarmvorlagen kopiert.
+Plans werden dessen SMS-Daten aus den aktuell ausgewählten Alarmvorlagen kopiert
+(SMS an einzelne Rufnummern sind direkt im Plan gespeichert).
 Eine zentrale Änderung/Deaktivierung der Vorlage stoppt also **keine bereits
 gespeicherten oder gestarteten Notfallpläne**. Bei Rücknahme einer Alarmierung
 betroffene Pläne ausdrücklich prüfen und zurückziehen.
@@ -355,6 +356,28 @@ Der Editor verwendet vorhandene aktive Alarmkacheln und das bestehende Gateway.
 Das KAEP-Team kann weder Gateway-Zugangsdaten ändern noch fremde Adminbereiche
 öffnen. Ein Administrator legt fehlende Alarmvorlagen an.
 
+**Einzelne Rufnummern:** Statt einer Alarmvorlage (Gruppe) kann ein SMS-Schritt
+an 1–20 einzeln eingetragene Rufnummern gehen (eine pro Zeile; erlaubt sind
+Ziffern, `+`, `*`, `#`, `/`, `-`, Leerzeichen und Klammern). Dann ist ein eigener
+SMS-Text Pflicht; der Zähler zeigt `x/255` Zeichen. Per Klick lassen sich
+Textbausteine einsetzen:
+
+| Baustein | Wird ersetzt durch |
+| --- | --- |
+| `{Notfallplan}` | Name des Notfallplans |
+| `{Datum}` | Datum der Auslösung (TT.MM.JJJJ, Ortszeit `APP_TIMEZONE`) |
+| `{Uhrzeit}` | Uhrzeit der Auslösung (HH:MM, Ortszeit) |
+| `{Schritt}` | Titel des SMS-Schritts |
+
+Die Bausteine werden beim **Start des Ereignisses** einmalig in den Snapshot
+eingesetzt; Ereignisansicht, KAEP-Dashboard und Versand zeigen den fertigen Text.
+Das Limit von 255 Zeichen gilt für die fertige Nachricht (Datum zählt 10,
+Uhrzeit 5 Zeichen, Plan- und Schritttitel mit ihrer tatsächlichen Länge) und wird
+beim Speichern geprüft. Beim Versand erhält jede Rufnummer über den
+Einzelnummer-Zugang des Gateways eine eigene SMS (Protokoll in `alarm_log`); schlägt
+eine fehl, gilt der Versand als fehlgeschlagen und die betroffenen Rufnummern
+werden genannt – auch dann gibt es keinen automatischen Neuversand.
+
 **Kein automatischer SMS-Versand beim Start.** Jede SMS wird im Ereignis mit
 Empfänger und Text angezeigt und separat bestätigt. Vor dem Netzwerkaufruf wird
 die Maßnahme dauerhaft reserviert, um Doppelklicks und parallele Auslösung
@@ -422,6 +445,7 @@ Beides ist **nur Administratoren** erlaubt; das KAEP-Team erhält HTTP 403.
   entscheiden Alarmtext und Zielrufnummer. Fehlt eine Vorlage oder ist sie nicht
   eindeutig, wird nichts importiert und die fehlenden Titel werden genannt.
   SMS-Text und Empfänger stammen danach aus der Vorlage des Zielsystems.
+  SMS an einzelne Rufnummern werden unverändert (Rufnummern und Text) übernommen.
 - **Vier-Augen-Prinzip:** Die importierende Person gilt als Autor des Entwurfs
   (Freigabeprotokoll: „Importiert“) und darf ihn nicht selbst freigeben. Vor der
   Veröffentlichung prüft eine zweite, unbeteiligte Person insbesondere die

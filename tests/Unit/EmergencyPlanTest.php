@@ -9,6 +9,7 @@ use App\Repositories\NavigationRepository;
 use App\Repositories\SettingsRepository;
 use App\Services\EmergencyPlanDefinition;
 use App\Services\EmergencyPlanService;
+use App\Services\EmergencyPlanSms;
 use App\Services\SettingsService;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
@@ -482,4 +483,88 @@ Runner::test('Notfallplan: Import prüft Format, Inhalt und Alarmvorlagen vollst
     $rejected = false;
     try { $service->exportPlans([]); } catch (ValidationException) { $rejected = true; }
     Assert::true($rejected);
+});
+
+function emergencySmsNumbersNode(string $id, array $values = []): array
+{
+    return array_replace(emergencyNode($id, 'sms'), ['alarm_id' => 0, 'sms_mode' => 'numbers',
+        'sms_numbers' => ['+49 171 1234567', '0171/7654321'], 'sms_text' => 'Alarm {Notfallplan} am {Datum} um {Uhrzeit}'], $values);
+}
+
+function emergencyRejected(array $input): string
+{
+    try {
+        EmergencyPlanDefinition::validate($input);
+    } catch (ValidationException $exception) {
+        return implode(' ', $exception->errors());
+    }
+    throw new RuntimeException('Validierung hätte scheitern müssen.');
+}
+
+Runner::test('Notfallplan: SMS an einzelne Rufnummern – Rufnummern, Pflichttext und Zeichenlimit', static function (): void {
+    $node = EmergencyPlanDefinition::validate(['title' => 'Brand', 'nodes' => [emergencySmsNumbersNode('s', ['alarm_id' => 7, 'sms_numbers' => [' 0171 1 ', '', '0171 1', '+49 (30) 123-4']])]])['nodes'][0];
+    Assert::same('numbers', $node['sms_mode']);
+    Assert::same(['0171 1', '+49 (30) 123-4'], $node['sms_numbers'], 'Rufnummern werden bereinigt und entdoppelt.');
+    Assert::same(0, $node['alarm_id']);
+    $legacy = EmergencyPlanDefinition::validate(['title' => 'Alt', 'nodes' => [emergencyNode('s', 'sms')]])['nodes'][0];
+    Assert::same(['template', [], ''], [$legacy['sms_mode'], $legacy['sms_numbers'], $legacy['sms_text']]);
+    $action = EmergencyPlanDefinition::validate(['title' => 'x', 'nodes' => [emergencyNode('a') + ['sms_mode' => 'numbers', 'sms_numbers' => ['1'], 'sms_text' => 'x']]])['nodes'][0];
+    Assert::same(['template', [], ''], [$action['sms_mode'], $action['sms_numbers'], $action['sms_text']], 'Nur SMS-Elemente tragen SMS-Daten.');
+
+    Assert::contains('Rufnummern', emergencyRejected(['title' => 'x', 'nodes' => [emergencySmsNumbersNode('s', ['sms_numbers' => []])]]));
+    Assert::contains('Rufnummern', emergencyRejected(['title' => 'x', 'nodes' => [emergencySmsNumbersNode('s', ['sms_numbers' => array_map(static fn ($i) => '0171 ' . $i, range(1, 21))])]]));
+    Assert::contains('Ungültige Rufnummer', emergencyRejected(['title' => 'x', 'nodes' => [emergencySmsNumbersNode('s', ['sms_numbers' => ['0171;rm']])]]));
+    Assert::contains('SMS-Text', emergencyRejected(['title' => 'x', 'nodes' => [emergencySmsNumbersNode('s', ['sms_text' => '  '])]]));
+    Assert::contains('SMS-Text', emergencyRejected(['title' => 'x', 'nodes' => [emergencySmsNumbersNode('s', ['sms_text' => str_repeat('a', 256)])]]));
+    Assert::contains('Empfängerart', emergencyRejected(['title' => 'x', 'nodes' => [emergencySmsNumbersNode('s', ['sms_mode' => 'mail'])]]));
+
+    // 240 Zeichen + {Datum} (10) = 250 erlaubt; 238 + 2 × {Datum} = 258 zu lang, obwohl der Rohtext nur 252 Zeichen hat.
+    EmergencyPlanDefinition::validate(['title' => 'x', 'nodes' => [emergencySmsNumbersNode('s', ['sms_text' => str_repeat('a', 240) . '{Datum}'])]]);
+    Assert::contains('258 Zeichen', emergencyRejected(['title' => 'x', 'nodes' => [emergencySmsNumbersNode('s', ['sms_text' => str_repeat('a', 238) . '{Datum}{Datum}'])]]));
+    // Der Plantitel zählt beim Platzhalter {Notfallplan} mit.
+    Assert::contains('Zeichen', emergencyRejected(['title' => str_repeat('T', 190), 'nodes' => [emergencySmsNumbersNode('s', ['sms_text' => str_repeat('a', 70) . '{Notfallplan}'])]]));
+    Assert::same(15, EmergencyPlanSms::length('{Datum}{Uhrzeit}', 'egal', 'egal'));
+    Assert::same('Brand / Schritt / {Unbekannt}', EmergencyPlanSms::render('{Notfallplan} / {Schritt} / {Unbekannt}', 'Brand', 'Schritt', 0));
+    Assert::same('{Datum}', EmergencyPlanSms::render('{Notfallplan}', '{Datum}', '', 0), 'Eingesetzte Werte werden nicht erneut ersetzt.');
+});
+
+Runner::test('Notfallplan: SMS an einzelne Rufnummern – Textbausteine beim Start, Versand je Rufnummer', static function (): void {
+    $sent = [];
+    $service = emergencyService(emergencyPdo(), null, static function (array $alarm) use (&$sent): array {
+        $sent[] = $alarm;
+        return ['status' => 'success', 'message' => 'Gateway bestätigt.'];
+    });
+    $id = $service->save(0, 0, ['title' => 'Gasaustritt', 'nodes' => [emergencySmsNumbersNode('sms', ['title' => 'Haustechnik informieren',
+        'sms_text' => '{Notfallplan}: {Schritt} – ausgelöst am {Datum} um {Uhrzeit}'])]], 'local:admin');
+    $draft = $service->repository->plan($id)['definition']['nodes'][0]['alarm'];
+    Assert::same('{Notfallplan}: {Schritt} – ausgelöst am {Datum} um {Uhrzeit}', $draft['alarm_text'], 'Der Entwurf behält die Textbausteine.');
+    Assert::same(['+49 171 1234567', '0171/7654321'], $draft['numbers']);
+    Assert::same('number', $draft['alarm_group_type']);
+    $service->repository->submit($id, 1, 'local:admin');
+    $service->repository->review($id, 1, 'local:reviewer', true, 'Geprüft.');
+    $eventId = $service->start($id, 1, emergencyUser(), ' correct password ', bin2hex(random_bytes(32)));
+    $event = $service->repository->event($eventId);
+    $started = strtotime($event['started_at'] . ' UTC');
+    $expected = 'Gasaustritt: Haustechnik informieren – ausgelöst am ' . date('d.m.Y', $started) . ' um ' . date('H:i', $started);
+    Assert::same($expected, $event['snapshot']['nodes'][0]['alarm']['alarm_text']);
+    Assert::false(isset($event['snapshot']['nodes'][0]['alarm']['placeholders']));
+    Assert::same('{Notfallplan}: {Schritt} – ausgelöst am {Datum} um {Uhrzeit}',
+        $service->repository->publishedPlan($id)['definition']['nodes'][0]['alarm']['alarm_text'], 'Die veröffentlichte Fassung bleibt unverändert.');
+    $service->update($event, 'actor', ['revision' => 1, 'node' => 'sms', 'action' => 'sms']);
+    Assert::same(1, count($sent));
+    Assert::same($expected, $sent[0]['alarm_text']);
+    Assert::same(['+49 171 1234567', '0171/7654321'], $sent[0]['numbers']);
+    Assert::same('success', $service->repository->event($eventId)['sms']['sms']['status']);
+});
+
+Runner::test('Notfallplan: Import übernimmt SMS an einzelne Rufnummern ohne Alarmvorlage', static function (): void {
+    $source = emergencyService(emergencyPdo());
+    $id = $source->save(0, 0, ['title' => 'Export', 'nodes' => [emergencySmsNumbersNode('s')]], 'local:autor');
+    $targetPdo = emergencyPdo();
+    emergencyAlarmTables($targetPdo, []);
+    $target = emergencyService($targetPdo);
+    Assert::same([1], $target->importPlans($source->exportPlans([$id]), 'local:admin'));
+    $node = $target->repository->plan(1)['definition']['nodes'][0];
+    Assert::same(['+49 171 1234567', '0171/7654321'], $node['sms_numbers']);
+    Assert::same('Alarm {Notfallplan} am {Datum} um {Uhrzeit}', $node['alarm']['alarm_text']);
 });

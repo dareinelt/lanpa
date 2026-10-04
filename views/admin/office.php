@@ -18,6 +18,14 @@ use App\Support\Html;
 /** @var array<string,string> $tileErrors */
 /** @var array<string,string> $tileStatusModes */
 /** @var list<string> $tileIcons */
+/** @var array<string,string> $orvantaValues */
+/** @var array<string,string> $orvantaErrors */
+/** @var bool $orvantaHasPassword */
+/** @var bool $orvantaEnabled */
+/** @var bool $orvantaDemo */
+/** @var string $orvantaEwsUrl */
+/** @var list<array{user_uid:string,items:int,bytes:int}> $orvantaCacheUsage */
+/** @var array{auth:array<string,string>,identity:array<string,string>,versions:array<string,string>,folders:array<string,string>} $orvantaOptions */
 /** @var array<string,mixed> $previewConfig */
 /** @var array<string,string> $aiValues */
 /** @var array<string,string> $aiErrors */
@@ -374,6 +382,231 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
     <div class="form__actions">
         <a class="button button--primary" href="/admin/office/apps">Apps und Berechtigungen verwalten</a>
     </div>
+</section>
+
+<?php
+$ovField = static function (string $name) use ($orvantaErrors): string {
+    return isset($orvantaErrors[$name]) ? 'aria-invalid="true" aria-describedby="ov-' . Html::e($name) . '-error"' : '';
+};
+$ovFieldError = static function (string $name) use ($orvantaErrors): string {
+    return isset($orvantaErrors[$name])
+        ? '<p class="field__error" id="ov-' . Html::e($name) . '-error">' . Html::e($orvantaErrors[$name]) . '</p>'
+        : '';
+};
+$ov = $orvantaValues;
+?>
+<section class="card" id="orvanta" aria-labelledby="office-orvanta-title">
+    <h2 class="card__title" id="office-orvanta-title">
+        <img src="/assets/images/orvanta-logo.png?v=<?= Html::e($assetVersion) ?>" alt="" width="40" height="36" class="card__title-logo">
+        Orvanta – Mail &amp; Kalender (Exchange On-Premise)
+    </h2>
+    <p class="card__hint">
+        Orvanta ist die Mail-, Kalender-, Kontakte-, Aufgaben- und Notizen-App der Office-Kachel
+        (Outlook-Ersatz im Browser). Sie spricht über <strong>Exchange Web Services (EWS)</strong> mit
+        Exchange ab Version 2016/2019 und greift im Namen des per Windows-Anmeldung erkannten
+        Benutzers auf dessen Postfach zu (Impersonation). Welche Benutzer die App sehen, wird wie bei
+        den übrigen Office-Apps unter <a href="/admin/office/apps">Apps und Berechtigungen</a> geregelt.
+    </p>
+    <?php if ($orvantaEnabled) { ?>
+        <p class="status status--ok">
+            <?php if ($orvantaDemo) { ?>
+                Demo-Modus aktiv: Orvanta zeigt Beispieldaten ohne Exchange-Server (nur außerhalb der Produktion).
+            <?php } else { ?>
+                Aktiv – EWS-Endpunkt: <code><?= Html::e($orvantaEwsUrl) ?></code>
+            <?php } ?>
+            <a href="/office/orvanta" target="_blank" rel="noopener">Orvanta öffnen</a>
+        </p>
+    <?php } else { ?>
+        <p class="status status--muted">Nicht aktiviert – die App erscheint erst nach Aktivierung in der Office-Kachel.</p>
+    <?php } ?>
+
+    <form method="post" action="/admin/office/orvanta" class="form form--wide">
+        <?= Csrf::field() ?>
+
+        <div class="field field--check">
+            <input type="checkbox" id="exchange_enabled" name="exchange_enabled" value="1" <?= ($ov['exchange_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
+            <label for="exchange_enabled">Exchange-Anbindung aktivieren (Orvanta in der Office-Kachel anbieten)</label>
+        </div>
+
+        <fieldset class="fieldset">
+            <legend>Exchange-Server</legend>
+            <div class="field-row">
+                <div class="field">
+                    <label for="exchange_host">Hostname des Exchange-Servers</label>
+                    <input type="text" id="exchange_host" name="exchange_host" maxlength="255"
+                           value="<?= Html::e($ov['exchange_host'] ?? '') ?>" placeholder="mail.firma.local" <?= $ovField('exchange_host') ?>>
+                    <p class="field__hint">Daraus wird <code>https://host/EWS/Exchange.asmx</code> gebildet. Der Wert <code>demo</code> aktiviert außerhalb der Produktion Beispieldaten.</p>
+                    <?= $ovFieldError('exchange_host') ?>
+                </div>
+                <div class="field">
+                    <label for="exchange_version">Exchange-Version</label>
+                    <select id="exchange_version" name="exchange_version">
+                        <?php foreach ($orvantaOptions['versions'] as $key => $label) { ?>
+                            <option value="<?= Html::e($key) ?>" <?= ($ov['exchange_version'] ?? '') === $key ? 'selected' : '' ?>><?= Html::e($label) ?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+            <div class="field">
+                <label for="exchange_ews_url">EWS-Endpunkt (optional, überschreibt den Hostnamen)</label>
+                <input type="url" id="exchange_ews_url" name="exchange_ews_url" maxlength="2048"
+                       value="<?= Html::e($ov['exchange_ews_url'] ?? '') ?>" placeholder="https://mail.firma.local/EWS/Exchange.asmx" <?= $ovField('exchange_ews_url') ?>>
+                <?= $ovFieldError('exchange_ews_url') ?>
+            </div>
+            <div class="field">
+                <label for="exchange_owa_url">Outlook Web App (optional, Link „Im Browser-Outlook öffnen“)</label>
+                <input type="url" id="exchange_owa_url" name="exchange_owa_url" maxlength="2048"
+                       value="<?= Html::e($ov['exchange_owa_url'] ?? '') ?>" placeholder="https://mail.firma.local/owa/" <?= $ovField('exchange_owa_url') ?>>
+                <?= $ovFieldError('exchange_owa_url') ?>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="exchange_timeout">Zeitlimit je Anfrage (Sekunden)</label>
+                    <input type="number" id="exchange_timeout" name="exchange_timeout" min="3" max="120" step="1"
+                           value="<?= Html::e($ov['exchange_timeout'] ?? '20') ?>" <?= $ovField('exchange_timeout') ?>>
+                    <?= $ovFieldError('exchange_timeout') ?>
+                </div>
+                <div class="field field--check field--align-end">
+                    <input type="checkbox" id="exchange_verify_tls" name="exchange_verify_tls" value="1" <?= ($ov['exchange_verify_tls'] ?? '1') === '1' ? 'checked' : '' ?>>
+                    <label for="exchange_verify_tls">TLS-Zertifikat des Exchange-Servers prüfen (empfohlen)</label>
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+            <legend>Anmeldung am Exchange-Server</legend>
+            <p class="field__hint">
+                Orvanta meldet sich mit einem Dienstkonto an, das die Rolle <code>ApplicationImpersonation</code>
+                besitzt, und handelt im Namen des erkannten Benutzers. Mit „Negotiate“ wird die Kerberos-Identität
+                des Containers (Keytab des auth-Dienstes) verwendet; Dienstkonto/Kennwort sind dann optional.
+            </p>
+            <div class="field">
+                <label for="exchange_auth">Anmeldeverfahren</label>
+                <select id="exchange_auth" name="exchange_auth" <?= $ovField('exchange_auth') ?>>
+                    <?php foreach ($orvantaOptions['auth'] as $key => $label) { ?>
+                        <option value="<?= Html::e($key) ?>" <?= ($ov['exchange_auth'] ?? 'negotiate') === $key ? 'selected' : '' ?>><?= Html::e($label) ?></option>
+                    <?php } ?>
+                </select>
+                <?= $ovFieldError('exchange_auth') ?>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="exchange_service_user">Dienstkonto</label>
+                    <input type="text" id="exchange_service_user" name="exchange_service_user" maxlength="190" autocomplete="off"
+                           value="<?= Html::e($ov['exchange_service_user'] ?? '') ?>" placeholder="FIRMA\svc-orvanta oder svc-orvanta@firma.local">
+                </div>
+                <div class="field">
+                    <label for="exchange_service_password">Kennwort des Dienstkontos</label>
+                    <input type="password" id="exchange_service_password" name="exchange_service_password" maxlength="500" autocomplete="new-password"
+                           placeholder="<?= $orvantaHasPassword ? 'gespeichert – leer lassen, um es zu behalten' : 'leer = ohne Kennwort' ?>" <?= $ovField('exchange_service_password') ?>>
+                    <?= $ovFieldError('exchange_service_password') ?>
+                    <?php if ($orvantaHasPassword) { ?>
+                        <div class="field field--check">
+                            <input type="checkbox" id="exchange_service_password_clear" name="exchange_service_password_clear" value="1">
+                            <label for="exchange_service_password_clear">Gespeichertes Kennwort entfernen</label>
+                        </div>
+                    <?php } ?>
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="exchange_identity">Postfach-Zuordnung der Benutzer</label>
+                    <select id="exchange_identity" name="exchange_identity">
+                        <?php foreach ($orvantaOptions['identity'] as $key => $label) { ?>
+                            <option value="<?= Html::e($key) ?>" <?= ($ov['exchange_identity'] ?? 'smtp') === $key ? 'selected' : '' ?>><?= Html::e($label) ?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="exchange_upn_domain">UPN-Domäne (bei Benutzerprinzipalname)</label>
+                    <input type="text" id="exchange_upn_domain" name="exchange_upn_domain" maxlength="190"
+                           value="<?= Html::e($ov['exchange_upn_domain'] ?? '') ?>" placeholder="firma.local" <?= $ovField('exchange_upn_domain') ?>>
+                    <?= $ovFieldError('exchange_upn_domain') ?>
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+            <legend>Zwischenspeicher, Erinnerungen und Darstellung</legend>
+            <p class="field__hint">
+                Empfangene Anhänge werden im Nextcloud-Bereich des jeweiligen Benutzers im unten genannten Ordner
+                zwischengespeichert und bei Überschreitung des Quotas automatisch (älteste zuerst) entfernt.
+                Mit „In Nextcloud speichern“ abgelegte Anhänge landen dauerhaft im Unterordner „Anhänge“.
+            </p>
+            <div class="field-row">
+                <div class="field">
+                    <label for="cache_folder">Ordner in Nextcloud</label>
+                    <input type="text" id="cache_folder" name="cache_folder" maxlength="120"
+                           value="<?= Html::e($ov['cache_folder'] ?? 'Orvanta') ?>" <?= $ovField('cache_folder') ?>>
+                    <?= $ovFieldError('cache_folder') ?>
+                </div>
+                <div class="field">
+                    <label for="cache_quota_mb">Quota des Zwischenspeichers je Benutzer (MB, 0 = aus)</label>
+                    <input type="number" id="cache_quota_mb" name="cache_quota_mb" min="0" max="1048576" step="1"
+                           value="<?= Html::e($ov['cache_quota_mb'] ?? '250') ?>" <?= $ovField('cache_quota_mb') ?>>
+                    <?= $ovFieldError('cache_quota_mb') ?>
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="reminder_lead_minutes">Vorlaufzeit der Terminerinnerungen (Minuten)</label>
+                    <input type="number" id="reminder_lead_minutes" name="reminder_lead_minutes" min="0" max="1440" step="1"
+                           value="<?= Html::e($ov['reminder_lead_minutes'] ?? '15') ?>" <?= $ovField('reminder_lead_minutes') ?>>
+                    <p class="field__hint">Gilt, wenn ein Termin keine eigene Erinnerung hinterlegt hat.</p>
+                    <?= $ovFieldError('reminder_lead_minutes') ?>
+                </div>
+                <div class="field">
+                    <label for="poll_interval">Abfrageintervall der App (Sekunden)</label>
+                    <input type="number" id="poll_interval" name="poll_interval" min="15" max="900" step="1"
+                           value="<?= Html::e($ov['poll_interval'] ?? '60') ?>" <?= $ovField('poll_interval') ?>>
+                    <?= $ovFieldError('poll_interval') ?>
+                </div>
+                <div class="field">
+                    <label for="default_folder">Startansicht</label>
+                    <select id="default_folder" name="default_folder">
+                        <?php foreach ($orvantaOptions['folders'] as $key => $label) { ?>
+                            <option value="<?= Html::e($key) ?>" <?= ($ov['default_folder'] ?? 'inbox') === $key ? 'selected' : '' ?>><?= Html::e($label) ?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+            <div class="field field--check">
+                <input type="checkbox" id="reminder_header" name="reminder_header" value="1" <?= ($ov['reminder_header'] ?? '1') === '1' ? 'checked' : '' ?>>
+                <label for="reminder_header">Fällige Terminerinnerungen auch in den Mitteilungen der Intranet-Kopfzeile anzeigen</label>
+            </div>
+        </fieldset>
+
+        <div class="form__actions">
+            <button type="submit" class="button button--primary">Orvanta-Einstellungen speichern</button>
+        </div>
+    </form>
+
+    <form method="post" action="/admin/office/orvanta/pruefen" class="form form--inline form--spaced">
+        <?= Csrf::field() ?>
+        <div class="field">
+            <label for="orvanta_test_mailbox">Verbindungstest (optional im Namen eines Postfachs)</label>
+            <div class="field-row">
+                <input type="email" id="orvanta_test_mailbox" name="mailbox" maxlength="190" placeholder="benutzer@firma.local">
+                <button type="submit" class="button" <?= $orvantaEnabled ? '' : 'disabled' ?>>Verbindung prüfen</button>
+            </div>
+        </div>
+    </form>
+
+    <?php if ($orvantaCacheUsage !== []) { ?>
+        <h3 class="card__subtitle">Belegung des Zwischenspeichers</h3>
+        <table class="table table--compact">
+            <thead><tr><th>Benutzer</th><th class="table__num">Elemente</th><th class="table__num">Belegt</th></tr></thead>
+            <tbody>
+            <?php foreach ($orvantaCacheUsage as $row) { ?>
+                <tr>
+                    <td><?= Html::e($row['user_uid']) ?></td>
+                    <td class="table__num"><?= (int) $row['items'] ?></td>
+                    <td class="table__num"><?= Html::e($formatBytes($row['bytes'])) ?></td>
+                </tr>
+            <?php } ?>
+            </tbody>
+        </table>
+    <?php } ?>
 </section>
 
 <section class="card" id="kachel" aria-labelledby="office-tile-title">

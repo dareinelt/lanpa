@@ -42,6 +42,8 @@ use App\Controllers\LandingController;
 use App\Controllers\LogoController;
 use App\Controllers\NetworkDriveController;
 use App\Controllers\OfficeController;
+use App\Controllers\OrvantaApiController;
+use App\Controllers\OrvantaController;
 use App\Controllers\PageController;
 use App\Controllers\PhonebookController;
 use App\Controllers\ProtectedAccessController;
@@ -86,7 +88,7 @@ $requireUnlocked = static function (Request $request): ?Response {
 // Domaenen-Clients kommen angemeldet zurueck, alle anderen ohne Anmeldung –
 // es gibt keine Anmeldepflicht.
 $ssoAttempt = static function (Request $request): ?Response {
-    if (!in_array($request->path, ['/', '/unterseite', '/seite', '/office-starten', '/office-app'], true)) {
+    if (!in_array($request->path, ['/', '/unterseite', '/seite', '/office-starten', '/office-app', '/office/orvanta'], true)) {
         return null;
     }
 
@@ -135,7 +137,45 @@ $router->get('/api/office/footer', [OfficeController::class, 'footer']);
 $router->get('/api/office/status', [OfficeController::class, 'status']);
 $router->group([$ssoAttempt], static function (Router $router): void {
     $router->get('/office-app', [OfficeController::class, 'launch']);
+    $router->get('/office/orvanta', [OrvantaController::class, 'index']);
 });
+
+// Orvanta (Mail & Kalender, Exchange On-Premise): Anhang-Links und JSON-API.
+// Zugriff: SSO-Benutzer mit App-Freigabe (OrvantaController::authorize).
+$router->get('/office/orvanta/anhang/oeffnen', [OrvantaController::class, 'openAttachment']);
+$router->get('/office/orvanta/anhang/datei', [OrvantaController::class, 'attachmentFile']); // Token-Zugriff des DocumentServers
+$router->get('/api/orvanta/status', [OrvantaApiController::class, 'status']);
+$router->get('/api/orvanta/mail/ordner', [OrvantaApiController::class, 'folders']);
+$router->get('/api/orvanta/mail', [OrvantaApiController::class, 'messages']);
+$router->get('/api/orvanta/mail/nachricht', [OrvantaApiController::class, 'message']);
+$router->post('/api/orvanta/mail/senden', [OrvantaApiController::class, 'send']);
+$router->post('/api/orvanta/mail/entwurf', [OrvantaApiController::class, 'draft']);
+$router->post('/api/orvanta/mail/antworten', [OrvantaApiController::class, 'respond']);
+$router->post('/api/orvanta/mail/aktion', [OrvantaApiController::class, 'mailAction']);
+$router->post('/api/orvanta/anhang/link', [OrvantaApiController::class, 'attachmentLink']);
+$router->post('/api/orvanta/anhang/nextcloud', [OrvantaApiController::class, 'attachmentToNextcloud']);
+$router->get('/api/orvanta/zwischenspeicher', [OrvantaApiController::class, 'cacheUsage']);
+$router->post('/api/orvanta/zwischenspeicher/leeren', [OrvantaApiController::class, 'cacheClear']);
+$router->get('/api/orvanta/kalender', [OrvantaApiController::class, 'calendar']);
+$router->get('/api/orvanta/kalender/termin', [OrvantaApiController::class, 'event']);
+$router->post('/api/orvanta/kalender/termin', [OrvantaApiController::class, 'saveEvent']);
+$router->post('/api/orvanta/kalender/termin/loeschen', [OrvantaApiController::class, 'deleteEvent']);
+$router->post('/api/orvanta/kalender/antwort', [OrvantaApiController::class, 'meetingResponse']);
+$router->get('/api/orvanta/kontakte', [OrvantaApiController::class, 'contacts']);
+$router->get('/api/orvanta/kontakte/kontakt', [OrvantaApiController::class, 'contact']);
+$router->post('/api/orvanta/kontakte/kontakt', [OrvantaApiController::class, 'saveContact']);
+$router->post('/api/orvanta/kontakte/loeschen', [OrvantaApiController::class, 'deleteContact']);
+$router->get('/api/orvanta/aufgaben', [OrvantaApiController::class, 'tasks']);
+$router->get('/api/orvanta/aufgaben/aufgabe', [OrvantaApiController::class, 'task']);
+$router->post('/api/orvanta/aufgaben/aufgabe', [OrvantaApiController::class, 'saveTask']);
+$router->post('/api/orvanta/aufgaben/loeschen', [OrvantaApiController::class, 'deleteTask']);
+$router->get('/api/orvanta/notizen', [OrvantaApiController::class, 'notes']);
+$router->get('/api/orvanta/notizen/notiz', [OrvantaApiController::class, 'note']);
+$router->post('/api/orvanta/notizen/notiz', [OrvantaApiController::class, 'saveNote']);
+$router->post('/api/orvanta/notizen/loeschen', [OrvantaApiController::class, 'deleteNote']);
+$router->get('/api/orvanta/erinnerungen', [OrvantaApiController::class, 'reminders']);
+$router->post('/api/orvanta/erinnerungen/erledigt', [OrvantaApiController::class, 'dismissReminder']);
+$router->post('/api/orvanta/erinnerungen/spaeter', [OrvantaApiController::class, 'snoozeReminder']);
 
 $router->get('/admin/login', [AuthController::class, 'showLogin']);
 foreach (['/notfallplan' => 'index', '/notfallplan/plan' => 'plan', '/notfallplan/ereignis' => 'event', '/notfallplan/stand' => 'status', '/notfallplan/anleitung' => 'guide', '/notfallplan/anhang' => 'attachment'] as $path => $method) {
@@ -286,6 +326,8 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/office/sicherung', [OfficeAdminController::class, 'backup']);
         $router->post('/admin/office/kachel', [OfficeAdminController::class, 'createTile']);
         $router->post('/admin/office/kachel/gestaltung', [OfficeAdminController::class, 'updateTile']);
+        $router->post('/admin/office/orvanta', [OfficeAdminController::class, 'updateOrvanta']);
+        $router->post('/admin/office/orvanta/pruefen', [OfficeAdminController::class, 'testOrvanta']);
         $router->get('/admin/office/kachel/vorschau', [OfficeAdminController::class, 'tilePreview']);
         $router->get('/admin/office/apps', [OfficeAppsAdminController::class, 'index']);
         $router->post('/admin/office/apps/owa', [OfficeAppsAdminController::class, 'updateOwa']);

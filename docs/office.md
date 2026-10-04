@@ -456,6 +456,7 @@ Nach Klick auf die Office-Kachel erscheint eine Übersicht der einzelnen Apps:
 | PDF-Formular | Euro-Office-Webapp `pdfeditor` |
 | Dateien | eigene Dateien in Nextcloud (`/office/index.php/apps/files/`) |
 | Outlook Web App | im Adminbereich hinterlegter Link (öffnet in neuem Tab) |
+| Orvanta | Mail, Kalender, Kontakte, Aufgaben und Notizen aus Exchange On-Premise im Intranet (`/office/orvanta`, nur wenn im Adminbereich aktiviert) – siehe [docs/orvanta.md](orvanta.md) |
 
 Die Editoren stammen aus [Euro-Office/web-apps](https://github.com/Euro-Office/web-apps)
 und werden vom DocumentServer (`/eurooffice/web-apps/…`) ausgeliefert. Gestartet
@@ -513,6 +514,7 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 | Vorschau der Fußzeile | Live-Vorschau mit demselben Stylesheet/Skript wie in Nextcloud |
 | Kachel im Intranet | Gestaltung, Status-Darstellung, Berechtigungen |
 | Office-Apps | Link zur Outlook Web App, Freigaben je App (AD-Gruppen), App-Pakete ([Abschnitt 5a](#5a-office-apps-und-app-pakete)) |
+| Orvanta | Exchange-Server (Host/EWS-Endpunkt, Version, TLS), Anmeldung (Negotiate/NTLM/Basic, Dienstkonto mit `ApplicationImpersonation`, Postfach-Zuordnung), Zwischenspeicher in Nextcloud mit Quota je Benutzer, Erinnerungen, Verbindungstest ([docs/orvanta.md](orvanta.md)) |
 | Sicherung | Sicherung anstoßen, vorhandene Sicherungen, Aufbewahrung |
 
 | Status | Diagnose |

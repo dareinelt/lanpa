@@ -29,10 +29,14 @@ final class OfficeAppService
     /** Start einer einzelnen App (?app=<Schluessel>). */
     public const LAUNCH_PATH = '/office-app';
 
+    /**
+     * @param \Closure(): bool $orvantaEnabled Liefert, ob die Exchange-Anbindung von Orvanta aktiv ist.
+     */
     public function __construct(
         private readonly OfficeAppRepository $repository,
         private readonly OfficeConfigService $config,
-        private readonly SettingsService $settings
+        private readonly SettingsService $settings,
+        private readonly ?\Closure $orvantaEnabled = null
     ) {
     }
 
@@ -55,7 +59,7 @@ final class OfficeAppService
                 'webapp' => (string) ($app['webapp'] ?? ''),
                 'configured' => $target !== '',
                 'target' => $target,
-                'external' => $app['kind'] === 'external',
+                'external' => in_array($app['kind'], ['external', 'intranet'], true),
             ];
         }
 
@@ -164,6 +168,7 @@ final class OfficeAppService
             ),
             'files' => $base . 'index.php/apps/files/',
             'external' => $key === 'owa' ? $this->owaUrl() : '',
+            'intranet' => $key === 'orvanta' && $this->orvantaEnabled !== null && ($this->orvantaEnabled)() ? OfficeAppCatalog::ORVANTA_PATH : '',
             default => '',
         };
     }

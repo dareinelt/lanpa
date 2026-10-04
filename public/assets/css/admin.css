@@ -187,6 +187,7 @@
 }
 
 .field input[type="text"],
+.field input[type="email"],
 .field input[type="url"],
 .field input[type="password"],
 .field input[type="number"],
@@ -1829,4 +1830,59 @@ body.has-nav-tree-overlay {
 
 .tier-extend .field--check {
     grid-column: 1 / -1;
+}
+
+/* Orvanta-Karte (Exchange-Anbindung) */
+.card__subtitle {
+    font-size: .98rem;
+    margin: 1.2rem 0 .5rem;
+}
+
+.status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem .8rem;
+    align-items: center;
+    margin: 0 0 1rem;
+    padding: .55rem .8rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-hover);
+    font-size: .9rem;
+}
+
+.status--ok {
+    border-color: #8fd3a8;
+    background: #e8f7ee;
+    color: #15532b;
+}
+
+.status--muted {
+    color: var(--color-muted);
+}
+
+.card__title-logo { vertical-align: middle; margin-right: .4rem; }
+.field--align-end { align-self: end; }
+.form--spaced { margin-top: 1rem; }
+
+.form--inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .6rem;
+}
+
+.table--compact {
+    min-width: 0;
+}
+
+.table--compact th,
+.table--compact td {
+    padding: .4rem .6rem;
+    font-size: .88rem;
+}
+
+.table__num {
+    text-align: right !important;
+    white-space: nowrap;
 }

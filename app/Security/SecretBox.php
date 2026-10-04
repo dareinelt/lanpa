@@ -71,6 +71,15 @@ final class SecretBox
     }
 
     /**
+     * Zweckgebundener Signaturschluessel, abgeleitet vom Installationsschluessel
+     * (z. B. fuer kurzlebige signierte Links). Verlaesst nie den Server.
+     */
+    public function deriveKey(string $purpose): string
+    {
+        return hash_hmac('sha256', $purpose, $this->key());
+    }
+
+    /**
      * Stellt sicher, dass der Schluessel existiert (z. B. beim Containerstart).
      */
     public function ensureKey(): void

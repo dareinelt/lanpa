@@ -1,0 +1,316 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services\Orvanta;
+
+use App\Exceptions\ValidationException;
+use App\Repositories\OrvantaRepository;
+use App\Security\SecretBox;
+use App\Support\Validator;
+
+/**
+ * Einstellungen von Orvanta (Tabelle orvanta_settings): Exchange-Server,
+ * EWS-Endpunkt, Anmeldeverfahren des Dienstkontos (Kennwort verschluesselt),
+ * Zuordnung der SSO-Identitaet (Impersonation), Zwischenspeicher-Quota und
+ * Standardordner. Gepflegt im Adminbereich unter Office -> Orvanta.
+ */
+final class OrvantaConfigService
+{
+    public const AUTH_MODES = ['negotiate' => 'Negotiate (Kerberos / SSO-Identität des auth-Containers)', 'ntlm' => 'NTLM (Dienstkonto)', 'basic' => 'Basic (Dienstkonto, nur über HTTPS)'];
+    public const IDENTITY_MODES = ['smtp' => 'E-Mail-Adresse aus dem Active Directory', 'upn' => 'Benutzerprinzipalname (Benutzer@Domäne)'];
+    public const VERSIONS = ['Exchange2016' => 'Exchange 2016 / 2019 / Subscription Edition', 'Exchange2013_SP1' => 'Exchange 2013 SP1'];
+    public const DEFAULT_FOLDERS = ['inbox' => 'Posteingang', 'calendar' => 'Kalender', 'contacts' => 'Kontakte', 'tasks' => 'Aufgaben', 'notes' => 'Notizen'];
+
+    public const DEFAULTS = [
+        'exchange_enabled' => '0',
+        'exchange_host' => '',
+        'exchange_ews_url' => '',
+        'exchange_version' => 'Exchange2016',
+        'exchange_auth' => 'negotiate',
+        'exchange_service_user' => '',
+        'exchange_service_password' => '',
+        'exchange_identity' => 'smtp',
+        'exchange_upn_domain' => '',
+        'exchange_verify_tls' => '1',
+        'exchange_timeout' => '20',
+        'exchange_owa_url' => '',
+        'cache_quota_mb' => '250',
+        'cache_folder' => 'Orvanta',
+        'reminder_lead_minutes' => '15',
+        'reminder_header' => '1',
+        'default_folder' => 'inbox',
+        'poll_interval' => '60',
+    ];
+
+    /** @var array<string,string>|null */
+    private ?array $cache = null;
+
+    public function __construct(
+        private readonly OrvantaRepository $repository,
+        private readonly SecretBox $secrets
+    ) {
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    public function all(): array
+    {
+        if ($this->cache === null) {
+            try {
+                $this->cache = array_merge(self::DEFAULTS, $this->repository->settings());
+            } catch (\PDOException) {
+                // Vor der Migration: nur Standardwerte.
+                $this->cache = self::DEFAULTS;
+            }
+        }
+
+        return $this->cache;
+    }
+
+    public function get(string $key): string
+    {
+        return $this->all()[$key] ?? (self::DEFAULTS[$key] ?? '');
+    }
+
+    public function isEnabled(): bool
+    {
+        return $this->get('exchange_enabled') === '1' && $this->ewsUrl() !== '';
+    }
+
+    /**
+     * Demomodus (Beispieldaten ohne Exchange): Server „demo“, nie im Produktionsmodus.
+     */
+    public function isDemo(): bool
+    {
+        return strtolower(trim($this->get('exchange_host'))) === DemoExchangeTransport::HOST
+            && (string) \App\Core\Config::get('app.env', 'production') !== 'production';
+    }
+
+    public function ewsUrl(): string
+    {
+        $url = trim($this->get('exchange_ews_url'));
+        if ($url !== '') {
+            return $url;
+        }
+        $host = trim($this->get('exchange_host'));
+
+        return $host === '' ? '' : 'https://' . $host . '/EWS/Exchange.asmx';
+    }
+
+    public function owaUrl(): string
+    {
+        return trim($this->get('exchange_owa_url'));
+    }
+
+    public function servicePassword(): string
+    {
+        return $this->secrets->decrypt($this->get('exchange_service_password')) ?? '';
+    }
+
+    public function hasServicePassword(): bool
+    {
+        return $this->get('exchange_service_password') !== '';
+    }
+
+    public function cacheQuotaBytes(): int
+    {
+        return max(0, (int) $this->get('cache_quota_mb')) * 1024 * 1024;
+    }
+
+    public function cacheFolder(): string
+    {
+        $folder = trim($this->get('cache_folder'));
+
+        return $folder === '' ? 'Orvanta' : $folder;
+    }
+
+    /** Terminerinnerungen zusaetzlich in den Kopfzeilen-Mitteilungen des Intranets anzeigen. */
+    public function reminderHeaderEnabled(): bool
+    {
+        return $this->get('reminder_header') === '1';
+    }
+
+    public function reminderLeadMinutes(): int
+    {
+        return max(0, min(1440, (int) $this->get('reminder_lead_minutes')));
+    }
+
+    public function pollInterval(): int
+    {
+        return max(15, min(900, (int) $this->get('poll_interval')));
+    }
+
+    /**
+     * Optionen fuer den Transport (Dienstkonto, Zeitlimit, TLS-Pruefung).
+     *
+     * @return array{auth:string,username:string,password:string,timeout:int,verify_tls:bool}
+     */
+    public function transportOptions(): array
+    {
+        return [
+            'auth' => $this->get('exchange_auth'),
+            'username' => trim($this->get('exchange_service_user')),
+            'password' => $this->servicePassword(),
+            'timeout' => max(3, min(120, (int) $this->get('exchange_timeout'))),
+            'verify_tls' => $this->get('exchange_verify_tls') === '1',
+        ];
+    }
+
+    /**
+     * Adresse, mit der Exchange den angemeldeten Benutzer identifiziert
+     * (Impersonation): SMTP-Adresse aus dem AD oder UPN.
+     *
+     * @param array{username:string,email?:string} $ssoUser
+     */
+    public function impersonationAddress(array $ssoUser): string
+    {
+        $email = trim((string) ($ssoUser['email'] ?? ''));
+        if ($this->get('exchange_identity') === 'upn') {
+            $domain = trim($this->get('exchange_upn_domain'));
+            if ($domain !== '') {
+                return $ssoUser['username'] . '@' . ltrim($domain, '@');
+            }
+        }
+
+        return $email;
+    }
+
+    /**
+     * Werte fuer das Formular (ohne Kennwort).
+     *
+     * @return array<string,string>
+     */
+    public function formValues(): array
+    {
+        $values = $this->all();
+        $values['exchange_service_password'] = '';
+
+        return $values;
+    }
+
+    /**
+     * Validiert die Eingaben des Adminformulars und speichert sie. Ein leeres
+     * Kennwortfeld laesst das gespeicherte Kennwort unveraendert.
+     *
+     * @param array<string,mixed> $input
+     *
+     * @throws ValidationException
+     */
+    public function save(array $input): void
+    {
+        $errors = [];
+        $values = [];
+        $text = static fn (string $key, int $max = 255): string => Validator::cleanText(is_scalar($input[$key] ?? null) ? (string) $input[$key] : '', $max);
+
+        $values['exchange_enabled'] = !empty($input['exchange_enabled']) ? '1' : '0';
+        $host = $text('exchange_host');
+        if ($host !== '' && $host !== DemoExchangeTransport::HOST && !Validator::isHostname($host)) {
+            $errors['exchange_host'] = 'Bitte einen gültigen Hostnamen angeben (z. B. mail.example.com).';
+        }
+        $values['exchange_host'] = $host;
+
+        $ews = $text('exchange_ews_url', 2048);
+        if ($ews !== '' && !self::isHttpsUrl($ews)) {
+            $errors['exchange_ews_url'] = 'Der EWS-Endpunkt muss eine vollständige http(s)-Adresse sein (z. B. https://mail.example.com/EWS/Exchange.asmx).';
+        }
+        $values['exchange_ews_url'] = $ews;
+        if ($values['exchange_enabled'] === '1' && $host === '' && $ews === '') {
+            $errors['exchange_host'] = 'Für die Aktivierung wird ein Exchange-Server oder ein EWS-Endpunkt benötigt.';
+        }
+
+        $version = $text('exchange_version', 40);
+        $values['exchange_version'] = isset(self::VERSIONS[$version]) ? $version : 'Exchange2016';
+        $auth = $text('exchange_auth', 20);
+        if (!isset(self::AUTH_MODES[$auth])) {
+            $errors['exchange_auth'] = 'Ungültiges Anmeldeverfahren.';
+            $auth = 'negotiate';
+        }
+        $values['exchange_auth'] = $auth;
+        $values['exchange_service_user'] = $text('exchange_service_user', 190);
+        if ($auth === 'basic' && $ews !== '' && !str_starts_with(strtolower($ews), 'https://')) {
+            $errors['exchange_auth'] = 'Basic-Authentifizierung ist nur über HTTPS zulässig.';
+        }
+
+        $password = is_scalar($input['exchange_service_password'] ?? null) ? (string) $input['exchange_service_password'] : '';
+        if (!empty($input['exchange_service_password_clear'])) {
+            $values['exchange_service_password'] = '';
+        } elseif ($password !== '') {
+            if (strlen($password) > 500) {
+                $errors['exchange_service_password'] = 'Das Kennwort ist zu lang.';
+            } else {
+                $values['exchange_service_password'] = $this->secrets->encrypt($password);
+            }
+        }
+
+        $identity = $text('exchange_identity', 10);
+        $values['exchange_identity'] = isset(self::IDENTITY_MODES[$identity]) ? $identity : 'smtp';
+        $domain = ltrim($text('exchange_upn_domain', 190), '@');
+        if ($domain !== '' && !Validator::isHostname($domain)) {
+            $errors['exchange_upn_domain'] = 'Bitte eine gültige Domäne angeben (z. B. firma.local).';
+        }
+        $values['exchange_upn_domain'] = $domain;
+        if ($values['exchange_identity'] === 'upn' && $domain === '') {
+            $errors['exchange_upn_domain'] = 'Für den Benutzerprinzipalnamen wird die UPN-Domäne benötigt.';
+        }
+
+        $values['exchange_verify_tls'] = !empty($input['exchange_verify_tls']) ? '1' : '0';
+        $timeout = (int) $text('exchange_timeout', 5);
+        if ($timeout < 3 || $timeout > 120) {
+            $errors['exchange_timeout'] = 'Das Zeitlimit muss zwischen 3 und 120 Sekunden liegen.';
+        }
+        $values['exchange_timeout'] = (string) $timeout;
+
+        $owa = $text('exchange_owa_url', 2048);
+        if ($owa !== '' && !self::isHttpsUrl($owa)) {
+            $errors['exchange_owa_url'] = 'Bitte eine vollständige http(s)-Adresse angeben.';
+        }
+        $values['exchange_owa_url'] = $owa;
+
+        $quota = (int) $text('cache_quota_mb', 8);
+        if ($quota < 0 || $quota > 1048576) {
+            $errors['cache_quota_mb'] = 'Das Quota muss zwischen 0 (deaktiviert) und 1.048.576 MB liegen.';
+        }
+        $values['cache_quota_mb'] = (string) $quota;
+
+        $folder = $text('cache_folder', 120);
+        if (!\App\Services\Office\NextcloudFilesService::isSafeSegment($folder)) {
+            $errors['cache_folder'] = 'Der Ordnername darf keine Sonderzeichen wie / \\ : * ? " < > | enthalten.';
+        }
+        $values['cache_folder'] = $folder;
+
+        $lead = (int) $text('reminder_lead_minutes', 5);
+        if ($lead < 0 || $lead > 1440) {
+            $errors['reminder_lead_minutes'] = 'Die Vorlaufzeit muss zwischen 0 und 1440 Minuten liegen.';
+        }
+        $values['reminder_lead_minutes'] = (string) $lead;
+        $values['reminder_header'] = !empty($input['reminder_header']) ? '1' : '0';
+
+        $poll = (int) $text('poll_interval', 5);
+        if ($poll < 15 || $poll > 900) {
+            $errors['poll_interval'] = 'Das Abfrageintervall muss zwischen 15 und 900 Sekunden liegen.';
+        }
+        $values['poll_interval'] = (string) $poll;
+
+        $default = $text('default_folder', 20);
+        $values['default_folder'] = isset(self::DEFAULT_FOLDERS[$default]) ? $default : 'inbox';
+
+        if ($errors !== []) {
+            throw new ValidationException($errors);
+        }
+
+        $this->repository->saveSettings($values);
+        $this->cache = null;
+    }
+
+    public static function isHttpsUrl(string $url): bool
+    {
+        if (strlen($url) > 2048 || preg_match('/[\x00-\x20\x7f\\\\]/', $url) === 1) {
+            return false;
+        }
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+
+        return in_array($scheme, ['http', 'https'], true) && (string) parse_url($url, PHP_URL_HOST) !== '';
+    }
+}

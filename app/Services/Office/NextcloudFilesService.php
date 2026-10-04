@@ -117,4 +117,78 @@ final class NextcloudFilesService
             'path' => $ok ? '/' . $folder . '/' . $name : '',
         ];
     }
+
+    /**
+     * Ruft eine zuvor abgelegte Datei ab (Orvanta-Zwischenspeicher).
+     *
+     * @return array{ok:bool,message:string,content:string,content_type:string}
+     */
+    public function fetch(string $uid, string $folder, string $name): array
+    {
+        $response = $this->fileAction('GET', 'fetch', $uid, $folder, $name);
+        if (isset($response['message'])) {
+            return ['ok' => false, 'message' => $response['message'], 'content' => '', 'content_type' => ''];
+        }
+
+        return ['ok' => true, 'message' => '', 'content' => $response['body'], 'content_type' => $response['content_type']];
+    }
+
+    /**
+     * Loescht eine zuvor abgelegte Datei (Quota-Verdraengung des Zwischenspeichers).
+     *
+     * @return array{ok:bool,message:string}
+     */
+    public function delete(string $uid, string $folder, string $name): array
+    {
+        $response = $this->fileAction('DELETE', 'delete', $uid, $folder, $name);
+        if (isset($response['message'])) {
+            return ['ok' => false, 'message' => $response['message']];
+        }
+
+        return ['ok' => true, 'message' => 'Gelöscht.'];
+    }
+
+    /**
+     * @return array{message:string}|array{body:string,content_type:string}
+     */
+    private function fileAction(string $method, string $action, string $uid, string $folder, string $name): array
+    {
+        $reason = $this->unavailableReason();
+        if ($reason !== null) {
+            return ['message' => $reason];
+        }
+        if (preg_match(self::UID_PATTERN, $uid) !== 1) {
+            return ['message' => 'Für Ihre Anmeldung ist kein Nextcloud-Konto bekannt.'];
+        }
+        $segments = explode('/', $folder);
+        if (count($segments) > 4 || in_array(false, array_map(self::isSafeSegment(...), $segments), true) || !self::isSafeSegment($name)) {
+            return ['message' => 'Ungültiger Ordner- oder Dateiname.'];
+        }
+        $infra = $this->office->infrastructure();
+        $url = rtrim((string) ($infra['nextcloud_internal_url'] ?? ''), '/') . '/index.php/apps/intranet_integration/api/files';
+        $response = $this->probe->request($method, $url, [
+            'Authorization' => 'Bearer ' . OfficeJwt::fileActionToken($this->office->jwtSecret(), $uid, $folder, $name, $action),
+        ], null, max(30, (int) ($infra['timeout'] ?? 4) * 5));
+        if ($response['error'] !== null || $response['status'] === 0) {
+            return ['message' => 'Nextcloud nicht erreichbar: ' . ($response['error'] ?? 'keine Antwort')];
+        }
+        if ($response['status'] !== 200) {
+            $data = json_decode($response['body'], true);
+            $message = is_array($data) ? (string) ($data['message'] ?? ($data['error'] ?? '')) : '';
+
+            return ['message' => Validator::cleanText($message !== '' ? $message : 'Nextcloud-Antwort HTTP ' . $response['status'], 300)];
+        }
+        if ($action === 'delete') {
+            return ['body' => '', 'content_type' => ''];
+        }
+        $headers = $response['headers'] ?? [];
+        $type = '';
+        foreach ($headers as $key => $value) {
+            if (strtolower((string) $key) === 'content-type') {
+                $type = trim(explode(';', (string) $value)[0]);
+            }
+        }
+
+        return ['body' => $response['body'], 'content_type' => $type];
+    }
 }

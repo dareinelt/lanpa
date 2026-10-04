@@ -45,14 +45,15 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
 <?php } ?>
 
 <?php ob_start(); ?>
-            <?php if ($announcements !== []) { ?>
-                <details class="site-nav__dropdown" data-announcement-menu>
+            <?php if ($announcements !== [] || !empty($orvantaReminders)) { ?>
+                <details class="site-nav__dropdown" data-announcement-menu<?= !empty($orvantaReminders) ? ' data-orvanta-reminders' : '' ?><?= $announcements === [] ? ' hidden' : '' ?>>
                     <summary class="site-nav__link site-nav__summary">
                         <span class="site-nav__summary-label">Mitteilungen</span>
                         <span class="site-nav__summary-count" aria-hidden="true"><?= count($announcements) ?></span>
                         <span class="site-nav__chevron" aria-hidden="true"></span>
                     </summary>
                     <ul class="site-nav__dropdown-list">
+                        <?php if (!empty($orvantaReminders)) { ?><li class="site-nav__dropdown-reminders" data-orvanta-reminder-list hidden></li><?php } ?>
                         <?php foreach ($announcements as $announcementItem) {
                             $announcementItemId = (int) $announcementItem['id']; ?>
                             <li>
@@ -260,6 +261,9 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
 </div>
 
 <script src="/assets/js/app.js?v=<?= Html::e($assetVersion) ?>" defer></script>
+<?php if (!empty($orvantaReminders)) { ?>
+    <script src="/assets/js/orvanta-reminders.js?v=<?= Html::e($assetVersion) ?>" data-csrf="<?= Html::e($csrfToken) ?>" defer></script>
+<?php } ?>
 <?php if (($pageScript ?? '') !== '') { ?>
     <script src="/assets/js/<?= Html::e($pageScript) ?>?v=<?= Html::e($assetVersion) ?>" defer></script>
 <?php } ?>

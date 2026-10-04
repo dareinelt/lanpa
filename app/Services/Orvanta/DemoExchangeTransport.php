@@ -162,6 +162,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             . '<p>Weitere Informationen finden Sie im Intranet unter <a href="https://intranet.example.org/">intranet.example.org</a>. Bei Rückfragen stehe ich gern zur Verfügung.</p>'
             . '<table style="border-collapse:collapse" border="1" cellpadding="6"><tr><th>Punkt</th><th>Verantwortlich</th><th>Termin</th></tr><tr><td>Serverwartung</td><td>IT-Service</td><td>Samstag</td></tr><tr><td>Schulung Notfallplan</td><td>D. Andre</td><td>nächste Woche</td></tr></table>'
             . '<p>Mit freundlichen Grüßen<br><strong>' . EwsXml::escape($message['from'][0]) . '</strong><br><span style="color:#5a6475">' . EwsXml::escape($message['from'][1]) . '</span></p>'
+            . ($message['att'] ? '<p><img src="cid:orvanta-logo@demo" alt="Orvanta" width="80" height="70"></p>' : '')
             . '<img src="https://tracker.example.org/pixel.gif" width="1" height="1" alt=""></div>';
     }
 
@@ -171,6 +172,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             . '<t:FileAttachment><t:AttachmentId Id="' . $id . '|att-1"/><t:Name>Protokoll_Dienstbesprechung.docx</t:Name><t:ContentType>application/vnd.openxmlformats-officedocument.wordprocessingml.document</t:ContentType><t:Size>48213</t:Size><t:IsInline>false</t:IsInline></t:FileAttachment>'
             . '<t:FileAttachment><t:AttachmentId Id="' . $id . '|att-2"/><t:Name>Massnahmenliste.xlsx</t:Name><t:ContentType>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</t:ContentType><t:Size>19877</t:Size><t:IsInline>false</t:IsInline></t:FileAttachment>'
             . '<t:FileAttachment><t:AttachmentId Id="' . $id . '|att-3"/><t:Name>Lageplan.pdf</t:Name><t:ContentType>application/pdf</t:ContentType><t:Size>302114</t:Size><t:IsInline>false</t:IsInline></t:FileAttachment>'
+            . '<t:FileAttachment><t:AttachmentId Id="' . $id . '|att-4"/><t:Name>orvanta-logo.png</t:Name><t:ContentType>image/png</t:ContentType><t:ContentId>orvanta-logo@demo</t:ContentId><t:Size>417</t:Size><t:IsInline>true</t:IsInline></t:FileAttachment>'
             . '</t:Attachments>';
     }
 
@@ -210,16 +212,20 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
         $name = match (substr($id, -5)) {
             'att-1' => 'Protokoll_Dienstbesprechung.docx',
             'att-2' => 'Massnahmenliste.xlsx',
+            'att-4' => 'orvanta-logo.png',
             default => 'Lageplan.pdf',
         };
         $type = match (substr($id, -5)) {
             'att-1' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             'att-2' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'att-4' => 'image/png',
             default => 'application/pdf',
         };
-        $content = str_ends_with($name, '.pdf')
-            ? "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n4 0 obj<</Length 70>>stream\nBT /F1 24 Tf 72 760 Td (Orvanta Demo - Lageplan) Tj ET\nendstream\nendobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF"
-            : 'Orvanta-Demoanhang ' . $name;
+        $content = match (true) {
+            $type === 'image/png' => (string) @file_get_contents(dirname(__DIR__, 3) . '/public/assets/images/orvanta-logo.png'),
+            str_ends_with($name, '.pdf') => "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n4 0 obj<</Length 70>>stream\nBT /F1 24 Tf 72 760 Td (Orvanta Demo - Lageplan) Tj ET\nendstream\nendobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
+            default => 'Orvanta-Demoanhang ' . $name,
+        };
 
         return $this->envelope('<m:GetAttachmentResponse><m:ResponseMessages><m:GetAttachmentResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Attachments><t:FileAttachment><t:AttachmentId Id="' . EwsXml::escape($id) . '"/><t:Name>' . $name . '</t:Name><t:ContentType>' . $type . '</t:ContentType><t:Content>' . base64_encode($content) . '</t:Content></t:FileAttachment></m:Attachments></m:GetAttachmentResponseMessage></m:ResponseMessages></m:GetAttachmentResponse>');
     }
@@ -240,6 +246,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             ['id' => 'demo-ev-5', 'subject' => 'Abstimmung Quartalszahlen', 'start' => $monday + 3 * 86400 + 10 * 3600, 'end' => $monday + 3 * 86400 + 11 * 3600, 'location' => 'Büro Controlling', 'all_day' => false, 'reminder' => 15, 'busy' => 'Tentative', 'meeting' => true],
             ['id' => 'demo-ev-6', 'subject' => 'Erinnerung: Statusbericht abgeben', 'start' => $now + 600, 'end' => $now + 1800, 'location' => '', 'all_day' => false, 'reminder' => 15, 'busy' => 'Free', 'meeting' => false],
             ['id' => 'demo-ev-7', 'subject' => 'Sprechstunde Personalrat', 'start' => $monday + 7 * 86400 + 13 * 3600, 'end' => $monday + 7 * 86400 + 14 * 3600, 'location' => 'Raum 1.03', 'all_day' => false, 'reminder' => 15, 'busy' => 'Busy', 'meeting' => false],
+            ['id' => 'demo-ev-9', 'subject' => 'Rückruf Bürgerbüro', 'start' => $now + 1200, 'end' => $now + 1500, 'location' => 'Telefon', 'all_day' => false, 'reminder' => -1, 'busy' => 'Busy', 'meeting' => false],
             ['id' => 'demo-ev-8', 'subject' => 'Wartungsfenster Rechenzentrum', 'start' => $monday + 5 * 86400 + 6 * 3600, 'end' => $monday + 5 * 86400 + 10 * 3600, 'location' => 'Rechenzentrum', 'all_day' => false, 'reminder' => 60, 'busy' => 'WorkingElsewhere', 'meeting' => false],
         ];
     }
@@ -266,7 +273,9 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     {
         return '<t:CalendarItem><t:ItemId Id="' . $event['id'] . '" ChangeKey="CK1"/><t:Subject>' . EwsXml::escape($event['subject']) . '</t:Subject>'
             . ($full ? '<t:Body BodyType="HTML">' . EwsXml::escape('<p>Agenda:</p><ol><li>Rückblick</li><li>Offene Punkte</li><li>Nächste Schritte</li></ol>') . '</t:Body>' : '')
-            . '<t:ReminderIsSet>true</t:ReminderIsSet><t:ReminderMinutesBeforeStart>' . $event['reminder'] . '</t:ReminderMinutesBeforeStart>'
+            . ($event['reminder'] >= 0
+                ? '<t:ReminderIsSet>true</t:ReminderIsSet><t:ReminderMinutesBeforeStart>' . $event['reminder'] . '</t:ReminderMinutesBeforeStart>'
+                : '<t:ReminderIsSet>false</t:ReminderIsSet>')
             . '<t:Start>' . EwsXml::dateTime($event['start']) . '</t:Start><t:End>' . EwsXml::dateTime($event['end']) . '</t:End>'
             . '<t:IsAllDayEvent>' . ($event['all_day'] ? 'true' : 'false') . '</t:IsAllDayEvent><t:LegacyFreeBusyStatus>' . $event['busy'] . '</t:LegacyFreeBusyStatus>'
             . '<t:Location>' . EwsXml::escape($event['location']) . '</t:Location><t:IsMeeting>' . ($event['meeting'] ? 'true' : 'false') . '</t:IsMeeting><t:CalendarItemType>Single</t:CalendarItemType>'

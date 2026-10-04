@@ -48,6 +48,12 @@ final class RecordingExchangeTransport implements ExchangeTransportInterface
     {
         return $this->requests[array_key_last($this->requests)]['xml'] ?? '';
     }
+
+    /** @return list<string> */
+    public function xmls(): array
+    {
+        return array_column($this->requests, 'xml');
+    }
 }
 
 function orvantaPdo(): PDO
@@ -356,13 +362,136 @@ Runner::test('Orvanta: Mail-HTML wird bereinigt und externe Bilder blockiert', f
     Assert::false(str_contains($html, 'javascript:'));
     Assert::contains('https://example.org', $html);
     Assert::contains('target="_blank"', $html);
-    Assert::false(str_contains($html, 'tracker.example'), 'Externe Bildquelle wird entfernt.');
+    Assert::false(str_contains($html, ' src="https://tracker.example'), 'Externe Bildquelle wird nicht direkt geladen.');
+    Assert::contains('data-blocked-src="https://tracker.example/pixel.gif"', $html, 'Externe Quelle bleibt zum Nachladen erhalten.');
+    Assert::contains('data-cid="logo"', $html, 'Eingebettete Bilder werden per Content-ID markiert.');
+    Assert::false(str_contains($html, ' src="cid:'), 'cid:-Quelle wird fuer den Browser entfernt.');
     Assert::true($result['blocked_images'] >= 1, 'Blockierte Bilder werden gezaehlt.');
+});
+
+Runner::test('Orvanta: Ausgehendes HTML behaelt externe Bilder und stellt cid:-Quellen wieder her', function (): void {
+    $display = MailHtmlSanitizer::clean('<p><img src="https://bilder.example/a.png"><img src="cid:logo@x"></p>')['html'];
+    $outgoing = MailHtmlSanitizer::clean($display, false);
+    Assert::same(0, $outgoing['blocked_images']);
+    Assert::contains('src="https://bilder.example/a.png"', $outgoing['html']);
+    Assert::contains('src="cid:logo@x"', $outgoing['html']);
+    Assert::false(str_contains($outgoing['html'], 'data-blocked-src'));
+    Assert::false(str_contains($outgoing['html'], 'data-cid'));
+});
+
+Runner::test('Orvanta: Eingebettete Bilder werden ueber den Anhang-Token aufgeloest', function (): void {
+    $parts = orvantaAttachments();
+    $attachments = $parts['attachments'];
+    $exchange = orvantaExchange()['exchange'];
+    $message = $exchange->message('demo@demo.local', 'demo-msg-1');
+    Assert::contains('data-cid="orvanta-logo@demo"', $message['body_html']);
+    $inline = array_values(array_filter($message['attachments'], static fn (array $a): bool => $a['content_id'] === 'orvanta-logo@demo'));
+    Assert::same(1, count($inline), 'Inline-Anhang traegt seine Content-ID.');
+
+    $resolved = $attachments->embedInlineImages('u1', 'demo@demo.local', $message);
+    Assert::true((bool) preg_match('~<img[^>]*src="[^"]*/anhang/oeffnen\?token=[^"]+"[^>]*data-cid="orvanta-logo@demo"~', $resolved['body_html']), 'Bildquelle zeigt auf den Anhang-Endpunkt.');
+    $flagged = array_values(array_filter($resolved['attachments'], static fn (array $a): bool => $a['content_id'] === 'orvanta-logo@demo'));
+    Assert::true($flagged[0]['inline']);
+});
+
+// ----------------------------------------------------------------------
+// Antworten und Entwuerfe
+// ----------------------------------------------------------------------
+
+Runner::test('Orvanta: Antwort uebernimmt Cc und referenziert die Originalmail', function (): void {
+    $parts = orvantaExchange();
+    $result = $parts['exchange']->respond('demo@demo.local', 'demo-msg-1', 'replyall', [
+        'to' => ['a@example.org'],
+        'cc' => ['c@example.org'],
+        'body' => '<p>Danke</p>',
+        'html' => true,
+    ]);
+    $xml = $parts['transport']->last();
+    Assert::true($result['id'] !== '');
+    Assert::contains('<m:CreateItem MessageDisposition="SendAndSaveCopy"', $xml);
+    Assert::contains('<t:ReplyAllToItem>', $xml);
+    Assert::contains('<t:CcRecipients><t:Mailbox><t:EmailAddress>c@example.org</t:EmailAddress>', $xml);
+    Assert::contains('<t:ReferenceItemId Id="demo-msg-1"', $xml);
+    Assert::true(strpos($xml, '<t:CcRecipients>') < strpos($xml, '<t:ReferenceItemId'), 'Schemareihenfolge: Empfaenger vor ReferenceItemId.');
+    Assert::true(strpos($xml, '<t:ReferenceItemId') < strpos($xml, '<t:NewBodyContent'), 'Schemareihenfolge: ReferenceItemId vor NewBodyContent.');
+});
+
+Runner::test('Orvanta: Antwort mit Anhang bleibt eine Antwort und wird aus dem Entwurf gesendet', function (): void {
+    $parts = orvantaExchange();
+    $transport = $parts['transport'];
+    $parts['exchange']->respond('demo@demo.local', 'demo-msg-1', 'reply', [
+        'to' => ['a@example.org'],
+        'body' => 'Anbei',
+        'attachments' => [['name' => 'x.txt', 'content_type' => 'text/plain', 'content' => base64_encode('hi')]],
+    ]);
+    $calls = implode("\n", $transport->xmls());
+    Assert::contains('<t:ReplyToItem>', $calls);
+    Assert::contains('<t:ReferenceItemId Id="demo-msg-1"', $calls);
+    Assert::contains('<m:CreateAttachment>', $calls);
+    Assert::contains('<m:SendItem SaveItemToFolder="true">', $transport->last());
+    Assert::contains('<t:ItemId Id="demo-new-', $transport->last());
+});
+
+Runner::test('Orvanta: Entwurf wird beim erneuten Speichern aktualisiert statt dupliziert', function (): void {
+    $parts = orvantaExchange();
+    $transport = $parts['transport'];
+    $draft = $parts['exchange']->saveDraft('demo@demo.local', ['subject' => 'Erst', 'body' => 'Text', 'to' => []]);
+    Assert::contains('<m:CreateItem MessageDisposition="SaveOnly"', $transport->last());
+    Assert::contains('<t:DistinguishedFolderId Id="drafts"', $transport->last());
+    Assert::true($draft['id'] !== '' && $draft['change_key'] !== '');
+
+    $updated = $parts['exchange']->saveDraft('demo@demo.local', [
+        'subject' => 'Zweit',
+        'body' => 'Mehr',
+        'to' => ['a@example.org'],
+        'attachments' => [['name' => 'x.txt', 'content_type' => 'text/plain', 'content' => base64_encode('hi')]],
+    ], $draft['id'], $draft['change_key']);
+    $calls = $transport->xmls();
+    $update = $calls[count($calls) - 2];
+    Assert::contains('<m:UpdateItem', $update);
+    Assert::contains('<t:ItemId Id="' . $draft['id'] . '"', $update);
+    Assert::contains('<t:FieldURI FieldURI="message:ToRecipients"/>', $update);
+    Assert::contains('<t:DeleteItemField><t:FieldURI FieldURI="message:CcRecipients"/></t:DeleteItemField>', $update);
+    Assert::false(str_contains($update, '<m:CreateItem'), 'Kein zweiter Entwurf.');
+    Assert::contains('<m:CreateAttachment>', $transport->last());
+    Assert::same($draft['id'], $updated['id']);
+});
+
+Runner::test('Orvanta: Senden eines gespeicherten Entwurfs nutzt SendItem', function (): void {
+    $parts = orvantaExchange();
+    $transport = $parts['transport'];
+    $parts['exchange']->send('demo@demo.local', ['subject' => 'S', 'body' => 'B', 'to' => ['a@example.org']], 'draft-1', 'CK0');
+    $calls = $transport->xmls();
+    Assert::contains('<m:UpdateItem', $calls[count($calls) - 2]);
+    Assert::contains('<m:SendItem SaveItemToFolder="true">', $transport->last());
+    Assert::contains('<t:ItemId Id="draft-1"', $transport->last());
 });
 
 // ----------------------------------------------------------------------
 // Erinnerungen
 // ----------------------------------------------------------------------
+
+Runner::test('Orvanta: Vorlaufzeit gilt nur fuer Termine ohne eigene Erinnerung', function (): void {
+    $now = time();
+    $without = orvantaExchange(['reminder_lead_minutes' => '0']);
+    $service = new OrvantaNotificationService($without['repository'], $without['exchange'], $without['config']);
+    $service->sync('u1', 'demo@demo.local', $now);
+    $ids = array_column($service->poll('u1', $now + 3600)['due'], 'item_id');
+    Assert::true(in_array('demo-ev-6', $ids, true), 'Termin mit eigener Erinnerung wird gemeldet.');
+    Assert::false(in_array('demo-ev-9', $ids, true), 'Ohne Vorlauf keine Erinnerung fuer Termine ohne eigene Erinnerung.');
+
+    $with = orvantaExchange(['reminder_lead_minutes' => '30']);
+    $service = new OrvantaNotificationService($with['repository'], $with['exchange'], $with['config']);
+    $service->sync('u1', 'demo@demo.local', $now);
+    $due = [];
+    foreach ($service->poll('u1', $now)['due'] as $row) {
+        $due[$row['item_id']] = $row;
+    }
+    Assert::true(isset($due['demo-ev-9']), 'Vorlauf erzeugt Erinnerung fuer Termin ohne eigene Erinnerung.');
+    Assert::same($due['demo-ev-9']['start'] - 30 * 60, $due['demo-ev-9']['remind_at']);
+    Assert::true(isset($due['demo-ev-6']));
+    Assert::same($due['demo-ev-6']['start'] - 15 * 60, $due['demo-ev-6']['remind_at'], 'Eigene Erinnerung bleibt unveraendert.');
+});
 
 Runner::test('Orvanta: Erinnerungen werden synchronisiert, faellig und erledigt', function (): void {
     $parts = orvantaExchange(['reminder_lead_minutes' => '0']);

@@ -41,9 +41,14 @@ final class OrvantaNotificationService
             if ($event['end'] > 0 && $event['end'] < $now) {
                 continue;
             }
-            $remindAt = $event['remind_at'];
-            if ($lead > 0 && $event['start'] - $lead * 60 < $remindAt) {
+            // Eigene Exchange-Erinnerung hat Vorrang; die Vorlaufzeit gilt nur
+            // fuer Termine ohne hinterlegte Erinnerung (0 = keine Benachrichtigung).
+            if (!empty($event['reminder_set'])) {
+                $remindAt = (int) $event['remind_at'];
+            } elseif ($lead > 0) {
                 $remindAt = $event['start'] - $lead * 60;
+            } else {
+                continue;
             }
             $items[] = [
                 'item_id' => $event['id'],

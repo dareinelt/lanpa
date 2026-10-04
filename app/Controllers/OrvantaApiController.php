@@ -68,23 +68,36 @@ final class OrvantaApiController extends Controller
 
     public function message(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->message($access['impersonate'], $this->requireId($request->query('id'))));
+        return $this->handle($request, function (array $access) use ($request): array {
+            $message = Container::orvantaExchange()->message($access['impersonate'], $this->requireId($request->query('id')));
+
+            return Container::orvantaAttachments()->embedInlineImages($access['uid'], $access['impersonate'], $message);
+        });
     }
 
     public function send(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $mail = $this->mailPayload();
-            $result = Container::orvantaExchange()->send($access['impersonate'], $mail);
+            $result = Container::orvantaExchange()->send($access['impersonate'], $this->mailPayload(), $this->str('draft_id'), $this->str('change_key'));
 
             return $result + ['message' => 'Die Nachricht wurde gesendet.'];
         }, true);
     }
 
+    /**
+     * Entwurf anlegen oder (mit draft_id) aktualisieren; reply_id/mode legen
+     * einen Antwort-Entwurf mit Bezug zur Originalnachricht an.
+     */
     public function draft(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $result = Container::orvantaExchange()->saveDraft($access['impersonate'], $this->mailPayload());
+            $mail = $this->mailPayload();
+            $replyId = $this->str('reply_id');
+            $mode = $this->str('mode', 'new');
+            if ($replyId !== '' && in_array($mode, ['reply', 'replyall', 'forward'], true)) {
+                $mail['reference'] = ['id' => $replyId, 'mode' => $mode];
+            }
+            $result = Container::orvantaExchange()->saveDraft($access['impersonate'], $mail, $this->str('draft_id'), $this->str('change_key'));
 
             return $result + ['message' => 'Der Entwurf wurde gespeichert.'];
         }, true);
@@ -93,16 +106,14 @@ final class OrvantaApiController extends Controller
     public function respond(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            Container::orvantaExchange()->respond(
+            $result = Container::orvantaExchange()->respond(
                 $access['impersonate'],
                 $this->requireId($this->str('id')),
                 $this->str('mode', 'reply'),
-                $this->str('body'),
-                $this->addresses('to'),
-                $this->bool('html', true)
+                $this->mailPayload()
             );
 
-            return ['message' => $this->str('mode') === 'forward' ? 'Die Nachricht wurde weitergeleitet.' : 'Die Antwort wurde gesendet.'];
+            return $result + ['message' => $this->str('mode') === 'forward' ? 'Die Nachricht wurde weitergeleitet.' : 'Die Antwort wurde gesendet.'];
         }, true);
     }
 

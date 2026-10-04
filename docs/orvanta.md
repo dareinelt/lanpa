@@ -44,6 +44,18 @@ hochgeladene Anhänge werden vollständig übernommen; der ursprüngliche Tab
 bleibt frei für die weitere Arbeit in Orvanta, ohne die Nachricht im neuen
 Tab zu beeinflussen. Senden oder Verwerfen schließt den eigenen Tab wieder.
 
+Die Felder „An“, „Cc“ und „Bcc“ (sowie die Teilnehmerfelder von Terminen)
+schlagen beim Tippen Empfänger vor – nach demselben Combobox-Mechanismus wie
+die AD-Gruppen-Vorschläge im Adminbereich (Inline-Ergänzung, Liste, Pfeiltasten,
+Enter/Tab übernehmen, Esc schließt). Quellen sind die **Telefonliste** (lokal
+synchronisierter AD-Bestand, nur Einträge mit E-Mail-Adresse) und der
+**eigene Verlauf**: Adressen, an die der Benutzer bereits gesendet hat, auch
+wenn sie weder in der Telefonliste noch in den Exchange-Kontakten stehen.
+Der Verlauf liegt je Benutzer als versteckte Datei `.empfaenger.json` im
+Orvanta-Ordner seiner Nextcloud (`<cache_folder>/`) und wird nach jedem
+Versand aktualisiert; Verlaufstreffer stehen in der Liste oben
+(„Zuletzt verwendet“). Ohne Nextcloud gibt es nur die Telefonliste.
+
 ---
 
 ## 2. Oberfläche
@@ -101,6 +113,7 @@ flowchart LR
 | `EwsXml` | `app/Services/Orvanta/` | Aufbau/Auswertung der SOAP-Nachrichten (`DOMDocument`) |
 | `MailHtmlSanitizer` | `app/Services/Orvanta/` | HTML-Mails bereinigen (Skripte, externe Inhalte, Event-Handler entfernen) |
 | `OrvantaAttachmentService` | `app/Services/Orvanta/` | Anhänge: signierte Kurzzeit-Links, Öffnungsmodus (`office`/`browser`/`download`), Zwischenspeicher und Ablage in Nextcloud (WebDAV), Quota |
+| `OrvantaRecipientService` | `app/Services/Orvanta/` | Empfänger-Vorschläge für An/Cc/Bcc: Telefonliste + Verlauf gesendeter Adressen (versteckte Datei `.empfaenger.json` in der Nextcloud des Benutzers, kurz in der Sitzung gehalten) |
 | `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile |
 | `OrvantaSignatureService` | `app/Services/Orvanta/` | Signaturvorlagen (Abschnitt 4a): Validierung, Zuordnung per AD-Gruppe, E-Mail-taugliches HTML aus Vorlage + Telefonliste + Design, `append()`/`strip()` beim Senden |
 | `Admin\OrvantaSignatureController` | `app/Controllers/Admin/OrvantaSignatureController.php` | Pflege der Signaturvorlagen unter `/admin/office/signaturen` (Liste, Formular, Vorschau-iframe) |
@@ -128,7 +141,7 @@ flowchart LR
   `GET /office/orvanta/anhang/datei?token=…` (Zugriff des DocumentServers).
 - API (`/api/orvanta/…`, JSON, CSRF-Token im Header `X-CSRF-Token`):
   `status`, `mail/ordner`, `mail`, `mail/nachricht`, `mail/senden`,
-  `mail/entwurf`, `mail/antworten`, `mail/aktion`, `anhang/link`,
+  `empfaenger` (Vorschläge für An/Cc/Bcc), `mail/entwurf`, `mail/antworten`, `mail/aktion`, `anhang/link`,
   `anhang/nextcloud`, `zwischenspeicher`, `zwischenspeicher/leeren`,
   `kalender`, `kalender/termin` (GET/POST), `kalender/termin/loeschen`,
   `kalender/antwort`, `kontakte`, `kontakte/kontakt` (GET/POST),
@@ -284,6 +297,13 @@ Die Vorschau im Adminbereich zeigt die Vorlage mit Beispieldaten
   Nextcloud-Kontingent des Benutzers). Die Schaltfläche erscheint nur, wenn
   Nextcloud erreichbar ist. Die Übertragung läuft per WebDAV mit der
   Intranet-SSO-Identität (`intranet_integration`).
+- **Empfänger-Verlauf:** `<cache_folder>/.empfaenger.json` (versteckt, max.
+  500 Adressen mit Name, Zähler und letzter Verwendung) speist die Vorschläge
+  in An/Cc/Bcc. Die Datei zählt nicht zum Orvanta-Quota und wird nicht in
+  `orvanta_cache_items` geführt; Lesefehler führen nur zu fehlenden
+  Verlaufsvorschlägen. Versteckte Dateinamen (führender Punkt) sind in der
+  Dateischnittstelle nur für Dateien, nicht für Ordner zulässig
+  (`isSafeFileName()` auf beiden Seiten).
 
 ---
 

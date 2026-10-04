@@ -502,6 +502,26 @@ final class Container
         );
     }
 
+    /**
+     * Empfaenger-Vorschlaege: Telefonliste plus Verlauf gesendeter Adressen
+     * (versteckte Datei in der Nextcloud des Benutzers, kurz in der Sitzung gehalten).
+     */
+    public static function orvantaRecipients(): \App\Services\Orvanta\OrvantaRecipientService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaRecipientService::class,
+            static fn (): \App\Services\Orvanta\OrvantaRecipientService => new \App\Services\Orvanta\OrvantaRecipientService(
+                self::orvantaConfig(),
+                self::nextcloudFiles(),
+                self::phonebookRepository(),
+                static fn (string $key): mixed => \App\Security\Session::get($key),
+                static function (string $key, mixed $value): void {
+                    \App\Security\Session::put($key, $value);
+                }
+            )
+        );
+    }
+
     public static function orvantaNotifications(): \App\Services\Orvanta\OrvantaNotificationService
     {
         return self::make(

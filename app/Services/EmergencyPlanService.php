@@ -16,10 +16,13 @@ use RuntimeException;
 final class EmergencyPlanService
 {
     public const EXPORT_FORMAT = 'lanpa-notfallplaene';
-    public const EXPORT_VERSION = 1;
+    /** Version 2 enthält zusätzlich die Anhänge der Schritte; Version 1 wird weiterhin importiert. */
+    public const EXPORT_VERSION = 2;
+    public const IMPORT_VERSIONS = [1, 2];
     public const EXPORT_MAX_PLANS = 100;
-    /** Entspricht upload_max_filesize in docker/php/php.ini. */
-    public const IMPORT_MAX_BYTES = 2097152;
+    /** Entspricht upload_max_filesize in docker/php/php.ini (Exportdateien enthalten base64-kodierte Anhänge). */
+    public const IMPORT_MAX_BYTES = 20971520;
+    public const IMPORT_MAX_LABEL = '20 MB';
 
     public function __construct(
         public readonly EmergencyPlanRepository $repository,
@@ -129,8 +132,16 @@ final class EmergencyPlanService
             throw new ValidationException(['export' => 'Höchstens ' . self::EXPORT_MAX_PLANS . ' Notfallpläne je Exportdatei.']);
         }
         $plans = [];
+        $attachments = [];
         foreach ($ids as $id) {
             $plan = $this->repository->plan($id);
+            foreach (EmergencyPlanAttachments::ids($plan['definition']) as $attachmentId) {
+                $attachment = $attachments[$attachmentId] ?? $this->repository->attachment($attachmentId);
+                if ($attachment === null) {
+                    throw new ValidationException(['export' => 'Ein Anhang des Notfallplans „' . $plan['definition']['title'] . '“ fehlt in der Datenbank. Bitte den Anhang im Editor neu hochladen.']);
+                }
+                $attachments[$attachmentId] = ['mime' => $attachment['mime'], 'size' => $attachment['size'], 'data' => $attachment['data']];
+            }
             $plans[] = [
                 'title' => $plan['definition']['title'],
                 'source_id' => (int) $plan['id'],
@@ -144,9 +155,10 @@ final class EmergencyPlanService
             'version' => self::EXPORT_VERSION,
             'exported_at' => gmdate('Y-m-d\TH:i:s\Z'),
             'plans' => $plans,
+            'attachments' => (object) $attachments,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) . "\n";
         if (strlen($contents) > self::IMPORT_MAX_BYTES) {
-            throw new ValidationException(['export' => 'Die Exportdatei wäre größer als 2 MB und könnte nicht importiert werden. Bitte weniger Notfallpläne auswählen.']);
+            throw new ValidationException(['export' => 'Die Exportdatei wäre größer als ' . self::IMPORT_MAX_LABEL . ' (einschließlich Anhängen) und könnte nicht importiert werden. Bitte weniger Notfallpläne auswählen.']);
         }
 
         return $contents;
@@ -161,7 +173,7 @@ final class EmergencyPlanService
     public function importPlans(string $contents, string $actor): array
     {
         if ($contents === '' || strlen($contents) > self::IMPORT_MAX_BYTES) {
-            self::importFail('Die Datei ist leer oder größer als 2 MB.');
+            self::importFail('Die Datei ist leer oder größer als ' . self::IMPORT_MAX_LABEL . '.');
         }
         if (str_starts_with($contents, "\xEF\xBB\xBF")) {
             $contents = substr($contents, 3);
@@ -174,9 +186,10 @@ final class EmergencyPlanService
         if (!is_array($data) || ($data['format'] ?? null) !== self::EXPORT_FORMAT) {
             self::importFail('Die Datei ist keine Notfallplan-Exportdatei.');
         }
-        if (($data['version'] ?? null) !== self::EXPORT_VERSION) {
+        if (!in_array($data['version'] ?? null, self::IMPORT_VERSIONS, true)) {
             self::importFail('Die Version der Exportdatei wird nicht unterstützt.');
         }
+        $attachments = self::importAttachments($data['attachments'] ?? []);
         $plans = $data['plans'] ?? null;
         if (!is_array($plans) || !array_is_list($plans) || $plans === [] || count($plans) > self::EXPORT_MAX_PLANS) {
             self::importFail('Die Exportdatei muss 1 bis ' . self::EXPORT_MAX_PLANS . ' Notfallpläne enthalten.');
@@ -215,7 +228,7 @@ final class EmergencyPlanService
                 continue;
             }
             try {
-                $definitions[] = $this->prepare($input);
+                $definitions[] = $this->prepare($input, $attachments);
             } catch (ValidationException $exception) {
                 self::importFail($label . ': ' . implode(' ', $exception->errors()));
             }
@@ -224,7 +237,15 @@ final class EmergencyPlanService
             self::importFail('Folgende SMS-Alarmvorlagen fehlen auf diesem System oder sind nicht eindeutig: '
                 . implode(', ', array_keys($missing)) . '. Bitte zuerst gleichnamige, aktive Alarmierungen anlegen. Es wurde nichts importiert.');
         }
-        $ids = $this->repository->importPlans($definitions, $actor);
+        $used = [];
+        foreach ($definitions as $definition) {
+            foreach (EmergencyPlanAttachments::ids($definition) as $attachmentId) {
+                if (isset($attachments[$attachmentId])) {
+                    $used[$attachmentId] = $attachments[$attachmentId];
+                }
+            }
+        }
+        $ids = $this->repository->importPlans($definitions, $actor, $used);
         app_logger()->info('Notfallpläne importiert.', ['ids' => $ids, 'actor' => $actor]);
 
         return $ids;
@@ -251,16 +272,73 @@ final class EmergencyPlanService
         return count($candidates) === 1 ? (int) $candidates[0]['id'] : '„' . mb_substr($title, 0, 190) . '“';
     }
 
+    /**
+     * Prüft die Anhänge einer Exportdatei: Inhalt muss zur ID (SHA-256) passen und ein erlaubter Dateityp sein.
+     *
+     * @return array<string,array{bytes:string,mime:string,size:int}>
+     */
+    private static function importAttachments(mixed $attachments): array
+    {
+        if (!is_array($attachments) || ($attachments !== [] && array_is_list($attachments))) {
+            self::importFail('Die Anhänge der Exportdatei sind ungültig.');
+        }
+        $result = [];
+        foreach ($attachments as $id => $attachment) {
+            $id = (string) $id;
+            $bytes = is_array($attachment) && is_string($attachment['data'] ?? null) ? base64_decode($attachment['data'], true) : false;
+            if ($bytes === false || hash('sha256', $bytes) !== $id) {
+                self::importFail('Ein Anhang der Exportdatei ist beschädigt. Es wurde nichts importiert.');
+            }
+            try {
+                $mime = EmergencyPlanAttachments::check($bytes);
+            } catch (ValidationException $exception) {
+                self::importFail('Ein Anhang der Exportdatei ist unzulässig: ' . implode(' ', $exception->errors()));
+            }
+            $result[$id] = ['bytes' => $bytes, 'mime' => $mime, 'size' => strlen($bytes)];
+        }
+
+        return $result;
+    }
+
+    /**
+     * Prüft eine hochgeladene Datei und legt sie als Anhang ab.
+     *
+     * @return array{id:string,name:string,mime:string,size:int}
+     */
+    public function uploadAttachment(string $bytes, string $name, string $actor): array
+    {
+        $mime = EmergencyPlanAttachments::check($bytes);
+        $id = $this->repository->storeAttachment($bytes, $mime, $actor);
+        app_logger()->info('Notfallplan-Anhang hochgeladen.', ['id' => $id, 'mime' => $mime, 'size' => strlen($bytes), 'actor' => $actor]);
+
+        return ['id' => $id, 'name' => EmergencyPlanAttachments::name($name), 'mime' => $mime, 'size' => strlen($bytes)];
+    }
+
     private static function importFail(string $message): never
     {
         throw new ValidationException(['import' => $message]);
     }
 
-    /** Prüft die Definition und hängt die Versanddaten der SMS-Elemente an (Vorlage kopiert bzw. einzelne Rufnummern). */
-    private function prepare(array $input): array
+    /**
+     * Prüft die Definition, gleicht Anhänge mit der Datenbank ab und hängt die Versanddaten der
+     * SMS-Elemente an (Vorlage kopiert bzw. einzelne Rufnummern).
+     *
+     * @param array<string,array{mime:string,size:int}> $pending Anhänge, die erst mit dem Import gespeichert werden
+     */
+    private function prepare(array $input, array $pending = []): array
     {
         $definition = EmergencyPlanDefinition::validate($input);
+        $ids = EmergencyPlanAttachments::ids($definition);
+        $known = $pending + ($ids === [] ? [] : $this->repository->attachmentMeta($ids));
         foreach ($definition['nodes'] as &$node) {
+            foreach ($node['attachments'] as &$attachment) {
+                if (!isset($known[$attachment['id']])) {
+                    throw new ValidationException(['attachment' => 'Der Anhang „' . $attachment['name'] . '“ ist nicht (mehr) vorhanden. Bitte erneut hochladen.']);
+                }
+                $attachment['mime'] = $known[$attachment['id']]['mime'];
+                $attachment['size'] = $known[$attachment['id']]['size'];
+            }
+            unset($attachment);
             if ($node['type'] !== 'sms') {
                 continue;
             }

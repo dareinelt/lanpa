@@ -100,6 +100,9 @@ Alle Editor-Routen liegen in `public/index.php` in der Gruppe
 | POST | `/admin/notfallplan/freigabe` | `review` | `action` = `submit` / `approve` / `reject` / `withdraw`; Redirect zurück in den Editor |
 | POST | `/admin/notfallplan/plaene/export` | `exportPlans` | nur `admin` |
 | POST | `/admin/notfallplan/plaene/import` | `importPlans` | nur `admin` |
+| POST | `/admin/notfallplan/anhang` | `uploadAttachment` | Anhang hochladen (Formfeld `file`, JSON `{id,name,mime,size}`) |
+| GET | `/admin/notfallplan/anhang?id=<sha256>&name=…` | `attachment` | Anhang ausliefern (Editor/Vorschau) |
+| GET | `/notfallplan/anhang?id=<sha256>&name=…` | `attachment` | Anhang ausliefern (Planansicht/Einsatz, jede Person mit Notfallplan-Zugriff) |
 
 Alle POST-Routen prüfen CSRF (`requireValidCsrf`). Antworten tragen
 `Cache-Control: no-store`.
@@ -149,7 +152,8 @@ zwischen lokalem Konto und SSO kein „zweites Augenpaar“.
       "checks": [],
       "dependencies": [{ "id": "n1a…", "when": "always" }],
       "join": "all",
-      "alarm_id": 0
+      "alarm_id": 0,
+      "attachments": [{ "id": "<sha256>", "name": "Lageplan.pdf", "mime": "application/pdf", "size": 48213 }]
     }
   ]
 }
@@ -175,6 +179,7 @@ zwischen lokalem Konto und SSO kein „zweites Augenpaar“.
 | `node.alarm_id` | Ganzzahl ≥ 0; bei `sms` mit `sms_mode = template` Pflicht (> 0), sonst auf `0` normalisiert |
 | `node.sms_mode` | nur `sms`: `template` (Alarmvorlage, Standard – auch für alte Pläne ohne Feld) oder `numbers` (einzelne Rufnummern); andere Typen → `template` |
 | `node.sms_numbers` | nur bei `numbers`: Liste 1–20 Rufnummern (`Validator::isPhoneNumber`, ≤ 64, getrimmt, Leerzeilen verworfen, entdoppelt); sonst `[]` |
+| `node.attachments` | Liste ≤ 10 (`EmergencyPlanAttachments::validateList`), nur bei `action`, `contact`, `decision`, `note` (sonst Fehler, leer → `[]`; fehlt bei alten Plänen/Snapshots). Eintrag: `id` = SHA-256 (64 hex) des Inhalts, eindeutig je Schritt; `name` Pflicht ≤ 190 (bereinigt); `mime` ∈ PDF/PNG/JPEG/GIF/WebP; `size` 1 – 20 MB. `prepare()` prüft, dass jeder Anhang in `emergency_plan_attachments` existiert, und übernimmt `mime`/`size` aus der Datenbank (Vorschau: ohne DB-Prüfung). |
 | `node.sms_text` | nur bei `numbers`: Pflicht, ≤ 255; zusätzlich ≤ 255 **nach Einsetzen der Textbausteine** (`EmergencyPlanSms::length()`: `{Notfallplan}` = Plantitel, `{Schritt}` = Elementtitel, `{Datum}` = 10, `{Uhrzeit}` = 5 Zeichen); sonst `''` |
 
 Alle Texte: Steuerzeichen außer Tab/LF/CR verboten, Werte werden getrimmt.
@@ -197,10 +202,27 @@ Unbekannte Felder werden von `validate()` verworfen (Whitelist-Ausgabe).
 - `publication` – nur in `published_definition`: `authors`, `approved_by`,
   `approved_at`, `revision` (`EmergencyPlanRepository::review()`).
 
+### 4.2a Anhänge (Tabelle `emergency_plan_attachments`, Migration 032)
+
+Inhaltsadressiert: `id` = SHA-256 der Rohdaten, `mime`, `size`, `data`
+(**base64**, `LONGTEXT`), `created_by`, `created_at`. Upload
+(`EmergencyPlanService::uploadAttachment()`) erkennt den Typ an den Magic Bytes
+(`EmergencyPlanAttachments::detectMime`, kein SVG), speichert gleiche Inhalte nur
+einmal und liefert die Metadaten für `node.attachments`. Anhänge sind
+unveränderlich und werden nie gelöscht (kein GC) – Entwurf, veröffentlichte
+Fassung und Ereignis-Snapshots referenzieren dieselben IDs. Auslieferung mit
+`Content-Disposition: inline`, ETag, `immutable`-Cache und eigener CSP
+(`object-src 'self'` für den PDF-Viewer); `public/index.php` überschreibt vom
+Controller gesetzte Sicherheitsheader nicht mehr.
+
 ### 4.3 Exportformat
 
-`{"format": "lanpa-notfallplaene", "version": 1, "exported_at": …, "plans": [{title, source_id, source_revision, definition}]}` –
-immer der **Entwurf**, ≤ 100 Pläne, ≤ 2 MB. Import ordnet SMS-Elemente über
+`{"format": "lanpa-notfallplaene", "version": 2, "exported_at": …, "plans": [{title, source_id, source_revision, definition}], "attachments": {"<sha256>": {mime, size, data(base64)}}}` –
+immer der **Entwurf**, ≤ 100 Pläne, ≤ 20 MB (inkl. base64-Anhänge). Import
+akzeptiert Version 1 (ohne Anhänge) und 2; jeder Anhang wird gegen seine
+SHA-256-ID und die Typ-/Größenregeln geprüft, jeder referenzierte Anhang muss in
+der Datei oder bereits lokal vorhanden sein, und Anhänge werden in derselben
+Transaktion wie die Pläne gespeichert. Import ordnet SMS-Elemente über
 `definition.nodes[].alarm.title` (case-insensitive, bei Mehrdeutigkeit zusätzlich
 Text + Zielrufnummer) lokalen Vorlagen zu und legt alles in einer Transaktion als
 neue Entwürfe an (`imported`). Details: [notfallplan.md](notfallplan.md#export-und-import-von-notfallplänen).
@@ -303,6 +325,7 @@ Diagramm und Inspector komplett neu; Texteingaben rufen nur `refreshGraph()`
 | Schritt hinzufügen | Baustein-Button (Palette oder Menüband „Start“) **oder** Baustein aufs Diagramm ziehen | `addNode(type)` → `makeNode(type)`; wird **ans Ende** gehängt und automatisch mit dem bisher letzten Schritt verbunden (`when: always`). Max. 80. Checklisten starten mit einem Prüfpunkt „Prüfpunkt“. Drag-and-Drop nutzt `dataTransfer` (`text/ep-type`) und die Drop-Zone `.ep-canvas`. |
 | Auswählen | Klick/Enter/Leertaste auf SVG-Knoten oder Listeneintrag | `select(id)` → `render()`; Listeneintrag erhält `aria-current`; Diagramm scrollt den Knoten in den sichtbaren Bereich. |
 | Felder bearbeiten | Eigenschaften-Bereich | `inputField()` für Titel/Frage, Anweisung, Zuständigkeit, Telefon, Informationslink, Zielzeit (`type=number`, 0–10080). `maxLength` entspricht den Servergrenzen. Laienfreundliche Beschriftungen („Schritt“, „Voraussetzung“, „Zielzeit“). |
+| Anhänge | Fieldset „Anhänge (Bilder, PDF)“ im Inspector zwischen Telefon und Informationslink (nur `action`/`contact`/`decision`/`note`); Kontextmenü „Anhang hinzufügen“ (Upload-Overlay mit Dropzone) und „Anhänge verwalten (n)“ (Liste mit „Vorschau“ und „✕“ + Ja/Nein-Rückfrage) | `uploadAttachments()` prüft Typ/Größe/Anzahl im Browser, lädt jede Datei per `POST /admin/notfallplan/anhang` hoch und hängt die Metadaten als ein Journal-Schritt an; `removeAttachment()` entfernt nur die Referenz. Drag-and-Drop von Dateien auf das Fieldset. Nach `await` wird der Schritt per `nodeById()` neu gesucht (Undo ersetzt Objekte). |
 | Prüfpunkte | Textarea (nur `checklist`) | Eine Zeile = ein Punkt; Zeilen werden getrimmt, Leerzeilen verworfen. Grenze 20 prüft erst der Server. |
 | SMS-Empfänger | Segment-Schalter „Alarmvorlage (Gruppe)“ / „Einzelne Rufnummern“ (nur `sms`) | setzt `node.sms_mode`; Wechsel ist ein Journal-Schritt und rendert den Inspector neu. |
 | SMS-Vorlage | Dropdown (nur `sms`, Modus `template`) | Optionen aus `alarmOptions()` (aktive Navigationselemente vom Typ `alarm`); Anzeige „An <Ziel>: <Text>“. Hinweis: Daten werden beim Speichern kopiert, im Einsatz separat bestätigt. |
@@ -358,6 +381,15 @@ Diagramm und Inspector komplett neu; Texteingaben rufen nur `refreshGraph()`
   Vorschauansicht (`renderStaticDiagram`); dort scrollt ein Klick zur
   Maßnahmenkarte `#node-<id>`.
 
+
+**Anhänge:** Hat ein Schritt `attachments`, zeichnet `diagram()` oben rechts im
+Knoten eine Büroklammer (`.ep-node-clip`, Klick öffnet `showAttachments()`).
+`showAttachments(list, start, opener)` ist ein modales `<dialog class="ep-viewer">`
+im Stil der App-Mitteilungen (`.announcement-overlay__box`), bei mehreren
+Anhängen mit Tabs (`role=tablist`, Pfeiltasten/Pos1/Ende) an der Oberkante; Bilder
+als `<img>`, PDF als `<iframe>`. In Plan- und Einsatzansicht rendert
+`views/emergency/attachment-button.php` die Schaltfläche `.ep-clip` mit
+`data-ep-attachments` (Dokument-Delegation in `emergency-plan.js`).
 ## 6. Validierung (Server)
 
 `EmergencyPlanDefinition::validate(array $input, bool $preview = false)`
@@ -506,6 +538,8 @@ Ja/Nein-Zweig braucht `join = any`, sonst entfällt er, sobald ein Zweig entfäl
    setzt Text nur per `textContent` (XSS-Schutz). Nur das vom Server gerenderte
    Vorschau-HTML wird per `innerHTML` eingesetzt.
 10. Grenzwerte in Client (`maxLength`, 80 Elemente) und Server (`validate`) synchron halten.
+11. Anhänge sind unveränderlich und inhaltsadressiert; Definitionen enthalten nur
+    Metadaten, nie Dateiinhalte. Export enthält alle referenzierten Anhänge.
 
 ## 12. Tests
 

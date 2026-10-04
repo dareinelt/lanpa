@@ -16,7 +16,7 @@ $preview = $preview ?? false;
     <textarea hidden data-ep-definition><?= Html::e(json_encode($plan['definition'], JSON_THROW_ON_ERROR)) ?></textarea>
     <ol>
         <?php foreach ($plan['definition']['nodes'] as $node) { ?>
-            <li><strong><?= Html::e($node['title']) ?></strong> – <?= Html::e($node['text']) ?><?php if ($node['owner'] !== '') { ?> (<?= Html::e($node['owner']) ?>)<?php } ?></li>
+            <li><strong><?= Html::e($node['title']) ?></strong> – <?= Html::e($node['text']) ?><?php if ($node['owner'] !== '') { ?> (<?= Html::e($node['owner']) ?>)<?php } ?> <?php require __DIR__ . '/attachment-button.php'; ?></li>
         <?php } ?>
     </ol>
 </details>

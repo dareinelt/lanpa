@@ -143,7 +143,7 @@ do_backup() {
     [[ -d "$NC_DATA" ]] && tar --numeric-owner --sparse -C "$NC_DATA" -cf "${work}/nextcloud-data.tar" .
     [[ -d "${TIERING}/stubs" ]] && tar --numeric-owner -C "$TIERING" -cf "${work}/storage-tiering.tar" stubs
     [[ -d "$EO_DATA" ]] && tar --numeric-owner -C "$EO_DATA" --exclude='./.private' -cf "${work}/eurooffice-data.tar" .
-    [[ -d "$APP_STORAGE" ]] && tar --numeric-owner -C "$APP_STORAGE" --exclude='./office-backup' -cf "${work}/intranet-storage.tar" .
+    [[ -d "$APP_STORAGE" ]] && tar --numeric-owner -C "$APP_STORAGE" --exclude='./office-backup' --exclude='./emergency-transfer' -cf "${work}/intranet-storage.tar" .
 
     maintenance_off
 

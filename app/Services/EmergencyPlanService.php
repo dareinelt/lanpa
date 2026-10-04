@@ -16,11 +16,10 @@ use RuntimeException;
 final class EmergencyPlanService
 {
     public const EXPORT_FORMAT = 'lanpa-notfallplaene';
-    /** Version 2 enthält zusätzlich die Anhänge der Schritte; Version 1 wird weiterhin importiert. */
-    public const EXPORT_VERSION = 2;
+    /** Einzeldateien der Versionen 1 (ohne Anhänge) und 2 (mit Anhängen); Version 3 siehe EmergencyPlanTransfer. */
     public const IMPORT_VERSIONS = [1, 2];
     public const EXPORT_MAX_PLANS = 100;
-    /** Entspricht upload_max_filesize in docker/php/php.ini (Exportdateien enthalten base64-kodierte Anhänge). */
+    /** Höchstgröße einer hochgeladenen Importdatei; entspricht upload_max_filesize in docker/php/php.ini. */
     public const IMPORT_MAX_BYTES = 20971520;
     public const IMPORT_MAX_LABEL = '20 MB';
 
@@ -118,55 +117,8 @@ final class EmergencyPlanService
     }
 
     /**
-     * Erzeugt eine portable Exportdatei (JSON) mit den aktuellen Entwürfen der gewählten Pläne.
-     *
-     * @param list<int> $ids
-     */
-    public function exportPlans(array $ids): string
-    {
-        $ids = array_values(array_unique(array_filter($ids, static fn ($id) => is_int($id) && $id > 0)));
-        if ($ids === []) {
-            throw new ValidationException(['export' => 'Bitte mindestens einen Notfallplan für den Export auswählen.']);
-        }
-        if (count($ids) > self::EXPORT_MAX_PLANS) {
-            throw new ValidationException(['export' => 'Höchstens ' . self::EXPORT_MAX_PLANS . ' Notfallpläne je Exportdatei.']);
-        }
-        $plans = [];
-        $attachments = [];
-        foreach ($ids as $id) {
-            $plan = $this->repository->plan($id);
-            foreach (EmergencyPlanAttachments::ids($plan['definition']) as $attachmentId) {
-                $attachment = $attachments[$attachmentId] ?? $this->repository->attachment($attachmentId);
-                if ($attachment === null) {
-                    throw new ValidationException(['export' => 'Ein Anhang des Notfallplans „' . $plan['definition']['title'] . '“ fehlt in der Datenbank. Bitte den Anhang im Editor neu hochladen.']);
-                }
-                $attachments[$attachmentId] = ['mime' => $attachment['mime'], 'size' => $attachment['size'], 'data' => $attachment['data']];
-            }
-            $plans[] = [
-                'title' => $plan['definition']['title'],
-                'source_id' => (int) $plan['id'],
-                'source_revision' => (int) $plan['revision'],
-                'definition' => $plan['definition'],
-            ];
-        }
-
-        $contents = json_encode([
-            'format' => self::EXPORT_FORMAT,
-            'version' => self::EXPORT_VERSION,
-            'exported_at' => gmdate('Y-m-d\TH:i:s\Z'),
-            'plans' => $plans,
-            'attachments' => (object) $attachments,
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) . "\n";
-        if (strlen($contents) > self::IMPORT_MAX_BYTES) {
-            throw new ValidationException(['export' => 'Die Exportdatei wäre größer als ' . self::IMPORT_MAX_LABEL . ' (einschließlich Anhängen) und könnte nicht importiert werden. Bitte weniger Notfallpläne auswählen.']);
-        }
-
-        return $contents;
-    }
-
-    /**
-     * Importiert alle Pläne einer Exportdatei als neue Entwürfe (alles oder nichts).
-     * SMS-Elemente werden anhand des Titels auf die lokalen, aktiven Alarmvorlagen abgebildet.
+     * Importiert eine einzelne Exportdatei der Formatversionen 1 und 2 (alles oder nichts).
+     * Version 3 (Export-Satz aus einer oder mehreren Teildateien) importiert EmergencyPlanTransfer.
      *
      * @return list<int> IDs der angelegten Entwürfe
      */
@@ -191,7 +143,30 @@ final class EmergencyPlanService
         }
         $attachments = self::importAttachments($data['attachments'] ?? []);
         $plans = $data['plans'] ?? null;
-        if (!is_array($plans) || !array_is_list($plans) || $plans === [] || count($plans) > self::EXPORT_MAX_PLANS) {
+        if (!is_array($plans)) {
+            self::importFail('Die Exportdatei muss 1 bis ' . self::EXPORT_MAX_PLANS . ' Notfallpläne enthalten.');
+        }
+
+        return $this->importDefinitions(
+            $plans,
+            array_map(static fn (array $attachment): array => ['mime' => $attachment['mime'], 'size' => $attachment['size']], $attachments),
+            static fn (string $id): array => $attachments[$id],
+            $actor
+        );
+    }
+
+    /**
+     * Legt geprüfte Pläne als neue Entwürfe an (alles oder nichts).
+     * SMS-Elemente werden anhand des Titels auf die lokalen, aktiven Alarmvorlagen abgebildet.
+     *
+     * @param array<mixed> $plans Einträge mit `definition`
+     * @param array<string,array{mime:string,size:int}> $attachments bereits geprüfte Anhänge (Metadaten)
+     * @param Closure(string):array{bytes:string,mime:string} $load lädt die Rohdaten eines geprüften Anhangs
+     * @return list<int> IDs der angelegten Entwürfe
+     */
+    public function importDefinitions(array $plans, array $attachments, Closure $load, string $actor): array
+    {
+        if (!array_is_list($plans) || $plans === [] || count($plans) > self::EXPORT_MAX_PLANS) {
             self::importFail('Die Exportdatei muss 1 bis ' . self::EXPORT_MAX_PLANS . ' Notfallpläne enthalten.');
         }
         $alarms = $this->alarmOptions();
@@ -241,11 +216,16 @@ final class EmergencyPlanService
         foreach ($definitions as $definition) {
             foreach (EmergencyPlanAttachments::ids($definition) as $attachmentId) {
                 if (isset($attachments[$attachmentId])) {
-                    $used[$attachmentId] = $attachments[$attachmentId];
+                    $used[$attachmentId] = $attachmentId;
                 }
             }
         }
-        $ids = $this->repository->importPlans($definitions, $actor, $used);
+        // Anhänge werden einzeln geladen und gespeichert, damit große Export-Sätze den Speicher nicht sprengen.
+        $ids = $this->repository->importPlans($definitions, $actor, (static function () use ($used, $load): \Generator {
+            foreach ($used as $attachmentId) {
+                yield $attachmentId => $load($attachmentId);
+            }
+        })());
         app_logger()->info('Notfallpläne importiert.', ['ids' => $ids, 'actor' => $actor]);
 
         return $ids;

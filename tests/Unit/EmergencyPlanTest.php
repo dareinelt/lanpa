@@ -10,6 +10,7 @@ use App\Repositories\SettingsRepository;
 use App\Services\EmergencyPlanDefinition;
 use App\Services\EmergencyPlanService;
 use App\Services\EmergencyPlanSms;
+use App\Services\EmergencyPlanTransfer;
 use App\Services\SettingsService;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
@@ -437,6 +438,57 @@ function emergencyImportRejected(EmergencyPlanService $service, string $contents
     throw new RuntimeException('Import hätte abgelehnt werden müssen.');
 }
 
+function emergencyTransfer(EmergencyPlanService $service, int $partMaxBytes = EmergencyPlanTransfer::PART_MAX_BYTES, ?string $directory = null): EmergencyPlanTransfer
+{
+    $directory ??= sys_get_temp_dir() . '/lanpa-ep-transfer-' . bin2hex(random_bytes(6));
+    register_shutdown_function(static function () use ($directory): void {
+        if (!is_dir($directory)) {
+            return;
+        }
+        $items = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+        foreach ($items as $item) {
+            $item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
+        }
+        @rmdir($directory);
+    });
+
+    return new EmergencyPlanTransfer($service, $directory, $partMaxBytes);
+}
+
+/** @return list<array{name:string,contents:string}> */
+function emergencyExportFiles(EmergencyPlanTransfer $transfer, array $ids, string $actor = 'local:admin'): array
+{
+    $export = $transfer->createExport($ids, $actor);
+    $files = [];
+    foreach ($export['parts'] as $part) {
+        $file = $transfer->exportPart($export['set'], $part['part'], $actor);
+        $files[] = ['name' => $file['name'], 'contents' => (string) file_get_contents($file['path'])];
+    }
+
+    return $files;
+}
+
+/** @return list<int> */
+function emergencyImportFiles(EmergencyPlanTransfer $transfer, array $files, string $actor = 'local:admin'): array
+{
+    $status = null;
+    foreach ($files as $file) {
+        $status = $transfer->stageImport($file['contents'], $file['name'], $actor);
+    }
+
+    return $transfer->importStaged($status['set'], $actor);
+}
+
+function emergencyTransferRejected(callable $callback): string
+{
+    try {
+        $callback();
+    } catch (ValidationException $exception) {
+        return implode(' ', $exception->errors());
+    }
+    throw new RuntimeException('Hätte abgelehnt werden müssen.');
+}
+
 Runner::test('Notfallplan: Export und Import zwischen Systemen als neue Entwürfe', static function (): void {
     $sourcePdo = emergencyPdo();
     emergencyAlarmTables($sourcePdo, [['Werkschutz', 'Brand im Werk', '100']]);
@@ -446,9 +498,13 @@ Runner::test('Notfallplan: Export und Import zwischen Systemen als neue Entwürf
     $id = $source->save(0, 0, $definition, 'local:autor');
     $source->repository->submit($id, 1, 'local:autor');
     $source->repository->review($id, 1, 'local:pruefer', true, 'Geprüft.');
-    $file = $source->exportPlans([$id]);
-    $data = json_decode($file, true, 64, JSON_THROW_ON_ERROR);
+    $files = emergencyExportFiles(emergencyTransfer($source), [$id]);
+    Assert::same(1, count($files));
+    Assert::true(str_starts_with($files[0]['name'], 'notfallplan-brandfall_') && str_ends_with($files[0]['name'], '_teil-1-von-1.json'));
+    $data = json_decode($files[0]['contents'], true, 64, JSON_THROW_ON_ERROR);
     Assert::same(EmergencyPlanService::EXPORT_FORMAT, $data['format']);
+    Assert::same(EmergencyPlanTransfer::VERSION, $data['version']);
+    Assert::same(['part' => 1, 'parts' => 1], ['part' => $data['set']['part'], 'parts' => $data['set']['parts']]);
     Assert::same('Werkschutz', $data['plans'][0]['definition']['nodes'][4]['alarm']['title']);
 
     // Zielsystem mit anderer ID der gleichnamigen Alarmierung.
@@ -456,7 +512,8 @@ Runner::test('Notfallplan: Export und Import zwischen Systemen als neue Entwürf
     emergencyAlarmTables($targetPdo, [['Andere', 'x', '1'], ['werkschutz ', 'Brand im Werk (neu)', '200']]);
     $target = emergencyService($targetPdo);
     $target->repository->savePlan(0, 0, emergencyDefinition(), 'local:bestand');
-    $ids = $target->importPlans("\xEF\xBB\xBF" . $file, 'local:admin');
+    $files[0]['contents'] = "\xEF\xBB\xBF" . $files[0]['contents'];
+    $ids = emergencyImportFiles(emergencyTransfer($target), $files);
     Assert::same([2], $ids);
     $plan = $target->repository->plan(2);
     Assert::same('Brandfall', $plan['title']);
@@ -479,7 +536,7 @@ Runner::test('Notfallplan: Import prüft Format, Inhalt und Alarmvorlagen vollst
     $valid = ['definition' => emergencyDefinition()];
     Assert::true(str_contains(emergencyImportRejected($service, 'kein json'), 'JSON'));
     Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid], ['format' => 'andere'])), 'keine Notfallplan-Exportdatei'));
-    Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid], ['version' => 3])), 'Version'));
+    Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid], ['version' => 99])), 'Version'));
     Assert::true(str_contains(emergencyImportRejected($service, $wrap([])), '1 bis'));
     $broken = ['definition' => ['title' => 'Kaputt', 'nodes' => [emergencyNode('x') + ['link' => 'javascript:alert(1)']]]];
     Assert::true(str_contains(emergencyImportRejected($service, $wrap([$valid, $broken])), 'Plan „Kaputt“'));
@@ -489,9 +546,7 @@ Runner::test('Notfallplan: Import prüft Format, Inhalt und Alarmvorlagen vollst
     Assert::same([], $service->repository->plans(), 'Fehlerhafter Import legt nichts an.');
     Assert::same([1], $service->importPlans($wrap([$sms('C', ['title' => 'Doppelt', 'alarm_text' => 'b', 'alarm_group_number' => '2'])]), 'local:admin'));
     Assert::same(2, $service->repository->plan(1)['definition']['nodes'][0]['alarm_id']);
-    $rejected = false;
-    try { $service->exportPlans([]); } catch (ValidationException) { $rejected = true; }
-    Assert::true($rejected);
+    Assert::contains('mindestens einen', emergencyTransferRejected(fn () => emergencyTransfer($service)->createExport([], 'local:admin')));
 });
 
 function emergencySmsNumbersNode(string $id, array $values = []): array
@@ -572,7 +627,7 @@ Runner::test('Notfallplan: Import übernimmt SMS an einzelne Rufnummern ohne Ala
     $targetPdo = emergencyPdo();
     emergencyAlarmTables($targetPdo, []);
     $target = emergencyService($targetPdo);
-    Assert::same([1], $target->importPlans($source->exportPlans([$id]), 'local:admin'));
+    Assert::same([1], emergencyImportFiles(emergencyTransfer($target), emergencyExportFiles(emergencyTransfer($source), [$id])));
     $node = $target->repository->plan(1)['definition']['nodes'][0];
     Assert::same(['+49 171 1234567', '0171/7654321'], $node['sms_numbers']);
     Assert::same('Alarm {Notfallplan} am {Datum} um {Uhrzeit}', $node['alarm']['alarm_text']);
@@ -645,34 +700,215 @@ Runner::test('Notfallplan: Export und Import übernehmen Anhänge', static funct
         emergencyNode('a') + ['attachments' => [$png, $pdf]],
         emergencyNode('b', 'decision', [['id' => 'a', 'when' => 'always']]) + ['attachments' => [$pdf]],
     ]], 'local:autor');
-    $file = $source->exportPlans([$id]);
-    $data = json_decode($file, true, 64, JSON_THROW_ON_ERROR);
-    Assert::same(EmergencyPlanService::EXPORT_VERSION, $data['version']);
-    Assert::same([$png['id'], $pdf['id']], array_keys($data['attachments']));
-    Assert::same(base64_encode("%PDF-1.4\nInhalt"), $data['attachments'][$pdf['id']]['data']);
+    $files = emergencyExportFiles(emergencyTransfer($source), [$id]);
+    $data = json_decode($files[0]['contents'], true, 64, JSON_THROW_ON_ERROR);
+    Assert::same([$png['id'], $pdf['id']], array_keys($data['manifest']['attachments']));
+    Assert::same(base64_encode("%PDF-1.4\nInhalt"), $data['chunks'][1]['data']);
 
     $targetPdo = emergencyPdo();
     emergencyAlarmTables($targetPdo, []);
     $target = emergencyService($targetPdo);
-    $ids = $target->importPlans($file, 'local:admin');
+    $ids = emergencyImportFiles(emergencyTransfer($target), $files);
     $plan = $target->repository->plan($ids[0]);
     Assert::same([$png, $pdf], $plan['definition']['nodes'][0]['attachments']);
     Assert::same(base64_encode(emergencyPng('a')), $target->repository->attachment($png['id'])['data']);
     Assert::same(2, (int) $targetPdo->query('SELECT COUNT(*) FROM emergency_plan_attachments')->fetchColumn());
 
-    // Manipulierte oder fehlende Anhänge: nichts wird importiert.
-    $broken = $data;
+    // Version 2 (eine Datei mit Anhängen): manipulierte oder fehlende Anhänge – nichts wird importiert.
+    $v2 = ['format' => EmergencyPlanService::EXPORT_FORMAT, 'version' => 2, 'exported_at' => '2024-01-01T00:00:00Z',
+        'plans' => [['definition' => $plan['definition']]], 'attachments' => [
+            $png['id'] => ['mime' => 'image/png', 'size' => strlen(emergencyPng('a')), 'data' => base64_encode(emergencyPng('a'))],
+            $pdf['id'] => ['mime' => 'application/pdf', 'size' => strlen("%PDF-1.4\nInhalt"), 'data' => base64_encode("%PDF-1.4\nInhalt")],
+        ]];
+    $broken = $v2;
     $broken['attachments'][$pdf['id']]['data'] = base64_encode('%PDF-1.4 anders');
     $empty = emergencyPdo();
     emergencyAlarmTables($empty, []);
     $emptyService = emergencyService($empty);
     Assert::contains('beschädigt', emergencyImportRejected($emptyService, json_encode($broken)));
-    $without = $data;
+    $without = $v2;
     unset($without['attachments'][$pdf['id']]);
     Assert::contains('nicht (mehr) vorhanden', emergencyImportRejected($emptyService, json_encode($without)));
     Assert::same([], $emptyService->repository->plans());
     Assert::same(0, (int) $empty->query('SELECT COUNT(*) FROM emergency_plan_attachments')->fetchColumn());
+    Assert::same([1], emergencyImportFiles(emergencyTransfer($emptyService), [['name' => 'alt.json', 'contents' => json_encode($v2)]]), 'Version 2 bleibt über den Export-Satz-Import importierbar.');
 
     // Version 1 (ohne Anhänge) bleibt importierbar.
-    Assert::same([1], $emptyService->importPlans(json_encode(['format' => EmergencyPlanService::EXPORT_FORMAT, 'version' => 1, 'plans' => [['definition' => emergencyDefinition()]]]), 'local:admin'));
+    Assert::same([2], $emptyService->importPlans(json_encode(['format' => EmergencyPlanService::EXPORT_FORMAT, 'version' => 1, 'plans' => [['definition' => emergencyDefinition()]]]), 'local:admin'));
 });
+
+Runner::test('Notfallplan: Export-Satz teilt bei Erreichen der Größengrenze in anfolgende Dateien auf', static function (): void {
+    $sourcePdo = emergencyPdo();
+    emergencyAlarmTables($sourcePdo, []);
+    $source = emergencyService($sourcePdo);
+    $large = "%PDF-1.4\n" . random_bytes(30000);
+    $pdf = $source->uploadAttachment($large, 'Gross.pdf', 'local:autor');
+    $png = $source->uploadAttachment(emergencyPng('b'), 'Bild.png', 'local:autor');
+    $first = $source->save(0, 0, ['title' => 'Großer Plan', 'nodes' => [emergencyNode('a') + ['attachments' => [$pdf, $png]]]], 'local:autor');
+    $second = $source->save(0, 0, emergencyDefinition(), 'local:autor');
+    Assert::same(EmergencyPlanTransfer::PART_MAX_BYTES, 15000000);
+
+    $limit = 8000;
+    $transfer = emergencyTransfer($source, $limit);
+    $export = $transfer->createExport([$first, $second], 'local:autor');
+    $count = count($export['parts']);
+    Assert::true($count >= 6, 'Mehrere Teildateien erwartet, erhalten: ' . $count);
+    Assert::same(['Großer Plan', 'Brandfall'], $export['plans']);
+    Assert::true(str_starts_with($export['folder'], 'Notfallpläne/') && str_ends_with($export['folder'], '2 Notfallpläne'));
+    $files = [];
+    foreach ($export['parts'] as $i => $part) {
+        $file = $transfer->exportPart($export['set'], $part['part'], 'local:autor');
+        $contents = (string) file_get_contents($file['path']);
+        Assert::true(strlen($contents) <= $limit, 'Teil ' . ($i + 1) . ' ist ' . strlen($contents) . ' Bytes groß.');
+        Assert::same(strlen($contents), $part['bytes']);
+        Assert::true(str_ends_with($file['name'], sprintf('_teil-%02d-von-%d.json', $i + 1, $count)) || str_ends_with($file['name'], sprintf('_teil-%d-von-%d.json', $i + 1, $count)));
+        $data = json_decode($contents, true, 64, JSON_THROW_ON_ERROR);
+        Assert::same(['id' => $export['set'], 'part' => $i + 1, 'parts' => $count], $data['set']);
+        Assert::same($i === 0, isset($data['manifest']));
+        $files[] = ['name' => $file['name'], 'contents' => $contents];
+    }
+    emergencyThrows(fn () => $transfer->exportPart($export['set'], 1, 'local:fremd'), 404);
+    emergencyThrows(fn () => $transfer->exportPart($export['set'], $count + 1, 'local:autor'), 404);
+    emergencyThrows(fn () => $transfer->exportPart('../x', 1, 'local:autor'), 404);
+
+    $targetPdo = emergencyPdo();
+    emergencyAlarmTables($targetPdo, []);
+    $target = emergencyService($targetPdo);
+    $import = emergencyTransfer($target);
+
+    // Unvollständiger Satz: Stand zeigt fehlende Teile, Import lehnt ab und legt nichts an.
+    $reversed = array_reverse($files);
+    $missing = array_pop($reversed); // Teil 1 fehlt
+    $status = null;
+    foreach ($reversed as $file) {
+        $status = $import->stageImport($file['contents'], $file['name'], 'local:admin');
+    }
+    Assert::same([1], $status['missing']);
+    Assert::false($status['complete']);
+    Assert::same([], $status['plans'], 'Ohne Teil 1 ist das Inhaltsverzeichnis unbekannt.');
+    Assert::contains('fehlt Teil 1 von ' . $count, emergencyTransferRejected(fn () => $import->importStaged($export['set'], 'local:admin')));
+    Assert::same([], $target->repository->plans());
+
+    // Fremde Personen sehen die hochgeladenen Teile nicht.
+    Assert::contains('nicht (mehr) vor', emergencyTransferRejected(fn () => $import->importStaged($export['set'], 'local:fremd')));
+    $foreign = $import->stageImport($missing['contents'], $missing['name'], 'local:fremd');
+    Assert::same(range(2, $count), $foreign['missing']);
+
+    // Doppelt gewählte Datei schadet nicht, abweichender Inhalt für denselben Teil wird abgelehnt.
+    $import->stageImport($files[1]['contents'], $files[1]['name'], 'local:admin');
+    $tampered = str_replace('"part":2', '"part":2 ', $files[1]['contents']);
+    Assert::contains('anderem Inhalt', emergencyTransferRejected(fn () => $import->stageImport($tampered, 'x.json', 'local:admin')));
+
+    $status = $import->stageImport($missing['contents'], $missing['name'], 'local:admin');
+    Assert::true($status['complete']);
+    Assert::same(['Großer Plan', 'Brandfall'], $status['plans']);
+    Assert::same([1, 2], $import->importStaged($export['set'], 'local:admin'));
+    Assert::same([$pdf, $png], $target->repository->plan(1)['definition']['nodes'][0]['attachments']);
+    Assert::same(base64_encode($large), $target->repository->attachment($pdf['id'])['data']);
+    Assert::same(emergencyDefinition()['nodes'][0]['title'], $target->repository->plan(2)['definition']['nodes'][0]['title']);
+    Assert::contains('nicht (mehr) vor', emergencyTransferRejected(fn () => $import->importStaged($export['set'], 'local:admin')), 'Importierte Teile werden entfernt.');
+});
+
+Runner::test('Notfallplan: Import eines Export-Satzes prüft Inhaltsverzeichnis, Prüfsummen und Zugehörigkeit', static function (): void {
+    $sourcePdo = emergencyPdo();
+    emergencyAlarmTables($sourcePdo, []);
+    $source = emergencyService($sourcePdo);
+    $pdf = $source->uploadAttachment("%PDF-1.4\n" . random_bytes(12000), 'Plan.pdf', 'local:autor');
+    $id = $source->save(0, 0, ['title' => 'Satz', 'nodes' => [emergencyNode('a') + ['attachments' => [$pdf]]]], 'local:autor');
+    $files = emergencyExportFiles(emergencyTransfer($source, 6000), [$id]);
+    Assert::true(count($files) >= 3);
+
+    $targetPdo = emergencyPdo();
+    emergencyAlarmTables($targetPdo, []);
+    $target = emergencyService($targetPdo);
+    $mutate = static function (array $files, int $index, callable $change): array {
+        $data = json_decode($files[$index]['contents'], true, 64, JSON_THROW_ON_ERROR);
+        $files[$index]['contents'] = json_encode($change($data), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        return $files;
+    };
+    $reject = static fn (array $files): string => emergencyTransferRejected(fn () => emergencyImportFiles(emergencyTransfer($target), $files));
+
+    Assert::contains('beschädigt', $reject($mutate($files, 0, static function (array $data): array {
+        $data['plans'][0]['definition']['title'] = 'Verändert';
+        return $data;
+    })));
+    $last = count($files) - 1;
+    Assert::contains('beschädigt', $reject($mutate($files, $last, static function (array $data): array {
+        $chunk = &$data['chunks'][count($data['chunks']) - 1];
+        $chunk['data'] = ($chunk['data'][0] === 'A' ? 'B' : 'A') . substr($chunk['data'], 1);
+        return $data;
+    })));
+    Assert::contains('ungültige oder doppelte', $reject($mutate($files, $last, static function (array $data): array {
+        $data['chunks'][] = $data['chunks'][0];
+        return $data;
+    })));
+    Assert::contains('Inhaltsverzeichnis', $reject($mutate($files, 0, static function (array $data): array {
+        unset($data['manifest']);
+        return $data;
+    })));
+    Assert::contains('Kennzeichnung', $reject($mutate($files, 1, static function (array $data): array {
+        $data['set']['part'] = 99;
+        return $data;
+    })));
+    // Teil aus einem anderen Export-Satz desselben Plans.
+    $other = emergencyExportFiles(emergencyTransfer($source, 6000), [$id]);
+    $mixed = $files;
+    $mixed[1] = $other[1];
+    $staging = emergencyTransfer($target);
+    $statuses = array_map(static fn (array $file): array => $staging->stageImport($file['contents'], $file['name'], 'local:admin'), $mixed);
+    Assert::false($statuses[count($statuses) - 1]['complete']);
+    Assert::true(in_array(2, $statuses[0]['missing'], true) || in_array(2, $statuses[count($statuses) - 1]['missing'], true));
+    Assert::contains('keine Notfallplan-Exportdatei', emergencyTransferRejected(fn () => $staging->stageImport('{"format":"x"}', 'x.json', 'local:admin')));
+    Assert::contains('Version', emergencyTransferRejected(fn () => $staging->stageImport(json_encode(['format' => EmergencyPlanService::EXPORT_FORMAT, 'version' => 99]), 'x.json', 'local:admin')));
+    Assert::same([], $target->repository->plans(), 'Fehlerhafte Sätze legen nichts an.');
+    Assert::same(0, (int) $targetPdo->query('SELECT COUNT(*) FROM emergency_plan_attachments')->fetchColumn());
+
+    Assert::same([1], emergencyImportFiles(emergencyTransfer($target), array_reverse($files)), 'Reihenfolge der Auswahl ist egal.');
+});
+
+Runner::test('Notfallplan: Ablage in Nextcloud – signiertes Token und sichere Zielpfade', static function (): void {
+    require_once BASE_PATH . '/docker/nextcloud/apps/intranet_integration/lib/Service/TokenVerifier.php';
+    require_once BASE_PATH . '/docker/nextcloud/apps/intranet_integration/lib/Service/FileTarget.php';
+    $secret = str_repeat('s', 32);
+    $body = '{"format":"lanpa-notfallplaene"}';
+    $token = \App\Services\Office\OfficeJwt::filesToken($secret, 'max@corp', 'Notfallpläne/2024-01-01 10-00 Brandfall', 'datei.json', $body, time());
+    $verifier = new \OCA\IntranetIntegration\Service\TokenVerifier();
+    $claims = $verifier->claims($token, $secret, \OCA\IntranetIntegration\Service\TokenVerifier::FILES_AUDIENCE);
+    Assert::same('max@corp', $claims['sub']);
+    Assert::same(hash('sha256', $body), $claims['body']);
+    Assert::same('datei.json', $claims['name']);
+    Assert::same(null, $verifier->claims($token, $secret, \OCA\IntranetIntegration\Service\TokenVerifier::AUDIENCE));
+    Assert::same(null, $verifier->claims($token, str_repeat('x', 32), \OCA\IntranetIntegration\Service\TokenVerifier::FILES_AUDIENCE));
+
+    $target = \OCA\IntranetIntegration\Service\FileTarget::class;
+    Assert::same(['Notfallpläne', '2024-01-01 10-00 Brandfall'], $target::folder('Notfallpläne/2024-01-01 10-00 Brandfall'));
+    foreach (['', '../x', 'a/../b', '/a', 'a//b', 'a/b/c/d/e', "a\nb", 'a\\b', '.hidden'] as $folder) {
+        Assert::same(null, $target::folder($folder), 'Ordner abgelehnt: ' . $folder);
+    }
+    Assert::false($target::isSafeSegment('..'));
+    Assert::false($target::isSafeSegment('a/b'));
+    Assert::true($target::isSafeSegment('notfallplan_2024-01-01_teil-1-von-2.json'));
+
+    Assert::same('Brandfall Werk', \App\Services\Office\NextcloudFilesService::segment('Brandfall/ Werk', 'x'));
+    Assert::same('x', \App\Services\Office\NextcloudFilesService::segment('..', 'x'));
+
+    // Übertragung: Inhalt als Anfragekörper, Token an Benutzer, Ziel und Inhalt gebunden.
+    $probe = new FakeOfficeProbe();
+    $url = 'POST http://nextcloud/office/index.php/apps/intranet_integration/api/files';
+    $probe->responses[$url] = ['status' => 200, 'error' => null, 'body' => '{"ok":true,"message":"In Nextcloud gespeichert."}'];
+    $files = new \App\Services\Office\NextcloudFilesService(officeConfig(), $probe);
+    $result = $files->upload('max@corp', 'Notfallpläne/2024-01-01 10-00 Brandfall', 'teil-1-von-1.json', $body);
+    Assert::true($result['ok']);
+    Assert::same('/Notfallpläne/2024-01-01 10-00 Brandfall/teil-1-von-1.json', $result['path']);
+    Assert::same($body, $probe->requests[0]['body']);
+    $sent = $verifier->claims(substr($probe->requests[0]['headers']['Authorization'], 7), 'test-secret-0123456789', \OCA\IntranetIntegration\Service\TokenVerifier::FILES_AUDIENCE);
+    Assert::same(['max@corp', 'Notfallpläne/2024-01-01 10-00 Brandfall', 'teil-1-von-1.json', hash('sha256', $body)], [$sent['sub'], $sent['folder'], $sent['name'], $sent['body']]);
+    Assert::false($files->upload('max@corp', '../x', 'a.json', $body)['ok']);
+    Assert::false($files->upload('böse uid', 'Notfallpläne', 'a.json', $body)['ok']);
+    Assert::same(1, count($probe->requests), 'Ungültige Ziele werden nicht übertragen.');
+    $probe->responses[$url] = ['status' => 404, 'error' => null, 'body' => '{"ok":false,"message":"Für Sie gibt es noch kein aktives Nextcloud-Konto."}'];
+    Assert::contains('kein aktives Nextcloud-Konto', $files->upload('max@corp', 'Notfallpläne', 'a.json', $body)['message']);
+    Assert::contains('nicht aktiviert', (new \App\Services\Office\NextcloudFilesService(officeConfig([], ['enabled' => false]), $probe))->unavailableReason() ?? '');
+    Assert::same('/office/index.php/apps/files/?dir=%2FNotf%C3%A4lle', $files->folderTarget('Notfälle'));
+});
+

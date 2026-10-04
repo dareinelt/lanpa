@@ -16,6 +16,7 @@ use App\Services\EmergencyPlanAttachments;
 use App\Services\EmergencyPlanDefinition;
 use App\Services\EmergencyPlanPreview;
 use App\Services\EmergencyPlanService;
+use App\Services\EmergencyPlanTransfer;
 
 final class EmergencyPlanController extends AdminController
 {
@@ -84,7 +85,7 @@ final class EmergencyPlanController extends AdminController
             'group' => Container::settings()->get('emergency_plan_group'),
             'triggerGroup' => Container::settings()->get('emergency_plan_trigger_group'),
             'smtpEnabled' => Container::settings()->bool('smtp_enabled'),
-            'canTransfer' => $access['manager'] && Container::auth()->isAdmin(),
+            'canTransfer' => $access['manager'],
         ]);
     }
 
@@ -311,51 +312,120 @@ final class EmergencyPlanController extends AdminController
         return Response::download("\xEF\xBB\xBF" . $csv, 'notfallereignis-' . $event['id'] . '.csv', 'text/csv; charset=utf-8');
     }
 
+    /** Erzeugt einen Export-Satz (eine oder mehrere Teildateien ≤ 15 MB) und meldet die Teile (JSON). */
     public function exportPlans(Request $request): Response
     {
         $access = $this->access($request, true);
-        $this->requireAdminRole();
         $this->requireValidCsrf($request);
         $ids = $request->post['plans'] ?? [];
         $ids = is_array($ids) ? array_map(static fn ($id) => is_string($id) && ctype_digit($id) ? (int) $id : 0, array_values($ids)) : [];
+        @set_time_limit(300);
         try {
-            $contents = Container::emergencyPlans()->exportPlans($ids);
+            $export = Container::emergencyPlanTransfer()->createExport($ids, $access['actor']);
         } catch (ValidationException $exception) {
-            Session::flash('error', implode(' ', $exception->errors()));
-
-            return $this->redirect('/admin/notfallplan');
+            return Response::json(['error' => implode(' ', $exception->errors())], 422);
+        } catch (HttpException $exception) {
+            return Response::json(['error' => $exception->getMessage()], $exception->statusCode());
         }
-        app_logger()->info('Notfallpläne exportiert.', ['actor' => $access['actor'], 'ids' => $ids]);
+        $nextcloud = Container::nextcloudFiles();
+        $reason = $nextcloud->unavailableReason() ?? ($this->nextcloudUid($request) === null
+            ? 'Die Ablage in Nextcloud ist nur mit Windows-/AD-Anmeldung möglich (lokales Konto ohne Nextcloud-Konto).' : null);
+        $parts = array_map(static fn (array $part): array => $part + [
+            'url' => '/admin/notfallplan/plaene/export/datei?' . http_build_query(['set' => $export['set'], 'part' => $part['part']]),
+        ], $export['parts']);
 
-        return Response::download($contents, 'notfallplaene-' . gmdate('Y-m-d') . '.json', 'application/json; charset=utf-8')
-            ->withHeader('Cache-Control', 'no-store');
+        return Response::json([
+            'set' => $export['set'], 'plans' => $export['plans'], 'parts' => $parts, 'max_label' => EmergencyPlanTransfer::PART_MAX_LABEL,
+            'nextcloud' => ['available' => $reason === null, 'reason' => $reason, 'folder' => $export['folder'],
+                'url' => '/office-starten?' . http_build_query(['ziel' => $nextcloud->folderTarget($export['folder'])])],
+        ]);
     }
 
+    /** Download einer Teildatei des eigenen Export-Satzes. */
+    public function exportPart(Request $request): Response
+    {
+        $access = $this->access($request, true);
+        $part = Container::emergencyPlanTransfer()->exportPart((string) $request->query('set', ''), $request->queryInt('part'), $access['actor']);
+
+        return Response::download((string) file_get_contents($part['path']), $part['name'], 'application/json; charset=utf-8');
+    }
+
+    /** Legt eine Teildatei des eigenen Export-Satzes in den Nextcloud-Dateien der angemeldeten Person ab. */
+    public function exportNextcloud(Request $request): Response
+    {
+        $access = $this->access($request, true);
+        $this->requireValidCsrf($request);
+        $uid = $this->nextcloudUid($request);
+        if ($uid === null) {
+            return Response::json(['error' => 'Die Ablage in Nextcloud ist nur mit Windows-/AD-Anmeldung möglich (lokales Konto ohne Nextcloud-Konto).'], 422);
+        }
+        try {
+            $part = Container::emergencyPlanTransfer()->exportPart((string) $request->input('set', ''), $request->inputInt('part'), $access['actor']);
+        } catch (HttpException $exception) {
+            return Response::json(['error' => $exception->getMessage()], $exception->statusCode());
+        }
+        @set_time_limit(120);
+        $result = Container::nextcloudFiles()->upload($uid, $part['folder'], $part['name'], (string) file_get_contents($part['path']));
+        if (!$result['ok']) {
+            app_logger()->warning('Notfallplan-Export: Ablage in Nextcloud fehlgeschlagen.', ['actor' => $access['actor'], 'message' => $result['message']]);
+
+            return Response::json(['error' => $result['message']], 502);
+        }
+        app_logger()->info('Notfallplan-Export in Nextcloud abgelegt.', ['actor' => $access['actor'], 'uid' => $uid, 'path' => $result['path']]);
+
+        return Response::json(['message' => $result['message'], 'path' => $result['path']]);
+    }
+
+    /** Nimmt eine Datei eines Export-Satzes entgegen und meldet, welche Teile noch fehlen (JSON). */
     public function importPlans(Request $request): Response
     {
         $access = $this->access($request, true);
-        $this->requireAdminRole();
         $this->requireValidCsrf($request);
         $file = $request->files['file'] ?? ['error' => UPLOAD_ERR_NO_FILE];
-        $tmpName = is_array($file) && ($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK ? (string) ($file['tmp_name'] ?? '') : '';
+        $error = is_array($file) ? (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE) : UPLOAD_ERR_NO_FILE;
+        $tmpName = $error === UPLOAD_ERR_OK ? (string) ($file['tmp_name'] ?? '') : '';
         $contents = $tmpName !== '' && is_uploaded_file($tmpName) && filesize($tmpName) <= EmergencyPlanService::IMPORT_MAX_BYTES
             ? file_get_contents($tmpName) : false;
         if ($contents === false) {
-            Session::flash('error', 'Bitte eine gültige Notfallplan-Exportdatei (höchstens ' . EmergencyPlanService::IMPORT_MAX_LABEL . ') auswählen.');
-
-            return $this->redirect('/admin/notfallplan');
+            return Response::json(['error' => 'Bitte gültige Notfallplan-Exportdateien (je höchstens ' . EmergencyPlanService::IMPORT_MAX_LABEL . ') auswählen.'], 422);
         }
         try {
-            $ids = Container::emergencyPlans()->importPlans($contents, $access['actor']);
+            return Response::json(Container::emergencyPlanTransfer()->stageImport($contents, (string) ($file['name'] ?? ''), $access['actor']));
         } catch (ValidationException $exception) {
-            Session::flash('error', implode(' ', $exception->errors()));
-
-            return $this->redirect('/admin/notfallplan');
+            return Response::json(['error' => implode(' ', $exception->errors())], 422);
         }
-        Session::flash('success', count($ids) . (count($ids) === 1 ? ' Notfallplan wurde' : ' Notfallpläne wurden')
-            . ' als neuer Entwurf importiert. Bestehende Pläne bleiben unverändert; die Veröffentlichung benötigt eine Vier-Augen-Freigabe.');
+    }
 
-        return $this->redirect('/admin/notfallplan');
+    /** Importiert einen vollständig hochgeladenen Export-Satz (alles oder nichts). */
+    public function importFinish(Request $request): Response
+    {
+        $access = $this->access($request, true);
+        $this->requireValidCsrf($request);
+        try {
+            $ids = Container::emergencyPlanTransfer()->importStaged((string) $request->input('set', ''), $access['actor']);
+        } catch (ValidationException $exception) {
+            return Response::json(['error' => implode(' ', $exception->errors())], 422);
+        }
+        $message = count($ids) . (count($ids) === 1 ? ' Notfallplan wurde' : ' Notfallpläne wurden')
+            . ' als neuer Entwurf importiert. Bestehende Pläne bleiben unverändert; die Veröffentlichung benötigt eine Vier-Augen-Freigabe.';
+        Session::flash('success', $message);
+
+        return Response::json(['message' => $message, 'ids' => $ids, 'redirect' => '/admin/notfallplan']);
+    }
+
+    /**
+     * Nextcloud-Kennung der angemeldeten Person: erkannte Windows-Anmeldung bzw. Anmeldung über eine AD-Gruppe.
+     * Lokale Konten ohne Windows-Anmeldung haben kein Nextcloud-Konto.
+     */
+    private function nextcloudUid(Request $request): ?string
+    {
+        $identity = Container::sso()->resolve($request);
+        if ($identity !== null && empty($identity['fake'])) {
+            return (string) $identity['office_uid'];
+        }
+        $auth = Container::auth();
+
+        return $auth->isDirectoryUser() ? $auth->username() : null;
     }
 
     /** Upload eines Anhangs aus dem Editor (JSON-Antwort mit den Metadaten für node.attachments). */
@@ -412,13 +482,6 @@ final class EmergencyPlanController extends AdminController
             ->withHeader('ETag', $etag)
             ->withHeader('X-Content-Type-Options', 'nosniff')
             ->withHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'; object-src 'self'; frame-ancestors 'self'");
-    }
-
-    private function requireAdminRole(): void
-    {
-        if (!Container::auth()->isAdmin()) {
-            throw new HttpException(403, 'Nur Administratoren dürfen Notfallpläne exportieren und importieren.');
-        }
     }
 
     public function guide(Request $request): Response

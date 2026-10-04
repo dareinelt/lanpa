@@ -217,6 +217,159 @@
         return result;
     }
 
+    // ---- Export-Sätze und Import (Teildateien ≤ 15 MB; Download oder eigene Nextcloud-Dateien) ----
+    // Server: EmergencyPlanController::exportPlans/exportPart/exportNextcloud/importPlans/importFinish.
+    const TRANSFER_BASE = '/admin/notfallplan/plaene';
+    const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const transferToken = scope => (scope.querySelector('[name="_token"]') || document.querySelector('[name="_token"]')).value;
+    function transferLine(list, text, state = '') {
+        const item = element('li', text, state ? 'ep-transfer__' + state : '');
+        list.append(item);
+        return item;
+    }
+    async function runExport(ids, target, status) {
+        status.replaceChildren(element('p', 'Export wird erstellt …'));
+        const data = new FormData();
+        data.set('_token', transferToken(status));
+        ids.forEach(id => data.append('plans[]', String(id)));
+        let result;
+        try { result = await post(TRANSFER_BASE + '/export', data); }
+        catch (error) { status.replaceChildren(element('p', 'Export fehlgeschlagen: ' + error.message, 'ep-transfer__error')); return false; }
+        const count = result.parts.length;
+        const intro = element('p', `Export-Satz mit ${count === 1 ? '1 Datei' : count + ' Dateien'} (je höchstens ${result.max_label}) für: ${result.plans.join(', ')}.`);
+        const list = element('ol', undefined, 'ep-transfer__list');
+        status.replaceChildren(intro, list);
+        const links = () => {
+            const box = element('p', 'Dateien einzeln herunterladen: ');
+            result.parts.forEach((part, i) => {
+                const link = element('a', `Teil ${part.part} von ${count}`);
+                link.href = part.url; link.download = part.name;
+                box.append(link, document.createTextNode(i < count - 1 ? ' · ' : ''));
+            });
+            return box;
+        };
+        if (target === 'nextcloud' && !result.nextcloud.available) {
+            status.append(element('p', 'Nextcloud nicht möglich: ' + result.nextcloud.reason, 'ep-transfer__error'), links());
+            return false;
+        }
+        if (target === 'download') {
+            for (const part of result.parts) {
+                const link = element('a');
+                link.href = part.url; link.download = part.name; link.hidden = true;
+                document.body.append(link); link.click(); link.remove();
+                transferLine(list, `${part.name} (${formatSize(part.bytes)}) – Download gestartet`, 'ok');
+                await wait(800);
+            }
+            status.append(element('p', count > 1 ? 'Für den Import alle Dateien des Satzes gemeinsam auswählen. Falls der Browser nicht alle Dateien gespeichert hat (Nachfrage „Mehrere Dateien herunterladen“), hier einzeln laden:' : 'Falls der Download nicht startet:'), links());
+            return true;
+        }
+        let failed = false;
+        for (const part of result.parts) {
+            const line = transferLine(list, `${part.name} (${formatSize(part.bytes)}) – wird in Nextcloud gespeichert …`);
+            const push = new FormData();
+            push.set('_token', transferToken(status));
+            push.set('set', result.set); push.set('part', String(part.part));
+            try {
+                await post(TRANSFER_BASE + '/export/nextcloud', push);
+                line.textContent = `${part.name} (${formatSize(part.bytes)}) – gespeichert`; line.className = 'ep-transfer__ok';
+            } catch (error) {
+                line.textContent = `${part.name} – nicht gespeichert: ${error.message}`; line.className = 'ep-transfer__error';
+                failed = true; break;
+            }
+        }
+        if (failed) {
+            status.append(element('p', 'Die Ablage in Nextcloud ist unvollständig. Die Dateien können stattdessen heruntergeladen werden.', 'ep-transfer__error'), links());
+            return false;
+        }
+        const done = element('p', `Gespeichert in Ihren Nextcloud-Dateien unter „${result.nextcloud.folder}“. `);
+        const open = element('a', 'Ordner in Nextcloud öffnen');
+        open.href = result.nextcloud.url; open.target = '_blank'; open.rel = 'noopener';
+        done.append(open);
+        status.append(done);
+        return true;
+    }
+
+    const exportForm = document.querySelector('[data-ep-export-form]');
+    if (exportForm) {
+        const status = exportForm.querySelector('[data-ep-transfer-status]');
+        exportForm.addEventListener('submit', event => event.preventDefault());
+        exportForm.querySelectorAll('[data-ep-export]').forEach(button => button.addEventListener('click', async () => {
+            const ids = [...exportForm.querySelectorAll('input[name="plans[]"]:checked')].map(input => input.value);
+            if (!ids.length) { status.replaceChildren(element('p', 'Bitte mindestens einen Notfallplan auswählen.', 'ep-transfer__error')); return; }
+            const buttons = [...exportForm.querySelectorAll('[data-ep-export]')];
+            buttons.forEach(b => { b.disabled = true; });
+            try { await runExport(ids, button.dataset.epExport, status); }
+            finally { buttons.forEach(b => { b.disabled = false; }); }
+        }));
+    }
+
+    const importForm = document.querySelector('[data-ep-import-form]');
+    if (importForm) {
+        const input = importForm.querySelector('[data-ep-import-files]');
+        const status = importForm.querySelector('[data-ep-import-status]');
+        const sets = new Map(); // Export-Satz-ID → letzter Stand vom Server
+        const errors = [];
+        let busy = false;
+        const render = () => {
+            const nodes = [];
+            errors.forEach(text => nodes.push(element('p', text, 'ep-transfer__error')));
+            sets.forEach(set => {
+                const box = element('div', undefined, 'ep-transfer__set');
+                const titles = set.plans.length ? set.plans.join(', ') : '(Inhaltsverzeichnis in Teil 1 – noch nicht ausgewählt)';
+                box.append(element('p', `Export-Satz vom ${set.exported_at.replace('T', ' ').replace('Z', ' UTC')}: ${titles}`));
+                const list = element('ul', undefined, 'ep-transfer__list');
+                for (let part = 1; part <= set.parts; part++) {
+                    const ok = set.received.includes(part);
+                    transferLine(list, `Teil ${part} von ${set.parts}: ${ok ? 'vorhanden' : 'fehlt'}`, ok ? 'ok' : 'error');
+                }
+                box.append(list);
+                if (set.complete) {
+                    const button = element('button', `Vollständig – ${set.plans.length === 1 ? '1 Notfallplan' : set.plans.length + ' Notfallpläne'} importieren`, 'button button--primary');
+                    button.type = 'button';
+                    button.disabled = busy;
+                    button.addEventListener('click', () => finish(set, button));
+                    box.append(button);
+                } else {
+                    box.append(element('p', `Unvollständig: Bitte ${set.missing.length === 1 ? 'Teil ' : 'die Teile '}${set.missing.join(', ')} zusätzlich auswählen. Ohne alle Teile wird nichts importiert.`, 'ep-transfer__error'));
+                }
+                nodes.push(box);
+            });
+            status.replaceChildren(...nodes);
+        };
+        async function finish(set, button) {
+            busy = true; button.disabled = true; input.disabled = true;
+            button.textContent = 'Wird geprüft und importiert …';
+            const data = new FormData();
+            data.set('_token', transferToken(importForm));
+            data.set('set', set.set);
+            try {
+                const result = await post(TRANSFER_BASE + '/import/abschluss', data);
+                location.href = result.redirect;
+            } catch (error) {
+                errors.splice(0, errors.length, 'Import fehlgeschlagen: ' + error.message);
+                sets.delete(set.set);
+                busy = false; input.disabled = false; render();
+            }
+        }
+        input.addEventListener('change', async () => {
+            const files = [...input.files];
+            if (!files.length) return;
+            busy = true; input.disabled = true; errors.length = 0;
+            for (const [i, file] of files.entries()) {
+                status.replaceChildren(element('p', `Datei ${i + 1} von ${files.length} wird hochgeladen und geprüft: ${file.name}`));
+                const data = new FormData();
+                data.set('_token', transferToken(importForm));
+                data.set('file', file, file.name);
+                try {
+                    const result = await post(TRANSFER_BASE + '/import', data);
+                    sets.set(result.set, result);
+                } catch (error) { errors.push(file.name + ': ' + error.message); }
+            }
+            busy = false; input.disabled = false; input.value = '';
+            render();
+        });
+    }
+
     const editor = document.querySelector('[data-ep-editor]');
     if (editor) {
         const initial = JSON.parse(editor.querySelector('[data-ep-initial]').value);
@@ -1262,6 +1415,24 @@
             finally { saving = false; controls.forEach(control => { control.disabled = false; }); updateHistoryButtons(); renderInspector(); }
         }
         $$('[data-ep-save]').forEach(b => b.addEventListener('click', save));
+
+        // ---- Export des gespeicherten Entwurfs (Download oder eigene Nextcloud-Dateien) ----
+        let exporting = false;
+        $$('[data-ep-export]').forEach(b => b.addEventListener('click', async () => {
+            if (exporting || saving) return;
+            if (dirty || !Number(initial.id)) {
+                const ok = await overlay({ heading: 'Erst speichern', text: 'Exportiert wird nur der gespeicherte Entwurf. Jetzt speichern und anschließend exportieren?', confirm: 'Speichern und exportieren' });
+                if (!ok) return;
+                await save();
+                if (dirty || !Number(initial.id)) return;
+            }
+            const dialog = $('[data-ep-dialog="export"]');
+            const status = dialog.querySelector('[data-ep-transfer-status]');
+            exporting = true;
+            dialog.showModal();
+            try { await runExport([initial.id], b.dataset.epExport, status); }
+            finally { exporting = false; }
+        }));
 
         // ---- Tastenkürzel ----
         document.addEventListener('keydown', event => {

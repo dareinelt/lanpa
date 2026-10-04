@@ -342,3 +342,14 @@ body[data-page="emergency_plan"] .table th, body[data-page="emergency_plan"] .ta
 .ep-attach-status.is-error { color: #b42318; }
 .ep-attach-manage { max-height: 50vh; overflow-y: auto; margin-bottom: 1rem; }
 @media print { .ep-clip, .ep-node-clip { display: none !important; } }
+
+/* Export-Sätze und Import (Übersicht und Editor-Dialog) */
+.ep-transfer:empty { display: none; }
+.ep-transfer { margin-top: .75rem; }
+.ep-transfer__list { margin: .5rem 0; padding-left: 1.5rem; }
+.ep-transfer__list li { margin: .15rem 0; overflow-wrap: anywhere; }
+.ep-transfer__ok { color: #1e6b31; }
+.ep-transfer__error { color: #b42318; }
+[data-theme="dark"] .ep-transfer__ok { color: #8fdca0; }
+[data-theme="dark"] .ep-transfer__error { color: #ffad9f; }
+.ep-transfer__set { border: 1px solid var(--color-border, #c3ccd6); border-radius: 6px; padding: .5rem .75rem; margin: .5rem 0; }

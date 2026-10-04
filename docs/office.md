@@ -327,6 +327,21 @@ Gleiche Seite, Karte **Intranet-Administratoren**: Mitglieder dieser
 AD-Gruppen dürfen per Windows-Anmeldung den Adminbereich des Intranets
 verwalten (siehe README, Abschnitt Adminbereich).
 
+### Dateiablage aus dem Intranet (Notfallplan-Exporte)
+
+Das Intranet legt Dateien direkt in den Nextcloud-Dateien der angemeldeten Person
+ab (derzeit Notfallplan-Exporte, siehe [notfallplan.md](notfallplan.md#export-und-import-von-notfallplänen)).
+`NextcloudFilesService` sendet je Datei den Inhalt als Anfragekörper an
+`intranet_integration` (`POST /apps/intranet_integration/api/files`, intern über
+`NEXTCLOUD_INTERNAL_URL`) mit einem kurzlebigen JWT (Audience
+`intranet_integration_files`, gemeinsames Euro-Office-Secret), das Benutzer
+(`sub` = Office-Kennung), Zielordner, Dateiname und SHA-256 des Inhalts bindet.
+Die App legt nur in vorhandenen, aktiven Konten ab (LDAP-Konten werden wie beim SSO
+gesucht), erstellt fehlende Ordner (höchstens 4 Ebenen, keine `..`/Steuerzeichen),
+ersetzt eine gleichnamige Datei und meldet fehlenden Speicherplatz (HTTP 507).
+Höchstens 16 MiB je Datei; lokale Intranet-Konten ohne Windows-Anmeldung haben kein
+Nextcloud-Konto und erhalten nur den Download.
+
 ### Automatische Anmeldung in Nextcloud (Intranet-SSO)
 
 ```mermaid

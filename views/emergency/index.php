@@ -33,8 +33,8 @@ use App\Support\Html;
     <?php if (!$smtpEnabled) { ?><p class="flash flash--error">SMTP ist deaktiviert. Automatische KAEP-E-Mails können nicht versendet werden. Ein Administrator muss E-Mail (SMTP) konfigurieren.</p><?php } ?>
     <?php if ($canTransfer) { ?>
         <details class="card">
-            <summary>Export und Import (nur Administratoren)</summary>
-            <form action="<?= $base ?>/plaene/export" method="post" class="form">
+            <summary>Export und Import</summary>
+            <form class="form" data-ep-export-form>
                 <?= Csrf::field() ?>
                 <fieldset>
                     <legend>Notfallpläne exportieren</legend>
@@ -43,17 +43,21 @@ use App\Support\Html;
                     <?php } ?>
                     <?php if ($plans === []) { ?><p>Keine Notfallpläne vorhanden.</p><?php } ?>
                 </fieldset>
-                <p>Exportiert wird jeweils der aktuelle Entwurf als JSON-Datei einschließlich der Anhänge (Bilder/PDF) – ohne Freigabehistorie und Ereignisse. Die Datei enthält Ansprechpartner und Telefonnummern; bitte vertraulich behandeln.</p>
-                <button class="button button--primary" <?= $plans === [] ? 'disabled' : '' ?>>Ausgewählte Pläne exportieren</button>
+                <p>Exportiert wird jeweils der aktuelle Entwurf einschließlich der Anhänge (Bilder/PDF) – ohne Freigabehistorie und Ereignisse – als Export-Satz aus JSON-Dateien von je höchstens <?= Html::e(\App\Services\EmergencyPlanTransfer::PART_MAX_LABEL) ?>. Wird die Grenze erreicht, entsteht eine anfolgende Datei („Teil 2 von 3“ …). Die Dateien enthalten Ansprechpartner und Telefonnummern; bitte vertraulich behandeln.</p>
+                <div class="toolbar">
+                    <button type="button" class="button button--primary" data-ep-export="download" <?= $plans === [] ? 'disabled' : '' ?>>Herunterladen</button>
+                    <button type="button" class="button button--ghost" data-ep-export="nextcloud" <?= $plans === [] ? 'disabled' : '' ?>>In meinen Nextcloud-Dateien speichern</button>
+                </div>
+                <div class="ep-transfer" data-ep-transfer-status aria-live="polite"></div>
             </form>
-            <form action="<?= $base ?>/plaene/import" method="post" enctype="multipart/form-data" class="form">
+            <form class="form" data-ep-import-form>
                 <?= Csrf::field() ?>
                 <div class="field">
-                    <label for="ep-import">Notfallpläne importieren (Exportdatei, höchstens <?= Html::e(\App\Services\EmergencyPlanService::IMPORT_MAX_LABEL) ?>)</label>
-                    <input id="ep-import" type="file" name="file" accept=".json,application/json" required>
+                    <label for="ep-import">Notfallpläne importieren (alle Dateien eines Export-Satzes, je höchstens <?= Html::e(\App\Services\EmergencyPlanService::IMPORT_MAX_LABEL) ?>)</label>
+                    <input id="ep-import" type="file" name="file" accept=".json,application/json" multiple data-ep-import-files>
                 </div>
-                <p>Jeder Plan wird als neuer, unveröffentlichter Entwurf angelegt; vorhandene Pläne bleiben unverändert. SMS-Elemente werden über den Titel den aktiven Alarmierungen dieses Systems zugeordnet – fehlt eine Vorlage, wird nichts importiert. Die Veröffentlichung benötigt wie immer eine Vier-Augen-Freigabe.</p>
-                <button class="button button--primary">Datei importieren</button>
+                <p>Mehrere Dateien gleichzeitig auswählen oder nacheinander hinzufügen. Vor dem Import wird geprüft, ob der Export-Satz vollständig und unverändert ist (alle Teile, Pläne, Anhänge und Prüfsummen); fehlt etwas, wird nichts importiert. Jeder Plan wird als neuer, unveröffentlichter Entwurf angelegt; vorhandene Pläne bleiben unverändert. SMS-Elemente werden über den Titel den aktiven Alarmierungen dieses Systems zugeordnet – fehlt eine Vorlage, wird nichts importiert. Die Veröffentlichung benötigt wie immer eine Vier-Augen-Freigabe.</p>
+                <div class="ep-transfer" data-ep-import-status aria-live="polite"></div>
             </form>
         </details>
     <?php } ?>

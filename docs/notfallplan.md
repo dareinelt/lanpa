@@ -50,8 +50,8 @@ automatische Alarmierung bei Fristüberschreitung.
 
 | Rolle / Voraussetzung | Umfang |
 | --- | --- |
-| Administrator | Alle bisherigen Adminbereiche sowie Notfallpläne, Export/Import von Notfallplänen und SMTP |
-| KAEP-Team | Ausschließlich Notfallplan-Verwaltung, Freigabeeinstellungen, Einsatzübersicht und historische Auswertung; kein Export/Import von Notfallplänen, kein SMTP-, AD-, Benutzer- oder anderer Adminbereich |
+| Administrator | Alle bisherigen Adminbereiche sowie Notfallpläne (inkl. Export/Import) und SMTP |
+| KAEP-Team | Ausschließlich Notfallplan-Verwaltung, Freigabeeinstellungen, Export/Import von Notfallplänen, Einsatzübersicht und historische Auswertung; kein SMTP-, AD-, Benutzer- oder anderer Adminbereich |
 | Redaktion | Bestehender Zugriff auf wichtige Links; kein Notfallplan-Adminzugriff |
 | Angemeldeter AD-Benutzer in der Freigabegruppe | Veröffentlichte Pläne ansehen und nach AD-Kennwortbestätigung auslösen; eigene Ereignisse bearbeiten |
 | Angemeldeter AD-Benutzer in der Auslösegruppe (optional) | Veröffentlichte Pläne ansehen und nach AD-Kennwortbestätigung auslösen; eigene und von anderen Mitgliedern der Auslösegruppe ausgelöste **laufende** Ereignisse gemeinsam abarbeiten. Kein KAEP-Dashboard, keine abgeschlossenen oder vergangenen Ereignisse, keine Filter/Historie |
@@ -439,21 +439,50 @@ bleiben. PHP erlaubt dafür Uploads bis 20 MB (`docker/php/php.ini`:
 
 ## Export und Import von Notfallplänen
 
-Notfallpläne lassen sich als Datei exportieren und auf einem anderen System
+Notfallpläne lassen sich exportieren und auf einem anderen System
 (z. B. Test → Produktion oder an einem weiteren Standort) wieder importieren.
-Beides ist **nur Administratoren** erlaubt; das KAEP-Team erhält HTTP 403.
+Beides ist **Administratoren und dem KAEP-Team** erlaubt.
 
-- **Export:** Unter **Notfallplan / KAEP → Export und Import** die gewünschten
-  Pläne auswählen und **Ausgewählte Pläne exportieren** wählen. Es entsteht
-  `notfallplaene-JJJJ-MM-TT.json` (Format `lanpa-notfallplaene`, Version 2) mit dem
-  jeweils aktuellen Entwurf jedes Plans und allen zugehörigen Anhängen (base64).
-  Dateien der Version 1 bleiben importierbar. Freigabehistorie, Ereignisse, Protokolle
-  und E-Mail-Queue sind nicht enthalten. Die Datei enthält Zuständigkeiten,
-  Telefonnummern und SMS-Daten: vertraulich behandeln.
-- **Import:** Auf dem Zielsystem die Datei (höchstens 20 MB inkl. Anhänge, bis zu 100 Pläne)
-  hochladen. Alle Pläne werden vollständig geprüft wie beim Speichern im Editor
-  und in einer Transaktion als **neue, unveröffentlichte Entwürfe** angelegt –
-  alles oder nichts. Vorhandene Pläne werden nie überschrieben.
+- **Export-Satz:** Ein Export besteht aus einer oder mehreren JSON-Dateien
+  (Format `lanpa-notfallplaene`, Version 3) von **je höchstens 15 MB**
+  (15 000 000 Bytes). Ist eine Datei voll, wird eine **anfolgende Datei** erzeugt
+  (`…_teil-1-von-3.json`, `…_teil-2-von-3.json`, …); große Anhänge werden dabei in
+  Abschnitte über mehrere Dateien verteilt. Teil 1 enthält das Inhaltsverzeichnis
+  (Pläne mit SHA-256-Prüfsumme, Anhänge mit Typ, Größe und Anzahl der Abschnitte).
+  Exportiert wird jeweils der aktuelle Entwurf mit allen Anhängen; Freigabehistorie,
+  Ereignisse, Protokolle und E-Mail-Queue sind nicht enthalten. Die Dateien enthalten
+  Zuständigkeiten, Telefonnummern und SMS-Daten: vertraulich behandeln.
+- **Export im Editor:** Reiter **Start → Exportieren** exportiert den geöffneten,
+  gespeicherten Plan (ungespeicherte Änderungen werden auf Nachfrage zuerst
+  gespeichert): **Herunterladen** lädt alle Dateien des Satzes nacheinander herunter
+  (Einzel-Links als Rückfall, falls der Browser Mehrfach-Downloads blockiert);
+  **In Nextcloud speichern** legt sie direkt in den **eigenen Nextcloud-Dateien**
+  unter `Notfallpläne/<Datum Uhrzeit> <Plantitel>/` ab und verlinkt den Ordner
+  (Öffnen mit automatischer Anmeldung über `/office-starten`).
+- **Export in der Übersicht:** Unter **Notfallplan / KAEP → Export und Import**
+  mehrere Pläne auswählen, dann ebenfalls **Herunterladen** oder **In meinen
+  Nextcloud-Dateien speichern**.
+- **Nextcloud-Ablage:** nur mit Windows-Anmeldung bzw. Anmeldung über eine AD-Gruppe
+  (Nextcloud-Konto = Office-Kennung) und laufendem Office; bei lokalen Konten wird der
+  Grund angezeigt und nur der Download angeboten. Das Intranet überträgt jede Datei
+  einzeln an den signierten Endpunkt `POST /apps/intranet_integration/api/files`
+  (siehe [office.md](office.md)). Es wird nur in bereits vorhandenen, aktiven
+  Nextcloud-Konten abgelegt; Speicherplatz-Kontingente gelten.
+- **Arbeitsverzeichnis:** Erzeugte Teildateien und hochgeladene Importteile liegen je
+  Person getrennt bis zu 2 Stunden in `storage/emergency-transfer`
+  (`app.emergency_transfer_path`) und werden danach bzw. nach dem Import gelöscht;
+  das Verzeichnis ist von der Office-Sicherung ausgenommen.
+- **Import:** Auf dem Zielsystem **alle Dateien des Export-Satzes** auswählen (gleichzeitig
+  oder nacheinander; je höchstens 20 MB, bis zu 100 Pläne). Jede Datei wird einzeln
+  hochgeladen; die Übersicht zeigt je Satz, welche Teile vorhanden sind und welche
+  **fehlen**. Importiert werden kann erst, wenn der Satz vollständig ist. Vor dem
+  Anlegen prüft der Server erneut die **Vollständigkeit**: alle Teile, zusammengehörige
+  Satz-Kennung, Inhaltsverzeichnis, jeder Plan (Prüfsumme), jeder Anhangsabschnitt
+  (keine fehlenden oder doppelten) und jeder Anhang (SHA-256, Größe, Typ). Fehlt etwas
+  oder ist etwas verändert, wird **nichts** importiert. Alle Pläne werden außerdem wie
+  beim Speichern im Editor geprüft und in einer Transaktion als **neue,
+  unveröffentlichte Entwürfe** angelegt – alles oder nichts. Vorhandene Pläne werden
+  nie überschrieben. Einzeldateien der Versionen 1 und 2 bleiben importierbar.
 - **SMS-Elemente:** Alarmierungs-IDs unterscheiden sich zwischen Systemen. Beim
   Import wird jedes SMS-Element über den Titel (ohne Groß-/Kleinschreibung) einer
   aktiven Alarmierung des Zielsystems zugeordnet; bei mehreren gleichnamigen

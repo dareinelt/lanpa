@@ -82,10 +82,10 @@ final class EmergencyPlanRepository extends Repository
      * Legt importierte Pläne als neue, unveröffentlichte Entwürfe an (eine Transaktion).
      *
      * @param list<array<string,mixed>> $definitions geprüfte Definitionen
-     * @param array<string,array{bytes:string,mime:string}> $attachments geprüfte Anhänge aus der Exportdatei
+     * @param iterable<string,array{bytes:string,mime:string}> $attachments geprüfte Anhänge aus der Exportdatei (auch Generator)
      * @return list<int>
      */
-    public function importPlans(array $definitions, string $actor, array $attachments = []): array
+    public function importPlans(array $definitions, string $actor, iterable $attachments = []): array
     {
         return $this->transaction(function () use ($definitions, $actor, $attachments): array {
             foreach ($attachments as $attachment) {

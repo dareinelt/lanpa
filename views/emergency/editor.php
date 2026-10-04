@@ -46,6 +46,8 @@ $icons = [
     'help' => '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01"/>',
     'theme' => '<path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/>',
     'close' => '<path d="M6 6l12 12M18 6 6 18"/>',
+    'download' => '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/>',
+    'cloud' => '<path d="M7 18a5 5 0 0 1-.6-9.96A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/><path d="M12 11v5M9.5 13.5 12 11l2.5 2.5"/>',
 ];
 $icon = static fn (string $name): string => '<svg class="ep-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' . $icons[$name] . '</svg>';
 // Ribbon-Schaltfläche: großes Symbol über Beschriftung, Datenattribute steuern das Skript.
@@ -124,6 +126,13 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
                     </div>
                 </div>
                 <div class="ep-rg__label">Plan</div>
+            </div>
+            <div class="ep-rg">
+                <div class="ep-rg__items">
+                    <?= $rb('download', 'Herunterladen', 'data-ep-export="download" title="Gespeicherten Entwurf als Exportdatei(en) herunterladen (je höchstens ' . \App\Services\EmergencyPlanTransfer::PART_MAX_LABEL . ')"') ?>
+                    <?= $rb('cloud', 'In Nextcloud speichern', 'data-ep-export="nextcloud" title="Gespeicherten Entwurf in den eigenen Nextcloud-Dateien ablegen (Ordner ' . \App\Services\EmergencyPlanTransfer::NEXTCLOUD_FOLDER . ')"') ?>
+                </div>
+                <div class="ep-rg__label">Exportieren</div>
             </div>
         </div>
 
@@ -308,6 +317,15 @@ $rb = static function (string $iconName, string $label, string $attributes, stri
             <h3>Freigabeprotokoll</h3>
             <ol class="ep-log"><?php foreach ($reviews as $review) { ?><li><?= Html::e($review['created_at']) ?> UTC · <?= Html::e($review['actor']) ?> · Version <?= (int) $review['revision'] ?> · <strong><?= Html::e(['saved' => 'Entwurf gespeichert', 'submitted' => 'Freigabe angefordert', 'approved' => 'Freigegeben', 'rejected' => 'Abgelehnt', 'withdrawn' => 'Zurückgezogen', 'imported' => 'Importiert'][$review['action']] ?? $review['action']) ?></strong><p><?= Html::e($review['comment']) ?></p></li><?php } ?></ol>
             <?php if ($reviews === []) { ?><p>Noch keine Einträge.</p><?php } ?>
+        </div>
+    </dialog>
+
+    <!-- Dialog: Export des gespeicherten Entwurfs -->
+    <dialog class="ep-dialog" data-ep-dialog="export" aria-labelledby="ep-export-heading">
+        <div class="ep-dialog__head"><h2 id="ep-export-heading">Notfallplan exportieren</h2><button type="button" class="ep-qb" data-ep-close-dialog title="Schließen"><?= $icon('close') ?><span class="visually-hidden">Schließen</span></button></div>
+        <div class="ep-help">
+            <p>Exportiert wird der gespeicherte Entwurf einschließlich der Anhänge – ohne Freigabehistorie und Ereignisse. Eine Exportdatei ist höchstens <?= Html::e(\App\Services\EmergencyPlanTransfer::PART_MAX_LABEL) ?> groß; wird die Grenze erreicht, entsteht eine anfolgende Datei („Teil 2 von 3“ …). Für den Import (Übersicht → Export und Import) alle Dateien des Satzes auswählen. Die Dateien enthalten Ansprechpartner und Telefonnummern; bitte vertraulich behandeln.</p>
+            <div class="ep-transfer" data-ep-transfer-status aria-live="polite"></div>
         </div>
     </dialog>
 

@@ -295,6 +295,9 @@
 .ov-dialog { border: 1px solid var(--ov-line); border-radius: .7rem; padding: 0; width: min(680px, 94vw); max-height: 90vh; background: var(--color-background); color: var(--color-text); box-shadow: 0 18px 60px rgba(0, 0, 0, .3); }
 .ov-dialog--wide { width: min(900px, 96vw); }
 .ov-dialog--small { width: min(460px, 94vw); }
+.ov-dialog--headers .ov-dialog__body { gap: .4rem; }
+.ov-headers { margin: 0; padding: .7rem .85rem; max-height: 60vh; overflow: auto; font: .78rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; border: 1px solid var(--ov-line); border-radius: .45rem; background: var(--ov-bar); color: var(--color-text); user-select: text; }
+.ov-headers.is-loading { color: var(--ov-muted, #5a6475); font-style: italic; }
 .ov-dialog::backdrop { background: rgba(10, 20, 30, .45); }
 .ov-dialog__form { display: flex; flex-direction: column; max-height: 90vh; }
 .ov-dialog__head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .65rem 1rem; background: var(--ov-accent); color: #fff; }

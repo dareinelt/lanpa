@@ -383,6 +383,18 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         </form>
     </dialog>
 
+    <!-- Dialog: Info (rohe Kopfzeilen) -->
+    <dialog class="ov-dialog ov-dialog--wide ov-dialog--headers" data-ov-dialog="headers">
+        <div class="ov-dialog__form">
+            <div class="ov-dialog__head"><h2>Nachrichteninfo – Kopfzeilen</h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
+            <div class="ov-dialog__body">
+                <p class="ov-muted" data-ov-headers-subject></p>
+                <pre class="ov-headers" tabindex="0" data-ov-headers-raw></pre>
+            </div>
+            <div class="ov-dialog__foot"><button type="button" class="button" data-ov-action="headers-copy">Kopieren</button><button type="button" class="button button--primary" data-ov-dialog-close>Schließen</button></div>
+        </div>
+    </dialog>
+
     <!-- Dialog: Einstellungen -->
     <dialog class="ov-dialog" data-ov-dialog="settings">
         <div class="ov-dialog__form">

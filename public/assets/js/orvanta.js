@@ -1243,6 +1243,65 @@
     }
 
     // ------------------------------------------------------------------
+    // Mail: Info (rohe Kopfzeilen)
+    // ------------------------------------------------------------------
+
+    function openHeadersDialog(message) {
+        var dialog = $('[data-ov-dialog="headers"]');
+        if (!dialog) {
+            return;
+        }
+        var subject = hook('headers-subject', dialog);
+        var raw = hook('headers-raw', dialog);
+        if (subject) {
+            subject.textContent = message.subject || '(kein Betreff)';
+        }
+        if (raw) {
+            raw.textContent = 'Kopfzeilen werden geladen …';
+            raw.classList.add('is-loading');
+        }
+        openDialog('headers');
+        api('/mail/kopfzeilen', { query: { id: message.id } }).then(function (info) {
+            if (raw) {
+                raw.textContent = info.headers || '';
+                raw.classList.remove('is-loading');
+                raw.focus();
+            }
+            if (subject && info.subject) {
+                subject.textContent = info.subject;
+            }
+        }).catch(function (error) {
+            if (raw) {
+                raw.textContent = error.message || 'Die Kopfzeilen konnten nicht geladen werden.';
+                raw.classList.remove('is-loading');
+            }
+        });
+    }
+
+    function copyHeaders() {
+        var raw = hook('headers-raw');
+        var text = raw ? raw.textContent : '';
+        if (!text || (raw && raw.classList.contains('is-loading'))) {
+            return;
+        }
+        var done = function () { toast('Kopfzeilen in die Zwischenablage kopiert.', 'success'); };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, function () {
+                toast('Kopieren nicht möglich – bitte Text markieren und manuell kopieren.', 'error');
+            });
+            return;
+        }
+        var range = document.createRange();
+        range.selectNodeContents(raw);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        if (document.execCommand('copy')) {
+            done();
+        }
+    }
+
+    // ------------------------------------------------------------------
     // Mail: Verfassen
     // ------------------------------------------------------------------
 
@@ -3198,6 +3257,7 @@
                 playSound();
                 break;
             case 'cache-clear': clearCache(); break;
+            case 'headers-copy': copyHeaders(); break;
             case 'send': sendCompose(hook('form-compose'), false); break;
             case 'save-draft': sendCompose(hook('form-compose'), true); break;
             case 'compose-detach': detachCompose(); break;
@@ -3715,6 +3775,8 @@
             } });
         }
         items.push({ label: (trash ? 'Endgültig löschen' : 'Löschen') + suffix, icon: '🗑', key: 'Entf', run: function () { mailAction(trash ? 'delete_permanent' : 'delete', ids); } });
+        items.push({ separator: true });
+        items.push({ label: 'Info', icon: 'ℹ', disabled: many, run: function () { openHeadersDialog(message); } });
         return items;
     }
 

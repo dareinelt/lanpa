@@ -200,6 +200,64 @@ final class OrvantaExchangeService
     }
 
     /**
+     * Unveraenderter Internet-Kopf (RFC 5322) einer Nachricht. Bevorzugt den
+     * Kopfblock des MIME-Inhalts; fehlt dieser, werden die von Exchange
+     * zerlegten InternetMessageHeaders wieder zu Kopfzeilen zusammengesetzt.
+     *
+     * @return array{id:string,subject:string,headers:string,source:string}
+     */
+    public function messageHeaders(string $user, string $id): array
+    {
+        $xpath = $this->call(
+            '<m:GetItem><m:ItemShape><t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>'
+            . '<t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="item:MimeContent"/><t:FieldURI FieldURI="item:InternetMessageHeaders"/>'
+            . '</t:AdditionalProperties></m:ItemShape>' . EwsXml::itemIds([['id' => $id]]) . '</m:GetItem>',
+            $user
+        );
+        $item = EwsXml::elements($xpath, '//m:Items/*')[0] ?? null;
+        if ($item === null) {
+            throw new OrvantaException('Die Nachricht wurde nicht gefunden.', 404);
+        }
+        $headers = self::mimeHeaderBlock(EwsXml::text($xpath, 't:MimeContent', $item));
+        $source = 'mime';
+        if ($headers === '') {
+            $source = 'exchange';
+            foreach (EwsXml::elements($xpath, 't:InternetMessageHeaders/t:InternetMessageHeader', $item) as $header) {
+                $name = trim($header->getAttribute('HeaderName'));
+                if ($name !== '') {
+                    $headers .= $name . ': ' . trim($header->textContent) . "\r\n";
+                }
+            }
+        }
+        if ($headers === '') {
+            throw new OrvantaException('Für diese Nachricht liegen keine Kopfzeilen vor.', 404);
+        }
+
+        return ['id' => $id, 'subject' => EwsXml::text($xpath, 't:Subject', $item), 'headers' => rtrim($headers), 'source' => $source];
+    }
+
+    /**
+     * Kopfblock (bis zur ersten Leerzeile) aus Base64-kodiertem MIME-Inhalt.
+     */
+    private static function mimeHeaderBlock(string $base64): string
+    {
+        $mime = base64_decode(trim($base64), true);
+        if ($mime === false || $mime === '') {
+            return '';
+        }
+        $parts = preg_split('/\r?\n\r?\n/', ltrim($mime, "\r\n"), 2) ?: [];
+        $block = $parts[0] ?? '';
+        if (!preg_match('/^[!-9;-~]+:/', $block)) {
+            return '';
+        }
+        if (!mb_check_encoding($block, 'UTF-8')) {
+            $block = mb_convert_encoding($block, 'UTF-8', 'ISO-8859-1');
+        }
+
+        return $block;
+    }
+
+    /**
      * Neue E-Mail senden (mit Kopie in „Gesendete Elemente“). Mit $draftId wird
      * ein vorhandener Entwurf aktualisiert und anschliessend gesendet; mit
      * $mail['reference'] (id, mode) entsteht eine Antwort/Weiterleitung mit

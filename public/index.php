@@ -149,6 +149,7 @@ $router->get('/api/orvanta/status', [OrvantaApiController::class, 'status']);
 $router->get('/api/orvanta/mail/ordner', [OrvantaApiController::class, 'folders']);
 $router->get('/api/orvanta/mail', [OrvantaApiController::class, 'messages']);
 $router->get('/api/orvanta/mail/nachricht', [OrvantaApiController::class, 'message']);
+$router->get('/api/orvanta/mail/kopfzeilen', [OrvantaApiController::class, 'messageHeaders']);
 $router->post('/api/orvanta/mail/senden', [OrvantaApiController::class, 'send']);
 $router->get('/api/orvanta/empfaenger', [OrvantaApiController::class, 'recipients']); // Vorschlaege fuer An/Cc/Bcc
 $router->post('/api/orvanta/mail/entwurf', [OrvantaApiController::class, 'draft']);

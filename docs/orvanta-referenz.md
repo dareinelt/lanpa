@@ -100,7 +100,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/Controller.php` | `orvantaRemindersVisible()` → View-Variable `$orvantaReminders` (Kopfzeilen-Erinnerungen auf allen Seiten) |
 | `app/Services/Office/OfficeAppCatalog.php` | App `orvanta` (`kind = intranet`), `ORVANTA_PATH = '/office/orvanta'` |
 | `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`/`isSafeFileName()` (führender Punkt nur bei Dateinamen), `MAX_BYTES` (16 MiB) |
-| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, profile, settings, help, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Mail-Liste, Textfelder, KI; Einträge per JS) |
+| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, headers, profile, settings, help, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Mail-Liste, Textfelder, KI; Einträge per JS) |
 | `views/orvanta/viewer.php` | Euro-Office-Viewer `.ov-viewer[data-orvanta-viewer]` mit `data-api`, `data-config`, `data-download` und Download-Fallback |
 | `views/admin/office.php` | Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer, KI-Nutzungsbericht `#orvanta-ki`) |
 | `views/layouts/base.php` | Mitteilungsmenü mit `data-orvanta-reminders` / `data-orvanta-reminder-list`, lädt `orvanta-reminders.js` (mit `data-csrf`) |
@@ -133,6 +133,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | GET | `/api/orvanta/mail/ordner` | `folders` | Ordnerbaum |
 | GET | `/api/orvanta/mail?ordner=&offset=&limit=&q=` | `messages` | Nachrichtenliste |
 | GET | `/api/orvanta/mail/nachricht?id=` | `message` | Nachricht inkl. bereinigtem HTML |
+| GET | `/api/orvanta/mail/kopfzeilen?id=` | `messageHeaders` | Rohe Internet-Kopfzeilen (Kontextmenü „Info“) |
 | POST | `/api/orvanta/mail/senden` | `send` | Neue Nachricht; merkt die Empfänger im Verlauf |
 | GET | `/api/orvanta/empfaenger?q=&limit=` | `recipients` | Vorschläge für An/Cc/Bcc (Verlauf + Telefonliste) |
 | POST | `/api/orvanta/mail/entwurf` | `draft` | Entwurf anlegen |
@@ -320,6 +321,7 @@ Vorprüfungen des Service als 422/404).
 | `mail/ordner` | – | `{folders[{id,name,parent,total,unread,kind,class}]}` |
 | `mail` | Query `ordner`, `offset`, `limit` (1–100), `q` | `{items[], total, offset, has_more}`; Element: `id, change_key, subject, preview, from{name,email}, to[], received, sent, is_read, has_attachments, size, importance, flagged, categories[], item_class, is_meeting_request` |
 | `mail/nachricht` | Query `id` | wie Listenelement + `body_html, blocked_images, cc, bcc, reply_to, sender, internet_message_id, attachments[{id,name,content_type,content_id,size,inline,is_item}]`; `cid:`-Bilder zeigen per `src` auf `anhang/oeffnen?token=…` |
+| `mail/kopfzeilen` | Query `id` | `{id, subject, headers, source}`; `headers` = unveränderter RFC-5322-Kopfblock aus `item:MimeContent` (`source` = `mime`), ersatzweise aus `InternetMessageHeaders` zusammengesetzt (`source` = `exchange`) |
 | `mail/senden` | `to, cc, bcc` (Strings oder `{name,email}`), `subject, body, html, importance, attachments[{name, content_type, content(Base64)}]`, optional `draft_id, change_key` (gespeicherten Entwurf senden) | `{id, message}` |
 | `empfaenger` | Query `q` (Pflicht, sonst leer), `limit` (1–25, Standard 8) | `{items[{display_name,email,department,source,recent}]}`; Verlaufstreffer zuerst (`source` = „Zuletzt verwendet“), dann Telefonliste ohne Dubletten; bekannte Adressen erhalten Name/Bereich aus der Telefonliste |
 | `mail/entwurf` | wie `mail/senden`; `draft_id, change_key` aktualisieren einen bestehenden Entwurf; `reply_id, mode` legen einen Antwort-Entwurf an | `{id, change_key, message}` |

@@ -99,22 +99,34 @@ Protokoll lesbar, aber nicht mehr bearbeitbar.
 
 1. **Administration → Notfallplan / KAEP** öffnen. Nur dieser Adminbereich ist
    für KAEP-Konten freigegeben.
-2. **Neuen Notfallplan entwerfen** wählen. Optional Beispiel Brandfall/MANF
-   übernehmen; örtliche Vorgaben vollständig einarbeiten.
-3. Bausteine hinzufügen: Maßnahme, Kontakt, Entscheidung, Checkliste, Hinweis,
-   SMS. Kurze eindeutige Titel, Zuständigkeiten und verständliche Anweisungen
-   eintragen.
-4. Im Diagramm oder in der Liste ein Element auswählen. Rechts Vorgänger und
-   Bedingungen einstellen. Die Anordnung entsteht automatisch; Elemente können
-   dupliziert oder mit ↑/↓ verschoben werden, sofern Verbindungen gültig bleiben.
+2. **Neuen Notfallplan entwerfen (neuer Tab)** wählen. Der Editor öffnet sich
+   in einem eigenen Browser-Tab im Stil einer Office-Anwendung: oben das
+   Menüband mit den Reitern **Start**, **Ablauf & Verbindungen**,
+   **Prüfen & Freigabe** und **Ansicht**, darunter links die Schritte, in der
+   Mitte das Ablaufdiagramm, rechts die Eigenschaften des gewählten Schritts.
+   Optional im Reiter **Start** Beispiel Brandfall/MANF übernehmen; örtliche
+   Vorgaben vollständig einarbeiten.
+3. Schritte hinzufügen: Maßnahme, Kontakt, Entscheidung, Checkliste, Hinweis,
+   SMS – per Klick auf den Baustein oder indem der Baustein auf das Diagramm
+   gezogen wird. Kurze eindeutige Titel, Zuständigkeiten und verständliche
+   Anweisungen eintragen. **Rückgängig/Wiederholen** (Strg+Z / Strg+Y) macht
+   Bearbeitungsschritte ungeschehen.
+4. Im Diagramm oder in der Liste einen Schritt auswählen. Rechts die
+   Voraussetzungen (vorherige Schritte) und Bedingungen anhaken; die
+   Klartext-Zusammenfassung zeigt, wann der Schritt startet. Die Anordnung
+   entsteht automatisch; Schritte können dupliziert oder mit Nach oben/unten
+   verschoben werden, sofern Verbindungen gültig bleiben. Zoom, Suche und
+   Bereiche finden sich in den Reitern **Ansicht** bzw. **Ablauf & Verbindungen**.
 5. **Alle Vorgänger (UND)**: alle ausgewählten Aufgaben müssen erfüllt sein.
    **Mindestens einer (ODER)**: mindestens ein zutreffender Vorgänger genügt.
    Für alternative Entscheidungen Ja-/Nein-Verbindungen nutzen und danach ggf.
    mit ODER zusammenführen. Ohne Vorgänger ist ein Element sofort verfügbar.
 6. SMS-Vorlage auswählen und Empfänger/Text kontrollieren. Fehlende Vorlagen
    durch Administratoren anlegen lassen; das Team hat keinen Gateway-Zugriff.
-7. **Entwurf speichern**, den gespeicherten Entwurf öffnen und **Freigabe
-   anfordern**. Das Speichern allein veröffentlicht niemals.
+7. **Plan prüfen** (Reiter **Prüfen & Freigabe**) zeigt unvollständige Felder
+   und fehlende Verbindungen direkt an. Dann **Entwurf speichern** (Strg+S),
+   den gespeicherten Entwurf neu laden und über **Freigabe & Protokoll** die
+   **Freigabe anfordern**. Das Speichern allein veröffentlicht niemals.
 8. Eine zweite, unbeteiligte Person prüft den Entwurf und wählt **Geprüften
    Entwurf freigeben und veröffentlichen**. Auch Administratoren dürfen
    selbst bearbeitete Pläne nicht selbst freigeben.
@@ -122,7 +134,7 @@ Protokoll lesbar, aber nicht mehr bearbeitbar.
    Der Autor liest den Kommentar im Freigabeprotokoll, korrigiert den Entwurf,
    speichert und reicht ihn erneut ein.
 
-**Optional vor dem Speichern:** **Live-Vorschau in neuem Tab** öffnen und den Tab
+**Optional vor dem Speichern:** **Live-Vorschau** (Titelleiste oder Alt+Umschalt+V) öffnen und den Tab
 auf den zweiten Monitor ziehen. Auch ungespeicherte Änderungen erscheinen dort
 live, ohne Neuladen oder Speichern des Editors. **Ablauf jetzt simulieren** erlaubt
 das Durchspielen der Maßnahmen einschließlich Entscheidungen, Checklisten,
@@ -136,7 +148,7 @@ Die Vorschau ersetzt kein Speichern des Entwurfs.
 
 ![Demo: Editor](../public/manuals/notfallplan/editor.png)
 
-*Beispielgrafik mit Demo-Daten: Bausteine, automatisches Diagramm und Eingaben.*
+*Beispielgrafik mit Demo-Daten: Menüband, Schritte, automatisches Diagramm, Eigenschaften und Statusleiste.*
 
 ![Demo: Vier-Augen-Freigabe](../public/manuals/notfallplan/freigabe.png)
 

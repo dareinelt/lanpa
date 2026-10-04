@@ -16,7 +16,7 @@ abstract class AdminController extends Controller
     /**
      * @param array<string,mixed> $data
      */
-    protected function adminView(string $template, array $data = [], int $status = 200): Response
+    protected function adminView(string $template, array $data = [], int $status = 200, string $layout = 'layouts.admin'): Response
     {
         $shared = [
             'appName' => Container::settings()->get('site_title'),
@@ -33,7 +33,7 @@ abstract class AdminController extends Controller
         ];
 
         return Response::html(
-            View::render($template, array_merge($shared, $data), 'layouts.admin'),
+            View::render($template, array_merge($shared, $data), $layout),
             $status
         );
     }

@@ -75,6 +75,16 @@ Typografie, Statusleiste):
   Autoren-Hinweis „Orvanta Mail-App by Daniel-André Reinelt“ und – sobald die
   KI-Unterstützung verfügbar ist – ein kleines Roboter-Symbol (Klick öffnet die
   Kurzanleitung, siehe Abschnitt 7).
+- **Speicheranzeigen unten links:** Zwei kleine Balken unter den Modulen
+  zeigen die Belegung des **Exchange-Postfachs** (Größe aller Ordner gegen die
+  vom Server gesetzte Sendegrenze, ab 80 % orange) und des
+  **Anhang-Zwischenspeichers** in Nextcloud. Der Einstellungsdialog (Zahnrad)
+  nennt zusätzlich die Grenzen „Warnung ab“, „Senden gesperrt ab“ und
+  „Empfang gesperrt ab“. Ist für das Postfach keine Grenze gesetzt, erscheint
+  nur die Größe („ohne Grenze“); ist Exchange nicht erreichbar, „Nicht
+  verfügbar“.
+
+![Orvanta – Einstellungen mit Postfachbelegung](screenshots/91-orvanta-einstellungen-postfach.png)
 
 Alle Styles liegen in `public/assets/css/orvanta.css`. Da die Content Security
 Policy inline-`style`-Attribute verbietet, setzt das Frontend Styles
@@ -289,9 +299,10 @@ Die Vorschau im Adminbereich zeigt die Vorlage mit Beispieldaten
   Nextcloud-Bereich des Benutzers im Ordner `<cache_folder>/` (Dateiname mit
   Hash-Präfix) abgelegt und in `orvanta_cache_items` registriert. Überschreitet der Benutzer
   `cache_quota_mb`, werden die ältesten Einträge automatisch entfernt
-  (FIFO). Die Belegung erscheint in der Statusleiste der App
-  (`GET /api/orvanta/zwischenspeicher`), kann vom Benutzer geleert werden und
-  wird im Adminbereich je Benutzer aufgelistet.
+  (FIFO). Die Belegung erscheint unten links in der Modulleiste und im
+  Einstellungsdialog (`GET /api/orvanta/zwischenspeicher`, liefert zusätzlich
+  die Postfachbelegung auf dem Exchange als `mailbox`), kann vom Benutzer
+  geleert werden und wird im Adminbereich je Benutzer aufgelistet.
 - **„In Nextcloud speichern“:** Legt den Anhang dauerhaft unter
   `<cache_folder>/Anhänge/` ab (zählt nicht zum Orvanta-Quota, sondern zum
   Nextcloud-Kontingent des Benutzers). Die Schaltfläche erscheint nur, wenn

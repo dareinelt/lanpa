@@ -141,7 +141,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/api/orvanta/mail/aktion` | `mailAction` | `action` = `read`/`unread`/`flag`/`unflag`/`move`/`delete`/`delete_permanent` |
 | POST | `/api/orvanta/anhang/link` | `attachmentLink` | Signierte URL + Öffnungsmodus |
 | POST | `/api/orvanta/anhang/nextcloud` | `attachmentToNextcloud` | Dauerhaft in Nextcloud speichern |
-| GET | `/api/orvanta/zwischenspeicher` | `cacheUsage` | Belegung |
+| GET | `/api/orvanta/zwischenspeicher` | `cacheUsage` | Belegung Zwischenspeicher + Postfach (`mailbox`) |
 | POST | `/api/orvanta/zwischenspeicher/leeren` | `cacheClear` | Zwischenspeicher leeren |
 | GET | `/api/orvanta/kalender?start=&end=` | `calendar` | Termine im Zeitraum (≤ 100 Tage) |
 | GET / POST | `/api/orvanta/kalender/termin` | `event` / `saveEvent` | Termin lesen / anlegen oder ändern |
@@ -280,6 +280,7 @@ Vorprüfungen des Service als 422/404).
 | Methode | EWS-Operation | Besonderheiten |
 | --- | --- | --- |
 | `testConnection()` | `GetFolder` inbox | ohne Impersonation = Dienstkonto selbst; liest `ServerVersionInfo` |
+| `mailboxUsage()` | `GetFolder` `root` mit `ExtendedFieldURI` `0x0E08` (PR_MESSAGE_SIZE_EXTENDED, Byte), `0x3FF5` (PR_STORAGE_QUOTA_LIMIT), `0x666E` (PR_PROHIBIT_SEND_QUOTA), `0x666A` (PR_PROHIBIT_RECEIVE_QUOTA; alle in KB) | Tags werden per `hexdec()` normalisiert (Exchange schreibt `0xe08`); `percent` gegen Sendegrenze, ersatzweise Empfangsgrenze, dann Warnschwelle; fehlende Grenzen = 0 |
 | `folders()` | `GetFolder` (Systemordner, `$strict = false`) + `FindFolder` Deep ab `msgfolderroot` (≤ 500) | nur `FolderClass` `IPF.Note*`; Sortierung Systemordner (`MAIL_FOLDERS`) vor Namen |
 | `messages()` | `FindItem` Shallow, `IndexedPageItemView`, absteigend nach `DateTimeReceived`, optional `QueryString` (AQS) | `limit` 1–200 (API: 1–100), `has_more` aus `IncludesLastItemInRange` |
 | `message()` | `GetItem` mit `BodyType = HTML` | Text-Body → `nl2br(htmlspecialchars())`, sonst `MailHtmlSanitizer::clean()`; externe Bilder landen in `data-blocked-src`, eingebettete in `data-cid` (Anhänge liefern `content_id`) |
@@ -329,7 +330,8 @@ Vorprüfungen des Service als 422/404).
 | `mail/aktion` | `action, ids[]` (oder `id`), bei `move` zusätzlich `folder` | `{ok, count}` |
 | `anhang/link` | `attachment_id, name` | `{url, mode, expires_in}` |
 | `anhang/nextcloud` | `attachment_id, folder` (optionaler Unterordner) | `{ok, message, path, target}` (Fehler → 502) |
-| `kalender` | Query `start`, `end` (Standard: aktuelle Woche) | `{items[], start, end}`; Element: `id, change_key, subject, start, end, all_day, location, organizer, free_busy, type, reminder_set, reminder_minutes, is_meeting, my_response, categories` |
+| `zwischenspeicher` | – | `{used, quota, items, folder, percent, mailbox}`; `mailbox` = `{used, quota, warning, receive_limit, percent}` in Byte oder `null`, wenn Exchange die Werte nicht liefert (Fehler blockieren die Antwort nicht) |
+| `zwischenspeicher/leeren` | – | wie `zwischenspeicher` + `{removed, message}` | Query `start`, `end` (Standard: aktuelle Woche) | `{items[], start, end}`; Element: `id, change_key, subject, start, end, all_day, location, organizer, free_busy, type, reminder_set, reminder_minutes, is_meeting, my_response, categories` |
 | `kalender/termin` (POST) | `id` (leer = neu), `change_key, subject, start, end, all_day, location, body, reminder` (Standard 15, < 0 = aus), `free_busy, required[], optional[]` | `{id[, change_key], message}`; löst `resync()` aus |
 | `kontakte/kontakt` (POST) | `id, given_name, surname, company, job_title, department, email, phone, mobile, notes` | `{id, message}` |
 | `aufgaben/aufgabe` (POST) | `id, subject, body, importance, status` und optional `due, start, reminder, percent` (Unix-Sekunden bzw. %) | `{id, message}` |
@@ -618,7 +620,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | --- | --- |
 | `tests/Unit/OrvantaAiTest.php` | `RecordingAiTransport`; Verfügbarkeit ohne Konfiguration (keine Anfrage), `GET /models` mit Datei-Cache und Fingerabdruck (URL\|Modell), `improve()` (Anfrageaufbau, Kontext, Token, `max_tokens`), Verfeinern (Assistenten-Turn), Bearer-Schlüssel, Validierung 422, 503 ohne KI, 502 bei Timeout/500/401/ungültigem JSON/leeren `choices`, `stripMarkers()`, Zähler und pseudonyme Auswertung (keine SIDs), `OrvantaAiCharts` (Zeitraum, SVG ohne `style`, leere Daten) |
 | `tests/Unit/OrvantaSignatureTest.php` | Validierung (Pflichtfelder, Modus, Reihenfolge, Gruppen-Dedupe, Präfix-Leerzeichen), Speichern/Laden/Löschen, Zuordnung (Reihenfolge, inaktiv, Schreibweise), Darstellung (AD-Daten, Präfix + Durchwahl vs. komplette Rufnummer, Farben, Logo als `data:`-URI, Sanitizer-Durchlauf), Fallbacks (ohne Logo/Telefonbuch/inaktiver Eintrag), `extension()`, `append()` (Dedupe, vor Zitat), `strip()` |
-| `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen) |
+| `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, Postfachbelegung (`mailboxUsage()`, Quota in KB, ohne Grenzen), `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen) |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema

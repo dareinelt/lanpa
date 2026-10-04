@@ -351,6 +351,9 @@
 
     function fmtBytes(bytes) {
         bytes = Number(bytes) || 0;
+        if (bytes >= 1073741824) {
+            return (bytes / 1073741824).toFixed(2).replace('.', ',') + ' GB';
+        }
         if (bytes >= 1048576) {
             return (bytes / 1048576).toFixed(1).replace('.', ',') + ' MB';
         }
@@ -3107,7 +3110,7 @@
 
     function loadQuota() {
         return api('/zwischenspeicher').then(renderQuota).catch(function () {
-            $$('[data-ov-quota-text]').forEach(function (node) {
+            $$('[data-ov-quota-text], [data-ov-mailbox-text]').forEach(function (node) {
                 node.textContent = 'Nicht verfügbar';
             });
         });
@@ -3122,6 +3125,48 @@
         $$('[data-ov-quota-text]').forEach(function (node) {
             node.textContent = fmtBytes(usage.used) + ' von ' + fmtBytes(usage.quota) + ' (' + usage.items + ' Datei' + (usage.items === 1 ? '' : 'en') + ')';
         });
+        renderMailboxUsage(usage.mailbox);
+    }
+
+    // Postfachbelegung auf dem Exchange (Groesse aller Ordner, Sendegrenze)
+    function renderMailboxUsage(mailbox) {
+        var detail = $('[data-ov-mailbox-detail]');
+        if (!mailbox) {
+            $$('[data-ov-mailbox-fill]').forEach(function (node) {
+                node.style.width = '0';
+            });
+            $$('[data-ov-mailbox-text]').forEach(function (node) {
+                node.textContent = 'Nicht verfügbar';
+            });
+            if (detail) {
+                detail.hidden = true;
+            }
+            return;
+        }
+        var limit = Number(mailbox.quota) || Number(mailbox.receive_limit) || Number(mailbox.warning) || 0;
+        var percent = Math.max(0, Math.min(100, Number(mailbox.percent) || 0));
+        var text = limit > 0 ? fmtBytes(mailbox.used) + ' von ' + fmtBytes(limit) : fmtBytes(mailbox.used) + ' (ohne Grenze)';
+        $$('[data-ov-mailbox-fill]').forEach(function (node) {
+            node.style.width = (limit > 0 ? percent : 0) + '%';
+            node.classList.toggle('ov-quota__fill--warn', limit > 0 && percent >= 80);
+        });
+        $$('[data-ov-mailbox-text]').forEach(function (node) {
+            node.textContent = text;
+        });
+        if (detail) {
+            var parts = [];
+            if (Number(mailbox.warning) > 0) {
+                parts.push('Warnung ab ' + fmtBytes(mailbox.warning));
+            }
+            if (Number(mailbox.quota) > 0) {
+                parts.push('Senden gesperrt ab ' + fmtBytes(mailbox.quota));
+            }
+            if (Number(mailbox.receive_limit) > 0) {
+                parts.push('Empfang gesperrt ab ' + fmtBytes(mailbox.receive_limit));
+            }
+            detail.textContent = parts.join(' · ');
+            detail.hidden = parts.length === 0;
+        }
     }
 
     function clearCache() {

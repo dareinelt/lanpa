@@ -20,6 +20,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     public function post(string $url, string $xml, array $options): array
     {
         $body = match (true) {
+            str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'DistinguishedFolderId Id="root"/>') => $this->mailboxUsage(),
             str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'DistinguishedFolderId Id="inbox"/></m:FolderIds>') && !str_contains($xml, 'Id="drafts"') => $this->getInbox(),
             str_contains($xml, '<m:GetFolder>') => $this->getKnownFolders(),
             str_contains($xml, '<m:FindFolder') => $this->findFolders(),
@@ -60,6 +61,17 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
         };
 
         return $this->envelope('<m:CreateItemResponse><m:ResponseMessages><m:CreateItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items><t:' . $type . '><t:ItemId Id="demo-new-' . substr(sha1($xml), 0, 8) . '" ChangeKey="CK1"/></t:' . $type . '></m:Items></m:CreateItemResponseMessage></m:ResponseMessages></m:CreateItemResponse>');
+    }
+
+    private function mailboxUsage(): string
+    {
+        // 1,35 GB belegt; Warnung 1,9 GB, Senden gesperrt ab 2 GB, Empfang ab 2,3 GB (Werte in KB)
+        return $this->envelope('<m:GetFolderResponse><m:ResponseMessages><m:GetFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Folders><t:Folder><t:FolderId Id="demo-root" ChangeKey="A"/>'
+            . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0xe08" PropertyType="Long"/><t:Value>1449551462</t:Value></t:ExtendedProperty>'
+            . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0x3ff5" PropertyType="Integer"/><t:Value>1992294</t:Value></t:ExtendedProperty>'
+            . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0x666e" PropertyType="Integer"/><t:Value>2097152</t:Value></t:ExtendedProperty>'
+            . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0x666a" PropertyType="Integer"/><t:Value>2411724</t:Value></t:ExtendedProperty>'
+            . '</t:Folder></m:Folders></m:GetFolderResponseMessage></m:ResponseMessages></m:GetFolderResponse>');
     }
 
     private function getInbox(): string

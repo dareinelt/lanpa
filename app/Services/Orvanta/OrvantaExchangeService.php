@@ -66,6 +66,48 @@ final class OrvantaExchangeService
         ];
     }
 
+    /**
+     * Belegung des Postfachs auf dem Exchange: Groesse aller Elemente
+     * (PR_MESSAGE_SIZE_EXTENDED am Stammordner) sowie die vom Server
+     * gesetzten Grenzen „Warnung“ (PR_STORAGE_QUOTA_LIMIT), „Senden
+     * verbieten“ (PR_PROHIBIT_SEND_QUOTA) und „Empfang verbieten“
+     * (PR_PROHIBIT_RECEIVE_QUOTA), jeweils in Byte. 0 = keine Grenze bekannt.
+     *
+     * @return array{used:int,quota:int,warning:int,receive_limit:int,percent:int}
+     */
+    public function mailboxUsage(string $user): array
+    {
+        $xpath = $this->call(
+            '<m:GetFolder><m:FolderShape><t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>'
+            . '<t:ExtendedFieldURI PropertyTag="0x0E08" PropertyType="Long"/>'
+            . '<t:ExtendedFieldURI PropertyTag="0x3FF5" PropertyType="Integer"/>'
+            . '<t:ExtendedFieldURI PropertyTag="0x666E" PropertyType="Integer"/>'
+            . '<t:ExtendedFieldURI PropertyTag="0x666A" PropertyType="Integer"/>'
+            . '</t:AdditionalProperties></m:FolderShape><m:FolderIds><t:DistinguishedFolderId Id="root"/></m:FolderIds></m:GetFolder>',
+            $user
+        );
+        $values = [];
+        foreach (EwsXml::elements($xpath, '//t:Folder/t:ExtendedProperty') as $property) {
+            // Exchange schreibt Tags ohne fuehrende Nullen (z. B. "0xe08")
+            $tag = (int) hexdec(ltrim(strtolower(EwsXml::attr($xpath, 't:ExtendedFieldURI', 'PropertyTag', $property)), 'x0'));
+            $values[$tag] = max(0, (int) EwsXml::text($xpath, 't:Value', $property));
+        }
+        $used = $values[0x0E08] ?? 0;
+        // Quota-Werte liefert Exchange in Kilobyte
+        $warning = ($values[0x3FF5] ?? 0) * 1024;
+        $quota = ($values[0x666E] ?? 0) * 1024;
+        $receive = ($values[0x666A] ?? 0) * 1024;
+        $limit = $quota > 0 ? $quota : ($receive > 0 ? $receive : $warning);
+
+        return [
+            'used' => $used,
+            'quota' => $quota,
+            'warning' => $warning,
+            'receive_limit' => $receive,
+            'percent' => $limit > 0 ? (int) min(100, round($used * 100 / $limit)) : 0,
+        ];
+    }
+
     // ------------------------------------------------------------------
     // Ordner
     // ------------------------------------------------------------------

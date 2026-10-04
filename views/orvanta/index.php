@@ -182,6 +182,11 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
                 </button>
             <?php } ?>
             <div class="ov-modules__spacer"></div>
+            <div class="ov-modules__quota" data-ov-mailbox title="Belegung des Postfachs auf dem Exchange-Server">
+                <?= $icon('mail') ?>
+                <span class="ov-quota__bar"><span class="ov-quota__fill" data-ov-mailbox-fill></span></span>
+                <span class="ov-quota__text" data-ov-mailbox-text>–</span>
+            </div>
             <div class="ov-modules__quota" data-ov-quota title="Zwischenspeicher für Anhänge im Nextcloud-Bereich">
                 <?= $icon('cloud') ?>
                 <span class="ov-quota__bar"><span class="ov-quota__fill" data-ov-quota-fill></span></span>
@@ -400,6 +405,10 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         <div class="ov-dialog__form">
             <div class="ov-dialog__head"><h2><?= $icon('settings') ?> Einstellungen</h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
             <div class="ov-dialog__body ov-settings">
+                <h3>Postfach auf dem Exchange-Server</h3>
+                <p class="ov-muted">Belegter Speicher Ihres Postfachs (alle Ordner) und die vom Server gesetzte Grenze. Bei Erreichen der Grenze können keine E-Mails mehr gesendet werden.</p>
+                <div class="ov-quota ov-quota--large"><span class="ov-quota__bar"><span class="ov-quota__fill" data-ov-mailbox-fill></span></span><span data-ov-mailbox-text>–</span></div>
+                <p class="ov-muted" data-ov-mailbox-detail hidden></p>
                 <h3>Zwischenspeicher für Anhänge</h3>
                 <p class="ov-muted">Geöffnete Anhänge werden in Ihrem Nextcloud-Bereich im Ordner <code><?= Html::e((string) $orvanta['cacheFolder']) ?>/Zwischenspeicher</code> abgelegt. Bei Erreichen des Quotas werden die ältesten Dateien automatisch entfernt.</p>
                 <div class="ov-quota ov-quota--large"><span class="ov-quota__bar"><span class="ov-quota__fill" data-ov-quota-fill></span></span><span data-ov-quota-text>–</span></div>

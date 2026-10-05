@@ -267,6 +267,8 @@ OrvantaExchangeService::<operation>()
        │     authFailure(): kein Dienstkonto/kein Kennwort, Kontoschreibweise,
        │     angebotene Verfahren (`auth_offered` aus WWW-Authenticate), 403 = EWS gesperrt
        ├─ EwsXml::parse() null → 502 „ungültige Antwort“
+       ├─ ErrorNonPrimarySmtpAddress → primäre Adresse aus MessageXml (`Value Name="Primary"`),
+       │     einmalige Wiederholung; Zuordnung 24 h in `storage/cache/orvanta_primary_smtp.json`
        └─ EwsXml::error() ≠ null → translate() → 502
             ($strict = false: nur, wenn SOAP-Fault oder alle ResponseMessages fehlschlagen)
 ```

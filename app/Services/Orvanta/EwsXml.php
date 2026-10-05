@@ -95,6 +95,15 @@ final class EwsXml
         return null;
     }
 
+    /**
+     * Primaere SMTP-Adresse aus dem MessageXml eines ErrorNonPrimarySmtpAddress
+     * (<t:Value Name="Primary">), sonst ''.
+     */
+    public static function primarySmtpAddress(DOMXPath $xpath): string
+    {
+        return trim(self::text($xpath, '//*[local-name()="MessageXml"]/*[local-name()="Value"][@Name="Primary"]'));
+    }
+
     public static function text(DOMXPath $xpath, string $query, ?DOMNode $context = null): string
     {
         $nodes = $xpath->query($query, $context);

@@ -461,7 +461,11 @@ final class Container
     {
         return self::make(
             \App\Services\Orvanta\OrvantaExchangeService::class,
-            static fn (): \App\Services\Orvanta\OrvantaExchangeService => new \App\Services\Orvanta\OrvantaExchangeService(self::exchangeTransport(), self::orvantaConfig())
+            static fn (): \App\Services\Orvanta\OrvantaExchangeService => new \App\Services\Orvanta\OrvantaExchangeService(
+                self::exchangeTransport(),
+                self::orvantaConfig(),
+                BASE_PATH . '/storage/cache/orvanta_primary_smtp.json'
+            )
         );
     }
 

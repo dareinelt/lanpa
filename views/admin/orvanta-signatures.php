@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Security\Csrf;
 use App\Support\Html;
 
-/** @var list<array{id:int,name:string,greeting:string,street:string,postal_city:string,phone_mode:string,phone_prefix:string,text_color:string,separator_color:string,groups:list<string>,sort_order:int,active:bool}> $signatures */
+/** @var list<array{id:int,name:string,greeting:string,name_format:string,street:string,postal_city:string,phone_mode:string,phone_prefix:string,text_color:string,separator_color:string,groups:list<string>,sort_order:int,active:bool}> $signatures */
 /** @var bool $hasLogo */
 /** @var array<string,string> $theme */
 /** @var array<string,string> $colorLabels */
@@ -20,7 +20,8 @@ use App\Support\Html;
     Signaturvorlagen werden in Orvanta beim Senden, Antworten und Speichern von Entwürfen
     <strong>automatisch angefügt</strong>; Benutzer sehen die Signatur im Verfassen-Dialog, können sie aber
     weder entfernen noch bearbeiten. <strong>Name, Position und Abteilung</strong> sowie die Rufnummer stammen aus
-    dem Active Directory (Telefonliste, Attribute „Anzeigename“, „Position“, „Abteilung“, „Telefon“),
+    dem Active Directory (Telefonliste, Attribute „Vorname“/„Nachname“ – je Vorlage als „Vorname Nachname“ oder
+    „Nachname, Vorname“ –, „Position“, „Abteilung“, „Telefon“),
     <strong>Straße und Ort</strong> aus der Vorlage. Welche Vorlage ein Mitarbeiter erhält, bestimmen die
     hinterlegten <strong>AD-Gruppen</strong>; bei mehreren Treffern gilt die Vorlage mit der kleinsten Reihenfolge.
 </p>
@@ -45,6 +46,7 @@ use App\Support\Html;
                     <tr>
                         <th scope="col">Reihenfolge</th>
                         <th scope="col">Name</th>
+                        <th scope="col">Namensdarstellung</th>
                         <th scope="col">Adresse</th>
                         <th scope="col">Rufnummer</th>
                         <th scope="col">Farben</th>
@@ -58,6 +60,7 @@ use App\Support\Html;
                     <tr>
                         <td><?= (int) $signature['sort_order'] ?></td>
                         <td><strong><?= Html::e($signature['name']) ?></strong></td>
+                        <td><?= $signature['name_format'] === 'last_first' ? 'Nachname, Vorname' : 'Vorname Nachname' ?></td>
                         <td><?= Html::e(trim($signature['street'] . ' · ' . $signature['postal_city'], ' ·')) ?></td>
                         <td>
                             <?php if ($signature['phone_mode'] === 'full') { ?>

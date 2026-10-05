@@ -141,7 +141,7 @@ flowchart LR
 | `OrvantaSignatureRepository` | `app/Repositories/OrvantaSignatureRepository.php` | Tabelle `orvanta_signatures` |
 | Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer |
 | Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php` | |
-| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql` | |
+| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql` | |
 | Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php` | Fakes für den Exchange-Transport; Signaturen gegen SQLite |
 
 ### Datenbank
@@ -152,7 +152,7 @@ flowchart LR
 | `orvanta_reminders` | Lokal zwischengespeicherte Terminerinnerungen je Benutzer | `user_uid`, `item_hash` (unique je Benutzer), `subject`, `location`, `starts_at`, `remind_at`, `state` (pending/delivered/dismissed/snoozed) |
 | `orvanta_cache_items` | Bestand des Zwischenspeichers im Nextcloud-Bereich des Benutzers | `user_uid`, `kind` (attachment/message), `item_hash`, `name`, `path`, `content_type`, `size_bytes` |
 | `orvanta_ai_usage` | Zähler der KI-Unterstützung (Migration 034) – nur Metadaten, nie Texte | `user_uid`, `kind` (mail_compose/mail_reply/mail_forward/event/reminder), `model`, `input_tokens`, `output_tokens`, `created_at` |
-| `orvanta_signatures` | Signaturvorlagen (Migrationen 035/036) | `name`, `greeting`, `street`, `postal_city`, `phone_mode` (prefix/full), `phone_prefix`, `text_color`, `separator_color` (Schlüssel einer Designfarbe), `ad_groups` (JSON-Liste), `sort_order`, `active` |
+| `orvanta_signatures` | Signaturvorlagen (Migrationen 035–037) | `name`, `greeting`, `name_format` (first_last/last_first), `street`, `postal_city`, `phone_mode` (prefix/full), `phone_prefix`, `text_color`, `separator_color` (Schlüssel einer Designfarbe), `ad_groups` (JSON-Liste), `sort_order`, `active` |
 
 ### Routen
 
@@ -273,7 +273,8 @@ Mit freundlichen Grüßen
 | Bestandteil | Quelle |
 |---|---|
 | Grußformel, Straße + Hausnummer, PLZ + Ort | Vorlage |
-| Name, Position, Abteilung | Active Directory (Telefonliste: `display_name`, `title`, `department`; LDAP-Attribut `LDAP_ATTR_TITLE`, Standard `title`) |
+| Name, Position, Abteilung | Active Directory (Telefonliste: `first_name`, `last_name`, `title`, `department`; LDAP-Attribut `LDAP_ATTR_TITLE`, Standard `title`) |
+| Darstellung des Namens | je Vorlage wählbar: **Vorname Nachname** (Standard) oder **Nachname, Vorname**; fehlt im AD Vor- oder Nachname, wird der Anzeigename (`display_name`) unverändert übernommen |
 | Rufnummer | wählbar: **Präfix aus der Vorlage + vierstellige Durchwahl** (letzte vier Ziffern der AD-Rufnummer, fett) oder **komplette Rufnummer aus dem AD** (`T.: …`); ohne AD-Rufnummer entfällt die Zeile |
 | Schriftfarbe / Farbe der Trennzeichen (■) | je Vorlage wählbar aus den Farben der Designeinstellungen (Standard „Textfarbe (hell)“ `color_text` / „Akzentfarbe“ `color_accent`); gespeichert wird der Farbschlüssel, Designänderungen wirken also sofort |
 | Logo links neben dem Text | das im Adminbereich hochgeladene Logo (als `data:`-URI eingebettet; Höhe = Anzahl Textzeilen × 18 px, Breite proportional, höchstens 240 px; feste `width`/`height`-Attribute, damit Outlook es nicht in Originalgröße zeigt) |

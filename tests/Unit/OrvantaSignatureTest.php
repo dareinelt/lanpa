@@ -13,7 +13,7 @@ use Tests\Support\Assert;
 use Tests\Support\Runner;
 
 /**
- * SQLite-Schema parallel zu den Migrationen 035/036 pflegen.
+ * SQLite-Schema parallel zu den Migrationen 035–037 pflegen.
  *
  * @param array<string,string> $settings
  * @return array{service:OrvantaSignatureService,repository:OrvantaSignatureRepository,pdo:PDO}
@@ -25,6 +25,7 @@ function signatureSetup(array $settings = [], ?string $logoPath = null, string $
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name VARCHAR(120) NOT NULL,
         greeting VARCHAR(120) NOT NULL DEFAULT \'Mit freundlichen Grüßen\',
+        name_format VARCHAR(20) NOT NULL DEFAULT \'first_last\',
         street VARCHAR(190) NOT NULL DEFAULT \'\',
         postal_city VARCHAR(190) NOT NULL DEFAULT \'\',
         phone_mode VARCHAR(10) NOT NULL DEFAULT \'prefix\',
@@ -297,6 +298,38 @@ Runner::test('Signaturen: komplette Rufnummer aus dem AD, ohne Logo, fehlende Fe
     $html = $service->forUser(['id' => 8, 'username' => 'inaktiv', 'display_name' => 'Fallback', 'groups' => ['IT']])['html'];
     Assert::contains('<b>Fallback</b>', $html);
     Assert::false(str_contains($html, 'Chef'));
+});
+
+Runner::test('Signaturen: Darstellung des Namens (Vorname Nachname / Nachname, Vorname)', function (): void {
+    $setup = signatureSetup();
+    $service = $setup['service'];
+    $setup['pdo']->exec("UPDATE phonebook SET first_name = 'Daniel-André', last_name = 'Reinelt' WHERE id = 7");
+
+    // Validierung: Standard "Vorname Nachname", nur bekannte Formate.
+    Assert::same('first_last', $service->validate(signatureInput())['name_format']);
+    Assert::same('last_first', $service->validate(signatureInput(['name_format' => 'last_first']))['name_format']);
+    try {
+        $service->validate(signatureInput(['name_format' => 'egal']));
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['name_format']));
+    }
+
+    $id = $service->save(null, signatureInput());
+    Assert::same('first_last', $service->find($id)['name_format']);
+    Assert::contains('<b>Daniel-André Reinelt</b>', $service->forUser(['id' => 7, 'groups' => ['IT']])['html']);
+
+    $service->save($id, signatureInput(['name_format' => 'last_first']));
+    Assert::same('last_first', $service->find($id)['name_format']);
+    Assert::contains('<b>Reinelt, Daniel-André</b>', $service->forUser(['id' => 7, 'groups' => ['IT']])['html']);
+
+    // Vorschau mit Beispieldaten.
+    Assert::contains('<b>Musterfrau, Erika</b>', $service->preview($service->find($id)));
+
+    // Ohne Vor- oder Nachname bleibt der Anzeigename erhalten.
+    Assert::same('Test Person', OrvantaSignatureService::formatName(['display_name' => 'Test Person', 'first_name' => '', 'last_name' => 'Person', 'title' => '', 'department' => '', 'phone' => ''], 'last_first'));
+    $html = $service->forUser(['id' => 0, 'username' => 'test', 'display_name' => 'Test Person', 'groups' => ['IT']])['html'];
+    Assert::contains('<b>Test Person</b>', $html);
 });
 
 Runner::test('Signaturen: Durchwahl aus verschiedenen Rufnummernformaten', function (): void {

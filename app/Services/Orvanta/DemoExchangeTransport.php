@@ -260,13 +260,17 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
                 }
             }
         }
+        $offset = preg_match('/Offset="(\d+)"/', $xml, $m) === 1 ? (int) $m[1] : 0;
+        $max = preg_match('/MaxEntriesReturned="(\d+)"/', $xml, $m) === 1 ? (int) $m[1] : 50;
+        $page = array_slice($list, $offset, $max);
+        $last = $offset + $max >= count($list) ? 'true' : 'false';
         $out = '';
-        foreach ($list as $message) {
+        foreach ($page as $message) {
             $host = substr(strrchr($message['from'][1], '@') ?: '@example.org', 1);
             $out .= $this->messageXml($message, false, '<t:InternetMessageId>' . EwsXml::escape('<' . $message['id'] . '@' . $host . '>') . '</t:InternetMessageId>');
         }
 
-        return $this->envelope('<m:FindItemResponse><m:ResponseMessages><m:FindItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:RootFolder TotalItemsInView="' . count($list) . '" IncludesLastItemInRange="true"><t:Items>' . $out . '</t:Items></m:RootFolder></m:FindItemResponseMessage></m:ResponseMessages></m:FindItemResponse>');
+        return $this->envelope('<m:FindItemResponse><m:ResponseMessages><m:FindItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:RootFolder TotalItemsInView="' . count($list) . '" IncludesLastItemInRange="' . $last . '"><t:Items>' . $out . '</t:Items></m:RootFolder></m:FindItemResponseMessage></m:ResponseMessages></m:FindItemResponse>');
     }
 
     private function messages(string $xml): string

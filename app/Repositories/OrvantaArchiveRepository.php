@@ -298,13 +298,13 @@ final class OrvantaArchiveRepository extends Repository
      */
     public function search(int $archiveId, string $query, int $limit = 50): array
     {
-        $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], mb_strtolower($query)) . '%';
+        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower($query)) . '%';
         $statement = $this->pdo->prepare('SELECT i.id, i.folder_id, i.subject, i.from_name, i.from_email, i.item_date, i.size_bytes, i.has_attachments, f.path AS folder_path
             FROM orvanta_archive_items i JOIN orvanta_archive_folders f ON f.id = i.folder_id
             WHERE i.archive_id = :archive AND i.status IN (\'committed\', \'deleted\') AND (
-                LOWER(i.subject) LIKE :q1 ESCAPE \'\\\' OR LOWER(i.from_name) LIKE :q2 ESCAPE \'\\\' OR LOWER(i.from_email) LIKE :q3 ESCAPE \'\\\'
-                OR LOWER(i.recipients) LIKE :q4 ESCAPE \'\\\' OR LOWER(i.search_text) LIKE :q5 ESCAPE \'\\\'
-                OR LOWER(i.internet_message_id) LIKE :q6 ESCAPE \'\\\' OR LOWER(i.attachment_names) LIKE :q7 ESCAPE \'\\\'
+                LOWER(i.subject) LIKE :q1 ESCAPE \'!\' OR LOWER(i.from_name) LIKE :q2 ESCAPE \'!\' OR LOWER(i.from_email) LIKE :q3 ESCAPE \'!\'
+                OR LOWER(i.recipients) LIKE :q4 ESCAPE \'!\' OR LOWER(i.search_text) LIKE :q5 ESCAPE \'!\'
+                OR LOWER(i.internet_message_id) LIKE :q6 ESCAPE \'!\' OR LOWER(i.attachment_names) LIKE :q7 ESCAPE \'!\'
             ) ORDER BY i.item_date DESC, i.id DESC LIMIT ' . max(1, $limit));
         $statement->execute(['archive' => $archiveId, 'q1' => $like, 'q2' => $like, 'q3' => $like, 'q4' => $like, 'q5' => $like, 'q6' => $like, 'q7' => $like]);
 

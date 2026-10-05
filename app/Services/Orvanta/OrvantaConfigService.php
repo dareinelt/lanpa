@@ -385,12 +385,18 @@ final class OrvantaConfigService
         $values['default_folder'] = isset(self::DEFAULT_FOLDERS[$default]) ? $default : 'inbox';
 
         $values['archive_enabled'] = !empty($input['archive_enabled']) ? '1' : '0';
-        $archiveUnit = $text('archive_threshold_unit', 10);
+        // Fehlende Archivfelder (z. B. API-Aufrufe ohne Archivformular)
+        // fallen auf die Standardwerte zurueck statt Fehler auszuloesen.
+        $archiveText = static fn (string $key, int $max): string => Validator::cleanText(
+            array_key_exists($key, $input) && is_scalar($input[$key]) ? (string) $input[$key] : self::DEFAULTS[$key],
+            $max
+        );
+        $archiveUnit = $archiveText('archive_threshold_unit', 10);
         if (!isset(self::ARCHIVE_THRESHOLD_UNITS[$archiveUnit])) {
             $archiveUnit = 'percent';
         }
         $values['archive_threshold_unit'] = $archiveUnit;
-        $archiveThreshold = (int) $text('archive_threshold', 8);
+        $archiveThreshold = (int) $archiveText('archive_threshold', 8);
         if ($archiveUnit === 'percent' && ($archiveThreshold < 1 || $archiveThreshold > 100)) {
             $errors['archive_threshold'] = 'Die Schwelle muss zwischen 1 und 100 Prozent liegen.';
         } elseif ($archiveUnit === 'mb' && ($archiveThreshold < 1 || $archiveThreshold > 10485760)) {
@@ -398,13 +404,13 @@ final class OrvantaConfigService
         }
         $values['archive_threshold'] = (string) $archiveThreshold;
 
-        $archiveAge = (int) $text('archive_age_days', 5);
+        $archiveAge = (int) $archiveText('archive_age_days', 5);
         if ($archiveAge < 1 || $archiveAge > 3650) {
             $errors['archive_age_days'] = 'Das Mindestalter muss zwischen 1 und 3650 Tagen liegen.';
         }
         $values['archive_age_days'] = (string) $archiveAge;
 
-        $archiveFolder = $text('archive_folder', 120);
+        $archiveFolder = $archiveText('archive_folder', 120);
         if ($archiveFolder === '' || !\App\Services\Office\NextcloudFilesService::isSafeSegment($archiveFolder)) {
             $errors['archive_folder'] = 'Der Ordnername darf nicht leer sein und keine Sonderzeichen wie / \\ : * ? " < > | enthalten.';
         }
@@ -413,13 +419,13 @@ final class OrvantaConfigService
         // Format-Invariante: aktuell ausschliesslich gzip (format_version 1).
         $values['archive_compression'] = 'gzip';
 
-        $archiveBatch = (int) $text('archive_batch_size', 4);
+        $archiveBatch = (int) $archiveText('archive_batch_size', 4);
         if ($archiveBatch < 1 || $archiveBatch > 200) {
             $errors['archive_batch_size'] = 'Die Batchgröße muss zwischen 1 und 200 Nachrichten liegen.';
         }
         $values['archive_batch_size'] = (string) $archiveBatch;
 
-        $archivePoll = (int) $text('archive_poll_interval', 6);
+        $archivePoll = (int) $archiveText('archive_poll_interval', 6);
         if ($archivePoll < 60 || $archivePoll > 86400) {
             $errors['archive_poll_interval'] = 'Das Prüfintervall muss zwischen 60 und 86.400 Sekunden liegen.';
         }

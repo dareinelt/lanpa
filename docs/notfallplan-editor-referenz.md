@@ -112,6 +112,15 @@ Alle Editor-Routen liegen in `public/index.php` in der Gruppe
 Alle POST-Routen prüfen CSRF (`requireValidCsrf`). Antworten tragen
 `Cache-Control: no-store`.
 
+**Einstieg über die Office-Kachel:** Mitglieder der KAEP-AD-Gruppen
+(`AdminGroupService::isKaepMember()`) sehen unter „Office“ die App
+„Notfallplan-Editor“ (`OfficeAppCatalog::EMERGENCY_PLAN_*`, ergänzt in
+`OfficeAppService::allowedFor()`). `OfficeController::launch`
+(`/office-app?app=notfallplan`) meldet den SSO-Benutzer per
+`Auth::loginDirectory()` an (sofern noch keine Sitzung mit Rolle `admin`/`kaep`
+besteht) und leitet auf `/admin/notfallplan` weiter; die Rechteprüfung der
+Editor-Routen bleibt unverändert.
+
 **Akteur-Ermittlung** (`access()`): Wird eine echte (nicht simulierte)
 Windows-Anmeldung erkannt, ist der Akteur immer `ad:<office_uid>` – auch bei
 lokalem Adminlogin. Sonst `ad:`/`local:` + Benutzername. Damit ist ein Wechsel

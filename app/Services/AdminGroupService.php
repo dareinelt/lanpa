@@ -126,6 +126,23 @@ final class AdminGroupService
     }
 
     /**
+     * Gehoert der Benutzer einer AD-Gruppe an, die das KAEP-Team berechtigt?
+     *
+     * @param list<string> $groups
+     */
+    public function isKaepMember(array $groups): bool
+    {
+        $groups = array_map(static fn (string $group): string => mb_strtolower(trim($group)), $groups);
+        foreach ($this->repository->rules(self::TARGET_KAEP) as $rule) {
+            if (in_array(mb_strtolower($rule['group_name']), $groups, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Mitglieder der Gruppen eines Ziels (aktive Benutzer bekannter Quellen).
      *
      * @return list<AdminMember>

@@ -76,6 +76,26 @@ final class OfficeAppCatalog
     /** Pfad der Mail- und Kalender-App Orvanta im Intranet. */
     public const ORVANTA_PATH = '/office/orvanta';
 
+    /**
+     * Notfallplan-Editor: nicht ueber Office-Freigaben/Pakete steuerbar,
+     * sondern automatisch fuer Mitglieder der AD-Gruppen des KAEP-Teams
+     * (Benutzer → Administratoren aus AD-Gruppen, Ziel "kaep").
+     */
+    public const EMERGENCY_PLAN_KEY = 'notfallplan';
+
+    /** Ziel im Adminbereich (Planliste mit Editor). */
+    public const EMERGENCY_PLAN_PATH = '/admin/notfallplan';
+
+    /**
+     * @var array{title:string,short_description:string,icon:string,kind:string}
+     */
+    public const EMERGENCY_PLAN_APP = [
+        'title' => 'Notfallplan-Editor',
+        'short_description' => 'Notfallpläne entwerfen, bearbeiten und freigeben (KAEP-Team)',
+        'icon' => 'siren',
+        'kind' => 'intranet',
+    ];
+
     public static function exists(string $key): bool
     {
         return isset(self::APPS[$key]);

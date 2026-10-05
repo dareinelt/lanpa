@@ -935,7 +935,15 @@ final class Container
                 new OfficeAppRepository(),
                 self::officeConfig(),
                 self::settings(),
-                static fn (): bool => self::orvantaConfig()->isEnabled()
+                static fn (): bool => self::orvantaConfig()->isEnabled(),
+                static function (array $groups): bool {
+                    try {
+                        return self::adminGroups()->isKaepMember($groups);
+                    } catch (\Throwable) {
+                        // Ohne Gruppentabelle (Migration ausstehend) keine Kachel.
+                        return false;
+                    }
+                }
             )
         );
     }

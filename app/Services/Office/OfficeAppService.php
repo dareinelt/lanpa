@@ -18,6 +18,8 @@ use App\Support\Validator;
  *   - Eine App ist nur fuer Mitglieder der ihr (direkt oder ueber ein Paket)
  *     zugeordneten AD-Gruppen sichtbar. Ohne Zuordnung sieht sie niemand.
  *   - "Outlook Web App" erscheint nur, wenn ein Link hinterlegt ist.
+ *   - Der Notfallplan-Editor erscheint zusaetzlich fuer Mitglieder der
+ *     AD-Gruppen des KAEP-Teams (unabhaengig von Office-Freigaben).
  */
 final class OfficeAppService
 {
@@ -31,12 +33,14 @@ final class OfficeAppService
 
     /**
      * @param \Closure(): bool $orvantaEnabled Liefert, ob die Exchange-Anbindung von Orvanta aktiv ist.
+     * @param \Closure(list<string>): bool $kaepMember Liefert, ob die AD-Gruppen das KAEP-Team berechtigen.
      */
     public function __construct(
         private readonly OfficeAppRepository $repository,
         private readonly OfficeConfigService $config,
         private readonly SettingsService $settings,
-        private readonly ?\Closure $orvantaEnabled = null
+        private readonly ?\Closure $orvantaEnabled = null,
+        private readonly ?\Closure $kaepMember = null
     ) {
     }
 
@@ -88,10 +92,39 @@ final class OfficeAppService
 
         $allowed = array_fill_keys($this->repository->appKeysForGroups($groups), true);
 
-        return array_values(array_filter(
+        $apps = array_values(array_filter(
             $this->catalog(),
             static fn (array $app): bool => $app['configured'] && isset($allowed[$app['key']])
         ));
+
+        if ($this->kaepMember !== null && ($this->kaepMember)($groups)) {
+            $apps[] = self::emergencyPlanApp();
+        }
+
+        return $apps;
+    }
+
+    /**
+     * Kachel des Notfallplan-Editors (nur fuer das KAEP-Team, siehe allowedFor()).
+     *
+     * @return array{key:string,title:string,short_description:string,icon:string,kind:string,webapp:string,configured:bool,target:string,external:bool}
+     */
+    public static function emergencyPlanApp(): array
+    {
+        $app = OfficeAppCatalog::EMERGENCY_PLAN_APP;
+
+        return [
+            'key' => OfficeAppCatalog::EMERGENCY_PLAN_KEY,
+            'title' => $app['title'],
+            'short_description' => $app['short_description'],
+            'icon' => $app['icon'],
+            'kind' => $app['kind'],
+            'webapp' => '',
+            'configured' => true,
+            'target' => OfficeAppCatalog::EMERGENCY_PLAN_PATH,
+            // Wie der Editor selbst in einem eigenen Tab.
+            'external' => true,
+        ];
     }
 
     /**

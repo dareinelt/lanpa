@@ -9,6 +9,8 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Exceptions\HttpException;
 use App\Security\Session;
+use App\Services\EmergencyPlanService;
+use App\Services\Office\OfficeAppCatalog;
 use App\Services\Office\OfficeAppService;
 use Throwable;
 
@@ -88,12 +90,39 @@ final class OfficeController extends Controller
 
         app_logger()->info('Office-App gestartet.', ['app' => $app['key'], 'user' => $ssoUser['username'] ?? '']);
 
+        if ($app['key'] === OfficeAppCatalog::EMERGENCY_PLAN_KEY) {
+            return $this->enterEmergencyPlanEditor($app['target'], $ssoUser);
+        }
+
         if ($app['external']) {
             return $this->redirect($app['target']);
         }
 
         return $this->enterNextcloud($app['target'], $ssoUser);
     }
+    /**
+     * Notfallplan-Editor aus der Office-Kachel: Der per Windows-Anmeldung
+     * erkannte Benutzer wird wie unter /admin/login/windows ueber seine
+     * AD-Gruppe am Adminbereich angemeldet (Rolle kaep bzw. admin), sofern
+     * nicht bereits eine Sitzung mit Zugriff auf Notfallplaene besteht.
+     *
+     * @param array<string,mixed> $ssoUser
+     */
+    private function enterEmergencyPlanEditor(string $target, array $ssoUser): Response
+    {
+        $auth = Container::auth();
+        if (!$auth->check() || !EmergencyPlanService::isManager($auth->role())) {
+            $role = Container::adminGroups()->intranetRole(is_array($ssoUser['groups'] ?? null) ? $ssoUser['groups'] : []);
+            if (!EmergencyPlanService::isManager($role)) {
+                throw new HttpException(403, 'Der Notfallplan-Editor ist nur für das KAEP-Team freigegeben.');
+            }
+            $auth->loginDirectory($ssoUser, (string) $role);
+            app_logger()->info('Admin-Login per Windows-Anmeldung (Office-Kachel Notfallplan-Editor).', ['user' => $ssoUser['office_uid'] ?? $ssoUser['username'] ?? '']);
+        }
+
+        return $this->redirect($target)->withHeader('Cache-Control', 'no-store');
+    }
+
     public function unavailable(Request $request): Response
     {
         $response = null;

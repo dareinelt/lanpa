@@ -199,6 +199,46 @@ Runner::test('Lokale KI: Endpunktpruefung erkennt fehlendes Modell und Zugriffsf
     Assert::contains('API-Schlüssel', $ai->testEndpoint()['message']);
 });
 
+Runner::test('Lokale KI: Verbindungstest mit Testnachricht nutzt die Formularwerte', static function (): void {
+    $probe = new FakeOfficeProbe();
+    $ai = officeAi($probe, OFFICE_AI_ACTIVE + ['office_ai_api_key' => 'sk-1'])['ai'];
+    $model = '/opt/llama.cpp/models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf';
+    $form = ['office_ai_url' => 'http://ki-server:11434/v1', 'office_ai_model' => $model, 'office_ai_timeout' => '60'];
+
+    $probe->responses['GET http://ki-server:11434/v1/models'] = ['status' => 200, 'error' => null, 'body' => json_encode(['data' => [['id' => $model]]])];
+    $probe->responses['POST http://ki-server:11434/v1/chat/completions'] = ['status' => 200, 'error' => null,
+        'body' => json_encode(['choices' => [['message' => ['role' => 'assistant', 'content' => "Ich bin Gemma.\r\n"]]], 'usage' => ['completion_tokens' => 5]])];
+
+    $result = $ai->runTest($form);
+    Assert::true($result['ok'], json_encode($result));
+    Assert::same('Ich bin Gemma.', $result['answer']);
+    Assert::same(5, $result['tokens']);
+    $chat = json_decode((string) $probe->requests[1]['body'], true);
+    Assert::same($model, $chat['model']);
+    Assert::same(OfficeAiService::TEST_PROMPT, $chat['messages'][0]['content']);
+    Assert::same('Bearer sk-1', $probe->requests[1]['headers']['Authorization'] ?? null, 'Gespeicherter Schluessel an gespeicherte Adresse.');
+
+    // Geaenderte Adresse: gespeicherter Schluessel bleibt zurueck.
+    $probe->requests = [];
+    $probe->responses['GET http://anderer-server/v1/models'] = ['status' => 200, 'error' => null, 'body' => json_encode(['data' => [['id' => $model]]])];
+    $probe->responses['POST http://anderer-server/v1/chat/completions'] = $probe->responses['POST http://ki-server:11434/v1/chat/completions'];
+    $result = $ai->runTest(['office_ai_url' => 'http://anderer-server/v1'] + $form);
+    Assert::true($result['ok']);
+    Assert::false(isset($probe->requests[0]['headers']['Authorization']), 'Kein Schluessel an fremde Adresse.');
+
+    // Fehler der Chat-Anfrage wird gemeldet.
+    $probe->responses['POST http://ki-server:11434/v1/chat/completions'] = ['status' => 400, 'error' => null, 'body' => json_encode(['error' => ['message' => 'context too small']])];
+    $result = $ai->runTest($form);
+    Assert::false($result['ok']);
+    Assert::contains('context too small', $result['steps'][1]['message']);
+
+    // Ungueltige Eingaben: kein Netzwerkzugriff.
+    $probe->requests = [];
+    $result = $ai->runTest(['office_ai_url' => 'ftp://x', 'office_ai_model' => '', 'office_ai_timeout' => '60']);
+    Assert::true(isset($result['errors']['office_ai_url'], $result['errors']['office_ai_model']));
+    Assert::same([], $probe->requests);
+});
+
 Runner::test('Lokale KI: Statuspruefung gleicht ab, ohne den Office-Status zu beeinflussen', static function (): void {
     $probe = FakeOfficeProbe::healthy('test-secret-0123456789');
     $pushUrl = 'POST http://nextcloud/office/index.php/apps/intranet_integration/api/ai';

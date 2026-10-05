@@ -325,6 +325,7 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/office', [OfficeAdminController::class, 'index']);
         $router->post('/admin/office', [OfficeAdminController::class, 'update']);
         $router->post('/admin/office/ki', [OfficeAdminController::class, 'updateAi']);
+        $router->post('/admin/office/ki/testen', [OfficeAdminController::class, 'testAi']);
         $router->post('/admin/office/app-store', [OfficeAdminController::class, 'updateAppStore']);
         $router->post('/admin/office/pruefen', [OfficeAdminController::class, 'check']);
         $router->post('/admin/office/sicherung', [OfficeAdminController::class, 'backup']);

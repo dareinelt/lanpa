@@ -544,7 +544,7 @@ standardmäßig aktiviert.
 | --- | --- |
 | Anzeigename | Name des Anbieters in Nextcloud und im KI-Plugin der Editoren |
 | Adresse | Basisadresse **inklusive** `/v1`, z. B. `http://ki-server:11434/v1` (muss aus den Containern `nextcloud` und `eurooffice` erreichbar sein) |
-| Modell | Modell-ID, wie sie `GET /v1/models` meldet (z. B. `llama3.1:8b`) |
+| Modell | Modell-ID, wie sie `GET /v1/models` meldet (z. B. `llama3.1:8b`; bei llama.cpp auch ein Dateipfad wie `/opt/llama.cpp/models/….gguf`) |
 | Zeitlimit | Maximale Dauer je Anfrage (10–900 s) |
 | API-Schlüssel | Optional; wird nie angezeigt. Das Secret `OFFICE_AI_API_KEY` (bzw. `OFFICE_AI_API_KEY_FILE`) hat Vorrang. |
 | „Mit Audio arbeiten“ anbieten | Transkription, Sprachausgabe und Audio-Chat im Nextcloud-Assistenten (Standard: aus) |
@@ -553,6 +553,13 @@ standardmäßig aktiviert.
 | Admin: Lokale KI | Diagnose |
 | --- | --- |
 | ![Lokale KI im Adminbereich](screenshots/53-admin-office-ki.png) | ![KI-Apps und Audio/Bilder in der Diagnose](screenshots/54-admin-office-ki-status.png) |
+
+**Verbindung testen** öffnet ein Overlay und prüft die aktuellen Formularwerte –
+auch ungespeicherte – ohne zu speichern (`POST /admin/office/ki/testen`):
+erst `GET /models`, dann eine Testnachricht „Wer bist du?“ an
+`/chat/completions` (Zeitlimit höchstens 120 s). Angezeigt werden die
+einzelnen Schritte, die Antwort des Modells, Dauer und Tokenanzahl. Ein
+gespeicherter API-Schlüssel wird nur an die gespeicherte Adresse gesendet.
 
 Beim Speichern werden die Einstellungen sofort weitergereicht und der Endpunkt
 geprüft (`GET /models`, Modell vorhanden?):

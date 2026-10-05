@@ -190,7 +190,7 @@ flowchart LR
 
 | Verfahren | Beschreibung |
 |---|---|
-| **Negotiate** (Standard) | Kerberos mit der Identität des `auth`-Containers (Keytab des Domänenbeitritts). Dienstkonto/Kennwort optional; ohne Angabe muss das Computerkonto die Impersonation-Rolle besitzen. |
+| **Negotiate** (Standard) | Dienstkonto + Kennwort; die Windows-Anmeldung wird per NTLM ausgehandelt. Der Intranet-Server (`app`-Container) besitzt keine eigene Kerberos-Identität – die Keytab liegt nur im `auth`-Container –, daher ist das Dienstkonto Pflicht. |
 | **NTLM** | Dienstkonto + Kennwort (`FIRMA\svc-orvanta` oder UPN). |
 | **Basic** | Dienstkonto + Kennwort, nur über HTTPS mit TLS-Prüfung. |
 
@@ -210,7 +210,7 @@ AD (Standard) oder per UPN (`benutzer@<UPN-Domäne>`); sie wird als
 | `exchange_ews_url` | EWS-Endpunkt (überschreibt den Hostnamen) | aus Host gebildet |
 | `exchange_version` | `Exchange2016` (auch 2019/SE) oder `Exchange2013_SP1` | `Exchange2016` |
 | `exchange_auth` | `negotiate`, `ntlm`, `basic` | `negotiate` |
-| `exchange_service_user`, `exchange_service_password` | Dienstkonto | – |
+| `exchange_service_user`, `exchange_service_password` | Dienstkonto (Pflicht bei aktivierter Anbindung außer im Demo-Modus) | – |
 | `exchange_identity`, `exchange_upn_domain` | Postfach-Zuordnung (`smtp`/`upn`) | `smtp` |
 | `exchange_verify_tls` | TLS-Zertifikat prüfen | an |
 | `exchange_timeout` | Zeitlimit je Anfrage (3–120 s) | 20 |

@@ -80,7 +80,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaExchangeService.php` | Fachlogik je Modul (siehe Abschnitt 5), `call()` (SOAP + Fehlerbehandlung), `translate()` (EWS-Fehlercodes → deutsche Meldung), Mapper `messageSummary()`, `calendarSummary()`, `contactData()`, `taskData()`, `attachmentList()` |
 | `app/Services/Orvanta/EwsXml.php` | `envelope()`, `parse()`, `error()`, `text()/attr()/bool()/elements()`, `itemId()/itemIds()`, `mailbox()/mailboxes()/recipients()`, `folderId()`, `dateTime()` (UTC), `timestamp()`, `escape()` |
 | `app/Contracts/ExchangeTransportInterface.php` | `post(url, xml, options): {status, body, error}` |
-| `app/Services/Orvanta/CurlExchangeTransport.php` | cURL-POST, Auth `negotiate` (`CURLAUTH_NEGOTIATE \| NTLM`, ohne Konto `:` = Keytab), `ntlm`, `basic`; keine Redirects, nur HTTP(S) |
+| `app/Services/Orvanta/CurlExchangeTransport.php` | cURL-POST, Auth `negotiate` (mit Dienstkonto `CURLAUTH_NTLM`, da GSSAPI Benutzer/Kennwort ignoriert und `app` kein Kerberos-Ticket hat; ohne Konto `CURLAUTH_NEGOTIATE` mit `:`), `ntlm`, `basic`; keine Redirects, nur HTTP(S); liefert `auth_offered` (WWW-Authenticate der letzten Antwort) |
 | `app/Services/Orvanta/DemoExchangeTransport.php` | Beispieldaten; erkennt die Operation per `str_contains()` am SOAP-Text; schreibende Aufrufe werden bestätigt, nicht gespeichert |
 | `app/Services/Orvanta/MailHtmlSanitizer.php` | `clean(html): {html, blocked_images}` – Whitelist für Tags/Attribute (Abschnitt 10) |
 | `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()` |
@@ -263,7 +263,9 @@ OrvantaExchangeService::<operation>()
        │             TimeZoneContext "W. Europe Standard Time"
        ├─ transport->post(url, xml, transportOptions())
        ├─ error ≠ '' → 502 „Exchange ist nicht erreichbar: …“
-       ├─ HTTP 401/403 → 502 „Exchange hat die Anmeldung abgelehnt …“
+       ├─ HTTP 401/403 → 502 „Exchange hat die Anmeldung abgelehnt …“ + Ursache aus
+       │     authFailure(): kein Dienstkonto/kein Kennwort, Kontoschreibweise,
+       │     angebotene Verfahren (`auth_offered` aus WWW-Authenticate), 403 = EWS gesperrt
        ├─ EwsXml::parse() null → 502 „ungültige Antwort“
        └─ EwsXml::error() ≠ null → translate() → 502
             ($strict = false: nur, wenn SOAP-Fault oder alle ResponseMessages fehlschlagen)

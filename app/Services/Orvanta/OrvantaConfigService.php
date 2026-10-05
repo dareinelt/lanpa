@@ -17,7 +17,7 @@ use App\Support\Validator;
  */
 final class OrvantaConfigService
 {
-    public const AUTH_MODES = ['negotiate' => 'Negotiate (Kerberos / SSO-Identität des auth-Containers)', 'ntlm' => 'NTLM (Dienstkonto)', 'basic' => 'Basic (Dienstkonto, nur über HTTPS)'];
+    public const AUTH_MODES = ['negotiate' => 'Negotiate / Windows-Anmeldung (Dienstkonto, Aushandlung per NTLM)', 'ntlm' => 'NTLM (Dienstkonto)', 'basic' => 'Basic (Dienstkonto, nur über HTTPS)'];
     public const IDENTITY_MODES = ['smtp' => 'E-Mail-Adresse aus dem Active Directory', 'upn' => 'Benutzerprinzipalname (Benutzer@Domäne)'];
     public const VERSIONS = ['Exchange2016' => 'Exchange 2016 / 2019 / Subscription Edition', 'Exchange2013_SP1' => 'Exchange 2013 SP1'];
     public const DEFAULT_FOLDERS = ['inbox' => 'Posteingang', 'calendar' => 'Kalender', 'contacts' => 'Kontakte', 'tasks' => 'Aufgaben', 'notes' => 'Notizen'];
@@ -241,6 +241,20 @@ final class OrvantaConfigService
                 $errors['exchange_service_password'] = 'Das Kennwort ist zu lang.';
             } else {
                 $values['exchange_service_password'] = $this->secrets->encrypt($password);
+            }
+        }
+
+        // Der Intranet-Server besitzt keine eigene Kerberos-Identitaet: ohne
+        // Dienstkonto und Kennwort lehnt Exchange jede Anfrage mit 401 ab.
+        if ($values['exchange_enabled'] === '1' && strtolower($host) !== DemoExchangeTransport::HOST) {
+            if ($values['exchange_service_user'] === '') {
+                $errors['exchange_service_user'] = 'Bitte ein Dienstkonto mit der Rolle ApplicationImpersonation angeben (z. B. FIRMA\svc-orvanta).';
+            }
+            $hasPassword = isset($values['exchange_service_password'])
+                ? $values['exchange_service_password'] !== ''
+                : $this->hasServicePassword();
+            if (!$hasPassword && !isset($errors['exchange_service_password'])) {
+                $errors['exchange_service_password'] = 'Bitte das Kennwort des Dienstkontos angeben.';
             }
         }
 

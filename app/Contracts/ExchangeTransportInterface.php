@@ -14,7 +14,7 @@ interface ExchangeTransportInterface
     /**
      * @param array{auth:string,username:string,password:string,timeout:int,verify_tls:bool,headers?:array<string,string>} $options
      *
-     * @return array{status:int,body:string,error:?string}
+     * @return array{status:int,body:string,error:?string,auth_offered?:list<string>}
      */
     public function post(string $url, string $xml, array $options): array;
 }

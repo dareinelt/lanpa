@@ -663,3 +663,14 @@
 .ov-help__ai { display: flex; gap: 1rem; align-items: flex-start; margin: .6rem 0; padding: .7rem; border: 1px solid var(--ov-ai); border-radius: .5rem; background: var(--ov-ai-soft); }
 .ov-help__robot { flex: 0 0 auto; width: 90px; height: 120px; }
 @media (max-width: 600px) { .ov-help__ai { flex-direction: column; } .ov-help__robot { width: 60px; height: 80px; } }
+
+/* Langzeitarchiv (📦): Archivordner in der Seitenleiste, Markierung
+   archivierter Nachrichten in Liste und Lesebereich. */
+.ov-folders__archive { margin-top: .6rem; border-top: 1px solid var(--ov-line); padding-top: .3rem; }
+.ov-folder--archive .ov-folder__name { color: var(--ov-muted); }
+.ov-folder--archive.ov-folder--active .ov-folder__name { color: inherit; }
+.ov-item--archive { background: var(--ov-bar); }
+.ov-item--archive .ov-item__subject::after { content: ' '; }
+.ov-item__archive { opacity: .85; }
+.ov-mail__archive-note { background: var(--ov-bar); border-left: 3px solid var(--ov-muted); }
+.ov-mail__hint { color: var(--ov-muted); font-size: .85rem; }

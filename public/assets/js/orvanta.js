@@ -43,6 +43,8 @@
         standalone: false,
         online: true,
         noteDraft: false,
+        archive: null,
+        archiveFolders: [],
         prefs: loadPrefs()
     };
 
@@ -796,6 +798,109 @@
         }).catch(function (error) {
             renderSimpleSidebar('Ordner', []);
             toast(error.message, 'error');
+        }).then(function () {
+            return loadArchive();
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Mail: Langzeitarchiv (📦)
+    // ------------------------------------------------------------------
+
+    function isArchiveFolder(key) {
+        return typeof key === 'string' && key.indexOf('archive:') === 0;
+    }
+
+    /**
+     * Archivstatus und -ordner laden; meldet den Abschluss eines neuen
+     * Archivierungslaufs einmalig per Toast (Vergleich der Job-ID im
+     * localStorage).
+     */
+    function loadArchive() {
+        return api('/archiv/status').then(function (status) {
+            state.archive = status;
+            if (status.last_job && status.last_job.id) {
+                var key = 'orvanta.archive.job';
+                var last = '';
+                try { last = window.localStorage.getItem(key) || ''; } catch (e) { /* privat */ }
+                if (String(status.last_job.id) !== last) {
+                    try { window.localStorage.setItem(key, String(status.last_job.id)); } catch (e) { /* privat */ }
+                    if (last !== '') {
+                        if (status.last_job.status === 'completed' && status.last_job.deleted_count > 0) {
+                            toast('📦 Archivierung abgeschlossen: ' + status.last_job.deleted_count + ' E-Mail(s) in das Langzeitarchiv verschoben.', 'success');
+                        } else if (status.last_job.status === 'failed') {
+                            toast('📦 Archivierung fehlgeschlagen: ' + (status.last_job.error || 'Details im Anwendungsprotokoll.'), 'error');
+                        }
+                    }
+                }
+            }
+            if (!status.exists) {
+                state.archiveFolders = [];
+                return null;
+            }
+            return api('/archiv/ordner').then(function (data) {
+                state.archiveFolders = data.folders || [];
+                renderArchiveFolders();
+                return null;
+            });
+        }).catch(function () {
+            state.archiveFolders = [];
+        });
+    }
+
+    function renderArchiveFolders() {
+        var body = hook('folders-body');
+        if (!body || !state.archiveFolders.length) {
+            return;
+        }
+        var old = body.querySelector('.ov-folders__archive');
+        if (old) {
+            old.remove();
+        }
+        var group = el('div', { 'class': 'ov-folders__archive' }, [
+            el('div', { 'class': 'ov-list__group', text: '📦 Langzeitarchiv' })
+        ]);
+        state.archiveFolders.forEach(function (folder) {
+            var key = 'archive:' + folder.id;
+            var node = el('button', {
+                type: 'button',
+                'class': 'ov-folder ov-folder--archive' + (key === state.folder ? ' ov-folder--active' : ''),
+                'data-folder': key
+            }, [
+                el('span', { 'class': 'ov-folder__icon', 'aria-hidden': 'true', text: '📦' }),
+                el('span', { 'class': 'ov-folder__name', text: folder.name + ' (' + folder.total + ')' })
+            ]);
+            node.addEventListener('click', function () {
+                selectFolder(key, '📦 ' + folder.name);
+            });
+            group.appendChild(node);
+        });
+        body.appendChild(group);
+    }
+
+    /** Index-Eintrag des Archivs auf das Listenformat der Mail-Ansicht abbilden. */
+    function mapArchiveItem(item) {
+        item.received = item.date ? Math.floor(Date.parse(item.date.replace(' ', 'T') + 'Z') / 1000) : 0;
+        item.is_read = true;
+        item.archived = true;
+        item.size = item.size || item.size_bytes || 0;
+        return item;
+    }
+
+    function loadArchiveMessages(append) {
+        var offset = append ? state.messages.length : 0;
+        if (!append) {
+            listMessage('Archiv wird geladen …', 'ov-list__empty--loading');
+        }
+        return api('/archiv/mail', { query: { ordner: state.folder.slice(8), offset: offset, limit: 50 } }).then(function (data) {
+            var items = (data.items || []).map(mapArchiveItem);
+            state.messages = append ? state.messages.concat(items) : items;
+            state.total = data.total || state.messages.length;
+            state.hasMore = state.messages.length < state.total;
+            renderMessages();
+            markSync();
+        }).catch(function (error) {
+            listMessage(error.message, 'ov-list__empty--error');
         });
     }
 
@@ -847,6 +952,7 @@
         if (!state.folders.length) {
             body.appendChild(el('div', { 'class': 'ov-folders__empty', text: 'Keine Ordner gefunden.' }));
         }
+        renderArchiveFolders();
     }
 
     /**
@@ -904,6 +1010,9 @@
     // ------------------------------------------------------------------
 
     function loadMessages(append) {
+        if (isArchiveFolder(state.folder)) {
+            return loadArchiveMessages(append);
+        }
         var offset = append ? state.messages.length : 0;
         if (!append) {
             listMessage('Wird geladen …', 'ov-list__empty--loading');
@@ -912,6 +1021,17 @@
             state.messages = append ? state.messages.concat(data.items || []) : (data.items || []);
             state.total = data.total || state.messages.length;
             state.hasMore = !!data.has_more;
+            if (!append && state.search) {
+                // Suche zusaetzlich im Langzeitarchiv: Treffer markiert anhaengen.
+                return api('/archiv/suche', { query: { q: state.search } }).then(function (archiveData) {
+                    state.messages = state.messages.concat((archiveData.items || []).map(mapArchiveItem));
+                    renderMessages();
+                    markSync();
+                }).catch(function () {
+                    renderMessages();
+                    markSync();
+                });
+            }
             renderMessages();
             markSync();
         }).catch(function (error) {
@@ -971,7 +1091,7 @@
             ? (message.to || []).map(mailboxName).join(', ') || '(kein Empfänger)'
             : mailboxName(message.from) || '(unbekannt)';
         var row = el('article', {
-            'class': 'ov-item' + (message.is_read ? '' : ' ov-item--unread') + (state.selected && state.selected.id === message.id ? ' ov-item--active' : '') + (state.selectedIds.indexOf(message.id) !== -1 ? ' ov-item--checked' : ''),
+            'class': 'ov-item' + (message.archived ? ' ov-item--archive' : '') + (message.is_read ? '' : ' ov-item--unread') + (state.selected && state.selected.id === message.id ? ' ov-item--active' : '') + (state.selectedIds.indexOf(message.id) !== -1 ? ' ov-item--checked' : ''),
             tabindex: '0',
             draggable: 'true',
             'data-id': message.id
@@ -996,6 +1116,7 @@
                 el('div', { 'class': 'ov-item__row' }, [
                     el('span', { 'class': 'ov-item__subject', text: message.subject || '(kein Betreff)' }),
                     el('span', { 'class': 'ov-item__icons' }, [
+                        message.archived ? el('span', { title: 'Archivierte Nachricht (Langzeitarchiv)', 'class': 'ov-item__archive', text: '📦' }) : null,
                         message.importance === 'High' ? el('span', { title: 'Hohe Wichtigkeit', 'class': 'ov-item__important', text: '!' }) : null,
                         message.has_attachments ? el('span', { title: 'Anhang', text: '📎' }) : null,
                         message.is_meeting_request ? el('span', { title: 'Besprechungsanfrage', text: '📅' }) : null,
@@ -1066,9 +1187,12 @@
     function openMessage(summary) {
         state.selected = summary;
         $$('.ov-item', hook('list-body')).forEach(function (node) {
-            node.classList.toggle('ov-item--active', node.getAttribute('data-id') === summary.id);
+            node.classList.toggle('ov-item--active', node.getAttribute('data-id') === String(summary.id));
         });
         updateActionState();
+        if (summary.archived) {
+            return openArchiveMessage(summary);
+        }
         var loading = el('div', { 'class': 'ov-mail ov-mail--loading', text: 'Nachricht wird geladen …' });
         showDetail(loading);
         return api('/mail/nachricht', { query: { id: summary.id } }).then(function (message) {
@@ -1085,6 +1209,31 @@
                     renderMessages();
                 }).catch(function () { /* still */ });
             }
+            return message;
+        }).catch(function (error) {
+            showDetail(el('div', { 'class': 'ov-mail ov-mail--error', text: error.message }));
+            return null;
+        });
+    }
+
+    /**
+     * Archivierte Nachricht aus dem Langzeitarchiv laden: ehrlicher
+     * Ladezustand (der Archivcontainer wird serverseitig gelesen, geprueft
+     * und entpackt), keine vorgetaeuschte Fortschrittsanzeige.
+     */
+    function openArchiveMessage(summary) {
+        var loading = el('div', { 'class': 'ov-mail ov-mail--loading' }, [
+            el('p', { text: '📦 Archivierte Nachricht wird geladen …' }),
+            el('p', { 'class': 'ov-mail__hint', text: 'Der Archivcontainer wird aus Nextcloud gelesen, auf Unversehrtheit geprüft und entpackt. Das kann einen Moment dauern.' })
+        ]);
+        showDetail(loading);
+        return api('/archiv/mail/detail', { query: { id: summary.id } }).then(function (message) {
+            if (!state.selected || state.selected.id !== message.id) {
+                return null;
+            }
+            mapArchiveItem(message);
+            state.selected = message;
+            showDetail(renderMessage(message));
             return message;
         }).catch(function (error) {
             showDetail(el('div', { 'class': 'ov-mail ov-mail--error', text: error.message }));
@@ -1129,13 +1278,19 @@
                         el('strong', { text: mailboxName(message.from) || '(unbekannt)' }),
                         message.from && message.from.email ? el('span', { 'class': 'ov-mail__email', text: ' <' + message.from.email + '>' }) : null
                     ]),
-                    el('div', { 'class': 'ov-mail__to', text: 'An: ' + ((message.to || []).map(mailboxFull).join(', ') || '–') }),
+                    el('div', { 'class': 'ov-mail__to', text: 'An: ' + (message.archived ? (message.recipients || '–') : ((message.to || []).map(mailboxFull).join(', ') || '–')) }),
                     message.cc && message.cc.length ? el('div', { 'class': 'ov-mail__to', text: 'Cc: ' + message.cc.map(mailboxFull).join(', ') }) : null
                 ]),
                 el('div', { 'class': 'ov-mail__date', text: fmtDateTime(message.received) })
             ])
         ]);
         wrap.appendChild(head);
+
+        if (message.archived) {
+            wrap.appendChild(el('div', { 'class': 'ov-mail__meeting ov-mail__archive-note' }, [
+                el('span', { text: '📦 Archivierte Nachricht – aus dem Langzeitarchiv in Nextcloud gelesen (Integrität geprüft).' })
+            ]));
+        }
 
         if (state.folder === 'drafts') {
             var draftBar = el('div', { 'class': 'ov-mail__meeting' }, [el('span', { text: 'Entwurf – ' })]);

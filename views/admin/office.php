@@ -611,6 +611,64 @@ $ov = $orvantaValues;
             </div>
         </fieldset>
 
+        <fieldset class="fieldset">
+            <legend>Langzeitarchiv (alte E-Mails nach Nextcloud auslagern)</legend>
+            <p class="field__hint">
+                Überschreitet ein Postfach die Schwelle, verschiebt der Container <code>mail-archive</code>
+                E-Mails, die älter als das Mindestalter sind, in komprimierte, prüfsummengesicherte
+                Archivcontainer im Nextcloud-Bereich des Benutzers. Gelöscht wird auf dem Exchange erst,
+                nachdem der Archivinhalt zurückgelesen und verifiziert wurde (Copy → Verify → Commit → Delete).
+            </p>
+            <div class="field field--check">
+                <input type="checkbox" id="archive_enabled" name="archive_enabled" value="1" <?= ($ov['archive_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
+                <label for="archive_enabled">Automatische Archivierung aktivieren</label>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="archive_threshold">Archivierungsschwelle</label>
+                    <input type="number" id="archive_threshold" name="archive_threshold" min="1" max="10485760" step="1"
+                           value="<?= Html::e($ov['archive_threshold'] ?? '80') ?>" <?= $ovField('archive_threshold') ?>>
+                    <?= $ovFieldError('archive_threshold') ?>
+                </div>
+                <div class="field">
+                    <label for="archive_threshold_unit">Einheit der Schwelle</label>
+                    <select id="archive_threshold_unit" name="archive_threshold_unit">
+                        <?php foreach ($orvantaOptions['archive_units'] as $key => $label) { ?>
+                            <option value="<?= Html::e($key) ?>" <?= ($ov['archive_threshold_unit'] ?? 'percent') === $key ? 'selected' : '' ?>><?= Html::e($label) ?></option>
+                        <?php } ?>
+                    </select>
+                    <p class="field__hint">Prozent bezieht sich auf die Postfachgrenze des Exchange.</p>
+                </div>
+                <div class="field">
+                    <label for="archive_age_days">Mindestalter der Nachrichten (Tage)</label>
+                    <input type="number" id="archive_age_days" name="archive_age_days" min="1" max="3650" step="1"
+                           value="<?= Html::e($ov['archive_age_days'] ?? '60') ?>" <?= $ovField('archive_age_days') ?>>
+                    <?= $ovFieldError('archive_age_days') ?>
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="archive_folder">Archivordner in Nextcloud</label>
+                    <input type="text" id="archive_folder" name="archive_folder" maxlength="120"
+                           value="<?= Html::e($ov['archive_folder'] ?? 'Orvanta-Archiv') ?>" <?= $ovField('archive_folder') ?>>
+                    <?= $ovFieldError('archive_folder') ?>
+                </div>
+                <div class="field">
+                    <label for="archive_batch_size">Nachrichten je Verarbeitungsschritt</label>
+                    <input type="number" id="archive_batch_size" name="archive_batch_size" min="1" max="200" step="1"
+                           value="<?= Html::e($ov['archive_batch_size'] ?? '50') ?>" <?= $ovField('archive_batch_size') ?>>
+                    <?= $ovFieldError('archive_batch_size') ?>
+                </div>
+                <div class="field">
+                    <label for="archive_poll_interval">Prüfintervall des Workers (Sekunden)</label>
+                    <input type="number" id="archive_poll_interval" name="archive_poll_interval" min="60" max="86400" step="1"
+                           value="<?= Html::e($ov['archive_poll_interval'] ?? '3600') ?>" <?= $ovField('archive_poll_interval') ?>>
+                    <?= $ovFieldError('archive_poll_interval') ?>
+                </div>
+            </div>
+            <p class="field__hint">Komprimierung: gzip (Formatversion 1, fest).</p>
+        </fieldset>
+
         <div class="form__actions">
             <button type="submit" class="button button--primary">Orvanta-Einstellungen speichern</button>
         </div>

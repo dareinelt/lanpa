@@ -488,6 +488,7 @@ final class OfficeController extends AdminController
                 'identity' => OrvantaConfigService::IDENTITY_MODES,
                 'versions' => OrvantaConfigService::VERSIONS,
                 'folders' => OrvantaConfigService::DEFAULT_FOLDERS,
+                'archive_units' => OrvantaConfigService::ARCHIVE_THRESHOLD_UNITS,
             ],
             'previewConfig' => $previewConfig,
             'pageScript' => 'admin-office.js',

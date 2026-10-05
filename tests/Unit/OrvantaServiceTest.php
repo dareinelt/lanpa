@@ -202,6 +202,7 @@ Runner::test('Orvanta: Validierung der Admin-Einstellungen', function (): void {
             'exchange_ews_url' => 'ftp://falsch',
             'exchange_timeout' => '999',
             'cache_quota_mb' => '-1',
+            'mailbox_quota_mb' => '-5',
             'cache_folder' => 'Orv/anta',
             'reminder_lead_minutes' => '5000',
             'poll_interval' => '1',
@@ -209,7 +210,7 @@ Runner::test('Orvanta: Validierung der Admin-Einstellungen', function (): void {
         Assert::true(false, 'ValidationException erwartet.');
     } catch (ValidationException $exception) {
         $errors = $exception->errors();
-        foreach (['exchange_ews_url', 'exchange_timeout', 'cache_quota_mb', 'cache_folder', 'reminder_lead_minutes', 'poll_interval'] as $field) {
+        foreach (['exchange_ews_url', 'exchange_timeout', 'cache_quota_mb', 'mailbox_quota_mb', 'cache_folder', 'reminder_lead_minutes', 'poll_interval'] as $field) {
             Assert::true(isset($errors[$field]), 'Fehler erwartet für ' . $field);
         }
     }
@@ -505,15 +506,21 @@ Runner::test('Orvanta: Kalender, Kontakte, Aufgaben und Notizen liefern Elemente
     Assert::contains('Raum 1', $parts['transport']->last());
 });
 
-Runner::test('Orvanta: Postfachbelegung wird aus dem Stammordner gelesen (Quota in KB)', function (): void {
+Runner::test('Orvanta: Postfachbelegung summiert alle Ordner (Quota in KB)', function (): void {
     $parts = orvantaExchange();
     $usage = $parts['exchange']->mailboxUsage('demo@demo.local');
-    Assert::contains('DistinguishedFolderId Id="root"', $parts['transport']->last());
+    $first = $parts['transport']->requests[0]['xml'];
+    Assert::contains('DistinguishedFolderId Id="root"', $first);
+    Assert::contains('DistinguishedFolderId Id="recoverableitemsroot"', $first);
+    Assert::contains('PropertyTag="0x0E08"', $first);
+    Assert::contains('<m:FindFolder Traversal="Deep">', $parts['transport']->last());
     Assert::contains('PropertyTag="0x0E08"', $parts['transport']->last());
+    // Stammordner + alle Unterordner, ohne Suchordner und Wiederherstellbare Elemente
     Assert::same(1449551462, $usage['used']);
     Assert::same(2097152 * 1024, $usage['quota']);
     Assert::same(1992294 * 1024, $usage['warning']);
     Assert::same(2411724 * 1024, $usage['receive_limit']);
+    Assert::same(2097152 * 1024, $usage['limit']);
     Assert::same(67, $usage['percent']);
 
     // Ohne Grenzen: nur Groesse, Prozent 0
@@ -523,7 +530,18 @@ Runner::test('Orvanta: Postfachbelegung wird aus dem Stammordner gelesen (Quota 
     $usage = $parts['exchange']->mailboxUsage('demo@demo.local');
     Assert::same(4096, $usage['used']);
     Assert::same(0, $usage['quota']);
+    Assert::same(0, $usage['limit']);
     Assert::same(0, $usage['percent']);
+
+    // Ohne Grenzen von Exchange: Postfachgroesse aus dem Adminbereich
+    $parts = orvantaExchange(['mailbox_quota_mb' => '1']);
+    $parts['transport']->forced = ['status' => 200, 'error' => null, 'body' => '<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types">'
+        . '<m:GetFolderResponse><m:ResponseMessages><m:GetFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Folders><t:Folder><t:FolderId Id="r" ChangeKey="A"/>'
+        . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0xe08" PropertyType="Long"/><t:Value>262144</t:Value></t:ExtendedProperty></t:Folder></m:Folders></m:GetFolderResponseMessage></m:ResponseMessages></m:GetFolderResponse></s:Body></s:Envelope>'];
+    $usage = $parts['exchange']->mailboxUsage('demo@demo.local');
+    Assert::same(0, $usage['quota']);
+    Assert::same(1048576, $usage['limit']);
+    Assert::same(25, $usage['percent']);
 });
 
 Runner::test('Orvanta: EwsXml-Hilfsfunktionen', function (): void {

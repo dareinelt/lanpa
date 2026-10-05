@@ -36,6 +36,7 @@ final class OrvantaConfigService
         'exchange_timeout' => '20',
         'exchange_owa_url' => '',
         'cache_quota_mb' => '250',
+        'mailbox_quota_mb' => '0',
         'cache_folder' => 'Orvanta',
         'reminder_lead_minutes' => '15',
         'reminder_header' => '1',
@@ -117,6 +118,15 @@ final class OrvantaConfigService
     public function cacheQuotaBytes(): int
     {
         return max(0, (int) $this->get('cache_quota_mb')) * 1024 * 1024;
+    }
+
+    /**
+     * Postfachgroesse fuer die Anzeige der Belegung, wenn Exchange keine
+     * Grenze liefert (0 = ohne Grenze).
+     */
+    public function mailboxQuotaBytes(): int
+    {
+        return max(0, (int) $this->get('mailbox_quota_mb')) * 1024 * 1024;
     }
 
     public function cacheFolder(): string
@@ -287,6 +297,12 @@ final class OrvantaConfigService
             $errors['cache_quota_mb'] = 'Das Quota muss zwischen 0 (deaktiviert) und 1.048.576 MB liegen.';
         }
         $values['cache_quota_mb'] = (string) $quota;
+
+        $mailboxQuota = (int) $text('mailbox_quota_mb', 8);
+        if ($mailboxQuota < 0 || $mailboxQuota > 10485760) {
+            $errors['mailbox_quota_mb'] = 'Die Postfachgröße muss zwischen 0 (ohne Grenze) und 10.485.760 MB liegen.';
+        }
+        $values['mailbox_quota_mb'] = (string) $mailboxQuota;
 
         $folder = $text('cache_folder', 120);
         if (!\App\Services\Office\NextcloudFilesService::isSafeSegment($folder)) {

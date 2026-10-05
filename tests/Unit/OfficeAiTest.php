@@ -70,6 +70,11 @@ Runner::test('Lokale KI: Validierung der Admin-Eingaben', static function (): vo
     }
     Assert::true(OfficeAiService::isValidUrl('https://ki.example.local:8443/v1'));
 
+    Assert::true(OfficeAiService::isValidModel('/opt/llama.cpp/models/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf'), 'llama.cpp meldet Dateipfade als Modell-ID.');
+    foreach (['-model', '.hidden', 'bad model', ''] as $model) {
+        Assert::false(OfficeAiService::isValidModel($model), $model . ' muss abgelehnt werden.');
+    }
+
     $result = OfficeAiService::validate(['office_ai_url' => 'http://ki-server:11434/v1/', 'office_ai_timeout' => '5', 'office_ai_model' => 'bad model'] + OFFICE_AI_ACTIVE);
     Assert::true(isset($result['errors']['office_ai_timeout'], $result['errors']['office_ai_model']));
     Assert::false(isset($result['errors']['office_ai_url']));

@@ -266,7 +266,8 @@ final class OfficeAiService
 
     public static function isValidModel(string $model): bool
     {
-        return preg_match('#^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$#', $model) === 1;
+        // Fuehrender "/" erlaubt: llama.cpp meldet den Dateipfad des Modells als ID.
+        return preg_match('#^[A-Za-z0-9/][A-Za-z0-9._:/@+-]{0,199}$#', $model) === 1;
     }
 
     /**

@@ -645,7 +645,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaAiTest.php` | `RecordingAiTransport`; Verfügbarkeit ohne Konfiguration (keine Anfrage), `GET /models` mit Datei-Cache und Fingerabdruck (URL\|Modell), `improve()` (Anfrageaufbau, Kontext, Token, `max_tokens`), Verfeinern (Assistenten-Turn), Bearer-Schlüssel, Validierung 422, 503 ohne KI, 502 bei Timeout/500/401/ungültigem JSON/leeren `choices`, `stripMarkers()`, Zähler und pseudonyme Auswertung (keine SIDs), `OrvantaAiCharts` (Zeitraum, SVG ohne `style`, leere Daten) |
 | `tests/Unit/OrvantaSignatureTest.php` | Validierung (Pflichtfelder, Modus, Reihenfolge, Gruppen-Dedupe, Präfix-Leerzeichen), Speichern/Laden/Löschen, Zuordnung (Reihenfolge, inaktiv, Schreibweise), Darstellung (AD-Daten, Präfix + Durchwahl vs. komplette Rufnummer, Farben, Logo als `data:`-URI, Sanitizer-Durchlauf), Logo in Zeilenhöhe und gewählte Designfarben (`logoSize()`, `imageDimensions()` inkl. SVG), Logo-Pixelgröße = Anzeigegröße (`scaleImage()`), Fallbacks (ohne Logo/Telefonbuch/inaktiver Eintrag), `extension()`, `append()` (Dedupe, vor Zitat), `strip()` |
 | `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, Postfachbelegung (`mailboxUsage()`, Summe aller Ordner ohne Suchordner/Wiederherstellbare Elemente, Quota in KB, ohne Grenzen, AD-Grenzen, Ersatzgrenze `mailbox_quota_mb`, `LdapClient::mailboxQuotaFromEntries()`), `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen) |
-| `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung) |
+| `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
@@ -865,8 +865,8 @@ anschließend werden die Nachrichten aus Exchange gelöscht. Oberstes Prinzip:
 | `App\Services\Orvanta\MimeMessageParser` | Liest archiviertes MIME (Multipart, base64/QP, Zeichensätze, RFC 2047, Anhänge) und erzeugt den Suchtext-Auszug |
 | `OrvantaExchangeService::archiveCandidates()/messageMime()/messageIdentity()` | Einzige EWS-Operationen des Archivs (FindItem mit `IsLessThanOrEqualTo item:DateTimeReceived`, GetItem mit `IncludeMimeContent`, Identitätsabfrage `message:InternetMessageId`); Löschen über das vorhandene `delete(..., true)` (HardDelete) |
 | `scripts/orvanta_archive_worker.php` | CLI-Worker (`--once` für Einzellauf): iteriert alle registrierten Archive, ruft `maybeRun()` |
-| `docker/mail-archive/` | Container `mail-archive`: PHP-CLI + Python-Supervisor (`archive_supervisor.py`: Intervall `ARCHIVE_POLL_INTERVAL`, Signalbehandlung, Backoff 60 s–30 min) |
-| `OrvantaApiController` (`archiv/*`) + `public/index.php` | API: `GET /api/orvanta/archiv/status|ordner|mail|mail/detail|suche`; `status` registriert das Postfach bei aktiviertem Archiv |
+| `docker/mail-archive/` | Container `mail-archive`: PHP-CLI + Python-Supervisor (`archive_supervisor.py`: Intervall `ARCHIVE_POLL_INTERVAL`, Signalbehandlung, Backoff 60 s–30 min); läuft als `www-data` und erhält das Secret `office_jwt_secret` (`OFFICE_JWT_SECRET_FILE`) für den Nextcloud-Upload |
+| `OrvantaApiController` (`archiv/*`) + `public/index.php` | API: `GET /api/orvanta/archiv/status|ordner|mail|mail/detail|suche`; `archiv/status` (von der Oberfläche zyklisch abgefragt) und `status` registrieren das Postfach bei aktiviertem Archiv (`registerArchive()`) |
 | `public/assets/js/orvanta.js` / `orvanta.css` | Ordnergruppe „📦 Langzeitarchiv“, Archiv-Nachrichtenliste, Lesen inkl. Anhänge, Suche mischt Archivtreffer ein; Kennzeichnung per Klassen (kein Inline-Style) |
 
 ### 17.2 Archivformat (format_version 1)
@@ -921,8 +921,13 @@ Wiederaufnahme am Anfang jedes Laufs:
 - Ein bei der Löschung bereits verschwundenes Element (`ErrorItemNotFound`)
   gilt als gelöscht (sichere Richtung: das Archiv hat die Nachricht).
 - Sperren: höchstens ein `running`-Job je Archiv (`acquireJob()`,
-  transaktional); Heartbeat verlängert `locked_until`, abgelaufene Sperren
-  (Absturz) werden übernommen und als `failed` geschlossen.
+  transaktional; ein `UPDATE` auf der `orvanta_archives`-Zeile nimmt vorab
+  die Zeilen- bzw. Schreibsperre, damit zwei Worker nicht gleichzeitig
+  prüfen und einfügen); Heartbeat verlängert `locked_until`, abgelaufene
+  Sperren (Absturz) werden übernommen und als `failed` geschlossen.
+- Ohne MIME-Quelltext (`messageMime()` liefert leer) wird die Nachricht als
+  `failed` vermerkt und bleibt in Exchange – es gibt keinen verkürzten
+  JSON-Ersatz (`kind = json` ist nur noch für Altbestände reserviert).
 
 Damit ist in jedem Absturzmoment eine Nachricht entweder unangetastet in
 Exchange (kein Commit) oder nachweislich verifiziert im Archiv (Commit, dann
@@ -930,7 +935,10 @@ erst Löschung – die bei Fehlschlag wiederholt wird).
 
 ### 17.5 Lauf, Paginierung und Worker
 
-`run()` iteriert alle Mail-Ordner; je Ordner `archiveCandidates()` mit
+`run()` legt zuerst die Ordnerhierarchie an (`ensureFolderTree()`: Eltern
+vor Kindern über `parent` aus `folders()`, `path` als `Eltern/Kind`;
+unbekannte Eltern wie die Postfachwurzel ergeben Wurzelordner) und iteriert
+dann alle Mail-Ordner; je Ordner `archiveCandidates()` mit
 Stichtag `now − archive_age_days`. Gelöschte Nachrichten rücken nach, daher
 erhöht sich der Offset nur um Elemente, die in Exchange verbleiben; ein
 `seen`-Set verhindert Endlosschleifen. Der Worker (`mail-archive`-Container)

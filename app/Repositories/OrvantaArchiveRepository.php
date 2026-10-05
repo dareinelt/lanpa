@@ -356,6 +356,11 @@ final class OrvantaArchiveRepository extends Repository
 
         $this->pdo->beginTransaction();
         try {
+            // Zeilensperre auf dem Archiv: serialisiert konkurrierende Worker
+            // (MySQL: X-Lock auf der Zeile, SQLite: Schreibsperre der Datenbank),
+            // damit Pruefung und Einfuegen nicht verschraenkt ablaufen koennen.
+            $this->pdo->prepare('UPDATE orvanta_archives SET updated_at = updated_at WHERE id = :id')
+                ->execute(['id' => $archiveId]);
             $check = $this->pdo->prepare('SELECT COUNT(*) FROM orvanta_archive_jobs WHERE archive_id = :archive AND status = \'running\' AND locked_until >= :now');
             $check->execute(['archive' => $archiveId, 'now' => $now]);
             if ((int) $check->fetchColumn() > 0) {

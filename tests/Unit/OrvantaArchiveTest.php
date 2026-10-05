@@ -583,3 +583,87 @@ Runner::test('Archiv: Massentest - 1000 Nachrichten verlustfrei archiviert und v
     $parts['storage']->corruptStored('chunk-');
     Assert::false($parts['service']->verify('dandre')['ok']);
 });
+
+/** Dekorierender Transport: veraendert die Antwort eines inneren Transports. */
+final class TamperingArchiveTransport implements ExchangeTransportInterface
+{
+    /** @param Closure(string, string): string $tamper erhaelt Anfrage-XML und Antwort-Body */
+    public function __construct(private ExchangeTransportInterface $inner, private Closure $tamper)
+    {
+    }
+
+    public function post(string $url, string $xml, array $options): array
+    {
+        $response = $this->inner->post($url, $xml, $options);
+        $response['body'] = ($this->tamper)($xml, (string) $response['body']);
+
+        return $response;
+    }
+}
+
+Runner::test('Archiv: ohne MIME-Quelltext wird nichts abgelegt und nichts gelöscht', function (): void {
+    $bulk = new BulkArchiveTransport(3);
+    $transport = new TamperingArchiveTransport($bulk, static fn (string $xml, string $body): string => str_contains($xml, '<m:GetItem>')
+        ? (string) preg_replace('#<t:MimeContent[^>]*>.*?</t:MimeContent>#s', '', $body)
+        : $body);
+    $parts = orvantaArchiveSetup([], $transport);
+    $archive = $parts['service']->registerMailbox('dandre', 'ich@example.org');
+    $result = $parts['service']->run($archive);
+    Assert::true($result['ran']);
+    Assert::same(3, $result['failed'], 'Jede Nachricht ohne MIME muss als fehlgeschlagen zählen.');
+    Assert::same(0, $result['deleted']);
+    Assert::same(0, $bulk->deleteCalls, 'Ohne vollständigen Inhalt darf in Exchange nichts gelöscht werden.');
+    Assert::same(3, count($bulk->remaining));
+    Assert::same([], $parts['storage']->chunkFiles(), 'Kein Container ohne echte Nutzlast.');
+    Assert::same(3, (int) $parts['pdo']->query('SELECT COUNT(*) FROM orvanta_archive_items WHERE status = \'failed\'')->fetchColumn());
+    Assert::same(0, (int) $parts['pdo']->query('SELECT COUNT(*) FROM orvanta_archive_items WHERE kind = \'json\'')->fetchColumn(), 'Kein JSON-Ersatz ohne Body und Anhänge.');
+    Assert::same(0, (int) $parts['service']->status('dandre')['message_count']);
+});
+
+Runner::test('Archiv: Ordnerhierarchie aus Exchange bleibt erhalten (parent_id und Pfad)', function (): void {
+    $bulk = new BulkArchiveTransport(2);
+    $transport = new TamperingArchiveTransport($bulk, static function (string $xml, string $body): string {
+        if (str_contains($xml, '<m:FindFolder')) {
+            // Posteingang > Projekte > Rechnungen; die Nachrichten liegen in „Rechnungen“ (bulk-inbox).
+            return (string) preg_replace('#<t:Folders>.*</t:Folders>#s', '<t:Folders>'
+                . '<t:Folder><t:FolderId Id="bulk-inbox" ChangeKey="CK"/><t:ParentFolderId Id="bulk-projekte"/><t:FolderClass>IPF.Note</t:FolderClass><t:DisplayName>Rechnungen</t:DisplayName><t:TotalCount>2</t:TotalCount><t:UnreadCount>0</t:UnreadCount></t:Folder>'
+                . '<t:Folder><t:FolderId Id="bulk-top" ChangeKey="CK"/><t:ParentFolderId Id="root"/><t:FolderClass>IPF.Note</t:FolderClass><t:DisplayName>Posteingang</t:DisplayName><t:TotalCount>0</t:TotalCount><t:UnreadCount>0</t:UnreadCount></t:Folder>'
+                . '<t:Folder><t:FolderId Id="bulk-projekte" ChangeKey="CK"/><t:ParentFolderId Id="bulk-top"/><t:FolderClass>IPF.Note</t:FolderClass><t:DisplayName>Projekte</t:DisplayName><t:TotalCount>0</t:TotalCount><t:UnreadCount>0</t:UnreadCount></t:Folder>'
+                . '</t:Folders>', $body);
+        }
+        if (str_contains($xml, '<m:FindItem') && !str_contains($xml, 'Id="bulk-inbox"')) {
+            return (string) preg_replace('#<t:Items>.*</t:Items>#s', '<t:Items/>', (string) preg_replace('/IncludesLastItemInRange="false"/', 'IncludesLastItemInRange="true"', $body));
+        }
+
+        return $body;
+    });
+    $parts = orvantaArchiveSetup([], $transport);
+    $archive = $parts['service']->registerMailbox('dandre', 'ich@example.org');
+    $result = $parts['service']->run($archive);
+    Assert::same(2, $result['processed']);
+
+    $rows = $parts['pdo']->query('SELECT exchange_folder_id, parent_id, path FROM orvanta_archive_folders ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+    $byExchangeId = array_column($rows, null, 'exchange_folder_id');
+    Assert::same('Posteingang', $byExchangeId['bulk-top']['path']);
+    Assert::null($byExchangeId['bulk-top']['parent_id']);
+    Assert::same('Posteingang/Projekte', $byExchangeId['bulk-projekte']['path']);
+    Assert::same('Posteingang/Projekte/Rechnungen', $byExchangeId['bulk-inbox']['path']);
+    $ids = $parts['pdo']->query('SELECT exchange_folder_id, id FROM orvanta_archive_folders')->fetchAll(PDO::FETCH_KEY_PAIR);
+    Assert::same((int) $ids['bulk-projekte'], (int) $byExchangeId['bulk-inbox']['parent_id']);
+    Assert::same((int) $ids['bulk-top'], (int) $byExchangeId['bulk-projekte']['parent_id']);
+});
+
+Runner::test('Archiv: Demo-Nachrichten mit Anhängen werden samt Anhängen archiviert', function (): void {
+    $parts = orvantaArchiveSetup();
+    $archive = $parts['service']->registerMailbox('dandre', 'ich@example.org');
+    $parts['service']->run($archive);
+    $itemId = (int) $parts['pdo']->query('SELECT id FROM orvanta_archive_items WHERE has_attachments = 1 ORDER BY id LIMIT 1')->fetchColumn();
+    Assert::true($itemId > 0, 'Mindestens eine archivierte Demo-Nachricht mit Anhang erwartet.');
+    $message = $parts['service']->message('dandre', $itemId);
+    $names = array_column($message['attachments'], 'name');
+    Assert::contains('Lageplan.pdf', implode(',', $names));
+    $pdfIndex = (int) array_search('Lageplan.pdf', $names, true);
+    $attachment = $parts['service']->attachment('dandre', $itemId, $pdfIndex);
+    Assert::true(str_starts_with($attachment['content'], '%PDF-'), 'Anhang muss byteidentisch aus dem Container kommen.');
+    Assert::contains('Lageplan.pdf', (string) $parts['pdo']->query('SELECT attachment_names FROM orvanta_archive_items WHERE id = ' . $itemId)->fetchColumn());
+});

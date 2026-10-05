@@ -158,8 +158,13 @@ services:
     environment:
       CONTAINER_ROLE: mail-archive
       ARCHIVE_POLL_INTERVAL: ${ARCHIVE_POLL_INTERVAL:-3600}
+      # Nextcloud-Upload laeuft ueber die signierte Intranet-Integration und
+      # braucht dasselbe Euro-Office-Secret wie der app-Container.
+      OFFICE_JWT_SECRET_FILE: /run/secrets/office_jwt_secret
     env_file:
       - .env
+    secrets:
+      - office_jwt_secret
     volumes:
       - app_storage:/var/www/html/storage
     networks:

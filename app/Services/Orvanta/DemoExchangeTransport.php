@@ -347,8 +347,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     {
         $date = gmdate('D, d M Y H:i:s', (int) $message['received'] - 60) . ' +0000';
         $host = substr(strrchr($message['from'][1], '@') ?: '@example.org', 1);
-
-        return "Received: from mail.example.org (mail.example.org [192.0.2.10])\r\n\tby exchange.example.org with ESMTPS id " . substr(sha1($message['id']), 0, 12) . ";\r\n\t" . $date . "\r\n"
+        $headers = "Received: from mail.example.org (mail.example.org [192.0.2.10])\r\n\tby exchange.example.org with ESMTPS id " . substr(sha1($message['id']), 0, 12) . ";\r\n\t" . $date . "\r\n"
             . 'Received: from ' . $host . ' ([198.51.100.7]) by mail.example.org with ESMTP; ' . $date . "\r\n"
             . 'Authentication-Results: exchange.example.org; spf=pass smtp.mailfrom=' . $host . "; dkim=pass; dmarc=pass\r\n"
             . 'From: "' . $message['from'][0] . '" <' . $message['from'][1] . ">\r\n"
@@ -356,8 +355,53 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             . 'Subject: =?UTF-8?B?' . base64_encode($message['subject']) . "?=\r\n"
             . 'Date: ' . $date . "\r\nMessage-ID: <" . $message['id'] . '@' . $host . ">\r\n"
             . 'X-Priority: ' . (($message['importance'] ?? 'Normal') === 'High' ? '1 (Highest)' : '3 (Normal)') . "\r\n"
-            . "X-Mailer: Orvanta Demo\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: 8bit\r\n\r\n"
-            . $this->bodyFor($message) . "\r\n";
+            . "X-Mailer: Orvanta Demo\r\nMIME-Version: 1.0\r\n";
+        $html = "Content-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: 8bit\r\n\r\n" . $this->bodyFor($message) . "\r\n";
+        if (empty($message['att'])) {
+            return $headers . $html;
+        }
+
+        // Mit Anhaengen: multipart/mixed wie bei echten Exchange-MimeContents,
+        // damit Archivierung und Anhangsliste den vollstaendigen Pfad durchlaufen.
+        $boundary = '----=_Orvanta_' . substr(sha1('mime' . $message['id']), 0, 16);
+        $mime = $headers . 'Content-Type: multipart/mixed; boundary="' . $boundary . "\"\r\n\r\n--" . $boundary . "\r\n" . $html;
+        foreach (['att-1', 'att-2', 'att-3', 'att-4'] as $suffix) {
+            [$name, $type, $content, $inline] = $this->attachmentData($suffix);
+            $mime .= '--' . $boundary . "\r\nContent-Type: " . $type . '; name="' . $name . "\"\r\nContent-Transfer-Encoding: base64\r\n"
+                . 'Content-Disposition: ' . ($inline ? 'inline' : 'attachment') . '; filename="' . $name . "\"\r\n"
+                . ($inline ? "Content-ID: <orvanta-logo@demo>\r\n" : '')
+                . "\r\n" . chunk_split(base64_encode($content), 76, "\r\n");
+        }
+
+        return $mime . '--' . $boundary . "--\r\n";
+    }
+
+    /**
+     * Name, Typ, Inhalt und Inline-Kennzeichen eines Demo-Anhangs.
+     *
+     * @return array{0:string,1:string,2:string,3:bool}
+     */
+    private function attachmentData(string $suffix): array
+    {
+        $name = match ($suffix) {
+            'att-1' => 'Protokoll_Dienstbesprechung.docx',
+            'att-2' => 'Massnahmenliste.xlsx',
+            'att-4' => 'orvanta-logo.png',
+            default => 'Lageplan.pdf',
+        };
+        $type = match ($suffix) {
+            'att-1' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'att-2' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'att-4' => 'image/png',
+            default => 'application/pdf',
+        };
+        $content = match (true) {
+            $type === 'image/png' => (string) @file_get_contents(dirname(__DIR__, 3) . '/public/assets/images/orvanta-logo.png'),
+            str_ends_with($name, '.pdf') => "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n4 0 obj<</Length 70>>stream\nBT /F1 24 Tf 72 760 Td (Orvanta Demo - Lageplan) Tj ET\nendstream\nendobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
+            default => 'Orvanta-Demoanhang ' . $name,
+        };
+
+        return [$name, $type, $content, $suffix === 'att-4'];
     }
 
     private function getItem(string $xml): string
@@ -402,23 +446,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     {
         preg_match('/<t:AttachmentId Id="([^"]+)"/', $xml, $m);
         $id = html_entity_decode($m[1] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
-        $name = match (substr($id, -5)) {
-            'att-1' => 'Protokoll_Dienstbesprechung.docx',
-            'att-2' => 'Massnahmenliste.xlsx',
-            'att-4' => 'orvanta-logo.png',
-            default => 'Lageplan.pdf',
-        };
-        $type = match (substr($id, -5)) {
-            'att-1' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'att-2' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'att-4' => 'image/png',
-            default => 'application/pdf',
-        };
-        $content = match (true) {
-            $type === 'image/png' => (string) @file_get_contents(dirname(__DIR__, 3) . '/public/assets/images/orvanta-logo.png'),
-            str_ends_with($name, '.pdf') => "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n4 0 obj<</Length 70>>stream\nBT /F1 24 Tf 72 760 Td (Orvanta Demo - Lageplan) Tj ET\nendstream\nendobj\n5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
-            default => 'Orvanta-Demoanhang ' . $name,
-        };
+        [$name, $type, $content] = $this->attachmentData(substr($id, -5));
 
         return $this->envelope('<m:GetAttachmentResponse><m:ResponseMessages><m:GetAttachmentResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Attachments><t:FileAttachment><t:AttachmentId Id="' . EwsXml::escape($id) . '"/><t:Name>' . $name . '</t:Name><t:ContentType>' . $type . '</t:ContentType><t:Content>' . base64_encode($content) . '</t:Content></t:FileAttachment></m:Attachments></m:GetAttachmentResponseMessage></m:ResponseMessages></m:GetAttachmentResponse>');
     }

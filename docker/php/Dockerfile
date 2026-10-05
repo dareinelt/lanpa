@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 FROM php:8.5-apache
 
-# Systempakete fuer die benoetigten PHP-Erweiterungen (pdo_mysql, ldap, zip).
+# Systempakete fuer die benoetigten PHP-Erweiterungen (pdo_mysql, ldap, zip, gd).
+# gd skaliert das Logo der E-Mail-Signatur auf die Zeilenhoehe.
 # OPcache ist ab PHP 8.5 fest eingebaut und wird nicht mehr separat installiert.
 RUN set -eux; \
     apt-get update; \
@@ -10,10 +11,14 @@ RUN set -eux; \
         libldap2-dev \
         libsasl2-dev \
         libzip-dev \
+        libpng-dev \
+        libjpeg62-turbo-dev \
+        libwebp-dev \
         default-mysql-client \
     ; \
     docker-php-ext-configure ldap --with-ldap-sasl; \
-    docker-php-ext-install -j"$(nproc)" pdo_mysql ldap zip; \
+    docker-php-ext-configure gd --with-jpeg --with-webp; \
+    docker-php-ext-install -j"$(nproc)" pdo_mysql ldap zip gd; \
     apt-get purge -y --auto-remove libldap2-dev libsasl2-dev; \
     rm -rf /var/lib/apt/lists/*
 

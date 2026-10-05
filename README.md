@@ -123,7 +123,7 @@ installieren, nicht starten).
 
 ## 3. Installation ohne Docker
 
-1. PHP 8.5 (mindestens 8.4) mit den Erweiterungen `pdo_mysql`, `ldap`, `mbstring`, `json`, `openssl`, `zip` bereitstellen.
+1. PHP 8.5 (mindestens 8.4) mit den Erweiterungen `pdo_mysql`, `ldap`, `mbstring`, `json`, `openssl`, `zip`, `gd` bereitstellen.
 2. Repository in das Zielverzeichnis kopieren, **DocumentRoot auf `public/`** setzen (`mod_rewrite` aktivieren).
 3. `.env.example` nach `.env` kopieren und ausfüllen.
 4. Datenbank (MySQL 9.7 LTS) und Benutzer anlegen (utf8mb4).

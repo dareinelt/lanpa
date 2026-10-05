@@ -241,6 +241,42 @@ Runner::test('Signaturen: Logo in Hoehe der Textzeilen, waehlbare Designfarben',
     Assert::same([0, 0], OrvantaSignatureService::imageDimensions('PNGDATA', 'image/png'));
 });
 
+Runner::test('Signaturen: Logo wird selbst auf die Zielgroesse verkleinert', function (): void {
+    // SVG: width/height des Wurzelelements, viewBox aus den alten Massen.
+    $svg = OrvantaSignatureService::scaleImage('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500"><rect/></svg>', 'image/svg+xml', 108, 54);
+    Assert::same('image/svg+xml', $svg['mime']);
+    Assert::contains('<svg width="108" height="54" viewBox="0 0 1000 500" xmlns="http://www.w3.org/2000/svg">', $svg['contents']);
+    Assert::same([108, 54], OrvantaSignatureService::imageDimensions($svg['contents'], 'image/svg+xml'));
+    $svg = OrvantaSignatureService::scaleImage('<svg viewBox="0 0 300 150" width=\'100%\'></svg>', 'image/svg+xml', 72, 36);
+    Assert::same('<svg width="72" height="36" viewBox="0 0 300 150"></svg>', $svg['contents']);
+
+    // Unbekannte Masse oder unlesbare Bilder bleiben unveraendert.
+    Assert::same(['contents' => 'PNGDATA', 'mime' => 'image/png'], OrvantaSignatureService::scaleImage('PNGDATA', 'image/png', 0, 36));
+    Assert::same(['contents' => 'PNGDATA', 'mime' => 'image/png'], OrvantaSignatureService::scaleImage('PNGDATA', 'image/png', 72, 36));
+
+    if (!function_exists('imagecreatetruecolor')) {
+        return;
+    }
+    $image = imagecreatetruecolor(1000, 500);
+    ob_start();
+    imagejpeg($image);
+    $jpeg = (string) ob_get_clean();
+    $logo = tempnam(sys_get_temp_dir(), 'ovlogo');
+    file_put_contents($logo, $jpeg);
+    try {
+        $service = signatureSetup([], $logo, 'image/jpeg')['service'];
+        $service->save(null, signatureInput());
+        $html = $service->forUser(['id' => 7, 'groups' => ['IT']])['html'];
+        $height = 3 * OrvantaSignatureService::LINE_HEIGHT;
+        Assert::true(preg_match('~src="data:image/png;base64,([^"]+)"~', $html, $match) === 1, 'Skaliertes Logo als PNG.');
+        $size = getimagesizefromstring((string) base64_decode($match[1], true));
+        Assert::same([$height * 2, $height], [$size[0], $size[1]], 'Pixelgroesse entspricht der Anzeigegroesse.');
+        Assert::contains('width="' . ($height * 2) . '" height="' . $height . '"', $html);
+    } finally {
+        @unlink($logo);
+    }
+});
+
 Runner::test('Signaturen: komplette Rufnummer aus dem AD, ohne Logo, fehlende Felder', function (): void {
     $service = signatureSetup()['service'];
     $service->save(null, signatureInput(['phone_mode' => 'full', 'phone_prefix' => '', 'greeting' => '', 'street' => '']));

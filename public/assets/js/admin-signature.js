@@ -20,7 +20,7 @@
 
         function refresh() {
             var params = new URLSearchParams();
-            ['greeting', 'street', 'postal_city', 'phone_prefix'].forEach(function (name) {
+            ['greeting', 'street', 'postal_city', 'phone_prefix', 'text_color', 'separator_color'].forEach(function (name) {
                 var field = form.elements[name];
                 params.set(name, field ? field.value : '');
             });

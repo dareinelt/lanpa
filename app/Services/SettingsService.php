@@ -16,6 +16,17 @@ use App\Support\Validator;
  */
 final class SettingsService
 {
+    /** Designfarben (Schluessel => Bezeichnung im Adminbereich). */
+    public const THEME_COLORS = [
+        'color_primary' => 'Primärfarbe',
+        'color_secondary' => 'Sekundärfarbe',
+        'color_accent' => 'Akzentfarbe',
+        'color_background' => 'Hintergrundfarbe (hell)',
+        'color_text' => 'Textfarbe (hell)',
+        'color_background_dark' => 'Hintergrundfarbe (dunkel)',
+        'color_text_dark' => 'Textfarbe (dunkel)',
+    ];
+
     /** @var array<string,string>|null */
     private ?array $cache = null;
 
@@ -181,18 +192,8 @@ final class SettingsService
     public function theme(): array
     {
         $defaults = $this->defaults();
-        $keys = [
-            'color_primary',
-            'color_secondary',
-            'color_accent',
-            'color_background',
-            'color_text',
-            'color_background_dark',
-            'color_text_dark',
-        ];
-
         $theme = [];
-        foreach ($keys as $key) {
+        foreach (array_keys(self::THEME_COLORS) as $key) {
             $value = Validator::normalizeHexColor($this->get($key, $defaults[$key]));
             $theme[$key] = $value ?? $defaults[$key];
         }

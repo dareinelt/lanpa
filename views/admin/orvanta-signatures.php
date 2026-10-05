@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Security\Csrf;
 use App\Support\Html;
 
-/** @var list<array{id:int,name:string,greeting:string,street:string,postal_city:string,phone_mode:string,phone_prefix:string,groups:list<string>,sort_order:int,active:bool}> $signatures */
+/** @var list<array{id:int,name:string,greeting:string,street:string,postal_city:string,phone_mode:string,phone_prefix:string,text_color:string,separator_color:string,groups:list<string>,sort_order:int,active:bool}> $signatures */
 /** @var bool $hasLogo */
-/** @var string $textColor */
-/** @var string $accentColor */
+/** @var array<string,string> $theme */
+/** @var array<string,string> $colorLabels */
 /** @var bool $orvantaEnabled */
 ?>
 <div class="toolbar">
@@ -25,9 +25,9 @@ use App\Support\Html;
     hinterlegten <strong>AD-Gruppen</strong>; bei mehreren Treffern gilt die Vorlage mit der kleinsten Reihenfolge.
 </p>
 <p class="card__hint">
-    Schriftfarbe (<code><?= Html::e($textColor) ?></code>, „Textfarbe (hell)“) und Farbe der Trennzeichen
-    (<code><?= Html::e($accentColor) ?></code>, „Akzentfarbe“) kommen aus den <a href="/admin/design">Designeinstellungen</a>;
-    links neben dem Text wird fest das dort hochgeladene Logo eingefügt
+    Schriftfarbe und Farbe der Trennzeichen werden je Vorlage aus den Farben der <a href="/admin/design">Designeinstellungen</a>
+    gewählt (Standard: „Textfarbe (hell)“ und „Akzentfarbe“); links neben dem Text wird das dort hochgeladene Logo
+    in der Höhe der Textzeilen eingefügt
     <?php if ($hasLogo) { ?>(Logo vorhanden).<?php } else { ?>– <strong>derzeit ist kein Logo hochgeladen</strong>, die Signatur erscheint ohne Bild.<?php } ?>
 </p>
 <?php if (!$orvantaEnabled) { ?>
@@ -47,6 +47,7 @@ use App\Support\Html;
                         <th scope="col">Name</th>
                         <th scope="col">Adresse</th>
                         <th scope="col">Rufnummer</th>
+                        <th scope="col">Farben</th>
                         <th scope="col">AD-Gruppen</th>
                         <th scope="col">Status</th>
                         <th scope="col"><span class="visually-hidden">Aktionen</span></th>
@@ -63,6 +64,12 @@ use App\Support\Html;
                                 Komplett aus dem AD
                             <?php } else { ?>
                                 <code><?= Html::e($signature['phone_prefix']) ?></code> + Durchwahl aus dem AD
+                            <?php } ?>
+                        </td>
+                        <td>
+                            <?php foreach (['text_color' => 'Schrift', 'separator_color' => 'Trennzeichen'] as $colorField => $colorLabel) { ?>
+                                <?php $colorKey = $signature[$colorField]; ?>
+                                <?= Html::e($colorLabel . ': ' . ($colorLabels[$colorKey] ?? $colorKey)) ?> <code><?= Html::e($theme[$colorKey] ?? '') ?></code><br>
                             <?php } ?>
                         </td>
                         <td>

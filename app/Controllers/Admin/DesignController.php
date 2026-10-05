@@ -10,19 +10,12 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Exceptions\ValidationException;
 use App\Security\Session;
+use App\Services\SettingsService;
 use App\Support\Validator;
 
 final class DesignController extends AdminController
 {
-    private const COLOR_KEYS = [
-        'color_primary' => 'Primärfarbe',
-        'color_secondary' => 'Sekundärfarbe',
-        'color_accent' => 'Akzentfarbe',
-        'color_background' => 'Hintergrundfarbe (hell)',
-        'color_text' => 'Textfarbe (hell)',
-        'color_background_dark' => 'Hintergrundfarbe (dunkel)',
-        'color_text_dark' => 'Textfarbe (dunkel)',
-    ];
+    private const COLOR_KEYS = SettingsService::THEME_COLORS;
 
     public function index(Request $request): Response
     {

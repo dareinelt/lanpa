@@ -311,7 +311,13 @@ final class OrvantaExchangeService
      */
     public function markFolderRead(string $user, string $folder): void
     {
-        $this->call('<m:MarkAllItemsAsRead ReadFlag="true" SuppressReadReceipts="true"><m:FolderIds>' . EwsXml::folderId($folder) . '</m:FolderIds></m:MarkAllItemsAsRead>', $user);
+        // ReadFlag/SuppressReadReceipts sind laut EWS-Schema Kindelemente, keine
+        // Attribute; als Attribute ignoriert Exchange sie und markiert als ungelesen.
+        $this->call(
+            '<m:MarkAllItemsAsRead><m:ReadFlag>true</m:ReadFlag><m:SuppressReadReceipts>true</m:SuppressReadReceipts>'
+            . '<m:FolderIds>' . EwsXml::folderId($folder) . '</m:FolderIds></m:MarkAllItemsAsRead>',
+            $user
+        );
     }
 
     /**

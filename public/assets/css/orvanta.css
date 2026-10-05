@@ -407,6 +407,8 @@
 /* Ordner */
 .ov-folder__icon { width: 1.2rem; text-align: center; flex: none; opacity: .8; }
 .ov-folder--active { background: var(--ov-accent-soft); border-color: var(--ov-accent); color: var(--ov-accent); font-weight: 700; }
+.ov-folder--drop, .ov-folder--active.ov-folder--drop { background: var(--ov-accent-soft); border: 1px dashed var(--ov-accent); color: var(--ov-accent); }
+.ov-item--dragging { opacity: .5; }
 .ov-folder--event { align-items: flex-start; flex-direction: column; gap: .05rem; }
 .ov-folder--event .ov-folder__name { font-size: .82rem; white-space: normal; }
 .ov-folder__count--muted { color: var(--ov-muted); font-weight: 500; }

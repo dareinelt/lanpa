@@ -692,6 +692,12 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
   Browser-Menü. Rechtsklick auf eine nicht ausgewählte Zeile wählt sie aus wie
   ein Linksklick; Antworten/Weiterleiten laden die Nachricht zuvor vollständig
   (`withFullMessage()`).
+- Drag&Drop: Mail-Zeilen sind `draggable`; `dragstart` legt die gezogenen IDs
+  in `state.dragIds` ab (ist die Zeile angehakt, alle angehakten Zeilen, sonst
+  nur diese). Ordner im Ordnerbaum (`bindFolderDrop()`) nehmen die Ablage an –
+  außer dem gerade geöffneten Ordner – und verschieben über
+  `mailAction('move', ids, ordner)` (`POST /api/orvanta/mail/aktion`,
+  EWS `MoveItem`). CSS: `.ov-item--dragging`, `.ov-folder--drop`.
 - „Einfügen“ nutzt `navigator.clipboard.readText()` (nur sicherer Kontext,
   Browser kann nachfragen oder ablehnen → Hinweis-Toast auf Strg+V);
   Ausschneiden/Kopieren/Rückgängig laufen über `document.execCommand`. Die

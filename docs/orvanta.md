@@ -154,6 +154,10 @@ flowchart LR
 | `orvanta_cache_items` | Bestand des Zwischenspeichers im Nextcloud-Bereich des Benutzers | `user_uid`, `kind` (attachment/message), `item_hash`, `name`, `path`, `content_type`, `size_bytes` |
 | `orvanta_ai_usage` | Zähler der KI-Unterstützung (Migration 034) – nur Metadaten, nie Texte | `user_uid`, `kind` (mail_compose/mail_reply/mail_forward/event/reminder), `model`, `input_tokens`, `output_tokens`, `created_at` |
 | `orvanta_signatures` | Signaturvorlagen (Migrationen 035–037) | `name`, `greeting`, `name_format` (first_last/last_first), `street`, `postal_city`, `phone_mode` (prefix/full), `phone_prefix`, `text_color`, `separator_color` (Schlüssel einer Designfarbe), `ad_groups` (JSON-Liste), `sort_order`, `active` |
+| `orvanta_archives` | Langzeitarchiv je Benutzer (Migration 038) | `user_uid` (unique), `mailbox`, `storage_folder`, `format_version`, `status` (active/error), Zähler, `last_successful_run`, `last_notice` |
+| `orvanta_archive_folders` | Abbild der Exchange-Ordner im Archiv | `archive_id` + `folder_hash` (unique), `exchange_folder_id`, `name`, `path` |
+| `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (mime/json), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
+| `orvanta_archive_jobs` | Archivierungsläufe inkl. Sperre (höchstens ein Lauf je Archiv) | `archive_id`, `status` (running/completed/failed), `locked_until`, Zähler, `last_error` |
 
 ### Routen
 
@@ -169,7 +173,9 @@ flowchart LR
   `kontakte/loeschen`, `aufgaben`, `aufgaben/aufgabe` (GET/POST),
   `aufgaben/loeschen`, `notizen`, `notizen/notiz` (GET/POST),
   `notizen/loeschen`, `erinnerungen`, `erinnerungen/erledigt`,
-  `erinnerungen/spaeter`, `ki/verbessern` (POST, KI-Unterstützung).
+  `erinnerungen/spaeter`, `ki/verbessern` (POST, KI-Unterstützung),
+  Langzeitarchiv (alle GET): `archiv/status`, `archiv/ordner`, `archiv/mail`,
+  `archiv/mail/detail`, `archiv/suche`.
 - Admin (`$requireAdmin`): `POST /admin/office/orvanta`,
   `POST /admin/office/orvanta/pruefen`; Signaturvorlagen
   `GET /admin/office/signaturen`, `GET|POST /admin/office/signaturen/vorlage`,
@@ -236,6 +242,12 @@ genannte primäre Adresse, wiederholt die Anfrage und merkt sich die Zuordnung
 | `reminder_header` | Fällige Erinnerungen auch in den Mitteilungen der Kopfzeile | an |
 | `default_folder` | Startansicht (`inbox`, `calendar`, …) | `inbox` |
 | `poll_interval` | Abfrageintervall der App in Sekunden | 60 |
+| `archive_enabled` | Langzeitarchiv aktivieren (siehe Abschnitt 7a) | aus |
+| `archive_threshold`, `archive_threshold_unit` | Auslöse-Schwelle der Postfachbelegung (`percent` der Postfachgrenze oder `mb` absolut) | 80 / `percent` |
+| `archive_age_days` | Mindestalter in Tagen – nur ältere Nachrichten werden archiviert (1–3650) | 60 |
+| `archive_folder` | Ordner im Nextcloud-Bereich des Benutzers für die Archivcontainer | `Orvanta-Archiv` |
+| `archive_batch_size` | Nachrichten je Verarbeitungsschritt (1–200) | 50 |
+| `archive_poll_interval` | Prüfintervall des Archiv-Workers in Sekunden (60–86400) | 3600 |
 
 Der **Verbindungstest** ruft `GetFolder` auf dem Posteingang auf – optional im
 Namen eines angegebenen Postfachs – und meldet Version, Dauer und Fehlertext.
@@ -450,6 +462,49 @@ Screenshots aller Schritte: [docs/assets/orvanta-ai/README.md](assets/orvanta-ai
 
 ---
 
+## 7a. Langzeitarchiv
+
+Das Langzeitarchiv verlagert alte E-Mails (Standard: älter als 60 Tage) aus
+dem Exchange-Postfach in komprimierte, integritätsgesicherte Container im
+Nextcloud-Bereich des jeweiligen Benutzers und löscht sie erst danach aus
+Exchange. Leitprinzip: **Niemals Datenverlust** – gelöscht wird ausschließlich,
+was nachweislich hochgeladen, zurückgelesen und per Prüfsumme verifiziert
+wurde (Ablauf Kopieren → Verifizieren → Festschreiben → Löschen, Details in
+`docs/orvanta-referenz.md`, Abschnitt 17).
+
+Ablauf und Bedienung:
+
+- **Aktivierung:** Admin → Office → Orvanta, Abschnitt „Langzeitarchiv“
+  (Einstellungen `archive_*`, siehe Tabelle oben). Die Archivierung startet,
+  wenn die Postfachbelegung die Schwelle überschreitet (`archive_threshold`
+  in Prozent der Postfachgrenze oder in MB).
+- **Registrierung:** Beim Öffnen von Orvanta wird das Postfach für die
+  Hintergrund-Archivierung registriert; danach arbeitet der Worker unabhängig
+  von einer geöffneten Oberfläche.
+- **Worker:** Der Container `mail-archive` (eigener Dienst in
+  `docker-compose.yml`) führt `scripts/orvanta_archive_worker.php` zyklisch
+  aus; ein Python-Supervisor (`docker/mail-archive/archive_supervisor.py`)
+  übernimmt Zeitsteuerung (`ARCHIVE_POLL_INTERVAL` bzw.
+  `archive_poll_interval`), Signalbehandlung und Backoff bei Fehlern.
+  Manueller Lauf: `docker compose exec mail-archive php /app/scripts/orvanta_archive_worker.php --once`.
+- **Speicherort:** Container (`chunk-….ova`, gzip-komprimiert, je ≤ 15 MB)
+  und ein Transparenz-Manifest (`manifest.json`) liegen im Ordner
+  `archive_folder` (Standard `Orvanta-Archiv`) des persönlichen
+  Nextcloud-Bereichs. Der maßgebliche Index bleibt die Datenbank.
+- **Oberfläche:** Archivierte Ordner erscheinen in der Mail-Ordnerliste unter
+  „📦 Langzeitarchiv“; archivierte Nachrichten sind mit 📦 gekennzeichnet,
+  werden beim Öffnen aus dem Container gelesen (inkl. Anhänge) und von der
+  Suche mitdurchsucht. Archivierte Nachrichten sind nur lesbar (Antworten per
+  Zitat weiterhin möglich).
+- **Sicherheit:** Zugriff nur auf das eigene Archiv (Identität aus dem SSO),
+  HTML-Inhalte laufen auch aus dem Archiv durch den `MailHtmlSanitizer`,
+  jede Nachricht wird beim Lesen gegen ihre gespeicherte Prüfsumme geprüft.
+- **Demo-Modus:** Mit `exchange_host = demo` liefert der Posteingang fünf
+  alte Beispielnachrichten (70–400 Tage), an denen sich der komplette
+  Archivlauf gefahrlos durchspielen lässt.
+
+---
+
 ## 8. Demo-Modus und Tests
 
 - `exchange_host = demo` (nur bei `APP_ENV ≠ production`) aktiviert
@@ -466,6 +521,10 @@ Screenshots aller Schritte: [docs/assets/orvanta-ai/README.md](assets/orvanta-ai
   `RecordingAiTransport`: Verfügbarkeit und Cache, Aufbau der
   `chat/completions`-Anfrage, Verfeinern, Validierung (422), Fehlerbilder
   (503/502), `stripMarkers()`, anonymisierte Auswertung und SVG-Bericht.
+- `tests/Unit/OrvantaArchiveTest.php` prüft das Langzeitarchiv: Konfiguration,
+  Stichtag, Copy-Verify-Commit-Delete, Wiederaufnahme nach Abbrüchen,
+  Korruptionserkennung, Sperren, Suche und einen Massentest mit 1000
+  Nachrichten (verlustfrei archiviert und verifiziert).
 
   ```bash
   php tests/run.php

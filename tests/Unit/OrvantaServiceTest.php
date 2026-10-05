@@ -290,6 +290,58 @@ Runner::test('Orvanta: Info liefert rohe Kopfzeilen aus dem MIME-Inhalt', functi
     Assert::false(str_contains($info['headers'], '<div'), 'Nachrichtentext ist nicht enthalten.');
 });
 
+Runner::test('Orvanta: Ordnereigenschaften liefern Anzahl und Groesse inkl. Unterordner', function (): void {
+    $parts = orvantaExchange();
+    $info = $parts['exchange']->folderProperties('demo@demo.local', 'inbox');
+    $xmls = $parts['transport']->xmls();
+    Assert::contains('<m:GetFolder>', $xmls[0]);
+    Assert::contains('<t:DistinguishedFolderId Id="inbox"/>', $xmls[0]);
+    Assert::contains('PropertyTag="0x0E08"', $xmls[0]);
+    Assert::contains('<m:FindFolder Traversal="Deep">', $xmls[1]);
+    Assert::contains('<m:ParentFolderIds><t:DistinguishedFolderId Id="inbox"/></m:ParentFolderIds>', $xmls[1]);
+    Assert::same('Posteingang', $info['name']);
+    Assert::same(8, $info['total']);
+    Assert::same(3, $info['unread']);
+    Assert::same(912261120, $info['size']);
+    Assert::same(1, $info['subfolders']);
+    Assert::same(8 + 17, $info['total_with_subfolders']);
+    Assert::same(912261120 + 48113254, $info['size_with_subfolders']);
+
+    $plain = $parts['exchange']->folderProperties('demo@demo.local', 'demo-rechnungen');
+    Assert::same(0, $plain['subfolders']);
+    Assert::same($plain['size'], $plain['size_with_subfolders']);
+
+    try {
+        $parts['exchange']->folderProperties('demo@demo.local', 'demo-unbekannt');
+        Assert::true(false, 'Unbekannter Ordner muss fehlschlagen.');
+    } catch (OrvantaException $exception) {
+        Assert::contains('nicht gefunden', $exception->getMessage());
+    }
+});
+
+Runner::test('Orvanta: Neuer Ordner und alle als gelesen markieren', function (): void {
+    $parts = orvantaExchange();
+    $created = $parts['exchange']->createFolder('demo@demo.local', 'demo-projekte', "  Q3 <Berichte>\n ");
+    $xml = $parts['transport']->last();
+    Assert::contains('<m:CreateFolder><m:ParentFolderId><t:FolderId Id="demo-projekte"/></m:ParentFolderId>', $xml);
+    Assert::contains('<t:FolderClass>IPF.Note</t:FolderClass><t:DisplayName>Q3 &lt;Berichte&gt;</t:DisplayName>', $xml);
+    Assert::same('Q3 <Berichte>', $created['name']);
+    Assert::true(str_starts_with($created['id'], 'demo-folder-'), 'Id des neuen Ordners.');
+
+    $parts['exchange']->createFolder('demo@demo.local', '', 'Oben');
+    Assert::contains('<t:DistinguishedFolderId Id="msgfolderroot"/>', $parts['transport']->last());
+
+    try {
+        $parts['exchange']->createFolder('demo@demo.local', 'inbox', '   ');
+        Assert::true(false, 'Leerer Name muss abgelehnt werden.');
+    } catch (OrvantaException $exception) {
+        Assert::same(422, $exception->status());
+    }
+
+    $parts['exchange']->markFolderRead('demo@demo.local', 'inbox');
+    Assert::contains('<m:MarkAllItemsAsRead ReadFlag="true" SuppressReadReceipts="true"><m:FolderIds><t:DistinguishedFolderId Id="inbox"/></m:FolderIds></m:MarkAllItemsAsRead>', $parts['transport']->last());
+});
+
 Runner::test('Orvanta: Senden erzeugt CreateItem mit Empfaengern', function (): void {
     $parts = orvantaExchange();
     $parts['exchange']->send('demo@demo.local', [

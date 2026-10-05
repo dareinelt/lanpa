@@ -285,6 +285,96 @@ final class OrvantaExchangeService
         return $list;
     }
 
+    /**
+     * Neuen E-Mail-Ordner (IPF.Note) unterhalb von $parent anlegen
+     * ('' = oberste Ebene des Postfachs).
+     *
+     * @return array{id:string,name:string}
+     */
+    public function createFolder(string $user, string $parent, string $name): array
+    {
+        $name = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $name));
+        if ($name === '' || mb_strlen($name) > 255) {
+            throw new OrvantaException('Bitte einen Ordnernamen angeben (höchstens 255 Zeichen).', 422);
+        }
+        $xpath = $this->call(
+            '<m:CreateFolder><m:ParentFolderId>' . EwsXml::folderId($parent !== '' ? $parent : 'msgfolderroot') . '</m:ParentFolderId>'
+            . '<m:Folders><t:Folder><t:FolderClass>IPF.Note</t:FolderClass><t:DisplayName>' . EwsXml::escape($name) . '</t:DisplayName></t:Folder></m:Folders></m:CreateFolder>',
+            $user
+        );
+
+        return ['id' => EwsXml::attr($xpath, '//m:Folders/*/t:FolderId', 'Id'), 'name' => $name];
+    }
+
+    /**
+     * Alle Nachrichten eines Ordners als gelesen markieren (ohne Lesebestaetigungen).
+     */
+    public function markFolderRead(string $user, string $folder): void
+    {
+        $this->call('<m:MarkAllItemsAsRead ReadFlag="true" SuppressReadReceipts="true"><m:FolderIds>' . EwsXml::folderId($folder) . '</m:FolderIds></m:MarkAllItemsAsRead>', $user);
+    }
+
+    /**
+     * Eigenschaften eines Ordners: Anzahl der Elemente und Groesse
+     * (PR_MESSAGE_SIZE_EXTENDED), jeweils fuer den Ordner selbst und
+     * zusammen mit allen Unterordnern (ohne Suchordner).
+     *
+     * @return array{id:string,name:string,total:int,unread:int,subfolders:int,size:int,total_with_subfolders:int,size_with_subfolders:int}
+     */
+    public function folderProperties(string $user, string $folder): array
+    {
+        $xpath = $this->call(
+            '<m:GetFolder><m:FolderShape><t:BaseShape>Default</t:BaseShape><t:AdditionalProperties>'
+            . '<t:ExtendedFieldURI PropertyTag="0x0E08" PropertyType="Long"/>'
+            . '</t:AdditionalProperties></m:FolderShape><m:FolderIds>' . EwsXml::folderId($folder) . '</m:FolderIds></m:GetFolder>',
+            $user
+        );
+        $node = EwsXml::elements($xpath, '//m:Folders/*')[0] ?? null;
+        if ($node === null) {
+            throw new OrvantaException('Der Ordner wurde nicht gefunden.', 404);
+        }
+        $result = [
+            'id' => EwsXml::attr($xpath, 't:FolderId', 'Id', $node),
+            'name' => EwsXml::text($xpath, 't:DisplayName', $node),
+            'total' => (int) EwsXml::text($xpath, 't:TotalCount', $node),
+            'unread' => (int) EwsXml::text($xpath, 't:UnreadCount', $node),
+            'subfolders' => 0,
+            'size' => self::extendedSize($xpath, $node),
+            'total_with_subfolders' => 0,
+            'size_with_subfolders' => 0,
+        ];
+        $result['total_with_subfolders'] = $result['total'];
+        $result['size_with_subfolders'] = $result['size'];
+
+        $xpath = $this->call(
+            '<m:FindFolder Traversal="Deep"><m:FolderShape><t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>'
+            . '<t:FieldURI FieldURI="folder:TotalCount"/><t:ExtendedFieldURI PropertyTag="0x0E08" PropertyType="Long"/>'
+            . '</t:AdditionalProperties></m:FolderShape>'
+            . '<m:IndexedPageFolderView MaxEntriesReturned="1000" Offset="0" BasePoint="Beginning"/>'
+            . '<m:ParentFolderIds>' . EwsXml::folderId($folder) . '</m:ParentFolderIds></m:FindFolder>',
+            $user,
+            false
+        );
+        foreach (EwsXml::elements($xpath, '//m:RootFolder/t:Folders/*[local-name() != "SearchFolder"]') as $child) {
+            $result['subfolders']++;
+            $result['total_with_subfolders'] += (int) EwsXml::text($xpath, 't:TotalCount', $child);
+            $result['size_with_subfolders'] += self::extendedSize($xpath, $child);
+        }
+
+        return $result;
+    }
+
+    private static function extendedSize(DOMXPath $xpath, DOMElement $folder): int
+    {
+        foreach (EwsXml::elements($xpath, 't:ExtendedProperty', $folder) as $property) {
+            if (self::propertyTag($xpath, $property) === 0x0E08) {
+                return max(0, (int) EwsXml::text($xpath, 't:Value', $property));
+            }
+        }
+
+        return 0;
+    }
+
     // ------------------------------------------------------------------
     // E-Mail
     // ------------------------------------------------------------------
@@ -1115,6 +1205,7 @@ final class OrvantaExchangeService
             str_contains($error, 'ErrorNonPrimarySmtpAddress') => 'Die E-Mail-Adresse aus dem Active Directory ist nicht die primäre SMTP-Adresse des Postfachs, und Exchange hat keine primäre Adresse genannt. Bitte im Active Directory das Attribut „mail“ auf die primäre Adresse setzen.',
             str_contains($error, 'ErrorItemNotFound') => 'Das Element wurde nicht gefunden (möglicherweise bereits verschoben oder gelöscht).',
             str_contains($error, 'ErrorFolderNotFound') => 'Der Ordner wurde nicht gefunden.',
+            str_contains($error, 'ErrorFolderExists') => 'Ein Ordner mit diesem Namen ist hier bereits vorhanden.',
             str_contains($error, 'ErrorAccessDenied') => 'Zugriff verweigert: ' . $error,
             str_contains($error, 'ErrorSchemaValidation') => 'Exchange hat die Anfrage abgelehnt (Schemafehler): ' . $error,
             default => 'Exchange-Fehler: ' . $error,

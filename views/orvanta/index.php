@@ -388,6 +388,29 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         </form>
     </dialog>
 
+    <!-- Dialog: Neuer Ordner (Kontextmenue im Ordnerbaum) -->
+    <dialog class="ov-dialog ov-dialog--small" data-ov-dialog="folder-new">
+        <form method="dialog" class="ov-dialog__form" data-ov-form="folder-new">
+            <div class="ov-dialog__head"><h2>Neuer Ordner</h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
+            <div class="ov-dialog__body">
+                <input type="hidden" name="parent" value="">
+                <p class="ov-muted">Wird angelegt in: <strong data-ov-folder-new-parent></strong></p>
+                <label class="ov-field"><span>Name</span><input type="text" name="name" maxlength="255" required autocomplete="off"></label>
+                <p class="ov-form-error" data-ov-form-error hidden></p>
+            </div>
+            <div class="ov-dialog__foot"><button type="submit" class="button button--primary">Anlegen</button><button type="button" class="button button--ghost" data-ov-dialog-close>Abbrechen</button></div>
+        </form>
+    </dialog>
+
+    <!-- Dialog: Ordnereigenschaften (Kontextmenue im Ordnerbaum) -->
+    <dialog class="ov-dialog ov-dialog--small" data-ov-dialog="folder-props">
+        <div class="ov-dialog__form">
+            <div class="ov-dialog__head"><h2>Eigenschaften – <span data-ov-folder-props-title></span></h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
+            <div class="ov-dialog__body"><dl class="ov-dl" data-ov-folder-props aria-live="polite"></dl></div>
+            <div class="ov-dialog__foot"><button type="button" class="button button--primary" data-ov-dialog-close>Schließen</button></div>
+        </div>
+    </dialog>
+
     <!-- Dialog: Info (rohe Kopfzeilen) -->
     <dialog class="ov-dialog ov-dialog--wide ov-dialog--headers" data-ov-dialog="headers">
         <div class="ov-dialog__form">
@@ -459,7 +482,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         </div>
     </dialog>
 
-    <!-- App-Kontextmenue (Mail-Liste, Textfelder, KI-Unterstuetzung); Eintraege werden per JS gefuellt -->
+    <!-- App-Kontextmenue (Ordnerbaum, Mail-Liste, Textfelder, KI-Unterstuetzung); Eintraege werden per JS gefuellt -->
     <div class="ov-ctx-menu" data-ov-ctx-menu role="menu" aria-label="Kontextmenü" hidden></div>
 
     <!-- Dialog: KI-Anweisung -->

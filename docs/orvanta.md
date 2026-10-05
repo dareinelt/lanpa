@@ -19,7 +19,7 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 
 | Modul | Funktionen |
 |---|---|
-| **Mail** ✉ | Ordnerbaum (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner), Nachrichtenliste mit Suche, Lesen (HTML bereinigt durch `MailHtmlSanitizer`), Verfassen/Antworten/Allen antworten/Weiterleiten, Entwürfe, Kennzeichnen, Gelesen/Ungelesen, Verschieben (Dialog oder per Drag&Drop auf einen Ordner im Ordnerbaum), Löschen, Anhänge öffnen/speichern |
+| **Mail** ✉ | Ordnerbaum (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner), Nachrichtenliste mit Suche, Lesen (HTML bereinigt durch `MailHtmlSanitizer`), Verfassen/Antworten/Allen antworten/Weiterleiten, Entwürfe, Kennzeichnen, Gelesen/Ungelesen, Verschieben (Dialog oder per Drag&Drop auf einen Ordner im Ordnerbaum), Löschen, Anhänge öffnen/speichern; Rechtsklick auf einen Ordner: Neuer Ordner, Alle als gelesen markieren, Eigenschaften (Größe und Anzahl der Elemente) |
 | **Kalender** 📅 | Monats-, Wochen- und Tagesansicht, Termine anlegen/bearbeiten/löschen (ganztägig, Ort, Teilnehmer, Erinnerung), Besprechungsanfragen annehmen/unter Vorbehalt/ablehnen |
 | **Kontakte** 👥 | Alphabetische Liste mit Buchstabengruppen, Details, Anlegen/Bearbeiten/Löschen, E-Mail direkt aus dem Kontakt |
 | **Aufgaben** ✓ | Liste mit Fälligkeit/Priorität, Erledigt-Schalter, Anlegen/Bearbeiten/Löschen |
@@ -160,7 +160,7 @@ flowchart LR
 - Anhänge: `GET /office/orvanta/anhang/oeffnen?token=…`,
   `GET /office/orvanta/anhang/datei?token=…` (Zugriff des DocumentServers).
 - API (`/api/orvanta/…`, JSON, CSRF-Token im Header `X-CSRF-Token`):
-  `status`, `mail/ordner`, `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
+  `status`, `mail/ordner`, `mail/ordner/eigenschaften`, `mail/ordner/neu`, `mail/ordner/gelesen` (Ordner-Kontextmenü), `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
   `empfaenger` (Vorschläge für An/Cc/Bcc), `mail/entwurf`, `mail/antworten`, `mail/aktion`, `anhang/link`,
   `anhang/nextcloud`, `zwischenspeicher`, `zwischenspeicher/leeren`,
   `kalender`, `kalender/termin` (GET/POST), `kalender/termin/loeschen`,

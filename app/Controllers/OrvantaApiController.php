@@ -42,12 +42,7 @@ final class OrvantaApiController extends Controller
     {
         return $this->handle($request, function (array $access): array {
             $config = Container::orvantaConfig();
-            // Postfach fuer die Hintergrund-Archivierung registrieren: ab der
-            // ersten Nutzung arbeitet der Archiv-Worker unabhaengig von einer
-            // geoeffneten Oberflaeche.
-            if ($config->archiveEnabled()) {
-                Container::orvantaArchive()->registerMailbox($access['uid'], $access['impersonate']);
-            }
+            $this->registerArchive($access);
 
             return [
                 'user' => ['name' => $access['user']['display_name'] ?? $access['user']['username'], 'email' => $access['impersonate']],
@@ -259,7 +254,25 @@ final class OrvantaApiController extends Controller
 
     public function archiveStatus(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaArchive()->status($access['uid']));
+        return $this->handle($request, function (array $access): array {
+            $this->registerArchive($access);
+
+            return Container::orvantaArchive()->status($access['uid']);
+        });
+    }
+
+    /**
+     * Postfach fuer die Hintergrund-Archivierung registrieren: ab der ersten
+     * Nutzung arbeitet der Archiv-Worker unabhaengig von einer geoeffneten
+     * Oberflaeche. Wird von den Statusabfragen der Oberflaeche aufgerufen.
+     *
+     * @param array{user:array<string,mixed>,uid:string,impersonate:string} $access
+     */
+    private function registerArchive(array $access): void
+    {
+        if (Container::orvantaConfig()->archiveEnabled()) {
+            Container::orvantaArchive()->registerMailbox($access['uid'], $access['impersonate']);
+        }
     }
 
     public function archiveFolders(Request $request): Response

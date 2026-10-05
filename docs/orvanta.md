@@ -156,7 +156,7 @@ flowchart LR
 | `orvanta_signatures` | Signaturvorlagen (Migrationen 035–037) | `name`, `greeting`, `name_format` (first_last/last_first), `street`, `postal_city`, `phone_mode` (prefix/full), `phone_prefix`, `text_color`, `separator_color` (Schlüssel einer Designfarbe), `ad_groups` (JSON-Liste), `sort_order`, `active` |
 | `orvanta_archives` | Langzeitarchiv je Benutzer (Migration 038) | `user_uid` (unique), `mailbox`, `storage_folder`, `format_version`, `status` (active/error), Zähler, `last_successful_run`, `last_notice` |
 | `orvanta_archive_folders` | Abbild der Exchange-Ordner im Archiv | `archive_id` + `folder_hash` (unique), `exchange_folder_id`, `name`, `path` |
-| `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (mime/json), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
+| `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (immer `mime`; `json` ist reserviert und wird nicht mehr geschrieben), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
 | `orvanta_archive_jobs` | Archivierungsläufe inkl. Sperre (höchstens ein Lauf je Archiv) | `archive_id`, `status` (running/completed/failed), `locked_until`, Zähler, `last_error` |
 
 ### Routen
@@ -478,19 +478,29 @@ Ablauf und Bedienung:
   (Einstellungen `archive_*`, siehe Tabelle oben). Die Archivierung startet,
   wenn die Postfachbelegung die Schwelle überschreitet (`archive_threshold`
   in Prozent der Postfachgrenze oder in MB).
-- **Registrierung:** Beim Öffnen von Orvanta wird das Postfach für die
-  Hintergrund-Archivierung registriert; danach arbeitet der Worker unabhängig
-  von einer geöffneten Oberfläche.
+- **Registrierung:** Beim Öffnen von Orvanta (Statusabfrage
+  `archiv/status`) wird das Postfach für die Hintergrund-Archivierung
+  registriert; danach arbeitet der Worker unabhängig von einer geöffneten
+  Oberfläche. Ein Postfach, das noch nie Orvanta geöffnet hat, wird nicht
+  archiviert.
 - **Worker:** Der Container `mail-archive` (eigener Dienst in
   `docker-compose.yml`) führt `scripts/orvanta_archive_worker.php` zyklisch
   aus; ein Python-Supervisor (`docker/mail-archive/archive_supervisor.py`)
   übernimmt Zeitsteuerung (`ARCHIVE_POLL_INTERVAL` bzw.
   `archive_poll_interval`), Signalbehandlung und Backoff bei Fehlern.
-  Manueller Lauf: `docker compose exec mail-archive php /app/scripts/orvanta_archive_worker.php --once`.
+  Der Container läuft wie `app` als `www-data` und erhält dasselbe
+  Euro-Office-Secret (`OFFICE_JWT_SECRET_FILE`) für den Nextcloud-Upload.
+  Manueller Lauf: `docker compose exec mail-archive php /var/www/html/scripts/orvanta_archive_worker.php --once`.
 - **Speicherort:** Container (`chunk-….ova`, gzip-komprimiert, je ≤ 15 MB)
   und ein Transparenz-Manifest (`manifest.json`) liegen im Ordner
   `archive_folder` (Standard `Orvanta-Archiv`) des persönlichen
-  Nextcloud-Bereichs. Der maßgebliche Index bleibt die Datenbank.
+  Nextcloud-Bereichs. Der maßgebliche Index bleibt die Datenbank. Die
+  Ordnerhierarchie des Postfachs (Eltern/Kind, Pfad `Posteingang/Projekte`)
+  wird im Archiv übernommen.
+- **Vollständigkeit:** Archiviert wird ausschließlich der vollständige
+  MIME-Quelltext (Kopfzeilen, Body, Anhänge). Liefert Exchange für eine
+  Nachricht keinen MIME-Inhalt, bleibt sie im Postfach und wird im Journal
+  als `failed` vermerkt – es gibt keinen verkürzten Ersatzdatensatz.
 - **Oberfläche:** Archivierte Ordner erscheinen in der Mail-Ordnerliste unter
   „📦 Langzeitarchiv“; archivierte Nachrichten sind mit 📦 gekennzeichnet,
   werden beim Öffnen aus dem Container gelesen (inkl. Anhänge) und von der
@@ -500,8 +510,25 @@ Ablauf und Bedienung:
   HTML-Inhalte laufen auch aus dem Archiv durch den `MailHtmlSanitizer`,
   jede Nachricht wird beim Lesen gegen ihre gespeicherte Prüfsumme geprüft.
 - **Demo-Modus:** Mit `exchange_host = demo` liefert der Posteingang fünf
-  alte Beispielnachrichten (70–400 Tage), an denen sich der komplette
-  Archivlauf gefahrlos durchspielen lässt.
+  alte Beispielnachrichten (70–400 Tage, zwei davon mit Anhängen als
+  `multipart/mixed`), an denen sich der komplette Archivlauf gefahrlos
+  durchspielen lässt.
+
+![Admin: Langzeitarchiv konfigurieren](screenshots/92-admin-orvanta-langzeitarchiv.png)
+
+*Admin → Office → Orvanta: Schwelle, Mindestalter, Zielordner und Worker-Intervall des Langzeitarchivs.*
+
+![Ordnergruppe „📦 Langzeitarchiv“](screenshots/93-orvanta-archiv-ordner.png)
+
+*Nach dem ersten Lauf erscheinen archivierte Ordner unter „📦 Langzeitarchiv“; die fünf alten Demo-Nachrichten wurden aus dem Posteingang verschoben.*
+
+![Archivierte Nachricht mit Anhängen](screenshots/94-orvanta-archiv-nachricht.png)
+
+*Lesen aus dem Container: Hinweis „Archivierte Nachricht … (Integrität geprüft)“, Anhänge werden aus dem Archiv geliefert.*
+
+![Suche mischt Archivtreffer ein](screenshots/95-orvanta-archiv-suche.png)
+
+*Die Suche zeigt Live-Treffer aus Exchange und mit 📦 markierte Archivtreffer in einer Liste.*
 
 ---
 

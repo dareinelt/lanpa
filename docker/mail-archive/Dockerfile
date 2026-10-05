@@ -21,4 +21,8 @@ COPY docker/mail-archive/archive_supervisor.py /usr/local/bin/archive_supervisor
 WORKDIR /var/www/html
 COPY . /var/www/html
 
+# Wie der app-Container als www-data laufen: Protokolle und Dateien im
+# gemeinsamen storage-Volume bleiben fuer Apache schreibbar.
+USER www-data
+
 ENTRYPOINT ["python3", "/usr/local/bin/archive_supervisor.py"]

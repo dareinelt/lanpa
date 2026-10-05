@@ -26,3 +26,4 @@ Thumbs.db
 /secrets/
 /backups/
 /docker-compose.sso.yml
+__pycache__/

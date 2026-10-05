@@ -163,8 +163,13 @@ final class OrvantaArchiveService
 
             $cutoff = ($this->now)() - $this->config->archiveAgeDays() * 86400;
             $batchSize = $this->config->archiveBatchSize();
-            foreach ($this->exchange->folders($mailbox) as $folder) {
-                $folderId = $this->repository->ensureFolder($archiveId, (string) $folder['id'], null, (string) $folder['name'], (string) $folder['name']);
+            $folders = $this->exchange->folders($mailbox);
+            $folderIds = $this->ensureFolderTree($archiveId, $folders);
+            foreach ($folders as $folder) {
+                $folderId = $folderIds[(string) $folder['id']] ?? null;
+                if ($folderId === null) {
+                    continue;
+                }
                 $offset = 0;
                 $seen = [];
                 do {
@@ -252,28 +257,24 @@ final class OrvantaArchiveService
             $payload = $full['mime'];
             $kind = 'mime';
             if ($payload === '') {
-                // Fallback: strukturierte JSON-Repraesentation, niemals serialize().
-                $kind = 'json';
-                $payload = (string) json_encode([
-                    'subject' => $candidate['subject'] ?? '',
-                    'from' => $candidate['from'] ?? null,
-                    'to' => $candidate['to'] ?? [],
-                    'received' => $candidate['received'] ?? 0,
-                ], JSON_UNESCAPED_UNICODE);
+                // Ohne vollstaendigen MIME-Quelltext (Body + Anhaenge) wird nicht
+                // archiviert und erst recht nicht geloescht: Nachricht bleibt in
+                // Exchange und wird als fehlgeschlagen vermerkt (siehe Prompt §33).
+                $failed++;
+                $this->markFailed($archiveId, $folderId, $entry);
+                continue;
             }
             $record = gzencode($payload, 6);
             if ($record === false) {
                 $failed++;
+                $this->markFailed($archiveId, $folderId, $entry);
                 continue;
             }
             if (strlen($record) + strlen($chunk) > self::MAX_CHUNK_BYTES) {
                 if (strlen($record) + strlen(self::MAGIC) > self::MAX_CHUNK_BYTES) {
                     // Einzelnachricht sprengt das Containerlimit: bleibt in Exchange.
                     $failed++;
-                    $failedId = $entry['existing'] !== null
-                        ? (int) $entry['existing']['id']
-                        : $this->repository->insertItem($this->itemRow($archiveId, $folderId, $entry, $kind, $payload, '', 0, 0));
-                    $this->repository->markItemStatus($failedId, 'failed');
+                    $this->markFailed($archiveId, $folderId, $entry);
                     continue;
                 }
                 break; // Rest des Batches im naechsten Lauf (Chunk voll).
@@ -588,6 +589,59 @@ final class OrvantaArchiveService
         $payload = @gzdecode(substr($bytes, $offset, $length));
 
         return $payload === false ? null : $payload;
+    }
+
+    /**
+     * Fehlgeschlagenes Element vermerken (bleibt in Exchange); ohne Nutzlast,
+     * damit kein unvollstaendiger Datensatz als archiviert gelten kann.
+     *
+     * @param array{candidate:array<string,mixed>,hash:string,existing:array<string,mixed>|null} $entry
+     */
+    private function markFailed(int $archiveId, int $folderId, array $entry): void
+    {
+        $id = $entry['existing'] !== null
+            ? (int) $entry['existing']['id']
+            : $this->repository->insertItem($this->itemRow($archiveId, $folderId, $entry, 'mime', '', '', 0, 0));
+        $this->repository->markItemStatus($id, 'failed');
+    }
+
+    /**
+     * Ordner des Postfachs in Baumreihenfolge (Eltern vor Kindern) als Archiv-
+     * ordner anlegen; liefert je Exchange-Ordner die Archiv-Ordner-ID.
+     *
+     * @param list<array{id:string,name:string,parent:string}> $folders
+     * @return array<string,int> Exchange-Ordner-ID => Archiv-Ordner-ID
+     */
+    private function ensureFolderTree(int $archiveId, array $folders): array
+    {
+        $byId = [];
+        foreach ($folders as $folder) {
+            $byId[(string) $folder['id']] = $folder;
+        }
+        $ids = [];
+        $paths = [];
+        $resolve = function (string $exchangeId, array $trail) use (&$resolve, &$ids, &$paths, $byId, $archiveId): ?int {
+            if (isset($ids[$exchangeId])) {
+                return $ids[$exchangeId];
+            }
+            $folder = $byId[$exchangeId] ?? null;
+            if ($folder === null || isset($trail[$exchangeId])) {
+                return null; // unbekannter Elternordner (z. B. Postfachwurzel) oder Zyklus
+            }
+            $trail[$exchangeId] = true;
+            $parentExchangeId = (string) ($folder['parent'] ?? '');
+            $parentId = $parentExchangeId !== '' ? $resolve($parentExchangeId, $trail) : null;
+            $name = (string) $folder['name'];
+            $path = $parentId !== null ? $paths[$parentExchangeId] . '/' . $name : $name;
+            $paths[$exchangeId] = $path;
+
+            return $ids[$exchangeId] = $this->repository->ensureFolder($archiveId, $exchangeId, $parentId, $name, $path);
+        };
+        foreach ($byId as $exchangeId => $folder) {
+            $resolve((string) $exchangeId, []);
+        }
+
+        return $ids;
     }
 
     /**

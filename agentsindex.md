@@ -201,7 +201,7 @@ KAEP wird zentral im Front-Controller auf Notfallplan-Routen beschränkt.
 `AdminGroupService` kennt zusätzlich das Ziel `kaep`. Mitglieder dieser
 AD-Gruppen sehen den Notfallplan-Editor zusätzlich als App unter der
 Office-Kachel (`OfficeAppService::allowedFor()`, Start per SSO-Anmeldung in
-`OfficeController::launch` → `/admin/notfallplan`). Benutzerzugriff ist davon
+`OfficeController::launch` → `/admin/notfallplan/bearbeiten`). Benutzerzugriff ist davon
 getrennt und benötigt aktivierte Funktion plus ausgewählte AD-Gruppe.
 Auch Administratoren dürfen eigene/mitbearbeitete Entwürfe nicht freigeben.
 Veröffentlichte Definitionen und Ereignissnapshots bleiben von Entwurfsänderungen

@@ -268,7 +268,9 @@
 .ov-statusbar > span { display: inline-flex; align-items: center; gap: .3rem; }
 .ov-statusbar .ov-icon { width: .95rem; height: .95rem; }
 .ov-statusbar__grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; display: block !important; }
-.ov-statusbar > .ov-statusbar__credit { flex: 1; min-width: 0; justify-content: center; align-self: stretch; padding: 0 1rem; border-left: 1px solid rgba(255, 255, 255, .55); border-right: 1px solid rgba(255, 255, 255, .55); opacity: .85; }
+.ov-statusbar > .ov-statusbar__credit { display: inline-flex; align-items: center; flex: 1; min-width: 0; justify-content: center; align-self: stretch; margin: 0; padding: 0 1rem; border: 0; border-left: 1px solid rgba(255, 255, 255, .55); border-right: 1px solid rgba(255, 255, 255, .55); background: transparent; color: inherit; font: inherit; opacity: .85; cursor: pointer; }
+.ov-statusbar > .ov-statusbar__credit:hover { opacity: 1; text-decoration: underline; }
+.ov-statusbar > .ov-statusbar__credit:focus-visible { opacity: 1; outline: 2px solid #fff; outline-offset: -2px; }
 .ov-statusbar .is-error { color: #ffd166; font-weight: 700; }
 
 /* Erinnerungen und Hinweise */

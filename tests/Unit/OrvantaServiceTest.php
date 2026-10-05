@@ -418,6 +418,62 @@ Runner::test('Orvanta: Aktivierung ohne Dienstkonto wird abgelehnt (ausser Demo)
     $config->save(['exchange_host' => 'demo'] + $base);
 });
 
+Runner::test('Orvanta: Alias-Adresse wird auf die primaere SMTP-Adresse umgestellt', function (): void {
+    $fault = '<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault>'
+        . '<faultcode xmlns:a="http://schemas.microsoft.com/exchange/services/2006/types">a:ErrorNonPrimarySmtpAddress</faultcode>'
+        . '<faultstring xml:lang="de-DE">Die primäre SMTP-Adresse muss angegeben werden, wenn Sie auf ein Postfach verweisen.</faultstring>'
+        . '<detail><e:ResponseCode xmlns:e="http://schemas.microsoft.com/exchange/services/2006/errors">ErrorNonPrimarySmtpAddress</e:ResponseCode>'
+        . '<e:MessageXml xmlns:e="http://schemas.microsoft.com/exchange/services/2006/errors"><t:Value xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" Name="Primary">daniel.reinelt@example.local</t:Value></e:MessageXml>'
+        . '</detail></s:Fault></s:Body></s:Envelope>';
+    $transport = new class ($fault) implements ExchangeTransportInterface {
+        /** @var list<string> */
+        public array $xmls = [];
+        private DemoExchangeTransport $demo;
+
+        public function __construct(private readonly string $fault)
+        {
+            $this->demo = new DemoExchangeTransport();
+        }
+
+        public function post(string $url, string $xml, array $options): array
+        {
+            $this->xmls[] = $xml;
+
+            $lower = strtolower($xml);
+
+            return str_contains($lower, 'reinelt@example.local</t:primarysmtpaddress>') && !str_contains($lower, 'daniel.reinelt@')
+                ? ['status' => 500, 'body' => $this->fault, 'error' => null]
+                : $this->demo->post($url, $xml, $options);
+        }
+    };
+    $cache = sys_get_temp_dir() . '/orvanta-primary-' . bin2hex(random_bytes(4)) . '/map.json';
+    $config = orvantaConfig(['exchange_host' => 'mail.example.local'])['config'];
+
+    $exchange = new OrvantaExchangeService($transport, $config, $cache);
+    Assert::true($exchange->testConnection('Reinelt@example.local')['ok'], 'Erfolg nach Wiederholung erwartet.');
+    Assert::same(2, count($transport->xmls), 'Genau eine Wiederholung.');
+    Assert::contains('<t:PrimarySmtpAddress>daniel.reinelt@example.local</t:PrimarySmtpAddress>', $transport->xmls[1]);
+
+    // Gelernte Zuordnung gilt fuer weitere Aufrufe und ueber die Instanz hinaus.
+    $exchange->testConnection('reinelt@example.local');
+    Assert::same(3, count($transport->xmls));
+    $again = new OrvantaExchangeService($transport, $config, $cache);
+    $again->testConnection('reinelt@example.local');
+    Assert::same(4, count($transport->xmls));
+    Assert::contains('daniel.reinelt@example.local', $transport->xmls[3]);
+
+    // Ohne genannte primaere Adresse: verstaendliche Meldung statt Endlosschleife.
+    $plain = new RecordingExchangeTransport();
+    $plain->forced = ['status' => 500, 'error' => null, 'body' => str_replace('<t:Value xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" Name="Primary">daniel.reinelt@example.local</t:Value>', '', $fault)];
+    try {
+        (new OrvantaExchangeService($plain, $config))->testConnection('reinelt@example.local');
+        Assert::true(false, 'Exception erwartet.');
+    } catch (OrvantaException $exception) {
+        Assert::contains('nicht die primäre SMTP-Adresse', $exception->getMessage());
+        Assert::same(1, count($plain->requests));
+    }
+});
+
 Runner::test('Orvanta: Ohne konfigurierten Server wird 503 gemeldet', function (): void {
     $parts = orvantaExchange(['exchange_host' => '', 'exchange_ews_url' => '']);
     try {

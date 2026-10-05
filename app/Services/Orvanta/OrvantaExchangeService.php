@@ -31,9 +31,17 @@ final class OrvantaExchangeService
         . '<t:FieldURI FieldURI="calendar:LegacyFreeBusyStatus"/><t:FieldURI FieldURI="calendar:CalendarItemType"/><t:FieldURI FieldURI="item:ReminderIsSet"/>'
         . '<t:FieldURI FieldURI="item:ReminderMinutesBeforeStart"/><t:FieldURI FieldURI="calendar:IsMeeting"/><t:FieldURI FieldURI="calendar:MyResponseType"/><t:FieldURI FieldURI="item:Categories"/>';
 
+    /** @var array<string,array{primary:string,at:int}>|null */
+    private ?array $primaryAddresses = null;
+
+    /**
+     * @param string|null $primaryCacheFile Datei fuer die gelernte Zuordnung
+     *                                      Alias-Adresse -> primaere SMTP-Adresse
+     */
     public function __construct(
         private readonly ExchangeTransportInterface $transport,
-        private readonly OrvantaConfigService $config
+        private readonly OrvantaConfigService $config,
+        private readonly ?string $primaryCacheFile = null
     ) {
     }
 
@@ -860,12 +868,13 @@ final class OrvantaExchangeService
      * SOAP-Aufruf mit Fehlerbehandlung. $strict=false toleriert Teilfehler
      * (z. B. nicht vorhandene Systemordner).
      */
-    private function call(string $body, string $impersonate, bool $strict = true): DOMXPath
+    private function call(string $body, string $impersonate, bool $strict = true, bool $retried = false): DOMXPath
     {
         $url = $this->config->ewsUrl();
         if ($url === '') {
             throw new OrvantaException('Es ist kein Exchange-Server konfiguriert. Bitte im Adminbereich unter Office → Orvanta eintragen.', 503);
         }
+        $impersonate = $this->primaryAddress($impersonate);
         $xml = EwsXml::envelope($body, $this->config->get('exchange_version'), $impersonate);
         $response = $this->transport->post($url, $xml, $this->config->transportOptions());
         if (($response['error'] ?? '') !== '') {
@@ -879,6 +888,16 @@ final class OrvantaExchangeService
             throw new OrvantaException('Exchange hat eine ungültige Antwort geliefert (HTTP ' . $response['status'] . ').', 502);
         }
         $error = EwsXml::error($xpath);
+        // Die AD-Adresse ist nur ein Alias des Postfachs: Exchange nennt die
+        // primaere Adresse, mit der die Anfrage einmalig wiederholt wird.
+        if ($error !== null && !$retried && $impersonate !== '' && str_contains($error, 'ErrorNonPrimarySmtpAddress')) {
+            $primary = EwsXml::primarySmtpAddress($xpath);
+            if ($primary !== '' && strcasecmp($primary, $impersonate) !== 0 && filter_var($primary, FILTER_VALIDATE_EMAIL) !== false) {
+                $this->rememberPrimaryAddress($impersonate, $primary);
+
+                return $this->call($body, $primary, $strict, true);
+            }
+        }
         if ($error !== null && ($strict || str_contains($response['body'], 'soap:Fault'))) {
             $all = EwsXml::elements($xpath, '//m:ResponseMessages/*');
             $failed = EwsXml::elements($xpath, '//m:ResponseMessages/*[@ResponseClass="Error"]');
@@ -888,6 +907,58 @@ final class OrvantaExchangeService
         }
 
         return $xpath;
+    }
+
+    /** Gelernte Zuordnungen gelten einen Tag; danach wird erneut bei Exchange nachgefragt. */
+    private const PRIMARY_TTL = 86400;
+
+    private function primaryAddress(string $address): string
+    {
+        if ($address === '') {
+            return '';
+        }
+        $entry = $this->primaryAddresses()[strtolower($address)] ?? null;
+
+        return $entry !== null && $entry['at'] > time() - self::PRIMARY_TTL ? $entry['primary'] : $address;
+    }
+
+    private function rememberPrimaryAddress(string $address, string $primary): void
+    {
+        $map = array_filter(
+            $this->primaryAddresses(),
+            static fn (array $entry): bool => $entry['at'] > time() - self::PRIMARY_TTL
+        );
+        $map[strtolower($address)] = ['primary' => $primary, 'at' => time()];
+        $this->primaryAddresses = $map;
+        if ($this->primaryCacheFile === null) {
+            return;
+        }
+        $dir = dirname($this->primaryCacheFile);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0750, true);
+        }
+        @file_put_contents($this->primaryCacheFile, (string) json_encode($map), LOCK_EX);
+    }
+
+    /**
+     * @return array<string,array{primary:string,at:int}>
+     */
+    private function primaryAddresses(): array
+    {
+        if ($this->primaryAddresses !== null) {
+            return $this->primaryAddresses;
+        }
+        $map = [];
+        if ($this->primaryCacheFile !== null && is_file($this->primaryCacheFile)) {
+            $data = json_decode((string) @file_get_contents($this->primaryCacheFile), true);
+            foreach (is_array($data) ? $data : [] as $key => $entry) {
+                if (is_string($key) && is_array($entry) && is_string($entry['primary'] ?? null) && is_int($entry['at'] ?? null)) {
+                    $map[$key] = ['primary' => $entry['primary'], 'at' => $entry['at']];
+                }
+            }
+        }
+
+        return $this->primaryAddresses = $map;
     }
 
     /**
@@ -928,6 +999,7 @@ final class OrvantaExchangeService
         return match (true) {
             str_contains($error, 'ErrorImpersonateUserDenied'), str_contains($error, 'ErrorImpersonationDenied') => 'Dem Dienstkonto fehlt die Berechtigung „ApplicationImpersonation“ für dieses Postfach.',
             str_contains($error, 'ErrorNonExistentMailbox') => 'Für die SSO-Identität wurde kein Exchange-Postfach gefunden.',
+            str_contains($error, 'ErrorNonPrimarySmtpAddress') => 'Die E-Mail-Adresse aus dem Active Directory ist nicht die primäre SMTP-Adresse des Postfachs, und Exchange hat keine primäre Adresse genannt. Bitte im Active Directory das Attribut „mail“ auf die primäre Adresse setzen.',
             str_contains($error, 'ErrorItemNotFound') => 'Das Element wurde nicht gefunden (möglicherweise bereits verschoben oder gelöscht).',
             str_contains($error, 'ErrorFolderNotFound') => 'Der Ordner wurde nicht gefunden.',
             str_contains($error, 'ErrorAccessDenied') => 'Zugriff verweigert: ' . $error,

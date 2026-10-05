@@ -113,6 +113,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `database/migrations/034_create_orvanta_ai_usage.sql` | Tabelle `orvanta_ai_usage` (Abschnitt 4.1) |
 | `database/migrations/035_orvanta_signatures.sql` | Tabelle `orvanta_signatures` und Spalte `phonebook.title` (Abschnitt 4.1) |
 | `database/migrations/036_orvanta_signature_colors.sql` | Spalten `orvanta_signatures.text_color`/`separator_color` (Schlüssel einer Designfarbe) |
+| `database/migrations/037_orvanta_signature_name_format.sql` | Spalte `orvanta_signatures.name_format` (`first_last`/`last_first`) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
@@ -208,7 +209,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_reminders` | `user_uid`, `item_id` (≤ 512), `item_hash` = `sha1(item_id)`, `subject`, `location`, `starts_at`, `remind_at`, `state` ∈ `pending\|delivered\|dismissed\|snoozed`, `delivered_at`, `dismissed_at` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `state`, `remind_at`) |
 | `orvanta_cache_items` | `user_uid`, `kind` ∈ `attachment\|message`, `item_hash` = `sha1(attachment_id)`, `name` (Dateiname in Nextcloud), `path`, `content_type`, `size_bytes` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `created_at`) für FIFO |
 | `orvanta_ai_usage` (Migration 034) | `user_uid`, `kind` ∈ `mail_compose\|mail_reply\|mail_forward\|event\|reminder`, `model`, `input_tokens`, `output_tokens`, `created_at` | Nur Zähler, nie Texte; Index (`created_at`), (`user_uid`, `created_at`) |
-| `orvanta_signatures` (Migrationen 035/036) | `name` (≤ 120), `greeting` (≤ 120), `street`, `postal_city` (≤ 190), `phone_mode` ∈ `prefix\|full`, `phone_prefix` (≤ 64, abschließendes Leerzeichen bleibt erhalten), `text_color`/`separator_color` (Schlüssel aus `SettingsService::THEME_COLORS`, Standard `color_text`/`color_accent`), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Zuordnung: erste aktive Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in den SSO-Gruppen vorkommt. Migration ergänzt zudem `phonebook.title` (Position aus dem AD, `LDAP_ATTR_TITLE`) |
+| `orvanta_signatures` (Migrationen 035–037) | `name` (≤ 120), `greeting` (≤ 120), `name_format` ∈ `first_last\|last_first` (Standard `first_last`), `street`, `postal_city` (≤ 190), `phone_mode` ∈ `prefix\|full`, `phone_prefix` (≤ 64, abschließendes Leerzeichen bleibt erhalten), `text_color`/`separator_color` (Schlüssel aus `SettingsService::THEME_COLORS`, Standard `color_text`/`color_accent`), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Zuordnung: erste aktive Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in den SSO-Gruppen vorkommt. Migration ergänzt zudem `phonebook.title` (Position aus dem AD, `LDAP_ATTR_TITLE`) |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -794,7 +795,9 @@ Senden: OrvantaApiController::withSignature(mail, access) → OrvantaSignatureSe
 
 - `render()` erzeugt E-Mail-taugliches HTML: `<div class="ov-signature-block">`
   mit optionalem Grußformel-Absatz und einer Tabelle (links Logo als
-  `data:`-URI; rechts Name fett, Position, Abteilung, Adresse, Rufnummer).
+  `data:`-URI; rechts Name fett (`formatName()`: `first_last` → „Vorname
+  Nachname“, `last_first` → „Nachname, Vorname“ aus `phonebook.first_name`/
+  `last_name`; fehlt einer davon → `display_name`), Position, Abteilung, Adresse, Rufnummer).
   Das Logo erhält feste `width`/`height`-Attribute (Outlook ignoriert
   `max-width`/`height:auto`): Höhe = Zeilenzahl × `LINE_HEIGHT` (18 px; Text
   mit `line-height` in px, `mso-line-height-rule:exactly`, `white-space:nowrap`),

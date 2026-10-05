@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Security\Csrf;
 use App\Support\Html;
 
-/** @var array{id:int,name:string,greeting:string,street:string,postal_city:string,phone_mode:string,phone_prefix:string,text_color:string,separator_color:string,groups:list<string>,sort_order:int,active:bool} $signature */
+/** @var array{id:int,name:string,greeting:string,name_format:string,street:string,postal_city:string,phone_mode:string,phone_prefix:string,text_color:string,separator_color:string,groups:list<string>,sort_order:int,active:bool} $signature */
 /** @var array<string,string> $theme */
 /** @var array<string,string> $colorLabels */
 /** @var array<string,string> $errors */
@@ -52,9 +52,18 @@ $invalid = static fn (string $key): string => isset($errors[$key])
         <legend>Inhalt</legend>
         <p class="field__hint">
             Name, Position und Abteilung werden <strong>nicht</strong> hier eingetragen – sie stammen aus dem
-            Active Directory des jeweiligen Benutzers (Attribute „Anzeigename“, „Position“ und „Abteilung“ der
+            Active Directory des jeweiligen Benutzers (Attribute „Vorname“, „Nachname“, „Position“ und „Abteilung“ der
             <a href="/admin/ad">AD-Konfiguration</a>).
         </p>
+        <div class="field">
+            <label for="signature_name_format">Darstellung des Namens</label>
+            <select id="signature_name_format" name="name_format" <?= $invalid('name_format') ?> aria-describedby="signature_name_format-hint" data-signature-field>
+                <option value="first_last" <?= $signature['name_format'] !== 'last_first' ? 'selected' : '' ?>>Vorname Nachname (z. B. Erika Musterfrau)</option>
+                <option value="last_first" <?= $signature['name_format'] === 'last_first' ? 'selected' : '' ?>>Nachname, Vorname (z. B. Musterfrau, Erika)</option>
+            </select>
+            <p class="field__hint" id="signature_name_format-hint">Fehlt im Active Directory Vor- oder Nachname, wird der Anzeigename unverändert übernommen.</p>
+            <?= $error('name_format') ?>
+        </div>
         <div class="field">
             <label for="signature_greeting">Grußformel</label>
             <input type="text" id="signature_greeting" name="greeting" maxlength="120" value="<?= Html::e($signature['greeting']) ?>" <?= $invalid('greeting') ?>

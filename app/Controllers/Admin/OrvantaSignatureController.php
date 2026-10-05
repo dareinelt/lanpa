@@ -67,6 +67,7 @@ final class OrvantaSignatureController extends AdminController
         $input = [
             'name' => (string) $request->input('name', ''),
             'greeting' => (string) $request->input('greeting', ''),
+            'name_format' => (string) $request->input('name_format', ''),
             'street' => (string) $request->input('street', ''),
             'postal_city' => (string) $request->input('postal_city', ''),
             'phone_mode' => (string) $request->input('phone_mode', 'prefix'),
@@ -92,6 +93,7 @@ final class OrvantaSignatureController extends AdminController
                 'id' => $id,
                 'name' => $input['name'],
                 'greeting' => $input['greeting'],
+                'name_format' => in_array($input['name_format'], OrvantaSignatureService::NAME_FORMATS, true) ? $input['name_format'] : OrvantaSignatureService::DEFAULT_NAME_FORMAT,
                 'street' => $input['street'],
                 'postal_city' => $input['postal_city'],
                 'phone_mode' => in_array($input['phone_mode'], OrvantaSignatureService::PHONE_MODES, true) ? $input['phone_mode'] : 'prefix',
@@ -137,6 +139,7 @@ final class OrvantaSignatureController extends AdminController
                 $signature = $service->validate([
                     'name' => (string) ($request->query['name'] ?? 'Vorschau'),
                     'greeting' => (string) ($request->query['greeting'] ?? ''),
+                    'name_format' => (string) ($request->query['name_format'] ?? ''),
                     'street' => (string) ($request->query['street'] ?? ''),
                     'postal_city' => (string) ($request->query['postal_city'] ?? ''),
                     'phone_mode' => (string) ($request->query['phone_mode'] ?? 'prefix'),

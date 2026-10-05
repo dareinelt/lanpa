@@ -27,7 +27,7 @@ use App\Support\Validator;
  * Signatur erhaelt.
  *
  * @phpstan-import-type SignatureRow from OrvantaSignatureRepository
- * @phpstan-type Person array{display_name:string,title:string,department:string,phone:string}
+ * @phpstan-type Person array{display_name:string,first_name?:string,last_name?:string,title:string,department:string,phone:string}
  */
 final class OrvantaSignatureService
 {
@@ -37,6 +37,11 @@ final class OrvantaSignatureService
     public const QUOTE_CLASS = 'ov-quote';
 
     public const PHONE_MODES = ['prefix', 'full'];
+
+    /** Darstellung des Namens: "Vorname Nachname" bzw. "Nachname, Vorname". */
+    public const NAME_FORMATS = ['first_last', 'last_first'];
+
+    public const DEFAULT_NAME_FORMAT = 'first_last';
 
     public const EXTENSION_LENGTH = 4;
 
@@ -55,6 +60,8 @@ final class OrvantaSignatureService
     /** Beispielperson fuer die Vorschau im Adminbereich. */
     public const SAMPLE_PERSON = [
         'display_name' => 'Erika Musterfrau',
+        'first_name' => 'Erika',
+        'last_name' => 'Musterfrau',
         'title' => 'Sachbearbeiterin',
         'department' => 'Verwaltung',
         'phone' => '+49 5331 934-1234',
@@ -104,6 +111,7 @@ final class OrvantaSignatureService
             'id' => 0,
             'name' => '',
             'greeting' => 'Mit freundlichen Grüßen',
+            'name_format' => self::DEFAULT_NAME_FORMAT,
             'street' => '',
             'postal_city' => '',
             'phone_mode' => 'prefix',
@@ -119,7 +127,7 @@ final class OrvantaSignatureService
     /**
      * Formulareingaben pruefen und normalisieren.
      *
-     * @param array<string,mixed> $input name, greeting, street, postal_city, phone_mode, phone_prefix, text_color, separator_color, groups (String), sort_order, active
+     * @param array<string,mixed> $input name, greeting, name_format, street, postal_city, phone_mode, phone_prefix, text_color, separator_color, groups (String), sort_order, active
      * @return SignatureRow
      */
     public function validate(array $input, int $id = 0): array
@@ -130,6 +138,13 @@ final class OrvantaSignatureService
             $errors['name'] = 'Bitte einen Namen für die Vorlage angeben.';
         }
         $greeting = Validator::cleanText(is_scalar($input['greeting'] ?? null) ? (string) $input['greeting'] : '', 120);
+        $nameFormat = is_scalar($input['name_format'] ?? null) ? (string) $input['name_format'] : '';
+        if ($nameFormat === '') {
+            $nameFormat = self::DEFAULT_NAME_FORMAT;
+        } elseif (!in_array($nameFormat, self::NAME_FORMATS, true)) {
+            $errors['name_format'] = 'Unbekannte Darstellung des Namens.';
+            $nameFormat = self::DEFAULT_NAME_FORMAT;
+        }
         $street = Validator::cleanText(is_scalar($input['street'] ?? null) ? (string) $input['street'] : '', 190);
         $postalCity = Validator::cleanText(is_scalar($input['postal_city'] ?? null) ? (string) $input['postal_city'] : '', 190);
         $phoneMode = is_scalar($input['phone_mode'] ?? null) ? (string) $input['phone_mode'] : 'prefix';
@@ -177,6 +192,7 @@ final class OrvantaSignatureService
             'id' => $id,
             'name' => $name,
             'greeting' => $greeting,
+            'name_format' => $nameFormat,
             'street' => $street,
             'postal_city' => $postalCity,
             'phone_mode' => $phoneMode,
@@ -279,6 +295,8 @@ final class OrvantaSignatureService
 
         return [
             'display_name' => trim((string) ($row['display_name'] ?? $ssoUser['display_name'] ?? $ssoUser['username'] ?? '')),
+            'first_name' => trim((string) ($row['first_name'] ?? '')),
+            'last_name' => trim((string) ($row['last_name'] ?? '')),
             'title' => trim((string) ($row['title'] ?? '')),
             'department' => trim((string) ($row['department'] ?? '')),
             'phone' => trim((string) ($row['phone'] ?? '')),
@@ -303,8 +321,9 @@ final class OrvantaSignatureService
         $base = 'font-family:' . self::FONT . ';font-size:10pt;color:' . $text;
 
         $lines = [];
+        $name = self::formatName($person, $signature['name_format'] ?? self::DEFAULT_NAME_FORMAT);
         $first = array_filter([
-            $person['display_name'] !== '' ? '<b>' . Html::e($person['display_name']) . '</b>' : '',
+            $name !== '' ? '<b>' . Html::e($name) . '</b>' : '',
             Html::e($person['title']),
             Html::e($person['department']),
         ], static fn (string $part): bool => $part !== '');
@@ -338,6 +357,24 @@ final class OrvantaSignatureService
         $html .= '</tr></table></div>';
 
         return $html;
+    }
+
+    /**
+     * Name gemaess Vorlage: "Vorname Nachname" (first_last) oder
+     * "Nachname, Vorname" (last_first). Fehlt Vor- oder Nachname im AD,
+     * bleibt der Anzeigename unveraendert.
+     *
+     * @param Person $person
+     */
+    public static function formatName(array $person, string $format): string
+    {
+        $firstName = trim((string) ($person['first_name'] ?? ''));
+        $lastName = trim((string) ($person['last_name'] ?? ''));
+        if ($firstName === '' || $lastName === '') {
+            return $person['display_name'];
+        }
+
+        return $format === 'last_first' ? $lastName . ', ' . $firstName : $firstName . ' ' . $lastName;
     }
 
     /**

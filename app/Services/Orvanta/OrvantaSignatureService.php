@@ -40,7 +40,15 @@ final class OrvantaSignatureService
 
     public const EXTENSION_LENGTH = 4;
 
-    public const LOGO_WIDTH = 160;
+    /** Zeilenhoehe des Signaturtextes in px (10pt Schrift); das Logo wird auf Zeilen x Zeilenhoehe skaliert. */
+    public const LINE_HEIGHT = 18;
+
+    /** Obergrenze der Logobreite in px (sehr breite Logos werden proportional verkleinert). */
+    public const LOGO_MAX_WIDTH = 240;
+
+    public const DEFAULT_TEXT_COLOR = 'color_text';
+
+    public const DEFAULT_SEPARATOR_COLOR = 'color_accent';
 
     private const FONT = 'Arial, Helvetica, sans-serif';
 
@@ -52,7 +60,7 @@ final class OrvantaSignatureService
         'phone' => '+49 5331 934-1234',
     ];
 
-    /** @var array{src:string}|null|false false = noch nicht geladen */
+    /** @var array{src:string,width:int,height:int}|null|false false = noch nicht geladen; width/height 0 = unbekannt */
     private array|null|false $logo = false;
 
     /**
@@ -97,6 +105,8 @@ final class OrvantaSignatureService
             'postal_city' => '',
             'phone_mode' => 'prefix',
             'phone_prefix' => 'T.: +49 (05331) 934 - ',
+            'text_color' => self::DEFAULT_TEXT_COLOR,
+            'separator_color' => self::DEFAULT_SEPARATOR_COLOR,
             'groups' => [],
             'sort_order' => 1,
             'active' => true,
@@ -106,7 +116,7 @@ final class OrvantaSignatureService
     /**
      * Formulareingaben pruefen und normalisieren.
      *
-     * @param array<string,mixed> $input name, greeting, street, postal_city, phone_mode, phone_prefix, groups (String), sort_order, active
+     * @param array<string,mixed> $input name, greeting, street, postal_city, phone_mode, phone_prefix, text_color, separator_color, groups (String), sort_order, active
      * @return SignatureRow
      */
     public function validate(array $input, int $id = 0): array
@@ -133,6 +143,17 @@ final class OrvantaSignatureService
         if ($phoneMode === 'prefix' && trim($phonePrefix) === '') {
             $errors['phone_prefix'] = 'Bitte den Präfix der Rufnummer angeben (z. B. „T.: +49 (05331) 934 - “).';
         }
+        $colors = [];
+        foreach (['text_color' => self::DEFAULT_TEXT_COLOR, 'separator_color' => self::DEFAULT_SEPARATOR_COLOR] as $field => $default) {
+            $value = is_scalar($input[$field] ?? null) ? (string) $input[$field] : '';
+            if ($value === '') {
+                $value = $default;
+            } elseif (!isset(SettingsService::THEME_COLORS[$value])) {
+                $errors[$field] = 'Bitte eine der Designfarben auswählen.';
+                $value = $default;
+            }
+            $colors[$field] = $value;
+        }
         $groups = OfficeAppService::splitGroups(is_string($input['groups'] ?? null) ? $input['groups'] : implode(',', is_array($input['groups'] ?? null) ? $input['groups'] : []));
         foreach ($groups as $group) {
             if (mb_strlen($group) > 190) {
@@ -157,6 +178,8 @@ final class OrvantaSignatureService
             'postal_city' => $postalCity,
             'phone_mode' => $phoneMode,
             'phone_prefix' => $phonePrefix,
+            'text_color' => $colors['text_color'],
+            'separator_color' => $colors['separator_color'],
             'groups' => $groups,
             'sort_order' => $sortOrder,
             'active' => !empty($input['active']),
@@ -271,8 +294,8 @@ final class OrvantaSignatureService
     public function render(array $signature, array $person): string
     {
         $theme = $this->settings->theme();
-        $text = $theme['color_text'];
-        $accent = $theme['color_accent'];
+        $text = $theme[$signature['text_color'] ?? ''] ?? $theme[self::DEFAULT_TEXT_COLOR];
+        $accent = $theme[$signature['separator_color'] ?? ''] ?? $theme[self::DEFAULT_SEPARATOR_COLOR];
         $separator = ' <span style="color:' . $accent . '">&#9632;</span> ';
         $base = 'font-family:' . self::FONT . ';font-size:10pt;color:' . $text;
 
@@ -300,15 +323,41 @@ final class OrvantaSignatureService
             $html .= '<p style="margin:0 0 1.5em 0;' . $base . '">' . Html::e($signature['greeting']) . '</p>';
         }
         $html .= '<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;' . $base . '"><tr>';
-        $html .= '<td style="vertical-align:top;padding:0 16px 0 0;width:' . self::LOGO_WIDTH . 'px">';
-        if ($logo !== null) {
-            $html .= '<img src="' . $logo['src'] . '" alt="" width="' . self::LOGO_WIDTH . '" style="display:block;max-width:' . self::LOGO_WIDTH . 'px;height:auto;border:0">';
+        if ($logo !== null && $lines !== []) {
+            [$width, $height] = self::logoSize($logo['width'], $logo['height'], count($lines));
+            $size = ($width > 0 ? ' width="' . $width . '"' : '') . ' height="' . $height . '"';
+            $css = ($width > 0 ? 'width:' . $width . 'px;' : '') . 'height:' . $height . 'px;';
+            $html .= '<td style="vertical-align:top;padding:0 12px 0 0">';
+            $html .= '<img src="' . $logo['src'] . '" alt=""' . $size . ' style="display:block;' . $css . 'border:0">';
+            $html .= '</td>';
         }
-        $html .= '</td>';
-        $html .= '<td style="vertical-align:top;line-height:1.45;' . $base . '">' . implode('<br>', $lines) . '</td>';
+        $html .= '<td style="vertical-align:top;white-space:nowrap;line-height:' . self::LINE_HEIGHT . 'px;mso-line-height-rule:exactly;' . $base . '">' . implode('<br>', $lines) . '</td>';
         $html .= '</tr></table></div>';
 
         return $html;
+    }
+
+    /**
+     * Logogroesse in px: Hoehe = Anzahl Textzeilen x Zeilenhoehe, Breite
+     * proportional (hoechstens LOGO_MAX_WIDTH, dann wird die Hoehe reduziert).
+     * Feste width/height-Attribute sind noetig, weil Outlook max-width und
+     * height:auto ignoriert und das Bild sonst in Originalgroesse zeigt.
+     *
+     * @return array{0:int,1:int} [Breite (0 = unbekannt), Hoehe]
+     */
+    public static function logoSize(int $naturalWidth, int $naturalHeight, int $lines): array
+    {
+        $height = max(1, $lines) * self::LINE_HEIGHT;
+        if ($naturalWidth <= 0 || $naturalHeight <= 0) {
+            return [0, $height];
+        }
+        $width = (int) round($height * $naturalWidth / $naturalHeight);
+        if ($width > self::LOGO_MAX_WIDTH) {
+            $width = self::LOGO_MAX_WIDTH;
+            $height = max(1, (int) round($width * $naturalHeight / $naturalWidth));
+        }
+
+        return [max(1, $width), $height];
     }
 
     /**
@@ -358,7 +407,7 @@ final class OrvantaSignatureService
     }
 
     /**
-     * @return array{src:string}|null
+     * @return array{src:string,width:int,height:int}|null
      */
     private function logo(): ?array
     {
@@ -368,12 +417,51 @@ final class OrvantaSignatureService
             if (is_array($current) && is_readable($current['path'])) {
                 $contents = file_get_contents($current['path']);
                 if ($contents !== false && $contents !== '') {
-                    $this->logo = ['src' => 'data:' . $current['mime'] . ';base64,' . base64_encode($contents)];
+                    [$width, $height] = self::imageDimensions($contents, $current['mime']);
+                    $this->logo = [
+                        'src' => 'data:' . $current['mime'] . ';base64,' . base64_encode($contents),
+                        'width' => $width,
+                        'height' => $height,
+                    ];
                 }
             }
         }
 
         return $this->logo;
+    }
+
+    /**
+     * Pixelmasse eines Bildes (Raster ueber getimagesizefromstring, SVG ueber
+     * width/height bzw. viewBox); [0, 0], wenn nicht ermittelbar.
+     *
+     * @return array{0:int,1:int}
+     */
+    public static function imageDimensions(string $contents, string $mime): array
+    {
+        if ($mime === 'image/svg+xml') {
+            if (preg_match('~<svg\b[^>]*>~is', $contents, $tag) !== 1) {
+                return [0, 0];
+            }
+            $attribute = static function (string $name) use ($tag): float {
+                if (preg_match('~\s' . $name . '\s*=\s*["\']\s*([0-9.]+)\s*(px)?\s*["\']~i', $tag[0], $match) === 1) {
+                    return (float) $match[1];
+                }
+
+                return 0.0;
+            };
+            $width = $attribute('width');
+            $height = $attribute('height');
+            if (($width <= 0 || $height <= 0)
+                && preg_match('~\sviewBox\s*=\s*["\']\s*[-0-9.]+[\s,]+[-0-9.]+[\s,]+([0-9.]+)[\s,]+([0-9.]+)\s*["\']~i', $tag[0], $box) === 1) {
+                $width = (float) $box[1];
+                $height = (float) $box[2];
+            }
+
+            return $width > 0 && $height > 0 ? [(int) round($width), max(1, (int) round($height))] : [0, 0];
+        }
+        $size = @getimagesizefromstring($contents);
+
+        return is_array($size) && $size[0] > 0 && $size[1] > 0 ? [(int) $size[0], (int) $size[1]] : [0, 0];
     }
 
     // ------------------------------------------------------------------ Anfuegen

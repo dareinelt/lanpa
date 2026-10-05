@@ -13,7 +13,7 @@ use Tests\Support\Assert;
 use Tests\Support\Runner;
 
 /**
- * SQLite-Schema parallel zur Migration 035 pflegen.
+ * SQLite-Schema parallel zu den Migrationen 035/036 pflegen.
  *
  * @param array<string,string> $settings
  * @return array{service:OrvantaSignatureService,repository:OrvantaSignatureRepository,pdo:PDO}
@@ -29,6 +29,8 @@ function signatureSetup(array $settings = [], ?string $logoPath = null, string $
         postal_city VARCHAR(190) NOT NULL DEFAULT \'\',
         phone_mode VARCHAR(10) NOT NULL DEFAULT \'prefix\',
         phone_prefix VARCHAR(64) NOT NULL DEFAULT \'\',
+        text_color VARCHAR(40) NOT NULL DEFAULT \'color_text\',
+        separator_color VARCHAR(40) NOT NULL DEFAULT \'color_accent\',
         ad_groups TEXT NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 1,
         active INTEGER NOT NULL DEFAULT 1
@@ -114,6 +116,21 @@ Runner::test('Signaturen: Validierung der Vorlage', function (): void {
 
     // Abschliessendes Leerzeichen des Praefixes bleibt erhalten.
     Assert::same('T.: +49 (05331) 934 - ', $service->validate(signatureInput())['phone_prefix']);
+
+    // Farben: Standard = Text-/Akzentfarbe, nur Designfarben erlaubt.
+    $clean = $service->validate(signatureInput());
+    Assert::same('color_text', $clean['text_color']);
+    Assert::same('color_accent', $clean['separator_color']);
+    $clean = $service->validate(signatureInput(['text_color' => 'color_primary', 'separator_color' => 'color_secondary']));
+    Assert::same('color_primary', $clean['text_color']);
+    Assert::same('color_secondary', $clean['separator_color']);
+    try {
+        $service->validate(signatureInput(['text_color' => '#ff0000', 'separator_color' => 'red']));
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['text_color']));
+        Assert::true(isset($exception->errors()['separator_color']));
+    }
 });
 
 Runner::test('Signaturen: Speichern, Laden, Aktualisieren und Loeschen', function (): void {
@@ -192,6 +209,36 @@ Runner::test('Signaturen: Darstellung mit AD-Daten, Praefix + Durchwahl, Farben 
     } finally {
         @unlink($logo);
     }
+});
+
+Runner::test('Signaturen: Logo in Hoehe der Textzeilen, waehlbare Designfarben', function (): void {
+    $logo = tempnam(sys_get_temp_dir(), 'ovlogo');
+    // 1000 x 500 px PNG (Signatur + IHDR reichen fuer getimagesize).
+    file_put_contents($logo, "\x89PNG\r\n\x1a\n" . pack('N', 13) . 'IHDR' . pack('NN', 1000, 500) . "\x08\x02\x00\x00\x00" . pack('N', 0));
+    try {
+        $service = signatureSetup(['color_primary' => '#0000aa', 'color_secondary' => '#00aa00'], $logo)['service'];
+        $id = $service->save(null, signatureInput(['text_color' => 'color_primary', 'separator_color' => 'color_secondary']));
+        Assert::same('color_primary', $service->find($id)['text_color']);
+
+        $html = $service->forUser(['id' => 7, 'groups' => ['IT']])['html'];
+        $height = 3 * OrvantaSignatureService::LINE_HEIGHT;
+        Assert::contains('width="' . ($height * 2) . '" height="' . $height . '"', $html, 'Logo skaliert auf drei Textzeilen.');
+        Assert::contains('line-height:' . OrvantaSignatureService::LINE_HEIGHT . 'px', $html);
+        Assert::contains('color:#0000aa', $html, 'Gewaehlte Schriftfarbe.');
+        Assert::contains('<span style="color:#00aa00">&#9632;</span>', $html, 'Gewaehlte Trennzeichenfarbe.');
+        Assert::false(str_contains($html, '#112233'));
+    } finally {
+        @unlink($logo);
+    }
+
+    // Sehr breite Logos werden auf LOGO_MAX_WIDTH begrenzt, unbekannte Masse nur in der Hoehe gesetzt.
+    Assert::same([OrvantaSignatureService::LOGO_MAX_WIDTH, 24], OrvantaSignatureService::logoSize(1000, 100, 3));
+    Assert::same([0, 36], OrvantaSignatureService::logoSize(0, 0, 2));
+    Assert::same([36, 54], OrvantaSignatureService::logoSize(200, 300, 3));
+
+    Assert::same([120, 60], OrvantaSignatureService::imageDimensions('<svg xmlns="http://www.w3.org/2000/svg" width="120px" height="60"></svg>', 'image/svg+xml'));
+    Assert::same([300, 150], OrvantaSignatureService::imageDimensions('<svg viewBox="0 0 300 150"></svg>', 'image/svg+xml'));
+    Assert::same([0, 0], OrvantaSignatureService::imageDimensions('PNGDATA', 'image/png'));
 });
 
 Runner::test('Signaturen: komplette Rufnummer aus dem AD, ohne Logo, fehlende Felder', function (): void {

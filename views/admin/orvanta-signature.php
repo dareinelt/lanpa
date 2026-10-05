@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Security\Csrf;
 use App\Support\Html;
 
-/** @var array{id:int,name:string,greeting:string,street:string,postal_city:string,phone_mode:string,phone_prefix:string,groups:list<string>,sort_order:int,active:bool} $signature */
+/** @var array{id:int,name:string,greeting:string,street:string,postal_city:string,phone_mode:string,phone_prefix:string,text_color:string,separator_color:string,groups:list<string>,sort_order:int,active:bool} $signature */
+/** @var array<string,string> $theme */
+/** @var array<string,string> $colorLabels */
 /** @var array<string,string> $errors */
 
 $error = static fn (string $key): string => isset($errors[$key])
@@ -95,6 +97,24 @@ $invalid = static fn (string $key): string => isset($errors[$key])
             <p class="field__hint">Die Rufnummer wird unverändert übernommen und mit „T.: “ eingeleitet; der Präfix bleibt unberücksichtigt.</p>
         </div>
         <?= $error('phone_mode') ?>
+    </fieldset>
+
+    <fieldset class="fieldset">
+        <legend>Farben</legend>
+        <p class="field__hint">Zur Auswahl stehen die Farben der <a href="/admin/design">Designeinstellungen</a>; ändert sich dort eine Farbe, übernehmen die Signaturen sie automatisch.</p>
+        <div class="field-grid">
+            <?php foreach (['text_color' => 'Schriftfarbe', 'separator_color' => 'Farbe der Trennzeichen (■)'] as $colorField => $colorLabel) { ?>
+                <div class="field">
+                    <label for="signature_<?= Html::e($colorField) ?>"><?= Html::e($colorLabel) ?></label>
+                    <select id="signature_<?= Html::e($colorField) ?>" name="<?= Html::e($colorField) ?>" <?= $invalid($colorField) ?> data-signature-field>
+                        <?php foreach ($colorLabels as $colorKey => $label) { ?>
+                            <option value="<?= Html::e($colorKey) ?>" <?= $signature[$colorField] === $colorKey ? 'selected' : '' ?>><?= Html::e($label . ' (' . ($theme[$colorKey] ?? '') . ')') ?></option>
+                        <?php } ?>
+                    </select>
+                    <?= $error($colorField) ?>
+                </div>
+            <?php } ?>
+        </div>
     </fieldset>
 
     <fieldset class="fieldset">

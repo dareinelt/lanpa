@@ -344,7 +344,7 @@
 .ov-editor { min-height: 220px; max-height: 45vh; overflow: auto; padding: .7rem .8rem; border: 1px solid var(--ov-line); border-radius: 0 0 .4rem .4rem; line-height: 1.5; }
 /* Fest zugeordnete Signatur im Editor: schreibgeschuetzt, sieht aus wie Teil des Textes. */
 .ov-editor .ov-signature-block { cursor: default; }
-.ov-editor .ov-signature-block img { max-width: 160px; height: auto; }
+.ov-editor .ov-signature-block img { max-width: 240px; height: auto; }
 .ov-editor blockquote { margin: .5rem 0; padding-left: .8rem; border-left: 3px solid var(--ov-line); color: var(--ov-muted); }
 .ov-attach-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; }
 .ov-attach-list:empty { display: none; }

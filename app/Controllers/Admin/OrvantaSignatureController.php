@@ -11,6 +11,7 @@ use App\Exceptions\ValidationException;
 use App\Security\Session;
 use App\Services\Office\OfficeAppService;
 use App\Services\Orvanta\OrvantaSignatureService;
+use App\Services\SettingsService;
 
 /**
  * Adminbereich "Office → Orvanta → Signaturen": Signaturvorlagen anlegen,
@@ -37,8 +38,8 @@ final class OrvantaSignatureController extends AdminController
             'activeNav' => 'office',
             'signatures' => $service->all(),
             'hasLogo' => Container::logo()->current() !== null,
-            'textColor' => $theme['color_text'],
-            'accentColor' => $theme['color_accent'],
+            'theme' => $theme,
+            'colorLabels' => SettingsService::THEME_COLORS,
             'orvantaEnabled' => Container::orvantaConfig()->isEnabled(),
         ]);
     }
@@ -70,6 +71,8 @@ final class OrvantaSignatureController extends AdminController
             'postal_city' => (string) $request->input('postal_city', ''),
             'phone_mode' => (string) $request->input('phone_mode', 'prefix'),
             'phone_prefix' => (string) $request->input('phone_prefix', ''),
+            'text_color' => (string) $request->input('text_color', ''),
+            'separator_color' => (string) $request->input('separator_color', ''),
             'groups' => (string) $request->input('groups', ''),
             'sort_order' => (string) $request->input('sort_order', '1'),
             'active' => $request->input('active', '') !== '',
@@ -93,6 +96,8 @@ final class OrvantaSignatureController extends AdminController
                 'postal_city' => $input['postal_city'],
                 'phone_mode' => in_array($input['phone_mode'], OrvantaSignatureService::PHONE_MODES, true) ? $input['phone_mode'] : 'prefix',
                 'phone_prefix' => $input['phone_prefix'],
+                'text_color' => isset(SettingsService::THEME_COLORS[$input['text_color']]) ? $input['text_color'] : OrvantaSignatureService::DEFAULT_TEXT_COLOR,
+                'separator_color' => isset(SettingsService::THEME_COLORS[$input['separator_color']]) ? $input['separator_color'] : OrvantaSignatureService::DEFAULT_SEPARATOR_COLOR,
                 'groups' => OfficeAppService::splitGroups($input['groups']),
                 'sort_order' => max(1, (int) $input['sort_order']),
                 'active' => $input['active'],
@@ -136,6 +141,8 @@ final class OrvantaSignatureController extends AdminController
                     'postal_city' => (string) ($request->query['postal_city'] ?? ''),
                     'phone_mode' => (string) ($request->query['phone_mode'] ?? 'prefix'),
                     'phone_prefix' => (string) ($request->query['phone_prefix'] ?? ''),
+                    'text_color' => (string) ($request->query['text_color'] ?? ''),
+                    'separator_color' => (string) ($request->query['separator_color'] ?? ''),
                     'groups' => '',
                     'sort_order' => '1',
                     'active' => true,
@@ -165,6 +172,8 @@ final class OrvantaSignatureController extends AdminController
             'pageTitle' => ((int) $signature['id']) > 0 ? 'Signaturvorlage bearbeiten' : 'Neue Signaturvorlage',
             'activeNav' => 'office',
             'signature' => $signature,
+            'theme' => Container::settings()->theme(),
+            'colorLabels' => SettingsService::THEME_COLORS,
             'errors' => $errors,
             'pageScript' => 'admin-group-autocomplete.js',
             'extraScripts' => ['admin-signature.js'],

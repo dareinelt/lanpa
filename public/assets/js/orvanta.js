@@ -27,6 +27,7 @@
         hasMore: false,
         selected: null,
         selectedIds: [],
+        dragIds: null,
         filter: 'all',
         search: '',
         calView: 'week',
@@ -837,6 +838,7 @@
                 node.addEventListener('click', function () {
                     selectFolder(key, FOLDER_LABELS[folder.kind] || folder.name);
                 });
+                bindFolderDrop(node, key);
                 body.appendChild(node);
                 render(folder.id, depth + 1);
             });
@@ -845,6 +847,44 @@
         if (!state.folders.length) {
             body.appendChild(el('div', { 'class': 'ov-folders__empty', text: 'Keine Ordner gefunden.' }));
         }
+    }
+
+    /**
+     * Ordner als Ablageziel fuer per Drag&Drop gezogene Nachrichten; der
+     * aktuell geoeffnete Ordner nimmt keine Ablage an.
+     */
+    function bindFolderDrop(node, key) {
+        function accepts() {
+            return !!(state.dragIds && state.dragIds.length) && key !== state.folder;
+        }
+        node.addEventListener('dragenter', function (event) {
+            if (accepts()) {
+                event.preventDefault();
+                node.classList.add('ov-folder--drop');
+            }
+        });
+        node.addEventListener('dragover', function (event) {
+            if (accepts()) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = 'move';
+                node.classList.add('ov-folder--drop');
+            }
+        });
+        node.addEventListener('dragleave', function (event) {
+            if (!node.contains(event.relatedTarget)) {
+                node.classList.remove('ov-folder--drop');
+            }
+        });
+        node.addEventListener('drop', function (event) {
+            node.classList.remove('ov-folder--drop');
+            if (!accepts()) {
+                return;
+            }
+            event.preventDefault();
+            var ids = state.dragIds.slice();
+            state.dragIds = null;
+            mailAction('move', ids, key);
+        });
     }
 
     function selectFolder(key, name) {
@@ -933,6 +973,7 @@
         var row = el('article', {
             'class': 'ov-item' + (message.is_read ? '' : ' ov-item--unread') + (state.selected && state.selected.id === message.id ? ' ov-item--active' : '') + (state.selectedIds.indexOf(message.id) !== -1 ? ' ov-item--checked' : ''),
             tabindex: '0',
+            draggable: 'true',
             'data-id': message.id
         }, [
             el('label', { 'class': 'ov-item__check' }, [
@@ -972,6 +1013,27 @@
                 event.preventDefault();
                 openMessage(message);
             }
+        });
+        row.addEventListener('dragstart', function (event) {
+            // Gehoert die Zeile zur Mehrfachauswahl, wird die ganze Auswahl gezogen.
+            state.dragIds = state.selectedIds.indexOf(message.id) !== -1 ? state.selectedIds.slice() : [message.id];
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', state.dragIds.length > 1 ? state.dragIds.length + ' Nachrichten' : (message.subject || '(kein Betreff)'));
+            state.dragIds.forEach(function (id) {
+                var node = $('[data-id="' + CSS.escape(id) + '"]', hook('list-body'));
+                if (node) {
+                    node.classList.add('ov-item--dragging');
+                }
+            });
+        });
+        row.addEventListener('dragend', function () {
+            state.dragIds = null;
+            $$('.ov-item--dragging', hook('list-body')).forEach(function (node) {
+                node.classList.remove('ov-item--dragging');
+            });
+            $$('.ov-folder--drop', hook('folders-body')).forEach(function (node) {
+                node.classList.remove('ov-folder--drop');
+            });
         });
         return row;
     }

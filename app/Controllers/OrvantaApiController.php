@@ -58,6 +58,40 @@ final class OrvantaApiController extends Controller
         return $this->handle($request, fn (array $access): array => ['folders' => Container::orvantaExchange()->folders($access['impersonate'])]);
     }
 
+    /**
+     * Eigenschaften eines Ordners (Kontextmenue „Eigenschaften“): Anzahl der
+     * Elemente und Groesse, auch zusammen mit den Unterordnern.
+     */
+    public function folderProperties(Request $request): Response
+    {
+        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->folderProperties($access['impersonate'], $this->requireId($request->query('ordner'))));
+    }
+
+    /**
+     * Neuen Ordner anlegen; `parent` leer = oberste Ebene des Postfachs.
+     */
+    public function createFolder(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            $parent = trim($this->str('parent'));
+            $result = Container::orvantaExchange()->createFolder($access['impersonate'], $parent !== '' ? $this->requireId($parent) : '', $this->str('name'));
+
+            return $result + ['message' => 'Der Ordner „' . $result['name'] . '“ wurde angelegt.'];
+        }, true);
+    }
+
+    /**
+     * Alle Nachrichten eines Ordners als gelesen markieren.
+     */
+    public function markFolderRead(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            Container::orvantaExchange()->markFolderRead($access['impersonate'], $this->requireId($this->str('folder')));
+
+            return ['ok' => true, 'message' => 'Alle Nachrichten wurden als gelesen markiert.'];
+        }, true);
+    }
+
     public function messages(Request $request): Response
     {
         return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->messages(

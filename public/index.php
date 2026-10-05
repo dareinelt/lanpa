@@ -147,6 +147,9 @@ $router->get('/office/orvanta/anhang/oeffnen', [OrvantaController::class, 'openA
 $router->get('/office/orvanta/anhang/datei', [OrvantaController::class, 'attachmentFile']); // Token-Zugriff des DocumentServers
 $router->get('/api/orvanta/status', [OrvantaApiController::class, 'status']);
 $router->get('/api/orvanta/mail/ordner', [OrvantaApiController::class, 'folders']);
+$router->get('/api/orvanta/mail/ordner/eigenschaften', [OrvantaApiController::class, 'folderProperties']);
+$router->post('/api/orvanta/mail/ordner/neu', [OrvantaApiController::class, 'createFolder']);
+$router->post('/api/orvanta/mail/ordner/gelesen', [OrvantaApiController::class, 'markFolderRead']);
 $router->get('/api/orvanta/mail', [OrvantaApiController::class, 'messages']);
 $router->get('/api/orvanta/mail/nachricht', [OrvantaApiController::class, 'message']);
 $router->get('/api/orvanta/mail/kopfzeilen', [OrvantaApiController::class, 'messageHeaders']);

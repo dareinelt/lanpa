@@ -17,13 +17,31 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
 {
     public const HOST = 'demo';
 
+    /** Ordnergroessen: [Typ, Id, Elternordner, Byte] */
+    private const SIZES = [
+        ['Folder', 'demo-ipm', 'demo-root', 4096], ['Folder', 'demo-inbox', 'demo-ipm', 912261120], ['Folder', 'demo-sentitems', 'demo-ipm', 402653184],
+        ['CalendarFolder', 'demo-calendar', 'demo-ipm', 83886080], ['ContactsFolder', 'demo-contacts', 'demo-ipm', 2097152], ['TasksFolder', 'demo-tasks', 'demo-ipm', 524288],
+        ['Folder', 'demo-projekte', 'demo-inbox', 48113254], ['SearchFolder', 'demo-search', 'demo-root', 500000000],
+        ['Folder', 'demo-recoverable', 'demo-root', 300000000], ['Folder', 'demo-deletions', 'demo-recoverable', 200000000],
+    ];
+
+    /** E-Mail-Ordner: [Id, Name, Elemente, ungelesen] */
+    private const MAIL_FOLDERS = [
+        ['demo-inbox', 'Posteingang', 8, 3], ['demo-drafts', 'Entwürfe', 1, 0], ['demo-sentitems', 'Gesendete Elemente', 42, 0],
+        ['demo-deleteditems', 'Gelöschte Elemente', 5, 0], ['demo-junkemail', 'Junk-E-Mail', 0, 0], ['demo-outbox', 'Postausgang', 0, 0],
+        ['demo-projekte', 'Projekte', 17, 1], ['demo-rechnungen', 'Rechnungen', 9, 0],
+    ];
+
     public function post(string $url, string $xml, array $options): array
     {
         $body = match (true) {
             str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'DistinguishedFolderId Id="root"/>') => $this->mailboxUsage(),
+            str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'PropertyTag="0x0E08"') => $this->folderProperties($xml),
             str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'DistinguishedFolderId Id="inbox"/></m:FolderIds>') && !str_contains($xml, 'Id="drafts"') => $this->getInbox(),
             str_contains($xml, '<m:GetFolder>') => $this->getKnownFolders(),
+            str_contains($xml, '<m:FindFolder') && str_contains($xml, 'PropertyTag="0x0E08"') && !str_contains($xml, 'DistinguishedFolderId Id="root"/>') => $this->subfolders($xml),
             str_contains($xml, '<m:FindFolder') && str_contains($xml, 'PropertyTag="0x0E08"') => $this->folderSizes(),
+            str_contains($xml, '<m:CreateFolder>') => $this->envelope('<m:CreateFolderResponse><m:ResponseMessages><m:CreateFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Folders><t:Folder><t:FolderId Id="demo-folder-' . substr(sha1($xml), 0, 8) . '" ChangeKey="A"/></t:Folder></m:Folders></m:CreateFolderResponseMessage></m:ResponseMessages></m:CreateFolderResponse>'),
             str_contains($xml, '<m:FindFolder') => $this->findFolders(),
             str_contains($xml, '<m:CalendarView') => $this->calendar($xml),
             str_contains($xml, 'Id="contacts"') && str_contains($xml, '<m:FindItem') => $this->contacts(),
@@ -85,12 +103,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
      */
     private function folderSizes(): string
     {
-        $folders = [
-            ['Folder', 'demo-ipm', 'demo-root', 4096], ['Folder', 'demo-inbox', 'demo-ipm', 912261120], ['Folder', 'demo-sentitems', 'demo-ipm', 402653184],
-            ['CalendarFolder', 'demo-calendar', 'demo-ipm', 83886080], ['ContactsFolder', 'demo-contacts', 'demo-ipm', 2097152], ['TasksFolder', 'demo-tasks', 'demo-ipm', 524288],
-            ['Folder', 'demo-projekte', 'demo-inbox', 48113254], ['SearchFolder', 'demo-search', 'demo-root', 500000000],
-            ['Folder', 'demo-recoverable', 'demo-root', 300000000], ['Folder', 'demo-deletions', 'demo-recoverable', 200000000],
-        ];
+        $folders = self::SIZES;
         $out = '';
         foreach ($folders as [$type, $id, $parent, $size]) {
             $out .= '<t:' . $type . '><t:FolderId Id="' . $id . '" ChangeKey="A"/><t:ParentFolderId Id="' . $parent . '" ChangeKey="A"/>'
@@ -117,17 +130,77 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
 
     private function findFolders(): string
     {
-        $folders = [
-            ['demo-inbox', 'Posteingang', 8, 3], ['demo-drafts', 'Entwürfe', 1, 0], ['demo-sentitems', 'Gesendete Elemente', 42, 0],
-            ['demo-deleteditems', 'Gelöschte Elemente', 5, 0], ['demo-junkemail', 'Junk-E-Mail', 0, 0], ['demo-outbox', 'Postausgang', 0, 0],
-            ['demo-projekte', 'Projekte', 17, 1], ['demo-rechnungen', 'Rechnungen', 9, 0],
-        ];
+        $folders = self::MAIL_FOLDERS;
         $out = '';
         foreach ($folders as [$id, $name, $total, $unread]) {
             $out .= '<t:Folder><t:FolderId Id="' . $id . '" ChangeKey="A"/><t:ParentFolderId Id="demo-root" ChangeKey="A"/><t:FolderClass>IPF.Note</t:FolderClass><t:DisplayName>' . $name . '</t:DisplayName><t:TotalCount>' . $total . '</t:TotalCount><t:ChildFolderCount>0</t:ChildFolderCount><t:UnreadCount>' . $unread . '</t:UnreadCount></t:Folder>';
         }
 
         return $this->envelope('<m:FindFolderResponse><m:ResponseMessages><m:FindFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:RootFolder TotalItemsInView="' . count($folders) . '" IncludesLastItemInRange="true"><t:Folders>' . $out . '</t:Folders></m:RootFolder></m:FindFolderResponseMessage></m:ResponseMessages></m:FindFolderResponse>');
+    }
+
+    /**
+     * Ordner-Id aus dem ersten Folder- bzw. DistinguishedFolderId-Element
+     * innerhalb von $container (Distinguished-Namen werden zu „demo-…“).
+     */
+    private function requestedFolder(string $xml, string $container): string
+    {
+        if (preg_match('/<m:' . $container . '>\s*<t:(?:Distinguished)?FolderId Id="([^"]+)"/', $xml, $match) !== 1) {
+            return '';
+        }
+
+        return str_starts_with($match[1], 'demo-') ? $match[1] : 'demo-' . $match[1];
+    }
+
+    private function folderProperties(string $xml): string
+    {
+        $id = $this->requestedFolder($xml, 'FolderIds');
+        $size = 0;
+        foreach (self::SIZES as [, $sizeId, , $bytes]) {
+            if ($sizeId === $id) {
+                $size = $bytes;
+            }
+        }
+        $children = 0;
+        foreach (self::SIZES as [, , $parent]) {
+            $children += $parent === $id ? 1 : 0;
+        }
+        foreach (self::MAIL_FOLDERS as [$folderId, $name, $total, $unread]) {
+            if ($folderId === $id) {
+                return $this->envelope('<m:GetFolderResponse><m:ResponseMessages><m:GetFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Folders><t:Folder><t:FolderId Id="' . $id . '" ChangeKey="A"/>'
+                    . '<t:DisplayName>' . $name . '</t:DisplayName><t:TotalCount>' . $total . '</t:TotalCount><t:ChildFolderCount>' . $children . '</t:ChildFolderCount><t:UnreadCount>' . $unread . '</t:UnreadCount>'
+                    . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0xe08" PropertyType="Long"/><t:Value>' . ($size ?: $total * 45056) . '</t:Value></t:ExtendedProperty>'
+                    . '</t:Folder></m:Folders></m:GetFolderResponseMessage></m:ResponseMessages></m:GetFolderResponse>');
+            }
+        }
+
+        return $this->envelope('<m:GetFolderResponse><m:ResponseMessages><m:GetFolderResponseMessage ResponseClass="Error"><m:MessageText>The specified folder could not be found in the store.</m:MessageText><m:ResponseCode>ErrorFolderNotFound</m:ResponseCode><m:DescriptiveLinkKey>0</m:DescriptiveLinkKey></m:GetFolderResponseMessage></m:ResponseMessages></m:GetFolderResponse>');
+    }
+
+    /**
+     * Unterordner (Deep) eines E-Mail-Ordners mit Anzahl und Groesse.
+     */
+    private function subfolders(string $xml): string
+    {
+        $totals = [];
+        foreach (self::MAIL_FOLDERS as [$folderId, , $total]) {
+            $totals[$folderId] = $total;
+        }
+        $parents = [$this->requestedFolder($xml, 'ParentFolderIds')];
+        $out = '';
+        $count = 0;
+        for ($i = 0; $i < count($parents); $i++) {
+            foreach (self::SIZES as [$type, $id, $parent, $size]) {
+                if ($parent === $parents[$i]) {
+                    $parents[] = $id;
+                    $count++;
+                    $out .= '<t:' . $type . '><t:FolderId Id="' . $id . '" ChangeKey="A"/><t:TotalCount>' . ($totals[$id] ?? 0) . '</t:TotalCount>'
+                        . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0xe08" PropertyType="Long"/><t:Value>' . $size . '</t:Value></t:ExtendedProperty></t:' . $type . '>';
+                }
+            }
+        }
+
+        return $this->envelope('<m:FindFolderResponse><m:ResponseMessages><m:FindFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:RootFolder TotalItemsInView="' . $count . '" IncludesLastItemInRange="true"><t:Folders>' . $out . '</t:Folders></m:RootFolder></m:FindFolderResponseMessage></m:ResponseMessages></m:FindFolderResponse>');
     }
 
     /**

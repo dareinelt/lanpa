@@ -100,7 +100,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/Controller.php` | `orvantaRemindersVisible()` → View-Variable `$orvantaReminders` (Kopfzeilen-Erinnerungen auf allen Seiten) |
 | `app/Services/Office/OfficeAppCatalog.php` | App `orvanta` (`kind = intranet`), `ORVANTA_PATH = '/office/orvanta'` |
 | `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`/`isSafeFileName()` (führender Punkt nur bei Dateinamen), `MAX_BYTES` (16 MiB) |
-| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, headers, profile, settings, help, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Mail-Liste, Textfelder, KI; Einträge per JS) |
+| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, headers, folder-new, folder-props, profile, settings, help, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Ordnerbaum, Mail-Liste, Textfelder, KI; Einträge per JS) |
 | `views/orvanta/viewer.php` | Euro-Office-Viewer `.ov-viewer[data-orvanta-viewer]` mit `data-api`, `data-config`, `data-download` und Download-Fallback |
 | `views/admin/office.php` | Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer, KI-Nutzungsbericht `#orvanta-ki`) |
 | `views/layouts/base.php` | Mitteilungsmenü mit `data-orvanta-reminders` / `data-orvanta-reminder-list`, lädt `orvanta-reminders.js` (mit `data-csrf`) |
@@ -133,6 +133,9 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | GET | `/office/orvanta/anhang/datei?token=` | `attachmentFile` | Rohdatei für den DocumentServer (**nur Token**, keine Session) |
 | GET | `/api/orvanta/status` | `status` | Benutzer, Demo, Host, Zwischenspeicher, Serverzeit |
 | GET | `/api/orvanta/mail/ordner` | `folders` | Ordnerbaum |
+| GET | `/api/orvanta/mail/ordner/eigenschaften?ordner=` | `folderProperties` | Anzahl/Größe eines Ordners, auch inkl. Unterordner (Kontextmenü „Eigenschaften“) |
+| POST | `/api/orvanta/mail/ordner/neu` | `createFolder` | Neuen E-Mail-Ordner anlegen (Kontextmenü „Neuer Ordner“) |
+| POST | `/api/orvanta/mail/ordner/gelesen` | `markFolderRead` | Alle Nachrichten eines Ordners als gelesen markieren (EWS `MarkAllItemsAsRead`) |
 | GET | `/api/orvanta/mail?ordner=&offset=&limit=&q=` | `messages` | Nachrichtenliste |
 | GET | `/api/orvanta/mail/nachricht?id=` | `message` | Nachricht inkl. bereinigtem HTML |
 | GET | `/api/orvanta/mail/kopfzeilen?id=` | `messageHeaders` | Rohe Internet-Kopfzeilen (Kontextmenü „Info“) |
@@ -327,6 +330,9 @@ Vorprüfungen des Service als 422/404).
 | --- | --- | --- |
 | `status` | – | `{user{name,email}, demo, host, cache{used,quota,items,folder,percent}, server_time}` |
 | `mail/ordner` | – | `{folders[{id,name,parent,total,unread,kind,class}]}` |
+| `mail/ordner/eigenschaften` | Query `ordner` (Systemname wie `inbox` oder FolderId) | `{id, name, total, unread, subfolders, size, total_with_subfolders, size_with_subfolders}`; Größe in Byte aus `PR_MESSAGE_SIZE_EXTENDED` (`0x0E08`), Unterordner per `FindFolder` Deep (ohne Suchordner, max. 1000) |
+| `mail/ordner/neu` | `parent` (leer = oberste Ebene, `msgfolderroot`), `name` (1–255 Zeichen, Steuerzeichen entfernt) | `{id, name, message}`; Ordnerklasse `IPF.Note`; vorhandener Name → `ErrorFolderExists` (502 mit Hinweis) |
+| `mail/ordner/gelesen` | `folder` | `{ok, message}`; `SuppressReadReceipts` = true |
 | `mail` | Query `ordner`, `offset`, `limit` (1–100), `q` | `{items[], total, offset, has_more}`; Element: `id, change_key, subject, preview, from{name,email}, to[], received, sent, is_read, has_attachments, size, importance, flagged, categories[], item_class, is_meeting_request` |
 | `mail/nachricht` | Query `id` | wie Listenelement + `body_html, blocked_images, cc, bcc, reply_to, sender, internet_message_id, attachments[{id,name,content_type,content_id,size,inline,is_item}]`; `cid:`-Bilder zeigen per `src` auf `anhang/oeffnen?token=…` |
 | `mail/kopfzeilen` | Query `id` | `{id, subject, headers, source}`; `headers` = unveränderter RFC-5322-Kopfblock aus `item:MimeContent` (`source` = `mime`), ersatzweise aus `InternetMessageHeaders` zusammengesetzt (`source` = `exchange`) |
@@ -682,8 +688,12 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
   (`ai.originals`) und werden beim Schließen des Dialogs verworfen; Blöcke aus
   wieder geöffneten Entwürfen sind daher nur noch verfeinerbar/entmarkierbar.
 - Das App-Kontextmenü (`[data-ov-ctx-menu]`, Abschnitt „App-Kontextmenue“ in
-  `orvanta.js`) ersetzt das Browser-Menü an zwei Stellen: auf Zeilen der
-  Mail-Liste (Öffnen/Entwurf bearbeiten, Antworten, Allen antworten,
+  `orvanta.js`) ersetzt das Browser-Menü an drei Stellen: auf Ordnern im
+  Ordnerbaum (`folderMenuItems()`: Öffnen, Neuer Ordner … – Dialog
+  `folder-new`, legt einen Unterordner des angeklickten Ordners an –, Alle als
+  gelesen markieren – deaktiviert ohne ungelesene Nachrichten –, Eigenschaften
+  – Overlay `folder-props` mit Elementen, Ungelesen, Größe und ggf.
+  Unterordnern), auf Zeilen der Mail-Liste (Öffnen/Entwurf bearbeiten, Antworten, Allen antworten,
   Weiterleiten, gelesen/ungelesen, Kennzeichnen, Verschieben, Archivieren,
   Löschen – bei angehakten Zeilen für alle markierten) und in Textfeldern
   (`input`, `textarea`, `contenteditable`: Rückgängig, Wiederholen,

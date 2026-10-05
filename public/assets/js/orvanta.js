@@ -1393,6 +1393,100 @@
     }
 
     // ------------------------------------------------------------------
+    // Mail: Ordner-Kontextmenue (Neuer Ordner, Alle gelesen, Eigenschaften)
+    // ------------------------------------------------------------------
+
+    function folderLabel(folder) {
+        return FOLDER_LABELS[folder.kind] || folder.name;
+    }
+
+    function openNewFolderDialog(parent) {
+        var form = hook('form-folder-new');
+        if (!form) {
+            return;
+        }
+        form.reset();
+        form.elements.parent.value = parent ? folderKey(parent) : '';
+        var label = hook('folder-new-parent', form);
+        if (label) {
+            label.textContent = parent ? folderLabel(parent) : 'Postfach (oberste Ebene)';
+        }
+        openDialog('folder-new');
+    }
+
+    function createFolder(form) {
+        var name = form.elements.name.value.trim();
+        if (!name) {
+            formError(form, 'Bitte einen Ordnernamen angeben.');
+            return;
+        }
+        var button = form.querySelector('[type=submit]');
+        button.disabled = true;
+        api('/mail/ordner/neu', { body: { parent: form.elements.parent.value, name: name } }).then(function (result) {
+            closeDialog('folder-new');
+            toast(result.message || 'Der Ordner wurde angelegt.', 'success');
+            return loadFolders();
+        }).catch(function (error) {
+            formError(form, error.message);
+        }).then(function () {
+            button.disabled = false;
+        });
+    }
+
+    function markFolderRead(folder) {
+        var key = folderKey(folder);
+        return api('/mail/ordner/gelesen', { body: { folder: key } }).then(function (result) {
+            toast(result.message || 'Alle Nachrichten wurden als gelesen markiert.', 'success');
+            return loadFolders().then(function () {
+                if (state.folder === key) {
+                    return loadMessages();
+                }
+            });
+        }).catch(function (error) {
+            toast(error.message, 'error');
+        });
+    }
+
+    function openFolderProperties(folder) {
+        var dialog = $('[data-ov-dialog="folder-props"]');
+        if (!dialog) {
+            return;
+        }
+        var title = hook('folder-props-title', dialog);
+        var list = hook('folder-props', dialog);
+        if (title) {
+            title.textContent = folderLabel(folder);
+        }
+        function fill(rows) {
+            if (!list) {
+                return;
+            }
+            list.innerHTML = '';
+            rows.forEach(function (row) {
+                list.appendChild(el('dt', { text: row[0] }));
+                list.appendChild(el('dd', { text: row[1] }));
+            });
+        }
+        fill([['Status', 'Eigenschaften werden geladen …']]);
+        openDialog('folder-props');
+        var items = function (n) { return n + ' Element' + (n === 1 ? '' : 'e'); };
+        api('/mail/ordner/eigenschaften', { query: { ordner: folderKey(folder) } }).then(function (info) {
+            var rows = [
+                ['Elemente', items(info.total)],
+                ['Ungelesen', String(info.unread)],
+                ['Größe', fmtBytes(info.size)]
+            ];
+            if (info.subfolders > 0) {
+                rows.push(['Unterordner', String(info.subfolders)]);
+                rows.push(['Inkl. Unterordner', items(info.total_with_subfolders) + ', ' + fmtBytes(info.size_with_subfolders)]);
+            }
+            fill(rows);
+        }).catch(function (error) {
+            fill([['Fehler', error.message || 'Die Eigenschaften konnten nicht geladen werden.']]);
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Mail: Verfassen
     // ------------------------------------------------------------------
 
@@ -3455,6 +3549,7 @@
                 else if (kind === 'contact') { saveContact(form); }
                 else if (kind === 'task') { saveTask(form); }
                 else if (kind === 'compose') { sendCompose(form, false); }
+                else if (kind === 'folder-new') { createFolder(form); }
             });
         });
 
@@ -3618,7 +3713,7 @@
     // ------------------------------------------------------------------
 
     // ------------------------------------------------------------------
-    // App-Kontextmenue (Mail-Liste, Textfelder, KI-Unterstuetzung)
+    // App-Kontextmenue (Ordnerbaum, Mail-Liste, Textfelder, KI-Unterstuetzung)
     // ------------------------------------------------------------------
 
     var MOD_KEY = /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘' : 'Strg+';
@@ -3914,6 +4009,22 @@
         return items;
     }
 
+    function folderMenuItems(node) {
+        var key = node.getAttribute('data-folder');
+        var folder = state.folders.filter(function (f) { return folderKey(f) === key; })[0];
+        if (!folder) {
+            return [];
+        }
+        return [
+            { label: 'Öffnen', icon: '📂', disabled: key === state.folder, run: function () { selectFolder(key, folderLabel(folder)); } },
+            { separator: true },
+            { label: 'Neuer Ordner …', icon: '📁', run: function () { openNewFolderDialog(folder); } },
+            { label: 'Alle als gelesen markieren', icon: '✉', disabled: !(folder.unread > 0), run: function () { markFolderRead(folder); } },
+            { separator: true },
+            { label: 'Eigenschaften', icon: 'ℹ', run: function () { openFolderProperties(folder); } }
+        ];
+    }
+
     function onContextMenu(event) {
         if (!ctx.menu || event.defaultPrevented) {
             return;
@@ -3940,9 +4051,14 @@
         } else if (state.module === 'mail') {
             var row = target.closest('.ov-item');
             var list = hook('list-body');
+            var folderNode = target.closest('[data-folder]');
+            var folders = hook('folders-body');
             if (row && list && list.contains(row)) {
                 items = mailMenuItems(row);
                 origin = row;
+            } else if (folderNode && folders && folders.contains(folderNode)) {
+                items = folderMenuItems(folderNode);
+                origin = folderNode;
             }
         }
         if (!items.length) {

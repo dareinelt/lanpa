@@ -169,7 +169,8 @@ class AiConfigService {
         if ($url !== '' && preg_match('#^https?://[^\s/?\#@]+(/[^\s?\#]*)?$#i', $url) !== 1) {
             return null;
         }
-        if ($model !== '' && preg_match('#^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$#', $model) !== 1) {
+        // Fuehrender "/" erlaubt: llama.cpp meldet den Dateipfad des Modells als ID.
+        if ($model !== '' && preg_match('#^[A-Za-z0-9/][A-Za-z0-9._:/@+-]{0,199}$#', $model) !== 1) {
             return null;
         }
         if (preg_match('/^[a-f0-9]{64}$/', $fingerprint) !== 1) {

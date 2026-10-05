@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Security\Csrf;
+use App\Services\Office\OfficeAiService;
 use App\Support\Html;
 
 /** @var bool $enabled */
@@ -257,7 +258,7 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
         Übersetzung) und in Euro-Office über das KI-Plugin der Editoren. Anfragen aus den Editoren
         laufen über den DocumentServer; der API-Schlüssel verlässt den Server nicht.
     </p>
-    <form method="post" action="/admin/office/ki" class="form form--wide">
+    <form method="post" action="/admin/office/ki" class="form form--wide" data-ai-form>
         <?= Csrf::field() ?>
 
         <div class="field field--check">
@@ -333,8 +334,26 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
 
         <div class="form__actions">
             <button type="submit" class="button button--primary">Speichern und übertragen</button>
+            <button type="button" class="button button--ghost" data-ai-test hidden>Verbindung testen</button>
         </div>
     </form>
+
+    <dialog id="ai-test-dialog" class="ai-test" aria-labelledby="ai-test-title">
+        <h2 id="ai-test-title">KI-Verbindung testen</h2>
+        <p class="card__hint">Getestet werden die aktuellen Formularwerte – auch wenn sie noch nicht gespeichert sind.</p>
+        <ol class="ai-test__steps" id="ai-test-steps" aria-live="polite"></ol>
+        <div class="ai-test__chat" id="ai-test-chat" hidden>
+            <p class="ai-test__label">Frage</p>
+            <p class="ai-test__bubble ai-test__bubble--question"><?= Html::e(OfficeAiService::TEST_PROMPT) ?></p>
+            <p class="ai-test__label">Antwort <span id="ai-test-model"></span></p>
+            <div class="ai-test__bubble ai-test__bubble--answer" id="ai-test-answer" aria-live="polite"></div>
+            <p class="ai-test__meta" id="ai-test-meta"></p>
+        </div>
+        <div class="form__actions">
+            <button type="button" class="button button--primary" id="ai-test-again">Erneut testen</button>
+            <button type="button" class="button button--ghost" id="ai-test-close">Schließen</button>
+        </div>
+    </dialog>
 </section>
 
 <section class="card" id="app-store" aria-labelledby="office-appstore-title">

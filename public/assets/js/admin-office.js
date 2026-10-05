@@ -124,3 +124,132 @@
     }
     refresh();
 })();
+
+/*
+ * Lokale KI: Verbindungstest im Overlay. Sendet die aktuellen (auch
+ * ungespeicherten) Formularwerte, prueft /models und zeigt die Antwort des
+ * Modells auf die Testnachricht. Inhalte werden nur per textContent gesetzt.
+ */
+(function () {
+    'use strict';
+
+    var form = document.querySelector('[data-ai-form]');
+    var button = form ? form.querySelector('[data-ai-test]') : null;
+    var dialog = document.getElementById('ai-test-dialog');
+    if (!form || !button || !dialog || typeof dialog.showModal !== 'function' || !window.fetch) {
+        return;
+    }
+
+    var steps = document.getElementById('ai-test-steps');
+    var chat = document.getElementById('ai-test-chat');
+    var answer = document.getElementById('ai-test-answer');
+    var model = document.getElementById('ai-test-model');
+    var meta = document.getElementById('ai-test-meta');
+    var again = document.getElementById('ai-test-again');
+    var closer = document.getElementById('ai-test-close');
+    var controller = null;
+    var timer = null;
+
+    button.hidden = false;
+
+    function step(text, state) {
+        var item = document.createElement('li');
+        item.className = 'ai-test__step ai-test__step--' + state;
+        item.textContent = text;
+        steps.appendChild(item);
+        return item;
+    }
+
+    function finish() {
+        window.clearInterval(timer);
+        timer = null;
+        controller = null;
+        again.disabled = false;
+        button.disabled = false;
+    }
+
+    function run() {
+        if (controller) {
+            return;
+        }
+        steps.textContent = '';
+        meta.textContent = '';
+        model.textContent = '';
+        answer.textContent = '';
+        chat.hidden = true;
+        again.disabled = true;
+        button.disabled = true;
+
+        var started = Date.now();
+        var pending = step('Test läuft …', 'pending');
+        timer = window.setInterval(function () {
+            pending.textContent = 'Test läuft … ' + Math.round((Date.now() - started) / 1000) + ' s';
+        }, 1000);
+
+        controller = window.AbortController ? new AbortController() : null;
+        fetch('/admin/office/ki/testen', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Accept': 'application/json'},
+            body: new URLSearchParams(new FormData(form)),
+            signal: controller ? controller.signal : undefined
+        }).then(function (response) {
+            return response.json().catch(function () {
+                throw new Error(response.status === 419
+                    ? 'Die Sitzung ist abgelaufen. Bitte die Seite neu laden.'
+                    : 'Unerwartete Antwort des Servers (HTTP ' + response.status + ').');
+            });
+        }).then(function (data) {
+            steps.textContent = '';
+            var errors = data.errors || {};
+            Object.keys(errors).forEach(function (key) {
+                step(errors[key], 'error');
+            });
+            (data.steps || []).forEach(function (item) {
+                step(item.label + ': ' + item.message, item.ok ? 'ok' : 'error');
+            });
+            if (data.answer) {
+                chat.hidden = false;
+                answer.textContent = data.answer;
+                model.textContent = data.model ? '(' + data.model + ')' : '';
+                var info = [];
+                if (data.duration_ms) {
+                    info.push((data.duration_ms / 1000).toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' s');
+                }
+                if (data.tokens) {
+                    info.push(data.tokens + ' Token');
+                }
+                meta.textContent = info.join(' · ');
+            }
+            if (!data.steps || data.steps.length === 0) {
+                if (Object.keys(errors).length === 0) {
+                    step('Der Test konnte nicht ausgeführt werden.', 'error');
+                }
+            }
+        }).catch(function (error) {
+            steps.textContent = '';
+            if (!error || error.name !== 'AbortError') {
+                step(error && error.message ? error.message : 'Der Test ist fehlgeschlagen.', 'error');
+            }
+        }).then(finish);
+    }
+
+    button.addEventListener('click', function () {
+        dialog.showModal();
+        run();
+    });
+    again.addEventListener('click', run);
+    closer.addEventListener('click', function () {
+        dialog.close();
+    });
+    dialog.addEventListener('close', function () {
+        if (controller) {
+            controller.abort();
+        }
+    });
+    dialog.addEventListener('click', function (event) {
+        if (event.target === dialog) {
+            dialog.close();
+        }
+    });
+}());

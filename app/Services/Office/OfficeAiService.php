@@ -38,6 +38,11 @@ final class OfficeAiService
 
     public const RUNTIME_FILE = 'runtime.json';
 
+    /** Testnachricht des Verbindungstests im Adminbereich. */
+    public const TEST_PROMPT = 'Wer bist du?';
+    private const TEST_MAX_TOKENS = 400;
+    private const TEST_MAX_ANSWER = 4000;
+
     /** Aendern, wenn sich die Abbildung auf Nextcloud aendert (erzwingt Neuuebertragung). */
     private const PAYLOAD_VERSION = 2;
 
@@ -472,26 +477,87 @@ final class OfficeAiService
             return ['ok' => false, 'message' => 'Adresse oder Modell fehlen.'];
         }
 
-        $headers = [];
-        if ($this->hasApiKey()) {
-            $headers['Authorization'] = 'Bearer ' . $this->apiKey();
+        $result = $this->checkModels($this->url(), $this->model(), $this->apiKey(), $timeout);
+
+        return ['ok' => $result['ok'], 'message' => $result['message']];
+    }
+
+    /**
+     * Test aus dem Adminbereich mit den (auch ungespeicherten) Formularwerten:
+     * prueft /models und stellt dem Modell die Frage TEST_PROMPT.
+     *
+     * Ein gespeicherter Schluessel (Datenbank oder Secret) wird nur an die
+     * gespeicherte Adresse gesendet, nie an eine im Formular geaenderte.
+     *
+     * @param array<string,mixed> $input Formularwerte
+     *
+     * @return array{ok:bool,errors:array<string,string>,steps:list<array{label:string,ok:bool,message:string}>,prompt:string,answer:string,model:string,duration_ms:int,tokens:int}
+     */
+    public function runTest(array $input, int $maxTimeout = 120): array
+    {
+        $result = ['ok' => false, 'errors' => [], 'steps' => [], 'prompt' => self::TEST_PROMPT, 'answer' => '', 'model' => '', 'duration_ms' => 0, 'tokens' => 0];
+
+        $validated = self::validate(['office_ai_enabled' => '1'] + $input);
+        $errors = array_intersect_key($validated['errors'], array_flip(['office_ai_url', 'office_ai_model', 'office_ai_timeout', 'office_ai_api_key']));
+        if ($errors !== []) {
+            $result['errors'] = $errors;
+
+            return $result;
         }
 
-        $response = $this->probe->request('GET', $this->url() . '/models', $headers, null, $timeout);
+        $values = $validated['values'];
+        $url = $values['office_ai_url'];
+        $model = $values['office_ai_model'];
+        $result['model'] = $model;
+        $timeout = max(5, min($maxTimeout, (int) $values['office_ai_timeout']));
+
+        if (array_key_exists('office_ai_api_key', $values) && !$this->apiKeyFromSecret()) {
+            $key = $values['office_ai_api_key'];
+        } elseif ($this->hasApiKey() && $url !== $this->url()) {
+            $key = '';
+            $result['steps'][] = ['label' => 'API-Schlüssel', 'ok' => true, 'message' => 'Der gespeicherte Schlüssel wird nur an die gespeicherte Adresse gesendet; getestet wird ohne Schlüssel.'];
+        } else {
+            $key = $this->apiKey();
+        }
+
+        $models = $this->checkModels($url, $model, $key, min($timeout, 15));
+        $result['steps'][] = ['label' => 'Endpunkt und Modell', 'ok' => $models['ok'], 'message' => $models['message']];
+        if (!$models['reachable']) {
+            return $result;
+        }
+
+        $chat = $this->chat($url, $model, $key, self::TEST_PROMPT, $timeout);
+        $result['steps'][] = ['label' => 'Testnachricht', 'ok' => $chat['ok'], 'message' => $chat['message']];
+        $result['answer'] = $chat['answer'];
+        $result['duration_ms'] = $chat['duration_ms'];
+        $result['tokens'] = $chat['tokens'];
+        $result['ok'] = $models['ok'] && $chat['ok'];
+
+        return $result;
+    }
+
+    /**
+     * GET /models: Endpunkt erreichbar und Modell angeboten?
+     *
+     * @return array{ok:bool,reachable:bool,message:string}
+     */
+    private function checkModels(string $url, string $model, string $key, int $timeout): array
+    {
+        $response = $this->probe->request('GET', $url . '/models', self::authHeaders($key), null, $timeout);
         if ($response['error'] !== null || $response['status'] === 0) {
-            return ['ok' => false, 'message' => 'Endpunkt nicht erreichbar: ' . ($response['error'] ?? 'keine Antwort')];
+            return ['ok' => false, 'reachable' => false, 'message' => 'Endpunkt nicht erreichbar: ' . ($response['error'] ?? 'keine Antwort')];
         }
         if ($response['status'] === 401 || $response['status'] === 403) {
-            return ['ok' => false, 'message' => 'Endpunkt verweigert den Zugriff (HTTP ' . $response['status'] . ') – API-Schlüssel prüfen.'];
+            return ['ok' => false, 'reachable' => false, 'message' => 'Endpunkt verweigert den Zugriff (HTTP ' . $response['status'] . ') – API-Schlüssel prüfen.'];
         }
         if ($response['status'] !== 200) {
-            return ['ok' => false, 'message' => 'Endpunkt antwortet mit HTTP ' . $response['status'] . ' – ist die Adresse inklusive /v1 angegeben?'];
+            return ['ok' => false, 'reachable' => false, 'message' => 'Endpunkt antwortet mit HTTP ' . $response['status'] . ' – ist die Adresse inklusive /v1 angegeben?'];
         }
 
         $data = json_decode($response['body'], true);
         $list = is_array($data) ? ($data['data'] ?? $data['models'] ?? null) : null;
         if (!is_array($list)) {
-            return ['ok' => false, 'message' => 'Unerwartete Antwort auf /models – kein OpenAI-kompatibler Endpunkt?'];
+            return ['ok' => false, 'reachable' => false, 'message' => 'Unerwartete Antwort auf /models – kein OpenAI-kompatibler Endpunkt?'];
         }
 
         $ids = [];
@@ -500,13 +566,77 @@ final class OfficeAiService
                 $ids[] = (string) ($entry['id'] ?? $entry['name'] ?? '');
             }
         }
-        if (!in_array($this->model(), $ids, true)) {
+        if (!in_array($model, $ids, true)) {
             $known = array_slice(array_filter($ids, 'strlen'), 0, 8);
 
-            return ['ok' => false, 'message' => 'Modell „' . $this->model() . '“ wird nicht angeboten'
+            return ['ok' => false, 'reachable' => true, 'message' => 'Modell „' . $model . '“ wird nicht angeboten'
                 . ($known !== [] ? ' (verfügbar: ' . implode(', ', $known) . ')' : '') . '.'];
         }
 
-        return ['ok' => true, 'message' => 'Endpunkt erreichbar, Modell „' . $this->model() . '“ verfügbar.'];
+        return ['ok' => true, 'reachable' => true, 'message' => 'Endpunkt erreichbar, Modell „' . $model . '“ verfügbar.'];
+    }
+
+    /**
+     * POST /chat/completions mit einer einzelnen Benutzernachricht.
+     *
+     * @return array{ok:bool,message:string,answer:string,duration_ms:int,tokens:int}
+     */
+    private function chat(string $url, string $model, string $key, string $prompt, int $timeout): array
+    {
+        $body = json_encode([
+            'model' => $model,
+            'messages' => [['role' => 'user', 'content' => $prompt]],
+            'max_tokens' => self::TEST_MAX_TOKENS,
+            'temperature' => 0.7,
+            'stream' => false,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $started = hrtime(true);
+        $response = $this->probe->request('POST', $url . '/chat/completions', ['Content-Type' => 'application/json'] + self::authHeaders($key), (string) $body, $timeout);
+        $duration = (int) round((hrtime(true) - $started) / 1e6);
+        $fail = static fn (string $message): array => ['ok' => false, 'message' => $message, 'answer' => '', 'duration_ms' => $duration, 'tokens' => 0];
+
+        if ($response['error'] !== null || $response['status'] === 0) {
+            return $fail('Keine Antwort: ' . ($response['error'] ?? 'Verbindung abgebrochen') . ' (Zeitlimit ' . $timeout . ' s).');
+        }
+        $data = json_decode($response['body'], true);
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            $detail = is_array($data) ? ($data['error']['message'] ?? $data['error'] ?? $data['message'] ?? '') : '';
+            $detail = is_string($detail) ? Validator::cleanText($detail, 300) : '';
+
+            return $fail('Anfrage abgelehnt (HTTP ' . $response['status'] . ')' . ($detail !== '' ? ': ' . $detail : '.'));
+        }
+
+        $message = is_array($data) ? ($data['choices'][0]['message'] ?? null) : null;
+        $content = is_array($message) ? ($message['content'] ?? null) : null;
+        // Denkende Modelle liefern bei knappem Tokenbudget nur reasoning_content.
+        if ((!is_string($content) || trim($content) === '') && is_array($message) && is_string($message['reasoning_content'] ?? null)) {
+            $content = $message['reasoning_content'];
+        }
+        if (!is_string($content) || trim($content) === '') {
+            return $fail('Das Modell hat keine Textantwort geliefert.');
+        }
+
+        $answer = trim((string) preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', str_replace("\r\n", "\n", $content)));
+        if (mb_strlen($answer) > self::TEST_MAX_ANSWER) {
+            $answer = mb_substr($answer, 0, self::TEST_MAX_ANSWER) . ' …';
+        }
+        $tokens = max(0, (int) ($data['usage']['completion_tokens'] ?? 0));
+
+        return [
+            'ok' => true,
+            'message' => 'Antwort erhalten nach ' . number_format($duration / 1000, 1, ',', '.') . ' s.',
+            'answer' => $answer,
+            'duration_ms' => $duration,
+            'tokens' => $tokens,
+        ];
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private static function authHeaders(string $key): array
+    {
+        return $key !== '' ? ['Authorization' => 'Bearer ' . $key] : [];
     }
 }

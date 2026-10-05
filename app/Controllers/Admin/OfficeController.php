@@ -102,6 +102,27 @@ final class OfficeController extends AdminController
     }
 
     /**
+     * Verbindungstest der lokalen KI mit den aktuellen Formularwerten (ohne
+     * Speichern): /models und Testnachricht. Antwort als JSON fuer das Overlay.
+     */
+    public function testAi(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $maxTimeout = 120;
+        @set_time_limit($maxTimeout + 30);
+        $result = Container::officeAi()->runTest($request->post, $maxTimeout);
+        app_logger()->info('KI-Verbindungstest ausgeführt.', [
+            'admin' => Container::auth()->username(),
+            'ok' => $result['ok'],
+            'model' => $result['model'],
+            'duration_ms' => $result['duration_ms'],
+        ]);
+
+        return Response::json($result, $result['errors'] !== [] ? 422 : 200);
+    }
+
+    /**
      * App-Store in Nextcloud ein- bzw. ausblenden. Der Stand wird sofort
      * uebertragen; schlaegt das fehl, gleicht die Diagnose spaeter ab.
      */

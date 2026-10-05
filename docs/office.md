@@ -457,7 +457,7 @@ Nach Klick auf die Office-Kachel erscheint eine Übersicht der einzelnen Apps:
 | Dateien | eigene Dateien in Nextcloud (`/office/index.php/apps/files/`) |
 | Outlook Web App | im Adminbereich hinterlegter Link (öffnet in neuem Tab) |
 | Orvanta | Mail, Kalender, Kontakte, Aufgaben und Notizen aus Exchange On-Premise im Intranet (`/office/orvanta`, nur wenn im Adminbereich aktiviert) – siehe [docs/orvanta.md](orvanta.md) |
-| Notfallplan-Editor | Planliste und Editor der Notfallpläne (`/admin/notfallplan`, neuer Tab) – nur für Mitglieder der AD-Gruppen des KAEP-Teams, siehe unten |
+| Notfallplan-Editor | Editor der Notfallpläne (`/admin/notfallplan/bearbeiten`, neuer Tab) – nur für Mitglieder der AD-Gruppen des KAEP-Teams, siehe unten |
 
 Die Editoren stammen aus [Euro-Office/web-apps](https://github.com/Euro-Office/web-apps)
 und werden vom DocumentServer (`/eurooffice/web-apps/…`) ausgeliefert. Gestartet
@@ -489,7 +489,7 @@ ausgeliefert werden (Komponente „Euro-Office-Webapps“, nicht kritisch).
   sehen die App zusätzlich – unabhängig von Office-Freigaben und App-Paketen
   (sie ist dort nicht zuordenbar). Der Start (`/office-app?app=notfallplan`)
   meldet den erkannten Windows-Benutzer wie `/admin/login/windows` am
-  Adminbereich an und leitet auf `/admin/notfallplan` weiter. Der Editor
+  Adminbereich an und leitet auf `/admin/notfallplan/bearbeiten` weiter. Der Editor
   bleibt unverändert auch im Adminbereich unter „Notfallplan“ erreichbar.
 - Die Kachel-Berechtigungen der Navigation gelten zusätzlich.
 

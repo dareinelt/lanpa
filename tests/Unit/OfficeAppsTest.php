@@ -176,7 +176,7 @@ Runner::test('Office-Apps: Notfallplan-Editor nur fuer Mitglieder der KAEP-AD-Gr
 
     $apps = $service->allowedFor(officeUser(['gg-kaep']));
     Assert::same(['notfallplan'], officeAppKeys($apps));
-    Assert::same('/admin/notfallplan', $apps[0]['target']);
+    Assert::same('/admin/notfallplan/bearbeiten', $apps[0]['target']);
     Assert::same('notfallplan', $service->findAllowed('notfallplan', officeUser(['gg-kaep']))['key'] ?? null);
     Assert::same(null, $service->findAllowed('notfallplan', officeUser(['verwaltung'])));
     Assert::false(in_array('notfallplan', officeAppKeys($service->catalog()), true));

@@ -83,8 +83,8 @@ final class OfficeAppCatalog
      */
     public const EMERGENCY_PLAN_KEY = 'notfallplan';
 
-    /** Ziel im Adminbereich (Planliste mit Editor). */
-    public const EMERGENCY_PLAN_PATH = '/admin/notfallplan';
+    /** Ziel im Adminbereich (Notfallplan-Editor). */
+    public const EMERGENCY_PLAN_PATH = '/admin/notfallplan/bearbeiten';
 
     /**
      * @var array{title:string,short_description:string,icon:string,kind:string}

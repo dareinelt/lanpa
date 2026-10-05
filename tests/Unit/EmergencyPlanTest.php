@@ -319,6 +319,9 @@ Runner::test('KAEP: Verzeichnisrolle getrennt, Administratorrechte vorrangig', s
     Assert::null($service->intranetRole(['andere']));
     $service->addRule('intranet', 'GG_ADMINS', 'admin');
     Assert::same('admin', $service->intranetRole(['GG_KAEP', 'GG_ADMINS']));
+    Assert::true($service->isKaepMember([' gg_kaep ']));
+    Assert::false($service->isKaepMember(['GG_ADMINS']), 'Nur KAEP-Gruppen erhalten die Office-App Notfallplan-Editor.');
+    Assert::false($service->isKaepMember([]));
 });
 
 Runner::test('Notfallplan: Einzelne Prüfpunkte samt Person, Zeit und Rücknahme auswertbar', static function (): void {

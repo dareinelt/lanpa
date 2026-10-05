@@ -31,6 +31,8 @@ $owaKey = OfficeAppService::OWA_SETTING;
     hinterlegt – die Outlook Web App. Freigaben erfolgen ausschließlich über AD-Gruppen, entweder für
     einzelne Apps oder über App-Pakete. <strong>Eine App ohne Freigabe sieht niemand</strong>;
     nicht angemeldete Nutzer erhalten nie Office-Apps und sehen die Office-Kachel nicht.
+    Mitglieder der AD-Gruppen des KAEP-Teams (Benutzer → Administratoren aus AD-Gruppen) erhalten
+    zusätzlich automatisch den „Notfallplan-Editor“; er bleibt auch im Adminbereich unter „Notfallplan“ erreichbar.
 </p>
 <?php if (!$enabled) { ?>
     <p class="flash flash--info">Office ist nicht aktiviert (<code>OFFICE_ENABLED</code>). Die Einstellungen werden gespeichert, aber erst mit aktivem Office wirksam.</p>

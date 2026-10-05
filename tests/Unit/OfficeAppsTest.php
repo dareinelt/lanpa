@@ -154,6 +154,37 @@ Runner::test('Office-Apps: Euro-Office-Webapps starten ueber den Connector, Date
     Assert::same('', $service->targetFor('unbekannt'));
 });
 
+Runner::test('Office-Apps: Notfallplan-Editor nur fuer Mitglieder der KAEP-AD-Gruppen', static function (): void {
+    $pdo = officePdo([]);
+    $pdo->exec('CREATE TABLE office_app_packages (id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR(120) NOT NULL UNIQUE, description VARCHAR(255) NOT NULL DEFAULT \'\')');
+    $pdo->exec('CREATE TABLE office_app_package_apps (package_id INTEGER NOT NULL, app_key VARCHAR(32) NOT NULL, PRIMARY KEY (package_id, app_key))');
+    $pdo->exec('CREATE TABLE office_app_permissions (id INTEGER PRIMARY KEY AUTOINCREMENT, group_name VARCHAR(190) NOT NULL, app_key VARCHAR(32) NULL, package_id INTEGER NULL)');
+    $settingsService = new SettingsService(new SettingsRepository($pdo));
+    $kaep = static fn (array $groups): bool => in_array('gg-kaep', array_map('mb_strtolower', $groups), true);
+    $service = new OfficeAppService(
+        new OfficeAppRepository($pdo),
+        new OfficeConfigService($settingsService, ['enabled' => true, 'public_path' => '/office/']),
+        $settingsService,
+        null,
+        $kaep
+    );
+    $service->saveDirectGroups(['files' => 'Verwaltung', 'notfallplan' => 'Verwaltung']);
+
+    Assert::same([], $service->allowedFor(null));
+    Assert::same(['files'], officeAppKeys($service->allowedFor(officeUser(['verwaltung']))));
+    Assert::same(['files', 'notfallplan'], officeAppKeys($service->allowedFor(officeUser(['Verwaltung', 'GG-KAEP']))));
+
+    $apps = $service->allowedFor(officeUser(['gg-kaep']));
+    Assert::same(['notfallplan'], officeAppKeys($apps));
+    Assert::same('/admin/notfallplan', $apps[0]['target']);
+    Assert::same('notfallplan', $service->findAllowed('notfallplan', officeUser(['gg-kaep']))['key'] ?? null);
+    Assert::same(null, $service->findAllowed('notfallplan', officeUser(['verwaltung'])));
+    Assert::false(in_array('notfallplan', officeAppKeys($service->catalog()), true));
+
+    $items = [['id' => 2, 'type' => 'internal', 'url' => '/office-starten']];
+    Assert::same(1, count($service->filterNavigation($items, officeUser(['gg-kaep']))));
+});
+
 Runner::test('Office-Apps: Office-Kachel wird ohne freigegebene App ausgeblendet', static function (): void {
     $service = officeAppsService();
     $service->saveDirectGroups(['files' => 'Verwaltung']);

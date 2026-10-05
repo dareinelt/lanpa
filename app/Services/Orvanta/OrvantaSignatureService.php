@@ -60,8 +60,11 @@ final class OrvantaSignatureService
         'phone' => '+49 5331 934-1234',
     ];
 
-    /** @var array{src:string,width:int,height:int}|null|false false = noch nicht geladen; width/height 0 = unbekannt */
+    /** @var array{contents:string,mime:string,width:int,height:int}|null|false false = noch nicht geladen; width/height 0 = unbekannt */
     private array|null|false $logo = false;
+
+    /** @var array<string,string> data-URIs des auf Zielgroesse skalierten Logos je "BreitexHoehe" */
+    private array $logoSources = [];
 
     /**
      * @param \Closure(): (array{path:string,mime:string}|null) $logoLoader liefert das hochgeladene Logo (LogoService::current())
@@ -328,7 +331,7 @@ final class OrvantaSignatureService
             $size = ($width > 0 ? ' width="' . $width . '"' : '') . ' height="' . $height . '"';
             $css = ($width > 0 ? 'width:' . $width . 'px;' : '') . 'height:' . $height . 'px;';
             $html .= '<td style="vertical-align:top;padding:0 12px 0 0">';
-            $html .= '<img src="' . $logo['src'] . '" alt=""' . $size . ' style="display:block;' . $css . 'border:0">';
+            $html .= '<img src="' . $this->logoSource($logo, $width, $height) . '" alt=""' . $size . ' style="display:block;' . $css . 'border:0">';
             $html .= '</td>';
         }
         $html .= '<td style="vertical-align:top;white-space:nowrap;line-height:' . self::LINE_HEIGHT . 'px;mso-line-height-rule:exactly;' . $base . '">' . implode('<br>', $lines) . '</td>';
@@ -407,7 +410,7 @@ final class OrvantaSignatureService
     }
 
     /**
-     * @return array{src:string,width:int,height:int}|null
+     * @return array{contents:string,mime:string,width:int,height:int}|null
      */
     private function logo(): ?array
     {
@@ -419,7 +422,8 @@ final class OrvantaSignatureService
                 if ($contents !== false && $contents !== '') {
                     [$width, $height] = self::imageDimensions($contents, $current['mime']);
                     $this->logo = [
-                        'src' => 'data:' . $current['mime'] . ';base64,' . base64_encode($contents),
+                        'contents' => $contents,
+                        'mime' => $current['mime'],
                         'width' => $width,
                         'height' => $height,
                     ];
@@ -428,6 +432,90 @@ final class OrvantaSignatureService
         }
 
         return $this->logo;
+    }
+
+    /**
+     * data-URI des Logos in Zielgroesse.
+     *
+     * @param array{contents:string,mime:string,width:int,height:int} $logo
+     */
+    private function logoSource(array $logo, int $width, int $height): string
+    {
+        $key = $width . 'x' . $height;
+        if (!isset($this->logoSources[$key])) {
+            $scaled = self::scaleImage($logo['contents'], $logo['mime'], $width, $height);
+            $this->logoSources[$key] = 'data:' . $scaled['mime'] . ';base64,' . base64_encode($scaled['contents']);
+        }
+
+        return $this->logoSources[$key];
+    }
+
+    /**
+     * Bringt das Bild selbst auf die Zielgroesse. Viele Mailprogramme (u. a.
+     * Outlook nach der Umwandlung eingebetteter Bilder durch Exchange)
+     * ignorieren width/height und zeigen ein Bild in seiner Pixelgroesse –
+     * nur ein bereits verkleinertes Bild erscheint dort in Zeilenhoehe.
+     *
+     * Rasterbilder werden mit GD neu berechnet und als PNG (mit Transparenz)
+     * ausgegeben, SVGs erhalten passende width/height-Attribute. Ohne GD
+     * bzw. bei unbekannter Groesse bleibt das Original erhalten.
+     *
+     * @return array{contents:string,mime:string}
+     */
+    public static function scaleImage(string $contents, string $mime, int $width, int $height): array
+    {
+        $original = ['contents' => $contents, 'mime' => $mime];
+        if ($width <= 0 || $height <= 0) {
+            return $original;
+        }
+        if ($mime === 'image/svg+xml') {
+            return ['contents' => self::resizeSvg($contents, $width, $height), 'mime' => $mime];
+        }
+        if (!function_exists('imagecreatefromstring') || !function_exists('imagecopyresampled')) {
+            return $original;
+        }
+        $source = @imagecreatefromstring($contents);
+        if ($source === false) {
+            return $original;
+        }
+        $sourceWidth = imagesx($source);
+        $sourceHeight = imagesy($source);
+        if ($sourceWidth === $width && $sourceHeight === $height && in_array($mime, ['image/png', 'image/jpeg'], true)) {
+            return $original;
+        }
+        $target = imagecreatetruecolor($width, $height);
+        imagealphablending($target, false);
+        imagesavealpha($target, true);
+        imagefill($target, 0, 0, (int) imagecolorallocatealpha($target, 255, 255, 255, 127));
+        imagecopyresampled($target, $source, 0, 0, 0, 0, $width, $height, $sourceWidth, $sourceHeight);
+        ob_start();
+        $written = imagepng($target, null, 9);
+        $png = (string) ob_get_clean();
+
+        return $written && $png !== '' ? ['contents' => $png, 'mime' => 'image/png'] : $original;
+    }
+
+    /**
+     * Setzt width/height des SVG-Wurzelelements; fehlt eine viewBox, wird sie
+     * aus den bisherigen Massen gebildet, damit der Inhalt mitskaliert.
+     */
+    private static function resizeSvg(string $contents, int $width, int $height): string
+    {
+        if (preg_match('~<svg\b[^>]*>~is', $contents, $tag, PREG_OFFSET_CAPTURE) !== 1) {
+            return $contents;
+        }
+        $open = $tag[0][0];
+        $updated = $open;
+        if (preg_match('~\sviewBox\s*=~i', $open) !== 1) {
+            [$naturalWidth, $naturalHeight] = self::imageDimensions($open . '</svg>', 'image/svg+xml');
+            if ($naturalWidth > 0 && $naturalHeight > 0) {
+                $updated = preg_replace('~^<svg\b~i', '<svg viewBox="0 0 ' . $naturalWidth . ' ' . $naturalHeight . '"', $updated) ?? $updated;
+            }
+        }
+        $updated = preg_replace('~\s(width|height)\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)~i', '', $updated) ?? $updated;
+        $updated = preg_replace('~^<svg\b~i', '<svg width="' . $width . '" height="' . $height . '"', $updated) ?? $updated;
+
+        return substr_replace($contents, $updated, $tag[0][1], strlen($open));
     }
 
     /**

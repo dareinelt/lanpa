@@ -55,7 +55,7 @@ flowchart LR
 
 | Dienst | Aufgabe |
 | --- | --- |
-| `auth` | Einziger Einstiegspunkt (Port `APP_PORT`). Leitet `/office/` an Nextcloud und `/eurooffice/` an den DocumentServer weiter, übernimmt optional die NTLM-Anmeldung und entfernt gefälschte `X-Remote-User`-Header. Ist Office nicht erreichbar, erscheint die Seite `/office-nicht-verfuegbar`. Wird ein Backend-Container (`app`, `nextcloud`, `eurooffice`) mit neuer IP-Adresse neu erstellt, lädt `auth` Apache innerhalb von etwa 10 Sekunden neu (`backend-watch.sh`). Sonst würden Anfragen an die alte Adresse gehen, z. B. `/office/` an das Intranet („Seite nicht gefunden“). |
+| `auth` | Einziger Einstiegspunkt (Port `APP_PORT`). Leitet `/office/` an Nextcloud (ausgenommen `/office/orvanta`, das zur Intranet-Anwendung gehört) und `/eurooffice/` an den DocumentServer weiter, übernimmt optional die NTLM-Anmeldung und entfernt gefälschte `X-Remote-User`-Header. Ist Office nicht erreichbar, erscheint die Seite `/office-nicht-verfuegbar`. Wird ein Backend-Container (`app`, `nextcloud`, `eurooffice`) mit neuer IP-Adresse neu erstellt, lädt `auth` Apache innerhalb von etwa 10 Sekunden neu (`backend-watch.sh`). Sonst würden Anfragen an die alte Adresse gehen, z. B. `/office/` an das Intranet („Seite nicht gefunden“). |
 | `nextcloud`, `nextcloud-cron` | Offizielles Image `nextcloud` (Apache). Ein Hook richtet bei jedem Start Pfade, vertrauenswürdige Domains, den Connector, AD und SSO ein (idempotent). |
 | `eurooffice` | Offizielles Image `ghcr.io/euro-office/documentserver`, abgesichert per JWT. |
 | `nextcloud-db`, `nextcloud-redis` | PostgreSQL und Redis (Passwort aus Secret), nur im internen Netz. |

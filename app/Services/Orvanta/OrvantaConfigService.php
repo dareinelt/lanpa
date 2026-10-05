@@ -21,6 +21,7 @@ final class OrvantaConfigService
     public const IDENTITY_MODES = ['smtp' => 'E-Mail-Adresse aus dem Active Directory', 'upn' => 'Benutzerprinzipalname (Benutzer@Domäne)'];
     public const VERSIONS = ['Exchange2016' => 'Exchange 2016 / 2019 / Subscription Edition', 'Exchange2013_SP1' => 'Exchange 2013 SP1'];
     public const DEFAULT_FOLDERS = ['inbox' => 'Posteingang', 'calendar' => 'Kalender', 'contacts' => 'Kontakte', 'tasks' => 'Aufgaben', 'notes' => 'Notizen'];
+    public const ARCHIVE_THRESHOLD_UNITS = ['percent' => 'Prozent der Postfachgrenze', 'mb' => 'Megabyte (absolut)'];
 
     public const DEFAULTS = [
         'exchange_enabled' => '0',
@@ -42,6 +43,14 @@ final class OrvantaConfigService
         'reminder_header' => '1',
         'default_folder' => 'inbox',
         'poll_interval' => '60',
+        'archive_enabled' => '0',
+        'archive_threshold' => '80',
+        'archive_threshold_unit' => 'percent',
+        'archive_age_days' => '60',
+        'archive_folder' => 'Orvanta-Archiv',
+        'archive_compression' => 'gzip',
+        'archive_batch_size' => '50',
+        'archive_poll_interval' => '3600',
     ];
 
     /** @var array<string,string>|null */
@@ -150,6 +159,55 @@ final class OrvantaConfigService
     public function pollInterval(): int
     {
         return max(15, min(900, (int) $this->get('poll_interval')));
+    }
+
+    // ------------------------------------------------------------------ Langzeitarchiv
+
+    /** Richtliniengesteuerte Archivierung aktiv (zusaetzlich zur Exchange-Anbindung). */
+    public function archiveEnabled(): bool
+    {
+        return $this->isEnabled() && $this->get('archive_enabled') === '1';
+    }
+
+    /** Mindestalter archivierungsfaehiger Nachrichten in Tagen (Standard 60). */
+    public function archiveAgeDays(): int
+    {
+        return max(1, min(3650, (int) $this->get('archive_age_days')));
+    }
+
+    /** Nachrichten je Verarbeitungsschritt (Batch). */
+    public function archiveBatchSize(): int
+    {
+        return max(1, min(200, (int) $this->get('archive_batch_size')));
+    }
+
+    /** Pruefintervall des Archivierungs-Workers in Sekunden. */
+    public function archivePollInterval(): int
+    {
+        return max(60, min(86400, (int) $this->get('archive_poll_interval')));
+    }
+
+    /** Nextcloud-Ordner des Langzeitarchivs (ein Pfadsegment je Benutzer). */
+    public function archiveFolder(): string
+    {
+        $folder = trim($this->get('archive_folder'));
+
+        return $folder === '' ? 'Orvanta-Archiv' : $folder;
+    }
+
+    /**
+     * Archivierungsschwelle in Byte fuer die gegebene Postfachgrenze
+     * ('percent') bzw. absolut ('mb'). 0 = Schwelle nicht bestimmbar
+     * (prozentuale Schwelle ohne bekannte Postfachgrenze).
+     */
+    public function archiveThresholdBytes(int $mailboxLimit): int
+    {
+        $threshold = max(0, (int) $this->get('archive_threshold'));
+        if ($this->get('archive_threshold_unit') === 'mb') {
+            return $threshold * 1024 * 1024;
+        }
+
+        return $mailboxLimit > 0 ? (int) ($mailboxLimit * min(100, $threshold) / 100) : 0;
     }
 
     /**
@@ -325,6 +383,47 @@ final class OrvantaConfigService
 
         $default = $text('default_folder', 20);
         $values['default_folder'] = isset(self::DEFAULT_FOLDERS[$default]) ? $default : 'inbox';
+
+        $values['archive_enabled'] = !empty($input['archive_enabled']) ? '1' : '0';
+        $archiveUnit = $text('archive_threshold_unit', 10);
+        if (!isset(self::ARCHIVE_THRESHOLD_UNITS[$archiveUnit])) {
+            $archiveUnit = 'percent';
+        }
+        $values['archive_threshold_unit'] = $archiveUnit;
+        $archiveThreshold = (int) $text('archive_threshold', 8);
+        if ($archiveUnit === 'percent' && ($archiveThreshold < 1 || $archiveThreshold > 100)) {
+            $errors['archive_threshold'] = 'Die Schwelle muss zwischen 1 und 100 Prozent liegen.';
+        } elseif ($archiveUnit === 'mb' && ($archiveThreshold < 1 || $archiveThreshold > 10485760)) {
+            $errors['archive_threshold'] = 'Die Schwelle muss zwischen 1 und 10.485.760 MB liegen.';
+        }
+        $values['archive_threshold'] = (string) $archiveThreshold;
+
+        $archiveAge = (int) $text('archive_age_days', 5);
+        if ($archiveAge < 1 || $archiveAge > 3650) {
+            $errors['archive_age_days'] = 'Das Mindestalter muss zwischen 1 und 3650 Tagen liegen.';
+        }
+        $values['archive_age_days'] = (string) $archiveAge;
+
+        $archiveFolder = $text('archive_folder', 120);
+        if ($archiveFolder === '' || !\App\Services\Office\NextcloudFilesService::isSafeSegment($archiveFolder)) {
+            $errors['archive_folder'] = 'Der Ordnername darf nicht leer sein und keine Sonderzeichen wie / \\ : * ? " < > | enthalten.';
+        }
+        $values['archive_folder'] = $archiveFolder;
+
+        // Format-Invariante: aktuell ausschliesslich gzip (format_version 1).
+        $values['archive_compression'] = 'gzip';
+
+        $archiveBatch = (int) $text('archive_batch_size', 4);
+        if ($archiveBatch < 1 || $archiveBatch > 200) {
+            $errors['archive_batch_size'] = 'Die Batchgröße muss zwischen 1 und 200 Nachrichten liegen.';
+        }
+        $values['archive_batch_size'] = (string) $archiveBatch;
+
+        $archivePoll = (int) $text('archive_poll_interval', 6);
+        if ($archivePoll < 60 || $archivePoll > 86400) {
+            $errors['archive_poll_interval'] = 'Das Prüfintervall muss zwischen 60 und 86.400 Sekunden liegen.';
+        }
+        $values['archive_poll_interval'] = (string) $archivePoll;
 
         if ($errors !== []) {
             throw new ValidationException($errors);

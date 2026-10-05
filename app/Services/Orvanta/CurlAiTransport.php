@@ -7,20 +7,20 @@ namespace App\Services\Orvanta;
 use App\Contracts\AiTransportInterface;
 
 /**
- * cURL-Transport zum KI-Endpunkt: keine Weiterleitungen, nur HTTP(S); im
- * Produktionsbetrieb ausschliesslich HTTPS.
+ * cURL-Transport zum KI-Endpunkt: keine Weiterleitungen, nur HTTP(S).
+ *
+ * HTTP ist bewusst erlaubt: Lokale Endpunkte (llama.cpp, Ollama) laufen meist
+ * ohne TLS im internen Netz. Welche Adresse zulaessig ist, entscheidet die
+ * globale KI-Einstellung (OfficeAiService::isValidUrl) - derselbe Massstab wie
+ * beim Verbindungstest im Adminbereich.
  */
 final class CurlAiTransport implements AiTransportInterface
 {
-    public function __construct(private readonly bool $production = false)
-    {
-    }
-
     public function request(string $method, string $url, array $headers, ?string $body, int $timeout): array
     {
         $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
-        if ($scheme !== 'https' && ($this->production || $scheme !== 'http')) {
-            return ['status' => 0, 'body' => '', 'error' => $this->production ? 'KI-Endpunkt muss über HTTPS erreichbar sein.' : 'Ungültige Adresse des KI-Endpunkts.'];
+        if ($scheme !== 'https' && $scheme !== 'http') {
+            return ['status' => 0, 'body' => '', 'error' => 'Ungültige Adresse des KI-Endpunkts.'];
         }
         if (!function_exists('curl_init')) {
             return ['status' => 0, 'body' => '', 'error' => 'cURL ist nicht verfügbar.'];

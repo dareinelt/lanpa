@@ -547,13 +547,14 @@ final class Container
     }
 
     /**
-     * Transport zum KI-Endpunkt (OpenAI-kompatibel); in Produktion nur HTTPS.
+     * Transport zum KI-Endpunkt (OpenAI-kompatibel, HTTP oder HTTPS wie in den
+     * globalen KI-Einstellungen hinterlegt).
      */
     public static function aiTransport(): \App\Contracts\AiTransportInterface
     {
         return self::make(
             \App\Contracts\AiTransportInterface::class,
-            static fn (): \App\Contracts\AiTransportInterface => new \App\Services\Orvanta\CurlAiTransport((string) Config::get('app.env', 'production') === 'production')
+            static fn (): \App\Contracts\AiTransportInterface => new \App\Services\Orvanta\CurlAiTransport()
         );
     }
 

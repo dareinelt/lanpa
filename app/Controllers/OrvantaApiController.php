@@ -42,12 +42,19 @@ final class OrvantaApiController extends Controller
     {
         return $this->handle($request, function (array $access): array {
             $config = Container::orvantaConfig();
+            // Postfach fuer die Hintergrund-Archivierung registrieren: ab der
+            // ersten Nutzung arbeitet der Archiv-Worker unabhaengig von einer
+            // geoeffneten Oberflaeche.
+            if ($config->archiveEnabled()) {
+                Container::orvantaArchive()->registerMailbox($access['uid'], $access['impersonate']);
+            }
 
             return [
                 'user' => ['name' => $access['user']['display_name'] ?? $access['user']['username'], 'email' => $access['impersonate']],
                 'demo' => $config->isDemo(),
                 'host' => $config->get('exchange_host'),
                 'cache' => Container::orvantaAttachments()->usage($access['uid']),
+                'archive' => Container::orvantaArchive()->status($access['uid']),
                 'server_time' => time(),
             ];
         });
@@ -244,6 +251,40 @@ final class OrvantaApiController extends Controller
 
             return Container::orvantaAttachments()->usage($access['uid']) + ['mailbox' => $this->mailboxUsage($access), 'removed' => $removed, 'message' => 'Der Zwischenspeicher wurde geleert.'];
         }, true);
+    }
+
+    // ------------------------------------------------------------------
+    // Langzeitarchiv
+    // ------------------------------------------------------------------
+
+    public function archiveStatus(Request $request): Response
+    {
+        return $this->handle($request, fn (array $access): array => Container::orvantaArchive()->status($access['uid']));
+    }
+
+    public function archiveFolders(Request $request): Response
+    {
+        return $this->handle($request, fn (array $access): array => ['folders' => Container::orvantaArchive()->folders($access['uid'])]);
+    }
+
+    public function archiveMessages(Request $request): Response
+    {
+        return $this->handle($request, fn (array $access): array => Container::orvantaArchive()->messages(
+            $access['uid'],
+            max(1, $request->queryInt('ordner', 0)),
+            max(0, $request->queryInt('offset', 0)),
+            max(1, min(100, $request->queryInt('limit', 50)))
+        ));
+    }
+
+    public function archiveMessage(Request $request): Response
+    {
+        return $this->handle($request, fn (array $access): array => Container::orvantaArchive()->message($access['uid'], max(1, $request->queryInt('id', 0))));
+    }
+
+    public function archiveSearch(Request $request): Response
+    {
+        return $this->handle($request, fn (array $access): array => ['items' => Container::orvantaArchive()->search($access['uid'], trim((string) $request->query('q', '')))]);
     }
 
     /**

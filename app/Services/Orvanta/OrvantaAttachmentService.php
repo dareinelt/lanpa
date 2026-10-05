@@ -39,7 +39,8 @@ final class OrvantaAttachmentService
         private readonly OfficeConfigService $office,
         private readonly NextcloudFilesService $nextcloud,
         private readonly OrvantaExchangeService $exchange,
-        private readonly SecretBox $secrets
+        private readonly SecretBox $secrets,
+        private readonly ?OrvantaArchiveService $archive = null
     ) {
     }
 
@@ -125,6 +126,20 @@ final class OrvantaAttachmentService
      */
     public function load(string $uid, string $impersonate, string $attachmentId): array
     {
+        // Anhaenge archivierter Nachrichten kommen aus dem Langzeitarchiv
+        // (Container in Nextcloud), nicht von Exchange.
+        if (str_starts_with($attachmentId, 'orvanta-archive:') && $this->archive !== null) {
+            $parts = explode(':', $attachmentId, 3);
+            $archived = $this->archive->attachment($uid, (int) ($parts[1] ?? 0), (int) ($parts[2] ?? -1));
+
+            return [
+                'name' => $archived['name'],
+                'content_type' => $archived['content_type'],
+                'content' => $archived['content'],
+                'size' => strlen($archived['content']),
+                'cached' => false,
+            ];
+        }
         $hash = sha1($attachmentId);
         $cached = $this->repository->findCacheItem($uid, $hash);
         if ($cached !== null && $this->config->cacheQuotaBytes() > 0) {

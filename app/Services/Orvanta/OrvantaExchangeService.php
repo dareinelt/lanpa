@@ -514,6 +514,104 @@ final class OrvantaExchangeService
     }
 
     /**
+     * Archivierungs-Kandidaten eines Ordners: Nachrichten, deren Empfangs-
+     * datum vor $before (Unix-Zeit) liegt, aelteste zuerst. Fuer das
+     * Langzeitarchiv wird zusaetzlich die InternetMessageId geliefert
+     * (dauerhafte Identitaet, unabhaengig vom veraenderlichen ChangeKey).
+     *
+     * @return array{items:list<array<string,mixed>>,total:int,has_more:bool}
+     */
+    public function archiveCandidates(string $user, string $folder, int $before, int $offset = 0, int $limit = 50): array
+    {
+        $limit = max(1, min(200, $limit));
+        $xpath = $this->call(
+            '<m:FindItem Traversal="Shallow"><m:ItemShape><t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>' . self::MESSAGE_FIELDS
+            . '<t:FieldURI FieldURI="message:InternetMessageId"/></t:AdditionalProperties></m:ItemShape>'
+            . '<m:IndexedPageItemView MaxEntriesReturned="' . $limit . '" Offset="' . max(0, $offset) . '" BasePoint="Beginning"/>'
+            . '<m:Restriction><t:IsLessThanOrEqualTo><t:FieldURI FieldURI="item:DateTimeReceived"/>'
+            . '<t:FieldURIOrConstant><t:Constant Value="' . EwsXml::dateTime($before) . '"/></t:FieldURIOrConstant></t:IsLessThanOrEqualTo></m:Restriction>'
+            . '<m:SortOrder><t:FieldOrder Order="Ascending"><t:FieldURI FieldURI="item:DateTimeReceived"/></t:FieldOrder></m:SortOrder>'
+            . '<m:ParentFolderIds>' . EwsXml::folderId($folder) . '</m:ParentFolderIds></m:FindItem>',
+            $user
+        );
+        $root = EwsXml::elements($xpath, '//m:RootFolder')[0] ?? null;
+        $items = [];
+        foreach (EwsXml::elements($xpath, '//t:Items/*') as $item) {
+            $summary = $this->messageSummary($xpath, $item);
+            $summary['internet_message_id'] = EwsXml::text($xpath, 't:InternetMessageId', $item);
+            $items[] = $summary;
+        }
+
+        return [
+            'items' => $items,
+            'total' => $root !== null ? (int) $root->getAttribute('TotalItemsInView') : count($items),
+            'has_more' => $root !== null && $root->getAttribute('IncludesLastItemInRange') === 'false',
+        ];
+    }
+
+    /**
+     * Unveraenderter MIME-Inhalt (RFC 5322) einer Nachricht fuer das
+     * Langzeitarchiv, inklusive der dauerhaften InternetMessageId zur
+     * Identitaetspruefung vor der Loeschung.
+     *
+     * @return array{id:string,change_key:string,mime:string,internet_message_id:string,subject:string}
+     */
+    public function messageMime(string $user, string $id): array
+    {
+        $xpath = $this->call(
+            '<m:GetItem><m:ItemShape><t:BaseShape>IdOnly</t:BaseShape><t:IncludeMimeContent>true</t:IncludeMimeContent><t:AdditionalProperties>'
+            . '<t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="message:InternetMessageId"/>'
+            . '</t:AdditionalProperties></m:ItemShape>' . EwsXml::itemIds([['id' => $id]]) . '</m:GetItem>',
+            $user
+        );
+        $item = EwsXml::elements($xpath, '//m:Items/*')[0] ?? null;
+        if ($item === null) {
+            throw new OrvantaException('Die Nachricht wurde nicht gefunden.', 404);
+        }
+        $itemId = EwsXml::itemId($xpath, $item);
+        $mime = base64_decode(trim(EwsXml::text($xpath, 't:MimeContent', $item)), true);
+
+        return [
+            'id' => $itemId['id'],
+            'change_key' => $itemId['change_key'],
+            'mime' => $mime === false ? '' : $mime,
+            'internet_message_id' => EwsXml::text($xpath, 't:InternetMessageId', $item),
+            'subject' => EwsXml::text($xpath, 't:Subject', $item),
+        ];
+    }
+
+    /**
+     * Dauerhafte Identitaet einer Nachricht (InternetMessageId) kurz vor der
+     * Loeschung erneut abrufen. Liefert null, wenn die Nachricht nicht mehr
+     * existiert (ErrorItemNotFound) - dann ist nichts mehr zu loeschen.
+     *
+     * @return array{id:string,internet_message_id:string}|null
+     */
+    public function messageIdentity(string $user, string $id): ?array
+    {
+        try {
+            $xpath = $this->call(
+                '<m:GetItem><m:ItemShape><t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>'
+                . '<t:FieldURI FieldURI="message:InternetMessageId"/></t:AdditionalProperties></m:ItemShape>'
+                . EwsXml::itemIds([['id' => $id]]) . '</m:GetItem>',
+                $user
+            );
+        } catch (OrvantaException $exception) {
+            if ($exception->getCode() === 404 || str_contains($exception->getMessage(), 'nicht gefunden')) {
+                return null;
+            }
+            throw $exception;
+        }
+        $item = EwsXml::elements($xpath, '//m:Items/*')[0] ?? null;
+        if ($item === null) {
+            return null;
+        }
+        $itemId = EwsXml::itemId($xpath, $item);
+
+        return ['id' => $itemId['id'], 'internet_message_id' => EwsXml::text($xpath, 't:InternetMessageId', $item)];
+    }
+
+    /**
      * Neue E-Mail senden (mit Kopie in „Gesendete Elemente“). Mit $draftId wird
      * ein vorhandener Entwurf aktualisiert und anschliessend gesendet; mit
      * $mail['reference'] (id, mode) entsteht eine Antwort/Weiterleitung mit

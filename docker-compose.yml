@@ -145,6 +145,27 @@ services:
     networks:
       - intranet
 
+  # Orvanta-Langzeitarchiv: Python-Supervisor steuert den PHP-Archivierungs-
+  # Worker (Copy -> Verify -> Commit -> Delete alter E-Mails nach Nextcloud).
+  mail-archive:
+    build:
+      context: .
+      dockerfile: docker/mail-archive/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      CONTAINER_ROLE: mail-archive
+      ARCHIVE_POLL_INTERVAL: ${ARCHIVE_POLL_INTERVAL:-3600}
+    env_file:
+      - .env
+    volumes:
+      - app_storage:/var/www/html/storage
+    networks:
+      - intranet
+      - office
+
   # Vorgelagerter Authentifizierungs-Container (HTTP Negotiate: Kerberos
   # ueber die Keytab des Computerkontos, sonst NTLM ueber winbind). Reicht
   # den erkannten Benutzer als Header "X-Remote-User" an die Hauptanwendung

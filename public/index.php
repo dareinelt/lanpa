@@ -162,6 +162,11 @@ $router->post('/api/orvanta/anhang/link', [OrvantaApiController::class, 'attachm
 $router->post('/api/orvanta/anhang/nextcloud', [OrvantaApiController::class, 'attachmentToNextcloud']);
 $router->get('/api/orvanta/zwischenspeicher', [OrvantaApiController::class, 'cacheUsage']);
 $router->post('/api/orvanta/zwischenspeicher/leeren', [OrvantaApiController::class, 'cacheClear']);
+$router->get('/api/orvanta/archiv/status', [OrvantaApiController::class, 'archiveStatus']);
+$router->get('/api/orvanta/archiv/ordner', [OrvantaApiController::class, 'archiveFolders']);
+$router->get('/api/orvanta/archiv/mail', [OrvantaApiController::class, 'archiveMessages']);
+$router->get('/api/orvanta/archiv/mail/detail', [OrvantaApiController::class, 'archiveMessage']);
+$router->get('/api/orvanta/archiv/suche', [OrvantaApiController::class, 'archiveSearch']);
 $router->get('/api/orvanta/kalender', [OrvantaApiController::class, 'calendar']);
 $router->get('/api/orvanta/kalender/termin', [OrvantaApiController::class, 'event']);
 $router->post('/api/orvanta/kalender/termin', [OrvantaApiController::class, 'saveEvent']);

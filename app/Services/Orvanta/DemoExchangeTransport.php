@@ -47,6 +47,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             str_contains($xml, 'Id="contacts"') && str_contains($xml, '<m:FindItem') => $this->contacts(),
             str_contains($xml, 'Id="tasks"') && str_contains($xml, '<m:FindItem') => $this->tasks(),
             str_contains($xml, 'Id="notes"') && str_contains($xml, '<m:FindItem') => $this->notes(),
+            str_contains($xml, '<m:FindItem') && str_contains($xml, 'IsLessThanOrEqualTo') => $this->archiveCandidates($xml),
             str_contains($xml, '<m:FindItem') => $this->messages($xml),
             str_contains($xml, '<m:GetItem>') => $this->getItem($xml),
             str_contains($xml, '<m:GetAttachment>') => $this->attachment($xml),
@@ -222,6 +223,56 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
         ];
     }
 
+    /**
+     * Alte Beispielnachrichten fuer das Langzeitarchiv (Demomodus): deutlich
+     * aelter als das Standard-Mindestalter von 60 Tagen.
+     *
+     * @return list<array{id:string,subject:string,from:array{0:string,1:string},received:int,read:bool,att:bool,preview:string}>
+     */
+    private function sampleArchiveMessages(): array
+    {
+        $today = strtotime('today 09:15');
+
+        return [
+            ['id' => 'demo-old-1', 'subject' => 'Jahresabschluss Vorjahr – finale Unterlagen', 'from' => ['Controlling', 'controlling@example.org'], 'received' => $today - 400 * 86400, 'read' => true, 'att' => true, 'preview' => 'Anbei die finalen Unterlagen zum Jahresabschluss des Vorjahres.'],
+            ['id' => 'demo-old-2', 'subject' => 'Altes Wartungsprotokoll USV', 'from' => ['IT-Service', 'it-service@example.org'], 'received' => $today - 250 * 86400, 'read' => true, 'att' => false, 'preview' => 'Das Wartungsprotokoll der USV-Anlage liegt zur Ablage bereit.'],
+            ['id' => 'demo-old-3', 'subject' => 'Einladung Sommerfest (vergangen)', 'from' => ['Personalabteilung', 'personal@example.org'], 'received' => $today - 120 * 86400, 'read' => true, 'att' => false, 'preview' => 'Herzliche Einladung zum Sommerfest auf dem Betriebsgelände.'],
+            ['id' => 'demo-old-4', 'subject' => 'Rechnung 2024-1874 – Büromaterial', 'from' => ['Markus Vogel', 'm.vogel@moebel-beispiel.de'], 'received' => $today - 90 * 86400, 'read' => true, 'att' => true, 'preview' => 'Anbei die Rechnung für die Lieferung Büromaterial.'],
+            ['id' => 'demo-old-5', 'subject' => 'Protokoll Dienstbesprechung (Archivbestand)', 'from' => ['Sabine Krüger', 'sabine.krueger@example.org'], 'received' => $today - 70 * 86400, 'read' => true, 'att' => false, 'preview' => 'Das Protokoll der damaligen Dienstbesprechung zur Ablage.'],
+        ];
+    }
+
+    /**
+     * FindItem mit Restriction (IsLessThanOrEqualTo item:DateTimeReceived):
+     * Archivierungs-Kandidaten im Demomodus - nur im Posteingang.
+     */
+    private function archiveCandidates(string $xml): string
+    {
+        $before = PHP_INT_MAX;
+        if (preg_match('/<t:Constant Value="([^"]+)"/', $xml, $m) === 1) {
+            $before = strtotime($m[1]) ?: PHP_INT_MAX;
+        }
+        $list = [];
+        if (str_contains($xml, 'Id="demo-inbox"') || str_contains($xml, 'Id="inbox"')) {
+            foreach ($this->sampleArchiveMessages() as $message) {
+                if ($message['received'] <= $before) {
+                    $list[] = $message;
+                }
+            }
+        }
+        $offset = preg_match('/Offset="(\d+)"/', $xml, $m) === 1 ? (int) $m[1] : 0;
+        $max = preg_match('/MaxEntriesReturned="(\d+)"/', $xml, $m) === 1 ? (int) $m[1] : 50;
+        $page = array_slice($list, $offset, $max);
+        $last = $offset + $max >= count($list) ? 'true' : 'false';
+        $out = '';
+        foreach ($page as $message) {
+            $host = substr(strrchr($message['from'][1], '@') ?: '@example.org', 1);
+            $out .= $this->messageXml($message, false, '<t:InternetMessageId>' . EwsXml::escape('<' . $message['id'] . '@' . $host . '>') . '</t:InternetMessageId>');
+        }
+
+        return $this->envelope('<m:FindItemResponse><m:ResponseMessages><m:FindItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:RootFolder TotalItemsInView="' . count($list) . '" IncludesLastItemInRange="' . $last . '"><t:Items>' . $out . '</t:Items></m:RootFolder></m:FindItemResponseMessage></m:ResponseMessages></m:FindItemResponse>');
+    }
+
     private function messages(string $xml): string
     {
         $out = '';
@@ -329,11 +380,18 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
 
             return $this->envelope('<m:GetItemResponse><m:ResponseMessages><m:GetItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items><t:Item><t:ItemId Id="' . $id . '" ChangeKey="CK1"/><t:Subject>' . EwsXml::escape($note['subject']) . '</t:Subject><t:Body BodyType="Text">' . EwsXml::escape($note['body']) . '</t:Body><t:LastModifiedTime>' . EwsXml::dateTime($note['modified']) . '</t:LastModifiedTime></t:Item></m:Items></m:GetItemResponseMessage></m:ResponseMessages></m:GetItemResponse>');
         }
-        foreach (array_merge($this->sampleMessages(), [['id' => 'demo-sent-1', 'subject' => 'AW: Protokoll Dienstbesprechung', 'from' => ['Ich', 'ich@example.org'], 'received' => time() - 5400, 'read' => true, 'att' => false, 'preview' => 'Danke, ich habe die Maßnahmen in den Notfallplan übernommen.']]) as $message) {
+        foreach (array_merge($this->sampleMessages(), $this->sampleArchiveMessages(), [['id' => 'demo-sent-1', 'subject' => 'AW: Protokoll Dienstbesprechung', 'from' => ['Ich', 'ich@example.org'], 'received' => time() - 5400, 'read' => true, 'att' => false, 'preview' => 'Danke, ich habe die Maßnahmen in den Notfallplan übernommen.']]) as $message) {
             if ($message['id'] === $id) {
-                $mime = str_contains($xml, 'item:MimeContent') ? '<t:MimeContent CharacterSet="UTF-8">' . base64_encode($this->mimeFor($message)) . '</t:MimeContent>' : '';
+                $extra = '';
+                if (str_contains($xml, 'item:MimeContent') || str_contains($xml, 'IncludeMimeContent')) {
+                    $extra .= '<t:MimeContent CharacterSet="UTF-8">' . base64_encode($this->mimeFor($message)) . '</t:MimeContent>';
+                }
+                if (str_contains($xml, 'InternetMessageId')) {
+                    $host = substr(strrchr($message['from'][1], '@') ?: '@example.org', 1);
+                    $extra .= '<t:InternetMessageId>' . EwsXml::escape('<' . $message['id'] . '@' . $host . '>') . '</t:InternetMessageId>';
+                }
 
-                return $this->envelope('<m:GetItemResponse><m:ResponseMessages><m:GetItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items>' . $this->messageXml($message, true, $mime) . '</m:Items></m:GetItemResponseMessage></m:ResponseMessages></m:GetItemResponse>');
+                return $this->envelope('<m:GetItemResponse><m:ResponseMessages><m:GetItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items>' . $this->messageXml($message, true, $extra) . '</m:Items></m:GetItemResponseMessage></m:ResponseMessages></m:GetItemResponse>');
             }
         }
 

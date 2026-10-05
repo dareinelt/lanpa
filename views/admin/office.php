@@ -489,7 +489,7 @@ $ov = $orvantaValues;
                 <label for="mailbox_quota_mb">Postfachgröße für die Belegungsanzeige (MB, 0 = ohne Grenze)</label>
                 <input type="number" id="mailbox_quota_mb" name="mailbox_quota_mb" min="0" max="10485760" step="1"
                        value="<?= Html::e($ov['mailbox_quota_mb'] ?? '0') ?>" <?= $ovField('mailbox_quota_mb') ?>>
-                <p class="field__hint">Gilt nur, wenn Exchange für das Postfach keine Grenze („Senden verbieten“, „Empfang verbieten“, „Warnung“) über EWS liefert – z. B. die Sendegrenze der Postfachdatenbank (Get-MailboxDatabase | fl ProhibitSendQuota).</p>
+                <p class="field__hint">Die Grenzen („Warnung“, „Senden verbieten“, „Empfang verbieten“) werden aus Exchange bzw. aus dem Active Directory gelesen (Benutzer bzw. Postfachdatenbank). Dieser Wert gilt nur, wenn dort keine Grenze gefunden wird.</p>
                 <?= $ovFieldError('mailbox_quota_mb') ?>
             </div>
             <div class="field-row">

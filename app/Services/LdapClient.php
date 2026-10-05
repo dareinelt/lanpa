@@ -105,6 +105,83 @@ final class LdapClient implements LdapClientInterface
         return $results;
     }
 
+    /** Exchange-Postfachgrenzen am Benutzer bzw. an der Postfachdatenbank (Werte in KB). */
+    private const MAILBOX_QUOTA_ATTRIBUTES = ['mdbusedefaults', 'mdbstoragequota', 'mdboverquotalimit', 'mdboverhardquotalimit', 'homemdb'];
+
+    /**
+     * Grenzen des Exchange-Postfachs (On-Premise) eines Benutzers aus dem AD:
+     * mDBStorageQuota (Warnung), mDBOverQuotaLimit (Senden verbieten) und
+     * mDBOverHardQuotaLimit (Senden und Empfangen verbieten). Steht
+     * mDBUseDefaults auf TRUE, gelten die Werte der Postfachdatenbank
+     * (homeMDB, Konfigurationspartition). null = kein Postfach gefunden.
+     *
+     * @return array{warning:int,send:int,receive:int,defaults:bool}|null Grenzen in Byte (0 = keine)
+     */
+    public function mailboxQuota(string $samAccountName): ?array
+    {
+        $attribute = (string) ($this->config['attributes']['samaccount_name'] ?? 'sAMAccountName');
+        if ($samAccountName === '' || !Validator::isLdapAttribute($attribute)) {
+            return null;
+        }
+        $connection = $this->connect();
+        try {
+            $filter = '(&(objectClass=user)(' . $attribute . '=' . ldap_escape($samAccountName, '', LDAP_ESCAPE_FILTER) . '))';
+            $result = @ldap_search($connection, (string) $this->config['base_dn'], $filter, self::MAILBOX_QUOTA_ATTRIBUTES, 0, 2);
+            if ($result === false) {
+                throw new RuntimeException('LDAP-Suche fehlgeschlagen: ' . ldap_error($connection));
+            }
+            $entries = ldap_get_entries($connection, $result);
+            if (!is_array($entries) || ($entries['count'] ?? 0) !== 1) {
+                return null;
+            }
+            /** @var array<string,mixed> $user */
+            $user = $entries[0];
+            $database = null;
+            $homeMdb = self::firstValue($user, 'homeMDB');
+            if ($homeMdb !== null && strtoupper((string) self::firstValue($user, 'mDBUseDefaults')) !== 'FALSE') {
+                $read = @ldap_read($connection, $homeMdb, '(objectClass=*)', self::MAILBOX_QUOTA_ATTRIBUTES);
+                $dbEntries = $read !== false ? ldap_get_entries($connection, $read) : false;
+                if (is_array($dbEntries) && ($dbEntries['count'] ?? 0) === 1) {
+                    /** @var array<string,mixed> $database */
+                    $database = $dbEntries[0];
+                }
+            }
+
+            return self::mailboxQuotaFromEntries($user, $database);
+        } finally {
+            @ldap_unbind($connection);
+        }
+    }
+
+    /**
+     * Wertet die Postfachgrenzen aus den LDAP-Eintraegen von Benutzer und
+     * Postfachdatenbank aus (fehlende Attribute = keine Grenze).
+     *
+     * @param array<string,mixed> $user
+     * @param array<string,mixed>|null $database
+     *
+     * @return array{warning:int,send:int,receive:int,defaults:bool}|null
+     */
+    public static function mailboxQuotaFromEntries(array $user, ?array $database): ?array
+    {
+        if (self::firstValue($user, 'homeMDB') === null) {
+            return null;
+        }
+        $defaults = strtoupper((string) self::firstValue($user, 'mDBUseDefaults')) !== 'FALSE';
+        $source = $defaults ? $database : $user;
+        if ($source === null) {
+            return null;
+        }
+        $bytes = static fn (string $attribute): int => max(0, (int) self::firstValue($source, $attribute)) * 1024;
+
+        return [
+            'warning' => $bytes('mDBStorageQuota'),
+            'send' => $bytes('mDBOverQuotaLimit'),
+            'receive' => $bytes('mDBOverHardQuotaLimit'),
+            'defaults' => $defaults,
+        ];
+    }
+
     /**
      * OID von LDAP_MATCHING_RULE_IN_CHAIN: loest verschachtelte
      * Gruppenmitgliedschaften serverseitig auf (Active Directory, Samba AD).

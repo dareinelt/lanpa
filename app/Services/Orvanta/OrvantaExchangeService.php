@@ -85,12 +85,16 @@ final class OrvantaExchangeService
      * und „Empfang verbieten“ (PR_PROHIBIT_RECEIVE_QUOTA), jeweils in Byte.
      * 0 = keine Grenze bekannt. Liefert Exchange keine Grenze (die
      * Quota-Eigenschaften des Postfachspeichers sind ueber EWS meist nicht
-     * lesbar), gilt die im Adminbereich eingetragene Postfachgroesse
-     * (mailbox_quota_mb) als Grenze `limit`.
+     * lesbar), gelten die aus dem AD gelesenen Grenzen $directory
+     * (LdapClient::mailboxQuota()), danach die im Adminbereich eingetragene
+     * Postfachgroesse (mailbox_quota_mb) als Grenze `limit`. `source` nennt
+     * die Herkunft der Grenzen (exchange, directory, setting, leer).
      *
-     * @return array{used:int,quota:int,warning:int,receive_limit:int,limit:int,percent:int}
+     * @param array{warning:int,send:int,receive:int}|null $directory
+     *
+     * @return array{used:int,quota:int,warning:int,receive_limit:int,limit:int,percent:int,source:string}
      */
-    public function mailboxUsage(string $user): array
+    public function mailboxUsage(string $user, ?array $directory = null): array
     {
         $xpath = $this->call(
             '<m:GetFolder><m:FolderShape><t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>'
@@ -119,7 +123,18 @@ final class OrvantaExchangeService
         $warning = ($values[0x3FF5] ?? 0) * 1024;
         $quota = ($values[0x666E] ?? 0) * 1024;
         $receive = ($values[0x666A] ?? 0) * 1024;
-        $limit = $quota > 0 ? $quota : ($receive > 0 ? $receive : ($warning > 0 ? $warning : $this->config->mailboxQuotaBytes()));
+        $source = 'exchange';
+        if ($quota === 0 && $receive === 0 && $warning === 0 && $directory !== null) {
+            $warning = max(0, $directory['warning']);
+            $quota = max(0, $directory['send']);
+            $receive = max(0, $directory['receive']);
+            $source = 'directory';
+        }
+        $limit = $quota > 0 ? $quota : ($receive > 0 ? $receive : $warning);
+        if ($limit === 0) {
+            $limit = $this->config->mailboxQuotaBytes();
+            $source = $limit > 0 ? 'setting' : '';
+        }
 
         return [
             'used' => $used,
@@ -128,6 +143,7 @@ final class OrvantaExchangeService
             'receive_limit' => $receive,
             'limit' => $limit,
             'percent' => $limit > 0 ? (int) min(100, round($used * 100 / $limit)) : 0,
+            'source' => $source,
         ];
     }
 

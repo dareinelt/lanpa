@@ -6,6 +6,7 @@ use App\Contracts\ExchangeTransportInterface;
 use App\Exceptions\ValidationException;
 use App\Repositories\OrvantaRepository;
 use App\Security\SecretBox;
+use App\Services\LdapClient;
 use App\Services\Office\NextcloudFilesService;
 use App\Services\Orvanta\DemoExchangeTransport;
 use App\Services\Orvanta\EwsXml;
@@ -522,6 +523,7 @@ Runner::test('Orvanta: Postfachbelegung summiert alle Ordner (Quota in KB)', fun
     Assert::same(2411724 * 1024, $usage['receive_limit']);
     Assert::same(2097152 * 1024, $usage['limit']);
     Assert::same(67, $usage['percent']);
+    Assert::same('exchange', $usage['source']);
 
     // Ohne Grenzen: nur Groesse, Prozent 0
     $parts['transport']->forced = ['status' => 200, 'error' => null, 'body' => '<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types">'
@@ -542,6 +544,38 @@ Runner::test('Orvanta: Postfachbelegung summiert alle Ordner (Quota in KB)', fun
     Assert::same(0, $usage['quota']);
     Assert::same(1048576, $usage['limit']);
     Assert::same(25, $usage['percent']);
+    Assert::same('setting', $usage['source']);
+
+    // Grenzen aus dem AD haben Vorrang vor der Postfachgroesse aus dem Adminbereich
+    $usage = $parts['exchange']->mailboxUsage('demo@demo.local', ['warning' => 1536 * 1024, 'send' => 2048 * 1024, 'receive' => 4096 * 1024]);
+    Assert::same(2048 * 1024, $usage['quota']);
+    Assert::same(1536 * 1024, $usage['warning']);
+    Assert::same(4096 * 1024, $usage['receive_limit']);
+    Assert::same(2048 * 1024, $usage['limit']);
+    Assert::same(13, $usage['percent']);
+    Assert::same('directory', $usage['source']);
+
+    // AD ohne Grenzen (unbegrenzt): Postfachgroesse aus dem Adminbereich
+    $usage = $parts['exchange']->mailboxUsage('demo@demo.local', ['warning' => 0, 'send' => 0, 'receive' => 0]);
+    Assert::same(1048576, $usage['limit']);
+    Assert::same('setting', $usage['source']);
+});
+
+Runner::test('Orvanta: Postfachgrenzen aus dem AD (Benutzer bzw. Postfachdatenbank, Werte in KB)', function (): void {
+    $database = ['mdbstoragequota' => ['count' => 1, '1900000'], 'mdboverquotalimit' => ['count' => 1, '2000000'], 'mdboverhardquotalimit' => ['count' => 1, '2300000']];
+    $home = ['count' => 1, 'CN=DB01,CN=Databases,CN=Exchange Administrative Group,CN=Administrative Groups,CN=Firma,CN=Microsoft Exchange,CN=Services,CN=Configuration,DC=firma,DC=local'];
+
+    // mDBUseDefaults = TRUE: Werte der Datenbank
+    $quota = LdapClient::mailboxQuotaFromEntries(['homemdb' => $home, 'mdbusedefaults' => ['count' => 1, 'TRUE'], 'mdboverquotalimit' => ['count' => 1, '5']], $database);
+    Assert::same(['warning' => 1900000 * 1024, 'send' => 2000000 * 1024, 'receive' => 2300000 * 1024, 'defaults' => true], $quota);
+
+    // mDBUseDefaults = FALSE: eigene Werte am Benutzer, fehlende = unbegrenzt
+    $quota = LdapClient::mailboxQuotaFromEntries(['homemdb' => $home, 'mdbusedefaults' => ['count' => 1, 'FALSE'], 'mdboverquotalimit' => ['count' => 1, '10485760']], $database);
+    Assert::same(['warning' => 0, 'send' => 10485760 * 1024, 'receive' => 0, 'defaults' => false], $quota);
+
+    // Kein On-Premise-Postfach bzw. Datenbank nicht lesbar
+    Assert::same(null, LdapClient::mailboxQuotaFromEntries(['mdbusedefaults' => ['count' => 1, 'TRUE']], $database));
+    Assert::same(null, LdapClient::mailboxQuotaFromEntries(['homemdb' => $home, 'mdbusedefaults' => ['count' => 1, 'TRUE']], null));
 });
 
 Runner::test('Orvanta: EwsXml-Hilfsfunktionen', function (): void {

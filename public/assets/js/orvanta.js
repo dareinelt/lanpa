@@ -1315,22 +1315,49 @@
             return;
         }
         var list = hook('move-folders');
-        if (list) {
-            list.innerHTML = '';
-            state.folders.forEach(function (folder) {
+        if (!list) {
+            return;
+        }
+        // Ein <select> nimmt nur <option>/<optgroup> auf; Ordner hierarchisch einruecken.
+        list.innerHTML = '';
+        var byParent = {};
+        var known = {};
+        state.folders.forEach(function (folder) {
+            known[folder.id] = true;
+        });
+        state.folders.forEach(function (folder) {
+            var parent = known[folder.parent] ? folder.parent : '';
+            (byParent[parent] = byParent[parent] || []).push(folder);
+        });
+        function add(parent, depth) {
+            (byParent[parent] || []).forEach(function (folder) {
                 var key = folderKey(folder);
-                if (key === state.folder) {
-                    return;
+                if (key !== state.folder) {
+                    var indent = new Array(depth + 1).join('\u00a0\u00a0\u00a0');
+                    list.appendChild(el('option', { value: key, text: indent + (FOLDER_ICONS[folder.kind] || FOLDER_ICONS.folder) + ' ' + (FOLDER_LABELS[folder.kind] || folder.name) }));
                 }
-                var button = el('button', { type: 'button', 'class': 'ov-folder', text: (FOLDER_ICONS[folder.kind] || FOLDER_ICONS.folder) + ' ' + (FOLDER_LABELS[folder.kind] || folder.name) });
-                button.addEventListener('click', function () {
-                    closeDialog('move');
-                    mailAction('move', ids, key);
-                });
-                list.appendChild(button);
+                add(folder.id, depth + 1);
             });
         }
+        add('', 0);
+        if (!list.options.length) {
+            toast('Kein anderer Ordner verfügbar.', 'info');
+            return;
+        }
+        state.moveIds = ids.slice();
         openDialog('move');
+    }
+
+    function submitMove(form) {
+        var select = hook('move-folders', form);
+        var target = select ? select.value : '';
+        var ids = state.moveIds || [];
+        if (!target || !ids.length) {
+            return;
+        }
+        state.moveIds = null;
+        closeDialog('move');
+        mailAction('move', ids, target);
     }
 
     // ------------------------------------------------------------------
@@ -3550,6 +3577,7 @@
                 else if (kind === 'task') { saveTask(form); }
                 else if (kind === 'compose') { sendCompose(form, false); }
                 else if (kind === 'folder-new') { createFolder(form); }
+                else if (kind === 'move') { submitMove(form); }
             });
         });
 

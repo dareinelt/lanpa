@@ -76,13 +76,23 @@ Typografie, Statusleiste):
   KI-Unterstützung verfügbar ist – ein kleines Roboter-Symbol (Klick öffnet die
   Kurzanleitung, siehe Abschnitt 7).
 - **Speicheranzeigen unten links:** Zwei kleine Balken unter den Modulen
-  zeigen die Belegung des **Exchange-Postfachs** (Größe aller Ordner gegen die
-  vom Server gesetzte Sendegrenze, ab 80 % orange) und des
+  zeigen die Belegung des **Exchange-Postfachs** (Summe aller Ordner ohne
+  Suchordner und „Wiederherstellbare Elemente“ – entspricht `TotalItemSize`
+  aus `Get-MailboxStatistics` – gegen die vom Server gesetzte Sendegrenze,
+  ab 80 % orange) und des
   **Anhang-Zwischenspeichers** in Nextcloud. Der Einstellungsdialog (Zahnrad)
   nennt zusätzlich die Grenzen „Warnung ab“, „Senden gesperrt ab“ und
-  „Empfang gesperrt ab“. Ist für das Postfach keine Grenze gesetzt, erscheint
-  nur die Größe („ohne Grenze“); ist Exchange nicht erreichbar, „Nicht
-  verfügbar“.
+  „Empfang gesperrt ab“. Exchange liefert diese Grenzen über EWS meist nicht;
+  dann werden sie aus dem **Active Directory** der Identitätsquelle des
+  Benutzers gelesen: `mDBStorageQuota` (Warnung), `mDBOverQuotaLimit`
+  (Senden) und `mDBOverHardQuotaLimit` (Empfang) am Benutzer – bzw. bei
+  `mDBUseDefaults = TRUE` an der Postfachdatenbank (`homeMDB`, Partition
+  „Configuration“; das LDAP-Bindkonto braucht dort Leserechte, was für
+  authentifizierte Benutzer standardmäßig gilt). Das Ergebnis wird je
+  Sitzung 15 Minuten zwischengespeichert. Findet sich auch dort keine
+  Grenze, gilt die im Adminbereich eingetragene **Postfachgröße**
+  (`mailbox_quota_mb`). Ist auch diese 0, erscheint nur die Größe („ohne
+  Grenze“); ist Exchange nicht erreichbar, „Nicht verfügbar“.
 
 ![Orvanta – Einstellungen mit Postfachbelegung](screenshots/91-orvanta-einstellungen-postfach.png)
 
@@ -218,6 +228,7 @@ genannte primäre Adresse, wiederholt die Anfrage und merkt sich die Zuordnung
 | `exchange_verify_tls` | TLS-Zertifikat prüfen | an |
 | `exchange_timeout` | Zeitlimit je Anfrage (3–120 s) | 20 |
 | `exchange_owa_url` | Link „Im Browser-Outlook öffnen“ | – |
+| `mailbox_quota_mb` | Postfachgröße für die Belegungsanzeige, wenn weder Exchange noch das AD eine Grenze liefern (0 = ohne Grenze) | 0 |
 | `cache_folder` | Ordner im Nextcloud-Bereich des Benutzers | `Orvanta` |
 | `cache_quota_mb` | Quota des Zwischenspeichers je Benutzer (0 = aus) | 250 |
 | `reminder_lead_minutes` | Vorlaufzeit, wenn ein Termin keine eigene Erinnerung hat | 15 |

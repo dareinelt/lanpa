@@ -75,15 +75,26 @@ final class OrvantaExchangeService
     }
 
     /**
-     * Belegung des Postfachs auf dem Exchange: Groesse aller Elemente
-     * (PR_MESSAGE_SIZE_EXTENDED am Stammordner) sowie die vom Server
-     * gesetzten Grenzen „Warnung“ (PR_STORAGE_QUOTA_LIMIT), „Senden
-     * verbieten“ (PR_PROHIBIT_SEND_QUOTA) und „Empfang verbieten“
-     * (PR_PROHIBIT_RECEIVE_QUOTA), jeweils in Byte. 0 = keine Grenze bekannt.
+     * Belegung des Postfachs auf dem Exchange: Summe der Groessen
+     * (PR_MESSAGE_SIZE_EXTENDED) des Stammordners und aller Unterordner
+     * (PR_MESSAGE_SIZE_EXTENDED gilt je Ordner nur fuer dessen eigene
+     * Elemente) ohne Suchordner und ohne „Wiederherstellbare Elemente“
+     * (eigenes Kontingent, wie TotalItemSize von Get-MailboxStatistics),
+     * dazu die vom Server gesetzten Grenzen „Warnung“
+     * (PR_STORAGE_QUOTA_LIMIT), „Senden verbieten“ (PR_PROHIBIT_SEND_QUOTA)
+     * und „Empfang verbieten“ (PR_PROHIBIT_RECEIVE_QUOTA), jeweils in Byte.
+     * 0 = keine Grenze bekannt. Liefert Exchange keine Grenze (die
+     * Quota-Eigenschaften des Postfachspeichers sind ueber EWS meist nicht
+     * lesbar), gelten die aus dem AD gelesenen Grenzen $directory
+     * (LdapClient::mailboxQuota()), danach die im Adminbereich eingetragene
+     * Postfachgroesse (mailbox_quota_mb) als Grenze `limit`. `source` nennt
+     * die Herkunft der Grenzen (exchange, directory, setting, leer).
      *
-     * @return array{used:int,quota:int,warning:int,receive_limit:int,percent:int}
+     * @param array{warning:int,send:int,receive:int}|null $directory
+     *
+     * @return array{used:int,quota:int,warning:int,receive_limit:int,limit:int,percent:int,source:string}
      */
-    public function mailboxUsage(string $user): array
+    public function mailboxUsage(string $user, ?array $directory = null): array
     {
         $xpath = $this->call(
             '<m:GetFolder><m:FolderShape><t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>'
@@ -91,29 +102,128 @@ final class OrvantaExchangeService
             . '<t:ExtendedFieldURI PropertyTag="0x3FF5" PropertyType="Integer"/>'
             . '<t:ExtendedFieldURI PropertyTag="0x666E" PropertyType="Integer"/>'
             . '<t:ExtendedFieldURI PropertyTag="0x666A" PropertyType="Integer"/>'
-            . '</t:AdditionalProperties></m:FolderShape><m:FolderIds><t:DistinguishedFolderId Id="root"/></m:FolderIds></m:GetFolder>',
-            $user
+            . '</t:AdditionalProperties></m:FolderShape><m:FolderIds><t:DistinguishedFolderId Id="root"/><t:DistinguishedFolderId Id="recoverableitemsroot"/></m:FolderIds></m:GetFolder>',
+            $user,
+            false
         );
-        $values = [];
-        foreach (EwsXml::elements($xpath, '//t:Folder/t:ExtendedProperty') as $property) {
-            // Exchange schreibt Tags ohne fuehrende Nullen (z. B. "0xe08")
-            $tag = (int) hexdec(ltrim(strtolower(EwsXml::attr($xpath, 't:ExtendedFieldURI', 'PropertyTag', $property)), 'x0'));
-            $values[$tag] = max(0, (int) EwsXml::text($xpath, 't:Value', $property));
+        $messages = EwsXml::elements($xpath, '//m:GetFolderResponseMessage');
+        $rootMessage = $messages[0] ?? null;
+        if ($rootMessage === null || $rootMessage->getAttribute('ResponseClass') === 'Error') {
+            throw new OrvantaException(self::translate(EwsXml::text($xpath, 'm:ResponseCode', $rootMessage) ?: 'ErrorFolderNotFound'), 502);
         }
-        $used = $values[0x0E08] ?? 0;
+        $values = [];
+        foreach (EwsXml::elements($xpath, './/t:Folder/t:ExtendedProperty', $rootMessage) as $property) {
+            $values[self::propertyTag($xpath, $property)] = max(0, (int) EwsXml::text($xpath, 't:Value', $property));
+        }
+        $recoverable = isset($messages[1]) && $messages[1]->getAttribute('ResponseClass') !== 'Error'
+            ? EwsXml::attr($xpath, './/t:FolderId', 'Id', $messages[1])
+            : '';
+        $used = ($values[0x0E08] ?? 0) + $this->subfolderSize($user, $recoverable);
         // Quota-Werte liefert Exchange in Kilobyte
         $warning = ($values[0x3FF5] ?? 0) * 1024;
         $quota = ($values[0x666E] ?? 0) * 1024;
         $receive = ($values[0x666A] ?? 0) * 1024;
+        $source = 'exchange';
+        if ($quota === 0 && $receive === 0 && $warning === 0 && $directory !== null) {
+            $warning = max(0, $directory['warning']);
+            $quota = max(0, $directory['send']);
+            $receive = max(0, $directory['receive']);
+            $source = 'directory';
+        }
         $limit = $quota > 0 ? $quota : ($receive > 0 ? $receive : $warning);
+        if ($limit === 0) {
+            $limit = $this->config->mailboxQuotaBytes();
+            $source = $limit > 0 ? 'setting' : '';
+        }
 
         return [
             'used' => $used,
             'quota' => $quota,
             'warning' => $warning,
             'receive_limit' => $receive,
+            'limit' => $limit,
             'percent' => $limit > 0 ? (int) min(100, round($used * 100 / $limit)) : 0,
+            'source' => $source,
         ];
+    }
+
+    /**
+     * Summe von PR_MESSAGE_SIZE_EXTENDED aller Ordner unterhalb des
+     * Stammordners (seitenweise), ohne Suchordner und ohne den Teilbaum
+     * $excludedRoot (Wiederherstellbare Elemente).
+     */
+    private function subfolderSize(string $user, string $excludedRoot): int
+    {
+        $folders = [];
+        $offset = 0;
+        for ($page = 0; $page < 20; $page++) {
+            $xpath = $this->call(
+                '<m:FindFolder Traversal="Deep"><m:FolderShape><t:BaseShape>IdOnly</t:BaseShape><t:AdditionalProperties>'
+                . '<t:FieldURI FieldURI="folder:ParentFolderId"/><t:ExtendedFieldURI PropertyTag="0x0E08" PropertyType="Long"/>'
+                . '</t:AdditionalProperties></m:FolderShape>'
+                . '<m:IndexedPageFolderView MaxEntriesReturned="1000" Offset="' . $offset . '" BasePoint="Beginning"/>'
+                . '<m:ParentFolderIds><t:DistinguishedFolderId Id="root"/></m:ParentFolderIds></m:FindFolder>',
+                $user
+            );
+            $root = EwsXml::elements($xpath, '//m:RootFolder')[0] ?? null;
+            if ($root === null) {
+                break;
+            }
+            // Folder, CalendarFolder, ContactsFolder, TasksFolder – Suchordner
+            // enthalten nur Verweise und werden nicht gezaehlt.
+            $entries = EwsXml::elements($xpath, 't:Folders/*[local-name() != "SearchFolder"]', $root);
+            foreach ($entries as $folder) {
+                $size = 0;
+                foreach (EwsXml::elements($xpath, 't:ExtendedProperty', $folder) as $property) {
+                    if (self::propertyTag($xpath, $property) === 0x0E08) {
+                        $size = max(0, (int) EwsXml::text($xpath, 't:Value', $property));
+                    }
+                }
+                $id = EwsXml::attr($xpath, 't:FolderId', 'Id', $folder);
+                $folders[$id !== '' ? $id : 'folder-' . count($folders)] = [
+                    'parent' => EwsXml::attr($xpath, 't:ParentFolderId', 'Id', $folder),
+                    'size' => $size,
+                ];
+            }
+            $offset += count($entries);
+            if ($entries === [] || $root->getAttribute('IncludesLastItemInRange') !== 'false') {
+                break;
+            }
+        }
+
+        $total = 0;
+        foreach ($folders as $id => $folder) {
+            if ($excludedRoot !== '' && $this->isWithin($folders, (string) $id, $excludedRoot)) {
+                continue;
+            }
+            $total += $folder['size'];
+        }
+
+        return $total;
+    }
+
+    /**
+     * @param array<string,array{parent:string,size:int}> $folders
+     */
+    private function isWithin(array $folders, string $id, string $ancestor): bool
+    {
+        for ($depth = 0; $depth < 64 && $id !== ''; $depth++) {
+            if ($id === $ancestor) {
+                return true;
+            }
+            $id = $folders[$id]['parent'] ?? '';
+        }
+
+        return false;
+    }
+
+    /**
+     * Tag einer erweiterten Eigenschaft als Zahl; Exchange schreibt Tags
+     * ohne fuehrende Nullen (z. B. "0xe08").
+     */
+    private static function propertyTag(DOMXPath $xpath, DOMElement $property): int
+    {
+        return (int) hexdec(ltrim(strtolower(EwsXml::attr($xpath, 't:ExtendedFieldURI', 'PropertyTag', $property)), 'x0'));
     }
 
     // ------------------------------------------------------------------

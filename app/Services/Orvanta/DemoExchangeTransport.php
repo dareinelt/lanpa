@@ -23,6 +23,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'DistinguishedFolderId Id="root"/>') => $this->mailboxUsage(),
             str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'DistinguishedFolderId Id="inbox"/></m:FolderIds>') && !str_contains($xml, 'Id="drafts"') => $this->getInbox(),
             str_contains($xml, '<m:GetFolder>') => $this->getKnownFolders(),
+            str_contains($xml, '<m:FindFolder') && str_contains($xml, 'PropertyTag="0x0E08"') => $this->folderSizes(),
             str_contains($xml, '<m:FindFolder') => $this->findFolders(),
             str_contains($xml, '<m:CalendarView') => $this->calendar($xml),
             str_contains($xml, 'Id="contacts"') && str_contains($xml, '<m:FindItem') => $this->contacts(),
@@ -65,13 +66,38 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
 
     private function mailboxUsage(): string
     {
-        // 1,35 GB belegt; Warnung 1,9 GB, Senden gesperrt ab 2 GB, Empfang ab 2,3 GB (Werte in KB)
+        // Stammordner 12 KB; Warnung 1,9 GB, Senden gesperrt ab 2 GB, Empfang ab 2,3 GB (Werte in KB)
         return $this->envelope('<m:GetFolderResponse><m:ResponseMessages><m:GetFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Folders><t:Folder><t:FolderId Id="demo-root" ChangeKey="A"/>'
-            . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0xe08" PropertyType="Long"/><t:Value>1449551462</t:Value></t:ExtendedProperty>'
+            . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0xe08" PropertyType="Long"/><t:Value>12288</t:Value></t:ExtendedProperty>'
             . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0x3ff5" PropertyType="Integer"/><t:Value>1992294</t:Value></t:ExtendedProperty>'
             . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0x666e" PropertyType="Integer"/><t:Value>2097152</t:Value></t:ExtendedProperty>'
             . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0x666a" PropertyType="Integer"/><t:Value>2411724</t:Value></t:ExtendedProperty>'
+            . '</t:Folder></m:Folders></m:GetFolderResponseMessage>'
+            . '<m:GetFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Folders><t:Folder><t:FolderId Id="demo-recoverable" ChangeKey="A"/>'
+            . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0xe08" PropertyType="Long"/><t:Value>0</t:Value></t:ExtendedProperty>'
             . '</t:Folder></m:Folders></m:GetFolderResponseMessage></m:ResponseMessages></m:GetFolderResponse>');
+    }
+
+    /**
+     * Groessen aller Ordner unterhalb des Stammordners (zusammen 1,35 GB
+     * mit dem Stammordner; Suchordner und Wiederherstellbare Elemente
+     * zaehlen nicht).
+     */
+    private function folderSizes(): string
+    {
+        $folders = [
+            ['Folder', 'demo-ipm', 'demo-root', 4096], ['Folder', 'demo-inbox', 'demo-ipm', 912261120], ['Folder', 'demo-sentitems', 'demo-ipm', 402653184],
+            ['CalendarFolder', 'demo-calendar', 'demo-ipm', 83886080], ['ContactsFolder', 'demo-contacts', 'demo-ipm', 2097152], ['TasksFolder', 'demo-tasks', 'demo-ipm', 524288],
+            ['Folder', 'demo-projekte', 'demo-inbox', 48113254], ['SearchFolder', 'demo-search', 'demo-root', 500000000],
+            ['Folder', 'demo-recoverable', 'demo-root', 300000000], ['Folder', 'demo-deletions', 'demo-recoverable', 200000000],
+        ];
+        $out = '';
+        foreach ($folders as [$type, $id, $parent, $size]) {
+            $out .= '<t:' . $type . '><t:FolderId Id="' . $id . '" ChangeKey="A"/><t:ParentFolderId Id="' . $parent . '" ChangeKey="A"/>'
+                . '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0xe08" PropertyType="Long"/><t:Value>' . $size . '</t:Value></t:ExtendedProperty></t:' . $type . '>';
+        }
+
+        return $this->envelope('<m:FindFolderResponse><m:ResponseMessages><m:FindFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:RootFolder TotalItemsInView="' . count($folders) . '" IncludesLastItemInRange="true"><t:Folders>' . $out . '</t:Folders></m:RootFolder></m:FindFolderResponseMessage></m:ResponseMessages></m:FindFolderResponse>');
     }
 
     private function getInbox(): string

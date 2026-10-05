@@ -3154,7 +3154,8 @@
         renderMailboxUsage(usage.mailbox);
     }
 
-    // Postfachbelegung auf dem Exchange (Groesse aller Ordner, Sendegrenze)
+    // Postfachbelegung auf dem Exchange (Groesse aller Ordner, Sendegrenze
+    // bzw. im Adminbereich eingetragene Postfachgroesse)
     function renderMailboxUsage(mailbox) {
         var detail = $('[data-ov-mailbox-detail]');
         if (!mailbox) {
@@ -3169,7 +3170,7 @@
             }
             return;
         }
-        var limit = Number(mailbox.quota) || Number(mailbox.receive_limit) || Number(mailbox.warning) || 0;
+        var limit = Number(mailbox.limit) || Number(mailbox.quota) || Number(mailbox.receive_limit) || Number(mailbox.warning) || 0;
         var percent = Math.max(0, Math.min(100, Number(mailbox.percent) || 0));
         var text = limit > 0 ? fmtBytes(mailbox.used) + ' von ' + fmtBytes(limit) : fmtBytes(mailbox.used) + ' (ohne Grenze)';
         $$('[data-ov-mailbox-fill]').forEach(function (node) {

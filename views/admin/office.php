@@ -485,6 +485,13 @@ $ov = $orvantaValues;
                        value="<?= Html::e($ov['exchange_owa_url'] ?? '') ?>" placeholder="https://mail.firma.local/owa/" <?= $ovField('exchange_owa_url') ?>>
                 <?= $ovFieldError('exchange_owa_url') ?>
             </div>
+            <div class="field">
+                <label for="mailbox_quota_mb">Postfachgröße für die Belegungsanzeige (MB, 0 = ohne Grenze)</label>
+                <input type="number" id="mailbox_quota_mb" name="mailbox_quota_mb" min="0" max="10485760" step="1"
+                       value="<?= Html::e($ov['mailbox_quota_mb'] ?? '0') ?>" <?= $ovField('mailbox_quota_mb') ?>>
+                <p class="field__hint">Die Grenzen („Warnung“, „Senden verbieten“, „Empfang verbieten“) werden aus Exchange bzw. aus dem Active Directory gelesen (Benutzer bzw. Postfachdatenbank). Dieser Wert gilt nur, wenn dort keine Grenze gefunden wird.</p>
+                <?= $ovFieldError('mailbox_quota_mb') ?>
+            </div>
             <div class="field-row">
                 <div class="field">
                     <label for="exchange_timeout">Zeitlimit je Anfrage (Sekunden)</label>

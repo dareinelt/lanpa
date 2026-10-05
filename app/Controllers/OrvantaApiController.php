@@ -11,6 +11,7 @@ use App\Exceptions\HttpException;
 use App\Exceptions\ValidationException;
 use App\Security\Csrf;
 use App\Security\Session;
+use App\Services\LdapClient;
 use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaSignatureService;
@@ -216,15 +217,57 @@ final class OrvantaApiController extends Controller
      * Zwischenspeichers nicht (null = nicht ermittelbar).
      *
      * @param array<string,mixed> $access
-     * @return array{used:int,quota:int,warning:int,receive_limit:int,percent:int}|null
+     * @return array{used:int,quota:int,warning:int,receive_limit:int,limit:int,percent:int,source:string}|null
      */
     private function mailboxUsage(array $access): ?array
     {
         try {
-            return Container::orvantaExchange()->mailboxUsage($access['impersonate']);
+            return Container::orvantaExchange()->mailboxUsage($access['impersonate'], $this->directoryQuota($access['user']));
         } catch (Throwable) {
             return null;
         }
+    }
+
+    /** Gueltigkeit der aus dem AD gelesenen Postfachgrenzen in der Sitzung (Sekunden). */
+    private const DIRECTORY_QUOTA_TTL = 900;
+
+    /**
+     * Postfachgrenzen des Benutzers aus seiner Identitaetsquelle (AD),
+     * je Sitzung zwischengespeichert; Fehler fuehren zu null.
+     *
+     * @param array<string,mixed> $ssoUser
+     * @return array{warning:int,send:int,receive:int,defaults:bool}|null
+     */
+    private function directoryQuota(array $ssoUser): ?array
+    {
+        $username = (string) ($ssoUser['username'] ?? '');
+        if ($username === '' || (!empty($ssoUser['fake']) && (int) ($ssoUser['id'] ?? 0) === 0) || !LdapClient::isSupported() || Container::orvantaConfig()->isDemo()) {
+            return null;
+        }
+        $sourceId = (int) ($ssoUser['source_id'] ?? 0);
+        $key = $sourceId . ':' . strtolower($username);
+        $cached = Session::get('orvanta_directory_quota');
+        if (is_array($cached) && ($cached['key'] ?? '') === $key && (int) ($cached['at'] ?? 0) > time() - self::DIRECTORY_QUOTA_TTL) {
+            /** @var array{warning:int,send:int,receive:int,defaults:bool}|null $quota */
+            $quota = $cached['quota'] ?? null;
+
+            return $quota;
+        }
+
+        $quota = null;
+        try {
+            foreach (Container::identitySources()->configs() as $config) {
+                if ((int) ($config['id'] ?? -1) === $sourceId) {
+                    $quota = (new LdapClient($config, app_logger()))->mailboxQuota($username);
+                    break;
+                }
+            }
+        } catch (Throwable $exception) {
+            app_logger()->warning('Orvanta: Postfachgrenzen konnten nicht aus dem AD gelesen werden.', ['error' => $exception->getMessage()]);
+        }
+        Session::put('orvanta_directory_quota', ['key' => $key, 'at' => time(), 'quota' => $quota]);
+
+        return $quota;
     }
 
     // ------------------------------------------------------------------

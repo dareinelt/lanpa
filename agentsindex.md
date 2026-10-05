@@ -466,6 +466,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - Jeder Lauf wird in `sync_log` protokolliert und im Adminbereich angezeigt.
 - Mehrere Quellen: jede Quelle wird getrennt synchronisiert (`AdSyncService`), Server je Quelle der Reihe nach versucht; fällt eine Quelle aus, bleibt ihr Stand erhalten (Status `partial`, `sync_ad.php` Exit 4).
 - Gruppen: `LdapClient::fetchGroups()` liest Gruppen unter `ldap_group_base_dn` und löst Mitglieder per `LDAP_MATCHING_RULE_IN_CHAIN` auf; `AdGroupRepository::replaceAll()` schreibt sie in derselben Transaktion. Fehler beim Gruppenabruf lassen den alten Gruppenstand unverändert. `SsoAuth` ergänzt die Gruppen des angemeldeten Benutzers aus diesem Bestand (keine Live-Abfrage des AD).
+- Postfachgrenzen: `LdapClient::mailboxQuota()` liest für Orvanta live `mDBStorageQuota`/`mDBOverQuotaLimit`/`mDBOverHardQuotaLimit` am Benutzer bzw. bei `mDBUseDefaults` an der Postfachdatenbank (`homeMDB`); Auswertung in `mailboxQuotaFromEntries()`.
 
 ### Tests
 

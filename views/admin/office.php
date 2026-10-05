@@ -484,8 +484,9 @@ $ov = $orvantaValues;
             <legend>Anmeldung am Exchange-Server</legend>
             <p class="field__hint">
                 Orvanta meldet sich mit einem Dienstkonto an, das die Rolle <code>ApplicationImpersonation</code>
-                besitzt, und handelt im Namen des erkannten Benutzers. Mit „Negotiate“ wird die Kerberos-Identität
-                des Containers (Keytab des auth-Dienstes) verwendet; Dienstkonto/Kennwort sind dann optional.
+                besitzt, und handelt im Namen des erkannten Benutzers. Dienstkonto und Kennwort sind erforderlich,
+                da der Intranet-Server keine eigene Kerberos-Identität besitzt; „Negotiate“ handelt die
+                Windows-Anmeldung dabei per NTLM aus.
             </p>
             <div class="field">
                 <label for="exchange_auth">Anmeldeverfahren</label>
@@ -500,12 +501,13 @@ $ov = $orvantaValues;
                 <div class="field">
                     <label for="exchange_service_user">Dienstkonto</label>
                     <input type="text" id="exchange_service_user" name="exchange_service_user" maxlength="190" autocomplete="off"
-                           value="<?= Html::e($ov['exchange_service_user'] ?? '') ?>" placeholder="FIRMA\svc-orvanta oder svc-orvanta@firma.local">
+                           value="<?= Html::e($ov['exchange_service_user'] ?? '') ?>" placeholder="FIRMA\svc-orvanta oder svc-orvanta@firma.local" <?= $ovField('exchange_service_user') ?>>
+                    <?= $ovFieldError('exchange_service_user') ?>
                 </div>
                 <div class="field">
                     <label for="exchange_service_password">Kennwort des Dienstkontos</label>
                     <input type="password" id="exchange_service_password" name="exchange_service_password" maxlength="500" autocomplete="new-password"
-                           placeholder="<?= $orvantaHasPassword ? 'gespeichert – leer lassen, um es zu behalten' : 'leer = ohne Kennwort' ?>" <?= $ovField('exchange_service_password') ?>>
+                           placeholder="<?= $orvantaHasPassword ? 'gespeichert – leer lassen, um es zu behalten' : 'erforderlich' ?>" <?= $ovField('exchange_service_password') ?>>
                     <?= $ovFieldError('exchange_service_password') ?>
                     <?php if ($orvantaHasPassword) { ?>
                         <div class="field field--check">

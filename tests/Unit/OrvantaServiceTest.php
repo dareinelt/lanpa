@@ -345,7 +345,77 @@ Runner::test('Orvanta: Fehler des Transports werden als OrvantaException gemelde
         Assert::true(false, 'Exception erwartet.');
     } catch (OrvantaException $exception) {
         Assert::contains('Anmeldung abgelehnt', $exception->getMessage());
+        Assert::contains('kein Dienstkonto hinterlegt', $exception->getMessage());
     }
+});
+
+Runner::test('Orvanta: 401 mit Dienstkonto nennt Konto und angebotene Verfahren', function (): void {
+    $parts = orvantaConfig(['exchange_host' => 'mail.example.local']);
+    $parts['config']->save([
+        'exchange_enabled' => '1', 'exchange_host' => 'mail.example.local', 'exchange_auth' => 'negotiate',
+        'exchange_service_user' => 'FIRMA\svc-orvanta', 'exchange_service_password' => 'geheim',
+        'exchange_timeout' => '20', 'cache_quota_mb' => '250', 'cache_folder' => 'Orvanta',
+        'reminder_lead_minutes' => '15', 'poll_interval' => '60',
+    ]);
+    $transport = new RecordingExchangeTransport();
+    $exchange = new OrvantaExchangeService($transport, $parts['config']);
+
+    $transport->forced = ['status' => 401, 'body' => '', 'error' => null, 'auth_offered' => ['Negotiate']];
+    try {
+        $exchange->folders('anna@example.local');
+        Assert::true(false, 'Exception erwartet.');
+    } catch (OrvantaException $exception) {
+        Assert::contains('FIRMA\svc-orvanta', $exception->getMessage());
+        Assert::contains('Der Server bietet: Negotiate.', $exception->getMessage());
+        Assert::contains('NTLM ist am EWS-Verzeichnis nicht aktiviert', $exception->getMessage());
+    }
+
+    $transport->forced = ['status' => 401, 'body' => '', 'error' => null, 'auth_offered' => ['Negotiate', 'NTLM']];
+    try {
+        $exchange->folders('anna@example.local');
+        Assert::true(false, 'Exception erwartet.');
+    } catch (OrvantaException $exception) {
+        Assert::contains('Kennwort und Schreibweise', $exception->getMessage());
+        Assert::false(str_contains($exception->getMessage(), 'nicht aktiviert'), 'NTLM wird angeboten.');
+    }
+
+    $transport->forced = ['status' => 403, 'body' => '', 'error' => null];
+    try {
+        $exchange->folders('anna@example.local');
+        Assert::true(false, 'Exception erwartet.');
+    } catch (OrvantaException $exception) {
+        Assert::contains('HTTP 403', $exception->getMessage());
+        Assert::contains('darf EWS aber nicht verwenden', $exception->getMessage());
+    }
+});
+
+Runner::test('Orvanta: Aktivierung ohne Dienstkonto wird abgelehnt (ausser Demo)', function (): void {
+    $config = orvantaConfig()['config'];
+    $base = [
+        'exchange_enabled' => '1', 'exchange_host' => 'mail.example.local', 'exchange_auth' => 'negotiate',
+        'exchange_timeout' => '20', 'cache_quota_mb' => '250', 'cache_folder' => 'Orvanta',
+        'reminder_lead_minutes' => '15', 'poll_interval' => '60',
+    ];
+    try {
+        $config->save($base);
+        Assert::true(false, 'ValidationException erwartet.');
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['exchange_service_user']));
+        Assert::true(isset($exception->errors()['exchange_service_password']));
+    }
+
+    $config->save($base + ['exchange_service_user' => 'svc', 'exchange_service_password' => 'geheim']);
+    // Gespeichertes Kennwort bleibt bei leerem Feld erhalten und genuegt.
+    $config->save($base + ['exchange_service_user' => 'svc']);
+    Assert::same('geheim', $config->servicePassword());
+    try {
+        $config->save($base + ['exchange_service_user' => 'svc', 'exchange_service_password_clear' => '1']);
+        Assert::true(false, 'ValidationException erwartet.');
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['exchange_service_password']));
+    }
+
+    $config->save(['exchange_host' => 'demo'] + $base);
 });
 
 Runner::test('Orvanta: Ohne konfigurierten Server wird 503 gemeldet', function (): void {

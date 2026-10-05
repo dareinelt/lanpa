@@ -872,7 +872,7 @@ final class OrvantaExchangeService
             throw new OrvantaException('Exchange ist nicht erreichbar: ' . $response['error'], 502);
         }
         if ($response['status'] === 401 || $response['status'] === 403) {
-            throw new OrvantaException('Exchange hat die Anmeldung abgelehnt (HTTP ' . $response['status'] . '). Bitte Anmeldeverfahren und Dienstkonto prüfen.', 502);
+            throw new OrvantaException($this->authFailure($response['status'], $response['auth_offered'] ?? []), 502);
         }
         $xpath = EwsXml::parse($response['body']);
         if ($xpath === null) {
@@ -888,6 +888,39 @@ final class OrvantaExchangeService
         }
 
         return $xpath;
+    }
+
+    /**
+     * Verstaendliche Meldung zu HTTP 401/403 mit der wahrscheinlichen Ursache.
+     *
+     * @param list<string> $offered vom Server angebotene Verfahren (WWW-Authenticate)
+     */
+    private function authFailure(int $status, array $offered): string
+    {
+        $prefix = 'Exchange hat die Anmeldung abgelehnt (HTTP ' . $status . '). ';
+        $options = $this->config->transportOptions();
+        if ($status === 403) {
+            return $prefix . 'Das Dienstkonto ist angemeldet, darf EWS aber nicht verwenden (z. B. EWS-Zugriffsrichtlinie oder SSL-Pflicht des EWS-Verzeichnisses). Bitte Anmeldeverfahren und Dienstkonto prüfen.';
+        }
+        if ($options['username'] === '') {
+            return $prefix . 'Es ist kein Dienstkonto hinterlegt; der Intranet-Server besitzt keine eigene Kerberos-Identität. Bitte unter Office → Orvanta Dienstkonto und Kennwort eintragen.';
+        }
+        if ($options['password'] === '') {
+            return $prefix . 'Für das Dienstkonto „' . $options['username'] . '“ ist kein Kennwort gespeichert. Bitte das Kennwort unter Office → Orvanta eintragen.';
+        }
+        $method = match ($options['auth']) {
+            'basic' => 'Basic',
+            default => 'NTLM',
+        };
+        $hint = 'Bitte Kennwort und Schreibweise des Dienstkontos „' . $options['username'] . '“ (FIRMA\\konto oder konto@firma.local) prüfen sowie, ob das Konto gesperrt oder abgelaufen ist.';
+        if ($offered !== []) {
+            $hint .= ' Der Server bietet: ' . implode(', ', $offered) . '.';
+            if (!in_array(strtolower($method), array_map('strtolower', $offered), true)) {
+                $hint .= ' Das verwendete Verfahren ' . $method . ' ist am EWS-Verzeichnis nicht aktiviert – bitte Anmeldeverfahren anpassen oder in Exchange freischalten.';
+            }
+        }
+
+        return $prefix . $hint;
     }
 
     private static function translate(string $error): string

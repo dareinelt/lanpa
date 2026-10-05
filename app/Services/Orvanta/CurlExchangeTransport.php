@@ -35,7 +35,19 @@ final class CurlExchangeTransport implements ExchangeTransportInterface
         }
 
         $timeout = max(3, (int) $options['timeout']);
+        $hasAccount = $options['username'] !== '';
+        $offered = [];
         curl_setopt_array($handle, [
+            // Angebotene Verfahren (WWW-Authenticate) der letzten Antwort fuer die Fehlermeldung.
+            CURLOPT_HEADERFUNCTION => static function ($curl, string $line) use (&$offered): int {
+                if (preg_match('#^HTTP/\S+\s+\d{3}#i', $line) === 1) {
+                    $offered = [];
+                } elseif (preg_match('/^WWW-Authenticate:\s*([A-Za-z0-9_-]+)/i', $line, $match) === 1 && !in_array($match[1], $offered, true)) {
+                    $offered[] = $match[1];
+                }
+
+                return strlen($line);
+            },
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $xml,
             CURLOPT_HTTPHEADER => $headers,
@@ -49,13 +61,15 @@ final class CurlExchangeTransport implements ExchangeTransportInterface
             CURLOPT_HTTPAUTH => match ($options['auth']) {
                 'basic' => CURLAUTH_BASIC,
                 'ntlm' => CURLAUTH_NTLM,
-                'negotiate' => CURLAUTH_NEGOTIATE | CURLAUTH_NTLM,
+                // SPNEGO/Kerberos ueber GSSAPI ignoriert Benutzer und Kennwort und
+                // braucht ein Ticket im Prozess, das der app-Container nicht hat.
+                // Mit Dienstkonto wird Negotiate daher per NTLM ausgehandelt.
+                'negotiate' => $hasAccount ? CURLAUTH_NTLM : CURLAUTH_NEGOTIATE,
                 default => CURLAUTH_ANYSAFE,
             },
         ]);
-        if ($options['username'] !== '' || $options['auth'] === 'negotiate') {
-            // Negotiate ohne Konto nutzt die Kerberos-Credentials des Prozesses (Keytab).
-            curl_setopt($handle, CURLOPT_USERPWD, $options['username'] !== '' ? $options['username'] . ':' . $options['password'] : ':');
+        if ($hasAccount || $options['auth'] === 'negotiate') {
+            curl_setopt($handle, CURLOPT_USERPWD, $hasAccount ? $options['username'] . ':' . $options['password'] : ':');
         }
 
         $body = curl_exec($handle);
@@ -63,6 +77,6 @@ final class CurlExchangeTransport implements ExchangeTransportInterface
         $error = curl_errno($handle) !== 0 ? curl_error($handle) : null;
         unset($handle); // curl_close() ist seit PHP 8.5 veraltet
 
-        return ['status' => $status, 'body' => is_string($body) ? $body : '', 'error' => $error];
+        return ['status' => $status, 'body' => is_string($body) ? $body : '', 'error' => $error, 'auth_offered' => $offered];
     }
 }

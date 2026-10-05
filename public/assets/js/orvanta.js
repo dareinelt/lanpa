@@ -405,8 +405,34 @@
         return out || '?';
     }
 
+    // Trennt an ; , oder Zeilenumbruch – aber nicht innerhalb von "…" oder <…>.
+    // Ein Komma trennt nur, wenn das bisherige Segment schon eine Adresse
+    // enthaelt, damit Anzeigenamen wie "Müller, Steffen <…>" erhalten bleiben.
+    function splitRecipients(value) {
+        var parts = [];
+        var current = '';
+        var quoted = false;
+        var angle = false;
+        String(value || '').split('').forEach(function (ch) {
+            if (ch === '"' && !angle) {
+                quoted = !quoted;
+            } else if (ch === '<' && !quoted) {
+                angle = true;
+            } else if (ch === '>' && !quoted) {
+                angle = false;
+            } else if (!quoted && !angle && (ch === ';' || ch === '\n' || (ch === ',' && current.indexOf('@') !== -1))) {
+                parts.push(current);
+                current = '';
+                return;
+            }
+            current += ch;
+        });
+        parts.push(current);
+        return parts;
+    }
+
     function parseRecipients(value) {
-        return String(value || '').split(/[;,\n]+/).map(function (part) {
+        return splitRecipients(value).map(function (part) {
             part = part.trim();
             var match = part.match(/^(.*?)\s*<([^>]+)>$/);
             if (match) {

@@ -313,12 +313,15 @@ final class OrvantaExchangeService
      * $mail['reference'] (id, mode) entsteht eine Antwort/Weiterleitung mit
      * Bezug zur Originalnachricht.
      *
-     * @param array{to?:list<string>,cc?:list<string>,bcc?:list<string>,subject?:string,body?:string,html?:bool,importance?:string,attachments?:list<array{name:string,content_type:string,content:string}>,reference?:array{id:string,mode:string}} $mail
+     * @param array{to?:list<string>,cc?:list<string>,bcc?:list<string>,subject?:string,body?:string,html?:bool,importance?:string,attachments?:list<array{name:string,content_type:string,content:string}>,reference?:array{id:string,mode:string,change_key?:string}} $mail
      * @return array{id:string}
      */
     public function send(string $user, array $mail, string $draftId = '', string $changeKey = ''): array
     {
-        $reference = $this->reference($mail);
+        $reference = $this->reference($user, $mail);
+        if ($reference !== null) {
+            $mail['reference'] = $reference;
+        }
         $hasRecipients = ($mail['to'] ?? []) !== [] || ($mail['cc'] ?? []) !== [] || ($mail['bcc'] ?? []) !== [];
         if (!$hasRecipients && ($reference === null || $reference['mode'] === 'forward')) {
             throw new OrvantaException($reference !== null ? 'Bitte einen Empfänger für die Weiterleitung angeben.' : 'Bitte mindestens einen Empfänger angeben.', 422);
@@ -350,7 +353,7 @@ final class OrvantaExchangeService
     public function saveDraft(string $user, array $mail, string $draftId = '', string $changeKey = ''): array
     {
         if ($draftId === '') {
-            $xpath = $this->call('<m:CreateItem MessageDisposition="SaveOnly"><m:SavedItemFolderId><t:DistinguishedFolderId Id="drafts"/></m:SavedItemFolderId><m:Items>' . $this->outgoingXml($mail, $this->reference($mail)) . '</m:Items></m:CreateItem>', $user);
+            $xpath = $this->call('<m:CreateItem MessageDisposition="SaveOnly"><m:SavedItemFolderId><t:DistinguishedFolderId Id="drafts"/></m:SavedItemFolderId><m:Items>' . $this->outgoingXml($mail, $this->reference($user, $mail)) . '</m:Items></m:CreateItem>', $user);
             $node = EwsXml::elements($xpath, '//m:Items/t:Message')[0] ?? null;
             $item = $node !== null ? EwsXml::itemId($xpath, $node) : ['id' => '', 'change_key' => ''];
             if ($item['id'] === '') {
@@ -584,7 +587,7 @@ final class OrvantaExchangeService
             'decline' => 'DeclineItem',
             default => throw new OrvantaException('Unbekannte Antwort.', 422),
         };
-        $this->call('<m:CreateItem MessageDisposition="SendAndSaveCopy"><m:Items><t:' . $element . '><t:ReferenceItemId Id="' . EwsXml::escape($id) . '"/></t:' . $element . '></m:Items></m:CreateItem>', $user);
+        $this->call('<m:CreateItem MessageDisposition="SendAndSaveCopy"><m:Items><t:' . $element . '>' . $this->referenceItemIdXml($id, $this->currentChangeKey($user, $id)) . '</t:' . $element . '></m:Items></m:CreateItem>', $user);
     }
 
     /**
@@ -1245,7 +1248,7 @@ final class OrvantaExchangeService
      * Originalnachricht an und setzt den Bezug (Konversation, In-Reply-To).
      *
      * @param array<string,mixed> $mail
-     * @param array{id:string,mode:string} $reference
+     * @param array{id:string,mode:string,change_key?:string} $reference
      */
     private function responseXml(array $mail, array $reference): string
     {
@@ -1263,14 +1266,14 @@ final class OrvantaExchangeService
             . EwsXml::recipients('ToRecipients', $mail['to'] ?? [])
             . EwsXml::recipients('CcRecipients', $mail['cc'] ?? [])
             . EwsXml::recipients('BccRecipients', $mail['bcc'] ?? [])
-            . '<t:ReferenceItemId Id="' . EwsXml::escape($reference['id']) . '"/>'
+            . $this->referenceItemIdXml($reference['id'], $reference['change_key'] ?? '')
             . '<t:NewBodyContent BodyType="' . ($html ? 'HTML' : 'Text') . '">' . EwsXml::escape($this->outgoingBody($mail)) . '</t:NewBodyContent>'
             . '</t:' . $element . '>';
     }
 
     /**
      * @param array<string,mixed> $mail
-     * @param array{id:string,mode:string}|null $reference
+     * @param array{id:string,mode:string,change_key?:string}|null $reference
      */
     private function outgoingXml(array $mail, ?array $reference): string
     {
@@ -1279,16 +1282,39 @@ final class OrvantaExchangeService
 
     /**
      * @param array<string,mixed> $mail
-     * @return array{id:string,mode:string}|null
+     * @return array{id:string,mode:string,change_key?:string}|null
      */
-    private function reference(array $mail): ?array
+    private function reference(string $user, array $mail): ?array
     {
         $reference = $mail['reference'] ?? null;
         if (!is_array($reference) || trim((string) ($reference['id'] ?? '')) === '') {
             return null;
         }
+        $id = (string) $reference['id'];
+        $changeKey = (string) ($reference['change_key'] ?? '');
 
-        return ['id' => (string) $reference['id'], 'mode' => (string) ($reference['mode'] ?? 'reply')];
+        return [
+            'id' => $id,
+            'mode' => (string) ($reference['mode'] ?? 'reply'),
+            'change_key' => $changeKey !== '' ? $changeKey : $this->currentChangeKey($user, $id),
+        ];
+    }
+
+    /**
+     * Aktueller ChangeKey eines Elements. Exchange verlangt ihn bei
+     * ReferenceItemId (Antworten, Weiterleiten, Besprechungsantworten);
+     * er aendert sich z. B. schon durch das Lesen, daher frisch abfragen.
+     */
+    private function currentChangeKey(string $user, string $id): string
+    {
+        $xpath = $this->call('<m:GetItem><m:ItemShape><t:BaseShape>IdOnly</t:BaseShape></m:ItemShape>' . EwsXml::itemIds([['id' => $id]]) . '</m:GetItem>', $user);
+
+        return EwsXml::attr($xpath, '//m:Items/*/t:ItemId', 'ChangeKey');
+    }
+
+    private function referenceItemIdXml(string $id, string $changeKey): string
+    {
+        return '<t:ReferenceItemId Id="' . EwsXml::escape($id) . '"' . ($changeKey !== '' ? ' ChangeKey="' . EwsXml::escape($changeKey) . '"' : '') . '/>';
     }
 
     /**

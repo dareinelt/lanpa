@@ -600,7 +600,7 @@ Runner::test('Orvanta: Antwort uebernimmt Cc und referenziert die Originalmail',
     Assert::contains('<m:CreateItem MessageDisposition="SendAndSaveCopy"', $xml);
     Assert::contains('<t:ReplyAllToItem>', $xml);
     Assert::contains('<t:CcRecipients><t:Mailbox><t:EmailAddress>c@example.org</t:EmailAddress>', $xml);
-    Assert::contains('<t:ReferenceItemId Id="demo-msg-1"', $xml);
+    Assert::contains('<t:ReferenceItemId Id="demo-msg-1" ChangeKey="CK1"/>', $xml);
     Assert::true(strpos($xml, '<t:CcRecipients>') < strpos($xml, '<t:ReferenceItemId'), 'Schemareihenfolge: Empfaenger vor ReferenceItemId.');
     Assert::true(strpos($xml, '<t:ReferenceItemId') < strpos($xml, '<t:NewBodyContent'), 'Schemareihenfolge: ReferenceItemId vor NewBodyContent.');
 });
@@ -615,7 +615,7 @@ Runner::test('Orvanta: Antwort mit Anhang bleibt eine Antwort und wird aus dem E
     ]);
     $calls = implode("\n", $transport->xmls());
     Assert::contains('<t:ReplyToItem>', $calls);
-    Assert::contains('<t:ReferenceItemId Id="demo-msg-1"', $calls);
+    Assert::contains('<t:ReferenceItemId Id="demo-msg-1" ChangeKey="CK1"/>', $calls);
     Assert::contains('<m:CreateAttachment>', $calls);
     Assert::contains('<m:SendItem SaveItemToFolder="true">', $transport->last());
     Assert::contains('<t:ItemId Id="demo-new-', $transport->last());

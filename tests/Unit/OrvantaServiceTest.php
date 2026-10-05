@@ -339,7 +339,7 @@ Runner::test('Orvanta: Neuer Ordner und alle als gelesen markieren', function ()
     }
 
     $parts['exchange']->markFolderRead('demo@demo.local', 'inbox');
-    Assert::contains('<m:MarkAllItemsAsRead ReadFlag="true" SuppressReadReceipts="true"><m:FolderIds><t:DistinguishedFolderId Id="inbox"/></m:FolderIds></m:MarkAllItemsAsRead>', $parts['transport']->last());
+    Assert::contains('<m:MarkAllItemsAsRead><m:ReadFlag>true</m:ReadFlag><m:SuppressReadReceipts>true</m:SuppressReadReceipts><m:FolderIds><t:DistinguishedFolderId Id="inbox"/></m:FolderIds></m:MarkAllItemsAsRead>', $parts['transport']->last());
 });
 
 Runner::test('Orvanta: Senden erzeugt CreateItem mit Empfaengern', function (): void {

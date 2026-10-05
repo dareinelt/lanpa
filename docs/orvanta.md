@@ -394,8 +394,10 @@ Kontextmenü erscheinen.
   Adressen, nie die restliche Nachricht oder das Postfach.
 - Der Aufruf geht vom Server an `POST {office_ai_url}/chat/completions`
   (OpenAI-kompatibel, Bearer-Schlüssel falls hinterlegt). Der Browser spricht
-  nie direkt mit dem KI-Endpunkt. In `APP_ENV=production` akzeptiert der
-  Transport nur HTTPS.
+  nie direkt mit dem KI-Endpunkt. HTTP und HTTPS sind wie beim
+  Verbindungstest im Adminbereich zulässig (lokale Endpunkte wie llama.cpp
+  laufen meist ohne TLS); für Endpunkte außerhalb des internen Netzes HTTPS
+  verwenden.
 - Protokolliert werden ausschließlich Zähler (`orvanta_ai_usage`): Benutzer,
   Einsatzort, Modell, Eingabe-/Ausgabe-Token, Zeitpunkt. Texte und Anweisungen
   werden weder gespeichert noch geloggt.

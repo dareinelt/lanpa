@@ -72,7 +72,8 @@ Typografie, Statusleiste):
   Kontakt …); wird nur geöffnet, wenn ein Element gewählt ist
   (Root-Klasse `ov--detail-open`).
 - **Statusleiste:** Verbindungsstatus, Belegung des Zwischenspeichers (Quota),
-  Autoren-Hinweis „Orvanta Mail-App by Daniel-André Reinelt“ und – sobald die
+  Autoren-Hinweis „Orvanta Mail-App by Daniel-André Reinelt“ (Klick öffnet
+  einen Hinweisdialog zum Namen und zur KI-gestützten Entwicklung) und – sobald die
   KI-Unterstützung verfügbar ist – ein kleines Roboter-Symbol (Klick öffnet die
   Kurzanleitung, siehe Abschnitt 7).
 - **Speicheranzeigen unten links:** Zwei kleine Balken unter den Modulen

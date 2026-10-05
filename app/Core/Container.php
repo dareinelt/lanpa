@@ -479,7 +479,8 @@ final class Container
                 self::officeConfig(),
                 self::nextcloudFiles(),
                 self::orvantaExchange(),
-                self::secretBox()
+                self::secretBox(),
+                self::orvantaArchive()
             )
         );
     }
@@ -487,6 +488,24 @@ final class Container
     public static function orvantaSignatureRepository(): \App\Repositories\OrvantaSignatureRepository
     {
         return self::make(\App\Repositories\OrvantaSignatureRepository::class, static fn (): \App\Repositories\OrvantaSignatureRepository => new \App\Repositories\OrvantaSignatureRepository());
+    }
+
+    public static function orvantaArchiveRepository(): \App\Repositories\OrvantaArchiveRepository
+    {
+        return self::make(\App\Repositories\OrvantaArchiveRepository::class, static fn (): \App\Repositories\OrvantaArchiveRepository => new \App\Repositories\OrvantaArchiveRepository());
+    }
+
+    public static function orvantaArchive(): \App\Services\Orvanta\OrvantaArchiveService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaArchiveService::class,
+            static fn (): \App\Services\Orvanta\OrvantaArchiveService => new \App\Services\Orvanta\OrvantaArchiveService(
+                self::orvantaArchiveRepository(),
+                self::orvantaConfig(),
+                self::orvantaExchange(),
+                new \App\Services\Orvanta\NextcloudArchiveStorage(self::nextcloudFiles())
+            )
+        );
     }
 
     /**

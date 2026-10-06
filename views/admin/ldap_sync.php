@@ -31,15 +31,7 @@ use App\Support\Html;
         </button>
     </form>
 
-    <dialog id="ad-sync-dialog" class="ad-sync" aria-labelledby="ad-sync-title">
-        <h2 id="ad-sync-title">Synchronisation</h2>
-        <p class="ad-sync__status" id="ad-sync-status" role="status">Synchronisation wird gestartet …</p>
-        <ol class="ad-sync__sources" id="ad-sync-sources" aria-live="polite"></ol>
-        <p class="ad-sync__summary" id="ad-sync-summary" hidden></p>
-        <div class="form__actions">
-            <button type="button" class="button button--primary" id="ad-sync-ok" disabled>OK</button>
-        </div>
-    </dialog>
+    <?php require __DIR__ . '/ldap/sync-dialog.php'; ?>
 </section>
 
 <form method="post" action="/admin/ad/synchronisation" class="form form--wide">

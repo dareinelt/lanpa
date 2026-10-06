@@ -87,9 +87,16 @@ final class LdapClient implements LdapClientInterface
 
         $port = (int) ($this->config['port'] ?? 636);
         $results = [];
+        $rejected = false;
         foreach ($this->hosts() as $host) {
             if (!Validator::isHostname($host) || !Validator::isPort($port)) {
                 $results[$host] = 'Ungültiger Server oder Port.';
+                continue;
+            }
+            // Nach abgewiesener Anmeldung keine weiteren Versuche, damit das
+            // Dienstkonto nicht durch den Test gesperrt wird.
+            if ($rejected) {
+                $results[$host] = 'Nicht geprüft – Anmeldung bereits abgewiesen (Schutz vor Kontosperre).';
                 continue;
             }
 
@@ -99,6 +106,7 @@ final class LdapClient implements LdapClientInterface
                 $results[$host] = null;
             } catch (RuntimeException $exception) {
                 $results[$host] = $exception->getMessage();
+                $rejected = $exception->getCode() === self::LDAP_INVALID_CREDENTIALS;
             }
         }
 
@@ -484,6 +492,15 @@ final class LdapClient implements LdapClientInterface
         $bindDn = (string) ($this->config['bind_dn'] ?? '');
         $password = (string) ($this->config['password'] ?? '');
 
+        // Bind-DN ohne Passwort waere ein nicht authentifizierter Bind, den das
+        // AD als "Invalid credentials" abweist – Ursache klar benennen.
+        if ($bindDn !== '' && $password === '') {
+            throw new RuntimeException(
+                'LDAP-Bind nicht möglich: Für das Dienstkonto ist kein (entschlüsselbares) Passwort hinterlegt. Bitte unter Verwaltung → Active Directory neu eingeben.',
+                self::LDAP_INVALID_CREDENTIALS
+            );
+        }
+
         // Zertifikatspruefung nur, wenn bewusst deaktiviert (dokumentierte Ausnahme fuer Testumgebungen).
         ldap_set_option(null, LDAP_OPT_X_TLS_REQUIRE_CERT, $verifyCert ? LDAP_OPT_X_TLS_HARD : LDAP_OPT_X_TLS_NEVER);
 
@@ -512,12 +529,47 @@ final class LdapClient implements LdapClientInterface
             // Fehlermeldung ohne Passwort.
             $errno = ldap_errno($connection);
             $message = 'LDAP-Bind fehlgeschlagen: ' . ldap_error($connection);
+            $diagnostic = '';
+            if (@ldap_get_option($connection, LDAP_OPT_DIAGNOSTIC_MESSAGE, $diagnostic) && is_string($diagnostic)) {
+                $detail = self::bindErrorDetail($diagnostic);
+                if ($detail !== null) {
+                    $message .= ' (' . $detail . ')';
+                }
+            }
             @ldap_unbind($connection);
 
             throw new RuntimeException($message, $errno === self::LDAP_INVALID_CREDENTIALS ? self::LDAP_INVALID_CREDENTIALS : 0);
         }
 
         return $connection;
+    }
+
+    /**
+     * Klartext zum Unterfehler des Active Directory bei abgewiesenem Bind
+     * ("AcceptSecurityContext error, data 775, ..."). AD meldet z. B. auch
+     * gesperrte oder abgelaufene Konten als "Invalid credentials".
+     */
+    public static function bindErrorDetail(string $diagnostic): ?string
+    {
+        if (preg_match('/\bdata ([0-9a-f]{2,8})\b/i', $diagnostic, $match) !== 1) {
+            return null;
+        }
+        $code = strtolower($match[1]);
+        $text = match ($code) {
+            '525' => 'Konto nicht gefunden – Bind-DN prüfen',
+            '52e' => 'Passwort oder Bind-DN falsch',
+            '530' => 'Anmeldung zu dieser Zeit nicht erlaubt',
+            '531' => 'Anmeldung von diesem Rechner nicht erlaubt',
+            '532' => 'Passwort abgelaufen',
+            '533' => 'Konto deaktiviert',
+            '568' => 'zu viele Sicherheitskennungen (Gruppen) im Token',
+            '701' => 'Konto abgelaufen',
+            '773' => 'Passwort muss geändert werden',
+            '775' => 'Konto gesperrt – zu viele Fehlanmeldungen',
+            default => null,
+        };
+
+        return 'AD-Code ' . $code . ($text === null ? '' : ': ' . $text);
     }
 
     /**

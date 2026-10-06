@@ -65,6 +65,8 @@ final class OrvantaController extends Controller
                 'owaUrl' => $access['route']->isProxy() ? '' : $config->owaUrl(),
                 // Nur das Flag - Modell, Adresse und Schluessel bleiben auf dem Server.
                 'aiAvailable' => Container::orvantaAi()->isAvailable(),
+                // Nur das Flag - die Woerterbuchdateien bleiben auf dem Server.
+                'spellcheckAvailable' => Container::orvantaSpellcheck()->isAvailable(),
                 // Fest zugeordnete Signatur (nur Anzeige; angefuegt wird serverseitig).
                 'signature' => Container::orvantaSignatures()->forUser($access['user']),
             ],

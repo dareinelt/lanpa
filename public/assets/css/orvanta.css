@@ -648,6 +648,19 @@
 .ov-ctx-menu .ov-ctx-menu__key { margin-left: 1.5rem; color: var(--ov-muted); font-size: .8em; }
 .ov-ctx-menu__sep { height: 1px; margin: .25rem .4rem; background: var(--ov-line); }
 .ov-ctx-menu button.ov-ctx-menu__item--ai:hover, .ov-ctx-menu button.ov-ctx-menu__item--ai:focus-visible { background: var(--ov-ai-soft); }
+/* Untermenue (z. B. Rechtschreibprüfung): relativ zum Eintrag, damit die
+   Mausbewegung hinein den Eintrag nicht verlaesst. */
+.ov-ctx-menu__sub-wrap { position: relative; }
+.ov-ctx-menu__sub { position: absolute; left: calc(100% - .25rem); top: -.3rem; z-index: 1; display: flex; flex-direction: column; min-width: 190px; max-width: 320px; padding: .25rem; border: 1px solid var(--ov-line); border-radius: .4rem; background: var(--color-background, #fff); box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+.ov-ctx-menu__sub--left { left: auto; right: calc(100% - .25rem); }
+.ov-ctx-menu__sub[hidden] { display: none; }
+.ov-ctx-menu__head { padding: .35rem .7rem .2rem; color: var(--ov-muted); font-size: .78em; letter-spacing: .02em; }
+.ov-ctx-menu__arrow { flex: none; margin-left: auto; color: var(--ov-muted); font-size: 1.1em; line-height: 1; }
+
+/* Rechtschreibprüfung: rote Wellenlinie ueber die CSS Custom Highlight API.
+   Der Editorinhalt bleibt dabei unveraendert, damit Cursorposition,
+   Formatierung und Rueckgaengig-Historie erhalten bleiben. */
+::highlight(ov-spell-error) { text-decoration: underline wavy #b42318; text-decoration-skip-ink: none; text-underline-offset: .18em; }
 
 .ov-dialog--ai .ov-dialog__head h2 { display: inline-flex; align-items: center; gap: .45rem; }
 .ov-ai-dialog__icon { height: 20px; width: auto; }

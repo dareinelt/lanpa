@@ -60,6 +60,15 @@ return [
     'ai_request_timeout' => Env::int('ORVANTA_AI_TIMEOUT', 30),
     'ai_availability_cache_file' => BASE_PATH . '/storage/cache/orvanta_ai.json',
 
+    // Deutsche Rechtschreibpruefung in Orvanta. Die Woerterbuchdateien werden
+    // einmalig beim Containerstart aus dem Web geholt und aufbereitet
+    // (scripts/spellcheck_dictionary.php, siehe docker/php/entrypoint.sh);
+    // der Dienst liest danach nur noch das Verzeichnis.
+    'spellcheck_enabled' => Env::bool('ORVANTA_SPELLCHECK', true),
+    'spellcheck_dir' => Env::get('ORVANTA_SPELLCHECK_DIR', BASE_PATH . '/storage/dictionaries/de_DE'),
+    'spellcheck_url' => Env::get('ORVANTA_SPELLCHECK_URL', 'https://raw.githubusercontent.com/LibreOffice/dictionaries/master/de'),
+    'spellcheck_timeout' => Env::int('ORVANTA_SPELLCHECK_TIMEOUT', 120),
+
     // Vertrauenswuerdige Hostnamen von Nextcloud (trusted_domains): zusaetzlich
     // zu APP_URL, den Domaenen mit Windows-Anmeldung und dem HTTPS-Zertifikat.
     // Die Liste wird vom Intranet an Nextcloud uebertragen (selbstheilend).

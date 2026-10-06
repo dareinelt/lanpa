@@ -9,6 +9,8 @@ storage/uploads/*
 !storage/uploads/.gitkeep
 storage/office-ai/
 storage/emergency-transfer/
+# Aufbereitetes Woerterbuch der Rechtschreibpruefung (scripts/spellcheck_dictionary.php)
+storage/dictionaries/
 
 # Werkzeuge / Editoren
 .idea/

@@ -55,6 +55,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 16. Signaturvorlagen
 17. Langzeitarchiv
 18. Mail-Backends und SMTP-/IMAP-Proxy
+19. Rechtschreibprüfung
 
 ---
 
@@ -98,7 +99,12 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Contracts/AiTransportInterface.php` | `request(method, url, headers, body, timeout): {status, body, error}` |
 | `app/Services/Orvanta/CurlAiTransport.php` | cURL zum OpenAI-kompatiblen Endpunkt; keine Redirects, nur HTTP(S) (Zulässigkeit der Adresse wie im Admin-Verbindungstest über `OfficeAiService::isValidUrl`) |
 | `app/Repositories/OrvantaRepository.php` | Einstellungen, Erinnerungen (`syncReminders()`, `dueReminders()`, `activeReminders()`, `markDelivered()`, `dismissReminder()`, `snoozeReminder()`, `purgeReminders()`), Zwischenspeicher (`cacheUsage()`, `findCacheItem()`, `addCacheItem()`, `oldestCacheItems()`, `deleteCacheItem()`, `cacheItems()`, `cacheUsagePerUser()`), KI-Nutzung (`recordAiUsage()`, `aiUsagePerUser()` (Pseudonyme „Benutzer n“), `aiUsagePerDay()`, `aiTokenTotals()`); SQL kompatibel zu MySQL und SQLite |
-| `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchange()`, `orvantaAttachments()`, `orvantaRecipients()`, `orvantaNotifications()`, `orvantaAiCharts()`, `aiTransport()`, `orvantaAi()` (nutzt `officeAi()`); `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
+| `app/Services/Orvanta/OrvantaSpellcheckService.php` | Rechtschreibprüfung (Abschnitt 19): `isAvailable()` (billig, nur `meta.json`), `isUsable()` (lädt Index + Regelwerk), `check(word)` (Hunspell-Algorithmus), `suggest(word)` (dreistufig, ranggeordnet); intern `collectCandidates()`/`editCandidates()`/`distance()`, `goodForms()`/`affixForms()`/`produceAffixForms()`/`desuffix()`/`deprefix()`/`isUsableAffix()`, `compoundForms()`/`compoundsByFlags()`/`isBadCompound()`/`hasAnyAffixForm()`, `isGoodForm()`/`formFlags()`/`hasAffixes()`/`allAffixes()`, `breakWord()` (Generator mit Arbeitsbudget), `tryLetterList()`; Grenzen `MAX_WORDS_PER_REQUEST` (400), `MAX_WORD_LENGTH` (64), `MAX_SUGGESTIONS` (8), `BREAK_BUDGET` (256) |
+| `app/Services/Orvanta/OrvantaSpellcheckCompiler.php` | Übersetzt `.aff`/`.dic` einmalig nach `aff.ser`/`words.dat`/`words.idx`/`words.case`/`meta.json`/`QUELLE.txt`: `compile()`, `parseAff()`, `readAffixRules()`, `compileCondition()`, `readTable()`, `parseMapGroup()`, `parseDic()`, `detectCharset()`, `toUtf8()`; `FORMAT_VERSION` |
+| `app/Services/Orvanta/OrvantaSpellcheckDictionary.php` | Verzögertes Lesen des übersetzten Wörterbuchs: `isAvailable()` (nur `meta.json`), `isUsable()` (Index + Regelwerk), `meta()`, `flagsOf(word)`, `caseEntries(key)`, `wordsWithPrefix(prefix, limit)`, `suffixRules()/suffixLengths()`, `prefixRules()/prefixLengths()`, `breaks()/replacements()/maps()/tryLetters()`, `flag(name)`, `compoundMin()/compoundMax()/checkSharps()`; `words.dat` wird über `read()` (`fseek`/`fread`) gelesen; `INDEX_ENTRY_SIZE` |
+| `app/Services/Orvanta/OrvantaSpellcheckCasing.php` | Gemeinsame Groß-/Kleinschreibungslogik (`NO`/`INIT`/`ALL`/`HUHINIT`/`HUH`): `guess()`, `variants()`, `lower()` (mit scharfem S), `lowerFirst()`, `capitalize()`, `sharpSVariants()`; `MAX_SHARP_S_VARIANTS` |
+| `scripts/spellcheck_dictionary.php` | Einmaliger Download + Übersetzung (Abschnitt 19), vom Entrypoint aufgerufen; `--force`, `--quiet`; atomarer Austausch über `meta.json` als Vollständigkeitsmarke |
+| `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchange()`, `orvantaAttachments()`, `orvantaRecipients()`, `orvantaNotifications()`, `orvantaSpellcheckDictionary()`, `orvantaSpellcheck()` (übergibt `office.spellcheck_enabled`), `orvantaAiCharts()`, `aiTransport()`, `orvantaAi()` (nutzt `officeAi()`); `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
 | `app/Controllers/Controller.php` | `orvantaRemindersVisible()` → View-Variable `$orvantaReminders` (Kopfzeilen-Erinnerungen auf allen Seiten) |
 | `app/Services/Office/OfficeAppCatalog.php` | App `orvanta` (`kind = intranet`), `ORVANTA_PATH = '/office/orvanta'` |
 | `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`/`isSafeFileName()` (führender Punkt nur bei Dateinamen), `MAX_BYTES` (16 MiB) |
@@ -106,10 +112,10 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `views/orvanta/viewer.php` | Euro-Office-Viewer `.ov-viewer[data-orvanta-viewer]` mit `data-api`, `data-config`, `data-download` und Download-Fallback |
 | `views/admin/office.php` | Abschnitt `$section === 'orvanta'`, Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer, KI-Nutzungsbericht `#orvanta-ki`) |
 | `views/layouts/base.php` | Mitteilungsmenü mit `data-orvanta-reminders` / `data-orvanta-reminder-list`, lädt `orvanta-reminders.js` (mit `data-csrf`) |
-| `public/assets/js/orvanta.js` | App (Abschnitt 9) |
+| `public/assets/js/orvanta.js` | App (Abschnitt 9); Kontextmenü mit Untermenüs, Rechtschreibprüfung (Abschnitt 19) |
 | `public/assets/js/orvanta-reminders.js` | Erinnerungen in der Kopfzeile aller übrigen Seiten |
 | `public/assets/js/orvanta-viewer.js` | Lädt `api.js` des DocumentServers und startet `DocsAPI.DocEditor` |
-| `public/assets/css/orvanta.css` | Präfix `.ov-*`, Grid-Layout, Breakpoints 1200/900 px, Druck; `.ov-ai-*` (Indikator, Menü, Dialog, Block) |
+| `public/assets/css/orvanta.css` | Präfix `.ov-*`, Grid-Layout, Breakpoints 1200/900 px, Druck; `.ov-ai-*` (Indikator, Menü, Dialog, Block); `.ov-ctx-menu__sub*` (Untermenüs), `::highlight(ov-spell-error)` (Abschnitt 19) |
 | `public/assets/images/orvanta-ai-robot*.png` | Roboter-Grafiken (klein 36×48/72×96 für Statusleiste/Menü, groß 180×240/360×480 für Hilfe und Admin) |
 | `database/migrations/033_create_orvanta_tables.sql` | Drei Tabellen (Abschnitt 4) |
 | `database/migrations/034_create_orvanta_ai_usage.sql` | Tabelle `orvanta_ai_usage` (Abschnitt 4.1) |
@@ -120,6 +126,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
 | `tests/Unit/OrvantaSignatureTest.php` | Tests der Signaturvorlagen gegen SQLite (Abschnitt 12) |
+| `tests/Unit/OrvantaSpellcheckTest.php` | Tests der Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (Abschnitt 19) |
 
 ## 3. Routen, Zugriff und API-Rahmen
 
@@ -169,6 +176,8 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/api/orvanta/erinnerungen/erledigt` | `dismissReminder` | Erinnerung schließen |
 | POST | `/api/orvanta/erinnerungen/spaeter` | `snoozeReminder` | Erinnerung verschieben (`minutes` 1–1440, Standard 5) |
 | POST | `/api/orvanta/ki/verbessern` | `aiImprove` | KI-Unterstützung: `mode`, `text`, `prompt`, optional `previous_text`, `context{subject, recipients}` → `{text, usage{input_tokens, output_tokens}}` (Abschnitt 15) |
+| POST | `/api/orvanta/rechtschreibung/pruefen` | `spellcheck` | Rechtschreibprüfung: `words[]` (≤ 400) → `{available, misspelled[]}` (Abschnitt 19) |
+| POST | `/api/orvanta/rechtschreibung/vorschlaege` | `spellcheckSuggest` | Vorschläge: `word` (≤ 64 Zeichen) → `{available, suggestions[]}` (Abschnitt 19) |
 | GET | `/admin/office/orvanta[?ki_zeitraum=…]` | `Admin\OfficeController::showOrvanta` | Unterseite Orvanta im Adminbereich (`$requireAdmin`) |
 | POST | `/admin/office/orvanta` | `Admin\OfficeController::updateOrvanta` | Einstellungen (`$requireAdmin`, CSRF) |
 | POST | `/admin/office/orvanta/pruefen` | `testOrvanta` | Verbindungstest, optional `mailbox` |
@@ -382,6 +391,9 @@ Grenzwerte (Server maßgeblich):
 | Datei im Zwischenspeicher / in Nextcloud | ≤ 16 MiB und ≤ Quota | `NextcloudFilesService::MAX_BYTES` |
 | KI: markierter Text / Anweisung / Kontextfelder | ≤ 8 000 / ≤ 1 000 / ≤ 300 Zeichen; Antwort ≤ 1 200 Token | `OrvantaAiService::MAX_*`; Client spiegelt `AI_MAX_TEXT`/`AI_MAX_PROMPT` |
 | KI: Zeitlimits | Erreichbarkeit 3 s (Cache 60 s), Anfrage `ORVANTA_AI_TIMEOUT` (5–120 s, Standard 30) | `AVAILABILITY_TIMEOUT`, `AVAILABILITY_TTL`, `Container::orvantaAi()` |
+| Rechtschreibung: Wörter je Anfrage / Wortlänge | 400 / 64 Zeichen | `OrvantaSpellcheckService::MAX_WORDS_PER_REQUEST`, `MAX_WORD_LENGTH` (Client spiegelt `SPELL_MAX_WORDS`/`SPELL_MAX_WORD_LENGTH`) |
+| Rechtschreibung: Vorschläge | höchstens 8, nur für Wörter ≤ 32 Zeichen | `OrvantaSpellcheckService::MAX_SUGGESTIONS`, `SUGGEST_MAX_LENGTH` |
+| Rechtschreibung: Wörterbuch-Download | Zeitlimit `ORVANTA_SPELLCHECK_TIMEOUT` (Standard 120 s) | `scripts/spellcheck_dictionary.php` |
 
 ## 7. Anhänge, Viewer und Zwischenspeicher
 
@@ -572,6 +584,22 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   am Wurzelelement (u. a. `ov--no-folders`, `ov--no-reading`).
 - Statusleiste: Verbindung, letzte Aktualisierung (`markSync()`), Quota
   (`loadQuota()`/`renderQuota()`, Warnfarbe ab 80 %).
+- Kontextmenü: `[data-ov-ctx-menu]`; `ctxBuildItems(container, items, renderers)`
+  rendert `{separator:true}`, `{header:true, label}`, `{label, items}` (Untermenü,
+  `items` als Liste oder Funktion – die Funktion wird bei jedem Öffnen und bei
+  `ctxRefreshSubmenus()` neu ausgewertet, damit später eintreffende Daten
+  nachrutschen) und normale Einträge `{label, icon?, run, disabled?}`.
+  Untermenüs öffnen per Hover (`ctxOpenSub`/`ctxCloseSub`) und per
+  Pfeil-rechts; sie klappen nach links um, wenn sie rechts aus dem Fenster
+  liefen (`.ov-ctx-menu__sub--left`). Die Einträge tragen `role="menuitem"`.
+- Rechtschreibprüfung (Abschnitt 19): Modul `spell`; `spellText()`/`spellWalk()`
+  lesen den Editor als Text mit Zuordnung zu den Textknoten,
+  `spellTokens()`/`spellWordIn()`/`spellPosition()`/`spellRange()` übersetzen
+  zwischen Zeichenpositionen und DOM-Bereichen, `spellPaint()`/`spellApply()`
+  setzen die Markierung, `spellCheck()`/`spellSuggest()` sprechen die API,
+  `spellMenuItems()`/`spellMenuEntries()` bauen das Untermenü,
+  `spellReplace()` ersetzt das Wort, `spellSchedule()`/`spellScan()` prüfen
+  nach 400 ms Ruhe, `initSpellcheck()` bindet Editoren und `MutationObserver`.
 
 ### 9.2 Gestaltung
 
@@ -668,6 +696,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), Freigabe per AD-Gruppe (`archive_group`, Standard: niemand; Mitglieder weiterer Quellen; Pflichtgruppe bei Aktivierung), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
 
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
+| `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
@@ -698,6 +727,7 @@ Download), Erinnerung in App und Kopfzeile, Statusleiste/Quota.
 | **Signaturaufbau ändern** (Zeilen, Trennzeichen, Logo-Größe) | Nur `OrvantaSignatureService::render()`/`phoneLine()` (E-Mail-tauglich: Tabelle, Inline-Styles ohne `url(`, Bilder nur als `data:`-URI – sonst entfernt sie `MailHtmlSanitizer`); Farben über die Farbschlüssel der Vorlage aus `SettingsService::theme()`; Logo-Höhe = `LINE_HEIGHT` × Zeilenzahl, das Bild wird per `scaleImage()` selbst auf diese Größe gebracht (Outlook/Exchange ignorieren width/height); Test „Darstellung …“ anpassen; Screenshot 88/90 erneuern. |
 | **Neues Vorlagenfeld der Signatur** | Spalte per Migration + SQLite-Schema in `OrvantaSignatureTest.php`; `OrvantaSignatureRepository` (`hydrate`, `save`), `OrvantaSignatureService::blank()/validate()/render()`, Formular `views/admin/orvanta-signature.php` (`data-signature-field`), Query in `admin-signature.js` und `OrvantaSignatureController::preview()`; Doku. |
 | **KI-Prompt oder Modellparameter ändern** | Nur `OrvantaAiService::messages()` bzw. `improve()` (Temperatur, `max_tokens`); nie Modell/URL in Orvanta speichern – sie stammen aus `OfficeAiService`. |
+| **Rechtschreibprüfung erweitern** (weiterer Editor, andere Sprache) | Editor mit `contenteditable` und `data-ov-…-body`-Hook anlegen und in `orvanta.js` zu `spellEditors()` hinzufügen (nur dort wird geprüft; Signatur-/Zitatblöcke tragen `contenteditable="false"` und werden automatisch übersprungen). Andere Sprache/Wörterbuch: `ORVANTA_SPELLCHECK_URL`/`ORVANTA_SPELLCHECK_DIR` umstellen – der Übersetzer liest `SET`/`FLAG`/`AF`/`AM` aus der `.aff`, das Dateiformat bleibt gleich. **Nur** die Engine selbst ändern, wenn das Wörterbuch eine Hunspell-Funktion nutzt, die noch fehlt (`COMPOUNDRULE`, `CHECKCOMPOUNDPATTERN`, `SIMPLIFIEDTRIPLE`, `COMPLEXPREFIXES`, `FORCEUCASE`, `PHONE`); Referenz ist die Python-Umsetzung `spylls` (`algo/lookup.py`), gegen die die Prüfung unterschiedfrei validiert wurde (Abschnitt 19). Danach `php tests/run.php` **und** ein Differenzlauf gegen `spylls` über eine echte Wortliste. |
 
 Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 `docs/orvanta.md` und `agentsindex.md` aktualisieren.
@@ -770,6 +800,20 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
   abgelaufen und der Anhang muss in Orvanta neu geöffnet werden.
 - `api()` in `orvanta.js` hat kein Zeitlimit; hängende Exchange-Aufrufe enden
   erst mit `exchange_timeout` auf dem Server.
+- Die Rechtschreibprüfung markiert auch korrekte Wörter, die im Wörterbuch
+  fehlen (Fachbegriffe, Namen, Abkürzungen) – bewusst ohne „Zum Wörterbuch
+  hinzufügen“. Die Markierung verschwindet erst mit der Korrektur des Wortes
+  bzw. mit dem Schließen des Dialogs; sie wandert **nicht** mit kopiertem Text
+  mit (die Markierung ist eine Anzeigeschicht, keine Auszeichnung).
+- Beim Tippen wird die Markierung kurz zurückgenommen und nach 400 ms Ruhe neu
+  berechnet; in dieser Zeit kann ein Rechtsklick „Wird geprüft …“ zeigen.
+- Die Prüfung arbeitet auf dem Text des Editors, nicht auf HTML: Ein per
+  `anhang/oeffnen` eingebettetes `cid:`-Bild oder ein Zitatblock wird zwar
+  mitgelesen, aber dessen Text stammt vom Absender und wird als Fehler
+  unterstrichen, solange er noch im Editor steht.
+- Bei fehlender Netzverbindung setzt ein Fehler die Prüfung 30 s aus
+  (`SPELL_RETRY_MS`), damit nicht jedes Tastendruck-Ereignis eine neue Anfrage
+  auslöst.
 
 ---
 
@@ -1033,3 +1077,325 @@ Benutzerdoku, Einrichtung und vollständige technische Referenz:
   bestätigter IMAP-(und ggf. SMTP-)Anmeldung per `mailbox.test`.
 
 Tests: `tests/Unit/MailProxyTest.php`.
+
+---
+
+## 19. Rechtschreibprüfung
+
+### 19.1 Zweck und Grenzen
+
+Orvanta prüft deutsche Texte in den `contenteditable`-Editoren für E-Mails
+(`[data-ov-compose-body]`) und Termine (`[data-ov-event-body]`) gegen das freie
+Wörterbuch **de_DE_frami** (igerman98 + frami, GPLv2/GPLv3). Es gibt **keine
+externe Rechtschreib-API**; geprüft wird auf dem Intranet-Server. Die
+Rechtschreibhilfe des Browsers wird über `spellcheck="false"` abgeschaltet,
+damit nicht zwei Prüfungen übereinander liegen.
+
+Nicht geprüft werden: Betreff- und Empfängerfelder, der Signaturblock und
+Zitatblöcke (beide `contenteditable="false"`, siehe `SPELL_SKIP`), die
+Nachrichtenanzeige und alle übrigen Eingabefelder der App.
+
+Die Umsetzung ist ein **eigener Port des Hunspell-Algorithmus** – das Projekt
+ist dependency-frei (kein Composer, kein PECL-`enchant`/`pspell`, kein CDN), und
+`enchant`/`hunspell` stehen im `php:8.5-apache`-Image nicht zur Verfügung.
+Referenz für den Port ist die Python-Umsetzung **`spylls`**
+(`spylls/hunspell/algo/lookup.py` und `algo/capitalization.py`); jeder
+Algorithmusschritt wurde gegen sie geprüft.
+
+### 19.2 Ablauf
+
+```
+Tippen im Editor
+  └─ spellSchedule(): 400 ms Ruhe ─► spellScan(editor)
+        ├─ spellText()/spellWalk(): Text + Zuordnung Textknoten (BR = \n,
+        │    Blöcke = \n, contenteditable="false" übersprungen)
+        ├─ spellTokens(): Wörter 2–64 Zeichen
+        ├─ spellPaint()/spellApply(): CSS.highlights["ov-spell-error"]
+        └─ spellCheck(unbekannte Wörter)
+              POST /api/orvanta/rechtschreibung/pruefen  {words:[…]}  (≤ 400)
+                 OrvantaApiController::spellcheck() ─► OrvantaSpellcheckService::check()
+                    ├─ Zahl (^\d+(\.\d+)?$)  ─► richtig
+                    ├─ breakWord(): Zerlegung an "-" und "." (rekursiv, Tiefe ≤ 10)
+                    ├─ goodForms(): affixForms() + compoundForms()
+                    └─ Wort in keinem Pfad ─► falsch
+              ◄─ {available, misspelled[]}  → spell.known[wort] = false
+                                              → spellRepaint() + ctxRefreshSubmenus()
+
+Rechtsklick auf ein markiertes Wort
+  └─ spellMenuItems() → Eintrag "Rechtschreibprüfung" {items: Funktion}
+        └─ spellMenuEntries(): POST /api/orvanta/rechtschreibung/vorschlaege {word}
+              OrvantaSpellcheckService::suggest()  ◄─ {available, suggestions[]}
+           Klick auf einen Vorschlag → spellReplace(): Auswahl setzen,
+           ctxInsertText() ersetzt das Wort (Rückgängig-Historie bleibt)
+```
+
+`available: false` (Rechtschreibung abgeschaltet oder Wörterbuch fehlt)
+deaktiviert die Prüfung im Browser dauerhaft; ein Fehler setzt sie 30 s aus
+(`SPELL_RETRY_MS`).
+
+### 19.3 Markierung (CSS Custom Highlight API)
+
+Die rote wellige Unterstreichung kommt aus
+`::highlight(ov-spell-error) { text-decoration: underline wavy … }`
+(`public/assets/css/orvanta.css`) und wird über `CSS.highlights.set()` mit
+`Range`-Objekten gefüllt. **Der Editorinhalt wird nicht verändert.**
+
+Das ist die zentrale Entscheidung dieses Moduls:
+
+- kein Einfügen/Entfernen von `<span class="…">`-Markierungen, damit
+  **kein Aufräumen vor dem Senden/Entwurf** nötig ist – anders als bei den
+  KI-Markern, die serverseitig über `OrvantaAiService::stripMarkers()` entfernt
+  werden müssen (Abschnitt 15). `composePayload()`, `eventBody()`,
+  `guardComposeSignature()` und `stripSignatureBlocks()` bleiben unberührt;
+- Cursorposition, Auswahl, Formatierung und Rückgängig-Historie des Browsers
+  bleiben erhalten, weil das DOM unangetastet bleibt;
+- die Markierung wandert nicht mit kopiertem Text mit (sie ist keine
+  Auszeichnung).
+
+Die API ist per `spell.marking` (Feature-Erkennung auf `CSS.highlights` und
+`window.Highlight`) optional; ohne sie entfällt nur die Unterstreichung, das
+Kontextmenü prüft weiter.
+
+### 19.4 Kontextmenü
+
+`ctxBuildItems()` kann Einträge der Form `{label, items}` rendern: daraus wird
+`div.ov-ctx-menu__sub-wrap > button.ov-ctx-menu__item--sub + div.ov-ctx-menu__sub[hidden]`.
+`items` darf eine **Funktion** sein; sie wird bei jedem Öffnen ausgewertet, und
+`ctxRefreshSubmenus()` wertet sie erneut aus, sobald eine späte Serverantwort
+eintrifft. Damit zeigt das Untermenü zunächst „Wird geprüft …“ bzw.
+„Wird gesucht …“ und füllt sich anschließend, ohne dass der Benutzer erneut
+rechtsklicken muss. Das Untermenü wird mit `hidden` erzeugt (nicht nur per CSS
+versteckt) und klappt nach links um, wenn es rechts aus dem Fenster liefe
+(`ctxOpenSub()`, Klasse `ov-ctx-menu__sub--left`).
+
+Bedienung: Hover oder Pfeil-rechts öffnet, Pfeil-links und `Esc` schließen nur
+das Untermenü (Fokus zurück auf den öffnenden Eintrag), `Esc` im Hauptmenü
+schließt alles. Die Einträge sind `<button role="menuitem">` – die
+zugängliche Rolle ist damit `menuitem`, nicht `button`.
+
+### 19.5 Aufbereitung des Wörterbuchs
+
+Einmalig beim Start des `app`-Containers (`docker/php/entrypoint.sh` ruft
+`scripts/spellcheck_dictionary.php` auf). Danach ist kein Netzzugriff nötig.
+
+```
+https://raw.githubusercontent.com/LibreOffice/dictionaries/master/de
+  de_DE_frami.aff (19 067 B)  +  de_DE_frami.dic (4 356 903 B, 258 202 Einträge)
+      │  scripts/spellcheck_dictionary.php  (stream_context_create + file_get_contents,
+      │  Statusprüfung über $http_response_header, kein cURL)
+      ▼
+  <dir>/quelle/            Rohdateien (Nachweis der Herkunft)
+      │  OrvantaSpellcheckCompiler::compile()
+      ▼
+  <dir>/neu-<pid>/         aff.ser  words.dat  words.idx  words.case
+                           meta.json  QUELLE.txt
+      │  meta.json wird erst ZULETZT geschrieben und dann per rename() eingesetzt
+      ▼
+  <dir>/                   gültiger Bestand (meta.json = Vollständigkeitsmarke)
+```
+
+Eigenschaften:
+
+- **Idempotent:** ist `<dir>/meta.json` vorhanden und gültig, passiert nichts
+  (`--force` erzwingt einen neuen Lauf). Der Austausch ist atomar: alte
+  `meta.json` löschen, neue Dateien per `rename()` einsetzen. Dabei werden die
+  Nutzdateien **zuerst** und `meta.json`/`QUELLE.txt` **zuletzt** eingesetzt
+  (`usort` mit `$markers`), damit ein Abbruch niemals eine gültige
+  `meta.json` neben alten Wortdaten hinterlässt – ein unvollständiger Bestand
+  wird von `isAvailable()` als ungültig erkannt.
+- **Nie blockierend:** Schlägt der Download fehl, meldet das Skript einen
+  Fehler und beendet sich mit Code 1; der Entrypoint protokolliert eine Warnung
+  und fährt fort. Ohne Wörterbuch ist die Prüfung einfach nicht verfügbar.
+- **Abschaltbar:** ist `ORVANTA_SPELLCHECK` falsch, beendet sich das Skript
+  sofort mit Code 0 („nichts zu tun“).
+- **Zeichensatz:** `detectCharset()` liest `SET` aus der `.aff` (hier
+  `ISO8859-1`); `toUtf8()` normalisiert den Namen (`ISO88591`/`LATIN1` →
+  `ISO-8859-1`, `LATIN9` → `ISO-8859-15`, `LATIN2` → `ISO-8859-2`,
+  `WINDOWS1252` → `Windows-1252`) und ruft `iconv()` nur, wenn die Rohdaten
+  kein gültiges UTF-8 sind. Eine Änderung des Zeichensatzes stromaufwärts
+  braucht also keinen Codeeingriff.
+
+### 19.6 Format des übersetzten Wörterbuchs
+
+| Datei | Inhalt |
+| --- | --- |
+| `aff.ser` | serialisiertes Array: `compound_min`/`compound_max`, `checksharps`, `flags` (`compound_begin`, `compound_middle`, `compound_end`, `forbidden`, `compound_permit`, `only_in_compound`, `need_affix`, `keepcase`, `circumfix`, `nosuggest`), `breaks`, `try`, `rep`, `map`, `suffixes`, `prefixes` |
+| `words.dat` | `Wort\tFlags\n`; zusätzliche Homonym-Einträge als weitere `Flags`-Zeilen im selben Datensatz; Datensätze nach `SORT_STRING` sortiert |
+| `words.idx` | **nur uint32-Offsets** (Little Endian, 4 Byte je Wort, `INDEX_ENTRY_SIZE`); die Länge von Datensatz *N* ergibt sich aus `Offset(N+1) − Offset(N)`, der letzte reicht bis `strlen(words.dat)` |
+| `words.case` | nur für Wörter der Klasse `ALL`/`HUH`/`HUHINIT`: `Kleinschreibung\tWort\tFlags` – der Index für die Suche ohne Rücksicht auf Groß-/Kleinschreibung (spylls' `lowercase_index`) |
+| `meta.json` | Zähler und `version` (**Vollständigkeitsmarke**, wird zuletzt geschrieben) |
+| `QUELLE.txt` | Herkunft und Lizenz (GPL) der Rohdaten |
+
+Eine Affixregel wird als `{flag, cross, strip, add, cont, cond}` abgelegt;
+`add` ist der Schlüssel in `suffixRules`/`prefixRules`
+(`Länge → add → Regeln`), `cond` ein fertiger PCRE
+(`#…#\z#u` für Suffixe, `#\A…#u` für Präfixe, leer = unbedingt).
+**`cont` sind die Fortsetzungsflags – also nur der Teil nach `/`, nie das
+eigene Flag der Regel.** Das ist die wichtigste Feinheit des Formats: spylls'
+`Affix.flags` enthält ausschließlich den Teil nach `/`, und
+`good_suffix()`/`good_prefix()` prüfen `required_flags` gegen genau diese
+Menge.
+
+Beispiel: `SFX j 0 0/xoc .` – hier ist `add` **leer** und `cont` = `xoc`. Genau
+diese Regel macht `Hausdach` möglich: `Haus` erhält über das leere Suffix `j`
+COMPOUNDBEGIN (`x`), `dach` liefert das Ende. Wird die Reihenfolge beim Parsen
+vertauscht (`0/xoc` erst normalisieren, dann trennen), landen die Fugenregeln
+unter dem Schlüssel `"0"` statt `""` – und **jede** Zusammensetzung schlägt
+fehl.
+
+Das Laufzeit-Lesen ist **verzögert und abgestuft**: `OrvantaSpellcheckDictionary`
+liest `aff.ser`, `words.idx` und `meta.json` erst bei Bedarf, `words.dat` gar
+nicht mehr am Stück, sondern je Eintrag über `fseek()`/`fread()` auf ein
+offenes Dateihandle (`read()`), und `words.case` erst beim ersten Zugriff
+darauf. Wörter werden per Binärsuche (`lowerBound()`/`search()`) gefunden,
+Affixe über `suffixLengths()`/`prefixLengths()`.
+
+Die beiden Verfuegbarkeitstests sind bewusst getrennt:
+
+| Methode | Aufwand | Zweck |
+| --- | --- | --- |
+| `isAvailable()` | liest nur `meta.json` | billig genug für **jeden Seitenaufbau** (`OrvantaController`) |
+| `isUsable()` | lädt zusätzlich `aff.ser` + `words.idx` | echte Prüfung; wird von `check()`/`suggest()`, den API-Antworten und dem Skript benutzt |
+
+Bei 176 Apache-Workern (`docker/php/apache-prefork.conf`) ist der
+Speicherbedarf je Prozess wichtiger als die Antwortzeit. Würde `isAvailable()`
+die Wortliste laden, kostete **jeder** Orvanta-Seitenaufbau rund 5,4 MB je
+Prozess (≈ 0,9 GB über alle Worker) für eine Prüfung, die meist gar nicht
+stattfindet. Durch die Trennung kostet ein Seitenaufbau ≈ 0,14 MB, und ein
+Prozess, der nie prüft, hält die Wortliste überhaupt nicht.
+
+`load()` prüft `version` gegen `OrvantaSpellcheckCompiler::FORMAT_VERSION` und
+`strlen(words.idx) === count * 4`; jeder Fehler führt zu `isUsable() = false`
+statt zu einer Ausnahme. `check()` und `suggest()` fragen `isUsable()` ab und
+melden bei einem beschädigten Bestand **jedes** Wort als korrekt – lieber keine
+Markierung als lauter falsche rote Wellenlinien. Nach einem Formatwechsel
+genügt ein `--force`-Lauf des Skripts.
+
+### 19.7 Algorithmus (Port von spylls/Hunspell)
+
+`check($word)`:
+
+1. `FORBIDDENWORD` (verbotene Schreibweise, `d`) → falsch.
+2. `NUMBER_REGEXP` (`^\d+(\.\d+)?$`) → richtig.
+3. `breakWord($word)`: für jedes `BREAK`-Muster (`-`, `.`) an allen
+   Trennstellen rekursiv zerlegen (Tiefe ≤ 10); sind **alle** Teile richtig,
+   ist das Wort richtig (`E-Mail-Adresse`). Die Zerlegung ist ein
+   **Generator** und arbeitet mit einem Arbeitsbudget
+   (`BREAK_BUDGET = 256` je Wort): Jede Trennstelle verdoppelt die Zahl der
+   Varianten, ein eingefügter Text wie `a.a.a.a…` erzeugte sonst Millionen
+   Varianten (gemessen 11 s und 50 MB, bei `memory_limit=64M` ein Abbruch).
+   Das Budget wird in `computeCorrect()` zurückgesetzt; da `isCorrect()`
+   memoisiert und nicht wiedereintritt, genügt eine einzige Instanzvariable.
+4. Sonst `goodForms()`: für jede Schreibvarianten-Klasse
+   (`OrvantaSpellcheckCasing::variants()`) `affixForms()` **und**
+   `compoundForms()`; ist irgendeine Form gültig, ist das Wort richtig.
+
+`affixForms()` erzeugt Kandidaten aus dem Wort selbst, aus Suffixen
+(`desuffix()`, höchstens zwei nacheinander) und Präfixen (`deprefix()`, nur
+eines – `COMPLEXPREFIXES` fehlt in de_DE_frami) inklusive Kreuzprodukt
+Präfix × Suffix; jede Form wird gegen die Homonyme des Stamms geprüft
+(`isGoodForm()`: `KEEPCASE`/`CHECKSHARPS`, `NEEDAFFIX`, `ONLYINCOMPOUND`,
+`CIRCUMFIX`, Wortart der Zusammensetzung).
+
+`compoundForms()`/`compoundsByFlags()` zerlegen das Wort an jeder Position
+(≥ `COMPOUNDMIN` Zeichen je Teil, Tiefe ≤ 8) und verlangen für jeden Teil die
+passende Wortart (`x`/`y`/`z`); `isBadCompound()` prüft anschließend, dass zwei
+benachbarte Teile **nicht** als `links rechts` im Wörterbuch stehen
+(`hasAnyAffixForm()` – diese Prüfung ist **exakt schreibungsabhängig**, weshalb
+eine Zusammensetzung nur greift, wenn jede Teilform genau so im Wörterbuch
+steht).
+
+`OrvantaSpellcheckCasing` bildet spylls' `Casing`/`GermanCasing` ab:
+`NO`/`INIT`/`ALL`/`HUHINIT`/`HUH`, `lower()` mit Erweiterung von `SS` zu
+`s`/`ss`/`ß` (`MAX_SHARP_S_VARIANTS = 64`), `capitalize()`, `lowerFirst()`,
+`guess()` mit der Sonderregel für `ß`. Statt `ctype_lower()`/`ctype_upper()`
+werden `\p{Ll}`/`\p{Lu}`/`\p{Lt}` verwendet – `ctype_*` ist für Umlaute und `ß`
+nicht verlässlich.
+
+`suggest($word)` arbeitet dreistufig und ranggeordnet:
+
+1. `editCandidates()` erzeugt Kandidaten in Hunspells Phasenreihenfolge –
+   Klasse 0 Schreibvarianten/`REP`/`MAP`, 1 benachbarte Vertauschung, 2 weite
+   Vertauschung, 3 überzähliges Zeichen, 4 fehlendes Zeichen (Einfügen, nach
+   `TRY` gewichtet), 5 verschobenes Zeichen, 6 falsches Zeichen, 7
+   Wörterbuchsuche über `wordsWithPrefix()` (nur ab 5 Zeichen, Abstand ≤ 2).
+   Der Rang ist `[Klasse, Abstand, TRY-Index, Längendifferenz]`.
+2. Kandidaten, die direkt als Stamm im Wörterbuch stehen, werden sofort
+   geprüft; danach höchstens `SUGGEST_FILTER_LIMIT` (160) Kandidaten mit
+   Affixformen (`hasAnyAffixForm()` als Vorfilter); zuletzt höchstens
+   `SUGGEST_COMPOUND_LIMIT` (40) Kandidaten vollständig inklusive
+   Zusammensetzungen. Die Abgrenzung ist nötig, weil die vollständige Prüfung
+   eines Kandidaten um Größenordnungen teurer ist als das Erzeugen.
+3. Ergebnis auf `MAX_SUGGESTIONS` (8) begrenzen.
+
+Die Qualität ist über den Bereich 40–250 Kandidaten praktisch unverändert;
+40 hält die Antwortzeit niedrig (Abschnitt 19.9).
+
+### 19.8 Validierung
+
+- **Unit-Test** `tests/Unit/OrvantaSpellcheckTest.php` gegen ein eigenes
+  Mini-Wörterbuch (wird im Test einmal übersetzt): Stammwörter, Affixe,
+  Groß-/Kleinschreibung, Umlaute/scharfes S/verbotene Schreibweisen,
+  Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen,
+  Vorschläge, Abschalten über die Konfiguration, Anfragegrenzen,
+  Verfuegbarkeit ohne Wortliste (`isAvailable()` vs. `isUsable()`) und
+  Beherrschbarkeit vieler Trennzeichen.
+- **Differenzlauf gegen `spylls`** über 8 006 Wörter aus der Wörterbuchdatei
+  (Nomen, Verben, Komposita, Umlaute, `ß`): genau **eine** Abweichung.
+- **Browserprüfung** über einen Hilfsserver mit echtem Wörterbuch und echtem
+  Frontend: Markierung genau auf den fehlerhaften Wörtern, Signaturblock
+  übersprungen, Untermenü mit dem erwarteten Vorschlag an erster Stelle,
+  Ersetzen per Klick, Nachladen von „Wird geprüft …“, Tastaturbedienung und
+  Degradation ohne Highlight-API.
+
+### 19.9 Messwerte
+
+| Vorgang | Wert |
+| --- | --- |
+| Übersetzen des Wörterbuchs (einmalig) | ≈ 390 ms, Spitze ≈ 112 MB, 250 835 Wörter, 410 Suffix-, 63 Prefixregeln |
+| Download + Übersetzen (`--force`, einmalig) | ≈ 1,5 s; zweiter Lauf (idempotent) ≈ 0,06 s |
+| `isAvailable()` (jeder Seitenaufbau) | ≈ 0,3 ms, ≈ 0,14 MB je Prozess |
+| `isUsable()` (erste echte Prüfung) | ≈ 0,35 ms, ≈ 1,3 MB je Prozess; danach ≈ 8 MB |
+| `check()` richtiges Wort / falsches Wort | ≈ 0,18 ms / ≈ 0,47 ms |
+| `suggest()` | ≈ 44 ms (Median ≈ 43 ms, p90 ≈ 61 ms, Maximum ≈ 113 ms) |
+| Vorschlagsqualität (197 Tippfehler) | 192 Treffer, 5 ohne Vorschlag, 0 Fehltreffer; Ziel im Mittel auf Rang 1,07 |
+| Zerlegung `a.a.a…` (35 Zeichen) | ≈ 7 ms, < 1 MB (vorher 11 s / 50 MB) |
+
+Die Speicherwerte beziehen sich auf einen Prozess; bei 176 Apache-Workern
+entspricht der Unterschied bei `isAvailable()` (5,4 MB → 0,14 MB) rund 0,9 GB
+über alle Prozesse.
+
+### 19.10 Bekannte Eigenheit: Abweichung in `spylls`
+
+Der Differenzlauf liefert genau ein Wort, bei dem `spylls` `ZE` (und `ZS`) für
+richtig hält, PHP aber nicht. Ursache ist ein **Fehler in `spylls`**:
+`readers/dic.py` übergibt für Wörter der Klasse `NO` eine Zeichenkette, wo eine
+Liste erwartet wird (`lower = aff.casing.lower(word) if captype != CapType.NO else word`);
+`data/dic.py::append()` iteriert sie deshalb **zeichenweise** und registriert
+jedes Wort unter jedem einzelnen Buchstaben seiner eigenen Schreibweise
+(`lowercase_index['z']` hat 30 623 Einträge, `lowercase_index['r']` 146 965;
+`ärztespezifisch` ist unter `'r'` auffindbar). Nachweisbar inkonsistent:
+`d.lookuper('ZE')` → `True`, aber `ZR`, `ZZZ`, `QQQ`, `AEZ`, `ZEZ`, `XZ`, `QZ`
+→ `False`, und `d.dic.homonyms('ZE')` ist leer. **Der PHP-Index ist korrekt;
+der Fehler darf nicht nachgebildet werden.**
+
+### 19.11 Nicht umgesetzte Hunspell-Funktionen
+
+de_DE_frami nutzt sie nicht; sie fehlen bewusst, weil sie ungenutzte
+Komplexität wären: `COMPOUNDRULE`/`CHECKCOMPOUNDPATTERN`/`SIMPLIFIEDTRIPLE`/
+`CHECKCOMPOUNDTRIPLE`/`CHECKCOMPOUNDCASE`/`CHECKCOMPOUNDDUP`,
+`COMPLEXPREFIXES`, `FORCEUCASE`, `COMPOUNDFORBIDFLAG`, `ICONV`/`OCONV`,
+`AF`/`AM`-Aliase, `PHONE` (Lautähnlichkeit). Auch Hunspells
+`-1`-Vorschlagsphase (verschiebbares Zeichen) ist nicht implementiert. Wird ein
+anderes Wörterbuch eingebunden, das diese Funktionen braucht, müssen sie in
+`OrvantaSpellcheckCompiler`/`OrvantaSpellcheckService` ergänzt werden
+(Abschnitt 13, „Rechtschreibprüfung erweitern“).
+
+### 19.12 Tests
+
+`tests/Unit/OrvantaSpellcheckTest.php` (Abschnitt 12).
+
+**Hinweis:** Die Docker-Teile (`docker/php/entrypoint.sh`,
+`scripts/spellcheck_dictionary.php` im Container) lassen sich in der
+Agentenumgebung nicht ausführen; das Skript wurde dort direkt (mit
+ausgehendem Netzzugriff) geprüft, der Entrypoint-Aufruf ist ungetestet.

@@ -31,6 +31,7 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 | **Notizen** 📝 | Kachelansicht, Anlegen/Bearbeiten/Löschen |
 | **Erinnerungen** | Terminerinnerungen als Dialog in der App, als Browser-Benachrichtigung (HTML5 Notifications API) und in den **Mitteilungen** der Intranet-Kopfzeile |
 | **KI-Unterstützung** 🤖 | Markierten Text per Rechtsklick vom lokalen KI-Modell (Office → Lokale KI) umformulieren lassen – in E-Mails, Terminen und Erinnerungen; Vorschläge hellblau markiert, verfeinerbar, zurücksetzbar; Marker werden vor dem Senden entfernt (Abschnitt 7) |
+| **Rechtschreibprüfung** ✍ | Deutsche Rechtschreibung in E-Mail- und Termin-Editoren: fehlerhafte Wörter rot gewellt unterstrichen, Rechtsklick → „Rechtschreibprüfung“ → „---Vorschläge---“ mit Ersetzen per Auswahl (Abschnitt 7b) |
 
 ![Kalender – Wochenansicht](screenshots/81-orvanta-kalender.png)
 
@@ -118,6 +119,8 @@ flowchart LR
     API --> EX[OrvantaExchangeService]
     API --> AT[OrvantaAttachmentService]
     API --> NO[OrvantaNotificationService]
+    API --> SP[OrvantaSpellcheckService]
+    SP --> SD[(storage/dictionaries/de_DE<br>uebersetztes Woerterbuch)]
     EX --> T{Transport}
     T -- Produktion --> C[CurlExchangeTransport<br>EWS SOAP, Negotiate/NTLM/Basic]
     T -- exchange_host = demo --> D[DemoExchangeTransport<br>Beispieldaten]
@@ -142,6 +145,9 @@ flowchart LR
 | `OrvantaRecipientService` | `app/Services/Orvanta/` | Empfänger-Vorschläge für An/Cc/Bcc: Telefonliste + Verlauf gesendeter Adressen (versteckte Datei `.empfaenger.json` in der Nextcloud des Benutzers, kurz in der Sitzung gehalten) |
 | `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile |
 | `OrvantaSignatureService` | `app/Services/Orvanta/` | Signaturvorlagen (Abschnitt 4a): Validierung, Zuordnung per AD-Gruppe, E-Mail-taugliches HTML aus Vorlage + Telefonliste + Design, `append()`/`strip()` beim Senden |
+| `OrvantaSpellcheckService` | `app/Services/Orvanta/` | Deutsche Rechtschreibprüfung (Abschnitt 7b): `check()` (Hunspell-Algorithmus: Affixe, Zusammensetzungen, Bindestrich-Zerlegung, Groß-/Kleinschreibung) und `suggest()` (Vorschläge, der wahrscheinlichste zuerst) |
+| `OrvantaSpellcheckCompiler` / `OrvantaSpellcheckDictionary` / `OrvantaSpellcheckCasing` | `app/Services/Orvanta/` | Übersetzt die Hunspell-Quelldateien einmalig in ein kompaktes Format bzw. liest es zur Laufzeit verzögert ein; gemeinsame Logik für Groß-/Kleinschreibung und scharfes S |
+| `scripts/spellcheck_dictionary.php` | `scripts/` | Einmaliger Download + Übersetzung des Wörterbuchs beim Containerstart (Abschnitt 7b) |
 | `Admin\OrvantaSignatureController` | `app/Controllers/Admin/OrvantaSignatureController.php` | Pflege der Signaturvorlagen unter `/admin/office/signaturen` (Liste, Formular, Vorschau-iframe) |
 | `OrvantaRepository` | `app/Repositories/OrvantaRepository.php` | Zugriff auf die drei Orvanta-Tabellen |
 | `OrvantaSignatureRepository` | `app/Repositories/OrvantaSignatureRepository.php` | Tabelle `orvanta_signatures` |
@@ -149,7 +155,7 @@ flowchart LR
 | Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php` | |
 | Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql` | |
 | `OrvantaMailRouter`, `ProxyMailBackend` | `app/Services/MailProxy/` | Backend-Auswahl je Benutzer (Exchange oder SMTP-/IMAP-Proxy, gemeinsames `OrvantaMailBackendInterface`); Details in [mail-proxy.md](mail-proxy.md) |
-| Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/MailProxyTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen gegen SQLite |
+| Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/OrvantaSpellcheckTest.php`, `tests/Unit/MailProxyTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen gegen SQLite; Rechtschreibung gegen ein eigenes Mini-Wörterbuch |
 
 ### Datenbank
 
@@ -180,6 +186,8 @@ flowchart LR
   `aufgaben/loeschen`, `notizen`, `notizen/notiz` (GET/POST),
   `notizen/loeschen`, `erinnerungen`, `erinnerungen/erledigt`,
   `erinnerungen/spaeter`, `ki/verbessern` (POST, KI-Unterstützung),
+  `rechtschreibung/pruefen` und `rechtschreibung/vorschlaege` (POST,
+  Rechtschreibprüfung, Abschnitt 7b),
   Langzeitarchiv (alle GET): `archiv/status`, `archiv/ordner`, `archiv/mail`,
   `archiv/mail/detail`, `archiv/suche`.
 - Admin (`$requireAdmin`): `GET|POST /admin/office/orvanta`,
@@ -569,6 +577,78 @@ Ablauf und Bedienung:
 
 ---
 
+## 7b. Rechtschreibprüfung
+
+Orvanta prüft deutsche Texte in den Editoren für E-Mails und Termine gegen das
+freie Wörterbuch **de_DE_frami** (igerman98 + frami, GPL) – unabhängig von der
+Rechtschreibhilfe des Browsers, die auf dem Server nicht steuerbar ist.
+
+### Bedienung
+
+1. Beim Tippen prüft Orvanta den Text und unterstreicht unbekannte Wörter
+   **rot gewellt**. Geprüft werden nur E-Mails (Verfassen, Antworten,
+   Weiterleiten, Entwürfe) und Terminbeschreibungen – nicht der
+   Signaturblock (der stammt aus der Vorlage, Abschnitt 4a) und nicht
+   Betreff- oder Empfängerfelder.
+2. Rechtsklick auf ein markiertes Wort → Untermenü **„Rechtschreibprüfung“** →
+   **„---Vorschläge---“** listet bis zu acht Vorschläge, der wahrscheinlichste
+   zuerst. Ein Klick ersetzt das Wort an Ort und Stelle.
+3. Ein Wort, das erst kurz zuvor getippt wurde, zeigt statt der Vorschläge
+   „Wird geprüft …“ bzw. „Wird gesucht …“; die Liste füllt sich, sobald die
+   Antwort des Servers da ist (ohne erneuten Rechtsklick).
+4. Ist ein Wort richtig geschrieben, erscheint das Untermenü gar nicht – das
+   normale Kontextmenü bleibt unverändert.
+
+Die Unterstreichung wird mit der **CSS Custom Highlight API** gezeichnet, der
+Editorinhalt selbst also nicht verändert. Dadurch bleiben Cursorposition,
+Auswahl, Formatierung und die Rückgängig-Historie des Browsers unberührt, und
+beim Senden ist kein Entfernen von Markierungen nötig (anders als bei den
+KI-Markern, Abschnitt 7). Browser ohne diese API (älter als Chrome/Edge 105,
+Safari 17.2, Firefox 140) verlieren nur die Unterstreichung; die Prüfung per
+Kontextmenü funktioniert weiter.
+
+### Wörterbuch
+
+- Das Wörterbuch wird **einmalig beim Start des `app`-Containers** aus dem Netz
+  geholt und in eine kompakte, beim Start nur teilweise gelesene Form
+  übersetzt (`storage/dictionaries/de_DE/`, nicht im Repository). Danach ist
+  kein Netzzugriff mehr nötig.
+- Quelle: `https://raw.githubusercontent.com/LibreOffice/dictionaries/master/de`
+  (`de_DE_frami.aff` und `.dic`), Lizenz GPLv2/GPLv3; die Herkunft steht in
+  `storage/dictionaries/de_DE/QUELLE.txt`.
+- Der Vorgang ist idempotent und bricht nichts ab: Ist das Verzeichnis bereits
+  gültig, passiert nichts. Schlägt Download oder Übersetzung fehl, startet
+  Orvanta normal weiter – nur ohne Rechtschreibprüfung. Manuell anstoßen:
+
+  ```bash
+  php scripts/spellcheck_dictionary.php --force   # neu laden und übersetzen
+  ```
+
+- **Speicher:** Für jeden Seitenaufbau wird nur die kleine Kennwertdatei
+  gelesen (≈ 0,14 MB je Apache-Prozess); Index und Regeln kommen erst bei der
+  ersten echten Prüfung dazu (≈ 1,3 MB), die Wortliste selbst wird nie
+  vollständig geladen, sondern Eintrag für Eintrag gelesen. Das ist bei den
+  176 Apache-Workern des Images der entscheidende Unterschied. Ist der
+  Bestand unvollständig, meldet die Prüfung jedes Wort als korrekt – lieber
+  keine Markierung als lauter falsche rote Wellenlinien.
+
+### Einstellungen
+
+| `.env` | Standard | Bedeutung |
+| --- | --- | --- |
+| `ORVANTA_SPELLCHECK` | `true` | Rechtschreibprüfung ein-/ausschalten |
+| `ORVANTA_SPELLCHECK_DIR` | `storage/dictionaries/de_DE` | Ablage des übersetzten Wörterbuchs |
+| `ORVANTA_SPELLCHECK_URL` | LibreOffice-Repository (s. o.) | Basisadresse der beiden Wörterbuchdateien |
+| `ORVANTA_SPELLCHECK_TIMEOUT` | `120` | Zeitlimit für den einmaligen Download (Sekunden) |
+
+Ist die Prüfung abgeschaltet oder fehlt das Wörterbuch, zeigt das Frontend
+weder Unterstreichung noch Kontextmenü-Eintrag. Die Prüfung läuft auf dem
+Intranet-Server; **kein** Wortinhalt verlässt das Haus, es gibt keine externe
+Rechtschreib-API. Anfragen sind auf 400 Wörter je Aufruf und 64 Zeichen je
+Wort begrenzt, der Browser schickt nur Wörter, die er noch nicht kennt.
+
+---
+
 ## 8. Demo-Modus und Tests
 
 - `exchange_host = demo` (nur bei `APP_ENV ≠ production`) aktiviert
@@ -585,6 +665,11 @@ Ablauf und Bedienung:
   `RecordingAiTransport`: Verfügbarkeit und Cache, Aufbau der
   `chat/completions`-Anfrage, Verfeinern, Validierung (422), Fehlerbilder
   (503/502), `stripMarkers()`, anonymisierte Auswertung und SVG-Bericht.
+- `tests/Unit/OrvantaSpellcheckTest.php` prüft die Rechtschreibprüfung gegen ein
+  eigenes Mini-Wörterbuch (wird im Test einmal übersetzt): Stammwörter, Affixe
+  und Groß-/Kleinschreibung, Umlaute/scharfes S/verbotene Schreibweisen,
+  Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen,
+  Vorschläge, Abschalten über die Konfiguration und die Anfragegrenzen.
 - `tests/Unit/OrvantaArchiveTest.php` prüft das Langzeitarchiv: Konfiguration,
   Stichtag, Copy-Verify-Commit-Delete, Wiederaufnahme nach Abbrüchen,
   Korruptionserkennung, Sperren, Suche und einen Massentest mit 1000
@@ -612,6 +697,10 @@ Ablauf und Bedienung:
   Ressourcen, keine Inline-Styles → CSP-konform über CSSOM).
 - Anhang-Links sind signiert, benutzergebunden und kurzlebig; Dateinamen werden
   für Nextcloud-Pfade bereinigt.
+- Rechtschreibprüfung: Der Text bleibt im Haus – geprüft wird auf dem
+  Intranet-Server gegen ein lokales Wörterbuch, es gibt keine externe
+  Rechtschreib-API. Nur einzelne Wörter (nie Zusammenhänge, nie Adressen)
+  gehen als JSON an `/api/orvanta/rechtschreibung/*`.
 - TLS-Prüfung gegenüber Exchange ist standardmäßig aktiv.
 
 ---
@@ -626,3 +715,13 @@ Ablauf und Bedienung:
 - S/MIME-Verschlüsselung und -Signatur werden nicht unterstützt.
 - Der Zwischenspeicher dient dem schnellen Öffnen; Exchange bleibt die
   führende Datenquelle.
+- Die Rechtschreibprüfung deckt die Editoren für E-Mails und Termine ab, nicht
+  Betreff-/Empfängerfelder, nicht den Signaturblock (der stammt aus der
+  Vorlage) und nicht die reine Nachrichtenanzeige. Die rote Unterstreichung
+  braucht einen Browser mit CSS Custom Highlight API (Abschnitt 7b); ohne sie
+  funktioniert nur noch die Prüfung per Kontextmenü. Ein Wort, das im
+  Wörterbuch fehlt (Fachbegriffe, Namen), wird als Fehler unterstrichen – es
+  gibt bewusst kein „Zum Wörterbuch hinzufügen“.
+- Das Wörterbuch wird beim Start des `app`-Containers einmalig aus dem Netz
+  geholt (Abschnitt 7b). Ohne ausgehenden Internetzugang beim ersten Start
+  bleibt die Rechtschreibprüfung aus, bis die Dateien bereitstehen.

@@ -4071,26 +4071,68 @@
 
     var ctx = {
         menu: null,
-        origin: null        // Element, von dem aus das Menue geoeffnet wurde (Fokusrueckgabe)
+        origin: null,       // Element, von dem aus das Menue geoeffnet wurde (Fokusrueckgabe)
+        openSub: null,      // aktuell geoeffnetes Untermenue
+        openWrap: null,     // zugehoeriger Menueeintrag (Fokusrueckgabe)
+        subRenderers: []    // Nachladen von Untermenue-Inhalten (z. B. Vorschlaege)
     };
 
+    function ctxCloseSub() {
+        if (!ctx.openSub) {
+            return;
+        }
+        ctx.openSub.hidden = true;
+        var opener = ctx.openWrap ? ctx.openWrap.querySelector('button') : null;
+        if (opener) {
+            opener.setAttribute('aria-expanded', 'false');
+        }
+        ctx.openSub = null;
+        ctx.openWrap = null;
+    }
+
+    function ctxOpenSub(wrap) {
+        var sub = wrap.querySelector('.ov-ctx-menu__sub');
+        if (!sub) {
+            return;
+        }
+        if (ctx.openWrap && ctx.openWrap !== wrap) {
+            ctxCloseSub();
+        }
+        sub.hidden = false;
+        var opener = wrap.querySelector('button');
+        if (opener) {
+            opener.setAttribute('aria-expanded', 'true');
+        }
+        // Neben dem Menue ist rechts kein Platz mehr: nach links oeffnen.
+        sub.classList.remove('ov-ctx-menu__sub--left');
+        if (sub.getBoundingClientRect().right > window.innerWidth - 8) {
+            sub.classList.add('ov-ctx-menu__sub--left');
+        }
+        ctx.openSub = sub;
+        ctx.openWrap = wrap;
+    }
+
+    /** Untermenues neu aufbauen (nachgeladene Vorschlaege, Zustandswechsel). */
+    function ctxRefreshSubmenus() {
+        if (!ctx.menu || ctx.menu.hidden) {
+            return;
+        }
+        ctx.subRenderers.slice().forEach(function (render) {
+            render();
+        });
+    }
+
     function ctxHide() {
+        ctxCloseSub();
+        ctx.subRenderers = [];
         if (ctx.menu && !ctx.menu.hidden) {
             ctx.menu.hidden = true;
             ctx.menu.innerHTML = '';
         }
     }
 
-    /**
-     * Menue mit Eintraegen { label, run, icon?, key?, title?, disabled?, ai? }
-     * bzw. { separator: true } an der Mausposition anzeigen. Liegt der Ursprung
-     * in einem modalen Dialog (Top-Layer), wandert das Menue dort hinein.
-     */
-    function ctxShow(event, items, origin) {
-        var menu = ctx.menu;
-        if (!menu) {
-            return false;
-        }
+    /** Trennlinien am Anfang/Ende und mehrfache Trennlinien entfernen. */
+    function ctxCleanItems(items) {
         var cleaned = [];
         items.forEach(function (item) {
             if (!item) {
@@ -4107,13 +4149,28 @@
         while (cleaned.length && cleaned[cleaned.length - 1].separator) {
             cleaned.pop();
         }
-        if (!cleaned.length) {
-            return false;
-        }
-        menu.innerHTML = '';
-        cleaned.forEach(function (item) {
+        return cleaned;
+    }
+
+    /**
+     * Eintraege in einen Menue-Container schreiben.
+     * { separator: true }               Trennlinie
+     * { header: true, label }           nicht anklickbare Ueberschrift
+     * { label, items: [...] | function } Untermenue (die Funktion wird bei jedem
+     *                                   Aufbau erneut ausgewertet)
+     * { label, run, icon?, key?, title?, disabled?, ai? } anklickbarer Eintrag
+     */
+    function ctxBuildItems(container, items, renderers) {
+        items.forEach(function (item) {
+            if (!item) {
+                return;
+            }
             if (item.separator) {
-                menu.appendChild(el('div', { 'class': 'ov-ctx-menu__sep', role: 'separator' }));
+                container.appendChild(el('div', { 'class': 'ov-ctx-menu__sep', role: 'separator' }));
+                return;
+            }
+            if (item.header) {
+                container.appendChild(el('div', { 'class': 'ov-ctx-menu__head', role: 'presentation', text: item.label }));
                 return;
             }
             var icon = typeof item.icon === 'string' || !item.icon
@@ -4122,15 +4179,65 @@
             var button = el('button', { type: 'button', role: 'menuitem', 'class': 'ov-ctx-menu__item' + (item.ai ? ' ov-ctx-menu__item--ai' : ''), title: item.title || null }, [
                 icon,
                 el('span', { 'class': 'ov-ctx-menu__label', text: item.label }),
-                item.key ? el('span', { 'class': 'ov-ctx-menu__key', 'aria-hidden': 'true', text: item.key }) : null
+                item.key ? el('span', { 'class': 'ov-ctx-menu__key', 'aria-hidden': 'true', text: item.key }) : null,
+                item.items ? el('span', { 'class': 'ov-ctx-menu__arrow', 'aria-hidden': 'true', text: '\u203a' }) : null
             ]);
             button.disabled = !!item.disabled;
+            if (item.items) {
+                var sub = el('div', { 'class': 'ov-ctx-menu__sub', role: 'menu', hidden: true });
+                var render = function () {
+                    sub.innerHTML = '';
+                    ctxBuildItems(sub, ctxCleanItems(typeof item.items === 'function' ? item.items() : item.items), []);
+                };
+                render();
+                button.setAttribute('aria-haspopup', 'true');
+                button.setAttribute('aria-expanded', 'false');
+                button.classList.add('ov-ctx-menu__item--sub');
+                var wrap = el('div', { 'class': 'ov-ctx-menu__sub-wrap' }, [button, sub]);
+                // Das Untermenue liegt im Eintrag selbst: Mausbewegungen dorthin
+                // verlassen den Eintrag nicht, er bleibt also geoeffnet.
+                wrap.addEventListener('mouseenter', function () { ctxOpenSub(wrap); });
+                wrap.addEventListener('mouseleave', ctxCloseSub);
+                button.addEventListener('click', function () {
+                    if (ctx.openWrap === wrap) {
+                        ctxCloseSub();
+                    } else {
+                        ctxOpenSub(wrap);
+                    }
+                });
+                container.appendChild(wrap);
+                if (renderers) {
+                    renderers.push(render);
+                }
+                return;
+            }
             button.addEventListener('click', function () {
                 ctxHide();
                 item.run();
             });
-            menu.appendChild(button);
+            container.appendChild(button);
         });
+    }
+
+    /**
+     * Menue mit Eintraegen { label, run, icon?, key?, title?, disabled?, ai? },
+     * { label, items } (Untermenue), { header: true } oder { separator: true }
+     * an der Mausposition anzeigen. Liegt der Ursprung in einem modalen Dialog
+     * (Top-Layer), wandert das Menue dort hinein.
+     */
+    function ctxShow(event, items, origin) {
+        var menu = ctx.menu;
+        if (!menu) {
+            return false;
+        }
+        var cleaned = ctxCleanItems(items);
+        if (!cleaned.length) {
+            return false;
+        }
+        menu.innerHTML = '';
+        ctxCloseSub();
+        ctx.subRenderers = [];
+        ctxBuildItems(menu, cleaned, ctx.subRenderers);
         ctx.origin = origin || null;
         var host = (origin && origin.closest && origin.closest('dialog')) || document.body;
         if (menu.parentNode !== host) {
@@ -4392,10 +4499,15 @@
         var origin = null;
         var field = ctxEditableField(target);
         if (field) {
-            // KI-Eintraege (nur bei Markierung bzw. KI-Block) vor den Standardbefehlen.
-            items = aiMenuItems(event);
+            // Rechtschreibpruefung direkt ueber dem Wort, dann KI-Eintraege
+            // (nur bei Markierung bzw. KI-Block), dann Standardbefehle.
+            items = spellMenuItems(event, field);
             if (items.length) {
                 items.push({ separator: true });
+            }
+            var aiItems = aiMenuItems(event);
+            if (aiItems.length) {
+                items = items.concat(aiItems, { separator: true });
             }
             items = items.concat(editMenuItems(field));
             origin = field;
@@ -4422,23 +4534,71 @@
         }
     }
 
+    /**
+     * Anwaehlbare Eintraege der aktuellen Ebene: Pfeiltasten bleiben im
+     * geoeffneten Untermenue, solange der Fokus darin steht.
+     */
+    function ctxFocusables() {
+        var menu = ctx.menu;
+        if (!menu) {
+            return [];
+        }
+        var scope = ctx.openSub && ctx.openSub.contains(document.activeElement) ? ctx.openSub : menu;
+        return $$('button:not(:disabled)', menu).filter(function (button) {
+            var sub = button.closest('.ov-ctx-menu__sub');
+            return sub ? sub === scope : scope === menu;
+        });
+    }
+
     function ctxOnKeydown(event) {
         var menu = ctx.menu;
         if (!menu || menu.hidden) {
             return;
         }
-        var buttons = $$('button:not(:disabled)', menu);
-        var index = buttons.indexOf(document.activeElement);
-        var inside = menu.contains(document.activeElement);
+        var inSub = !!(ctx.openSub && ctx.openSub.contains(document.activeElement));
+        var opener = ctx.openWrap ? ctx.openWrap.querySelector('button') : null;
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
+            if (inSub) {
+                // Erst das Untermenue schliessen, das Menue bleibt offen.
+                ctxCloseSub();
+                if (opener) {
+                    opener.focus();
+                }
+                return;
+            }
             ctxHide();
             if (ctx.origin && ctx.origin.focus) {
                 ctx.origin.focus();
             }
             return;
         }
+        if (event.key === 'ArrowRight' && !inSub && document.activeElement && document.activeElement.closest) {
+            var wrap = document.activeElement.closest('.ov-ctx-menu__sub-wrap');
+            if (wrap) {
+                event.preventDefault();
+                event.stopPropagation();
+                ctxOpenSub(wrap);
+                var children = $$('button:not(:disabled)', ctx.openSub);
+                if (children.length) {
+                    children[0].focus();
+                }
+                return;
+            }
+        }
+        if (event.key === 'ArrowLeft' && inSub) {
+            event.preventDefault();
+            event.stopPropagation();
+            ctxCloseSub();
+            if (opener) {
+                opener.focus();
+            }
+            return;
+        }
+        var buttons = ctxFocusables();
+        var index = buttons.indexOf(document.activeElement);
+        var inside = menu.contains(document.activeElement);
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
             event.preventDefault();
             event.stopPropagation();
@@ -4812,6 +4972,485 @@
     }
 
     // ------------------------------------------------------------------
+    // Deutsche Rechtschreibpruefung (rote Wellenlinie, Kontextmenue)
+    // ------------------------------------------------------------------
+    // Woerterbuch und Suchlauf liegen serverseitig
+    // (App\Services\Orvanta\OrvantaSpellcheckService); hier bleiben nur
+    // Markierung und Kontextmenue. Die rote Wellenlinie zeichnet die CSS
+    // Custom Highlight API: Der Editorinhalt wird dafuer nicht veraendert,
+    // Cursorposition, Formatierung und Rueckgaengig-Historie des Browsers
+    // bleiben also unberuehrt. Browser ohne diese API bekommen nur das
+    // Kontextmenue.
+
+    var SPELL_CHECK_URL = '/rechtschreibung/pruefen';
+    var SPELL_SUGGEST_URL = '/rechtschreibung/vorschlaege';
+    var SPELL_MAX_WORDS = 400;          // wie OrvantaSpellcheckService::MAX_WORDS_PER_REQUEST
+    var SPELL_MAX_WORD_LENGTH = 64;     // wie OrvantaSpellcheckService::MAX_WORD_LENGTH
+    var SPELL_MIN_WORD_LENGTH = 2;      // Einzelbuchstaben ("z. B.") nicht anmeckern
+    var SPELL_DEBOUNCE_MS = 400;
+    var SPELL_RETRY_MS = 30000;         // Pause nach einem Serverfehler
+    var SPELL_HIGHLIGHT = 'ov-spell-error';
+    // Nicht pruefen: Skripte/Styles und die feste Signatur (nicht aenderbar).
+    var SPELL_SKIP = 'script, style, [contenteditable="false"]';
+    var SPELL_BLOCKS = /^(P|DIV|LI|UL|OL|TR|TD|TH|BLOCKQUOTE|H[1-6]|PRE|TABLE|SECTION|ARTICLE)$/;
+
+    // Wortgrenzen wie in Hunspell (WORDCHARS ß-.): Buchstaben, Ziffern und
+    // einzelne Binde-/Schlusszeichen innerhalb des Wortes ("E-Mail", "z. B.").
+    var SPELL_TOKEN_RE = (function () {
+        try {
+            return new RegExp('[\\p{L}\\p{M}0-9]+(?:[.\\-\'\u2019]?[\\p{L}\\p{M}0-9]+)*', 'gu');
+        } catch (e) {
+            return new RegExp('[A-Za-z\u00c0-\u024f0-9]+(?:[.\\-\'\u2019]?[A-Za-z\u00c0-\u024f0-9]+)*', 'g');
+        }
+    }());
+
+    var spell = {
+        available: !!config.spellcheckAvailable,
+        marking: typeof CSS !== 'undefined' && !!CSS.highlights && typeof window.Highlight === 'function',
+        // Die Worttabellen ohne Prototyp anlegen: Woerter wie "constructor"
+        // oder "toString" wuerden sonst mit Object.prototype kollidieren und
+        // nie geprueft werden.
+        known: Object.create(null),          // Wort -> true (korrekt) | false (fehlerhaft)
+        queued: Object.create(null),         // Wort -> Anfrage laeuft
+        suggestions: Object.create(null),    // Wort -> Liste (leer: keine gefunden)
+        ranges: new Map(),                   // Editor -> markierte Bereiche
+        timers: new Map(),                   // Editor -> Tipppause
+        pendingSuggest: Object.create(null), // Wort -> laufende Vorschlagsabfrage
+        blockedUntil: 0
+    };
+
+    function spellEditors() {
+        return [hook('compose-body'), hook('event-body')].filter(Boolean);
+    }
+
+    function spellClearHighlight() {
+        if (spell.marking) {
+            CSS.highlights.delete(SPELL_HIGHLIGHT);
+        }
+    }
+
+    /**
+     * Editorinhalt als Text mit Zuordnung zu den Textknoten: Zell-/Absatzgrenzen
+     * zaehlen als Trennzeichen, damit Woerter nicht ueber Zeilen hinweg
+     * zusammenwachsen. Rueckgabe { value, segments } mit segments als
+     * [{ node, start, end }] in denselben Offsets wie value.
+     *
+     * @param {Element} editor
+     * @returns {{value: string, segments: Array<{node: Text, start: number, end: number}>}}
+     */
+    function spellText(editor) {
+        var scan = { value: '', segments: [] };
+        spellWalk(editor, scan);
+        return scan;
+    }
+
+    function spellWalk(node, scan) {
+        var children = node.childNodes;
+        for (var i = 0; i < children.length; i++) {
+            var child = children[i];
+            if (child.nodeType === 3) {
+                var value = child.nodeValue || '';
+                if (value !== '') {
+                    scan.segments.push({ node: child, start: scan.value.length, end: scan.value.length + value.length });
+                    scan.value += value;
+                }
+                continue;
+            }
+            if (child.nodeType !== 1) {
+                continue;
+            }
+            if (child.nodeName === 'BR') {
+                scan.value += '\n';
+                continue;
+            }
+            if (child.matches && child.matches(SPELL_SKIP)) {
+                continue;
+            }
+            spellWalk(child, scan);
+            if (SPELL_BLOCKS.test(child.nodeName)) {
+                scan.value += '\n';
+            }
+        }
+    }
+
+    /** Woerter des Textes mit Start-/Endposition. */
+    function spellTokens(text) {
+        var tokens = [];
+        var match;
+        SPELL_TOKEN_RE.lastIndex = 0;
+        while ((match = SPELL_TOKEN_RE.exec(text)) !== null) {
+            var word = match[0];
+            if (word.length >= SPELL_MIN_WORD_LENGTH && word.length <= SPELL_MAX_WORD_LENGTH) {
+                tokens.push({ word: word, start: match.index, end: match.index + word.length });
+            }
+            if (SPELL_TOKEN_RE.lastIndex === match.index) {
+                SPELL_TOKEN_RE.lastIndex++;
+            }
+        }
+        return tokens;
+    }
+
+    /** Wort an einer Textstelle (fuer das Kontextmenue). */
+    function spellWordIn(text, index) {
+        if (index < 0 || index > text.length) {
+            return null;
+        }
+        SPELL_TOKEN_RE.lastIndex = 0;
+        var match;
+        while ((match = SPELL_TOKEN_RE.exec(text)) !== null) {
+            var start = match.index;
+            var end = start + match[0].length;
+            if (index >= start && index <= end && match[0].length >= SPELL_MIN_WORD_LENGTH) {
+                return { value: match[0], start: start, end: end };
+            }
+            if (start > index) {
+                break;
+            }
+        }
+        return null;
+    }
+
+    function spellPosition(segments, offset) {
+        for (var i = 0; i < segments.length; i++) {
+            if (offset <= segments[i].end) {
+                return { node: segments[i].node, offset: Math.max(0, offset - segments[i].start) };
+            }
+        }
+        return null;
+    }
+
+    function spellRange(segments, start, end) {
+        var from = spellPosition(segments, start);
+        var to = spellPosition(segments, end);
+        if (!from || !to) {
+            return null;
+        }
+        var range = document.createRange();
+        range.setStart(from.node, from.offset);
+        range.setEnd(to.node, to.offset);
+        return range;
+    }
+
+    /** Markierte Bereiche eines Editors aus dem Wortzwischenspeicher zeichnen. */
+    function spellPaint(editor) {
+        var scan = spellText(editor);
+        var ranges = [];
+        spellTokens(scan.value).forEach(function (token) {
+            if (spell.known[token.word] === false) {
+                var range = spellRange(scan.segments, token.start, token.end);
+                if (range) {
+                    ranges.push(range);
+                }
+            }
+        });
+        spell.ranges.set(editor, ranges);
+    }
+
+    function spellApply() {
+        if (!spell.marking) {
+            return;
+        }
+        var highlight = new window.Highlight();
+        spell.ranges.forEach(function (ranges) {
+            ranges.forEach(function (range) {
+                highlight.add(range);
+            });
+        });
+        CSS.highlights.set(SPELL_HIGHLIGHT, highlight);
+    }
+
+    function spellRepaint() {
+        if (!spell.marking) {
+            return;
+        }
+        spellEditors().forEach(spellPaint);
+        spellApply();
+    }
+
+    function spellClear() {
+        spell.ranges.clear();
+        spellClearHighlight();
+    }
+
+    /**
+     * Fehlerhafte Woerter beim Server erfragen; unbekannte Woerter werden
+     * gesammelt, damit ein Durchgang moeglichst wenige Anfragen ausloest.
+     */
+    function spellCheck(words) {
+        if (!spell.available || Date.now() < spell.blockedUntil) {
+            return;
+        }
+        var pending = [];
+        words.forEach(function (word) {
+            if (spell.known[word] === undefined && !spell.queued[word]) {
+                spell.queued[word] = true;
+                pending.push(word);
+            }
+        });
+        if (!pending.length) {
+            return;
+        }
+        var batch = pending.slice(0, SPELL_MAX_WORDS);
+        var rest = pending.slice(SPELL_MAX_WORDS);
+        api(SPELL_CHECK_URL, { body: { words: batch } }).then(function (data) {
+            if (!data || data.available === false) {
+                spell.available = false;
+                spellClear();
+                return;
+            }
+            var bad = Object.create(null);
+            (data.misspelled || []).forEach(function (word) {
+                bad[word] = true;
+            });
+            batch.forEach(function (word) {
+                delete spell.queued[word];
+                spell.known[word] = bad[word] !== true;
+            });
+            spellRepaint();
+            ctxRefreshSubmenus();
+            if (rest.length) {
+                spellCheck(rest);
+            }
+        }).catch(function () {
+            // Serverfehler: kurz pausieren, damit die Pruefung nicht in einer
+            // Schleife erneut anfragt.
+            batch.forEach(function (word) {
+                delete spell.queued[word];
+            });
+            spell.blockedUntil = Date.now() + SPELL_RETRY_MS;
+        });
+    }
+
+    /** Vorschlaege zu einem Wort (gepuffert, hoechstens eine Anfrage je Wort). */
+    function spellSuggest(word) {
+        if (spell.suggestions[word] !== undefined) {
+            return window.Promise.resolve(spell.suggestions[word]);
+        }
+        if (spell.pendingSuggest[word]) {
+            return spell.pendingSuggest[word];
+        }
+        spell.pendingSuggest[word] = api(SPELL_SUGGEST_URL, { body: { word: word } })
+            .then(function (data) {
+                return (data && data.suggestions) || [];
+            })
+            .catch(function () {
+                return [];
+            })
+            .then(function (list) {
+                spell.suggestions[word] = list;
+                delete spell.pendingSuggest[word];
+                ctxRefreshSubmenus();
+                return list;
+            });
+        return spell.pendingSuggest[word];
+    }
+
+    /** Wort unter dem Mauszeiger samt Bereich zum Ersetzen. */
+    function spellWordAt(field, event) {
+        var caret = spellCaretAt(event.clientX, event.clientY);
+        if (!caret || !field.contains(caret.startContainer)) {
+            return null;
+        }
+        var node = caret.startContainer;
+        var offset = caret.startOffset;
+        var marked = spellMarkedAt(field, node, offset);
+        if (marked) {
+            return { field: field, word: marked.toString(), range: marked };
+        }
+        if (node.nodeType !== 3) {
+            return null;
+        }
+        var token = spellWordIn(node.nodeValue || '', offset);
+        if (!token) {
+            return null;
+        }
+        var range = document.createRange();
+        range.setStart(node, token.start);
+        range.setEnd(node, token.end);
+        return { field: field, word: token.value, range: range };
+    }
+
+    function spellCaretAt(x, y) {
+        if (document.caretRangeFromPoint) {
+            return document.caretRangeFromPoint(x, y);
+        }
+        if (document.caretPositionFromPoint) {
+            var position = document.caretPositionFromPoint(x, y);
+            if (position && position.offsetNode) {
+                var range = document.createRange();
+                range.setStart(position.offsetNode, position.offset);
+                range.collapse(true);
+                return range;
+            }
+        }
+        return null;
+    }
+
+    /** Bereits markiertes Wort an dieser Stelle (exakter Bereich). */
+    function spellMarkedAt(field, node, offset) {
+        var ranges = spell.ranges.get(field) || [];
+        var point = document.createRange();
+        try {
+            point.setStart(node, offset);
+            point.collapse(true);
+        } catch (e) {
+            return null;
+        }
+        for (var i = 0; i < ranges.length; i++) {
+            try {
+                if (ranges[i].compareBoundaryPoints(window.Range.START_TO_START, point) <= 0
+                    && ranges[i].compareBoundaryPoints(window.Range.END_TO_END, point) >= 0) {
+                    return ranges[i].cloneRange();
+                }
+            } catch (e) {
+                // Bereich zeigt nicht mehr ins Dokument.
+            }
+        }
+        return null;
+    }
+
+    /** Eintraege des Untermenues "Rechtschreibprüfung". */
+    function spellMenuEntries(info) {
+        if (spell.known[info.word] === true) {
+            return [{ label: 'Kein Fehler gefunden', header: true }];
+        }
+        if (spell.known[info.word] === undefined) {
+            spellCheck([info.word]);
+            return [{ label: '---Vorschläge---', header: true }, { label: 'Wird geprüft …', disabled: true }];
+        }
+        var entries = [{ label: '---Vorschläge---', header: true }];
+        var list = spell.suggestions[info.word];
+        if (list === undefined) {
+            spellSuggest(info.word);
+            entries.push({ label: 'Wird gesucht …', disabled: true });
+            return entries;
+        }
+        if (!list.length) {
+            entries.push({ label: 'Keine Vorschläge', disabled: true });
+            return entries;
+        }
+        list.forEach(function (suggestion) {
+            entries.push({ label: suggestion, run: function () { spellReplace(info, suggestion); } });
+        });
+        return entries;
+    }
+
+    function spellMenuItems(event, field) {
+        if (!spell.available || !field.isContentEditable || spellEditors().indexOf(field) === -1) {
+            return [];
+        }
+        var info = spellWordAt(field, event);
+        if (!info || spell.known[info.word] === true) {
+            return [];
+        }
+        return [{
+            label: 'Rechtschreibprüfung',
+            icon: '\u2713',
+            items: function () { return spellMenuEntries(info); }
+        }];
+    }
+
+    /**
+     * Fehlerhaftes Wort durch einen Vorschlag ersetzen. Der Bereich wird vorher
+     * markiert, damit insertText die Rueckgaengig-Historie des Browsers erhaelt.
+     */
+    function spellReplace(info, replacement) {
+        var field = info.field;
+        if (!field || !info.range || !field.contains(info.range.startContainer)) {
+            toast('Das Wort steht nicht mehr im Text.', 'info');
+            return;
+        }
+        field.focus();
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(info.range);
+        ctxInsertText(field, replacement);
+        // Vorschlaege stammen aus dem Woerterbuch und sind damit korrekt.
+        spell.known[replacement] = true;
+        delete spell.suggestions[replacement];
+        spellRepaint();
+    }
+
+    function spellSchedule(editor) {
+        var timer = spell.timers.get(editor);
+        if (timer) {
+            window.clearTimeout(timer);
+        }
+        spell.timers.set(editor, window.setTimeout(function () {
+            spell.timers.delete(editor);
+            spellScan(editor);
+        }, SPELL_DEBOUNCE_MS));
+    }
+
+    function spellScan(editor) {
+        if (!spell.available) {
+            return;
+        }
+        var scan = spellText(editor);
+        var tokens = spellTokens(scan.value);
+        var unknown = [];
+        tokens.forEach(function (token) {
+            if (spell.known[token.word] === undefined && unknown.indexOf(token.word) === -1) {
+                unknown.push(token.word);
+            }
+        });
+        if (spell.marking) {
+            var ranges = [];
+            tokens.forEach(function (token) {
+                if (spell.known[token.word] === false) {
+                    var range = spellRange(scan.segments, token.start, token.end);
+                    if (range) {
+                        ranges.push(range);
+                    }
+                }
+            });
+            spell.ranges.set(editor, ranges);
+            spellApply();
+        }
+        if (unknown.length) {
+            spellCheck(unknown);
+        }
+    }
+
+    function initSpellcheck() {
+        if (!spell.available) {
+            return;
+        }
+        spellEditors().forEach(function (editor) {
+            // Die Pruefung des Browsers kennt kein Deutsch und wuerde eine
+            // zweite, andersfarbige Wellenlinie zeichnen.
+            editor.setAttribute('spellcheck', 'false');
+            editor.addEventListener('input', function () {
+                // Waehrend des Tippens verschieben sich die Bereiche; die
+                // Markierung kommt nach der Tipppause zurueck.
+                spellClearHighlight();
+                spellSchedule(editor);
+            });
+            if (typeof window.MutationObserver === 'function') {
+                // Deckt auch programmatisch gesetzte Inhalte ab (Entwurf,
+                // Zitat, Signatur).
+                new window.MutationObserver(function () {
+                    spellSchedule(editor);
+                }).observe(editor, { childList: true, subtree: true, characterData: true });
+            }
+            var dialog = editor.closest('dialog');
+            if (dialog) {
+                dialog.addEventListener('close', function () {
+                    // Editor ist zu: Bereiche freigeben und nicht weiter pruefen.
+                    var timer = spell.timers.get(editor);
+                    if (timer) {
+                        window.clearTimeout(timer);
+                        spell.timers.delete(editor);
+                    }
+                    spell.ranges.delete(editor);
+                    spellApply();
+                });
+            }
+            spellSchedule(editor);
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Empfaenger-Vorschlaege aus der Telefonliste
     // ------------------------------------------------------------------
     // Gleicher Mechanismus wie die AD-Gruppen-Vorschlaege im Adminbereich
@@ -5171,6 +5810,7 @@
         bindEvents();
         initContextMenu();
         initAi();
+        initSpellcheck();
         initRecipientSuggestAll();
         updateNotifyState();
         setOnline(true);

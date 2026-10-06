@@ -130,6 +130,12 @@ final class OrvantaSpellcheckService
         if (!$this->isUsable()) {
             return true;
         }
+        // Abschliessende Punkte wie in Hunspell: erst ohne Punkt pruefen
+        // ("Ende."), dann mit einem Punkt als Abkuerzung ("usw.", "Nr.").
+        $base = rtrim($word, '.');
+        if ($base !== $word) {
+            return $base === '' || $this->isCorrect($base, true) || $this->isCorrect($base . '.', true);
+        }
 
         return $this->isCorrect($word, true);
     }
@@ -151,10 +157,34 @@ final class OrvantaSpellcheckService
             $this->suggestMemo = [];
         }
         $length = mb_strlen($word, 'UTF-8');
-        if ($length > self::SUGGEST_MAX_LENGTH || $this->isCorrect($word, true)) {
+        if ($length > self::SUGGEST_MAX_LENGTH || $this->check($word)) {
             return $this->suggestMemo[$word] = [];
         }
 
+        // Mit abschliessendem Punkt: Vorschlaege fuer das Wort ohne Punkt und
+        // zusaetzlich Abkuerzungen mit Punkt ("uws." -> "usw.").
+        $base = rtrim($word, '.');
+        $suggestions = $this->rankedSuggestions($base);
+        if ($base !== $word) {
+            foreach ($this->rankedSuggestions($base . '.') as $candidate => $rank) {
+                $candidate = (string) $candidate;
+                if (str_ends_with($candidate, '.') && !isset($suggestions[$candidate])) {
+                    $suggestions[$candidate] = $rank;
+                }
+            }
+            uasort($suggestions, static fn (array $a, array $b): int => $a <=> $b);
+        }
+
+        return $this->suggestMemo[$word] = array_map('strval', array_slice(array_keys($suggestions), 0, self::MAX_SUGGESTIONS));
+    }
+
+    /**
+     * Gepruefte Vorschlaege mit ihrem Rang, bestes zuerst.
+     *
+     * @return array<string,array{0:int,1:int,2:int,3:int}>
+     */
+    private function rankedSuggestions(string $word): array
+    {
         $candidates = $this->collectCandidates($word);
         uasort($candidates, static fn (array $a, array $b): int => $a <=> $b);
 
@@ -210,9 +240,8 @@ final class OrvantaSpellcheckService
         }
 
         uasort($suggestions, static fn (array $a, array $b): int => $a <=> $b);
-        $result = array_slice(array_keys($suggestions), 0, self::MAX_SUGGESTIONS);
 
-        return $this->suggestMemo[$word] = $result;
+        return array_slice($suggestions, 0, self::MAX_SUGGESTIONS, true);
     }
 
     /**
@@ -469,7 +498,9 @@ final class OrvantaSpellcheckService
         if ($forbidden !== '' && $this->hasFlag($word, $forbidden, true)) {
             return false;
         }
-        if (preg_match('/^[0-9]+(?:\.[0-9]+)?$/', $word) === 1) {
+        // Zahlen mit einzelnen Trennzeichen wie in Hunspell ("1.500", "1,5",
+        // "07.10.2026", "10-12").
+        if (preg_match('/^[0-9]+(?:[.,\-][0-9]+)*$/', $word) === 1) {
             return true;
         }
         $this->breakBudget = self::BREAK_BUDGET;

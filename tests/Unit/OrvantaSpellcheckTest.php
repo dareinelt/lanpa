@@ -64,6 +64,7 @@ AFF;
  * ACLs/S           -> Gross-/Kleinschreibung im Bestand (HUHINIT).
  * fug/xoz          -> nur innerhalb einer Zusammensetzung gueltig.
  * E, Mail, Adresse -> Zerlegung an Bindestrichen.
+ * usw.             -> Abkuerzung mit Punkt.
  */
 const SPELLCHECK_TEST_DIC = <<<'DIC'
 Haus/j
@@ -82,6 +83,7 @@ Boot/z
 E
 Mail/S
 Adresse/S
+usw.
 DIC;
 
 /** Verzeichnis mit aufbereitetem Pruefwoerterbuch (je Testlauf einmal). */
@@ -138,7 +140,7 @@ Runner::test('Rechtschreibung: Aufbereitung des Woerterbuchs', function (): void
     $dictionary = new OrvantaSpellcheckDictionary($directory);
     Assert::true($dictionary->isAvailable(), 'Das aufbereitete Woerterbuch sollte lesbar sein.');
     $meta = $dictionary->meta();
-    Assert::same(16, $meta['words'], 'Alle Stammwoerter sollten uebernommen werden.');
+    Assert::same(17, $meta['words'], 'Alle Stammwoerter sollten uebernommen werden.');
     Assert::same(4, $meta['suffixes'], 'Die drei SFX-Regeln sollten uebernommen werden.');
     Assert::same(1, $meta['prefixes'], 'Die PFX-Regel sollte uebernommen werden.');
     Assert::same(['-', '.'], $dictionary->breaks(), 'Beide BREAK-Muster sollten uebernommen werden.');
@@ -184,6 +186,13 @@ Runner::test('Rechtschreibung: Stammwoerter, Affixe und Gross-/Kleinschreibung',
         // Zahlen
         '12345' => true,
         '12.5' => true,
+        // Wie Hunspell: einzelne Trennzeichen zwischen Ziffern (Datum, Dezimalkomma, Bereich)
+        '07.10.2026' => true,
+        '1,5' => true,
+        '10-12' => true,
+        '1..2' => false,
+        ',5' => false,
+        '5-' => false,
     ], 'Wortpruefung');
 });
 
@@ -226,6 +235,25 @@ Runner::test('Rechtschreibung: Zerlegung an Bindestrichen', function (): void {
         'E-Mail-Adresse' => true,
         'E-Mai-Adresse' => false,
     ], 'Bindestrich');
+});
+
+Runner::test('Rechtschreibung: abschliessender Punkt und Abkuerzungen', function (): void {
+    spellcheckAssertWords([
+        // Satzende: ohne Punkt pruefen
+        'Haus.' => true,
+        'Rechnung.' => true,
+        'Rechnun.' => false,
+        // Abkuerzung: nur mit Punkt im Bestand
+        'usw.' => true,
+        'usw' => false,
+        'usw..' => true,
+        '.' => true,
+    ], 'Punkt');
+
+    $service = spellcheckService();
+    Assert::same('Rechnung', $service->suggest('Rechnun.')[0] ?? '', 'Vorschlaege gelten dem Wort ohne Punkt.');
+    Assert::contains('usw.', implode('|', $service->suggest('uws.')), 'Abkuerzungen mit Punkt sollten vorgeschlagen werden.');
+    Assert::same([], $service->suggest('Haus.'), 'Korrekte Woerter am Satzende erhalten keine Vorschlaege.');
 });
 
 Runner::test('Rechtschreibung: Vorschlaege', function (): void {
@@ -301,9 +329,11 @@ Runner::test('Rechtschreibung: viele Trennzeichen bleiben beherrschbar', functio
     // Obergrenze kostete ein eingefuegter Text wie "1.2.3.4.…" Sekunden und
     // zig Megabyte; die Pruefung muss in Sekundenbruchteilen bleiben.
     $started = microtime(true);
-    foreach (['a' . str_repeat('.a', 17), 'a' . str_repeat('-a', 16), '1.' . implode('.', range(2, 17))] as $word) {
+    foreach (['a' . str_repeat('.a', 17), 'a' . str_repeat('-a', 16), 'x1.' . implode('.', range(2, 17))] as $word) {
         Assert::false($service->check($word), 'Eine sinnlose Zerlegung ergibt kein korrektes Wort.');
     }
+    // Reine Zahlenfolgen gelten wie in Hunspell sofort als korrekt.
+    Assert::true($service->check('1.' . implode('.', range(2, 17))), 'Zahlen mit Trennzeichen sind korrekt.');
     $elapsed = microtime(true) - $started;
     Assert::true(
         $elapsed < 2.0,

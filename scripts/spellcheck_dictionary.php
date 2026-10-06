@@ -126,8 +126,16 @@ function download(string $url, string $target, int $timeout): void
     if ($content === false || $content === '') {
         throw new RuntimeException('Die Datei konnte nicht geladen werden: ' . $url);
     }
-    if (!str_contains($http_response_header[0] ?? '', '200')) {
-        throw new RuntimeException('Unerwartete Antwort beim Laden von ' . $url . ': ' . ($http_response_header[0] ?? 'ohne Status'));
+    // Nach Weiterleitungen enthaelt die Liste die Kopfzeilen aller Antworten;
+    // massgeblich ist die letzte Statuszeile.
+    $status = '';
+    foreach (http_get_last_response_headers() ?? [] as $header) {
+        if (str_starts_with($header, 'HTTP/')) {
+            $status = $header;
+        }
+    }
+    if (preg_match('#^HTTP/\S+\s+200\b#', $status) !== 1) {
+        throw new RuntimeException('Unerwartete Antwort beim Laden von ' . $url . ': ' . ($status !== '' ? $status : 'ohne Status'));
     }
     ensureDirectory(dirname($target));
     if (@file_put_contents($target, $content) === false) {

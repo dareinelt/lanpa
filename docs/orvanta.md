@@ -589,7 +589,11 @@ Rechtschreibhilfe des Browsers, die auf dem Server nicht steuerbar ist.
    **rot gewellt**. Geprüft werden nur E-Mails (Verfassen, Antworten,
    Weiterleiten, Entwürfe) und Terminbeschreibungen – nicht der
    Signaturblock (der stammt aus der Vorlage, Abschnitt 4a) und nicht
-   Betreff- oder Empfängerfelder.
+   Betreff- oder Empfängerfelder. Wie in Word/Outlook bleiben Web- und
+   E-Mail-Adressen, Wörter mit Ziffern (`A4`, `3x`) und Wörter ganz in
+   Großbuchstaben (`EDV`, `LG`) ungeprüft. Zahlen und Datumsangaben
+   (`1,5`, `07.10.2026`) gelten als richtig, Abkürzungen werden mit ihrem
+   Punkt geprüft (`usw.`, `bzw.`).
 2. Rechtsklick auf ein markiertes Wort → Untermenü **„Rechtschreibprüfung“** →
    **„---Vorschläge---“** listet bis zu acht Vorschläge, der wahrscheinlichste
    zuerst. Ein Klick ersetzt das Wort an Ort und Stelle.

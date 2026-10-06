@@ -512,6 +512,21 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 
 ## 6. Adminbereich „Office“
 
+„Office“ ist in der Admin-Navigation ein aufklappbarer Punkt; jeder Bereich ist
+eine eigene Unterseite:
+
+| Unterseite | Pfad |
+| --- | --- |
+| Status & Diagnose (inkl. Aktualisierung) | `/admin/office` |
+| Fußzeile und Einstieg (inkl. Vorschau) | `/admin/office/fusszeile` |
+| Lokale KI | `/admin/office/ki` |
+| Nextcloud-App-Store | `/admin/office/app-store` |
+| Office-Apps und Berechtigungen | `/admin/office/apps` |
+| Orvanta – Mail & Kalender | `/admin/office/orvanta` |
+| Signaturvorlagen | `/admin/office/signaturen` |
+| Kachel im Intranet | `/admin/office/kachel` |
+| Sicherung | `/admin/office/sicherung` |
+
 | Bereich | Inhalt |
 | --- | --- |
 | Status | Gesamtzustand, letzte Prüfung, „Jetzt prüfen“ |
@@ -534,7 +549,7 @@ Nextcloud zugreifen darf, regeln weiterhin `NEXTCLOUD_LDAP_ALLOWED_GROUPS` und
 
 ## 6a. Lokale KI
 
-Unter **Admin → Office → Lokale KI** (`/admin/office#ki`) wird ein lokaler,
+Unter **Admin → Office → Lokale KI** (`/admin/office/ki`) wird ein lokaler,
 OpenAI-kompatibler KI-Endpunkt hinterlegt (z. B. Ollama, vLLM, LocalAI,
 LM Studio). Er steht danach **allen Benutzern** in Nextcloud und Euro-Office
 zur Verfügung; die Option „KI für alle Benutzer bereitstellen“ ist
@@ -617,7 +632,7 @@ Wird die KI deaktiviert, schaltet Nextcloud `integration_openai` und
 
 ## 6b. Nextcloud-App-Store ausblenden
 
-Unter **Admin → Office → Nextcloud-App-Store** (`/admin/office#app-store`)
+Unter **Admin → Office → Nextcloud-App-Store** (`/admin/office/app-store`)
 lässt sich der App-Store von Nextcloud deaktivieren (Schalter „App-Store in
 Nextcloud anzeigen“, Standard: an). Die Einstellung (`office_appstore_enabled`)
 wird sofort signiert an `intranet_integration` übertragen

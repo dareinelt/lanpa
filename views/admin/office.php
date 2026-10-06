@@ -6,6 +6,7 @@ use App\Security\Csrf;
 use App\Services\Office\OfficeAiService;
 use App\Support\Html;
 
+/** @var string $section Unterseite: status|footer|ai|appstore|orvanta|tile|backup */
 /** @var bool $enabled */
 /** @var bool $jwtConfigured */
 /** @var string $publicPath */
@@ -13,7 +14,7 @@ use App\Support\Html;
 /** @var array<string,string> $values */
 /** @var array<string,string> $errors */
 /** @var array<string,mixed>|null $health */
-/** @var array<string,mixed> $backup */
+/** @var array<string,mixed>|null $backup nur auf der Unterseite „Sicherung“ */
 /** @var array<string,mixed>|null $tile */
 /** @var array<string,mixed>|null $tileValues */
 /** @var array<string,string> $tileErrors */
@@ -26,7 +27,7 @@ use App\Support\Html;
 /** @var bool $orvantaDemo */
 /** @var string $orvantaEwsUrl */
 /** @var list<array{user_uid:string,items:int,bytes:int}> $orvantaCacheUsage */
-/** @var array{period:int,from:string,to:string,totals:array<string,int>,users:list<array<string,mixed>>,days:list<array<string,mixed>>,svg:array<string,string>} $orvantaAiReport */
+/** @var array{period:int,from:string,to:string,totals:array<string,int>,users:list<array<string,mixed>>,days:list<array<string,mixed>>,svg:array<string,string>}|null $orvantaAiReport nur auf der Unterseite „Orvanta“ */
 /** @var list<int> $orvantaAiPeriods */
 /** @var array{auth:array<string,string>,identity:array<string,string>,versions:array<string,string>,folders:array<string,string>} $orvantaOptions */
 /** @var array<string,mixed> $previewConfig */
@@ -79,6 +80,7 @@ $connector = is_array($diagnostics['connector'] ?? null) ? $diagnostics['connect
 $apps = is_array($diagnostics['apps'] ?? null) ? $diagnostics['apps'] : [];
 $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 ?>
+<?php if ($section === 'status') { ?>
 <?php if (!$enabled) { ?>
     <section class="card">
         <h2 class="card__title">Office ist nicht aktiviert</h2>
@@ -180,9 +182,23 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
     </p>
 </section>
 
+<section class="card" aria-labelledby="office-update-title">
+    <h2 class="card__title" id="office-update-title">Aktualisierung</h2>
+    <p class="card__hint">
+        Aktualisierungen stammen ausschließlich aus den offiziellen Quellen (Container-Images von
+        Nextcloud und Euro-Office, Connector aus dem Nextcloud-App-Store). Vor dem Update wird
+        automatisch gesichert:
+    </p>
+    <pre class="code-block"><code>./scripts/office-update.sh --check
+./scripts/office-update.sh --eurooffice &lt;Version&gt; --nextcloud &lt;Version&gt;</code></pre>
+</section>
+<?php } ?>
+
+<?php if ($section === 'footer') { ?>
+
 <section class="card" id="fusszeile" aria-labelledby="office-config-title">
     <h2 class="card__title" id="office-config-title">Fußzeile und Einstieg</h2>
-    <form method="post" action="/admin/office" class="form form--wide" data-office-form>
+    <form method="post" action="/admin/office/fusszeile" class="form form--wide" data-office-form>
         <?= Csrf::field() ?>
 
         <div class="field field--check">
@@ -240,6 +256,21 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
     </form>
 </section>
 
+<section class="card" aria-labelledby="office-preview-title">
+    <h2 class="card__title" id="office-preview-title">Vorschau der Fußzeile</h2>
+    <p class="card__hint">Die Vorschau verwendet dasselbe Stylesheet und Skript wie Nextcloud. Änderungen im Formular werden sofort angezeigt (gespeichert wird erst mit „Speichern“).</p>
+    <div class="office-preview" data-office-preview data-office-config="<?= Html::e((string) $previewJson) ?>">
+        <div class="office-preview__app" aria-hidden="true">
+            <div class="office-preview__bar"></div>
+            <div class="office-preview__doc"></div>
+        </div>
+    </div>
+    <link rel="stylesheet" href="<?= Html::e((string) $previewConfig['assets']['css']) ?>">
+    <script src="<?= Html::e((string) $previewConfig['assets']['js']) ?>" defer></script>
+</section>
+<?php } ?>
+
+<?php if ($section === 'ai') { ?>
 <?php
 $aiField = static function (string $name) use ($aiErrors): string {
     return isset($aiErrors[$name]) ? 'aria-invalid="true" aria-describedby="' . Html::e($name) . '-error"' : '';
@@ -355,6 +386,9 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
         </div>
     </dialog>
 </section>
+<?php } ?>
+
+<?php if ($section === 'appstore') { ?>
 
 <section class="card" id="app-store" aria-labelledby="office-appstore-title">
     <h2 class="card__title" id="office-appstore-title">Nextcloud-App-Store</h2>
@@ -378,33 +412,9 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
         </div>
     </form>
 </section>
+<?php } ?>
 
-<section class="card" aria-labelledby="office-preview-title">
-    <h2 class="card__title" id="office-preview-title">Vorschau der Fußzeile</h2>
-    <p class="card__hint">Die Vorschau verwendet dasselbe Stylesheet und Skript wie Nextcloud. Änderungen im Formular werden sofort angezeigt (gespeichert wird erst mit „Speichern“).</p>
-    <div class="office-preview" data-office-preview data-office-config="<?= Html::e((string) $previewJson) ?>">
-        <div class="office-preview__app" aria-hidden="true">
-            <div class="office-preview__bar"></div>
-            <div class="office-preview__doc"></div>
-        </div>
-    </div>
-    <link rel="stylesheet" href="<?= Html::e((string) $previewConfig['assets']['css']) ?>">
-    <script src="<?= Html::e((string) $previewConfig['assets']['js']) ?>" defer></script>
-</section>
-
-<section class="card" id="apps" aria-labelledby="office-apps-title">
-    <h2 class="card__title" id="office-apps-title">Office-Apps und Berechtigungen</h2>
-    <p class="card__hint">
-        Ein Klick auf die Office-Kachel zeigt die einzelnen Apps: die Euro-Office-Webapps (Text, Tabelle,
-        Präsentation, PDF), „Dateien“ (eigene Dateien in Nextcloud) und die „Outlook Web App“.
-        Welche Apps ein Benutzer sieht, wird über AD-Gruppen je App oder App-Paket geregelt; nicht
-        angemeldete Nutzer erhalten keine Office-Apps. Dort wird auch der Link zur Outlook Web App hinterlegt.
-    </p>
-    <div class="form__actions">
-        <a class="button button--primary" href="/admin/office/apps">Apps und Berechtigungen verwalten</a>
-    </div>
-</section>
-
+<?php if ($section === 'orvanta') { ?>
 <?php
 $ovField = static function (string $name) use ($orvantaErrors): string {
     return isset($orvantaErrors[$name]) ? 'aria-invalid="true" aria-describedby="ov-' . Html::e($name) . '-error"' : '';
@@ -718,15 +728,15 @@ $ov = $orvantaValues;
             <div>
                 <h3 class="card__subtitle">KI-Unterstützung – Nutzung</h3>
                 <p class="form__hint">
-                    Orvanta nutzt das unter <a href="#ki">Lokale KI</a> hinterlegte Modell<?= $aiActive ? '' : ' (derzeit nicht aktiv – die Funktion wird den Benutzern nicht angeboten)' ?>.
+                    Orvanta nutzt das unter <a href="/admin/office/ki">Lokale KI</a> hinterlegte Modell<?= $aiActive ? '' : ' (derzeit nicht aktiv – die Funktion wird den Benutzern nicht angeboten)' ?>.
                     Der Bericht ist anonymisiert: Benutzer erscheinen nur als „Benutzer 1…n“, die Zuordnung wird nicht gespeichert; Texte und Anweisungen werden nie protokolliert.
                 </p>
             </div>
         </div>
-        <form method="get" action="/admin/office" class="orvanta-ai-report__period" aria-label="Zeitraum des Berichts">
+        <form method="get" action="/admin/office/orvanta" class="orvanta-ai-report__period" aria-label="Zeitraum des Berichts">
             <span>Zeitraum:</span>
             <?php foreach ($orvantaAiPeriods as $days) { ?>
-                <button type="submit" name="ki_zeitraum" value="<?= (int) $days ?>" class="button orvanta-ai-report__button<?= $days === $orvantaAiReport['period'] ? ' button--primary' : '' ?>" formaction="/admin/office#orvanta-ki"><?= (int) $days ?> Tage</button>
+                <button type="submit" name="ki_zeitraum" value="<?= (int) $days ?>" class="button orvanta-ai-report__button<?= $days === $orvantaAiReport['period'] ? ' button--primary' : '' ?>" formaction="/admin/office/orvanta#orvanta-ki"><?= (int) $days ?> Tage</button>
             <?php } ?>
             <span class="form__hint"><?= Html::e($orvantaAiReport['from']) ?> bis <?= Html::e($orvantaAiReport['to']) ?></span>
         </form>
@@ -767,7 +777,9 @@ $ov = $orvantaValues;
         <?php } ?>
     </div>
 </section>
+<?php } ?>
 
+<?php if ($section === 'tile') { ?>
 <section class="card" id="kachel" aria-labelledby="office-tile-title">
     <h2 class="card__title" id="office-tile-title">Kachel im Intranet</h2>
     <?php if ($tile !== null && $tileValues !== null) {
@@ -873,7 +885,9 @@ $ov = $orvantaValues;
         </form>
     <?php } ?>
 </section>
+<?php } ?>
 
+<?php if ($section === 'backup') { ?>
 <section class="card" id="sicherung" aria-labelledby="office-backup-title">
     <h2 class="card__title" id="office-backup-title">Sicherung der Office-Daten</h2>
     <?php if (!$backup['available']) { ?>
@@ -942,14 +956,4 @@ $ov = $orvantaValues;
         </p>
     <?php } ?>
 </section>
-
-<section class="card" aria-labelledby="office-update-title">
-    <h2 class="card__title" id="office-update-title">Aktualisierung</h2>
-    <p class="card__hint">
-        Aktualisierungen stammen ausschließlich aus den offiziellen Quellen (Container-Images von
-        Nextcloud und Euro-Office, Connector aus dem Nextcloud-App-Store). Vor dem Update wird
-        automatisch gesichert:
-    </p>
-    <pre class="code-block"><code>./scripts/office-update.sh --check
-./scripts/office-update.sh --eurooffice &lt;Version&gt; --nextcloud &lt;Version&gt;</code></pre>
-</section>
+<?php } ?>

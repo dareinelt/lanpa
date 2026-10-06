@@ -21,7 +21,8 @@ use Throwable;
 
 /**
  * Adminbereich "Office": Konfiguration, Gesundheit/Diagnose, Fusszeilen-
- * Vorschau, Sicherung und Einrichtung der Kachel.
+ * Vorschau, Sicherung und Einrichtung der Kachel. Jeder Bereich ist eine
+ * eigene Unterseite (siehe PAGES) des Navigationspunkts "Office".
  */
 final class OfficeController extends AdminController
 {
@@ -33,9 +34,55 @@ final class OfficeController extends AdminController
     ];
 
     private const TILE_DESIGN_KEYS = ['title', 'short_description', 'description', 'icon', 'background_color', 'background_opacity'];
+
+    /**
+     * Unterseiten: Abschnitt => [Pfad, activeNav-Schluessel, Seitentitel].
+     *
+     * @var array<string,array{0:string,1:string,2:string}>
+     */
+    public const PAGES = [
+        'status' => ['/admin/office', 'office', 'Office – Status & Diagnose'],
+        'footer' => ['/admin/office/fusszeile', 'office_footer', 'Office – Fußzeile und Einstieg'],
+        'ai' => ['/admin/office/ki', 'office_ai', 'Office – Lokale KI'],
+        'appstore' => ['/admin/office/app-store', 'office_appstore', 'Office – Nextcloud-App-Store'],
+        'orvanta' => ['/admin/office/orvanta', 'office_orvanta', 'Office – Orvanta (Mail & Kalender)'],
+        'tile' => ['/admin/office/kachel', 'office_tile', 'Office – Kachel im Intranet'],
+        'backup' => ['/admin/office/sicherung', 'office_backup', 'Office – Sicherung'],
+    ];
+
     public function index(Request $request): Response
     {
-        return $this->render(aiPeriod: OrvantaAiCharts::period($request->query['ki_zeitraum'] ?? null));
+        return $this->render('status');
+    }
+
+    public function showFooter(Request $request): Response
+    {
+        return $this->render('footer');
+    }
+
+    public function showAi(Request $request): Response
+    {
+        return $this->render('ai');
+    }
+
+    public function showAppStore(Request $request): Response
+    {
+        return $this->render('appstore');
+    }
+
+    public function showOrvanta(Request $request): Response
+    {
+        return $this->render('orvanta', aiPeriod: OrvantaAiCharts::period($request->query['ki_zeitraum'] ?? null));
+    }
+
+    public function showTile(Request $request): Response
+    {
+        return $this->render('tile');
+    }
+
+    public function showBackup(Request $request): Response
+    {
+        return $this->render('backup');
     }
 
     public function update(Request $request): Response
@@ -46,14 +93,14 @@ final class OfficeController extends AdminController
         if ($result['errors'] !== []) {
             Session::flash('error', 'Bitte prüfen Sie die Office-Einstellungen.');
 
-            return $this->render($result['errors'], $result['values'], 422);
+            return $this->render('footer', $result['errors'], $result['values'], 422);
         }
 
         Container::settings()->update($result['values']);
         app_logger()->info('Office-Einstellungen geändert.', ['admin' => Container::auth()->username()]);
         Session::flash('success', 'Die Office-Einstellungen wurden gespeichert.');
 
-        return $this->redirect('/admin/office');
+        return $this->redirect(self::PAGES['footer'][0]);
     }
 
     /**
@@ -69,7 +116,7 @@ final class OfficeController extends AdminController
         if ($result['errors'] !== []) {
             Session::flash('error', 'Bitte prüfen Sie die KI-Einstellungen.');
 
-            return $this->render(status: 422, aiErrors: $result['errors'], aiValues: $result['values']);
+            return $this->render('ai', status: 422, aiErrors: $result['errors'], aiValues: $result['values']);
         }
 
         Container::settings()->update($result['values']);
@@ -98,7 +145,7 @@ final class OfficeController extends AdminController
 
         Session::flash($ok ? 'success' : 'error', implode(' ', $messages));
 
-        return $this->redirect('/admin/office#ki');
+        return $this->redirect(self::PAGES['ai'][0]);
     }
 
     /**
@@ -147,7 +194,7 @@ final class OfficeController extends AdminController
             Session::flash($pushed['ok'] ? 'success' : 'error', $message . ' Nextcloud: ' . $pushed['message']);
         }
 
-        return $this->redirect('/admin/office#app-store');
+        return $this->redirect(self::PAGES['appstore'][0]);
     }
 
     /**
@@ -164,7 +211,7 @@ final class OfficeController extends AdminController
             Session::flash('error', 'Bitte prüfen Sie die Orvanta-Einstellungen.');
             $values = array_diff_key($request->post, ['_token' => true, 'exchange_service_password' => true]);
 
-            return $this->render(status: 422, orvantaErrors: $exception->errors(), orvantaValues: array_map('strval', array_filter($values, 'is_scalar')));
+            return $this->render('orvanta', status: 422, orvantaErrors: $exception->errors(), orvantaValues: array_map('strval', array_filter($values, 'is_scalar')));
         }
 
         $config = Container::orvantaConfig();
@@ -177,7 +224,7 @@ final class OfficeController extends AdminController
         ]);
         Session::flash('success', 'Die Orvanta-Einstellungen wurden gespeichert.' . ($config->isDemo() ? ' Der Demo-Modus mit Beispieldaten ist aktiv.' : ''));
 
-        return $this->redirect('/admin/office#orvanta');
+        return $this->redirect(self::PAGES['orvanta'][0]);
     }
 
     /**
@@ -190,13 +237,13 @@ final class OfficeController extends AdminController
         if (!$config->isEnabled()) {
             Session::flash('error', 'Orvanta ist nicht aktiviert. Bitte zuerst die Exchange-Anbindung aktivieren und speichern.');
 
-            return $this->redirect('/admin/office#orvanta');
+            return $this->redirect(self::PAGES['orvanta'][0]);
         }
         $mailbox = trim((string) $request->input('mailbox', ''));
         if ($mailbox !== '' && filter_var($mailbox, FILTER_VALIDATE_EMAIL) === false) {
             Session::flash('error', 'Bitte eine gültige E-Mail-Adresse für den Test angeben.');
 
-            return $this->redirect('/admin/office#orvanta');
+            return $this->redirect(self::PAGES['orvanta'][0]);
         }
         try {
             $result = Container::orvantaExchange()->testConnection($mailbox);
@@ -208,7 +255,7 @@ final class OfficeController extends AdminController
             Session::flash('error', 'Verbindungstest fehlgeschlagen: ' . $exception->getMessage());
         }
 
-        return $this->redirect('/admin/office#orvanta');
+        return $this->redirect(self::PAGES['orvanta'][0]);
     }
 
     public function check(Request $request): Response
@@ -256,7 +303,7 @@ final class OfficeController extends AdminController
             Session::flash('error', $exception->getMessage());
         }
 
-        return $this->redirect('/admin/office#sicherung');
+        return $this->redirect(self::PAGES['backup'][0]);
     }
 
     public function createTile(Request $request): Response
@@ -266,7 +313,7 @@ final class OfficeController extends AdminController
         if (Container::navigationRepository()->findActiveInternalByUrl(PublicOfficeController::ENTRY_PATH) !== null) {
             Session::flash('error', 'Eine Office-Kachel ist bereits vorhanden.');
 
-            return $this->redirect('/admin/office');
+            return $this->redirect(self::PAGES['tile'][0]);
         }
 
         try {
@@ -282,7 +329,7 @@ final class OfficeController extends AdminController
         } catch (ValidationException $exception) {
             Session::flash('error', 'Die Kachel konnte nicht angelegt werden: ' . implode(' ', $exception->errors()));
 
-            return $this->redirect('/admin/office');
+            return $this->redirect(self::PAGES['tile'][0]);
         }
 
         app_logger()->info('Office-Kachel angelegt.', ['admin' => Container::auth()->username(), 'id' => $id]);
@@ -302,7 +349,7 @@ final class OfficeController extends AdminController
         if ($tile === null) {
             Session::flash('error', 'Es ist keine Office-Kachel vorhanden.');
 
-            return $this->redirect('/admin/office#kachel');
+            return $this->redirect(self::PAGES['tile'][0]);
         }
 
         $mode = (string) ($request->post['office_tile_status'] ?? 'full');
@@ -321,7 +368,7 @@ final class OfficeController extends AdminController
         if ($errors !== []) {
             Session::flash('error', 'Bitte prüfen Sie die Gestaltung der Kachel.');
 
-            return $this->render([], [], 422, $errors, $merged + ['office_tile_status' => $mode]);
+            return $this->render('tile', [], [], 422, $errors, $merged + ['office_tile_status' => $mode]);
         }
 
         Container::navigationRepository()->update((int) $tile['id'], $validated);
@@ -329,7 +376,7 @@ final class OfficeController extends AdminController
         app_logger()->info('Office-Kachel gestaltet.', ['admin' => Container::auth()->username(), 'id' => (int) $tile['id']]);
         Session::flash('success', 'Die Gestaltung der Office-Kachel wurde gespeichert.');
 
-        return $this->redirect('/admin/office#kachel');
+        return $this->redirect(self::PAGES['tile'][0]);
     }
 
     /**
@@ -415,6 +462,7 @@ final class OfficeController extends AdminController
     }
 
     /**
+     * @param string $section Abschnitt/Unterseite (Schluessel aus PAGES)
      * @param array<string,string> $errors
      * @param array<string,string> $values
      * @param array<string,string> $tileErrors
@@ -426,6 +474,7 @@ final class OfficeController extends AdminController
      * @param int $aiPeriod Zeitraum des KI-Nutzungsberichts in Tagen
      */
     private function render(
+        string $section,
         array $errors = [],
         array $values = [],
         int $status = 200,
@@ -452,9 +501,12 @@ final class OfficeController extends AdminController
         $previewConfig['enabled'] = true;
         $previewConfig['preview'] = true;
 
+        [, $activeNav, $pageTitle] = self::PAGES[$section];
+
         return $this->adminView('admin.office', [
-            'pageTitle' => 'Office (Euro-Office)',
-            'activeNav' => 'office',
+            'pageTitle' => $pageTitle,
+            'activeNav' => $activeNav,
+            'section' => $section,
             'enabled' => $office->isEnabled(),
             'jwtConfigured' => $office->hasJwtSecret(),
             'publicPath' => $office->publicPath(),
@@ -462,7 +514,7 @@ final class OfficeController extends AdminController
             'values' => $current,
             'errors' => $errors,
             'health' => $health,
-            'backup' => Container::officeBackup()->status(),
+            'backup' => $section === 'backup' ? Container::officeBackup()->status() : null,
             'tile' => $tile,
             'tileValues' => $tileValues ?? ($tile !== null ? $tile + ['office_tile_status' => $office->tileStatusMode()] : null),
             'tileErrors' => $tileErrors,
@@ -480,8 +532,8 @@ final class OfficeController extends AdminController
             'orvantaEnabled' => $orvanta->isEnabled(),
             'orvantaDemo' => $orvanta->isDemo(),
             'orvantaEwsUrl' => $orvanta->ewsUrl(),
-            'orvantaCacheUsage' => Container::orvantaRepository()->cacheUsagePerUser(),
-            'orvantaAiReport' => Container::orvantaAiCharts()->report($aiPeriod),
+            'orvantaCacheUsage' => $section === 'orvanta' ? Container::orvantaRepository()->cacheUsagePerUser() : [],
+            'orvantaAiReport' => $section === 'orvanta' ? Container::orvantaAiCharts()->report($aiPeriod) : null,
             'orvantaAiPeriods' => OrvantaAiCharts::PERIODS,
             'orvantaOptions' => [
                 'auth' => OrvantaConfigService::AUTH_MODES,

@@ -176,7 +176,7 @@ flowchart LR
   `erinnerungen/spaeter`, `ki/verbessern` (POST, KI-Unterstützung),
   Langzeitarchiv (alle GET): `archiv/status`, `archiv/ordner`, `archiv/mail`,
   `archiv/mail/detail`, `archiv/suche`.
-- Admin (`$requireAdmin`): `POST /admin/office/orvanta`,
+- Admin (`$requireAdmin`): `GET|POST /admin/office/orvanta`,
   `POST /admin/office/orvanta/pruefen`; Signaturvorlagen
   `GET /admin/office/signaturen`, `GET|POST /admin/office/signaturen/vorlage`,
   `POST /admin/office/signaturen/loeschen`,
@@ -219,7 +219,7 @@ des Postfachs (`ErrorNonPrimarySmtpAddress`), übernimmt Orvanta die von Exchang
 genannte primäre Adresse, wiederholt die Anfrage und merkt sich die Zuordnung
 24 Stunden (`storage/cache/orvanta_primary_smtp.json`).
 
-### Admin-Einstellungen (`/admin/office#orvanta`)
+### Admin-Einstellungen (`/admin/office/orvanta`)
 
 ![Adminbereich – Orvanta](screenshots/87-admin-office-orvanta.png)
 
@@ -430,7 +430,7 @@ Kontextmenü erscheinen.
 
 ### Nutzungsbericht im Adminbereich
 
-Unter `/admin/office#orvanta-ki` zeigt die Orvanta-Karte den anonymisierten
+Unter `/admin/office/orvanta#orvanta-ki` zeigt die Orvanta-Karte den anonymisierten
 Bericht: Anfragen je Benutzer (Pseudonyme „Benutzer 1…n“, Zuordnung wird nicht
 gespeichert und wechselt je Zeitraum), Anfragen je Tag und Token je Tag, jeweils
 als serverseitig erzeugtes SVG ohne JavaScript und ohne `style`-Attribute

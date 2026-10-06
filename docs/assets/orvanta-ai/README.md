@@ -44,7 +44,7 @@ docker compose exec app php scripts/create_admin.php admin '<Kennwort>'
 ```
 
 Orvanta: `http://localhost:8080/office/orvanta` – Bericht:
-`http://localhost:8080/admin/office?ki_zeitraum=30#orvanta-ki`. Für gefüllte
+`http://localhost:8080/admin/office/orvanta?ki_zeitraum=30#orvanta-ki`. Für gefüllte
 Diagramme vorher einige Verbesserungen auslösen (oder Testzeilen in
 `orvanta_ai_usage` einfügen).
 

@@ -12,7 +12,7 @@ use App\Support\Html;
 /** @var bool $orvantaEnabled */
 ?>
 <div class="toolbar">
-    <a class="button button--ghost" href="/admin/office#orvanta">Zurück zu Office</a>
+    <a class="button button--ghost" href="/admin/office/orvanta">Zurück zu Office</a>
     <a class="button button--primary" href="/admin/office/signaturen/vorlage">Neue Signaturvorlage</a>
 </div>
 

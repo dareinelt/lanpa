@@ -1832,6 +1832,106 @@ body.has-nav-tree-overlay {
     color: var(--color-muted);
 }
 
+/* Active Directory: Fortschritt der manuellen Synchronisation im Overlay */
+.ad-sync {
+    --ad-sync-ok: #1a7f37;
+    --ad-sync-warn: #9a6700;
+    --ad-sync-error: #cf222e;
+    width: min(40rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    background: var(--color-surface);
+    color: inherit;
+}
+
+[data-theme="dark"] .ad-sync {
+    --ad-sync-ok: #7ee787;
+    --ad-sync-warn: #e3b341;
+    --ad-sync-error: #ff7b72;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .ad-sync {
+        --ad-sync-ok: #7ee787;
+        --ad-sync-warn: #e3b341;
+        --ad-sync-error: #ff7b72;
+    }
+}
+
+.ad-sync::backdrop {
+    background: rgba(5, 18, 32, .55);
+}
+
+.ad-sync h2 {
+    margin-top: 0;
+}
+
+.ad-sync__status {
+    margin: 0;
+    color: var(--color-muted);
+}
+
+.ad-sync__sources {
+    list-style: none;
+    margin: 1rem 0;
+    padding: 0;
+}
+
+.ad-sync__source {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: .15rem 1rem;
+    padding: .45rem 0 .45rem 1.6rem;
+    position: relative;
+    border-top: 1px solid var(--color-border);
+}
+
+.ad-sync__source:first-child {
+    border-top: 0;
+}
+
+.ad-sync__source::before {
+    position: absolute;
+    left: 0;
+    top: .45rem;
+    font-weight: 700;
+}
+
+.ad-sync__label {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.ad-sync__state {
+    text-align: right;
+}
+
+.ad-sync__detail {
+    grid-column: 1 / -1;
+    font-size: .8125rem;
+    overflow-wrap: anywhere;
+}
+
+.ad-sync__source--waiting { color: var(--color-muted); }
+.ad-sync__source--waiting::before { content: "○"; }
+.ad-sync__source--running::before { content: "…"; color: var(--color-primary); }
+.ad-sync__source--ok::before { content: "✓"; color: var(--ad-sync-ok); }
+.ad-sync__source--warn::before { content: "!"; color: var(--ad-sync-warn); }
+.ad-sync__source--warn .ad-sync__detail { color: var(--ad-sync-warn); }
+.ad-sync__source--error::before { content: "✗"; color: var(--ad-sync-error); }
+.ad-sync__source--error .ad-sync__state,
+.ad-sync__source--error .ad-sync__detail { color: var(--ad-sync-error); }
+
+.ad-sync__summary {
+    margin: 0;
+    font-weight: 600;
+}
+
+.ad-sync__summary--ok { color: var(--ad-sync-ok); }
+.ad-sync__summary--error { color: var(--ad-sync-error); }
+
 /* Cold-Tier-Erweiterungen: gestapelte Kapazitaet und Ziele innerhalb einer Kachel */
 .tier-members {
     display: grid;

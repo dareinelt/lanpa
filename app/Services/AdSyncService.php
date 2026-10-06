@@ -42,16 +42,41 @@ final class AdSyncService
     }
 
     /**
-     * @return array{status:string,processed:int,deactivated:int,message:?string,groups:?int,sources:list<array{id:int,label:string,status:string,processed:int,deactivated:int,message:?string,groups:?int}>}
+     * Quellen in der Reihenfolge, in der sie synchronisiert werden.
+     *
+     * @return list<array{id:int,label:string}>
      */
-    public function run(): array
+    public function sources(): array
+    {
+        return array_map(
+            static fn (array $source): array => ['id' => $source['id'], 'label' => $source['label']],
+            $this->sources
+        );
+    }
+
+    /**
+     * @param (callable(string,array<string,mixed>):void)|null $onProgress
+     *        erhaelt vor jeder Quelle ('start', {id,label}) und danach
+     *        ('done', Ergebnis der Quelle) – z. B. fuer die Fortschrittsanzeige
+     *
+     * @return array{status:string,processed:int,deactivated:int,message:?string,groups:?int,sources:list<array{id:int,label:string,status:string,processed:int,deactivated:int,message:?string,groups:?int,warning:?string}>}
+     */
+    public function run(?callable $onProgress = null): array
     {
         $runId = $this->syncLog->start();
         $syncedAt = date('Y-m-d H:i:s');
 
         $results = [];
         foreach ($this->sources as $source) {
-            $results[] = ['id' => $source['id'], 'label' => $source['label']] + $this->syncSource($source, $syncedAt);
+            if ($onProgress !== null) {
+                $onProgress('start', ['id' => $source['id'], 'label' => $source['label']]);
+            }
+            $result = ['id' => $source['id'], 'label' => $source['label']] + $this->syncSource($source, $syncedAt);
+            $results[] = $result;
+            if ($onProgress !== null) {
+                unset($result['log']);
+                $onProgress('done', $result);
+            }
         }
 
         $processed = array_sum(array_column($results, 'processed'));
@@ -101,7 +126,7 @@ final class AdSyncService
     /**
      * @param array{id:int,label:string,client:LdapClientInterface} $source
      *
-     * @return array{status:string,processed:int,deactivated:int,message:?string,log:?string,groups:?int}
+     * @return array{status:string,processed:int,deactivated:int,message:?string,log:?string,groups:?int,warning:?string}
      */
     private function syncSource(array $source, string $syncedAt): array
     {
@@ -128,10 +153,12 @@ final class AdSyncService
         // Gruppen sind optional: Schlaegt ihr Abruf fehl, werden die Benutzer
         // trotzdem synchronisiert und der letzte Gruppenbestand bleibt erhalten.
         $groups = null;
+        $warning = null;
         if ($this->groups !== null) {
             try {
                 $groups = $client->fetchGroups();
             } catch (Throwable $exception) {
+                $warning = 'AD-Gruppen konnten nicht gelesen werden – bisheriger Gruppenbestand bleibt erhalten: ' . $exception->getMessage();
                 $this->logger->warning('AD-Gruppen' . $context . ' konnten nicht gelesen werden – bisheriger Gruppenbestand bleibt erhalten: ' . $exception->getMessage());
             }
         }
@@ -176,21 +203,22 @@ final class AdSyncService
             'message' => null,
             'log' => null,
             'groups' => $groupCount,
+            'warning' => $warning,
         ];
     }
 
     /**
-     * @return array{status:string,processed:int,deactivated:int,message:?string,log:?string,groups:?int}
+     * @return array{status:string,processed:int,deactivated:int,message:?string,log:?string,groups:?int,warning:?string}
      */
     private function failure(string $message, string $log): array
     {
-        return ['status' => 'error', 'processed' => 0, 'deactivated' => 0, 'message' => $message, 'log' => $log, 'groups' => null];
+        return ['status' => 'error', 'processed' => 0, 'deactivated' => 0, 'message' => $message, 'log' => $log, 'groups' => null, 'warning' => null];
     }
 
     /**
      * @param list<array<string,mixed>> $results
      *
-     * @return array{status:string,processed:int,deactivated:int,message:?string,groups:?int,sources:list<array{id:int,label:string,status:string,processed:int,deactivated:int,message:?string,groups:?int}>}
+     * @return array{status:string,processed:int,deactivated:int,message:?string,groups:?int,sources:list<array{id:int,label:string,status:string,processed:int,deactivated:int,message:?string,groups:?int,warning:?string}>}
      */
     private function publicResult(string $status, int $processed, int $deactivated, ?string $message, ?int $groups, array $results): array
     {
@@ -200,7 +228,7 @@ final class AdSyncService
             $sources[] = $result;
         }
 
-        /** @var list<array{id:int,label:string,status:string,processed:int,deactivated:int,message:?string,groups:?int}> $sources */
+        /** @var list<array{id:int,label:string,status:string,processed:int,deactivated:int,message:?string,groups:?int,warning:?string}> $sources */
         return [
             'status' => $status,
             'processed' => $processed,

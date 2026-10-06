@@ -49,6 +49,7 @@ Runner::test('Fehler beim Gruppenabruf lässt Benutzer-Sync laufen und alte Grup
 
     Assert::same('success', $result['status']);
     Assert::null($result['groups']);
+    Assert::contains('AD-Gruppen konnten nicht gelesen werden', (string) $result['sources'][0]['warning']);
     Assert::same(0, count($groups->replaced));
     Assert::same(1, count($store->upserted));
 });

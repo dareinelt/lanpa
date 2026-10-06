@@ -10,6 +10,13 @@ use PDO;
  * Gemeldete Netzlaufwerke der Windows-Clients (je Benutzer und Buchstabe).
  * Bewusst ohne MySQL-spezifisches Upsert (auch mit SQLite testbar).
  *
+ * Benutzerkennungen werden klein geschrieben gespeichert und gesucht. Windows
+ * meldet den Anmeldenamen in gemischter Schreibweise; die Nextcloud-App
+ * normalisiert Kennungen ebenfalls auf Kleinbuchstaben
+ * (intranet_integration, NetworkDriveService::normalizePayload()). Zugleich
+ * bleibt der Index uniq_network_drives_user_letter nutzbar - ein LOWER() auf
+ * der Spalte wuerde ihn ausschliessen.
+ *
  * @phpstan-type DriveRow array{user_uid:string,display_name:string,drive_letter:string,unc_path:string,domain:string,computer_name:string,reported_at:string}
  */
 final class NetworkDriveRepository extends Repository
@@ -28,15 +35,17 @@ final class NetworkDriveRepository extends Repository
     }
 
     /**
+     * Gemeldeter Stand eines Benutzers (fuer den Vergleich vor dem Schreiben).
+     *
      * @return list<DriveRow>
      */
     public function forUser(string $uid): array
     {
         $statement = $this->pdo->prepare(
             'SELECT user_uid, display_name, drive_letter, unc_path, domain, computer_name, reported_at
-               FROM network_drives WHERE LOWER(user_uid) = LOWER(:uid) ORDER BY drive_letter ASC'
+               FROM network_drives WHERE user_uid = :uid ORDER BY drive_letter ASC'
         );
-        $statement->execute(['uid' => $uid]);
+        $statement->execute(['uid' => self::normalizeUid($uid)]);
 
         return array_map(self::row(...), $statement->fetchAll(PDO::FETCH_ASSOC));
     }
@@ -48,9 +57,10 @@ final class NetworkDriveRepository extends Repository
      */
     public function replaceForUser(string $uid, string $displayName, array $drives, string $domain, string $computer): void
     {
+        $uid = self::normalizeUid($uid);
         $this->pdo->beginTransaction();
         try {
-            $this->pdo->prepare('DELETE FROM network_drives WHERE LOWER(user_uid) = LOWER(:uid)')->execute(['uid' => $uid]);
+            $this->pdo->prepare('DELETE FROM network_drives WHERE user_uid = :uid')->execute(['uid' => $uid]);
             $insert = $this->pdo->prepare(
                 'INSERT INTO network_drives (user_uid, display_name, drive_letter, unc_path, domain, computer_name)
                  VALUES (:uid, :name, :letter, :unc, :domain, :computer)'
@@ -72,12 +82,39 @@ final class NetworkDriveRepository extends Repository
         }
     }
 
-    public function deleteForUser(string $uid): int
+    /**
+     * Fuehrt eine unveraenderte Meldung nach: Meldezeitpunkt und die
+     * Anzeigedaten der Uebersicht (die Liste "letzte Meldung" darf nicht
+     * veralten). Die Laufwerke selbst bleiben unberuehrt.
+     */
+    public function touchForUser(string $uid, string $displayName, string $domain, string $computer): int
     {
-        $statement = $this->pdo->prepare('DELETE FROM network_drives WHERE LOWER(user_uid) = LOWER(:uid)');
-        $statement->execute(['uid' => $uid]);
+        $statement = $this->pdo->prepare(
+            'UPDATE network_drives
+                SET display_name = :name, domain = :domain, computer_name = :computer, reported_at = CURRENT_TIMESTAMP
+              WHERE user_uid = :uid'
+        );
+        $statement->execute([
+            'uid' => self::normalizeUid($uid),
+            'name' => $displayName,
+            'domain' => $domain,
+            'computer' => $computer,
+        ]);
 
         return $statement->rowCount();
+    }
+
+    public function deleteForUser(string $uid): int
+    {
+        $statement = $this->pdo->prepare('DELETE FROM network_drives WHERE user_uid = :uid');
+        $statement->execute(['uid' => self::normalizeUid($uid)]);
+
+        return $statement->rowCount();
+    }
+
+    private static function normalizeUid(string $uid): string
+    {
+        return strtolower($uid);
     }
 
     /**

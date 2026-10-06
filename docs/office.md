@@ -256,8 +256,12 @@ Die auf dem Windows-Client gemappten Netzlaufwerke (z. B. `H:` →
    bei jeder Windows-Anmeldung im Benutzerkontext, wartet kurz auf die per
    Gruppenrichtlinie verbundenen Laufwerke und meldet alle Netzlaufwerke
    (Buchstabe → UNC-Pfad, Domäne, Computername) per Windows-Anmeldung
-   (Kerberos/NTLM, kein Kennwort) an `POST /sso/laufwerke`. Jede Meldung
-   ersetzt den bisherigen Stand des Benutzers. Protokoll auf dem Client:
+   (Kerberos/NTLM, kein Kennwort) an `POST /sso/laufwerke`. Die Meldung wird
+   mit dem gespeicherten Stand verglichen: Sind Laufwerke, Domäne und
+   Computername unverändert, wird nur der Meldezeitpunkt (`reported_at`)
+   aktualisiert – kein Ersetzen der Datensätze und keine Übergabe an
+   Nextcloud. Erst eine echte Änderung schreibt den neuen Stand und stößt die
+   Übergabe an. Protokoll auf dem Client:
    `%LOCALAPPDATA%\Intranet\netzlaufwerke.log`.
 2. **Ausschlussliste:** Adminbereich **Netzlaufwerke** pflegt die Laufwerke,
    die **nie** weitergereicht werden (Standard `B:/, G:/`; leeres Feld = keine

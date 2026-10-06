@@ -56,6 +56,23 @@ function drivesOkProbe(): FakeOfficeProbe
     return $probe;
 }
 
+/**
+ * Zaehlt Schreibzugriffe auf network_drives mit, um zu belegen, dass eine
+ * unveraenderte Meldung keine Laufwerke loescht und neu anlegt.
+ */
+function drivesWriteLog(PDO $pdo): void
+{
+    $pdo->exec('CREATE TABLE drive_writes (op TEXT NOT NULL)');
+    $pdo->exec("CREATE TRIGGER drive_writes_insert AFTER INSERT ON network_drives BEGIN INSERT INTO drive_writes VALUES ('insert'); END");
+    $pdo->exec("CREATE TRIGGER drive_writes_delete AFTER DELETE ON network_drives BEGIN INSERT INTO drive_writes VALUES ('delete'); END");
+}
+
+/** @return list<string> */
+function drivesWrites(PDO $pdo): array
+{
+    return array_column($pdo->query('SELECT op FROM drive_writes ORDER BY rowid')->fetchAll(PDO::FETCH_ASSOC), 'op');
+}
+
 Runner::test('Netzlaufwerke: Laufwerksbuchstaben und UNC-Pfade werden geprueft', static function (): void {
     Assert::same(['B', 'G'], NetworkDriveService::parseLetters('B:/, G:/'));
     Assert::same(['B', 'G', 'H'], NetworkDriveService::parseLetters('h:\\ b; G: g'));
@@ -162,6 +179,86 @@ Runner::test('Netzlaufwerke: Meldung ersetzt den Stand, ausgeschlossene Laufwerk
         $errors = $exception->errors();
     }
     Assert::true(isset($errors['user']));
+});
+
+Runner::test('Netzlaufwerke: unveraenderte Meldung schreibt nur den Meldezeitpunkt nach', static function (): void {
+    $pdo = drivesPdo();
+    drivesWriteLog($pdo);
+    $probe = drivesOkProbe();
+    $service = drivesService($pdo, $probe);
+
+    // Windows meldet den Anmeldenamen in gemischter Schreibweise.
+    $first = $service->report(['office_uid' => 'AMueller', 'display_name' => 'Anna Müller'], 'H=\\\\fs01\\home\\amueller', 'example', 'pc-0815');
+    Assert::true($first['changed']);
+    Assert::same(['insert'], drivesWrites($pdo));
+
+    // Die Meldung ist unveraendert (jede Anmeldung des Clients).
+    $pdo->exec("UPDATE network_drives SET reported_at = '2000-01-01 00:00:00'");
+    $pdo->exec('DELETE FROM drive_writes');
+    $result = $service->report(['office_uid' => 'amueller', 'display_name' => 'Anna Müller'], "H=\\\\fs01\\home\\amueller\r\n", 'EXAMPLE', 'PC-0815');
+
+    Assert::false($result['changed']);
+    Assert::null($result['push']);
+    Assert::same(1, count($probe->requests), 'Unveraenderte Meldungen loesen keine Uebertragung aus.');
+    Assert::same([], drivesWrites($pdo), 'Unveraenderte Meldungen loeschen und schreiben keine Laufwerke.');
+
+    $rows = $service->rows();
+    Assert::same(1, count($rows), 'Beide Schreibweisen treffen dieselbe Zeile.');
+    Assert::same('amueller', $rows[0]['user_uid']);
+    Assert::same('Anna Müller', $rows[0]['display_name']);
+    Assert::true($rows[0]['reported_at'] !== '2000-01-01 00:00:00', 'Die Liste „letzte Meldung“ darf nicht veralten.');
+
+    // Namenswechsel des Kontos wird auch ohne Laufwerksaenderung nachgefuehrt.
+    $result = $service->report(['office_uid' => 'amueller', 'display_name' => 'Anna M.'], 'H=\\\\fs01\\home\\amueller', 'EXAMPLE', 'PC-0815');
+    Assert::false($result['changed']);
+    Assert::same('Anna M.', $service->rows()[0]['display_name']);
+});
+
+Runner::test('Netzlaufwerke: Meldung ohne Laufwerke erzeugt keinen Schreibverkehr', static function (): void {
+    $pdo = drivesPdo();
+    drivesWriteLog($pdo);
+    $probe = drivesOkProbe();
+    $service = drivesService($pdo, $probe);
+    $user = ['office_uid' => 'amueller', 'display_name' => 'Anna Müller'];
+
+    // Client ohne gemappte Laufwerke meldet sich wiederholt ohne Inhalt.
+    $first = $service->report($user, '', 'EXAMPLE', 'PC-0815');
+    Assert::false($first['changed']);
+    Assert::null($first['push']);
+    Assert::same([], drivesWrites($pdo));
+    Assert::same(0, count($probe->requests));
+
+    // Vorhandener Stand wird durch eine leere Meldung entfernt.
+    $service->report($user, 'H=\\\\fs01\\home\\amueller', 'EXAMPLE', 'PC-0815');
+    Assert::same(1, count($service->rows()));
+    $pdo->exec('DELETE FROM drive_writes');
+    $result = $service->report($user, '', 'EXAMPLE', 'PC-0815');
+    Assert::true($result['changed']);
+    Assert::same(['delete'], drivesWrites($pdo));
+    Assert::same(0, count($service->rows()));
+});
+
+Runner::test('Netzlaufwerke: geaenderte Meldung ersetzt nur den eigenen Stand', static function (): void {
+    $pdo = drivesPdo();
+    drivesWriteLog($pdo);
+    $probe = drivesOkProbe();
+    $service = drivesService($pdo, $probe);
+
+    $service->report(['office_uid' => 'amueller', 'display_name' => 'Anna Müller'], "B=\\\\fs01\\backup\nH=\\\\fs01\\home\\amueller", 'EXAMPLE', 'PC-0815');
+    $service->report(['office_uid' => 'bschmidt', 'display_name' => 'Bernd Schmidt'], 'H=\\\\fs01\\home\\bschmidt', 'EXAMPLE', 'PC-4711');
+    Assert::same(2, $service->summary()['users']);
+    $pushes = count($probe->requests);
+
+    $pdo->exec('DELETE FROM drive_writes');
+    $result = $service->report(['office_uid' => 'amueller', 'display_name' => 'Anna Müller'], "H=\\\\fs01\\home\\amueller\nS=\\\\fs01\\scans", 'EXAMPLE', 'PC-0815');
+
+    // Ausgeschlossenes B: faellt weg, neues S: kommt hinzu - nur fuer amueller.
+    Assert::true($result['changed']);
+    Assert::same(['delete', 'delete', 'insert', 'insert'], drivesWrites($pdo));
+    $mine = array_values(array_filter($service->rows(), static fn (array $row): bool => $row['user_uid'] === 'amueller'));
+    Assert::same(['H' => '\\\\fs01\\home\\amueller', 'S' => '\\\\fs01\\scans'], array_column($mine, 'unc_path', 'drive_letter'));
+    Assert::same($pushes + 1, count($probe->requests));
+    Assert::false(str_contains((string) end($probe->requests)['body'], 'backup'), 'Ausgeschlossene Laufwerke verlassen das Intranet nicht.');
 });
 
 Runner::test('Netzlaufwerke: Uebertragung an Nextcloud ist signiert und an den Inhalt gebunden', static function (): void {

@@ -176,7 +176,8 @@ final class NetworkDriveService
             throw new ValidationException(['user' => 'Ungültige Benutzerkennung.']);
         }
 
-        $excluded = array_flip($this->excludedLetters());
+        $excludedLetters = $this->excludedLetters();
+        $excluded = array_flip($excludedLetters);
         $drives = [];
         $accepted = [];
         $ignored = [];
@@ -213,15 +214,54 @@ final class NetworkDriveService
         $computer = preg_match(self::NAME_PATTERN, trim($computer)) === 1 ? strtoupper(trim($computer)) : '';
         $displayName = Validator::cleanText((string) $user['display_name'], 255);
 
-        $before = $this->fingerprint();
-        $this->repository->replaceForUser($uid, $displayName, array_values($drives), $domain, $computer);
-        $changed = !hash_equals($before, $this->fingerprint());
+        // Der Normalfall ist eine unveraenderte Meldung bei jeder
+        // Windows-Anmeldung. Deshalb wird zuerst verglichen und nur bei
+        // Abweichung geschrieben (statt wie frueher immer DELETE + INSERT je
+        // Laufwerk). Zwei Vergleiche mit unterschiedlicher Aufgabe:
+        //  - sameState(): der gespeicherte Stand insgesamt - entscheidet, ob
+        //    ersetzt oder nur der Meldezeitpunkt nachgefuehrt wird.
+        //  - $changed: der an Nextcloud weitergereichte Ausschnitt (ohne
+        //    ausgeschlossene Laufwerke) - entscheidet ueber die Uebertragung
+        //    und ist die Kennzahl in Antwort und Protokoll.
+        $stored = $this->repository->forUser($uid);
+        $drivesList = array_values($drives);
+
+        $changed = $this->isEnabled()
+            && self::pushableUsers($stored, $excludedLetters) !== self::pushableReport($uid, $drivesList, $domain, $excludedLetters);
+
+        if (self::sameState($stored, $drives, $domain, $computer)) {
+            $this->repository->touchForUser($uid, $displayName, $domain, $computer);
+        } else {
+            $this->repository->replaceForUser($uid, $displayName, $drivesList, $domain, $computer);
+        }
 
         // Unveraenderte Meldungen (der Normalfall bei jeder Anmeldung) loesen
         // keine Uebertragung aus; die Gesundheitspruefung gleicht ohnehin ab.
         $push = $changed ? $this->pushIfEnabled() : null;
 
         return ['accepted' => $accepted, 'ignored' => $ignored, 'changed' => $changed, 'push' => $push];
+    }
+
+    /**
+     * Entspricht der gespeicherte Stand genau der neuen Meldung?
+     *
+     * @param list<array{user_uid:string,display_name:string,drive_letter:string,unc_path:string,domain:string,computer_name:string,reported_at:string}> $stored
+     * @param array<string,array{letter:string,unc:string}> $drives nach Buchstaben sortiert
+     */
+    private static function sameState(array $stored, array $drives, string $domain, string $computer): bool
+    {
+        if (count($stored) !== count($drives)) {
+            return false;
+        }
+        foreach ($stored as $row) {
+            $drive = $drives[$row['drive_letter']] ?? null;
+            if ($drive === null || $drive['unc'] !== $row['unc_path']
+                || $row['domain'] !== $domain || $row['computer_name'] !== $computer) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -274,29 +314,106 @@ final class NetworkDriveService
             return [];
         }
 
-        $excluded = array_flip($this->excludedLetters());
+        return self::pushableUsers($this->repository->all(), $this->excludedLetters());
+    }
+
+    /**
+     * Weiterzureichender Ausschnitt gespeicherter Meldungen, nach Benutzern
+     * gruppiert. Kennungen als Schluessel klein geschrieben - genauso, wie die
+     * Nextcloud-App sie zuordnet (normalizePayload()).
+     *
+     * @param list<array{user_uid:string,display_name:string,drive_letter:string,unc_path:string,domain:string,computer_name:string,reported_at:string}> $rows
+     * @param list<string> $excluded
+     *
+     * @return array<string,list<array{letter:string,host:string,share:string,root:string,domain:string}>>
+     */
+    private static function pushableUsers(array $rows, array $excluded): array
+    {
+        $excludedMap = array_flip($excluded);
         $users = [];
-        foreach ($this->repository->all() as $row) {
-            $unc = self::parseUnc($row['unc_path']);
-            if ($unc === null || isset($excluded[$row['drive_letter']]) || preg_match(self::UID_PATTERN, $row['user_uid']) !== 1
-                || preg_match('/^[A-Z]$/', $row['drive_letter']) !== 1) {
+        foreach ($rows as $row) {
+            if (isset($excludedMap[$row['drive_letter']]) || preg_match(self::UID_PATTERN, $row['user_uid']) !== 1) {
                 continue;
             }
-            $users[$row['user_uid']][] = [
-                'letter' => $row['drive_letter'],
-                'host' => $unc['host'],
-                'share' => $unc['share'],
-                'root' => $unc['root'],
-                'domain' => $row['domain'],
-            ];
+            $entry = self::pushableEntry($row['drive_letter'], $row['unc_path'], $row['domain']);
+            if ($entry !== null) {
+                $users[strtolower($row['user_uid'])][] = $entry;
+            }
         }
+
+        return self::sortUsers($users);
+    }
+
+    /**
+     * Derselbe Ausschnitt fuer eine noch nicht gespeicherte Meldung.
+     *
+     * @param list<array{letter:string,unc:string}> $drives
+     * @param list<string> $excluded
+     *
+     * @return array<string,list<array{letter:string,host:string,share:string,root:string,domain:string}>>
+     */
+    private static function pushableReport(string $uid, array $drives, string $domain, array $excluded): array
+    {
+        if (preg_match(self::UID_PATTERN, $uid) !== 1) {
+            return [];
+        }
+        $excludedMap = array_flip($excluded);
+        $list = [];
+        foreach ($drives as $drive) {
+            if (isset($excludedMap[$drive['letter']])) {
+                continue;
+            }
+            $entry = self::pushableEntry($drive['letter'], $drive['unc'], $domain);
+            if ($entry !== null) {
+                $list[] = $entry;
+            }
+        }
+        if ($list === []) {
+            return [];
+        }
+
+        return self::sortUsers([strtolower($uid) => $list]);
+    }
+
+    /**
+     * @param array<string,list<array{letter:string,host:string,share:string,root:string,domain:string}>> $users
+     *
+     * @return array<string,list<array{letter:string,host:string,share:string,root:string,domain:string}>>
+     */
+    private static function sortUsers(array $users): array
+    {
         ksort($users, SORT_STRING);
-        foreach ($users as &$drives) {
-            usort($drives, static fn (array $a, array $b): int => strcmp($a['letter'], $b['letter']));
+        foreach ($users as &$list) {
+            usort($list, static fn (array $a, array $b): int => strcmp($a['letter'], $b['letter']));
         }
-        unset($drives);
+        unset($list);
 
         return $users;
+    }
+
+    /**
+     * Ein weiterzureichendes Laufwerk; null, wenn Buchstabe oder UNC-Pfad nicht
+     * den Regeln der Nextcloud-App entsprechen.
+     *
+     * @return array{letter:string,host:string,share:string,root:string,domain:string}|null
+     */
+    private static function pushableEntry(string $letter, string $uncPath, string $domain): ?array
+    {
+        if (preg_match('/^[A-Z]$/', $letter) !== 1) {
+            return null;
+        }
+        $unc = self::parseUnc($uncPath);
+        if ($unc === null) {
+            return null;
+        }
+
+        return [
+            'letter' => $letter,
+            'host' => $unc['host'],
+            'share' => $unc['share'],
+            'root' => $unc['root'],
+            'domain' => $domain,
+        ];
     }
 
     public function fingerprint(): string

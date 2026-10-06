@@ -618,10 +618,20 @@ $ov = $orvantaValues;
                 E-Mails, die älter als das Mindestalter sind, in komprimierte, prüfsummengesicherte
                 Archivcontainer im Nextcloud-Bereich des Benutzers. Gelöscht wird auf dem Exchange erst,
                 nachdem der Archivinhalt zurückgelesen und verifiziert wurde (Copy → Verify → Commit → Delete).
+                Archiviert werden ausschließlich Mitglieder der angegebenen AD-Gruppe; ohne Gruppe bleibt die
+                Archivierung für alle Benutzer aus. Bereits archivierte E-Mails bleiben weiterhin lesbar.
             </p>
             <div class="field field--check">
                 <input type="checkbox" id="archive_enabled" name="archive_enabled" value="1" <?= ($ov['archive_enabled'] ?? '0') === '1' ? 'checked' : '' ?>>
-                <label for="archive_enabled">Automatische Archivierung aktivieren</label>
+                <label for="archive_enabled">Automatische Archivierung für Mitglieder der AD-Gruppe aktivieren</label>
+            </div>
+            <div class="field group-suggest">
+                <label for="archive_group">AD-Gruppe mit Archivierung</label>
+                <input type="text" id="archive_group" name="archive_group" maxlength="190"
+                       value="<?= Html::e($ov['archive_group'] ?? '') ?>" autocomplete="off" spellcheck="false"
+                       data-group-suggest="/admin/ad/gruppen" <?= $ovField('archive_group') ?>>
+                <p class="field__hint">Vorschläge aus der AD-Synchronisation. Nur Benutzer dieser Gruppe werden archiviert.</p>
+                <?= $ovFieldError('archive_group') ?>
             </div>
             <div class="field-row">
                 <div class="field">
@@ -668,6 +678,7 @@ $ov = $orvantaValues;
             </div>
             <p class="field__hint">Komprimierung: gzip (Formatversion 1, fest).</p>
         </fieldset>
+        <script src="/assets/js/admin-group-autocomplete.js?v=<?= Html::e((string) ($assetVersion ?? '1')) ?>" defer></script>
 
         <div class="form__actions">
             <button type="submit" class="button button--primary">Orvanta-Einstellungen speichern</button>

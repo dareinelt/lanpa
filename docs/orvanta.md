@@ -243,6 +243,7 @@ genannte primäre Adresse, wiederholt die Anfrage und merkt sich die Zuordnung
 | `default_folder` | Startansicht (`inbox`, `calendar`, …) | `inbox` |
 | `poll_interval` | Abfrageintervall der App in Sekunden | 60 |
 | `archive_enabled` | Langzeitarchiv aktivieren (siehe Abschnitt 7a) | aus |
+| `archive_group` | AD-Gruppe, deren Mitglieder archiviert werden; Pflicht bei aktivierter Archivierung, ohne Gruppe wird niemand archiviert | leer |
 | `archive_threshold`, `archive_threshold_unit` | Auslöse-Schwelle der Postfachbelegung (`percent` der Postfachgrenze oder `mb` absolut) | 80 / `percent` |
 | `archive_age_days` | Mindestalter in Tagen – nur ältere Nachrichten werden archiviert (1–3650) | 60 |
 | `archive_folder` | Ordner im Nextcloud-Bereich des Benutzers für die Archivcontainer | `Orvanta-Archiv` |
@@ -475,14 +476,19 @@ wurde (Ablauf Kopieren → Verifizieren → Festschreiben → Löschen, Details 
 Ablauf und Bedienung:
 
 - **Aktivierung:** Admin → Office → Orvanta, Abschnitt „Langzeitarchiv“
-  (Einstellungen `archive_*`, siehe Tabelle oben). Die Archivierung startet,
+  (Einstellungen `archive_*`, siehe Tabelle oben). Standardmäßig ist die
+  Archivierung aus. Sie gilt nur für Mitglieder der AD-Gruppe
+  `archive_group` (Abgleich über die SSO-Gruppen bzw. für den Worker über die
+  AD-Synchronisation); ohne Gruppe wird niemand archiviert. Wird ein Benutzer
+  aus der Gruppe entfernt, archiviert der Worker sein Postfach nicht mehr –
+  bereits archivierte E-Mails bleiben lesbar. Die Archivierung startet,
   wenn die Postfachbelegung die Schwelle überschreitet (`archive_threshold`
   in Prozent der Postfachgrenze oder in MB).
 - **Registrierung:** Beim Öffnen von Orvanta (Statusabfrage
-  `archiv/status`) wird das Postfach für die Hintergrund-Archivierung
-  registriert; danach arbeitet der Worker unabhängig von einer geöffneten
-  Oberfläche. Ein Postfach, das noch nie Orvanta geöffnet hat, wird nicht
-  archiviert.
+  `archiv/status`) wird das Postfach eines Gruppenmitglieds für die
+  Hintergrund-Archivierung registriert; danach arbeitet der Worker
+  unabhängig von einer geöffneten Oberfläche. Ein Postfach, das noch nie
+  Orvanta geöffnet hat, wird nicht archiviert.
 - **Worker:** Der Container `mail-archive` (eigener Dienst in
   `docker-compose.yml`) führt `scripts/orvanta_archive_worker.php` zyklisch
   aus; ein Python-Supervisor (`docker/mail-archive/archive_supervisor.py`)

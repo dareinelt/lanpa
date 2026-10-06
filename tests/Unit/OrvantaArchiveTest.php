@@ -265,6 +265,13 @@ function orvantaArchivePdo(): PDO
         deleted_count INTEGER NOT NULL DEFAULT 0,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )');
+    // Freigabegruppe: "dandre" ist Mitglied von GG_Archiv, "fremd" nicht.
+    $pdo->exec('CREATE TABLE phonebook (id INTEGER PRIMARY KEY, identity_source_id INTEGER NOT NULL DEFAULT 0, samaccount_name TEXT NULL, active INTEGER NOT NULL DEFAULT 1)');
+    $pdo->exec('CREATE TABLE ad_groups (id INTEGER PRIMARY KEY, name TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)');
+    $pdo->exec('CREATE TABLE ad_group_members (group_id INTEGER NOT NULL, phonebook_id INTEGER NOT NULL)');
+    $pdo->exec("INSERT INTO phonebook (id, identity_source_id, samaccount_name, active) VALUES (1, 0, 'dandre', 1), (2, 0, 'fremd', 1), (3, 7, 'dandre', 1)");
+    $pdo->exec("INSERT INTO ad_groups (id, name, active) VALUES (1, 'GG_Archiv', 1), (2, 'GG_Andere', 1)");
+    $pdo->exec('INSERT INTO ad_group_members (group_id, phonebook_id) VALUES (1, 1), (2, 2), (1, 3)');
 
     return $pdo;
 }
@@ -278,7 +285,7 @@ function orvantaArchivePdo(): PDO
  */
 function orvantaArchiveSetup(array $settings = [], ?ExchangeTransportInterface $transport = null): array
 {
-    $parts = orvantaConfig($settings + ['archive_enabled' => '1']);
+    $parts = orvantaConfig($settings + ['archive_enabled' => '1', 'archive_group' => 'gg_archiv']);
     $recorder = $transport ?? new RecordingExchangeTransport();
     $exchange = new OrvantaExchangeService($recorder, $parts['config']);
     $pdo = orvantaArchivePdo();
@@ -288,7 +295,7 @@ function orvantaArchiveSetup(array $settings = [], ?ExchangeTransportInterface $
         public int $time = 0;
     };
     $clock->time = time();
-    $service = new OrvantaArchiveService($repository, $parts['config'], $exchange, $storage, new MimeMessageParser(), fn (): int => $clock->time);
+    $service = new OrvantaArchiveService($repository, $parts['config'], $exchange, $storage, new MimeMessageParser(), fn (): int => $clock->time, static fn (): array => [0 => ['key' => ''], 7 => ['key' => 'zweig']]);
 
     return ['service' => $service, 'repository' => $repository, 'storage' => $storage, 'transport' => $recorder, 'exchange' => $exchange, 'config' => $parts['config'], 'pdo' => $pdo, 'clock' => $clock];
 }
@@ -350,6 +357,54 @@ Runner::test('Archiv: maybeRun respektiert Aktivierung, Registrierung und Schwel
     $high = orvantaArchiveSetup(['archive_threshold_unit' => 'mb', 'archive_threshold' => '10485760']);
     $high['service']->registerMailbox('dandre', 'ich@example.org');
     Assert::same('Schwelle nicht erreicht.', $high['service']->maybeRun('dandre')['reason']);
+});
+
+Runner::test('Archiv: nur Mitglieder der AD-Gruppe werden archiviert (Standard: niemand)', function (): void {
+    $config = orvantaConfig(['archive_enabled' => '1'])['config'];
+    Assert::false($config->archiveEnabledFor(['GG_Archiv']), 'Ohne Freigabegruppe darf niemand archiviert werden.');
+    $config = orvantaConfig(['archive_enabled' => '1', 'archive_group' => 'GG_Archiv'])['config'];
+    Assert::true($config->archiveEnabledFor(['verwaltung', 'gg_archiv']));
+    Assert::false($config->archiveEnabledFor(['verwaltung']));
+    Assert::false(orvantaConfig(['archive_group' => 'GG_Archiv'])['config']->archiveEnabledFor(['gg_archiv']), 'Ausgeschaltet bleibt aus.');
+
+    $parts = orvantaArchiveSetup();
+    Assert::true($parts['service']->isArchiveUser('dandre'));
+    Assert::true($parts['service']->isArchiveUser('DAndre@zweig'), 'Mitglied aus weiterer Quelle.');
+    Assert::false($parts['service']->isArchiveUser('fremd'));
+    $parts['service']->registerMailbox('fremd', 'fremd@example.org');
+    $result = $parts['service']->maybeRun('fremd', true);
+    Assert::false($result['ran']);
+    Assert::same('Benutzer ist nicht Mitglied der Archivierungsgruppe.', $result['reason']);
+    Assert::same([], orvantaArchiveDeletes($parts['transport']));
+    Assert::false($parts['service']->status('fremd')['enabled']);
+    Assert::true($parts['service']->status('dandre')['enabled']);
+
+    $noGroup = orvantaArchiveSetup(['archive_group' => '']);
+    Assert::false($noGroup['service']->isArchiveUser('dandre'));
+    $noGroup['service']->registerMailbox('dandre', 'ich@example.org');
+    Assert::same('Benutzer ist nicht Mitglied der Archivierungsgruppe.', $noGroup['service']->maybeRun('dandre', true)['reason']);
+});
+
+Runner::test('Archiv-Konfiguration: Aktivierung verlangt genau eine AD-Gruppe', function (): void {
+    $base = [
+        'exchange_enabled' => '1', 'exchange_host' => 'demo', 'exchange_auth' => 'negotiate',
+        'exchange_timeout' => '20', 'cache_quota_mb' => '250', 'cache_folder' => 'Orvanta',
+        'reminder_lead_minutes' => '15', 'poll_interval' => '60',
+    ];
+    foreach (['', 'GG_A, GG_B'] as $group) {
+        try {
+            orvantaConfig()['config']->save($base + ['archive_enabled' => '1', 'archive_group' => $group]);
+            Assert::true(false, 'Validierung hätte fehlschlagen müssen: "' . $group . '"');
+        } catch (ValidationException $exception) {
+            Assert::same(['archive_group'], array_keys($exception->errors()));
+        }
+    }
+    $config = orvantaConfig()['config'];
+    $config->save($base + ['archive_enabled' => '1', 'archive_group' => ' GG_Archiv ']);
+    Assert::same('GG_Archiv', $config->archiveGroup());
+    Assert::true($config->archiveEnabledFor(['gg_archiv']));
+    $config->save($base);
+    Assert::false($config->archiveEnabled());
 });
 
 Runner::test('Archiv: Demolauf archiviert alte Nachrichten (Copy-Verify-Commit-Delete)', function (): void {

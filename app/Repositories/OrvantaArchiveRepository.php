@@ -20,6 +20,38 @@ use PDO;
  */
 final class OrvantaArchiveRepository extends Repository
 {
+    // ------------------------------------------------------------------ Freigabegruppe
+
+    /**
+     * Aktive Telefonbuch-Konten, die Mitglied der AD-Gruppe sind (Name ohne
+     * Gross-/Kleinschreibung, alle Quellen).
+     *
+     * @return list<array{identity_source_id:int,samaccount_name:string}>
+     */
+    public function groupMemberAccounts(string $groupName): array
+    {
+        $groupName = mb_strtolower(trim($groupName));
+        if ($groupName === '') {
+            return [];
+        }
+        $statement = $this->pdo->prepare(
+            "SELECT DISTINCT p.identity_source_id, p.samaccount_name
+               FROM ad_group_members m
+               JOIN ad_groups g ON g.id = m.group_id
+               JOIN phonebook p ON p.id = m.phonebook_id
+              WHERE g.active = 1 AND p.active = 1 AND LOWER(g.name) = :name
+                AND p.samaccount_name IS NOT NULL AND p.samaccount_name <> ''"
+        );
+        $statement->execute(['name' => $groupName]);
+
+        $accounts = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $accounts[] = ['identity_source_id' => (int) $row['identity_source_id'], 'samaccount_name' => (string) $row['samaccount_name']];
+        }
+
+        return $accounts;
+    }
+
     // ------------------------------------------------------------------ Archive
 
     /**

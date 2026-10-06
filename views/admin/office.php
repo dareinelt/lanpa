@@ -180,7 +180,7 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
     </p>
 </section>
 
-<section class="card" aria-labelledby="office-config-title">
+<section class="card" id="fusszeile" aria-labelledby="office-config-title">
     <h2 class="card__title" id="office-config-title">Fußzeile und Einstieg</h2>
     <form method="post" action="/admin/office" class="form form--wide" data-office-form>
         <?= Csrf::field() ?>

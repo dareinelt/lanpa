@@ -32,7 +32,17 @@ $navItems = $isAdmin ? [
     'alarm' => ['/admin/alarmierung', 'Alarmierung'],
     'smtp' => ['/admin/smtp', 'E-Mail (SMTP)'],
     'activation' => ['/admin/aktivierungs-rufnummern', 'Aktivierungs-Rufnummern'],
-    'office' => ['/admin/office', 'Office'],
+    'office' => ['/admin/office', 'Office', [
+        'office' => ['/admin/office', 'Status & Diagnose'],
+        'office_footer' => ['/admin/office#fusszeile', 'Fußzeile und Einstieg'],
+        'office_ai' => ['/admin/office#ki', 'Lokale KI'],
+        'office_appstore' => ['/admin/office#app-store', 'Nextcloud-App-Store'],
+        'office_apps' => ['/admin/office/apps', 'Office-Apps und Berechtigungen'],
+        'office_orvanta' => ['/admin/office#orvanta', 'Orvanta – Mail & Kalender'],
+        'office_signatures' => ['/admin/office/signaturen', 'Signaturvorlagen'],
+        'office_tile' => ['/admin/office#kachel', 'Kachel im Intranet'],
+        'office_backup' => ['/admin/office#sicherung', 'Sicherung'],
+    ]],
     'quota' => ['/admin/speicherplatz', 'Speicherplatz (Quota)'],
     'drives' => ['/admin/netzlaufwerke', 'Netzlaufwerke'],
     'storage' => ['/admin/speicher-ha', 'Speicher (HA)'],
@@ -89,14 +99,33 @@ $navItems = $isAdmin ? [
 <div class="admin-layout">
     <nav class="admin-nav" aria-label="Administrationsnavigation">
         <ul>
-            <?php foreach ($navItems as $key => [$href, $label]) { ?>
+            <?php foreach ($navItems as $key => $item) { ?>
+                <?php [$href, $label] = $item; $children = $item[2] ?? null; ?>
                 <li>
-                    <a href="<?= Html::e($href) ?>" class="admin-nav__link<?= $activeNav === $key ? ' is-active' : '' ?>"<?= $activeNav === $key ? ' aria-current="page"' : '' ?>>
-                        <?= Html::e($label) ?>
-                        <?php if ($key === 'incidents' && $openIncidents > 0) { ?>
-                            <span class="admin-nav__badge" title="Offene Sicherheitsvorfälle"><?= $openIncidents ?><span class="visually-hidden"> offen</span></span>
-                        <?php } ?>
-                    </a>
+                    <?php if (is_array($children)) { ?>
+                        <?php $groupActive = $key === $activeNav || array_key_exists($activeNav, $children); ?>
+                        <details class="admin-nav__group"<?= $groupActive ? ' open' : '' ?>>
+                            <summary class="admin-nav__link admin-nav__summary<?= $groupActive ? ' is-active' : '' ?>">
+                                <?= Html::e($label) ?>
+                            </summary>
+                            <ul class="admin-nav__sub">
+                                <?php foreach ($children as $childKey => [$childHref, $childLabel]) { ?>
+                                    <li>
+                                        <a href="<?= Html::e($childHref) ?>" class="admin-nav__link admin-nav__link--sub<?= $activeNav === $childKey ? ' is-active' : '' ?>"<?= $activeNav === $childKey ? ' aria-current="page"' : '' ?>>
+                                            <?= Html::e($childLabel) ?>
+                                        </a>
+                                    </li>
+                                <?php } ?>
+                            </ul>
+                        </details>
+                    <?php } else { ?>
+                        <a href="<?= Html::e($href) ?>" class="admin-nav__link<?= $activeNav === $key ? ' is-active' : '' ?>"<?= $activeNav === $key ? ' aria-current="page"' : '' ?>>
+                            <?= Html::e($label) ?>
+                            <?php if ($key === 'incidents' && $openIncidents > 0) { ?>
+                                <span class="admin-nav__badge" title="Offene Sicherheitsvorfälle"><?= $openIncidents ?><span class="visually-hidden"> offen</span></span>
+                            <?php } ?>
+                        </a>
+                    <?php } ?>
                 </li>
             <?php } ?>
         </ul>

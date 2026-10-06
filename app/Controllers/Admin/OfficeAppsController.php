@@ -131,7 +131,7 @@ final class OfficeAppsController extends AdminController
 
         return $this->adminView('admin.office-apps', [
             'pageTitle' => 'Office-Apps und Berechtigungen',
-            'activeNav' => 'office',
+            'activeNav' => 'office_apps',
             'enabled' => Container::officeConfig()->isEnabled(),
             'ssoEnabled' => Container::sso()->isEnabled(),
             'apps' => $service->catalog(),
@@ -152,7 +152,7 @@ final class OfficeAppsController extends AdminController
     {
         return $this->adminView('admin.office-app-package', [
             'pageTitle' => $package['id'] > 0 ? 'App-Paket bearbeiten' : 'Neues App-Paket',
-            'activeNav' => 'office',
+            'activeNav' => 'office_apps',
             'package' => $package,
             'apps' => Container::officeApps()->catalog(),
             'errors' => $errors,

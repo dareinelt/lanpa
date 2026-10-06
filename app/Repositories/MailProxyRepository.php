@@ -297,10 +297,6 @@ final class MailProxyRepository extends Repository
     }
 
     /**
-     * Aktiver Benutzer anhand SamAccountName und Quelle (fuer die Aufloesung
-     * der Office-Kennung bei Anhang-Links ohne Sitzung).
-     */
-    /**
      * Aktive weitere Identitaetsquelle anhand ihrer Kennung (ohne Beachtung
      * der Gross-/Kleinschreibung).
      */
@@ -313,6 +309,10 @@ final class MailProxyRepository extends Repository
         return $id === false ? null : (int) $id;
     }
 
+    /**
+     * Aktiver Benutzer anhand SamAccountName und Quelle (fuer die Aufloesung
+     * der Office-Kennung bei Anhang-Links ohne Sitzung).
+     */
     public function findActiveUserId(string $samAccountName, int $sourceId): ?int
     {
         $statement = $this->pdo->prepare('SELECT id FROM phonebook WHERE identity_source_id = :source AND active = 1 AND LOWER(samaccount_name) = LOWER(:name) LIMIT 1');

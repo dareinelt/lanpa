@@ -45,7 +45,7 @@ Zusätzlich: Zuerst Code und zugehörige Doku verstehen, dann ändern. Keine gro
 
 ## Dokumentation
 
-- Bei Verhaltensänderungen betroffene Doku mitpflegen: `agentsindex.md` (Tabellen/Routen/Schema), Modul-Doku (`docs/orvanta.md` + `docs/orvanta-referenz.md` + `docs/mail-proxy.md`, `docs/storage.md` + `docs/storage-referenz.md`, `docs/notfallplan.md` + `docs/notfallplan-editor-referenz.md`, `docs/office.md`, `docs/llmint.md`).
+- Bei Verhaltensänderungen betroffene Doku mitpflegen: `agentsindex.md` (Tabellen/Routen/Schema), Modul-Doku (`docs/orvanta.md` + `docs/orvanta-referenz.md` + `docs/mail-proxy.md` + `docs/mail-proxy-referenz.md`, `docs/storage.md` + `docs/storage-referenz.md`, `docs/notfallplan.md` + `docs/notfallplan-editor-referenz.md`, `docs/office.md`, `docs/llmint.md`).
 - Referenzdokumente (`*-referenz.md`) vor Änderungen am jeweiligen Modul lesen.
 - Neue Doku nur anlegen, wenn nötig; keine Duplikate von Code.
 

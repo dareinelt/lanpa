@@ -126,6 +126,8 @@ services:
       # Office-Statuspruefung (Nextcloud, DocumentServer, Redis, PostgreSQL).
       - office
       - office_backend
+      # SMTP-/IMAP-Proxy fuer Orvanta (nur app <-> mail-proxy).
+      - mail_proxy
 
   mail:
     build:
@@ -170,6 +172,53 @@ services:
     networks:
       - intranet
       - office
+
+  # SMTP-/IMAP-Proxy fuer Orvanta-Benutzer ohne Exchange-Postfach
+  # (Adminbereich -> Office -> SMTP-/IMAP-Proxy, docs/mail-proxy.md). Nur aus
+  # dem internen Netz mail_proxy erreichbar (keine Portfreigabe), ohne
+  # Datenbankzugriff. Liest nur den SecretBox-Schluessel (schreibgeschuetzt),
+  # um die signierten Anfragen des app-Containers zu pruefen; Postfach-
+  # Zugangsdaten kommen pro Anfrage und werden nie gespeichert.
+  mail-proxy:
+    build:
+      context: .
+      dockerfile: docker/mail-proxy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      MAIL_PROXY_PORT: "8025"
+      MAIL_PROXY_KEY_FILE: /run/mail-proxy/keys/secrets.key
+      MAIL_PROXY_MAX_CONNECTIONS: ${MAIL_PROXY_MAX_CONNECTIONS:-32}
+      MAIL_PROXY_POOL_SIZE: ${MAIL_PROXY_POOL_SIZE:-32}
+      MAIL_PROXY_POOL_IDLE_SECONDS: ${MAIL_PROXY_POOL_IDLE_SECONDS:-90}
+      MAIL_PROXY_MAX_MESSAGE_MB: ${MAIL_PROXY_MAX_MESSAGE_MB:-35}
+      MAIL_PROXY_DENY_CIDRS: ${MAIL_PROXY_DENY_CIDRS:-}
+    volumes:
+      - type: volume
+        source: app_storage
+        target: /run/mail-proxy/keys
+        read_only: true
+        volume:
+          subpath: keys
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python3", "/app/mail_proxy.py", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - mail_proxy
+      # Ausgehende Verbindungen zu den konfigurierten SMTP-/IMAP-Servern.
+      - mail_egress
 
   # Vorgelagerter Authentifizierungs-Container (HTTP Negotiate: Kerberos
   # ueber die Keytab des Computerkontos, sonst NTLM ueber winbind). Reicht
@@ -659,6 +708,13 @@ networks:
   office_backend:
     driver: bridge
     internal: true
+  # app <-> mail-proxy (signierte Anfragen); kein Zugang von aussen.
+  mail_proxy:
+    driver: bridge
+    internal: true
+  # Ausgehender Weg des mail-proxy zu den Mailservern (ohne Datenbank/app).
+  mail_egress:
+    driver: bridge
   # Katalog-Datenbank und Redis von storage-sync: nur storage-sync hat Zugang.
   storage_catalog:
     driver: bridge

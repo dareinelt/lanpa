@@ -54,7 +54,9 @@ keinen eigenen Port mehr; erreichbar ist es nur über den `auth`-Container.
    PROXY_SSO_HEADER=X-Remote-User
    ```
 
-   Danach den LLMInt-Stack neu starten.
+   LLMInt bringt dafür die Override-Datei `docker-compose.lanpa.yml` mit
+   (Netz, Alias und beide Werte, siehe README von LLMInt). Danach den
+   LLMInt-Stack neu starten.
 
 3. **lanpa**: in der `.env`
 

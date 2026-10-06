@@ -35,7 +35,7 @@ final class OrvantaSignatureController extends AdminController
 
         return $this->adminView('admin.orvanta-signatures', [
             'pageTitle' => 'Orvanta – Signaturvorlagen',
-            'activeNav' => 'office',
+            'activeNav' => 'office_signatures',
             'signatures' => $service->all(),
             'hasLogo' => Container::logo()->current() !== null,
             'theme' => $theme,
@@ -173,7 +173,7 @@ final class OrvantaSignatureController extends AdminController
     {
         return $this->adminView('admin.orvanta-signature', [
             'pageTitle' => ((int) $signature['id']) > 0 ? 'Signaturvorlage bearbeiten' : 'Neue Signaturvorlage',
-            'activeNav' => 'office',
+            'activeNav' => 'office_signatures',
             'signature' => $signature,
             'theme' => Container::settings()->theme(),
             'colorLabels' => SettingsService::THEME_COLORS,

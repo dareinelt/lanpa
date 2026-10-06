@@ -682,6 +682,13 @@ class ImapSession:
         return uids
 
     def fetch_raw(self, uid: int, section: str = "BODY.PEEK[]") -> tuple:
+        if section == "BODY.PEEK[]":
+            # Groesse vorab pruefen, damit uebergrosse Nachrichten nicht komplett geladen werden.
+            typ, data = self.conn.uid("FETCH", str(uid), "(UID RFC822.SIZE)")
+            _ok(typ, "FETCH")
+            for record in fetch_records(data or []):
+                if meta_int(record["meta"], b"UID") == uid and meta_int(record["meta"], b"RFC822.SIZE") > MAX_MESSAGE:
+                    raise ProxyError("too_large", "Nachricht zu groß.", 413)
         typ, data = self.conn.uid("FETCH", str(uid), f"(UID FLAGS INTERNALDATE RFC822.SIZE {section})")
         _ok(typ, "FETCH")
         for record in fetch_records(data or []):
@@ -1619,6 +1626,8 @@ class Handler(BaseHTTPRequestHandler):
             self._authenticate(operation, body)
             payload = json.loads(body.decode("utf-8")) if body else {}
             del body
+            if payload == []:
+                payload = {}  # leeres PHP-Array wird als JSON-Liste kodiert
             if not isinstance(payload, dict):
                 raise ProxyError("invalid", "Ungültige Anfrage.", 422)
             if operation == "cache.invalidate":

@@ -586,7 +586,9 @@ final class MailProxyService
         $this->cache->clear();
         if ($hasServers) {
             try {
-                $this->transport->request('cache.invalidate', []);
+                // Nicht-leeres Objekt: ein leeres PHP-Array wuerde als JSON-Liste
+                // gesendet und vom Proxy als ungueltig abgelehnt.
+                $this->transport->request('cache.invalidate', ['reason' => $reason]);
             } catch (OrvantaException) {
                 // Proxy nicht erreichbar: dessen Pool prueft die Generation ohnehin.
             }

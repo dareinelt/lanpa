@@ -39,6 +39,7 @@ use App\Controllers\ClickController;
 use App\Controllers\HealthController;
 use App\Controllers\ImportantLinkIconController;
 use App\Controllers\InternalController;
+use App\Controllers\KiController;
 use App\Controllers\LandingController;
 use App\Controllers\LogoController;
 use App\Controllers\NetworkDriveController;
@@ -136,6 +137,8 @@ $router->get('/internal/tls-config', [InternalController::class, 'tlsConfig']);
 $router->get('/office-nicht-verfuegbar', [OfficeController::class, 'unavailable']);
 $router->get('/api/office/footer', [OfficeController::class, 'footer']);
 $router->get('/api/office/status', [OfficeController::class, 'status']);
+// LLMInt unter /ki/: Fehlerseite des auth-Proxys, wenn LLMInt nicht erreichbar ist.
+$router->get('/ki-nicht-verfuegbar', [KiController::class, 'unavailable']);
 $router->group([$ssoAttempt], static function (Router $router): void {
     $router->get('/office-app', [OfficeController::class, 'launch']);
     $router->get('/office/orvanta', [OrvantaController::class, 'index']);

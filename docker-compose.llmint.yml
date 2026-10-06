@@ -1,0 +1,27 @@
+# Optional: LLMInt (KI-Oberflaeche, eigener Compose-Stack) auf demselben Host
+# hinter dem auth-Container unter /ki/ (siehe docs/llmint.md).
+#
+# Haengt den auth-Container zusaetzlich an das externe Docker-Netz, an dem
+# auch der web-Container von LLMInt (Alias llmint-web) haengt. Das Netz legt
+# der Administrator einmalig an:
+#
+#   docker network create --subnet 172.30.251.0/24 llmint-proxy
+#
+# Aktivierung in der .env:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.llmint.yml
+#   LLMINT_ENABLED=true
+#   LLMINT_UPSTREAM=http://llmint-web
+#
+# Mit weiteren Identitaetsquellen (docker-compose.sso.yml) danach
+# ./scripts/sso-domains.sh erneut ausfuehren, damit auch deren Instanzen an
+# das Netz angebunden werden.
+services:
+  auth:
+    networks:
+      - llmint
+
+networks:
+  llmint:
+    external: true
+    name: ${LLMINT_PROXY_NETWORK:-llmint-proxy}

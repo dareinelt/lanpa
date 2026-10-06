@@ -33,6 +33,10 @@
 #                        Umgebungsvariablen (Altinstallationen).
 # - OFFICE_ENABLED=true: Reverse-Proxy fuer Nextcloud/Euro-Office aktivieren
 #                        (-D OFFICE, bindet /etc/apache2/intranet/office.conf ein).
+# - LLMINT_ENABLED=true: Reverse-Proxy fuer LLMInt (KI-Oberflaeche, eigener
+#                        Stack) unter LLMINT_PATH (Standard /ki) nach
+#                        LLMINT_UPSTREAM (z. B. http://llmint-web), -D LLMINT,
+#                        bindet /etc/apache2/intranet/llmint.conf ein.
 # - TLS_ENABLED=true:    HTTPS auf Port 443 mit dem Zertifikat aus der
 #                        Zertifikatsverwaltung (tls-sync.sh, alle 60 s
 #                        abgeglichen). Ohne gueltiges Zertifikat gilt ein
@@ -47,6 +51,9 @@ set -e
 : "${SSO_ROUTES:=}"
 : "${SSO_PROXY_PROTOCOL:=false}"
 : "${OFFICE_ENABLED:=false}"
+: "${LLMINT_ENABLED:=false}"
+: "${LLMINT_UPSTREAM:=}"
+: "${LLMINT_PATH:=/ki}"
 : "${APP_URL:=http://localhost:8080}"
 : "${TLS_ENABLED:=true}"
 : "${HTTPS_PUBLIC_PORT:=443}"
@@ -477,6 +484,39 @@ if is_true "$OFFICE_ENABLED"; then
     echo "[auth] Euro-Office-Proxy aktiv (/office/, /eurooffice/)."
 fi
 
+# LLMInt (KI-Oberflaeche, eigener Stack) unter LLMINT_PATH. Fehlerhafte
+# Angaben schalten nur diesen Proxy ab, nicht den Einstieg ins Intranet.
+LLMINT_HOST=""
+LLMINT_PATH="$(printf '%s' "$LLMINT_PATH" | sed -E 's#/+$##')"
+LLMINT_UPSTREAM="$(printf '%s' "$LLMINT_UPSTREAM" | sed -E 's#/+$##')"
+if is_true "$LLMINT_ENABLED"; then
+    llmint_error=""
+    if ! printf '%s' "$LLMINT_PATH" | grep -Eq '^/[a-z0-9][a-z0-9_-]{0,31}$'; then
+        llmint_error="ungueltiger LLMINT_PATH '${LLMINT_PATH}' (erlaubt z. B. /ki: a-z, 0-9, _, -)"
+    else
+        case "$LLMINT_PATH" in
+            # Pfade des Proxys und der Intranet-Anwendung.
+            /office|/eurooffice|/sdkjs|/sso|/internal|/auth-health|/admin|/api|/assets|/office-starten|/office-app|/office-nicht-verfuegbar|/ki-nicht-verfuegbar)
+                llmint_error="LLMINT_PATH '${LLMINT_PATH}' ist bereits belegt" ;;
+        esac
+    fi
+    if [ -z "$llmint_error" ] \
+        && ! printf '%s' "$LLMINT_UPSTREAM" | grep -Eq '^https?://[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?(:[0-9]{1,5})?$'; then
+        llmint_error="ungueltiger LLMINT_UPSTREAM '${LLMINT_UPSTREAM}' (z. B. http://llmint-web oder http://10.0.0.5:8080)"
+    fi
+    if [ -n "$llmint_error" ]; then
+        echo "[auth] WARNUNG: LLMInt-Proxy nicht aktiv: ${llmint_error}." >&2
+    else
+        APACHE_DEFINES="${APACHE_DEFINES} -D LLMINT"
+        case "$LLMINT_UPSTREAM" in
+            https://*) APACHE_DEFINES="${APACHE_DEFINES} -D LLMINT_TLS" ;;
+        esac
+        LLMINT_HOST="$(printf '%s' "$LLMINT_UPSTREAM" | sed -E 's#^[a-zA-Z]+://##; s#:[0-9]+$##')"
+        echo "[auth] LLMInt-Proxy aktiv (${LLMINT_PATH}/ -> ${LLMINT_UPSTREAM}/)."
+    fi
+fi
+export LLMINT_PATH LLMINT_UPSTREAM
+
 # apache2ctl uebergibt APACHE_ARGUMENTS an httpd.
 export APACHE_ARGUMENTS="${APACHE_ARGUMENTS:-}${APACHE_DEFINES}"
 
@@ -490,6 +530,11 @@ fi
 # behaelt die alte bis zum Neuladen (siehe backend-watch.sh).
 backend_hosts="app"
 is_true "$OFFICE_ENABLED" && backend_hosts="${backend_hosts} nextcloud eurooffice"
+# LLMInt-Upstream nur, wenn er per Hostname (z. B. Container llmint-web)
+# angegeben ist; feste IP-Adressen aendern sich nicht.
+if [ -n "$LLMINT_HOST" ] && ! printf '%s' "$LLMINT_HOST" | grep -Eq '^[0-9.]+$'; then
+    backend_hosts="${backend_hosts} ${LLMINT_HOST}"
+fi
 # shellcheck disable=SC2086
 /usr/local/bin/backend-watch.sh $backend_hosts &
 

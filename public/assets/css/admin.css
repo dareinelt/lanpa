@@ -961,6 +961,13 @@ body.has-nav-tree-overlay {
 
 .mail-proxy-map__cell input[type="text"] {
     width: 100%;
+    min-height: 44px;
+    padding: .55rem .75rem;
+    font: inherit;
+    color: inherit;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
 }
 
 @media (max-width: 720px) {

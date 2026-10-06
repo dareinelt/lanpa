@@ -129,7 +129,7 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
                             $editSource = $source;
                         }
                     } ?>
-                    <input id="mp-source" value="<?= Html::e($sourceName($editSource)) ?>" disabled>
+                    <input id="mp-source" type="text" value="<?= Html::e($sourceName($editSource)) ?>" disabled>
                     <p>Die Identitätsquelle ist nach dem Anlegen fest, damit Zuordnungen nie auf eine andere Quelle zeigen.</p>
                 <?php } else { ?>
                     <select id="mp-source" name="identity_source_id" required>
@@ -139,10 +139,10 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
                     </select>
                 <?php } ?>
             </div>
-            <div class="field"><label for="mp-name">Bezeichnung</label><input id="mp-name" name="name" value="<?= Html::e((string) $form['name']) ?>" maxlength="100" required></div>
+            <div class="field"><label for="mp-name">Bezeichnung</label><input id="mp-name" type="text" name="name" value="<?= Html::e((string) $form['name']) ?>" maxlength="100" required></div>
             <fieldset>
                 <legend>SMTP (Versand)</legend>
-                <div class="field"><label for="mp-smtp-host">SMTP-Host</label><input id="mp-smtp-host" name="smtp_host" value="<?= Html::e((string) $form['smtp_host']) ?>" maxlength="253" required placeholder="smtp.firma.local" spellcheck="false"></div>
+                <div class="field"><label for="mp-smtp-host">SMTP-Host</label><input id="mp-smtp-host" type="text" name="smtp_host" value="<?= Html::e((string) $form['smtp_host']) ?>" maxlength="253" required placeholder="smtp.firma.local" spellcheck="false"></div>
                 <div class="field"><label for="mp-smtp-port">SMTP-Port</label><select id="mp-smtp-port" name="smtp_port">
                     <?php foreach ($smtpPorts as $port) { ?><option value="<?= $port ?>"<?= (int) $form['smtp_port'] === $port ? ' selected' : '' ?>><?= $port ?></option><?php } ?>
                 </select></div>
@@ -153,7 +153,7 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
             </fieldset>
             <fieldset>
                 <legend>IMAP (Postfachzugriff)</legend>
-                <div class="field"><label for="mp-imap-host">IMAP-Host</label><input id="mp-imap-host" name="imap_host" value="<?= Html::e((string) $form['imap_host']) ?>" maxlength="253" required placeholder="imap.firma.local" spellcheck="false"></div>
+                <div class="field"><label for="mp-imap-host">IMAP-Host</label><input id="mp-imap-host" type="text" name="imap_host" value="<?= Html::e((string) $form['imap_host']) ?>" maxlength="253" required placeholder="imap.firma.local" spellcheck="false"></div>
                 <div class="field"><label for="mp-imap-port">IMAP-Port</label><select id="mp-imap-port" name="imap_port">
                     <?php foreach ($imapPorts as $port) { ?><option value="<?= $port ?>"<?= (int) $form['imap_port'] === $port ? ' selected' : '' ?>><?= $port ?></option><?php } ?>
                 </select></div>
@@ -229,9 +229,9 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
         <input type="hidden" name="id" value="<?= (int) ($editMailbox['id'] ?? 0) ?>">
         <input type="hidden" name="server_id" value="<?= (int) $server['id'] ?>">
         <input type="hidden" name="quelle" value="<?= $sourceQuery ?>">
-        <div class="field"><label for="mp-mb-username">Benutzername (Anmeldename am Mailserver)</label><input id="mp-mb-username" name="username" value="<?= Html::e((string) ($editMailbox['username'] ?? '')) ?>" maxlength="190" required autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label for="mp-mb-username">Benutzername (Anmeldename am Mailserver)</label><input id="mp-mb-username" type="text" name="username" value="<?= Html::e((string) ($editMailbox['username'] ?? '')) ?>" maxlength="190" required autocomplete="off" spellcheck="false"></div>
         <div class="field"><label for="mp-mb-email">E-Mail-Adresse</label><input id="mp-mb-email" name="email_address" type="email" value="<?= Html::e((string) ($editMailbox['email_address'] ?? '')) ?>" maxlength="254" required autocomplete="off"></div>
-        <div class="field"><label for="mp-mb-name">Anzeigename (optional, Absendername)</label><input id="mp-mb-name" name="display_name" value="<?= Html::e((string) ($editMailbox['display_name'] ?? '')) ?>" maxlength="190" autocomplete="off"></div>
+        <div class="field"><label for="mp-mb-name">Anzeigename (optional, Absendername)</label><input id="mp-mb-name" type="text" name="display_name" value="<?= Html::e((string) ($editMailbox['display_name'] ?? '')) ?>" maxlength="190" autocomplete="off"></div>
         <div class="field">
             <label for="mp-mb-password"><?= $editMailbox !== null ? 'Neues Passwort' : 'Passwort' ?></label>
             <input id="mp-mb-password" name="password" type="password" maxlength="4096" autocomplete="new-password"<?= $editMailbox === null ? ' required' : '' ?>>

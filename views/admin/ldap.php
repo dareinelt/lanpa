@@ -3,22 +3,18 @@
 declare(strict_types=1);
 
 use App\Security\Csrf;
-use App\Support\Dates;
 use App\Support\Html;
 
-/** @var array<string,string> $values */
-/** @var array<string,string> $errors */
-/** @var array<string,string> $attributeKeys */
-/** @var array<string,string> $secretStates */
+/** @var array<string,string> $primarySecretStates */
 /** @var bool $ldapExtensionAvailable */
-/** @var list<array<string,mixed>> $syncRuns */
 /** @var list<array<string,mixed>> $sources */
+/** @var array<string,mixed>|null $dialog */
 ?>
 <?php if (!$ldapExtensionAvailable) { ?>
     <p class="flash flash--error">Die PHP-Erweiterung <code>ldap</code> ist nicht installiert. Eine Synchronisation ist nicht möglich.</p>
 <?php } ?>
 
-<?php if (($secretStates['ldap_bind_password'] ?? 'missing') === 'invalid' || ($secretStates['sso_join_password'] ?? 'missing') === 'invalid') { ?>
+<?php if (($primarySecretStates['ldap_bind_password'] ?? 'missing') === 'invalid' || ($primarySecretStates['sso_join_password'] ?? 'missing') === 'invalid') { ?>
     <p class="flash flash--error">
         Mindestens ein gespeichertes Passwort der Hauptquelle kann nicht entschlüsselt werden (z. B. nach einer
         Wiederherstellung auf einem anderen Server). Bitte die Passwörter neu eingeben.
@@ -77,7 +73,7 @@ use App\Support\Html;
                     <td>
                         <div class="row-actions">
                             <?php if ($source['primary']) { ?>
-                                <a class="button button--ghost" href="#hauptquelle">Bearbeiten</a>
+                                <a class="button button--ghost" href="/admin/ad/hauptquelle">Bearbeiten</a>
                             <?php } else { ?>
                                 <a class="button button--ghost" href="/admin/ad/quellen/bearbeiten?id=<?= $sourceId ?>">Bearbeiten</a>
                             <?php } ?>
@@ -108,86 +104,6 @@ use App\Support\Html;
     </div>
 </section>
 
-<h2 id="hauptquelle">Hauptquelle</h2>
-<form method="post" action="/admin/ad" class="form form--wide">
-    <?= Csrf::field() ?>
-
-    <?php require __DIR__ . '/ldap/fields.php'; ?>
-
-    <?php $serviceName = 'auth'; require __DIR__ . '/ldap/sso.php'; ?>
-
-    <fieldset class="fieldset">
-        <legend>Synchronisation</legend>
-        <div class="field">
-            <label for="ldap_sync_interval">Synchronisationsintervall (Sekunden)</label>
-            <input type="number" id="ldap_sync_interval" name="ldap_sync_interval" min="60" max="86400"
-                   value="<?= Html::e($values['ldap_sync_interval']) ?>">
-            <p class="field__hint">Wird vom Synchronisationsdienst (Container <code>sync</code>) ausgewertet.</p>
-            <?php if (isset($errors['ldap_sync_interval'])) { ?><p class="field__error"><?= Html::e($errors['ldap_sync_interval']) ?></p><?php } ?>
-        </div>
-    </fieldset>
-
-    <div class="form__actions">
-        <button type="submit" class="button button--primary">Einstellungen speichern</button>
-    </div>
-</form>
-
-<section class="card">
-    <h2 class="card__title">Synchronisation</h2>
-    <p class="card__hint">
-        Aktive Telefonbucheinträge: <?= (int) $phonebookCount ?>
-        <?php if (($groupCount ?? null) !== null) { ?> · AD-Gruppen für die Rechtevergabe: <?= (int) $groupCount ?><?php } ?>
-    </p>
-
-    <form method="post" action="/admin/ad/sync" class="inline-form" data-ad-sync>
-        <?= Csrf::field() ?>
-        <button type="submit" class="button button--primary" <?= $ldapExtensionAvailable ? '' : 'disabled' ?>>
-            Manuelle Synchronisation starten
-        </button>
-    </form>
-
-    <dialog id="ad-sync-dialog" class="ad-sync" aria-labelledby="ad-sync-title">
-        <h2 id="ad-sync-title">Synchronisation</h2>
-        <p class="ad-sync__status" id="ad-sync-status" role="status">Synchronisation wird gestartet …</p>
-        <ol class="ad-sync__sources" id="ad-sync-sources" aria-live="polite"></ol>
-        <p class="ad-sync__summary" id="ad-sync-summary" hidden></p>
-        <div class="form__actions">
-            <button type="button" class="button button--primary" id="ad-sync-ok" disabled>OK</button>
-        </div>
-    </dialog>
-
-    <?php if ($syncRuns === []) { ?>
-        <p class="card__hint">Es wurde noch keine Synchronisation ausgeführt.</p>
-    <?php } else { ?>
-        <div class="table-wrapper">
-            <table class="table">
-                <thead>
-                <tr>
-                    <th scope="col">Start</th>
-                    <th scope="col">Ende</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Aktualisiert</th>
-                    <th scope="col">Deaktiviert</th>
-                    <th scope="col">Meldung</th>
-                </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($syncRuns as $run) { ?>
-                    <tr>
-                        <td><?= Html::e(Dates::formatDateTime((string) $run['started_at'])) ?></td>
-                        <td><?= $run['finished_at'] === null ? '–' : Html::e(Dates::formatDateTime((string) $run['finished_at'])) ?></td>
-                        <td>
-                            <span class="badge <?= (string) $run['status'] === 'success' ? 'badge--ok' : 'badge--warn' ?>">
-                                <?= Html::e((string) $run['status']) ?>
-                            </span>
-                        </td>
-                        <td><?= (int) $run['processed'] ?></td>
-                        <td><?= (int) $run['deactivated'] ?></td>
-                        <td class="table__hint"><?= Html::e((string) ($run['message'] ?? '')) ?></td>
-                    </tr>
-                <?php } ?>
-                </tbody>
-            </table>
-        </div>
-    <?php } ?>
-</section>
+<?php if ($dialog !== null) {
+    require __DIR__ . '/ldap/source.php';
+} ?>

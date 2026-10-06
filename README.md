@@ -238,6 +238,10 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Benutzer | Benutzerverwaltung: Konten anlegen/bearbeiten/deaktivieren/löschen, Rollenvergabe (nur für Administratoren); **Administratoren aus AD-Gruppen**: Mitglieder festzulegender AD-Gruppen werden Intranet-Administratoren (Anmeldung per Windows-Anmeldung) bzw. Nextcloud-Administratoren ([docs/office.md](docs/office.md#nextcloud-administratoren-aus-ad-gruppen)) |
 | Sicherung | Vollständige Sicherung als ZIP exportieren und wieder einspielen |
 
+Die Punkte Speicherplatz (Quota), Netzlaufwerke, Speicher (HA) und Vorfälle sind in der Admin-Navigation
+unter dem aufklappbaren Punkt **Storage** zusammengefasst (der Zähler offener Vorfälle erscheint auch am
+Punkt Storage); ihre Pfade bleiben unverändert.
+
 Die Punkte Zertifikate (HTTPS), SNMP, Benutzer, Sicherung und E-Mail (SMTP) sind in der Admin-Navigation
 unter dem aufklappbaren Punkt **System** zusammengefasst; ihre Pfade bleiben unverändert.
 

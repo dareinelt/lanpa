@@ -1603,6 +1603,10 @@ body.has-nav-tree-overlay {
     text-align: center;
 }
 
+.admin-nav__summary .admin-nav__badge {
+    margin-left: auto;
+}
+
 .incident-alert {
     margin: 0 0 1.25rem;
     padding: 1rem 1.25rem;

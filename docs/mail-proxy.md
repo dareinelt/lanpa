@@ -51,6 +51,12 @@ OrvantaController/ApiController ─► OrvantaMailRouter ─┬─► OrvantaExc
    (Office → Office-Apps). Orvanta ist auch ohne Exchange-Einstellungen
    verfügbar, sobald ein aktiver Proxy-Mailserver existiert.
 
+![Adminseite SMTP-/IMAP-Proxy mit Konfigurationen, Postfächern und Zuordnungen](screenshots/96-admin-mail-proxy-uebersicht.png)
+
+| Mailserver bearbeiten | Verbindungstest eines Postfachs |
+| --- | --- |
+| ![Formular Proxy-Konfiguration](screenshots/97-admin-mail-proxy-server.png) | ![Verbindungstest erfolgreich](screenshots/98-admin-mail-proxy-verbindungstest.png) |
+
 ### Mailserver-Felder
 
 | Feld | Werte / Regeln |
@@ -79,6 +85,10 @@ deaktivieren).
 - **E-Mail-Adresse** wird kleingeschrieben gespeichert und ist je Server eindeutig.
   Sie ist gleichzeitig die Absenderadresse; Benutzer können keinen anderen
   Absender wählen.
+
+### Zuordnung
+
+![Zuordnung AD-Benutzer → Postfach mit Autovervollständigung](screenshots/99-admin-mail-proxy-zuordnung.png)
 
 ## 3. Welches Backend nutzt ein Benutzer?
 
@@ -116,6 +126,8 @@ Proxy per IMAP `APPEND` im Gesendet-Ordner ab.
 Systemordner werden über SPECIAL-USE (RFC 6154) erkannt, sonst über übliche
 deutsche und englische Namen (`Sent`, `Gesendete Elemente`, `Trash`,
 `Papierkorb`, `Drafts`, `Entwürfe`, `Junk`, `Spam` …).
+
+![Orvanta über den Proxy: Status „Verbunden (IMAP/SMTP)“, nur das Modul Mail](screenshots/100-orvanta-proxy-postfach.png)
 
 ## 5. Sicherheit
 
@@ -163,6 +175,8 @@ schlägt Orvanta nicht hart fehl:
    je Sitzung und Postfach ist die Eingabe 5 Minuten gesperrt (429). Ist der
    Mailserver nicht erreichbar, bleibt das gespeicherte Kennwort unverändert.
 
+![Overlay „Kennwort des Postfachs“ in Orvanta](screenshots/101-orvanta-proxy-kennwort-overlay.png)
+
 Abbrechen schließt das Overlay; die auslösende Aktion zeigt dann die normale
 Fehlermeldung, die nächste Aktion fragt erneut. Das Protokoll vermerkt die
 Übernahme (`mail-proxy password updated by user`, nur Postfach-ID) – nie das
@@ -205,6 +219,8 @@ Office → **Status & Diagnose** zeigt eine Karte „SMTP-/IMAP-Proxy“:
 Konfigurationsstatus, Erreichbarkeit/Version/Verbindungen des Dienstes, Anzahl
 der Server, Postfächer und Zuordnungen, Cache-TTL, letzter Erfolg und letzter
 Fehler (ohne Geheimnisse).
+
+![Karte SMTP-/IMAP-Proxy unter Status & Diagnose](screenshots/102-admin-office-diagnose-mail-proxy.png)
 
 | Meldung | Ursache / Abhilfe |
 | --- | --- |

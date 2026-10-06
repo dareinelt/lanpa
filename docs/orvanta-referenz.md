@@ -138,6 +138,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | GET | `/api/orvanta/mail/ordner/eigenschaften?ordner=` | `folderProperties` | Anzahl/Größe eines Ordners, auch inkl. Unterordner (Kontextmenü „Eigenschaften“) |
 | POST | `/api/orvanta/mail/ordner/neu` | `createFolder` | Neuen E-Mail-Ordner anlegen (Kontextmenü „Neuer Ordner“) |
 | POST | `/api/orvanta/mail/ordner/gelesen` | `markFolderRead` | Alle Nachrichten eines Ordners als gelesen markieren (EWS `MarkAllItemsAsRead`) |
+| POST | `/api/orvanta/mail/kennwort` | `mailPassword` | Nur Proxy-Postfächer: vom Benutzer geändertes Kennwort prüfen und übernehmen (Abschnitt 18) |
 | GET | `/api/orvanta/mail?ordner=&offset=&limit=&q=` | `messages` | Nachrichtenliste |
 | GET | `/api/orvanta/mail/nachricht?id=` | `message` | Nachricht inkl. bereinigtem HTML |
 | GET | `/api/orvanta/mail/kopfzeilen?id=` | `messageHeaders` | Rohe Internet-Kopfzeilen (Kontextmenü „Info“) |
@@ -199,7 +200,8 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 - `readBody()`: bei `Content-Type: application/json` wird `php://input`
   gelesen (≤ 20 MB, `MAX_BODY`, sonst 413), sonst `$request->post`.
 - CSRF: `_token` im Body oder Header `X-CSRF-Token`; ungültig → **419**.
-- Fehlerabbildung: `OrvantaException` → `status()`; `ValidationException` → 422
+- Fehlerabbildung: `OrvantaException` → `status()` (mit `reason()` zusätzlich
+  `"code"`, z. B. `mail_auth`); `ValidationException` → 422
   (Meldungen verkettet); `HttpException` → deren Status; alles andere → 500
   mit generischer Meldung und Logeintrag `Orvanta: Unerwarteter Fehler.`
 - GET-Routen sind lesend und ohne CSRF; **jede schreibende Route ist POST mit
@@ -1010,5 +1012,13 @@ Benutzerdoku, Einrichtung und vollständige technische Referenz:
   auch aus dem Zwischenspeicher. Ein Token für eine früher zugeordnete Adresse
   wird abgewiesen (403).
 - **Langzeitarchiv:** nur für Exchange-Benutzer (`CAPABILITY_ARCHIVE`).
+- **Geändertes Kennwort:** Proxy-Code `auth_failed` → `OrvantaException`
+  409 mit `reason()` = `OrvantaException::MAIL_AUTH`; `handle()` liefert dann
+  zusätzlich `"code": "mail_auth"`. `api()` in `orvanta.js` öffnet den Dialog
+  `mail-password` (`promptMailPassword()`, eine gemeinsame Abfrage),
+  sendet `POST /api/orvanta/mail/kennwort` (`mailPassword()`, 5 Fehlversuche
+  je Sitzung/Postfach, dann 5 min 429) und wiederholt die Anfrage danach
+  einmal. `MailProxyService::updateUserPassword()` speichert nur nach
+  bestätigter IMAP-(und ggf. SMTP-)Anmeldung per `mailbox.test`.
 
 Tests: `tests/Unit/MailProxyTest.php`.

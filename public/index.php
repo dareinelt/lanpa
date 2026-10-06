@@ -154,6 +154,7 @@ $router->get('/api/orvanta/mail/ordner', [OrvantaApiController::class, 'folders'
 $router->get('/api/orvanta/mail/ordner/eigenschaften', [OrvantaApiController::class, 'folderProperties']);
 $router->post('/api/orvanta/mail/ordner/neu', [OrvantaApiController::class, 'createFolder']);
 $router->post('/api/orvanta/mail/ordner/gelesen', [OrvantaApiController::class, 'markFolderRead']);
+$router->post('/api/orvanta/mail/kennwort', [OrvantaApiController::class, 'mailPassword']); // nur Proxy-Postfaecher: geaendertes Kennwort uebernehmen
 $router->get('/api/orvanta/mail', [OrvantaApiController::class, 'messages']);
 $router->get('/api/orvanta/mail/nachricht', [OrvantaApiController::class, 'message']);
 $router->get('/api/orvanta/mail/kopfzeilen', [OrvantaApiController::class, 'messageHeaders']);

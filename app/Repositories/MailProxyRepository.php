@@ -199,6 +199,15 @@ final class MailProxyRepository extends Repository
         $statement->execute($params);
     }
 
+    /**
+     * Nur das Kennwort-Chiffrat ersetzen (vom Benutzer bestaetigtes neues Kennwort).
+     */
+    public function updateMailboxPassword(int $id, string $passwordEncrypted): void
+    {
+        $this->pdo->prepare('UPDATE mail_proxy_mailboxes SET password_encrypted = :password, updated_at = CURRENT_TIMESTAMP WHERE id = :id')
+            ->execute(['id' => $id, 'password' => $passwordEncrypted]);
+    }
+
     public function deleteMailbox(int $id): void
     {
         // Zuordnungen explizit entfernen (SQLite-Tests ohne Fremdschluessel).

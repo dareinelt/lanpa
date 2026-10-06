@@ -171,7 +171,7 @@ flowchart LR
 - Anhänge: `GET /office/orvanta/anhang/oeffnen?token=…`,
   `GET /office/orvanta/anhang/datei?token=…` (Zugriff des DocumentServers).
 - API (`/api/orvanta/…`, JSON, CSRF-Token im Header `X-CSRF-Token`):
-  `status`, `mail/ordner`, `mail/ordner/eigenschaften`, `mail/ordner/neu`, `mail/ordner/gelesen` (Ordner-Kontextmenü), `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
+  `status`, `mail/ordner`, `mail/ordner/eigenschaften`, `mail/ordner/neu`, `mail/ordner/gelesen` (Ordner-Kontextmenü), `mail/kennwort` (nur Proxy-Postfächer: geändertes Kennwort übernehmen), `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
   `empfaenger` (Vorschläge für An/Cc/Bcc), `mail/entwurf`, `mail/antworten`, `mail/aktion`, `anhang/link`,
   `anhang/nextcloud`, `zwischenspeicher`, `zwischenspeicher/leeren`,
   `kalender`, `kalender/termin` (GET/POST), `kalender/termin/loeschen`,
@@ -336,6 +336,10 @@ einzelnen Postfächern zugeordnet. Für zugeordnete Benutzer wählt
   Postfach sperrt Orvanta für den Benutzer (403) ohne Rückfall.
 - Orvanta wird in der Office-Kachel auch angeboten, wenn Exchange nicht
   aktiviert ist, aber ein aktiver Proxy-Mailserver existiert.
+- Lehnt der Mailserver das hinterlegte Kennwort ab (z. B. vom Benutzer
+  geändert), fragt Orvanta in einem Overlay nach dem aktuellen Kennwort. Es wird
+  am Mailserver geprüft und ersetzt bei Erfolg den vom Admin eingetragenen Wert
+  (`POST /api/orvanta/mail/kennwort`).
 
 Einrichtung, Sicherheit, Cache und Fehlersuche: [docs/mail-proxy.md](mail-proxy.md).
 

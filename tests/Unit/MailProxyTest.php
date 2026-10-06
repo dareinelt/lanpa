@@ -603,3 +603,64 @@ Runner::test('Mail-Proxy: Verbindungstest und Diagnose ohne Geheimnisse', static
     Assert::false($env['service']->diagnostics()['available'], 'Fehlende Migration wird gemeldet.');
     Assert::same(MailProxyRoute::EXCHANGE, $env['resolver']->resolve(['id' => 2, 'source_id' => 5])->state, 'Ohne Tabellen bleibt Exchange.');
 });
+
+Runner::test('Mail-Proxy: Benutzer übernimmt geändertes Kennwort nur nach erfolgreicher Anmeldung', static function (): void {
+    $env = mailProxyEnv();
+    $ids = mailProxySeed($env);
+    $route = $env['resolver']->resolve(['id' => 2, 'source_id' => 5]);
+    Assert::true($route->isProxy());
+    $stored = static fn (): ?string => $env['secrets']->decrypt((string) $env['repository']->mailboxSecret($ids['mailbox']));
+    $env['transport']->requests = [];
+
+    Assert::same(422, mailProxyStatus(fn () => $env['service']->updateUserPassword($route, '')));
+    Assert::same(422, mailProxyStatus(fn () => $env['service']->updateUserPassword($route, "neu\r\n")));
+    Assert::same([], $env['transport']->operations(), 'Ungültige Eingabe erreicht den Mailserver nicht.');
+
+    $env['transport']->responses['mailbox.test'] = ['checks' => [
+        ['name' => 'SMTP-Verbindung', 'ok' => true, 'message' => ''],
+        ['name' => 'IMAP', 'ok' => false, 'code' => 'auth_failed', 'message' => 'IMAP-Anmeldung abgelehnt.'],
+    ]];
+    Assert::same(422, mailProxyStatus(fn () => $env['service']->updateUserPassword($route, 'falsch')));
+    Assert::same('geheim-123', $stored(), 'Abgelehntes Kennwort wird nicht gespeichert.');
+    Assert::same('falsch', $env['transport']->requests[0]['payload']['account']['imap']['password'], 'Geprüft wird das eingegebene Kennwort.');
+
+    $env['transport']->responses['mailbox.test'] = ['checks' => [
+        ['name' => 'SMTP-Verbindung', 'ok' => true, 'message' => ''],
+        ['name' => 'SMTP', 'ok' => false, 'code' => 'auth_failed', 'message' => 'SMTP-Anmeldung abgelehnt.'],
+        ['name' => 'IMAP-Anmeldung', 'ok' => true, 'message' => ''],
+    ]];
+    Assert::same(422, mailProxyStatus(fn () => $env['service']->updateUserPassword($route, 'nur-imap')), 'Auch SMTP muss das Kennwort annehmen.');
+
+    $env['transport']->responses['mailbox.test'] = ['checks' => [['name' => 'IMAP', 'ok' => false, 'code' => 'unreachable', 'message' => 'Mailserver nicht erreichbar (IMAP).']]];
+    Assert::same(502, mailProxyStatus(fn () => $env['service']->updateUserPassword($route, 'neu-456')));
+    Assert::same('geheim-123', $stored(), 'Ohne bestätigte Anmeldung bleibt das Kennwort unverändert.');
+
+    $env['transport']->responses['mailbox.test'] = ['checks' => [
+        ['name' => 'SMTP-Verbindung', 'ok' => true, 'message' => ''],
+        ['name' => 'SMTP-Anmeldung', 'ok' => true, 'message' => ''],
+        ['name' => 'IMAP-Verbindung/TLS', 'ok' => true, 'message' => ''],
+        ['name' => 'IMAP-Anmeldung', 'ok' => true, 'message' => ''],
+    ]];
+    $env['service']->updateUserPassword($route, 'neu-456');
+    Assert::same('neu-456', $stored(), 'Bestätigtes Kennwort ersetzt den Admin-Wert.');
+    Assert::same('neu-456', $env['resolver']->account($route)->payload()['imap']['password']);
+    Assert::false(in_array('smtp.send', $env['transport']->operations(), true), 'Die Prüfung versendet keine Mail.');
+    Assert::false(str_contains((string) @file_get_contents($env['dir'] . '/mail-proxy.log'), 'neu-456'), 'Kein Kennwort im Log.');
+
+    $env['service']->saveMailbox($ids['server'], ['username' => 'jan', 'email_address' => 'jan@hh.example', 'display_name' => 'Jan Müller', 'active' => '0'], '', $ids['mailbox']);
+    Assert::same(403, mailProxyStatus(fn () => $env['service']->updateUserPassword($route, 'neu-789')), 'Deaktiviertes Postfach: keine Änderung.');
+});
+
+Runner::test('Mail-Proxy: abgelehnte Anmeldung liefert den Grund mail_auth an Orvanta', static function (): void {
+    $transport = new FakeMailProxyTransport();
+    $transport->responses['imap.folders'] = new OrvantaException('Die Anmeldung am Postfach wurde abgelehnt.', 409, null, OrvantaException::MAIL_AUTH);
+    $backend = mailProxyBackend($transport);
+    try {
+        $backend->folders('jan@hh.example');
+        throw new RuntimeException('Erwartete OrvantaException blieb aus.');
+    } catch (OrvantaException $exception) {
+        Assert::same(409, $exception->status());
+        Assert::same(OrvantaException::MAIL_AUTH, $exception->reason());
+    }
+    Assert::same('', (new OrvantaException('x'))->reason());
+});

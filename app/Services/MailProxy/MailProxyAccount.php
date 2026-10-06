@@ -59,6 +59,15 @@ final class MailProxyAccount implements \JsonSerializable
     }
 
     /**
+     * Gleiche Verbindung mit anderem Kennwort (Pruefung eines vom Benutzer
+     * eingegebenen Kennworts, bevor es gespeichert wird).
+     */
+    public function withPassword(#[\SensitiveParameter] string $password): self
+    {
+        return new self($this->mailboxId, $this->serverId, $this->sourceId, $this->username, $this->email, $this->displayName, $password, $this->server, $this->generation);
+    }
+
+    /**
      * @return array<string,mixed>
      */
     public function __debugInfo(): array

@@ -29,7 +29,7 @@ final class HttpMailProxyTransport implements MailProxyTransportInterface
     private const ERRORS = [
         'unreachable' => ['Der Mailserver ist nicht erreichbar. Bitte später erneut versuchen oder die Administration informieren.', 502],
         'tls' => ['Die TLS-Verbindung zum Mailserver ist fehlgeschlagen (Zertifikat oder TLS-Modus prüfen).', 502],
-        'auth_failed' => ['Die Anmeldung am Postfach ist fehlgeschlagen. Bitte die Administration informieren (Zugangsdaten prüfen).', 502],
+        'auth_failed' => ['Die Anmeldung am Postfach wurde abgelehnt. Möglicherweise wurde das Kennwort geändert.', 409],
         'timeout' => ['Der Mailserver hat nicht rechtzeitig geantwortet.', 504],
         'not_found' => ['Das Element wurde nicht gefunden.', 404],
         'invalid' => ['Die Anfrage an den Mailserver ist ungültig.', 422],
@@ -87,7 +87,7 @@ final class HttpMailProxyTransport implements MailProxyTransportInterface
         $message = is_array($data['error'] ?? null) ? (string) ($data['error']['message'] ?? '') : '';
         [$text, $httpStatus] = self::ERRORS[$code] ?? [$message !== '' ? mb_substr($message, 0, 300) : 'Der Mail-Proxy meldet einen Fehler.', 502];
 
-        throw new OrvantaException($text, $httpStatus);
+        throw new OrvantaException($text, $httpStatus, null, $code === 'auth_failed' ? OrvantaException::MAIL_AUTH : '');
     }
 
     public function health(): array

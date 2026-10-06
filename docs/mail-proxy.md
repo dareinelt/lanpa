@@ -72,7 +72,10 @@ deaktivieren).
 
 - **Passwort** wird ausschließlich als SecretBox-Chiffrat (`enc:v1:…`) gespeichert
   und nie wieder angezeigt. Leeres Feld beim Bearbeiten = unverändert.
-  Zeilenumbrüche sind nicht erlaubt, höchstens 4096 Zeichen.
+  Zeilenumbrüche sind nicht erlaubt, höchstens 4096 Zeichen. Ändert der
+  Benutzer sein Kennwort am Mailserver, kann er das neue in Orvanta eingeben;
+  es ersetzt nach erfolgreicher Anmeldung den hier eingetragenen Wert
+  (Abschnitt 5a).
 - **E-Mail-Adresse** wird kleingeschrieben gespeichert und ist je Server eindeutig.
   Sie ist gleichzeitig die Absenderadresse; Benutzer können keinen anderen
   Absender wählen.
@@ -141,6 +144,30 @@ deutsche und englische Namen (`Sent`, `Gesendete Elemente`, `Trash`,
 - **Protokolle:** strukturierte JSON-Zeilen auf stdout; Felder mit
   `pass|secret|token|authorization|signature|credential` werden maskiert.
 
+## 5a. Geändertes Kennwort (Abfrage in Orvanta)
+
+Ändert ein Benutzer das Kennwort seines Postfachs direkt am Mailserver,
+schlägt Orvanta nicht hart fehl:
+
+1. Lehnt der Mailserver die Anmeldung ab (Proxy-Code `auth_failed`), antwortet
+   die Orvanta-API mit **409** und `{"error": "…", "code": "mail_auth"}`.
+2. `orvanta.js` öffnet daraufhin das Overlay „Kennwort des Postfachs“ und fragt
+   das aktuelle Kennwort ab. Gleichzeitige Anfragen teilen sich eine Abfrage.
+3. `POST /api/orvanta/mail/kennwort` (CSRF, nur für Proxy-Postfächer, nur das
+   eigene zugeordnete und aktive Postfach) prüft das Kennwort mit
+   `mailbox.test` (IMAP- und ggf. SMTP-Anmeldung, **kein** Mailversand).
+4. Nur wenn der Mailserver die Anmeldung bestätigt, wird das Kennwort
+   verschlüsselt gespeichert und **ersetzt den vom Admin eingetragenen Wert**.
+   Danach wiederholt Orvanta die ursprüngliche Anfrage einmal.
+5. Ein abgelehntes Kennwort (422) wird nicht gespeichert; nach 5 Fehlversuchen
+   je Sitzung und Postfach ist die Eingabe 5 Minuten gesperrt (429). Ist der
+   Mailserver nicht erreichbar, bleibt das gespeicherte Kennwort unverändert.
+
+Abbrechen schließt das Overlay; die auslösende Aktion zeigt dann die normale
+Fehlermeldung, die nächste Aktion fragt erneut. Das Protokoll vermerkt die
+Übernahme (`mail-proxy password updated by user`, nur Postfach-ID) – nie das
+Kennwort.
+
 ## 6. Cache und Invalidierung
 
 - Die aufgelöste Zuordnung (nur Kennungen und Zustand, nie Zugangsdaten) wird
@@ -183,7 +210,7 @@ Fehler (ohne Geheimnisse).
 | --- | --- |
 | „Der Mail-Proxy-Dienst ist nicht erreichbar.“ (503) | Container `mail-proxy` läuft nicht oder `app` hängt nicht im Netz `mail_proxy`: `docker compose ps mail-proxy`, `docker compose logs mail-proxy` |
 | „Der Mail-Proxy hat die Anfrage abgelehnt (Schlüssel prüfen).“ | Schlüsseldatei nicht lesbar/abweichend oder Uhrzeit von `app` und `mail-proxy` weicht > 60 s ab |
-| „Die Anmeldung am Postfach ist fehlgeschlagen.“ | Benutzername/Passwort des Postfachs prüfen (Verbindungstest) |
+| „Die Anmeldung am Postfach wurde abgelehnt. Möglicherweise wurde das Kennwort geändert.“ | Orvanta fragt den Benutzer in einem Overlay nach dem aktuellen Kennwort (Abschnitt 5a); im Adminbereich Benutzername/Passwort prüfen (Verbindungstest) |
 | „Die TLS-Verbindung zum Mailserver ist fehlgeschlagen.“ | Zertifikat, Hostname oder TLS-Modus/Port prüfen |
 | „Der konfigurierte Mailserver ist als Ziel nicht zulässig.“ | Host löst auf eine gesperrte Adresse auf (Loopback, Link-Local, `MAIL_PROXY_DENY_CIDRS`) |
 | Orvanta zeigt „Das zugeordnete Postfach ist deaktiviert.“ | Postfach im Adminbereich aktivieren oder Zuordnung löschen |
@@ -226,6 +253,10 @@ Mailserver und Postfächer neu anzulegen.
 | POST | `/admin/office/mail-proxy/zuordnung`, `…/zuordnung/loeschen` | Zuordnung speichern, löschen |
 | GET | `/admin/office/mail-proxy/users`, `…/mailboxes` | JSON-Vorschläge (gefiltert nach Quelle, ohne Zugangsdaten) |
 
+Für Benutzer (Orvanta-Freigabe, CSRF): `POST /api/orvanta/mail/kennwort`
+(`OrvantaApiController::mailPassword()` → `MailProxyService::updateUserPassword()`),
+siehe Abschnitt 5a.
+
 ### Proxy-Protokoll
 
 - `POST /v1/<operation>` mit JSON-Body `{"account": {...}, ...}` und Headern
@@ -233,6 +264,9 @@ Mailserver und Postfächer neu anzulegen.
 - Antwort `{"ok": true, "data": {...}}` bzw. `{"ok": false, "error": {"code", "message"}}`;
   Codes: `unreachable`, `tls`, `auth_failed`, `timeout`, `not_found`, `invalid`,
   `busy`, `forbidden_target`, `unauthorized`, `smtp_rejected`, `too_large`.
+  `auth_failed` wird in PHP zu 409 mit `OrvantaException::reason()` =
+  `mail_auth`; fehlgeschlagene Prüfschritte von `mailbox.test` tragen den Code
+  im Feld `code`.
 - Operationen: `imap.folders`, `imap.create_folder`, `imap.mark_folder_read`,
   `imap.folder_status`, `imap.messages`, `imap.message`, `imap.headers`,
   `imap.attachment`, `imap.flags`, `imap.move`, `imap.delete`, `imap.quota`,
@@ -255,5 +289,6 @@ Mailserver und Postfächer neu anzulegen.
 Verschlüsselung und geheimnisfreie Listen, Zuordnungsregeln, Vorschläge,
 Entscheidungstabelle, Cache/Generation, frische Zugangsdaten, Router inkl.
 Sperre ohne Rückfall, Postfach-Bindung der IDs, Signatur-Referenzwert,
-Verbindungstest und Diagnose. Ende-zu-Ende-Tests gegen einen echten Mailserver
+Verbindungstest und Diagnose, Kennwort-Übernahme durch den Benutzer (nur nach
+bestätigter Anmeldung) und Grund `mail_auth`. Ende-zu-Ende-Tests gegen einen echten Mailserver
 (z. B. GreenMail) sind manuell durchzuführen.

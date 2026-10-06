@@ -387,6 +387,20 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         </form>
     </dialog>
 
+    <!-- Dialog: Postfach-Kennwort (nur Proxy-Postfaecher; Mailserver lehnt das hinterlegte Kennwort ab) -->
+    <dialog class="ov-dialog ov-dialog--small" data-ov-dialog="mail-password">
+        <form method="dialog" class="ov-dialog__form" data-ov-form="mail-password">
+            <div class="ov-dialog__head"><h2>Kennwort des Postfachs</h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
+            <div class="ov-dialog__body">
+                <p data-ov-mail-password-reason>Der Mailserver hat die Anmeldung abgelehnt. Möglicherweise wurde das Kennwort geändert.</p>
+                <p class="ov-muted">Bitte das aktuelle Kennwort für <strong data-ov-mail-password-email></strong> eingeben. Es wird zuerst am Mailserver geprüft und bei Erfolg für Orvanta gespeichert.</p>
+                <label class="ov-field"><span>Aktuelles Kennwort</span><input type="password" name="password" maxlength="4096" required autocomplete="current-password"></label>
+                <p class="ov-form-error" data-ov-form-error hidden></p>
+            </div>
+            <div class="ov-dialog__foot"><button type="submit" class="button button--primary">Anmelden</button><button type="button" class="button button--ghost" data-ov-dialog-close>Abbrechen</button></div>
+        </form>
+    </dialog>
+
     <!-- Dialog: Verschieben -->
     <dialog class="ov-dialog ov-dialog--small" data-ov-dialog="move">
         <form method="dialog" class="ov-dialog__form" data-ov-form="move">

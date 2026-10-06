@@ -630,7 +630,8 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
             $payload['account'] = $this->account->payload();
             $result = $this->transport->request($operation, $payload);
         } catch (OrvantaException $exception) {
-            if ($exception->status() >= 500 || in_array($exception->status(), [403, 413], true)) {
+            $authFailed = $exception->reason() === OrvantaException::MAIL_AUTH;
+            if ($exception->status() >= 500 || $authFailed || in_array($exception->status(), [403, 413], true)) {
                 $this->logger?->warning('mail-proxy operation failed', [
                     'operation' => $operation,
                     'mailbox_id' => $this->route->mailboxId,
@@ -638,7 +639,7 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
                     'status' => $exception->status(),
                     'error' => $exception->getMessage(),
                 ]);
-                if ($exception->status() >= 500) {
+                if ($exception->status() >= 500 || $authFailed) {
                     $this->state(fn (MailProxyRepository $repository) => $repository->recordError($exception->getMessage()));
                 }
             }

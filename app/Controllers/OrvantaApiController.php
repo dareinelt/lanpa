@@ -32,6 +32,8 @@ final class OrvantaApiController extends Controller
 {
     private const MAX_BODY = 20 * 1024 * 1024;
     private const SYNC_INTERVAL = 300;
+    private const PASSWORD_ATTEMPTS = 5;
+    private const PASSWORD_LOCK_SECONDS = 300;
 
     /** @var array<string,mixed> */
     private array $body = [];
@@ -649,6 +651,48 @@ final class OrvantaApiController extends Controller
     }
 
     // ------------------------------------------------------------------
+    // Proxy-Postfach: Kennwort durch den Benutzer
+    // ------------------------------------------------------------------
+
+    /**
+     * Aktuelles Kennwort des zugeordneten Proxy-Postfachs uebernehmen, wenn
+     * der Mailserver das hinterlegte ablehnt (Overlay in orvanta.js). Das
+     * Kennwort wird vor dem Speichern gegen den Mailserver geprueft und
+     * ersetzt bei Erfolg den vom Admin eingetragenen Wert. Fehlversuche
+     * werden je Sitzung und Postfach begrenzt.
+     */
+    public function mailPassword(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            $route = $access['route'];
+            if (!$route->isProxy()) {
+                throw new OrvantaException('Für Ihr Postfach kann hier kein Kennwort hinterlegt werden.', 409);
+            }
+            $key = 'orvanta_mail_password_' . $route->mailboxId;
+            $state = Session::get($key);
+            $state = is_array($state) ? $state : ['attempts' => 0, 'locked_until' => 0];
+            $wait = (int) ($state['locked_until'] ?? 0) - time();
+            if ($wait > 0) {
+                throw new OrvantaException('Zu viele Fehlversuche. Bitte in ' . (int) ceil($wait / 60) . ' Minute(n) erneut versuchen.', 429);
+            }
+            try {
+                Container::mailProxy()->updateUserPassword($route, $this->str('password'));
+            } catch (OrvantaException $exception) {
+                if ($exception->status() === 422) {
+                    $attempts = (int) ($state['attempts'] ?? 0) + 1;
+                    Session::put($key, $attempts >= self::PASSWORD_ATTEMPTS
+                        ? ['attempts' => 0, 'locked_until' => time() + self::PASSWORD_LOCK_SECONDS]
+                        : ['attempts' => $attempts, 'locked_until' => 0]);
+                }
+                throw $exception;
+            }
+            Session::forget($key);
+
+            return ['ok' => true, 'message' => 'Das Kennwort wurde übernommen.'];
+        }, true);
+    }
+
+    // ------------------------------------------------------------------
     // Hilfsfunktionen
     // ------------------------------------------------------------------
 
@@ -706,7 +750,12 @@ final class OrvantaApiController extends Controller
 
             return Response::json($action($access))->withHeader('Vary', 'Cookie');
         } catch (OrvantaException $exception) {
-            return Response::json(['error' => $exception->getMessage()], $exception->status());
+            $payload = ['error' => $exception->getMessage()];
+            if ($exception->reason() !== '') {
+                $payload['code'] = $exception->reason();
+            }
+
+            return Response::json($payload, $exception->status());
         } catch (ValidationException $exception) {
             return Response::json(['error' => implode(' ', $exception->errors())], 422);
         } catch (HttpException $exception) {

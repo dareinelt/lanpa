@@ -451,6 +451,58 @@ final class MailProxyService
     }
 
     // ------------------------------------------------------------------
+    // Kennwort durch den Benutzer (Orvanta)
+    // ------------------------------------------------------------------
+
+    /**
+     * Aktuelles Postfach-Kennwort des angemeldeten Benutzers uebernehmen,
+     * z. B. nachdem er es am Mailserver geaendert hat. Das Kennwort wird
+     * erst gegen den Mailserver geprueft (IMAP- und ggf. SMTP-Anmeldung,
+     * ohne Mailversand) und nur bei Erfolg verschluesselt gespeichert; es
+     * ersetzt dann den vom Admin hinterlegten Wert.
+     *
+     * @throws OrvantaException 422 bei abgelehntem/ungueltigem Kennwort,
+     *         sonst Fehler der Postfach-Pruefung (403/409/502/503)
+     */
+    public function updateUserPassword(MailProxyRoute $route, #[\SensitiveParameter] string $password): void
+    {
+        if ($password === '' || strlen($password) > self::PASSWORD_MAX || preg_match('/[\r\n\x00]/', $password) === 1) {
+            throw new OrvantaException('Bitte das aktuelle Kennwort des Postfachs eingeben (keine Zeilenumbrüche, höchstens 4096 Zeichen).', 422);
+        }
+        $account = $this->resolver->account($route)->withPassword($password);
+        $data = $this->transport->request('mailbox.test', ['account' => $account->payload()]);
+        unset($account);
+        $imapLogin = false;
+        $rejected = false;
+        $failure = '';
+        foreach ((array) ($data['checks'] ?? []) as $check) {
+            if (!is_array($check)) {
+                continue;
+            }
+            $ok = !empty($check['ok']);
+            if (($check['code'] ?? '') === 'auth_failed') {
+                $rejected = true;
+            }
+            if ($ok && ($check['name'] ?? '') === 'IMAP-Anmeldung') {
+                $imapLogin = true;
+            }
+            if (!$ok && $failure === '') {
+                $failure = mb_substr((string) ($check['message'] ?? ''), 0, 300);
+            }
+        }
+        if ($rejected) {
+            $this->logger->warning('mail-proxy user password rejected', ['mailbox_id' => $route->mailboxId]);
+            throw new OrvantaException('Der Mailserver hat das Kennwort abgelehnt. Bitte erneut eingeben.', 422);
+        }
+        if (!$imapLogin) {
+            throw new OrvantaException($failure !== '' ? 'Das Kennwort konnte nicht geprüft werden: ' . $failure : 'Das Kennwort konnte nicht geprüft werden.', 502);
+        }
+        $this->repository->updateMailboxPassword($route->mailboxId, $this->secrets->encrypt($password));
+        $this->safeState(fn () => $this->repository->recordSuccess());
+        $this->logger->info('mail-proxy password updated by user', ['mailbox_id' => $route->mailboxId, 'identity_source' => $route->sourceId]);
+    }
+
+    // ------------------------------------------------------------------
     // Verbindungstest und Diagnose
     // ------------------------------------------------------------------
 

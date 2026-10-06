@@ -1491,7 +1491,8 @@ def op_test(account: Account, payload: dict) -> dict:
         if cfg["auth"]:
             checks.append({"name": "SMTP-Anmeldung", "ok": True, "message": ""})
     except Exception as exc:  # noqa: BLE001
-        checks.append({"name": stages[0], "ok": False, "message": classify(exc, stages[0]).message})
+        error = classify(exc, stages[0])
+        checks.append({"name": stages[0], "ok": False, "code": error.code, "message": error.message})
     finally:
         _smtp_close(conn)
     try:
@@ -1502,10 +1503,12 @@ def op_test(account: Account, payload: dict) -> dict:
             session.select("INBOX", True)
             checks.append({"name": "IMAP-Posteingang", "ok": True, "message": ""})
         except Exception as exc:  # noqa: BLE001
-            checks.append({"name": "IMAP-Posteingang", "ok": False, "message": classify(exc, "IMAP").message})
+            error = classify(exc, "IMAP")
+            checks.append({"name": "IMAP-Posteingang", "ok": False, "code": error.code, "message": error.message})
         session.close()
     except Exception as exc:  # noqa: BLE001
-        checks.append({"name": "IMAP", "ok": False, "message": classify(exc, "IMAP").message})
+        error = classify(exc, "IMAP")
+        checks.append({"name": "IMAP", "ok": False, "code": error.code, "message": error.message})
     return {"checks": checks}
 
 

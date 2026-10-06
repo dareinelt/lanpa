@@ -450,6 +450,20 @@
     // ------------------------------------------------------------------
 
     function api(path, options) {
+        return apiRequest(path, options).catch(function (error) {
+            // Proxy-Postfach: Mailserver lehnt das hinterlegte Kennwort ab
+            // (z. B. vom Benutzer geaendert) – Kennwort abfragen und die
+            // Anfrage danach einmal wiederholen, statt hart zu scheitern.
+            if (error.data && error.data.code === 'mail_auth' && !(options && options.noPasswordPrompt)) {
+                return promptMailPassword(error).then(function () {
+                    return apiRequest(path, options);
+                });
+            }
+            throw error;
+        });
+    }
+
+    function apiRequest(path, options) {
         options = options || {};
         var init = {
             method: options.method || 'GET',
@@ -603,8 +617,9 @@
         }
         if (typeof dialog.close === 'function' && dialog.open) {
             dialog.close();
-        } else {
+        } else if (dialog.hasAttribute('open')) {
             dialog.removeAttribute('open');
+            dialog.dispatchEvent(new Event('close'));
         }
     }
 
@@ -620,6 +635,83 @@
 
     function confirmAction(message) {
         return window.confirm(message);
+    }
+
+    // ------------------------------------------------------------------
+    // Proxy-Postfach: Kennwort-Abfrage
+    // ------------------------------------------------------------------
+
+    var mailPasswordPrompt = null;
+
+    /**
+     * Zeigt das Kennwort-Overlay (gleichzeitige Anfragen teilen sich eine
+     * Abfrage). Erfuellt sich, sobald das neue Kennwort am Mailserver
+     * bestaetigt und gespeichert ist; beim Abbrechen mit dem urspruenglichen
+     * Fehler abgelehnt.
+     */
+    function promptMailPassword(original) {
+        if (mailPasswordPrompt) {
+            return mailPasswordPrompt.promise;
+        }
+        var form = hook('form-mail-password');
+        var dialog = form ? form.closest('dialog') : null;
+        if (!form || !dialog) {
+            return Promise.reject(original);
+        }
+        var pending = {};
+        pending.promise = new Promise(function (resolve, reject) {
+            pending.resolve = resolve;
+            pending.reject = reject;
+        });
+        mailPasswordPrompt = pending;
+        form.reset();
+        var reason = hook('mail-password-reason', form);
+        if (reason && original && original.message) {
+            reason.textContent = original.message;
+        }
+        var email = hook('mail-password-email', form);
+        if (email) {
+            email.textContent = (config.user && config.user.email) || 'Ihr Postfach';
+        }
+        var onClose = function () {
+            dialog.removeEventListener('close', onClose);
+            form.reset();
+            if (mailPasswordPrompt === pending) {
+                mailPasswordPrompt = null;
+                pending.reject(original);
+            }
+        };
+        dialog.addEventListener('close', onClose);
+        openDialog('mail-password');
+        return pending.promise;
+    }
+
+    function submitMailPassword(form) {
+        var pending = mailPasswordPrompt;
+        if (!pending) {
+            closeDialog('mail-password');
+            return;
+        }
+        var password = form.elements.password.value;
+        if (!password) {
+            formError(form, 'Bitte das aktuelle Kennwort eingeben.');
+            return;
+        }
+        var button = form.querySelector('[type=submit]');
+        button.disabled = true;
+        formError(form, '');
+        apiRequest('/mail/kennwort', { body: { password: password } }).then(function (result) {
+            mailPasswordPrompt = null;
+            closeDialog('mail-password');
+            toast(result.message || 'Das Kennwort wurde übernommen.', 'success');
+            pending.resolve();
+        }).catch(function (error) {
+            form.elements.password.value = '';
+            formError(form, error.message);
+            form.elements.password.focus();
+        }).then(function () {
+            button.disabled = false;
+        });
     }
 
     // ------------------------------------------------------------------
@@ -3753,6 +3845,7 @@
                 else if (kind === 'compose') { sendCompose(form, false); }
                 else if (kind === 'folder-new') { createFolder(form); }
                 else if (kind === 'move') { submitMove(form); }
+                else if (kind === 'mail-password') { submitMailPassword(form); }
             });
         });
 

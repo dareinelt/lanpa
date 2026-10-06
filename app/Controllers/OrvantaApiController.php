@@ -681,7 +681,7 @@ final class OrvantaApiController extends Controller
     public function spellcheck(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $spellcheck = Container::orvantaSpellcheck();
+            $spellcheck = $this->spellcheckFor($access);
             $words = $this->words('words', OrvantaSpellcheckService::MAX_WORDS_PER_REQUEST);
             $misspelled = [];
             foreach ($words as $word) {
@@ -701,7 +701,7 @@ final class OrvantaApiController extends Controller
     public function spellcheckSuggest(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $spellcheck = Container::orvantaSpellcheck();
+            $spellcheck = $this->spellcheckFor($access);
             $word = $this->str('word');
             if (mb_strlen($word, 'UTF-8') > OrvantaSpellcheckService::MAX_WORD_LENGTH) {
                 throw new OrvantaException('Das Wort ist zu lang.', 422);
@@ -709,6 +709,49 @@ final class OrvantaApiController extends Controller
 
             return ['available' => $spellcheck->isUsable(), 'suggestions' => $spellcheck->suggest($word)];
         }, true);
+    }
+
+    /**
+     * Persoenliches Woerterbuch des Benutzers (Einstellungen).
+     */
+    public function spellcheckWords(Request $request): Response
+    {
+        return $this->handle($request, static fn (array $access): array => [
+            'words' => Container::orvantaSpellcheckUserWords()->words((string) $access['uid']),
+        ]);
+    }
+
+    /**
+     * Wort ins persoenliche Woerterbuch aufnehmen (Kontextmenue "Zum
+     * Woerterbuch hinzufuegen").
+     */
+    public function spellcheckAddWord(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            return ['words' => Container::orvantaSpellcheckUserWords()->add((string) $access['uid'], $this->str('word'))];
+        }, true);
+    }
+
+    public function spellcheckRemoveWord(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            return ['words' => Container::orvantaSpellcheckUserWords()->remove((string) $access['uid'], $this->str('word'))];
+        }, true);
+    }
+
+    /**
+     * Pruefung mit den persoenlichen Woertern des Benutzers.
+     *
+     * @param array<string,mixed> $access
+     */
+    private function spellcheckFor(array $access): OrvantaSpellcheckService
+    {
+        $spellcheck = Container::orvantaSpellcheck();
+        if (!$spellcheck->isAvailable()) {
+            return $spellcheck;
+        }
+
+        return $spellcheck->withUserWords(Container::orvantaSpellcheckUserWords()->wordsForCheck((string) $access['uid']));
     }
 
     // ------------------------------------------------------------------

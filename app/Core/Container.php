@@ -723,6 +723,19 @@ final class Container
         );
     }
 
+    /**
+     * Persoenliche Woerterbuecher der Rechtschreibpruefung (Datenbank).
+     */
+    public static function orvantaSpellcheckUserWords(): \App\Services\Orvanta\OrvantaSpellcheckUserWords
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaSpellcheckUserWords::class,
+            static fn (): \App\Services\Orvanta\OrvantaSpellcheckUserWords => new \App\Services\Orvanta\OrvantaSpellcheckUserWords(
+                new \App\Repositories\OrvantaSpellcheckWordRepository()
+            )
+        );
+    }
+
     public static function nextcloudAdmins(): NextcloudAdminService
     {
         return self::make(

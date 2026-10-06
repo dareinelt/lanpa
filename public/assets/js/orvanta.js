@@ -3834,6 +3834,7 @@
                 playSound();
                 break;
             case 'cache-clear': clearCache(); break;
+            case 'spell-word-remove': spellRemoveWord(value); break;
             case 'headers-copy': copyHeaders(); break;
             case 'send': sendCompose(hook('form-compose'), false); break;
             case 'save-draft': sendCompose(hook('form-compose'), true); break;
@@ -3869,6 +3870,7 @@
                     renderSettingsInfo();
                     updateNotifyState();
                     loadQuota();
+                    spellLoadWords();
                 }
                 openDialog(name);
             } else if (target.hasAttribute('data-ov-dialog-close')) {
@@ -4990,6 +4992,7 @@
 
     var SPELL_CHECK_URL = '/rechtschreibung/pruefen';
     var SPELL_SUGGEST_URL = '/rechtschreibung/vorschlaege';
+    var SPELL_WORDS_URL = '/rechtschreibung/woerterbuch';
     var SPELL_MAX_WORDS = 400;          // wie OrvantaSpellcheckService::MAX_WORDS_PER_REQUEST
     var SPELL_MAX_WORD_LENGTH = 64;     // wie OrvantaSpellcheckService::MAX_WORD_LENGTH
     var SPELL_MIN_WORD_LENGTH = 2;      // Einzelbuchstaben ("z. B.") nicht anmeckern
@@ -5410,12 +5413,108 @@
         }
         if (!list.length) {
             entries.push({ label: 'Keine Vorschläge', disabled: true });
-            return entries;
         }
         list.forEach(function (suggestion) {
             entries.push({ label: suggestion, run: function () { spellReplace(info, suggestion); } });
         });
+        entries.push(
+            { separator: true },
+            { label: 'Alle ignorieren', run: function () { spellAccept(info.word); } },
+            { label: 'Zum Wörterbuch hinzufügen', run: function () { spellAddWord(info.word); } }
+        );
         return entries;
+    }
+
+    /**
+     * Wort fuer diese Sitzung als korrekt behandeln ("Alle ignorieren") bzw.
+     * nach dem Aufnehmen ins Woerterbuch die Markierungen entfernen.
+     */
+    function spellAccept(word) {
+        spell.known[word] = true;
+        delete spell.suggestions[word];
+        spellRepaint();
+    }
+
+    /**
+     * Wort ins persoenliche Woerterbuch aufnehmen (serverseitig, gilt damit
+     * auf allen Geraeten).
+     */
+    function spellAddWord(word) {
+        api(SPELL_WORDS_URL, { body: { word: word } }).then(function (data) {
+            spellAccept(word);
+            spellRenderWords(data && data.words);
+            toast('„' + word + '“ wurde in Ihr Wörterbuch aufgenommen.', 'success');
+        }).catch(function (error) {
+            toast(error.message || 'Das Wort konnte nicht aufgenommen werden.', 'error');
+        });
+    }
+
+    /**
+     * Persoenliches Woerterbuch in den Einstellungen anzeigen.
+     */
+    function spellLoadWords() {
+        var list = hook('spell-words');
+        if (!list || !spell.available) {
+            return;
+        }
+        api(SPELL_WORDS_URL).then(function (data) {
+            spellRenderWords(data && data.words);
+        }).catch(function (error) {
+            list.textContent = '';
+            list.appendChild(el('li', { 'class': 'ov-muted', text: error.message || 'Das Wörterbuch konnte nicht geladen werden.' }));
+        });
+    }
+
+    function spellRenderWords(words) {
+        var list = hook('spell-words');
+        if (!list || !Array.isArray(words)) {
+            return;
+        }
+        list.textContent = '';
+        if (!words.length) {
+            list.appendChild(el('li', { 'class': 'ov-muted', text: 'Noch keine eigenen Wörter.' }));
+            return;
+        }
+        words.forEach(function (word) {
+            list.appendChild(el('li', {}, [
+                el('span', { text: word }),
+                el('button', {
+                    type: 'button',
+                    'class': 'ov-mini ov-mini--light',
+                    'data-ov-action': 'spell-word-remove',
+                    'data-ov-value': word,
+                    title: 'Aus dem Wörterbuch entfernen',
+                    'aria-label': '„' + word + '“ aus dem Wörterbuch entfernen',
+                    text: '\u00d7'
+                })
+            ]));
+        });
+    }
+
+    /**
+     * Wort aus dem persoenlichen Woerterbuch entfernen; offene Editoren werden
+     * danach neu geprueft.
+     */
+    function spellRemoveWord(word) {
+        if (!word) {
+            return;
+        }
+        api(SPELL_WORDS_URL + '/entfernen', { body: { word: word } }).then(function (data) {
+            spellRenderWords(data && data.words);
+            // Auch Formen mit Gross-/Kleinschreibung oder Punkt koennen durch
+            // das Wort als korrekt gegolten haben: Ergebnisse neu erfragen.
+            spell.known = Object.create(null);
+            spell.suggestions = Object.create(null);
+            spellEditors().forEach(function (editor) {
+                var dialog = editor.closest('dialog');
+                if (!dialog || dialog.open) {
+                    spellScan(editor);
+                }
+            });
+            toast('„' + word + '“ wurde aus Ihrem Wörterbuch entfernt.', 'success');
+        }).catch(function (error) {
+            toast(error.message || 'Das Wort konnte nicht entfernt werden.', 'error');
+        });
     }
 
     function spellMenuItems(event, field) {

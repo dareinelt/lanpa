@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Services\Orvanta;
 
 use App\Repositories\OrvantaRepository;
+use App\Contracts\OrvantaMailBackendInterface;
 use App\Security\SecretBox;
+use App\Services\MailProxy\OrvantaMailRouter;
+use App\Services\MailProxy\ProxyMailBackend;
 use App\Services\Office\NextcloudFilesService;
 use App\Services\Office\OfficeAppCatalog;
 use App\Services\Office\OfficeConfigService;
@@ -40,7 +43,8 @@ final class OrvantaAttachmentService
         private readonly NextcloudFilesService $nextcloud,
         private readonly OrvantaExchangeService $exchange,
         private readonly SecretBox $secrets,
-        private readonly ?OrvantaArchiveService $archive = null
+        private readonly ?OrvantaArchiveService $archive = null,
+        private readonly ?OrvantaMailRouter $router = null
     ) {
     }
 
@@ -140,6 +144,14 @@ final class OrvantaAttachmentService
                 'cached' => false,
             ];
         }
+        // Backend des Benutzers (Exchange oder Proxy-Postfach) vor dem
+        // Zwischenspeicher pruefen: Kennungen eines anderen Backends bzw.
+        // eines frueher zugeordneten Postfachs werden nie ausgeliefert.
+        $backend = $this->backend($uid, $impersonate);
+        $isProxyId = ProxyMailBackend::isProxyId($attachmentId);
+        if ($isProxyId !== ($backend instanceof ProxyMailBackend) || ($backend instanceof ProxyMailBackend && !$backend->ownsId($attachmentId))) {
+            throw new OrvantaException('Der Anhang wurde nicht gefunden.', 404);
+        }
         $hash = sha1($attachmentId);
         $cached = $this->repository->findCacheItem($uid, $hash);
         if ($cached !== null && $this->config->cacheQuotaBytes() > 0) {
@@ -156,10 +168,18 @@ final class OrvantaAttachmentService
             $this->repository->deleteCacheItem((int) $cached['id']);
         }
 
-        $attachment = $this->exchange->attachment($impersonate, $attachmentId);
+        $attachment = $backend->attachment($impersonate, $attachmentId);
         $this->cache($uid, $hash, $attachment);
 
         return $attachment + ['cached' => false];
+    }
+
+    /**
+     * Mail-Backend zur Office-Kennung (ohne Router: Exchange).
+     */
+    private function backend(string $uid, string $impersonate): OrvantaMailBackendInterface
+    {
+        return $this->router !== null ? $this->router->backendForUid($uid, $impersonate) : $this->exchange;
     }
 
     /**

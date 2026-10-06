@@ -506,7 +506,7 @@
         state.online = online;
         var conn = hook('status-conn');
         if (conn) {
-            conn.textContent = online ? (config.demo ? 'Demo-Postfach' : 'Verbunden mit Exchange') : 'Keine Verbindung';
+            conn.textContent = online ? (config.demo ? 'Demo-Postfach' : (isProxyBackend() ? 'Verbunden (IMAP/SMTP)' : 'Verbunden mit Exchange')) : 'Keine Verbindung';
             conn.classList.toggle('ov-status__item--error', !online);
         }
     }
@@ -628,8 +628,25 @@
 
     var MODULE_TITLES = { mail: 'E-Mail', calendar: 'Kalender', contacts: 'Kontakte', tasks: 'Aufgaben', notes: 'Notizen' };
 
+    /**
+     * Unterstuetzt das Mail-Backend die Funktion? (SMTP-/IMAP-Proxy: nur
+     * E-Mail; Kalender, Kontakte, Aufgaben, Notizen und Erinnerungen nicht.)
+     */
+    function hasCapability(name) {
+        var caps = config.capabilities || {};
+        return caps[name] !== false;
+    }
+
+    function isProxyBackend() {
+        return config.backend === 'proxy';
+    }
+
     function switchModule(name) {
         if (!MODULE_TITLES[name]) {
+            return;
+        }
+        if (!hasCapability(name)) {
+            toast(MODULE_TITLES[name] + ' steht für Ihr Postfach (IMAP/SMTP) nicht zur Verfügung.', 'info');
             return;
         }
         state.module = name;
@@ -3452,6 +3469,9 @@
     }
 
     function startReminderPolling() {
+        if (!hasCapability('reminders')) {
+            return;
+        }
         var interval = Math.max(15, parseInt(config.pollInterval, 10) || 60) * 1000;
         syncReminders(true);
         reminderTimer = window.setInterval(function () {
@@ -3552,7 +3572,7 @@
             return;
         }
         dl.innerHTML = '';
-        [['Postfach', config.user && config.user.email], ['Modus', config.demo ? 'Demo (ohne Exchange-Verbindung)' : 'Exchange Web Services (SSO)'], ['Erinnerungsvorlauf', (config.reminderLead || 15) + ' Minuten'], ['Abfrageintervall', (config.pollInterval || 60) + ' Sekunden'], ['Euro-Office', config.officeAvailable ? 'Verfügbar' : 'Nicht konfiguriert'], ['Nextcloud', config.nextcloudAvailable ? 'Verfügbar' : 'Nicht konfiguriert']].forEach(function (pair) {
+        [['Postfach', config.user && config.user.email], ['Modus', config.demo ? 'Demo (ohne Exchange-Verbindung)' : (isProxyBackend() ? 'IMAP/SMTP über Mail-Proxy (nur E-Mail)' : 'Exchange Web Services (SSO)')], ['Erinnerungsvorlauf', (config.reminderLead || 15) + ' Minuten'], ['Abfrageintervall', (config.pollInterval || 60) + ' Sekunden'], ['Euro-Office', config.officeAvailable ? 'Verfügbar' : 'Nicht konfiguriert'], ['Nextcloud', config.nextcloudAvailable ? 'Verfügbar' : 'Nicht konfiguriert']].forEach(function (pair) {
             dl.appendChild(el('dt', { text: pair[0] }));
             dl.appendChild(el('dd', { text: String(pair[1] || '–') }));
         });
@@ -3833,8 +3853,8 @@
             if (typing || event.ctrlKey || event.metaKey || event.altKey) {
                 return;
             }
-            var modules = ['mail', 'calendar', 'contacts', 'tasks', 'notes'];
-            if (/^[1-5]$/.test(event.key)) {
+            var modules = ['mail', 'calendar', 'contacts', 'tasks', 'notes'].filter(hasCapability);
+            if (/^[1-5]$/.test(event.key) && modules[parseInt(event.key, 10) - 1]) {
                 switchModule(modules[parseInt(event.key, 10) - 1]);
             } else if (event.key === '/') {
                 event.preventDefault();
@@ -5011,6 +5031,9 @@
         var wanted = params.get('modul') || '';
         if (['mail', 'calendar', 'contacts', 'tasks', 'notes'].indexOf(wanted) !== -1) {
             module = wanted;
+        }
+        if (!hasCapability(module)) {
+            module = 'mail';
         }
         state.module = '';
         switchModule(module);

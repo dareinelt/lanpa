@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Contracts\OrvantaMailBackendInterface;
 use App\Core\Container;
 use App\Core\Request;
 use App\Core\Response;
@@ -14,6 +15,7 @@ use App\Security\Session;
 use App\Services\LdapClient;
 use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
+use App\Services\Orvanta\OrvantaExchangeService;
 use App\Services\Orvanta\OrvantaSignatureService;
 use Throwable;
 
@@ -46,8 +48,10 @@ final class OrvantaApiController extends Controller
 
             return [
                 'user' => ['name' => $access['user']['display_name'] ?? $access['user']['username'], 'email' => $access['impersonate']],
-                'demo' => $config->isDemo(),
-                'host' => $config->get('exchange_host'),
+                'demo' => $access['route']->isProxy() ? false : $config->isDemo(),
+                'host' => $access['route']->isProxy() ? '' : $config->get('exchange_host'),
+                'backend' => $this->mail($access)->backendName(),
+                'capabilities' => $this->mail($access)->capabilities(),
                 'cache' => Container::orvantaAttachments()->usage($access['uid']),
                 'archive' => Container::orvantaArchive()->status($access['uid'], $this->archiveEnabledFor($access)),
                 'server_time' => time(),
@@ -57,7 +61,7 @@ final class OrvantaApiController extends Controller
 
     public function folders(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => ['folders' => Container::orvantaExchange()->folders($access['impersonate'])]);
+        return $this->handle($request, fn (array $access): array => ['folders' => $this->mail($access)->folders($access['impersonate'])]);
     }
 
     /**
@@ -66,7 +70,7 @@ final class OrvantaApiController extends Controller
      */
     public function folderProperties(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->folderProperties($access['impersonate'], $this->requireId($request->query('ordner'))));
+        return $this->handle($request, fn (array $access): array => $this->mail($access)->folderProperties($access['impersonate'], $this->requireId($request->query('ordner'))));
     }
 
     /**
@@ -76,7 +80,7 @@ final class OrvantaApiController extends Controller
     {
         return $this->handle($request, function (array $access): array {
             $parent = trim($this->str('parent'));
-            $result = Container::orvantaExchange()->createFolder($access['impersonate'], $parent !== '' ? $this->requireId($parent) : '', $this->str('name'));
+            $result = $this->mail($access)->createFolder($access['impersonate'], $parent !== '' ? $this->requireId($parent) : '', $this->str('name'));
 
             return $result + ['message' => 'Der Ordner „' . $result['name'] . '“ wurde angelegt.'];
         }, true);
@@ -88,7 +92,7 @@ final class OrvantaApiController extends Controller
     public function markFolderRead(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            Container::orvantaExchange()->markFolderRead($access['impersonate'], $this->requireId($this->str('folder')));
+            $this->mail($access)->markFolderRead($access['impersonate'], $this->requireId($this->str('folder')));
 
             return ['ok' => true, 'message' => 'Alle Nachrichten wurden als gelesen markiert.'];
         }, true);
@@ -96,7 +100,7 @@ final class OrvantaApiController extends Controller
 
     public function messages(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->messages(
+        return $this->handle($request, fn (array $access): array => $this->mail($access)->messages(
             $access['impersonate'],
             (string) $request->query('ordner', 'inbox'),
             max(0, $request->queryInt('offset', 0)),
@@ -108,7 +112,7 @@ final class OrvantaApiController extends Controller
     public function message(Request $request): Response
     {
         return $this->handle($request, function (array $access) use ($request): array {
-            $message = Container::orvantaExchange()->message($access['impersonate'], $this->requireId($request->query('id')));
+            $message = $this->mail($access)->message($access['impersonate'], $this->requireId($request->query('id')));
 
             return Container::orvantaAttachments()->embedInlineImages($access['uid'], $access['impersonate'], $message);
         });
@@ -119,13 +123,13 @@ final class OrvantaApiController extends Controller
      */
     public function messageHeaders(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->messageHeaders($access['impersonate'], $this->requireId($request->query('id'))));
+        return $this->handle($request, fn (array $access): array => $this->mail($access)->messageHeaders($access['impersonate'], $this->requireId($request->query('id'))));
     }
 
     public function send(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $result = Container::orvantaExchange()->send($access['impersonate'], $this->withSignature($this->mailPayload(), $access), $this->str('draft_id'), $this->str('change_key'));
+            $result = $this->mail($access)->send($access['impersonate'], $this->withSignature($this->mailPayload(), $access), $this->str('draft_id'), $this->str('change_key'));
             $this->rememberRecipients($access);
 
             return $result + ['message' => 'Die Nachricht wurde gesendet.'];
@@ -158,7 +162,7 @@ final class OrvantaApiController extends Controller
             if ($replyId !== '' && in_array($mode, ['reply', 'replyall', 'forward'], true)) {
                 $mail['reference'] = ['id' => $replyId, 'mode' => $mode];
             }
-            $result = Container::orvantaExchange()->saveDraft($access['impersonate'], $mail, $this->str('draft_id'), $this->str('change_key'));
+            $result = $this->mail($access)->saveDraft($access['impersonate'], $mail, $this->str('draft_id'), $this->str('change_key'));
 
             return $result + ['message' => 'Der Entwurf wurde gespeichert.'];
         }, true);
@@ -167,7 +171,7 @@ final class OrvantaApiController extends Controller
     public function respond(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $result = Container::orvantaExchange()->respond(
+            $result = $this->mail($access)->respond(
                 $access['impersonate'],
                 $this->requireId($this->str('id')),
                 $this->str('mode', 'reply'),
@@ -186,7 +190,7 @@ final class OrvantaApiController extends Controller
     {
         return $this->handle($request, function (array $access): array {
             $ids = $this->ids();
-            $exchange = Container::orvantaExchange();
+            $exchange = $this->mail($access);
             $action = $this->str('action');
             match ($action) {
                 'read' => $exchange->markRead($access['impersonate'], $ids, true),
@@ -281,6 +285,11 @@ final class OrvantaApiController extends Controller
      */
     private function archiveEnabledFor(array $access): bool
     {
+        // Der Archiv-Worker arbeitet ueber EWS; Proxy-Postfaecher werden nicht
+        // registriert (bereits archivierte Daten bleiben lesbar).
+        if (!$this->can($access, OrvantaMailBackendInterface::CAPABILITY_ARCHIVE)) {
+            return false;
+        }
         $groups = $access['user']['groups'] ?? [];
 
         return Container::orvantaConfig()->archiveEnabledFor(is_array($groups) ? array_values($groups) : []);
@@ -321,7 +330,7 @@ final class OrvantaApiController extends Controller
     private function mailboxUsage(array $access): ?array
     {
         try {
-            return Container::orvantaExchange()->mailboxUsage($access['impersonate'], $this->directoryQuota($access['user']));
+            return $this->mail($access)->mailboxUsage($access['impersonate'], $this->directoryQuota($access['user']));
         } catch (Throwable) {
             return null;
         }
@@ -382,13 +391,13 @@ final class OrvantaApiController extends Controller
                 throw new OrvantaException('Ungültiger Zeitraum.', 422);
             }
 
-            return ['items' => Container::orvantaExchange()->calendar($access['impersonate'], $start, $end), 'start' => $start, 'end' => $end];
+            return ['items' => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->calendar($access['impersonate'], $start, $end), 'start' => $start, 'end' => $end];
         });
     }
 
     public function event(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->event($access['impersonate'], $this->requireId($request->query('id'))));
+        return $this->handle($request, fn (array $access): array => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->event($access['impersonate'], $this->requireId($request->query('id'))));
     }
 
     public function saveEvent(Request $request): Response
@@ -407,7 +416,7 @@ final class OrvantaApiController extends Controller
                 'optional' => $this->addresses('optional'),
             ];
             $id = $this->str('id');
-            $exchange = Container::orvantaExchange();
+            $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR);
             if ($id === '') {
                 $result = $exchange->createEvent($access['impersonate'], $event);
             } else {
@@ -423,7 +432,7 @@ final class OrvantaApiController extends Controller
     public function deleteEvent(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            Container::orvantaExchange()->deleteEvent($access['impersonate'], $this->requireId($this->str('id')));
+            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->deleteEvent($access['impersonate'], $this->requireId($this->str('id')));
             $this->resync($access);
 
             return ['ok' => true, 'message' => 'Der Termin wurde gelöscht.'];
@@ -433,7 +442,7 @@ final class OrvantaApiController extends Controller
     public function meetingResponse(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            Container::orvantaExchange()->respondToMeeting($access['impersonate'], $this->requireId($this->str('id')), $this->str('response', 'accept'));
+            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->respondToMeeting($access['impersonate'], $this->requireId($this->str('id')), $this->str('response', 'accept'));
             $this->resync($access);
 
             return ['ok' => true, 'message' => 'Die Antwort wurde gesendet.'];
@@ -446,12 +455,12 @@ final class OrvantaApiController extends Controller
 
     public function contacts(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => ['items' => Container::orvantaExchange()->contacts($access['impersonate'], trim((string) $request->query('q', '')))]);
+        return $this->handle($request, fn (array $access): array => ['items' => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CONTACTS)->contacts($access['impersonate'], trim((string) $request->query('q', '')))]);
     }
 
     public function contact(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->contact($access['impersonate'], $this->requireId($request->query('id'))));
+        return $this->handle($request, fn (array $access): array => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CONTACTS)->contact($access['impersonate'], $this->requireId($request->query('id'))));
     }
 
     public function saveContact(Request $request): Response
@@ -465,7 +474,7 @@ final class OrvantaApiController extends Controller
                 throw new OrvantaException('Bitte mindestens Vorname, Nachname oder Firma angeben.', 422);
             }
             $id = $this->str('id');
-            $exchange = Container::orvantaExchange();
+            $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CONTACTS);
             if ($id === '') {
                 $result = $exchange->createContact($access['impersonate'], $contact);
             } else {
@@ -479,7 +488,7 @@ final class OrvantaApiController extends Controller
 
     public function deleteContact(Request $request): Response
     {
-        return $this->deleteItems($request, 'Der Kontakt wurde gelöscht.');
+        return $this->deleteItems($request, 'Der Kontakt wurde gelöscht.', OrvantaMailBackendInterface::CAPABILITY_CONTACTS);
     }
 
     // ------------------------------------------------------------------
@@ -488,12 +497,12 @@ final class OrvantaApiController extends Controller
 
     public function tasks(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => ['items' => Container::orvantaExchange()->tasks($access['impersonate'], $request->query('erledigt', '1') !== '0')]);
+        return $this->handle($request, fn (array $access): array => ['items' => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_TASKS)->tasks($access['impersonate'], $request->query('erledigt', '1') !== '0')]);
     }
 
     public function task(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->task($access['impersonate'], $this->requireId($request->query('id'))));
+        return $this->handle($request, fn (array $access): array => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_TASKS)->task($access['impersonate'], $this->requireId($request->query('id'))));
     }
 
     public function saveTask(Request $request): Response
@@ -506,7 +515,7 @@ final class OrvantaApiController extends Controller
                 }
             }
             $id = $this->str('id');
-            $exchange = Container::orvantaExchange();
+            $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_TASKS);
             if ($id === '') {
                 $result = $exchange->createTask($access['impersonate'], $task);
             } else {
@@ -520,7 +529,7 @@ final class OrvantaApiController extends Controller
 
     public function deleteTask(Request $request): Response
     {
-        return $this->deleteItems($request, 'Die Aufgabe wurde gelöscht.');
+        return $this->deleteItems($request, 'Die Aufgabe wurde gelöscht.', OrvantaMailBackendInterface::CAPABILITY_TASKS);
     }
 
     // ------------------------------------------------------------------
@@ -529,12 +538,12 @@ final class OrvantaApiController extends Controller
 
     public function notes(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => ['items' => Container::orvantaExchange()->notes($access['impersonate'])]);
+        return $this->handle($request, fn (array $access): array => ['items' => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_NOTES)->notes($access['impersonate'])]);
     }
 
     public function note(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaExchange()->note($access['impersonate'], $this->requireId($request->query('id'))));
+        return $this->handle($request, fn (array $access): array => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_NOTES)->note($access['impersonate'], $this->requireId($request->query('id'))));
     }
 
     public function saveNote(Request $request): Response
@@ -545,7 +554,7 @@ final class OrvantaApiController extends Controller
                 throw new OrvantaException('Die Notiz ist leer.', 422);
             }
             $id = $this->str('id');
-            $exchange = Container::orvantaExchange();
+            $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_NOTES);
             if ($id === '') {
                 $result = $exchange->createNote($access['impersonate'], $body);
             } else {
@@ -559,7 +568,7 @@ final class OrvantaApiController extends Controller
 
     public function deleteNote(Request $request): Response
     {
-        return $this->deleteItems($request, 'Die Notiz wurde gelöscht.');
+        return $this->deleteItems($request, 'Die Notiz wurde gelöscht.', OrvantaMailBackendInterface::CAPABILITY_NOTES);
     }
 
     // ------------------------------------------------------------------
@@ -577,7 +586,9 @@ final class OrvantaApiController extends Controller
             $warning = null;
             $key = 'orvanta_sync_' . $access['uid'];
             $last = (int) Session::get($key, 0);
-            if ($request->query('sync') === '1' || time() - $last >= self::SYNC_INTERVAL) {
+            // Proxy-Postfaecher haben keinen Kalender: keine EWS-Synchronisation.
+            if ($this->can($access, OrvantaMailBackendInterface::CAPABILITY_REMINDERS)
+                && ($request->query('sync') === '1' || time() - $last >= self::SYNC_INTERVAL)) {
                 $warning = $notifications->sync($access['uid'], $access['impersonate']);
                 Session::put($key, time());
             }
@@ -642,6 +653,40 @@ final class OrvantaApiController extends Controller
     // ------------------------------------------------------------------
 
     /**
+     * Mail-Backend des Benutzers (Exchange oder SMTP-/IMAP-Proxy).
+     *
+     * @param array<string,mixed> $access
+     */
+    private function mail(array $access): OrvantaMailBackendInterface
+    {
+        return $access['backend'];
+    }
+
+    /**
+     * @param array<string,mixed> $access
+     */
+    private function can(array $access, string $capability): bool
+    {
+        return ($this->mail($access)->capabilities()[$capability] ?? false) === true;
+    }
+
+    /**
+     * Exchange-Funktionen (Kalender, Kontakte, Aufgaben, Notizen) nur fuer
+     * Exchange-Postfaecher; fuer Proxy-Postfaecher erfolgt kein EWS-Aufruf.
+     *
+     * @param array<string,mixed> $access
+     */
+    private function exchange(array $access, string $capability): OrvantaExchangeService
+    {
+        $backend = $this->mail($access);
+        if (!$backend instanceof OrvantaExchangeService || !$this->can($access, $capability)) {
+            throw new OrvantaException('Diese Funktion steht für Ihr Postfach (IMAP/SMTP) nicht zur Verfügung.', 409);
+        }
+
+        return $backend;
+    }
+
+    /**
      * Gemeinsamer Rahmen: Zugriffspruefung, JSON-Body, CSRF (POST) und
      * Fehlerbehandlung.
      *
@@ -691,10 +736,10 @@ final class OrvantaApiController extends Controller
         return is_array($data) ? $data : [];
     }
 
-    private function deleteItems(Request $request, string $message): Response
+    private function deleteItems(Request $request, string $message, string $capability): Response
     {
-        return $this->handle($request, function (array $access) use ($message): array {
-            Container::orvantaExchange()->delete($access['impersonate'], $this->ids(), false);
+        return $this->handle($request, function (array $access) use ($message, $capability): array {
+            $this->exchange($access, $capability)->delete($access['impersonate'], $this->ids(), false);
 
             return ['ok' => true, 'message' => $message];
         }, true);
@@ -705,6 +750,9 @@ final class OrvantaApiController extends Controller
      */
     private function resync(array $access): void
     {
+        if (!$this->can($access, OrvantaMailBackendInterface::CAPABILITY_REMINDERS)) {
+            return;
+        }
         Container::orvantaNotifications()->sync($access['uid'], $access['impersonate']);
         Session::put('orvanta_sync_' . $access['uid'], time());
     }

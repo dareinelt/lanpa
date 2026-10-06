@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Orvanta;
 
 use App\Contracts\ExchangeTransportInterface;
+use App\Contracts\OrvantaMailBackendInterface;
 use DOMElement;
 use DOMXPath;
 
@@ -17,7 +18,7 @@ use DOMXPath;
  * Alle Methoden liefern einfache PHP-Arrays fuer die JSON-API und werfen bei
  * Fehlern eine OrvantaException mit anzeigbarer Meldung.
  */
-final class OrvantaExchangeService
+final class OrvantaExchangeService implements OrvantaMailBackendInterface
 {
     public const MAIL_FOLDERS = ['inbox', 'drafts', 'sentitems', 'deleteditems', 'junkemail', 'outbox'];
 
@@ -43,6 +44,29 @@ final class OrvantaExchangeService
         private readonly OrvantaConfigService $config,
         private readonly ?string $primaryCacheFile = null
     ) {
+    }
+
+    public function backendName(): string
+    {
+        return 'exchange';
+    }
+
+    /**
+     * Exchange stellt alle Orvanta-Module bereit (Standard-Backend).
+     *
+     * @return array<string,bool>
+     */
+    public function capabilities(): array
+    {
+        return [
+            self::CAPABILITY_MAIL => true,
+            self::CAPABILITY_CALENDAR => true,
+            self::CAPABILITY_CONTACTS => true,
+            self::CAPABILITY_TASKS => true,
+            self::CAPABILITY_NOTES => true,
+            self::CAPABILITY_REMINDERS => true,
+            self::CAPABILITY_ARCHIVE => true,
+        ];
     }
 
     // ------------------------------------------------------------------

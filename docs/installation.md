@@ -255,3 +255,93 @@ Inhalt des Berichts:
 | `db` startet nicht: „Cannot upgrade from 80xxx to 907xx“ | Datenbestand stammt von MySQL 8.0: `./scripts/mysql-upgrade.sh` ausführen (Zwischenschritt 8.4 LTS) |
 | Admin-Passwort vergessen | `docker compose exec app php scripts/create_admin.php <name>` erzeugt ein neues Passwort – oder das Skript erneut ausführen |
 | Port belegt | Das Skript fragt einen anderen Port ab; alternativ `APP_PORT`/`SNMP_PORT` in der `.env` ändern |
+| „Too many connections“ im Containerlog, HTTP 500 unter Last | Verbindungsbudget prüfen, siehe Abschnitt 10 |
+
+---
+
+## 10. Dimensionierung
+
+Die Vorgabewerte sind auf eine kleine bis mittlere Umgebung ausgelegt. Ab etwa
+1.000 gleichzeitig arbeitenden Personen (Richtwert: 1.500 Mitarbeitende und
+750 Windows-Clients) sollten die folgenden Werte geprüft und an die RAM-Reserve
+des Hosts angepasst werden. Sie hängen zusammen und dürfen nicht einzeln
+verändert werden.
+
+### Der Zusammenhang
+
+Die Anwendung öffnet je Anfrage eine eigene PDO-Verbindung und gibt sie am Ende
+wieder frei (`app/Core/Database.php`) – ein Verbindungspool gibt es nicht. Die
+Zahl der gleichzeitigen Anfragen bestimmt deshalb unmittelbar die Zahl der
+gleichzeitigen Datenbankverbindungen. Es gilt:
+
+```
+MaxRequestWorkers  ≤  max_connections − Nebenverbraucher
+```
+
+| Stellschraube | Datei / Variable | Vorgabe | Bedeutung |
+| --- | --- | --- | --- |
+| `MaxRequestWorkers` | `docker/php/apache-prefork.conf` | 176 | Gleichzeitige Anfragen des `app`-Containers (mod_php/prefork: ein Prozess je Anfrage). Ohne diese Datei gilt der Debian-Standard 150. |
+| `max_connections` | `docker/mysql/my.cnf` | 240 | Verbindungen der Datenbank insgesamt. |
+| `DB_BUFFER_POOL` | `.env` | `1G` | InnoDB-Pufferpool (`--innodb-buffer-pool-size`), muss das Arbeits-Set der Anwendung abdecken. |
+
+Für die Nebenverbraucher sind rund 15 Verbindungen einzuplanen: `mail`,
+`mail-archive`, `sync`, `snmp`, `office-backup`, phpMyAdmin, die Healthchecks der
+Container und eine Reserve für den Root-Zugang. Von den 240 Verbindungen bleiben
+damit etwa 220 für die Worker; `MaxRequestWorkers = 176` lässt Luft für
+Lastspitzen. Bei Erreichen der Grenze wartet die Anfrage in der Warteschlange des
+Betriebssystems, statt mit HTTP 500 abzubrechen.
+
+### Pufferpool wählen
+
+`DB_BUFFER_POOL` ist der wirksamste Hebel für die Antwortzeiten, weil er die
+Arbeitsdaten dauerhaft im Speicher hält. Faustregel: 50–70 % des für den
+`db`-Container vorgesehenen RAM, mindestens aber das Arbeits-Set aus
+`phonebook`, `ad_group_members`, `settings` und `navigation_items` – bei den
+oben genannten Größenordnungen sind das wenige hundert MB, sodass 1 GB bequem
+reicht. Der Wert muss in die RAM-Reserve des Hosts passen; `docker-compose.yml`
+übergibt ihn an den Container.
+
+```bash
+# Belegung des Pufferpools im Betrieb
+docker compose exec db mysql -u root -p -e "
+  SELECT ROUND(SUM(data_length + index_length)/1048576) AS mb FROM information_schema.tables
+   WHERE table_schema = DATABASE();
+  SHOW STATUS LIKE 'Innodb_buffer_pool_read%';"
+```
+
+### Obere Grenze ist der Arbeitsspeicher
+
+Nach oben begrenzt nicht die Verbindungszahl, sondern der RAM des Hosts: Jeder
+Worker belegt seinen tatsächlichen RSS (nicht `memory_limit`). Bei 176 Workern
+sind das grob 176 × 60–80 MB. Vor einer Erhöhung von `MaxRequestWorkers` daher
+unter Last messen und den Wert nur so weit anheben, wie die Reserve reicht:
+
+```bash
+docker stats --no-stream app            # Speicherbedarf der Worker
+docker compose exec db mysql -u root -p \
+  -e "SHOW STATUS LIKE 'Threads_connected'; SHOW STATUS LIKE 'Threads_running';"
+```
+
+`Threads_connected` sollte dauerhaft unter `max_connections` bleiben,
+`Threads_running` deutlich darunter liegen.
+
+### Bewusst nicht verändert
+
+- `innodb_flush_log_at_trx_commit = 1` (Standard) bleibt: Die Daten in
+  `phonebook`, `ad_group_members` und `network_drives` sind nicht
+  rekonstruierbar, ein Absturz darf keine bestätigte Transaktion verlieren.
+  Für den Katalog des Speicher-Tiers gilt das nicht – dort ist der Wert
+  angepasst, siehe [storage-stack.md](storage-stack.md), Abschnitt 6.5.
+- Das Binärlog bleibt aktiv (Point-in-Time-Recovery).
+- Die Transaktionsisolierung bleibt beim Standard (`REPEATABLE-READ`), weil die
+  Fachlogik darauf aufbaut.
+
+### Lastspitzen
+
+Zwei Vorgänge erzeugen kurze Schreibspitzen: die AD-Synchronisation und die
+Laufwerksmeldungen der Windows-Clients bei der Anmeldung. Beide sind so gebaut,
+dass sie den Normalbetrieb nicht blockieren: Die Synchronisation schreibt in
+Blöcken (eigene Transaktion je 200 Konten statt einer Transaktion über den
+gesamten Lauf), und eine unveränderte Laufwerksmeldung löst keinen Schreibzugriff
+aus. Details unter „AD-Synchronisation“ in der [README.md](../README.md) bzw.
+[office.md](office.md), Abschnitt „Netzlaufwerke der Windows-Clients“.

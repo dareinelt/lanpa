@@ -289,6 +289,11 @@ Sitzungserneuerung nach der Anmeldung, automatische Abmeldung bei Inaktivität, 
 - Im AD deaktivierte Benutzerkonten (`userAccountControl`-Bit `ACCOUNTDISABLE`) werden beim
   Import übersprungen; bereits importierte, inzwischen deaktivierte Konten werden dadurch
   ebenfalls auf `active = 0` gesetzt.
+- **Schreibweise:** Konten werden blockweise geschrieben (200 Konten je Transaktion statt einer
+  Transaktion über den gesamten Lauf). Damit entsteht bei ~1.500 Konten keine lange offene
+  Transaktion, und bricht ein Lauf ab, bleiben die bereits geschriebenen Blöcke gültig; deaktiviert
+  wird nichts, sodass niemand seine Sichtbarkeit verliert. Unveränderte AD-Gruppen werden nicht
+  neu geschrieben.
 
 ### Windows-Anmeldung ohne Anmeldepflicht
 

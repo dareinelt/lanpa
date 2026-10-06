@@ -72,6 +72,15 @@ final class FakePhonebookStore implements PhonebookStoreInterface
 
     public bool $failOnUpsert = false;
 
+    /**
+     * Bricht ab, sobald der naechste Block diese Anzahl geschriebener Konten
+     * ueberschreiten wuerde - simuliert einen Abbruch mitten im Lauf.
+     */
+    public ?int $failAfterUsers = null;
+
+    /** @var list<string> */
+    public array $syncStamps = [];
+
     public function beginTransaction(): void
     {
     }
@@ -88,11 +97,22 @@ final class FakePhonebookStore implements PhonebookStoreInterface
 
     public function upsert(array $user, string $syncedAt): void
     {
+        $this->upsertMany([$user], $syncedAt);
+    }
+
+    public function upsertMany(array $users, string $syncedAt): void
+    {
         if ($this->failOnUpsert) {
             throw new RuntimeException('Schreibfehler');
         }
+        if ($this->failAfterUsers !== null && count($this->upserted) + count($users) > $this->failAfterUsers) {
+            throw new RuntimeException('Schreibfehler im Block');
+        }
 
-        $this->upserted[] = $user;
+        $this->syncStamps[] = $syncedAt;
+        foreach ($users as $user) {
+            $this->upserted[] = $user;
+        }
     }
 
     /** @var list<int> */

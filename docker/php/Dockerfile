@@ -38,6 +38,11 @@ RUN set -eux; \
         > /etc/apache2/conf-available/intranet.conf; \
     a2enconf intranet
 
+# Grenze der gleichzeitigen Anfragen (muss zum Verbindungsbudget der Datenbank
+# passen) - siehe Kommentar in docker/php/apache-prefork.conf.
+COPY docker/php/apache-prefork.conf /etc/apache2/conf-available/intranet-prefork.conf
+RUN a2enconf intranet-prefork
+
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/intranet.ini
 COPY docker/php/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

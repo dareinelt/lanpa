@@ -78,6 +78,10 @@ services:
       MYSQL_USER: ${DB_USER:-intranet}
       MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD muss in .env gesetzt sein}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD muss in .env gesetzt sein}
+    # Pufferpool gross genug fuer das Arbeits-Set der Anwendung waehlen
+    # (DB_BUFFER_POOL in .env). Muss in die RAM-Reserve des Hosts passen.
+    command:
+      - --innodb-buffer-pool-size=${DB_BUFFER_POOL:-1G}
     volumes:
       - db_data:/var/lib/mysql
       - ./docker/mysql/my.cnf:/etc/mysql/conf.d/intranet.cnf:ro

@@ -1923,6 +1923,40 @@ body.has-nav-tree-overlay {
     padding: 0;
 }
 
+/* Office – SMTP-/IMAP-Proxy: Konfiguration und Postfach im Overlay bearbeiten */
+.mail-proxy-overlay {
+    width: min(60rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    background: var(--color-surface);
+    color: inherit;
+}
+
+.mail-proxy-overlay::backdrop {
+    background: rgba(5, 18, 32, .55);
+}
+
+.mail-proxy-overlay__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.mail-proxy-overlay__header h2 {
+    margin: 0;
+}
+
+.mail-proxy-overlay .form {
+    max-width: none;
+    border: 0;
+    padding: 0;
+}
+
 /* Active Directory: Fortschritt der manuellen Synchronisation im Overlay */
 .ad-sync {
     --ad-sync-ok: #1a7f37;

@@ -6,8 +6,7 @@ use App\Security\Csrf;
 use App\Support\Html;
 
 /** @var array{sources:list<array<string,mixed>>,servers:list<array<string,mixed>>,selected:?array<string,mixed>,server:?array<string,mixed>,mailboxes:list<array<string,mixed>>,mappings:list<array<string,mixed>>} $overview */
-/** @var array<string,mixed>|null $editServer */
-/** @var array<string,mixed>|null $editMailbox */
+/** @var array<string,mixed>|null $dialog */
 /** @var bool $tablesMissing */
 /** @var bool $orvantaEnabled */
 /** @var list<int> $smtpPorts */
@@ -32,12 +31,8 @@ foreach ($overview['servers'] as $row) {
 $freeSources = array_values(array_filter($overview['sources'], static fn (array $source): bool => !isset($configured[(int) $source['id']])));
 $smtpSecurityLabels = ['starttls' => 'STARTTLS', 'tls' => 'TLS direkt', 'none' => 'ohne Verschlüsselung'];
 $imapSecurityLabels = ['tls' => 'TLS direkt', 'starttls' => 'STARTTLS'];
-$form = $editServer ?? [
-    'id' => 0, 'identity_source_id' => $selected !== null && !isset($configured[(int) $selected['id']]) ? (int) $selected['id'] : (int) ($freeSources[0]['id'] ?? 0),
-    'name' => '', 'smtp_host' => '', 'smtp_port' => 587, 'smtp_security' => 'starttls', 'smtp_auth' => true,
-    'imap_host' => '', 'imap_port' => 993, 'imap_security' => 'tls', 'verify_tls' => true, 'timeout_seconds' => 20, 'active' => true,
-];
 $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
+$selectedFree = $selected !== null && !isset($configured[(int) $selected['id']]);
 ?>
 <div class="toolbar">
     <a class="button button--ghost" href="/admin/office/orvanta">Orvanta – Mail &amp; Kalender</a>
@@ -91,7 +86,7 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
                         </td>
                         <td>
                             <div class="row-actions">
-                                <a class="button button--ghost" href="<?= Html::e($base . '?quelle=' . $rowSource . '&bearbeiten=' . (int) $row['id']) ?>#mp-server-form">Bearbeiten</a>
+                                <a class="button button--ghost" href="<?= Html::e($base . '/server/bearbeiten?id=' . (int) $row['id']) ?>">Bearbeiten</a>
                                 <form method="post" action="<?= Html::e($base) ?>/server/status" class="inline-form"<?= $row['active'] ? ' data-confirm="Konfiguration deaktivieren? Zugeordnete Benutzer verwenden dann wieder Exchange."' : '' ?>>
                                     <?= Csrf::field() ?>
                                     <input type="hidden" name="id" value="<?= (int) $row['id'] ?>">
@@ -115,59 +110,10 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
         </div>
     <?php } ?>
 
-    <?php if ($editServer !== null || $freeSources !== []) { ?>
-        <h3 id="mp-server-form"><?= $editServer !== null ? 'Konfiguration bearbeiten' : 'Neue Konfiguration' ?></h3>
-        <form method="post" action="<?= Html::e($base) ?>/server" class="form form--wide" autocomplete="off">
-            <?= Csrf::field() ?>
-            <input type="hidden" name="id" value="<?= (int) $form['id'] ?>">
-            <div class="field">
-                <label for="mp-source">Identitätsquelle</label>
-                <?php if ($editServer !== null) {
-                    $editSource = null;
-                    foreach ($overview['sources'] as $source) {
-                        if ((int) $source['id'] === (int) $editServer['identity_source_id']) {
-                            $editSource = $source;
-                        }
-                    } ?>
-                    <input id="mp-source" type="text" value="<?= Html::e($sourceName($editSource)) ?>" disabled>
-                    <p>Die Identitätsquelle ist nach dem Anlegen fest, damit Zuordnungen nie auf eine andere Quelle zeigen.</p>
-                <?php } else { ?>
-                    <select id="mp-source" name="identity_source_id" required>
-                        <?php foreach ($freeSources as $source) { ?>
-                            <option value="<?= (int) $source['id'] ?>"<?= (int) $source['id'] === (int) $form['identity_source_id'] ? ' selected' : '' ?>><?= Html::e($sourceName($source) . ($source['base_dn'] !== '' ? ' – ' . $source['base_dn'] : '') . (!$source['active'] ? ' (deaktiviert)' : '')) ?></option>
-                        <?php } ?>
-                    </select>
-                <?php } ?>
-            </div>
-            <div class="field"><label for="mp-name">Bezeichnung</label><input id="mp-name" type="text" name="name" value="<?= Html::e((string) $form['name']) ?>" maxlength="100" required></div>
-            <fieldset>
-                <legend>SMTP (Versand)</legend>
-                <div class="field"><label for="mp-smtp-host">SMTP-Host</label><input id="mp-smtp-host" type="text" name="smtp_host" value="<?= Html::e((string) $form['smtp_host']) ?>" maxlength="253" required placeholder="smtp.firma.local" spellcheck="false"></div>
-                <div class="field"><label for="mp-smtp-port">SMTP-Port</label><select id="mp-smtp-port" name="smtp_port">
-                    <?php foreach ($smtpPorts as $port) { ?><option value="<?= $port ?>"<?= (int) $form['smtp_port'] === $port ? ' selected' : '' ?>><?= $port ?></option><?php } ?>
-                </select></div>
-                <div class="field"><label for="mp-smtp-security">Verschlüsselung</label><select id="mp-smtp-security" name="smtp_security">
-                    <?php foreach (['starttls' => 'STARTTLS (empfohlen, meist Port 587)', 'tls' => 'TLS direkt (meist Port 465)', 'none' => 'Keine (nur internes Relay ohne Anmeldung)'] as $value => $label) { ?><option value="<?= $value ?>"<?= $form['smtp_security'] === $value ? ' selected' : '' ?>><?= Html::e($label) ?></option><?php } ?>
-                </select></div>
-                <label><input type="checkbox" name="smtp_auth" value="1"<?= $form['smtp_auth'] ? ' checked' : '' ?>> SMTP-Anmeldung mit den Postfach-Zugangsdaten</label>
-            </fieldset>
-            <fieldset>
-                <legend>IMAP (Postfachzugriff)</legend>
-                <div class="field"><label for="mp-imap-host">IMAP-Host</label><input id="mp-imap-host" type="text" name="imap_host" value="<?= Html::e((string) $form['imap_host']) ?>" maxlength="253" required placeholder="imap.firma.local" spellcheck="false"></div>
-                <div class="field"><label for="mp-imap-port">IMAP-Port</label><select id="mp-imap-port" name="imap_port">
-                    <?php foreach ($imapPorts as $port) { ?><option value="<?= $port ?>"<?= (int) $form['imap_port'] === $port ? ' selected' : '' ?>><?= $port ?></option><?php } ?>
-                </select></div>
-                <div class="field"><label for="mp-imap-security">Verschlüsselung</label><select id="mp-imap-security" name="imap_security">
-                    <?php foreach (['tls' => 'TLS direkt (meist Port 993)', 'starttls' => 'STARTTLS (meist Port 143)'] as $value => $label) { ?><option value="<?= $value ?>"<?= $form['imap_security'] === $value ? ' selected' : '' ?>><?= Html::e($label) ?></option><?php } ?>
-                </select></div>
-            </fieldset>
-            <div class="field"><label for="mp-timeout">Zeitlimit je Verbindung (5–60 Sekunden)</label><input id="mp-timeout" name="timeout_seconds" type="number" min="5" max="60" value="<?= (int) $form['timeout_seconds'] ?>"></div>
-            <label><input type="checkbox" name="verify_tls" value="1"<?= $form['verify_tls'] ? ' checked' : '' ?>> TLS-Zertifikate prüfen (dringend empfohlen; interne Zertifizierungsstellen im Container <code>mail-proxy</code> hinterlegen)</label>
-            <label><input type="checkbox" name="active" value="1"<?= $form['active'] ? ' checked' : '' ?>> Aktiv</label>
-            <p class="card__hint">Erlaubt sind vollqualifizierte Hostnamen oder IP-Adressen (keine Loopback-/Link-Local-Adressen, keine internen Docker-Dienstnamen) und die Standard-Mailports.</p>
-            <button class="button button--primary"><?= $editServer !== null ? 'Konfiguration speichern' : 'Konfiguration anlegen' ?></button>
-            <?php if ($editServer !== null) { ?><a class="button button--ghost" href="<?= Html::e($base . '?quelle=' . (int) $editServer['identity_source_id']) ?>">Abbrechen</a><?php } ?>
-        </form>
+    <?php if ($freeSources !== []) { ?>
+        <div class="toolbar">
+            <a class="button button--primary" href="<?= Html::e($base . '/server/neu' . ($selectedFree ? '?quelle=' . (int) $selected['id'] : '')) ?>">Konfiguration anlegen</a>
+        </div>
     <?php } ?>
 </section>
 
@@ -203,7 +149,7 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
                         </td>
                         <td>
                             <div class="row-actions">
-                                <a class="button button--ghost" href="<?= Html::e($base . '?quelle=' . $sourceQuery . '&postfach=' . (int) $mailbox['id']) ?>#mp-mailbox-form">Bearbeiten</a>
+                                <a class="button button--ghost" href="<?= Html::e($base . '/postfach/bearbeiten?id=' . (int) $mailbox['id']) ?>">Bearbeiten</a>
                                 <form method="post" action="<?= Html::e($base) ?>/postfach/test" class="inline-form">
                                     <?= Csrf::field() ?>
                                     <input type="hidden" name="id" value="<?= (int) $mailbox['id'] ?>">
@@ -225,29 +171,9 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
         </div>
     <?php } ?>
 
-    <h3 id="mp-mailbox-form"><?= $editMailbox !== null ? 'Postfach bearbeiten' : 'Neues Postfach' ?></h3>
-    <form method="post" action="<?= Html::e($base) ?>/postfach" class="form form--wide" autocomplete="off">
-        <?= Csrf::field() ?>
-        <input type="hidden" name="id" value="<?= (int) ($editMailbox['id'] ?? 0) ?>">
-        <input type="hidden" name="server_id" value="<?= (int) $server['id'] ?>">
-        <input type="hidden" name="quelle" value="<?= $sourceQuery ?>">
-        <div class="field"><label for="mp-mb-username">Benutzername (Anmeldename am Mailserver)</label><input id="mp-mb-username" type="text" name="username" value="<?= Html::e((string) ($editMailbox['username'] ?? '')) ?>" maxlength="190" required autocomplete="off" spellcheck="false"></div>
-        <div class="field"><label for="mp-mb-email">E-Mail-Adresse</label><input id="mp-mb-email" name="email_address" type="email" value="<?= Html::e((string) ($editMailbox['email_address'] ?? '')) ?>" maxlength="254" required autocomplete="off"></div>
-        <div class="field"><label for="mp-mb-name">Anzeigename (optional, Absendername)</label><input id="mp-mb-name" type="text" name="display_name" value="<?= Html::e((string) ($editMailbox['display_name'] ?? '')) ?>" maxlength="190" autocomplete="off"></div>
-        <div class="field">
-            <label for="mp-mb-quota">Postfachgröße (MB, 0 = ohne Grenze)</label>
-            <input id="mp-mb-quota" type="number" name="quota_mb" min="0" max="10485760" step="1" value="<?= (int) ($editMailbox['quota_mb'] ?? 0) ?>" autocomplete="off">
-            <p>Feste Grenze für die Belegungsanzeige in Orvanta. Für Proxy-Postfächer werden Exchange und AD nicht abgefragt; die Belegung liefert der IMAP-Server.</p>
-        </div>
-        <div class="field">
-            <label for="mp-mb-password"><?= $editMailbox !== null ? 'Neues Passwort' : 'Passwort' ?></label>
-            <input id="mp-mb-password" name="password" type="password" maxlength="4096" autocomplete="new-password"<?= $editMailbox === null ? ' required' : '' ?>>
-            <p><?= $editMailbox !== null ? 'Leer lassen, um das gespeicherte Passwort beizubehalten.' : 'Pflichtfeld.' ?> Verschlüsselte Speicherung; das Passwort wird nie angezeigt, protokolliert oder exportiert.</p>
-        </div>
-        <label><input type="checkbox" name="active" value="1"<?= ($editMailbox['active'] ?? true) ? ' checked' : '' ?>> Aktiv (inaktive Postfächer werden nie verbunden)</label>
-        <button class="button button--primary"><?= $editMailbox !== null ? 'Postfach speichern' : 'Postfach anlegen' ?></button>
-        <?php if ($editMailbox !== null) { ?><a class="button button--ghost" href="<?= Html::e($base . '?quelle=' . $sourceQuery) ?>#postfaecher">Abbrechen</a><?php } ?>
-    </form>
+    <div class="toolbar">
+        <a class="button button--primary" href="<?= Html::e($base) ?>/postfach/neu?quelle=<?= $sourceQuery ?>">Postfach anlegen</a>
+    </div>
 </section>
 
 <section class="card" aria-labelledby="mp-mapping-title" id="zuordnung">
@@ -319,6 +245,10 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
 <?php } elseif ($selected !== null) { ?>
     <p class="flash flash--info">Für <?= Html::e($sourceName($selected)) ?> ist noch kein Mailserver konfiguriert. Postfächer und Zuordnungen folgen nach dem Anlegen der Konfiguration.</p>
 <?php } ?>
+
+<?php if ($dialog !== null) {
+    require __DIR__ . '/mail-proxy/' . $dialog['type'] . '.php';
+} ?>
 
 <?php if (!$orvantaEnabled) { ?>
     <p class="card__hint">Hinweis: Die Exchange-Anbindung ist nicht aktiviert. Orvanta steht dann nur Benutzern mit Proxy-Zuordnung zur Verfügung (Freigabe über Office → Apps).</p>

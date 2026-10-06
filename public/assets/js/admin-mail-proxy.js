@@ -264,3 +264,40 @@
         });
     });
 })();
+
+/*
+ * SMTP-/IMAP-Proxy: Konfiguration und Postfach im Overlay bearbeiten. Der
+ * Server rendert die Uebersicht samt Overlay (Bearbeiten-Links,
+ * Validierungsfehler); hier wird es modal geoeffnet. Escape fuehrt wie
+ * "Abbrechen" zurueck zur Uebersicht. Ohne dialog-Unterstuetzung bleibt das
+ * Overlay offen im Fluss.
+ */
+(function () {
+    'use strict';
+
+    var target = '/admin/office/mail-proxy';
+
+    Array.prototype.forEach.call(
+        document.querySelectorAll('[data-mail-proxy-server-dialog], [data-mail-proxy-mailbox-dialog]'),
+        function (dialog) {
+            if (typeof dialog.showModal !== 'function') {
+                return;
+            }
+            if (dialog.open) {
+                dialog.close();
+            }
+            dialog.showModal();
+
+            var first = dialog.querySelector('[aria-invalid="true"]')
+                || dialog.querySelector('form input:not([type="hidden"]), form textarea, form select');
+            if (first) {
+                first.focus();
+            }
+
+            dialog.addEventListener('cancel', function (event) {
+                event.preventDefault();
+                window.location.assign(target);
+            });
+        }
+    );
+}());

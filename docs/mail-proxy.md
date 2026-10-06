@@ -40,6 +40,9 @@ OrvantaController/ApiController ─► OrvantaMailRouter ─┬─► OrvantaExc
    `app` zusätzlich an das Netz `mail_proxy`. Voraussetzung: Docker Engine ≥ 26
    bzw. Compose ≥ 2.24 (Volume-`subpath` für den Schlüssel).
 3. Adminbereich → **Office → SMTP-/IMAP-Proxy** (`/admin/office/mail-proxy`):
+   Die Seite zeigt nur Listen; „Bearbeiten“ und „anlegen“ öffnen die
+   Einstellungen je Punkt als Overlay (wie die Identitätsquellen unter
+   Active Directory).
    1. **Proxy-Konfiguration je Identitätsquelle:** Quelle wählen, SMTP- und
       IMAP-Server eintragen, speichern.
    2. **Postfächer:** Anmeldename, E-Mail-Adresse, Anzeigename, Passwort und
@@ -269,6 +272,7 @@ Mailserver und Postfächer neu anzulegen.
 | Methode | Pfad | Zweck |
 | --- | --- | --- |
 | GET | `/admin/office/mail-proxy` | Seite (`?quelle=<id>`) |
+| GET | `/admin/office/mail-proxy/server/neu`, `…/server/bearbeiten?id=`, `…/postfach/neu?quelle=`, `…/postfach/bearbeiten?id=` | Overlays zum Anlegen/Bearbeiten (serverseitig gerendert, modal geöffnet) |
 | POST | `/admin/office/mail-proxy/server`, `…/server/status`, `…/server/loeschen` | Mailserver speichern, (de)aktivieren, löschen |
 | POST | `/admin/office/mail-proxy/postfach`, `…/postfach/loeschen`, `…/postfach/test` | Postfach speichern, löschen, Verbindungstest |
 | POST | `/admin/office/mail-proxy/zuordnung`, `…/zuordnung/loeschen` | Zuordnung speichern, löschen |

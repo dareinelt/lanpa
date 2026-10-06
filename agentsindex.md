@@ -465,7 +465,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 ### AD-Synchronisation
 
-- Einzellauf: `php scripts/sync_ad.php` oder Schaltfläche im Adminbereich.
+- Einzellauf: `php scripts/sync_ad.php` oder Schaltfläche im Adminbereich. Die Schaltfläche (`admin-ldap.js`) sendet `POST /admin/ad/sync` mit `Accept: text/event-stream` und zeigt den Fortschritt je Identitätsquelle in einem Overlay, das nur mit „OK“ geschlossen werden kann (danach Neuladen). Events: `sources`, `source-start`, `source-done` (Ergebnis inkl. `warning` bei Gruppenfehler), `done`, `error`; Vorbedingungsfehler als JSON 422. Ohne JavaScript: Redirect mit Flash-Meldung. Ein Lauf = ein `sync_log`-Eintrag (`AdSyncService::run($onProgress)`).
 - Dauerlauf: `php scripts/sync_worker.php` (Intervall `LDAP_SYNC_INTERVAL`).
 - **Datensicherheit:** nicht erreichbares/leeres AD → *kein* Schreiben, letzter Stand bleibt aktiv.
 - Nicht mehr vorhandene Personen → `active = 0` (kein Löschen); deaktivierte AD-Konten (`ACCOUNTDISABLE`) werden übersprungen/deaktiviert.

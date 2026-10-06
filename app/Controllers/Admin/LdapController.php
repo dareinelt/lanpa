@@ -188,20 +188,34 @@ final class LdapController extends AdminController
         return $this->redirect('/admin/ad');
     }
 
+    /**
+     * Manuelle Synchronisation. Mit "Accept: text/event-stream" (Overlay der
+     * Adminseite) wird der Fortschritt je Identitaetsquelle als Server-Sent
+     * Events gemeldet; ohne JavaScript bleibt es beim Redirect mit Hinweis.
+     */
     public function sync(Request $request): Response
     {
         $this->requireValidCsrf($request);
+        $stream = str_contains((string) ($request->server['HTTP_ACCEPT'] ?? ''), 'text/event-stream');
 
+        $error = null;
         if (!LdapClient::isSupported()) {
-            Session::flash('error', 'Die PHP-Erweiterung "ldap" ist nicht verfügbar.');
+            $error = 'Die PHP-Erweiterung "ldap" ist nicht verfügbar.';
+        } elseif (!Container::identitySources()->isAnyConfigured()) {
+            $error = 'Bitte zuerst LDAP-Server und Base DN konfigurieren.';
+        }
+
+        if ($error !== null) {
+            if ($stream) {
+                return Response::json(['error' => $error], 422);
+            }
+            Session::flash('error', $error);
 
             return $this->redirect('/admin/ad');
         }
 
-        if (!Container::identitySources()->isAnyConfigured()) {
-            Session::flash('error', 'Bitte zuerst LDAP-Server und Base DN konfigurieren.');
-
-            return $this->redirect('/admin/ad');
+        if ($stream) {
+            return $this->streamSync();
         }
 
         $result = Container::adSync()->run();
@@ -213,6 +227,62 @@ final class LdapController extends AdminController
             return $this->redirect('/admin/ad');
         }
 
+        Session::flash($result['status'] === 'success' ? 'success' : 'error', $this->syncSummary($result, $multiple));
+
+        return $this->redirect('/admin/ad');
+    }
+
+    /**
+     * Fuehrt die Synchronisation aus und meldet je Quelle "source-start" und
+     * "source-done" sowie zu Beginn "sources" und am Ende "done" bzw. "error".
+     */
+    private function streamSync(): Response
+    {
+        $service = Container::adSync();
+        $admin = Container::auth()->username();
+
+        return Response::eventStream(function () use ($service, $admin): void {
+            // Ein geschlossener Tab darf den Lauf nicht mitten im Protokoll abbrechen.
+            ignore_user_abort(true);
+
+            $send = static function (string $event, array $data): void {
+                echo 'event: ' . $event . "\n"
+                    . 'data: ' . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE) . "\n\n";
+                flush();
+            };
+
+            app_logger()->info('Manuelle AD-Synchronisation gestartet.', ['admin' => $admin]);
+            $send('sources', ['sources' => $service->sources()]);
+
+            try {
+                $result = $service->run(static function (string $phase, array $data) use ($send): void {
+                    $send($phase === 'start' ? 'source-start' : 'source-done', $data);
+                });
+            } catch (\Throwable $exception) {
+                app_logger()->error('Manuelle AD-Synchronisation abgebrochen: ' . $exception->getMessage());
+                $send('error', ['message' => 'Die Synchronisation wurde abgebrochen. Details stehen im Log. Der letzte gültige Datenbestand bleibt erhalten.']);
+
+                return;
+            }
+
+            $send('done', [
+                'status' => $result['status'],
+                'processed' => $result['processed'],
+                'deactivated' => $result['deactivated'],
+                'groups' => $result['groups'],
+                'message' => $result['status'] === 'error' && count($result['sources']) <= 1
+                    ? 'Die Synchronisation ist fehlgeschlagen. Der letzte gültige Datenbestand bleibt erhalten.'
+                    : $this->syncSummary($result, false),
+            ]);
+        });
+    }
+
+    /**
+     * @param array{status:string,processed:int,deactivated:int,groups:?int,sources:list<array<string,mixed>>} $result
+     */
+    private function syncSummary(array $result, bool $withSources): string
+    {
+        $multiple = count($result['sources']) > 1;
         $message = sprintf(
             '%s: %d Einträge aktualisiert, %d deaktiviert.',
             match ($result['status']) {
@@ -229,7 +299,7 @@ final class LdapController extends AdminController
             $message .= ' Die AD-Gruppen konnten nicht gelesen werden (siehe Log); der bisherige Gruppenbestand bleibt erhalten.';
         }
 
-        if ($multiple) {
+        if ($multiple && $withSources) {
             $parts = [];
             foreach ($result['sources'] as $source) {
                 $parts[] = $source['status'] === 'success'
@@ -239,9 +309,7 @@ final class LdapController extends AdminController
             $message .= ' ' . implode(' · ', $parts) . '.';
         }
 
-        Session::flash($result['status'] === 'success' ? 'success' : 'error', $message);
-
-        return $this->redirect('/admin/ad');
+        return $message;
     }
 
     /**
@@ -465,6 +533,7 @@ final class LdapController extends AdminController
             'syncRuns' => Container::syncLogRepository()->recent(10),
             'phonebookCount' => Container::phonebook()->countActive(),
             'groupCount' => $this->safeGroupCount(),
+            'pageScript' => 'admin-ldap.js',
         ], $status);
     }
 }

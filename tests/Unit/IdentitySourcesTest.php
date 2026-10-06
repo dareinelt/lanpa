@@ -185,6 +185,24 @@ Runner::test('Mehrere Quellen: alle erfolgreich ergibt Status success', static f
     Assert::same([0, 5], $store->deactivatedSources);
 });
 
+Runner::test('Mehrere Quellen: Fortschritt wird je Quelle gemeldet', static function (): void {
+    $service = new AdSyncService([
+        ['id' => 0, 'label' => 'Zentrale', 'client' => new FakeLdapClient([['external_id' => 'hq-1', 'display_name' => 'A']])],
+        ['id' => 5, 'label' => 'Hamburg', 'client' => new FakeLdapClient([], true)],
+    ], new FakePhonebookStore(), new FakeSyncLog(), testLogger());
+
+    Assert::same([['id' => 0, 'label' => 'Zentrale'], ['id' => 5, 'label' => 'Hamburg']], $service->sources());
+
+    $events = [];
+    $result = $service->run(static function (string $phase, array $data) use (&$events): void {
+        $events[] = [$phase, $data['id'], $data['status'] ?? null];
+    });
+
+    Assert::same([['start', 0, null], ['done', 0, 'success'], ['start', 5, null], ['done', 5, 'error']], $events);
+    Assert::same('partial', $result['status']);
+    Assert::null($result['sources'][0]['warning']);
+});
+
 Runner::test('SSO ohne Quellen-Header meldet den Benutzer der Hauptquelle an', static function (): void {
     $user = multiSourceSso()->resolve(multiSourceRequest(['HTTP_X_REMOTE_USER' => 'ZENTRALE\\mueller']));
 

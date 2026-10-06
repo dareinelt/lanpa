@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 use App\Contracts\MailProxyTransportInterface;
 use App\Contracts\OrvantaMailBackendInterface;
+use App\Controllers\Admin\MailProxyController;
 use App\Core\Logger;
+use App\Core\Request;
+use App\Exceptions\HttpException;
 use App\Repositories\MailProxyRepository;
+use App\Security\Csrf;
 use App\Security\SecretBox;
 use App\Services\MailProxy\HttpMailProxyTransport;
 use App\Services\MailProxy\MailProxyAccount;
@@ -206,6 +210,56 @@ function mailProxyStatus(callable $callback): int
         return $exception->status();
     }
     throw new RuntimeException('Erwartete OrvantaException blieb aus.');
+}
+
+/**
+ * HTTP-Status einer erwarteten HttpException (z. B. 403 oder 419).
+ */
+function mailProxyHttpStatus(callable $callback): int
+{
+    try {
+        $callback();
+    } catch (HttpException $exception) {
+        return $exception->statusCode();
+    }
+    throw new RuntimeException('Erwartete HttpException blieb aus.');
+}
+
+/**
+ * Rumpf einer Middleware-Gruppe aus public/index.php (klammerrichtig,
+ * Zeichenketten werden nicht als Klammern gewertet).
+ */
+function mailProxyGroupBody(string $source, string $header): string
+{
+    $start = strpos($source, $header);
+    if ($start === false) {
+        throw new RuntimeException('Gruppe nicht gefunden: ' . $header);
+    }
+    $depth = 0;
+    $quote = '';
+    for ($i = (int) strpos($source, '{', $start), $length = strlen($source); $i < $length; $i++) {
+        $char = $source[$i];
+        if ($quote !== '') {
+            if ($char === '\\') {
+                $i++;
+            } elseif ($char === $quote) {
+                $quote = '';
+            }
+            continue;
+        }
+        if ($char === "'" || $char === '"') {
+            $quote = $char;
+            continue;
+        }
+        if ($char === '{') {
+            $depth++;
+            continue;
+        }
+        if ($char === '}' && --$depth === 0) {
+            return substr($source, $start, $i - $start + 1);
+        }
+    }
+    throw new RuntimeException('Gruppe nicht geschlossen: ' . $header);
 }
 
 /**
@@ -775,4 +829,118 @@ Runner::test('Mail-Proxy-Admin: Postfach-Overlay gibt kein Passwort aus und kehr
     Assert::false(str_contains($html, 'geheim-123'), 'Das Passwort wird nie ausgegeben.');
     Assert::false(str_contains($html, 'role="alert"'), 'Ohne Fehler keine Meldung.');
     Assert::false(str_contains($html, 'name="active" value="1" checked'));
+});
+
+Runner::test('Mail-Proxy-Admin: schreibende Aktionen prüfen das CSRF-Token als Erstes', static function (): void {
+    $actions = [
+        'saveServer' => '/admin/office/mail-proxy/server',
+        'toggleServer' => '/admin/office/mail-proxy/server/status',
+        'deleteServer' => '/admin/office/mail-proxy/server/loeschen',
+        'saveMailbox' => '/admin/office/mail-proxy/postfach',
+        'deleteMailbox' => '/admin/office/mail-proxy/postfach/loeschen',
+        'testMailbox' => '/admin/office/mail-proxy/postfach/test',
+        'saveMapping' => '/admin/office/mail-proxy/zuordnung',
+        'deleteMapping' => '/admin/office/mail-proxy/zuordnung/loeschen',
+    ];
+    $session = $_SESSION ?? [];
+    try {
+        // Ohne Sitzungstoken ist jede Variante ungültig: fehlend, fremd (64 Zeichen) oder zu kurz.
+        $_SESSION = [];
+        $controller = new MailProxyController();
+        foreach ($actions as $action => $path) {
+            foreach ([[], ['_token' => str_repeat('a', 64)], ['_token' => 'kurz']] as $post) {
+                Assert::same(
+                    419,
+                    mailProxyHttpStatus(static fn (): mixed => $controller->{$action}(new Request('POST', $path, [], $post))),
+                    $action . ': Ohne gültiges CSRF-Token muss die Anfrage abgewiesen werden.'
+                );
+            }
+        }
+
+        // Mit gültigem Token greift die CSRF-Prüfung nicht mehr (danach folgt erst die Validierung).
+        $token = Csrf::token();
+        $passed = true;
+        try {
+            $controller->saveServer(new Request('POST', $actions['saveServer'], [], ['_token' => $token]));
+        } catch (HttpException $exception) {
+            $passed = $exception->statusCode() !== 419;
+        } catch (Throwable) {
+            $passed = true;
+        }
+        Assert::true($passed, 'Mit gültigem CSRF-Token darf die CSRF-Prüfung nicht mehr greifen.');
+    } finally {
+        $_SESSION = $session;
+    }
+});
+
+Runner::test('Mail-Proxy-Admin: alle Routen liegen in der Admin-Gruppe (Redaktion und KAEP gesperrt)', static function (): void {
+    $source = (string) file_get_contents(dirname(__DIR__, 2) . '/public/index.php');
+
+    // Die Wache selbst: nur Administratoren kommen durch, sonst 403.
+    $guard = mailProxyGroupBody($source, '$requireAdmin = static function (Request $request): ?Response {');
+    Assert::contains('Container::auth()->isAdmin()', $guard);
+    Assert::contains('new HttpException(403', $guard);
+
+    // Keine eigene Untergruppe: alle Mail-Proxy-Routen erben die Admin-Wache direkt.
+    $admin = mailProxyGroupBody($source, '$router->group([$requireAdmin], static function (Router $router): void {');
+    Assert::same(1, substr_count($admin, '$router->group('), 'Der Admin-Block enthält keine weitere Middleware-Gruppe.');
+
+    $routes = [
+        'get' => ['/admin/office/mail-proxy', '/admin/office/mail-proxy/server/neu', '/admin/office/mail-proxy/server/bearbeiten',
+            '/admin/office/mail-proxy/postfach/neu', '/admin/office/mail-proxy/postfach/bearbeiten',
+            '/admin/office/mail-proxy/users', '/admin/office/mail-proxy/mailboxes'],
+        'post' => ['/admin/office/mail-proxy/server', '/admin/office/mail-proxy/server/status', '/admin/office/mail-proxy/server/loeschen',
+            '/admin/office/mail-proxy/postfach', '/admin/office/mail-proxy/postfach/loeschen', '/admin/office/mail-proxy/postfach/test',
+            '/admin/office/mail-proxy/zuordnung', '/admin/office/mail-proxy/zuordnung/loeschen'],
+    ];
+    foreach ($routes as $method => $paths) {
+        foreach ($paths as $path) {
+            $call = "\$router->" . $method . "('" . $path . "'";
+            Assert::true(str_contains($admin, $call), 'Route fehlt in der Admin-Gruppe: ' . $path);
+            Assert::same(1, substr_count($source, $call), 'Route darf nur einmal registriert sein: ' . $path);
+        }
+    }
+});
+
+Runner::test('Mail-Proxy: Postfach- und Proxyänderungen invalidieren den Auflösungs-Cache', static function (): void {
+    $env = mailProxyEnv();
+    $ids = mailProxySeed($env);
+    $user = ['id' => 2, 'source_id' => 5];
+    Assert::true($env['resolver']->resolve($user)->isProxy(), 'Ausgangslage: Proxy-Postfach.');
+
+    // Postfach deaktivieren.
+    $generation = $env['repository']->generation();
+    $env['service']->saveMailbox($ids['server'], ['username' => 'jan', 'email_address' => 'jan@hh.example', 'display_name' => 'Jan Müller'], '', $ids['mailbox']);
+    Assert::same($generation + 1, $env['repository']->generation(), 'Postfachänderung hebt die Generation.');
+    Assert::true($env['resolver']->resolve($user)->isBlocked(), 'Deaktiviertes Postfach wird frisch aufgelöst.');
+    Assert::true(in_array('cache.invalidate', $env['transport']->operations(), true), 'Der Proxy-Pool wird geleert.');
+
+    // Postfach wieder aktivieren.
+    $generation = $env['repository']->generation();
+    $env['service']->saveMailbox($ids['server'], ['username' => 'jan', 'email_address' => 'jan@hh.example', 'display_name' => 'Jan Müller', 'active' => '1'], '', $ids['mailbox']);
+    Assert::same($generation + 1, $env['repository']->generation(), 'Erneutes Speichern hebt die Generation.');
+    Assert::true($env['resolver']->resolve($user)->isProxy(), 'Aktiviertes Postfach wird frisch aufgelöst.');
+
+    // Proxy-Konfiguration bearbeiten.
+    $generation = $env['repository']->generation();
+    $env['service']->saveServer(mailProxyServerInput(['identity_source_id' => '5', 'imap_host' => 'imap2.hh.example.net']), $ids['server']);
+    Assert::same($generation + 1, $env['repository']->generation(), 'Proxyänderung hebt die Generation.');
+    Assert::true($env['resolver']->resolve($user)->isProxy(), 'Geänderte Konfiguration bleibt aktiv.');
+
+    // Proxy-Konfiguration deaktivieren und wieder aktivieren.
+    $env['service']->setServerActive($ids['server'], false);
+    Assert::same(MailProxyRoute::EXCHANGE, $env['resolver']->resolve($user)->state, 'Deaktivierte Konfiguration fällt auf Exchange zurück.');
+    $env['service']->setServerActive($ids['server'], true);
+    Assert::true($env['resolver']->resolve($user)->isProxy(), 'Aktivierte Konfiguration wird frisch aufgelöst.');
+
+    // Postfach löschen.
+    $generation = $env['repository']->generation();
+    $env['service']->deleteMailbox($ids['mailbox']);
+    Assert::same($generation + 1, $env['repository']->generation(), 'Postfachlöschung hebt die Generation.');
+    Assert::same(MailProxyRoute::EXCHANGE, $env['resolver']->resolve($user)->state, 'Ohne Postfach kein Proxy-Zugriff.');
+
+    // Konfiguration löschen (zuletzt, weil sie nur ohne Postfächer möglich ist).
+    $generation = $env['repository']->generation();
+    $env['service']->deleteServer($ids['server']);
+    Assert::same($generation + 1, $env['repository']->generation(), 'Löschen der Konfiguration hebt die Generation.');
 });

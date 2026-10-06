@@ -596,7 +596,9 @@ Servervalidierung, Quelle je Server, verschlüsselte Passwörter, feste
 Postfachgröße/Belegung, Zuordnungsregeln, Vorschläge, Entscheidungstabelle,
 Cache/Invalidierung/TTL/Generation, frische Zugangsdaten, Router ohne
 Rückfall, Postfach-Bindung der IDs, umkehrbare Ordner-IDs, Signatur-Referenzwert
-und Basis-URL, Verbindungstest/Diagnose, Kennwortübernahme, `mail_auth`.
+und Basis-URL, Verbindungstest/Diagnose, Kennwortübernahme, `mail_auth`,
+CSRF-Pflicht der schreibenden Admin-Aktionen und Admin-Gruppenzugehörigkeit
+aller Routen.
 
 Nicht automatisiert: der Python-Dienst gegen echte Server. Manuell z. B. mit
 GreenMail/Dovecot im Netz `mail_egress` und `docker compose up mail-proxy`.

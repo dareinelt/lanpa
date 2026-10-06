@@ -323,5 +323,8 @@ Verschlüsselung und geheimnisfreie Listen, Zuordnungsregeln, Vorschläge,
 Entscheidungstabelle, Cache/Generation, frische Zugangsdaten, Router inkl.
 Sperre ohne Rückfall, Postfach-Bindung der IDs, Signatur-Referenzwert,
 Verbindungstest und Diagnose, Kennwort-Übernahme durch den Benutzer (nur nach
-bestätigter Anmeldung) und Grund `mail_auth`. Ende-zu-Ende-Tests gegen einen echten Mailserver
+bestätigter Anmeldung) und Grund `mail_auth`. Zusätzlich prüft die Suite, dass
+alle schreibenden Admin-Aktionen das CSRF-Token als Erstes validieren (419) und
+dass sämtliche Mail-Proxy-Routen in der Admin-Gruppe liegen, sowie dass jede
+Server- und Postfachänderung den Auflösungs-Cache invalidiert. Ende-zu-Ende-Tests gegen einen echten Mailserver
 (z. B. GreenMail) sind manuell durchzuführen.

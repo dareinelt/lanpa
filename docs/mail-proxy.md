@@ -6,6 +6,10 @@ Exchange-Server – erhalten über den SMTP-/IMAP-Proxy ein Postfach auf einem
 beliebigen IMAP-/SMTP-Mailserver. Die Oberfläche von Orvanta bleibt gleich,
 nur die Funktionen ohne IMAP-Entsprechung werden ausgeblendet.
 
+Technische Details (Code-Landkarte, Abläufe, Protokoll, Fehlercodes,
+Invarianten, Änderungsrezepte) stehen in
+[mail-proxy-referenz.md](mail-proxy-referenz.md).
+
 **Exchange bleibt der Standard und die Rückfallebene:** Wer keine gültige
 Zuordnung hat, nutzt Orvanta unverändert über Exchange.
 
@@ -247,6 +251,9 @@ mitwandern. Nach einer Wiederherstellung auf einem anderen System sind
 Mailserver und Postfächer neu anzulegen.
 
 ## 10. Technische Referenz (für Entwickler)
+
+Kurzüberblick; die ausführliche Referenz für Entwickler und Coding-Agenten
+ist [mail-proxy-referenz.md](mail-proxy-referenz.md).
 
 ### Code-Landkarte
 

@@ -507,6 +507,7 @@ Mindestens:
 
 ```text
 archive_enabled
+archive_group
 archive_threshold
 archive_threshold_unit
 archive_age_days

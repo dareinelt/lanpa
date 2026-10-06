@@ -44,6 +44,7 @@ final class OrvantaConfigService
         'default_folder' => 'inbox',
         'poll_interval' => '60',
         'archive_enabled' => '0',
+        'archive_group' => '',
         'archive_threshold' => '80',
         'archive_threshold_unit' => 'percent',
         'archive_age_days' => '60',
@@ -163,10 +164,37 @@ final class OrvantaConfigService
 
     // ------------------------------------------------------------------ Langzeitarchiv
 
-    /** Richtliniengesteuerte Archivierung aktiv (zusaetzlich zur Exchange-Anbindung). */
+    /**
+     * Richtliniengesteuerte Archivierung grundsaetzlich aktiv (zusaetzlich zur
+     * Exchange-Anbindung). Ob ein Benutzer archiviert wird, entscheidet
+     * zusaetzlich die Freigabegruppe (archiveEnabledFor()).
+     */
     public function archiveEnabled(): bool
     {
         return $this->isEnabled() && $this->get('archive_enabled') === '1';
+    }
+
+    /** AD-Gruppe, deren Mitglieder archiviert werden ('' = niemand). */
+    public function archiveGroup(): string
+    {
+        return trim($this->get('archive_group'));
+    }
+
+    /**
+     * Archivierung fuer einen Benutzer mit den gegebenen AD-Gruppen aktiv:
+     * nur bei eingeschalteter Archivierung und Mitgliedschaft in der
+     * Freigabegruppe (Standard: fuer niemanden).
+     *
+     * @param list<string> $groups
+     */
+    public function archiveEnabledFor(array $groups): bool
+    {
+        $group = mb_strtolower($this->archiveGroup());
+        if ($group === '' || !$this->archiveEnabled()) {
+            return false;
+        }
+
+        return in_array($group, array_map(static fn ($name): string => mb_strtolower(trim((string) $name)), $groups), true);
     }
 
     /** Mindestalter archivierungsfaehiger Nachrichten in Tagen (Standard 60). */
@@ -391,6 +419,13 @@ final class OrvantaConfigService
             array_key_exists($key, $input) && is_scalar($input[$key]) ? (string) $input[$key] : self::DEFAULTS[$key],
             $max
         );
+        $archiveGroup = trim($archiveText('archive_group', 190), " \t,;");
+        if (preg_match('/[,;\r\n]/', $archiveGroup) === 1) {
+            $errors['archive_group'] = 'Bitte genau eine AD-Gruppe angeben.';
+        } elseif ($values['archive_enabled'] === '1' && $archiveGroup === '') {
+            $errors['archive_group'] = 'Die Archivierung ist nur für Mitglieder einer AD-Gruppe möglich. Bitte eine Gruppe angeben.';
+        }
+        $values['archive_group'] = $archiveGroup;
         $archiveUnit = $archiveText('archive_threshold_unit', 10);
         if (!isset(self::ARCHIVE_THRESHOLD_UNITS[$archiveUnit])) {
             $archiveUnit = 'percent';

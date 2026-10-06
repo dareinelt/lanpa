@@ -49,7 +49,7 @@ final class OrvantaApiController extends Controller
                 'demo' => $config->isDemo(),
                 'host' => $config->get('exchange_host'),
                 'cache' => Container::orvantaAttachments()->usage($access['uid']),
-                'archive' => Container::orvantaArchive()->status($access['uid']),
+                'archive' => Container::orvantaArchive()->status($access['uid'], $this->archiveEnabledFor($access)),
                 'server_time' => time(),
             ];
         });
@@ -257,7 +257,7 @@ final class OrvantaApiController extends Controller
         return $this->handle($request, function (array $access): array {
             $this->registerArchive($access);
 
-            return Container::orvantaArchive()->status($access['uid']);
+            return Container::orvantaArchive()->status($access['uid'], $this->archiveEnabledFor($access));
         });
     }
 
@@ -265,14 +265,25 @@ final class OrvantaApiController extends Controller
      * Postfach fuer die Hintergrund-Archivierung registrieren: ab der ersten
      * Nutzung arbeitet der Archiv-Worker unabhaengig von einer geoeffneten
      * Oberflaeche. Wird von den Statusabfragen der Oberflaeche aufgerufen.
+     * Nur Mitglieder der Freigabegruppe werden registriert.
      *
      * @param array{user:array<string,mixed>,uid:string,impersonate:string} $access
      */
     private function registerArchive(array $access): void
     {
-        if (Container::orvantaConfig()->archiveEnabled()) {
+        if ($this->archiveEnabledFor($access)) {
             Container::orvantaArchive()->registerMailbox($access['uid'], $access['impersonate']);
         }
+    }
+
+    /**
+     * @param array{user:array<string,mixed>,uid:string,impersonate:string} $access
+     */
+    private function archiveEnabledFor(array $access): bool
+    {
+        $groups = $access['user']['groups'] ?? [];
+
+        return Container::orvantaConfig()->archiveEnabledFor(is_array($groups) ? array_values($groups) : []);
     }
 
     public function archiveFolders(Request $request): Response

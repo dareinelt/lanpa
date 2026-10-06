@@ -43,6 +43,16 @@ final class OrvantaArchiveService
     /** @var callable():int */
     private $now;
 
+    /** @var \Closure():array<int,array{key:string}> */
+    private \Closure $sources;
+
+    /** @var array<string,true>|null Kleingeschriebene Kennungen der Mitglieder der Freigabegruppe. */
+    private ?array $members = null;
+
+    /**
+     * @param (\Closure():array<int,array{key:string}>)|null $sources Identitaetsquellen
+     *        (ID => Kennung) zur Bildung der Benutzerkennung; Standard: nur Hauptquelle.
+     */
     public function __construct(
         private readonly OrvantaArchiveRepository $repository,
         private readonly OrvantaConfigService $config,
@@ -50,8 +60,47 @@ final class OrvantaArchiveService
         private readonly ArchiveStorageInterface $storage,
         private readonly MimeMessageParser $parser = new MimeMessageParser(),
         ?callable $now = null,
+        ?\Closure $sources = null,
     ) {
         $this->now = $now ?? static fn (): int => time();
+        $this->sources = $sources ?? static fn (): array => [0 => ['key' => '']];
+    }
+
+    // ------------------------------------------------------------------ Freigabe
+
+    /**
+     * Archivierung fuer diesen Benutzer aktiv: Archivierung eingeschaltet und
+     * Benutzer Mitglied der Freigabegruppe (laut AD-Synchronisation). Ohne
+     * Freigabegruppe wird niemand archiviert.
+     */
+    public function isArchiveUser(string $uid): bool
+    {
+        if (!$this->config->archiveEnabled() || $this->config->archiveGroup() === '') {
+            return false;
+        }
+
+        return isset($this->memberUids()[mb_strtolower($uid)]);
+    }
+
+    /**
+     * @return array<string,true>
+     */
+    private function memberUids(): array
+    {
+        if ($this->members !== null) {
+            return $this->members;
+        }
+        $sources = ($this->sources)();
+        $members = [];
+        foreach ($this->repository->groupMemberAccounts($this->config->archiveGroup()) as $account) {
+            $source = $sources[$account['identity_source_id']] ?? null;
+            if ($source === null) {
+                continue;
+            }
+            $members[mb_strtolower(\App\Security\SsoAuth::officeUid($account['samaccount_name'], (string) $source['key']))] = true;
+        }
+
+        return $this->members = $members;
     }
 
     // ------------------------------------------------------------------ Registrierung und Status
@@ -69,20 +118,23 @@ final class OrvantaArchiveService
     }
 
     /**
-     * Archivstatus fuer die Oberflaeche.
+     * Archivstatus fuer die Oberflaeche. $enabled: Freigabe des angemeldeten
+     * Benutzers (aus seinen SSO-Gruppen); ohne Angabe gilt die
+     * Gruppenmitgliedschaft laut AD-Synchronisation.
      *
      * @return array<string,mixed>
      */
-    public function status(string $uid): array
+    public function status(string $uid, ?bool $enabled = null): array
     {
+        $enabled ??= $this->isArchiveUser($uid);
         $archive = $this->repository->findArchive($uid);
         if ($archive === null) {
-            return ['enabled' => $this->config->archiveEnabled(), 'exists' => false];
+            return ['enabled' => $enabled, 'exists' => false];
         }
         $job = $this->repository->lastFinishedJob((int) $archive['id']);
 
         return [
-            'enabled' => $this->config->archiveEnabled(),
+            'enabled' => $enabled,
             'exists' => true,
             'status' => (string) $archive['status'],
             'notice' => $archive['last_notice'] !== null ? (string) $archive['last_notice'] : '',
@@ -106,7 +158,8 @@ final class OrvantaArchiveService
     /**
      * Prueft die Archivierungsrichtlinie fuer ein registriertes Postfach und
      * startet bei Ueberschreiten der Schwelle einen Lauf. $force uebergeht
-     * die Schwellenpruefung (nicht die Aktivierung und nicht das Mindestalter).
+     * die Schwellenpruefung (nicht die Aktivierung, nicht die Freigabegruppe
+     * und nicht das Mindestalter).
      *
      * @return array{ran:bool,reason:string,processed:int,deleted:int,failed:int}
      */
@@ -115,6 +168,9 @@ final class OrvantaArchiveService
         $none = static fn (string $reason): array => ['ran' => false, 'reason' => $reason, 'processed' => 0, 'deleted' => 0, 'failed' => 0];
         if (!$this->config->archiveEnabled()) {
             return $none('Archivierung ist deaktiviert.');
+        }
+        if (!$this->isArchiveUser($uid)) {
+            return $none('Benutzer ist nicht Mitglied der Archivierungsgruppe.');
         }
         $archive = $this->repository->findArchive($uid);
         if ($archive === null) {

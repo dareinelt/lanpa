@@ -6,8 +6,10 @@ declare(strict_types=1);
  * Orvanta-Archivierungs-Worker (Container mail-archive).
  *
  * Prueft fuer jedes registrierte Postfach die Archivierungsrichtlinie
- * (Schwelle, Mindestalter) und fuehrt bei Bedarf einen Archivierungslauf aus
- * (Copy -> Verify -> Commit -> Delete, siehe OrvantaArchiveService). Mehrere
+ * (Freigabegruppe, Schwelle, Mindestalter) und fuehrt bei Bedarf einen
+ * Archivierungslauf aus (Copy -> Verify -> Commit -> Delete, siehe
+ * OrvantaArchiveService). Archiviert werden nur Mitglieder der konfigurierten
+ * AD-Gruppe (Standard: niemand). Mehrere
  * Instanzen sind durch die Job-Sperre in orvanta_archive_jobs ungefaehrlich.
  *
  * Aufruf:

@@ -503,7 +503,10 @@ final class Container
                 self::orvantaArchiveRepository(),
                 self::orvantaConfig(),
                 self::orvantaExchange(),
-                new \App\Services\Orvanta\NextcloudArchiveStorage(self::nextcloudFiles())
+                new \App\Services\Orvanta\NextcloudArchiveStorage(self::nextcloudFiles()),
+                new \App\Services\Orvanta\MimeMessageParser(),
+                null,
+                static fn (): array => self::identitySourceMap()
             )
         );
     }

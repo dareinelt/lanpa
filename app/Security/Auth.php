@@ -126,7 +126,7 @@ final class Auth
 
         $lastActivity = Session::get(self::LAST_ACTIVITY);
         if (is_int($lastActivity) && (time() - $lastActivity) > $this->idleTimeout) {
-            $this->logout();
+            $this->expire();
 
             return false;
         }
@@ -134,7 +134,7 @@ final class Auth
         if (is_int($id)) {
             $current = $this->users->findActiveByUsername((string) $this->username());
             if ($current === null || (int) $current['id'] !== $id) {
-                $this->logout();
+                $this->expire();
 
                 return false;
             }
@@ -148,7 +148,7 @@ final class Auth
             }
             $role = $this->directoryRoleCache;
             if ($role === null) {
-                $this->logout();
+                $this->expire();
 
                 return false;
             }
@@ -206,6 +206,20 @@ final class Auth
 
     public function logout(): void
     {
+        $this->expire();
+        Csrf::rotate();
+        Session::regenerate();
+    }
+
+    /**
+     * Beendet nur die Admin-Anmeldung (Leerlauf, Konto/Gruppe ungueltig).
+     * CSRF-Token und Sitzungs-ID bleiben erhalten: Die Sitzung traegt auch
+     * Windows-Anmeldung und offene Seiten (z. B. Orvanta), deren Formulare
+     * sonst mit „Sitzung abgelaufen“ scheitern wuerden. Eine Rechte-
+     * Erweiterung findet hier nicht statt, daher ist keine Rotation noetig.
+     */
+    private function expire(): void
+    {
         Session::forget(self::USER_KEY);
         Session::forget(self::NAME_KEY);
         Session::forget(self::ROLE_KEY);
@@ -213,8 +227,6 @@ final class Auth
         Session::forget(self::LAST_ACTIVITY);
         $this->directoryVerified = false;
         $this->directoryRoleCache = null;
-        Csrf::rotate();
-        Session::regenerate();
     }
 
     /**

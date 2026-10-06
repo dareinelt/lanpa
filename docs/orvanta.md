@@ -171,7 +171,7 @@ flowchart LR
 - Anhänge: `GET /office/orvanta/anhang/oeffnen?token=…`,
   `GET /office/orvanta/anhang/datei?token=…` (Zugriff des DocumentServers).
 - API (`/api/orvanta/…`, JSON, CSRF-Token im Header `X-CSRF-Token`):
-  `status`, `mail/ordner`, `mail/ordner/eigenschaften`, `mail/ordner/neu`, `mail/ordner/gelesen` (Ordner-Kontextmenü), `mail/kennwort` (nur Proxy-Postfächer: geändertes Kennwort übernehmen), `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
+  `status`, `sitzung` (Keep-alive, aktuelles CSRF-Token), `mail/ordner`, `mail/ordner/eigenschaften`, `mail/ordner/neu`, `mail/ordner/gelesen` (Ordner-Kontextmenü), `mail/kennwort` (nur Proxy-Postfächer: geändertes Kennwort übernehmen), `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
   `empfaenger` (Vorschläge für An/Cc/Bcc), `mail/entwurf`, `mail/antworten`, `mail/aktion`, `anhang/link`,
   `anhang/nextcloud`, `zwischenspeicher`, `zwischenspeicher/leeren`,
   `kalender`, `kalender/termin` (GET/POST), `kalender/termin/loeschen`,

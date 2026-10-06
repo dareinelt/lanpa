@@ -150,6 +150,7 @@ $router->group([$ssoAttempt], static function (Router $router): void {
 $router->get('/office/orvanta/anhang/oeffnen', [OrvantaController::class, 'openAttachment']);
 $router->get('/office/orvanta/anhang/datei', [OrvantaController::class, 'attachmentFile']); // Token-Zugriff des DocumentServers
 $router->get('/api/orvanta/status', [OrvantaApiController::class, 'status']);
+$router->get('/api/orvanta/sitzung', [OrvantaApiController::class, 'keepAlive']); // Keep-alive + aktuelles CSRF-Token
 $router->get('/api/orvanta/mail/ordner', [OrvantaApiController::class, 'folders']);
 $router->get('/api/orvanta/mail/ordner/eigenschaften', [OrvantaApiController::class, 'folderProperties']);
 $router->post('/api/orvanta/mail/ordner/neu', [OrvantaApiController::class, 'createFolder']);

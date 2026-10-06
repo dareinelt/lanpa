@@ -451,6 +451,13 @@
 
     function api(path, options) {
         return apiRequest(path, options).catch(function (error) {
+            // Veraltetes CSRF-Token (z. B. nach Ablauf einer parallelen
+            // Admin-Anmeldung): Server liefert das aktuelle Token mit –
+            // uebernehmen und die Anfrage einmal wiederholen.
+            if (error.status === 419 && error.data && error.data.code === 'csrf' && error.data.csrf && !(options && options.csrfRetried)) {
+                setCsrf(error.data.csrf);
+                return api(path, Object.assign({}, options, { csrfRetried: true }));
+            }
             // Proxy-Postfach: Mailserver lehnt das hinterlegte Kennwort ab
             // (z. B. vom Benutzer geaendert) – Kennwort abfragen und die
             // Anfrage danach einmal wiederholen, statt hart zu scheitern.
@@ -513,6 +520,54 @@
                 setOnline(false);
             }
             throw error;
+        });
+    }
+
+    function setCsrf(token) {
+        if (typeof token === 'string' && token !== '') {
+            csrf = token;
+            root.setAttribute('data-csrf', token);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Keep-alive: Solange der Benutzer arbeitet (tippt, klickt), wird die
+    // Sitzung regelmaessig aufgefrischt – auch im eigenen Verfassen-Tab, in
+    // dem sonst keine Abfragen laufen. So laeuft sie beim Schreiben langer
+    // Antworten nicht ab, und das CSRF-Token bleibt aktuell.
+    // ------------------------------------------------------------------
+
+    var KEEPALIVE_INTERVAL = 5 * 60 * 1000;
+    var lastActivity = Date.now();
+    var lastKeepAlive = Date.now();
+
+    function keepAlive() {
+        lastKeepAlive = Date.now();
+        return apiRequest('/sitzung').then(function (data) {
+            setCsrf(data && data.csrf);
+        }).catch(function () {});
+    }
+
+    function startKeepAlive() {
+        var mark = function () {
+            lastActivity = Date.now();
+            // Nach laengerer Pause sofort auffrischen, bevor der Benutzer absendet.
+            if (Date.now() - lastKeepAlive > KEEPALIVE_INTERVAL) {
+                keepAlive();
+            }
+        };
+        ['keydown', 'pointerdown', 'input', 'focusin'].forEach(function (type) {
+            document.addEventListener(type, mark, { capture: true, passive: true });
+        });
+        window.setInterval(function () {
+            if (Date.now() - lastActivity < KEEPALIVE_INTERVAL) {
+                keepAlive();
+            }
+        }, KEEPALIVE_INTERVAL);
+        document.addEventListener('visibilitychange', function () {
+            if (!document.hidden) {
+                mark();
+            }
         });
     }
 
@@ -5119,6 +5174,7 @@
         initRecipientSuggestAll();
         updateNotifyState();
         setOnline(true);
+        startKeepAlive();
         var params = new window.URLSearchParams(window.location.search);
         var module = state.module;
         var wanted = params.get('modul') || '';

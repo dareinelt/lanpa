@@ -161,3 +161,37 @@ Runner::test('Abgelaufene Sitzungen werden beendet', static function (): void {
 
     Assert::false($auth->check());
 });
+
+Runner::test('Ablauf der Admin-Anmeldung behält CSRF-Token (offene Orvanta-Seiten)', static function (): void {
+    $_SESSION = [];
+    $store = new FakeAdminUserStore([
+        'id' => 4,
+        'username' => 'admin',
+        'password_hash' => password_hash('sicheres-passwort', PASSWORD_DEFAULT),
+        'active' => 1,
+    ]);
+    $auth = new Auth($store, 60);
+    $auth->attempt('admin', 'sicheres-passwort');
+    $token = Csrf::token();
+    $_SESSION['_admin_last_activity'] = time() - 120;
+
+    Assert::false($auth->check());
+    Assert::null($auth->id());
+    Assert::true(Csrf::isValid($token));
+});
+
+Runner::test('Explizites Abmelden rotiert das CSRF-Token', static function (): void {
+    $_SESSION = [];
+    $store = new FakeAdminUserStore([
+        'id' => 5,
+        'username' => 'admin',
+        'password_hash' => password_hash('sicheres-passwort', PASSWORD_DEFAULT),
+        'active' => 1,
+    ]);
+    $auth = new Auth($store);
+    $auth->attempt('admin', 'sicheres-passwort');
+    $token = Csrf::token();
+    $auth->logout();
+
+    Assert::false(Csrf::isValid($token));
+});

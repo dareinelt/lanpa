@@ -370,6 +370,10 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/office/signaturen/vorschau', [OrvantaSignatureController::class, 'preview']);
         // Orvanta: SMTP-/IMAP-Proxy fuer Benutzer ohne Exchange-Postfach (Server, Postfaecher, Zuordnung).
         $router->get('/admin/office/mail-proxy', [MailProxyController::class, 'index']);
+        $router->get('/admin/office/mail-proxy/server/neu', [MailProxyController::class, 'createServer']);
+        $router->get('/admin/office/mail-proxy/server/bearbeiten', [MailProxyController::class, 'editServer']);
+        $router->get('/admin/office/mail-proxy/postfach/neu', [MailProxyController::class, 'createMailbox']);
+        $router->get('/admin/office/mail-proxy/postfach/bearbeiten', [MailProxyController::class, 'editMailbox']);
         $router->post('/admin/office/mail-proxy/server', [MailProxyController::class, 'saveServer']);
         $router->post('/admin/office/mail-proxy/server/status', [MailProxyController::class, 'toggleServer']);
         $router->post('/admin/office/mail-proxy/server/loeschen', [MailProxyController::class, 'deleteServer']);

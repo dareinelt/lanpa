@@ -833,7 +833,10 @@ final class Container
                     self::phonebookRepository(),
                     self::syncLogRepository(),
                     app_logger(),
-                    self::adGroupRepository()
+                    self::adGroupRepository(),
+                    static function (int $deactivated): void {
+                        self::mailProxy()->invalidate('ad sync deactivated users', ['deactivated' => $deactivated]);
+                    }
                 );
             }
         );

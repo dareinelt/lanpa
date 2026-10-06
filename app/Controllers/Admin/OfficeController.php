@@ -542,6 +542,7 @@ final class OfficeController extends AdminController
                 'folders' => OrvantaConfigService::DEFAULT_FOLDERS,
                 'archive_units' => OrvantaConfigService::ARCHIVE_THRESHOLD_UNITS,
             ],
+            'mailProxyDiagnostics' => $section === 'status' ? Container::mailProxy()->diagnostics() : null,
             'previewConfig' => $previewConfig,
             'pageScript' => 'admin-office.js',
         ], $status);

@@ -23,6 +23,7 @@ use App\Controllers\Admin\ImportExportController;
 use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\IncidentController;
 use App\Controllers\Admin\LdapController;
+use App\Controllers\Admin\MailProxyController;
 use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\NetworkDriveController as NetworkDriveAdminController;
 use App\Controllers\Admin\OfficeController as OfficeAdminController;
@@ -363,6 +364,18 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/office/signaturen/vorlage', [OrvantaSignatureController::class, 'save']);
         $router->post('/admin/office/signaturen/loeschen', [OrvantaSignatureController::class, 'delete']);
         $router->get('/admin/office/signaturen/vorschau', [OrvantaSignatureController::class, 'preview']);
+        // Orvanta: SMTP-/IMAP-Proxy fuer Benutzer ohne Exchange-Postfach (Server, Postfaecher, Zuordnung).
+        $router->get('/admin/office/mail-proxy', [MailProxyController::class, 'index']);
+        $router->post('/admin/office/mail-proxy/server', [MailProxyController::class, 'saveServer']);
+        $router->post('/admin/office/mail-proxy/server/status', [MailProxyController::class, 'toggleServer']);
+        $router->post('/admin/office/mail-proxy/server/loeschen', [MailProxyController::class, 'deleteServer']);
+        $router->post('/admin/office/mail-proxy/postfach', [MailProxyController::class, 'saveMailbox']);
+        $router->post('/admin/office/mail-proxy/postfach/loeschen', [MailProxyController::class, 'deleteMailbox']);
+        $router->post('/admin/office/mail-proxy/postfach/test', [MailProxyController::class, 'testMailbox']);
+        $router->post('/admin/office/mail-proxy/zuordnung', [MailProxyController::class, 'saveMapping']);
+        $router->post('/admin/office/mail-proxy/zuordnung/loeschen', [MailProxyController::class, 'deleteMapping']);
+        $router->get('/admin/office/mail-proxy/users', [MailProxyController::class, 'users']);
+        $router->get('/admin/office/mail-proxy/mailboxes', [MailProxyController::class, 'mailboxes']);
         $router->get('/admin/speicherplatz', [StorageQuotaController::class, 'index']);
         $router->post('/admin/speicherplatz/standard', [StorageQuotaController::class, 'updateDefault']);
         $router->post('/admin/speicherplatz/gruppen', [StorageQuotaController::class, 'saveGroup']);

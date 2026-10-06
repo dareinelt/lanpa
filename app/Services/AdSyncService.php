@@ -34,7 +34,8 @@ final class AdSyncService
         private readonly PhonebookStoreInterface $store,
         private readonly SyncLogStoreInterface $syncLog,
         private readonly Logger $logger,
-        private readonly ?AdGroupStoreInterface $groups = null
+        private readonly ?AdGroupStoreInterface $groups = null,
+        private readonly ?\Closure $onDeactivated = null
     ) {
         $this->sources = $sources instanceof LdapClientInterface
             ? [['id' => 0, 'label' => 'Active Directory', 'client' => $sources]]
@@ -56,6 +57,15 @@ final class AdSyncService
 
         $processed = array_sum(array_column($results, 'processed'));
         $deactivated = array_sum(array_column($results, 'deactivated'));
+        if ($deactivated > 0 && $this->onDeactivated !== null) {
+            // Abhaengige Caches (z. B. Mail-Proxy-Zuordnungen) duerfen
+            // deaktivierte Benutzer nicht weiter verwenden.
+            try {
+                ($this->onDeactivated)($deactivated);
+            } catch (\Throwable $exception) {
+                $this->logger->warning('Nachbearbeitung deaktivierter Benutzer fehlgeschlagen.', ['error' => $exception->getMessage()]);
+            }
+        }
         $groupCounts = array_filter(array_column($results, 'groups'), static fn (?int $count): bool => $count !== null);
         $groupCount = $groupCounts === [] ? null : array_sum($groupCounts);
         $failed = array_values(array_filter($results, static fn (array $result): bool => $result['status'] !== 'success'));

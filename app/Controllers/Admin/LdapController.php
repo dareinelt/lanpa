@@ -71,6 +71,7 @@ final class LdapController extends AdminController
             'host' => str_replace("\n", ', ', $values['ldap_host']),
             'passwords_changed' => array_keys($changes),
         ]);
+        $this->invalidateMailProxy('identity source changed', ['source' => 'primary']);
         Session::flash('success', 'Die AD-Einstellungen wurden gespeichert.' . ($ssoChanged ? self::SSO_RESTART_HINT : ''));
 
         return $this->redirect('/admin/ad');
@@ -131,6 +132,7 @@ final class LdapController extends AdminController
             'admin' => Container::auth()->username(),
             'source' => (string) $row['source_key'],
         ]);
+        $this->invalidateMailProxy('identity source deleted', ['source' => (string) $row['source_key']]);
         Session::flash('success', sprintf('Die Identitätsquelle „%s“ wurde gelöscht; ihre Einträge sind ausgeblendet.', (string) $row['label']));
 
         return $this->redirect('/admin/ad');
@@ -293,6 +295,7 @@ final class LdapController extends AdminController
             'passwords_changed' => array_keys($changes),
         ]);
 
+        $this->invalidateMailProxy('identity source changed', ['source' => (string) $values['ldap_key']]);
         $message = sprintf('Die Identitätsquelle „%s“ wurde gespeichert.', $values['ldap_label']);
         if ($service->secretStates($service->find($savedId))['ldap_bind_password'] !== 'set' && $values['ldap_bind_dn'] !== '') {
             $message .= ' Hinweis: Für das Dienstkonto ist noch kein Passwort hinterlegt.';
@@ -304,6 +307,21 @@ final class LdapController extends AdminController
         Session::flash('success', $message);
 
         return $this->redirect('/admin/ad');
+    }
+
+    /**
+     * Aenderungen an Identitaetsquellen machen gecachte Mail-Proxy-
+     * Zuordnungen ungueltig (Quelle geaendert/deaktiviert/geloescht).
+     *
+     * @param array<string,mixed> $context
+     */
+    private function invalidateMailProxy(string $reason, array $context): void
+    {
+        try {
+            Container::mailProxy()->invalidate($reason, $context);
+        } catch (\Throwable $exception) {
+            app_logger()->warning('Mail-Proxy-Cache konnte nicht invalidiert werden.', ['error' => $exception->getMessage()]);
+        }
     }
 
     /**

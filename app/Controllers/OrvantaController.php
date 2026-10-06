@@ -7,7 +7,9 @@ namespace App\Controllers;
 use App\Core\Container;
 use App\Core\Request;
 use App\Core\Response;
+use App\Contracts\OrvantaMailBackendInterface;
 use App\Exceptions\HttpException;
+use App\Services\MailProxy\MailProxyRoute;
 use App\Services\Office\OfficeAppCatalog;
 use App\Services\Orvanta\OrvantaAttachmentService;
 use App\Services\Orvanta\OrvantaException;
@@ -22,7 +24,8 @@ use App\Support\Html;
  *   GET /office/orvanta/anhang/datei       Rohdatei fuer den DocumentServer (?token=…)
  *
  * Zugriff wie bei den uebrigen Office-Apps ueber die AD-Gruppenfreigabe
- * (Adminbereich Office → Apps) und die aktivierte Exchange-Anbindung.
+ * (Adminbereich Office → Apps) und die aktivierte Exchange-Anbindung bzw.
+ * eine Postfach-Zuordnung zum SMTP-/IMAP-Proxy (docs/mail-proxy.md).
  */
 final class OrvantaController extends Controller
 {
@@ -47,6 +50,10 @@ final class OrvantaController extends Controller
                     'email' => $access['impersonate'],
                     'username' => (string) $access['user']['username'],
                 ],
+                // Mail-Backend (exchange|proxy) und verfuegbare Module; ohne
+                // Server- oder Zugangsdaten.
+                'backend' => $access['backend']->backendName(),
+                'capabilities' => $access['backend']->capabilities(),
                 'defaultModule' => $config->get('default_folder'),
                 'pollInterval' => $config->pollInterval(),
                 'reminderLead' => $config->reminderLeadMinutes(),
@@ -54,8 +61,8 @@ final class OrvantaController extends Controller
                 'nextcloudAvailable' => Container::nextcloudFiles()->unavailableReason() === null,
                 'cacheFolder' => $config->cacheFolder(),
                 'cacheQuota' => $config->cacheQuotaBytes(),
-                'demo' => $config->isDemo(),
-                'owaUrl' => $config->owaUrl(),
+                'demo' => $access['route']->isProxy() ? false : $config->isDemo(),
+                'owaUrl' => $access['route']->isProxy() ? '' : $config->owaUrl(),
                 // Nur das Flag - Modell, Adresse und Schluessel bleiben auf dem Server.
                 'aiAvailable' => Container::orvantaAi()->isAvailable(),
                 // Fest zugeordnete Signatur (nur Anzeige; angefuegt wird serverseitig).
@@ -135,9 +142,14 @@ final class OrvantaController extends Controller
 
     /**
      * Gemeinsame Pruefung: angemeldeter SSO-Benutzer, Orvanta freigegeben
-     * (AD-Gruppen wie Euro-Office-Apps) und Exchange-Anbindung aktiv.
+     * (AD-Gruppen wie Euro-Office-Apps) und ein Mail-Backend verfuegbar:
      *
-     * @return array{user:array<string,mixed>,uid:string,impersonate:string}
+     *  - Benutzer mit aktiver Proxy-Zuordnung (Admin → Office → SMTP-/IMAP-
+     *    Proxy): Postfach ueber IMAP/SMTP, keine Exchange-Anmeldung
+     *  - Zuordnung auf deaktiviertes Postfach: kein Zugriff (kein Rueckfall)
+     *  - sonst: Exchange-Anbindung (bestehendes Verhalten)
+     *
+     * @return array{user:array<string,mixed>,uid:string,impersonate:string,backend:OrvantaMailBackendInterface,route:MailProxyRoute}
      */
     public static function authorize(Request $request): array
     {
@@ -145,7 +157,9 @@ final class OrvantaController extends Controller
         if ($ssoUser === null) {
             throw new HttpException(403, 'Orvanta steht nur angemeldeten Benutzern zur Verfügung.');
         }
-        if (!Container::orvantaConfig()->isEnabled()) {
+        $router = Container::orvantaMail();
+        $route = $router->route($ssoUser);
+        if ($route->state === MailProxyRoute::EXCHANGE && !Container::orvantaConfig()->isEnabled()) {
             throw new HttpException(404, 'Die Exchange-Anbindung (Orvanta) ist in dieser Installation nicht aktiviert.');
         }
         if (Container::officeApps()->findAllowed('orvanta', $ssoUser) === null) {
@@ -155,6 +169,13 @@ final class OrvantaController extends Controller
         if ($tile !== null && !Container::navigation()->isAccessible((int) $tile['id'], $ssoUser)) {
             throw new HttpException(403, 'Für Office fehlt die Berechtigung.');
         }
+        if ($route->isBlocked()) {
+            throw new HttpException(403, 'Das Ihnen zugeordnete Postfach ist deaktiviert. Bitte wenden Sie sich an die Administration.');
+        }
+        $uid = (string) ($ssoUser['office_uid'] ?? $ssoUser['username']);
+        if ($route->isProxy()) {
+            return ['user' => $ssoUser, 'uid' => $uid, 'impersonate' => $route->email, 'backend' => $router->backendForRoute($route), 'route' => $route];
+        }
         $impersonate = Container::orvantaConfig()->impersonationAddress($ssoUser);
         if ($impersonate === '' && !Container::orvantaConfig()->isDemo()) {
             throw new HttpException(403, 'Für Ihr Konto ist im Active Directory keine E-Mail-Adresse hinterlegt. Orvanta kann Ihr Postfach nicht zuordnen.');
@@ -162,8 +183,10 @@ final class OrvantaController extends Controller
 
         return [
             'user' => $ssoUser,
-            'uid' => (string) ($ssoUser['office_uid'] ?? $ssoUser['username']),
+            'uid' => $uid,
             'impersonate' => $impersonate !== '' ? $impersonate : (string) $ssoUser['username'] . '@demo.local',
+            'backend' => $router->backendForRoute($route),
+            'route' => $route,
         ];
     }
 

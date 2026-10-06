@@ -7,6 +7,11 @@ und spricht über **Exchange Web Services (EWS)** mit einem Exchange-Server
 On-Premise ab Version 2016/2019 (inkl. Subscription Edition). Der Zugriff
 erfolgt im Namen des per Windows-Anmeldung (SSO) erkannten Benutzers.
 
+Benutzer **ohne Exchange-Postfach** können einem IMAP-/SMTP-Postfach zugeordnet
+werden; Orvanta nutzt dann statt EWS den internen SMTP-/IMAP-Proxy (nur Mail,
+siehe [Abschnitt 4b](#4b-smtp-imap-proxy-benutzer-ohne-exchange) und
+[docs/mail-proxy.md](mail-proxy.md)).
+
 Technische Details für Entwickler und Coding-Agenten (Code-Landkarte,
 API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 [docs/orvanta-referenz.md](orvanta-referenz.md).
@@ -143,7 +148,8 @@ flowchart LR
 | Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer |
 | Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php` | |
 | Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql` | |
-| Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php` | Fakes für den Exchange-Transport; Signaturen gegen SQLite |
+| `OrvantaMailRouter`, `ProxyMailBackend` | `app/Services/MailProxy/` | Backend-Auswahl je Benutzer (Exchange oder SMTP-/IMAP-Proxy, gemeinsames `OrvantaMailBackendInterface`); Details in [mail-proxy.md](mail-proxy.md) |
+| Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/MailProxyTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen gegen SQLite |
 
 ### Datenbank
 
@@ -165,7 +171,7 @@ flowchart LR
 - Anhänge: `GET /office/orvanta/anhang/oeffnen?token=…`,
   `GET /office/orvanta/anhang/datei?token=…` (Zugriff des DocumentServers).
 - API (`/api/orvanta/…`, JSON, CSRF-Token im Header `X-CSRF-Token`):
-  `status`, `mail/ordner`, `mail/ordner/eigenschaften`, `mail/ordner/neu`, `mail/ordner/gelesen` (Ordner-Kontextmenü), `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
+  `status`, `mail/ordner`, `mail/ordner/eigenschaften`, `mail/ordner/neu`, `mail/ordner/gelesen` (Ordner-Kontextmenü), `mail/kennwort` (nur Proxy-Postfächer: geändertes Kennwort übernehmen), `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
   `empfaenger` (Vorschläge für An/Cc/Bcc), `mail/entwurf`, `mail/antworten`, `mail/aktion`, `anhang/link`,
   `anhang/nextcloud`, `zwischenspeicher`, `zwischenspeicher/leeren`,
   `kalender`, `kalender/termin` (GET/POST), `kalender/termin/loeschen`,
@@ -311,6 +317,31 @@ Verhalten in Orvanta:
 
 Die Vorschau im Adminbereich zeigt die Vorlage mit Beispieldaten
 („Erika Musterfrau“) und aktualisiert sich beim Ändern der Felder.
+
+---
+
+## 4b. SMTP-/IMAP-Proxy (Benutzer ohne Exchange)
+
+Unter **Admin → Office → SMTP-/IMAP-Proxy** (`/admin/office/mail-proxy`) wird
+je Identitätsquelle ein IMAP-/SMTP-Mailserver eingerichtet; AD-Benutzer werden
+einzelnen Postfächern zugeordnet. Für zugeordnete Benutzer wählt
+`OrvantaMailRouter` das `ProxyMailBackend` statt `OrvantaExchangeService`.
+
+- Verfügbar: Mail lesen/senden/antworten/weiterleiten, Anhänge, Ordner, Suche,
+  Entwürfe, Markierungen, Verschieben/Löschen, Kontingent.
+- Nicht verfügbar: Kalender, Kontakte, Aufgaben, Notizen, Erinnerungen,
+  Langzeitarchiv. Die Oberfläche blendet sie aus (`capabilities` in der
+  Seitenkonfiguration und in `/api/orvanta/status`), die API antwortet mit 409.
+- Ohne gültige Zuordnung bleibt alles beim Exchange-Verhalten; ein deaktiviertes
+  Postfach sperrt Orvanta für den Benutzer (403) ohne Rückfall.
+- Orvanta wird in der Office-Kachel auch angeboten, wenn Exchange nicht
+  aktiviert ist, aber ein aktiver Proxy-Mailserver existiert.
+- Lehnt der Mailserver das hinterlegte Kennwort ab (z. B. vom Benutzer
+  geändert), fragt Orvanta in einem Overlay nach dem aktuellen Kennwort. Es wird
+  am Mailserver geprüft und ersetzt bei Erfolg den vom Admin eingetragenen Wert
+  (`POST /api/orvanta/mail/kennwort`).
+
+Einrichtung, Sicherheit, Cache und Fehlersuche: [docs/mail-proxy.md](mail-proxy.md).
 
 ---
 
@@ -588,6 +619,8 @@ Ablauf und Bedienung:
 ## 10. Grenzen und Hinweise
 
 - Keine Exchange-Online-/Graph-Anbindung; Ziel ist On-Premise ab 2016/2019.
+- Proxy-Postfächer (IMAP/SMTP) bieten nur Mail; Kalender, Kontakte, Aufgaben,
+  Notizen, Erinnerungen und Langzeitarchiv setzen Exchange voraus.
 - Serienregeln werden angezeigt und als Vorkommen geladen, aber nicht als
   Serie bearbeitet.
 - S/MIME-Verschlüsselung und -Signatur werden nicht unterstützt.

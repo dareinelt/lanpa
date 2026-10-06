@@ -450,6 +450,20 @@
     // ------------------------------------------------------------------
 
     function api(path, options) {
+        return apiRequest(path, options).catch(function (error) {
+            // Proxy-Postfach: Mailserver lehnt das hinterlegte Kennwort ab
+            // (z. B. vom Benutzer geaendert) – Kennwort abfragen und die
+            // Anfrage danach einmal wiederholen, statt hart zu scheitern.
+            if (error.data && error.data.code === 'mail_auth' && !(options && options.noPasswordPrompt)) {
+                return promptMailPassword(error).then(function () {
+                    return apiRequest(path, options);
+                });
+            }
+            throw error;
+        });
+    }
+
+    function apiRequest(path, options) {
         options = options || {};
         var init = {
             method: options.method || 'GET',
@@ -506,7 +520,7 @@
         state.online = online;
         var conn = hook('status-conn');
         if (conn) {
-            conn.textContent = online ? (config.demo ? 'Demo-Postfach' : 'Verbunden mit Exchange') : 'Keine Verbindung';
+            conn.textContent = online ? (config.demo ? 'Demo-Postfach' : (isProxyBackend() ? 'Verbunden (IMAP/SMTP)' : 'Verbunden mit Exchange')) : 'Keine Verbindung';
             conn.classList.toggle('ov-status__item--error', !online);
         }
     }
@@ -603,8 +617,9 @@
         }
         if (typeof dialog.close === 'function' && dialog.open) {
             dialog.close();
-        } else {
+        } else if (dialog.hasAttribute('open')) {
             dialog.removeAttribute('open');
+            dialog.dispatchEvent(new Event('close'));
         }
     }
 
@@ -623,13 +638,107 @@
     }
 
     // ------------------------------------------------------------------
+    // Proxy-Postfach: Kennwort-Abfrage
+    // ------------------------------------------------------------------
+
+    var mailPasswordPrompt = null;
+
+    /**
+     * Zeigt das Kennwort-Overlay (gleichzeitige Anfragen teilen sich eine
+     * Abfrage). Erfuellt sich, sobald das neue Kennwort am Mailserver
+     * bestaetigt und gespeichert ist; beim Abbrechen mit dem urspruenglichen
+     * Fehler abgelehnt.
+     */
+    function promptMailPassword(original) {
+        if (mailPasswordPrompt) {
+            return mailPasswordPrompt.promise;
+        }
+        var form = hook('form-mail-password');
+        var dialog = form ? form.closest('dialog') : null;
+        if (!form || !dialog) {
+            return Promise.reject(original);
+        }
+        var pending = {};
+        pending.promise = new Promise(function (resolve, reject) {
+            pending.resolve = resolve;
+            pending.reject = reject;
+        });
+        mailPasswordPrompt = pending;
+        form.reset();
+        var reason = hook('mail-password-reason', form);
+        if (reason && original && original.message) {
+            reason.textContent = original.message;
+        }
+        var email = hook('mail-password-email', form);
+        if (email) {
+            email.textContent = (config.user && config.user.email) || 'Ihr Postfach';
+        }
+        var onClose = function () {
+            dialog.removeEventListener('close', onClose);
+            form.reset();
+            if (mailPasswordPrompt === pending) {
+                mailPasswordPrompt = null;
+                pending.reject(original);
+            }
+        };
+        dialog.addEventListener('close', onClose);
+        openDialog('mail-password');
+        return pending.promise;
+    }
+
+    function submitMailPassword(form) {
+        var pending = mailPasswordPrompt;
+        if (!pending) {
+            closeDialog('mail-password');
+            return;
+        }
+        var password = form.elements.password.value;
+        if (!password) {
+            formError(form, 'Bitte das aktuelle Kennwort eingeben.');
+            return;
+        }
+        var button = form.querySelector('[type=submit]');
+        button.disabled = true;
+        formError(form, '');
+        apiRequest('/mail/kennwort', { body: { password: password } }).then(function (result) {
+            mailPasswordPrompt = null;
+            closeDialog('mail-password');
+            toast(result.message || 'Das Kennwort wurde übernommen.', 'success');
+            pending.resolve();
+        }).catch(function (error) {
+            form.elements.password.value = '';
+            formError(form, error.message);
+            form.elements.password.focus();
+        }).then(function () {
+            button.disabled = false;
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Modulsteuerung
     // ------------------------------------------------------------------
 
     var MODULE_TITLES = { mail: 'E-Mail', calendar: 'Kalender', contacts: 'Kontakte', tasks: 'Aufgaben', notes: 'Notizen' };
 
+    /**
+     * Unterstuetzt das Mail-Backend die Funktion? (SMTP-/IMAP-Proxy: nur
+     * E-Mail; Kalender, Kontakte, Aufgaben, Notizen und Erinnerungen nicht.)
+     */
+    function hasCapability(name) {
+        var caps = config.capabilities || {};
+        return caps[name] !== false;
+    }
+
+    function isProxyBackend() {
+        return config.backend === 'proxy';
+    }
+
     function switchModule(name) {
         if (!MODULE_TITLES[name]) {
+            return;
+        }
+        if (!hasCapability(name)) {
+            toast(MODULE_TITLES[name] + ' steht für Ihr Postfach (IMAP/SMTP) nicht zur Verfügung.', 'info');
             return;
         }
         state.module = name;
@@ -3452,6 +3561,9 @@
     }
 
     function startReminderPolling() {
+        if (!hasCapability('reminders')) {
+            return;
+        }
         var interval = Math.max(15, parseInt(config.pollInterval, 10) || 60) * 1000;
         syncReminders(true);
         reminderTimer = window.setInterval(function () {
@@ -3552,7 +3664,7 @@
             return;
         }
         dl.innerHTML = '';
-        [['Postfach', config.user && config.user.email], ['Modus', config.demo ? 'Demo (ohne Exchange-Verbindung)' : 'Exchange Web Services (SSO)'], ['Erinnerungsvorlauf', (config.reminderLead || 15) + ' Minuten'], ['Abfrageintervall', (config.pollInterval || 60) + ' Sekunden'], ['Euro-Office', config.officeAvailable ? 'Verfügbar' : 'Nicht konfiguriert'], ['Nextcloud', config.nextcloudAvailable ? 'Verfügbar' : 'Nicht konfiguriert']].forEach(function (pair) {
+        [['Postfach', config.user && config.user.email], ['Modus', config.demo ? 'Demo (ohne Exchange-Verbindung)' : (isProxyBackend() ? 'IMAP/SMTP über Mail-Proxy (nur E-Mail)' : 'Exchange Web Services (SSO)')], ['Erinnerungsvorlauf', (config.reminderLead || 15) + ' Minuten'], ['Abfrageintervall', (config.pollInterval || 60) + ' Sekunden'], ['Euro-Office', config.officeAvailable ? 'Verfügbar' : 'Nicht konfiguriert'], ['Nextcloud', config.nextcloudAvailable ? 'Verfügbar' : 'Nicht konfiguriert']].forEach(function (pair) {
             dl.appendChild(el('dt', { text: pair[0] }));
             dl.appendChild(el('dd', { text: String(pair[1] || '–') }));
         });
@@ -3733,6 +3845,7 @@
                 else if (kind === 'compose') { sendCompose(form, false); }
                 else if (kind === 'folder-new') { createFolder(form); }
                 else if (kind === 'move') { submitMove(form); }
+                else if (kind === 'mail-password') { submitMailPassword(form); }
             });
         });
 
@@ -3833,8 +3946,8 @@
             if (typing || event.ctrlKey || event.metaKey || event.altKey) {
                 return;
             }
-            var modules = ['mail', 'calendar', 'contacts', 'tasks', 'notes'];
-            if (/^[1-5]$/.test(event.key)) {
+            var modules = ['mail', 'calendar', 'contacts', 'tasks', 'notes'].filter(hasCapability);
+            if (/^[1-5]$/.test(event.key) && modules[parseInt(event.key, 10) - 1]) {
                 switchModule(modules[parseInt(event.key, 10) - 1]);
             } else if (event.key === '/') {
                 event.preventDefault();
@@ -5011,6 +5124,9 @@
         var wanted = params.get('modul') || '';
         if (['mail', 'calendar', 'contacts', 'tasks', 'notes'].indexOf(wanted) !== -1) {
             module = wanted;
+        }
+        if (!hasCapability(module)) {
+            module = 'mail';
         }
         state.module = '';
         switchModule(module);

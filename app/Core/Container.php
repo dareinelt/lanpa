@@ -480,9 +480,106 @@ final class Container
                 self::nextcloudFiles(),
                 self::orvantaExchange(),
                 self::secretBox(),
-                self::orvantaArchive()
+                self::orvantaArchive(),
+                self::orvantaMail()
             )
         );
+    }
+
+    // ------------------------------------------------------------------ SMTP-/IMAP-Proxy (Orvanta ohne Exchange)
+
+    public static function mailProxyRepository(): \App\Repositories\MailProxyRepository
+    {
+        return self::make(\App\Repositories\MailProxyRepository::class, static fn (): \App\Repositories\MailProxyRepository => new \App\Repositories\MailProxyRepository());
+    }
+
+    public static function mailProxyCache(): \App\Services\MailProxy\MailProxyCache
+    {
+        return self::make(
+            \App\Services\MailProxy\MailProxyCache::class,
+            static fn (): \App\Services\MailProxy\MailProxyCache => new \App\Services\MailProxy\MailProxyCache(
+                BASE_PATH . '/storage/cache/mail-proxy',
+                max(0, min(3600, (int) Env::get('MAIL_PROXY_CACHE_TTL', '300')))
+            )
+        );
+    }
+
+    public static function mailProxyResolver(): \App\Services\MailProxy\MailProxyResolver
+    {
+        return self::make(
+            \App\Services\MailProxy\MailProxyResolver::class,
+            static fn (): \App\Services\MailProxy\MailProxyResolver => new \App\Services\MailProxy\MailProxyResolver(
+                self::mailProxyRepository(),
+                self::mailProxyCache(),
+                self::secretBox(),
+                app_logger()
+            )
+        );
+    }
+
+    /**
+     * Interner HTTP-Transport zum Container mail-proxy (MAIL_PROXY_URL,
+     * nur internes Docker-Netz; Anfragen HMAC-signiert).
+     */
+    public static function mailProxyTransport(): \App\Contracts\MailProxyTransportInterface
+    {
+        return self::make(
+            \App\Contracts\MailProxyTransportInterface::class,
+            static fn (): \App\Contracts\MailProxyTransportInterface => new \App\Services\MailProxy\HttpMailProxyTransport(
+                (string) Env::get('MAIL_PROXY_URL', 'http://mail-proxy:8025'),
+                self::secretBox()
+            )
+        );
+    }
+
+    public static function mailProxy(): \App\Services\MailProxy\MailProxyService
+    {
+        return self::make(
+            \App\Services\MailProxy\MailProxyService::class,
+            static fn (): \App\Services\MailProxy\MailProxyService => new \App\Services\MailProxy\MailProxyService(
+                self::mailProxyRepository(),
+                self::mailProxyCache(),
+                self::secretBox(),
+                self::mailProxyTransport(),
+                self::mailProxyResolver(),
+                app_logger(),
+                static function (): array {
+                    $ldap = self::settings()->ldapConfig();
+
+                    return ['label' => (string) ($ldap['label'] ?? ''), 'base_dn' => (string) ($ldap['base_dn'] ?? '')];
+                }
+            )
+        );
+    }
+
+    /**
+     * Auswahl des Orvanta-Mail-Backends je Benutzer (Exchange oder Proxy).
+     */
+    public static function orvantaMail(): \App\Services\MailProxy\OrvantaMailRouter
+    {
+        return self::make(
+            \App\Services\MailProxy\OrvantaMailRouter::class,
+            static fn (): \App\Services\MailProxy\OrvantaMailRouter => new \App\Services\MailProxy\OrvantaMailRouter(
+                self::mailProxyResolver(),
+                self::mailProxyTransport(),
+                static fn (): \App\Contracts\OrvantaMailBackendInterface => self::orvantaExchange(),
+                self::mailProxyRepository(),
+                app_logger()
+            )
+        );
+    }
+
+    /**
+     * Gibt es mindestens eine aktive Proxy-Konfiguration? (Orvanta ist dann
+     * auch ohne Exchange-Anbindung fuer zugeordnete Benutzer nutzbar.)
+     */
+    public static function mailProxyActive(): bool
+    {
+        try {
+            return self::mailProxyRepository()->hasActiveServers();
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     public static function orvantaSignatureRepository(): \App\Repositories\OrvantaSignatureRepository
@@ -736,7 +833,10 @@ final class Container
                     self::phonebookRepository(),
                     self::syncLogRepository(),
                     app_logger(),
-                    self::adGroupRepository()
+                    self::adGroupRepository(),
+                    static function (int $deactivated): void {
+                        self::mailProxy()->invalidate('ad sync deactivated users', ['deactivated' => $deactivated]);
+                    }
                 );
             }
         );
@@ -962,7 +1062,7 @@ final class Container
                 new OfficeAppRepository(),
                 self::officeConfig(),
                 self::settings(),
-                static fn (): bool => self::orvantaConfig()->isEnabled(),
+                static fn (): bool => self::orvantaConfig()->isEnabled() || self::mailProxyActive(),
                 static function (array $groups): bool {
                     try {
                         return self::adminGroups()->isKaepMember($groups);

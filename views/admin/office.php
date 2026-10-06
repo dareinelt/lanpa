@@ -182,6 +182,33 @@ $previewJson = json_encode($previewConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAP
     </p>
 </section>
 
+<?php if (is_array($mailProxyDiagnostics ?? null)) {
+    $mpd = $mailProxyDiagnostics;
+    $mpCounts = $mpd['counts'];
+    $mpState = $mpd['state']; ?>
+<section class="card" aria-labelledby="office-mail-proxy-title">
+    <h2 class="card__title" id="office-mail-proxy-title">SMTP-/IMAP-Proxy (Orvanta ohne Exchange)</h2>
+    <ul class="status-list">
+        <?php if (!$mpd['available']) { ?>
+            <li><span>Konfiguration</span><span class="badge badge--error"><?= Html::e((string) $mpd['service']['message']) ?></span></li>
+        <?php } else { ?>
+            <li><span>Konfiguration</span><?= (int) $mpCounts['active_servers'] > 0 ? '<span class="badge badge--ok">OK</span>' : '<span class="badge badge--muted">nicht eingerichtet</span>' ?></li>
+            <li><span>Proxy-Dienst (mail-proxy)</span><?php if ((int) $mpCounts['servers'] === 0) { ?><span class="badge badge--muted">nicht benötigt</span><?php } elseif ($mpd['service']['ok']) { ?><span class="badge badge--ok">OK</span><?php } else { ?><span class="badge badge--error"><?= Html::e((string) $mpd['service']['message']) ?></span><?php } ?></li>
+            <?php if (($mpd['service']['details']['version'] ?? '') !== '') { ?>
+                <li><span>Proxy-Version / Verbindungen</span><span><?= Html::e((string) $mpd['service']['details']['version']) ?> · <?= (int) ($mpd['service']['details']['connections'] ?? 0) ?>/<?= (int) ($mpd['service']['details']['max_connections'] ?? 0) ?> aktiv · <?= (int) ($mpd['service']['details']['pooled'] ?? 0) ?> im Pool</span></li>
+            <?php } ?>
+            <li><span>Konfigurationen (aktiv)</span><span><?= (int) $mpCounts['servers'] ?> (<?= (int) $mpCounts['active_servers'] ?>)</span></li>
+            <li><span>Postfächer (aktiv)</span><span><?= (int) $mpCounts['mailboxes'] ?> (<?= (int) $mpCounts['active_mailboxes'] ?>)</span></li>
+            <li><span>Zuordnungen</span><span><?= (int) $mpCounts['mappings'] ?></span></li>
+            <li><span>Zuordnungs-Cache</span><span><?= (int) $mpd['cache_ttl'] > 0 ? (int) $mpd['cache_ttl'] . ' s TTL, Generation ' . (int) $mpState['generation'] : 'deaktiviert' ?></span></li>
+            <li><span>Letzte erfolgreiche Verbindung</span><span><?= $mpState['last_success_at'] !== '' ? Html::e((string) $mpState['last_success_at']) : '–' ?></span></li>
+            <li><span>Letzter Fehler</span><span><?= $mpState['last_error_at'] !== '' ? Html::e($mpState['last_error_at'] . ': ' . $mpState['last_error']) : '–' ?></span></li>
+        <?php } ?>
+    </ul>
+    <p class="card__hint">Verwaltung und Verbindungstest je Postfach unter <a href="/admin/office/mail-proxy">Office → SMTP-/IMAP-Proxy</a>. Zugangsdaten werden hier nie angezeigt.</p>
+</section>
+<?php } ?>
+
 <section class="card" aria-labelledby="office-update-title">
     <h2 class="card__title" id="office-update-title">Aktualisierung</h2>
     <p class="card__hint">

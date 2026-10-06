@@ -73,8 +73,16 @@ $modules = [
     'tasks' => ['Aufgaben', 'tasks'],
     'notes' => ['Notizen', 'notes'],
 ];
+// Module, die das Mail-Backend nicht unterstuetzt (z. B. Kalender beim
+// SMTP-/IMAP-Proxy), werden nicht angeboten.
+$capabilities = is_array($orvanta['capabilities'] ?? null) ? $orvanta['capabilities'] : [];
+$modules = array_filter($modules, static fn (string $key): bool => ($capabilities[$key] ?? true) === true, ARRAY_FILTER_USE_KEY);
 $moduleFor = ['inbox' => 'mail', 'calendar' => 'calendar', 'contacts' => 'contacts', 'tasks' => 'tasks', 'notes' => 'notes'];
 $startModule = $moduleFor[(string) $orvanta['defaultModule']] ?? 'mail';
+if (!isset($modules[$startModule])) {
+    $startModule = 'mail';
+}
+$isProxy = ($orvanta['backend'] ?? 'exchange') === 'proxy';
 $userName = (string) $orvanta['user']['name'];
 $initials = '';
 foreach (preg_split('/\s+/', $userName) ?: [] as $part) {
@@ -103,7 +111,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
             <button type="button" class="ov-titlebar__search-clear" data-ov-search-clear aria-label="Suche zurücksetzen" hidden><?= $icon('close') ?></button>
         </div>
         <div class="ov-titlebar__actions">
-            <button type="button" class="ov-qb" data-ov-reminders-toggle title="Erinnerungen" aria-label="Erinnerungen">
+            <button type="button" class="ov-qb" data-ov-reminders-toggle title="Erinnerungen" aria-label="Erinnerungen"<?= ($capabilities['reminders'] ?? true) === true ? '' : ' hidden' ?>>
                 <?= $icon('bell') ?><span class="ov-qb__count" data-ov-reminders-count hidden>0</span>
             </button>
             <button type="button" class="ov-qb" data-ov-dialog-open="settings" title="Einstellungen (⚙)" aria-label="Einstellungen"><?= $icon('settings') ?></button>
@@ -226,7 +234,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
 
     <!-- Statusleiste -->
     <footer class="ov-statusbar">
-        <span data-ov-status-conn><?= $icon('check') ?> Verbunden<?= !empty($orvanta['demo']) ? ' (Demo)' : '' ?></span>
+        <span data-ov-status-conn><?= $icon('check') ?> Verbunden<?= !empty($orvanta['demo']) ? ' (Demo)' : ($isProxy ? ' (IMAP/SMTP)' : '') ?></span>
         <span data-ov-status-count></span>
         <span class="ov-statusbar__grow" data-ov-status-text></span>
         <button type="button" class="ov-statusbar__credit" data-ov-dialog-open="about" title="Hinweise zu Orvanta anzeigen">Orvanta Mail-App by Daniel-André Reinelt</button>
@@ -376,6 +384,20 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
                 <button type="submit" class="button button--primary"><?= $icon('save') ?> Speichern</button>
                 <button type="button" class="button button--ghost" data-ov-dialog-close>Abbrechen</button>
             </div>
+        </form>
+    </dialog>
+
+    <!-- Dialog: Postfach-Kennwort (nur Proxy-Postfaecher; Mailserver lehnt das hinterlegte Kennwort ab) -->
+    <dialog class="ov-dialog ov-dialog--small" data-ov-dialog="mail-password">
+        <form method="dialog" class="ov-dialog__form" data-ov-form="mail-password">
+            <div class="ov-dialog__head"><h2>Kennwort des Postfachs</h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
+            <div class="ov-dialog__body">
+                <p data-ov-mail-password-reason>Der Mailserver hat die Anmeldung abgelehnt. Möglicherweise wurde das Kennwort geändert.</p>
+                <p class="ov-muted">Bitte das aktuelle Kennwort für <strong data-ov-mail-password-email></strong> eingeben. Es wird zuerst am Mailserver geprüft und bei Erfolg für Orvanta gespeichert.</p>
+                <label class="ov-field"><span>Aktuelles Kennwort</span><input type="password" name="password" maxlength="4096" required autocomplete="current-password"></label>
+                <p class="ov-form-error" data-ov-form-error hidden></p>
+            </div>
+            <div class="ov-dialog__foot"><button type="submit" class="button button--primary">Anmelden</button><button type="button" class="button button--ghost" data-ov-dialog-close>Abbrechen</button></div>
         </form>
     </dialog>
 

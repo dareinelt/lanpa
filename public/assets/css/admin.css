@@ -923,6 +923,63 @@ body.has-nav-tree-overlay {
     font-size: .85rem;
 }
 
+/* Office → SMTP-/IMAP-Proxy: zweispaltige Zuordnung AD-Benutzer → Postfach */
+.mail-proxy-map {
+    display: grid;
+    gap: .5rem;
+}
+
+.mail-proxy-map__head,
+.mail-proxy-map__form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: .75rem;
+    align-items: start;
+}
+
+.mail-proxy-map__head {
+    padding-bottom: .35rem;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-muted);
+    font-weight: 600;
+}
+
+.mail-proxy-map__row {
+    padding: .5rem 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.mail-proxy-map__row--new {
+    border-bottom: 0;
+}
+
+.mail-proxy-map__cell {
+    display: grid;
+    gap: .2rem;
+    min-width: 0;
+}
+
+.mail-proxy-map__cell input[type="text"] {
+    width: 100%;
+    min-height: 44px;
+    padding: .55rem .75rem;
+    font: inherit;
+    color: inherit;
+    background: var(--color-background);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+}
+
+@media (max-width: 720px) {
+    .mail-proxy-map__head {
+        display: none;
+    }
+
+    .mail-proxy-map__form {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 /* Office-Kachel: Gestaltung mit Live-Vorschau */
 .office-tile-design {
     display: grid;

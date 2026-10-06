@@ -44,6 +44,7 @@ $navItems = $isAdmin ? [
         'office_apps' => ['/admin/office/apps', 'Office-Apps und Berechtigungen'],
         'office_orvanta' => ['/admin/office/orvanta', 'Orvanta – Mail & Kalender'],
         'office_signatures' => ['/admin/office/signaturen', 'Signaturvorlagen'],
+        'office_mail_proxy' => ['/admin/office/mail-proxy', 'SMTP-/IMAP-Proxy'],
         'office_tile' => ['/admin/office/kachel', 'Kachel im Intranet'],
         'office_backup' => ['/admin/office/sicherung', 'Sicherung'],
     ]],

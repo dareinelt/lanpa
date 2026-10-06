@@ -30,7 +30,6 @@ $navItems = $isAdmin ? [
     'design' => ['/admin/design', 'Design'],
     'ldap' => ['/admin/ad', 'Active Directory'],
     'alarm' => ['/admin/alarmierung', 'Alarmierung'],
-    'smtp' => ['/admin/smtp', 'E-Mail (SMTP)'],
     'activation' => ['/admin/aktivierungs-rufnummern', 'Aktivierungs-Rufnummern'],
     'office' => ['/admin/office', 'Office', [
         'office' => ['/admin/office', 'Status & Diagnose'],
@@ -47,11 +46,14 @@ $navItems = $isAdmin ? [
     'drives' => ['/admin/netzlaufwerke', 'Netzlaufwerke'],
     'storage' => ['/admin/speicher-ha', 'Speicher (HA)'],
     'incidents' => ['/admin/vorfaelle', 'Vorfälle'],
-    'certificates' => ['/admin/zertifikate', 'Zertifikate (HTTPS)'],
-    'snmp' => ['/admin/snmp', 'SNMP'],
     'statistics' => ['/admin/statistik', 'Statistik'],
-    'users' => ['/admin/benutzer', 'Benutzer'],
-    'backup' => ['/admin/sicherung', 'Sicherung'],
+    'system' => ['/admin/zertifikate', 'System', [
+        'certificates' => ['/admin/zertifikate', 'Zertifikate (HTTPS)'],
+        'snmp' => ['/admin/snmp', 'SNMP'],
+        'users' => ['/admin/benutzer', 'Benutzer'],
+        'backup' => ['/admin/sicherung', 'Sicherung'],
+        'smtp' => ['/admin/smtp', 'E-Mail (SMTP)'],
+    ]],
 ] : ($adminRole === 'kaep' ? [
     'emergency_plan' => ['/admin/notfallplan', 'Notfallplan / KAEP'],
 ] : [

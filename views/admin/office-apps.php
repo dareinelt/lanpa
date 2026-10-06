@@ -98,7 +98,7 @@ $owaKey = OfficeAppService::OWA_SETTING;
                                 <?php } elseif ($key === 'files') { ?>
                                     Eigene Dateien in Nextcloud
                                 <?php } elseif ($app['kind'] === 'intranet') { ?>
-                                    Intranet-App (Exchange-Anbindung unter <a href="/admin/office#orvanta">Office → Orvanta</a>)
+                                    Intranet-App (Exchange-Anbindung unter <a href="/admin/office/orvanta">Office → Orvanta</a>)
                                 <?php } else { ?>
                                     Externer Link
                                 <?php } ?>

@@ -76,7 +76,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | --- | --- |
 | `app/Controllers/OrvantaController.php` | `index()` (App-Seite im Layout `layouts.editor`, Konfiguration als `$orvanta`), `openAttachment()` (Viewer/Inline/Download), `attachmentFile()` (Rohdatei für den DocumentServer), statisch `authorize()` (gemeinsame Zugriffsprüfung), `inlineType()` (sichere Inline-Typen) |
 | `app/Controllers/OrvantaApiController.php` | JSON-API; Rahmen `handle()` (Zugriff, Body, CSRF, Fehlerabbildung), Hilfen `readBody()`, `mailPayload()`, `addresses()`, `ids()`, `requireId()`, `str()/int()/bool()`, `resync()` |
-| `app/Controllers/Admin/OfficeController.php` | `updateOrvanta()` (Formular → `OrvantaConfigService::save()`), `testOrvanta()` (`testConnection()`), `render()` übergibt `orvanta*`-Variablen an `views/admin/office.php` |
+| `app/Controllers/Admin/OfficeController.php` | `showOrvanta()` (Unterseite `/admin/office/orvanta`), `updateOrvanta()` (Formular → `OrvantaConfigService::save()`), `testOrvanta()` (`testConnection()`), `render('orvanta', …)` übergibt `orvanta*`-Variablen an `views/admin/office.php` |
 | `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()` |
 | `app/Services/Orvanta/OrvantaExchangeService.php` | Fachlogik je Modul (siehe Abschnitt 5), `call()` (SOAP + Fehlerbehandlung), `translate()` (EWS-Fehlercodes → deutsche Meldung), Mapper `messageSummary()`, `calendarSummary()`, `contactData()`, `taskData()`, `attachmentList()` |
 | `app/Services/Orvanta/EwsXml.php` | `envelope()`, `parse()`, `error()`, `text()/attr()/bool()/elements()`, `itemId()/itemIds()`, `mailbox()/mailboxes()/recipients()`, `folderId()`, `dateTime()` (UTC), `timestamp()`, `escape()` |
@@ -103,7 +103,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`/`isSafeFileName()` (führender Punkt nur bei Dateinamen), `MAX_BYTES` (16 MiB) |
 | `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]` und Autoren-Button `.ov-statusbar__credit[data-ov-dialog-open="about"]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, headers, folder-new, folder-props, profile, settings, help, about, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Ordnerbaum, Mail-Liste, Textfelder, KI; Einträge per JS) |
 | `views/orvanta/viewer.php` | Euro-Office-Viewer `.ov-viewer[data-orvanta-viewer]` mit `data-api`, `data-config`, `data-download` und Download-Fallback |
-| `views/admin/office.php` | Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer, KI-Nutzungsbericht `#orvanta-ki`) |
+| `views/admin/office.php` | Abschnitt `$section === 'orvanta'`, Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer, KI-Nutzungsbericht `#orvanta-ki`) |
 | `views/layouts/base.php` | Mitteilungsmenü mit `data-orvanta-reminders` / `data-orvanta-reminder-list`, lädt `orvanta-reminders.js` (mit `data-csrf`) |
 | `public/assets/js/orvanta.js` | App (Abschnitt 9) |
 | `public/assets/js/orvanta-reminders.js` | Erinnerungen in der Kopfzeile aller übrigen Seiten |
@@ -166,6 +166,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/api/orvanta/erinnerungen/erledigt` | `dismissReminder` | Erinnerung schließen |
 | POST | `/api/orvanta/erinnerungen/spaeter` | `snoozeReminder` | Erinnerung verschieben (`minutes` 1–1440, Standard 5) |
 | POST | `/api/orvanta/ki/verbessern` | `aiImprove` | KI-Unterstützung: `mode`, `text`, `prompt`, optional `previous_text`, `context{subject, recipients}` → `{text, usage{input_tokens, output_tokens}}` (Abschnitt 15) |
+| GET | `/admin/office/orvanta[?ki_zeitraum=…]` | `Admin\OfficeController::showOrvanta` | Unterseite Orvanta im Adminbereich (`$requireAdmin`) |
 | POST | `/admin/office/orvanta` | `Admin\OfficeController::updateOrvanta` | Einstellungen (`$requireAdmin`, CSRF) |
 | POST | `/admin/office/orvanta/pruefen` | `testOrvanta` | Verbindungstest, optional `mailbox` |
 | GET | `/admin/office/signaturen` | `Admin\OrvantaSignatureController::index` | Signaturvorlagen (Liste, Vorschau-iframes) |
@@ -664,7 +665,7 @@ Download), Erinnerung in App und Kopfzeile, Statusleiste/Quota.
 
 | Aufgabe | Vorgehen |
 | --- | --- |
-| **Neue Einstellung** | `OrvantaConfigService::DEFAULTS` + Validierung in `save()` + ggf. Getter mit Klammerung; Formularfeld in `views/admin/office.php` (Karte `#orvanta`, `$ovField`/`$ovFieldError`); bei Frontend-Bedarf in `OrvantaController::index()` → `$orvanta`; Test in `OrvantaServiceTest.php`; Tabelle in `docs/orvanta.md`. Keine Migration nötig (Schlüssel/Wert). |
+| **Neue Einstellung** | `OrvantaConfigService::DEFAULTS` + Validierung in `save()` + ggf. Getter mit Klammerung; Formularfeld in `views/admin/office.php` (Abschnitt `orvanta`, Karte `#orvanta`, `$ovField`/`$ovFieldError`); bei Frontend-Bedarf in `OrvantaController::index()` → `$orvanta`; Test in `OrvantaServiceTest.php`; Tabelle in `docs/orvanta.md`. Keine Migration nötig (Schlüssel/Wert). |
 | **Neuer API-Endpunkt** | Methode in `OrvantaApiController` über `handle()` (schreibend: `true`), Route in `public/index.php` beim Orvanta-Block, Aufruf über `api()` in `orvanta.js`; Routenliste in `docs/orvanta.md` und `agentsindex.md` ergänzen. |
 | **Neues Feld eines Exchange-Elements** | `FieldURI` in `MESSAGE_FIELDS`/`CALENDAR_FIELDS` bzw. Abfrage, Mapper (`messageSummary()` …) erweitern, beim Schreiben `SetItemField` in `update*()` und Element in `create*()` (EWS verlangt die **Schema-Reihenfolge** der Kindelemente!), Demo-Antworten in `DemoExchangeTransport` ergänzen, Frontend-Anzeige/-Formular, Test. |
 | **Neue EWS-Operation** | In `OrvantaExchangeService` über `call()` (nie direkt am Transport), Werte mit `EwsXml::escape()`; neuen Fehlercode ggf. in `translate()`; `DemoExchangeTransport::post()` um Erkennung erweitern, sonst antwortet die Demo mit generischem Erfolg. |
@@ -797,7 +798,7 @@ Senden/Entwurf/Termin: OrvantaExchangeService → OrvantaAiService::stripMarkers
   zurückgegeben, die Zuordnung nicht gespeichert.
 - SVGs (`OrvantaAiCharts`) nutzen ausschließlich Präsentationsattribute
   (`fill`, `stroke`, `font-size`) – kein `style`, kein Skript (CSP).
-- Zeitraum per `GET /admin/office?ki_zeitraum=7|30|90` (`period()` normiert).
+- Zeitraum per `GET /admin/office/orvanta?ki_zeitraum=7|30|90` (`period()` normiert).
 
 ### 15.4 Testendpunkt
 

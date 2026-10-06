@@ -334,14 +334,20 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/ad/gruppen', [LdapController::class, 'groups']);
 
         $router->get('/admin/office', [OfficeAdminController::class, 'index']);
-        $router->post('/admin/office', [OfficeAdminController::class, 'update']);
+        $router->get('/admin/office/fusszeile', [OfficeAdminController::class, 'showFooter']);
+        $router->post('/admin/office/fusszeile', [OfficeAdminController::class, 'update']);
+        $router->get('/admin/office/ki', [OfficeAdminController::class, 'showAi']);
         $router->post('/admin/office/ki', [OfficeAdminController::class, 'updateAi']);
         $router->post('/admin/office/ki/testen', [OfficeAdminController::class, 'testAi']);
+        $router->get('/admin/office/app-store', [OfficeAdminController::class, 'showAppStore']);
         $router->post('/admin/office/app-store', [OfficeAdminController::class, 'updateAppStore']);
         $router->post('/admin/office/pruefen', [OfficeAdminController::class, 'check']);
+        $router->get('/admin/office/sicherung', [OfficeAdminController::class, 'showBackup']);
         $router->post('/admin/office/sicherung', [OfficeAdminController::class, 'backup']);
+        $router->get('/admin/office/kachel', [OfficeAdminController::class, 'showTile']);
         $router->post('/admin/office/kachel', [OfficeAdminController::class, 'createTile']);
         $router->post('/admin/office/kachel/gestaltung', [OfficeAdminController::class, 'updateTile']);
+        $router->get('/admin/office/orvanta', [OfficeAdminController::class, 'showOrvanta']);
         $router->post('/admin/office/orvanta', [OfficeAdminController::class, 'updateOrvanta']);
         $router->post('/admin/office/orvanta/pruefen', [OfficeAdminController::class, 'testOrvanta']);
         $router->get('/admin/office/kachel/vorschau', [OfficeAdminController::class, 'tilePreview']);

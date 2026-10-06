@@ -134,6 +134,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | GET | `/office/orvanta/anhang/oeffnen?token=` | `openAttachment` | Anhang öffnen (Session + Token, `uid` muss passen) |
 | GET | `/office/orvanta/anhang/datei?token=` | `attachmentFile` | Rohdatei für den DocumentServer (**nur Token**, keine Session) |
 | GET | `/api/orvanta/status` | `status` | Benutzer, Demo, Host, Zwischenspeicher, Serverzeit |
+| GET | `/api/orvanta/sitzung` | `keepAlive` | Keep-alive: frischt die Sitzung auf, liefert aktuelles CSRF-Token (`csrf`) |
 | GET | `/api/orvanta/mail/ordner` | `folders` | Ordnerbaum |
 | GET | `/api/orvanta/mail/ordner/eigenschaften?ordner=` | `folderProperties` | Anzahl/Größe eines Ordners, auch inkl. Unterordner (Kontextmenü „Eigenschaften“) |
 | POST | `/api/orvanta/mail/ordner/neu` | `createFolder` | Neuen E-Mail-Ordner anlegen (Kontextmenü „Neuer Ordner“) |
@@ -199,7 +200,17 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 
 - `readBody()`: bei `Content-Type: application/json` wird `php://input`
   gelesen (≤ 20 MB, `MAX_BODY`, sonst 413), sonst `$request->post`.
-- CSRF: `_token` im Body oder Header `X-CSRF-Token`; ungültig → **419**.
+- CSRF: `_token` im Body oder Header `X-CSRF-Token`; ungültig → **419** mit
+  `code: "csrf"` und dem aktuellen Token (`csrf`). `api()` in `orvanta.js`
+  übernimmt es und wiederholt die Anfrage einmal (z. B. nach Ablauf einer
+  parallelen Admin-Anmeldung).
+- Keep-alive: `startKeepAlive()` ruft bei Benutzeraktivität (Tippen, Klicken)
+  höchstens alle 5 Minuten `GET /api/orvanta/sitzung` auf – auch im eigenen
+  Verfassen-Tab –, damit die Sitzung beim Schreiben nicht abläuft
+  (`session.gc_maxlifetime`).
+- Ablauf der Admin-Anmeldung (`Auth::check()`: Leerlauf, Konto/Gruppe
+  ungültig) beendet nur die Admin-Rechte; CSRF-Token und Sitzungs-ID bleiben.
+  Nur das explizite `Auth::logout()` rotiert beides.
 - Fehlerabbildung: `OrvantaException` → `status()` (mit `reason()` zusätzlich
   `"code"`, z. B. `mail_auth`); `ValidationException` → 422
   (Meldungen verkettet); `HttpException` → deren Status; alles andere → 500

@@ -61,6 +61,19 @@ final class OrvantaApiController extends Controller
         });
     }
 
+    /**
+     * Keep-alive: haelt die Sitzung waehrend der Bearbeitung (z. B. langer
+     * Antworten) am Leben und liefert das aktuelle CSRF-Token.
+     */
+    public function keepAlive(Request $request): Response
+    {
+        return $this->handle($request, static function (): array {
+            Session::put('_orvanta_alive', time());
+
+            return ['ok' => true, 'csrf' => Csrf::token(), 'server_time' => time()];
+        })->withHeader('Cache-Control', 'no-store');
+    }
+
     public function folders(Request $request): Response
     {
         return $this->handle($request, fn (array $access): array => ['folders' => $this->mail($access)->folders($access['impersonate'])]);
@@ -749,7 +762,14 @@ final class OrvantaApiController extends Controller
                 $this->body = $this->readBody($request);
                 $token = $this->body['_token'] ?? $request->server['HTTP_X_CSRF_TOKEN'] ?? null;
                 if (!Csrf::isValid(is_string($token) ? $token : null)) {
-                    throw new HttpException(419, 'Die Sitzung ist abgelaufen. Bitte die Seite neu laden.');
+                    // Der Benutzer ist (per Windows-Anmeldung) weiterhin
+                    // berechtigt, nur das Token der Seite ist veraltet: neues
+                    // Token mitliefern, der Client wiederholt einmal.
+                    return Response::json([
+                        'error' => 'Die Sitzung ist abgelaufen. Bitte die Seite neu laden.',
+                        'code' => 'csrf',
+                        'csrf' => Csrf::token(),
+                    ], 419)->withHeader('Cache-Control', 'no-store');
                 }
             }
 

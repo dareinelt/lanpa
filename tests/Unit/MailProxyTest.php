@@ -706,3 +706,73 @@ Runner::test('Mail-Proxy: abgelehnte Anmeldung liefert den Grund mail_auth an Or
     }
     Assert::same('', (new OrvantaException('x'))->reason());
 });
+/**
+ * Rendert ein Overlay-Partial der Adminseite mit den Variablen, die
+ * views/admin/mail-proxy.php bereitstellt.
+ *
+ * @param array<string,mixed> $dialog
+ */
+function mailProxyDialogHtml(string $type, array $dialog): string
+{
+    $base = '/admin/office/mail-proxy';
+    $overview = ['sources' => [
+        ['id' => 3, 'label' => 'Hamburg', 'domain' => 'hh.example', 'base_dn' => '', 'active' => true],
+        ['id' => 4, 'label' => 'Berlin', 'domain' => 'be.example', 'base_dn' => '', 'active' => true],
+    ]];
+    $sourceName = static fn (?array $source): string => $source === null ? 'Unbekannte Quelle (gelöscht)' : (string) $source['label'];
+    $smtpPorts = [25, 465, 587];
+    $imapPorts = [143, 993];
+    ob_start();
+    require dirname(__DIR__, 2) . '/views/admin/mail-proxy/' . $type . '.php';
+
+    return (string) ob_get_clean();
+}
+
+Runner::test('Mail-Proxy-Admin: Overlay-Routen registriert, alte Links umgeleitet', static function (): void {
+    $routes = (string) file_get_contents(dirname(__DIR__, 2) . '/public/index.php');
+    foreach (['server/neu' => 'createServer', 'server/bearbeiten' => 'editServer', 'postfach/neu' => 'createMailbox', 'postfach/bearbeiten' => 'editMailbox'] as $path => $method) {
+        Assert::contains("\$router->get('/admin/office/mail-proxy/" . $path . "', [MailProxyController::class, '" . $method . "']);", $routes);
+        Assert::true(method_exists(\App\Controllers\Admin\MailProxyController::class, $method), $method . ' fehlt.');
+    }
+    $controller = (string) file_get_contents(dirname(__DIR__, 2) . '/app/Controllers/Admin/MailProxyController.php');
+    Assert::contains("queryInt('bearbeiten', 0)", $controller);
+    Assert::contains("queryInt('postfach', 0)", $controller);
+});
+
+Runner::test('Mail-Proxy-Admin: Konfigurations-Overlay führt zur angezeigten Quelle zurück und escapt Eingaben', static function (): void {
+    $html = mailProxyDialogHtml('server', [
+        'type' => 'server', 'title' => 'Neue Konfiguration', 'action' => '/admin/office/mail-proxy/server',
+        'error' => 'Ungültiger <Host>.', 'editing' => false, 'cancel' => '/admin/office/mail-proxy?quelle=3',
+        'freeSources' => [['id' => 4, 'label' => 'Berlin', 'domain' => 'be.example', 'base_dn' => '', 'active' => true]],
+        'values' => ['id' => 0, 'identity_source_id' => 4, 'name' => '<script>x</script>', 'smtp_host' => 'smtp.be.example', 'smtp_port' => 465,
+            'smtp_security' => 'tls', 'smtp_auth' => false, 'imap_host' => 'imap.be.example', 'imap_port' => 993, 'imap_security' => 'tls',
+            'verify_tls' => true, 'timeout_seconds' => 20, 'active' => true],
+    ]);
+    Assert::contains('data-cancel-url="/admin/office/mail-proxy?quelle=3"', $html);
+    Assert::same(2, substr_count($html, 'href="/admin/office/mail-proxy?quelle=3"'), 'Schließen und Abbrechen behalten die Quelle.');
+    Assert::contains('role="alert">Ungültiger &lt;Host&gt;.', $html);
+    Assert::contains('value="&lt;script&gt;x&lt;/script&gt;"', $html);
+    Assert::false(str_contains($html, '<script>'), 'Eingaben werden escapt.');
+    Assert::contains('<option value="4" selected>', $html);
+    Assert::false(str_contains($html, '<option value="3"'), 'Nur freie Quellen sind wählbar.');
+    Assert::contains('<option value="465" selected>', $html);
+    Assert::false(str_contains($html, 'name="smtp_auth" value="1" checked'), 'Checkbox-Eingabe bleibt erhalten.');
+});
+
+Runner::test('Mail-Proxy-Admin: Postfach-Overlay gibt kein Passwort aus und kehrt zu #postfaecher zurück', static function (): void {
+    $html = mailProxyDialogHtml('mailbox', [
+        'type' => 'mailbox', 'title' => 'Postfach bearbeiten', 'action' => '/admin/office/mail-proxy/postfach',
+        'error' => null, 'editing' => true, 'cancel' => '/admin/office/mail-proxy?quelle=3#postfaecher',
+        'server' => ['id' => 9, 'identity_source_id' => 3],
+        'values' => ['id' => 12, 'username' => 'jan', 'email_address' => 'jan@hh.example', 'display_name' => 'Jan', 'quota_mb' => '250', 'active' => false, 'password' => 'geheim-123'],
+    ]);
+    Assert::contains('data-cancel-url="/admin/office/mail-proxy?quelle=3#postfaecher"', $html);
+    Assert::contains('href="/admin/office/mail-proxy?quelle=3#postfaecher">Abbrechen</a>', $html);
+    Assert::contains('<input type="hidden" name="server_id" value="9">', $html);
+    Assert::contains('<input type="hidden" name="quelle" value="3">', $html);
+    Assert::contains('<input type="hidden" name="id" value="12">', $html);
+    Assert::contains('value="250"', $html);
+    Assert::false(str_contains($html, 'geheim-123'), 'Das Passwort wird nie ausgegeben.');
+    Assert::false(str_contains($html, 'role="alert"'), 'Ohne Fehler keine Meldung.');
+    Assert::false(str_contains($html, 'name="active" value="1" checked'));
+});

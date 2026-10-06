@@ -265,11 +265,47 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
      */
     public function upsert(array $user, string $syncedAt): void
     {
-        $statement = $this->pdo->prepare(
-            'INSERT INTO phonebook
-                (external_id, identity_source_id, samaccount_name, display_name, first_name, last_name, title, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active)
-             VALUES
-                (:external_id, :identity_source_id, :samaccount_name, :display_name, :first_name, :last_name, :title, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, 1)
+        $this->upsertMany([$user], $syncedAt);
+    }
+
+    /**
+     * Sammel-Upsert: eine Anweisung je Block statt einer je Benutzer.
+     *
+     * @param list<array<string,string|null>> $users
+     */
+    public function upsertMany(array $users, string $syncedAt): void
+    {
+        foreach (array_chunk(array_values($users), self::UPSERT_BATCH) as $chunk) {
+            $statement = $this->pdo->prepare(self::upsertSql(count($chunk)));
+            $statement->execute($this->upsertBindings($chunk, $syncedAt));
+        }
+    }
+
+    /**
+     * Spaltenliste des Upserts - an einer Stelle, damit Einzel- und
+     * Sammelschreibweise nicht auseinanderlaufen.
+     */
+    private const UPSERT_COLUMNS = 'external_id, identity_source_id, samaccount_name, display_name, first_name, last_name, title, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active';
+
+    /**
+     * Zeilen je Anweisung: 200 x 15 Platzhalter liegen weit unter dem Limit
+     * von MySQL (65535) und SQLite, halten den Speicherbedarf klein und
+     * begrenzen die Zahl der Rundlaeufe auf einstellige Werte.
+     */
+    private const UPSERT_BATCH = 200;
+
+    private static function upsertSql(int $rows): string
+    {
+        $values = [];
+        for ($index = 0; $index < $rows; $index++) {
+            $values[] = '(:external_id' . $index . ', :identity_source_id' . $index . ', :samaccount_name' . $index
+                . ', :display_name' . $index . ', :first_name' . $index . ', :last_name' . $index
+                . ', :title' . $index . ', :phone' . $index . ', :phone_digits' . $index . ', :mobile' . $index
+                . ', :email' . $index . ', :department' . $index . ', :ad_modified' . $index
+                . ', :synced_at' . $index . ', 1)';
+        }
+
+        return 'INSERT INTO phonebook (' . self::UPSERT_COLUMNS . ') VALUES ' . implode(', ', $values) . '
              ON DUPLICATE KEY UPDATE
                 identity_source_id = VALUES(identity_source_id),
                 samaccount_name = VALUES(samaccount_name),
@@ -284,25 +320,35 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
                 department = VALUES(department),
                 ad_modified = VALUES(ad_modified),
                 synced_at = VALUES(synced_at),
-                active = 1'
-        );
+                active = 1';
+    }
 
-        $statement->execute([
-            'external_id' => (string) $user['external_id'],
-            'identity_source_id' => (int) ($user['identity_source_id'] ?? 0),
-            'samaccount_name' => $this->value($user['samaccount_name'] ?? null),
-            'display_name' => (string) ($user['display_name'] ?? ''),
-            'first_name' => $user['first_name'] ?? null,
-            'last_name' => $user['last_name'] ?? null,
-            'title' => $user['title'] ?? null,
-            'phone' => $user['phone'] ?? null,
-            'phone_digits' => Validator::normalizePhone($user['phone'] ?? null),
-            'mobile' => $user['mobile'] ?? null,
-            'email' => $user['email'] ?? null,
-            'department' => $user['department'] ?? null,
-            'ad_modified' => $user['ad_modified'] ?? null,
-            'synced_at' => $syncedAt,
-        ]);
+    /**
+     * @param list<array<string,string|null>> $users
+     *
+     * @return array<string,string|int|null>
+     */
+    private function upsertBindings(array $users, string $syncedAt): array
+    {
+        $bindings = [];
+        foreach ($users as $index => $user) {
+            $bindings['external_id' . $index] = (string) $user['external_id'];
+            $bindings['identity_source_id' . $index] = (int) ($user['identity_source_id'] ?? 0);
+            $bindings['samaccount_name' . $index] = $this->value($user['samaccount_name'] ?? null);
+            $bindings['display_name' . $index] = (string) ($user['display_name'] ?? '');
+            $bindings['first_name' . $index] = $this->value($user['first_name'] ?? null);
+            $bindings['last_name' . $index] = $this->value($user['last_name'] ?? null);
+            $bindings['title' . $index] = $this->value($user['title'] ?? null);
+            $bindings['phone' . $index] = $this->value($user['phone'] ?? null);
+            $bindings['phone_digits' . $index] = Validator::normalizePhone($user['phone'] ?? null);
+            $bindings['mobile' . $index] = $this->value($user['mobile'] ?? null);
+            $bindings['email' . $index] = $this->value($user['email'] ?? null);
+            $bindings['department' . $index] = $this->value($user['department'] ?? null);
+            $bindings['ad_modified' . $index] = $this->value($user['ad_modified'] ?? null);
+            $bindings['synced_at' . $index] = $syncedAt;
+        }
+
+        return $bindings;
     }
 
     public function deactivateStale(string $syncedAt, int $sourceId = 0): int

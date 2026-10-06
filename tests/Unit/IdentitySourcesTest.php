@@ -166,7 +166,8 @@ Runner::test('Mehrere Quellen: Ausfall einer Quelle lässt die anderen unberühr
     Assert::same('error', $result['sources'][1]['status']);
     Assert::same([0, 7], $store->deactivatedSources);
     Assert::same([0, 7], array_column($store->upserted, 'identity_source_id'));
-    Assert::same(2, $store->commits);
+    // Je erfolgreicher Quelle ein Schreibblock plus die Abschluss-Transaktion.
+    Assert::same(4, $store->commits);
     Assert::same('error', $log->entries[0]['status']);
     Assert::contains('Hamburg', (string) $log->entries[0]['message']);
 });

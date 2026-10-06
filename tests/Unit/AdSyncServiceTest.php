@@ -38,7 +38,9 @@ Runner::test('Erfolgreiche Synchronisation schreibt und deaktiviert veraltete Ei
     Assert::same(2, $result['deactivated']);
     Assert::same(2, count($store->upserted));
     Assert::same(1, $store->deactivateCalls);
-    Assert::same(1, $store->commits);
+    // Zwei Festschreibungen: ein Schreibblock (2 Konten < BLOCK_SIZE) und die
+    // abschliessende Transaktion fuer Abgleich und Gruppen.
+    Assert::same(2, $store->commits);
     Assert::same('success', $log->entries[0]['status']);
 });
 
@@ -92,4 +94,52 @@ Runner::test('Datensätze ohne eindeutige Kennung werden übersprungen', static 
     Assert::same('success', $result['status']);
     Assert::same(1, $result['processed']);
     Assert::same('guid-3', $store->upserted[0]['external_id']);
+});
+
+/**
+ * @return list<array<string,string|null>>
+ */
+function manyUsers(int $count): array
+{
+    $users = [];
+    for ($i = 1; $i <= $count; $i++) {
+        $users[] = ['external_id' => 'guid-' . $i, 'display_name' => 'Konto ' . $i];
+    }
+
+    return $users;
+}
+
+Runner::test('Grosse Kontenmengen werden blockweise mit einheitlichem Zeitstempel geschrieben', static function (): void {
+    $store = new FakePhonebookStore();
+    $service = new AdSyncService(new FakeLdapClient(manyUsers(450)), $store, new FakeSyncLog(), testLogger());
+
+    $result = $service->run();
+
+    Assert::same('success', $result['status']);
+    Assert::same(450, $result['processed']);
+    Assert::same(450, count($store->upserted));
+    // 450 Konten ergeben drei Bloecke (200/200/50) plus die Abschluss-Transaktion.
+    Assert::same(3, count($store->syncStamps));
+    Assert::same(4, $store->commits);
+    // Nur ein Zeitstempel fuer den ganzen Lauf, sonst wuerde deactivateStale()
+    // die zuvor geschriebenen Bloecke wieder deaktivieren.
+    Assert::same(1, count(array_unique($store->syncStamps)));
+    Assert::same(1, $store->deactivateCalls);
+});
+
+Runner::test('Abbruch im zweiten Block lässt den ersten Block festgeschrieben', static function (): void {
+    $store = new FakePhonebookStore();
+    $store->failAfterUsers = 200;
+    $service = new AdSyncService(new FakeLdapClient(manyUsers(450)), $store, new FakeSyncLog(), testLogger());
+
+    $result = $service->run();
+
+    Assert::same('error', $result['status']);
+    // Der erste Block ist bereits festgeschrieben, der zweite wird zurueckgerollt.
+    Assert::same(200, count($store->upserted));
+    Assert::same(1, $store->commits);
+    Assert::same(1, $store->rollbacks);
+    // Ohne vollstaendigen Lauf wird nichts deaktiviert - kein Konto verliert
+    // seine Sichtbarkeit.
+    Assert::same(0, $store->deactivateCalls);
 });

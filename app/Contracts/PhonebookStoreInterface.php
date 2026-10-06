@@ -25,6 +25,14 @@ interface PhonebookStoreInterface
     public function upsert(array $user, string $syncedAt): void;
 
     /**
+     * Wie {@see upsert()}, aber fuer einen ganzen Block in einer Anweisung.
+     * Bei rund 1500 Konten spart das je Lauf ueber tausend Netzwerk-Rundlaeufe.
+     *
+     * @param list<array<string,string|null>> $users
+     */
+    public function upsertMany(array $users, string $syncedAt): void;
+
+    /**
      * Deaktiviert alle Eintraege der Identitaetsquelle (0 = Hauptquelle), die
      * im aktuellen Lauf nicht geliefert wurden.
      */

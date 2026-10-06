@@ -22,6 +22,12 @@ use Throwable;
  */
 final class AdSyncService
 {
+    /**
+     * Konten je Schreibblock. Eine kleinere Einheit als der gesamte Lauf
+     * begrenzt Sperr- und Undo-Log-Dauer; siehe syncSource().
+     */
+    private const BLOCK_SIZE = 200;
+
     /** @var list<array{id:int,label:string,client:LdapClientInterface}> */
     private readonly array $sources;
 
@@ -174,26 +180,47 @@ final class AdSyncService
         }
 
         try {
-            $this->store->beginTransaction();
-
+            // Blockweise schreiben statt alles in einer Transaktion: bei rund
+            // 1500 Konten entsteht sonst eine sehr lange offene Transaktion
+            // (Undo-Log, Sperren auf phonebook) und im Fehlerfall ist der
+            // gesamte Lauf verloren. $syncedAt gilt fuer den ganzen Lauf -
+            // nur so erkennt deactivateStale() die bereits geschriebenen
+            // Bloecke als aktuell und deaktiviert sie nicht wieder.
             $processed = 0;
+            $block = [];
             foreach ($users as $user) {
                 if (!isset($user['external_id']) || (string) $user['external_id'] === '') {
                     continue;
                 }
 
                 $user['identity_source_id'] = $sourceId;
-                $this->store->upsert($user, $syncedAt);
-                $processed++;
+                $block[] = $user;
+                if (count($block) >= self::BLOCK_SIZE) {
+                    $this->writeBlock($block, $syncedAt);
+                    $processed += count($block);
+                    $block = [];
+                }
+            }
+            if ($block !== []) {
+                $this->writeBlock($block, $syncedAt);
+                $processed += count($block);
             }
 
-            $deactivated = $processed > 0 ? $this->store->deactivateStale($syncedAt, $sourceId) : 0;
-            $groupCount = $groups !== null && $this->groups !== null
-                ? $this->groups->replaceAll($groups, $syncedAt, $sourceId)
-                : null;
-            $this->store->commit();
+            // Abgleich und Gruppen in einer Transaktion: erst nachdem alle
+            // Bloecke festgeschrieben sind, werden nicht mehr gelieferte
+            // Konten deaktiviert.
+            $this->store->beginTransaction();
+            try {
+                $deactivated = $processed > 0 ? $this->store->deactivateStale($syncedAt, $sourceId) : 0;
+                $groupCount = $groups !== null && $this->groups !== null
+                    ? $this->groups->replaceAll($groups, $syncedAt, $sourceId)
+                    : null;
+                $this->store->commit();
+            } catch (Throwable $exception) {
+                $this->store->rollBack();
+                throw $exception;
+            }
         } catch (Throwable $exception) {
-            $this->store->rollBack();
             $message = 'AD-Synchronisation' . $context . ' konnte nicht gespeichert werden: ' . $exception->getMessage();
             $this->logger->error($message);
 
@@ -215,6 +242,26 @@ final class AdSyncService
             'groups' => $groupCount,
             'warning' => $warning,
         ];
+    }
+
+    /**
+     * Schreibt einen Block Konten in einer eigenen Transaktion. Bricht der
+     * Lauf spaeter ab, bleiben die bereits geschriebenen Bloecke gueltig; der
+     * Aufrufer meldet den Lauf als Fehler, und deactivateStale() laeuft nicht -
+     * es verschwindet also kein Konto aus dem Telefonbuch.
+     *
+     * @param list<array<string,string|null>> $block
+     */
+    private function writeBlock(array $block, string $syncedAt): void
+    {
+        $this->store->beginTransaction();
+        try {
+            $this->store->upsertMany($block, $syncedAt);
+            $this->store->commit();
+        } catch (Throwable $exception) {
+            $this->store->rollBack();
+            throw $exception;
+        }
     }
 
     /**

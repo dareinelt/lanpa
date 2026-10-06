@@ -19,9 +19,14 @@ final class AdGroupRepository extends Repository implements AdGroupStoreInterfac
              ON DUPLICATE KEY UPDATE dn = VALUES(dn), name = VALUES(name), description = VALUES(description),
                 member_count = VALUES(member_count), synced_at = VALUES(synced_at), active = 1'
         );
-        $findId = $this->pdo->prepare('SELECT id FROM ad_groups WHERE identity_source_id = :source AND dn_hash = :dn_hash');
         $deleteMembers = $this->pdo->prepare('DELETE FROM ad_group_members WHERE group_id = :group_id');
         $userIds = $this->phonebookIdsByExternalId($sourceId);
+
+        // Bekannte Gruppen der Quelle in einem Zug lesen statt je Gruppe
+        // einzeln zu suchen (das waren bei 200 Gruppen 200 Rundlaeufe). Nur
+        // wirklich neue Gruppen brauchen weiterhin eine Einzelabfrage.
+        $knownIds = $this->knownGroupIds($sourceId);
+        $findId = $this->pdo->prepare('SELECT id FROM ad_groups WHERE identity_source_id = :source AND dn_hash = :dn_hash');
 
         $seenIds = [];
         foreach ($groups as $group) {
@@ -32,6 +37,8 @@ final class AdGroupRepository extends Repository implements AdGroupStoreInterfac
                     $members[$userIds[$externalId]] = true;
                 }
             }
+            $memberIds = array_keys($members);
+            sort($memberIds);
 
             $upsert->execute([
                 'source' => $sourceId,
@@ -39,18 +46,27 @@ final class AdGroupRepository extends Repository implements AdGroupStoreInterfac
                 'dn' => mb_substr($group['dn'], 0, 1024),
                 'name' => $group['name'],
                 'description' => $group['description'],
-                'member_count' => count($members),
+                'member_count' => count($memberIds),
                 'synced_at' => $syncedAt,
             ]);
-            $findId->execute(['source' => $sourceId, 'dn_hash' => $hash]);
-            $groupId = (int) $findId->fetchColumn();
-            if ($groupId === 0) {
-                continue;
+            $groupId = $knownIds[$hash] ?? null;
+            if ($groupId === null) {
+                $findId->execute(['source' => $sourceId, 'dn_hash' => $hash]);
+                $groupId = (int) $findId->fetchColumn();
+                if ($groupId === 0) {
+                    continue;
+                }
+                $knownIds[$hash] = $groupId;
             }
 
-            $deleteMembers->execute(['group_id' => $groupId]);
-            if ($members !== []) {
-                $this->insertMembers($groupId, array_keys($members));
+            // Mitglieder nur anfassen, wenn sich die Menge tatsaechlich
+            // aendert. Bei einem unveraenderten Bestand entfaellt damit
+            // DELETE + Neuaufbau aller Mitgliedszeilen.
+            if ($this->currentMemberIds($groupId) !== $memberIds) {
+                $deleteMembers->execute(['group_id' => $groupId]);
+                if ($memberIds !== []) {
+                    $this->insertMembers($groupId, $memberIds);
+                }
             }
             $seenIds[$groupId] = true;
         }
@@ -127,6 +143,39 @@ final class AdGroupRepository extends Repository implements AdGroupStoreInterfac
     public function countActive(): int
     {
         return (int) ($this->pdo->query('SELECT COUNT(*) FROM ad_groups WHERE active = 1')?->fetchColumn() ?: 0);
+    }
+
+    /**
+     * IDs der bereits bekannten Gruppen einer Quelle, Schluessel dn_hash.
+     *
+     * @return array<string,int>
+     */
+    private function knownGroupIds(int $sourceId): array
+    {
+        $statement = $this->pdo->prepare('SELECT id, dn_hash FROM ad_groups WHERE identity_source_id = :source');
+        $statement->execute(['source' => $sourceId]);
+        $ids = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $ids[(string) $row['dn_hash']] = (int) $row['id'];
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Aktuell gespeicherte Mitglieder einer Gruppe, aufsteigend sortiert -
+     * Vergleichsbasis fuer {@see replaceAll()}.
+     *
+     * @return list<int>
+     */
+    private function currentMemberIds(int $groupId): array
+    {
+        $statement = $this->pdo->prepare('SELECT phonebook_id FROM ad_group_members WHERE group_id = :group_id');
+        $statement->execute(['group_id' => $groupId]);
+        $ids = array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN) ?: []);
+        sort($ids);
+
+        return $ids;
     }
 
     /**

@@ -99,7 +99,7 @@ final class HttpMailProxyTransport implements MailProxyTransportInterface
         $raw = curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         $error = $raw === false ? curl_error($handle) : null;
-        curl_close($handle);
+        unset($handle); // curl_close() ist seit PHP 8.5 veraltet
         if ($error !== null || !is_string($raw)) {
             return ['ok' => false, 'message' => 'Der Proxy-Dienst ist nicht erreichbar.', 'details' => []];
         }
@@ -147,7 +147,7 @@ final class HttpMailProxyTransport implements MailProxyTransportInterface
         $raw = curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         $error = $raw === false ? 'curl' : null;
-        curl_close($handle);
+        unset($handle); // curl_close() ist seit PHP 8.5 veraltet
 
         return [$status, is_string($raw) ? $raw : '', $error];
     }

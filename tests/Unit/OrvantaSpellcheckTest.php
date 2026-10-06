@@ -256,3 +256,60 @@ Runner::test('Rechtschreibung: Anfragegrenzen', function (): void {
     Assert::same(400, OrvantaSpellcheckService::MAX_WORDS_PER_REQUEST, 'Die Anfrageobergrenze der Oberflaeche passt zum Dienst.');
     Assert::same(64, OrvantaSpellcheckService::MAX_WORD_LENGTH, 'Die Wortlaengengrenze der Oberflaeche passt zum Dienst.');
 });
+
+/**
+ * Legt einen Datensatz an, dem die Wortliste fehlt (nur meta.json vorhanden).
+ * Bildet einen halb getauschten oder beschaedigten Stand nach.
+ */
+function spellcheckMetaOnlyFixture(): string
+{
+    static $dir = null;
+    if ($dir !== null) {
+        return $dir;
+    }
+    $dir = sys_get_temp_dir() . '/lanpa-spellcheck-meta-' . bin2hex(random_bytes(6));
+    mkdir($dir, 0o700, true);
+    copy(spellcheckFixture() . '/meta.json', $dir . '/meta.json');
+    register_shutdown_function(static function () use ($dir): void {
+        @unlink($dir . '/meta.json');
+        @rmdir($dir);
+    });
+
+    return $dir;
+}
+
+Runner::test('Rechtschreibung: Verfuegbarkeit ohne Wortliste', function (): void {
+    // Fuer jeden Seitenaufbau wird nur meta.json gelesen - die Wortliste darf
+    // dabei nicht in den Speicher jedes Apache-Prozesses wandern.
+    $dictionary = new OrvantaSpellcheckDictionary(spellcheckMetaOnlyFixture());
+    Assert::true($dictionary->isAvailable(), 'meta.json allein gilt als vorhanden.');
+    Assert::false($dictionary->isUsable(), 'Ohne Wortliste laesst sich nicht pruefen.');
+    Assert::null($dictionary->flagsOf('Haus'), 'Ohne Wortliste gibt es keine Stammformen.');
+
+    // Der Dienst muss dann jedes Wort als korrekt melden, statt alles rot zu markieren.
+    $service = new OrvantaSpellcheckService($dictionary);
+    Assert::true($service->isAvailable(), 'Der billige Verfuegbarkeitstest greift auf meta.json zu.');
+    Assert::false($service->isUsable(), 'Ohne Wortliste ist der Dienst nicht einsatzbereit.');
+    Assert::true($service->check('Hausxxx'), 'Ohne Wortliste gilt jedes Wort als korrekt.');
+    Assert::same([], $service->suggest('Rechnun'), 'Ohne Wortliste gibt es keine Vorschlaege.');
+});
+
+Runner::test('Rechtschreibung: viele Trennzeichen bleiben beherrschbar', function (): void {
+    $service = spellcheckService();
+
+    // Jedes Trennzeichen verdoppelt die Zahl der Zerlegungsvarianten. Ohne
+    // Obergrenze kostete ein eingefuegter Text wie "1.2.3.4.…" Sekunden und
+    // zig Megabyte; die Pruefung muss in Sekundenbruchteilen bleiben.
+    $started = microtime(true);
+    foreach (['a' . str_repeat('.a', 17), 'a' . str_repeat('-a', 16), '1.' . implode('.', range(2, 17))] as $word) {
+        Assert::false($service->check($word), 'Eine sinnlose Zerlegung ergibt kein korrektes Wort.');
+    }
+    $elapsed = microtime(true) - $started;
+    Assert::true(
+        $elapsed < 2.0,
+        'Die Zerlegung darf nicht aus dem Ruder laufen (gemessen: ' . round($elapsed, 3) . ' s).'
+    );
+
+    // Regulaere Bindestrichwoerter bleiben unveraendert korrekt.
+    Assert::true($service->check('E-Mail-Adresse'), 'Die Obergrenze greift bei normalen Woertern nicht.');
+});

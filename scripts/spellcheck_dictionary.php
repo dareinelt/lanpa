@@ -39,7 +39,7 @@ if (Config::get('office.spellcheck_enabled', true) === false) {
     exit(0);
 }
 
-if (!$force && (new OrvantaSpellcheckDictionary($targetDir))->isAvailable()) {
+if (!$force && (new OrvantaSpellcheckDictionary($targetDir))->isUsable()) {
     $log('Woerterbuch ist bereits aufbereitet, nichts zu tun.');
     exit(0);
 }
@@ -72,12 +72,17 @@ try {
         $stats['prefixes']
     ));
     // Erst den alten Datensatz entwerten, dann die neuen Dateien einsetzen:
-    // meta.json wird zuletzt geschrieben und gilt als Vollstaendigkeitsmerkmal.
+    // die Nutzdaten kommen zuerst, meta.json und QUELLE.txt zuletzt.
+    // meta.json gilt als Vollstaendigkeitsmerkmal - stuende es vor den
+    // Wortdaten, koennte ein Abbruch hier einen halb getauschten Datensatz
+    // hinterlassen, der als vollstaendig durchgeht.
     @unlink($targetDir . '/' . OrvantaSpellcheckCompiler::META_FILE);
-    foreach (scandir($compileDir) ?: [] as $file) {
-        if ($file === '.' || $file === '..') {
-            continue;
-        }
+    $markers = [OrvantaSpellcheckCompiler::META_FILE, OrvantaSpellcheckCompiler::NOTICE_FILE];
+    $files = array_values(array_diff(scandir($compileDir) ?: [], ['.', '..']));
+    usort($files, static function (string $a, string $b) use ($markers): int {
+        return (int) in_array($a, $markers, true) <=> (int) in_array($b, $markers, true);
+    });
+    foreach ($files as $file) {
         if (!rename($compileDir . '/' . $file, $targetDir . '/' . $file)) {
             throw new RuntimeException('Datei konnte nicht eingesetzt werden: ' . $file);
         }
@@ -90,7 +95,7 @@ try {
 removeDirectory($compileDir);
 
 $dictionary = new OrvantaSpellcheckDictionary($targetDir);
-if (!$dictionary->isAvailable()) {
+if (!$dictionary->isUsable()) {
     $log('Der erzeugte Datensatz konnte nicht gelesen werden.');
     exit(1);
 }

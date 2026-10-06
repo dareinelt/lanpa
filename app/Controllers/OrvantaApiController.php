@@ -690,7 +690,7 @@ final class OrvantaApiController extends Controller
                 }
             }
 
-            return ['available' => $spellcheck->isAvailable(), 'misspelled' => $misspelled];
+            return ['available' => $spellcheck->isUsable(), 'misspelled' => $misspelled];
         }, true);
     }
 
@@ -707,7 +707,7 @@ final class OrvantaApiController extends Controller
                 throw new OrvantaException('Das Wort ist zu lang.', 422);
             }
 
-            return ['available' => $spellcheck->isAvailable(), 'suggestions' => $spellcheck->suggest($word)];
+            return ['available' => $spellcheck->isUsable(), 'suggestions' => $spellcheck->suggest($word)];
         }, true);
     }
 

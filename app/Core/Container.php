@@ -699,6 +699,8 @@ final class Container
      * Deutsche Rechtschreibpruefung in Orvanta. Das aufbereitete Woerterbuch
      * entsteht beim Containerstart (scripts/spellcheck_dictionary.php) und wird
      * erst beim ersten Zugriff geladen; fehlt es, meldet isAvailable() false.
+     * Fuer jeden Seitenaufbau genuegt isAvailable() (liest nur meta.json);
+     * isUsable() laedt zusaetzlich Index und Regelwerk.
      */
     public static function orvantaSpellcheck(): \App\Services\Orvanta\OrvantaSpellcheckService
     {

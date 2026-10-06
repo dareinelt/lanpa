@@ -624,6 +624,14 @@ Kontextmenü funktioniert weiter.
   php scripts/spellcheck_dictionary.php --force   # neu laden und übersetzen
   ```
 
+- **Speicher:** Für jeden Seitenaufbau wird nur die kleine Kennwertdatei
+  gelesen (≈ 0,14 MB je Apache-Prozess); Index und Regeln kommen erst bei der
+  ersten echten Prüfung dazu (≈ 1,3 MB), die Wortliste selbst wird nie
+  vollständig geladen, sondern Eintrag für Eintrag gelesen. Das ist bei den
+  176 Apache-Workern des Images der entscheidende Unterschied. Ist der
+  Bestand unvollständig, meldet die Prüfung jedes Wort als korrekt – lieber
+  keine Markierung als lauter falsche rote Wellenlinien.
+
 ### Einstellungen
 
 | `.env` | Standard | Bedeutung |

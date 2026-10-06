@@ -59,6 +59,13 @@ final class OrvantaSpellcheckService
     /** Rekursionstiefe beim Zerlegen an Trennzeichen (wie in Hunspell). */
     private const BREAK_DEPTH = 10;
 
+    /**
+     * Hoechste Anzahl gepruefter Zerlegungsvarianten je Wort. Ein Text mit
+     * vielen Trennzeichen ("1.2.3.4.…", "a-a-a-…") wuerde sonst exponentiell
+     * viele Varianten ergeben.
+     */
+    private const BREAK_BUDGET = 256;
+
     /** Hoechste Anzahl Wortteile einer Zusammensetzung. */
     private const COMPOUND_DEPTH = 8;
 
@@ -67,6 +74,9 @@ final class OrvantaSpellcheckService
 
     /** @var array<string,bool> Zwischenspeicher fuer Pruefungen ("1"/"0" + Wort) */
     private array $memo = [];
+
+    /** Restliches Arbeitsbudget der laufenden Zerlegung an Trennzeichen. */
+    private int $breakBudget = self::BREAK_BUDGET;
 
     /** @var array<string,list<string>> Zwischenspeicher fuer Vorschlaege */
     private array $suggestMemo = [];
@@ -89,12 +99,23 @@ final class OrvantaSpellcheckService
     }
 
     /**
-     * Ist die Rechtschreibpruefung einsatzbereit (aktiv und Woerterbuch
-     * uebersetzt)?
+     * Ist die Rechtschreibpruefung eingeschaltet und ein Datensatz vorhanden?
+     *
+     * Der Test liest nur meta.json - er ist fuer jeden Seitenaufbau gedacht
+     * und zieht die Wortliste nicht in den Speicher.
      */
     public function isAvailable(): bool
     {
         return $this->enabled && $this->dictionary->isAvailable();
+    }
+
+    /**
+     * Laesst sich wirklich pruefen (Index und Regelwerk lesbar)? Erst danach
+     * darf {@see self::check()} ein Wort fuer falsch erklaeren.
+     */
+    public function isUsable(): bool
+    {
+        return $this->enabled && $this->dictionary->isUsable();
     }
 
     /**
@@ -106,7 +127,7 @@ final class OrvantaSpellcheckService
         if ($word === '' || mb_strlen($word, 'UTF-8') > self::MAX_WORD_LENGTH) {
             return true;
         }
-        if (!$this->isAvailable()) {
+        if (!$this->isUsable()) {
             return true;
         }
 
@@ -120,7 +141,7 @@ final class OrvantaSpellcheckService
      */
     public function suggest(string $word): array
     {
-        if ($word === '' || !$this->isAvailable()) {
+        if ($word === '' || !$this->isUsable()) {
             return [];
         }
         if (array_key_exists($word, $this->suggestMemo)) {
@@ -451,6 +472,7 @@ final class OrvantaSpellcheckService
         if (preg_match('/^[0-9]+(?:\.[0-9]+)?$/', $word) === 1) {
             return true;
         }
+        $this->breakBudget = self::BREAK_BUDGET;
         foreach ($this->breakWord($word) as $parts) {
             $correct = true;
             foreach ($parts as $part) {
@@ -474,13 +496,19 @@ final class OrvantaSpellcheckService
      * Zerlegt ein Wort an den Trennzeichen (BREAK) in alle moeglichen Varianten.
      * Das ganze Wort steht immer an erster Stelle.
      *
-     * @return list<list<string>>
+     * Die Varianten entstehen einzeln (Generator), damit die Pruefung beim
+     * ersten Treffer aufhoeren kann. Weil die Anzahl der Varianten mit jedem
+     * Trennzeichen wachsen kann, begrenzt {@see self::BREAK_BUDGET} die Arbeit
+     * je Wort - sonst kostet ein eingefuegter Text wie "1.2.3.4.…" Sekunden
+     * und viel Speicher.
+     *
+     * @return \Generator<int,list<string>>
      */
-    private function breakWord(string $text, int $depth = 0): array
+    private function breakWord(string $text, int $depth = 0): \Generator
     {
-        $result = [[$text]];
-        if ($depth >= self::BREAK_DEPTH) {
-            return $result;
+        yield [$text];
+        if ($depth >= self::BREAK_DEPTH || $this->breakBudget <= 0) {
+            return;
         }
         $length = mb_strlen($text, 'UTF-8');
         foreach ($this->dictionary->breaks() as $break) {
@@ -495,12 +523,13 @@ final class OrvantaSpellcheckService
                 $head = mb_substr($text, 0, $position, 'UTF-8');
                 $rest = mb_substr($text, $position + $breakLength, null, 'UTF-8');
                 foreach ($this->breakWord($rest, $depth + 1) as $breaking) {
-                    $result[] = array_merge([$head], $breaking);
+                    yield array_merge([$head], $breaking);
+                    if (--$this->breakBudget <= 0) {
+                        return;
+                    }
                 }
             }
         }
-
-        return $result;
     }
 
     /**

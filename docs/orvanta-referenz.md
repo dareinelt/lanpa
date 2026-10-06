@@ -99,9 +99,9 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Contracts/AiTransportInterface.php` | `request(method, url, headers, body, timeout): {status, body, error}` |
 | `app/Services/Orvanta/CurlAiTransport.php` | cURL zum OpenAI-kompatiblen Endpunkt; keine Redirects, nur HTTP(S) (Zulässigkeit der Adresse wie im Admin-Verbindungstest über `OfficeAiService::isValidUrl`) |
 | `app/Repositories/OrvantaRepository.php` | Einstellungen, Erinnerungen (`syncReminders()`, `dueReminders()`, `activeReminders()`, `markDelivered()`, `dismissReminder()`, `snoozeReminder()`, `purgeReminders()`), Zwischenspeicher (`cacheUsage()`, `findCacheItem()`, `addCacheItem()`, `oldestCacheItems()`, `deleteCacheItem()`, `cacheItems()`, `cacheUsagePerUser()`), KI-Nutzung (`recordAiUsage()`, `aiUsagePerUser()` (Pseudonyme „Benutzer n“), `aiUsagePerDay()`, `aiTokenTotals()`); SQL kompatibel zu MySQL und SQLite |
-| `app/Services/Orvanta/OrvantaSpellcheckService.php` | Rechtschreibprüfung (Abschnitt 19): `isAvailable()`, `check(word)` (Hunspell-Algorithmus), `suggest(word)` (dreistufig, ranggeordnet); intern `collectCandidates()`/`editCandidates()`/`distance()`, `goodForms()`/`affixForms()`/`produceAffixForms()`/`desuffix()`/`deprefix()`/`isUsableAffix()`, `compoundForms()`/`compoundsByFlags()`/`isBadCompound()`/`hasAnyAffixForm()`, `isGoodForm()`/`formFlags()`/`hasAffixes()`/`allAffixes()`, `breakWord()`, `tryLetterList()`; Grenzen `MAX_WORDS_PER_REQUEST` (400), `MAX_WORD_LENGTH` (64), `MAX_SUGGESTIONS` (8) |
+| `app/Services/Orvanta/OrvantaSpellcheckService.php` | Rechtschreibprüfung (Abschnitt 19): `isAvailable()` (billig, nur `meta.json`), `isUsable()` (lädt Index + Regelwerk), `check(word)` (Hunspell-Algorithmus), `suggest(word)` (dreistufig, ranggeordnet); intern `collectCandidates()`/`editCandidates()`/`distance()`, `goodForms()`/`affixForms()`/`produceAffixForms()`/`desuffix()`/`deprefix()`/`isUsableAffix()`, `compoundForms()`/`compoundsByFlags()`/`isBadCompound()`/`hasAnyAffixForm()`, `isGoodForm()`/`formFlags()`/`hasAffixes()`/`allAffixes()`, `breakWord()` (Generator mit Arbeitsbudget), `tryLetterList()`; Grenzen `MAX_WORDS_PER_REQUEST` (400), `MAX_WORD_LENGTH` (64), `MAX_SUGGESTIONS` (8), `BREAK_BUDGET` (256) |
 | `app/Services/Orvanta/OrvantaSpellcheckCompiler.php` | Übersetzt `.aff`/`.dic` einmalig nach `aff.ser`/`words.dat`/`words.idx`/`words.case`/`meta.json`/`QUELLE.txt`: `compile()`, `parseAff()`, `readAffixRules()`, `compileCondition()`, `readTable()`, `parseMapGroup()`, `parseDic()`, `detectCharset()`, `toUtf8()`; `FORMAT_VERSION` |
-| `app/Services/Orvanta/OrvantaSpellcheckDictionary.php` | Verzögertes Lesen des übersetzten Wörterbuchs: `isAvailable()`, `meta()`, `flagsOf(word)`, `caseEntries(key)`, `wordsWithPrefix(prefix, limit)`, `suffixRules()/suffixLengths()`, `prefixRules()/prefixLengths()`, `breaks()/replacements()/maps()/tryLetters()`, `flag(name)`, `compoundMin()/compoundMax()/checkSharps()`; `INDEX_ENTRY_SIZE` |
+| `app/Services/Orvanta/OrvantaSpellcheckDictionary.php` | Verzögertes Lesen des übersetzten Wörterbuchs: `isAvailable()` (nur `meta.json`), `isUsable()` (Index + Regelwerk), `meta()`, `flagsOf(word)`, `caseEntries(key)`, `wordsWithPrefix(prefix, limit)`, `suffixRules()/suffixLengths()`, `prefixRules()/prefixLengths()`, `breaks()/replacements()/maps()/tryLetters()`, `flag(name)`, `compoundMin()/compoundMax()/checkSharps()`; `words.dat` wird über `read()` (`fseek`/`fread`) gelesen; `INDEX_ENTRY_SIZE` |
 | `app/Services/Orvanta/OrvantaSpellcheckCasing.php` | Gemeinsame Groß-/Kleinschreibungslogik (`NO`/`INIT`/`ALL`/`HUHINIT`/`HUH`): `guess()`, `variants()`, `lower()` (mit scharfem S), `lowerFirst()`, `capitalize()`, `sharpSVariants()`; `MAX_SHARP_S_VARIANTS` |
 | `scripts/spellcheck_dictionary.php` | Einmaliger Download + Übersetzung (Abschnitt 19), vom Entrypoint aufgerufen; `--force`, `--quiet`; atomarer Austausch über `meta.json` als Vollständigkeitsmarke |
 | `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchange()`, `orvantaAttachments()`, `orvantaRecipients()`, `orvantaNotifications()`, `orvantaSpellcheckDictionary()`, `orvantaSpellcheck()` (übergibt `office.spellcheck_enabled`), `orvantaAiCharts()`, `aiTransport()`, `orvantaAi()` (nutzt `officeAi()`); `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
@@ -696,7 +696,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), Freigabe per AD-Gruppe (`archive_group`, Standard: niemand; Mitglieder weiterer Quellen; Pflichtgruppe bei Aktivierung), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
 
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
-| `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen |
+| `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
@@ -1198,9 +1198,11 @@ Eigenschaften:
 
 - **Idempotent:** ist `<dir>/meta.json` vorhanden und gültig, passiert nichts
   (`--force` erzwingt einen neuen Lauf). Der Austausch ist atomar: alte
-  `meta.json` löschen, neue Dateien per `rename()` einsetzen – ein Abbruch
-  hinterlässt einen unvollständigen Bestand, den `isAvailable()` als ungültig
-  erkennt.
+  `meta.json` löschen, neue Dateien per `rename()` einsetzen. Dabei werden die
+  Nutzdateien **zuerst** und `meta.json`/`QUELLE.txt` **zuletzt** eingesetzt
+  (`usort` mit `$markers`), damit ein Abbruch niemals eine gültige
+  `meta.json` neben alten Wortdaten hinterlässt – ein unvollständiger Bestand
+  wird von `isAvailable()` als ungültig erkannt.
 - **Nie blockierend:** Schlägt der Download fehl, meldet das Skript einen
   Fehler und beendet sich mit Code 1; der Entrypoint protokolliert eine Warnung
   und fährt fort. Ohne Wörterbuch ist die Prüfung einfach nicht verfügbar.
@@ -1241,18 +1243,33 @@ vertauscht (`0/xoc` erst normalisieren, dann trennen), landen die Fugenregeln
 unter dem Schlüssel `"0"` statt `""` – und **jede** Zusammensetzung schlägt
 fehl.
 
-Das Laufzeit-Lesen ist **verzögert**: `OrvantaSpellcheckDictionary` liest
-`aff.ser`, `words.idx` und `meta.json` bei Bedarf, `words.dat` erst beim ersten
-Zugriff, `words.case` erst beim ersten Zugriff darauf. Wörter werden per
-Binärsuche (`lowerBound()`/`search()`) gefunden, Affixe über
-`suffixLengths()`/`prefixLengths()`. Bei 176 Apache-Workern
-(`docker/php/apache-prefork.conf`) ist der Speicherbedarf je Prozess wichtiger
-als die Antwortzeit: Ein Prozess, der nie prüft, lädt nichts.
+Das Laufzeit-Lesen ist **verzögert und abgestuft**: `OrvantaSpellcheckDictionary`
+liest `aff.ser`, `words.idx` und `meta.json` erst bei Bedarf, `words.dat` gar
+nicht mehr am Stück, sondern je Eintrag über `fseek()`/`fread()` auf ein
+offenes Dateihandle (`read()`), und `words.case` erst beim ersten Zugriff
+darauf. Wörter werden per Binärsuche (`lowerBound()`/`search()`) gefunden,
+Affixe über `suffixLengths()`/`prefixLengths()`.
+
+Die beiden Verfuegbarkeitstests sind bewusst getrennt:
+
+| Methode | Aufwand | Zweck |
+| --- | --- | --- |
+| `isAvailable()` | liest nur `meta.json` | billig genug für **jeden Seitenaufbau** (`OrvantaController`) |
+| `isUsable()` | lädt zusätzlich `aff.ser` + `words.idx` | echte Prüfung; wird von `check()`/`suggest()`, den API-Antworten und dem Skript benutzt |
+
+Bei 176 Apache-Workern (`docker/php/apache-prefork.conf`) ist der
+Speicherbedarf je Prozess wichtiger als die Antwortzeit. Würde `isAvailable()`
+die Wortliste laden, kostete **jeder** Orvanta-Seitenaufbau rund 5,4 MB je
+Prozess (≈ 0,9 GB über alle Worker) für eine Prüfung, die meist gar nicht
+stattfindet. Durch die Trennung kostet ein Seitenaufbau ≈ 0,14 MB, und ein
+Prozess, der nie prüft, hält die Wortliste überhaupt nicht.
 
 `load()` prüft `version` gegen `OrvantaSpellcheckCompiler::FORMAT_VERSION` und
-`strlen(words.idx) === count * 4`; jeder Fehler führt zu `isAvailable() = false`
-statt zu einer Ausnahme. Nach einem Formatwechsel genügt damit ein
-`--force`-Lauf des Skripts.
+`strlen(words.idx) === count * 4`; jeder Fehler führt zu `isUsable() = false`
+statt zu einer Ausnahme. `check()` und `suggest()` fragen `isUsable()` ab und
+melden bei einem beschädigten Bestand **jedes** Wort als korrekt – lieber keine
+Markierung als lauter falsche rote Wellenlinien. Nach einem Formatwechsel
+genügt ein `--force`-Lauf des Skripts.
 
 ### 19.7 Algorithmus (Port von spylls/Hunspell)
 
@@ -1262,7 +1279,13 @@ statt zu einer Ausnahme. Nach einem Formatwechsel genügt damit ein
 2. `NUMBER_REGEXP` (`^\d+(\.\d+)?$`) → richtig.
 3. `breakWord($word)`: für jedes `BREAK`-Muster (`-`, `.`) an allen
    Trennstellen rekursiv zerlegen (Tiefe ≤ 10); sind **alle** Teile richtig,
-   ist das Wort richtig (`E-Mail-Adresse`).
+   ist das Wort richtig (`E-Mail-Adresse`). Die Zerlegung ist ein
+   **Generator** und arbeitet mit einem Arbeitsbudget
+   (`BREAK_BUDGET = 256` je Wort): Jede Trennstelle verdoppelt die Zahl der
+   Varianten, ein eingefügter Text wie `a.a.a.a…` erzeugte sonst Millionen
+   Varianten (gemessen 11 s und 50 MB, bei `memory_limit=64M` ein Abbruch).
+   Das Budget wird in `computeCorrect()` zurückgesetzt; da `isCorrect()`
+   memoisiert und nicht wiedereintritt, genügt eine einzige Instanzvariable.
 4. Sonst `goodForms()`: für jede Schreibvarianten-Klasse
    (`OrvantaSpellcheckCasing::variants()`) `affixForms()` **und**
    `compoundForms()`; ist irgendeine Form gültig, ist das Wort richtig.
@@ -1314,7 +1337,9 @@ Die Qualität ist über den Bereich 40–250 Kandidaten praktisch unverändert;
   Mini-Wörterbuch (wird im Test einmal übersetzt): Stammwörter, Affixe,
   Groß-/Kleinschreibung, Umlaute/scharfes S/verbotene Schreibweisen,
   Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen,
-  Vorschläge, Abschalten über die Konfiguration, Anfragegrenzen.
+  Vorschläge, Abschalten über die Konfiguration, Anfragegrenzen,
+  Verfuegbarkeit ohne Wortliste (`isAvailable()` vs. `isUsable()`) und
+  Beherrschbarkeit vieler Trennzeichen.
 - **Differenzlauf gegen `spylls`** über 8 006 Wörter aus der Wörterbuchdatei
   (Nomen, Verben, Komposita, Umlaute, `ß`): genau **eine** Abweichung.
 - **Browserprüfung** über einen Hilfsserver mit echtem Wörterbuch und echtem
@@ -1329,10 +1354,16 @@ Die Qualität ist über den Bereich 40–250 Kandidaten praktisch unverändert;
 | --- | --- |
 | Übersetzen des Wörterbuchs (einmalig) | ≈ 390 ms, Spitze ≈ 112 MB, 250 835 Wörter, 410 Suffix-, 63 Prefixregeln |
 | Download + Übersetzen (`--force`, einmalig) | ≈ 1,5 s; zweiter Lauf (idempotent) ≈ 0,06 s |
-| Speicherbedarf nach dem Laden | ≈ 8 MB je Prozess (verzögert); nach 3 000 Prüfungen ≈ 24 MB |
+| `isAvailable()` (jeder Seitenaufbau) | ≈ 0,3 ms, ≈ 0,14 MB je Prozess |
+| `isUsable()` (erste echte Prüfung) | ≈ 0,35 ms, ≈ 1,3 MB je Prozess; danach ≈ 8 MB |
 | `check()` richtiges Wort / falsches Wort | ≈ 0,18 ms / ≈ 0,47 ms |
 | `suggest()` | ≈ 44 ms (Median ≈ 43 ms, p90 ≈ 61 ms, Maximum ≈ 113 ms) |
 | Vorschlagsqualität (197 Tippfehler) | 192 Treffer, 5 ohne Vorschlag, 0 Fehltreffer; Ziel im Mittel auf Rang 1,07 |
+| Zerlegung `a.a.a…` (35 Zeichen) | ≈ 7 ms, < 1 MB (vorher 11 s / 50 MB) |
+
+Die Speicherwerte beziehen sich auf einen Prozess; bei 176 Apache-Workern
+entspricht der Unterschied bei `isAvailable()` (5,4 MB → 0,14 MB) rund 0,9 GB
+über alle Prozesse.
 
 ### 19.10 Bekannte Eigenheit: Abweichung in `spylls`
 

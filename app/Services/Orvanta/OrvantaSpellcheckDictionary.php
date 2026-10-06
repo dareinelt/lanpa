@@ -10,8 +10,10 @@ namespace App\Services\Orvanta;
  * Die Dateien entstehen einmalig beim Containerstart ueber
  * {@see OrvantaSpellcheckCompiler} (siehe scripts/spellcheck_dictionary.php).
  * Sie werden erst beim ersten Zugriff geladen; die Wortliste wird ueber einen
- * binaer durchsuchten Offset-Index seitenweise gelesen, damit der Speicherbedarf
- * je Apache-Prozess klein bleibt.
+ * binaer durchsuchten Offset-Index und einen Dateizeiger einzeln gelesen,
+ * damit der Speicherbedarf je Apache-Prozess klein bleibt. Ein billiger
+ * Verfuegbarkeitstest ({@see self::isAvailable()}) liest nur meta.json und
+ * zieht die Wortliste nicht in den Speicher.
  *
  * Aufbau von words.dat (je Zeile "Wort\tFlags", Flags mehrerer Homonyme mit \n):
  * der Index enthaelt je Eintrag den 32-Bit-Offset; die Laenge eines Eintrags
@@ -27,13 +29,18 @@ final class OrvantaSpellcheckDictionary
 
     private bool $loaded = false;
 
+    private bool $metaChecked = false;
+
     /** @var array<string,mixed>|null */
     private ?array $meta = null;
 
     /** @var array<string,mixed> */
     private array $aff = [];
 
-    private ?string $data = null;
+    /** @var resource|null Zeiger auf words.dat (die Wortliste bleibt auf der Platte) */
+    private $handle = null;
+
+    private int $dataSize = 0;
 
     private ?string $index = null;
 
@@ -76,6 +83,10 @@ final class OrvantaSpellcheckDictionary
 
     /**
      * Ist ein vollstaendiger, zum Format passender Datensatz vorhanden?
+     *
+     * Liest nur meta.json und ist damit billig genug fuer jeden Seitenaufbau.
+     * Fuer die Frage, ob wirklich geprueft werden kann, siehe
+     * {@see self::isUsable()}.
      */
     public function isAvailable(): bool
     {
@@ -83,16 +94,37 @@ final class OrvantaSpellcheckDictionary
     }
 
     /**
+     * Laesst sich der Datensatz tatsaechlich lesen? Laedt dabei Index und
+     * Regelwerk, ist also teurer als {@see self::isAvailable()}.
+     */
+    public function isUsable(): bool
+    {
+        $this->load();
+
+        return $this->handle !== null && $this->index !== null;
+    }
+
+    /**
      * Kennzahlen des uebersetzten Woerterbuchs (meta.json).
+     *
+     * Liest nur die kleine Metadatendatei - die Wortliste wird dabei nicht
+     * geladen, damit die Pruefung auf Verfuegbarkeit nichts kostet.
      *
      * @return array<string,mixed>|null
      */
     public function meta(): ?array
     {
-        if ($this->loaded) {
+        if ($this->metaChecked) {
             return $this->meta;
         }
-        $this->load();
+        $this->metaChecked = true;
+
+        $raw = @file_get_contents($this->path(OrvantaSpellcheckCompiler::META_FILE));
+        $meta = $raw === false ? null : json_decode($raw, true);
+        if (!is_array($meta) || (int) ($meta['version'] ?? 0) !== OrvantaSpellcheckCompiler::FORMAT_VERSION) {
+            return null;
+        }
+        $this->meta = $meta;
 
         return $this->meta;
     }
@@ -238,7 +270,7 @@ final class OrvantaSpellcheckDictionary
     public function flagsOf(string $word): ?array
     {
         $this->load();
-        if ($this->data === null || $this->index === null || $word === '') {
+        if ($this->handle === null || $this->index === null || $word === '') {
             return null;
         }
         if (array_key_exists($word, $this->wordMemo)) {
@@ -252,7 +284,7 @@ final class OrvantaSpellcheckDictionary
             return $this->wordMemo[$word] = null;
         }
         [$start, $length] = $this->entryAt($position);
-        $line = substr($this->data, $start, $length);
+        $line = $this->read($start, $length);
         $parts = explode("\t", rtrim($line, "\n"), 2);
 
         return $this->wordMemo[$word] = explode("\n", $parts[1] ?? '');
@@ -279,7 +311,7 @@ final class OrvantaSpellcheckDictionary
     public function wordsWithPrefix(string $prefix, int $limit = self::MAX_PREFIX_RESULTS): array
     {
         $this->load();
-        if ($this->data === null || $this->index === null || $prefix === '') {
+        if ($this->handle === null || $this->index === null || $prefix === '') {
             return [];
         }
         $result = [];
@@ -287,7 +319,7 @@ final class OrvantaSpellcheckDictionary
         $length = mb_strlen($prefix, 'UTF-8');
         for (; $position < $this->count && count($result) < $limit; $position++) {
             [$start, $size] = $this->entryAt($position);
-            $line = rtrim(substr($this->data, $start, $size), "\n");
+            $line = rtrim($this->read($start, $size), "\n");
             $parts = explode("\t", $line, 2);
             if (mb_substr($parts[0], 0, $length, 'UTF-8') !== $prefix) {
                 break;
@@ -299,8 +331,8 @@ final class OrvantaSpellcheckDictionary
     }
 
     /**
-     * Laedt Regelwerk und Wortliste. Fehlende oder unpassende Dateien lassen
-     * das Woerterbuch unbrauchbar werden, ohne eine Ausnahme auszuloesen.
+     * Laedt Regelwerk und Index. Fehlende oder unpassende Dateien lassen das
+     * Woerterbuch unbrauchbar werden, ohne eine Ausnahme auszuloesen.
      */
     private function load(): void
     {
@@ -309,9 +341,8 @@ final class OrvantaSpellcheckDictionary
         }
         $this->loaded = true;
 
-        $raw = @file_get_contents($this->path(OrvantaSpellcheckCompiler::META_FILE));
-        $meta = $raw === false ? null : json_decode($raw, true);
-        if (!is_array($meta) || (int) ($meta['version'] ?? 0) !== OrvantaSpellcheckCompiler::FORMAT_VERSION) {
+        $meta = $this->meta();
+        if ($meta === null) {
             return;
         }
 
@@ -321,19 +352,46 @@ final class OrvantaSpellcheckDictionary
             return;
         }
 
-        $data = @file_get_contents($this->path(OrvantaSpellcheckCompiler::WORDS_DATA_FILE));
         $index = @file_get_contents($this->path(OrvantaSpellcheckCompiler::WORDS_INDEX_FILE));
         $count = (int) ($meta['words'] ?? 0);
-        if ($data === false || $index === false || $count < 1 || strlen($index) !== $count * self::INDEX_ENTRY_SIZE) {
+        if ($index === false || $count < 1 || strlen($index) !== $count * self::INDEX_ENTRY_SIZE) {
+            return;
+        }
+
+        $handle = @fopen($this->path(OrvantaSpellcheckCompiler::WORDS_DATA_FILE), 'rb');
+        if ($handle === false) {
+            return;
+        }
+        $stat = fstat($handle);
+        $size = is_array($stat) ? (int) ($stat['size'] ?? 0) : 0;
+        if ($size <= 0) {
+            fclose($handle);
+
             return;
         }
 
         $this->aff = $aff;
-        $this->data = $data;
         $this->index = $index;
+        $this->handle = $handle;
+        $this->dataSize = $size;
         $this->count = $count;
-        $this->meta = $meta;
         $this->buildRuleIndex();
+    }
+
+    /**
+     * Liest einen Bereich aus words.dat.
+     */
+    private function read(int $start, int $length): string
+    {
+        if ($this->handle === null || $length <= 0) {
+            return '';
+        }
+        if (fseek($this->handle, $start) !== 0) {
+            return '';
+        }
+        $bytes = fread($this->handle, $length);
+
+        return $bytes === false ? '' : $bytes;
     }
 
     /**
@@ -415,7 +473,7 @@ final class OrvantaSpellcheckDictionary
     private function wordAt(int $position): string
     {
         [$start, $length] = $this->entryAt($position);
-        $line = substr((string) $this->data, $start, $length);
+        $line = $this->read($start, $length);
         $tab = strpos($line, "\t");
 
         return rtrim($tab === false ? $line : substr($line, 0, $tab), "\n");
@@ -427,7 +485,7 @@ final class OrvantaSpellcheckDictionary
     private function entryAt(int $position): array
     {
         $start = $this->offsetAt($position);
-        $end = $position + 1 < $this->count ? $this->offsetAt($position + 1) : strlen((string) $this->data);
+        $end = $position + 1 < $this->count ? $this->offsetAt($position + 1) : $this->dataSize;
 
         return [$start, $end - $start];
     }

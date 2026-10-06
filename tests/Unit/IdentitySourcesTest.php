@@ -103,6 +103,16 @@ Runner::test('LDAP-Client nutzt alle Server in Reihenfolge und klammert IPv6', s
     Assert::same('ldap://[fd00::5]:389', LdapClient::uri('fd00::5', 389, false));
 });
 
+Runner::test('LDAP-Bindfehler nennt den AD-Unterfehler (z. B. Kontosperre)', static function (): void {
+    Assert::same(
+        'AD-Code 775: Konto gesperrt – zu viele Fehlanmeldungen',
+        LdapClient::bindErrorDetail('80090308: LdapErr: DSID-0C09044E, comment: AcceptSecurityContext error, data 775, v4563')
+    );
+    Assert::same('AD-Code 52e: Passwort oder Bind-DN falsch', LdapClient::bindErrorDetail('AcceptSecurityContext error, data 52e, v2580'));
+    Assert::same('AD-Code 999', LdapClient::bindErrorDetail('AcceptSecurityContext error, data 999, v1'));
+    Assert::same(null, LdapClient::bindErrorDetail('Invalid credentials'));
+});
+
 Runner::test('Kennung einer Identitätsquelle wird normalisiert und geprüft', static function (): void {
     Assert::same('HAMBURG_2', IdentitySourceService::normalizeKey(' hamburg_2 '));
     Assert::true(IdentitySourceService::isValidKey('HAMBURG'));

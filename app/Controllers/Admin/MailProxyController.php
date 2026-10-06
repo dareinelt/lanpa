@@ -15,7 +15,7 @@ use App\Support\Validator;
  * Identitaetsquelle, Postfaecher (Passwoerter verschluesselt) und Zuordnung
  * AD-Benutzer → Postfach fuer Orvanta-Benutzer ohne Exchange-Postfach.
  *
- *   GET  /admin/office/mail-proxy?quelle=                 Uebersicht
+ *   GET  /admin/office/mail-proxy?quelle=                 Uebersicht (alte ?bearbeiten=/?postfach= leiten auf die Overlays um)
  *   GET  /admin/office/mail-proxy/server/neu              Overlay: Konfiguration anlegen
  *   GET  /admin/office/mail-proxy/server/bearbeiten?id=   Overlay: Konfiguration bearbeiten
  *   GET  /admin/office/mail-proxy/postfach/neu?quelle=    Overlay: Postfach anlegen
@@ -40,6 +40,16 @@ final class MailProxyController extends AdminController
 
     public function index(Request $request): Response
     {
+        // Alte Links (?bearbeiten=, ?postfach=) auf die Overlay-Routen umleiten.
+        $legacyServer = $request->queryInt('bearbeiten', 0);
+        if ($legacyServer > 0) {
+            return $this->redirect(self::BASE . '/server/bearbeiten?id=' . $legacyServer);
+        }
+        $legacyMailbox = $request->queryInt('postfach', 0);
+        if ($legacyMailbox > 0) {
+            return $this->redirect(self::BASE . '/postfach/bearbeiten?id=' . $legacyMailbox);
+        }
+
         return $this->render(null, $request->queryInt('quelle', -1));
     }
 
@@ -48,10 +58,18 @@ final class MailProxyController extends AdminController
      */
     public function createServer(Request $request): Response
     {
-        return $this->render(
-            $this->serverDialog(null, ['identity_source_id' => $request->queryInt('quelle', -1)]),
-            $request->queryInt('quelle', -1)
-        );
+        $sourceId = $request->queryInt('quelle', -1);
+
+        return $this->overlay(function () use ($sourceId): Response {
+            $dialog = $this->serverDialog(null, ['identity_source_id' => $sourceId]);
+            if ($dialog['freeSources'] === []) {
+                Session::flash('error', 'Alle Identitätsquellen haben bereits eine Proxy-Konfiguration.');
+
+                return $this->redirect(self::BASE . ($sourceId >= 0 ? '?quelle=' . $sourceId : ''));
+            }
+
+            return $this->render($dialog, $sourceId);
+        });
     }
 
     /**
@@ -59,14 +77,18 @@ final class MailProxyController extends AdminController
      */
     public function editServer(Request $request): Response
     {
-        $server = Container::mailProxyRepository()->findServer($request->queryInt('id', 0));
-        if ($server === null) {
-            Session::flash('error', 'Die Proxy-Konfiguration wurde nicht gefunden.');
+        $id = $request->queryInt('id', 0);
 
-            return $this->redirect(self::BASE);
-        }
+        return $this->overlay(function () use ($id): Response {
+            $server = Container::mailProxyRepository()->findServer($id);
+            if ($server === null) {
+                Session::flash('error', 'Die Proxy-Konfiguration wurde nicht gefunden.');
 
-        return $this->render($this->serverDialog($server), (int) $server['identity_source_id']);
+                return $this->redirect(self::BASE);
+            }
+
+            return $this->render($this->serverDialog($server), (int) $server['identity_source_id']);
+        });
     }
 
     /**
@@ -74,14 +96,18 @@ final class MailProxyController extends AdminController
      */
     public function createMailbox(Request $request): Response
     {
-        $server = Container::mailProxyRepository()->findServerBySource($request->queryInt('quelle', 0));
-        if ($server === null) {
-            Session::flash('error', 'Für diese Identitätsquelle ist noch kein Mailserver konfiguriert.');
+        $sourceId = $request->queryInt('quelle', 0);
 
-            return $this->redirect(self::BASE);
-        }
+        return $this->overlay(function () use ($sourceId): Response {
+            $server = Container::mailProxyRepository()->findServerBySource($sourceId);
+            if ($server === null) {
+                Session::flash('error', 'Für diese Identitätsquelle ist noch kein Mailserver konfiguriert.');
 
-        return $this->render($this->mailboxDialog($server, null), (int) $server['identity_source_id']);
+                return $this->redirect(self::BASE);
+            }
+
+            return $this->render($this->mailboxDialog($server, null), (int) $server['identity_source_id']);
+        });
     }
 
     /**
@@ -89,15 +115,19 @@ final class MailProxyController extends AdminController
      */
     public function editMailbox(Request $request): Response
     {
-        $mailbox = Container::mailProxyRepository()->findMailbox($request->queryInt('id', 0));
-        if ($mailbox === null) {
-            Session::flash('error', 'Das Postfach wurde nicht gefunden.');
+        $id = $request->queryInt('id', 0);
 
-            return $this->redirect(self::BASE);
-        }
-        $server = Container::mailProxyRepository()->findServer((int) $mailbox['server_id']);
+        return $this->overlay(function () use ($id): Response {
+            $mailbox = Container::mailProxyRepository()->findMailbox($id);
+            $server = $mailbox !== null ? Container::mailProxyRepository()->findServer((int) $mailbox['server_id']) : null;
+            if ($mailbox === null || $server === null) {
+                Session::flash('error', 'Das Postfach wurde nicht gefunden.');
 
-        return $this->render($this->mailboxDialog($server, $mailbox), $server !== null ? (int) $server['identity_source_id'] : -1);
+                return $this->redirect(self::BASE);
+            }
+
+            return $this->render($this->mailboxDialog($server, $mailbox), (int) $server['identity_source_id']);
+        });
     }
 
     public function saveServer(Request $request): Response
@@ -187,6 +217,8 @@ final class MailProxyController extends AdminController
             unset($password);
             $server = Container::mailProxyRepository()->findServer($serverId);
             if ($server === null) {
+                Session::flash('error', 'Die Proxy-Konfiguration des Postfachs wurde nicht gefunden.');
+
                 return $this->redirect(self::BASE);
             }
             $mailbox = $id > 0 ? Container::mailProxyRepository()->findMailbox($id) : null;
@@ -288,13 +320,34 @@ final class MailProxyController extends AdminController
     }
 
     /**
+     * Fuehrt den Aufbau eines Overlays aus; fehlen die Tabellen (Migration
+     * nicht ausgefuehrt), erscheint statt eines Fehlers die Uebersicht mit
+     * Hinweis.
+     *
+     * @param \Closure(): Response $build
+     */
+    private function overlay(\Closure $build): Response
+    {
+        try {
+            return $build();
+        } catch (\PDOException) {
+            return $this->render(null);
+        }
+    }
+
+    /**
      * Rendert die Uebersicht und - sofern vorhanden - das Bearbeitungs-Overlay
-     * einer Konfiguration bzw. eines Postfachs.
+     * einer Konfiguration bzw. eines Postfachs. Schliessen/Abbrechen fuehrt
+     * zur angezeigten Identitaetsquelle zurueck.
      *
      * @param array<string,mixed>|null $dialog
      */
     private function render(?array $dialog, int $sourceId = -1, int $status = 200): Response
     {
+        if ($dialog !== null) {
+            $dialog['cancel'] = self::BASE . ($sourceId >= 0 ? '?quelle=' . $sourceId : '')
+                . ($dialog['type'] === 'mailbox' ? '#postfaecher' : '');
+        }
         $service = Container::mailProxy();
         $tablesMissing = false;
         try {

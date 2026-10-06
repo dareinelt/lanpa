@@ -8,12 +8,13 @@ use App\Support\Html;
 /**
  * Bearbeitungs-Overlay einer Proxy-Konfiguration (neu oder bestehend) auf der
  * Uebersichtsseite. admin-mail-proxy.js oeffnet es modal; Schliessen fuehrt
- * zurueck zur Uebersicht.
+ * zurueck zur Uebersicht der angezeigten Identitaetsquelle.
  */
 
 /** @var array<string,mixed> $dialog */
 $values = $dialog['values'];
 $editing = (bool) $dialog['editing'];
+$cancel = (string) ($dialog['cancel'] ?? $base);
 $editSource = null;
 foreach ($overview['sources'] as $source) {
     if ((int) $source['id'] === (int) $values['identity_source_id']) {
@@ -21,14 +22,14 @@ foreach ($overview['sources'] as $source) {
     }
 }
 ?>
-<dialog id="mail-proxy-server-dialog" class="mail-proxy-overlay" aria-labelledby="mail-proxy-server-title" open data-mail-proxy-server-dialog>
+<dialog id="mail-proxy-server-dialog" class="mail-proxy-overlay" aria-labelledby="mail-proxy-server-title" open data-mail-proxy-server-dialog data-cancel-url="<?= Html::e($cancel) ?>">
     <div class="mail-proxy-overlay__header">
         <h2 id="mail-proxy-server-title"><?= Html::e((string) $dialog['title']) ?></h2>
-        <a class="button button--ghost" href="<?= Html::e($base) ?>" aria-label="Schließen">✕</a>
+        <a class="button button--ghost" href="<?= Html::e($cancel) ?>" aria-label="Schließen">✕</a>
     </div>
 
     <?php if (($dialog['error'] ?? null) !== null) { ?>
-        <p class="flash flash--error"><?= Html::e((string) $dialog['error']) ?></p>
+        <p class="flash flash--error" role="alert"><?= Html::e((string) $dialog['error']) ?></p>
     <?php } ?>
 
     <form method="post" action="<?= Html::e((string) $dialog['action']) ?>" class="form form--wide" autocomplete="off">
@@ -75,7 +76,7 @@ foreach ($overview['sources'] as $source) {
         <p class="card__hint">Erlaubt sind vollqualifizierte Hostnamen oder IP-Adressen (keine Loopback-/Link-Local-Adressen, keine internen Docker-Dienstnamen) und die Standard-Mailports.</p>
         <div class="form__actions">
             <button class="button button--primary"><?= $editing ? 'Konfiguration speichern' : 'Konfiguration anlegen' ?></button>
-            <a class="button button--ghost" href="<?= Html::e($base) ?>">Abbrechen</a>
+            <a class="button button--ghost" href="<?= Html::e($cancel) ?>">Abbrechen</a>
         </div>
     </form>
 </dialog>

@@ -8,23 +8,24 @@ use App\Support\Html;
 /**
  * Bearbeitungs-Overlay eines Postfachs (neu oder bestehend) auf der
  * Uebersichtsseite. admin-mail-proxy.js oeffnet es modal; Schliessen fuehrt
- * zurueck zur Uebersicht.
+ * zurueck zur Uebersicht der angezeigten Identitaetsquelle.
  */
 
 /** @var array<string,mixed> $dialog */
 $values = $dialog['values'];
 $editing = (bool) $dialog['editing'];
+$cancel = (string) ($dialog['cancel'] ?? $base);
 $serverId = (int) ($dialog['server']['id'] ?? 0);
 $sourceId = (int) ($dialog['server']['identity_source_id'] ?? 0);
 ?>
-<dialog id="mail-proxy-mailbox-dialog" class="mail-proxy-overlay" aria-labelledby="mail-proxy-mailbox-title" open data-mail-proxy-mailbox-dialog>
+<dialog id="mail-proxy-mailbox-dialog" class="mail-proxy-overlay" aria-labelledby="mail-proxy-mailbox-title" open data-mail-proxy-mailbox-dialog data-cancel-url="<?= Html::e($cancel) ?>">
     <div class="mail-proxy-overlay__header">
         <h2 id="mail-proxy-mailbox-title"><?= Html::e((string) $dialog['title']) ?></h2>
-        <a class="button button--ghost" href="<?= Html::e($base) ?>" aria-label="Schließen">✕</a>
+        <a class="button button--ghost" href="<?= Html::e($cancel) ?>" aria-label="Schließen">✕</a>
     </div>
 
     <?php if (($dialog['error'] ?? null) !== null) { ?>
-        <p class="flash flash--error"><?= Html::e((string) $dialog['error']) ?></p>
+        <p class="flash flash--error" role="alert"><?= Html::e((string) $dialog['error']) ?></p>
     <?php } ?>
 
     <form method="post" action="<?= Html::e((string) $dialog['action']) ?>" class="form form--wide" autocomplete="off">
@@ -48,7 +49,7 @@ $sourceId = (int) ($dialog['server']['identity_source_id'] ?? 0);
         <label><input type="checkbox" name="active" value="1"<?= $values['active'] ? ' checked' : '' ?>> Aktiv (inaktive Postfächer werden nie verbunden)</label>
         <div class="form__actions">
             <button class="button button--primary"><?= $editing ? 'Postfach speichern' : 'Postfach anlegen' ?></button>
-            <a class="button button--ghost" href="<?= Html::e($base) ?>">Abbrechen</a>
+            <a class="button button--ghost" href="<?= Html::e($cancel) ?>">Abbrechen</a>
         </div>
     </form>
 </dialog>

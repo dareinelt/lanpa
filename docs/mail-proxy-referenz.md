@@ -90,8 +90,8 @@ Die Berührungspunkte mit Orvanta stehen zusätzlich in
 | `app/Controllers/Admin/MailProxyController.php` | Adminseite `/admin/office/mail-proxy` (`activeNav` `office_mail_proxy`); `render()` = Übersicht + optionales Overlay, `serverDialog()`/`mailboxDialog()` bauen die Overlay-Daten |
 | `views/admin/mail-proxy.php` | Nur Listen in drei Karten: 1. Konfiguration je Quelle, 2. Postfächer, 3. Zuordnung (Inline-Formular nur für Zuordnungen); bindet bei `$dialog !== null` das Partial `mail-proxy/<type>.php` ein |
 | `views/admin/mail-proxy/server.php`, `views/admin/mail-proxy/mailbox.php` | Overlay-Partials (`<dialog>`) zum Anlegen/Bearbeiten von Konfiguration bzw. Postfach |
-| `public/assets/js/admin-mail-proxy.js` | ARIA-Combobox-Vorschläge für Zuordnung (schreibt nur die ID ins versteckte Feld); öffnet die Overlays modal, Escape/Abbrechen → zurück zur Übersicht |
-| `public/assets/css/admin.css` (`.mail-proxy-overlay`) | Overlay-Gestaltung nach dem Muster `.ad-source` (Identitätsquellen) |
+| `public/assets/js/admin-mail-proxy.js` | ARIA-Combobox-Vorschläge für Zuordnung (schreibt nur die ID ins versteckte Feld); öffnet die Overlays modal, Escape → `data-cancel-url` (Übersicht der angezeigten Quelle) |
+| `public/assets/css/admin.css` (`.mail-proxy-overlay`) | Overlay-Gestaltung, gemeinsame Regeln mit `.ad-source` (Identitätsquellen) |
 | `app/Controllers/OrvantaController.php` | `authorize()`: ermittelt Route, sperrt `blocked`, erlaubt Proxy auch bei deaktiviertem Exchange-Orvanta |
 | `app/Controllers/OrvantaApiController.php` | `status` liefert `backend` + `capabilities`; `exchange()`-Guard für Exchange-only-Endpunkte (409); `mailPassword()` |
 | `app/Services/Orvanta/OrvantaAttachmentService.php` | Prüft, dass `mpx.`-IDs nur über das Proxy-Backend und nur fürs eigene Postfach laufen |
@@ -357,11 +357,15 @@ AD-Identitätsquellen):
    `…/server/bearbeiten?id=`, `…/postfach/neu?quelle=` oder
    `…/postfach/bearbeiten?id=`.
 2. Controller rendert die Übersicht über `render($dialog, $sourceId, $status)`
-   mit `dialog = {type: server|mailbox, title, action, error, editing, values, …}`;
+   mit `dialog = {type: server|mailbox, title, action, error, editing, values, cancel, …}`;
+   `cancel` setzt `render()` aus `$sourceId` (`?quelle=…`, Postfach mit
+   `#postfaecher`), damit Schließen/Abbrechen/Escape zur angezeigten Quelle
+   zurückführen;
    die View bindet `views/admin/mail-proxy/<type>.php` ein.
    `admin-mail-proxy.js` öffnet jeden `[data-mail-proxy-server-dialog]`/
    `[data-mail-proxy-mailbox-dialog]` per `showModal()` und fokussiert das erste
-   ungültige bzw. erste Eingabefeld; `cancel` (Escape) navigiert zur Übersicht.
+   aktive Eingabefeld; das `cancel`-Ereignis (Escape) navigiert zu
+   `data-cancel-url`.
    Ohne `<dialog>`-Unterstützung bleibt das Overlay als normaler Block sichtbar.
 3. POST `…/server` bzw. `…/postfach`: Erfolg → Flash + Redirect zur Übersicht
    (`?quelle=…`, Postfach mit `#postfaecher`). `InvalidArgumentException` →
@@ -369,10 +373,14 @@ AD-Identitätsquellen):
    den Eingaben (`array_merge(Defaults, gespeicherte Zeile, Eingaben)`) und der
    Meldung, HTTP **422**. Das Postfach-Passwort wird dabei nie zurückgegeben.
 4. Neue Konfiguration: `?quelle=` wird nur übernommen, wenn die Quelle noch
-   frei ist, sonst die erste freie Quelle (`freeSources`). Beim Bearbeiten ist
-   die Quelle fest.
+   frei ist, sonst die erste freie Quelle (`freeSources`). Ist keine Quelle mehr
+   frei → Flash-Fehler + Redirect. Beim Bearbeiten ist die Quelle fest.
 5. Nicht gefundene IDs bzw. Postfach-Anlage ohne Mailserver der Quelle →
-   Flash-Fehler + Redirect zur Übersicht.
+   Flash-Fehler + Redirect zur Übersicht. Fehlen die Tabellen (`PDOException`),
+   rendern die Overlay-Routen über `overlay()` die Übersicht mit
+   Migrationshinweis statt eines Fehlers 500.
+6. Alte Links `?bearbeiten=<id>` bzw. `?postfach=<id>` leitet `index()` auf
+   `…/server/bearbeiten?id=` bzw. `…/postfach/bearbeiten?id=` um.
 
 Zuordnungen, Status-/Lösch-Aktionen und der Verbindungstest bleiben
 Inline-Formulare mit Flash-Redirect.

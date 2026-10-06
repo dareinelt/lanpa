@@ -32,7 +32,6 @@ $freeSources = array_values(array_filter($overview['sources'], static fn (array 
 $smtpSecurityLabels = ['starttls' => 'STARTTLS', 'tls' => 'TLS direkt', 'none' => 'ohne Verschlüsselung'];
 $imapSecurityLabels = ['tls' => 'TLS direkt', 'starttls' => 'STARTTLS'];
 $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
-$selectedFree = $selected !== null && !isset($configured[(int) $selected['id']]);
 ?>
 <div class="toolbar">
     <a class="button button--ghost" href="/admin/office/orvanta">Orvanta – Mail &amp; Kalender</a>
@@ -112,7 +111,7 @@ $selectedFree = $selected !== null && !isset($configured[(int) $selected['id']])
 
     <?php if ($freeSources !== []) { ?>
         <div class="toolbar">
-            <a class="button button--primary" href="<?= Html::e($base . '/server/neu' . ($selectedFree ? '?quelle=' . (int) $selected['id'] : '')) ?>">Konfiguration anlegen</a>
+            <a class="button button--primary" href="<?= Html::e($base . '/server/neu' . ($selected !== null ? '?quelle=' . (int) $selected['id'] : '')) ?>">Konfiguration anlegen</a>
         </div>
     <?php } ?>
 </section>

@@ -46,7 +46,8 @@ OrvantaController/ApiController ─► OrvantaMailRouter ─┬─► OrvantaExc
 3. Adminbereich → **Office → SMTP-/IMAP-Proxy** (`/admin/office/mail-proxy`):
    Die Seite zeigt nur Listen; „Bearbeiten“ und „anlegen“ öffnen die
    Einstellungen je Punkt als Overlay (wie die Identitätsquellen unter
-   Active Directory).
+   Active Directory). Schließen, „Abbrechen“ und Escape führen zur zuvor
+   angezeigten Identitätsquelle zurück.
    1. **Proxy-Konfiguration je Identitätsquelle:** Quelle wählen, SMTP- und
       IMAP-Server eintragen, speichern.
    2. **Postfächer:** Anmeldename, E-Mail-Adresse, Anzeigename, Passwort und
@@ -278,7 +279,7 @@ ist [mail-proxy-referenz.md](mail-proxy-referenz.md).
 
 | Methode | Pfad | Zweck |
 | --- | --- | --- |
-| GET | `/admin/office/mail-proxy` | Seite (`?quelle=<id>`) |
+| GET | `/admin/office/mail-proxy` | Seite (`?quelle=<id>`; alte Links `?bearbeiten=`/`?postfach=` werden auf die Overlays umgeleitet) |
 | GET | `/admin/office/mail-proxy/server/neu`, `…/server/bearbeiten?id=`, `…/postfach/neu?quelle=`, `…/postfach/bearbeiten?id=` | Overlays zum Anlegen/Bearbeiten (serverseitig gerendert, modal geöffnet) |
 | POST | `/admin/office/mail-proxy/server`, `…/server/status`, `…/server/loeschen` | Mailserver speichern, (de)aktivieren, löschen |
 | POST | `/admin/office/mail-proxy/postfach`, `…/postfach/loeschen`, `…/postfach/test` | Postfach speichern, löschen, Verbindungstest |

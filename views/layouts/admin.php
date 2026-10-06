@@ -20,13 +20,15 @@ $isAdmin = $adminRole === 'admin';
 
 $navItems = $isAdmin ? [
     'dashboard' => ['/admin', 'Dashboard'],
-    'navigation' => ['/admin/navigation', 'Navigation'],
-    'important_links' => ['/admin/wichtige-links', 'Wichtige Links'],
-    'emergency' => ['/admin/notfallnummern', 'Notfallnummern'],
+    'content' => ['/admin/navigation', 'Inhalt', [
+        'navigation' => ['/admin/navigation', 'Navigation'],
+        'important_links' => ['/admin/wichtige-links', 'Wichtige Links'],
+        'emergency' => ['/admin/notfallnummern', 'Notfallnummern'],
+        'phonebook' => ['/admin/telefonliste', 'Telefonliste'],
+        'announcements' => ['/admin/mitteilungen', 'Mitteilungen'],
+        'descriptions' => ['/admin/beschreibungen', 'Beschreibungen'],
+    ]],
     'emergency_plan' => ['/admin/notfallplan', 'Notfallplan / KAEP'],
-    'phonebook' => ['/admin/telefonliste', 'Telefonliste'],
-    'announcements' => ['/admin/mitteilungen', 'Mitteilungen'],
-    'descriptions' => ['/admin/beschreibungen', 'Beschreibungen'],
     'design' => ['/admin/design', 'Design'],
     'ldap' => ['/admin/ad', 'Active Directory'],
     'alarm' => ['/admin/alarmierung', 'Alarmierung'],

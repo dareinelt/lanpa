@@ -54,6 +54,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 15. KI-Unterstützung
 16. Signaturvorlagen
 17. Langzeitarchiv
+18. Mail-Backends und SMTP-/IMAP-Proxy
 
 ---
 
@@ -635,6 +636,11 @@ Breakpoints 1200 px und 900 px, eigenes Drucklayout.
     mit `orvanta_cache_items`.
 17. **Kein `serialize()` im Archivformat** – Container enthalten originales
     MIME oder JSON (`kind`), Lesen über `MimeMessageParser`/`json_decode`.
+18. **Mail nur über `OrvantaMailRouter`.** Controller holen das Backend über
+    den Router (`$this->mail($access)`); Kalender, Kontakte, Aufgaben, Notizen,
+    Erinnerungen und Archiv nur über `exchange($access, CAPABILITY_…)`, das bei
+    Proxy-Postfächern 409 liefert. Ein deaktiviertes Proxy-Postfach fällt nie
+    auf Exchange zurück (Abschnitt 18).
 
 ## 12. Tests
 
@@ -647,6 +653,8 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaSignatureTest.php` | Validierung (Pflichtfelder, Modus, Reihenfolge, Gruppen-Dedupe, Präfix-Leerzeichen), Speichern/Laden/Löschen, Zuordnung (Reihenfolge, inaktiv, Schreibweise), Darstellung (AD-Daten, Präfix + Durchwahl vs. komplette Rufnummer, Farben, Logo als `data:`-URI, Sanitizer-Durchlauf), Logo in Zeilenhöhe und gewählte Designfarben (`logoSize()`, `imageDimensions()` inkl. SVG), Logo-Pixelgröße = Anzeigegröße (`scaleImage()`), Fallbacks (ohne Logo/Telefonbuch/inaktiver Eintrag), `extension()`, `append()` (Dedupe, vor Zitat), `strip()` |
 | `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, Postfachbelegung (`mailboxUsage()`, Summe aller Ordner ohne Suchordner/Wiederherstellbare Elemente, Quota in KB, ohne Grenzen, AD-Grenzen, Ersatzgrenze `mailbox_quota_mb`, `LdapClient::mailboxQuotaFromEntries()`), `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen) |
 | `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), Freigabe per AD-Gruppe (`archive_group`, Standard: niemand; Mitglieder weiterer Quellen; Pflichtgruppe bei Aktivierung), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
+
+| `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
@@ -973,3 +981,34 @@ SQLite-Abbild der Migration 038 **parallel pflegen**, `MemoryArchiveStorage`,
 1000-Nachrichten-Massentest). Demo-Modus: `DemoExchangeTransport` liefert im
 Posteingang fünf alte Nachrichten (`demo-old-1…5`, 70–400 Tage) inkl.
 MIME-Inhalt und beantwortet `FindItem` mit Restriction samt Paginierung.
+
+## 18. Mail-Backends und SMTP-/IMAP-Proxy
+
+Benutzerdoku, Einrichtung und vollständige technische Referenz:
+[docs/mail-proxy.md](mail-proxy.md). Hier nur die Berührungspunkte mit Orvanta.
+
+- **Gemeinsames Interface:** `App\Contracts\OrvantaMailBackendInterface`
+  (Mail-Operationen + `capabilities()`/`backendName()`), implementiert von
+  `OrvantaExchangeService` (alle Capabilities) und
+  `MailProxy\ProxyMailBackend` (nur `mail`). Die API-Formate von `orvanta.js`
+  sind für beide identisch.
+- **Auswahl:** `authorize()` ermittelt per `Container::orvantaMail()`
+  (`OrvantaMailRouter::route()`) die Route `exchange`/`proxy`/`blocked`;
+  `blocked` → 403. Bei `proxy` ist `impersonate` die Postfachadresse aus der
+  Zuordnung, nicht die AD-Adresse.
+- **Capabilities:** Die Seitenkonfiguration (`OrvantaController::index()`)
+  und `/api/orvanta/status` liefern `capabilities` (Status zusätzlich
+  `backend`); `orvanta.js` blendet Module und Aktionen per `hasCapability()` aus.
+  Serverseitig erzwingt `OrvantaApiController::exchange($access, CAPABILITY_…)`
+  die Grenze (409).
+- **IDs:** Proxy-Kennungen beginnen mit `mpx.` (Ordner `mpx.f.<b64url>`,
+  Nachrichten `mpx.<mailbox>.<ordner>.<uidvalidity>.<uid>`, Anhänge
+  zusätzlich `.<index>`); EWS-IDs enthalten nie einen Punkt.
+- **Anhänge:** `OrvantaAttachmentService::load()` holt das Backend per
+  `OrvantaMailRouter::backendForUid($uid, $impersonate)` und liefert nur
+  Kennungen des aktuell zugeordneten Backends/Postfachs aus (sonst 404) –
+  auch aus dem Zwischenspeicher. Ein Token für eine früher zugeordnete Adresse
+  wird abgewiesen (403).
+- **Langzeitarchiv:** nur für Exchange-Benutzer (`CAPABILITY_ARCHIVE`).
+
+Tests: `tests/Unit/MailProxyTest.php`.

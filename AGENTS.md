@@ -14,7 +14,7 @@ Ausführlicher Kontext steht in [`agentsindex.md`](agentsindex.md) (Architektur,
 
 - Request-Fluss: `public/index.php` → `bootstrap.php` → `Router` → Controller (`app/Controllers/`) → Service (`app/Services/`) → Repository (`app/Repositories/`) → PDO (`app/Core/Database.php`).
 - Weitere Verzeichnisse: `app/Contracts` (Interfaces), `app/Security`, `config/`, `views/`, `public/assets/` (JS/CSS), `database/migrations/`, `scripts/` (CLI), `docker/` (Container-Images), `docs/`, `tests/`.
-- Größere Module mit eigener Referenz: Orvanta (Mail/Kalender, EWS), Speicher-Tiering (`storage-sync`), Notfallplan-Editor/KAEP, Office, LLMInt.
+- Größere Module mit eigener Referenz: Orvanta (Mail/Kalender, EWS; SMTP-/IMAP-Proxy `mail-proxy` für Benutzer ohne Exchange), Speicher-Tiering (`storage-sync`), Notfallplan-Editor/KAEP, Office, LLMInt.
 
 ## Grundprinzipien
 
@@ -45,7 +45,7 @@ Zusätzlich: Zuerst Code und zugehörige Doku verstehen, dann ändern. Keine gro
 
 ## Dokumentation
 
-- Bei Verhaltensänderungen betroffene Doku mitpflegen: `agentsindex.md` (Tabellen/Routen/Schema), Modul-Doku (`docs/orvanta.md` + `docs/orvanta-referenz.md`, `docs/storage.md` + `docs/storage-referenz.md`, `docs/notfallplan.md` + `docs/notfallplan-editor-referenz.md`, `docs/office.md`, `docs/llmint.md`).
+- Bei Verhaltensänderungen betroffene Doku mitpflegen: `agentsindex.md` (Tabellen/Routen/Schema), Modul-Doku (`docs/orvanta.md` + `docs/orvanta-referenz.md` + `docs/mail-proxy.md`, `docs/storage.md` + `docs/storage-referenz.md`, `docs/notfallplan.md` + `docs/notfallplan-editor-referenz.md`, `docs/office.md`, `docs/llmint.md`).
 - Referenzdokumente (`*-referenz.md`) vor Änderungen am jeweiligen Modul lesen.
 - Neue Doku nur anlegen, wenn nötig; keine Duplikate von Code.
 

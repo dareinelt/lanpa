@@ -524,6 +524,7 @@ eine eigene Unterseite:
 | Office-Apps und Berechtigungen | `/admin/office/apps` |
 | Orvanta – Mail & Kalender | `/admin/office/orvanta` |
 | Signaturvorlagen | `/admin/office/signaturen` |
+| SMTP-/IMAP-Proxy (Orvanta ohne Exchange) | `/admin/office/mail-proxy` |
 | Kachel im Intranet | `/admin/office/kachel` |
 | Sicherung | `/admin/office/sicherung` |
 
@@ -538,6 +539,7 @@ eine eigene Unterseite:
 | Kachel im Intranet | Gestaltung, Status-Darstellung, Berechtigungen |
 | Office-Apps | Link zur Outlook Web App, Freigaben je App (AD-Gruppen), App-Pakete ([Abschnitt 5a](#5a-office-apps-und-app-pakete)) |
 | Orvanta | Exchange-Server (Host/EWS-Endpunkt, Version, TLS), Anmeldung (Negotiate/NTLM/Basic, Dienstkonto mit `ApplicationImpersonation`, Postfach-Zuordnung), Zwischenspeicher in Nextcloud mit Quota je Benutzer, Erinnerungen, Verbindungstest ([docs/orvanta.md](orvanta.md)) |
+| SMTP-/IMAP-Proxy | IMAP-/SMTP-Mailserver je Identitätsquelle, Postfächer (Passwort verschlüsselt), Zuordnung AD-Benutzer → Postfach mit Autovervollständigung, Verbindungstest ohne Mailversand; Diagnose-Karte unter Status & Diagnose ([docs/mail-proxy.md](mail-proxy.md)) |
 | Sicherung | Sicherung anstoßen, vorhandene Sicherungen, Aufbewahrung |
 
 | Status | Diagnose |

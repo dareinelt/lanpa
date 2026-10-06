@@ -5,30 +5,42 @@ declare(strict_types=1);
 use App\Security\Csrf;
 use App\Support\Html;
 
-/** @var int|null $sourceId */
-/** @var array<string,string> $values */
-/** @var array<string,string> $errors */
+/**
+ * Bearbeitungs-Overlay einer Identitaetsquelle (Hauptquelle, neue oder
+ * weitere Quelle) auf der Uebersichtsseite. admin-ldap.js oeffnet es modal;
+ * Schliessen fuehrt zurueck zur Uebersicht.
+ */
+
+/** @var array<string,mixed> $dialog */
 /** @var array<string,string> $attributeKeys */
-/** @var array<string,string> $secretStates */
-/** @var string $serviceName */
-$isNew = $sourceId === null;
-$action = $isNew ? '/admin/ad/quellen/neu' : '/admin/ad/quellen/bearbeiten';
+/** @var bool $ssoEnabled */
+$sourceId = $dialog['sourceId'];
+$primary = (bool) $dialog['primary'];
+$values = $dialog['values'];
+$errors = $dialog['errors'];
+$secretStates = $dialog['secretStates'];
+$serviceName = (string) $dialog['serviceName'];
 ?>
-<p class="toolbar"><a class="button button--ghost" href="/admin/ad">Zurück zur Übersicht</a></p>
+<dialog id="ad-source-dialog" class="ad-source" aria-labelledby="ad-source-title" open data-ad-source-dialog>
+    <div class="ad-source__header">
+        <h2 id="ad-source-title"><?= Html::e((string) $dialog['title']) ?></h2>
+        <a class="button button--ghost" href="/admin/ad" aria-label="Schließen">✕</a>
+    </div>
 
-<?php if (in_array('invalid', $secretStates, true)) { ?>
-    <p class="flash flash--error">
-        Mindestens ein gespeichertes Passwort dieser Quelle kann nicht entschlüsselt werden (z. B. nach einer
-        Wiederherstellung auf einem anderen Server). Bitte neu eingeben.
-    </p>
-<?php } ?>
+    <?php if (in_array('invalid', $secretStates, true)) { ?>
+        <p class="flash flash--error">
+            Mindestens ein gespeichertes Passwort dieser Quelle kann nicht entschlüsselt werden (z. B. nach einer
+            Wiederherstellung auf einem anderen Server). Bitte neu eingeben.
+        </p>
+    <?php } ?>
 
-<form method="post" action="<?= Html::e($action) ?>" class="form form--wide">
+<form method="post" action="<?= Html::e((string) $dialog['action']) ?>" class="form form--wide">
     <?= Csrf::field() ?>
-    <?php if (!$isNew) { ?>
+    <?php if ($sourceId !== null) { ?>
         <input type="hidden" name="id" value="<?= (int) $sourceId ?>">
     <?php } ?>
 
+    <?php if (!$primary) { ?>
     <fieldset class="fieldset">
         <legend>Identitätsquelle</legend>
 
@@ -59,13 +71,15 @@ $action = $isNew ? '/admin/ad/quellen/neu' : '/admin/ad/quellen/bearbeiten';
             <label for="ldap_active">Aktiv (wird synchronisiert und für die Windows-Anmeldung akzeptiert)</label>
         </div>
     </fieldset>
+    <?php } ?>
 
     <?php require __DIR__ . '/fields.php'; ?>
 
     <?php require __DIR__ . '/sso.php'; ?>
 
     <div class="form__actions">
-        <button type="submit" class="button button--primary">Identitätsquelle speichern</button>
+        <button type="submit" class="button button--primary"><?= $primary ? 'Hauptquelle speichern' : 'Identitätsquelle speichern' ?></button>
         <a class="button button--ghost" href="/admin/ad">Abbrechen</a>
     </div>
 </form>
+</dialog>

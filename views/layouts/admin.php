@@ -30,7 +30,10 @@ $navItems = $isAdmin ? [
     ]],
     'emergency_plan' => ['/admin/notfallplan', 'Notfallplan / KAEP'],
     'design' => ['/admin/design', 'Design'],
-    'ldap' => ['/admin/ad', 'Active Directory'],
+    'ldap' => ['/admin/ad', 'Active Directory', [
+        'ldap' => ['/admin/ad', 'Identitätsquellen'],
+        'ldap_sync' => ['/admin/ad/synchronisation', 'Synchronisation'],
+    ]],
     'alarm' => ['/admin/alarmierung', 'Alarmierung'],
     'activation' => ['/admin/aktivierungs-rufnummern', 'Aktivierungs-Rufnummern'],
     'office' => ['/admin/office', 'Office', [

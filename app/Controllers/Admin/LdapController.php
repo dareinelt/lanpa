@@ -21,6 +21,8 @@ use App\Support\Validator;
  */
 final class LdapController extends AdminController
 {
+    private const SYNC_PATH = '/admin/ad/synchronisation';
+
     private const SSO_RESTART_HINT = ' Die Windows-Anmeldung übernimmt geänderte Domänen-Einstellungen erst nach einem Neustart der auth-Container (docker compose restart auth bzw. ./scripts/sso-domains.sh bei neuen oder entfernten Domänen).';
 
     public function index(Request $request): Response
@@ -29,8 +31,15 @@ final class LdapController extends AdminController
     }
 
     /**
-     * Speichert die Hauptquelle (Einstellungen ldap_*) und das
-     * Synchronisationsintervall.
+     * Uebersicht mit geoeffnetem Overlay zum Bearbeiten der Hauptquelle.
+     */
+    public function editPrimary(Request $request): Response
+    {
+        return $this->render($this->primaryDialog());
+    }
+
+    /**
+     * Speichert die Hauptquelle (Einstellungen ldap_*).
      */
     public function update(Request $request): Response
     {
@@ -38,12 +47,6 @@ final class LdapController extends AdminController
 
         $service = Container::identitySources();
         [$values, $errors] = IdentitySourceService::validateConnection($request->post);
-
-        $interval = $request->inputInt('ldap_sync_interval', 3600);
-        if ($interval < 60 || $interval > 86400) {
-            $errors['ldap_sync_interval'] = 'Das Synchronisationsintervall muss zwischen 60 und 86400 Sekunden liegen.';
-        }
-        $values['ldap_sync_interval'] = (string) $interval;
 
         [$ssoValues, $ssoErrors] = IdentitySourceService::validateSso($request->post, false);
         $values += $ssoValues;
@@ -59,7 +62,7 @@ final class LdapController extends AdminController
         if ($errors !== []) {
             Session::flash('error', 'Bitte prüfen Sie die AD-Einstellungen.');
 
-            return $this->render($errors, $values, 422);
+            return $this->render($this->primaryDialog($values, $errors), 422);
         }
 
         $ssoChanged = $this->ssoFingerprint(null) !== $this->ssoFingerprint($values, $changes);
@@ -74,6 +77,42 @@ final class LdapController extends AdminController
         Session::flash('success', 'Die AD-Einstellungen wurden gespeichert.' . ($ssoChanged ? self::SSO_RESTART_HINT : ''));
 
         return $this->redirect('/admin/ad');
+    }
+
+    /**
+     * Unterseite "Synchronisation": manueller Lauf, Intervall und Protokoll.
+     */
+    public function syncPage(Request $request): Response
+    {
+        return $this->renderSync();
+    }
+
+    /**
+     * Speichert das Synchronisationsintervall.
+     */
+    public function updateSyncInterval(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $interval = $request->inputInt('ldap_sync_interval', 3600);
+        if ($interval < 60 || $interval > 86400) {
+            Session::flash('error', 'Bitte prüfen Sie das Synchronisationsintervall.');
+
+            return $this->renderSync(
+                ['ldap_sync_interval' => (string) $interval],
+                ['ldap_sync_interval' => 'Das Synchronisationsintervall muss zwischen 60 und 86400 Sekunden liegen.'],
+                422
+            );
+        }
+
+        Container::settings()->update(['ldap_sync_interval' => (string) $interval]);
+        app_logger()->info('AD-Synchronisationsintervall geändert.', [
+            'admin' => Container::auth()->username(),
+            'interval' => $interval,
+        ]);
+        Session::flash('success', 'Das Synchronisationsintervall wurde gespeichert.');
+
+        return $this->redirect(self::SYNC_PATH);
     }
 
     public function createSource(Request $request): Response
@@ -190,7 +229,7 @@ final class LdapController extends AdminController
 
     /**
      * Manuelle Synchronisation. Mit "Accept: text/event-stream" (Overlay der
-     * Adminseite) wird der Fortschritt je Identitaetsquelle als Server-Sent
+     * Synchronisationsseite) wird der Fortschritt je Identitaetsquelle als Server-Sent
      * Events gemeldet; ohne JavaScript bleibt es beim Redirect mit Hinweis.
      */
     public function sync(Request $request): Response
@@ -211,7 +250,7 @@ final class LdapController extends AdminController
             }
             Session::flash('error', $error);
 
-            return $this->redirect('/admin/ad');
+            return $this->redirect(self::SYNC_PATH);
         }
 
         if ($stream) {
@@ -224,12 +263,12 @@ final class LdapController extends AdminController
         if ($result['status'] === 'error' && !$multiple) {
             Session::flash('error', 'Die Synchronisation ist fehlgeschlagen. Details stehen im Log. Der letzte gültige Datenbestand bleibt erhalten.');
 
-            return $this->redirect('/admin/ad');
+            return $this->redirect(self::SYNC_PATH);
         }
 
         Session::flash($result['status'] === 'success' ? 'success' : 'error', $this->syncSummary($result, $multiple));
 
-        return $this->redirect('/admin/ad');
+        return $this->redirect(self::SYNC_PATH);
     }
 
     /**
@@ -428,34 +467,37 @@ final class LdapController extends AdminController
     }
 
     /**
+     * Uebersicht mit geoeffnetem Overlay einer weiteren Identitaetsquelle
+     * (neu oder bearbeiten).
+     *
      * @param array<string,mixed>|null $row
      * @param array<string,string> $values
      * @param array<string,string> $errors
      */
     private function renderSource(?array $row, array $values, array $errors = [], int $status = 200): Response
     {
-        return $this->adminView('admin.ldap.source', [
-            'pageTitle' => $row === null ? 'Neue Identitätsquelle' : 'Identitätsquelle bearbeiten',
-            'activeNav' => 'ldap',
+        return $this->render([
+            'title' => $row === null ? 'Neue Identitätsquelle' : 'Identitätsquelle bearbeiten',
+            'action' => $row === null ? '/admin/ad/quellen/neu' : '/admin/ad/quellen/bearbeiten',
             'sourceId' => $row === null ? null : (int) $row['id'],
+            'primary' => false,
             'values' => $values,
             'errors' => $errors,
-            'attributeKeys' => IdentitySourceService::ATTRIBUTE_KEYS,
             'secretStates' => Container::identitySources()->secretStates($row),
-            'primary' => false,
-            'ssoEnabled' => (bool) Config::get('sso.enabled', false),
             'serviceName' => ($values['ldap_key'] ?? '') !== '' ? IdentitySourceService::serviceName((string) $values['ldap_key']) : '',
         ], $status);
     }
 
     /**
+     * Overlay-Daten der Hauptquelle (Einstellungen ldap_*, sso_*).
+     *
+     * @param array<string,string> $values Formularwerte (ueberschreiben gespeicherte)
      * @param array<string,string> $errors
-     * @param array<string,string> $values
+     * @return array<string,mixed>
      */
-    private function render(array $errors = [], array $values = [], int $status = 200): Response
+    private function primaryDialog(array $values = [], array $errors = []): array
     {
         $settings = Container::settings();
-        $service = Container::identitySources();
         $primary = $settings->ldapConfig();
         $current = [
             'ldap_label' => (string) $primary['label'],
@@ -467,7 +509,6 @@ final class LdapController extends AdminController
             'ldap_bind_dn' => $settings->get('ldap_bind_dn'),
             'ldap_filter' => $settings->get('ldap_filter'),
             'ldap_timeout' => (string) $settings->int('ldap_timeout', 10),
-            'ldap_sync_interval' => (string) $settings->int('ldap_sync_interval', 3600),
             'ldap_group_base_dn' => implode("\n", SettingsService::splitDnList($settings->get('ldap_group_base_dn'))),
             'ldap_group_filter' => $settings->get('ldap_group_filter'),
             'ldap_group_name_attribute' => $settings->get('ldap_group_name_attribute'),
@@ -480,6 +521,30 @@ final class LdapController extends AdminController
         foreach (array_keys(IdentitySourceService::ATTRIBUTE_KEYS) as $key) {
             $current[$key] = $settings->get($key);
         }
+
+        return [
+            'title' => 'Hauptquelle bearbeiten',
+            'action' => '/admin/ad',
+            'sourceId' => null,
+            'primary' => true,
+            'values' => array_merge($current, $values),
+            'errors' => $errors,
+            'secretStates' => Container::identitySources()->secretStates(null),
+            'serviceName' => 'auth',
+        ];
+    }
+
+    /**
+     * Uebersicht der Identitaetsquellen, optional mit geoeffnetem
+     * Bearbeitungs-Overlay (siehe primaryDialog()/renderSource()).
+     *
+     * @param array<string,mixed>|null $dialog
+     */
+    private function render(?array $dialog = null, int $status = 200): Response
+    {
+        $settings = Container::settings();
+        $service = Container::identitySources();
+        $primary = $settings->ldapConfig();
 
         $counts = $this->safeCountsBySource();
         $sources = [[
@@ -522,14 +587,31 @@ final class LdapController extends AdminController
         return $this->adminView('admin.ldap', [
             'pageTitle' => 'Active Directory',
             'activeNav' => 'ldap',
-            'values' => array_merge($current, $values),
-            'errors' => $errors,
-            'attributeKeys' => IdentitySourceService::ATTRIBUTE_KEYS,
-            'secretStates' => $service->secretStates(null),
-            'primary' => true,
-            'ssoEnabled' => (bool) Config::get('sso.enabled', false),
+            'primarySecretStates' => $service->secretStates(null),
             'ldapExtensionAvailable' => LdapClient::isSupported(),
             'sources' => $sources,
+            'dialog' => $dialog,
+            'attributeKeys' => IdentitySourceService::ATTRIBUTE_KEYS,
+            'ssoEnabled' => (bool) Config::get('sso.enabled', false),
+            'pageScript' => 'admin-ldap.js',
+        ], $status);
+    }
+
+    /**
+     * @param array<string,string> $values
+     * @param array<string,string> $errors
+     */
+    private function renderSync(array $values = [], array $errors = [], int $status = 200): Response
+    {
+        return $this->adminView('admin.ldap_sync', [
+            'pageTitle' => 'Synchronisation',
+            'activeNav' => 'ldap_sync',
+            'values' => array_merge(
+                ['ldap_sync_interval' => (string) Container::settings()->int('ldap_sync_interval', 3600)],
+                $values
+            ),
+            'errors' => $errors,
+            'ldapExtensionAvailable' => LdapClient::isSupported(),
             'syncRuns' => Container::syncLogRepository()->recent(10),
             'phonebookCount' => Container::phonebook()->countActive(),
             'groupCount' => $this->safeGroupCount(),

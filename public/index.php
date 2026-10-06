@@ -324,6 +324,9 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
 
         $router->get('/admin/ad', [LdapController::class, 'index']);
         $router->post('/admin/ad', [LdapController::class, 'update']);
+        $router->get('/admin/ad/hauptquelle', [LdapController::class, 'editPrimary']);
+        $router->get('/admin/ad/synchronisation', [LdapController::class, 'syncPage']);
+        $router->post('/admin/ad/synchronisation', [LdapController::class, 'updateSyncInterval']);
         $router->post('/admin/ad/sync', [LdapController::class, 'sync']);
         $router->get('/admin/ad/quellen/neu', [LdapController::class, 'createSource']);
         $router->post('/admin/ad/quellen/neu', [LdapController::class, 'storeSource']);

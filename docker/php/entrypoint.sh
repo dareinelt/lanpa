@@ -75,6 +75,14 @@ if [ "$CONTAINER_ROLE" = "app" ]; then
         echo "[entrypoint] Lege Administrationskonto an ..."
         php scripts/create_admin.php
     fi
+
+    # Deutsche Rechtschreibpruefung: Woerterbuch einmalig aus dem Netz holen
+    # und aufbereiten. Laeuft nur, wenn der Datensatz noch fehlt; ein Fehler
+    # (z. B. kein Internetzugang) darf den Start nicht verhindern.
+    echo "[entrypoint] Bereite Woerterbuch der Rechtschreibprüfung auf ..."
+    php scripts/spellcheck_dictionary.php \
+        || echo "[entrypoint] WARNUNG: Rechtschreibprüfung nicht verfügbar (Woerterbuch fehlt)." >&2
+    chown -R www-data:www-data storage/dictionaries 2>/dev/null || true
 else
     # Der Sync-Container wartet kurz, damit der App-Container die Migrationen abschliessen kann.
     sleep 10

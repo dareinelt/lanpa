@@ -695,6 +695,32 @@ final class Container
         );
     }
 
+    /**
+     * Deutsche Rechtschreibpruefung in Orvanta. Das aufbereitete Woerterbuch
+     * entsteht beim Containerstart (scripts/spellcheck_dictionary.php) und wird
+     * erst beim ersten Zugriff geladen; fehlt es, meldet isAvailable() false.
+     */
+    public static function orvantaSpellcheck(): \App\Services\Orvanta\OrvantaSpellcheckService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaSpellcheckService::class,
+            static fn (): \App\Services\Orvanta\OrvantaSpellcheckService => new \App\Services\Orvanta\OrvantaSpellcheckService(
+                self::orvantaSpellcheckDictionary(),
+                Config::get('office.spellcheck_enabled', true) !== false
+            )
+        );
+    }
+
+    public static function orvantaSpellcheckDictionary(): \App\Services\Orvanta\OrvantaSpellcheckDictionary
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaSpellcheckDictionary::class,
+            static fn (): \App\Services\Orvanta\OrvantaSpellcheckDictionary => new \App\Services\Orvanta\OrvantaSpellcheckDictionary(
+                (string) Config::get('office.spellcheck_dir', BASE_PATH . '/storage/dictionaries/de_DE')
+            )
+        );
+    }
+
     public static function nextcloudAdmins(): NextcloudAdminService
     {
         return self::make(

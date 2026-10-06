@@ -17,6 +17,7 @@ use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaExchangeService;
 use App\Services\Orvanta\OrvantaSignatureService;
+use App\Services\Orvanta\OrvantaSpellcheckService;
 use Throwable;
 
 /**
@@ -669,6 +670,48 @@ final class OrvantaApiController extends Controller
     }
 
     // ------------------------------------------------------------------
+    // Rechtschreibpruefung
+    // ------------------------------------------------------------------
+
+    /**
+     * Prueft eine Liste von Woertern und liefert die fehlerhaften zurueck.
+     * Die Oberflaeche sendet nur unbekannte Woerter, daher bleibt die Antwort
+     * klein; doppelte Woerter werden vorher zusammengefasst.
+     */
+    public function spellcheck(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            $spellcheck = Container::orvantaSpellcheck();
+            $words = $this->words('words', OrvantaSpellcheckService::MAX_WORDS_PER_REQUEST);
+            $misspelled = [];
+            foreach ($words as $word) {
+                if (!$spellcheck->check($word)) {
+                    $misspelled[] = $word;
+                }
+            }
+
+            return ['available' => $spellcheck->isAvailable(), 'misspelled' => $misspelled];
+        }, true);
+    }
+
+    /**
+     * Verbesserungsvorschlaege fuer ein einzelnes Wort (Kontextmenue
+     * "Rechtschreibpruefung -> ---Vorschlaege---").
+     */
+    public function spellcheckSuggest(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            $spellcheck = Container::orvantaSpellcheck();
+            $word = $this->str('word');
+            if (mb_strlen($word, 'UTF-8') > OrvantaSpellcheckService::MAX_WORD_LENGTH) {
+                throw new OrvantaException('Das Wort ist zu lang.', 422);
+            }
+
+            return ['available' => $spellcheck->isAvailable(), 'suggestions' => $spellcheck->suggest($word)];
+        }, true);
+    }
+
+    // ------------------------------------------------------------------
     // Proxy-Postfach: Kennwort durch den Benutzer
     // ------------------------------------------------------------------
 
@@ -944,6 +987,35 @@ final class OrvantaApiController extends Controller
         }
 
         return $ids;
+    }
+
+    /**
+     * Wortliste aus dem Anfragetext: bereinigt, entdoppelt und begrenzt.
+     *
+     * @return list<string>
+     */
+    private function words(string $key, int $limit): array
+    {
+        $value = $this->body[$key] ?? [];
+        if (!is_array($value)) {
+            return [];
+        }
+        $seen = [];
+        foreach ($value as $word) {
+            if (!is_scalar($word)) {
+                continue;
+            }
+            $word = trim((string) $word);
+            if ($word === '' || mb_strlen($word, 'UTF-8') > OrvantaSpellcheckService::MAX_WORD_LENGTH) {
+                continue;
+            }
+            $seen[$word] = true;
+            if (count($seen) >= $limit) {
+                break;
+            }
+        }
+
+        return array_map('strval', array_keys($seen));
     }
 
     private function requireId(?string $id): string

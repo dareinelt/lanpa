@@ -149,6 +149,7 @@ final class MailProxyController extends AdminController
             'username' => (string) $request->input('username', ''),
             'email_address' => (string) $request->input('email_address', ''),
             'display_name' => (string) $request->input('display_name', ''),
+            'quota_mb' => (string) $request->input('quota_mb', '0'),
             'active' => $request->input('active', '') !== '',
         ];
         try {

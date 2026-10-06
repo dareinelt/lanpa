@@ -185,6 +185,7 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
                         <th scope="col">Benutzername</th>
                         <th scope="col">E-Mail-Adresse</th>
                         <th scope="col">Zugeordnet</th>
+                        <th scope="col">Postfachgröße</th>
                         <th scope="col">Status</th>
                         <th scope="col"><span class="visually-hidden">Aktionen</span></th>
                     </tr>
@@ -195,6 +196,7 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
                         <td><code><?= Html::e((string) $mailbox['username']) ?></code></td>
                         <td><?= Html::e((string) $mailbox['email_address']) ?><?= (string) $mailbox['display_name'] !== '' ? '<br><span class="card__hint">' . Html::e((string) $mailbox['display_name']) . '</span>' : '' ?></td>
                         <td><?= ($mailbox['mapping_id'] ?? null) !== null ? Html::e((string) ($mailbox['mapped_display_name'] ?? '')) . ' <span class="card__hint">(' . Html::e((string) ($mailbox['mapped_username'] ?? '')) . ')</span>' : '<span class="card__hint">–</span>' ?></td>
+                        <td><?= (int) ($mailbox['quota_mb'] ?? 0) > 0 ? Html::e(number_format((int) $mailbox['quota_mb'], 0, ',', '.')) . ' MB' : '<span class="card__hint">ohne Grenze</span>' ?></td>
                         <td>
                             <?= $mailbox['active'] ? '<span class="badge badge--ok">Aktiv</span>' : '<span class="badge badge--muted">Inaktiv</span>' ?>
                             <?= $mailbox['password_set'] ? '' : '<br><span class="badge badge--error">kein Passwort</span>' ?>
@@ -232,6 +234,11 @@ $sourceQuery = $selected !== null ? (int) $selected['id'] : 0;
         <div class="field"><label for="mp-mb-username">Benutzername (Anmeldename am Mailserver)</label><input id="mp-mb-username" type="text" name="username" value="<?= Html::e((string) ($editMailbox['username'] ?? '')) ?>" maxlength="190" required autocomplete="off" spellcheck="false"></div>
         <div class="field"><label for="mp-mb-email">E-Mail-Adresse</label><input id="mp-mb-email" name="email_address" type="email" value="<?= Html::e((string) ($editMailbox['email_address'] ?? '')) ?>" maxlength="254" required autocomplete="off"></div>
         <div class="field"><label for="mp-mb-name">Anzeigename (optional, Absendername)</label><input id="mp-mb-name" type="text" name="display_name" value="<?= Html::e((string) ($editMailbox['display_name'] ?? '')) ?>" maxlength="190" autocomplete="off"></div>
+        <div class="field">
+            <label for="mp-mb-quota">Postfachgröße (MB, 0 = ohne Grenze)</label>
+            <input id="mp-mb-quota" type="number" name="quota_mb" min="0" max="10485760" step="1" value="<?= (int) ($editMailbox['quota_mb'] ?? 0) ?>" autocomplete="off">
+            <p>Feste Grenze für die Belegungsanzeige in Orvanta. Für Proxy-Postfächer werden Exchange und AD nicht abgefragt; die Belegung liefert der IMAP-Server.</p>
+        </div>
         <div class="field">
             <label for="mp-mb-password"><?= $editMailbox !== null ? 'Neues Passwort' : 'Passwort' ?></label>
             <input id="mp-mb-password" name="password" type="password" maxlength="4096" autocomplete="new-password"<?= $editMailbox === null ? ' required' : '' ?>>

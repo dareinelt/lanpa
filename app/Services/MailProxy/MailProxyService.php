@@ -30,6 +30,8 @@ final class MailProxyService
     public const SMTP_SECURITY = ['starttls', 'tls', 'none'];
     public const IMAP_SECURITY = ['tls', 'starttls'];
     private const PASSWORD_MAX = 4096;
+    /** Obergrenze der festen Postfachgroesse je Proxy-Postfach (wie mailbox_quota_mb in Orvanta). */
+    public const QUOTA_MAX_MB = 10485760;
 
     /**
      * @param \Closure(): array{label:string,base_dn:string} $primarySource Hauptquelle aus den LDAP-Einstellungen
@@ -302,7 +304,7 @@ final class MailProxyService
     /**
      * Postfach anlegen/aendern. Leeres Passwort beim Bearbeiten = unveraendert.
      *
-     * @param array<string,mixed> $input username, email_address, display_name, active
+     * @param array<string,mixed> $input username, email_address, display_name, quota_mb, active
      */
     public function saveMailbox(int $serverId, array $input, #[\SensitiveParameter] string $password, int $id = 0): int
     {
@@ -313,12 +315,17 @@ final class MailProxyService
         $username = trim((string) ($input['username'] ?? ''));
         $email = strtolower(trim((string) ($input['email_address'] ?? '')));
         $displayName = Validator::cleanText((string) ($input['display_name'] ?? ''), 190);
+        $quotaRaw = trim((string) ($input['quota_mb'] ?? '0'));
+        $quotaMb = $quotaRaw === '' ? 0 : (int) $quotaRaw;
         $active = !empty($input['active']);
         if ($username === '' || mb_strlen($username) > 190 || preg_match('/[\x00-\x1F\x7F]/', $username) === 1) {
             throw new \InvalidArgumentException('Bitte einen gültigen Benutzernamen (Anmeldename am Mailserver) angeben.');
         }
         if (!SmtpService::validEmail($email)) {
             throw new \InvalidArgumentException('Bitte eine gültige E-Mail-Adresse angeben.');
+        }
+        if (preg_match('/^\d*$/', $quotaRaw) !== 1 || $quotaMb < 0 || $quotaMb > self::QUOTA_MAX_MB) {
+            throw new \InvalidArgumentException('Die Postfachgröße muss zwischen 0 (ohne Grenze) und 10.485.760 MB liegen.');
         }
         if ($password !== '' && (strlen($password) > self::PASSWORD_MAX || preg_match('/[\r\n\x00]/', $password) === 1)) {
             throw new \InvalidArgumentException('Das Passwort ist ungültig (keine Zeilenumbrüche, höchstens 4096 Zeichen).');
@@ -331,12 +338,12 @@ final class MailProxyService
             if ($existing === null || (int) $existing['server_id'] !== $serverId) {
                 throw new \InvalidArgumentException('Das Postfach wurde nicht gefunden.');
             }
-            $this->repository->updateMailbox($id, $username, $email, $displayName, $password !== '' ? $this->secrets->encrypt($password) : null, $active);
+            $this->repository->updateMailbox($id, $username, $email, $displayName, $password !== '' ? $this->secrets->encrypt($password) : null, $active, $quotaMb);
         } else {
             if ($password === '') {
                 throw new \InvalidArgumentException('Bitte ein Passwort für das neue Postfach angeben.');
             }
-            $id = $this->repository->createMailbox($serverId, $username, $email, $displayName, $this->secrets->encrypt($password), $active);
+            $id = $this->repository->createMailbox($serverId, $username, $email, $displayName, $this->secrets->encrypt($password), $active, $quotaMb);
         }
         $this->invalidate('mailbox saved', ['mailbox_id' => $id, 'server_id' => $serverId, 'credentials_changed' => $password !== '']);
 

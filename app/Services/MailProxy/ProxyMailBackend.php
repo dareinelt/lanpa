@@ -366,26 +366,27 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
         ];
     }
 
+    /**
+     * Postfachbelegung: die Belegung liefert der IMAP-Server (QUOTA); als
+     * Grenze gilt die im Adminbereich je Postfach eingetragene feste
+     * Postfachgroesse. Exchange und AD werden fuer Proxy-Postfaecher nicht
+     * befragt; $directory wird daher ignoriert. Ohne feste Groesse gilt
+     * ersatzweise die IMAP-Grenze, sonst keine Grenze.
+     */
     public function mailboxUsage(string $user, ?array $directory = null): array
     {
         $data = $this->call('imap.quota', $user, []);
         $used = max(0, (int) ($data['used'] ?? 0));
-        $limit = max(0, (int) ($data['limit'] ?? 0));
-        $source = $limit > 0 ? 'imap' : '';
-        $warning = 0;
-        $receive = 0;
-        if ($limit === 0 && $directory !== null) {
-            $warning = max(0, $directory['warning']);
-            $receive = max(0, $directory['receive']);
-            $limit = max(0, $directory['send']) ?: ($receive ?: $warning);
-            $source = $limit > 0 ? 'directory' : '';
-        }
+        $imapLimit = max(0, (int) ($data['limit'] ?? 0));
+        $fixed = $this->account?->quotaBytes() ?? 0;
+        $limit = $fixed > 0 ? $fixed : $imapLimit;
+        $source = $fixed > 0 ? 'setting' : ($imapLimit > 0 ? 'imap' : '');
 
         return [
             'used' => $used,
             'quota' => $limit,
-            'warning' => $warning,
-            'receive_limit' => $receive,
+            'warning' => 0,
+            'receive_limit' => 0,
             'limit' => $limit,
             'percent' => $limit > 0 ? (int) min(100, round($used * 100 / $limit)) : 0,
             'source' => $source,

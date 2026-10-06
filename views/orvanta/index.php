@@ -472,6 +472,11 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
                 <h3>Benachrichtigungen</h3>
                 <p class="ov-muted">Terminerinnerungen erscheinen als Desktop-Benachrichtigung (Browser), als Hinweis in Orvanta und in den Mitteilungen des Intranets. Status: <strong data-ov-notify-state>unbekannt</strong></p>
                 <div class="ov-inline-actions"><button type="button" class="button" data-ov-action="notify-permission">Desktop-Benachrichtigungen erlauben</button><button type="button" class="button button--ghost" data-ov-action="notify-test">Testbenachrichtigung</button></div>
+                <?php if (!empty($orvanta['spellcheckAvailable'])) { ?>
+                    <h3>Rechtschreibprüfung – eigenes Wörterbuch</h3>
+                    <p class="ov-muted">Wörter, die Sie per Rechtsklick mit „Zum Wörterbuch hinzufügen“ aufgenommen haben, gelten auf allen Geräten als richtig geschrieben.</p>
+                    <ul class="ov-spell-words" data-ov-spell-words aria-label="Eigene Wörter"></ul>
+                <?php } ?>
                 <h3>Verbindung</h3>
                 <dl class="ov-dl" data-ov-settings-info></dl>
             </div>

@@ -122,6 +122,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `database/migrations/035_orvanta_signatures.sql` | Tabelle `orvanta_signatures` und Spalte `phonebook.title` (Abschnitt 4.1) |
 | `database/migrations/036_orvanta_signature_colors.sql` | Spalten `orvanta_signatures.text_color`/`separator_color` (Schlüssel einer Designfarbe) |
 | `database/migrations/037_orvanta_signature_name_format.sql` | Spalte `orvanta_signatures.name_format` (`first_last`/`last_first`) |
+| `database/migrations/042_orvanta_spellcheck_words.sql` | Tabelle `orvanta_spellcheck_words` (persönliches Wörterbuch, Abschnitt 19.12) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
@@ -178,6 +179,9 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/api/orvanta/ki/verbessern` | `aiImprove` | KI-Unterstützung: `mode`, `text`, `prompt`, optional `previous_text`, `context{subject, recipients}` → `{text, usage{input_tokens, output_tokens}}` (Abschnitt 15) |
 | POST | `/api/orvanta/rechtschreibung/pruefen` | `spellcheck` | Rechtschreibprüfung: `words[]` (≤ 400) → `{available, misspelled[]}` (Abschnitt 19) |
 | POST | `/api/orvanta/rechtschreibung/vorschlaege` | `spellcheckSuggest` | Vorschläge: `word` (≤ 64 Zeichen) → `{available, suggestions[]}` (Abschnitt 19) |
+| GET | `/api/orvanta/rechtschreibung/woerterbuch` | `spellcheckWords` | Persönliches Wörterbuch → `{words[]}` (Abschnitt 19.12) |
+| POST | `/api/orvanta/rechtschreibung/woerterbuch` | `spellcheckAddWord` | Wort aufnehmen: `word` → `{words[]}`; ungültig/voll → 422 (Abschnitt 19.12) |
+| POST | `/api/orvanta/rechtschreibung/woerterbuch/entfernen` | `spellcheckRemoveWord` | Wort entfernen: `word` → `{words[]}` (Abschnitt 19.12) |
 | GET | `/admin/office/orvanta[?ki_zeitraum=…]` | `Admin\OfficeController::showOrvanta` | Unterseite Orvanta im Adminbereich (`$requireAdmin`) |
 | POST | `/admin/office/orvanta` | `Admin\OfficeController::updateOrvanta` | Einstellungen (`$requireAdmin`, CSRF) |
 | POST | `/admin/office/orvanta/pruefen` | `testOrvanta` | Verbindungstest, optional `mailbox` |
@@ -238,6 +242,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_cache_items` | `user_uid`, `kind` ∈ `attachment\|message`, `item_hash` = `sha1(attachment_id)`, `name` (Dateiname in Nextcloud), `path`, `content_type`, `size_bytes` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `created_at`) für FIFO |
 | `orvanta_ai_usage` (Migration 034) | `user_uid`, `kind` ∈ `mail_compose\|mail_reply\|mail_forward\|event\|reminder`, `model`, `input_tokens`, `output_tokens`, `created_at` | Nur Zähler, nie Texte; Index (`created_at`), (`user_uid`, `created_at`) |
 | `orvanta_signatures` (Migrationen 035–037) | `name` (≤ 120), `greeting` (≤ 120), `name_format` ∈ `first_last\|last_first` (Standard `first_last`), `street`, `postal_city` (≤ 190), `phone_mode` ∈ `prefix\|full`, `phone_prefix` (≤ 64, abschließendes Leerzeichen bleibt erhalten), `text_color`/`separator_color` (Schlüssel aus `SettingsService::THEME_COLORS`, Standard `color_text`/`color_accent`), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Zuordnung: erste aktive Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in den SSO-Gruppen vorkommt. Migration ergänzt zudem `phonebook.title` (Position aus dem AD, `LDAP_ATTR_TITLE`) |
+| `orvanta_spellcheck_words` (Migration 042) | `user_uid` (≤ 100, klein geschrieben), `word` (≤ 64, `utf8mb4_bin`), `created_at` | Unique (`user_uid`, `word`); `OrvantaSpellcheckWordRepository`, Abschnitt 19.12 |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -594,7 +599,7 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   liefen (`.ov-ctx-menu__sub--left`). Die Einträge tragen `role="menuitem"`.
 - Rechtschreibprüfung (Abschnitt 19): Modul `spell`; `spellText()`/`spellWalk()`
   lesen den Editor als Text mit Zuordnung zu den Textknoten,
-  `spellTokens()`/`spellWordIn()`/`spellPosition()`/`spellRange()` übersetzen
+  `spellTokens()`/`spellToken()`/`spellSkipSpans()`/`spellWordIn()`/`spellPosition()`/`spellRange()` übersetzen
   zwischen Zeichenpositionen und DOM-Bereichen, `spellPaint()`/`spellApply()`
   setzen die Markierung, `spellCheck()`/`spellSuggest()` sprechen die API,
   `spellMenuItems()`/`spellMenuEntries()` bauen das Untermenü,
@@ -696,7 +701,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), Freigabe per AD-Gruppe (`archive_group`, Standard: niemand; Mitglieder weiterer Quellen; Pflichtgruppe bei Aktivierung), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
 
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
-| `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
+| `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
@@ -1109,12 +1114,20 @@ Tippen im Editor
   └─ spellSchedule(): 400 ms Ruhe ─► spellScan(editor)
         ├─ spellText()/spellWalk(): Text + Zuordnung Textknoten (BR = \n,
         │    Blöcke = \n, contenteditable="false" übersprungen)
-        ├─ spellTokens(): Wörter 2–64 Zeichen
+        ├─ spellTokens(): Wörter 2–64 Zeichen; Schlüssel = Wort + direkt
+        │    folgender Punkt ("usw.", Bereich endet davor); übersprungen:
+        │    URL/E-Mail (SPELL_ADDRESS_RE), Wörter mit Ziffern, Versalwörter
         ├─ spellPaint()/spellApply(): CSS.highlights["ov-spell-error"]
         └─ spellCheck(unbekannte Wörter)
               POST /api/orvanta/rechtschreibung/pruefen  {words:[…]}  (≤ 400)
-                 OrvantaApiController::spellcheck() ─► OrvantaSpellcheckService::check()
-                    ├─ Zahl (^\d+(\.\d+)?$)  ─► richtig
+                 OrvantaApiController::spellcheck()
+                    ─► spellcheckFor(): Container::orvantaSpellcheck()
+                         ->withUserWords(persönliche Wörter aus der DB)
+                    ─► OrvantaSpellcheckService::check()
+                    ├─ abschließende Punkte: ohne Punkt prüfen, sonst
+                    │    mit einem Punkt (Abkürzung) – wie Hunspell
+                    ├─ Ergänzung/persönliches Wort (isExtraWord) ─► richtig
+                    ├─ Zahl (^\d+([.,-]\d+)*$, wie Hunspell)  ─► richtig
                     ├─ breakWord(): Zerlegung an "-" und "." (rekursiv, Tiefe ≤ 10)
                     ├─ goodForms(): affixForms() + compoundForms()
                     └─ Wort in keinem Pfad ─► falsch
@@ -1125,13 +1138,20 @@ Rechtsklick auf ein markiertes Wort
   └─ spellMenuItems() → Eintrag "Rechtschreibprüfung" {items: Funktion}
         └─ spellMenuEntries(): POST /api/orvanta/rechtschreibung/vorschlaege {word}
               OrvantaSpellcheckService::suggest()  ◄─ {available, suggestions[]}
+              (mit Punkt: Vorschläge ohne Punkt + Abkürzungen mit Punkt)
            Klick auf einen Vorschlag → spellReplace(): Auswahl setzen,
-           ctxInsertText() ersetzt das Wort (Rückgängig-Historie bleibt)
+           ctxInsertText() ersetzt das Wort (Rückgängig-Historie bleibt;
+           der Punkt einer Abkürzung steht schon im Text und entfällt)
+           „Alle ignorieren“ → spellAccept(): spell.known[wort] = true (Seite)
+           „Zum Wörterbuch hinzufügen“ → spellAddWord():
+              POST /api/orvanta/rechtschreibung/woerterbuch {word} → spellAccept()
 ```
 
 `available: false` (Rechtschreibung abgeschaltet oder Wörterbuch fehlt)
-deaktiviert die Prüfung im Browser dauerhaft; ein Fehler setzt sie 30 s aus
-(`SPELL_RETRY_MS`).
+deaktiviert die Prüfung im Browser dauerhaft; ein Fehler setzt Prüfung und
+Vorschläge 30 s aus (`SPELL_RETRY_MS`, Untermenü „Derzeit nicht verfügbar“;
+fehlgeschlagene Vorschlagsabfragen werden nicht zwischengespeichert). Mehr als
+400 unbekannte Wörter gehen nacheinander in mehreren Anfragen.
 
 ### 19.3 Markierung (CSS Custom Highlight API)
 
@@ -1182,7 +1202,8 @@ Einmalig beim Start des `app`-Containers (`docker/php/entrypoint.sh` ruft
 https://raw.githubusercontent.com/LibreOffice/dictionaries/master/de
   de_DE_frami.aff (19 067 B)  +  de_DE_frami.dic (4 356 903 B, 258 202 Einträge)
       │  scripts/spellcheck_dictionary.php  (stream_context_create + file_get_contents,
-      │  Statusprüfung über $http_response_header, kein cURL)
+      │  Statusprüfung über http_get_last_response_headers(),
+      │  letzte Statuszeile nach Weiterleitungen, kein cURL)
       ▼
   <dir>/quelle/            Rohdateien (Nachweis der Herkunft)
       │  OrvantaSpellcheckCompiler::compile()
@@ -1275,8 +1296,18 @@ genügt ein `--force`-Lauf des Skripts.
 
 `check($word)`:
 
-1. `FORBIDDENWORD` (verbotene Schreibweise, `d`) → falsch.
-2. `NUMBER_REGEXP` (`^\d+(\.\d+)?$`) → richtig.
+0. Abschließende Punkte (wie Hunspell `cleanword2`/`abbv`, in `spylls`
+   nicht umgesetzt): Endet das Wort auf `.`, ist es richtig, wenn es ohne
+   Punkte (`Ende.`) oder mit genau einem Punkt (`usw.`) richtig ist.
+   `suggest()` liefert dann Vorschläge für das Wort ohne Punkt plus
+   Abkürzungen mit Punkt (`uws.` → `usw.`).
+1. Ergänzung oder persönliches Wort (`isExtraWord()`, Abschnitt 19.12) →
+   richtig – vor `FORBIDDENWORD`, damit eine bewusste Aufnahme gilt. Auch
+   jeder Teil einer Zerlegung (Schritt 3) wird so geprüft.
+1a. `FORBIDDENWORD` (verbotene Schreibweise, `d`) → falsch.
+2. Zahl → richtig. Regel wie Hunspell (`^\d+([.,-]\d+)*$`: `1,5`,
+   `07.10.2026`, `10-12`), weiter als `NUMBER_REGEXP` in `spylls`
+   (`^\d+(\.\d+)?$`).
 3. `breakWord($word)`: für jedes `BREAK`-Muster (`-`, `.`) an allen
    Trennstellen rekursiv zerlegen (Tiefe ≤ 10); sind **alle** Teile richtig,
    ist das Wort richtig (`E-Mail-Adresse`). Die Zerlegung ist ein
@@ -1391,7 +1422,46 @@ anderes Wörterbuch eingebunden, das diese Funktionen braucht, müssen sie in
 `OrvantaSpellcheckCompiler`/`OrvantaSpellcheckService` ergänzt werden
 (Abschnitt 13, „Rechtschreibprüfung erweitern“).
 
-### 19.12 Tests
+### 19.12 Ergänzungen und persönliches Wörterbuch
+
+Zusätzlich zu de_DE_frami gelten zwei Wortlisten, die **nicht** in den
+Wörterbuchindex übersetzt, sondern im Service gehalten werden
+(`extraLookup()`: genaue Schreibweise und GROSSBUCHSTABEN-Form):
+
+- `OrvantaSpellcheckSupplement::WORDS` – mitgelieferte Ergänzungen (Anreden,
+  Wochentage, Mailformeln, `OK`/`ok`, `Homeoffice`, Produktnamen). Gilt für
+  alle; per Konstruktor (`$supplement`) austauschbar (Tests).
+- Persönliche Wörter aus `orvanta_spellcheck_words`.
+  `OrvantaApiController::spellcheckFor()` lädt sie über
+  `OrvantaSpellcheckUserWords::wordsForCheck()` (DB-Fehler, etwa vor der
+  Migration → Warnung im Log, Prüfung ohne persönliche Wörter) und erzeugt
+  mit `withUserWords()` eine **Kopie** des Container-Singletons mit leeren
+  Zwischenspeichern, damit keine Ergebnisse zwischen Benutzern geteilt
+  werden.
+
+Regeln (`isExtraWord()`): genaue Schreibweise; bei großem Anfangsbuchstaben
+auch der kleingeschriebene Eintrag (Satzanfang); ein Wort in GROSSBUCHSTABEN,
+wenn ein Eintrag dieselbe Großschreibung hat. Ein Eintrag mit Punkt
+(`Kundennr.`) greift über die Punktregel aus Schritt 0. Affixe und
+Zusammensetzungen ohne Bindestrich werden für diese Wörter **nicht**
+gebildet. In `collectCandidates()` werden beide Listen nach Editierdistanz
+≤ 2 durchsucht; Treffer gelten in `rankedSuggestions()` wie Stammwörter.
+
+`OrvantaSpellcheckUserWords` prüft beim Aufnehmen: 2–64 Zeichen, gleiche
+Wortgrenzen wie der Tokenizer in `orvanta.js` plus optionaler Schlusspunkt,
+mindestens ein Buchstabe; höchstens `MAX_WORDS = 1000` Wörter je Benutzer
+(Fehler → `ValidationException` → 422). Die Kennung wird klein geschrieben
+gespeichert; doppelte Wörter werden ignoriert.
+
+Frontend: `spellMenuEntries()` hängt unter die Vorschläge „Alle ignorieren“
+(`spellAccept()`, nur für die geöffnete Seite) und „Zum Wörterbuch
+hinzufügen“ (`spellAddWord()`). Der Einstellungsdialog lädt die Liste beim
+Öffnen (`spellLoadWords()`, `[data-ov-spell-words]`, nur bei
+`spellcheckAvailable`); Entfernen (`data-ov-action="spell-word-remove"` →
+`spellRemoveWord()`) leert `spell.known`/`spell.suggestions` und prüft
+offene Editoren neu.
+
+### 19.13 Tests
 
 `tests/Unit/OrvantaSpellcheckTest.php` (Abschnitt 12).
 

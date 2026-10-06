@@ -3834,6 +3834,7 @@
                 playSound();
                 break;
             case 'cache-clear': clearCache(); break;
+            case 'spell-word-remove': spellRemoveWord(value); break;
             case 'headers-copy': copyHeaders(); break;
             case 'send': sendCompose(hook('form-compose'), false); break;
             case 'save-draft': sendCompose(hook('form-compose'), true); break;
@@ -3869,6 +3870,7 @@
                     renderSettingsInfo();
                     updateNotifyState();
                     loadQuota();
+                    spellLoadWords();
                 }
                 openDialog(name);
             } else if (target.hasAttribute('data-ov-dialog-close')) {
@@ -4186,8 +4188,14 @@
             if (item.items) {
                 var sub = el('div', { 'class': 'ov-ctx-menu__sub', role: 'menu', hidden: true });
                 var render = function () {
+                    // Neuaufbau (nachgeladene Vorschlaege) darf den Tastaturfokus
+                    // im Untermenue nicht verlieren.
+                    var hadFocus = sub.contains(document.activeElement);
                     sub.innerHTML = '';
                     ctxBuildItems(sub, ctxCleanItems(typeof item.items === 'function' ? item.items() : item.items), []);
+                    if (hadFocus) {
+                        (sub.querySelector('button:not(:disabled)') || button).focus();
+                    }
                 };
                 render();
                 button.setAttribute('aria-haspopup', 'true');
@@ -4984,6 +4992,7 @@
 
     var SPELL_CHECK_URL = '/rechtschreibung/pruefen';
     var SPELL_SUGGEST_URL = '/rechtschreibung/vorschlaege';
+    var SPELL_WORDS_URL = '/rechtschreibung/woerterbuch';
     var SPELL_MAX_WORDS = 400;          // wie OrvantaSpellcheckService::MAX_WORDS_PER_REQUEST
     var SPELL_MAX_WORD_LENGTH = 64;     // wie OrvantaSpellcheckService::MAX_WORD_LENGTH
     var SPELL_MIN_WORD_LENGTH = 2;      // Einzelbuchstaben ("z. B.") nicht anmeckern
@@ -5003,6 +5012,9 @@
             return new RegExp('[A-Za-z\u00c0-\u024f0-9]+(?:[.\\-\'\u2019]?[A-Za-z\u00c0-\u024f0-9]+)*', 'g');
         }
     }());
+
+    // Web- und E-Mail-Adressen (werden nicht geprueft).
+    var SPELL_ADDRESS_RE = /(?:https?:\/\/|ftp:\/\/|mailto:|www\.)[^\s<>"']+|[^\s<>"'@()\[\]]+@[^\s<>"'@()\[\]]+\.[^\s<>"'@()\[\]]+/gi;
 
     var spell = {
         available: !!config.spellcheckAvailable,
@@ -5073,15 +5085,22 @@
         }
     }
 
-    /** Woerter des Textes mit Start-/Endposition. */
+    /**
+     * Woerter des Textes mit Start-/Endposition. "key" ist das zu pruefende
+     * Wort: Folgt direkt ein Punkt, gehoert er dazu, damit Abkuerzungen
+     * ("usw.", "Nr.") erkannt werden; der Bereich endet vor dem Punkt.
+     * Wie in Word/Outlook bleiben Adressen (URL, E-Mail), Woerter mit Ziffern
+     * und Woerter in Grossbuchstaben ("EDV", "LG") ungeprueft.
+     */
     function spellTokens(text) {
         var tokens = [];
+        var skip = spellSkipSpans(text);
         var match;
         SPELL_TOKEN_RE.lastIndex = 0;
         while ((match = SPELL_TOKEN_RE.exec(text)) !== null) {
-            var word = match[0];
-            if (word.length >= SPELL_MIN_WORD_LENGTH && word.length <= SPELL_MAX_WORD_LENGTH) {
-                tokens.push({ word: word, start: match.index, end: match.index + word.length });
+            var token = spellToken(text, match, skip);
+            if (token) {
+                tokens.push(token);
             }
             if (SPELL_TOKEN_RE.lastIndex === match.index) {
                 SPELL_TOKEN_RE.lastIndex++;
@@ -5090,21 +5109,58 @@
         return tokens;
     }
 
+    /** Treffer des Wortmusters als pruefbares Wort, sonst null. */
+    function spellToken(text, match, skip) {
+        var word = match[0];
+        var start = match.index;
+        var end = start + word.length;
+        if (word.length < SPELL_MIN_WORD_LENGTH || word.length > SPELL_MAX_WORD_LENGTH) {
+            return null;
+        }
+        if (/[0-9]/.test(word) || (word === word.toUpperCase() && word !== word.toLowerCase())) {
+            return null;
+        }
+        for (var i = 0; i < skip.length; i++) {
+            if (start < skip[i][1] && end > skip[i][0]) {
+                return null;
+            }
+        }
+        var key = text.charAt(end) === '.' ? word + '.' : word;
+        return { word: word, key: key, start: start, end: end };
+    }
+
+    /** Bereiche mit Web- und E-Mail-Adressen als [start, end]. */
+    function spellSkipSpans(text) {
+        var spans = [];
+        var match;
+        SPELL_ADDRESS_RE.lastIndex = 0;
+        while ((match = SPELL_ADDRESS_RE.exec(text)) !== null) {
+            spans.push([match.index, match.index + match[0].length]);
+            if (SPELL_ADDRESS_RE.lastIndex === match.index) {
+                SPELL_ADDRESS_RE.lastIndex++;
+            }
+        }
+        return spans;
+    }
+
     /** Wort an einer Textstelle (fuer das Kontextmenue). */
     function spellWordIn(text, index) {
         if (index < 0 || index > text.length) {
             return null;
         }
+        var skip = spellSkipSpans(text);
         SPELL_TOKEN_RE.lastIndex = 0;
         var match;
         while ((match = SPELL_TOKEN_RE.exec(text)) !== null) {
             var start = match.index;
-            var end = start + match[0].length;
-            if (index >= start && index <= end && match[0].length >= SPELL_MIN_WORD_LENGTH) {
-                return { value: match[0], start: start, end: end };
-            }
             if (start > index) {
                 break;
+            }
+            if (index <= start + match[0].length) {
+                return spellToken(text, match, skip);
+            }
+            if (SPELL_TOKEN_RE.lastIndex === match.index) {
+                SPELL_TOKEN_RE.lastIndex++;
             }
         }
         return null;
@@ -5131,15 +5187,19 @@
         return range;
     }
 
-    /** Markierte Bereiche eines Editors aus dem Wortzwischenspeicher zeichnen. */
-    function spellPaint(editor) {
-        var scan = spellText(editor);
+    /**
+     * Markierte Bereiche eines Editors aus dem Wortzwischenspeicher zeichnen.
+     * Gespeichert wird je Bereich auch das gepruefte Wort (mit Punkt).
+     */
+    function spellPaint(editor, scan, tokens) {
+        scan = scan || spellText(editor);
+        tokens = tokens || spellTokens(scan.value);
         var ranges = [];
-        spellTokens(scan.value).forEach(function (token) {
-            if (spell.known[token.word] === false) {
+        tokens.forEach(function (token) {
+            if (spell.known[token.key] === false) {
                 var range = spellRange(scan.segments, token.start, token.end);
                 if (range) {
-                    ranges.push(range);
+                    ranges.push({ range: range, key: token.key });
                 }
             }
         });
@@ -5152,8 +5212,8 @@
         }
         var highlight = new window.Highlight();
         spell.ranges.forEach(function (ranges) {
-            ranges.forEach(function (range) {
-                highlight.add(range);
+            ranges.forEach(function (entry) {
+                highlight.add(entry.range);
             });
         });
         CSS.highlights.set(SPELL_HIGHLIGHT, highlight);
@@ -5163,7 +5223,9 @@
         if (!spell.marking) {
             return;
         }
-        spellEditors().forEach(spellPaint);
+        spellEditors().forEach(function (editor) {
+            spellPaint(editor);
+        });
         spellApply();
     }
 
@@ -5175,24 +5237,32 @@
     /**
      * Fehlerhafte Woerter beim Server erfragen; unbekannte Woerter werden
      * gesammelt, damit ein Durchgang moeglichst wenige Anfragen ausloest.
+     * Mehr als SPELL_MAX_WORDS Woerter gehen nacheinander in mehreren Anfragen.
      */
     function spellCheck(words) {
-        if (!spell.available || Date.now() < spell.blockedUntil) {
+        if (!spell.available || spellBlocked()) {
             return;
         }
-        var pending = [];
+        var batch = [];
+        var rest = [];
         words.forEach(function (word) {
-            if (spell.known[word] === undefined && !spell.queued[word]) {
+            if (spell.known[word] !== undefined || spell.queued[word]) {
+                return;
+            }
+            if (batch.length < SPELL_MAX_WORDS) {
                 spell.queued[word] = true;
-                pending.push(word);
+                batch.push(word);
+            } else {
+                rest.push(word);
             }
         });
-        if (!pending.length) {
+        if (!batch.length) {
             return;
         }
-        var batch = pending.slice(0, SPELL_MAX_WORDS);
-        var rest = pending.slice(SPELL_MAX_WORDS);
         api(SPELL_CHECK_URL, { body: { words: batch } }).then(function (data) {
+            batch.forEach(function (word) {
+                delete spell.queued[word];
+            });
             if (!data || data.available === false) {
                 spell.available = false;
                 spellClear();
@@ -5203,7 +5273,6 @@
                 bad[word] = true;
             });
             batch.forEach(function (word) {
-                delete spell.queued[word];
                 spell.known[word] = bad[word] !== true;
             });
             spellRepaint();
@@ -5218,10 +5287,19 @@
                 delete spell.queued[word];
             });
             spell.blockedUntil = Date.now() + SPELL_RETRY_MS;
+            ctxRefreshSubmenus();
         });
     }
 
-    /** Vorschlaege zu einem Wort (gepuffert, hoechstens eine Anfrage je Wort). */
+    function spellBlocked() {
+        return Date.now() < spell.blockedUntil;
+    }
+
+    /**
+     * Vorschlaege zu einem Wort (gepuffert, hoechstens eine Anfrage je Wort).
+     * Fehlgeschlagene Abfragen werden nicht gepuffert, sondern pausieren die
+     * Pruefung wie bei spellCheck().
+     */
     function spellSuggest(word) {
         if (spell.suggestions[word] !== undefined) {
             return window.Promise.resolve(spell.suggestions[word]);
@@ -5234,13 +5312,16 @@
                 return (data && data.suggestions) || [];
             })
             .catch(function () {
-                return [];
+                spell.blockedUntil = Date.now() + SPELL_RETRY_MS;
+                return null;
             })
             .then(function (list) {
-                spell.suggestions[word] = list;
+                if (list !== null) {
+                    spell.suggestions[word] = list;
+                }
                 delete spell.pendingSuggest[word];
                 ctxRefreshSubmenus();
-                return list;
+                return list || [];
             });
         return spell.pendingSuggest[word];
     }
@@ -5255,7 +5336,7 @@
         var offset = caret.startOffset;
         var marked = spellMarkedAt(field, node, offset);
         if (marked) {
-            return { field: field, word: marked.toString(), range: marked };
+            return { field: field, word: marked.key, range: marked.range };
         }
         if (node.nodeType !== 3) {
             return null;
@@ -5267,7 +5348,7 @@
         var range = document.createRange();
         range.setStart(node, token.start);
         range.setEnd(node, token.end);
-        return { field: field, word: token.value, range: range };
+        return { field: field, word: token.key, range: range };
     }
 
     function spellCaretAt(x, y) {
@@ -5298,9 +5379,9 @@
         }
         for (var i = 0; i < ranges.length; i++) {
             try {
-                if (ranges[i].compareBoundaryPoints(window.Range.START_TO_START, point) <= 0
-                    && ranges[i].compareBoundaryPoints(window.Range.END_TO_END, point) >= 0) {
-                    return ranges[i].cloneRange();
+                if (ranges[i].range.compareBoundaryPoints(window.Range.START_TO_START, point) <= 0
+                    && ranges[i].range.compareBoundaryPoints(window.Range.END_TO_END, point) >= 0) {
+                    return { range: ranges[i].range.cloneRange(), key: ranges[i].key };
                 }
             } catch (e) {
                 // Bereich zeigt nicht mehr ins Dokument.
@@ -5314,12 +5395,17 @@
         if (spell.known[info.word] === true) {
             return [{ label: 'Kein Fehler gefunden', header: true }];
         }
+        var entries = [{ label: '---Vorschläge---', header: true }];
+        var list = spell.known[info.word] === false ? spell.suggestions[info.word] : undefined;
+        if (list === undefined && spellBlocked()) {
+            entries.push({ label: 'Derzeit nicht verfügbar', disabled: true });
+            return entries;
+        }
         if (spell.known[info.word] === undefined) {
             spellCheck([info.word]);
-            return [{ label: '---Vorschläge---', header: true }, { label: 'Wird geprüft …', disabled: true }];
+            entries.push({ label: 'Wird geprüft …', disabled: true });
+            return entries;
         }
-        var entries = [{ label: '---Vorschläge---', header: true }];
-        var list = spell.suggestions[info.word];
         if (list === undefined) {
             spellSuggest(info.word);
             entries.push({ label: 'Wird gesucht …', disabled: true });
@@ -5327,12 +5413,108 @@
         }
         if (!list.length) {
             entries.push({ label: 'Keine Vorschläge', disabled: true });
-            return entries;
         }
         list.forEach(function (suggestion) {
             entries.push({ label: suggestion, run: function () { spellReplace(info, suggestion); } });
         });
+        entries.push(
+            { separator: true },
+            { label: 'Alle ignorieren', run: function () { spellAccept(info.word); } },
+            { label: 'Zum Wörterbuch hinzufügen', run: function () { spellAddWord(info.word); } }
+        );
         return entries;
+    }
+
+    /**
+     * Wort fuer diese Sitzung als korrekt behandeln ("Alle ignorieren") bzw.
+     * nach dem Aufnehmen ins Woerterbuch die Markierungen entfernen.
+     */
+    function spellAccept(word) {
+        spell.known[word] = true;
+        delete spell.suggestions[word];
+        spellRepaint();
+    }
+
+    /**
+     * Wort ins persoenliche Woerterbuch aufnehmen (serverseitig, gilt damit
+     * auf allen Geraeten).
+     */
+    function spellAddWord(word) {
+        api(SPELL_WORDS_URL, { body: { word: word } }).then(function (data) {
+            spellAccept(word);
+            spellRenderWords(data && data.words);
+            toast('„' + word + '“ wurde in Ihr Wörterbuch aufgenommen.', 'success');
+        }).catch(function (error) {
+            toast(error.message || 'Das Wort konnte nicht aufgenommen werden.', 'error');
+        });
+    }
+
+    /**
+     * Persoenliches Woerterbuch in den Einstellungen anzeigen.
+     */
+    function spellLoadWords() {
+        var list = hook('spell-words');
+        if (!list || !spell.available) {
+            return;
+        }
+        api(SPELL_WORDS_URL).then(function (data) {
+            spellRenderWords(data && data.words);
+        }).catch(function (error) {
+            list.textContent = '';
+            list.appendChild(el('li', { 'class': 'ov-muted', text: error.message || 'Das Wörterbuch konnte nicht geladen werden.' }));
+        });
+    }
+
+    function spellRenderWords(words) {
+        var list = hook('spell-words');
+        if (!list || !Array.isArray(words)) {
+            return;
+        }
+        list.textContent = '';
+        if (!words.length) {
+            list.appendChild(el('li', { 'class': 'ov-muted', text: 'Noch keine eigenen Wörter.' }));
+            return;
+        }
+        words.forEach(function (word) {
+            list.appendChild(el('li', {}, [
+                el('span', { text: word }),
+                el('button', {
+                    type: 'button',
+                    'class': 'ov-mini ov-mini--light',
+                    'data-ov-action': 'spell-word-remove',
+                    'data-ov-value': word,
+                    title: 'Aus dem Wörterbuch entfernen',
+                    'aria-label': '„' + word + '“ aus dem Wörterbuch entfernen',
+                    text: '\u00d7'
+                })
+            ]));
+        });
+    }
+
+    /**
+     * Wort aus dem persoenlichen Woerterbuch entfernen; offene Editoren werden
+     * danach neu geprueft.
+     */
+    function spellRemoveWord(word) {
+        if (!word) {
+            return;
+        }
+        api(SPELL_WORDS_URL + '/entfernen', { body: { word: word } }).then(function (data) {
+            spellRenderWords(data && data.words);
+            // Auch Formen mit Gross-/Kleinschreibung oder Punkt koennen durch
+            // das Wort als korrekt gegolten haben: Ergebnisse neu erfragen.
+            spell.known = Object.create(null);
+            spell.suggestions = Object.create(null);
+            spellEditors().forEach(function (editor) {
+                var dialog = editor.closest('dialog');
+                if (!dialog || dialog.open) {
+                    spellScan(editor);
+                }
+            });
+            toast('„' + word + '“ wurde aus Ihrem Wörterbuch entfernt.', 'success');
+        }).catch(function (error) {
+            toast(error.message || 'Das Wort konnte nicht entfernt werden.', 'error');
+        });
     }
 
     function spellMenuItems(event, field) {
@@ -5364,10 +5546,12 @@
         var selection = window.getSelection();
         selection.removeAllRanges();
         selection.addRange(info.range);
-        ctxInsertText(field, replacement);
+        // Der Punkt einer Abkuerzung steht schon im Text (der Bereich endet davor).
+        var dotted = info.word.charAt(info.word.length - 1) === '.';
+        var text = dotted ? replacement.replace(/\.+$/, '') : replacement;
+        ctxInsertText(field, text);
         // Vorschlaege stammen aus dem Woerterbuch und sind damit korrekt.
-        spell.known[replacement] = true;
-        delete spell.suggestions[replacement];
+        spell.known[dotted ? text + '.' : text] = true;
         spellRepaint();
     }
 
@@ -5390,21 +5574,12 @@
         var tokens = spellTokens(scan.value);
         var unknown = [];
         tokens.forEach(function (token) {
-            if (spell.known[token.word] === undefined && unknown.indexOf(token.word) === -1) {
-                unknown.push(token.word);
+            if (spell.known[token.key] === undefined && unknown.indexOf(token.key) === -1) {
+                unknown.push(token.key);
             }
         });
         if (spell.marking) {
-            var ranges = [];
-            tokens.forEach(function (token) {
-                if (spell.known[token.word] === false) {
-                    var range = spellRange(scan.segments, token.start, token.end);
-                    if (range) {
-                        ranges.push(range);
-                    }
-                }
-            });
-            spell.ranges.set(editor, ranges);
+            spellPaint(editor, scan, tokens);
             spellApply();
         }
         if (unknown.length) {

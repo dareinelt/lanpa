@@ -87,15 +87,45 @@ final class OrvantaSpellcheckService
     /** @var list<string>|null Bevorzugte Buchstabenfolge (TRY) */
     private ?array $tryLetters = null;
 
+    /** @var list<string> Persoenliche Woerter des aktuellen Benutzers */
+    private array $userWords = [];
+
+    /** @var array<string,true>|null Ergaenzungs- und Benutzerwoerter (genaue Schreibweise) */
+    private ?array $extraExact = null;
+
+    /** @var array<string,true>|null Dieselben Woerter in Grossbuchstaben */
+    private ?array $extraUpper = null;
+
     /**
      * @param bool $enabled Abschalter aus der Konfiguration
      *                      (office.spellcheck_enabled); ist er aus, verhaelt
      *                      sich die Pruefung wie ohne Woerterbuch.
+     * @param list<string> $supplement Mitgelieferte Ergaenzungen zum Woerterbuch
      */
     public function __construct(
         private readonly OrvantaSpellcheckDictionary $dictionary,
-        private readonly bool $enabled = true
+        private readonly bool $enabled = true,
+        private readonly array $supplement = OrvantaSpellcheckSupplement::WORDS
     ) {
+    }
+
+    /**
+     * Kopie der Pruefung, die zusaetzlich die persoenlichen Woerter eines
+     * Benutzers als korrekt anerkennt. Die Zwischenspeicher der Kopie starten
+     * leer, damit keine Ergebnisse zwischen Benutzern geteilt werden.
+     *
+     * @param list<string> $words
+     */
+    public function withUserWords(array $words): self
+    {
+        $copy = clone $this;
+        $copy->userWords = array_values(array_filter($words, static fn (mixed $word): bool => is_string($word) && $word !== ''));
+        $copy->memo = [];
+        $copy->suggestMemo = [];
+        $copy->extraExact = null;
+        $copy->extraUpper = null;
+
+        return $copy;
     }
 
     /**
@@ -130,6 +160,12 @@ final class OrvantaSpellcheckService
         if (!$this->isUsable()) {
             return true;
         }
+        // Abschliessende Punkte wie in Hunspell: erst ohne Punkt pruefen
+        // ("Ende."), dann mit einem Punkt als Abkuerzung ("usw.", "Nr.").
+        $base = rtrim($word, '.');
+        if ($base !== $word) {
+            return $base === '' || $this->isCorrect($base, true) || $this->isCorrect($base . '.', true);
+        }
 
         return $this->isCorrect($word, true);
     }
@@ -151,10 +187,34 @@ final class OrvantaSpellcheckService
             $this->suggestMemo = [];
         }
         $length = mb_strlen($word, 'UTF-8');
-        if ($length > self::SUGGEST_MAX_LENGTH || $this->isCorrect($word, true)) {
+        if ($length > self::SUGGEST_MAX_LENGTH || $this->check($word)) {
             return $this->suggestMemo[$word] = [];
         }
 
+        // Mit abschliessendem Punkt: Vorschlaege fuer das Wort ohne Punkt und
+        // zusaetzlich Abkuerzungen mit Punkt ("uws." -> "usw.").
+        $base = rtrim($word, '.');
+        $suggestions = $this->rankedSuggestions($base);
+        if ($base !== $word) {
+            foreach ($this->rankedSuggestions($base . '.') as $candidate => $rank) {
+                $candidate = (string) $candidate;
+                if (str_ends_with($candidate, '.') && !isset($suggestions[$candidate])) {
+                    $suggestions[$candidate] = $rank;
+                }
+            }
+            uasort($suggestions, static fn (array $a, array $b): int => $a <=> $b);
+        }
+
+        return $this->suggestMemo[$word] = array_map('strval', array_slice(array_keys($suggestions), 0, self::MAX_SUGGESTIONS));
+    }
+
+    /**
+     * Gepruefte Vorschlaege mit ihrem Rang, bestes zuerst.
+     *
+     * @return array<string,array{0:int,1:int,2:int,3:int}>
+     */
+    private function rankedSuggestions(string $word): array
+    {
         $candidates = $this->collectCandidates($word);
         uasort($candidates, static fn (array $a, array $b): int => $a <=> $b);
 
@@ -165,7 +225,8 @@ final class OrvantaSpellcheckService
         $suggestions = [];
         $remaining = [];
         foreach ($candidates as $candidate => $rank) {
-            if ($this->dictionary->flagsOf($candidate) === null) {
+            $candidate = (string) $candidate;
+            if ($this->dictionary->flagsOf($candidate) === null && !$this->isExtraWord($candidate)) {
                 $remaining[] = $candidate;
 
                 continue;
@@ -210,9 +271,8 @@ final class OrvantaSpellcheckService
         }
 
         uasort($suggestions, static fn (array $a, array $b): int => $a <=> $b);
-        $result = array_slice(array_keys($suggestions), 0, self::MAX_SUGGESTIONS);
 
-        return $this->suggestMemo[$word] = $result;
+        return array_slice($suggestions, 0, self::MAX_SUGGESTIONS, true);
     }
 
     /**
@@ -259,6 +319,18 @@ final class OrvantaSpellcheckService
                 if ($distance <= self::MAX_SCAN_DISTANCE) {
                     $add($entry['word'], 7, $distance, 0, abs(mb_strlen($entry['word'], 'UTF-8') - $length));
                 }
+            }
+        }
+        // Ergaenzungs- und Benutzerwoerter stehen nicht im Woerterbuchindex.
+        foreach (array_keys($this->extraLookup()[0]) as $extra) {
+            $extra = (string) $extra;
+            $extraLength = mb_strlen($extra, 'UTF-8');
+            if (isset($candidates[$extra]) || abs($extraLength - $length) > self::MAX_SCAN_DISTANCE) {
+                continue;
+            }
+            $distance = $this->distance($word, $extra, self::MAX_SCAN_DISTANCE);
+            if ($distance <= self::MAX_SCAN_DISTANCE) {
+                $add($extra, 7, $distance, 0, abs($extraLength - $length));
             }
         }
 
@@ -465,11 +537,16 @@ final class OrvantaSpellcheckService
      */
     private function computeCorrect(string $word, bool $allowNosuggest): bool
     {
+        if ($this->isExtraWord($word)) {
+            return true;
+        }
         $forbidden = $this->flags()['forbidden'];
         if ($forbidden !== '' && $this->hasFlag($word, $forbidden, true)) {
             return false;
         }
-        if (preg_match('/^[0-9]+(?:\.[0-9]+)?$/', $word) === 1) {
+        // Zahlen mit einzelnen Trennzeichen wie in Hunspell ("1.500", "1,5",
+        // "07.10.2026", "10-12").
+        if (preg_match('/^[0-9]+(?:[.,\-][0-9]+)*$/', $word) === 1) {
             return true;
         }
         $this->breakBudget = self::BREAK_BUDGET;
@@ -479,7 +556,7 @@ final class OrvantaSpellcheckService
                 if ($part === '') {
                     continue;
                 }
-                if (!$this->anyGoodForm($part, true, $allowNosuggest)) {
+                if (!$this->isExtraWord($part) && !$this->anyGoodForm($part, true, $allowNosuggest)) {
                     $correct = false;
                     break;
                 }
@@ -490,6 +567,46 @@ final class OrvantaSpellcheckService
         }
 
         return false;
+    }
+
+    /**
+     * Steht das Wort in den Ergaenzungen oder im Benutzerwoerterbuch? Am
+     * Satzanfang zaehlt auch die grossgeschriebene Form eines kleinen
+     * Eintrags, ausserdem jeder Eintrag in GROSSBUCHSTABEN.
+     */
+    private function isExtraWord(string $word): bool
+    {
+        [$exact, $upper] = $this->extraLookup();
+        if (isset($exact[$word])) {
+            return true;
+        }
+        $captype = OrvantaSpellcheckCasing::guess($word);
+        if ($captype === OrvantaSpellcheckCasing::INIT || $captype === OrvantaSpellcheckCasing::HUHINIT) {
+            foreach (OrvantaSpellcheckCasing::lowerFirst($word) as $variant) {
+                if (isset($exact[$variant])) {
+                    return true;
+                }
+            }
+        }
+
+        return $captype === OrvantaSpellcheckCasing::ALL && isset($upper[$word]);
+    }
+
+    /**
+     * @return array{0:array<string,true>,1:array<string,true>}
+     */
+    private function extraLookup(): array
+    {
+        if ($this->extraExact === null || $this->extraUpper === null) {
+            $this->extraExact = [];
+            $this->extraUpper = [];
+            foreach (array_merge($this->supplement, $this->userWords) as $entry) {
+                $this->extraExact[$entry] = true;
+                $this->extraUpper[mb_strtoupper($entry, 'UTF-8')] = true;
+            }
+        }
+
+        return [$this->extraExact, $this->extraUpper];
     }
 
     /**

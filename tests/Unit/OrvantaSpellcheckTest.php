@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 use App\Services\Orvanta\OrvantaSpellcheckCompiler;
 use App\Services\Orvanta\OrvantaSpellcheckDictionary;
+use App\Exceptions\ValidationException;
+use App\Repositories\OrvantaSpellcheckWordRepository;
 use App\Services\Orvanta\OrvantaSpellcheckService;
+use App\Services\Orvanta\OrvantaSpellcheckUserWords;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
 
@@ -64,6 +67,7 @@ AFF;
  * ACLs/S           -> Gross-/Kleinschreibung im Bestand (HUHINIT).
  * fug/xoz          -> nur innerhalb einer Zusammensetzung gueltig.
  * E, Mail, Adresse -> Zerlegung an Bindestrichen.
+ * usw.             -> Abkuerzung mit Punkt.
  */
 const SPELLCHECK_TEST_DIC = <<<'DIC'
 Haus/j
@@ -82,6 +86,7 @@ Boot/z
 E
 Mail/S
 Adresse/S
+usw.
 DIC;
 
 /** Verzeichnis mit aufbereitetem Pruefwoerterbuch (je Testlauf einmal). */
@@ -138,7 +143,7 @@ Runner::test('Rechtschreibung: Aufbereitung des Woerterbuchs', function (): void
     $dictionary = new OrvantaSpellcheckDictionary($directory);
     Assert::true($dictionary->isAvailable(), 'Das aufbereitete Woerterbuch sollte lesbar sein.');
     $meta = $dictionary->meta();
-    Assert::same(16, $meta['words'], 'Alle Stammwoerter sollten uebernommen werden.');
+    Assert::same(17, $meta['words'], 'Alle Stammwoerter sollten uebernommen werden.');
     Assert::same(4, $meta['suffixes'], 'Die drei SFX-Regeln sollten uebernommen werden.');
     Assert::same(1, $meta['prefixes'], 'Die PFX-Regel sollte uebernommen werden.');
     Assert::same(['-', '.'], $dictionary->breaks(), 'Beide BREAK-Muster sollten uebernommen werden.');
@@ -184,6 +189,13 @@ Runner::test('Rechtschreibung: Stammwoerter, Affixe und Gross-/Kleinschreibung',
         // Zahlen
         '12345' => true,
         '12.5' => true,
+        // Wie Hunspell: einzelne Trennzeichen zwischen Ziffern (Datum, Dezimalkomma, Bereich)
+        '07.10.2026' => true,
+        '1,5' => true,
+        '10-12' => true,
+        '1..2' => false,
+        ',5' => false,
+        '5-' => false,
     ], 'Wortpruefung');
 });
 
@@ -226,6 +238,25 @@ Runner::test('Rechtschreibung: Zerlegung an Bindestrichen', function (): void {
         'E-Mail-Adresse' => true,
         'E-Mai-Adresse' => false,
     ], 'Bindestrich');
+});
+
+Runner::test('Rechtschreibung: abschliessender Punkt und Abkuerzungen', function (): void {
+    spellcheckAssertWords([
+        // Satzende: ohne Punkt pruefen
+        'Haus.' => true,
+        'Rechnung.' => true,
+        'Rechnun.' => false,
+        // Abkuerzung: nur mit Punkt im Bestand
+        'usw.' => true,
+        'usw' => false,
+        'usw..' => true,
+        '.' => true,
+    ], 'Punkt');
+
+    $service = spellcheckService();
+    Assert::same('Rechnung', $service->suggest('Rechnun.')[0] ?? '', 'Vorschlaege gelten dem Wort ohne Punkt.');
+    Assert::contains('usw.', implode('|', $service->suggest('uws.')), 'Abkuerzungen mit Punkt sollten vorgeschlagen werden.');
+    Assert::same([], $service->suggest('Haus.'), 'Korrekte Woerter am Satzende erhalten keine Vorschlaege.');
 });
 
 Runner::test('Rechtschreibung: Vorschlaege', function (): void {
@@ -301,9 +332,11 @@ Runner::test('Rechtschreibung: viele Trennzeichen bleiben beherrschbar', functio
     // Obergrenze kostete ein eingefuegter Text wie "1.2.3.4.…" Sekunden und
     // zig Megabyte; die Pruefung muss in Sekundenbruchteilen bleiben.
     $started = microtime(true);
-    foreach (['a' . str_repeat('.a', 17), 'a' . str_repeat('-a', 16), '1.' . implode('.', range(2, 17))] as $word) {
+    foreach (['a' . str_repeat('.a', 17), 'a' . str_repeat('-a', 16), 'x1.' . implode('.', range(2, 17))] as $word) {
         Assert::false($service->check($word), 'Eine sinnlose Zerlegung ergibt kein korrektes Wort.');
     }
+    // Reine Zahlenfolgen gelten wie in Hunspell sofort als korrekt.
+    Assert::true($service->check('1.' . implode('.', range(2, 17))), 'Zahlen mit Trennzeichen sind korrekt.');
     $elapsed = microtime(true) - $started;
     Assert::true(
         $elapsed < 2.0,
@@ -312,4 +345,105 @@ Runner::test('Rechtschreibung: viele Trennzeichen bleiben beherrschbar', functio
 
     // Regulaere Bindestrichwoerter bleiben unveraendert korrekt.
     Assert::true($service->check('E-Mail-Adresse'), 'Die Obergrenze greift bei normalen Woertern nicht.');
+});
+
+Runner::test('Rechtschreibung: mitgelieferte Ergaenzungen', function (): void {
+    $service = spellcheckService();
+    foreach (['Hr.', 'Mo.', 'OK', 'ok', 'MfG', 'Homeoffice', 'Outlook', 'HOMEOFFICE'] as $word) {
+        Assert::true($service->check($word), 'Ergaenzung "' . $word . '" sollte korrekt sein.');
+    }
+    Assert::false($service->check('Hr'), 'Ohne Punkt ist "Hr" keine Abkuerzung.');
+    Assert::false($service->check('mfg'), 'Die Schreibweise der Ergaenzung gilt genau.');
+
+    $custom = new OrvantaSpellcheckService(new OrvantaSpellcheckDictionary(spellcheckFixture()), true, ['Lanpa', 'okay']);
+    spellcheckAssertCustom($custom, [
+        'Lanpa' => true,
+        'LANPA' => true,
+        'lanpa' => false,
+        'okay' => true,
+        'Okay' => true,
+        'Lanpa-Rechnung' => true,
+        'Lanpas' => false,
+    ]);
+    Assert::true(in_array('Lanpa', $custom->suggest('Lanap'), true), 'Ergaenzungen erscheinen in den Vorschlaegen.');
+});
+
+Runner::test('Rechtschreibung: persoenliche Woerter gelten nur fuer die Kopie', function (): void {
+    $service = spellcheckService();
+    Assert::false($service->check('Kundennr.'), 'Ohne Benutzerwoerterbuch ist das Wort unbekannt.');
+    Assert::same([], array_filter($service->suggest('Kundenrn.'), static fn (string $s): bool => $s === 'Kundennr.'));
+
+    $user = $service->withUserWords(['Kundennr.', 'Xaver', '']);
+    Assert::true($user->check('Kundennr.'), 'Persoenliche Woerter sind korrekt.');
+    Assert::true($user->check('XAVER'), 'Auch in Grossbuchstaben.');
+    Assert::true($user->check('Xaver-Rechnung'), 'Auch als Teil einer Bindestrich-Zusammensetzung.');
+    Assert::true(in_array('Xaver', $user->suggest('Xavr'), true), 'Persoenliche Woerter erscheinen in den Vorschlaegen.');
+    Assert::false($service->check('Xaver'), 'Die urspruengliche Pruefung bleibt unveraendert.');
+});
+
+/**
+ * SQLite-Schema parallel zu Migration 042 pflegen.
+ */
+function spellcheckUserWords(): OrvantaSpellcheckUserWords
+{
+    $pdo = new PDO('sqlite::memory:');
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->exec('CREATE TABLE orvanta_spellcheck_words (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_uid VARCHAR(100) NOT NULL,
+        word VARCHAR(64) NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (user_uid, word)
+    )');
+
+    return new OrvantaSpellcheckUserWords(new OrvantaSpellcheckWordRepository($pdo));
+}
+
+/**
+ * @param array<string,bool> $cases
+ */
+function spellcheckAssertCustom(OrvantaSpellcheckService $service, array $cases): void
+{
+    foreach ($cases as $word => $expected) {
+        Assert::same($expected, $service->check((string) $word), '"' . $word . '" sollte ' . ($expected ? 'korrekt' : 'fehlerhaft') . ' sein.');
+    }
+}
+
+function spellcheckExpectInvalid(OrvantaSpellcheckUserWords $words, string $word): void
+{
+    try {
+        $words->add('anna', $word);
+    } catch (ValidationException) {
+        return;
+    }
+    Assert::true(false, '"' . $word . '" haette abgelehnt werden muessen.');
+}
+
+Runner::test('Rechtschreibung: Benutzerwoerterbuch speichern und entfernen', function (): void {
+    $words = spellcheckUserWords();
+    Assert::same([], $words->words('anna'));
+
+    Assert::same(['Lanpa'], $words->add('Anna', ' Lanpa '), 'Kennung ohne Gross-/Kleinschreibung, Wort ohne Leerraum.');
+    Assert::same(['Lanpa'], $words->add('anna', 'Lanpa'), 'Doppelte Woerter werden nur einmal gespeichert.');
+    Assert::same(['Lanpa', 'lanpa'], $words->add('anna', 'lanpa'), 'Schreibweisen werden unterschieden.');
+    Assert::same(['Kundennr.', 'Lanpa', 'lanpa'], $words->add('anna', 'Kundennr.'), 'Abkuerzungen mit Punkt sind erlaubt.');
+    Assert::same([], $words->words('bernd'), 'Woerter gehoeren nur dem jeweiligen Benutzer.');
+
+    Assert::same(['Kundennr.', 'lanpa'], $words->remove('ANNA', 'Lanpa'));
+    Assert::same(['Kundennr.', 'lanpa'], $words->remove('anna', 'Unbekannt'), 'Unbekannte Woerter zu entfernen ist kein Fehler.');
+
+    foreach (['', 'a', 'zwei Woerter', '<script>', '123', str_repeat('a', 65), 'Wort..', '-Wort'] as $invalid) {
+        spellcheckExpectInvalid($words, $invalid);
+    }
+    Assert::same(['Kundennr.', 'lanpa'], $words->words('anna'), 'Abgelehnte Woerter werden nicht gespeichert.');
+});
+
+Runner::test('Rechtschreibung: Benutzerwoerterbuch ist begrenzt', function (): void {
+    $words = spellcheckUserWords();
+    for ($i = 0; $i < OrvantaSpellcheckUserWords::MAX_WORDS; $i++) {
+        $words->add('anna', 'Wort' . $i);
+    }
+    spellcheckExpectInvalid($words, 'Zuviel');
+    Assert::same(OrvantaSpellcheckUserWords::MAX_WORDS, count($words->add('anna', 'Wort5')), 'Vorhandene Woerter bleiben erlaubt.');
+    Assert::same(1, count($words->add('bernd', 'Zuviel')), 'Die Grenze gilt je Benutzer.');
 });

@@ -354,6 +354,9 @@
 .ov-settings h3 { margin: .6rem 0 .2rem; font-size: .95rem; }
 .ov-settings h3:first-child { margin-top: 0; }
 .ov-inline-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.ov-spell-words { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem; max-height: 9rem; overflow-y: auto; }
+.ov-spell-words li { display: inline-flex; align-items: center; gap: .2rem; padding: .1rem .2rem .1rem .55rem; border: 1px solid var(--ov-line); border-radius: 999px; font-size: .85rem; }
+.ov-spell-words li.ov-muted { border: 0; padding-left: 0; }
 .ov-profile { flex-direction: row; align-items: center; gap: 1rem; }
 .ov-help p { margin: .2rem 0; line-height: 1.5; }
 .ov-help kbd { padding: .05rem .35rem; border: 1px solid var(--ov-line); border-radius: .25rem; background: var(--ov-bar); font-size: .8rem; }

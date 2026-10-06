@@ -20,6 +20,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | AD-Synchronisation | LDAP/LDAPS-Abgleich in die lokale Datenbank, konfigurierbares Intervall und Attribut-Mapping; optional AD-Gruppen aus konfigurierbaren Pfaden (inkl. verschachtelter Mitgliedschaften) für die Rechtevergabe |
 | Office (optional) | Nextcloud mit Euro-Office DocumentServer hinter demselben Einstieg, Einrichtung per Einzeiler, Updates aus den offiziellen Quellen, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, gestaltbare Kachel mit Verfügbarkeitsstatus, Office-Apps (Euro-Office-Webapps, Dateien, Outlook Web App) mit Freigabe per AD-Gruppe/App-Paket, Mail- und Kalender-App **Orvanta** (Exchange On-Premise ≥ 2016/2019 via EWS mit SSO-Identität, Anhänge in Euro-Office öffnen oder in Nextcloud speichern, Zwischenspeicher mit eigenem Quota, Terminerinnerungen als Browser-Benachrichtigung und in den Mitteilungen der Kopfzeile – siehe [docs/orvanta.md](docs/orvanta.md)), lokaler KI-Endpunkt für alle Benutzer (Nextcloud-Assistent, KI-Plugin der Editoren; Audio/Bilder optional), Speicherplatz-Kontingente je Benutzer (Standard 500 MB, je AD-Gruppe, individuell mit Begründung und Verlauf), Netzlaufwerke der Windows-Clients in „Dateien“ (Opt-in je Benutzer, Ausschlussliste im Adminbereich), App-Store im Adminbereich abschaltbar, verschlüsselte Sicherung – siehe [docs/office.md](docs/office.md) |
 | Notfallnummern | Eigene, farblich abgesetzte Kacheln für Notfallnummern (z. B. Werkschutz, Feuerwehr), im Adminbereich pflegbar |
+| KI-Oberfläche LLMInt (optional) | [LLMInt](https://github.com/dareinelt/LLMInt) (eigener Stack) hinter demselben Einstieg unter `/ki/` – gleiches HTTPS-Zertifikat, Windows-Anmeldung über den `auth`-Container, Streaming der Antworten – siehe [docs/llmint.md](docs/llmint.md) |
 | Notfallpläne / KAEP | Roter Button mit AD-Gruppenfreigabe, visueller Ablaufeditor, AD-Kennwortbestätigung, Maßnahmenstatus/Kommentare, separat bestätigte SMS, automatische KAEP-E-Mails, historische Auswertung sowie Export/Import von Plänen zwischen Systemen (nur Administratoren); [Einrichtung](docs/notfallplan.md), [bebilderte Einsatzanleitung](docs/notfallplan-anleitung.md), [Editor-Referenz](docs/notfallplan-editor-referenz.md) |
 | Mitteilungen | Aufklappbares Mitteilungs-Overlay auf der Startseite, im Adminbereich pflegbar |
 | Alarmierungen | Alarm-Kacheln, die per Klick eine SMS über ein konfigurierbares SMS-Gateway auslösen – an eine Gruppe oder eine einzelne Rufnummer, mit Verlauf |
@@ -113,7 +114,7 @@ installieren, nicht starten).
 | `mail` | Dauerhafter SMTP-Versand der KAEP-Benachrichtigungen; Konfiguration nur durch Admins unter E-Mail (SMTP) | Versandstatus im Adminbereich |
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
-| `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter; Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
+| `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter, optional `/ki/` an LLMInt ([docs/llmint.md](docs/llmint.md)); Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
 | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
 | `storage-sync` | optional, Profil `office` – Speicher-Tiering und HA-Synchronisation der Office-Daten auf SMB-Freigaben und S3-kompatible Objektspeicher (s3fs/FUSE) ([docs/storage.md](docs/storage.md), Container-Übersicht [docs/storage-stack.md](docs/storage-stack.md)) | `agent.alive` jünger als 30 s |
 | `storage-sync-catalog` | optional, Profil `office` – MySQL-Katalog von `storage-sync` (Zugangsdaten wie `db`, nur internes Netz `storage_catalog`) | `mysqladmin ping` |
@@ -177,6 +178,8 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | `NEXTCLOUD_LDAP_*`, `NEXTCLOUD_OFFICE_GROUPS` | AD-Anbindung und Gruppenbeschränkung in Nextcloud | – |
 | `NEXTCLOUD_AI_APPS`, `EUROOFFICE_AI_PLUGIN`, `OFFICE_AI_API_KEY` | Lokale KI: Nextcloud-Apps installieren, KI-Plugin der Editoren, optionaler API-Schlüssel (Einstellungen unter Admin → Office → Lokale KI) | `true` / `true` / – |
 | `OFFICE_BACKUP_DIR`, `OFFICE_BACKUP_RETENTION`, `OFFICE_BACKUP_SCHEDULE_HOUR` | Office-Sicherung | `./backups` / `7` / – |
+| `LLMINT_ENABLED`, `LLMINT_UPSTREAM`, `LLMINT_PATH` | KI-Oberfläche LLMInt hinter dem `auth`-Container (z. B. `http://llmint-web` mit `COMPOSE_FILE=docker-compose.yml:docker-compose.llmint.yml`, oder `http://<IP>:<Port>`), siehe [docs/llmint.md](docs/llmint.md) | `false` / – / `/ki` |
+| `LLMINT_PROXY_NETWORK` | Externes Docker-Netz für LLMInt auf demselben Host (`docker-compose.llmint.yml`) | `llmint-proxy` |
 | `SEED_ON_START` | Beispielnavigation beim Containerstart anlegen | `true` |
 | `CLICK_RETENTION_DAYS` | Aufbewahrung der Klickdaten für `purge_clicks.php` | `400` |
 | `ALARM_HOST`, `ALARM_USERNAME` | SMS-Gateway für Alarmierungen (auch im Adminbereich pflegbar) | – |
@@ -432,6 +435,27 @@ Die auth-Container rufen ihre Konfiguration beim Start über `/internal/sso-conf
 Anwendung ab (Token im Volume `sso_token`, Prüfung des absendenden Containers; über den
 öffentlichen Proxy gesperrt). Nach geänderten Zugangsdaten genügt `docker compose restart auth
 auth-<kennung>`. Jede Instanz darf nur Benutzer ihrer eigenen Quelle melden.
+
+### KI-Oberfläche LLMInt unter `/ki/`
+
+Optional leitet der `auth`-Container `/ki/` an [LLMInt](https://github.com/dareinelt/LLMInt)
+(eigener Compose-Stack) weiter – mit demselben Zertifikat und Windows-Anmeldung am SSO-Einstiegspunkt
+von LLMInt. Kurzfassung für LLMInt auf demselben Host:
+
+```bash
+docker network create --subnet 172.30.251.0/24 llmint-proxy   # einmalig
+# LLMInt: web-Container mit Alias llmint-web an llmint-proxy, TRUSTED_PROXIES=172.30.251.0/24,
+#         PROXY_SSO_HEADER=X-Remote-User; im LLMInt-Admin LDAP + "Windows-SSO" aktivieren
+# lanpa (.env):
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.llmint.yml
+#   LLMINT_ENABLED=true
+#   LLMINT_UPSTREAM=http://llmint-web
+docker compose up -d
+```
+
+Danach eine Kachel mit der URL `/ki/` anlegen. LLMInt läuft im selben Origin wie die Landingpage –
+Einrichtung beider Seiten, Variante „anderer Host“, Sicherheitshinweise und Fehlersuche:
+[docs/llmint.md](docs/llmint.md).
 
 ### Zugangsdaten und Schlüssel
 

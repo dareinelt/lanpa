@@ -3,7 +3,8 @@
 #
 #   backend-watch.sh HOST [HOST ...]
 #
-# mod_proxy loest die Container-Hostnamen (app, nextcloud, eurooffice) je
+# mod_proxy loest die Container-Hostnamen (app, nextcloud, eurooffice, ggf.
+# der LLMInt-Upstream) je
 # Apache-Prozess nur einmal auf und behaelt die Adresse bis zum Neuladen -
 # auch mit disablereuse/addressttl. Wird ein Container neu erstellt (z. B.
 # "docker compose up -d" nach einem Update), erhaelt er oft eine neue Adresse;

@@ -18,6 +18,8 @@
 # 2. HTTPS mit dem Zertifikat aus der Zertifikatsverwaltung (tls-sync.sh).
 # 3. Reverse-Proxy fuer Euro-Office: /office/ -> nextcloud, /eurooffice/ ->
 #    eurooffice (inkl. WebSockets). Nur aktiv bei OFFICE_ENABLED=true.
+# 4. Reverse-Proxy fuer LLMInt (KI-Oberflaeche, eigener Stack): /ki/ ->
+#    LLMINT_UPSTREAM. Nur aktiv bei LLMINT_ENABLED=true.
 
 # --- Stufe 1: gss-ntlmssp aus den Debian-Quellen mit Patches bauen ----------
 # Das Debian-Paket gss-ntlmssp 1.2.0 weist NTLM-NEGOTIATE-Nachrichten ohne
@@ -87,6 +89,7 @@ RUN set -eux; \
 COPY docker/auth/ntlm.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/auth/common.conf /etc/apache2/intranet/common.conf
 COPY docker/auth/office.conf /etc/apache2/intranet/office.conf
+COPY docker/auth/llmint.conf /etc/apache2/intranet/llmint.conf
 COPY docker/auth/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/auth/sso-routes.sh /usr/local/bin/sso-routes.sh
 COPY docker/auth/tls-sync.sh /usr/local/bin/tls-sync.sh

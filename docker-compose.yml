@@ -201,7 +201,14 @@ services:
       # (scripts/sso-domains.sh) kommt ebenfalls von dort.
       # Reverse-Proxy /office/ und /eurooffice/ (Same-Origin).
       OFFICE_ENABLED: ${OFFICE_ENABLED:-false}
+      # Reverse-Proxy fuer LLMInt (KI-Oberflaeche, eigener Stack) unter
+      # LLMINT_PATH (Standard /ki/). Gemeinsames Docker-Netz mit LLMInt:
+      # docker-compose.llmint.yml (siehe docs/llmint.md).
+      LLMINT_ENABLED: ${LLMINT_ENABLED:-false}
+      LLMINT_UPSTREAM: ${LLMINT_UPSTREAM:-}
+      LLMINT_PATH: ${LLMINT_PATH:-/ki}
       # APP_URL liefert auch den Hostnamen fuer den Kerberos-SPN (HTTP/<host>).
+
       APP_URL: ${APP_URL:-http://localhost:8080}
       SSO_REALM: ${SSO_REALM:-}
       SSO_SPN_HOSTS: ${SSO_SPN_HOSTS:-}

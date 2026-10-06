@@ -30,6 +30,19 @@ fi
 services=""
 volumes=""
 keys=""
+
+compose_file=""
+if [ -f "$ENV_FILE" ]; then
+    compose_file="$(grep -E '^[[:space:]]*COMPOSE_FILE=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+fi
+# LLMInt auf demselben Host (docker-compose.llmint.yml): die Instanzen
+# brauchen wie die Hauptinstanz Zugang zum gemeinsamen Netz.
+llmint_network=""
+case "$compose_file" in
+    *docker-compose.llmint.yml*) llmint_network="
+      - llmint" ;;
+esac
+
 while read -r key service; do
     [ -z "${key:-}" ] && continue
     if ! printf '%s' "$key" | grep -Eq '^[A-Z][A-Z0-9_]{0,31}$' \
@@ -58,6 +71,9 @@ while read -r key service; do
       SSO_SOURCE: ${key}
       SSO_PROXY_PROTOCOL: \"true\"
       OFFICE_ENABLED: \${OFFICE_ENABLED:-false}
+      LLMINT_ENABLED: \${LLMINT_ENABLED:-false}
+      LLMINT_UPSTREAM: \${LLMINT_UPSTREAM:-}
+      LLMINT_PATH: \${LLMINT_PATH:-/ki}
       APP_URL: \${APP_URL:-http://localhost:8080}
       # Kerberos-SPNs wie die Hauptinstanz (Hostname aus APP_URL, SSO_SPN_HOSTS);
       # der Realm dieser Domaene wird am Domaenencontroller ermittelt.
@@ -67,16 +83,11 @@ while read -r key service; do
       - ${volume}:/var/lib/samba
     networks:
       - intranet
-      - office
+      - office${llmint_network}
 "
 done <<LIST
 $sources
 LIST
-
-compose_file=""
-if [ -f "$ENV_FILE" ]; then
-    compose_file="$(grep -E '^[[:space:]]*COMPOSE_FILE=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
-fi
 
 if [ -z "$keys" ]; then
     rm -f "$OUT_FILE"
@@ -100,6 +111,6 @@ YAML
 echo "Erzeugt: $OUT_FILE (Domaenen: ${keys})"
 case "$compose_file" in
     *docker-compose.sso.yml*) ;;
-    *) echo "Bitte in der .env setzen: COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml" ;;
+    *) echo "Bitte in der .env docker-compose.sso.yml zu COMPOSE_FILE hinzufuegen, z. B. COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml (ggf. :docker-compose.llmint.yml)" ;;
 esac
 echo "Danach: docker compose up -d --build --remove-orphans && docker compose restart auth"

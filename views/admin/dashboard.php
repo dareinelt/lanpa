@@ -54,10 +54,11 @@ $incidentAlert = $incidentAlert ?? null;
         <?php if ($lastSync !== null && (string) $lastSync['status'] === 'error') { ?>
             <p class="flash flash--error">Der letzte Synchronisationslauf ist fehlgeschlagen. Der vorherige Datenbestand bleibt aktiv.</p>
         <?php } ?>
-        <form method="post" action="/admin/ad/sync" class="inline-form">
+        <form method="post" action="/admin/ad/sync" class="inline-form" data-ad-sync>
             <?= Csrf::field() ?>
             <button type="submit" class="button button--primary">Jetzt synchronisieren</button>
         </form>
+        <?php require __DIR__ . '/ldap/sync-dialog.php'; ?>
     </section>
 
     <section class="card">

@@ -24,6 +24,7 @@ final class DashboardController extends AdminController
         return $this->adminView('admin.dashboard', [
             'pageTitle' => 'Dashboard',
             'activeNav' => 'dashboard',
+            'pageScript' => 'admin-ldap.js',
             'navigationCount' => count(Container::navigation()->allItems()),
             'phonebookCount' => $phonebook->countActive(),
             'phonebookVisible' => $phonebook->countVisible(true),

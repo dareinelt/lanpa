@@ -388,7 +388,7 @@ gilt der Eigentümer des Ordners.
    Einstellungen festgelegte Ziel, sonst ein synchrones, nicht primäres Ziel.
    Der HA-Status zeigt in dieser Zeit „eingeschränkt“.
 3. **Meldung im Adminbereich:** Dashboard, Speicher (HA) und der Menüpunkt
-   **Vorfälle** (mit Zähler) weisen auf den offenen Vorfall hin.
+   **Storage → Vorfälle** (mit Zähler, auch am Punkt Storage) weisen auf den offenen Vorfall hin.
 
 Unter **Einstellungen → Maßnahmen bei einem Vorfall** ist wählbar, ob
 **nur der Benutzer** (auslösender Benutzer bzw. Eigentümer des Ordners)

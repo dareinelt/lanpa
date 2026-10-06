@@ -22,7 +22,7 @@ final class MailProxyRepository extends Repository
 {
     private const SERVER_COLUMNS = 'id, identity_source_id, name, smtp_host, smtp_port, smtp_security, smtp_auth, imap_host, imap_port, imap_security, verify_tls, timeout_seconds, active, created_at, updated_at';
 
-    private const MAILBOX_COLUMNS = 'b.id, b.server_id, b.username, b.email_address, b.display_name, b.active, b.created_at, b.updated_at,'
+    private const MAILBOX_COLUMNS = 'b.id, b.server_id, b.username, b.email_address, b.display_name, b.quota_mb, b.active, b.created_at, b.updated_at,'
         . " CASE WHEN b.password_encrypted <> '' THEN 1 ELSE 0 END AS password_set";
 
     // ------------------------------------------------------------------ Server
@@ -163,17 +163,18 @@ final class MailProxyRepository extends Repository
         return (int) $statement->fetchColumn() > 0;
     }
 
-    public function createMailbox(int $serverId, string $username, string $email, string $displayName, string $passwordEncrypted, bool $active): int
+    public function createMailbox(int $serverId, string $username, string $email, string $displayName, string $passwordEncrypted, bool $active, int $quotaMb = 0): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO mail_proxy_mailboxes (server_id, username, email_address, display_name, password_encrypted, active)'
-            . ' VALUES (:server, :username, :email, :display_name, :password, :active)'
+            'INSERT INTO mail_proxy_mailboxes (server_id, username, email_address, display_name, quota_mb, password_encrypted, active)'
+            . ' VALUES (:server, :username, :email, :display_name, :quota_mb, :password, :active)'
         );
         $statement->execute([
             'server' => $serverId,
             'username' => $username,
             'email' => $email,
             'display_name' => $displayName,
+            'quota_mb' => max(0, $quotaMb),
             'password' => $passwordEncrypted,
             'active' => $active ? 1 : 0,
         ]);
@@ -184,16 +185,16 @@ final class MailProxyRepository extends Repository
     /**
      * @param string|null $passwordEncrypted null = Passwort unveraendert lassen
      */
-    public function updateMailbox(int $id, string $username, string $email, string $displayName, ?string $passwordEncrypted, bool $active): void
+    public function updateMailbox(int $id, string $username, string $email, string $displayName, ?string $passwordEncrypted, bool $active, int $quotaMb = 0): void
     {
-        $params = ['id' => $id, 'username' => $username, 'email' => $email, 'display_name' => $displayName, 'active' => $active ? 1 : 0];
+        $params = ['id' => $id, 'username' => $username, 'email' => $email, 'display_name' => $displayName, 'quota_mb' => max(0, $quotaMb), 'active' => $active ? 1 : 0];
         $passwordSql = '';
         if ($passwordEncrypted !== null) {
             $passwordSql = ', password_encrypted = :password';
             $params['password'] = $passwordEncrypted;
         }
         $statement = $this->pdo->prepare(
-            'UPDATE mail_proxy_mailboxes SET username = :username, email_address = :email, display_name = :display_name, active = :active'
+            'UPDATE mail_proxy_mailboxes SET username = :username, email_address = :email, display_name = :display_name, quota_mb = :quota_mb, active = :active'
             . $passwordSql . ', updated_at = CURRENT_TIMESTAMP WHERE id = :id'
         );
         $statement->execute($params);
@@ -450,7 +451,7 @@ final class MailProxyRepository extends Repository
     public function connectionRow(int $mailboxId): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT b.id AS mailbox_id, b.username, b.email_address, b.display_name, b.password_encrypted, b.active AS mailbox_active,'
+            'SELECT b.id AS mailbox_id, b.username, b.email_address, b.display_name, b.quota_mb, b.password_encrypted, b.active AS mailbox_active,'
             . ' s.id AS server_id, s.identity_source_id, s.smtp_host, s.smtp_port, s.smtp_security, s.smtp_auth,'
             . ' s.imap_host, s.imap_port, s.imap_security, s.verify_tls, s.timeout_seconds, s.active AS server_active'
             . ' FROM mail_proxy_mailboxes b JOIN mail_proxy_servers s ON s.id = b.server_id WHERE b.id = :id'
@@ -603,6 +604,7 @@ final class MailProxyRepository extends Repository
     {
         $row['id'] = (int) $row['id'];
         $row['server_id'] = (int) $row['server_id'];
+        $row['quota_mb'] = (int) ($row['quota_mb'] ?? 0);
         $row['active'] = (int) $row['active'] === 1;
         $row['password_set'] = (int) $row['password_set'] === 1;
         if (array_key_exists('mapping_id', $row)) {

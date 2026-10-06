@@ -87,7 +87,7 @@ function mailProxyPdo(): PDO
     $pdo->exec(
         "CREATE TABLE mail_proxy_mailboxes (
             id INTEGER PRIMARY KEY AUTOINCREMENT, server_id INTEGER NOT NULL, username TEXT NOT NULL,
-            email_address TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '', password_encrypted TEXT NOT NULL,
+            email_address TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '', quota_mb INTEGER NOT NULL DEFAULT 0, password_encrypted TEXT NOT NULL,
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (server_id, email_address)
@@ -221,13 +221,13 @@ function mailProxyResolutionRow(array $overrides = []): array
     ];
 }
 
-function mailProxyBackend(FakeMailProxyTransport $transport, int $mailboxId = 7): ProxyMailBackend
+function mailProxyBackend(FakeMailProxyTransport $transport, int $mailboxId = 7, int $quotaMb = 0): ProxyMailBackend
 {
     $route = MailProxyRoute::proxy($mailboxId, 3, 5, 'jan@hh.example');
     $account = new MailProxyAccount($mailboxId, 3, 5, 'jan', 'jan@hh.example', 'Jan', 'geheim-123', [
         'smtp_host' => 'smtp.hh.example.net', 'smtp_port' => 587, 'smtp_security' => 'starttls', 'smtp_auth' => true,
         'imap_host' => 'imap.hh.example.net', 'imap_port' => 993, 'imap_security' => 'tls', 'verify_tls' => true, 'timeout' => 20,
-    ], 1);
+    ], 1, $quotaMb);
 
     return new ProxyMailBackend($route, static fn (): MailProxyAccount => $account, $transport);
 }
@@ -290,6 +290,48 @@ Runner::test('Mail-Proxy: Postfach-Passwort nur verschlüsselt, Listen ohne Zuga
     Assert::contains('Passwort ist ungültig', mailProxyRejected(fn () => $env['service']->saveMailbox($ids['server'], ['username' => 'x', 'email_address' => 'x@hh.example'], "a\r\nb")));
     Assert::contains('bereits angelegt', mailProxyRejected(fn () => $env['service']->saveMailbox($ids['server'], ['username' => 'x', 'email_address' => 'JAN@hh.example'], 'pw')));
     Assert::contains('noch Postfächer', mailProxyRejected(fn () => $env['service']->deleteServer($ids['server'])));
+});
+
+Runner::test('Mail-Proxy: feste Postfachgröße je Postfach wird gespeichert und geprüft', static function (): void {
+    $env = mailProxyEnv();
+    $ids = mailProxySeed($env);
+    Assert::same(0, $env['repository']->findMailbox($ids['mailbox'])['quota_mb'], 'Standard: ohne Grenze.');
+
+    $env['service']->saveMailbox($ids['server'], ['username' => 'jan', 'email_address' => 'jan@hh.example', 'quota_mb' => ' 2048 ', 'active' => '1'], '', $ids['mailbox']);
+    Assert::same(2048, $env['repository']->findMailbox($ids['mailbox'])['quota_mb']);
+    Assert::same(2048, $env['service']->overview(5)['mailboxes'][0]['quota_mb']);
+    Assert::same(2048, (int) $env['repository']->connectionRow($ids['mailbox'])['quota_mb']);
+    Assert::same(2048 * 1024 * 1024, $env['resolver']->accountForTest($ids['mailbox'])->quotaBytes());
+
+    foreach (['-1', '10485761', 'abc', '1.5'] as $invalid) {
+        Assert::contains('Postfachgröße', mailProxyRejected(fn () => $env['service']->saveMailbox($ids['server'], ['username' => 'jan', 'email_address' => 'jan@hh.example', 'quota_mb' => $invalid, 'active' => '1'], '', $ids['mailbox'])), 'Ungültig: ' . $invalid);
+    }
+    $env['service']->saveMailbox($ids['server'], ['username' => 'jan', 'email_address' => 'jan@hh.example', 'quota_mb' => '', 'active' => '1'], '', $ids['mailbox']);
+    Assert::same(0, $env['repository']->findMailbox($ids['mailbox'])['quota_mb'], 'Leer = ohne Grenze.');
+});
+
+Runner::test('Mail-Proxy: Postfachbelegung nutzt die feste Postfachgröße, nie AD-Grenzen', static function (): void {
+    $transport = new FakeMailProxyTransport();
+    $transport->responses['imap.quota'] = ['used' => 512 * 1024 * 1024, 'limit' => 4096 * 1024 * 1024];
+    $directory = ['warning' => 1, 'send' => 2, 'receive' => 3];
+
+    // Feste Groesse hat Vorrang vor IMAP-QUOTA und Verzeichnis.
+    $usage = mailProxyBackend($transport, 7, 1024)->mailboxUsage('jan@hh.example', $directory);
+    Assert::same(512 * 1024 * 1024, $usage['used']);
+    Assert::same(1024 * 1024 * 1024, $usage['limit']);
+    Assert::same(50, $usage['percent']);
+    Assert::same('setting', $usage['source']);
+    Assert::same(['imap.quota'], $transport->operations());
+
+    // Ohne feste Groesse: IMAP-Grenze; AD-Grenzen werden nie verwendet.
+    $usage = mailProxyBackend($transport)->mailboxUsage('jan@hh.example', $directory);
+    Assert::same(4096 * 1024 * 1024, $usage['limit']);
+    Assert::same('imap', $usage['source']);
+    $transport->responses['imap.quota'] = ['used' => 10, 'limit' => 0];
+    $usage = mailProxyBackend($transport)->mailboxUsage('jan@hh.example', $directory);
+    Assert::same(0, $usage['limit']);
+    Assert::same(0, $usage['percent']);
+    Assert::same('', $usage['source']);
 });
 
 Runner::test('Mail-Proxy: Zuordnung nur innerhalb einer Identitätsquelle und eindeutig', static function (): void {

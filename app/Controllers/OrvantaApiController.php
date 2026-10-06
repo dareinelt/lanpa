@@ -323,8 +323,10 @@ final class OrvantaApiController extends Controller
     }
 
     /**
-     * Postfachbelegung auf dem Exchange; Fehler blockieren die Anzeige des
-     * Zwischenspeichers nicht (null = nicht ermittelbar).
+     * Postfachbelegung des Mail-Backends; Fehler blockieren die Anzeige des
+     * Zwischenspeichers nicht (null = nicht ermittelbar). Die AD-Grenzen
+     * werden nur fuer Exchange-Postfaecher gelesen; Proxy-Postfaecher
+     * verwenden die im Adminbereich eingetragene feste Postfachgroesse.
      *
      * @param array<string,mixed> $access
      * @return array{used:int,quota:int,warning:int,receive_limit:int,limit:int,percent:int,source:string}|null
@@ -332,7 +334,10 @@ final class OrvantaApiController extends Controller
     private function mailboxUsage(array $access): ?array
     {
         try {
-            return $this->mail($access)->mailboxUsage($access['impersonate'], $this->directoryQuota($access['user']));
+            $backend = $this->mail($access);
+            $directory = $backend instanceof OrvantaExchangeService ? $this->directoryQuota($access['user']) : null;
+
+            return $backend->mailboxUsage($access['impersonate'], $directory);
         } catch (Throwable) {
             return null;
         }

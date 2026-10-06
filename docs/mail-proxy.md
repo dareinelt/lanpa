@@ -34,14 +34,18 @@ OrvantaController/ApiController ─► OrvantaMailRouter ─┬─► OrvantaExc
 
 ## 2. Einrichtung
 
-1. `php scripts/migrate.php` (Migration `039_mail_proxy.sql`).
+1. `php scripts/migrate.php` (Migrationen `039_mail_proxy.sql` und
+   `040_mail_proxy_mailbox_quota.sql`).
 2. `docker compose up -d --build` – startet den Dienst `mail-proxy` und hängt
    `app` zusätzlich an das Netz `mail_proxy`. Voraussetzung: Docker Engine ≥ 26
    bzw. Compose ≥ 2.24 (Volume-`subpath` für den Schlüssel).
 3. Adminbereich → **Office → SMTP-/IMAP-Proxy** (`/admin/office/mail-proxy`):
    1. **Proxy-Konfiguration je Identitätsquelle:** Quelle wählen, SMTP- und
       IMAP-Server eintragen, speichern.
-   2. **Postfächer:** Anmeldename, E-Mail-Adresse, Anzeigename und Passwort.
+   2. **Postfächer:** Anmeldename, E-Mail-Adresse, Anzeigename, Passwort und
+      **Postfachgröße** (MB, 0 = ohne Grenze). Die Postfachgröße ist die feste
+      Grenze der Belegungsanzeige in Orvanta; Exchange und AD werden für
+      Proxy-Postfächer nicht abgefragt.
       „Verbindung testen“ prüft SMTP und IMAP (Verbindung, TLS, Anmeldung) –
       **ohne** eine Mail zu versenden.
    3. **Zuordnung AD-Benutzer → Postfach:** beide Felder mit
@@ -117,7 +121,7 @@ erreichbar, bleibt es beim Exchange-Verhalten.
 | Ordner (inkl. Anlegen, mUTF-7), Suche (auch Umlaute) | Terminerinnerungen |
 | Gelesen/Ungelesen, Kennzeichnung, Verschieben, Löschen (Papierkorb/endgültig) | Langzeitarchiv (Worker benötigt EWS) |
 | Anhänge öffnen/speichern (Euro-Office, Browser, Download, Nextcloud) | |
-| Kontingent (IMAP `QUOTA`, sonst Angaben aus dem Verzeichnis) | |
+| Kontingent (Belegung per IMAP `QUOTA`; Grenze = feste Postfachgröße des Postfachs, ersatzweise IMAP-Grenze; kein Exchange-/AD-Zugriff) | |
 
 Nicht verfügbare Funktionen sind per Capability-Flag in der Oberfläche
 ausgeblendet; die API antwortet darauf mit **409**. Gesendete Mails legt der
@@ -246,6 +250,7 @@ Mailserver und Postfächer neu anzulegen.
 | Datei | Aufgabe |
 | --- | --- |
 | `database/migrations/039_mail_proxy.sql` | Tabellen `mail_proxy_servers`, `mail_proxy_mailboxes`, `mail_proxy_mappings`, `mail_proxy_state` |
+| `database/migrations/040_mail_proxy_mailbox_quota.sql` | Spalte `mail_proxy_mailboxes.quota_mb` (feste Postfachgröße, 0 = ohne Grenze) |
 | `app/Repositories/MailProxyRepository.php` | SQL (auch in SQLite lauffähig); Chiffrat nur über `mailboxSecret()`/`connectionRow()` |
 | `app/Services/MailProxy/MailProxyService.php` | Admin-Logik: Validierung inkl. SSRF-Prüfung, CRUD, Vorschläge, Verbindungstest, Diagnose, `invalidate()` |
 | `app/Services/MailProxy/MailProxyResolver.php` | Entscheidung Exchange/Proxy/gesperrt (`decide()` rein), frische Zugangsdaten (`account()`) |

@@ -155,7 +155,8 @@ final class MailProxyResolver
                 'verify_tls' => (int) $row['verify_tls'] === 1,
                 'timeout' => (int) $row['timeout_seconds'],
             ],
-            $this->repository->generation()
+            $this->repository->generation(),
+            (int) ($row['quota_mb'] ?? 0)
         );
     }
 

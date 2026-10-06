@@ -22,8 +22,16 @@ final class MailProxyAccount implements \JsonSerializable
         #[\SensitiveParameter] private readonly string $password,
         /** @var array{smtp_host:string,smtp_port:int,smtp_security:string,smtp_auth:bool,imap_host:string,imap_port:int,imap_security:string,verify_tls:bool,timeout:int} */
         public readonly array $server,
-        public readonly int $generation
+        public readonly int $generation,
+        /** Feste Postfachgroesse aus dem Adminbereich in MB (0 = ohne Grenze). */
+        public readonly int $quotaMb = 0
     ) {
+    }
+
+    /** Feste Postfachgroesse in Byte (0 = ohne Grenze). */
+    public function quotaBytes(): int
+    {
+        return max(0, $this->quotaMb) * 1024 * 1024;
     }
 
     /**
@@ -64,7 +72,7 @@ final class MailProxyAccount implements \JsonSerializable
      */
     public function withPassword(#[\SensitiveParameter] string $password): self
     {
-        return new self($this->mailboxId, $this->serverId, $this->sourceId, $this->username, $this->email, $this->displayName, $password, $this->server, $this->generation);
+        return new self($this->mailboxId, $this->serverId, $this->sourceId, $this->username, $this->email, $this->displayName, $password, $this->server, $this->generation, $this->quotaMb);
     }
 
     /**

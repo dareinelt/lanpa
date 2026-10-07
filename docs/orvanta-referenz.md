@@ -56,6 +56,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 17. Langzeitarchiv
 18. Mail-Backends und SMTP-/IMAP-Proxy
 19. Rechtschreibprüfung
+20. Exchange-DAG (Lastverteilung, Failover und Dashboard)
 
 ---
 
@@ -76,11 +77,14 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 
 | Datei | Verantwortung |
 | --- | --- |
-| `app/Controllers/OrvantaController.php` | `index()` (App-Seite im Layout `layouts.editor`, Konfiguration als `$orvanta`), `openAttachment()` (Viewer/Inline/Download), `attachmentFile()` (Rohdatei für den DocumentServer), statisch `authorize()` (gemeinsame Zugriffsprüfung), `inlineType()` (sichere Inline-Typen) |
-| `app/Controllers/OrvantaApiController.php` | JSON-API; Rahmen `handle()` (Zugriff, Body, CSRF, Fehlerabbildung), Hilfen `readBody()`, `mailPayload()`, `addresses()`, `ids()`, `requireId()`, `str()/int()/bool()`, `resync()` |
+| `app/Controllers/OrvantaController.php` | `index()` (App-Seite im Layout `layouts.editor`, Konfiguration als `$orvanta`), `openAttachment()` (Viewer/Inline/Download), `attachmentFile()` (Rohdatei für den DocumentServer), statisch `authorize()` (gemeinsame Zugriffsprüfung), statisch `exchangeHost($access)` (aktueller DAG-Host für den Tooltipp im Fußbereich, Abschnitt 20), `inlineType()` (sichere Inline-Typen) |
+| `app/Controllers/OrvantaApiController.php` | JSON-API; Rahmen `handle()` (Zugriff, Body, CSRF, Fehlerabbildung), Hilfen `readBody()`, `mailPayload()`, `addresses()`, `ids()`, `requireId()`, `str()/int()/bool()`, `resync()`; `keepAlive()` liefert zusätzlich `exchange_host` (Abschnitt 20) |
+| `app/Controllers/Admin/OrvantaHostController.php` | Adminbereich „Orvanta – DAG-Hosts“ (Abschnitt 20): `index()`, `add()` (bestätigte DAG-Zugehörigkeit), `toggle()` (Wartung), `remove()`, `check()` (Verbindungstest), `data()` (Kachelwerte als JSON), `render()` |
 | `app/Controllers/Admin/OfficeController.php` | `showOrvanta()` (Unterseite `/admin/office/orvanta`), `updateOrvanta()` (Formular → `OrvantaConfigService::save()`), `testOrvanta()` (`testConnection()`), `render('orvanta', …)` übergibt `orvanta*`-Variablen an `views/admin/office.php` |
-| `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()` |
-| `app/Services/Orvanta/OrvantaExchangeService.php` | Fachlogik je Modul (siehe Abschnitt 5), `call()` (SOAP + Fehlerbehandlung), `translate()` (EWS-Fehlercodes → deutsche Meldung), Mapper `messageSummary()`, `calendarSummary()`, `contactData()`, `taskData()`, `attachmentList()` |
+| `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung; zieht den primären Host der DAG-Hostliste nach, Abschnitt 20), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()` |
+| `app/Services/Orvanta/OrvantaExchangeService.php` | Fachlogik je Modul (siehe Abschnitt 5), `call()` (SOAP + Fehlerbehandlung), `request()` (Lastverteilung und Failover, Abschnitt 20), `testConnection()`/`testHost()` (Verbindungstest), `translate()` (EWS-Fehlercodes → deutsche Meldung), Mapper `messageSummary()`, `calendarSummary()`, `contactData()`, `taskData()`, `attachmentList()` |
+| `app/Services/Orvanta/OrvantaExchangePool.php` | Lastverteilung und Failover über die Hosts der DAG (Abschnitt 20): `sessionKey()`, `hosts()`, `session()`, `currentHost()`, `failover()`, `recordSuccess()`, `recordFailure()`, `overview()`, `purge()`, statisch `parseHostList()`; Konstanten `SESSION_TTL`, `PURGE_AFTER`, `LATENCY_SAMPLES`, `FAILURE_COOLDOWN`, `MAX_HOSTS` |
+| `app/Repositories/OrvantaExchangeHostRepository.php` | Hosts und Sitzungszuordnungen der DAG (Abschnitt 20): `hosts()`, `find()`, `hostCount()`, `nextSortOrder()`, `insert()`, `setActive()`, `deleteHost()`, `syncPrimary()`, `recordLatency()`, `recordSuccess()`, `recordFailure()`, `touchHostSession()`, `findSession()`, `startSession()`, `moveSession()`, `touchSession()`, `sessionCounts()`, `activeSessions()`, `purgeSessions()` |
 | `app/Services/Orvanta/OrvantaMailboxResolver.php` | `address($ssoUser)`: primäre SMTP-Adresse des Postfachs aus dem AD (`LdapClient::primaryMailboxAddress()`, `proxyAddresses`), je Sitzung 15 min in `orvanta_mailbox_address`; ohne AD-Treffer, ohne `ldap`-Erweiterung, im Demo-Modus und für Testbenutzer gilt `OrvantaConfigService::impersonationAddress()` |
 | `app/Services/Orvanta/EwsXml.php` | `envelope()`, `parse()`, `error()`, `text()/attr()/bool()/elements()`, `itemId()/itemIds()`, `mailbox()/mailboxes()/recipients()`, `folderId()`, `dateTime()` (UTC), `timestamp()`, `escape()` |
 | `app/Contracts/ExchangeTransportInterface.php` | `post(url, xml, options): {status, body, error}` |
@@ -94,6 +98,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Repositories/OrvantaSignatureRepository.php` | `all(activeOnly)`, `find()`, `save()`, `delete()`; `ad_groups` als JSON-Liste → `groups` |
 | `app/Controllers/Admin/OrvantaSignatureController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
 | `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `public/assets/js/admin-signature.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/signaturen/vorschau`) |
+| `views/admin/orvanta-hosts.php`, `public/assets/js/admin-orvanta-hosts.js` | DAG-Dashboard (Abschnitt 20): Host-Kacheln mit Status, Latenz, Sitzungen und Aktionen; Live-Aktualisierung über `GET …/hosts/daten` |
 | `app/Services/Orvanta/OrvantaException.php` | Fehler mit anzeigbarer Meldung und HTTP-Status (`status()`, Standard 502) |
 | `app/Services/Orvanta/OrvantaAiService.php` | KI-Unterstützung (Abschnitt 15): `isAvailable()` (globale KI aktiv + `GET /models`, Datei-Cache 60 s), `resetAvailability()`, `improve()` (`POST /chat/completions`, Systemprompt je `MODES`, Verfeinern per Assistenten-Turn), `recordUsage()`, statisch `stripMarkers()`; Konstanten `MODES`, `MAX_TEXT`, `MAX_PROMPT`, `MAX_CONTEXT`, `MAX_OUTPUT_TOKENS`, `MARKER_CLASS`, `MARKER_ATTR_PREFIX` |
 | `app/Services/Orvanta/OrvantaAiCharts.php` | Anonymisierter Nutzungsbericht für den Adminbereich: `period()`, `report(days)`, SVG-Erzeuger `usersChart()`, `daysChart()`, `tokensChart()` (Präsentationsattribute, kein `style`) |
@@ -105,11 +110,11 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaSpellcheckDictionary.php` | Verzögertes Lesen des übersetzten Wörterbuchs: `isAvailable()` (nur `meta.json`), `isUsable()` (Index + Regelwerk), `meta()`, `flagsOf(word)`, `caseEntries(key)`, `wordsWithPrefix(prefix, limit)`, `suffixRules()/suffixLengths()`, `prefixRules()/prefixLengths()`, `breaks()/replacements()/maps()/tryLetters()`, `flag(name)`, `compoundMin()/compoundMax()/checkSharps()`; `words.dat` wird über `read()` (`fseek`/`fread`) gelesen; `INDEX_ENTRY_SIZE` |
 | `app/Services/Orvanta/OrvantaSpellcheckCasing.php` | Gemeinsame Groß-/Kleinschreibungslogik (`NO`/`INIT`/`ALL`/`HUHINIT`/`HUH`): `guess()`, `variants()`, `lower()` (mit scharfem S), `lowerFirst()`, `capitalize()`, `sharpSVariants()`; `MAX_SHARP_S_VARIANTS` |
 | `scripts/spellcheck_dictionary.php` | Einmaliger Download + Übersetzung (Abschnitt 19), vom Entrypoint aufgerufen; `--force`, `--quiet`; atomarer Austausch über `meta.json` als Vollständigkeitsmarke |
-| `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchange()`, `orvantaAttachments()`, `orvantaRecipients()`, `orvantaNotifications()`, `orvantaSpellcheckDictionary()`, `orvantaSpellcheck()` (übergibt `office.spellcheck_enabled`), `orvantaAiCharts()`, `aiTransport()`, `orvantaAi()` (nutzt `officeAi()`); `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
+| `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchangeHostRepository()`, `orvantaExchangePool()`, `orvantaExchange()`, `orvantaAttachments()`, `orvantaRecipients()`, `orvantaNotifications()`, `orvantaSpellcheckDictionary()`, `orvantaSpellcheck()` (übergibt `office.spellcheck_enabled`), `orvantaAiCharts()`, `aiTransport()`, `orvantaAi()` (nutzt `officeAi()`); `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
 | `app/Controllers/Controller.php` | `orvantaRemindersVisible()` → View-Variable `$orvantaReminders` (Kopfzeilen-Erinnerungen auf allen Seiten) |
 | `app/Services/Office/OfficeAppCatalog.php` | App `orvanta` (`kind = intranet`), `ORVANTA_PATH = '/office/orvanta'` |
 | `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`/`isSafeFileName()` (führender Punkt nur bei Dateinamen), `MAX_BYTES` (16 MiB) |
-| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]` und Autoren-Button `.ov-statusbar__credit[data-ov-dialog-open="about"]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, headers, folder-new, folder-props, profile, settings, help, about, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Ordnerbaum, Mail-Liste, Textfelder, KI; Einträge per JS) |
+| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`, der Verbindungsanzeige `[data-ov-status-conn]` samt Tooltipp zum aktuellen Exchange-Host und Autoren-Button `.ov-statusbar__credit[data-ov-dialog-open="about"]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, headers, folder-new, folder-props, profile, settings, help, about, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Ordnerbaum, Mail-Liste, Textfelder, KI; Einträge per JS) |
 | `views/orvanta/viewer.php` | Euro-Office-Viewer `.ov-viewer[data-orvanta-viewer]` mit `data-api`, `data-config`, `data-download` und Download-Fallback |
 | `views/admin/office.php` | Abschnitt `$section === 'orvanta'`, Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer, KI-Nutzungsbericht `#orvanta-ki`) |
 | `views/layouts/base.php` | Mitteilungsmenü mit `data-orvanta-reminders` / `data-orvanta-reminder-list`, lädt `orvanta-reminders.js` (mit `data-csrf`) |
@@ -124,6 +129,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `database/migrations/036_orvanta_signature_colors.sql` | Spalten `orvanta_signatures.text_color`/`separator_color` (Schlüssel einer Designfarbe) |
 | `database/migrations/037_orvanta_signature_name_format.sql` | Spalte `orvanta_signatures.name_format` (`first_last`/`last_first`) |
 | `database/migrations/042_orvanta_spellcheck_words.sql` | Tabelle `orvanta_spellcheck_words` (persönliches Wörterbuch, Abschnitt 19.12) |
+| `database/migrations/043_orvanta_exchange_dag.sql` | Tabellen `orvanta_exchange_hosts` und `orvanta_exchange_sessions` (Exchange-DAG, Abschnitt 20) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
@@ -142,8 +148,8 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | GET | `/office/orvanta[?modul=…&termin=…&verfassen=…]` | `OrvantaController::index` | App (`verfassen=<key>`: Verfassen-Dialog in eigenem Tab, Abschnitt 9.1) |
 | GET | `/office/orvanta/anhang/oeffnen?token=` | `openAttachment` | Anhang öffnen (Session + Token, `uid` muss passen) |
 | GET | `/office/orvanta/anhang/datei?token=` | `attachmentFile` | Rohdatei für den DocumentServer (**nur Token**, keine Session) |
-| GET | `/api/orvanta/status` | `status` | Benutzer, Demo, Host, Zwischenspeicher, Serverzeit |
-| GET | `/api/orvanta/sitzung` | `keepAlive` | Keep-alive: frischt die Sitzung auf, liefert aktuelles CSRF-Token (`csrf`) |
+| GET | `/api/orvanta/status` | `status` | Benutzer, Demo, Host, Zwischenspeicher, Serverzeit, `exchange_host` (Abschnitt 20) |
+| GET | `/api/orvanta/sitzung` | `keepAlive` | Keep-alive: frischt die Sitzung auf, liefert aktuelles CSRF-Token (`csrf`) und `exchange_host` (Abschnitt 20) |
 | GET | `/api/orvanta/mail/ordner` | `folders` | Ordnerbaum |
 | GET | `/api/orvanta/mail/ordner/eigenschaften?ordner=` | `folderProperties` | Anzahl/Größe eines Ordners, auch inkl. Unterordner (Kontextmenü „Eigenschaften“) |
 | POST | `/api/orvanta/mail/ordner/neu` | `createFolder` | Neuen E-Mail-Ordner anlegen (Kontextmenü „Neuer Ordner“) |
@@ -186,6 +192,12 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | GET | `/admin/office/orvanta[?ki_zeitraum=…]` | `Admin\OfficeController::showOrvanta` | Unterseite Orvanta im Adminbereich (`$requireAdmin`) |
 | POST | `/admin/office/orvanta` | `Admin\OfficeController::updateOrvanta` | Einstellungen (`$requireAdmin`, CSRF) |
 | POST | `/admin/office/orvanta/pruefen` | `testOrvanta` | Verbindungstest, optional `mailbox` |
+| GET | `/admin/office/orvanta/hosts` | `Admin\OrvantaHostController::index` | Dashboard der Exchange-DAG (Abschnitt 20) |
+| POST | `/admin/office/orvanta/hosts` | `add` | Host aufnehmen; `dag_confirm=1` bestätigt die DAG-Zugehörigkeit |
+| POST | `/admin/office/orvanta/hosts/status` | `toggle` | Host in Wartung setzen oder wieder freigeben |
+| POST | `/admin/office/orvanta/hosts/loeschen` | `remove` | Host entfernen (Sitzungen werden umgeleitet) |
+| POST | `/admin/office/orvanta/hosts/pruefen` | `check` | Verbindungstest eines Hosts |
+| GET | `/admin/office/orvanta/hosts/daten` | `data` | Kachelwerte als JSON für die Live-Aktualisierung |
 | GET | `/admin/office/signaturen` | `Admin\OrvantaSignatureController::index` | Signaturvorlagen (Liste, Vorschau-iframes) |
 | GET/POST | `/admin/office/signaturen/vorlage[?id=…]` | `edit` / `save` | Vorlage anlegen/bearbeiten (CSRF) |
 | POST | `/admin/office/signaturen/loeschen` | `delete` | Vorlage löschen (`id`) |
@@ -221,7 +233,8 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 - Keep-alive: `startKeepAlive()` ruft bei Benutzeraktivität (Tippen, Klicken)
   höchstens alle 5 Minuten `GET /api/orvanta/sitzung` auf – auch im eigenen
   Verfassen-Tab –, damit die Sitzung beim Schreiben nicht abläuft
-  (`session.gc_maxlifetime`).
+  (`session.gc_maxlifetime`); die Antwort zieht zugleich den Tooltipp an der
+  Verbindungsanzeige nach (`setExchangeHost()`, Abschnitt 20.6).
 - Ablauf der Admin-Anmeldung (`Auth::check()`: Leerlauf, Konto/Gruppe
   ungültig) beendet nur die Admin-Rechte; CSRF-Token und Sitzungs-ID bleiben.
   Nur das explizite `Auth::logout()` rotiert beides.
@@ -234,7 +247,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 
 ## 4. Datenhaltung
 
-### 4.1 Tabellen (Migration 033)
+### 4.1 Tabellen (Migrationen 033–043)
 
 | Tabelle | Spalten (Auszug) | Hinweise |
 | --- | --- | --- |
@@ -244,6 +257,8 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_ai_usage` (Migration 034) | `user_uid`, `kind` ∈ `mail_compose\|mail_reply\|mail_forward\|event\|reminder`, `model`, `input_tokens`, `output_tokens`, `created_at` | Nur Zähler, nie Texte; Index (`created_at`), (`user_uid`, `created_at`) |
 | `orvanta_signatures` (Migrationen 035–037) | `name` (≤ 120), `greeting` (≤ 120), `name_format` ∈ `first_last\|last_first` (Standard `first_last`), `street`, `postal_city` (≤ 190), `phone_mode` ∈ `prefix\|full`, `phone_prefix` (≤ 64, abschließendes Leerzeichen bleibt erhalten), `text_color`/`separator_color` (Schlüssel aus `SettingsService::THEME_COLORS`, Standard `color_text`/`color_accent`), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Zuordnung: erste aktive Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in den SSO-Gruppen vorkommt. Migration ergänzt zudem `phonebook.title` (Position aus dem AD, `LDAP_ATTR_TITLE`) |
 | `orvanta_spellcheck_words` (Migration 042) | `user_uid` (≤ 100, klein geschrieben), `word` (≤ 64, `utf8mb4_bin`), `created_at` | Unique (`user_uid`, `word`); `OrvantaSpellcheckWordRepository`, Abschnitt 19.12 |
+| `orvanta_exchange_hosts` (Migration 043) | `host` (≤ 190, unique), `ews_url` (≤ 2048, leer = URL aus den Einstellungen), `is_primary`, `active` (0 = Wartung), `sort_order`, `latency_ms` (gleitender Mittelwert), `latency_samples`, `last_latency_ms`, `last_session_at`, `last_check_at`, `last_ok`, `last_error` (≤ 500), `failures` | Hosts der DAG samt Lastkennzahlen; `OrvantaExchangeHostRepository`, Abschnitt 20. Der Host aus `exchange_host` ist immer `is_primary = 1` und steht in `sort_order` 0 |
+| `orvanta_exchange_sessions` (Migration 043) | `session_hash` = `sha1(session_id)`, `user_uid`, `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -255,7 +270,7 @@ Validierung in `OrvantaConfigService::save()`:
 
 | Schlüssel | Regel |
 | --- | --- |
-| `exchange_host` | leer, `demo` oder `Validator::isHostname()` |
+| `exchange_host` | leer, `demo` oder `Validator::isHostname()`; immer der primäre Host der DAG (Abschnitt 20) |
 | `exchange_ews_url`, `exchange_owa_url` | leer oder `isHttpsUrl()` (http/https, Host, ≤ 2048, keine Steuerzeichen/Backslashes) |
 | `exchange_enabled = 1` | verlangt Host **oder** EWS-URL |
 | `exchange_version` | Schlüssel aus `VERSIONS`, sonst `Exchange2016` |
@@ -271,7 +286,9 @@ Validierung in `OrvantaConfigService::save()`:
 | `default_folder` | Schlüssel aus `DEFAULT_FOLDERS`, sonst `inbox` |
 
 `OrvantaConfigService` cacht `all()` je Instanz; `save()` setzt den Cache
-zurück. Vor Ausführung der Migration liefert `all()` nur die Defaults
+zurück und zieht den primären Host in der DAG-Hostliste nach
+(`OrvantaExchangeHostRepository::syncPrimary()`, Abschnitt 20). Vor Ausführung
+der Migration liefert `all()` nur die Defaults
 (`PDOException` wird abgefangen) – damit ist Orvanta dann deaktiviert.
 
 ### 4.3 Weitere Zustände
@@ -298,6 +315,11 @@ OrvantaExchangeService::<operation>()
        │     Header: RequestServerVersion, ExchangeImpersonation/ConnectingSID
        │             (PrimarySmtpAddress bei '@', sonst PrincipalName),
        │             TimeZoneContext "W. Europe Standard Time"
+       ├─ request($xml, $impersonate, $configuredUrl)  ← Lastverteilung (Abschnitt 20)
+       │     ├─ ohne Pool → transport->post($configuredUrl, …)
+       │     └─ mit Pool: Host der Sitzung wählen (oder neu vergeben), posten,
+       │          Antwortzeit messen; Ausfall → failover() → nächster Host,
+       │          Anfrage dort wiederholen (höchstens einmal je Host)
        ├─ transport->post(url, xml, transportOptions())
        ├─ error ≠ '' → 502 „Exchange ist nicht erreichbar: …“
        ├─ HTTP 401/403 → 502 „Exchange hat die Anmeldung abgelehnt …“ + Ursache aus
@@ -315,13 +337,16 @@ OrvantaExchangeService::<operation>()
 `ErrorItemNotFound`, `ErrorFolderNotFound`, `ErrorAccessDenied`,
 `ErrorSchemaValidation`; alles andere „Exchange-Fehler: …“.
 **Alle** Exchange-Fehler erscheinen in der API als HTTP 502 (fachliche
-Vorprüfungen des Service als 422/404).
+Vorprüfungen des Service als 422/404). Fällt ein Host der DAG aus, wiederholt
+`request()` die Anfrage auf einem anderen Host – der Benutzer sieht davon nur
+die (etwas längere) Antwortzeit (Abschnitt 20).
 
 ### 5.2 Operationen
 
 | Methode | EWS-Operation | Besonderheiten |
 | --- | --- | --- |
-| `testConnection()` | `GetFolder` inbox | ohne Impersonation = Dienstkonto selbst; liest `ServerVersionInfo` |
+| `testConnection()` | `GetFolder` inbox | ohne Impersonation = Dienstkonto selbst; liest `ServerVersionInfo`; optionaler zweiter Parameter erzwingt einen bestimmten EWS-Endpunkt (Verbindungstest eines DAG-Hosts, Abschnitt 20) |
+| `testHost($host)` | `testConnection()` gegen diesen Host | Verbindungstest im DAG-Dashboard: umgeht die Sitzungsaffinität, verschiebt keine Sitzung und liefert `{ok, message, server_version, latency_ms}`; die Messung fließt in die Lastverteilung ein (Abschnitt 20) |
 | `mailboxUsage()` | `GetFolder` `root` + `recoverableitemsroot` (`$strict = false`) mit `ExtendedFieldURI` `0x0E08` (PR_MESSAGE_SIZE_EXTENDED, Byte), `0x3FF5` (PR_STORAGE_QUOTA_LIMIT), `0x666E` (PR_PROHIBIT_SEND_QUOTA), `0x666A` (PR_PROHIBIT_RECEIVE_QUOTA; alle in KB); danach `FindFolder` Deep ab `root` mit `0x0E08` und `folder:ParentFolderId` (Seiten à 1000, max. 20) | `used` = Stammordner + alle Unterordner (`0x0E08` gilt je Ordner nur für dessen eigene Elemente), ohne `SearchFolder` und ohne den Teilbaum „Wiederherstellbare Elemente“; Tags werden per `hexdec()` normalisiert (Exchange schreibt `0xe08`); liefert EWS keine Grenze, gelten die AD-Grenzen `$directory` (`LdapClient::mailboxQuota()`, vom `OrvantaApiController` nur für Exchange-Postfächer gelesen und je Sitzung 15 min in `orvanta_directory_quota` gehalten; Proxy-Postfächer: Belegung per IMAP `QUOTA`, Grenze = feste Postfachgröße `mail_proxy_mailboxes.quota_mb`, `source` = `setting`, kein AD-Zugriff); `limit` = Sendegrenze, ersatzweise Empfangsgrenze, Warnschwelle, dann `mailbox_quota_mb`; `source` = `exchange`/`directory`/`setting`/leer; `percent` gegen `limit`; fehlende Grenzen = 0 |
 | `folders()` | `GetFolder` (Systemordner, `$strict = false`) + `FindFolder` Deep ab `msgfolderroot` (≤ 500) | nur `FolderClass` `IPF.Note*`; Sortierung Systemordner (`MAIL_FOLDERS`) vor Namen |
 | `messages()` | `FindItem` Shallow, `IndexedPageItemView`, absteigend nach `DateTimeReceived`, optional `QueryString` (AQS) | `limit` 1–200 (API: 1–100), `has_more` aus `IncludesLastItemInRange` |
@@ -360,7 +385,7 @@ Vorprüfungen des Service als 422/404).
 
 | Endpunkt | Eingabe (JSON) | Antwort |
 | --- | --- | --- |
-| `status` | – | `{user{name,email}, demo, host, cache{used,quota,items,folder,percent}, server_time}` |
+| `status` | – | `{user{name,email}, demo, host, exchange_host, backend, capabilities, archive, cache{used,quota,items,folder,percent}, server_time}`; `host` = konfigurierter Server, `exchange_host` = Host der laufenden Sitzung (Abschnitt 20.6) |
 | `mail/ordner` | – | `{folders[{id,name,parent,total,unread,kind,class}]}` |
 | `mail/ordner/eigenschaften` | Query `ordner` (Systemname wie `inbox` oder FolderId) | `{id, name, total, unread, subfolders, size, total_with_subfolders, size_with_subfolders}`; Größe in Byte aus `PR_MESSAGE_SIZE_EXTENDED` (`0x0E08`), Unterordner per `FindFolder` Deep (ohne Suchordner, max. 1000) |
 | `mail/ordner/neu` | `parent` (leer = oberste Ebene, `msgfolderroot`), `name` (1–255 Zeichen, Steuerzeichen entfernt) | `{id, name, message}`; Ordnerklasse `IPF.Note`; vorhandener Name → `ErrorFolderExists` (502 mit Hinweis) |
@@ -697,6 +722,20 @@ Breakpoints 1200 px und 900 px, eigenes Drucklayout.
     Erinnerungen und Archiv nur über `exchange($access, CAPABILITY_…)`, das bei
     Proxy-Postfächern 409 liefert. Ein deaktiviertes Proxy-Postfach fällt nie
     auf Exchange zurück (Abschnitt 18).
+19. **Eine Sitzung bleibt auf ihrem Exchange-Host** (Sitzungsaffinität,
+    `orvanta_exchange_sessions`); umgeleitet wird nur, wenn der Host nicht
+    mehr wählbar ist. Neue Sitzungen verteilt ausschließlich
+    `OrvantaExchangePool::best()` nach Fair-use, Sitzungszahl und mittlerer
+    Antwortzeit (Abschnitt 20.2).
+20. **Failover nur bei echten Host-Ausfällen** (Transportfehler, Status 0,
+    HTTP ≥ 500). **401/403 ist kein Host-Ausfall**, sondern eine
+    Anmeldefehler-Meldung; ebenso wenig darf ein Fehler einen Host dauerhaft
+    ausschließen (Selbstheilung nach `FAILURE_COOLDOWN`, Abschnitt 20.4).
+21. **Hosts einer DAG werden nur mit ausdrücklicher Bestätigung aufgenommen.**
+    Der Server prüft `dag_confirmed` selbst; ohne Bestätigung, ohne aktivierte
+    Anbindung oder im Demo-Modus wird nichts gespeichert. Falsche Hosts
+    bedeuten Postfächer ohne Replikat – die Verteilung stützt sich allein auf
+    diese Bestätigung (Abschnitt 20.5).
 
 ## 12. Tests
 
@@ -707,7 +746,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | --- | --- |
 | `tests/Unit/OrvantaAiTest.php` | `RecordingAiTransport`; Verfügbarkeit ohne Konfiguration (keine Anfrage), `GET /models` mit Datei-Cache und Fingerabdruck (URL\|Modell), `improve()` (Anfrageaufbau, Kontext, Token, `max_tokens`), Verfeinern (Assistenten-Turn), Bearer-Schlüssel, Validierung 422, 503 ohne KI, 502 bei Timeout/500/401/ungültigem JSON/leeren `choices`, `stripMarkers()`, Zähler und pseudonyme Auswertung (keine SIDs), `OrvantaAiCharts` (Zeitraum, SVG ohne `style`, leere Daten) |
 | `tests/Unit/OrvantaSignatureTest.php` | Validierung (Pflichtfelder, Modus, Reihenfolge, Gruppen-Dedupe, Präfix-Leerzeichen), Speichern/Laden/Löschen, Zuordnung (Reihenfolge, inaktiv, Schreibweise), Darstellung (AD-Daten, Präfix + Durchwahl vs. komplette Rufnummer, Farben, Logo als `data:`-URI, Sanitizer-Durchlauf), Logo in Zeilenhöhe und gewählte Designfarben (`logoSize()`, `imageDimensions()` inkl. SVG), Logo-Pixelgröße = Anzeigegröße (`scaleImage()`), Fallbacks (ohne Logo/Telefonbuch/inaktiver Eintrag), `extension()`, `append()` (Dedupe, vor Zitat), `strip()` |
-| `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, Postfachbelegung (`mailboxUsage()`, Summe aller Ordner ohne Suchordner/Wiederherstellbare Elemente, Quota in KB, ohne Grenzen, AD-Grenzen, Ersatzgrenze `mailbox_quota_mb`, `LdapClient::mailboxQuotaFromEntries()`), `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen) |
+| `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, Postfachbelegung (`mailboxUsage()`, Summe aller Ordner ohne Suchordner/Wiederherstellbare Elemente, Quota in KB, ohne Grenzen, AD-Grenzen, Ersatzgrenze `mailbox_quota_mb`, `LdapClient::mailboxQuotaFromEntries()`), `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen), Exchange-DAG (Verteilung nach Fair-use/Sitzungszahl/Latenz, Affinität, Wartung, Umleitung, Failover, `parseHostList()`, `overview()`, `syncPrimary()`, Tooltipp der Verbindungsanzeige; Abschnitt 20) |
 | `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), Freigabe per AD-Gruppe (`archive_group`, Standard: niemand; Mitglieder weiterer Quellen; Pflichtgruppe bei Aktivierung), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
 
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
@@ -718,7 +757,10 @@ Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 **parallel zur Migration pflegen**), `orvantaConfig()`, `orvantaExchange()`,
 `orvantaAttachments()`. `FakeOfficeProbe` und `officeConfig()` stammen aus
 `tests/Unit/OfficeTest.php` (wird wegen alphabetischer Ladereihenfolge vorher
-geladen).
+geladen). Für die Exchange-DAG liefern `orvantaPool()` und `dagSettings()` die
+Hostliste; der primäre Host wird explizit eingetragen, und jede simulierte
+Anfrage braucht einen **frischen** Pool, weil `OrvantaExchangePool::hosts()`
+das Hostabbild je Instanz speichert (Abschnitt 20.7).
 
 Controller und JavaScript haben keine automatisierten Tests. Manuell im
 Demo-Modus prüfen (`exchange_host = demo`, `APP_ENV ≠ production`,
@@ -742,6 +784,7 @@ Download), Erinnerung in App und Kopfzeile, Statusleiste/Quota.
 | **Signaturaufbau ändern** (Zeilen, Trennzeichen, Logo-Größe) | Nur `OrvantaSignatureService::render()`/`phoneLine()` (E-Mail-tauglich: Tabelle, Inline-Styles ohne `url(`, Bilder nur als `data:`-URI – sonst entfernt sie `MailHtmlSanitizer`); Farben über die Farbschlüssel der Vorlage aus `SettingsService::theme()`; Logo-Höhe = `LINE_HEIGHT` × Zeilenzahl, das Bild wird per `scaleImage()` selbst auf diese Größe gebracht (Outlook/Exchange ignorieren width/height); Test „Darstellung …“ anpassen; Screenshot 88/90 erneuern. |
 | **Neues Vorlagenfeld der Signatur** | Spalte per Migration + SQLite-Schema in `OrvantaSignatureTest.php`; `OrvantaSignatureRepository` (`hydrate`, `save`), `OrvantaSignatureService::blank()/validate()/render()`, Formular `views/admin/orvanta-signature.php` (`data-signature-field`), Query in `admin-signature.js` und `OrvantaSignatureController::preview()`; Doku. |
 | **KI-Prompt oder Modellparameter ändern** | Nur `OrvantaAiService::messages()` bzw. `improve()` (Temperatur, `max_tokens`); nie Modell/URL in Orvanta speichern – sie stammen aus `OfficeAiService`. |
+| **Exchange-DAG erweitern** (weiterer Host, anderes Lastverteilungs-Gewicht) | Hosts nur über das Dashboard „Office → Orvanta – DAG-Hosts“ aufnehmen (`Admin\OrvantaHostController::add()`, `dag_confirmed`); die Verteilung ändert man ausschließlich in `OrvantaExchangePool::best()`/`disturbed()`/`fairUseRank()`/`latencyRank()` und den zugehörigen Konstanten – Affinität (`session()`) und Failover (`OrvantaExchangeService::request()`/`hostFailed()`) nicht umgehen. Test in `OrvantaServiceTest.php` mit **frischem** Pool je Anfrage, Doku in Abschnitt 20. |
 | **Rechtschreibprüfung erweitern** (weiterer Editor, andere Sprache) | Editor mit `contenteditable` und `data-ov-…-body`-Hook anlegen und in `orvanta.js` zu `spellEditors()` hinzufügen (nur dort wird geprüft; Signatur-/Zitatblöcke tragen `contenteditable="false"` und werden automatisch übersprungen). Andere Sprache/Wörterbuch: `ORVANTA_SPELLCHECK_URL`/`ORVANTA_SPELLCHECK_DIR` umstellen – der Übersetzer liest `SET`/`FLAG`/`AF`/`AM` aus der `.aff`, das Dateiformat bleibt gleich. **Nur** die Engine selbst ändern, wenn das Wörterbuch eine Hunspell-Funktion nutzt, die noch fehlt (`COMPOUNDRULE`, `CHECKCOMPOUNDPATTERN`, `SIMPLIFIEDTRIPLE`, `COMPLEXPREFIXES`, `FORCEUCASE`, `PHONE`); Referenz ist die Python-Umsetzung `spylls` (`algo/lookup.py`), gegen die die Prüfung unterschiedfrei validiert wurde (Abschnitt 19). Danach `php tests/run.php` **und** ein Differenzlauf gegen `spylls` über eine echte Wortliste. |
 
 Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
@@ -1479,3 +1522,163 @@ offene Editoren neu.
 `scripts/spellcheck_dictionary.php` im Container) lassen sich in der
 Agentenumgebung nicht ausführen; das Skript wurde dort direkt (mit
 ausgehendem Netzzugriff) geprüft, der Entrypoint-Aufruf ist ungetestet.
+
+---
+
+## 20. Exchange-DAG (Lastverteilung, Failover und Dashboard)
+
+Orvanta kann die Postfächer einer Exchange-Database Availability Group (DAG)
+über mehrere Hosts bedienen. Voraussetzung ist immer eine **bereits
+eingerichtete und getestete** Exchange-Anbindung (Abschnitt 4.2): Der dort
+eingetragene Server ist der primäre Host, weitere Mitglieder derselben DAG
+kommen ausschließlich über das Dashboard hinzu. `OrvantaHostController::add()`
+verlangt eine aktivierte Anbindung, keinen Demo-Modus und die bestätigte
+Zugehörigkeit zur selben DAG – ein Start „von Null“ ist nicht vorgesehen.
+
+### 20.1 Aufbau und Grenzen
+
+| Baustein | Aufgabe |
+| --- | --- |
+| `orvanta_exchange_hosts` | Hosts, Wartungszustand, Sortierung, Lastkennzahlen (Abschnitt 4.1) |
+| `orvanta_exchange_sessions` | Sitzungsaffinität: `sha1(session_id)` → Host, mit Zählern |
+| `OrvantaExchangePool` | Verteilung, Affinität, Failover, Kachelwerte |
+| `OrvantaExchangeHostRepository` | Persistenz beider Tabellen |
+| `Admin\OrvantaHostController` | Dashboard und Verwaltung (Abschnitt 20.5) |
+| `OrvantaExchangeService::request()` | nutzt den Pool bei **jedem** EWS-Aufruf (Abschnitt 20.4) |
+
+- Höchstens `MAX_HOSTS = 16` Hosts – so viele Mitglieder erlaubt Exchange.
+- Fehlt die Migration 043, arbeitet der Pool mit einem synthetischen Host aus
+  den Einstellungen (`id = 0`): Orvanta bleibt benutzbar, es wird nichts
+  geschrieben, das Dashboard weist auf die fehlende Migration hin.
+- Der Host aus `exchange_host` ist immer `is_primary = 1` und steht vorn
+  (`sort_order` 0); `OrvantaConfigService::save()` zieht ihn über
+  `syncPrimary()` nach. Er lässt sich nur in den Einstellungen ändern, nicht
+  im Dashboard entfernen.
+- Ohne eigene EWS-Adresse gilt `https://<host>/EWS/Exchange.asmx`.
+
+### 20.2 Verteilung neuer Sitzungen (Prioritäten)
+
+`OrvantaExchangePool::session()` verteilt eine noch nicht zugeordnete Sitzung
+über `best()`; die Sortierschlüssel werden in dieser Reihenfolge verglichen:
+
+1. **Gestörte Hosts zuletzt** (`disturbed()`): `last_ok = 0` und der letzte
+   Fehler jünger als `FAILURE_COOLDOWN = 60 s`. Danach gilt der Host wieder als
+   normal und heilt sich beim nächsten erfolgreichen Aufruf selbst.
+2. **Fair-use** (`fairUseRank()`): `last_session_at` – wer am längsten keine
+   Sitzung erhalten hat, kommt zuerst; ein Host ohne Zuweisung (`0`) hat
+   Vorrang.
+3. **Wenigste Sitzungen** (`sessionCounts()`): Sitzungen mit Aktivität in den
+   letzten `SESSION_TTL = 300 s`.
+4. **Mittlere Antwortzeit** (`latencyRank()`): gleitendes Mittel `latency_ms`;
+   ein noch nie gemessener Host hat `0` und wird dadurch zuerst geprüft.
+5. `sort_order`, dann Hostname (stabile Reihenfolge bei Gleichstand).
+
+`recordSuccess()` führt die Antwortzeit in das gleitende Mittel über
+`LATENCY_SAMPLES = 200` Messungen und setzt `last_ok = 1`, `failures = 0`;
+`recordFailure()` setzt `last_ok = 0`, `last_error` (≤ 500 Zeichen) und erhöht
+`failures`.
+
+Ohne Sitzungskennung (`Session::id()` leer, z. B. im Archivierungs-Worker)
+wird verteilt, aber **nichts gespeichert**; mit Kennung legt `start()` die
+Zuordnung an und zieht `last_session_at` nach. `currentHost()` ist die
+Anzeigevariante derselben Auswahl (Abschnitt 20.6).
+
+### 20.3 Affinität und Wartung
+
+- Eine bestehende Zuordnung bleibt: `session()` liefert den Host aus
+  `orvanta_exchange_sessions`, solange er wählbar ist. Alle Aufrufe einer
+  Sitzung landen also auf demselben Host – Voraussetzung dafür, dass das
+  Postfach-Replikat passt.
+- Ist der Host nicht mehr wählbar (Wartung, entfernt, ausgefallen), schreibt
+  `move()` die Zuordnung sofort um; der Benutzer merkt nur die längere
+  Antwortzeit.
+- Hosts in Wartung (`active = 0`) sind für neue Sitzungen unsichtbar und
+  werden umgeleitet; der **letzte aktive Host** lässt sich nicht in Wartung
+  nehmen (`OrvantaHostController::toggle()`). Sind alle Hosts inaktiv, gilt
+  weiterhin der primäre Host, damit Orvanta erreichbar bleibt.
+- Abgelaufene Sitzungszeilen räumt `purge()` (älter als
+  `PURGE_AFTER = 86400 s`) ab; aufgerufen vom Archivierungs-Worker
+  (`scripts/orvanta_archive_worker.php`).
+
+### 20.4 Failover
+
+`OrvantaExchangeService::request()` umgeht die Verteilung nur, wenn kein Pool
+vorhanden ist (und bei `testHost()`, das einen Endpunkt erzwingt). Sonst:
+
+```
+session($key) ─▶ Host + URL ─▶ transport->post()
+      ▲                              │
+      │                   hostFailed()? ── nein ─▶ recordSuccess() ─▶ Antwort
+      │                              │ ja
+      └── failover($key, $tried) ◀───┘ recordFailure(); nächster Host
+```
+
+- `hostFailed()`: Transportfehler (`error ≠ ''`), Status `0` oder HTTP ≥ 500.
+  **401/403 ist kein Host-Ausfall** – eine abgelehnte Anmeldung betrifft alle
+  Mitglieder der DAG gleich und wird von `call()` als Anmeldefehler gemeldet
+  (Abschnitt 5.1).
+- Jeder Host wird höchstens einmal versucht (`$tried`); ist keiner mehr
+  erreichbar, liefert `request()` `status = 0` mit „Kein Exchange-Server der
+  DAG ist erreichbar.“ → 502.
+- `failover()` schreibt die Zuordnung sofort um (`moveSession()`), damit auch
+  der nächste Aufruf den neuen Host nutzt.
+- Der Benutzer sieht weder Fehler noch Umleitung; im Fußbereich der App nennt
+  der Tooltipp nach dem nächsten `GET /api/orvanta/sitzung` den neuen Host
+  (Abschnitt 20.6).
+
+### 20.5 Dashboard (Admin → Office → Orvanta – DAG-Hosts)
+
+`GET /admin/office/orvanta/hosts` (`$requireAdmin`, `activeNav =
+office_orvanta_hosts`, Einstieg zusätzlich über `views/admin/office.php`)
+zeigt je Host eine Kachel mit
+
+- Hostname und EWS-Adresse sowie Status („Online“, „Gestört“, „Wartung“,
+  „Ungeprüft“ aus `last_check_at`/`last_ok`/`active`),
+- Latenz (`Ø x ms` aus `latency_ms`, dazu der letzte Messwert) und
+  Sitzungszahl (Sitzungen der letzten 5 Minuten),
+- Zeitpunkten der letzten Sitzung und der letzten Prüfung sowie der letzten
+  Fehlermeldung,
+- Aktionen: Verbindung testen, Wartung/aktivieren, entfernen (nicht beim
+  primären Host).
+
+Darüber stehen die Summen (Hosts, aktiv, online, Sitzungen) und die Tabelle
+der aktiven Sitzungen (Benutzer, Host, Umleitungen, Aufrufe, Beginn, letzte
+Aktivität). Die Seite bleibt ohne JavaScript vollständig bedienbar;
+`admin-orvanta-hosts.js` aktualisiert die Kacheln im Takt von `poll_interval`
+(5–120 s) über `GET …/hosts/daten` (`Cache-Control: no-store`), pausiert im
+verborgenen Tab und lässt Abfragen nicht überlappen. Der Verbindungstest
+(`POST …/hosts/pruefen`, optional `id`) misst je Host über `testHost()`
+(umgeht die Affinität), übernimmt die Zeit in die Lastverteilung und markiert
+Fehler als Störung. Alle schreibenden Aktionen prüfen CSRF, protokollieren
+über `app_logger()` (Admin, Hosts) und melden über `Session::flash()`.
+
+Das Formular „Hosts ergänzen“ nimmt einen Host je Zeile (Trenner auch Komma
+oder Semikolon), optional mit eigener EWS-Adresse (`host https://…` oder
+`host=…`); `OrvantaExchangePool::parseHostList()` prüft Hostnamen
+(`Validator::isHostname()`) und Adressen (`OrvantaConfigService::isHttpsUrl()`)
+und meldet Dubletten sowie Grenzüberschreitungen. Die Zugehörigkeit zur selben
+DAG bestätigt der Admin per Kontrollkästchen (`dag_confirmed`, Pflichtfeld)
+und per Rückfrage „Ja/Abbrechen“ (`data-confirm`); der Server prüft die
+Bestätigung erneut – ohne sie wird nichts gespeichert.
+
+### 20.6 Anzeige im Fußbereich der App
+
+`OrvantaController::exchangeHost($access)` liefert den Host der laufenden
+Sitzung (`OrvantaExchangePool::currentHost()`); bei Proxy-Postfächern
+(Abschnitt 18) und im Demo-Modus bleibt er leer. Der Wert steht in der
+Seitenkonfiguration (`exchangeHost`) und wird als `title` an die
+Verbindungsanzeige `[data-ov-status-conn]` („Verbunden mit Exchange“)
+geschrieben; ohne Host entfällt das Attribut. `/api/orvanta/status` und
+`/api/orvanta/sitzung` liefern zusätzlich `exchange_host`, und `orvanta.js`
+zieht den Tooltipp über `setExchangeHost()` nach – spätestens beim nächsten
+Keep-alive (5 Minuten), ohne Neuladen der Seite.
+
+### 20.7 Tests
+
+In `tests/Unit/OrvantaServiceTest.php` (Abschnitt 12): Verteilung nach
+Fair-use, Sitzungszahl und Latenz, Affinität, Wartung und Umleitung, Failover
+nur bei Transportfehlern/5xx, `parseHostList()`, `overview()`, `syncPrimary()`
+und der Tooltipp der Verbindungsanzeige. Die Testbausteine
+`orvantaPool()`/`dagSettings()` tragen den primären Host explizit ein; jede
+simulierte Anfrage braucht einen **frischen** Pool, weil
+`OrvantaExchangePool::hosts()` das Hostabbild je Instanz speichert.

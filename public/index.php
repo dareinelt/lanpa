@@ -368,6 +368,7 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/office/orvanta/hosts/status', [OrvantaHostController::class, 'toggle']);
         $router->post('/admin/office/orvanta/hosts/loeschen', [OrvantaHostController::class, 'remove']);
         $router->post('/admin/office/orvanta/hosts/pruefen', [OrvantaHostController::class, 'check']);
+        $router->post('/admin/office/orvanta/hosts/pruefpostfach', [OrvantaHostController::class, 'testMailbox']);
         $router->get('/admin/office/orvanta/hosts/daten', [OrvantaHostController::class, 'data']);
         $router->get('/admin/office/kachel/vorschau', [OfficeAdminController::class, 'tilePreview']);
         $router->get('/admin/office/apps', [OfficeAppsAdminController::class, 'index']);

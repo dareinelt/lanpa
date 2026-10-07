@@ -158,8 +158,10 @@ final class OrvantaExchangeHostRepository extends Repository
 
             return;
         }
-        $insert = $this->pdo->prepare('INSERT INTO orvanta_exchange_sessions (session_hash, user_uid, host, requests, started_at, last_seen_at) VALUES (:hash, :uid, :host, 1, :now, :now)');
-        $insert->execute(['hash' => $hash, 'uid' => mb_substr($uid, 0, 190), 'host' => $host, 'now' => $now]);
+        // Jeder Platzhalter nur einmal: MySQL ohne emulierte Prepared Statements
+        // lehnt doppelte benannte Parameter ab (SQLSTATE HY093).
+        $insert = $this->pdo->prepare('INSERT INTO orvanta_exchange_sessions (session_hash, user_uid, host, requests, started_at, last_seen_at) VALUES (:hash, :uid, :host, 1, :started, :seen)');
+        $insert->execute(['hash' => $hash, 'uid' => mb_substr($uid, 0, 190), 'host' => $host, 'started' => $now, 'seen' => $now]);
     }
 
     /**

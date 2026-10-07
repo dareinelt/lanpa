@@ -196,7 +196,8 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/admin/office/orvanta/hosts` | `add` | Host aufnehmen; `dag_confirm=1` bestätigt die DAG-Zugehörigkeit |
 | POST | `/admin/office/orvanta/hosts/status` | `toggle` | Host in Wartung setzen oder wieder freigeben |
 | POST | `/admin/office/orvanta/hosts/loeschen` | `remove` | Host entfernen (Sitzungen werden umgeleitet) |
-| POST | `/admin/office/orvanta/hosts/pruefen` | `check` | Verbindungstest eines Hosts |
+| POST | `/admin/office/orvanta/hosts/pruefen` | `check` | Verbindungstest eines Hosts (mit Prüfpostfach `exchange_test_mailbox`) |
+| POST | `/admin/office/orvanta/hosts/pruefpostfach` | `testMailbox` | Prüfpostfach speichern (`test_mailbox`, leer = Dienstkonto) |
 | GET | `/admin/office/orvanta/hosts/daten` | `data` | Kachelwerte als JSON für die Live-Aktualisierung |
 | GET | `/admin/office/signaturen` | `Admin\OrvantaSignatureController::index` | Signaturvorlagen (Liste, Vorschau-iframes) |
 | GET/POST | `/admin/office/signaturen/vorlage[?id=…]` | `edit` / `save` | Vorlage anlegen/bearbeiten (CSRF) |
@@ -1674,7 +1675,13 @@ Aktivität). Die Seite bleibt ohne JavaScript vollständig bedienbar;
 verborgenen Tab und lässt Abfragen nicht überlappen. Der Verbindungstest
 (`POST …/hosts/pruefen`, optional `id`) misst je Host über `testHost()`
 (umgeht die Affinität), übernimmt die Zeit in die Lastverteilung und markiert
-Fehler als Störung. Alle schreibenden Aktionen prüfen CSRF, protokollieren
+Fehler als Störung. Geprüft wird der Posteingang des Prüfpostfachs
+(`exchange_test_mailbox` in `orvanta_settings`, Impersonation;
+`OrvantaConfigService::testMailbox()`), leer der Posteingang des
+Dienstkontos. Das Prüfpostfach setzt `POST …/hosts/pruefpostfach`
+(`test_mailbox`, gültige E-Mail-Adresse oder leer;
+`OrvantaConfigService::saveTestMailbox()`); hat das Dienstkonto kein eigenes
+Postfach, ist es nötig, sonst meldet jeder Host „Gestört“. Alle schreibenden Aktionen prüfen CSRF, protokollieren
 über `app_logger()` (Admin, Hosts) und melden über `Session::flash()`.
 
 Das Formular „Hosts ergänzen“ nimmt einen Host je Zeile (Trenner auch Komma

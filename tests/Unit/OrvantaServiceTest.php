@@ -886,6 +886,62 @@ Runner::test('Orvanta: Signierte Mail wird wie eine normale Mail mit Hinweis dar
     }
 });
 
+Runner::test('Orvanta: Als Outlook-Element angehaengte signierte Mail wird direkt angezeigt', function (): void {
+    $envelope = static fn (string $body): array => ['status' => 200, 'error' => null, 'body' => '<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types">' . $body . '</s:Body></s:Envelope>'];
+    $transport = new class ($envelope) implements ExchangeTransportInterface {
+        /** @var list<string> */
+        public array $xmls = [];
+
+        public function __construct(private Closure $envelope)
+        {
+        }
+
+        public function post(string $url, string $xml, array $options): array
+        {
+            $this->xmls[] = $xml;
+            if (str_contains($xml, '<m:GetAttachment>')) {
+                return ($this->envelope)('<m:GetAttachmentResponse><m:ResponseMessages><m:GetAttachmentResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Attachments><t:ItemAttachment><t:AttachmentId Id="att-item"/><t:Name>Signiert</t:Name>'
+                    . '<t:Message><t:MimeContent CharacterSet="UTF-8">' . base64_encode(orvantaSignedMime()) . '</t:MimeContent><t:ItemClass>IPM.Note.SMIME.MultipartSigned</t:ItemClass></t:Message></t:ItemAttachment></m:Attachments></m:GetAttachmentResponseMessage></m:ResponseMessages></m:GetAttachmentResponse>');
+            }
+
+            return ($this->envelope)('<m:GetItemResponse><m:ResponseMessages><m:GetItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items><t:Message>'
+                . '<t:ItemId Id="outer-1" ChangeKey="CK1"/><t:ItemClass>IPM.Note</t:ItemClass><t:Subject>[EXTERN][filtered] Signiert</t:Subject><t:Body BodyType="HTML">&lt;html&gt;&lt;body&gt;&lt;/body&gt;&lt;/html&gt;</t:Body><t:HasAttachments>true</t:HasAttachments>'
+                . '<t:Attachments><t:ItemAttachment><t:AttachmentId Id="att-item"/><t:Name>[EXTERN][filtered] Signiert</t:Name><t:Size>146432</t:Size><t:IsInline>false</t:IsInline></t:ItemAttachment>'
+                . '<t:FileAttachment><t:AttachmentId Id="att-file"/><t:Name>hinweis.txt</t:Name><t:ContentType>text/plain</t:ContentType><t:Size>5</t:Size><t:IsInline>false</t:IsInline></t:FileAttachment></t:Attachments>'
+                . '</t:Message></m:Items></m:GetItemResponseMessage></m:ResponseMessages></m:GetItemResponse>');
+        }
+    };
+    $exchange = new OrvantaExchangeService($transport, orvantaConfig()['config']);
+
+    $message = $exchange->message('demo@demo.local', 'outer-1');
+    Assert::true($message['signed']);
+    Assert::contains('<b>signiert</b>', $message['body_html'], 'Leerer Text wird durch den signierten Inhalt ersetzt.');
+    Assert::same(['hinweis.txt', 'vertrag.pdf', 'logo.png'], array_column($message['attachments'], 'name'), 'Outlook-Element wird durch seine Anhaenge ersetzt.');
+    Assert::same('orvanta-signeditem:0:att-item', $message['attachments'][1]['id']);
+    Assert::contains('<t:IncludeMimeContent>true</t:IncludeMimeContent>', implode("\n", $transport->xmls));
+
+    $attachment = $exchange->attachment('demo@demo.local', 'orvanta-signeditem:0:att-item');
+    Assert::same('vertrag.pdf', $attachment['name']);
+    Assert::same('%PDF-1.4 Vertrag', $attachment['content']);
+});
+
+Runner::test('Orvanta: MIME-Parser zeigt angehaengte signierte Nachricht direkt an', function (): void {
+    $raw = "From: Gateway <gw@example.org>\r\nSubject: [EXTERN] Signiert\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"outer\"\r\n\r\n"
+        . "--outer\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nVom Gateway geprueft.\r\n"
+        . "--outer\r\nContent-Type: message/rfc822\r\nContent-Disposition: attachment; filename=\"original.eml\"\r\n\r\n" . orvantaSignedMime() . "\r\n--outer--\r\n";
+    $parsed = (new App\Services\Orvanta\MimeMessageParser())->parse($raw);
+    Assert::true($parsed['signed']);
+    Assert::contains('Vom Gateway geprueft.', $parsed['html']);
+    Assert::contains('<strong>Von:</strong> Absender &lt;a@example.org&gt;', $parsed['html']);
+    Assert::contains('<b>signiert</b>', $parsed['html']);
+    Assert::same(['vertrag.pdf', 'logo.png'], array_column($parsed['attachments'], 'name'));
+
+    $unsigned = str_replace(orvantaSignedMime(), "Subject: Normal\r\nContent-Type: text/plain\r\n\r\nHallo\r\n", $raw);
+    $plain = (new App\Services\Orvanta\MimeMessageParser())->parse($unsigned);
+    Assert::false($plain['signed']);
+    Assert::same(['original.eml'], array_column($plain['attachments'], 'name'), 'Unsignierte angehaengte Mail bleibt ein Anhang.');
+});
+
 Runner::test('Orvanta: Normale Mail wird nicht als signiert gekennzeichnet', function (): void {
     $message = orvantaExchange()['exchange']->message('demo@demo.local', 'demo-msg-1');
     Assert::false($message['signed']);

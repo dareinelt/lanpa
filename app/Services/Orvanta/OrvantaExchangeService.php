@@ -25,6 +25,12 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     /** Kennungs-Praefix fuer Anhaenge aus dem Inhalt S/MIME-signierter Nachrichten. */
     public const SIGNED_ATTACHMENT_PREFIX = 'orvanta-signed:';
 
+    /** Kennungs-Praefix fuer Anhaenge aus angehaengten signierten Outlook-Elementen. */
+    public const SIGNED_ITEM_PREFIX = 'orvanta-signeditem:';
+
+    /** Hoechstzahl angehaengter Outlook-Elemente, die auf eine Signatur geprueft werden. */
+    private const MAX_SIGNED_ITEMS = 5;
+
     private const MESSAGE_FIELDS = '<t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="item:DateTimeReceived"/><t:FieldURI FieldURI="item:DateTimeSent"/>'
         . '<t:FieldURI FieldURI="item:HasAttachments"/><t:FieldURI FieldURI="item:Size"/><t:FieldURI FieldURI="item:Importance"/><t:FieldURI FieldURI="item:ItemClass"/>'
         . '<t:FieldURI FieldURI="message:From"/><t:FieldURI FieldURI="message:IsRead"/><t:FieldURI FieldURI="message:ToRecipients"/><t:FieldURI FieldURI="item:Preview"/>'
@@ -491,6 +497,9 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
         if (str_starts_with(strtolower((string) $data['item_class']), 'ipm.note.smime')) {
             $data = $this->unwrapSigned($user, $data);
         }
+        if (!$data['signed']) {
+            $data = $this->unwrapSignedItems($user, $data);
+        }
 
         return $data;
     }
@@ -520,18 +529,102 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
         if (!$parsed['signed']) {
             return $data;
         }
+        $data['body_html'] = '';
+        $data['blocked_images'] = 0;
+        $data['attachments'] = [];
+
+        return $this->mergeSigned($data, $parsed, self::SIGNED_ATTACHMENT_PREFIX, (string) $data['id']);
+    }
+
+    /**
+     * Als Outlook-Element angehaengte signierte Nachrichten (ItemAttachment,
+     * z. B. von einem Mail-Gateway gekapselt) direkt im Nachrichtentext
+     * anzeigen: Der MIME-Inhalt des angehaengten Elements wird gelesen, sein
+     * Text an den Nachrichtentext angefuegt (bei leerem Text ersetzt er ihn)
+     * und seine Anhaenge ersetzen das Outlook-Element in der Anhangliste.
+     *
+     * @param array<string,mixed> $data
+     * @return array<string,mixed>
+     */
+    private function unwrapSignedItems(string $user, array $data): array
+    {
+        $checked = 0;
+        foreach ((array) $data['attachments'] as $position => $attachment) {
+            if (empty($attachment['is_item']) || (string) $attachment['id'] === '' || ++$checked > self::MAX_SIGNED_ITEMS) {
+                continue;
+            }
+            $mime = $this->itemAttachmentMime($user, (string) $attachment['id']);
+            if ($mime === '') {
+                continue;
+            }
+            $parsed = (new MimeMessageParser())->parse($mime);
+            if (!$parsed['signed']) {
+                continue;
+            }
+            unset($data['attachments'][$position]);
+            $data = $this->mergeSigned($data, $parsed, self::SIGNED_ITEM_PREFIX, (string) $attachment['id']);
+        }
+        $data['attachments'] = array_values((array) $data['attachments']);
+
+        return $data;
+    }
+
+    /**
+     * MIME-Inhalt eines angehaengten Outlook-Elements ('' bei Fehler).
+     */
+    private function itemAttachmentMime(string $user, string $attachmentId): string
+    {
+        try {
+            $xpath = $this->call(
+                '<m:GetAttachment><m:AttachmentShape><t:IncludeMimeContent>true</t:IncludeMimeContent></m:AttachmentShape>'
+                . '<m:AttachmentIds><t:AttachmentId Id="' . EwsXml::escape($attachmentId) . '"/></m:AttachmentIds></m:GetAttachment>',
+                $user
+            );
+        } catch (OrvantaException) {
+            return '';
+        }
+        $mime = base64_decode(trim(EwsXml::text($xpath, '//m:Attachments/t:ItemAttachment/*/t:MimeContent')), true);
+
+        return $mime === false ? '' : $mime;
+    }
+
+    /**
+     * Signierten Inhalt in die Nachricht uebernehmen: Text anfuegen (bei
+     * leerem Nachrichtentext ersetzen) und Anhaenge mit Kennungen
+     * $prefix . Teil-Index . ':' . $sourceId ergaenzen.
+     *
+     * @param array<string,mixed> $data
+     * @param array{subject:string,from:string,date:string,text:string,html:string,attachments:list<array{name:string,content_type:string,content:string,content_id:string,inline:bool}>} $parsed
+     * @return array<string,mixed>
+     */
+    private function mergeSigned(array $data, array $parsed, string $prefix, string $sourceId): array
+    {
         if ($parsed['html'] !== '') {
             $clean = MailHtmlSanitizer::clean($parsed['html']);
-            $data['body_html'] = $clean['html'];
-            $data['blocked_images'] = $clean['blocked_images'];
+            $html = $clean['html'];
+            $blocked = $clean['blocked_images'];
         } else {
-            $data['body_html'] = nl2br(htmlspecialchars($parsed['text'], ENT_QUOTES, 'UTF-8'));
-            $data['blocked_images'] = 0;
+            $html = nl2br(htmlspecialchars($parsed['text'], ENT_QUOTES, 'UTF-8'));
+            $blocked = 0;
         }
-        $attachments = [];
+        $current = (string) ($data['body_html'] ?? '');
+        $empty = trim(html_entity_decode(strip_tags($current), ENT_QUOTES | ENT_HTML5, 'UTF-8'), " \t\n\r\0\x0B\u{A0}") === '' && stripos($current, '<img') === false;
+        if ($empty) {
+            $data['body_html'] = $html;
+            $data['blocked_images'] = $blocked;
+        } else {
+            $head = [];
+            foreach (['Von' => $parsed['from'], 'Datum' => $parsed['date'], 'Betreff' => $parsed['subject']] as $label => $value) {
+                if (trim($value) !== '') {
+                    $head[] = '<strong>' . $label . ':</strong> ' . htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
+                }
+            }
+            $data['body_html'] = $current . '<hr>' . ($head !== [] ? '<p>' . implode('<br>', $head) . '</p>' : '') . $html;
+            $data['blocked_images'] = (int) ($data['blocked_images'] ?? 0) + $blocked;
+        }
         foreach ($parsed['attachments'] as $index => $attachment) {
-            $attachments[] = [
-                'id' => self::SIGNED_ATTACHMENT_PREFIX . $index . ':' . $data['id'],
+            $data['attachments'][] = [
+                'id' => $prefix . $index . ':' . $sourceId,
                 'name' => $attachment['name'],
                 'content_type' => $attachment['content_type'],
                 'content_id' => $attachment['content_id'],
@@ -540,27 +633,31 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
                 'is_item' => false,
             ];
         }
-        $data['attachments'] = $attachments;
-        $data['has_attachments'] = array_filter($attachments, static fn (array $a): bool => !$a['inline']) !== [];
+        $data['has_attachments'] = array_filter((array) $data['attachments'], static fn (array $a): bool => empty($a['inline'])) !== [];
         $data['signed'] = true;
 
         return $data;
     }
 
     /**
-     * Anhang aus dem signierten Inhalt einer S/MIME-Nachricht
-     * (Kennung SIGNED_ATTACHMENT_PREFIX . Index . ':' . ItemId).
+     * Anhang aus dem signierten Inhalt einer S/MIME-Nachricht (Kennung
+     * SIGNED_ATTACHMENT_PREFIX . Index . ':' . ItemId) bzw. eines
+     * angehaengten signierten Outlook-Elements (SIGNED_ITEM_PREFIX . Index
+     * . ':' . AttachmentId).
      *
      * @return array{name:string,content_type:string,content:string,size:int}
      */
     private function signedAttachment(string $user, string $attachmentId): array
     {
-        $parts = explode(':', substr($attachmentId, strlen(self::SIGNED_ATTACHMENT_PREFIX)), 2);
-        $itemId = $parts[1] ?? '';
-        if ($itemId === '' || !ctype_digit($parts[0])) {
+        $item = str_starts_with($attachmentId, self::SIGNED_ITEM_PREFIX);
+        $prefix = $item ? self::SIGNED_ITEM_PREFIX : self::SIGNED_ATTACHMENT_PREFIX;
+        $parts = explode(':', substr($attachmentId, strlen($prefix)), 2);
+        $sourceId = $parts[1] ?? '';
+        if ($sourceId === '' || !ctype_digit($parts[0])) {
             throw new OrvantaException('Der Anhang wurde nicht gefunden.', 404);
         }
-        $attachment = (new MimeMessageParser())->parse($this->messageMime($user, $itemId)['mime'])['attachments'][(int) $parts[0]] ?? null;
+        $mime = $item ? $this->itemAttachmentMime($user, $sourceId) : $this->messageMime($user, $sourceId)['mime'];
+        $attachment = (new MimeMessageParser())->parse($mime)['attachments'][(int) $parts[0]] ?? null;
         if ($attachment === null) {
             throw new OrvantaException('Der Anhang wurde nicht gefunden.', 404);
         }
@@ -866,7 +963,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
      */
     public function attachment(string $user, string $attachmentId): array
     {
-        if (str_starts_with($attachmentId, self::SIGNED_ATTACHMENT_PREFIX)) {
+        if (str_starts_with($attachmentId, self::SIGNED_ATTACHMENT_PREFIX) || str_starts_with($attachmentId, self::SIGNED_ITEM_PREFIX)) {
             return $this->signedAttachment($user, $attachmentId);
         }
         $xpath = $this->call('<m:GetAttachment><m:AttachmentIds><t:AttachmentId Id="' . EwsXml::escape($attachmentId) . '"/></m:AttachmentIds></m:GetAttachment>', $user);

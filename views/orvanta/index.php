@@ -132,7 +132,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
 
         <!-- Start: Mail -->
         <div class="ov-ribbon__panel" id="ov-panel-start" role="tabpanel" data-ov-panel="start" data-ov-for="mail">
-            <div class="ov-rg"><div class="ov-rg__items"><?= $rb('compose', 'Neue E-Mail', 'data-ov-action="compose"') ?><?= $rb('plus', 'Neues Element', 'data-ov-action="new-menu" aria-haspopup="true"') ?></div><div class="ov-rg__label">Neu</div></div>
+            <div class="ov-rg"><div class="ov-rg__items"><?= $rb('compose', 'Neue E-Mail', 'data-ov-action="compose"') ?></div><div class="ov-rg__label">Neu</div></div>
             <?php if (($capabilities['tasks'] ?? true) === true) { ?>
             <div class="ov-rg"><div class="ov-rg__items"><?= $rb('tasks', 'In Aufgabe übernehmen', 'data-ov-action="mail-to-task" data-ov-needs="message"') ?></div><div class="ov-rg__label">Aufgabe</div></div>
             <?php } ?>

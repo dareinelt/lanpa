@@ -162,6 +162,20 @@ final class MimeMessageParser
                 return;
             }
         }
+
+        // Angehaengte signierte Nachricht (z. B. von einem Mail-Gateway
+        // gekapselt) direkt anzeigen statt als Anhang.
+        if ($type === 'message/rfc822') {
+            [$embeddedHeaderBlock, $embeddedBody] = $this->splitHeaderBody($decoded);
+            $embeddedHeaders = $this->parseHeaders($embeddedHeaderBlock);
+            $embedded = ['headers' => $embeddedHeaders, 'subject' => '', 'from' => '', 'to' => '', 'date' => '', 'text' => '', 'html' => '', 'signed' => false, 'attachments' => []];
+            $this->walkPart($embeddedHeaders, $embeddedBody, $embedded, $depth + 1, $parts);
+            if ($embedded['signed']) {
+                $this->mergeEmbedded($result, $embedded);
+
+                return;
+            }
+        }
         $disposition = strtolower(trim((string) strtok($headers['content-disposition'] ?? '', ';')));
         $name = $this->partName($headers);
         $contentId = trim($headers['content-id'] ?? '', " \t<>");
@@ -189,6 +203,31 @@ final class MimeMessageParser
             if ($result['text'] === '') {
                 $result['text'] = $text;
             }
+        }
+    }
+
+    /**
+     * Inhalt einer angehaengten signierten Nachricht uebernehmen: bei leerem
+     * Rumpf ersetzt er ihn, sonst wird er direkt angefuegt (z. B. unter das
+     * Banner eines Mail-Gateways); ihre Anhaenge werden ergaenzt.
+     *
+     * @param array{headers:array<string,string>,subject:string,from:string,to:string,date:string,text:string,html:string,signed:bool,attachments:list<array{name:string,content_type:string,content:string,content_id:string,inline:bool}>} $result
+     * @param array{headers:array<string,string>,subject:string,from:string,to:string,date:string,text:string,html:string,signed:bool,attachments:list<array{name:string,content_type:string,content:string,content_id:string,inline:bool}>} $embedded
+     */
+    private function mergeEmbedded(array &$result, array $embedded): void
+    {
+        $result['signed'] = true;
+        if (trim($result['text']) === '' && trim(strip_tags($result['html'])) === '') {
+            $result['text'] = $embedded['text'];
+            $result['html'] = $embedded['html'];
+        } else {
+            $escape = static fn (string $text): string => nl2br(htmlspecialchars($text, ENT_QUOTES, 'UTF-8'));
+            $result['html'] = ($result['html'] !== '' ? $result['html'] : $escape($result['text']))
+                . ($embedded['html'] !== '' ? $embedded['html'] : $escape($embedded['text']));
+            $result['text'] = trim($result['text'] . "\n\n" . ($embedded['text'] !== '' ? $embedded['text'] : strip_tags($embedded['html'])));
+        }
+        foreach ($embedded['attachments'] as $attachment) {
+            $result['attachments'][] = $attachment;
         }
     }
 

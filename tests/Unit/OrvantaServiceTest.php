@@ -1576,3 +1576,110 @@ Runner::test('Orvanta DAG: der konfigurierte Server bleibt der primaere Host', f
     $pool = new OrvantaExchangePool($hosts, $config, static fn (): string => '');
     Assert::same('https://mail02.example.local/EWS/Exchange.asmx', $pool->overview()['hosts'][0]['url']);
 });
+
+Runner::test('Orvanta DAG: Sitzungsaffinitaet haelt die Sitzung aktiv (letzte Aktivitaet, Aufrufe)', function (): void {
+    $parts = orvantaPool();
+    $hash = sha1('orvanta-dag:session-a');
+    Assert::same('mail01.example.local', $parts['pool']->session('session-a', 'anna@example.local')['host']);
+    $parts['pdo']->exec("UPDATE orvanta_exchange_sessions SET last_seen_at = '2020-01-01 00:00:00'");
+
+    Assert::same('mail01.example.local', $parts['pool']->session('session-a', 'anna@example.local')['host']);
+    $row = $parts['hosts']->findSession($hash);
+    Assert::true((string) $row['last_seen_at'] > '2020-01-01 00:00:00', 'Jeder Aufruf vermerkt die Aktivitaet.');
+    Assert::same(2, (int) $row['requests']);
+    Assert::same(1, $parts['pool']->overview()['totals']['sessions'], 'Die laufende Sitzung zaehlt weiter als verbunden.');
+
+    // Die Anzeige (Tooltipp, Keep-alive) vermerkt die Aktivitaet, zaehlt aber keinen Exchange-Aufruf.
+    $parts['pdo']->exec("UPDATE orvanta_exchange_sessions SET last_seen_at = '2020-01-01 00:00:00'");
+    Assert::same('mail01.example.local', (string) $parts['pool']->currentHost()['host']);
+    $row = $parts['hosts']->findSession($hash);
+    Assert::true((string) $row['last_seen_at'] > '2020-01-01 00:00:00');
+    Assert::same(2, (int) $row['requests']);
+    Assert::same(0, $parts['pool']->purge(), 'Eine aktive Sitzung wird nicht aufgeraeumt.');
+});
+
+Runner::test('Orvanta DAG: fachlicher SOAP-Fehler (HTTP 500) ist kein Host-Ausfall', function (): void {
+    $parts = orvantaPool();
+    $fault = static fn (string $code): array => [
+        'status' => 500,
+        'body' => '<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><s:Fault>'
+            . '<faultcode>a:' . $code . '</faultcode><faultstring xml:lang="de-DE">Fehler</faultstring>'
+            . '<detail><e:ResponseCode xmlns:e="http://schemas.microsoft.com/exchange/services/2006/errors">' . $code . '</e:ResponseCode></detail>'
+            . '</s:Fault></s:Body></s:Envelope>',
+        'error' => null,
+    ];
+    $mail01 = 'https://mail01.example.local/EWS/Exchange.asmx';
+    $parts['transport']->byUrl[$mail01] = $fault('ErrorNonExistentMailbox');
+    try {
+        $parts['exchange']->folders('fehlt@example.local');
+        Assert::true(false, 'OrvantaException erwartet.');
+    } catch (OrvantaException) {
+    }
+    Assert::same([$mail01], array_values(array_unique(array_column($parts['transport']->requests, 'url'))), 'Kein Wechsel des Hosts.');
+    $id = (int) $parts['pdo']->query("SELECT id FROM orvanta_exchange_hosts WHERE host = 'mail01.example.local'")->fetchColumn();
+    Assert::same(0, (int) $parts['hosts']->find($id)['failures'], 'Der Host gilt nicht als gestoert.');
+    Assert::same('mail01.example.local', (string) $parts['hosts']->findSession(sha1('orvanta-dag:session-a'))['host']);
+
+    // Ein ueberlasteter Host dagegen wird verlassen.
+    $parts['transport']->requests = [];
+    $parts['transport']->byUrl[$mail01] = $fault('ErrorServerBusy');
+    $parts['exchange']->folders('anna@example.local');
+    Assert::same(1, (int) $parts['hosts']->find($id)['failures']);
+    Assert::same('mail02.example.local', (string) $parts['hosts']->findSession(sha1('orvanta-dag:session-a'))['host']);
+});
+
+Runner::test('Orvanta DAG: aendernde Anfragen werden nach Zustellung nicht wiederholt (kein doppelter Versand)', function (): void {
+    $mail = ['to' => ['max@example.local'], 'cc' => [], 'bcc' => [], 'subject' => 'Einmal', 'body' => '<p>Hallo</p>', 'html' => true, 'attachments' => []];
+    $mail01 = 'https://mail01.example.local/EWS/Exchange.asmx';
+    $creates = static fn (array $parts): array => array_values(array_filter(
+        $parts['transport']->requests,
+        static fn (array $request): bool => str_contains($request['xml'], '<m:CreateItem')
+    ));
+
+    // Zeitueberschreitung nach dem Senden: die Mail koennte bereits verschickt sein.
+    $parts = orvantaPool();
+    $parts['transport']->byUrl[$mail01] = ['status' => 0, 'body' => '', 'error' => 'Operation timed out', 'request_sent' => true];
+    try {
+        $parts['exchange']->send('anna@example.local', $mail);
+        Assert::true(false, 'OrvantaException erwartet.');
+    } catch (OrvantaException $exception) {
+        Assert::contains('Operation timed out', $exception->getMessage());
+    }
+    Assert::same(1, count($creates($parts)), 'Kein zweiter Versand ueber einen anderen Host.');
+    Assert::same('mail02.example.local', (string) $parts['hosts']->findSession(sha1('orvanta-dag:session-a'))['host'], 'Der naechste Aufruf nutzt trotzdem den neuen Host.');
+
+    // Verbindung gar nicht erst zustande gekommen: gefahrlos auf dem naechsten Host wiederholen.
+    $parts = orvantaPool();
+    $parts['transport']->byUrl[$mail01] = ['status' => 0, 'body' => '', 'error' => 'Could not connect', 'request_sent' => false];
+    $parts['exchange']->send('anna@example.local', $mail);
+    $sent = $creates($parts);
+    Assert::same(2, count($sent));
+    Assert::same('https://mail02.example.local/EWS/Exchange.asmx', $sent[1]['url']);
+
+    // Serverfehler ohne EWS-Antwort bei aendernder Anfrage: ebenfalls keine Wiederholung.
+    $parts = orvantaPool();
+    $parts['transport']->byUrl[$mail01] = ['status' => 503, 'body' => '', 'error' => null];
+    try {
+        $parts['exchange']->send('anna@example.local', $mail);
+        Assert::true(false, 'OrvantaException erwartet.');
+    } catch (OrvantaException) {
+    }
+    Assert::same(1, count($creates($parts)));
+});
+
+Runner::test('Orvanta DAG: nur EWS-Endpunkt ohne Hostnamen bleibt benutzbar', function (): void {
+    $ews = 'https://ews.example.local/EWS/Exchange.asmx';
+    $parts = orvantaConfig(['exchange_host' => '', 'exchange_ews_url' => $ews]);
+    $hosts = new OrvantaExchangeHostRepository($parts['pdo']);
+    $config = new OrvantaConfigService($parts['repository'], orvantaSecrets(), $hosts);
+    Assert::same('ews.example.local', $config->primaryHost());
+    $config->save(['exchange_host' => '', 'exchange_ews_url' => $ews] + dagSettings(''));
+    Assert::same(['ews.example.local'], array_column($hosts->hosts(), 'host'), 'Der Host aus dem EWS-Endpunkt wird primaerer Host.');
+    Assert::same($ews, (string) $hosts->hosts()[0]['ews_url']);
+
+    $pool = new OrvantaExchangePool($hosts, $config, static fn (): string => 'session-a');
+    $transport = new RecordingExchangeTransport();
+    $exchange = new OrvantaExchangeService($transport, $config, null, $pool);
+    Assert::true(count($exchange->folders('anna@example.local')) >= 5);
+    Assert::same([$ews], array_values(array_unique(array_column($transport->requests, 'url'))));
+});

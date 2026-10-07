@@ -1219,7 +1219,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
         $impersonate = $this->primaryAddress($impersonate);
         $xml = EwsXml::envelope($body, $this->config->get('exchange_version'), $impersonate);
         $response = $url === null
-            ? $this->request($xml, $impersonate, $configured)
+            ? $this->request($xml, $impersonate, $configured, self::isReadOnly($body))
             : $this->transport->post($url, $xml, $this->config->transportOptions());
         if (($response['error'] ?? '') !== '') {
             throw new OrvantaException('Exchange ist nicht erreichbar: ' . $response['error'], 502);
@@ -1256,12 +1256,15 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     /**
      * Uebergibt die SOAP-Anfrage an einen Host der Exchange-DAG. Faellt der
      * gewaehlte Host aus, wird die Sitzung ohne Zutun des Benutzers auf den
-     * naechsten Host umgeleitet und die Anfrage dort wiederholt. Ohne
-     * Lastverteilung (kein Pool) geht die Anfrage an den konfigurierten Server.
+     * naechsten Host umgeleitet. Lesende Anfragen werden dort wiederholt;
+     * aendernde (Senden, Anlegen, Verschieben, Loeschen …) nur, wenn sie den
+     * ausgefallenen Host nachweislich nie erreicht haben – sonst koennte z. B.
+     * eine Mail doppelt versendet werden. Ohne Lastverteilung (kein Pool) bzw.
+     * ohne eingetragenen Host geht die Anfrage an den konfigurierten Server.
      *
-     * @return array{status:int,body:string,error:?string,auth_offered?:list<string>}
+     * @return array{status:int,body:string,error:?string,auth_offered?:list<string>,request_sent?:bool}
      */
-    private function request(string $xml, string $impersonate, string $configuredUrl): array
+    private function request(string $xml, string $impersonate, string $configuredUrl, bool $retryable): array
     {
         $options = $this->config->transportOptions();
         if ($this->pool === null) {
@@ -1270,42 +1273,104 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
 
         $key = $this->pool->sessionKey();
         $host = $this->pool->session($key, $impersonate);
-        $url = $host !== null ? self::hostUrl($host) : $configuredUrl;
+        if ($host === null) {
+            return $this->transport->post($configuredUrl, $xml, $options);
+        }
         $tried = [];
-        $last = null;
-        while ($host !== null) {
+        while (true) {
             $tried[] = (string) $host['host'];
             $started = microtime(true);
-            $response = $this->transport->post($url, $xml, $options);
+            $response = $this->transport->post(self::hostUrl($host), $xml, $options);
             $duration = (int) round((microtime(true) - $started) * 1000);
             if (!self::hostFailed($response)) {
                 $this->pool->recordSuccess($host, $duration);
 
                 return $response;
             }
-            $this->pool->recordFailure($host, (string) ($response['error'] ?? ('HTTP ' . $response['status'])));
-            $last = $response;
-            $host = $this->pool->failover($key, $tried);
-            if ($host !== null) {
-                $url = self::hostUrl($host);
+            $this->pool->recordFailure($host, (string) (($response['error'] ?? '') !== '' ? $response['error'] : ('HTTP ' . $response['status'])));
+            // Die Zuordnung wechselt in jedem Fall, damit der naechste Aufruf
+            // nicht erneut am gestoerten Host haengt.
+            $next = $this->pool->failover($key, $tried);
+            if ($next === null || (!$retryable && self::requestSent($response))) {
+                return $response;
             }
+            $host = $next;
         }
-
-        return $last ?? ['status' => 0, 'body' => '', 'error' => 'Kein Exchange-Server der DAG ist erreichbar.'];
     }
 
     /**
-     * Host-Ausfall: Verbindungsfehler, Zeitueberschreitung oder Serverfehler
-     * (HTTP 5xx). Eine abgelehnte Anmeldung (HTTP 401/403) ist kein
-     * Host-Ausfall: sie betrifft alle Mitglieder der DAG gleich.
+     * Rein lesende EWS-Operationen duerfen nach einem Host-Ausfall gefahrlos
+     * auf einem anderen Host wiederholt werden. Alles andere gilt als aendernd.
+     */
+    private static function isReadOnly(string $body): bool
+    {
+        if (preg_match('/^\s*<m:([A-Za-z]+)/', $body, $match) !== 1) {
+            return false;
+        }
+
+        return in_array($match[1], self::READ_ONLY_OPERATIONS, true);
+    }
+
+    /**
+     * Hat die Anfrage den Host erreicht? Der Transport meldet das ueber
+     * `request_sent`; ohne Angabe gilt jede HTTP-Antwort als zugestellt.
      *
-     * @param array{status:int,body:string,error:?string,auth_offered?:list<string>} $response
+     * @param array{status:int,body:string,error:?string,auth_offered?:list<string>,request_sent?:bool} $response
+     */
+    private static function requestSent(array $response): bool
+    {
+        return isset($response['request_sent']) ? (bool) $response['request_sent'] : (int) $response['status'] > 0;
+    }
+
+    /** Lesende EWS-Operationen (Wiederholung auf einem anderen DAG-Host erlaubt). */
+    private const READ_ONLY_OPERATIONS = [
+        'GetFolder', 'FindFolder', 'FindItem', 'GetItem', 'GetAttachment', 'ResolveNames',
+        'GetUserAvailability', 'ConvertId', 'GetServerTimeZones', 'GetUserOofSettings',
+        'SyncFolderItems', 'SyncFolderHierarchy', 'GetInboxRules', 'ExpandDL', 'GetMailTips',
+    ];
+
+    /**
+     * EWS-Fehlercodes, die einen gestoerten Host bedeuten (Postfachdatenbank
+     * nicht bereit, Server ueberlastet). Andere SOAP-Fehler – Exchange liefert
+     * sie mit HTTP 500 – betreffen die Anfrage oder das Postfach und waeren auf
+     * jedem Host der DAG gleich.
+     */
+    private const HOST_ERROR_CODES = [
+        'ErrorServerBusy', 'ErrorMailboxStoreUnavailable', 'ErrorConnectionFailed',
+        'ErrorInternalServerTransientError', 'ErrorMailboxMoveInProgress',
+    ];
+
+    /**
+     * Host-Ausfall: Verbindungsfehler, Zeitueberschreitung oder Serverfehler
+     * (HTTP 5xx ohne auswertbare EWS-Antwort bzw. mit einem Fehlercode aus
+     * HOST_ERROR_CODES). Eine abgelehnte Anmeldung (HTTP 401/403) und
+     * fachliche SOAP-Fehler (z. B. fehlendes Postfach, verweigerte
+     * Impersonation) sind kein Host-Ausfall: sie betreffen alle Mitglieder der
+     * DAG gleich.
+     *
+     * @param array{status:int,body:string,error:?string,auth_offered?:list<string>,request_sent?:bool} $response
      */
     private static function hostFailed(array $response): bool
     {
         $status = (int) $response['status'];
+        if (($response['error'] ?? '') !== '' || $status === 0) {
+            return true;
+        }
+        if ($status < 500) {
+            return false;
+        }
+        $xpath = EwsXml::parse($response['body']);
+        $error = $xpath !== null ? EwsXml::error($xpath) : null;
+        if ($error === null) {
+            return true;
+        }
+        foreach (self::HOST_ERROR_CODES as $code) {
+            if (str_contains($error, $code)) {
+                return true;
+            }
+        }
 
-        return ($response['error'] ?? '') !== '' || $status === 0 || $status >= 500;
+        return false;
     }
 
     /**

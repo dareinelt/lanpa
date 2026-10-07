@@ -171,9 +171,17 @@ final class OrvantaExchangeHostRepository extends Repository
         $statement->execute(['hash' => $hash, 'host' => $host, 'now' => $now]);
     }
 
-    public function touchSession(string $hash, string $now): void
+    /**
+     * Haelt eine bestehende Zuordnung am Leben (Sitzungsaffinitaet).
+     * $countRequest = false aktualisiert nur die letzte Aktivitaet (z. B.
+     * Keep-alive ohne Exchange-Aufruf).
+     */
+    public function touchSession(string $hash, string $now, bool $countRequest = true): void
     {
-        $statement = $this->pdo->prepare('UPDATE orvanta_exchange_sessions SET requests = requests + 1, last_seen_at = :now WHERE session_hash = :hash');
+        $sql = $countRequest
+            ? 'UPDATE orvanta_exchange_sessions SET requests = requests + 1, last_seen_at = :now WHERE session_hash = :hash'
+            : 'UPDATE orvanta_exchange_sessions SET last_seen_at = :now WHERE session_hash = :hash';
+        $statement = $this->pdo->prepare($sql);
         $statement->execute(['hash' => $hash, 'now' => $now]);
     }
 

@@ -104,10 +104,12 @@ final class OrvantaExchangePool
      * wird die Sitzung sofort umgeleitet.
      *
      * @param list<string> $exclude Hosts, die im laufenden Aufruf bereits ausgefallen sind
+     * @param bool $countRequest false: nur die Aktivitaet vermerken, keinen
+     *                           Exchange-Aufruf zaehlen (Anzeige, Keep-alive)
      *
      * @return array<string,mixed>|null
      */
-    public function session(string $key, string $identity = '', array $exclude = []): ?array
+    public function session(string $key, string $identity = '', array $exclude = [], bool $countRequest = true): ?array
     {
         $hosts = $this->selectable($exclude);
         if ($hosts === []) {
@@ -121,6 +123,14 @@ final class OrvantaExchangePool
         if ($row !== null) {
             foreach ($hosts as $host) {
                 if (strcasecmp((string) $host['host'], (string) $row['host']) === 0) {
+                    // Aktivitaet vermerken: sonst faellt eine laufende Sitzung nach
+                    // SESSION_TTL aus der Zaehlung und nach PURGE_AFTER aus der Tabelle.
+                    try {
+                        $this->repository->touchSession($hash, $this->now(), $countRequest);
+                    } catch (\PDOException) {
+                        // Zaehler sind Beiwerk: die Zuordnung gilt auch ohne sie.
+                    }
+
                     return $host;
                 }
             }
@@ -141,7 +151,7 @@ final class OrvantaExchangePool
     {
         $key = $this->sessionKey();
         if ($key !== '') {
-            return $this->session($key);
+            return $this->session($key, '', [], false);
         }
         $hosts = $this->hosts();
 
@@ -344,7 +354,7 @@ final class OrvantaExchangePool
         } catch (\PDOException) {
             return $this->hosts = $this->configuredHost();
         }
-        $primary = strtolower(trim($this->config->get('exchange_host')));
+        $primary = $this->config->primaryHost();
         if ($primary !== '') {
             $known = false;
             foreach ($hosts as $host) {
@@ -375,10 +385,7 @@ final class OrvantaExchangePool
     private function configuredHost(): array
     {
         $url = $this->config->ewsUrl();
-        $host = strtolower(trim($this->config->get('exchange_host')));
-        if ($host === '') {
-            $host = strtolower((string) parse_url($url, PHP_URL_HOST));
-        }
+        $host = $this->config->primaryHost();
         if ($host === '' || $url === '') {
             return [];
         }

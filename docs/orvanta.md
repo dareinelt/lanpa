@@ -422,14 +422,19 @@ Ist eine Sitzung einem Host zugeordnet, bleibt sie dort
 `sha1('orvanta-dag:' . session_id())` in `orvanta_exchange_sessions`.
 
 **Failover:** Antwortet der gewählte Host nicht (Verbindungsfehler, Zeitlimit,
-HTTP ≥ 500), markiert Orvanta ihn als gestört, schreibt die Zuordnung der
-Sitzung auf den nächsten Host nach derselben Prioritätenfolge um und wiederholt
-die Anfrage dort – der Benutzer merkt davon nichts. Der Vorgang wird in
+HTTP ≥ 500 ohne fachlichen EWS-Fehler), markiert Orvanta ihn als gestört und
+schreibt die Zuordnung der Sitzung auf den nächsten Host nach derselben
+Prioritätenfolge um. Lesende Anfragen wiederholt Orvanta dort – der Benutzer
+merkt davon nichts. Ändernde Anfragen (z. B. Senden, Verschieben, Löschen)
+werden nur wiederholt, wenn sie den gestörten Host nie erreicht haben; sonst
+erhält der Benutzer eine Fehlermeldung, damit keine Mail doppelt verschickt
+wird. Der Vorgang wird in
 `orvanta_exchange_sessions.failovers` gezählt und im Protokoll als
 Host-Fehler (`last_error`, `failures`) geführt. Ein frisch gestörter Host ist
 60 Sekunden lang nachrangig (Selbstheilung), danach wird er wieder geprüft.
 HTTP **401/403** löst **kein** Failover aus: eine abgelehnte Anmeldung betrifft
-alle Hosts der DAG.
+alle Hosts der DAG. Dasselbe gilt für fachliche SOAP-Fehler wie ein nicht
+vorhandenes Postfach oder eine verweigerte Impersonation.
 
 **Sichtbar für den Benutzer:** Im Fußbereich der App nennt der Tooltipp über der
 Verbindungsanzeige („Verbunden mit Exchange“) den aktuellen Exchange-Host der

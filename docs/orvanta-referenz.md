@@ -728,9 +728,11 @@ Breakpoints 1200 px und 900 px, eigenes Drucklayout.
     `OrvantaExchangePool::best()` nach Fair-use, Sitzungszahl und mittlerer
     Antwortzeit (Abschnitt 20.2).
 20. **Failover nur bei echten Host-Ausfällen** (Transportfehler, Status 0,
-    HTTP ≥ 500). **401/403 ist kein Host-Ausfall**, sondern eine
-    Anmeldefehler-Meldung; ebenso wenig darf ein Fehler einen Host dauerhaft
-    ausschließen (Selbstheilung nach `FAILURE_COOLDOWN`, Abschnitt 20.4).
+    HTTP ≥ 500 ohne fachlichen EWS-Fehlercode). **401/403 und fachliche
+    SOAP-Fehler sind kein Host-Ausfall**; ebenso wenig darf ein Fehler einen
+    Host dauerhaft ausschließen (Selbstheilung nach `FAILURE_COOLDOWN`,
+    Abschnitt 20.4). **Ändernde EWS-Operationen werden nach Zustellung nie auf
+    einem anderen Host wiederholt** (kein doppelter Versand).
 21. **Hosts einer DAG werden nur mit ausdrücklicher Bestätigung aufgenommen.**
     Der Server prüft `dag_confirmed` selbst; ohne Bestätigung, ohne aktivierte
     Anbindung oder im Demo-Modus wird nichts gespeichert. Falsche Hosts
@@ -1550,7 +1552,9 @@ Zugehörigkeit zur selben DAG – ein Start „von Null“ ist nicht vorgesehen.
 - Fehlt die Migration 043, arbeitet der Pool mit einem synthetischen Host aus
   den Einstellungen (`id = 0`): Orvanta bleibt benutzbar, es wird nichts
   geschrieben, das Dashboard weist auf die fehlende Migration hin.
-- Der Host aus `exchange_host` ist immer `is_primary = 1` und steht vorn
+- Der Host aus `exchange_host` – ist nur ein EWS-Endpunkt eingetragen, dessen
+  Hostname (`OrvantaConfigService::primaryHost()`) – ist immer
+  `is_primary = 1` und steht vorn
   (`sort_order` 0); `OrvantaConfigService::save()` zieht ihn über
   `syncPrimary()` nach. Er lässt sich nur in den Einstellungen ändern, nicht
   im Dashboard entfernen.
@@ -1586,7 +1590,10 @@ Anzeigevariante derselben Auswahl (Abschnitt 20.6).
 ### 20.3 Affinität und Wartung
 
 - Eine bestehende Zuordnung bleibt: `session()` liefert den Host aus
-  `orvanta_exchange_sessions`, solange er wählbar ist. Alle Aufrufe einer
+  `orvanta_exchange_sessions`, solange er wählbar ist, und vermerkt die
+  Aktivität (`touchSession()`: `last_seen_at`, bei Exchange-Aufrufen auch
+  `requests`; `currentHost()` zählt keinen Aufruf). Damit bleibt eine laufende
+  Sitzung in der Sitzungszählung und wird nicht aufgeräumt. Alle Aufrufe einer
   Sitzung landen also auf demselben Host – Voraussetzung dafür, dass das
   Postfach-Replikat passt.
 - Ist der Host nicht mehr wählbar (Wartung, entfernt, ausgefallen), schreibt
@@ -1613,18 +1620,36 @@ session($key) ─▶ Host + URL ─▶ transport->post()
       └── failover($key, $tried) ◀───┘ recordFailure(); nächster Host
 ```
 
-- `hostFailed()`: Transportfehler (`error ≠ ''`), Status `0` oder HTTP ≥ 500.
-  **401/403 ist kein Host-Ausfall** – eine abgelehnte Anmeldung betrifft alle
-  Mitglieder der DAG gleich und wird von `call()` als Anmeldefehler gemeldet
-  (Abschnitt 5.1).
+- `hostFailed()`: Transportfehler (`error ≠ ''`), Status `0` oder HTTP ≥ 500
+  **ohne** auswertbare EWS-Antwort bzw. mit einem Host-Fehlercode
+  (`HOST_ERROR_CODES`: `ErrorServerBusy`, `ErrorMailboxStoreUnavailable`,
+  `ErrorConnectionFailed`, `ErrorInternalServerTransientError`,
+  `ErrorMailboxMoveInProgress`). Fachliche SOAP-Fehler – Exchange liefert sie
+  mit HTTP 500, z. B. `ErrorNonExistentMailbox`,
+  `ErrorImpersonateUserDenied` – sind **kein** Host-Ausfall: sie wären auf
+  jedem Mitglied der DAG gleich. **401/403 ist kein Host-Ausfall** – eine
+  abgelehnte Anmeldung betrifft alle Mitglieder der DAG gleich und wird von
+  `call()` als Anmeldefehler gemeldet (Abschnitt 5.1).
+- **Wiederholung nur, wenn sie gefahrlos ist:** Rein lesende Operationen
+  (`READ_ONLY_OPERATIONS`: `GetFolder`, `FindItem`, `GetItem`,
+  `GetAttachment` …) werden auf dem nächsten Host wiederholt. Ändernde
+  Operationen (`CreateItem`/Senden, `SendItem`, `UpdateItem`, `MoveItem`,
+  `DeleteItem`, `CreateAttachment`, `CreateFolder`, `MarkAllItemsAsRead` und
+  alles Unbekannte) nur, wenn die Anfrage den Host nachweislich nie erreicht
+  hat (`request_sent = false` des Transports: DNS-, Verbindungs-,
+  TLS-Fehler). Sonst – z. B. Zeitlimit nach dem Senden oder HTTP 5xx – geht
+  der Fehler an den Benutzer, damit keine Mail doppelt verschickt wird. Die
+  Zuordnung wechselt trotzdem (`failover()`), der nächste Aufruf nutzt also
+  den neuen Host.
 - Jeder Host wird höchstens einmal versucht (`$tried`); ist keiner mehr
-  erreichbar, liefert `request()` `status = 0` mit „Kein Exchange-Server der
-  DAG ist erreichbar.“ → 502.
+  erreichbar, liefert `request()` die letzte Fehlerantwort → 502. Ohne
+  wählbaren Host geht die Anfrage an den konfigurierten Endpunkt
+  (`OrvantaConfigService::ewsUrl()`).
 - `failover()` schreibt die Zuordnung sofort um (`moveSession()`), damit auch
   der nächste Aufruf den neuen Host nutzt.
-- Der Benutzer sieht weder Fehler noch Umleitung; im Fußbereich der App nennt
-  der Tooltipp nach dem nächsten `GET /api/orvanta/sitzung` den neuen Host
-  (Abschnitt 20.6).
+- Bei lesenden Aufrufen sieht der Benutzer weder Fehler noch Umleitung; im
+  Fußbereich der App nennt der Tooltipp nach dem nächsten
+  `GET /api/orvanta/sitzung` den neuen Host (Abschnitt 20.6).
 
 ### 20.5 Dashboard (Admin → Office → Orvanta – DAG-Hosts)
 
@@ -1676,8 +1701,10 @@ Keep-alive (5 Minuten), ohne Neuladen der Seite.
 ### 20.7 Tests
 
 In `tests/Unit/OrvantaServiceTest.php` (Abschnitt 12): Verteilung nach
-Fair-use, Sitzungszahl und Latenz, Affinität, Wartung und Umleitung, Failover
-nur bei Transportfehlern/5xx, `parseHostList()`, `overview()`, `syncPrimary()`
+Fair-use, Sitzungszahl und Latenz, Affinität (inkl. Aktivitätsvermerk),
+Wartung und Umleitung, Failover nur bei Transportfehlern/5xx ohne fachlichen
+SOAP-Fehler, keine Wiederholung zugestellter ändernder Anfragen, EWS-Endpunkt
+ohne Hostnamen, `parseHostList()`, `overview()`, `syncPrimary()`
 und der Tooltipp der Verbindungsanzeige. Die Testbausteine
 `orvantaPool()`/`dagSettings()` tragen den primären Host explizit ein; jede
 simulierte Anfrage braucht einen **frischen** Pool, weil

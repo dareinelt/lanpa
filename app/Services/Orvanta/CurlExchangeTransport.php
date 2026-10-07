@@ -75,8 +75,12 @@ final class CurlExchangeTransport implements ExchangeTransportInterface
         $body = curl_exec($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
         $error = curl_errno($handle) !== 0 ? curl_error($handle) : null;
+        // Hat die Anfrage den Server erreicht? Ohne Antwort und ohne
+        // uebertragene Daten (DNS-, Verbindungs-, TLS-Fehler) kann eine
+        // aendernde EWS-Operation gefahrlos auf einem anderen Host wiederholt werden.
+        $sent = $status > 0 || (int) curl_getinfo($handle, CURLINFO_SIZE_UPLOAD_T) > 0;
         unset($handle); // curl_close() ist seit PHP 8.5 veraltet
 
-        return ['status' => $status, 'body' => is_string($body) ? $body : '', 'error' => $error, 'auth_offered' => $offered];
+        return ['status' => $status, 'body' => is_string($body) ? $body : '', 'error' => $error, 'auth_offered' => $offered, 'request_sent' => $sent];
     }
 }

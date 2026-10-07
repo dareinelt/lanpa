@@ -112,6 +112,20 @@ final class OrvantaConfigService
         return $host === '' ? '' : 'https://' . $host . '/EWS/Exchange.asmx';
     }
 
+    /**
+     * Hostname des konfigurierten Exchange-Servers (primaerer Host der DAG):
+     * `exchange_host`, sonst der Host aus dem EWS-Endpunkt; '' ohne Angabe.
+     */
+    public function primaryHost(): string
+    {
+        $host = strtolower(trim($this->get('exchange_host')));
+        if ($host !== '') {
+            return $host;
+        }
+
+        return strtolower((string) parse_url(trim($this->get('exchange_ews_url')), PHP_URL_HOST));
+    }
+
     public function owaUrl(): string
     {
         return trim($this->get('exchange_owa_url'));
@@ -478,7 +492,7 @@ final class OrvantaConfigService
         // Hostliste (Office → Orvanta – DAG-Hosts) wird mitgezogen, damit kein
         // umbenannter Altbestand stehen bleibt.
         try {
-            $this->hosts?->syncPrimary($values['exchange_host'], $values['exchange_ews_url']);
+            $this->hosts?->syncPrimary($this->primaryHost(), $values['exchange_ews_url']);
         } catch (\PDOException) {
             // Vor der Migration 043: keine Hostliste vorhanden.
         }

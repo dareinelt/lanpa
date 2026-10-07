@@ -905,7 +905,7 @@ Runner::test('Orvanta: Als Outlook-Element angehaengte signierte Mail wird direk
             }
 
             return ($this->envelope)('<m:GetItemResponse><m:ResponseMessages><m:GetItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items><t:Message>'
-                . '<t:ItemId Id="outer-1" ChangeKey="CK1"/><t:ItemClass>IPM.Note</t:ItemClass><t:Subject>[EXTERN][filtered] Signiert</t:Subject><t:Body BodyType="HTML">&lt;html&gt;&lt;body&gt;&lt;/body&gt;&lt;/html&gt;</t:Body><t:HasAttachments>true</t:HasAttachments>'
+                . '<t:ItemId Id="outer-1" ChangeKey="CK1"/><t:ItemClass>IPM.Note</t:ItemClass><t:Subject>[EXTERN][filtered] Signiert</t:Subject><t:Body BodyType="HTML">&lt;p&gt;EXTERNE NACHRICHT! - Sei vorsichtig beim Öffnen von Links oder Anlagen!&lt;/p&gt;</t:Body><t:HasAttachments>true</t:HasAttachments>'
                 . '<t:Attachments><t:ItemAttachment><t:AttachmentId Id="att-item"/><t:Name>[EXTERN][filtered] Signiert</t:Name><t:Size>146432</t:Size><t:IsInline>false</t:IsInline></t:ItemAttachment>'
                 . '<t:FileAttachment><t:AttachmentId Id="att-file"/><t:Name>hinweis.txt</t:Name><t:ContentType>text/plain</t:ContentType><t:Size>5</t:Size><t:IsInline>false</t:IsInline></t:FileAttachment></t:Attachments>'
                 . '</t:Message></m:Items></m:GetItemResponseMessage></m:ResponseMessages></m:GetItemResponse>');
@@ -915,7 +915,9 @@ Runner::test('Orvanta: Als Outlook-Element angehaengte signierte Mail wird direk
 
     $message = $exchange->message('demo@demo.local', 'outer-1');
     Assert::true($message['signed']);
-    Assert::contains('<b>signiert</b>', $message['body_html'], 'Leerer Text wird durch den signierten Inhalt ersetzt.');
+    Assert::contains('<b>signiert</b>', $message['body_html']);
+    Assert::true(strpos($message['body_html'], 'EXTERNE NACHRICHT!') < strpos($message['body_html'], '<b>signiert</b>'), 'Banner bleibt oben, signierter Inhalt folgt direkt.');
+    Assert::false(str_contains($message['body_html'], '<hr'), 'Keine Trennlinie zwischen Banner und Inhalt.');
     Assert::same(['hinweis.txt', 'vertrag.pdf', 'logo.png'], array_column($message['attachments'], 'name'), 'Outlook-Element wird durch seine Anhaenge ersetzt.');
     Assert::same('orvanta-signeditem:0:att-item', $message['attachments'][1]['id']);
     Assert::contains('<t:IncludeMimeContent>true</t:IncludeMimeContent>', implode("\n", $transport->xmls));
@@ -932,7 +934,8 @@ Runner::test('Orvanta: MIME-Parser zeigt angehaengte signierte Nachricht direkt 
     $parsed = (new App\Services\Orvanta\MimeMessageParser())->parse($raw);
     Assert::true($parsed['signed']);
     Assert::contains('Vom Gateway geprueft.', $parsed['html']);
-    Assert::contains('<strong>Von:</strong> Absender &lt;a@example.org&gt;', $parsed['html']);
+    Assert::false(str_contains($parsed['html'], '<hr>'), 'Signierter Inhalt folgt ohne Trennlinie.');
+    Assert::true(strpos($parsed['html'], 'Vom Gateway geprueft.') < strpos($parsed['html'], '<b>signiert</b>'), 'Banner steht vor dem signierten Inhalt.');
     Assert::contains('<b>signiert</b>', $parsed['html']);
     Assert::same(['vertrag.pdf', 'logo.png'], array_column($parsed['attachments'], 'name'));
 

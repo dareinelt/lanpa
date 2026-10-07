@@ -589,8 +589,9 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     }
 
     /**
-     * Signierten Inhalt in die Nachricht uebernehmen: Text anfuegen (bei
-     * leerem Nachrichtentext ersetzen) und Anhaenge mit Kennungen
+     * Signierten Inhalt in die Nachricht uebernehmen: Text direkt anfuegen,
+     * z. B. unter das Banner eines Mail-Gateways (bei leerem
+     * Nachrichtentext ersetzen), und Anhaenge mit Kennungen
      * $prefix . Teil-Index . ':' . $sourceId ergaenzen.
      *
      * @param array<string,mixed> $data
@@ -613,13 +614,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             $data['body_html'] = $html;
             $data['blocked_images'] = $blocked;
         } else {
-            $head = [];
-            foreach (['Von' => $parsed['from'], 'Datum' => $parsed['date'], 'Betreff' => $parsed['subject']] as $label => $value) {
-                if (trim($value) !== '') {
-                    $head[] = '<strong>' . $label . ':</strong> ' . htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
-                }
-            }
-            $data['body_html'] = $current . '<hr>' . ($head !== [] ? '<p>' . implode('<br>', $head) . '</p>' : '') . $html;
+            $data['body_html'] = $current . $html;
             $data['blocked_images'] = (int) ($data['blocked_images'] ?? 0) + $blocked;
         }
         foreach ($parsed['attachments'] as $index => $attachment) {

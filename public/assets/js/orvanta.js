@@ -578,7 +578,22 @@
         lastKeepAlive = Date.now();
         return apiRequest('/sitzung').then(function (data) {
             setCsrf(data && data.csrf);
+            setExchangeHost(data && data.exchange_host);
         }).catch(function () {});
+    }
+
+    /**
+     * Tooltipp an der Verbindungsanzeige („Verbunden mit Exchange“) aktuell
+     * halten: Nach einem Failover laeuft die Sitzung auf einem anderen Host
+     * der DAG.
+     */
+    function setExchangeHost(host) {
+        var node = hook('status-conn');
+        if (!node || typeof host !== 'string' || host === '' || host === config.exchangeHost) {
+            return;
+        }
+        config.exchangeHost = host;
+        node.setAttribute('title', 'Aktueller Exchange-Host: ' + host);
     }
 
     function startKeepAlive() {

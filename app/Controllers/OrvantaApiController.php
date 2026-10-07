@@ -53,6 +53,7 @@ final class OrvantaApiController extends Controller
                 'user' => ['name' => $access['user']['display_name'] ?? $access['user']['username'], 'email' => $access['impersonate']],
                 'demo' => $access['route']->isProxy() ? false : $config->isDemo(),
                 'host' => $access['route']->isProxy() ? '' : $config->get('exchange_host'),
+                'exchange_host' => OrvantaController::exchangeHost($access),
                 'backend' => $this->mail($access)->backendName(),
                 'capabilities' => $this->mail($access)->capabilities(),
                 'cache' => Container::orvantaAttachments()->usage($access['uid']),
@@ -64,14 +65,20 @@ final class OrvantaApiController extends Controller
 
     /**
      * Keep-alive: haelt die Sitzung waehrend der Bearbeitung (z. B. langer
-     * Antworten) am Leben und liefert das aktuelle CSRF-Token.
+     * Antworten) am Leben und liefert das aktuelle CSRF-Token sowie den
+     * Exchange-Host der Sitzung (Tooltipp im Fussbereich).
      */
     public function keepAlive(Request $request): Response
     {
-        return $this->handle($request, static function (): array {
+        return $this->handle($request, static function (array $access): array {
             Session::put('_orvanta_alive', time());
 
-            return ['ok' => true, 'csrf' => Csrf::token(), 'server_time' => time()];
+            return [
+                'ok' => true,
+                'csrf' => Csrf::token(),
+                'exchange_host' => OrvantaController::exchangeHost($access),
+                'server_time' => time(),
+            ];
         })->withHeader('Cache-Control', 'no-store');
     }
 

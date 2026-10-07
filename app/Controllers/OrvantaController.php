@@ -63,6 +63,9 @@ final class OrvantaController extends Controller
                 'cacheQuota' => $config->cacheQuotaBytes(),
                 'demo' => $access['route']->isProxy() ? false : $config->isDemo(),
                 'owaUrl' => $access['route']->isProxy() ? '' : $config->owaUrl(),
+                // Aktueller Exchange-Host dieser Sitzung (Tooltipp an der
+                // Verbindungsanzeige im Fussbereich).
+                'exchangeHost' => self::exchangeHost($access),
                 // Nur das Flag - Modell, Adresse und Schluessel bleiben auf dem Server.
                 'aiAvailable' => Container::orvantaAi()->isAvailable(),
                 // Nur das Flag - die Woerterbuchdateien bleiben auf dem Server.
@@ -190,6 +193,22 @@ final class OrvantaController extends Controller
             'backend' => $router->backendForRoute($route),
             'route' => $route,
         ];
+    }
+
+    /**
+     * Hostname des Exchange-Hosts, auf dem die aktuelle Sitzung laeuft
+     * (Tooltipp an der Verbindungsanzeige im Fussbereich). Leer, wenn kein
+     * Exchange beteiligt ist: Proxy-Postfaecher (IMAP/SMTP) und Demomodus.
+     *
+     * @param array{user:array<string,mixed>,uid:string,impersonate:string,backend:OrvantaMailBackendInterface,route:MailProxyRoute} $access
+     */
+    public static function exchangeHost(array $access): string
+    {
+        if ($access['route']->isProxy() || Container::orvantaConfig()->isDemo()) {
+            return '';
+        }
+
+        return (string) (Container::orvantaExchangePool()->currentHost()['host'] ?? '');
     }
 
     private static function inlineType(string $contentType, string $name): string

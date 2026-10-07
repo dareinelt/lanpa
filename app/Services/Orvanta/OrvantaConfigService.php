@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Orvanta;
 
 use App\Exceptions\ValidationException;
+use App\Repositories\OrvantaExchangeHostRepository;
 use App\Repositories\OrvantaRepository;
 use App\Security\SecretBox;
 use App\Support\Validator;
@@ -59,7 +60,8 @@ final class OrvantaConfigService
 
     public function __construct(
         private readonly OrvantaRepository $repository,
-        private readonly SecretBox $secrets
+        private readonly SecretBox $secrets,
+        private readonly ?OrvantaExchangeHostRepository $hosts = null
     ) {
     }
 
@@ -472,6 +474,14 @@ final class OrvantaConfigService
 
         $this->repository->saveSettings($values);
         $this->cache = null;
+        // Der konfigurierte Server ist immer der primaere Host der DAG: die
+        // Hostliste (Office → Orvanta – DAG-Hosts) wird mitgezogen, damit kein
+        // umbenannter Altbestand stehen bleibt.
+        try {
+            $this->hosts?->syncPrimary($values['exchange_host'], $values['exchange_ews_url']);
+        } catch (\PDOException) {
+            // Vor der Migration 043: keine Hostliste vorhanden.
+        }
     }
 
     public static function isHttpsUrl(string $url): bool

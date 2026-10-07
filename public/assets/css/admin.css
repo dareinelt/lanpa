@@ -2321,3 +2321,82 @@ body.has-nav-tree-overlay {
     border-radius: 0.5rem;
     background: #fff;
 }
+
+/* Orvanta: Host-Dashboard einer Exchange-DAG (Kacheln mit Latenz und Sitzungen) */
+.card__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.card__head .card__title {
+    margin-bottom: .75rem;
+}
+
+.host-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+    margin-bottom: 1rem;
+}
+
+.host-tile {
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-left: 4px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1rem;
+}
+
+.host-tile[data-status="online"] { border-left-color: #1a7f37; }
+.host-tile[data-status="offline"] { border-left-color: #bf8700; }
+.host-tile[data-status="maintenance"] { border-left-color: var(--color-muted); }
+
+.host-tile__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+}
+
+.host-tile__name {
+    margin: 0;
+    font-size: 1rem;
+    word-break: break-word;
+}
+
+.host-tile__meta {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    flex-wrap: wrap;
+    margin: 0;
+    font-size: .85rem;
+}
+
+.host-tile__url {
+    color: var(--color-muted);
+    word-break: break-all;
+}
+
+.host-tile .status-list {
+    margin-bottom: .25rem;
+    font-size: .9rem;
+}
+
+.host-tile__error {
+    margin: 0;
+    font-size: .85rem;
+    color: #8a6100;
+    word-break: break-word;
+}
+
+.host-tile .row-actions {
+    margin-top: auto;
+    padding-top: .5rem;
+}

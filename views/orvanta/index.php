@@ -83,6 +83,8 @@ if (!isset($modules[$startModule])) {
     $startModule = 'mail';
 }
 $isProxy = ($orvanta['backend'] ?? 'exchange') === 'proxy';
+// Aktueller Exchange-Host der Sitzung (Tooltipp an der Verbindungsanzeige im Fussbereich).
+$exchangeHost = (string) ($orvanta['exchangeHost'] ?? '');
 $userName = (string) $orvanta['user']['name'];
 $initials = '';
 foreach (preg_split('/\s+/', $userName) ?: [] as $part) {
@@ -237,7 +239,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
 
     <!-- Statusleiste -->
     <footer class="ov-statusbar">
-        <span data-ov-status-conn><?= $icon('check') ?> Verbunden<?= !empty($orvanta['demo']) ? ' (Demo)' : ($isProxy ? ' (IMAP/SMTP)' : '') ?></span>
+        <span data-ov-status-conn<?= $exchangeHost === '' ? '' : ' title="' . Html::e('Aktueller Exchange-Host: ' . $exchangeHost) . '"' ?>><?= $icon('check') ?> Verbunden<?= !empty($orvanta['demo']) ? ' (Demo)' : ($isProxy ? ' (IMAP/SMTP)' : '') ?></span>
         <span data-ov-status-count></span>
         <span class="ov-statusbar__grow" data-ov-status-text></span>
         <button type="button" class="ov-statusbar__credit" data-ov-dialog-open="about" title="Hinweise zu Orvanta anzeigen">Orvanta Mail-App by Daniel-André Reinelt</button>

@@ -442,6 +442,18 @@ final class Container
         );
     }
 
+    public static function orvantaMailboxResolver(): \App\Services\Orvanta\OrvantaMailboxResolver
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaMailboxResolver::class,
+            static fn (): \App\Services\Orvanta\OrvantaMailboxResolver => new \App\Services\Orvanta\OrvantaMailboxResolver(
+                self::orvantaConfig(),
+                self::identitySources(),
+                app_logger()
+            )
+        );
+    }
+
     /**
      * EWS-Transport: cURL (Negotiate/NTLM/Basic) oder Demomodus mit
      * Beispieldaten (Exchange-Server „demo“, nicht im Produktionsmodus).

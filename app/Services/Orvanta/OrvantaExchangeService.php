@@ -1329,7 +1329,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     {
         return match (true) {
             str_contains($error, 'ErrorImpersonateUserDenied'), str_contains($error, 'ErrorImpersonationDenied') => 'Dem Dienstkonto fehlt die Berechtigung „ApplicationImpersonation“ für dieses Postfach.',
-            str_contains($error, 'ErrorNonExistentMailbox') => 'Für die SSO-Identität wurde kein Exchange-Postfach gefunden.',
+            str_contains($error, 'ErrorNonExistentMailbox') => 'Für die SSO-Identität wurde kein Exchange-Postfach gefunden. Die verwendete Adresse muss die primäre SMTP-Adresse des Postfachs sein (Active Directory, Attribut „proxyAddresses“, Eintrag mit „SMTP:“); Anmeldename oder Attribut „mail“ funktionieren nur, wenn Exchange sie als Alias kennt.',
             str_contains($error, 'ErrorNonPrimarySmtpAddress') => 'Die E-Mail-Adresse aus dem Active Directory ist nicht die primäre SMTP-Adresse des Postfachs, und Exchange hat keine primäre Adresse genannt. Bitte im Active Directory das Attribut „mail“ auf die primäre Adresse setzen.',
             str_contains($error, 'ErrorItemNotFound') => 'Das Element wurde nicht gefunden (möglicherweise bereits verschoben oder gelöscht).',
             str_contains($error, 'ErrorFolderNotFound') => 'Der Ordner wurde nicht gefunden.',

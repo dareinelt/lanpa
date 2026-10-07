@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use App\Contracts\ExchangeTransportInterface;
 use App\Exceptions\ValidationException;
+use App\Repositories\IdentitySourceRepository;
 use App\Repositories\OrvantaRepository;
+use App\Repositories\SettingsRepository;
 use App\Security\SecretBox;
+use App\Services\IdentitySourceService;
 use App\Services\LdapClient;
 use App\Services\Office\NextcloudFilesService;
 use App\Services\Orvanta\DemoExchangeTransport;
@@ -15,7 +18,9 @@ use App\Services\Orvanta\OrvantaAttachmentService;
 use App\Services\Orvanta\OrvantaConfigService;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaExchangeService;
+use App\Services\Orvanta\OrvantaMailboxResolver;
 use App\Services\Orvanta\OrvantaNotificationService;
+use App\Services\SettingsService;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
 
@@ -113,6 +118,18 @@ function orvantaSecrets(): SecretBox
     mkdir($dir, 0700, true);
 
     return new SecretBox($dir . '/secrets.key');
+}
+
+/**
+ * Identitaetsquellen ohne LDAP-Konfiguration (nur die Hauptquelle, id 0).
+ */
+function orvantaIdentitySources(): IdentitySourceService
+{
+    $pdo = new PDO('sqlite::memory:');
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->exec('CREATE TABLE settings (id INTEGER PRIMARY KEY AUTOINCREMENT, setting_key TEXT NOT NULL UNIQUE, setting_value TEXT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+
+    return new IdentitySourceService(new IdentitySourceRepository($pdo), new SettingsService(new SettingsRepository($pdo)), orvantaSecrets());
 }
 
 /**
@@ -628,6 +645,38 @@ Runner::test('Orvanta: Postfachgrenzen aus dem AD (Benutzer bzw. Postfachdatenba
     // Kein On-Premise-Postfach bzw. Datenbank nicht lesbar
     Assert::same(null, LdapClient::mailboxQuotaFromEntries(['mdbusedefaults' => ['count' => 1, 'TRUE']], $database));
     Assert::same(null, LdapClient::mailboxQuotaFromEntries(['homemdb' => $home, 'mdbusedefaults' => ['count' => 1, 'TRUE']], null));
+});
+
+Runner::test('Orvanta: primaere Postfachadresse aus dem AD (proxyAddresses)', function (): void {
+    // Nur der Eintrag mit "SMTP:" ist die primaere Adresse – auch wenn er
+    // hinter Aliasen ("smtp:") und fremden Praefixen steht.
+    $entry = ['proxyaddresses' => ['count' => 3, 0 => 'smtp:anna.alt@firma.local', 1 => 'X400:c=DE;a=firma;', 2 => 'SMTP:anna.neu@firma.local']];
+    Assert::same('anna.neu@firma.local', LdapClient::primarySmtpFromProxyAddresses($entry));
+
+    // Einzelner Wert statt Liste (abweichende LDAP-Treiber)
+    Assert::same('anna@firma.local', LdapClient::primarySmtpFromProxyAddresses(['proxyaddresses' => 'SMTP:anna@firma.local']));
+
+    // Nur Aliase: keine Postfachkennung (genau der Fall der neuen Benutzer)
+    Assert::same(null, LdapClient::primarySmtpFromProxyAddresses(['proxyaddresses' => ['count' => 1, 0 => 'smtp:anna@firma.local']]));
+    // Fremde Praefixe, ungueltige Adresse, fehlendes Attribut
+    Assert::same(null, LdapClient::primarySmtpFromProxyAddresses(['proxyaddresses' => ['count' => 1, 0 => 'SIP:anna@firma.local']]));
+    Assert::same(null, LdapClient::primarySmtpFromProxyAddresses(['proxyaddresses' => ['count' => 1, 0 => 'SMTP:keine-adresse']]));
+    Assert::same(null, LdapClient::primarySmtpFromProxyAddresses([]));
+});
+
+Runner::test('Orvanta: Postfachadresse ohne AD-Treffer bleibt die Konfiguration', function (): void {
+    $parts = orvantaConfig(['exchange_host' => 'mail.example.local', 'exchange_identity' => 'upn', 'exchange_upn_domain' => 'example.local']);
+    $resolver = new OrvantaMailboxResolver($parts['config'], orvantaIdentitySources());
+
+    // Testbenutzer (kein Telefonbucheintrag) wird nicht im AD gesucht
+    Assert::same('jdoe@example.local', $resolver->address(['username' => 'jdoe', 'email' => '', 'fake' => true, 'id' => 0, 'source_id' => 0]));
+    // Ohne lesbare Quelle (hier unkonfiguriertes AD) gilt weiter die Konfiguration
+    Assert::same('jdoe@example.local', $resolver->address(['username' => 'jdoe', 'email' => '', 'id' => 5, 'source_id' => 0]));
+
+    // Im SMTP-Modus ist die konfigurierte Adresse die aus dem AD-Attribut "mail"
+    $parts = orvantaConfig(['exchange_host' => 'mail.example.local', 'exchange_identity' => 'smtp']);
+    $resolver = new OrvantaMailboxResolver($parts['config'], orvantaIdentitySources());
+    Assert::same('anna@firma.local', $resolver->address(['username' => 'anna', 'email' => 'anna@firma.local', 'id' => 6, 'source_id' => 0]));
 });
 
 Runner::test('Orvanta: EwsXml-Hilfsfunktionen', function (): void {

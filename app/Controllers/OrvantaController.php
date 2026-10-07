@@ -178,7 +178,7 @@ final class OrvantaController extends Controller
         if ($route->isProxy()) {
             return ['user' => $ssoUser, 'uid' => $uid, 'impersonate' => $route->email, 'backend' => $router->backendForRoute($route), 'route' => $route];
         }
-        $impersonate = Container::orvantaConfig()->impersonationAddress($ssoUser);
+        $impersonate = Container::orvantaMailboxResolver()->address($ssoUser);
         if ($impersonate === '' && !Container::orvantaConfig()->isDemo()) {
             throw new HttpException(403, 'Für Ihr Konto ist im Active Directory keine E-Mail-Adresse hinterlegt. Orvanta kann Ihr Postfach nicht zuordnen.');
         }

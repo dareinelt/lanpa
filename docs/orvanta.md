@@ -241,10 +241,17 @@ flowchart LR
 Das Kennwort wird verschlüsselt in `orvanta_settings` abgelegt
 (`Crypto`, `APP_KEY`). Die Postfach-Zuordnung erfolgt per E-Mail-Adresse aus dem
 AD (Standard) oder per UPN (`benutzer@<UPN-Domäne>`); sie wird als
-`ExchangeImpersonation`-Kopf an EWS übergeben. Ist die AD-Adresse nur ein Alias
-des Postfachs (`ErrorNonPrimarySmtpAddress`), übernimmt Orvanta die von Exchange
-genannte primäre Adresse, wiederholt die Anfrage und merkt sich die Zuordnung
-24 Stunden (`storage/cache/orvanta_primary_smtp.json`).
+`ExchangeImpersonation`-Kopf an EWS übergeben. Beide Angaben sind nur dann eine
+Postfach-Kennung, wenn Exchange sie als Alias oder UPN kennt – bei neu
+angelegten Konten fehlt das, und Exchange meldet
+`ErrorNonExistentMailbox`, obwohl das Postfach existiert. Maßgeblich ist daher
+die primäre SMTP-Adresse des Postfachs aus dem Active Directory
+(`proxyAddresses`, Eintrag mit `SMTP:`), die Orvanta beim Öffnen der App liest
+und je Sitzung 15 Minuten hält; schlägt das fehl (kein Postfach, AD nicht
+erreichbar), gilt weiter die Konfiguration. Ist die verwendete AD-Adresse nur
+ein Alias des Postfachs (`ErrorNonPrimarySmtpAddress`), übernimmt Orvanta die
+von Exchange genannte primäre Adresse, wiederholt die Anfrage und merkt sich die
+Zuordnung 24 Stunden (`storage/cache/orvanta_primary_smtp.json`).
 
 ### Admin-Einstellungen (`/admin/office/orvanta`)
 

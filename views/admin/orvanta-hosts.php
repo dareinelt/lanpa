@@ -11,6 +11,8 @@ use App\Support\Html;
 /** @var bool $orvantaDemo */
 /** @var string $primaryHost */
 /** @var string $ewsUrl */
+/** @var string $testMailbox */
+/** @var string $serviceUser */
 /** @var int $maxHosts */
 /** @var int $sessionTtl */
 /** @var int $refreshInterval */
@@ -119,6 +121,23 @@ $hosts = $overview['hosts'];
             <button class="button button--ghost"<?= $hosts === [] ? ' disabled' : '' ?>>Alle Hosts prüfen</button>
         </form>
     </div>
+
+    <form method="post" action="<?= Html::e($base) ?>/pruefpostfach" class="form">
+        <?= Csrf::field() ?>
+        <div class="field">
+            <label for="test_mailbox">Prüfpostfach für den Verbindungstest</label>
+            <input type="email" id="test_mailbox" name="test_mailbox" maxlength="190"
+                   value="<?= Html::e($testMailbox) ?>" placeholder="z. B. pruefung@firma.de">
+            <p class="field__hint">
+                „Verbindung testen“ und „Alle Hosts prüfen“ öffnen den Posteingang dieses Postfachs im Namen des Dienstkontos
+                (Impersonation). Leer = Posteingang des Dienstkontos<?= $serviceUser !== '' ? ' (' . Html::e($serviceUser) . ')' : '' ?> –
+                hat es kein eigenes Postfach, melden alle Hosts „Gestört“.
+            </p>
+        </div>
+        <div class="form__actions">
+            <button class="button button--ghost">Prüfpostfach speichern</button>
+        </div>
+    </form>
 </section>
 
 <section class="card" aria-labelledby="orv-hosts-add">

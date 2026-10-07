@@ -1310,6 +1310,36 @@ Runner::test('Orvanta DAG: Prioritaet 2 verteilt auf den Host mit den wenigsten 
     Assert::same('mail02.example.local', $pool->session('s5')['host']);
 });
 
+Runner::test('Orvanta DAG: Sitzungs-SQL nutzt jeden benannten Platzhalter nur einmal (MySQL ohne Emulation)', function (): void {
+    // SQLite toleriert doppelte Platzhalter, MySQL mit ATTR_EMULATE_PREPARES=false
+    // nicht (HY093): die Sitzungszeile entstand nie, Zaehler und Liste blieben leer.
+    $source = (string) file_get_contents(dirname(__DIR__, 2) . '/app/Repositories/OrvantaExchangeHostRepository.php');
+    preg_match_all("/'((?:SELECT|INSERT|UPDATE|DELETE)[^']*)'/i", $source, $matches);
+    Assert::true(count($matches[1]) > 5, 'SQL-Anweisungen gefunden.');
+    foreach ($matches[1] as $sql) {
+        preg_match_all('/(?<![:\w]):([a-z_]\w*)/i', $sql, $names);
+        Assert::same(count($names[1]), count(array_unique($names[1])), 'Doppelter Platzhalter in: ' . $sql);
+    }
+});
+
+Runner::test('Orvanta DAG: Pruefpostfach fuer den Verbindungstest ist einstellbar', function (): void {
+    $parts = orvantaConfig();
+    $config = $parts['config'];
+    Assert::same('', $config->testMailbox(), 'Standard: Posteingang des Dienstkontos.');
+    $config->saveTestMailbox(' pruefung@example.local ');
+    Assert::same('pruefung@example.local', $config->testMailbox());
+    $rejected = false;
+    try {
+        $config->saveTestMailbox('keine-adresse');
+    } catch (\App\Exceptions\ValidationException $exception) {
+        $rejected = isset($exception->errors()['exchange_test_mailbox']);
+    }
+    Assert::true($rejected, 'Ungueltige Adresse wird abgelehnt.');
+    Assert::same('pruefung@example.local', $config->testMailbox(), 'Ungueltige Eingabe aendert nichts.');
+    $config->saveTestMailbox('');
+    Assert::same('', $config->testMailbox(), 'Leer setzt auf das Dienstkonto zurueck.');
+});
+
 Runner::test('Orvanta DAG: Prioritaet 3 entscheidet nach mittlerer Antwortzeit', function (): void {
     $parts = orvantaPool();
     // Die Hostliste wird je Anfrage neu gelesen: jede Stufe prueft mit einer

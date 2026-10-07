@@ -37,6 +37,7 @@ final class OrvantaConfigService
         'exchange_verify_tls' => '1',
         'exchange_timeout' => '20',
         'exchange_owa_url' => '',
+        'exchange_test_mailbox' => '',
         'cache_quota_mb' => '250',
         'mailbox_quota_mb' => '0',
         'cache_folder' => 'Orvanta',
@@ -124,6 +125,30 @@ final class OrvantaConfigService
         }
 
         return strtolower((string) parse_url(trim($this->get('exchange_ews_url')), PHP_URL_HOST));
+    }
+
+    /**
+     * Postfach fuer den Verbindungstest der DAG-Hosts (Impersonation);
+     * '' = Posteingang des Dienstkontos.
+     */
+    public function testMailbox(): string
+    {
+        return trim($this->get('exchange_test_mailbox'));
+    }
+
+    /**
+     * Speichert das Pruefpostfach der DAG-Hosts ('' = Dienstkonto).
+     *
+     * @throws ValidationException
+     */
+    public function saveTestMailbox(string $mailbox): void
+    {
+        $mailbox = Validator::cleanText($mailbox, 190);
+        if ($mailbox !== '' && filter_var($mailbox, FILTER_VALIDATE_EMAIL) === false) {
+            throw new ValidationException(['exchange_test_mailbox' => 'Bitte eine gültige E-Mail-Adresse für das Prüfpostfach angeben.']);
+        }
+        $this->repository->saveSettings(['exchange_test_mailbox' => $mailbox]);
+        $this->cache = null;
     }
 
     public function owaUrl(): string

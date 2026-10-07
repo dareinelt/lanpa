@@ -225,6 +225,7 @@ flowchart LR
   `POST /admin/office/orvanta/hosts/status` (Wartung/aktivieren),
   `POST /admin/office/orvanta/hosts/loeschen` (entfernen),
   `POST /admin/office/orvanta/hosts/pruefen` (Verbindungstest einzeln/alle),
+  `POST /admin/office/orvanta/hosts/pruefpostfach` (Prüfpostfach für den Verbindungstest),
   `GET /admin/office/orvanta/hosts/daten` (Kachelwerte als JSON).
 
 ---
@@ -453,6 +454,10 @@ Host in Wartung erhält keine neuen Sitzungen, bestehende werden beim nächsten
 Aufruf umgeleitet; der letzte aktive Host lässt sich nicht abschalten. Die
 Kacheln aktualisieren sich automatisch (`GET …/hosts/daten`, JSON, nur lesend,
 Intervall aus `poll_interval`), die Seite bleibt ohne JavaScript bedienbar.
+Der Verbindungstest öffnet den Posteingang des **Prüfpostfachs** (auf dem
+Dashboard einstellbar, Impersonation); ohne Angabe den des Dienstkontos. Hat
+das Dienstkonto kein eigenes Postfach, muss ein Prüfpostfach eingetragen
+werden, sonst melden alle Hosts „Gestört“.
 
 **Grenzen:** höchstens 16 Hosts (Vorgabe von Exchange), Hostname je Zeile
 (optional mit abweichender EWS-Adresse), keine Prüfung der DAG-Zugehörigkeit

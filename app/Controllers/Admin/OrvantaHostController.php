@@ -7,6 +7,7 @@ namespace App\Controllers\Admin;
 use App\Core\Container;
 use App\Core\Request;
 use App\Core\Response;
+use App\Exceptions\ValidationException;
 use App\Security\Session;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaExchangePool;
@@ -22,6 +23,7 @@ use Throwable;
  *   POST /admin/office/orvanta/hosts/status     Host aktivieren / in Wartung nehmen
  *   POST /admin/office/orvanta/hosts/loeschen   Host entfernen
  *   POST /admin/office/orvanta/hosts/pruefen    Verbindungstest (einzeln oder alle)
+ *   POST /admin/office/orvanta/hosts/pruefpostfach  Postfach fuer den Verbindungstest
  *   GET  /admin/office/orvanta/hosts/daten      Kachelwerte als JSON (Live-Aktualisierung)
  *
  * Der im Adminbereich unter Office → Orvanta eingetragene Exchange-Server ist
@@ -236,12 +238,13 @@ final class OrvantaHostController extends AdminController
         @set_time_limit(count($targets) * 30 + 30);
         $pool = Container::orvantaExchangePool();
         $exchange = Container::orvantaExchange();
+        $mailbox = Container::orvantaConfig()->testMailbox();
         $ok = 0;
         $failed = 0;
         $errors = [];
         foreach ($targets as $host) {
             try {
-                $result = $exchange->testHost($host);
+                $result = $exchange->testHost($host, $mailbox);
                 $pool->recordSuccess($host, (int) $result['latency_ms']);
                 $ok++;
             } catch (OrvantaException $exception) {
@@ -268,6 +271,40 @@ final class OrvantaHostController extends AdminController
         if ($ok > 0) {
             Session::flash('success', $ok . ' von ' . count($targets) . ' Host(s) erreichbar.');
         }
+
+        return $this->redirect(self::BASE);
+    }
+
+    /**
+     * Postfach fuer den Verbindungstest der Hosts festlegen (leer = Posteingang
+     * des Dienstkontos). Hat das Dienstkonto kein eigenes Postfach, schlaegt
+     * der Test sonst auf jedem Host fehl.
+     */
+    public function testMailbox(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        try {
+            Container::orvantaConfig()->saveTestMailbox((string) $request->input('test_mailbox', ''));
+        } catch (ValidationException $exception) {
+            foreach ($exception->errors() as $error) {
+                Session::flash('error', $error);
+            }
+
+            return $this->redirect(self::BASE);
+        } catch (PDOException $exception) {
+            app_logger()->error('Orvanta: Prüfpostfach der DAG-Hosts konnte nicht gespeichert werden.', ['error' => $exception->getMessage()]);
+            Session::flash('error', 'Das Prüfpostfach konnte nicht gespeichert werden.');
+
+            return $this->redirect(self::BASE);
+        }
+        $mailbox = Container::orvantaConfig()->testMailbox();
+        app_logger()->info('Orvanta: Prüfpostfach der DAG-Hosts geändert.', [
+            'admin' => Container::auth()->username(),
+            'mailbox' => $mailbox,
+        ]);
+        Session::flash('success', $mailbox !== ''
+            ? 'Der Verbindungstest verwendet jetzt das Postfach „' . $mailbox . '“.'
+            : 'Der Verbindungstest verwendet jetzt den Posteingang des Dienstkontos.');
 
         return $this->redirect(self::BASE);
     }
@@ -319,6 +356,8 @@ final class OrvantaHostController extends AdminController
             'orvantaDemo' => $config->isDemo(),
             'primaryHost' => $config->get('exchange_host'),
             'ewsUrl' => $config->ewsUrl(),
+            'testMailbox' => $config->testMailbox(),
+            'serviceUser' => $config->get('exchange_service_user'),
             'maxHosts' => OrvantaExchangePool::MAX_HOSTS,
             'sessionTtl' => OrvantaExchangePool::SESSION_TTL,
             'refreshInterval' => max(5, min(120, $config->pollInterval())),

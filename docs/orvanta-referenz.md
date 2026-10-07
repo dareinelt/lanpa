@@ -351,14 +351,14 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `mailboxUsage()` | `GetFolder` `root` + `recoverableitemsroot` (`$strict = false`) mit `ExtendedFieldURI` `0x0E08` (PR_MESSAGE_SIZE_EXTENDED, Byte), `0x3FF5` (PR_STORAGE_QUOTA_LIMIT), `0x666E` (PR_PROHIBIT_SEND_QUOTA), `0x666A` (PR_PROHIBIT_RECEIVE_QUOTA; alle in KB); danach `FindFolder` Deep ab `root` mit `0x0E08` und `folder:ParentFolderId` (Seiten à 1000, max. 20) | `used` = Stammordner + alle Unterordner (`0x0E08` gilt je Ordner nur für dessen eigene Elemente), ohne `SearchFolder` und ohne den Teilbaum „Wiederherstellbare Elemente“; Tags werden per `hexdec()` normalisiert (Exchange schreibt `0xe08`); liefert EWS keine Grenze, gelten die AD-Grenzen `$directory` (`LdapClient::mailboxQuota()`, vom `OrvantaApiController` nur für Exchange-Postfächer gelesen und je Sitzung 15 min in `orvanta_directory_quota` gehalten; Proxy-Postfächer: Belegung per IMAP `QUOTA`, Grenze = feste Postfachgröße `mail_proxy_mailboxes.quota_mb`, `source` = `setting`, kein AD-Zugriff); `limit` = Sendegrenze, ersatzweise Empfangsgrenze, Warnschwelle, dann `mailbox_quota_mb`; `source` = `exchange`/`directory`/`setting`/leer; `percent` gegen `limit`; fehlende Grenzen = 0 |
 | `folders()` | `GetFolder` (Systemordner, `$strict = false`) + `FindFolder` Deep ab `msgfolderroot` (≤ 500) | nur `FolderClass` `IPF.Note*`; Sortierung Systemordner (`MAIL_FOLDERS`) vor Namen |
 | `messages()` | `FindItem` Shallow, `IndexedPageItemView`, absteigend nach `DateTimeReceived`, optional `QueryString` (AQS) | `limit` 1–200 (API: 1–100), `has_more` aus `IncludesLastItemInRange` |
-| `message()` | `GetItem` mit `BodyType = HTML` | Text-Body → `nl2br(htmlspecialchars())`, sonst `MailHtmlSanitizer::clean()`; externe Bilder landen in `data-blocked-src`, eingebettete in `data-cid` (Anhänge liefern `content_id`) |
+| `message()` | `GetItem` mit `BodyType = HTML` | Text-Body → `nl2br(htmlspecialchars())`, sonst `MailHtmlSanitizer::clean()`; externe Bilder landen in `data-blocked-src`, eingebettete in `data-cid` (Anhänge liefern `content_id`). S/MIME (`ItemClass` beginnt mit `IPM.Note.SMIME`): `unwrapSigned()` liest zusätzlich den MIME-Inhalt (`messageMime()`) und ersetzt bei signierten Nachrichten Text und Anhänge durch den signierten Inhalt (`signed = true`, Anhang-IDs `orvanta-signed:<index>:<itemId>`); verschlüsselte Nachrichten bleiben unverändert |
+| `attachment()` | `GetAttachment` | `FileAttachment` → Base64-Inhalt; `ItemAttachment` → Body als `<Name>.html` (`text/html`); `orvanta-signed:`-IDs → `GetItem` mit `IncludeMimeContent`, Teil `<index>` aus `MimeMessageParser` |
 | `send(user, mail, draftId, changeKey)` | ohne Entwurf und Anhänge `CreateItem SendAndSaveCopy`; sonst `saveDraft()` → `SendItem SaveItemToFolder` | mind. ein Empfänger in to/cc/bcc (außer `reference` mit `reply`/`replyall`); `mail.reference = {id, mode}` erzeugt `ReplyToItem`/`ReplyAllToItem`/`ForwardItem` statt `Message` |
 | `saveDraft(user, mail, draftId, changeKey)` | neu: `CreateItem SaveOnly` in drafts; bestehend: `UpdateItem SaveOnly` (Subject, Body, Importance, To/Cc/Bcc) | anschließend `CreateAttachment` für neue Anhänge; liefert `{id, change_key}` |
 | `respond()` | `send()` mit `reference` | übernimmt `to`, `cc`, `bcc`, `subject`, `importance`, Anhänge; `forward` verlangt Empfänger |
 | `markRead()`, `flag()` | `UpdateItem` `AlwaysOverwrite` | Lesebestätigungen unterdrückt |
 | `move()` | `MoveItem` | Zielordner per `EwsXml::folderId()` |
 | `delete()` | `DeleteItem` `MoveToDeletedItems` bzw. `HardDelete` | `SendMeetingCancellations = SendToNone`; genutzt für Mail, Kontakte, Aufgaben, Notizen |
-| `attachment()` | `GetAttachment` | `FileAttachment` → Base64-Inhalt; `ItemAttachment` → Body als `<Name>.html` (`text/html`) |
 | `calendar()` | `FindItem` mit `CalendarView` (≤ 500) | Serien als Einzelvorkommen; nach Start sortiert |
 | `event()` | `GetItem` (HTML-Body bereinigt, Teilnehmer, Anhänge, `recurring`) | |
 | `createEvent()` | `CreateItem` | Body wird bereinigt; Einladungen `SendToAllAndSaveCopy` nur mit Teilnehmern; `reminder < 0` = keine Erinnerung |
@@ -392,7 +392,7 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `mail/ordner/neu` | `parent` (leer = oberste Ebene, `msgfolderroot`), `name` (1–255 Zeichen, Steuerzeichen entfernt) | `{id, name, message}`; Ordnerklasse `IPF.Note`; vorhandener Name → `ErrorFolderExists` (502 mit Hinweis) |
 | `mail/ordner/gelesen` | `folder` | `{ok, message}`; `SuppressReadReceipts` = true |
 | `mail` | Query `ordner`, `offset`, `limit` (1–100), `q` | `{items[], total, offset, has_more}`; Element: `id, change_key, subject, preview, from{name,email}, to[], received, sent, is_read, has_attachments, size, importance, flagged, categories[], item_class, is_meeting_request` |
-| `mail/nachricht` | Query `id` | wie Listenelement + `body_html, blocked_images, cc, bcc, reply_to, sender, internet_message_id, attachments[{id,name,content_type,content_id,size,inline,is_item}]`; `cid:`-Bilder zeigen per `src` auf `anhang/oeffnen?token=…` |
+| `mail/nachricht` | Query `id` | wie Listenelement + `body_html, blocked_images, signed, cc, bcc, reply_to, sender, internet_message_id, attachments[{id,name,content_type,content_id,size,inline,is_item}]`; `cid:`-Bilder zeigen per `src` auf `anhang/oeffnen?token=…`; `signed = true` → Hinweis „digital signiert“ im Kopf |
 | `mail/kopfzeilen` | Query `id` | `{id, subject, headers, source}`; `headers` = unveränderter RFC-5322-Kopfblock aus `item:MimeContent` (`source` = `mime`), ersatzweise aus `InternetMessageHeaders` zusammengesetzt (`source` = `exchange`) |
 | `mail/senden` | `to, cc, bcc` (Strings oder `{name,email}`), `subject, body, html, importance, attachments[{name, content_type, content(Base64)}]`, optional `draft_id, change_key` (gespeicherten Entwurf senden) | `{id, message}` |
 | `empfaenger` | Query `q` (Pflicht, sonst leer), `limit` (1–25, Standard 8) | `{items[{display_name,email,department,source,recent}]}`; Verlaufstreffer zuerst (`source` = „Zuletzt verwendet“), dann Telefonliste ohne Dubletten; bekannte Adressen erhalten Name/Bereich aus der Telefonliste |
@@ -865,6 +865,14 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
   begrenzt, ohne Nachladen.
 - Inline-Bilder einer Mail (`inline = true`) werden im Frontend aus der
   Anhangliste gefiltert und nur im Nachrichtentext angezeigt.
+- S/MIME-signierte Mails (multipart/signed und opak signiert, `signed-data`)
+  werden wie normale Mails angezeigt; die Signatur (`smime.p7s`) bzw. der
+  Wrapper (`smime.p7m`) erscheint nicht als Anhang. Die Signatur wird
+  **nicht** kryptografisch geprüft – der Hinweis „vom Absender digital
+  signiert“ sagt nur aus, dass die Nachricht signiert ist. Opak signierte
+  Mails benötigen die PHP-Erweiterung OpenSSL; verschlüsselte Mails
+  (`enveloped-data`) bleiben ein Anhang. Das gilt auch für archivierte Mails
+  (`MimeMessageParser`); für Proxy-Postfächer entscheidet der `mail-proxy`.
 - `usage()` zählt Einträge über `cacheItems(uid, 10000)` (Obergrenze der Zählung).
 - Der Anhang-Viewer bekommt ein Token mit 5 Minuten Laufzeit; lädt der
   DocumentServer die Datei später erneut (z. B. nach Neuladen), ist der Link
@@ -999,7 +1007,7 @@ anschließend werden die Nachrichten aus Exchange gelöscht. Oberstes Prinzip:
 | `App\Services\Orvanta\OrvantaArchiveService` | Kernlogik: Registrierung, Freigabeprüfung per AD-Gruppe (`isArchiveUser()`, Mitglieder aus `ad_group_members` → Office-Kennung), Richtlinienprüfung (`maybeRun()`), Archivierungslauf (`run()`), Lesepfad (`folders()/messages()/message()/attachment()/search()`), `verify()`; Konstanten `MAGIC`, `FORMAT_VERSION`, `MAX_CHUNK_BYTES`, `INTEGRITY_ERROR`; injizierbare Uhr (`?callable $now`) und Identitätsquellen (`?\Closure $sources`) für Tests |
 | `App\Repositories\OrvantaArchiveRepository` | Journal/Index/Sperren (Migration 038); SQL läuft auf MySQL **und** SQLite |
 | `App\Contracts\ArchiveStorageInterface` | `put()`/`get()` der Containerdateien; produktiv `NextcloudArchiveStorage` (Intranet-API der Nextcloud-App), Tests `MemoryArchiveStorage` mit Fehler-/Korruptionsinjektion |
-| `App\Services\Orvanta\MimeMessageParser` | Liest archiviertes MIME (Multipart, base64/QP, Zeichensätze, RFC 2047, Anhänge) und erzeugt den Suchtext-Auszug |
+| `App\Services\Orvanta\MimeMessageParser` | Liest archiviertes MIME (Multipart, base64/QP, Zeichensätze, RFC 2047, Anhänge, S/MIME-signiert → `signed`) und erzeugt den Suchtext-Auszug; auch für signierte Exchange-Mails genutzt |
 | `OrvantaExchangeService::archiveCandidates()/messageMime()/messageIdentity()` | Einzige EWS-Operationen des Archivs (FindItem mit `IsLessThanOrEqualTo item:DateTimeReceived`, GetItem mit `IncludeMimeContent`, Identitätsabfrage `message:InternetMessageId`); Löschen über das vorhandene `delete(..., true)` (HardDelete) |
 | `scripts/orvanta_archive_worker.php` | CLI-Worker (`--once` für Einzellauf): iteriert alle registrierten Archive, ruft `maybeRun()` (archiviert nur Mitglieder der Gruppe `archive_group`) |
 | `docker/mail-archive/` | Container `mail-archive`: PHP-CLI + Python-Supervisor (`archive_supervisor.py`: Intervall `ARCHIVE_POLL_INTERVAL`, Signalbehandlung, Backoff 60 s–30 min); läuft als `www-data` und erhält das Secret `office_jwt_secret` (`OFFICE_JWT_SECRET_FILE`) für den Nextcloud-Upload |

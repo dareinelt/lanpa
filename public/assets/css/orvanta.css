@@ -689,4 +689,5 @@
 .ov-item--archive .ov-item__subject::after { content: ' '; }
 .ov-item__archive { opacity: .85; }
 .ov-mail__archive-note { background: var(--ov-bar); border-left: 3px solid var(--ov-muted); }
+.ov-mail__signed-note { background: var(--ov-bar); border-left: 3px solid var(--ov-accent); }
 .ov-mail__hint { color: var(--ov-muted); font-size: .85rem; }

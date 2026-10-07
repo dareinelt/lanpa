@@ -835,6 +835,85 @@ Runner::test('Orvanta: Eingebettete Bilder werden ueber den Anhang-Token aufgelo
 });
 
 // ----------------------------------------------------------------------
+// S/MIME-signierte Nachrichten
+// ----------------------------------------------------------------------
+
+function orvantaSignedMime(): string
+{
+    return "From: Absender <a@example.org>\r\nSubject: Signiert\r\nMIME-Version: 1.0\r\n"
+        . "Content-Type: multipart/signed; protocol=\"application/pkcs7-signature\"; micalg=sha-256; boundary=\"sig\"\r\n\r\n"
+        . "--sig\r\nContent-Type: multipart/mixed; boundary=\"mix\"\r\n\r\n"
+        . "--mix\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Hallo <b>signiert</b><img src=\"cid:logo@x\"></p>\r\n"
+        . "--mix\r\nContent-Type: application/pdf; name=\"vertrag.pdf\"\r\nContent-Disposition: attachment; filename=\"vertrag.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+        . base64_encode('%PDF-1.4 Vertrag') . "\r\n"
+        . "--mix\r\nContent-Type: image/png; name=\"logo.png\"\r\nContent-Disposition: inline; filename=\"logo.png\"\r\nContent-ID: <logo@x>\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+        . base64_encode('PNGDATA') . "\r\n--mix--\r\n\r\n"
+        . "--sig\r\nContent-Type: application/pkcs7-signature; name=\"smime.p7s\"\r\nContent-Disposition: attachment; filename=\"smime.p7s\"\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+        . base64_encode('SIGNATUR') . "\r\n--sig--\r\n";
+}
+
+Runner::test('Orvanta: Signierte Mail wird wie eine normale Mail mit Hinweis dargestellt', function (): void {
+    $parts = orvantaExchange();
+    $parts['transport']->forced = ['status' => 200, 'error' => null, 'body' => '<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types">'
+        . '<m:GetItemResponse><m:ResponseMessages><m:GetItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items><t:Message>'
+        . '<t:MimeContent CharacterSet="UTF-8">' . base64_encode(orvantaSignedMime()) . '</t:MimeContent>'
+        . '<t:ItemId Id="sig-1" ChangeKey="CK1"/><t:ItemClass>IPM.Note.SMIME.MultipartSigned</t:ItemClass><t:Subject>Signiert</t:Subject>'
+        . '<t:Body BodyType="HTML"></t:Body><t:HasAttachments>true</t:HasAttachments>'
+        . '<t:Attachments><t:FileAttachment><t:AttachmentId Id="att-p7m"/><t:Name>Signiert</t:Name><t:ContentType>multipart/signed</t:ContentType><t:Size>146432</t:Size><t:IsInline>false</t:IsInline></t:FileAttachment></t:Attachments>'
+        . '</t:Message></m:Items></m:GetItemResponseMessage></m:ResponseMessages></m:GetItemResponse></s:Body></s:Envelope>'];
+
+    $message = $parts['exchange']->message('demo@demo.local', 'sig-1');
+    Assert::true($message['signed'], 'Signierte Nachricht wird gekennzeichnet.');
+    Assert::contains('<b>signiert</b>', $message['body_html'], 'Signierter Inhalt erscheint als Nachrichtentext.');
+    Assert::contains('data-cid="logo@x"', $message['body_html']);
+    $names = array_column($message['attachments'], 'name');
+    Assert::same(['vertrag.pdf', 'logo.png'], $names, 'Weder Wrapper (smime.p7m) noch Signatur (smime.p7s) erscheinen als Anhang.');
+    Assert::true($message['has_attachments']);
+    Assert::same('orvanta-signed:0:sig-1', $message['attachments'][0]['id']);
+    Assert::same('logo@x', $message['attachments'][1]['content_id']);
+
+    $attachment = $parts['exchange']->attachment('demo@demo.local', 'orvanta-signed:0:sig-1');
+    Assert::same('vertrag.pdf', $attachment['name']);
+    Assert::same('application/pdf', $attachment['content_type']);
+    Assert::same('%PDF-1.4 Vertrag', $attachment['content']);
+    Assert::contains('IncludeMimeContent', $parts['transport']->last(), 'Anhang wird aus dem MIME-Inhalt gelesen.');
+
+    try {
+        $parts['exchange']->attachment('demo@demo.local', 'orvanta-signed:9:sig-1');
+        Assert::true(false, 'Unbekannter Index muss scheitern.');
+    } catch (OrvantaException $exception) {
+        Assert::same(404, $exception->status());
+    }
+});
+
+Runner::test('Orvanta: Normale Mail wird nicht als signiert gekennzeichnet', function (): void {
+    $message = orvantaExchange()['exchange']->message('demo@demo.local', 'demo-msg-1');
+    Assert::false($message['signed']);
+});
+
+Runner::test('Orvanta: MIME-Parser entpackt opak signierte S/MIME-Nachrichten', function (): void {
+    if (!function_exists('openssl_pkcs7_sign')) {
+        return;
+    }
+    $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+    $csr = openssl_csr_new(['commonName' => 'Absender', 'emailAddress' => 'a@example.org'], $key);
+    $cert = openssl_csr_sign($csr, null, $key, 1);
+    $in = (string) tempnam(sys_get_temp_dir(), 'ovt');
+    $out = (string) tempnam(sys_get_temp_dir(), 'ovt');
+    file_put_contents($in, "Content-Type: text/plain; charset=utf-8\r\n\r\nGeheimer Gruss\r\n");
+    Assert::true(openssl_pkcs7_sign($in, $out, $cert, $key, ['From' => 'a@example.org', 'Subject' => 'Opak'], 0));
+    $signed = (string) file_get_contents($out);
+    @unlink($in);
+    @unlink($out);
+    Assert::contains('application/', $signed);
+
+    $parsed = (new App\Services\Orvanta\MimeMessageParser())->parse($signed);
+    Assert::true($parsed['signed']);
+    Assert::contains('Geheimer Gruss', $parsed['text']);
+    Assert::same([], $parsed['attachments'], 'smime.p7m erscheint nicht als Anhang.');
+});
+
+// ----------------------------------------------------------------------
 // Antworten und Entwuerfe
 // ----------------------------------------------------------------------
 

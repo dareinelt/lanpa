@@ -13,6 +13,13 @@ namespace App\Services\Orvanta;
  * Unterstuetzt: Header-Unfolding, multipart/* (rekursiv), base64 und
  * quoted-printable, Zeichensatz-Konvertierung nach UTF-8, RFC-2047-Betreff,
  * Anhaenge mit Name/Content-Type/Content-ID (inline-Erkennung).
+ *
+ * S/MIME-signierte Nachrichten (multipart/signed bzw. application/pkcs7-mime
+ * mit smime-type=signed-data) werden wie normale Nachrichten zerlegt: Der
+ * signierte Inhalt liefert Text und Anhaenge, die Signatur selbst erscheint
+ * nicht als Anhang, sondern nur als Kennzeichen 'signed'. Die Signatur wird
+ * dabei nicht kryptografisch geprueft. Verschluesselte Nachrichten
+ * (enveloped-data) bleiben unveraendert ein Anhang.
  */
 final class MimeMessageParser
 {
@@ -28,6 +35,7 @@ final class MimeMessageParser
      *     date: string,
      *     text: string,
      *     html: string,
+     *     signed: bool,
      *     attachments: list<array{name:string,content_type:string,content:string,content_id:string,inline:bool}>
      * }
      */
@@ -43,6 +51,7 @@ final class MimeMessageParser
             'date' => $headers['date'] ?? '',
             'text' => '',
             'html' => '',
+            'signed' => false,
             'attachments' => [],
         ];
         $parts = 0;
@@ -111,7 +120,7 @@ final class MimeMessageParser
 
     /**
      * @param array<string,string> $headers
-     * @param array{headers:array<string,string>,subject:string,from:string,to:string,date:string,text:string,html:string,attachments:list<array{name:string,content_type:string,content:string,content_id:string,inline:bool}>} $result
+     * @param array{headers:array<string,string>,subject:string,from:string,to:string,date:string,text:string,html:string,signed:bool,attachments:list<array{name:string,content_type:string,content:string,content_id:string,inline:bool}>} $result
      */
     private function walkPart(array $headers, string $body, array &$result, int $depth, int &$parts): void
     {
@@ -127,7 +136,13 @@ final class MimeMessageParser
             if ($boundary === '') {
                 return;
             }
-            foreach ($this->splitMultipart($body, $boundary) as $partRaw) {
+            $sections = $this->splitMultipart($body, $boundary);
+            if ($type === 'multipart/signed') {
+                // RFC 1847: erster Teil = signierter Inhalt, zweiter = Signatur.
+                $result['signed'] = true;
+                $sections = array_slice($sections, 0, 1);
+            }
+            foreach ($sections as $partRaw) {
                 [$partHeaderBlock, $partBody] = $this->splitHeaderBody($partRaw);
                 $this->walkPart($this->parseHeaders($partHeaderBlock), $partBody, $result, $depth + 1, $parts);
             }
@@ -136,6 +151,17 @@ final class MimeMessageParser
         }
 
         $decoded = $this->decodeBody($body, strtolower($headers['content-transfer-encoding'] ?? ''));
+
+        if (in_array($type, ['application/pkcs7-mime', 'application/x-pkcs7-mime'], true)) {
+            $inner = $this->signedDataContent($contentType, $decoded);
+            if ($inner !== null) {
+                $result['signed'] = true;
+                [$innerHeaderBlock, $innerBody] = $this->splitHeaderBody($inner);
+                $this->walkPart($this->parseHeaders($innerHeaderBlock), $innerBody, $result, $depth + 1, $parts);
+
+                return;
+            }
+        }
         $disposition = strtolower(trim((string) strtok($headers['content-disposition'] ?? '', ';')));
         $name = $this->partName($headers);
         $contentId = trim($headers['content-id'] ?? '', " \t<>");
@@ -162,6 +188,43 @@ final class MimeMessageParser
         } elseif ($type === 'text/plain' || $type === '') {
             if ($result['text'] === '') {
                 $result['text'] = $text;
+            }
+        }
+    }
+
+    /**
+     * Signierten Inhalt aus einer opak signierten S/MIME-Struktur
+     * (application/pkcs7-mime, smime-type=signed-data) lesen. Die Signatur
+     * wird nicht geprueft (keine Vertrauenskette verfuegbar). Liefert null
+     * bei verschluesselten Nachrichten oder wenn OpenSSL fehlt bzw. die
+     * Struktur nicht lesbar ist.
+     */
+    private function signedDataContent(string $contentType, string $der): ?string
+    {
+        $smimeType = strtolower($this->parameter($contentType, 'smime-type'));
+        if (($smimeType !== '' && $smimeType !== 'signed-data') || $der === '' || !function_exists('openssl_pkcs7_verify')) {
+            return null;
+        }
+        $input = tempnam(sys_get_temp_dir(), 'ovp7i');
+        $output = tempnam(sys_get_temp_dir(), 'ovp7o');
+        if ($input === false || $output === false) {
+            return null;
+        }
+        try {
+            $smime = "MIME-Version: 1.0\r\nContent-Type: application/pkcs7-mime; smime-type=signed-data; name=\"smime.p7m\"\r\n"
+                . "Content-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($der), 64, "\r\n");
+            if (file_put_contents($input, $smime) === false) {
+                return null;
+            }
+            $ok = @openssl_pkcs7_verify($input, PKCS7_NOVERIFY | PKCS7_NOSIGS, null, [], null, $output);
+            $content = $ok === true ? file_get_contents($output) : false;
+
+            return is_string($content) && $content !== '' ? $content : null;
+        } finally {
+            @unlink($input);
+            @unlink($output);
+            while (openssl_error_string() !== false) {
+                // OpenSSL-Fehlerpuffer leeren.
             }
         }
     }

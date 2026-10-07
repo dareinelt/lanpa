@@ -535,6 +535,7 @@ final class OrvantaArchiveService
             return $entry;
         }
         $parsed = $this->parser->parse($payload);
+        $entry['signed'] = $parsed['signed'];
         if ($parsed['html'] !== '') {
             $clean = MailHtmlSanitizer::clean($parsed['html']);
             $entry['body_html'] = $clean['html'];

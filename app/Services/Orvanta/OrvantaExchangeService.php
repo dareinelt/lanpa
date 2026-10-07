@@ -1094,11 +1094,11 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     /**
      * Antwort auf eine Besprechungsanfrage.
      *
-     * @param 'accept'|'tentative'|'decline' $response
+     * @param string $response 'accept'|'tentative'|'decline' (Groß-/Kleinschreibung egal)
      */
     public function respondToMeeting(string $user, string $id, string $response): void
     {
-        $element = match ($response) {
+        $element = match (strtolower(trim($response))) {
             'accept' => 'AcceptItem',
             'tentative' => 'TentativelyAcceptItem',
             'decline' => 'DeclineItem',

@@ -674,6 +674,29 @@ Runner::test('Orvanta: Kalender, Kontakte, Aufgaben und Notizen liefern Elemente
     Assert::contains('Raum 1', $parts['transport']->last());
 });
 
+Runner::test('Orvanta: Besprechungsantwort akzeptiert Gross- und Kleinschreibung', function (): void {
+    $parts = orvantaExchange();
+    // Das Frontend sendet die EWS-Schreibweise (Accept/Tentative/Decline).
+    foreach (['Accept' => 'AcceptItem', 'Tentative' => 'TentativelyAcceptItem', 'Decline' => 'DeclineItem'] as $response => $element) {
+        $parts['exchange']->respondToMeeting('demo@demo.local', 'demo-ev-1', $response);
+        $xml = $parts['transport']->last();
+        Assert::contains('<m:CreateItem MessageDisposition="SendAndSaveCopy">', $xml);
+        Assert::contains('<t:' . $element . '>', $xml);
+        Assert::contains('<t:ReferenceItemId Id="demo-ev-1"', $xml);
+    }
+    // Die dokumentierte Kleinschreibung bleibt unveraendert gueltig.
+    $parts['exchange']->respondToMeeting('demo@demo.local', 'demo-ev-1', 'accept');
+    Assert::contains('<t:AcceptItem>', $parts['transport']->last());
+
+    try {
+        $parts['exchange']->respondToMeeting('demo@demo.local', 'demo-ev-1', 'vielleicht');
+        Assert::true(false, 'Exception erwartet.');
+    } catch (OrvantaException $exception) {
+        Assert::same(422, $exception->status());
+        Assert::contains('Unbekannte Antwort', $exception->getMessage());
+    }
+});
+
 Runner::test('Orvanta: Postfachbelegung summiert alle Ordner (Quota in KB)', function (): void {
     $parts = orvantaExchange();
     $usage = $parts['exchange']->mailboxUsage('demo@demo.local');

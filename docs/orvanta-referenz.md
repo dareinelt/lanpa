@@ -64,7 +64,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | Begriff (UI) | Code | Bedeutung |
 | --- | --- | --- |
 | Benutzer-ID | `$access['uid']` = `office_uid` ?? `username` | Schlüssel für lokale Tabellen und Nextcloud-Bereich |
-| Postfach / Impersonation | `$access['impersonate']`, `OrvantaConfigService::impersonationAddress()` | SMTP-Adresse aus dem AD (`exchange_identity = smtp`) oder `username@<exchange_upn_domain>` (`upn`); im Demo-Modus ersatzweise `username@demo.local` |
+| Postfach / Impersonation | `$access['impersonate']`, `OrvantaMailboxResolver::address()` | Primäre SMTP-Adresse des Postfachs aus dem AD (`proxyAddresses`, Eintrag mit `SMTP:`, je Sitzung 15 min zwischengespeichert); ohne AD-Treffer `OrvantaConfigService::impersonationAddress()`: SMTP-Adresse aus dem AD (`exchange_identity = smtp`) oder `username@<exchange_upn_domain>` (`upn`); im Demo-Modus ersatzweise `username@demo.local` |
 | Dienstkonto | `exchange_service_user` / `exchange_service_password` | Konto mit `ApplicationImpersonation`; Kennwort mit `SecretBox` verschlüsselt |
 | Element-ID | `id` + `change_key` | EWS-`ItemId` (Base64, opak); `change_key` wird nur bei `updateEvent()` mitgesendet |
 | Ordnerschlüssel | `folderKey()` (JS), `EwsXml::folderId()` | Systemordner als Kleinbuchstaben-Name (`inbox`, `drafts`, …), eigene Ordner als `FolderId` |
@@ -81,6 +81,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/Admin/OfficeController.php` | `showOrvanta()` (Unterseite `/admin/office/orvanta`), `updateOrvanta()` (Formular → `OrvantaConfigService::save()`), `testOrvanta()` (`testConnection()`), `render('orvanta', …)` übergibt `orvanta*`-Variablen an `views/admin/office.php` |
 | `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()` |
 | `app/Services/Orvanta/OrvantaExchangeService.php` | Fachlogik je Modul (siehe Abschnitt 5), `call()` (SOAP + Fehlerbehandlung), `translate()` (EWS-Fehlercodes → deutsche Meldung), Mapper `messageSummary()`, `calendarSummary()`, `contactData()`, `taskData()`, `attachmentList()` |
+| `app/Services/Orvanta/OrvantaMailboxResolver.php` | `address($ssoUser)`: primäre SMTP-Adresse des Postfachs aus dem AD (`LdapClient::primaryMailboxAddress()`, `proxyAddresses`), je Sitzung 15 min in `orvanta_mailbox_address`; ohne AD-Treffer, ohne `ldap`-Erweiterung, im Demo-Modus und für Testbenutzer gilt `OrvantaConfigService::impersonationAddress()` |
 | `app/Services/Orvanta/EwsXml.php` | `envelope()`, `parse()`, `error()`, `text()/attr()/bool()/elements()`, `itemId()/itemIds()`, `mailbox()/mailboxes()/recipients()`, `folderId()`, `dateTime()` (UTC), `timestamp()`, `escape()` |
 | `app/Contracts/ExchangeTransportInterface.php` | `post(url, xml, options): {status, body, error}` |
 | `app/Services/Orvanta/CurlExchangeTransport.php` | cURL-POST, Auth `negotiate` (mit Dienstkonto `CURLAUTH_NTLM`, da GSSAPI Benutzer/Kennwort ignoriert und `app` kein Kerberos-Ticket hat; ohne Konto `CURLAUTH_NEGOTIATE` mit `:`), `ntlm`, `basic`; keine Redirects, nur HTTP(S); liefert `auth_offered` (WWW-Authenticate der letzten Antwort) |
@@ -198,7 +199,7 @@ Reihenfolge und Antwort bei Fehlschlag:
 2. `orvantaConfig()->isEnabled()` falsch (`exchange_enabled ≠ 1` oder keine EWS-URL) → **404**.
 3. `officeApps()->findAllowed('orvanta', $ssoUser)` ist `null` (keine Freigabe per AD-Gruppe/App-Paket) → **403**.
 4. Aktive Office-Kachel (`OfficeController::ENTRY_PATH`) für den Benutzer nicht zugänglich → **403**.
-5. Keine Postfachadresse (`impersonationAddress()` leer) und kein Demo-Modus → **403**.
+5. Keine Postfachadresse (`OrvantaMailboxResolver::address()` leer) und kein Demo-Modus → **403**.
 
 Rückgabe: `{user, uid, impersonate}`. Der Browser bestimmt die Identität nie
 selbst – `impersonate` stammt ausschließlich aus SSO + Konfiguration.
@@ -310,8 +311,9 @@ OrvantaExchangeService::<operation>()
 ```
 
 `translate()` übersetzt u. a. `ErrorImpersonateUserDenied`/`ErrorImpersonationDenied`,
-`ErrorNonExistentMailbox`, `ErrorItemNotFound`, `ErrorFolderNotFound`,
-`ErrorAccessDenied`, `ErrorSchemaValidation`; alles andere „Exchange-Fehler: …“.
+`ErrorNonExistentMailbox` (Hinweis auf die primäre Adresse aus `proxyAddresses`),
+`ErrorItemNotFound`, `ErrorFolderNotFound`, `ErrorAccessDenied`,
+`ErrorSchemaValidation`; alles andere „Exchange-Fehler: …“.
 **Alle** Exchange-Fehler erscheinen in der API als HTTP 502 (fachliche
 Vorprüfungen des Service als 422/404).
 

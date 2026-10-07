@@ -190,6 +190,66 @@ final class LdapClient implements LdapClientInterface
         ];
     }
 
+    /** SMTP-Adressen des Postfachs am Benutzerobjekt (primaer + Aliase). */
+    private const MAILBOX_ADDRESS_ATTRIBUTE = 'proxyAddresses';
+
+    /**
+     * Primaere SMTP-Adresse des Exchange-Postfachs eines Benutzers aus dem AD
+     * (proxyAddresses). Nur diese Adresse ist als Postfach-Kennung eindeutig:
+     * das Attribut "mail" oder der Anmeldename koennen auf eine Adresse
+     * zeigen, die Exchange nicht als Alias kennt. null = kein Postfach bzw.
+     * keine verwendbare Adresse gefunden.
+     */
+    public function primaryMailboxAddress(string $samAccountName): ?string
+    {
+        $attribute = (string) ($this->config['attributes']['samaccount_name'] ?? 'sAMAccountName');
+        if ($samAccountName === '' || !Validator::isLdapAttribute($attribute)) {
+            return null;
+        }
+        $connection = $this->connect();
+        try {
+            $filter = '(&(objectClass=user)(' . $attribute . '=' . ldap_escape($samAccountName, '', LDAP_ESCAPE_FILTER) . '))';
+            $result = @ldap_search($connection, (string) $this->config['base_dn'], $filter, [self::MAILBOX_ADDRESS_ATTRIBUTE], 0, 2);
+            if ($result === false) {
+                throw new RuntimeException('LDAP-Suche fehlgeschlagen: ' . ldap_error($connection));
+            }
+            $entries = ldap_get_entries($connection, $result);
+            if (!is_array($entries) || ($entries['count'] ?? 0) !== 1) {
+                return null;
+            }
+            /** @var array<string,mixed> $user */
+            $user = $entries[0];
+
+            return self::primarySmtpFromProxyAddresses($user);
+        } finally {
+            @ldap_unbind($connection);
+        }
+    }
+
+    /**
+     * Primaere SMTP-Adresse aus proxyAddresses: nur der Eintrag mit
+     * Grossbuchstaben-Praefix "SMTP:" ist die primaere Adresse des Postfachs,
+     * "smtp:" sind Alias-Adressen (nicht Postfach-Kennung), andere Praefixe
+     * (X400, SIP, …) sind keine SMTP-Adressen.
+     *
+     * @param array<string,mixed> $user LDAP-Eintrag des Benutzers
+     */
+    public static function primarySmtpFromProxyAddresses(array $user): ?string
+    {
+        foreach (self::allValues($user, self::MAILBOX_ADDRESS_ATTRIBUTE) as $value) {
+            $separator = strpos($value, ':');
+            if ($separator === false || substr($value, 0, $separator) !== 'SMTP') {
+                continue;
+            }
+            $address = trim(substr($value, $separator + 1));
+            if (filter_var($address, FILTER_VALIDATE_EMAIL) !== false) {
+                return $address;
+            }
+        }
+
+        return null;
+    }
+
     /**
      * OID von LDAP_MATCHING_RULE_IN_CHAIN: loest verschachtelte
      * Gruppenmitgliedschaften serverseitig auf (Active Directory, Samba AD).
@@ -403,6 +463,35 @@ final class LdapClient implements LdapClientInterface
         }
 
         return is_string($raw) ? $raw : null;
+    }
+
+    /**
+     * Alle Werte eines mehrwertigen LDAP-Attributs (ldap_get_entries liefert
+     * ['count' => n, 0 => 'wert', …]).
+     *
+     * @param array<string,mixed> $entry
+     *
+     * @return list<string>
+     */
+    private static function allValues(array $entry, string $attribute): array
+    {
+        /** @var mixed $raw */
+        $raw = $entry[strtolower($attribute)] ?? null;
+        if (is_string($raw)) {
+            return [$raw];
+        }
+        if (!is_array($raw)) {
+            return [];
+        }
+        $values = [];
+        foreach ($raw as $key => $value) {
+            if ($key === 'count' || !is_string($value)) {
+                continue;
+            }
+            $values[] = $value;
+        }
+
+        return $values;
     }
 
     /**

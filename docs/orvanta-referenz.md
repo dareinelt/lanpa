@@ -566,6 +566,16 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   auf `?modul=<name>`; Startmodul: `?modul=` vor `data-module` (in
   `views/orvanta/index.php` über `$moduleFor` aus `default_folder` abgeleitet,
   `inbox` → `mail`); `?modul=calendar&termin=<id>` öffnet einen Termin (`init()`).
+- Mail-Aktualisierung: `startMailPolling()` ruft `refreshMail()` im Takt
+  `poll_interval` (≥ 15 s) und bei `visibilitychange` (sichtbar, letzter
+  Abgleich > 15 s). Still (ohne Ladeanzeige/Toasts, `noPasswordPrompt`):
+  `mail/ordner` (`applyFolders()`) und erste Seite des aktuellen Ordners
+  (`limit` = geladene Anzahl, 50–100; weitere nachgeladene Seiten bleiben
+  angehängt). Übersprungen bei verborgenem Tab, anderem Modul, Suche,
+  Archivordner, Ziehen oder offenem Kontextmenü; verworfen, wenn sich
+  Ordner oder `state.messages` inzwischen geändert haben. Neu gezeichnet wird
+  nur bei Änderungen (`renderMessagesKeepingView()` hält Scrollposition,
+  Fokus, Auswahl und Detailansicht). Der eigene Verfassen-Tab pollt nicht.
 - `api(path, {query, body})`: `credentials: same-origin`, `Accept: application/json`,
   `X-CSRF-Token`; mit `body` automatisch POST + JSON. Nicht-JSON → „Ungültige
   Antwort des Servers.“; HTTP-Fehler → `Error(data.error)`. Netzwerkfehler und

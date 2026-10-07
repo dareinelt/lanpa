@@ -992,22 +992,24 @@
     var FOLDER_LABELS = { inbox: 'Posteingang', drafts: 'Entwürfe', sentitems: 'Gesendete Elemente', deleteditems: 'Gelöschte Elemente', junkemail: 'Junk-E-Mail', outbox: 'Postausgang' };
     var FOLDER_ICONS = { inbox: '📥', drafts: '📝', sentitems: '📤', deleteditems: '🗑', junkemail: '⚠', outbox: '📮', folder: '📁' };
 
-    function loadFolders() {
-        return api('/mail/ordner').then(function (data) {
-            state.folders = data.folders || data || [];
-            renderFolders();
-            var inboxUnread = 0;
-            state.folders.forEach(function (folder) {
-                if (folder.kind === 'inbox') {
-                    inboxUnread = folder.unread;
-                }
-            });
-            var count = $('[data-ov-module-count="mail"]');
-            if (count) {
-                count.textContent = inboxUnread > 0 ? String(inboxUnread) : '';
-                count.hidden = inboxUnread <= 0;
+    function applyFolders(data) {
+        state.folders = data.folders || data || [];
+        renderFolders();
+        var inboxUnread = 0;
+        state.folders.forEach(function (folder) {
+            if (folder.kind === 'inbox') {
+                inboxUnread = folder.unread;
             }
-        }).catch(function (error) {
+        });
+        var count = $('[data-ov-module-count="mail"]');
+        if (count) {
+            count.textContent = inboxUnread > 0 ? String(inboxUnread) : '';
+            count.hidden = inboxUnread <= 0;
+        }
+    }
+
+    function loadFolders() {
+        return api('/mail/ordner').then(applyFolders).catch(function (error) {
             renderSimpleSidebar('Ordner', []);
             toast(error.message, 'error');
         }).then(function () {
@@ -1228,6 +1230,7 @@
         var offset = append ? state.messages.length : 0;
         if (!append) {
             listMessage('Wird geladen …', 'ov-list__empty--loading');
+            lastMailRefresh = Date.now();
         }
         return api('/mail', { query: { ordner: state.folder, offset: offset, limit: 50, q: state.search } }).then(function (data) {
             state.messages = append ? state.messages.concat(data.items || []) : (data.items || []);
@@ -1248,6 +1251,129 @@
             markSync();
         }).catch(function (error) {
             listMessage(error.message, 'ov-list__empty--error');
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // Mail: Automatische Aktualisierung (Takt poll_interval)
+    // ------------------------------------------------------------------
+
+    var lastMailRefresh = 0;
+    var mailRefreshBusy = false;
+
+    /**
+     * Hintergrundabgleich nur, wenn er den Benutzer nicht stoert: Mail-Modul
+     * sichtbar, keine Suche/Archivansicht, kein Ziehen und kein offenes
+     * Kontextmenue.
+     */
+    function mailRefreshAllowed() {
+        return state.module === 'mail' && !document.hidden && !mailRefreshBusy
+            && !isArchiveFolder(state.folder) && !state.search && !state.dragIds
+            && !(ctx.menu && !ctx.menu.hidden);
+    }
+
+    /**
+     * Ordner (Ungelesen-Zaehler) und die erste Seite des aktuellen Ordners
+     * still nachladen – ohne Ladeanzeige, Fehler-Toasts oder Kennwortabfrage.
+     * Auswahl, Detailansicht und Scrollposition bleiben erhalten.
+     */
+    function refreshMail() {
+        if (!mailRefreshAllowed()) {
+            return Promise.resolve();
+        }
+        mailRefreshBusy = true;
+        lastMailRefresh = Date.now();
+        var folder = state.folder;
+        var before = state.messages;
+        var limit = Math.min(100, Math.max(50, before.length));
+        var folders = api('/mail/ordner', { noPasswordPrompt: true }).then(function (data) {
+            if (state.module === 'mail' && !state.dragIds) {
+                applyFolders(data);
+            }
+        }).catch(function () {});
+        var messages = api('/mail', { query: { ordner: folder, offset: 0, limit: limit }, noPasswordPrompt: true }).then(function (data) {
+            // Zwischenzeitlich gewechselt oder neu geladen: Ergebnis verwerfen.
+            if (state.module !== 'mail' || state.folder !== folder || state.search || state.messages !== before || state.dragIds) {
+                return;
+            }
+            applyRefreshedMessages(data, limit);
+        }).catch(function () {});
+        return Promise.all([folders, messages]).then(function () {
+            mailRefreshBusy = false;
+        });
+    }
+
+    function applyRefreshedMessages(data, limit) {
+        var items = data.items || [];
+        var old = state.messages;
+        var hasMore = !!data.has_more;
+        if (old.length > limit && items.length >= limit) {
+            // Bereits nachgeladene Seiten hinter der ersten Seite behalten.
+            var known = {};
+            items.forEach(function (m) { known[m.id] = true; });
+            items = items.concat(old.slice(limit).filter(function (m) { return !known[m.id]; }));
+            hasMore = state.hasMore;
+        }
+        var total = data.total || items.length;
+        markSync();
+        if (total === state.total && hasMore === state.hasMore && JSON.stringify(items) === JSON.stringify(old)) {
+            return;
+        }
+        var ids = {};
+        items.forEach(function (m) { ids[m.id] = true; });
+        state.messages = items;
+        state.total = total;
+        state.hasMore = hasMore;
+        state.selectedIds = state.selectedIds.filter(function (id) { return ids[id]; });
+        renderMessagesKeepingView();
+    }
+
+    /** Liste neu zeichnen, dabei sichtbare Zeile und Tastaturfokus halten. */
+    function renderMessagesKeepingView() {
+        var body = hook('list-body');
+        if (!body) {
+            renderMessages();
+            return;
+        }
+        var anchorId = null;
+        var anchorOffset = 0;
+        var top = body.getBoundingClientRect().top;
+        if (body.scrollTop > 0) {
+            var rows = $$('.ov-item', body);
+            for (var i = 0; i < rows.length; i++) {
+                var rect = rows[i].getBoundingClientRect();
+                if (rect.bottom > top) {
+                    anchorId = rows[i].getAttribute('data-id');
+                    anchorOffset = rect.top - top;
+                    break;
+                }
+            }
+        }
+        var scrollTop = body.scrollTop;
+        var active = document.activeElement;
+        var focusRow = active && body.contains(active) ? active.closest('.ov-item') : null;
+        var focusId = focusRow ? focusRow.getAttribute('data-id') : null;
+        renderMessages();
+        var anchor = anchorId !== null ? $('[data-id="' + CSS.escape(anchorId) + '"]', body) : null;
+        if (anchor) {
+            body.scrollTop += anchor.getBoundingClientRect().top - top - anchorOffset;
+        } else {
+            body.scrollTop = scrollTop;
+        }
+        var focusNode = focusId !== null ? $('[data-id="' + CSS.escape(focusId) + '"]', body) : null;
+        if (focusNode) {
+            focusNode.focus({ preventScroll: true });
+        }
+    }
+
+    function startMailPolling() {
+        var interval = Math.max(15, parseInt(config.pollInterval, 10) || 60) * 1000;
+        window.setInterval(refreshMail, interval);
+        document.addEventListener('visibilitychange', function () {
+            // Beim Zurueckkehren in den Tab sofort abgleichen, falls faellig.
+            if (!document.hidden && Date.now() - lastMailRefresh > 15000) {
+                refreshMail();
+            }
         });
     }
 
@@ -6085,6 +6211,7 @@
         }
         loadQuota();
         startReminderPolling();
+        startMailPolling();
         $$('[data-ov-tasks-completed]').forEach(function (box) {
             state.tasksCompleted = box.checked;
         });

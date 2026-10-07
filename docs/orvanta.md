@@ -293,7 +293,7 @@ Zuordnung 24 Stunden (`storage/cache/orvanta_primary_smtp.json`).
 | `reminder_lead_minutes` | Vorlaufzeit, wenn ein Termin keine eigene Erinnerung hat | 15 |
 | `reminder_header` | Fällige Erinnerungen auch in den Mitteilungen der Kopfzeile | an |
 | `default_folder` | Startansicht (`inbox`, `calendar`, …) | `inbox` |
-| `poll_interval` | Abfrageintervall der App in Sekunden | 60 |
+| `poll_interval` | Abfrageintervall der App in Sekunden (neue E-Mails, Ungelesen-Zähler, Erinnerungen) | 60 |
 | `archive_enabled` | Langzeitarchiv aktivieren (siehe Abschnitt 7a) | aus |
 | `archive_group` | AD-Gruppe, deren Mitglieder archiviert werden; Pflicht bei aktivierter Archivierung, ohne Gruppe wird niemand archiviert | leer |
 | `archive_threshold`, `archive_threshold_unit` | Auslöse-Schwelle der Postfachbelegung (`percent` der Postfachgrenze oder `mb` absolut) | 80 / `percent` |

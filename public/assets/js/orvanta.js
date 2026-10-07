@@ -100,6 +100,39 @@
     }
 
     /**
+     * (Bereinigtes) Mail-HTML in einfachen Text umwandeln, z. B. fuer die Notiz
+     * einer aus einer E-Mail erzeugten Aufgabe: Blockelemente werden zu
+     * Zeilenumbruechen, ueberzaehlige Leerzeilen entfallen.
+     */
+    function htmlToPlainText(html) {
+        var holder = document.createElement('div');
+        holder.innerHTML = String(html || '');
+        var blocks = { P: 1, DIV: 1, LI: 1, TR: 1, BLOCKQUOTE: 1, PRE: 1, TABLE: 1, H1: 1, H2: 1, H3: 1, H4: 1, H5: 1, H6: 1 };
+        var out = '';
+        (function walk(node) {
+            for (var child = node.firstChild; child; child = child.nextSibling) {
+                if (child.nodeType === 3) {
+                    out += child.nodeValue;
+                } else if (child.nodeType === 1) {
+                    if (child.tagName === 'BR') {
+                        out += '\n';
+                        continue;
+                    }
+                    var block = blocks[child.tagName] === 1;
+                    if (block && out !== '' && out.charAt(out.length - 1) !== '\n') {
+                        out += '\n';
+                    }
+                    walk(child);
+                    if (block && out.charAt(out.length - 1) !== '\n') {
+                        out += '\n';
+                    }
+                }
+            }
+        })(holder);
+        return out.replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{2,}/g, '\n').trim();
+    }
+
+    /**
      * Fest zugeordnete Signatur in den Editor einfuegen: schreibgeschuetzter
      * Block (contenteditable=false) vor einem Zitat bzw. am Ende. Vorhandene
      * Bloecke (z. B. aus einem Entwurf) werden ersetzt; massgeblich ist ohnehin
@@ -3196,6 +3229,24 @@
         return card;
     }
 
+    /**
+     * Ausgewaehlte E-Mail als neue Aufgabe uebernehmen: Betreff und Text der
+     * Nachricht wandern in den Aufgabendialog; Faelligkeit, Erinnerung und die
+     * uebrigen Felder ergaenzt der Benutzer dort vor dem Speichern.
+     */
+    function mailToTask() {
+        if (!state.selected) {
+            toast('Bitte zuerst eine E-Mail auswählen.', 'info');
+            return;
+        }
+        withFullMessage(state.selected).then(function (message) {
+            if (!message) {
+                return;
+            }
+            openTaskDialog({ subject: message.subject || '', body: htmlToPlainText(message.body_html) });
+        });
+    }
+
     function openTaskDialog(task) {
         var form = hook('form-task');
         if (!form) {
@@ -3204,9 +3255,9 @@
         form.reset();
         var title = hook('task-title', form.closest('dialog'));
         if (title) {
-            title.textContent = task ? 'Aufgabe bearbeiten' : 'Neue Aufgabe';
+            title.textContent = task && task.id ? 'Aufgabe bearbeiten' : 'Neue Aufgabe';
         }
-        form.elements.id.value = task ? task.id : '';
+        form.elements.id.value = task && task.id ? task.id : '';
         if (task) {
             form.elements.subject.value = task.subject || '';
             form.elements.start.value = task.start ? toDateInput(fromTs(task.start)) : '';
@@ -3242,9 +3293,13 @@
         api('/aufgaben/aufgabe', { body: payload }).then(function (result) {
             closeDialog('task');
             toast(result.message || 'Aufgabe gespeichert.', 'success');
-            state.selected = null;
-            showDetailEmpty();
-            loadTasks();
+            // Aus dem Mail-Modul heraus darf die Aufgabenliste den Lesebereich
+            // nicht ueberschreiben; dort wird beim Modulwechsel neu geladen.
+            if (state.module === 'tasks') {
+                state.selected = null;
+                showDetailEmpty();
+                loadTasks();
+            }
         }).catch(function (error) {
             formError(form, error.message);
         });
@@ -3778,6 +3833,7 @@
                 break;
             }
             case 'print': window.print(); break;
+            case 'mail-to-task': mailToTask(); break;
             case 'refresh': loadModule(); loadQuota(); syncReminders(true); break;
             case 'more': loadMessages(true); break;
             case 'event-new': openEventDialog(null, state.module === 'calendar' ? state.calDate : null); break;

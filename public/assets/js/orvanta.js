@@ -1624,6 +1624,12 @@
         ]);
         wrap.appendChild(head);
 
+        if (message.signed) {
+            wrap.appendChild(el('div', { 'class': 'ov-mail__meeting ov-mail__signed-note', title: 'Orvanta zeigt den signierten Inhalt an; das Zertifikat des Absenders wird dabei nicht geprüft.' }, [
+                el('span', { text: '🔏 Diese E-Mail wurde vom Absender digital signiert.' })
+            ]));
+        }
+
         if (message.archived) {
             wrap.appendChild(el('div', { 'class': 'ov-mail__meeting ov-mail__archive-note' }, [
                 el('span', { text: '📦 Archivierte Nachricht – aus dem Langzeitarchiv in Nextcloud gelesen (Integrität geprüft).' })

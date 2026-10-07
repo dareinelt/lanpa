@@ -22,6 +22,9 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
 {
     public const MAIL_FOLDERS = ['inbox', 'drafts', 'sentitems', 'deleteditems', 'junkemail', 'outbox'];
 
+    /** Kennungs-Praefix fuer Anhaenge aus dem Inhalt S/MIME-signierter Nachrichten. */
+    public const SIGNED_ATTACHMENT_PREFIX = 'orvanta-signed:';
+
     private const MESSAGE_FIELDS = '<t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="item:DateTimeReceived"/><t:FieldURI FieldURI="item:DateTimeSent"/>'
         . '<t:FieldURI FieldURI="item:HasAttachments"/><t:FieldURI FieldURI="item:Size"/><t:FieldURI FieldURI="item:Importance"/><t:FieldURI FieldURI="item:ItemClass"/>'
         . '<t:FieldURI FieldURI="message:From"/><t:FieldURI FieldURI="message:IsRead"/><t:FieldURI FieldURI="message:ToRecipients"/><t:FieldURI FieldURI="item:Preview"/>'
@@ -484,8 +487,90 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
         $data['sender'] = EwsXml::mailbox($xpath, 't:Sender', $item);
         $data['internet_message_id'] = EwsXml::text($xpath, 't:InternetMessageId', $item);
         $data['attachments'] = $this->attachmentList($xpath, $item);
+        $data['signed'] = false;
+        if (str_starts_with(strtolower((string) $data['item_class']), 'ipm.note.smime')) {
+            $data = $this->unwrapSigned($user, $data);
+        }
 
         return $data;
+    }
+
+    /**
+     * S/MIME-signierte Nachricht wie eine normale E-Mail darstellen: Exchange
+     * liefert dafuer nur einen leeren Text und die Originalnachricht als
+     * Anhang (smime.p7m). Text und Anhaenge werden deshalb aus dem
+     * MIME-Inhalt gelesen; die Signatur selbst wird nur als Kennzeichen
+     * 'signed' gemeldet (keine kryptografische Pruefung). Verschluesselte
+     * oder nicht lesbare Nachrichten bleiben unveraendert.
+     *
+     * @param array<string,mixed> $data
+     * @return array<string,mixed>
+     */
+    private function unwrapSigned(string $user, array $data): array
+    {
+        try {
+            $mime = $this->messageMime($user, (string) $data['id'])['mime'];
+        } catch (OrvantaException) {
+            return $data;
+        }
+        if ($mime === '') {
+            return $data;
+        }
+        $parsed = (new MimeMessageParser())->parse($mime);
+        if (!$parsed['signed']) {
+            return $data;
+        }
+        if ($parsed['html'] !== '') {
+            $clean = MailHtmlSanitizer::clean($parsed['html']);
+            $data['body_html'] = $clean['html'];
+            $data['blocked_images'] = $clean['blocked_images'];
+        } else {
+            $data['body_html'] = nl2br(htmlspecialchars($parsed['text'], ENT_QUOTES, 'UTF-8'));
+            $data['blocked_images'] = 0;
+        }
+        $attachments = [];
+        foreach ($parsed['attachments'] as $index => $attachment) {
+            $attachments[] = [
+                'id' => self::SIGNED_ATTACHMENT_PREFIX . $index . ':' . $data['id'],
+                'name' => $attachment['name'],
+                'content_type' => $attachment['content_type'],
+                'content_id' => $attachment['content_id'],
+                'size' => strlen($attachment['content']),
+                'inline' => $attachment['inline'],
+                'is_item' => false,
+            ];
+        }
+        $data['attachments'] = $attachments;
+        $data['has_attachments'] = array_filter($attachments, static fn (array $a): bool => !$a['inline']) !== [];
+        $data['signed'] = true;
+
+        return $data;
+    }
+
+    /**
+     * Anhang aus dem signierten Inhalt einer S/MIME-Nachricht
+     * (Kennung SIGNED_ATTACHMENT_PREFIX . Index . ':' . ItemId).
+     *
+     * @return array{name:string,content_type:string,content:string,size:int}
+     */
+    private function signedAttachment(string $user, string $attachmentId): array
+    {
+        $parts = explode(':', substr($attachmentId, strlen(self::SIGNED_ATTACHMENT_PREFIX)), 2);
+        $itemId = $parts[1] ?? '';
+        if ($itemId === '' || !ctype_digit($parts[0])) {
+            throw new OrvantaException('Der Anhang wurde nicht gefunden.', 404);
+        }
+        $attachment = (new MimeMessageParser())->parse($this->messageMime($user, $itemId)['mime'])['attachments'][(int) $parts[0]] ?? null;
+        if ($attachment === null) {
+            throw new OrvantaException('Der Anhang wurde nicht gefunden.', 404);
+        }
+
+        return [
+            'name' => $attachment['name'],
+            'content_type' => $attachment['content_type'],
+            'content' => $attachment['content'],
+            'size' => strlen($attachment['content']),
+        ];
     }
 
     /**
@@ -781,6 +866,9 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
      */
     public function attachment(string $user, string $attachmentId): array
     {
+        if (str_starts_with($attachmentId, self::SIGNED_ATTACHMENT_PREFIX)) {
+            return $this->signedAttachment($user, $attachmentId);
+        }
         $xpath = $this->call('<m:GetAttachment><m:AttachmentIds><t:AttachmentId Id="' . EwsXml::escape($attachmentId) . '"/></m:AttachmentIds></m:GetAttachment>', $user);
         $file = EwsXml::elements($xpath, '//m:Attachments/t:FileAttachment')[0] ?? null;
         if ($file === null) {

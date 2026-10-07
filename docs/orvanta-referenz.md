@@ -582,6 +582,14 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
 - Mail-Anzeige: `body.innerHTML = inlineStylesToCssom(message.body_html)`,
   danach `data-ov-style` → `node.style.cssText`; Links erhalten
   `target=_blank` und `rel="noopener noreferrer nofollow"`.
+- Aufgabe aus E-Mail: Menüband-Schaltfläche `data-ov-action="mail-to-task"`
+  (Reiter Start, `data-ov-needs="message"`) → `mailToTask()` lädt die
+  vollständige Nachricht (`withFullMessage()`), wandelt das bereinigte
+  `body_html` mit `htmlToPlainText()` in Text um und öffnet den Aufgabendialog
+  vorausgefüllt (`openTaskDialog({subject, body})`). `openTaskDialog()`
+  behandelt ein Objekt ohne `id` als neue Aufgabe (Titel „Neue Aufgabe“,
+  verstecktes `id`-Feld leer); gespeichert wird über den bestehenden Endpunkt
+  `aufgaben/aufgabe` (leere `id` → `createTask()`).
 - Tastatur (außerhalb von Eingabefeldern/Dialogen): `1`–`5` Module, `/` Suche,
   `N` Neu, `R` Antworten, `Entf` Löschen (je Modul), Pfeile hoch/runter in der
   Liste, `Esc` schließt das Erinnerungs-Popover.

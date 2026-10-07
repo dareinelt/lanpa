@@ -133,6 +133,9 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         <!-- Start: Mail -->
         <div class="ov-ribbon__panel" id="ov-panel-start" role="tabpanel" data-ov-panel="start" data-ov-for="mail">
             <div class="ov-rg"><div class="ov-rg__items"><?= $rb('compose', 'Neue E-Mail', 'data-ov-action="compose"') ?><?= $rb('plus', 'Neues Element', 'data-ov-action="new-menu" aria-haspopup="true"') ?></div><div class="ov-rg__label">Neu</div></div>
+            <?php if (($capabilities['tasks'] ?? true) === true) { ?>
+            <div class="ov-rg"><div class="ov-rg__items"><?= $rb('tasks', 'In Aufgabe übernehmen', 'data-ov-action="mail-to-task" data-ov-needs="message"') ?></div><div class="ov-rg__label">Aufgabe</div></div>
+            <?php } ?>
             <div class="ov-rg"><div class="ov-rg__items"><?= $rb('trash', 'Löschen', 'data-ov-action="mail-delete" data-ov-needs="message"') ?><?= $rb('archive', 'Archivieren', 'data-ov-action="mail-archive" data-ov-needs="message"') ?><?= $rb('move', 'Verschieben', 'data-ov-action="mail-move" data-ov-needs="message"') ?></div><div class="ov-rg__label">Löschen</div></div>
             <div class="ov-rg"><div class="ov-rg__items"><?= $rb('reply', 'Antworten', 'data-ov-action="reply" data-ov-needs="message"') ?><?= $rb('replyall', 'Allen antworten', 'data-ov-action="replyall" data-ov-needs="message"') ?><?= $rb('forward', 'Weiterleiten', 'data-ov-action="forward" data-ov-needs="message"') ?></div><div class="ov-rg__label">Antworten</div></div>
             <div class="ov-rg"><div class="ov-rg__items ov-rg__items--column"><?= $rb('unread', 'Ungelesen/Gelesen', 'data-ov-action="toggle-read" data-ov-needs="message"', true) ?><?= $rb('flag', 'Zur Nachverfolgung', 'data-ov-action="toggle-flag" data-ov-needs="message"', true) ?><?= $rb('print', 'Drucken', 'data-ov-action="print" data-ov-needs="message"', true) ?></div><div class="ov-rg__label">Kategorien</div></div>
@@ -502,6 +505,9 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
             <div class="ov-dialog__head"><h2><?= $icon('help') ?> Kurzanleitung</h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
             <div class="ov-dialog__body ov-help">
                 <p><strong>Module</strong> wechseln Sie links: Mail, Kalender, Kontakte, Aufgaben, Notizen. Die mittlere Spalte listet die Elemente, rechts erscheint das Detail.</p>
+                <?php if (($capabilities['tasks'] ?? true) === true) { ?>
+                <p><strong>E-Mail als Aufgabe:</strong> Bei geöffneter Nachricht übernimmt „In Aufgabe übernehmen“ (Menüband <em>Start</em>) den Betreff als Titel und den Text als Notiz in eine neue Aufgabe. Fälligkeit, Erinnerung und Priorität ergänzen Sie im Dialog.</p>
+                <?php } ?>
                 <p><strong>Anhänge</strong> öffnen sich per Klick in einem neuen Tab in Euro-Office (Word, Excel, PowerPoint, PDF). Mit „In Nextcloud speichern“ legen Sie den Anhang dauerhaft in Ihrem Nextcloud-Ordner ab.</p>
                 <p><strong>Erinnerungen</strong> zu Terminen erscheinen als Desktop-Benachrichtigung, als Hinweis in Orvanta und in den Mitteilungen des Intranets. Sie können sie verschieben („Später“) oder schließen.</p>
                 <?php if (!empty($orvanta['aiAvailable'])) { ?>

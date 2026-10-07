@@ -24,10 +24,10 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 
 | Modul | Funktionen |
 |---|---|
-| **Mail** ✉ | Ordnerbaum (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner), Nachrichtenliste mit Suche, Lesen (HTML bereinigt durch `MailHtmlSanitizer`), Verfassen/Antworten/Allen antworten/Weiterleiten, Entwürfe, Kennzeichnen, Gelesen/Ungelesen, Verschieben (Dialog oder per Drag&Drop auf einen Ordner im Ordnerbaum), Löschen, Anhänge öffnen/speichern; Rechtsklick auf einen Ordner: Neuer Ordner, Alle als gelesen markieren, Eigenschaften (Größe und Anzahl der Elemente) |
+| **Mail** ✉ | Ordnerbaum (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner), Nachrichtenliste mit Suche, Lesen (HTML bereinigt durch `MailHtmlSanitizer`), Verfassen/Antworten/Allen antworten/Weiterleiten, Entwürfe, Kennzeichnen, Gelesen/Ungelesen, Verschieben (Dialog oder per Drag&Drop auf einen Ordner im Ordnerbaum), Löschen, Anhänge öffnen/speichern, **In Aufgabe übernehmen**; Rechtsklick auf einen Ordner: Neuer Ordner, Alle als gelesen markieren, Eigenschaften (Größe und Anzahl der Elemente) |
 | **Kalender** 📅 | Monats-, Wochen- und Tagesansicht, Termine anlegen/bearbeiten/löschen (ganztägig, Ort, Teilnehmer, Erinnerung), Besprechungsanfragen annehmen/unter Vorbehalt/ablehnen |
 | **Kontakte** 👥 | Alphabetische Liste mit Buchstabengruppen, Details, Anlegen/Bearbeiten/Löschen, E-Mail direkt aus dem Kontakt |
-| **Aufgaben** ✓ | Liste mit Fälligkeit/Priorität, Erledigt-Schalter, Anlegen/Bearbeiten/Löschen |
+| **Aufgaben** ✓ | Liste mit Fälligkeit/Priorität, Erledigt-Schalter, Anlegen/Bearbeiten/Löschen, Übernahme einer E-Mail als Aufgabe |
 | **Notizen** 📝 | Kachelansicht, Anlegen/Bearbeiten/Löschen |
 | **Erinnerungen** | Terminerinnerungen als Dialog in der App, als Browser-Benachrichtigung (HTML5 Notifications API) und in den **Mitteilungen** der Intranet-Kopfzeile |
 | **KI-Unterstützung** 🤖 | Markierten Text per Rechtsklick vom lokalen KI-Modell (Office → Lokale KI) umformulieren lassen – in E-Mails, Terminen und Erinnerungen; Vorschläge hellblau markiert, verfeinerbar, zurücksetzbar; Marker werden vor dem Senden entfernt (Abschnitt 7) |
@@ -61,6 +61,14 @@ Der Verlauf liegt je Benutzer als versteckte Datei `.empfaenger.json` im
 Orvanta-Ordner seiner Nextcloud (`<cache_folder>/`) und wird nach jedem
 Versand aktualisiert; Verlaufstreffer stehen in der Liste oben
 („Zuletzt verwendet“). Ohne Nextcloud gibt es nur die Telefonliste.
+
+Ist eine Nachricht im Lesebereich geöffnet, übernimmt die Menüband-Schaltfläche
+**„In Aufgabe übernehmen“** (Reiter *Start*, Gruppe *Aufgabe*) die Nachricht in
+eine neue Aufgabe: Der Betreff wird zum Aufgabentitel, der Nachrichtentext zur
+Notiz. Der Aufgabendialog öffnet sich vorausgefüllt, sodass Fälligkeitsdatum,
+Erinnerung, Status und Priorität vor dem Speichern ergänzt werden können. Die
+Aufgabe landet wie jede andere im Modul **Aufgaben** (Exchange); die E-Mail
+selbst bleibt unverändert.
 
 ---
 

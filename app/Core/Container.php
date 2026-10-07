@@ -438,7 +438,35 @@ final class Container
     {
         return self::make(
             \App\Services\Orvanta\OrvantaConfigService::class,
-            static fn (): \App\Services\Orvanta\OrvantaConfigService => new \App\Services\Orvanta\OrvantaConfigService(self::orvantaRepository(), self::secretBox())
+            static fn (): \App\Services\Orvanta\OrvantaConfigService => new \App\Services\Orvanta\OrvantaConfigService(
+                self::orvantaRepository(),
+                self::secretBox(),
+                self::orvantaExchangeHostRepository()
+            )
+        );
+    }
+
+    public static function orvantaExchangeHostRepository(): \App\Repositories\OrvantaExchangeHostRepository
+    {
+        return self::make(
+            \App\Repositories\OrvantaExchangeHostRepository::class,
+            static fn (): \App\Repositories\OrvantaExchangeHostRepository => new \App\Repositories\OrvantaExchangeHostRepository()
+        );
+    }
+
+    /**
+     * Lastverteilung und Failover ueber die Hosts der Exchange-DAG. Ohne
+     * gepflegte Hostliste wirkt nur der konfigurierte Exchange-Server.
+     */
+    public static function orvantaExchangePool(): \App\Services\Orvanta\OrvantaExchangePool
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaExchangePool::class,
+            static fn (): \App\Services\Orvanta\OrvantaExchangePool => new \App\Services\Orvanta\OrvantaExchangePool(
+                self::orvantaExchangeHostRepository(),
+                self::orvantaConfig(),
+                static fn (): string => \App\Security\Session::id()
+            )
         );
     }
 
@@ -476,7 +504,8 @@ final class Container
             static fn (): \App\Services\Orvanta\OrvantaExchangeService => new \App\Services\Orvanta\OrvantaExchangeService(
                 self::exchangeTransport(),
                 self::orvantaConfig(),
-                BASE_PATH . '/storage/cache/orvanta_primary_smtp.json'
+                BASE_PATH . '/storage/cache/orvanta_primary_smtp.json',
+                self::orvantaExchangePool()
             )
         );
     }

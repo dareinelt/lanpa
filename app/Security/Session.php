@@ -36,6 +36,14 @@ final class Session
         $_SESSION[$key] = $value;
     }
 
+    /**
+     * Kennung der aktuellen Sitzung ('' ohne aktive PHP-Sitzung, z. B. CLI).
+     */
+    public static function id(): string
+    {
+        return session_status() === PHP_SESSION_ACTIVE ? session_id() : '';
+    }
+
     public static function get(string $key, mixed $default = null): mixed
     {
         return $_SESSION[$key] ?? $default;

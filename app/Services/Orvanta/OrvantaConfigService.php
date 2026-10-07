@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Orvanta;
 
 use App\Exceptions\ValidationException;
+use App\Repositories\OrvantaExchangeHostRepository;
 use App\Repositories\OrvantaRepository;
 use App\Security\SecretBox;
 use App\Support\Validator;
@@ -59,7 +60,8 @@ final class OrvantaConfigService
 
     public function __construct(
         private readonly OrvantaRepository $repository,
-        private readonly SecretBox $secrets
+        private readonly SecretBox $secrets,
+        private readonly ?OrvantaExchangeHostRepository $hosts = null
     ) {
     }
 
@@ -108,6 +110,20 @@ final class OrvantaConfigService
         $host = trim($this->get('exchange_host'));
 
         return $host === '' ? '' : 'https://' . $host . '/EWS/Exchange.asmx';
+    }
+
+    /**
+     * Hostname des konfigurierten Exchange-Servers (primaerer Host der DAG):
+     * `exchange_host`, sonst der Host aus dem EWS-Endpunkt; '' ohne Angabe.
+     */
+    public function primaryHost(): string
+    {
+        $host = strtolower(trim($this->get('exchange_host')));
+        if ($host !== '') {
+            return $host;
+        }
+
+        return strtolower((string) parse_url(trim($this->get('exchange_ews_url')), PHP_URL_HOST));
     }
 
     public function owaUrl(): string
@@ -472,6 +488,14 @@ final class OrvantaConfigService
 
         $this->repository->saveSettings($values);
         $this->cache = null;
+        // Der konfigurierte Server ist immer der primaere Host der DAG: die
+        // Hostliste (Office → Orvanta – DAG-Hosts) wird mitgezogen, damit kein
+        // umbenannter Altbestand stehen bleibt.
+        try {
+            $this->hosts?->syncPrimary($this->primaryHost(), $values['exchange_ews_url']);
+        } catch (\PDOException) {
+            // Vor der Migration 043: keine Hostliste vorhanden.
+        }
     }
 
     public static function isHttpsUrl(string $url): bool

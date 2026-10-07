@@ -12,6 +12,12 @@ werden; Orvanta nutzt dann statt EWS den internen SMTP-/IMAP-Proxy (nur Mail,
 siehe [Abschnitt 4b](#4b-smtp-imap-proxy-benutzer-ohne-exchange) und
 [docs/mail-proxy.md](mail-proxy.md)).
 
+Stellt Exchange die Postfächer in einer **Database Availability Group (DAG)**
+auf mehreren Servern bereit, verteilt Orvanta seine Sitzungen auf die
+Mitglieder der Gruppe und weicht bei einem Ausfall ohne Zutun des Benutzers
+automatisch auf einen anderen Host aus (Abschnitt 4c,
+Admin → Office → Orvanta – Exchange-DAG-Hosts).
+
 Technische Details für Entwickler und Coding-Agenten (Code-Landkarte,
 API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 [docs/orvanta-referenz.md](orvanta-referenz.md).
@@ -145,7 +151,10 @@ flowchart LR
 | `OrvantaApiController` | `app/Controllers/OrvantaApiController.php` | JSON-API für Mail, Kalender, Kontakte, Aufgaben, Notizen, Anhänge, Zwischenspeicher, Erinnerungen |
 | `Admin\OfficeController` | `app/Controllers/Admin/OfficeController.php` | `updateOrvanta()` (Einstellungen), `testOrvanta()` (Verbindungstest) |
 | `OrvantaConfigService` | `app/Services/Orvanta/` | Einstellungen (`DEFAULTS`), Validierung, Dienstkonto-Kennwort verschlüsselt, Demo-Erkennung |
-| `OrvantaExchangeService` | `app/Services/Orvanta/` | Fachlogik zu Exchange: Ordner, Nachrichten, Termine, Kontakte, Aufgaben, Notizen, Erinnerungen; Impersonation des Benutzers |
+| `OrvantaExchangeService` | `app/Services/Orvanta/` | Fachlogik zu Exchange: Ordner, Nachrichten, Termine, Kontakte, Aufgaben, Notizen, Erinnerungen; Impersonation des Benutzers; Failover über die Hosts der DAG (Abschnitt 4c) |
+| `OrvantaExchangePool` | `app/Services/Orvanta/` | Lastverteilung (Fair-use, Sitzungszahl, Antwortzeit), Sitzungsaffinität, Failover und Kachelwerte des DAG-Dashboards |
+| `OrvantaExchangeHostRepository` | `app/Repositories/` | Tabellen `orvanta_exchange_hosts` und `orvanta_exchange_sessions` (Hostliste, Lastkennzahlen, Sitzungszuordnung) |
+| `Admin\OrvantaHostController` | `app/Controllers/Admin/OrvantaHostController.php` | DAG-Dashboard unter `/admin/office/orvanta/hosts` (Hosts ergänzen, Wartung, entfernen, Verbindungstest, JSON-Kachelwerte) |
 | `CurlExchangeTransport` / `DemoExchangeTransport` | `app/Services/Orvanta/` | EWS-SOAP per cURL (`ExchangeTransportInterface`) bzw. Beispieldaten ohne Server |
 | `EwsXml` | `app/Services/Orvanta/` | Aufbau/Auswertung der SOAP-Nachrichten (`DOMDocument`) |
 | `MailHtmlSanitizer` | `app/Services/Orvanta/` | HTML-Mails bereinigen (Skripte, externe Inhalte, Event-Handler entfernen) |
@@ -161,9 +170,9 @@ flowchart LR
 | `Admin\OrvantaSignatureController` | `app/Controllers/Admin/OrvantaSignatureController.php` | Pflege der Signaturvorlagen unter `/admin/office/signaturen` (Liste, Formular, Vorschau-iframe) |
 | `OrvantaRepository` | `app/Repositories/OrvantaRepository.php` | Zugriff auf die drei Orvanta-Tabellen |
 | `OrvantaSignatureRepository` | `app/Repositories/OrvantaSignatureRepository.php` | Tabelle `orvanta_signatures` |
-| Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer |
-| Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php` | |
-| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql` | |
+| Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `admin-orvanta-hosts.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer, Live-Aktualisierung des DAG-Dashboards |
+| Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `views/admin/orvanta-hosts.php` | |
+| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql` | |
 | `OrvantaMailRouter`, `ProxyMailBackend` | `app/Services/MailProxy/` | Backend-Auswahl je Benutzer (Exchange oder SMTP-/IMAP-Proxy, gemeinsames `OrvantaMailBackendInterface`); Details in [mail-proxy.md](mail-proxy.md) |
 | Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/OrvantaSpellcheckTest.php`, `tests/Unit/MailProxyTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen gegen SQLite; Rechtschreibung gegen ein eigenes Mini-Wörterbuch |
 
@@ -181,6 +190,8 @@ flowchart LR
 | `orvanta_archive_folders` | Abbild der Exchange-Ordner im Archiv | `archive_id` + `folder_hash` (unique), `exchange_folder_id`, `name`, `path` |
 | `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (immer `mime`; `json` ist reserviert und wird nicht mehr geschrieben), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
 | `orvanta_archive_jobs` | Archivierungsläufe inkl. Sperre (höchstens ein Lauf je Archiv) | `archive_id`, `status` (running/completed/failed), `locked_until`, Zähler, `last_error` |
+| `orvanta_exchange_hosts` | Hosts der Exchange-DAG (Migration 043, Abschnitt 4c) | `host` (unique), `ews_url`, `is_primary`, `active` (Wartung), `sort_order`, `latency_ms`/`latency_samples`/`last_latency_ms`, `last_session_at` (Fair-use), `last_check_at`, `last_ok`, `last_error`, `failures` |
+| `orvanta_exchange_sessions` | Zuordnung laufender Orvanta-Sitzungen zu einem Host | `session_hash` (unique, `sha1` der PHP-Sitzung), `user_uid`, `host`, `failovers`, `requests`, `started_at`, `last_seen_at` |
 
 ### Routen
 
@@ -188,7 +199,7 @@ flowchart LR
 - Anhänge: `GET /office/orvanta/anhang/oeffnen?token=…`,
   `GET /office/orvanta/anhang/datei?token=…` (Zugriff des DocumentServers).
 - API (`/api/orvanta/…`, JSON, CSRF-Token im Header `X-CSRF-Token`):
-  `status`, `sitzung` (Keep-alive, aktuelles CSRF-Token), `mail/ordner`, `mail/ordner/eigenschaften`, `mail/ordner/neu`, `mail/ordner/gelesen` (Ordner-Kontextmenü), `mail/kennwort` (nur Proxy-Postfächer: geändertes Kennwort übernehmen), `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
+  `status`, `sitzung` (Keep-alive, aktuelles CSRF-Token und aktueller Exchange-Host der Sitzung), `mail/ordner`, `mail/ordner/eigenschaften`, `mail/ordner/neu`, `mail/ordner/gelesen` (Ordner-Kontextmenü), `mail/kennwort` (nur Proxy-Postfächer: geändertes Kennwort übernehmen), `mail`, `mail/nachricht`, `mail/kopfzeilen` (rohe Kopfzeilen, Kontextmenü „Info“), `mail/senden`,
   `empfaenger` (Vorschläge für An/Cc/Bcc), `mail/entwurf`, `mail/antworten`, `mail/aktion`, `anhang/link`,
   `anhang/nextcloud`, `zwischenspeicher`, `zwischenspeicher/leeren`,
   `kalender`, `kalender/termin` (GET/POST), `kalender/termin/loeschen`,
@@ -207,7 +218,14 @@ flowchart LR
   `POST /admin/office/orvanta/pruefen`; Signaturvorlagen
   `GET /admin/office/signaturen`, `GET|POST /admin/office/signaturen/vorlage`,
   `POST /admin/office/signaturen/loeschen`,
-  `GET /admin/office/signaturen/vorschau` (iframe mit eigener CSP).
+  `GET /admin/office/signaturen/vorschau` (iframe mit eigener CSP);
+  Exchange-DAG (Abschnitt 4c):
+  `GET /admin/office/orvanta/hosts` (Dashboard),
+  `POST /admin/office/orvanta/hosts` (Hosts ergänzen, DAG bestätigt),
+  `POST /admin/office/orvanta/hosts/status` (Wartung/aktivieren),
+  `POST /admin/office/orvanta/hosts/loeschen` (entfernen),
+  `POST /admin/office/orvanta/hosts/pruefen` (Verbindungstest einzeln/alle),
+  `GET /admin/office/orvanta/hosts/daten` (Kachelwerte als JSON).
 
 ---
 
@@ -370,6 +388,78 @@ einzelnen Postfächern zugeordnet. Für zugeordnete Benutzer wählt
   (`POST /api/orvanta/mail/kennwort`).
 
 Einrichtung, Sicherheit, Cache und Fehlersuche: [docs/mail-proxy.md](mail-proxy.md).
+
+---
+
+## 4c. Exchange-DAG: mehrere Hosts, Lastverteilung und Failover
+
+Exchange On-Premise kann Postfächer in einer **Database Availability Group
+(DAG)** auf mehreren Servern replizieren. Orvanta verteilt seine Sitzungen dann
+auf die Mitglieder der Gruppe, statt nur einen Server zu nutzen.
+
+![Adminbereich – Orvanta: DAG-Hosts mit Kacheln je Host, Formular zum Ergänzen und Liste der verbundenen Sitzungen](screenshots/103-admin-orvanta-dag-hosts.png)
+
+**Grundsatz:** Eine DAG lässt sich nur zu einer **vorhandenen, getesteten
+Konfiguration** ergänzen. Der unter Office → Orvanta eingetragene Server
+(`exchange_host`) ist und bleibt der **primäre Host**; ohne ihn gibt es keine
+Hostliste. Beim Ergänzen bestätigt der Admin per Kontrollkästchen und Rückfrage
+(Ja/Abbrechen), dass die angegebenen Server Mitglieder **derselben** DAG sind
+und dasselbe Postfach bereitstellen – Orvanta kann das nicht prüfen, und eine
+falsche Angabe führt dazu, dass Benutzer ihre Mails nicht öffnen können. Der
+Demo-Modus (`exchange_host = demo`) kennt keine echten Hosts.
+
+**Verteilung neuer Sitzungen** (`OrvantaExchangePool::session()`), in dieser
+Reihenfolge:
+
+| Priorität | Kriterium | Bedeutung |
+|---|---|---|
+| 1 | Fair-use | Der Host, der am längsten keine neue Sitzung mehr erhalten hat (`last_session_at`), ist zuerst an der Reihe; noch nie bediente Hosts zuerst. |
+| 2 | Sitzungszahl | Bei gleicher Wartezeit erhält der Host mit den wenigsten verbundenen Sitzungen die neue Sitzung (Sitzungen ohne Aktivität seit 300 Sekunden gelten als beendet). |
+| 3 | Antwortzeit | Bleibt es gleich, entscheidet die geringste gemittelte Antwortzeit (`latency_ms`, gleitendes Mittel der letzten Messungen). Ein noch nicht gemessener Host gilt als bester Wert und wird dadurch zuerst geprüft. |
+
+Ist eine Sitzung einem Host zugeordnet, bleibt sie dort
+(**Sitzungsaffinität**). Der Schlüssel ist die PHP-Sitzung, als
+`sha1('orvanta-dag:' . session_id())` in `orvanta_exchange_sessions`.
+
+**Failover:** Antwortet der gewählte Host nicht (Verbindungsfehler, Zeitlimit,
+HTTP ≥ 500 ohne fachlichen EWS-Fehler), markiert Orvanta ihn als gestört und
+schreibt die Zuordnung der Sitzung auf den nächsten Host nach derselben
+Prioritätenfolge um. Lesende Anfragen wiederholt Orvanta dort – der Benutzer
+merkt davon nichts. Ändernde Anfragen (z. B. Senden, Verschieben, Löschen)
+werden nur wiederholt, wenn sie den gestörten Host nie erreicht haben; sonst
+erhält der Benutzer eine Fehlermeldung, damit keine Mail doppelt verschickt
+wird. Der Vorgang wird in
+`orvanta_exchange_sessions.failovers` gezählt und im Protokoll als
+Host-Fehler (`last_error`, `failures`) geführt. Ein frisch gestörter Host ist
+60 Sekunden lang nachrangig (Selbstheilung), danach wird er wieder geprüft.
+HTTP **401/403** löst **kein** Failover aus: eine abgelehnte Anmeldung betrifft
+alle Hosts der DAG. Dasselbe gilt für fachliche SOAP-Fehler wie ein nicht
+vorhandenes Postfach oder eine verweigerte Impersonation.
+
+**Sichtbar für den Benutzer:** Im Fußbereich der App nennt der Tooltipp über der
+Verbindungsanzeige („Verbunden mit Exchange“) den aktuellen Exchange-Host der
+Sitzung (`OrvantaController::exchangeHost()`). Nach einer Umleitung zieht er
+nach, sobald die App die Sitzung auffrischt (`GET /api/orvanta/sitzung`). Bei
+Postfächern am SMTP-/IMAP-Proxy (Abschnitt 4b) und im Demo-Modus gibt es keinen
+Tooltipp – dort ist kein Exchange-Host beteiligt.
+
+**Dashboard:** Admin → Office → **Orvanta – Exchange-DAG-Hosts**
+(`/admin/office/orvanta/hosts`) zeigt je Host eine Kachel mit Hostname,
+Status (Online/Gestört/Wartung/Ungeprüft), Latenz (Ø und letzte Antwort),
+verbundenen Sitzungen, letzter Prüfung, letzter Sitzungszuweisung und der
+letzten Fehlermeldung. Aktionen je Kachel: **Verbindung testen**, **Wartung**
+(aktivieren/deaktivieren) und **Entfernen** (nicht für den primären Host). Ein
+Host in Wartung erhält keine neuen Sitzungen, bestehende werden beim nächsten
+Aufruf umgeleitet; der letzte aktive Host lässt sich nicht abschalten. Die
+Kacheln aktualisieren sich automatisch (`GET …/hosts/daten`, JSON, nur lesend,
+Intervall aus `poll_interval`), die Seite bleibt ohne JavaScript bedienbar.
+
+**Grenzen:** höchstens 16 Hosts (Vorgabe von Exchange), Hostname je Zeile
+(optional mit abweichender EWS-Adresse), keine Prüfung der DAG-Zugehörigkeit
+durch Orvanta. Ohne Migration 043 arbeitet Orvanta unverändert mit dem
+konfigurierten Server weiter (die Verteilung fällt still auf ihn zurück).
+Beendete Sitzungszeilen räumt der Archiv-Worker auf
+(`OrvantaExchangePool::purge()`, älter als 24 Stunden).
 
 ---
 

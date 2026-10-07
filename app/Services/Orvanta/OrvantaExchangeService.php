@@ -38,11 +38,15 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     /**
      * @param string|null $primaryCacheFile Datei fuer die gelernte Zuordnung
      *                                      Alias-Adresse -> primaere SMTP-Adresse
+     * @param OrvantaExchangePool|null $pool Lastverteilung und Failover ueber die
+     *                                      Hosts einer Exchange-DAG (null: nur
+     *                                      der konfigurierte Server)
      */
     public function __construct(
         private readonly ExchangeTransportInterface $transport,
         private readonly OrvantaConfigService $config,
-        private readonly ?string $primaryCacheFile = null
+        private readonly ?string $primaryCacheFile = null,
+        private readonly ?OrvantaExchangePool $pool = null
     ) {
     }
 
@@ -75,14 +79,19 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
 
     /**
      * Prueft die Verbindung: Posteingang des Dienstkontos bzw. des Benutzers.
+     * $url erzwingt einen bestimmten Endpunkt (Verbindungstest eines einzelnen
+     * Hosts der DAG im Dashboard); ohne Angabe waehlt die Lastverteilung.
      *
      * @return array{ok:bool,message:string,server_version:string}
      */
-    public function testConnection(string $impersonate = ''): array
+    public function testConnection(string $impersonate = '', ?string $url = null): array
     {
         $xpath = $this->call(
             '<m:GetFolder><m:FolderShape><t:BaseShape>Default</t:BaseShape></m:FolderShape><m:FolderIds><t:DistinguishedFolderId Id="inbox"/></m:FolderIds></m:GetFolder>',
-            $impersonate
+            $impersonate,
+            true,
+            false,
+            $url
         );
         $name = EwsXml::text($xpath, '//t:Folder/t:DisplayName');
         $total = EwsXml::text($xpath, '//t:Folder/t:TotalCount');
@@ -1197,17 +1206,21 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
 
     /**
      * SOAP-Aufruf mit Fehlerbehandlung. $strict=false toleriert Teilfehler
-     * (z. B. nicht vorhandene Systemordner).
+     * (z. B. nicht vorhandene Systemordner). $url erzwingt einen bestimmten
+     * Endpunkt (Verbindungstest eines einzelnen DAG-Hosts) und umgeht damit die
+     * Lastverteilung.
      */
-    private function call(string $body, string $impersonate, bool $strict = true, bool $retried = false): DOMXPath
+    private function call(string $body, string $impersonate, bool $strict = true, bool $retried = false, ?string $url = null): DOMXPath
     {
-        $url = $this->config->ewsUrl();
-        if ($url === '') {
+        $configured = $this->config->ewsUrl();
+        if ($url === null && $configured === '') {
             throw new OrvantaException('Es ist kein Exchange-Server konfiguriert. Bitte im Adminbereich unter Office → Orvanta eintragen.', 503);
         }
         $impersonate = $this->primaryAddress($impersonate);
         $xml = EwsXml::envelope($body, $this->config->get('exchange_version'), $impersonate);
-        $response = $this->transport->post($url, $xml, $this->config->transportOptions());
+        $response = $url === null
+            ? $this->request($xml, $impersonate, $configured, self::isReadOnly($body))
+            : $this->transport->post($url, $xml, $this->config->transportOptions());
         if (($response['error'] ?? '') !== '') {
             throw new OrvantaException('Exchange ist nicht erreichbar: ' . $response['error'], 502);
         }
@@ -1238,6 +1251,161 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
         }
 
         return $xpath;
+    }
+
+    /**
+     * Uebergibt die SOAP-Anfrage an einen Host der Exchange-DAG. Faellt der
+     * gewaehlte Host aus, wird die Sitzung ohne Zutun des Benutzers auf den
+     * naechsten Host umgeleitet. Lesende Anfragen werden dort wiederholt;
+     * aendernde (Senden, Anlegen, Verschieben, Loeschen …) nur, wenn sie den
+     * ausgefallenen Host nachweislich nie erreicht haben – sonst koennte z. B.
+     * eine Mail doppelt versendet werden. Ohne Lastverteilung (kein Pool) bzw.
+     * ohne eingetragenen Host geht die Anfrage an den konfigurierten Server.
+     *
+     * @return array{status:int,body:string,error:?string,auth_offered?:list<string>,request_sent?:bool}
+     */
+    private function request(string $xml, string $impersonate, string $configuredUrl, bool $retryable): array
+    {
+        $options = $this->config->transportOptions();
+        if ($this->pool === null) {
+            return $this->transport->post($configuredUrl, $xml, $options);
+        }
+
+        $key = $this->pool->sessionKey();
+        $host = $this->pool->session($key, $impersonate);
+        if ($host === null) {
+            return $this->transport->post($configuredUrl, $xml, $options);
+        }
+        $tried = [];
+        while (true) {
+            $tried[] = (string) $host['host'];
+            $started = microtime(true);
+            $response = $this->transport->post(self::hostUrl($host), $xml, $options);
+            $duration = (int) round((microtime(true) - $started) * 1000);
+            if (!self::hostFailed($response)) {
+                $this->pool->recordSuccess($host, $duration);
+
+                return $response;
+            }
+            $this->pool->recordFailure($host, (string) (($response['error'] ?? '') !== '' ? $response['error'] : ('HTTP ' . $response['status'])));
+            // Die Zuordnung wechselt in jedem Fall, damit der naechste Aufruf
+            // nicht erneut am gestoerten Host haengt.
+            $next = $this->pool->failover($key, $tried);
+            if ($next === null || (!$retryable && self::requestSent($response))) {
+                return $response;
+            }
+            $host = $next;
+        }
+    }
+
+    /**
+     * Rein lesende EWS-Operationen duerfen nach einem Host-Ausfall gefahrlos
+     * auf einem anderen Host wiederholt werden. Alles andere gilt als aendernd.
+     */
+    private static function isReadOnly(string $body): bool
+    {
+        if (preg_match('/^\s*<m:([A-Za-z]+)/', $body, $match) !== 1) {
+            return false;
+        }
+
+        return in_array($match[1], self::READ_ONLY_OPERATIONS, true);
+    }
+
+    /**
+     * Hat die Anfrage den Host erreicht? Der Transport meldet das ueber
+     * `request_sent`; ohne Angabe gilt jede HTTP-Antwort als zugestellt.
+     *
+     * @param array{status:int,body:string,error:?string,auth_offered?:list<string>,request_sent?:bool} $response
+     */
+    private static function requestSent(array $response): bool
+    {
+        return isset($response['request_sent']) ? (bool) $response['request_sent'] : (int) $response['status'] > 0;
+    }
+
+    /** Lesende EWS-Operationen (Wiederholung auf einem anderen DAG-Host erlaubt). */
+    private const READ_ONLY_OPERATIONS = [
+        'GetFolder', 'FindFolder', 'FindItem', 'GetItem', 'GetAttachment', 'ResolveNames',
+        'GetUserAvailability', 'ConvertId', 'GetServerTimeZones', 'GetUserOofSettings',
+        'SyncFolderItems', 'SyncFolderHierarchy', 'GetInboxRules', 'ExpandDL', 'GetMailTips',
+    ];
+
+    /**
+     * EWS-Fehlercodes, die einen gestoerten Host bedeuten (Postfachdatenbank
+     * nicht bereit, Server ueberlastet). Andere SOAP-Fehler – Exchange liefert
+     * sie mit HTTP 500 – betreffen die Anfrage oder das Postfach und waeren auf
+     * jedem Host der DAG gleich.
+     */
+    private const HOST_ERROR_CODES = [
+        'ErrorServerBusy', 'ErrorMailboxStoreUnavailable', 'ErrorConnectionFailed',
+        'ErrorInternalServerTransientError', 'ErrorMailboxMoveInProgress',
+    ];
+
+    /**
+     * Host-Ausfall: Verbindungsfehler, Zeitueberschreitung oder Serverfehler
+     * (HTTP 5xx ohne auswertbare EWS-Antwort bzw. mit einem Fehlercode aus
+     * HOST_ERROR_CODES). Eine abgelehnte Anmeldung (HTTP 401/403) und
+     * fachliche SOAP-Fehler (z. B. fehlendes Postfach, verweigerte
+     * Impersonation) sind kein Host-Ausfall: sie betreffen alle Mitglieder der
+     * DAG gleich.
+     *
+     * @param array{status:int,body:string,error:?string,auth_offered?:list<string>,request_sent?:bool} $response
+     */
+    private static function hostFailed(array $response): bool
+    {
+        $status = (int) $response['status'];
+        if (($response['error'] ?? '') !== '' || $status === 0) {
+            return true;
+        }
+        if ($status < 500) {
+            return false;
+        }
+        $xpath = EwsXml::parse($response['body']);
+        $error = $xpath !== null ? EwsXml::error($xpath) : null;
+        if ($error === null) {
+            return true;
+        }
+        foreach (self::HOST_ERROR_CODES as $code) {
+            if (str_contains($error, $code)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string,mixed> $host
+     */
+    private static function hostUrl(array $host): string
+    {
+        $url = trim((string) ($host['ews_url'] ?? ''));
+
+        return $url !== '' ? $url : 'https://' . (string) $host['host'] . '/EWS/Exchange.asmx';
+    }
+
+    /**
+     * Verbindungstest zu einem einzelnen Host der DAG (Dashboard). Der Aufruf
+     * umgeht die Sitzungsaffinitaet und veraendert die Zuordnung der
+     * Benutzersitzungen nicht; die gemessene Antwortzeit fliesst in die
+     * Lastverteilung ein.
+     *
+     * @param array<string,mixed> $host Zeile aus orvanta_exchange_hosts
+     *
+     * @return array{ok:bool,message:string,server_version:string,latency_ms:int}
+     */
+    public function testHost(array $host, string $impersonate = ''): array
+    {
+        $name = (string) $host['host'];
+        $started = microtime(true);
+        try {
+            $result = $this->testConnection($impersonate, self::hostUrl($host));
+        } catch (OrvantaException $exception) {
+            throw new OrvantaException('Der Host „' . $name . '“: ' . $exception->getMessage(), $exception->getCode() ?: 502);
+        }
+        $result['message'] = 'Der Host „' . $name . '“: ' . $result['message'];
+        $result['latency_ms'] = (int) round((microtime(true) - $started) * 1000);
+
+        return $result;
     }
 
     /** Gelernte Zuordnungen gelten einen Tag; danach wird erneut bei Exchange nachgefragt. */

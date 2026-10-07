@@ -28,6 +28,7 @@ use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\NetworkDriveController as NetworkDriveAdminController;
 use App\Controllers\Admin\OfficeController as OfficeAdminController;
 use App\Controllers\Admin\OfficeAppsController as OfficeAppsAdminController;
+use App\Controllers\Admin\OrvantaHostController;
 use App\Controllers\Admin\OrvantaSignatureController;
 use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
@@ -361,6 +362,13 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/office/orvanta', [OfficeAdminController::class, 'showOrvanta']);
         $router->post('/admin/office/orvanta', [OfficeAdminController::class, 'updateOrvanta']);
         $router->post('/admin/office/orvanta/pruefen', [OfficeAdminController::class, 'testOrvanta']);
+        // Orvanta: Hosts einer Exchange-DAG (Lastverteilung, Ausfallsicherung, Dashboard).
+        $router->get('/admin/office/orvanta/hosts', [OrvantaHostController::class, 'index']);
+        $router->post('/admin/office/orvanta/hosts', [OrvantaHostController::class, 'add']);
+        $router->post('/admin/office/orvanta/hosts/status', [OrvantaHostController::class, 'toggle']);
+        $router->post('/admin/office/orvanta/hosts/loeschen', [OrvantaHostController::class, 'remove']);
+        $router->post('/admin/office/orvanta/hosts/pruefen', [OrvantaHostController::class, 'check']);
+        $router->get('/admin/office/orvanta/hosts/daten', [OrvantaHostController::class, 'data']);
         $router->get('/admin/office/kachel/vorschau', [OfficeAdminController::class, 'tilePreview']);
         $router->get('/admin/office/apps', [OfficeAppsAdminController::class, 'index']);
         $router->post('/admin/office/apps/owa', [OfficeAppsAdminController::class, 'updateOwa']);

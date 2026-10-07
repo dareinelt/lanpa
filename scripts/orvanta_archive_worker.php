@@ -11,6 +11,8 @@ declare(strict_types=1);
  * OrvantaArchiveService). Archiviert werden nur Mitglieder der konfigurierten
  * AD-Gruppe (Standard: niemand). Mehrere
  * Instanzen sind durch die Job-Sperre in orvanta_archive_jobs ungefaehrlich.
+ * Nebenbei raeumt der Worker beendete Orvanta-Sitzungen der Exchange-DAG-Hosts
+ * auf (orvanta_exchange_sessions, siehe OrvantaExchangePool::purge()).
  *
  * Aufruf:
  *   php scripts/orvanta_archive_worker.php          Endlosschleife (Intervall aus der Konfiguration)
@@ -28,6 +30,9 @@ do {
         Container::reset();
         $config = Container::orvantaConfig();
         $interval = $config->archivePollInterval();
+        // Beendete Orvanta-Sitzungen der DAG-Hosts aufraeumen (Sitzungsaffinitaet
+        // und Fair-use brauchen nur die laufenden Zuordnungen).
+        Container::orvantaExchangePool()->purge();
         if ($config->archiveEnabled()) {
             $service = Container::orvantaArchive();
             foreach (Container::orvantaArchiveRepository()->archives() as $archive) {

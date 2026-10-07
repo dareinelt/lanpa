@@ -12,9 +12,12 @@ namespace App\Contracts;
 interface ExchangeTransportInterface
 {
     /**
+     * `request_sent` (optional) meldet, ob die Anfrage den Server erreicht hat;
+     * ohne Angabe gilt jede Antwort mit HTTP-Status als zugestellt.
+     *
      * @param array{auth:string,username:string,password:string,timeout:int,verify_tls:bool,headers?:array<string,string>} $options
      *
-     * @return array{status:int,body:string,error:?string,auth_offered?:list<string>}
+     * @return array{status:int,body:string,error:?string,auth_offered?:list<string>,request_sent?:bool}
      */
     public function post(string $url, string $xml, array $options): array;
 }

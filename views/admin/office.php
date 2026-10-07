@@ -469,6 +469,7 @@ $ov = $orvantaValues;
     </p>
     <p>
         <a class="button" href="/admin/office/signaturen">Signaturvorlagen verwalten</a>
+        <a class="button" href="/admin/office/orvanta/hosts">DAG-Hosts verwalten</a>
     </p>
     <?php if ($orvantaEnabled) { ?>
         <p class="status status--ok">

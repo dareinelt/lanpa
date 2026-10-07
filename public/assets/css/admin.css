@@ -2400,3 +2400,32 @@ body.has-nav-tree-overlay {
     margin-top: auto;
     padding-top: .5rem;
 }
+
+/* Subgrid: Kopf, Meta, Kennzahlzeilen, Fehler und Aktionen nebeneinander
+   liegender Kacheln teilen sich dieselben Zeilenspuren und stehen auf einer Höhe. */
+@supports (grid-template-rows: subgrid) {
+    .host-tile {
+        display: grid;
+        grid-row: span 9;
+        grid-template-rows: subgrid;
+        row-gap: .6rem;
+    }
+
+    .host-tile__head { grid-row: 1; }
+    .host-tile__meta { grid-row: 2; }
+
+    .host-tile .status-list {
+        grid-row: 3 / span 5;
+        grid-template-rows: subgrid;
+        margin: 0;
+    }
+
+    .host-tile .status-list li { align-items: end; }
+    .host-tile__error { grid-row: 8; }
+
+    .host-tile .row-actions {
+        grid-row: 9;
+        align-self: end;
+        margin-top: 0;
+    }
+}

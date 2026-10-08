@@ -148,7 +148,7 @@ app/            Anwendungscode
   Repositories/ Datenbankzugriff (PDO)
   Security/     Auth, Csrf, Session
   Services/     Geschäftslogik (Unterordner Office/, Orvanta/, Tls/, …)
-  Support/      Dates, Html, Sanitizer, Validator
+  Support/      Color, Dates, Html, Sanitizer, TileColors, Validator
 config/         Konfiguration aus Umgebungsvariablen (app, database, ldap)
 database/
   migrations/   SQL-Migrationen (001…033)
@@ -260,7 +260,7 @@ Ereignisstart-Requests. Vollständige Notfallhistorie über MySQL sichern, nicht
 `EmergencyNumberService`, `FaviconService`, `ImportService`, `ImportantLinkService`,
 `LdapAttributeMapper`, `LdapClient`, `LogoService`, `NavigationService`,
 `IdentitySourceService` (Identitätsquellen: Hauptquelle ID 0 aus `settings`, weitere aus `identity_sources`; Validierung, Ver-/Entschlüsselung der Zugangsdaten, SSO-Routen/Worker, `authEnvironment()` für `/internal/sso-config`),
-`PhonebookService`, `SettingsService`, `SmsCodeService`, `StatisticsService`, `ThemeService`,
+`PhonebookService`, `SettingsService`, `SmsCodeService`, `StatisticsService`, `ThemeService` (Designfarben → geprüfte CSS-Variablen je Modus; Kachel-Textfarben werden bei zu geringem Kontrast automatisch angepasst),
 `Tls\TlsCertificateService` (CSR/Schlüssel erzeugen, Import-Vorschau und -Bestätigung, Aktivierung, Notfall-Zertifikat, HTTP-Quellnetze `tls_http_networks`, `authConfig()` für `/internal/tls-config`) + `Tls\CertificateInspector` (PEM/DER/Base64 lesen, Details, Kette ordnen, Status valid/expiring/expired/not_yet_valid, Hostname-Abdeckung).
 
 Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
@@ -290,7 +290,9 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 - `Html::e()` – zentrales Escaping (htmlspecialchars, UTF-8).
 - `Validator` – Eingabe-/URL-/Farb-/Typ-Prüfung.
 - `Sanitizer` – HTML-Reinigung (Rich-Text).
+- `Color` – WCAG-Farbrechnung (`blend`, `relativeLuminance`, `contrastRatio`, `bestTextColor`, `ensureContrast`, `MIN_CONTRAST = 4.5`).
 - `Dates` – Datums-/Zeitraum-Helfer (u. a. für die Statistik).
+- `TileColors::variables()` – kontrastsichere Textfarben einer Kachel (`--tile-text`, `--tile-muted`, `--tile-accent`, `--tile-hover-bg`, `--tile-details-text`) aus Designfarben, Kachelfarbe und Deckkraft; genutzt von `ThemeService` (Vorgaben) und `views/partials/tiles.php` (je Kachel).
 
 ### Contracts (`app/Contracts/`) & Exceptions (`app/Exceptions/`)
 
@@ -535,7 +537,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | LDAP-Attribut-Mapping | `config/ldap.php` / `LDAP_ATTR_*` bzw. Adminbereich „Active Directory“ |
 | Alarmierung anlegen | Navigationselement vom Typ `alarm` anlegen; Ziel (Gruppe/Rufnummer) in `alarm_groups`; Gateway unter **Alarmierung** konfigurieren |
 | Geschütztes Element | `protected_access` am Element setzen; erlaubte Rufnummern unter **Aktivierungs-Rufnummern** pflegen |
-| Frontend-Styling | `public/assets/css/app.css` (handgeschrieben, Theme-Variablen über `ThemeService`) |
+| Frontend-Styling | `public/assets/css/app.css` (handgeschrieben, Theme-Variablen über `ThemeService`); Kacheln lesen `--tile-bg`/`--tile-bg-opacity` sowie die kontrastsicheren `--tile-text`/`--tile-muted`/`--tile-accent`/`--tile-hover-bg`/`--tile-details-text` (Rückfall auf die Designfarben); Textfarben auf eigener Kachelfarbe werden automatisch nach WCAG angepasst (`App\Support\TileColors` + `App\Support\Color`) |
 
 ---
 

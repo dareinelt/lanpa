@@ -32,6 +32,7 @@ abstract class Controller
             'footerText' => $settings->get('footer_text'),
             'documentationEnabled' => $settings->documentationEnabled(),
             'themeCss' => Container::theme()->css(),
+            'tileContrastBase' => Container::theme()->tileContrastBase(),
             'hasLogo' => Container::logo()->current() !== null,
             'hasBackground' => Container::backgroundImage()->current() !== null,
             'announcements' => Container::announcements()->activeItems(),

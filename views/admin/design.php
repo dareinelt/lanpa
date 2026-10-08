@@ -36,7 +36,12 @@ use App\Support\Html;
                 </div>
             <?php } ?>
         </div>
-        <p class="field__hint">Alle Farbwerte werden serverseitig geprüft; es werden ausschließlich Hex-Werte gespeichert.</p>
+        <p class="field__hint">
+            Alle Farbwerte werden serverseitig geprüft; es werden ausschließlich Hex-Werte gespeichert.
+            Reicht der Kontrast einer Textfarbe auf der Kachelfläche nicht aus (z.&nbsp;B. Textfarbe für den
+            dunklen Modus auf einer hellen Kachel-Hintergrundfarbe), passt die Startseite die Kacheltexte
+            automatisch an einen lesbaren Wert an.
+        </p>
     </fieldset>
 
     <fieldset class="fieldset">

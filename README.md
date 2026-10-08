@@ -28,7 +28,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | Administration | Navigation (CRUD, Sortierung, Aktivierung, Hierarchie aus Unterseiten/Textseiten), Beschreibungen, Design/Logo, AD-Konfiguration, Statistik |
 | Statistik | Klicks je Element und Tag, Zeiträume 3/7/14/30/90/365 Tage, selbst gerendertes SVG-Liniendiagramm |
 | Darstellung | Hell-/Dunkelmodus (System oder manuell), frei konfigurierbare Farben, eigenes Logo |
-| Barrierefreiheit | Semantisches HTML, Tastaturbedienung, sichtbarer Fokus, ARIA-Beschriftungen, Kontrastwahl nach WCAG-Leuchtdichte |
+| Barrierefreiheit | Semantisches HTML, Tastaturbedienung, sichtbarer Fokus, ARIA-Beschriftungen, Kontrastwahl nach WCAG-Leuchtdichte; Kacheltexte werden auf eigener Kachelfarbe automatisch auf mindestens 4,5:1 nachjustiert |
 
 ---
 
@@ -222,7 +222,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Telefonliste | Alle Einträge auflisten und je Eintrag ein-/ausblenden (Standard für neu synchronisierte Einträge: eingeblendet); Filter nach „Hat E-Mail-Adresse“, „Ist aktiv“, „Hat Telefonnummer“ und „Nur eingeblendete“ |
 | Mitteilungen | Mitteilungs-Overlay der Startseite anlegen, bearbeiten, ein-/ausblenden |
 | Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`), Handbuch-Links ein-/ausblenden |
-| Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen |
+| Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen; Designfarben werden serverseitig geprüft, Kacheltexte bei zu geringem Kontrast automatisch angepasst |
 | Active Directory | Identitätsquellen (Hauptquelle und weitere AD von Zweigstellen/Tochtergesellschaften, je mit Beschriftung und mehreren Servern als Ausfallreserve): Server, Verschlüsselung, Base DN, Bind DN und Passwort (verschlüsselt gespeichert), Filter, Attributzuordnung, Gruppen-Pfade, Windows-Anmeldung je Domäne (Domänencontroller, Zeitserver, Beitrittskonto, Client-Netze/Hostnamen), Verbindungstest je Server, Intervall, manueller Testlauf |
 | Navigation → Berechtigungen | Kacheln auf Benutzer und AD-Gruppen beschränken; Gruppennamen werden beim Tippen aus dem synchronisierten Bestand vorgeschlagen (Inline-Ergänzung und Liste, keine Live-Abfrage des AD) |
 | Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Office-Apps/App-Pakete und OWA-Link, Orvanta (Exchange-Server, Anmeldung, Zwischenspeicher-Quota, Erinnerungen, Verbindungstest; [docs/orvanta.md](docs/orvanta.md)), SMTP-/IMAP-Proxy für Orvanta-Benutzer ohne Exchange ([docs/mail-proxy.md](docs/mail-proxy.md)), lokale KI (Endpunkt, Modell, Audio-/Bildfunktionen in Nextcloud), Nextcloud-App-Store ein-/ausblenden, Sicherung ([docs/office.md](docs/office.md)) |

@@ -3,29 +3,37 @@
 declare(strict_types=1);
 
 use App\Support\Html;
+use App\Support\TileColors;
+use App\Support\Validator;
 
 /**
  * Wiederverwendbare Kachel-Liste (Landingpage und Unterseiten).
  *
  * @var list<array<string,mixed>> $items
  * @var string $descriptionMode
+ * @var array{tileBackground:string,tileOpacity:int,light:array{background:string,text:string,muted:string,accent:string,surface:string,surfaceHover:string},dark:array{background:string,text:string,muted:string,accent:string,surface:string,surfaceHover:string}}|null $tileContrastBase
  */
 
 /**
  * Kachel-Hintergrundfarben werden als CSS-Regeln in einem per Nonce
  * freigegebenen <style>-Block ausgeliefert. Inline-Style-Attribute sind durch
  * die Content-Security-Policy (style-src ohne 'unsafe-inline') gesperrt.
+ *
+ * Kacheln mit eigener Hintergrundfarbe bekommen zusaetzlich kontrastsichere
+ * Textfarben, damit Beschreibungen auch bei abweichenden Designfarben im
+ * dunklen Modus lesbar bleiben.
  */
+$contrastBase = is_array($tileContrastBase ?? null) ? $tileContrastBase : null;
 $tileRules = [];
 foreach ($items as $item) {
     if (empty($item['override_background'])) {
         continue;
     }
-    $bgColor = (string) ($item['background_color'] ?? '');
+    $bgColor = Validator::normalizeHexColor((string) ($item['background_color'] ?? '')) ?? '';
     $bgOpacity = $item['background_opacity'] ?? null;
     $declarations = '';
     if ($bgColor !== '') {
-        $declarations .= '--tile-bg:' . Html::e($bgColor) . ';';
+        $declarations .= '--tile-bg:' . $bgColor . ';';
     }
     if ($bgOpacity !== null && $bgOpacity !== '' && is_numeric($bgOpacity)) {
         $declarations .= '--tile-bg-opacity:' . (int) $bgOpacity . '%;';
@@ -34,7 +42,32 @@ foreach ($items as $item) {
         continue;
     }
     $tileId = (int) $item['id'];
-    $tileRules[] = '.tile[data-tile-id="' . $tileId . '"]{' . $declarations . '}';
+    $selector = '.tile[data-tile-id="' . $tileId . '"]';
+    $tileRules[] = $selector . '{' . $declarations . '}';
+
+    if ($contrastBase === null) {
+        continue;
+    }
+
+    $opacity = is_numeric($bgOpacity) ? (int) $bgOpacity : $contrastBase['tileOpacity'];
+    $baseTileColor = $bgColor !== '' ? $bgColor : $contrastBase['tileBackground'];
+    $lightRule = '';
+    $darkRule = '';
+    foreach (['light', 'dark'] as $mode) {
+        $variables = TileColors::variables($contrastBase[$mode], $baseTileColor, $opacity);
+        $contrastDeclarations = '--tile-text:' . $variables['tileText'] . ';'
+            . '--tile-muted:' . $variables['tileMuted'] . ';'
+            . '--tile-accent:' . $variables['tileAccent'] . ';'
+            . '--tile-hover-bg:' . $variables['tileHoverBg'] . ';';
+        if ($mode === 'dark') {
+            $darkRule = $contrastDeclarations;
+        } else {
+            $lightRule = $contrastDeclarations;
+        }
+    }
+    $tileRules[] = $selector . '{' . $lightRule . '}';
+    $tileRules[] = '@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) ' . $selector . '{' . $darkRule . '}}';
+    $tileRules[] = ':root[data-theme="dark"] ' . $selector . '{' . $darkRule . '}';
 }
 $nonce = (string) ($GLOBALS['csp_nonce'] ?? '');
 $officeTileStatus = (bool) ($officeTileStatus ?? false);

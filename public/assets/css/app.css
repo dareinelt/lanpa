@@ -535,6 +535,8 @@ code {
     box-shadow: var(--shadow);
     transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
     overflow: hidden;
+    /* Bei eigener Kachelfarbe liefert das Theme eine kontrastsichere Textfarbe. */
+    color: var(--tile-text, var(--color-text));
 }
 
 .tile::before {
@@ -603,7 +605,7 @@ code {
 }
 
 .tile__short {
-    color: var(--color-muted);
+    color: var(--tile-muted, var(--color-muted));
     font-size: .92rem;
 }
 
@@ -685,14 +687,14 @@ code {
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     background: transparent;
-    color: var(--color-primary);
+    color: var(--tile-accent, var(--color-primary));
     font: inherit;
     font-weight: 550;
     cursor: pointer;
 }
 
 .tile__toggle:hover {
-    background: var(--color-surface-hover);
+    background: var(--tile-hover-bg, var(--color-surface-hover));
 }
 
 .tile__toggle-icon {
@@ -716,6 +718,9 @@ code {
     background: var(--color-surface-hover);
     border: 1px solid var(--color-border);
     font-size: .95rem;
+    /* Die Detailflaeche nutzt die Design-Oberflaeche; die Textfarbe wird
+       serverseitig gegen genau diese Flaeche kontrastsicher berechnet. */
+    color: var(--tile-details-text, var(--color-text));
 }
 
 .tile__details p {

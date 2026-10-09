@@ -269,6 +269,13 @@ Ohne Werte (Höchstwert 0) bleibt es bei `l1`. Die Staffelung wechselt mit der
 Position (`--up` an geraden, `--down` an ungeraden Positionen), die Reihenfolge
 der Einträge gibt also der Aufrufer vor: absteigend nach Wert.
 
+Für Werte, die nicht als reine Zahl gelesen werden sollen (Belegung im
+Zwischenspeicher), nimmt die Wolke zusätzlich den Schlüssel `display` entgegen:
+Er ersetzt die angezeigte Zahl in Wolke und Wertetabelle, während die
+Größenstufe weiter aus dem Zahlenwert `value` folgt. Die Wertetabelle erlaubt
+dafür eigene Spaltenköpfe (`OrvantaFlowCloud::table($entries, $summary,
+$headLeft, $headRight)`).
+
 ## 6. Verlaufsgrafik (Overlay, retinafreundlich)
 
 Die Grafik liegt in einem `<details>`-Overlay und wird per Klick auf die

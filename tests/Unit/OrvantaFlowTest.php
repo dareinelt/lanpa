@@ -674,6 +674,24 @@ Runner::test('Nachrichtenfluss: Wolkenwerte stehen zusätzlich als Tabelle berei
     Assert::false(str_contains($html, 'style="'), 'keine Inline-Stile (CSP)');
 });
 
+Runner::test('Nachrichtenfluss: Wolke zeigt formatierte Werte und eigene Spaltenköpfe', static function (): void {
+    $cloud = new OrvantaFlowCloud();
+    $entries = [
+        ['label' => 'anna', 'value' => 1073741824, 'display' => '1,0 GB'],
+        ['label' => 'bert', 'value' => 1024],
+    ];
+
+    $html = $cloud->render($entries);
+    Assert::true(str_contains($html, '>1,0 GB</span>'), 'formatierter Wert ersetzt die Rohzahl');
+    Assert::true(str_contains($html, '>1024</span>'), 'ohne Formatierung bleibt die Zahl');
+    Assert::true(str_contains($html, 'cloud__word--l5'), 'die Stufe richtet sich weiter nach dem Zahlenwert');
+
+    $table = $cloud->table($entries, 'Größte Zwischenspeicher', 'Nutzer', 'Belegung');
+    Assert::true(str_contains($table, '<th scope="col">Belegung</th>'), 'eigener Spaltenkopf für die Wertspalte');
+    Assert::true(str_contains($table, '<td>1,0 GB</td>'), 'auch die Tabelle zeigt den formatierten Wert');
+    Assert::true(str_contains($table, '<td>1024</td>'), 'Zahlen ohne Formatierung bleiben unverändert');
+});
+
 // ------------------------------------------------------- Nachrichtenflussdienst
 
 /**

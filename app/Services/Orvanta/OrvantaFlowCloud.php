@@ -19,7 +19,10 @@ use App\Support\Html;
  * Zeile kleben.
  *
  * Jede Wolke liefert ihren Inhalt zusaetzlich als Wertetabelle, damit die
- * Groesse nie die einzige Quelle einer Zahl ist.
+ * Groesse nie die einzige Quelle einer Zahl ist. Werte, die nicht als reine
+ * Zahl gelesen werden sollen (Belegung im Zwischenspeicher), koennen mit
+ * `display` eine formatierte Fassung mitbringen; die Stufe folgt weiter dem
+ * Zahlenwert.
  */
 final class OrvantaFlowCloud
 {
@@ -46,9 +49,9 @@ final class OrvantaFlowCloud
      * Staffelung. Eintraege ohne Beschriftung werden verworfen, negative Werte
      * auf 0 begrenzt.
      *
-     * @param list<array{label?:mixed,value?:mixed,title?:mixed,url?:mixed}> $entries
+     * @param list<array{label?:mixed,value?:mixed,title?:mixed,url?:mixed,display?:mixed}> $entries
      *
-     * @return list<array{label:string,value:int,level:int,direction:string,title:string,url:string}>
+     * @return list<array{label:string,value:int,level:int,direction:string,title:string,url:string,display:string}>
      */
     public function items(array $entries): array
     {
@@ -64,6 +67,7 @@ final class OrvantaFlowCloud
                 'value' => max(0, (int) ($entry['value'] ?? 0)),
                 'title' => trim((string) ($entry['title'] ?? '')),
                 'url' => trim((string) ($entry['url'] ?? '')),
+                'display' => trim((string) ($entry['display'] ?? '')),
             ];
         }
 
@@ -85,6 +89,7 @@ final class OrvantaFlowCloud
                 'direction' => $index % 2 === 0 ? 'up' : 'down',
                 'title' => $entry['title'] !== '' ? $entry['title'] : $entry['label'] . ': ' . $entry['value'],
                 'url' => $entry['url'],
+                'display' => $entry['display'],
             ];
         }
 
@@ -115,7 +120,7 @@ final class OrvantaFlowCloud
      * Wolkendarstellung als HTML-Liste. Der Text ist maskiert, es werden keine
      * Inline-Stile gesetzt.
      *
-     * @param list<array{label?:mixed,value?:mixed,title?:mixed,url?:mixed}> $entries
+     * @param list<array{label?:mixed,value?:mixed,title?:mixed,url?:mixed,display?:mixed}> $entries
      * @param string $emptyText Hinweis, wenn die Liste leer ist
      */
     public function render(array $entries, string $emptyText = 'Keine Werte vorhanden.'): string
@@ -128,7 +133,8 @@ final class OrvantaFlowCloud
         $html = '<ul class="cloud">';
         foreach ($items as $item) {
             $class = 'cloud__word cloud__word--l' . $item['level'] . ' cloud__word--' . $item['direction'];
-            $inner = '<span class="cloud__value">' . Html::e((string) $item['value']) . '</span>'
+            $number = $item['display'] !== '' ? $item['display'] : (string) $item['value'];
+            $inner = '<span class="cloud__value">' . Html::e($number) . '</span>'
                 . '<span class="cloud__label">' . Html::e($item['label']) . '</span>';
 
             if ($item['url'] !== '') {
@@ -145,14 +151,16 @@ final class OrvantaFlowCloud
      * Dieselben Werte als aufklappbare Tabelle. Die Wolke ist damit nie die
      * einzige Quelle einer Zahl.
      *
-     * @param list<array{label?:mixed,value?:mixed,title?:mixed,url?:mixed}> $entries
+     * @param list<array{label?:mixed,value?:mixed,title?:mixed,url?:mixed,display?:mixed}> $entries
      * @param string $summary Beschriftung des Aufklapppunkts
      * @param string $headLeft Spaltenkopf der Beschriftungsspalte
+     * @param string $headRight Spaltenkopf der Wertspalte
      */
     public function table(
         array $entries,
         string $summary = 'Werte als Tabelle',
-        string $headLeft = 'Element'
+        string $headLeft = 'Element',
+        string $headRight = 'Anzahl'
     ): string {
         $items = $this->items($entries);
         if ($items === []) {
@@ -162,15 +170,16 @@ final class OrvantaFlowCloud
         $html = '<details class="cloud-values"><summary>' . Html::e($summary) . '</summary>'
             . '<table class="table"><thead><tr>'
             . '<th scope="col">' . Html::e($headLeft) . '</th>'
-            . '<th scope="col">Anzahl</th>'
+            . '<th scope="col">' . Html::e($headRight) . '</th>'
             . '</tr></thead><tbody>';
 
         foreach ($items as $item) {
             $label = $item['url'] !== ''
                 ? '<a href="' . Html::url($item['url']) . '">' . Html::e($item['label']) . '</a>'
                 : Html::e($item['label']);
+            $number = $item['display'] !== '' ? $item['display'] : (string) $item['value'];
 
-            $html .= '<tr><th scope="row">' . $label . '</th><td>' . Html::e((string) $item['value']) . '</td></tr>';
+            $html .= '<tr><th scope="row">' . $label . '</th><td>' . Html::e($number) . '</td></tr>';
         }
 
         return $html . '</tbody></table></details>';

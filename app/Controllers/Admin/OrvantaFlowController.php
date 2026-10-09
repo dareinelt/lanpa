@@ -29,7 +29,7 @@ final class OrvantaFlowController extends AdminController
     public const BASE = '/admin/office/orvanta/nachrichtenfluss';
 
     /** Hoechstzahl der Quellen, die in einem Durchgang geprueft werden. */
-    private const MAX_CHECK_SOURCES = 16;
+    public const MAX_CHECK_SOURCES = 16;
 
     public function index(Request $request): Response
     {
@@ -46,6 +46,7 @@ final class OrvantaFlowController extends AdminController
             'orvantaDemo' => $config->isDemo(),
             'refreshInterval' => $this->refreshInterval(),
             'checkableSources' => $this->checkableSources(),
+            'checkLimit' => self::MAX_CHECK_SOURCES,
         ]);
     }
 

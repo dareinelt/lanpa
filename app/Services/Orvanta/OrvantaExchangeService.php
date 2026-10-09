@@ -95,6 +95,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             self::CAPABILITY_NOTES => true,
             self::CAPABILITY_REMINDERS => true,
             self::CAPABILITY_ARCHIVE => true,
+            self::CAPABILITY_OOF => true,
         ];
     }
 
@@ -204,6 +205,81 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             'source' => $source,
         ];
     }
+
+    // ------------------------------------------------------------------
+    // Abwesenheitsnotiz (Out-of-Office)
+    // ------------------------------------------------------------------
+
+    /**
+     * Abwesenheitsnotiz des Postfachs aus Exchange lesen. Den Versand
+     * uebernimmt der Server; Orvanta muss dafuer nicht geoeffnet bleiben.
+     *
+     * @return array{state:string,external_audience:string,start:int,end:int,internal:string,external:string}
+     */
+    public function oofSettings(string $user): array
+    {
+        $xpath = $this->call(
+            '<m:GetUserOofSettingsRequest><t:Mailbox><t:EmailAddress>' . EwsXml::escape($this->primaryAddress($user))
+            . '</t:EmailAddress></t:Mailbox></m:GetUserOofSettingsRequest>',
+            $user
+        );
+        $node = EwsXml::elements($xpath, '//m:OofSettings')[0] ?? null;
+        if ($node === null) {
+            return ['state' => 'Disabled', 'external_audience' => 'None', 'start' => 0, 'end' => 0, 'internal' => '', 'external' => ''];
+        }
+        $state = EwsXml::text($xpath, 't:OofState', $node);
+        $audience = EwsXml::text($xpath, 't:ExternalAudience', $node);
+
+        return [
+            'state' => in_array($state, self::OOF_STATES, true) ? $state : 'Disabled',
+            'external_audience' => in_array($audience, self::OOF_AUDIENCES, true) ? $audience : 'None',
+            'start' => EwsXml::timestamp(EwsXml::text($xpath, 't:Duration/t:StartTime', $node)),
+            'end' => EwsXml::timestamp(EwsXml::text($xpath, 't:Duration/t:EndTime', $node)),
+            'internal' => EwsXml::text($xpath, 't:InternalReply/t:Message', $node),
+            'external' => EwsXml::text($xpath, 't:ExternalReply/t:Message', $node),
+        ];
+    }
+
+    /**
+     * Abwesenheitsnotiz des Postfachs setzen. $state ist Disabled, Enabled
+     * (bis zum Abschalten) oder Scheduled (Zeitraum); $reply ist der
+     * E-Mail-taugliche HTML-Text, der intern und – je nach $audience – auch
+     * als Antwort an Externe versendet wird.
+     *
+     * @param array{state:string,external_audience:string,start:int,end:int,reply:string} $settings
+     */
+    public function setOofSettings(string $user, array $settings): void
+    {
+        $state = in_array($settings['state'], self::OOF_STATES, true) ? $settings['state'] : 'Disabled';
+        $audience = in_array($settings['external_audience'], self::OOF_AUDIENCES, true) ? $settings['external_audience'] : 'None';
+        $reply = '<t:InternalReply><t:Message>' . EwsXml::escape($settings['reply']) . '</t:Message></t:InternalReply>'
+            . '<t:ExternalReply><t:Message>' . EwsXml::escape($settings['reply']) . '</t:Message></t:ExternalReply>';
+        // Der Zeitraum gilt nur fuer "Scheduled"; Exchange weist ihn sonst
+        // (auch bei "Enabled") mit einem Fehler zurueck.
+        $duration = '';
+        if ($state === 'Scheduled') {
+            $start = (int) $settings['start'];
+            $end = (int) $settings['end'];
+            if ($end <= $start) {
+                $end = $start + 86400;
+            }
+            $duration = '<t:Duration><t:StartTime>' . EwsXml::dateTime($start) . '</t:StartTime><t:EndTime>'
+                . EwsXml::dateTime($end) . '</t:EndTime></t:Duration>';
+        }
+        $this->call(
+            '<m:SetUserOofSettingsRequest><t:Mailbox><t:EmailAddress>' . EwsXml::escape($this->primaryAddress($user))
+            . '</t:EmailAddress></t:Mailbox><t:UserOofSettings><t:OofState>' . $state . '</t:OofState>'
+            . '<t:ExternalAudience>' . $audience . '</t:ExternalAudience>' . $duration . $reply
+            . '</t:UserOofSettings></m:SetUserOofSettingsRequest>',
+            $user
+        );
+    }
+
+    /** Zustand der Abwesenheitsnotiz auf dem Server. */
+    private const OOF_STATES = ['Disabled', 'Enabled', 'Scheduled'];
+
+    /** Empfaenger der Abwesenheitsnotiz: None = nur intern, All = auch extern. */
+    private const OOF_AUDIENCES = ['None', 'Known', 'All'];
 
     /**
      * Summe von PR_MESSAGE_SIZE_EXTENDED aller Ordner unterhalb des

@@ -24,6 +24,9 @@ interface OrvantaMailBackendInterface
     public const CAPABILITY_REMINDERS = 'reminders';
     public const CAPABILITY_ARCHIVE = 'archive';
 
+    /** Abwesenheitsnotiz (Out-of-Office): nur Exchange/EWS. */
+    public const CAPABILITY_OOF = 'oof';
+
     /** Kennung des Backends ('exchange' oder 'proxy'). */
     public function backendName(): string;
 

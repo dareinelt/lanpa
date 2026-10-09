@@ -634,6 +634,11 @@ final class Container
         return self::make(\App\Repositories\OrvantaArchiveRepository::class, static fn (): \App\Repositories\OrvantaArchiveRepository => new \App\Repositories\OrvantaArchiveRepository());
     }
 
+    public static function orvantaOofRepository(): \App\Repositories\OrvantaOofRepository
+    {
+        return self::make(\App\Repositories\OrvantaOofRepository::class, static fn (): \App\Repositories\OrvantaOofRepository => new \App\Repositories\OrvantaOofRepository());
+    }
+
     public static function orvantaArchive(): \App\Services\Orvanta\OrvantaArchiveService
     {
         return self::make(
@@ -663,6 +668,22 @@ final class Container
                 self::phonebookRepository(),
                 self::settings(),
                 static fn (): ?array => self::logo()->current()
+            )
+        );
+    }
+
+    /**
+     * Abwesenheitsnotizen: Zuordnung per AD-Gruppe, Text und Zeitraum je
+     * Benutzer; uebertragen wird die Notiz auf den Exchange-Server.
+     */
+    public static function orvantaOof(): \App\Services\Orvanta\OrvantaOofService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaOofService::class,
+            static fn (): \App\Services\Orvanta\OrvantaOofService => new \App\Services\Orvanta\OrvantaOofService(
+                self::orvantaOofRepository(),
+                self::orvantaSignatures(),
+                self::orvantaConfig()
             )
         );
     }

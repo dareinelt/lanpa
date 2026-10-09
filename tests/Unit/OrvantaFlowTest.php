@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Repositories\MailProxyRepository;
+use App\Repositories\OrvantaFlowRepository;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
 
@@ -178,3 +179,166 @@ Runner::test('Nachrichtenfluss: Fehlertext wird auf 500 Zeichen begrenzt', stati
 
     Assert::same(500, mb_strlen($proxy->sourceStates()[5]['last_error']));
 });
+
+// ------------------------------------------------------------------ Aktivität
+
+Runner::test('Nachrichtenfluss: Aktivität wird angelegt und fortgeschrieben', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $first = date('Y-m-d H:i:s', time() - 120);
+    $second = date('Y-m-d H:i:s');
+
+    $flow->touchActivity('mueller', 'exchange', $first);
+    Assert::same(1, $flow->activityCount());
+    Assert::same(1, $flow->activeUsers(date('Y-m-d H:i:s', time() - 300), date('Y-m-d H:i:s'))['total']);
+
+    $flow->touchActivity('mueller', 'exchange', $second);
+    Assert::same(1, $flow->activityCount(), 'kein zweiter Eintrag für denselben Benutzer');
+
+    $row = $pdo->query("SELECT first_seen_at, last_seen_at, requests FROM orvanta_activity WHERE user_uid = 'mueller'")->fetch(PDO::FETCH_ASSOC);
+    Assert::same($first, (string) $row['first_seen_at'], 'erste Sichtung bleibt erhalten');
+    Assert::same($second, (string) $row['last_seen_at'], 'letzte Sichtung wird nachgeführt');
+    Assert::same(2, (int) $row['requests'], 'Zähler zählt hoch');
+});
+
+Runner::test('Nachrichtenfluss: Aktivität merkt sich einen Wechsel des Backends', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $now = date('Y-m-d H:i:s');
+
+    $flow->touchActivity('mueller', 'exchange', $now);
+    $flow->touchActivity('mueller', 'proxy', $now);
+
+    Assert::same('proxy', (string) $pdo->query("SELECT backend FROM orvanta_activity WHERE user_uid = 'mueller'")->fetchColumn());
+    Assert::same(1, $flow->activeUsers(date('Y-m-d H:i:s', time() - 300), $now)['proxy']);
+});
+
+Runner::test('Nachrichtenfluss: leere Kennung wird nicht erfasst', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $flow->touchActivity('   ', 'exchange', date('Y-m-d H:i:s'));
+
+    Assert::same(0, $flow->activityCount());
+});
+
+Runner::test('Nachrichtenfluss: aktive Nutzer beachten das Zeitfenster und die Backends', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $now = time();
+    $flow->touchActivity('alt', 'exchange', date('Y-m-d H:i:s', $now - 600));
+    $flow->touchActivity('exchange1', 'exchange', date('Y-m-d H:i:s', $now - 60));
+    $flow->touchActivity('exchange2', 'exchange', date('Y-m-d H:i:s', $now - 10));
+    $flow->touchActivity('proxy1', 'proxy', date('Y-m-d H:i:s', $now - 5));
+
+    $inside = $flow->activeUsers(date('Y-m-d H:i:s', $now - 300), date('Y-m-d H:i:s', $now));
+    Assert::same(3, $inside['total'], 'nur Aktivität im Fenster');
+    Assert::same(2, $inside['exchange']);
+    Assert::same(1, $inside['proxy']);
+
+    $all = $flow->activeUsers(date('Y-m-d H:i:s', $now - 900), date('Y-m-d H:i:s', $now));
+    Assert::same(4, $all['total'], 'größeres Fenster erfasst mehr');
+});
+
+// ---------------------------------------------------------------------- Proben
+
+Runner::test('Nachrichtenfluss: je Zeitraster entsteht genau eine Probe', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $at = date('Y-m-d H:i:s');
+
+    Assert::true($flow->recordSample($at, 4, 3, 1, 2), 'erste Probe wird geschrieben');
+    Assert::false($flow->recordSample($at, 9, 9, 0, 0), 'zweite Probe im selben Raster wird verworfen');
+    Assert::same(1, $flow->sampleCount());
+
+    $row = $pdo->query('SELECT active_users, exchange_users, proxy_users, ai_users FROM orvanta_user_samples')->fetch(PDO::FETCH_ASSOC);
+    Assert::same(4, (int) $row['active_users'], 'bestehende Probe wird nicht überschrieben');
+    Assert::same(3, (int) $row['exchange_users']);
+    Assert::same(1, (int) $row['proxy_users']);
+    Assert::same(2, (int) $row['ai_users']);
+    Assert::same($at, $flow->lastSampleAt());
+});
+
+Runner::test('Nachrichtenfluss: negative Probenwerte werden auf 0 begrenzt', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $flow->recordSample(date('Y-m-d H:i:s'), -5, -1, -2, -3);
+
+    $row = $pdo->query('SELECT active_users, exchange_users, proxy_users, ai_users FROM orvanta_user_samples')->fetch(PDO::FETCH_ASSOC);
+    Assert::same(0, (int) $row['active_users']);
+    Assert::same(0, (int) $row['ai_users']);
+});
+
+Runner::test('Nachrichtenfluss: Probenkennzahlen liefern Minimum, Maximum und Mittelwert', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $now = time();
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 7200), 2, 2, 0, 0);
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 3600), 7, 5, 2, 1);
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 60), 5, 4, 1, 3);
+    // Außerhalb des Fensters
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 100000), 99, 99, 0, 0);
+
+    $stats = $flow->sampleStats(date('Y-m-d H:i:s', $now - 86400), date('Y-m-d H:i:s', $now));
+    Assert::same(2, $stats['min']);
+    Assert::same(7, $stats['max']);
+    Assert::same(4.7, $stats['avg']);
+    Assert::same(3, $stats['samples']);
+});
+
+Runner::test('Nachrichtenfluss: ohne Proben sind die Kennzahlen Null', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $stats = $flow->sampleStats(date('Y-m-d H:i:s', time() - 86400), date('Y-m-d H:i:s'));
+
+    Assert::same(0, $stats['min']);
+    Assert::same(0, $stats['max']);
+    Assert::same(0.0, $stats['avg']);
+    Assert::same(0, $stats['samples']);
+    Assert::same('', $flow->lastSampleAt());
+});
+
+Runner::test('Nachrichtenfluss: Tagesmaximum wird je Kalendertag gebildet', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $today = date('Y-m-d');
+    $yesterday = date('Y-m-d', strtotime('-1 day'));
+    $flow->recordSample($yesterday . ' 09:00:00', 3, 3, 0, 0);
+    $flow->recordSample($yesterday . ' 14:00:00', 8, 6, 2, 0);
+    $flow->recordSample($today . ' 08:00:00', 5, 5, 0, 0);
+
+    $peaks = $flow->dailyPeaks(date('Y-m-d 00:00:00', strtotime('-7 days')), date('Y-m-d H:i:s'));
+    Assert::same(8, $peaks[$yesterday], 'Tagesmaximum statt letzter Wert');
+    Assert::same(5, $peaks[$today]);
+    Assert::same(2, count($peaks), 'nur Tage mit Proben');
+
+    $empty = $flow->dailyPeaks(date('Y-m-d 00:00:00', strtotime('-400 days')), date('Y-m-d H:i:s', strtotime('-300 days')));
+    Assert::same([], $empty, 'leerer Zeitraum ohne Fehler');
+});
+
+// --------------------------------------------------------------------- Räumen
+
+Runner::test('Nachrichtenfluss: alte Aktivität und alte Proben werden entfernt', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $now = time();
+    $flow->touchActivity('frisch', 'exchange', date('Y-m-d H:i:s', $now - 60));
+    $flow->touchActivity('alt', 'exchange', date('Y-m-d H:i:s', $now - 90000));
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 60), 1, 1, 0, 0);
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 500 * 86400), 1, 1, 0, 0);
+
+    $removed = $flow->purge(date('Y-m-d H:i:s', $now - 86400), date('Y-m-d H:i:s', $now - 400 * 86400));
+    Assert::same(['activity' => 1, 'samples' => 1], $removed);
+    Assert::same(1, $flow->activityCount(), 'frische Aktivität bleibt');
+    Assert::same(1, $flow->sampleCount(), 'frische Probe bleibt');
+    Assert::same(1, $flow->activeUsers(date('Y-m-d H:i:s', $now - 300), date('Y-m-d H:i:s', $now))['total']);
+});
+
+Runner::test('Nachrichtenfluss: Räumen ohne alte Zeilen ist folgenlos', static function (): void {
+    $pdo = flowPdo();
+    $flow = new OrvantaFlowRepository($pdo);
+    $flow->touchActivity('mueller', 'exchange', date('Y-m-d H:i:s'));
+
+    Assert::same(['activity' => 0, 'samples' => 0], $flow->purge(date('Y-m-d H:i:s', time() - 86400), date('Y-m-d H:i:s', time() - 400 * 86400)));
+    Assert::same(1, $flow->activityCount());
+});
+

@@ -98,12 +98,13 @@ final class OrvantaFlowService
     public function collect(): array
     {
         $now = $this->now();
+        $exchange = $this->collectExchange();
 
         return [
             'now' => $now,
             'proxy' => $this->collectProxy(),
-            'sources' => $this->collectSources(),
-            'exchange' => $this->collectExchange(),
+            'sources' => $this->collectSources((array) $exchange['hosts']),
+            'exchange' => $exchange,
             'presence' => $this->presence->stats(),
             'history' => $this->presence->history(),
             'storage' => $this->collectStorage(),
@@ -148,12 +149,16 @@ final class OrvantaFlowService
 
     /**
      * Identitaetsquellen mit Postfachzahlen und gespeichertem Zustand.
-     * `transport` nennt den Weg der Quelle: 'proxy' mit hinterlegtem
-     * Mailserver, sonst 'exchange' (die Quelle haengt nicht hinter dem Proxy).
+     * `transport` nennt den Weg der Quelle (siehe transportFor()): 'exchange'
+     * nur, wenn ihre Verzeichnisserver zur Domaene der Exchange-Hosts
+     * gehoeren, sonst 'proxy'. `proxied` sagt, ob im Proxy ein Mailserver
+     * fuer die Quelle hinterlegt ist.
+     *
+     * @param list<array<string,mixed>> $exchangeHosts Hosts aus collectExchange()
      *
      * @return list<array<string,mixed>>
      */
-    private function collectSources(): array
+    private function collectSources(array $exchangeHosts = []): array
     {
         try {
             $counts = $this->mailProxyRepository->sourceCounts();
@@ -166,16 +171,21 @@ final class OrvantaFlowService
             return [];
         }
 
+        $exchangeDomains = self::hostDomains(array_map(static fn (array $host): string => (string) ($host['host'] ?? ''), $exchangeHosts));
+
         $sources = [];
         foreach ($this->mailProxy->sources() as $source) {
             $id = (int) $source['id'];
+            $hosts = array_values(array_map('strval', (array) ($source['hosts'] ?? [])));
             $sources[] = [
                 'id' => $id,
                 'label' => (string) $source['label'],
                 'domain' => (string) $source['domain'],
+                'hosts' => $hosts,
                 'active' => (bool) $source['active'],
                 'primary' => $id === 0,
-                'transport' => isset($proxied[$id]) ? self::TRANSPORT_PROXY : self::TRANSPORT_EXCHANGE,
+                'proxied' => isset($proxied[$id]),
+                'transport' => self::transportFor($hosts, $exchangeDomains, isset($proxied[$id])),
                 'counts' => $counts[$id] ?? [
                     'mailboxes' => 0,
                     'active_mailboxes' => 0,
@@ -195,6 +205,58 @@ final class OrvantaFlowService
         }
 
         return $sources;
+    }
+
+    /**
+     * Transportweg einer Identitaetsquelle anhand ihrer Verzeichnisserver.
+     *
+     * Zusammengehoerigkeit wird ueber den FQDN festgemacht: Liegt mindestens
+     * ein Server der Quelle in derselben Domaene wie ein Exchange-Host
+     * (dc01.khwf.de zu exchange01.khwf.de), gehoert die Quelle zum
+     * Exchange-Ast. IP-Adressen, kurze Hostnamen und fremde Domaenen
+     * (dc01.mvzintsz.local) liegen hinter dem IMAP-/SMTP-Proxy, auch wenn dort
+     * noch kein Mailserver eingetragen ist. Ein eingetragener Mailserver
+     * (`mail_proxy_servers`) legt den Proxy-Weg immer fest.
+     *
+     * @param list<string> $hosts           Server der Quelle (FQDN oder IP)
+     * @param list<string> $exchangeDomains Domaenen der Exchange-Hosts (siehe hostDomains())
+     * @param bool         $proxied         Mailserver fuer die Quelle im Proxy hinterlegt
+     */
+    public static function transportFor(array $hosts, array $exchangeDomains, bool $proxied): string
+    {
+        if ($proxied || $exchangeDomains === []) {
+            return self::TRANSPORT_PROXY;
+        }
+
+        return array_intersect(self::hostDomains($hosts), $exchangeDomains) !== []
+            ? self::TRANSPORT_EXCHANGE
+            : self::TRANSPORT_PROXY;
+    }
+
+    /**
+     * Domaenen (alles nach dem ersten Label, kleingeschrieben) der FQDNs einer
+     * Hostliste; IP-Adressen und Namen ohne Punkt liefern keine Domaene.
+     *
+     * @param list<string> $hosts
+     *
+     * @return list<string>
+     */
+    public static function hostDomains(array $hosts): array
+    {
+        $domains = [];
+        foreach ($hosts as $host) {
+            $host = strtolower(trim((string) $host, " \t\n\r\0\x0B.[]"));
+            if ($host === '' || filter_var($host, FILTER_VALIDATE_IP) !== false) {
+                continue;
+            }
+            $dot = strpos($host, '.');
+            if ($dot === false || $dot === strlen($host) - 1) {
+                continue;
+            }
+            $domains[substr($host, $dot + 1)] = true;
+        }
+
+        return array_keys($domains);
     }
 
     /**
@@ -570,7 +632,9 @@ final class OrvantaFlowService
                 $message = (string) ($state['last_error'] ?? 'Die Identitätsquelle ist nicht erreichbar.');
             } elseif ($lastSuccess === '') {
                 $stateKey = 'warn';
-                $message = 'Die Identitätsquelle wurde noch nicht geprüft.';
+                $message = (bool) ($source['proxied'] ?? true)
+                    ? 'Die Identitätsquelle wurde noch nicht geprüft.'
+                    : 'Für diese Identitätsquelle ist im Proxy noch kein Mailserver hinterlegt.';
             }
         }
 

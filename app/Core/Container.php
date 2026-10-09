@@ -690,7 +690,11 @@ final class Container
                 static function (): array {
                     $ldap = self::settings()->ldapConfig();
 
-                    return ['label' => (string) ($ldap['label'] ?? ''), 'base_dn' => (string) ($ldap['base_dn'] ?? '')];
+                    return [
+                        'label' => (string) ($ldap['label'] ?? ''),
+                        'base_dn' => (string) ($ldap['base_dn'] ?? ''),
+                        'hosts' => array_values((array) ($ldap['hosts'] ?? [])),
+                    ];
                 }
             )
         );

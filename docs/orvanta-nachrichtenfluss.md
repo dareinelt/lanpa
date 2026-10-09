@@ -64,20 +64,26 @@ Exchange-Pfad:  [Identitätsquellen ohne Mailserver] --→ [Exchange-Host / DAG-
                               [KI-Endpunkt] ──┘   [Storagetiers]  [Zwischenspeicher]
 ```
 
-Welcher Spur eine Identitätsquelle angehört, entscheidet allein ihre
-Proxy-Konfiguration (`mail_proxy_servers`): Mit hinterlegtem Mailserver steht
-sie vor dem Proxy, ohne steht sie vor dem bzw. den Exchange-Hosts. Quellen im
-Exchange-Pfad hängen nicht hinter dem Proxy und werden deshalb **nicht
-geprüft** – sie zählen nie als „Einschränkung“ (ungeprüft), sondern folgen dem
-Zustand der Exchange-Hosts.
+Welcher Spur eine Identitätsquelle angehört, wird an den **FQDNs ihrer
+Verzeichnisserver** festgemacht: Liegt mindestens ein Server der Quelle in
+derselben Domäne wie ein Exchange-Host (`dc01.khwf.de` zu
+`exchange01.khwf.de`), steht die Quelle vor dem bzw. den Exchange-Hosts. Alle
+anderen Quellen – IP-Adressen, kurze Hostnamen, abweichende Domänen wie
+`dc01.mvzintsz.local` – stehen vor dem IMAP-/SMTP-Proxy, **auch wenn dort noch
+kein Mailserver** (`mail_proxy_servers`) hinterlegt ist; ein hinterlegter
+Mailserver legt den Proxy-Pfad immer fest. Quellen im Exchange-Pfad hängen
+nicht hinter dem Proxy und werden deshalb **nicht geprüft** – sie zählen nie
+als „Einschränkung“ (ungeprüft), sondern folgen dem Zustand der
+Exchange-Hosts.
 
 ## 3. Elemente im Detail
 
 ### 3.1 Identitätsquellen (Wolkendarstellung)
 
-Je Identitätsquelle **mit Proxy-Konfiguration** eine Karte mit einer **Wolke**
-aus den Postfachzahlen. Quellen **ohne** Proxy-Konfiguration erscheinen im
-Exchange-Pfad ohne Wolke mit den Fakten Transportweg „Exchange (EWS)“,
+Je Identitätsquelle **im Proxy-Pfad** eine Karte mit einer **Wolke**
+aus den Postfachzahlen. Quellen **im Exchange-Pfad** (Verzeichnisserver in der
+Domäne der Exchange-Hosts, Abschnitt 2) erscheinen ohne Wolke mit den Fakten
+Transportweg „Exchange (EWS)“,
 Exchange-Hosts online/gesamt, „Proxy: nicht konfiguriert“ und „Prüfung: über die
 Exchange-Hosts“ (Feld `transport` = `exchange`).
 
@@ -493,9 +499,9 @@ Bildschirm oder die Leitwarte.
   Vollbild.
 - **Bühne (`<canvas>`):** räumliches Netz (Perspektivprojektion, Sternhimmel
   mit Parallaxe). Die Nutzer stehen im Zentrum, der Proxy links, die
-  Identitätsquellen mit Proxy-Konfiguration als Ring dahinter, die
-  Exchange-Hosts als Ring rechts und die Identitätsquellen ohne
-  Proxy-Konfiguration (Transportweg Exchange) als Ring dahinter, die
+  Identitätsquellen des Proxy-Pfads als Ring dahinter, die
+  Exchange-Hosts als Ring rechts und die Identitätsquellen des
+  Exchange-Pfads (Transportweg Exchange) als Ring dahinter, die
   KI oben, der Zwischenspeicher unten, die Speicher-Tiers als Ring darunter.
   Kanten sind gebogene Leuchtbahnen; zwischen Tiers und Zwischenspeicher
   werden gestrichelte Hilfskanten ergänzt. Eine 2D-Spaltenansicht (Taste `2`)
@@ -551,3 +557,16 @@ Dateien: `views/admin/orvanta-flow-topology.php`,
 `public/assets/js/admin-orvanta-flow-topology.js`,
 `public/assets/css/orvanta-flow-topology.css`; Tests in
 `tests/Unit/OrvantaFlowTest.php` (Abschnitt „Topologie-Ansicht“).
+
+### 14.5 Zuordnung der Identitätsquellen (Screenshot)
+
+![Topologie: KHWF (dc01.khwf.de) hinter den Exchange-Hosts exchange01/exchange02.khwf.de, MVZ Innere Medizin Wolfenbüttel (dc01.mvzintsz.local) vor dem noch nicht konfigurierten IMAP-/SMTP-Proxy](screenshots/118-admin-orvanta-nachrichtenfluss-topologie-zuordnung.png)
+
+Aufnahme aus dem Docker-Demobetrieb (`app`, `db`, `mail-proxy`) mit zwei
+DAG-Hosts `exchange01.khwf.de` und `exchange02.khwf.de`: Die Hauptquelle
+„KHWF“ (`dc01.khwf.de`) teilt deren Domäne und steht deshalb rechts hinter
+den Exchange-Hosts. Die Identitätsquelle „MVZ Innere Medizin Wolfenbüttel“
+(`dc01.mvzintsz.local`) gehört zu einer anderen Domäne und hängt links vor
+dem IMAP-/SMTP-Proxy – obwohl dort noch kein Mailserver eingetragen ist
+(Proxy „Nicht aktiv“, Quelle „Eingeschränkt“ mit dem Hinweis „Für diese
+Identitätsquelle ist im Proxy noch kein Mailserver hinterlegt.“).

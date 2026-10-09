@@ -54,6 +54,7 @@ final class OrvantaConfigService
         'archive_compression' => 'gzip',
         'archive_batch_size' => '50',
         'archive_poll_interval' => '3600',
+        'flow_ai_user_names' => '0',
     ];
 
     /** @var array<string,string>|null */
@@ -443,6 +444,7 @@ final class OrvantaConfigService
         }
         $values['reminder_lead_minutes'] = (string) $lead;
         $values['reminder_header'] = !empty($input['reminder_header']) ? '1' : '0';
+        $values['flow_ai_user_names'] = !empty($input['flow_ai_user_names']) ? '1' : '0';
 
         $poll = (int) $text('poll_interval', 5);
         if ($poll < 15 || $poll > 900) {

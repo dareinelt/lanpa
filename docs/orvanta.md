@@ -205,7 +205,7 @@ flowchart LR
 | `OrvantaOofRepository` | `app/Repositories/OrvantaOofRepository.php` | Tabellen `orvanta_oof_templates` und `orvanta_oof_settings` |
 | Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `admin-orvanta-hosts.js`, `admin-oof.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer, Live-Aktualisierung des DAG-Dashboards, Live-Vorschau der Abwesenheitsnotiz-Vorlage |
 | Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `views/admin/orvanta-oof-templates.php`, `views/admin/orvanta-oof-template.php`, `views/admin/orvanta-hosts.php`, `views/admin/orvanta-shared-mailboxes.php` | |
-| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql`, `044_orvanta_exchange_session_client.sql`, `045_orvanta_oof.sql`, `046_orvanta_shared_mailboxes.sql`, `047_orvanta_shared_mailboxes_reverify.sql` | |
+| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql`, `044_orvanta_exchange_session_client.sql`, `045_orvanta_oof.sql`, `046_orvanta_shared_mailboxes.sql`, `047_orvanta_shared_mailboxes_reverify.sql`, `048_orvanta_flow_presence.sql` | |
 | `OrvantaMailRouter`, `ProxyMailBackend` | `app/Services/MailProxy/` | Backend-Auswahl je Benutzer (Exchange oder SMTP-/IMAP-Proxy, gemeinsames `OrvantaMailBackendInterface`); Details in [mail-proxy.md](mail-proxy.md) |
 | Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/OrvantaSpellcheckTest.php`, `tests/Unit/MailProxyTest.php`, `tests/Unit/OrvantaSharedMailboxTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen und zusätzliche Postfächer gegen SQLite; Rechtschreibung gegen ein eigenes Mini-Wörterbuch |
 
@@ -275,7 +275,13 @@ flowchart LR
   `GET /admin/office/orvanta/postfaecher` (Zuordnungen pflegen),
   `POST /admin/office/orvanta/postfaecher/speichern`,
   `POST /admin/office/orvanta/postfaecher/pruefen` (Erreichbarkeit über EWS),
-  `POST /admin/office/orvanta/postfaecher/loeschen`.
+  `POST /admin/office/orvanta/postfaecher/loeschen`;
+  Nachrichtenfluss-Dashboard (Abschnitt 4f):
+  `GET /admin/office/orvanta/nachrichtenfluss` (Dashboard),
+  `GET /admin/office/orvanta/nachrichtenfluss/daten` (Kennzahlen als JSON für
+  die Live-Aktualisierung),
+  `POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen`
+  (Verbindungstest je Identitätsquelle).
 
 ---
 
@@ -342,6 +348,7 @@ Zuordnung 24 Stunden (`storage/cache/orvanta_primary_smtp.json`).
 | `cache_quota_mb` | Quota des Zwischenspeichers je Benutzer (0 = aus) | 250 |
 | `reminder_lead_minutes` | Vorlaufzeit, wenn ein Termin keine eigene Erinnerung hat | 15 |
 | `reminder_header` | Fällige Erinnerungen auch in den Mitteilungen der Kopfzeile | an |
+| `flow_ai_user_names` | Namen der KI-Nutzer im Nachrichtenfluss-Dashboard anzeigen (sonst pseudonym „Benutzer 1 …“) | aus |
 | `default_folder` | Startansicht (`inbox`, `calendar`, …) | `inbox` |
 | `poll_interval` | Abfrageintervall der App in Sekunden (neue E-Mails, Ungelesen-Zähler, Erinnerungen) | 60 |
 | `archive_enabled` | Langzeitarchiv aktivieren (siehe Abschnitt 7a) | aus |
@@ -678,6 +685,74 @@ eigenen Postfach. Im **Demo-Modus** (Abschnitt 8) stehen zwei Beispielpostfäche
 zur Verfügung: `team@demo.local` („Team Postfach“, „Senden als“ erlaubt) und
 `buero@demo.local` („Büro“, ohne „Senden als“); nur diese beiden lassen sich
 prüfen, jede andere Adresse meldet „nicht erreichbar“.
+
+---
+
+## 4f. Nachrichtenfluss-Dashboard
+
+Unter **Office → Orvanta – Nachrichtenfluss**
+(`/admin/office/orvanta/nachrichtenfluss`) zeigt Orvanta auf **einer** Seite,
+wie eine Nachricht durch die Umgebung läuft und wie es den beteiligten
+Elementen gerade geht. Die Seite ist rein lesend; sie ändert keine
+Einstellung und sendet nichts.
+
+![Orvanta – Nachrichtenfluss im Regelbetrieb](screenshots/113-admin-orvanta-nachrichtenfluss.png)
+
+**Aufbau (von links nach rechts):**
+
+- **Spur „Identitätsquellen und Proxy“** – jede Identitätsquelle als Wolke mit
+  der Zahl ihrer Postfächer (vorhanden / verbunden / aktiv), daneben der
+  IMAP-/SMTP-Proxy mit Containerstatus.
+- **Spur „Exchange“** – die Hosts der Exchange-DAG, an jedem Host eine Wolke
+  mit den verbundenen Clients, daneben der Knoten der Orvanta-Nutzer.
+- **Speicher-Tiers** mit belegt/von in GB je Tier.
+- **Orvanta-Zwischenspeicher** mit Belegung; die Einfärbung wechselt ab 75 %
+  auf „eingeschränkt“ und ab 90 % auf „Störung“.
+- **KI-Endpunkte** mit den Top-10-Nutzern der letzten 30 Tage (Zahl der
+  Anfragen) sowie „X weitere Nutzer“ und der Gesamtzahl der Anfragen.
+- **Kennzahlen** oben: Nutzer, Quellen, Zuordnungen, Proxy, Exchange,
+  Speicher, Zwischenspeicher und KI.
+- **Aktive Orvanta-Nutzer** (aktuell / Minimum / Maximum der letzten 24
+  Stunden). Ein Klick darauf öffnet die **Verlaufsgrafik** über 365, 180, 90,
+  30 und 14 Tage als Overlay – die kurzen Zeiträume liegen oben, Lücken in den
+  Daten bleiben sichtbar. Die Grafik ist für Retina-Displays als SVG gezeichnet
+  und funktioniert in hellem und dunklem Design.
+
+![Aufgeklappte Verlaufsgrafik mit den Zeiträumen 365/180/90/30/14 Tage](screenshots/117-admin-orvanta-nachrichtenfluss-verlauf.png)
+
+**Störungen** werden sofort sichtbar: Ist der Proxy ausgefallen, trägt er ein
+rotes Ausrufezeichen, und die Identitätsquellen samt Postfächern werden
+ausgegraut. Ist eine einzelne Identitätsquelle gestört (Netzwerk oder
+Anmeldung), trägt sie das Ausrufezeichen, und nur ihre Postfächer werden
+ausgegraut. Gestörte Exchange-Hosts grauen ihre Clientwolke aus, ausgefallene
+oder deaktivierte Tiers werden ausgegraut. Ein Hinweis am Knoten nennt immer
+den Grund („Werte ausgegraut (Proxy nicht erreichbar)“). Eine Störungsliste
+oben fasst alle Befunde zusammen.
+
+![Proxy ausgefallen: rote Ausrufezeichen an Proxy und Identitätsquellen, Postfachwolken ausgegraut](screenshots/115-admin-orvanta-nachrichtenfluss-stoerung.png)
+
+**Live-Aktualisierung:** Die Seite frischt Kennzahlen, Knotenzustände, Wolken
+und die Störungsliste selbstständig in einstellbarem Abstand nach (Ableitung
+aus `poll_interval`), ohne die Seite neu zu laden. Der Knopf **Aktualisieren**
+stößt das sofort an.
+
+**Verbindungstest:** Der Knopf **Identitätsquellen prüfen** testet je Quelle
+das erste aktive Postfach über den Proxy und schreibt das Ergebnis in den
+Quellenzustand. Sind mehr als 16 aktive Quellen eingerichtet, prüft die Seite
+sie nur einzeln (Auswahl je Quelle), damit die Anfrage nicht zu lange läuft.
+Quellen ohne aktives Postfach werden als „nicht geprüft“ gemeldet.
+
+**Einstellung:** `flow_ai_user_names` (Abschnitt 4, Adminbereich) schaltet die
+Klarnamen der KI-Nutzer frei; ohne die Einstellung stehen dort Pseudonyme
+(„Benutzer 1 …“). Die Nutzerzahlen des Verlaufs entstehen aus kurzen
+Minutenproben (5-Minuten-Raster, 400 Tage Vorhaltung); gespeichert werden
+ausschließlich Zähler, nie Inhalte.
+
+Ohne die Migration 048 fehlen die Tabellen für Präsenz und Verlauf; die Seite
+zeigt dann weiter alle Knoten, aber keine Nutzerzahlen und keine
+Verlaufsgrafik. Konzept und Umsetzungsplan stehen in
+[docs/orvanta-nachrichtenfluss.md](orvanta-nachrichtenfluss.md), die technische
+Umsetzung in [docs/orvanta-referenz.md](orvanta-referenz.md) Abschnitt 23.
 
 ---
 

@@ -646,6 +646,12 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
                 if ($exception->status() >= 500 || $authFailed) {
                     $this->state(fn (MailProxyRepository $repository) => $repository->recordError($exception->getMessage()));
                 }
+                $reason = $exception->reason();
+                if ($reason === OrvantaException::MAIL_AUTH || $reason === OrvantaException::MAIL_SOURCE) {
+                    $sourceId = $this->route->sourceId;
+                    $message = $exception->getMessage();
+                    $this->state(static fn (MailProxyRepository $repository) => $repository->recordSourceError($sourceId, $message));
+                }
             }
             throw $exception;
         } finally {
@@ -653,7 +659,11 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
         }
         if (!$this->recorded) {
             $this->recorded = true;
-            $this->state(fn (MailProxyRepository $repository) => $repository->recordSuccess());
+            $sourceId = $this->route->sourceId;
+            $this->state(function (MailProxyRepository $repository) use ($sourceId): void {
+                $repository->recordSuccess();
+                $repository->recordSourceSuccess($sourceId);
+            });
         }
 
         return $result;

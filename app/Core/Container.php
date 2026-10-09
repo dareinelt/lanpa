@@ -471,6 +471,51 @@ final class Container
         );
     }
 
+    public static function orvantaFlowRepository(): \App\Repositories\OrvantaFlowRepository
+    {
+        return self::make(
+            \App\Repositories\OrvantaFlowRepository::class,
+            static fn (): \App\Repositories\OrvantaFlowRepository => new \App\Repositories\OrvantaFlowRepository()
+        );
+    }
+
+    /**
+     * Praesenz der Orvanta-Benutzer (Nachrichtenfluss-Dashboard): erfasst die
+     * Aktivitaet an der Orvanta-Schnittstelle und schreibt Proben der aktiven
+     * Nutzer.
+     */
+    public static function orvantaPresence(): \App\Services\Orvanta\OrvantaPresenceService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaPresenceService::class,
+            static fn (): \App\Services\Orvanta\OrvantaPresenceService => new \App\Services\Orvanta\OrvantaPresenceService(
+                self::orvantaFlowRepository(),
+                self::orvantaRepository()
+            )
+        );
+    }
+
+    /**
+     * Nachrichtenfluss-Dashboard: Knoten, Kanten, Kennzahlen und Gesamtstatus
+     * der am Mail- und Kalenderfluss beteiligten Bausteine.
+     */
+    public static function orvantaFlow(): \App\Services\Orvanta\OrvantaFlowService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaFlowService::class,
+            static fn (): \App\Services\Orvanta\OrvantaFlowService => new \App\Services\Orvanta\OrvantaFlowService(
+                self::orvantaPresence(),
+                self::mailProxy(),
+                self::mailProxyRepository(),
+                self::orvantaExchangePool(),
+                self::storage(),
+                self::officeAi(),
+                self::orvantaRepository(),
+                self::orvantaConfig()
+            )
+        );
+    }
+
     public static function orvantaMailboxResolver(): \App\Services\Orvanta\OrvantaMailboxResolver
     {
         return self::make(

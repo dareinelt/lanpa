@@ -548,6 +548,62 @@ final class MailProxyService
     }
 
     /**
+     * Verbindungstest je Identitaetsquelle fuer das Nachrichtenfluss-Dashboard.
+     * Je aktiver Quelle wird ein aktives Postfach geprueft; das Ergebnis
+     * schreibt den Quellenzustand fort. Quellen ohne aktives Postfach gelten
+     * als ungeprueft, inaktive Quellen werden nicht geprueft.
+     *
+     * @param int|null $sourceId Nur diese Identitätsquelle prüfen (null = alle aktiven).
+     *
+     * @return array<int,array{identity_source_id:int,label:string,mailbox:string,checked:bool,ok:bool,message:string}>
+     */
+    public function testSources(?int $sourceId = null): array
+    {
+        $result = [];
+        $filter = $sourceId;
+        foreach ($this->sources() as $source) {
+            if (!$source['active']) {
+                continue;
+            }
+            $sourceId = (int) $source['id'];
+            if ($filter !== null && $filter !== $sourceId) {
+                continue;
+            }
+            $probe = $this->repository->probeMailbox($sourceId);            if ($probe['id'] === 0) {
+                $this->safeState(fn () => $this->repository->touchSourceCheck($sourceId));
+                $result[$sourceId] = [
+                    'identity_source_id' => $sourceId,
+                    'label' => (string) $source['label'],
+                    'mailbox' => '',
+                    'checked' => false,
+                    'ok' => false,
+                    'message' => 'Kein aktives Postfach zum Prüfen vorhanden.',
+                ];
+                continue;
+            }
+            $test = $this->testConnection($probe['id']);
+            $this->safeState(function () use ($sourceId, $test): void {
+                $this->repository->touchSourceCheck($sourceId);
+                if ($test['ok']) {
+                    $this->repository->recordSourceSuccess($sourceId);
+                } else {
+                    $this->repository->recordSourceError($sourceId, $test['message']);
+                }
+            });
+            $result[$sourceId] = [
+                'identity_source_id' => $sourceId,
+                'label' => (string) $source['label'],
+                'mailbox' => $probe['email'],
+                'checked' => true,
+                'ok' => $test['ok'],
+                'message' => $test['message'],
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
      * Diagnose fuer Office → Status & Diagnose (ohne Zugangsdaten).
      *
      * @return array{available:bool,counts:array<string,int>,state:array<string,mixed>,service:array{ok:bool,message:string,details:array<string,mixed>},cache_ttl:int}

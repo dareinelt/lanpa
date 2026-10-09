@@ -13,9 +13,11 @@ use App\Exceptions\ValidationException;
 use App\Security\Csrf;
 use App\Security\Session;
 use App\Services\LdapClient;
+use App\Services\MailProxy\MailProxyRoute;
 use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaExchangeService;
+use App\Services\Orvanta\OrvantaPresenceService;
 use App\Services\Orvanta\OrvantaSignatureService;
 use App\Services\Orvanta\OrvantaSpellcheckService;
 use Throwable;
@@ -1141,6 +1143,7 @@ final class OrvantaApiController extends Controller
                 }
             }
             $access = $this->withMailbox($access, $request);
+            $this->recordPresence($access);
 
             return Response::json($action($access))->withHeader('Vary', 'Cookie');
         } catch (OrvantaException $exception) {
@@ -1158,6 +1161,26 @@ final class OrvantaApiController extends Controller
             app_logger()->error('Orvanta: Unerwarteter Fehler.', ['path' => $request->path, 'error' => $exception->getMessage()]);
 
             return Response::json(['error' => 'Orvanta konnte die Anfrage nicht verarbeiten.'], 500);
+        }
+    }
+
+    /**
+     * Praesenz fuer das Nachrichtenfluss-Dashboard erfassen: Die Anfrage hat
+     * die Zugriffspruefung bestanden, der Benutzer verwendet Orvanta also
+     * gerade - unabhaengig davon, ob ueber Exchange oder den Proxy.
+     *
+     * @param array<string,mixed> $access
+     */
+    private function recordPresence(array $access): void
+    {
+        $route = $access['route'] ?? null;
+        if (!$route instanceof MailProxyRoute) {
+            return;
+        }
+        try {
+            Container::orvantaPresence()->touch((string) $access['uid'], OrvantaPresenceService::backendFor($route));
+        } catch (Throwable) {
+            // Die Praesenz ist nachrangig und darf Orvanta nie stoeren.
         }
     }
 

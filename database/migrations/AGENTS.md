@@ -3,7 +3,7 @@
 Ergänzt die Wurzel-`AGENTS.md`.
 
 - **Vorhandene Migrationen niemals ändern, umbenennen oder löschen** (sie sind über `schema_migrations` bereits angewendet).
-- Schemaänderung = neue Datei `0NN_beschreibung.sql` mit der nächsthöheren Nummer (aktuell zuletzt `040_mail_proxy_mailbox_quota.sql`; vor dem Anlegen Verzeichnis prüfen).
+- Schemaänderung = neue Datei `0NN_beschreibung.sql` mit der nächsthöheren Nummer (aktuell zuletzt `048_orvanta_flow_presence.sql`; vor dem Anlegen Verzeichnis prüfen).
 - Stil der letzten Migrationen übernehmen (utf8mb4, `IF NOT EXISTS`-Muster falls dort üblich).
 - Danach: `agentsindex.md` (Abschnitt Datenbankschema), betroffene Modul-Doku und manuell gepflegte SQLite-Test-Schemata in `tests/Unit/` anpassen.
 - Ausführung per `php scripts/migrate.php` (benötigt DB).

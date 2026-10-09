@@ -362,10 +362,34 @@ Runner::test('Orvanta: Einstellungen werden gespeichert, Passwort verschluesselt
     Assert::same(100 * 1024 * 1024, $config->cacheQuotaBytes());
     Assert::same('0', $config->get('reminder_header'));
     Assert::false($config->reminderHeaderEnabled());
+    Assert::same('0', $config->get('flow_ai_user_names'), 'Standard ist die pseudonyme Anzeige');
     Assert::same('calendar', $config->get('default_folder'));
     Assert::same(45, $config->pollInterval());
     Assert::same('jdoe@example.local', $config->impersonationAddress(['username' => 'jdoe', 'email' => 'john@mail.example']));
     Assert::same('john@mail.example', orvantaConfig()['config']->impersonationAddress(['username' => 'jdoe', 'email' => 'john@mail.example']));
+});
+
+Runner::test('Orvanta: Namensanzeige der KI-Nutzer im Nachrichtenfluss ist zuschaltbar', function (): void {
+    $config = orvantaConfig()['config'];
+    $base = [
+        'exchange_enabled' => '0',
+        'exchange_host' => 'mail.example.local',
+        'exchange_auth' => 'negotiate',
+        'exchange_identity' => 'smtp',
+        'exchange_verify_tls' => '1',
+        'exchange_timeout' => '20',
+        'cache_quota_mb' => '250',
+        'cache_folder' => 'Orvanta',
+        'reminder_lead_minutes' => '15',
+        'poll_interval' => '60',
+        'default_folder' => 'inbox',
+    ];
+
+    $config->save($base + ['flow_ai_user_names' => '1']);
+    Assert::same('1', $config->get('flow_ai_user_names'));
+
+    $config->save($base);
+    Assert::same('0', $config->get('flow_ai_user_names'), 'Ohne Häkchen bleibt die Anzeige pseudonym.');
 });
 
 // ----------------------------------------------------------------------

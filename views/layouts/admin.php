@@ -44,6 +44,7 @@ $navItems = $isAdmin ? [
         'office_apps' => ['/admin/office/apps', 'Office-Apps und Berechtigungen'],
         'office_orvanta' => ['/admin/office/orvanta', 'Orvanta – Mail & Kalender'],
         'office_orvanta_hosts' => ['/admin/office/orvanta/hosts', 'Orvanta – Exchange-DAG-Hosts'],
+        'office_orvanta_shared' => ['/admin/office/orvanta/postfaecher', 'Orvanta – Weitere Postfächer'],
         'office_signatures' => ['/admin/office/signaturen', 'Signaturvorlagen'],
         'office_oof' => ['/admin/office/abwesenheit', 'Abwesenheitsnotizen'],
         'office_mail_proxy' => ['/admin/office/mail-proxy', 'SMTP-/IMAP-Proxy'],

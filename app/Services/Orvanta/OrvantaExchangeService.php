@@ -8,6 +8,7 @@ use App\Contracts\ExchangeTransportInterface;
 use App\Contracts\OrvantaMailBackendInterface;
 use DOMElement;
 use DOMXPath;
+use Throwable;
 
 /**
  * Schnittstelle zu Microsoft Exchange On-Premise (ab 2016/2019) ueber
@@ -933,7 +934,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
      * $mail['reference'] (id, mode) entsteht eine Antwort/Weiterleitung mit
      * Bezug zur Originalnachricht.
      *
-     * @param array{to?:list<string>,cc?:list<string>,bcc?:list<string>,subject?:string,body?:string,html?:bool,importance?:string,attachments?:list<array{name:string,content_type:string,content:string}>,reference?:array{id:string,mode:string,change_key?:string}} $mail
+     * @param array{to?:list<string>,cc?:list<string>,bcc?:list<string>,subject?:string,body?:string,html?:bool,importance?:string,from?:string,from_name?:string,attachments?:list<array{name:string,content_type:string,content:string}>,reference?:array{id:string,mode:string,change_key?:string}} $mail
      * @return array{id:string}
      */
     public function send(string $user, array $mail, string $draftId = '', string $changeKey = ''): array
@@ -1512,6 +1513,35 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     // ------------------------------------------------------------------
 
     /**
+     * Prueft, ob das Dienstkonto ein Postfach per ExchangeImpersonation
+     * erreicht. Nur so kann Orvanta ein zusaetzlich berechtigtes Postfach
+     * bedienen; die Pruefung ersetzt die fehlende EWS-Abfrage der
+     * Postfachberechtigungen.
+     *
+     * @return array{ok:bool,error:string}
+     */
+    public function probeMailbox(string $email): array
+    {
+        $email = trim($email);
+        if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            return ['ok' => false, 'error' => 'Ungültige E-Mail-Adresse.'];
+        }
+        try {
+            $this->call(
+                '<m:GetFolder><m:FolderShape><t:BaseShape>IdOnly</t:BaseShape></m:FolderShape><m:FolderIds>'
+                . '<t:DistinguishedFolderId Id="msgfolderroot"/></m:FolderIds></m:GetFolder>',
+                $email
+            );
+        } catch (OrvantaException $exception) {
+            return ['ok' => false, 'error' => $exception->getMessage()];
+        } catch (Throwable $exception) {
+            return ['ok' => false, 'error' => 'Exchange ist nicht erreichbar: ' . $exception->getMessage()];
+        }
+
+        return ['ok' => true, 'error' => ''];
+    }
+
+    /**
      * SOAP-Aufruf mit Fehlerbehandlung. $strict=false toleriert Teilfehler
      * (z. B. nicht vorhandene Systemordner). $url erzwingt einen bestimmten
      * Endpunkt (Verbindungstest eines einzelnen DAG-Hosts) und umgeht damit die
@@ -2080,6 +2110,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             . EwsXml::recipients('ToRecipients', $mail['to'] ?? [])
             . EwsXml::recipients('CcRecipients', $mail['cc'] ?? [])
             . EwsXml::recipients('BccRecipients', $mail['bcc'] ?? [])
+            . self::fromXml($mail)
             . $this->referenceItemIdXml($reference['id'], $reference['change_key'] ?? '')
             . '<t:NewBodyContent BodyType="' . ($html ? 'HTML' : 'Text') . '">' . EwsXml::escape($this->outgoingBody($mail)) . '</t:NewBodyContent>'
             . '</t:' . $element . '>';
@@ -2145,7 +2176,21 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             . '<t:Importance>' . self::importance((string) ($mail['importance'] ?? 'Normal')) . '</t:Importance>'
             . EwsXml::recipients('ToRecipients', $mail['to'] ?? [])
             . EwsXml::recipients('CcRecipients', $mail['cc'] ?? [])
-            . EwsXml::recipients('BccRecipients', $mail['bcc'] ?? []);
+            . EwsXml::recipients('BccRecipients', $mail['bcc'] ?? [])
+            . self::fromXml($mail);
+    }
+
+    /**
+     * Absenderfeld (t:From) fuer Nachrichten aus einem zusaetzlich
+     * berechtigten Postfach ("Senden als"). Ohne Eintrag setzt Exchange den
+     * Absender selbst – das Verhalten ohne Zusatzpostfaecher bleibt damit
+     * unveraendert.
+     *
+     * @param array<string,mixed> $mail
+     */
+    private static function fromXml(array $mail): string
+    {
+        return EwsXml::singleRecipient('From', trim((string) ($mail['from'] ?? '')), trim((string) ($mail['from_name'] ?? '')));
     }
 
     /**
@@ -2188,6 +2233,12 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             . $recipients('message:ToRecipients', 'ToRecipients', $mail['to'] ?? [])
             . $recipients('message:CcRecipients', 'CcRecipients', $mail['cc'] ?? [])
             . $recipients('message:BccRecipients', 'BccRecipients', $mail['bcc'] ?? []);
+        // Absender nur setzen, wenn aus einem zusaetzlich berechtigten
+        // Postfach gesendet wird; sonst bleibt der Entwurf unveraendert.
+        $from = self::fromXml($mail);
+        if ($from !== '') {
+            $updates .= $set('message:From', $from);
+        }
         $xpath = $this->call(
             '<m:UpdateItem ConflictResolution="AlwaysOverwrite" MessageDisposition="SaveOnly"><m:ItemChanges><t:ItemChange>'
             . '<t:ItemId Id="' . EwsXml::escape($id) . '"' . ($changeKey !== '' ? ' ChangeKey="' . EwsXml::escape($changeKey) . '"' : '') . '/>'

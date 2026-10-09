@@ -22,6 +22,8 @@
         folders: [],
         folder: 'inbox',
         folderName: 'Posteingang',
+        collapsedMailboxes: {},
+        moduleMailbox: '',
         messages: [],
         total: 0,
         hasMore: false,
@@ -873,6 +875,7 @@
     }
 
     function loadModule() {
+        renderModuleMailbox();
         if (state.module === 'mail') {
             return loadFolders().then(loadMessages);
         }
@@ -881,7 +884,7 @@
             return loadCalendar();
         }
         if (state.module === 'contacts') {
-            renderSimpleSidebar('Kontakte', [{ label: 'Alle Kontakte', count: state.contacts.length }]);
+            renderSimpleSidebar(moduleTitle('Kontakte'), [{ label: 'Alle Kontakte', count: state.contacts.length }]);
             return loadContacts();
         }
         if (state.module === 'tasks') {
@@ -889,10 +892,47 @@
             return loadTasks();
         }
         if (state.module === 'notes') {
-            renderSimpleSidebar('Notizen', [{ label: 'Alle Notizen', count: state.notes.length }]);
+            renderSimpleSidebar(moduleTitle('Notizen'), [{ label: 'Alle Notizen', count: state.notes.length }]);
             return loadNotes();
         }
         return Promise.resolve();
+    }
+
+    /** Titel eines Moduls; in einem weiteren Postfach mit dessen Namen. */
+    function moduleTitle(title) {
+        var mailbox = mailboxDisplay(moduleMailbox());
+        return mailbox === '' ? title : title + ' – ' + mailbox;
+    }
+
+    /**
+     * Auswahl des Postfachs fuer Kontakte, Aufgaben und Notizen. Nur sichtbar,
+     * wenn dem Benutzer weitere Postfaecher bereitstehen.
+     */
+    function renderModuleMailbox() {
+        var select = hook('module-mailbox');
+        if (!select) {
+            return;
+        }
+        var simple = state.module === 'contacts' || state.module === 'tasks' || state.module === 'notes';
+        var mailboxes = (config.mailboxes || []).filter(function (mailbox) { return !!mailbox.id; });
+        if (!simple || !mailboxes.length) {
+            state.moduleMailbox = '';
+            select.hidden = true;
+            select.innerHTML = '';
+            return;
+        }
+        if (state.moduleMailbox && !mailboxNodes()[state.moduleMailbox]) {
+            state.moduleMailbox = '';
+        }
+        select.innerHTML = '';
+        (config.mailboxes || []).forEach(function (mailbox) {
+            select.appendChild(el('option', {
+                value: mailbox.id ? String(mailbox.id) : '',
+                text: mailbox.id ? (mailbox.name || mailbox.email) : 'Eigenes Postfach'
+            }));
+        });
+        select.value = moduleMailbox();
+        select.hidden = false;
     }
 
     function showDetailEmpty() {
@@ -997,7 +1037,7 @@
         renderFolders();
         var inboxUnread = 0;
         state.folders.forEach(function (folder) {
-            if (folder.kind === 'inbox') {
+            if (folder.kind === 'inbox' && !folder.mailbox) {
                 inboxUnread = folder.unread;
             }
         });
@@ -1119,7 +1159,86 @@
     }
 
     function folderKey(folder) {
+        // Ordner zusaetzlich berechtigter Postfaecher tragen ihr Postfach in
+        // der Kennung ("smb:<Postfach>|<Ordner>") und sind damit eindeutig.
+        if (folder.mailbox) {
+            return folder.id;
+        }
         return folder.kind !== 'folder' ? folder.kind : folder.id;
+    }
+
+    /**
+     * Basis-Kennung eines Ordners ohne Postfach-Praefix: Vergleiche mit
+     * "inbox", "drafts" usw. gelten auch in zusaetzlichen Postfaechern.
+     */
+    function baseFolder(key) {
+        key = String(key || '');
+        var position = key.indexOf('|');
+        return position === -1 ? key : key.slice(position + 1);
+    }
+
+    /**
+     * Zusaetzliches Postfach aus einer Ordner-Kennung ("smb:<Id>|…").
+     */
+    function mailboxOf(key) {
+        key = String(key || '');
+        if (key.indexOf('smb:') !== 0) {
+            return '';
+        }
+        var position = key.indexOf('|');
+        return key.slice(4, position === -1 ? key.length : position);
+    }
+
+    /** Ordner zusaetzlicher Postfaecher als Wurzelknoten im Baum. */
+    function mailboxNodes() {
+        var nodes = {};
+        (config.mailboxes || []).forEach(function (mailbox) {
+            if (mailbox.id) {
+                nodes[mailbox.id] = mailbox;
+            }
+        });
+        return nodes;
+    }
+
+    function mailboxEmail(id) {
+        var mailbox = mailboxNodes()[id];
+        return mailbox ? mailbox.email : '';
+    }
+
+    function mailboxDisplay(id) {
+        var mailbox = mailboxNodes()[id];
+        return mailbox ? (mailbox.name || mailbox.email) : '';
+    }
+
+    /**
+     * Postfaecher, aus denen der Benutzer senden darf: das eigene Postfach und
+     * alle weiteren mit "Senden als".
+     */
+    function senderMailboxes() {
+        var list = [{
+            id: '',
+            email: config.primaryEmail || (config.user && config.user.email) || '',
+            name: config.user && config.user.name ? config.user.name : ''
+        }];
+        (config.mailboxes || []).forEach(function (mailbox) {
+            if (mailbox.id && mailbox.send_as) {
+                list.push({ id: String(mailbox.id), email: mailbox.email, name: mailbox.name || mailbox.email });
+            }
+        });
+        return list;
+    }
+
+    /** Postfach, dessen Kontakte/Aufgaben/Notizen angezeigt werden. */
+    function moduleMailbox() {
+        return state.moduleMailbox || '';
+    }
+
+    /**
+     * Postfach der aktuellen Ansicht: in Mail das Postfach des geoeffneten
+     * Ordners, in den uebrigen Modulen das dort gewaehlte Postfach.
+     */
+    function activeMailbox() {
+        return state.module === 'mail' ? mailboxOf(state.folder) : moduleMailbox();
     }
 
     function renderFolders() {
@@ -1143,6 +1262,35 @@
         });
         function render(parent, depth) {
             (byParent[parent] || []).forEach(function (folder) {
+                // Wurzelknoten eines zusaetzlichen Postfachs: nur ein-/ausklappen,
+                // nicht auswaehlbar (wie die Postfaecher in Outlook).
+                if (folder.kind === 'mailbox') {
+                    var collapsed = !!state.collapsedMailboxes[folder.id];
+                    var head_ = el('button', {
+                        type: 'button',
+                        'class': 'ov-folder ov-folder--mailbox' + (collapsed ? ' ov-folder--collapsed' : ''),
+                        'data-mailbox-node': folder.id,
+                        style: 'padding-left:' + (0.75 + depth * 0.9) + 'rem',
+                        title: folder.name
+                    }, [
+                        el('span', { 'class': 'ov-folder__icon', 'aria-hidden': 'true', text: collapsed ? '▸' : '▾' }),
+                        el('span', { 'class': 'ov-folder__icon', 'aria-hidden': 'true', text: '📬' }),
+                        el('span', { 'class': 'ov-folder__name', text: folder.name })
+                    ]);
+                    head_.addEventListener('click', function () {
+                        if (collapsed) {
+                            delete state.collapsedMailboxes[folder.id];
+                        } else {
+                            state.collapsedMailboxes[folder.id] = true;
+                        }
+                        renderFolders();
+                    });
+                    body.appendChild(head_);
+                    if (!collapsed) {
+                        render(folder.id, depth + 1);
+                    }
+                    return;
+                }
                 var key = folderKey(folder);
                 var node = el('button', {
                     type: 'button',
@@ -1399,7 +1547,7 @@
         }
         var items = filteredMessages();
         setListTitle(state.search ? 'Suche: ' + state.search : state.folderName);
-        setCount(state.total + ' Element' + (state.total === 1 ? '' : 'e') + (state.folder === 'inbox' ? ', ' + state.messages.filter(function (m) { return !m.is_read; }).length + ' ungelesen' : ''));
+        setCount(state.total + ' Element' + (state.total === 1 ? '' : 'e') + (baseFolder(state.folder) === 'inbox' ? ', ' + state.messages.filter(function (m) { return !m.is_read; }).length + ' ungelesen' : ''));
         if (!items.length) {
             body.appendChild(el('div', { 'class': 'ov-list__empty', text: state.search ? 'Keine Treffer.' : 'Dieser Ordner ist leer.' }));
         }
@@ -1425,7 +1573,7 @@
     }
 
     function renderMessageRow(message) {
-        var who = state.folder === 'sentitems' || state.folder === 'drafts' || state.folder === 'outbox'
+        var who = baseFolder(state.folder) === 'sentitems' || baseFolder(state.folder) === 'drafts' || baseFolder(state.folder) === 'outbox'
             ? (message.to || []).map(mailboxName).join(', ') || '(kein Empfänger)'
             : mailboxName(message.from) || '(unbekannt)';
         var row = el('article', {
@@ -1554,7 +1702,7 @@
             }
             state.selected = message;
             showDetail(renderMessage(message));
-            if (!summary.is_read && state.folder !== 'drafts') {
+            if (!summary.is_read && baseFolder(state.folder) !== 'drafts') {
                 api('/mail/aktion', { body: { action: 'read', ids: [message.id] } }).then(function () {
                     summary.is_read = true;
                     message.is_read = true;
@@ -1612,7 +1760,7 @@
             }
         });
         renderFolders();
-        var inbox = state.folders.filter(function (f) { return f.kind === 'inbox'; })[0];
+        var inbox = state.folders.filter(function (f) { return f.kind === 'inbox' && !f.mailbox; })[0];
         var count = $('[data-ov-module-count="mail"]');
         if (count && inbox) {
             count.textContent = inbox.unread > 0 ? String(inbox.unread) : '';
@@ -1655,7 +1803,7 @@
             ]));
         }
 
-        if (state.folder === 'drafts') {
+        if (baseFolder(state.folder) === 'drafts') {
             var draftBar = el('div', { 'class': 'ov-mail__meeting' }, [el('span', { text: 'Entwurf – ' })]);
             var edit = el('button', { type: 'button', 'class': 'button button--ghost', text: 'Entwurf bearbeiten' });
             edit.addEventListener('click', function () {
@@ -1812,7 +1960,7 @@
             toast('Bitte zuerst eine Nachricht auswählen.', 'info');
             return Promise.resolve();
         }
-        return api('/mail/aktion', { body: { action: action, ids: ids, folder: folder || '' } }).then(function () {
+        return api('/mail/aktion', { body: { action: action, ids: ids, folder: folder || '', postfach: mailboxOf(folder || state.folder) } }).then(function () {
             var labels = { read: 'Als gelesen markiert.', unread: 'Als ungelesen markiert.', flag: 'Gekennzeichnet.', unflag: 'Kennzeichnung entfernt.', move: 'Verschoben.', 'delete': 'In „Gelöschte Elemente“ verschoben.', delete_permanent: 'Endgültig gelöscht.' };
             toast(labels[action] || 'Erledigt.', 'success');
             if (action === 'delete' || action === 'delete_permanent' || action === 'move') {
@@ -1824,6 +1972,14 @@
         }).catch(function (error) {
             toast(error.message, 'error');
         });
+    }
+
+    /** Archivordner des aktuell geoeffneten Postfachs (nicht das eines weiteren Postfachs). */
+    function archiveFolder() {
+        var current = mailboxOf(state.folder);
+        return state.folders.filter(function (f) {
+            return /^archiv/i.test(f.name) && f.kind !== 'mailbox' && mailboxOf(folderKey(f)) === current;
+        })[0];
     }
 
     function openMoveDialog(ids) {
@@ -1838,6 +1994,7 @@
         }
         // Ein <select> nimmt nur <option>/<optgroup> auf; Ordner hierarchisch einruecken.
         list.innerHTML = '';
+        var currentMailbox = mailboxOf(state.folder);
         var byParent = {};
         var known = {};
         state.folders.forEach(function (folder) {
@@ -1850,7 +2007,9 @@
         function add(parent, depth) {
             (byParent[parent] || []).forEach(function (folder) {
                 var key = folderKey(folder);
-                if (key !== state.folder) {
+                // Postfach-Wurzelknoten sind kein Ablageziel, und Nachrichten
+                // lassen sich nur innerhalb eines Postfachs verschieben.
+                if (folder.kind !== 'mailbox' && key !== state.folder && mailboxOf(key) === currentMailbox) {
                     var indent = new Array(depth + 1).join('\u00a0\u00a0\u00a0');
                     list.appendChild(el('option', { value: key, text: indent + (FOLDER_ICONS[folder.kind] || FOLDER_ICONS.folder) + ' ' + (FOLDER_LABELS[folder.kind] || folder.name) }));
                 }
@@ -2052,7 +2211,10 @@
             attachments: [],
             replyTo: message && !isDraft ? message.id : null,
             draftId: isDraft && message ? message.id : null,
-            changeKey: isDraft && message ? (message.change_key || '') : ''
+            changeKey: isDraft && message ? (message.change_key || '') : '',
+            // Postfach, aus dem der Editor geoeffnet wurde: Vorgabe der
+            // Absenderadresse und Ziel beim Speichern des Entwurfs.
+            mailbox: activeMailbox()
         };
         var body = hook('compose-body');
         var attachList = hook('attach-list');
@@ -2095,6 +2257,7 @@
                 });
             }
         }
+        renderComposeFrom(form);
         renderComposeSignature();
         openDialog('compose');
         if (mode === 'new' || mode === 'forward') {
@@ -2102,6 +2265,50 @@
         } else if (body) {
             body.focus();
         }
+    }
+
+    /**
+     * Absenderadresse im Verfassen-Dialog. Vorgabe ist das Postfach, aus dem
+     * der Editor geoeffnet wurde; die Liste erscheint nur, wenn der Benutzer
+     * aus mehreren Postfaechern senden darf ("Senden als"). Die Signatur bleibt
+     * immer die des eigenen Postfachs.
+     */
+    function renderComposeFrom(form) {
+        var select = form.elements.from;
+        var field = select ? select.closest('[data-ov-compose-from]') : null;
+        if (!select || !field) {
+            return;
+        }
+        var mailboxes = senderMailboxes();
+        if (mailboxes.length < 2) {
+            field.hidden = true;
+            select.innerHTML = '';
+            return;
+        }
+        var current = (state.compose && state.compose.mailbox) || '';
+        select.innerHTML = '';
+        mailboxes.forEach(function (mailbox) {
+            select.appendChild(el('option', {
+                value: mailbox.email,
+                text: mailbox.name && mailbox.name !== mailbox.email
+                    ? mailbox.name + ' <' + mailbox.email + '>'
+                    : mailbox.email
+            }));
+        });
+        var match = mailboxes.filter(function (mailbox) { return mailbox.id === current; })[0];
+        select.value = (match || mailboxes[0]).email;
+        field.hidden = false;
+    }
+
+    /** Postfach zur gewaehlten Absenderadresse ('' = eigenes Postfach). */
+    function composeMailbox(form) {
+        var select = form.elements.from;
+        var address = select ? String(select.value).toLowerCase() : '';
+        var match = senderMailboxes().filter(function (mailbox) {
+            return address !== '' && mailbox.email.toLowerCase() === address;
+        })[0];
+
+        return match ? match.id : '';
     }
 
     /**
@@ -2165,6 +2372,10 @@
         var body = hook('compose-body');
         var compose = state.compose || {};
         return {
+            // Entwuerfe bleiben in ihrem Postfach; neue Nachrichten gehen in das
+            // Postfach der gewaehlten Absenderadresse.
+            postfach: compose.draftId ? (compose.mailbox || '') : composeMailbox(form),
+            from: form.elements.from ? form.elements.from.value : '',
             to: parseRecipients(form.elements.to.value),
             cc: parseRecipients(form.elements.cc.value),
             bcc: parseRecipients(form.elements.bcc ? form.elements.bcc.value : ''),
@@ -2287,6 +2498,7 @@
             replyTo: compose.replyTo || null,
             draftId: compose.draftId || null,
             changeKey: compose.changeKey || '',
+            mailbox: compose.mailbox || '',
             attachments: (compose.attachments || []).map(function (a) {
                 return { name: a.name, content_type: a.content_type, content: a.content || '', size: a.size, uploaded: !!a.uploaded };
             }),
@@ -2313,7 +2525,8 @@
             attachments: [],
             replyTo: snapshot.replyTo || null,
             draftId: snapshot.draftId || null,
-            changeKey: snapshot.changeKey || ''
+            changeKey: snapshot.changeKey || '',
+            mailbox: snapshot.mailbox || ''
         };
         var fields = snapshot.fields || {};
         form.elements.to.value = fields.to || '';
@@ -2330,6 +2543,7 @@
             title.textContent = snapshot.title;
         }
         setEditorHtml(hook('compose-body'), snapshot.body || '');
+        renderComposeFrom(form);
         renderComposeSignature();
         var list = hook('attach-list');
         if (list) {
@@ -2598,6 +2812,9 @@
         if (event.my_response === 'Tentative') {
             cls += ' ov-event--tentative';
         }
+        if (event.mailbox) {
+            cls += ' ov-event--shared';
+        }
         if (state.selected && state.selected.id === event.id) {
             cls += ' ov-event--active';
         }
@@ -2605,9 +2822,10 @@
     }
 
     function eventNode(event, showTime) {
-        var node = el('button', { type: 'button', 'class': eventClass(event), 'data-id': event.id, draggable: 'true', title: event.subject + (event.location ? ' – ' + event.location : '') }, [
+        var node = el('button', { type: 'button', 'class': eventClass(event), 'data-id': event.id, draggable: 'true', title: event.subject + (event.location ? ' – ' + event.location : '') + (event.mailbox_name ? ' · Kalender ' + event.mailbox_name : '') }, [
             showTime && !event.all_day ? el('span', { 'class': 'ov-event__time', text: fmtTime(event.start) }) : null,
-            el('span', { 'class': 'ov-event__subject', text: event.subject || '(ohne Betreff)' })
+            el('span', { 'class': 'ov-event__subject', text: event.subject || '(ohne Betreff)' }),
+            event.mailbox_name ? el('span', { 'class': 'ov-event__mailbox', text: event.mailbox_name }) : null
         ]);
         node.addEventListener('click', function (e) {
             e.stopPropagation();
@@ -2793,7 +3011,8 @@
                     el('span', { 'class': 'ov-agenda__subject', text: event.subject || '(ohne Betreff)' }),
                     event.location ? el('span', { 'class': 'ov-agenda__location', text: event.location }) : null
                 ]),
-                event.is_meeting ? el('span', { 'class': 'ov-agenda__badge', text: 'Besprechung' }) : null
+                event.is_meeting ? el('span', { 'class': 'ov-agenda__badge', text: 'Besprechung' }) : null,
+                event.mailbox_name ? el('span', { 'class': 'ov-agenda__badge ov-agenda__badge--mailbox', text: event.mailbox_name }) : null
             ]);
             row.addEventListener('click', function () {
                 openEvent(event);
@@ -2861,6 +3080,7 @@
         }
         mini.appendChild(grid);
         body.appendChild(mini);
+        renderCalendarMailboxes(body);
 
         var upcoming = state.events.filter(function (event) {
             return event.end >= toTs(new Date());
@@ -2878,6 +3098,52 @@
                 body.appendChild(row);
             });
         }
+    }
+
+    /**
+     * Checkboxen zum Ein- und Ausblenden der Kalender zusaetzlich berechtigter
+     * Postfaecher. Der eigene Kalender ist immer sichtbar.
+     */
+    function renderCalendarMailboxes(body) {
+        var mailboxes = (config.mailboxes || []).filter(function (mailbox) { return !!mailbox.id; });
+        if (!mailboxes.length) {
+            return;
+        }
+        body.appendChild(el('div', { 'class': 'ov-folders__section', text: 'Weitere Kalender' }));
+        mailboxes.forEach(function (mailbox) {
+            var label = mailbox.name || mailbox.email;
+            var input = el('input', { type: 'checkbox', 'class': 'ov-folder__check' });
+            input.checked = (config.calendarVisible || []).indexOf(Number(mailbox.id)) !== -1;
+            input.setAttribute('aria-label', 'Kalender von ' + label + ' anzeigen');
+            input.addEventListener('change', function () {
+                setCalendarVisible(mailbox.id, input.checked);
+            });
+            body.appendChild(el('label', { 'class': 'ov-folder ov-folder--mailbox' }, [
+                input,
+                el('span', { 'class': 'ov-folder__name', text: label })
+            ]));
+        });
+    }
+
+    /**
+     * Kalender eines weiteren Postfachs ein- oder ausblenden; die Auswahl wird
+     * serverseitig je Benutzer gemerkt.
+     */
+    function setCalendarVisible(id, visible) {
+        var previous = (config.calendarVisible || []).slice();
+        var value = Number(id);
+        var list = previous.filter(function (entry) { return entry !== value; });
+        if (visible) {
+            list.push(value);
+        }
+        config.calendarVisible = list;
+        api('/kalender/postfach', { body: { postfach: value, sichtbar: visible ? 1 : 0 } }).then(function () {
+            loadCalendar();
+        }).catch(function (error) {
+            config.calendarVisible = previous;
+            toast(error.message, 'error');
+            renderCalendarSidebar();
+        });
     }
 
     function openEvent(summary) {
@@ -2914,6 +3180,7 @@
                 event.location ? el('dt', { text: 'Ort' }) : null, event.location ? el('dd', { text: event.location }) : null,
                 el('dt', { text: 'Anzeigen als' }), el('dd', { text: FREE_BUSY[event.free_busy] || event.free_busy }),
                 event.organizer && event.organizer.email ? el('dt', { text: 'Organisator' }) : null, event.organizer && event.organizer.email ? el('dd', { text: mailboxFull(event.organizer) }) : null,
+                event.mailbox_name ? el('dt', { text: 'Kalender' }) : null, event.mailbox_name ? el('dd', { text: event.mailbox_name }) : null,
                 el('dt', { text: 'Erinnerung' }), el('dd', { text: event.reminder_set ? event.reminder_minutes + ' Minuten vorher' : 'Keine' }),
                 event.recurring ? el('dt', { text: 'Serie' }) : null, event.recurring ? el('dd', { text: 'Dieser Termin ist Teil einer Serie.' }) : null
             ])
@@ -3330,7 +3597,7 @@
 
     function loadContacts() {
         listMessage('Kontakte werden geladen …', 'ov-list__empty--loading');
-        return api('/kontakte', { query: { q: state.search } }).then(function (data) {
+        return api('/kontakte', { query: { q: state.search, postfach: moduleMailbox() } }).then(function (data) {
             state.contacts = data.items || [];
             renderContacts();
             renderSimpleSidebar('Kontakte', [{ label: 'Alle Kontakte', count: state.contacts.length }]);
@@ -3387,7 +3654,7 @@
             node.classList.toggle('ov-item--active', node.getAttribute('data-id') === summary.id);
         });
         showDetail(renderContact(summary));
-        api('/kontakte/kontakt', { query: { id: summary.id } }).then(function (contact) {
+        api('/kontakte/kontakt', { query: { id: summary.id, postfach: moduleMailbox() } }).then(function (contact) {
             if (state.selected && state.selected.id === contact.id) {
                 state.selected = contact;
                 showDetail(renderContact(contact));
@@ -3490,7 +3757,7 @@
             formError(form, 'Bitte mindestens Vorname, Nachname oder Firma angeben.');
             return;
         }
-        api('/kontakte/kontakt', { body: payload }).then(function (result) {
+        api('/kontakte/kontakt', { body: Object.assign({ postfach: moduleMailbox() }, payload) }).then(function (result) {
             closeDialog('contact');
             toast(result.message || 'Kontakt gespeichert.', 'success');
             state.selected = null;
@@ -3509,7 +3776,7 @@
         if (!confirmAction('Kontakt „' + (state.selected.display_name || '') + '“ löschen?')) {
             return;
         }
-        api('/kontakte/loeschen', { body: { ids: [state.selected.id] } }).then(function () {
+        api('/kontakte/loeschen', { body: { ids: [state.selected.id], postfach: moduleMailbox() } }).then(function () {
             toast('Kontakt gelöscht.', 'success');
             state.selected = null;
             showDetailEmpty();
@@ -3528,14 +3795,14 @@
     function renderTasksSidebar() {
         var open = state.tasks.filter(function (t) { return !t.is_complete; }).length;
         var overdue = state.tasks.filter(function (t) { return !t.is_complete && t.due && t.due < toTs(startOfDay(new Date())); }).length;
-        renderSimpleSidebar('Aufgaben', [{ label: 'Offene Aufgaben', count: open }].concat(overdue ? [{ label: 'Überfällig', count: overdue }] : []));
+        renderSimpleSidebar(moduleTitle('Aufgaben'), [{ label: 'Offene Aufgaben', count: open }].concat(overdue ? [{ label: 'Überfällig', count: overdue }] : []));
     }
 
     function loadTasks() {
         listMessage('Aufgaben werden geladen …', 'ov-list__empty--loading');
         var completedToggle = hook('tasks-completed');
         state.tasksCompleted = completedToggle ? completedToggle.checked : true;
-        return api('/aufgaben', { query: { erledigt: state.tasksCompleted ? '1' : '0' } }).then(function (data) {
+        return api('/aufgaben', { query: { erledigt: state.tasksCompleted ? '1' : '0', postfach: moduleMailbox() } }).then(function (data) {
             state.tasks = (data.items || []).slice().sort(function (a, b) {
                 if (a.is_complete !== b.is_complete) {
                     return a.is_complete ? 1 : -1;
@@ -3605,7 +3872,7 @@
     }
 
     function toggleTaskComplete(task, complete) {
-        api('/aufgaben/aufgabe', { body: { id: task.id, subject: task.subject, body: task.body || '', importance: task.importance, status: complete ? 'Completed' : 'NotStarted', percent: complete ? 100 : 0, due: task.due || 0, start: task.start || 0 } }).then(function () {
+        api('/aufgaben/aufgabe', { body: { id: task.id, subject: task.subject, body: task.body || '', importance: task.importance, status: complete ? 'Completed' : 'NotStarted', percent: complete ? 100 : 0, due: task.due || 0, start: task.start || 0, postfach: moduleMailbox() } }).then(function () {
             toast(complete ? 'Aufgabe erledigt.' : 'Aufgabe wieder geöffnet.', 'success');
             loadTasks();
         }).catch(function (error) {
@@ -3620,7 +3887,7 @@
             node.classList.toggle('ov-item--active', node.getAttribute('data-id') === summary.id);
         });
         showDetail(renderTask(summary));
-        api('/aufgaben/aufgabe', { query: { id: summary.id } }).then(function (task) {
+        api('/aufgaben/aufgabe', { query: { id: summary.id, postfach: moduleMailbox() } }).then(function (task) {
             if (state.selected && state.selected.id === task.id) {
                 state.selected = task;
                 showDetail(renderTask(task));
@@ -3719,7 +3986,7 @@
         if (payload.status === 'Completed') {
             payload.percent = 100;
         }
-        api('/aufgaben/aufgabe', { body: payload }).then(function (result) {
+        api('/aufgaben/aufgabe', { body: Object.assign({ postfach: moduleMailbox() }, payload) }).then(function (result) {
             closeDialog('task');
             toast(result.message || 'Aufgabe gespeichert.', 'success');
             // Aus dem Mail-Modul heraus darf die Aufgabenliste den Lesebereich
@@ -3742,7 +4009,7 @@
         if (!confirmAction('Aufgabe „' + (state.selected.subject || '') + '“ löschen?')) {
             return;
         }
-        api('/aufgaben/loeschen', { body: { ids: [state.selected.id] } }).then(function () {
+        api('/aufgaben/loeschen', { body: { ids: [state.selected.id], postfach: moduleMailbox() } }).then(function () {
             toast('Aufgabe gelöscht.', 'success');
             state.selected = null;
             showDetailEmpty();
@@ -3758,7 +4025,7 @@
 
     function loadNotes() {
         listMessage('Notizen werden geladen …', 'ov-list__empty--loading');
-        return api('/notizen').then(function (data) {
+        return api('/notizen', { query: { postfach: moduleMailbox() } }).then(function (data) {
             state.notes = data.items || [];
             renderNotes();
             renderSimpleSidebar('Notizen', [{ label: 'Alle Notizen', count: state.notes.length }]);
@@ -3804,7 +4071,7 @@
             node.classList.toggle('ov-note--active', node.getAttribute('data-id') === summary.id);
         });
         showDetail(el('div', { 'class': 'ov-mail ov-mail--loading', text: 'Notiz wird geladen …' }));
-        api('/notizen/notiz', { query: { id: summary.id } }).then(function (note) {
+        api('/notizen/notiz', { query: { id: summary.id, postfach: moduleMailbox() } }).then(function (note) {
             if (state.selected && state.selected.id === note.id) {
                 state.selected = note;
                 showDetail(renderNoteEditor(note));
@@ -3854,7 +4121,7 @@
             toast('Die Notiz ist leer.', 'info');
             return;
         }
-        api('/notizen/notiz', { body: { id: state.selected ? state.selected.id : '', body: text } }).then(function (result) {
+        api('/notizen/notiz', { body: { id: state.selected ? state.selected.id : '', body: text, postfach: moduleMailbox() } }).then(function (result) {
             toast(result.message || 'Notiz gespeichert.', 'success');
             state.noteDraft = false;
             loadNotes().then(function () {
@@ -3880,7 +4147,7 @@
         if (!confirmAction('Notiz löschen?')) {
             return;
         }
-        api('/notizen/loeschen', { body: { ids: [state.selected.id] } }).then(function () {
+        api('/notizen/loeschen', { body: { ids: [state.selected.id], postfach: moduleMailbox() } }).then(function () {
             toast('Notiz gelöscht.', 'success');
             state.selected = null;
             showDetailEmpty();
@@ -4366,9 +4633,9 @@
             case 'reply': if (state.selected) { openCompose('reply', state.selected); } break;
             case 'replyall': if (state.selected) { openCompose('replyall', state.selected); } break;
             case 'forward': if (state.selected) { openCompose('forward', state.selected); } break;
-            case 'mail-delete': mailAction(state.folder === 'deleteditems' ? 'delete_permanent' : 'delete'); break;
+            case 'mail-delete': mailAction(baseFolder(state.folder) === 'deleteditems' ? 'delete_permanent' : 'delete'); break;
             case 'mail-archive': {
-                var archive = state.folders.filter(function (f) { return /^archiv/i.test(f.name); })[0];
+                var archive = archiveFolder();
                 if (archive) { mailAction('move', null, folderKey(archive)); } else { openMoveDialog(); }
                 break;
             }
@@ -4563,6 +4830,17 @@
                 if (state.module === 'mail') {
                     renderMessages();
                 }
+            });
+        }
+
+        var mailboxSelect = hook('module-mailbox');
+        if (mailboxSelect) {
+            mailboxSelect.addEventListener('change', function () {
+                state.moduleMailbox = mailboxSelect.value;
+                state.selected = null;
+                state.selectedIds = [];
+                showDetailEmpty();
+                loadModule();
             });
         }
 
@@ -5056,8 +5334,8 @@
         var targets = state.messages.filter(function (m) { return ids.indexOf(m.id) !== -1; });
         var many = ids.length > 1;
         var suffix = many ? ' (' + ids.length + ')' : '';
-        var drafts = state.folder === 'drafts';
-        var trash = state.folder === 'deleteditems';
+        var drafts = baseFolder(state.folder) === 'drafts';
+        var trash = baseFolder(state.folder) === 'deleteditems';
         var anyUnread = targets.some(function (m) { return !m.is_read; });
         var anyUnflagged = targets.some(function (m) { return !m.flagged; });
         var compose = function (mode) {
@@ -5086,7 +5364,7 @@
         items.push({ label: 'Verschieben …' + suffix, icon: '📁', run: function () { openMoveDialog(ids); } });
         if (!trash) {
             items.push({ label: 'Archivieren' + suffix, icon: '🗄', run: function () {
-                var archive = state.folders.filter(function (f) { return /^archiv/i.test(f.name); })[0];
+                var archive = archiveFolder();
                 if (archive) {
                     mailAction('move', ids, folderKey(archive));
                 } else {

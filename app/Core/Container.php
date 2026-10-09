@@ -511,6 +511,31 @@ final class Container
         );
     }
 
+    /**
+     * Zusaetzlich berechtigte Postfaecher (Vollzugriff / "Senden als"). Die
+     * Zuordnung pflegt der Adminbereich; erreichbar ist nur, was EWS mit dem
+     * Dienstkonto bestaetigt.
+     */
+    public static function orvantaSharedMailboxRepository(): \App\Repositories\OrvantaSharedMailboxRepository
+    {
+        return self::make(
+            \App\Repositories\OrvantaSharedMailboxRepository::class,
+            static fn (): \App\Repositories\OrvantaSharedMailboxRepository => new \App\Repositories\OrvantaSharedMailboxRepository()
+        );
+    }
+
+    public static function orvantaSharedMailboxes(): \App\Services\Orvanta\OrvantaSharedMailboxService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaSharedMailboxService::class,
+            static fn (): \App\Services\Orvanta\OrvantaSharedMailboxService => new \App\Services\Orvanta\OrvantaSharedMailboxService(
+                self::orvantaSharedMailboxRepository(),
+                self::orvantaExchange(),
+                app_logger()
+            )
+        );
+    }
+
     public static function orvantaAttachments(): \App\Services\Orvanta\OrvantaAttachmentService
     {
         return self::make(

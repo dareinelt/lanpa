@@ -31,6 +31,7 @@ use App\Controllers\Admin\OfficeAppsController as OfficeAppsAdminController;
 use App\Controllers\Admin\OrvantaHostController;
 use App\Controllers\Admin\OrvantaOofController;
 use App\Controllers\Admin\OrvantaSignatureController;
+use App\Controllers\Admin\OrvantaSharedMailboxController;
 use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
 use App\Controllers\Admin\StatisticsController;
@@ -183,6 +184,7 @@ $router->post('/api/orvanta/kalender/termin', [OrvantaApiController::class, 'sav
 $router->post('/api/orvanta/kalender/termin/verschieben', [OrvantaApiController::class, 'moveEvent']);
 $router->post('/api/orvanta/kalender/termin/loeschen', [OrvantaApiController::class, 'deleteEvent']);
 $router->post('/api/orvanta/kalender/antwort', [OrvantaApiController::class, 'meetingResponse']);
+$router->post('/api/orvanta/kalender/postfach', [OrvantaApiController::class, 'setCalendarVisible']); // Kalender zusaetzlicher Postfaecher ein-/ausblenden
 $router->get('/api/orvanta/kontakte', [OrvantaApiController::class, 'contacts']);
 $router->get('/api/orvanta/kontakte/kontakt', [OrvantaApiController::class, 'contact']);
 $router->post('/api/orvanta/kontakte/kontakt', [OrvantaApiController::class, 'saveContact']);
@@ -374,6 +376,11 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/office/orvanta/hosts/pruefen', [OrvantaHostController::class, 'check']);
         $router->post('/admin/office/orvanta/hosts/pruefpostfach', [OrvantaHostController::class, 'testMailbox']);
         $router->get('/admin/office/orvanta/hosts/daten', [OrvantaHostController::class, 'data']);
+        // Orvanta: zusaetzlich berechtigte Postfaecher je Benutzer (Vollzugriff / "Senden als").
+        $router->get('/admin/office/orvanta/postfaecher', [OrvantaSharedMailboxController::class, 'index']);
+        $router->post('/admin/office/orvanta/postfaecher/speichern', [OrvantaSharedMailboxController::class, 'save']);
+        $router->post('/admin/office/orvanta/postfaecher/pruefen', [OrvantaSharedMailboxController::class, 'verify']);
+        $router->post('/admin/office/orvanta/postfaecher/loeschen', [OrvantaSharedMailboxController::class, 'delete']);
         $router->get('/admin/office/kachel/vorschau', [OfficeAdminController::class, 'tilePreview']);
         $router->get('/admin/office/apps', [OfficeAppsAdminController::class, 'index']);
         $router->post('/admin/office/apps/owa', [OfficeAppsAdminController::class, 'updateOwa']);

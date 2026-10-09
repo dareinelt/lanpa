@@ -50,7 +50,7 @@ final class OrvantaApiController extends Controller
             $this->registerArchive($access);
 
             return [
-                'user' => ['name' => $access['user']['display_name'] ?? $access['user']['username'], 'email' => $access['impersonate']],
+                'user' => ['name' => $access['user']['display_name'] ?? $access['user']['username'], 'email' => $access['primary']],
                 'demo' => $access['route']->isProxy() ? false : $config->isDemo(),
                 'host' => $access['route']->isProxy() ? '' : $config->get('exchange_host'),
                 'exchange_host' => OrvantaController::exchangeHost($access),
@@ -67,14 +67,15 @@ final class OrvantaApiController extends Controller
      * Abwesenheitsnotiz des Postfachs: Zustand auf dem Exchange-Server,
      * Vorlage und die zuletzt in Orvanta gespeicherten Eingaben (Banner und
      * Dialog). Massgeblich ist der Server – den Versand uebernimmt Exchange,
-     * Orvanta muss dafuer nicht geoeffnet bleiben.
+     * Orvanta muss dafuer nicht geoeffnet bleiben. Die Abwesenheitsnotiz gilt
+     * immer fuer das eigene (primaere) Postfach.
      */
     public function oof(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
             $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_OOF);
 
-            return Container::orvantaOof()->status($access['uid'], $access['impersonate'], $exchange, $access['user']);
+            return Container::orvantaOof()->status($access['uid'], $access['primary'], $exchange, $access['user']);
         })->withHeader('Cache-Control', 'no-store');
     }
 
@@ -92,14 +93,14 @@ final class OrvantaApiController extends Controller
             if ($template === null) {
                 throw new OrvantaException('Für Ihr Konto ist keine Abwesenheitsvorlage hinterlegt. Bitte wenden Sie sich an die Administration.', 409);
             }
-            $settings = $service->apply($access['uid'], $access['impersonate'], $template, $this->body, $exchange, $access['user']);
+            $settings = $service->apply($access['uid'], $access['primary'], $template, $this->body, $exchange, $access['user']);
 
             return [
                 'ok' => true,
                 'message' => $settings['active']
                     ? 'Die Abwesenheitsnotiz ist aktiv. Exchange sendet sie automatisch.'
                     : 'Die Abwesenheitsnotiz ist abgeschaltet.',
-                'oof' => $service->status($access['uid'], $access['impersonate'], $exchange, $access['user']),
+                'oof' => $service->status($access['uid'], $access['primary'], $exchange, $access['user']),
             ];
         }, true);
     }
@@ -123,9 +124,38 @@ final class OrvantaApiController extends Controller
         })->withHeader('Cache-Control', 'no-store');
     }
 
+    /**
+     * Ordnerbaum: eigenes Postfach und – sofern zugeordnet – die zusaetzlich
+     * berechtigten Postfaecher (Vollzugriff) als weitere Wurzelknoten. Deren
+     * Ordner tragen ein Praefix vor ihrer Kennung, damit sie eindeutig bleiben;
+     * nicht erreichbare Postfaecher werden uebersprungen.
+     */
     public function folders(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => ['folders' => $this->mail($access)->folders($access['impersonate'])]);
+        return $this->handle($request, function (array $access): array {
+            $backend = $this->mail($access);
+            $folders = $backend->folders($access['primary']);
+            foreach ($access['mailboxes'] as $mailbox) {
+                $root = self::MAILBOX_PREFIX . $mailbox['id'] . '|';
+                try {
+                    $shared = $backend->folders($mailbox['email']);
+                } catch (Throwable $exception) {
+                    app_logger()->warning('Orvanta: Ordner eines zusaetzlichen Postfachs nicht abrufbar.', ['mailbox' => $mailbox['email'], 'error' => $exception->getMessage()]);
+                    continue;
+                }
+                // Wurzelknoten des Postfachs (wie in Outlook); das eigene
+                // Postfach braucht ihn nicht.
+                $folders[] = ['id' => $root, 'parent' => '', 'name' => $mailbox['name'], 'kind' => 'mailbox', 'unread' => 0, 'total' => 0, 'mailbox' => $mailbox['id']];
+                foreach ($shared as $folder) {
+                    $folder['id'] = $root . $folder['id'];
+                    $folder['parent'] = $folder['parent'] !== '' ? $root . $folder['parent'] : $root;
+                    $folder['mailbox'] = $mailbox['id'];
+                    $folders[] = $folder;
+                }
+            }
+
+            return ['folders' => $folders, 'mailboxes' => array_values($access['mailboxes'])];
+        });
     }
 
     /**
@@ -134,7 +164,7 @@ final class OrvantaApiController extends Controller
      */
     public function folderProperties(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => $this->mail($access)->folderProperties($access['impersonate'], $this->requireId($request->query('ordner'))));
+        return $this->handle($request, fn (array $access): array => $this->mail($access)->folderProperties($access['impersonate'], $this->requireId($this->stripMailbox($access, (string) $request->query('ordner', '')))));
     }
 
     /**
@@ -144,7 +174,7 @@ final class OrvantaApiController extends Controller
     {
         return $this->handle($request, function (array $access): array {
             $parent = trim($this->str('parent'));
-            $result = $this->mail($access)->createFolder($access['impersonate'], $parent !== '' ? $this->requireId($parent) : '', $this->str('name'));
+            $result = $this->mail($access)->createFolder($access['impersonate'], $parent !== '' ? $this->requireId($this->stripMailbox($access, $parent)) : '', $this->str('name'));
 
             return $result + ['message' => 'Der Ordner „' . $result['name'] . '“ wurde angelegt.'];
         }, true);
@@ -156,7 +186,7 @@ final class OrvantaApiController extends Controller
     public function markFolderRead(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $this->mail($access)->markFolderRead($access['impersonate'], $this->requireId($this->str('folder')));
+            $this->mail($access)->markFolderRead($access['impersonate'], $this->requireId($this->stripMailbox($access, $this->str('folder'))));
 
             return ['ok' => true, 'message' => 'Alle Nachrichten wurden als gelesen markiert.'];
         }, true);
@@ -166,7 +196,7 @@ final class OrvantaApiController extends Controller
     {
         return $this->handle($request, fn (array $access): array => $this->mail($access)->messages(
             $access['impersonate'],
-            (string) $request->query('ordner', 'inbox'),
+            $this->stripMailbox($access, (string) $request->query('ordner', 'inbox')),
             max(0, $request->queryInt('offset', 0)),
             max(1, min(100, $request->queryInt('limit', 50))),
             trim((string) $request->query('q', ''))
@@ -193,7 +223,7 @@ final class OrvantaApiController extends Controller
     public function send(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $result = $this->mail($access)->send($access['impersonate'], $this->withSignature($this->mailPayload(), $access), $this->str('draft_id'), $this->str('change_key'));
+            $result = $this->mail($access)->send($access['impersonate'], $this->withSignature($this->mailPayload($access), $access), $this->str('draft_id'), $this->str('change_key'));
             $this->rememberRecipients($access);
 
             return $result + ['message' => 'Die Nachricht wurde gesendet.'];
@@ -220,7 +250,7 @@ final class OrvantaApiController extends Controller
     public function draft(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $mail = $this->withSignature($this->mailPayload(), $access);
+            $mail = $this->withSignature($this->mailPayload($access), $access);
             $replyId = $this->str('reply_id');
             $mode = $this->str('mode', 'new');
             if ($replyId !== '' && in_array($mode, ['reply', 'replyall', 'forward'], true)) {
@@ -239,7 +269,7 @@ final class OrvantaApiController extends Controller
                 $access['impersonate'],
                 $this->requireId($this->str('id')),
                 $this->str('mode', 'reply'),
-                $this->withSignature($this->mailPayload(), $access)
+                $this->withSignature($this->mailPayload($access), $access)
             );
             $this->rememberRecipients($access);
 
@@ -333,19 +363,21 @@ final class OrvantaApiController extends Controller
      * Postfach fuer die Hintergrund-Archivierung registrieren: ab der ersten
      * Nutzung arbeitet der Archiv-Worker unabhaengig von einer geoeffneten
      * Oberflaeche. Wird von den Statusabfragen der Oberflaeche aufgerufen.
-     * Nur Mitglieder der Freigabegruppe werden registriert.
+     * Nur Mitglieder der Freigabegruppe werden registriert – und immer nur
+     * das eigene Postfach: zusaetzlich berechtigte Postfaecher werden nicht
+     * archiviert.
      *
-     * @param array{user:array<string,mixed>,uid:string,impersonate:string} $access
+     * @param array<string,mixed> $access
      */
     private function registerArchive(array $access): void
     {
         if ($this->archiveEnabledFor($access)) {
-            Container::orvantaArchive()->registerMailbox($access['uid'], $access['impersonate']);
+            Container::orvantaArchive()->registerMailbox($access['uid'], $access['primary']);
         }
     }
 
     /**
-     * @param array{user:array<string,mixed>,uid:string,impersonate:string} $access
+     * @param array<string,mixed> $access
      */
     private function archiveEnabledFor(array $access): bool
     {
@@ -389,6 +421,7 @@ final class OrvantaApiController extends Controller
      * Zwischenspeichers nicht (null = nicht ermittelbar). Die AD-Grenzen
      * werden nur fuer Exchange-Postfaecher gelesen; Proxy-Postfaecher
      * verwenden die im Adminbereich eingetragene feste Postfachgroesse.
+     * Angezeigt wird immer das eigene Postfach.
      *
      * @param array<string,mixed> $access
      * @return array{used:int,quota:int,warning:int,receive_limit:int,limit:int,percent:int,source:string}|null
@@ -399,7 +432,7 @@ final class OrvantaApiController extends Controller
             $backend = $this->mail($access);
             $directory = $backend instanceof OrvantaExchangeService ? $this->directoryQuota($access['user']) : null;
 
-            return $backend->mailboxUsage($access['impersonate'], $directory);
+            return $backend->mailboxUsage($access['primary'], $directory);
         } catch (Throwable) {
             return null;
         }
@@ -460,13 +493,26 @@ final class OrvantaApiController extends Controller
                 throw new OrvantaException('Ungültiger Zeitraum.', 422);
             }
 
-            return ['items' => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->calendar($access['impersonate'], $start, $end), 'start' => $start, 'end' => $end];
+            $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR);
+            // Eigenes Postfach und die im Kalender eingeblendeten Kalender
+            // zusaetzlich berechtigter Postfaecher zusammenfuehren. Termine aus
+            // weiteren Postfaechern tragen deren Kennung als Praefix.
+            $items = [];
+            foreach ($this->calendars($access) as $mailbox) {
+                $target = $mailbox === null ? $access['primary'] : (string) $mailbox['email'];
+                foreach ($exchange->calendar($target, $start, $end) as $event) {
+                    $items[] = $this->calendarEvent($mailbox, $event);
+                }
+            }
+            usort($items, static fn (array $a, array $b): int => ((int) ($a['start'] ?? 0)) <=> ((int) ($b['start'] ?? 0)));
+
+            return ['items' => $items, 'start' => $start, 'end' => $end];
         });
     }
 
     public function event(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->event($access['impersonate'], $this->requireId($request->query('id'))));
+        return $this->handle($request, fn (array $access): array => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->event($access['impersonate'], $this->requireId($this->stripMailbox($access, (string) $request->query('id', '')))));
     }
 
     public function saveEvent(Request $request): Response
@@ -484,7 +530,7 @@ final class OrvantaApiController extends Controller
                 'required' => $this->addresses('required'),
                 'optional' => $this->addresses('optional'),
             ];
-            $id = $this->str('id');
+            $id = $this->stripMailbox($access, $this->str('id'));
             $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR);
             if ($id === '') {
                 $result = $exchange->createEvent($access['impersonate'], $event);
@@ -504,7 +550,7 @@ final class OrvantaApiController extends Controller
     public function moveEvent(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $id = $this->requireId($this->str('id'));
+            $id = $this->requireId($this->stripMailbox($access, $this->str('id')));
             $start = $this->int('start');
             $end = $this->int('end');
             $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->moveEvent($access['impersonate'], $id, $start, $end, $this->str('change_key'));
@@ -517,7 +563,7 @@ final class OrvantaApiController extends Controller
     public function deleteEvent(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->deleteEvent($access['impersonate'], $this->requireId($this->str('id')));
+            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->deleteEvent($access['impersonate'], $this->requireId($this->stripMailbox($access, $this->str('id'))));
             $this->resync($access);
 
             return ['ok' => true, 'message' => 'Der Termin wurde gelöscht.'];
@@ -527,10 +573,36 @@ final class OrvantaApiController extends Controller
     public function meetingResponse(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->respondToMeeting($access['impersonate'], $this->requireId($this->str('id')), $this->str('response', 'accept'));
+            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->respondToMeeting($access['impersonate'], $this->requireId($this->stripMailbox($access, $this->str('id'))), $this->str('response', 'accept'));
             $this->resync($access);
 
             return ['ok' => true, 'message' => 'Die Antwort wurde gesendet.'];
+        }, true);
+    }
+
+    /**
+     * Kalender eines zusaetzlich berechtigten Postfachs ein- oder ausblenden
+     * (Checkbox in der Kalender-Seitenleiste). Die Auswahl wird je Benutzer
+     * gespeichert und beim naechsten Aufruf wieder angewendet.
+     */
+    public function setCalendarVisible(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            $mailbox = $access['mailbox'];
+            if (!is_array($mailbox)) {
+                throw new OrvantaException('Bitte ein zusätzliches Postfach angeben.', 422);
+            }
+            $visible = $this->bool('sichtbar', true);
+            Container::orvantaSharedMailboxes()->setCalendarVisible($access['user'], (int) $mailbox['id'], $visible);
+
+            return [
+                'ok' => true,
+                'mailbox' => (int) $mailbox['id'],
+                'visible' => $visible,
+                'message' => $visible
+                    ? 'Der Kalender von ' . $mailbox['name'] . ' wird angezeigt.'
+                    : 'Der Kalender von ' . $mailbox['name'] . ' wird ausgeblendet.',
+            ];
         }, true);
     }
 
@@ -874,6 +946,129 @@ final class OrvantaApiController extends Controller
         return $access['backend'];
     }
 
+    /** Kennung eines zusaetzlich berechtigten Postfachs in Ordner-Kennungen. */
+    public const MAILBOX_PREFIX = 'smb:';
+
+    /**
+     * Ziel der Anfrage festlegen: Der Parameter `postfach` (Kennung oder
+     * Adresse aus der Liste der zusaetzlich berechtigten Postfaecher) bestimmt
+     * das angesprochene Postfach. Ohne Parameter bleibt das eigene Postfach
+     * das Ziel; `$access['primary']` bleibt immer das Benutzerpostfach
+     * (Archivierung, Abwesenheitsnotiz, Kontingent).
+     *
+     * @param array<string,mixed> $access
+     * @return array<string,mixed>
+     */
+    private function withMailbox(array $access, Request $request): array
+    {
+        $access['primary'] = (string) ($access['primary'] ?? $access['impersonate']);
+        $access['mailbox'] = null;
+        $requested = $this->requestedMailbox($request);
+        if ($requested === '' || $access['mailboxes'] === []) {
+            return $access;
+        }
+        $mailbox = Container::orvantaSharedMailboxes()->resolve($access['user'], $requested);
+        if ($mailbox === null) {
+            throw new OrvantaException('Für dieses Postfach haben Sie keine Berechtigung. Bitte die Seite neu laden.', 403);
+        }
+        $access['mailbox'] = $mailbox;
+        $access['impersonate'] = $mailbox['email'];
+
+        return $access;
+    }
+
+    /**
+     * Postfachkennung der Anfrage (Parameter oder Body); im Ordnerbaum steckt
+     * sie zusaetzlich im Praefix der Ordnerkennung.
+     */
+    private function requestedMailbox(Request $request): string
+    {
+        foreach (['postfach', 'mailbox'] as $key) {
+            $value = $this->body[$key] ?? $request->query($key, '');
+            if (is_scalar($value) && trim((string) $value) !== '') {
+                return trim((string) $value);
+            }
+        }
+        $folder = (string) ($this->body['folder'] ?? $this->body['ordner'] ?? $request->query('ordner', ''));
+        $position = strpos($folder, '|');
+        if (str_starts_with($folder, self::MAILBOX_PREFIX) && $position !== false) {
+            return substr($folder, strlen(self::MAILBOX_PREFIX), $position - strlen(self::MAILBOX_PREFIX));
+        }
+        // Termine aus weiteren Postfaechern tragen deren Kennung im Praefix.
+        $id = (string) ($this->body['id'] ?? $request->query('id', ''));
+        $position = strpos($id, '|');
+        if (str_starts_with($id, self::MAILBOX_PREFIX) && $position !== false) {
+            return substr($id, strlen(self::MAILBOX_PREFIX), $position - strlen(self::MAILBOX_PREFIX));
+        }
+
+        return '';
+    }
+
+    /**
+     * Praefix der Postfachkennung aus einer Ordner-/Elementkennung entfernen.
+     * Ordner zusaetzlicher Postfaecher tragen "<smb:Id>|" vor ihrer eigenen
+     * Kennung, damit sie im Ordnerbaum eindeutig bleiben.
+     *
+     * @param array<string,mixed> $access
+     */
+    private function stripMailbox(array $access, string $id): string
+    {
+        $position = strpos($id, '|');
+        if (!str_starts_with($id, self::MAILBOX_PREFIX) || $position === false) {
+            return $id;
+        }
+        $requested = substr($id, strlen(self::MAILBOX_PREFIX), $position - strlen(self::MAILBOX_PREFIX));
+        $current = $access['mailbox'] === null ? '' : (string) $access['mailbox']['id'];
+        if ($requested !== $current) {
+            throw new OrvantaException('Der Ordner gehört zu einem anderen Postfach.', 409);
+        }
+
+        return substr($id, $position + 1);
+    }
+
+    /**
+     * Kalender der Kalenderansicht: das eigene Postfach (null) und die per
+     * Checkbox eingeblendeten Kalender zusaetzlich berechtigter Postfaecher.
+     *
+     * @param array<string,mixed> $access
+     * @return list<array<string,mixed>|null>
+     */
+    private function calendars(array $access): array
+    {
+        $list = [null];
+        if ($access['mailboxes'] === []) {
+            return $list;
+        }
+        $visible = Container::orvantaSharedMailboxes()->calendarSelection($access['user'])['visible'];
+        foreach ($access['mailboxes'] as $mailbox) {
+            if (in_array((string) $mailbox['id'], $visible, true)) {
+                $list[] = $mailbox;
+            }
+        }
+
+        return $list;
+    }
+
+    /**
+     * Termin aus einem weiteren Postfach mit dessen Kennung versehen, damit
+     * Anzeige und Aenderungen eindeutig zuzuordnen sind.
+     *
+     * @param array<string,mixed>|null $mailbox
+     * @param array<string,mixed> $event
+     * @return array<string,mixed>
+     */
+    private function calendarEvent(?array $mailbox, array $event): array
+    {
+        if ($mailbox === null) {
+            return $event;
+        }
+        $event['id'] = self::MAILBOX_PREFIX . $mailbox['id'] . '|' . (string) ($event['id'] ?? '');
+        $event['mailbox'] = (int) $mailbox['id'];
+        $event['mailbox_name'] = (string) $mailbox['name'];
+
+        return $event;
+    }
+
     /**
      * @param array<string,mixed> $access
      */
@@ -922,6 +1117,7 @@ final class OrvantaApiController extends Controller
                     ], 419)->withHeader('Cache-Control', 'no-store');
                 }
             }
+            $access = $this->withMailbox($access, $request);
 
             return Response::json($action($access))->withHeader('Vary', 'Cookie');
         } catch (OrvantaException $exception) {
@@ -970,14 +1166,17 @@ final class OrvantaApiController extends Controller
     }
 
     /**
-     * @param array{uid:string,impersonate:string} $access
+     * Erinnerungen/Systembenachrichtigungen werden immer fuer das eigene
+     * Postfach abgeglichen.
+     *
+     * @param array<string,mixed> $access
      */
     private function resync(array $access): void
     {
         if (!$this->can($access, OrvantaMailBackendInterface::CAPABILITY_REMINDERS)) {
             return;
         }
-        Container::orvantaNotifications()->sync($access['uid'], $access['impersonate']);
+        Container::orvantaNotifications()->sync($access['uid'], $access['primary']);
         Session::put('orvanta_sync_' . $access['uid'], time());
     }
 
@@ -1025,7 +1224,11 @@ final class OrvantaApiController extends Controller
         }
     }
 
-    private function mailPayload(): array
+    /**
+     * @param array<string,mixed> $access
+     * @return array<string,mixed>
+     */
+    private function mailPayload(array $access): array
     {
         $attachments = [];
         $total = 0;
@@ -1044,7 +1247,7 @@ final class OrvantaApiController extends Controller
             $attachments[] = ['name' => (string) ($file['name'] ?? 'anhang.bin'), 'content_type' => (string) ($file['content_type'] ?? 'application/octet-stream'), 'content' => $content];
         }
 
-        return [
+        $mail = [
             'to' => $this->addresses('to'),
             'cc' => $this->addresses('cc'),
             'bcc' => $this->addresses('bcc'),
@@ -1054,6 +1257,44 @@ final class OrvantaApiController extends Controller
             'importance' => $this->str('importance', 'Normal'),
             'attachments' => $attachments,
         ];
+        $sender = $this->sender($access);
+        if ($sender['email'] !== '') {
+            $mail['from'] = $sender['email'];
+            $mail['from_name'] = $sender['name'];
+        }
+
+        return $mail;
+    }
+
+    /**
+     * Absenderadresse aus der Auswahl im Maileditor. Ohne zusaetzliche
+     * Postfaecher bleibt der Absender ungesetzt (Exchange setzt das eigene
+     * Postfach); die Signatur stammt immer aus dem eigenen Postfach.
+     *
+     * @param array<string,mixed> $access
+     * @return array{email:string,name:string}
+     */
+    private function sender(array $access): array
+    {
+        $requested = trim($this->str('from'));
+        $editor = is_array($access['mailbox'] ?? null) ? (string) $access['mailbox']['email'] : '';
+        if ($requested === '' && $editor === '') {
+            return ['email' => '', 'name' => ''];
+        }
+        $primary = (string) $access['primary'];
+        $sender = Container::orvantaSharedMailboxes()->sender($access['user'], $primary, $requested !== '' ? $requested : $editor);
+        if ($sender === null) {
+            if ($requested !== '') {
+                throw new OrvantaException('Aus diesem Postfach dürfen Sie nicht senden.', 403);
+            }
+            // Postfach ohne "Senden als": der Absender ist das eigene Postfach.
+            $sender = ['email' => '', 'name' => ''];
+        }
+        if ($sender['email'] === '') {
+            return ['email' => $primary, 'name' => (string) ($access['user']['display_name'] ?? '')];
+        }
+
+        return $sender;
     }
 
     /**

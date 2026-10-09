@@ -32,9 +32,29 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
         ['demo-projekte', 'Projekte', 17, 1], ['demo-rechnungen', 'Rechnungen', 9, 0],
     ];
 
+    /**
+     * Zusaetzlich berechtigte Postfaecher (Vollzugriff / "Senden als") im
+     * Demomodus: Nur diese beiden Adressen lassen sich im Adminbereich
+     * zuordnen und ueber EWS oeffnen, alle anderen gelten als nicht
+     * erreichbar.
+     */
+    public const SHARED_MAILBOXES = [
+        ['email' => 'team@demo.local', 'name' => 'Team Postfach', 'send_as' => true],
+        ['email' => 'buero@demo.local', 'name' => 'Büro', 'send_as' => false],
+    ];
+
+    /** Kennung des aktuell angesprochenen Postfachs ("" = eigenes Postfach). */
+    private string $mailboxSuffix = '';
+
+    /** Angesprochenes Postfach aus dem SOAP-Kopf (klein, "" ohne Impersonation). */
+    private string $address = '';
+
     public function post(string $url, string $xml, array $options): array
     {
+        $this->address = $this->impersonatedAddress($xml);
+        $this->mailboxSuffix = $this->mailboxSuffix();
         $body = match (true) {
+            str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'DistinguishedFolderId Id="msgfolderroot"') => $this->probeMailbox(),
             str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'DistinguishedFolderId Id="root"/>') => $this->mailboxUsage(),
             str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'PropertyTag="0x0E08"') => $this->folderProperties($xml),
             str_contains($xml, '<m:GetFolder>') && str_contains($xml, 'DistinguishedFolderId Id="inbox"/></m:FolderIds>') && !str_contains($xml, 'Id="drafts"') => $this->getInbox(),
@@ -63,8 +83,65 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
 
     private function envelope(string $body): string
     {
+        if ($this->mailboxSuffix !== '') {
+            // Kennungen je Postfach eindeutig halten: Ordner und Elemente
+            // eines zusaetzlichen Postfachs tragen dessen Kennung.
+            $body = (string) preg_replace('/Id="(demo-[^"]*)"/', 'Id="$1' . $this->mailboxSuffix . '"', $body);
+        }
+
         return '<?xml version="1.0" encoding="utf-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Header><h:ServerVersionInfo MajorVersion="15" MinorVersion="2" MajorBuildNumber="1258" MinorBuildNumber="12" Version="V2017_07_11" xmlns:h="http://schemas.microsoft.com/exchange/services/2006/types"/></s:Header>'
             . '<s:Body xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types">' . $body . '</s:Body></s:Envelope>';
+    }
+
+    /**
+     * Suffix fuer die Beispieldaten des angesprochenen Postfachs: leer fuer
+     * das eigene Postfach, sonst "@<adresse>".
+     */
+    private function mailboxSuffix(): string
+    {
+        foreach (self::SHARED_MAILBOXES as $mailbox) {
+            if ($mailbox['email'] === $this->address) {
+                return '@' . preg_replace('/[^a-z0-9]+/', '-', $mailbox['email']);
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Postfachadresse aus der Impersonation des SOAP-Kopfes (klein, "" ohne
+     * Impersonation).
+     */
+    private function impersonatedAddress(string $xml): string
+    {
+        if (preg_match('/<t:(?:PrimarySmtpAddress|SmtpAddress)>([^<]+)</', $xml, $match) !== 1) {
+            return '';
+        }
+
+        return strtolower(trim(html_entity_decode($match[1], ENT_XML1 | ENT_QUOTES, 'UTF-8')));
+    }
+
+    /**
+     * Kennung aus einer Anfrage ohne das Postfach-Suffix.
+     */
+    private function requestId(string $id): string
+    {
+        return $this->mailboxSuffix !== '' ? str_replace($this->mailboxSuffix, '', $id) : $id;
+    }
+
+    /**
+     * Erreichbarkeitspruefung eines zusaetzlich berechtigten Postfachs
+     * (Adminbereich); im Demomodus sind nur die Beispielpostfaecher erreichbar.
+     */
+    private function probeMailbox(): string
+    {
+        foreach (self::SHARED_MAILBOXES as $mailbox) {
+            if ($mailbox['email'] === $this->address) {
+                return $this->getKnownFolders();
+            }
+        }
+
+        return $this->envelope('<m:GetFolderResponse><m:ResponseMessages><m:GetFolderResponseMessage ResponseClass="Error"><m:MessageText>Das Postfach konnte nicht geoeffnet werden.</m:MessageText><m:ResponseCode>ErrorMailboxStoreUnavailable</m:ResponseCode></m:GetFolderResponseMessage></m:ResponseMessages></m:GetFolderResponse>');
     }
 
     private function success(): string
@@ -165,8 +242,9 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
         if (preg_match('/<m:' . $container . '>\s*<t:(?:Distinguished)?FolderId Id="([^"]+)"/', $xml, $match) !== 1) {
             return '';
         }
+        $id = $this->requestId($match[1]);
 
-        return str_starts_with($match[1], 'demo-') ? $match[1] : 'demo-' . $match[1];
+        return str_starts_with($id, 'demo-') ? $id : 'demo-' . $id;
     }
 
     private function folderProperties(string $xml): string
@@ -430,7 +508,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     private function getItem(string $xml): string
     {
         preg_match('/<t:ItemId Id="([^"]+)"/', $xml, $m);
-        $id = $m[1] ?? '';
+        $id = $this->requestId($m[1] ?? '');
         if (str_starts_with($id, 'demo-ev-')) {
             $event = $this->sampleEvents()[(int) substr($id, 8) - 1] ?? $this->sampleEvents()[0];
 
@@ -468,7 +546,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     private function attachment(string $xml): string
     {
         preg_match('/<t:AttachmentId Id="([^"]+)"/', $xml, $m);
-        $id = html_entity_decode($m[1] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        $id = $this->requestId(html_entity_decode($m[1] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8'));
         [$name, $type, $content] = $this->attachmentData(substr($id, -5));
 
         return $this->envelope('<m:GetAttachmentResponse><m:ResponseMessages><m:GetAttachmentResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Attachments><t:FileAttachment><t:AttachmentId Id="' . EwsXml::escape($id) . '"/><t:Name>' . $name . '</t:Name><t:ContentType>' . $type . '</t:ContentType><t:Content>' . base64_encode($content) . '</t:Content></t:FileAttachment></m:Attachments></m:GetAttachmentResponseMessage></m:ResponseMessages></m:GetAttachmentResponse>');

@@ -227,6 +227,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
             <div class="ov-list__head">
                 <h2 class="ov-list__title" data-ov-list-title>Posteingang</h2>
                 <div class="ov-list__tools">
+                    <select class="ov-select" data-ov-module-mailbox aria-label="Postfach" title="Postfach der angezeigten Elemente" hidden></select>
                     <select class="ov-select" data-ov-list-filter aria-label="Filter">
                         <option value="all">Alle</option>
                         <option value="unread">Ungelesen</option>
@@ -282,6 +283,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
             </div>
             <div class="ov-dialog__body">
                 <input type="hidden" name="mode" value="new"><input type="hidden" name="reply_id" value="">
+                <label class="ov-field" data-ov-compose-from hidden><span>Von</span><select name="from" aria-label="Absenderadresse"></select></label>
                 <label class="ov-field"><span>An</span><input type="text" name="to" placeholder="name@firma.de; …" autocomplete="off" required data-ov-recipients></label>
                 <div class="ov-field-row">
                     <label class="ov-field"><span>Cc</span><input type="text" name="cc" autocomplete="off" data-ov-recipients></label>

@@ -555,6 +555,147 @@ final class MailProxyRepository extends Repository
         ];
     }
 
+    // ------------------------------------ Zustand je Identitaetsquelle
+
+    /**
+     * Postfachzahlen je Identitaetsquelle fuer das Nachrichtenfluss-Dashboard.
+     * "verbunden" sind Postfaecher mit Zuordnung zu einem AD-Benutzer, "frei"
+     * sind aktive Postfaecher ohne Zuordnung.
+     *
+     * @return array<int,array{identity_source_id:int,mailboxes:int,active_mailboxes:int,mapped_mailboxes:int,active_mapped_mailboxes:int,free_mailboxes:int,mappings:int}>
+     */
+    public function sourceCounts(): array
+    {
+        $sql = 'SELECT s.identity_source_id AS identity_source_id,'
+            . ' COUNT(b.id) AS mailboxes,'
+            . ' COALESCE(SUM(CASE WHEN b.active = 1 THEN 1 ELSE 0 END), 0) AS active_mailboxes,'
+            . ' COALESCE(SUM(CASE WHEN m.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS mapped_mailboxes,'
+            . ' COALESCE(SUM(CASE WHEN b.active = 1 AND m.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS active_mapped_mailboxes,'
+            . ' COALESCE(SUM(CASE WHEN b.active = 1 AND m.id IS NULL THEN 1 ELSE 0 END), 0) AS free_mailboxes,'
+            . ' COUNT(m.id) AS mappings'
+            . ' FROM mail_proxy_servers s'
+            . ' LEFT JOIN mail_proxy_mailboxes b ON b.server_id = s.id'
+            . ' LEFT JOIN mail_proxy_mappings m ON m.mailbox_id = b.id'
+            . ' GROUP BY s.identity_source_id ORDER BY s.identity_source_id ASC';
+        $statement = $this->pdo->query($sql);
+        $rows = $statement === false ? [] : $statement->fetchAll(PDO::FETCH_ASSOC);
+
+        $counts = [];
+        foreach ($rows as $row) {
+            $sourceId = (int) $row['identity_source_id'];
+            $counts[$sourceId] = [
+                'identity_source_id' => $sourceId,
+                'mailboxes' => (int) $row['mailboxes'],
+                'active_mailboxes' => (int) $row['active_mailboxes'],
+                'mapped_mailboxes' => (int) $row['mapped_mailboxes'],
+                'active_mapped_mailboxes' => (int) $row['active_mapped_mailboxes'],
+                'free_mailboxes' => (int) $row['free_mailboxes'],
+                'mappings' => (int) $row['mappings'],
+            ];
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Gespeicherter Zustand je Identitaetsquelle, nach Kennung indiziert.
+     *
+     * @return array<int,array{identity_source_id:int,last_success_at:string,last_error_at:string,last_error:string,failures:int,checked_at:string}>
+     */
+    public function sourceStates(): array
+    {
+        $statement = $this->pdo->query(
+            'SELECT identity_source_id, last_success_at, last_error_at, last_error, failures, checked_at'
+            . ' FROM mail_proxy_source_state ORDER BY identity_source_id ASC'
+        );
+        $rows = $statement === false ? [] : $statement->fetchAll(PDO::FETCH_ASSOC);
+
+        $states = [];
+        foreach ($rows as $row) {
+            $sourceId = (int) $row['identity_source_id'];
+            $states[$sourceId] = [
+                'identity_source_id' => $sourceId,
+                'last_success_at' => (string) ($row['last_success_at'] ?? ''),
+                'last_error_at' => (string) ($row['last_error_at'] ?? ''),
+                'last_error' => (string) ($row['last_error'] ?? ''),
+                'failures' => (int) ($row['failures'] ?? 0),
+                'checked_at' => (string) ($row['checked_at'] ?? ''),
+            ];
+        }
+
+        return $states;
+    }
+
+    /**
+     * Erfolgreicher Vorgang einer Identitaetsquelle: Der Fehlerzustand ist
+     * beendet (Zaehler zurueck auf 0). Der zuletzt gemeldete Fehlertext bleibt
+     * als Diagnose erhalten und wird nur bei bestehendem Fehler angezeigt.
+     */
+    public function recordSourceSuccess(int $identitySourceId): void
+    {
+        $updated = $this->pdo->prepare(
+            'UPDATE mail_proxy_source_state SET last_success_at = CURRENT_TIMESTAMP, failures = 0'
+            . ' WHERE identity_source_id = :id'
+        );
+        $updated->execute(['id' => $identitySourceId]);
+        if ($updated->rowCount() === 0) {
+            $exists = $this->pdo->prepare('SELECT COUNT(*) FROM mail_proxy_source_state WHERE identity_source_id = :id');
+            $exists->execute(['id' => $identitySourceId]);
+            if ((int) $exists->fetchColumn() > 0) {
+                return;
+            }
+            $this->pdo->prepare(
+                'INSERT INTO mail_proxy_source_state (identity_source_id, last_success_at, failures)'
+                . ' VALUES (:id, CURRENT_TIMESTAMP, 0)'
+            )->execute(['id' => $identitySourceId]);
+        }
+    }
+
+    /**
+     * Fehlgeschlagener Vorgang einer Identitaetsquelle: Fehlertext und Zaehler
+     * fortschreiben. Der Text wird auf 500 Zeichen begrenzt (Spaltenbreite).
+     */
+    public function recordSourceError(int $identitySourceId, string $message): void
+    {
+        $message = mb_substr(trim($message), 0, 500);
+        $updated = $this->pdo->prepare(
+            'UPDATE mail_proxy_source_state SET last_error_at = CURRENT_TIMESTAMP, last_error = :error,'
+            . ' failures = failures + 1 WHERE identity_source_id = :id'
+        );
+        $updated->execute(['error' => $message, 'id' => $identitySourceId]);
+        if ($updated->rowCount() === 0) {
+            $exists = $this->pdo->prepare('SELECT COUNT(*) FROM mail_proxy_source_state WHERE identity_source_id = :id');
+            $exists->execute(['id' => $identitySourceId]);
+            if ((int) $exists->fetchColumn() > 0) {
+                return;
+            }
+            $this->pdo->prepare(
+                'INSERT INTO mail_proxy_source_state (identity_source_id, last_error_at, last_error, failures)'
+                . ' VALUES (:id, CURRENT_TIMESTAMP, :error, 1)'
+            )->execute(['id' => $identitySourceId, 'error' => $message]);
+        }
+    }
+
+    /**
+     * Zeitpunkt der letzten Pruefung einer Identitaetsquelle setzen. Die Zeile
+     * wird bei Bedarf angelegt, damit eine noch nie benutzte Quelle nach der
+     * Pruefung sofort einen Zustand hat.
+     */
+    public function touchSourceCheck(int $identitySourceId): void
+    {
+        $updated = $this->pdo->prepare('UPDATE mail_proxy_source_state SET checked_at = CURRENT_TIMESTAMP WHERE identity_source_id = :id');
+        $updated->execute(['id' => $identitySourceId]);
+        if ($updated->rowCount() === 0) {
+            $exists = $this->pdo->prepare('SELECT COUNT(*) FROM mail_proxy_source_state WHERE identity_source_id = :id');
+            $exists->execute(['id' => $identitySourceId]);
+            if ((int) $exists->fetchColumn() > 0) {
+                return;
+            }
+            $this->pdo->prepare('INSERT INTO mail_proxy_source_state (identity_source_id, checked_at) VALUES (:id, CURRENT_TIMESTAMP)')
+                ->execute(['id' => $identitySourceId]);
+        }
+    }
+
     // ------------------------------------------------------------------ Hilfen
 
     /**

@@ -224,7 +224,7 @@ final class OrvantaController extends Controller
      * (Tooltipp an der Verbindungsanzeige im Fussbereich). Leer, wenn kein
      * Exchange beteiligt ist: Proxy-Postfaecher (IMAP/SMTP) und Demomodus.
      *
-     * @param array{route:MailProxyRoute} $access
+     * @param array{route:MailProxyRoute,primary?:string} $access
      */
     public static function exchangeHost(array $access): string
     {
@@ -232,7 +232,7 @@ final class OrvantaController extends Controller
             return '';
         }
 
-        return (string) (Container::orvantaExchangePool()->currentHost()['host'] ?? '');
+        return (string) (Container::orvantaExchangePool()->currentHost((string) ($access['primary'] ?? ''))['host'] ?? '');
     }
 
     private static function inlineType(string $contentType, string $name): string

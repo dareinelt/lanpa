@@ -165,6 +165,15 @@ final class OrvantaExchangeHostRepository extends Repository
     }
 
     /**
+     * Traegt den Benutzer an einer ohne Benutzer begonnenen Sitzungszeile nach.
+     */
+    public function storeSessionUser(string $hash, string $uid): void
+    {
+        $statement = $this->pdo->prepare("UPDATE orvanta_exchange_sessions SET user_uid = :uid WHERE session_hash = :hash AND user_uid = ''");
+        $statement->execute(['hash' => $hash, 'uid' => mb_substr(trim($uid), 0, 190)]);
+    }
+
+    /**
      * Vermerkt IP-Adresse und Hostname des Clients an der Sitzungszeile
      * (Migration 044). Beide Werte beschreiben den Beginn der Sitzung und
      * bleiben bei einer Umleitung unveraendert.

@@ -227,7 +227,7 @@ flowchart LR
 | `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (immer `mime`; `json` ist reserviert und wird nicht mehr geschrieben), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
 | `orvanta_archive_jobs` | Archivierungsläufe inkl. Sperre (höchstens ein Lauf je Archiv) | `archive_id`, `status` (running/completed/failed), `locked_until`, Zähler, `last_error` |
 | `orvanta_exchange_hosts` | Hosts der Exchange-DAG (Migration 043, Abschnitt 4c) | `host` (unique), `ews_url`, `is_primary`, `active` (Wartung), `sort_order`, `latency_ms`/`latency_samples`/`last_latency_ms`, `last_session_at` (Fair-use), `last_check_at`, `last_ok`, `last_error`, `failures` |
-| `orvanta_exchange_sessions` | Zuordnung laufender Orvanta-Sitzungen zu einem Host (Migrationen 043, 044) | `session_hash` (unique, `sha1` der PHP-Sitzung), `user_uid`, `client_ip`, `client_host` (Client des Sitzungsbeginns), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` |
+| `orvanta_exchange_sessions` | Zuordnung laufender Orvanta-Sitzungen zu einem Host (Migrationen 043, 044) | `session_hash` (unique, `sha1` des Affinitätsschlüssels Benutzer + Client), `user_uid`, `client_ip`, `client_host` (Client des Sitzungsbeginns), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` |
 
 ### Routen
 
@@ -475,8 +475,16 @@ Reihenfolge:
 | 3 | Antwortzeit | Bleibt es gleich, entscheidet die geringste gemittelte Antwortzeit (`latency_ms`, gleitendes Mittel der letzten Messungen). Ein noch nicht gemessener Host gilt als bester Wert und wird dadurch zuerst geprüft. |
 
 Ist eine Sitzung einem Host zugeordnet, bleibt sie dort
-(**Sitzungsaffinität**). Der Schlüssel ist die PHP-Sitzung, als
-`sha1('orvanta-dag:' . session_id())` in `orvanta_exchange_sessions`.
+(**Sitzungsaffinität**). Eine Sitzung ist das Paar aus **Benutzer und
+Client**: der Schlüssel lautet `user:<office_uid>|client:<Client-IP>`
+(`OrvantaExchangePool::affinityKey()`) und steht als
+`sha1('orvanta-dag:' . Schlüssel)` in `orvanta_exchange_sessions`. Er hängt
+bewusst nicht an der PHP-Sitzung: eine neue Sitzungs-ID (Windows- oder
+Admin-Anmeldung), ein zweiter Browser-Tab oder der Adminbereich nutzen
+dieselbe Zuordnung weiter. Je Benutzer und Arbeitsplatz gibt es damit genau
+eine Sitzung – ein Postfach wird nie auf zwei Hosts der DAG verteilt, was den
+Synchronisationsaufwand vervielfachen würde. Ohne erkannten Benutzer gilt
+ersatzweise die PHP-Sitzung.
 
 **Failover:** Antwortet der gewählte Host nicht (Verbindungsfehler, Zeitlimit,
 HTTP ≥ 500 ohne fachlichen EWS-Fehler), markiert Orvanta ihn als gestört und

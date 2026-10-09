@@ -88,7 +88,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/Admin/OfficeController.php` | `showOrvanta()` (Unterseite `/admin/office/orvanta`), `updateOrvanta()` (Formular → `OrvantaConfigService::save()`), `testOrvanta()` (`testConnection()`), `render('orvanta', …)` übergibt `orvanta*`-Variablen an `views/admin/office.php` |
 | `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung; zieht den primären Host der DAG-Hostliste nach, Abschnitt 20), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()` |
 | `app/Services/Orvanta/OrvantaExchangeService.php` | Fachlogik je Modul (siehe Abschnitt 5), `call()` (SOAP + Fehlerbehandlung), `request()` (Lastverteilung und Failover, Abschnitt 20), `testConnection()`/`testHost()` (Verbindungstest), `translate()` (EWS-Fehlercodes → deutsche Meldung), Mapper `messageSummary()`, `calendarSummary()`, `contactData()`, `taskData()`, `attachmentList()` |
-| `app/Services/Orvanta/OrvantaExchangePool.php` | Lastverteilung und Failover über die Hosts der DAG (Abschnitt 20): `sessionKey()`, `hosts()`, `session()`, `currentHost()`, `failover()`, `recordSuccess()`, `recordFailure()`, `overview()`, `purge()`, statisch `parseHostList()`; Konstanten `SESSION_TTL`, `PURGE_AFTER`, `LATENCY_SAMPLES`, `FAILURE_COOLDOWN`, `MAX_HOSTS` |
+| `app/Services/Orvanta/OrvantaExchangePool.php` | Lastverteilung und Failover über die Hosts der DAG (Abschnitt 20): `sessionKey()`, statisch `affinityKey()`, `hosts()`, `session()`, `currentHost()`, `failover()`, `recordSuccess()`, `recordFailure()`, `overview()`, `purge()`, statisch `parseHostList()`; Konstanten `SESSION_TTL`, `PURGE_AFTER`, `LATENCY_SAMPLES`, `FAILURE_COOLDOWN`, `MAX_HOSTS` |
 | `app/Repositories/OrvantaExchangeHostRepository.php` | Hosts und Sitzungszuordnungen der DAG (Abschnitt 20): `hosts()`, `find()`, `hostCount()`, `nextSortOrder()`, `insert()`, `setActive()`, `deleteHost()`, `syncPrimary()`, `recordLatency()`, `recordSuccess()`, `recordFailure()`, `touchHostSession()`, `findSession()`, `startSession()`, `moveSession()`, `touchSession()`, `sessionCounts()`, `activeSessions()`, `purgeSessions()` |
 | `app/Services/Orvanta/OrvantaMailboxResolver.php` | `address($ssoUser)`: primäre SMTP-Adresse des Postfachs aus dem AD (`LdapClient::primaryMailboxAddress()`, `proxyAddresses`), je Sitzung 15 min in `orvanta_mailbox_address`; ohne AD-Treffer, ohne `ldap`-Erweiterung, im Demo-Modus und für Testbenutzer gilt `OrvantaConfigService::impersonationAddress()` |
 | `app/Services/Orvanta/EwsXml.php` | `envelope()`, `parse()`, `error()`, `text()/attr()/bool()/elements()`, `itemId()/itemIds()`, `mailbox()/mailboxes()/recipients()`, `folderId()`, `dateTime()` (UTC), `timestamp()`, `escape()` |
@@ -306,7 +306,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_signatures` (Migrationen 035–037) | `name` (≤ 120), `greeting` (≤ 120), `name_format` ∈ `first_last\|last_first` (Standard `first_last`), `street`, `postal_city` (≤ 190), `phone_mode` ∈ `prefix\|full`, `phone_prefix` (≤ 64, abschließendes Leerzeichen bleibt erhalten), `text_color`/`separator_color` (Schlüssel aus `SettingsService::THEME_COLORS`, Standard `color_text`/`color_accent`), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Zuordnung: erste aktive Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in den SSO-Gruppen vorkommt. Migration ergänzt zudem `phonebook.title` (Position aus dem AD, `LDAP_ATTR_TITLE`) |
 | `orvanta_spellcheck_words` (Migration 042) | `user_uid` (≤ 100, klein geschrieben), `word` (≤ 64, `utf8mb4_bin`), `created_at` | Unique (`user_uid`, `word`); `OrvantaSpellcheckWordRepository`, Abschnitt 19.12 |
 | `orvanta_exchange_hosts` (Migration 043) | `host` (≤ 190, unique), `ews_url` (≤ 2048, leer = URL aus den Einstellungen), `is_primary`, `active` (0 = Wartung), `sort_order`, `latency_ms` (gleitender Mittelwert), `latency_samples`, `last_latency_ms`, `last_session_at`, `last_check_at`, `last_ok`, `last_error` (≤ 500), `failures` | Hosts der DAG samt Lastkennzahlen; `OrvantaExchangeHostRepository`, Abschnitt 20. Der Host aus `exchange_host` ist immer `is_primary = 1` und steht in `sort_order` 0 |
-| `orvanta_exchange_sessions` (Migrationen 043, 044) | `session_hash` = `sha1(session_id)`, `user_uid`, `client_ip` (≤ 45, IPv4/IPv6), `client_host` (≤ 190, Reverse-DNS oder leer), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
+| `orvanta_exchange_sessions` (Migrationen 043, 044) | `session_hash` = `sha1('orvanta-dag:' . affinityKey)` (Benutzer + Client, Abschnitt 20.3), `user_uid`, `client_ip` (≤ 45, IPv4/IPv6), `client_host` (≤ 190, Reverse-DNS oder leer), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
 | `orvanta_oof_templates` (Migration 045) | `name` (≤ 120), `fixed_text` (TEXT, ≤ 4000 Zeichen), `example_text` (TEXT, ≤ 2000 Zeichen), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Vorlagen der Abwesenheitsnotiz; Index (`active`, `sort_order`). Zuordnung wie bei den Signaturen: erste aktive Vorlage nach `sort_order`, deren Gruppe in den SSO-Gruppen vorkommt – ohne Treffer gibt es keine Abwesenheitsnotiz. Migration legt die Vorlage „Allgemeine Abwesenheit“ an. Abschnitt 21 |
 | `orvanta_oof_settings` (Migration 045) | `user_uid` (Primary Key), `template_id` (NULL, `ON DELETE SET NULL`), `dynamic_text` (≤ 2000), `external_audience` ∈ `none\|all` (Standard `none`), `schedule_mode` ∈ `range\|until_off` (Standard `until_off`), `start_date`, `end_date` (DATE, NULL), `active` | Benutzereinstellungen; die maßgebliche Einstellung liegt auf dem Exchange-Server, die Zeile hält den letzten Stand für Banner und Dialog. Abschnitt 21 |
 | `orvanta_shared_mailboxes` (Migration 046) | `user_uid` (≤ 190), `email` (≤ 190), `display_name` (≤ 190), `send_as`, `active`, `verified_at` (DATETIME, NULL), `verify_error` (≤ 500), `checked_at` (DATETIME, NULL), `calendar_visible`, `sort_order` (1–999), `created_at`, `updated_at` | Unique (`user_uid`, `email`); Index (`user_uid`, `active`, `sort_order`). Zusätzlich per Vollzugriff berechtigte Postfächer, Abschnitt 22; Migration 047 setzt `checked_at` zurück (Neuprüfung als Benutzer). Collation `utf8mb4_unicode_ci`, Adressen werden also ohne Beachtung der Groß-/Kleinschreibung verglichen |
@@ -839,7 +839,9 @@ Druck ausgeblendet.
     auf Exchange zurück (Abschnitt 18).
 19. **Eine Sitzung bleibt auf ihrem Exchange-Host** (Sitzungsaffinität,
     `orvanta_exchange_sessions`); umgeleitet wird nur, wenn der Host nicht
-    mehr wählbar ist. Neue Sitzungen verteilt ausschließlich
+    mehr wählbar ist. **Je Benutzer und Client genau eine Sitzung**
+    (`affinityKey()`, Abschnitt 20.3) – nie dasselbe Postfach auf zwei Hosts
+    der DAG. Neue Sitzungen verteilt ausschließlich
     `OrvantaExchangePool::best()` nach Fair-use, Sitzungszahl und mittlerer
     Antwortzeit (Abschnitt 20.2).
 20. **Failover nur bei echten Host-Ausfällen** (Transportfehler, Status 0,
@@ -1707,7 +1709,7 @@ Zugehörigkeit zur selben DAG – ein Start „von Null“ ist nicht vorgesehen.
 | Baustein | Aufgabe |
 | --- | --- |
 | `orvanta_exchange_hosts` | Hosts, Wartungszustand, Sortierung, Lastkennzahlen (Abschnitt 4.1) |
-| `orvanta_exchange_sessions` | Sitzungsaffinität: `sha1(session_id)` → Host, mit Zählern und Clientangaben (Abschnitt 20.5) |
+| `orvanta_exchange_sessions` | Sitzungsaffinität: `sha1('orvanta-dag:' . affinityKey)` (Benutzer + Client) → Host, mit Zählern und Clientangaben (Abschnitt 20.5) |
 | `OrvantaExchangePool` | Verteilung, Affinität, Failover, Kachelwerte |
 | `OrvantaExchangeHostRepository` | Persistenz beider Tabellen |
 | `Admin\OrvantaHostController` | Dashboard und Verwaltung (Abschnitt 20.5) |
@@ -1757,6 +1759,25 @@ Anzeigevariante derselben Auswahl (Abschnitt 20.6).
 
 ### 20.3 Affinität und Wartung
 
+- **Sitzungskennung = Benutzer + Client.** `Container::orvantaExchangePool()`
+  bildet die Kennung mit `OrvantaExchangePool::affinityKey($ssoUser,
+  $clientIp, Session::id())`: `user:<office_uid>|client:<IP>` (Kennung in
+  Kleinschreibung; ohne `office_uid` `username@source_key`). Sie hängt
+  bewusst **nicht** an der PHP-Sitzungs-ID, die bei der Windows-Anmeldung
+  (`SsoAuth::remember()`) und der Admin-Anmeldung (`Auth`) regeneriert wird
+  und je Browser verschieden ist: früher entstand so je Anmeldung eine neue
+  Zeile, die die Fair-use-Verteilung auf einen **anderen** DAG-Host legte –
+  dasselbe Postfach lief auf zwei Hosts. Jetzt teilen sich alle Aufrufe eines
+  Benutzers von einem Arbeitsplatz (Seite, API, Adminbereich, zweiter Tab)
+  eine Zuordnung. Ohne erkannten Benutzer gilt ersatzweise die PHP-Sitzung,
+  ohne diese (CLI) bleibt die Kennung leer. Die Kennung wird je Anfrage
+  einmal ermittelt (Memoisierung in der Closure).
+- **Benutzer nachtragen:** beginnt eine Zuordnung ohne Benutzer (z. B.
+  `currentHost()` ohne Adresse), trägt der erste Aufruf mit Adresse sie per
+  `storeSessionUser()` nach (nur bei leerem `user_uid`; ein Zusatzpostfach
+  überschreibt den Benutzer nicht). `OrvantaController::exchangeHost()`
+  übergibt dafür `$access['primary']` an `currentHost()`. In der
+  Sitzungsliste steht so kein „unbekannt“ mehr.
 - Eine bestehende Zuordnung bleibt: `session()` liefert den Host aus
   `orvanta_exchange_sessions`, solange er wählbar ist, und vermerkt die
   Aktivität (`touchSession()`: `last_seen_at`, bei Exchange-Aufrufen auch

@@ -526,6 +526,8 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
             'size' => max(0, (int) ($item['size'] ?? 0)),
             'importance' => in_array($importance, ['High', 'Normal', 'Low'], true) ? $importance : 'Normal',
             'flagged' => !empty($item['flagged']),
+            'replied' => !empty($item['answered']),
+            'forwarded' => !empty($item['forwarded']),
             'categories' => [],
             'item_class' => 'IPM.Note',
             'is_meeting_request' => false,

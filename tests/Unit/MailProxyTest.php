@@ -596,7 +596,7 @@ Runner::test('Mail-Proxy: Backend bindet Kennungen und Absender an das zugeordne
     $transport->responses['imap.messages'] = [
         'uidvalidity' => 42,
         'total' => 3,
-        'items' => [['uid' => 9, 'subject' => 'Hallo', 'seen' => true, 'from' => ['name' => 'Eva', 'email' => 'eva@hh.example'], 'importance' => 'Dringend']],
+        'items' => [['uid' => 9, 'subject' => 'Hallo', 'seen' => true, 'answered' => true, 'forwarded' => true, 'from' => ['name' => 'Eva', 'email' => 'eva@hh.example'], 'importance' => 'Dringend']],
     ];
     $backend = mailProxyBackend($transport);
     $list = $backend->messages('jan@hh.example', 'inbox', 0, 1);
@@ -604,6 +604,8 @@ Runner::test('Mail-Proxy: Backend bindet Kennungen und Absender an das zugeordne
     Assert::same('mpx.7.' . rtrim(strtr(base64_encode('inbox'), '+/', '-_'), '=') . '.42.9', $id);
     Assert::true($list['has_more']);
     Assert::same('Normal', $list['items'][0]['importance']);
+    Assert::true($list['items'][0]['replied'], 'IMAP-Flag \\Answered wird als Antwort gemeldet.');
+    Assert::true($list['items'][0]['forwarded'], 'IMAP-Flag $Forwarded wird als Weiterleitung gemeldet.');
     Assert::true($backend->ownsId($id));
     Assert::true($backend->ownsId($id . '.2'));
     Assert::false($backend->ownsId(str_replace('mpx.7.', 'mpx.8.', $id)));

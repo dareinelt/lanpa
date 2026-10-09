@@ -34,7 +34,23 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     private const MESSAGE_FIELDS = '<t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="item:DateTimeReceived"/><t:FieldURI FieldURI="item:DateTimeSent"/>'
         . '<t:FieldURI FieldURI="item:HasAttachments"/><t:FieldURI FieldURI="item:Size"/><t:FieldURI FieldURI="item:Importance"/><t:FieldURI FieldURI="item:ItemClass"/>'
         . '<t:FieldURI FieldURI="message:From"/><t:FieldURI FieldURI="message:IsRead"/><t:FieldURI FieldURI="message:ToRecipients"/><t:FieldURI FieldURI="item:Preview"/>'
-        . '<t:FieldURI FieldURI="item:Categories"/><t:FieldURI FieldURI="item:Flag"/>';
+        . '<t:FieldURI FieldURI="item:Categories"/><t:FieldURI FieldURI="item:Flag"/><t:FieldURI FieldURI="item:IconIndex"/>'
+        . '<t:ExtendedFieldURI PropertyTag="0x1081" PropertyType="Integer"/>';
+
+    /** Erweiterte Eigenschaft `PR_LAST_VERB_EXECUTED` (zuletzt ausgefuehrtes Verb). */
+    private const TAG_LAST_VERB_EXECUTED = 0x1081;
+
+    /** `item:IconIndex`: Die Nachricht wurde beantwortet (`Replied mail`). */
+    private const VERB_REPLIED = 0x0105;
+
+    /** `item:IconIndex`: Die Nachricht wurde weitergeleitet (`Forwarded mail`). */
+    private const VERB_FORWARDED = 0x0106;
+
+    /** `PR_LAST_VERB_EXECUTED` (NOTEIVERB aus [MS-OXOMSG]): Antwort an Absender bzw. alle. */
+    private const NOTEIVERB_REPLY = [102, 103];
+
+    /** `PR_LAST_VERB_EXECUTED` (NOTEIVERB aus [MS-OXOMSG]): Weiterleitung. */
+    private const NOTEIVERB_FORWARD = 104;
 
     private const CALENDAR_FIELDS = '<t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="calendar:Start"/><t:FieldURI FieldURI="calendar:End"/>'
         . '<t:FieldURI FieldURI="calendar:IsAllDayEvent"/><t:FieldURI FieldURI="calendar:Location"/><t:FieldURI FieldURI="calendar:Organizer"/>'
@@ -266,6 +282,20 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     private static function propertyTag(DOMXPath $xpath, DOMElement $property): int
     {
         return (int) hexdec(ltrim(strtolower(EwsXml::attr($xpath, 't:ExtendedFieldURI', 'PropertyTag', $property)), 'x0'));
+    }
+
+    /**
+     * Zahlwert einer erweiterten Eigenschaft am Element; 0, wenn sie fehlt.
+     */
+    private static function extendedInt(DOMXPath $xpath, DOMElement $item, int $tag): int
+    {
+        foreach (EwsXml::elements($xpath, 't:ExtendedProperty', $item) as $property) {
+            if (self::propertyTag($xpath, $property) === $tag) {
+                return (int) EwsXml::text($xpath, 't:Value', $property);
+            }
+        }
+
+        return 0;
     }
 
     // ------------------------------------------------------------------
@@ -1702,6 +1732,14 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             $categories[] = trim($category->textContent);
         }
 
+        // Exchange fuehrt das zuletzt ausgefuehrte Verb im Symbolindex
+        // (`IconIndex`) und in `PR_LAST_VERB_EXECUTED`; je nach Server ist nur
+        // eine der beiden Quellen gefuellt, deshalb werden beide ausgewertet.
+        $verb = self::extendedInt($xpath, $item, self::TAG_LAST_VERB_EXECUTED);
+        $icon = (int) EwsXml::text($xpath, 't:IconIndex', $item);
+        $replied = $icon === self::VERB_REPLIED || $verb === self::VERB_REPLIED || in_array($verb, self::NOTEIVERB_REPLY, true);
+        $forwarded = $icon === self::VERB_FORWARDED || $verb === self::VERB_FORWARDED || $verb === self::NOTEIVERB_FORWARD;
+
         return [
             'id' => $id['id'],
             'change_key' => $id['change_key'],
@@ -1716,6 +1754,8 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             'size' => (int) EwsXml::text($xpath, 't:Size', $item),
             'importance' => EwsXml::text($xpath, 't:Importance', $item) ?: 'Normal',
             'flagged' => EwsXml::text($xpath, 't:Flag/t:FlagStatus', $item) === 'Flagged',
+            'replied' => $replied,
+            'forwarded' => $forwarded,
             'categories' => $categories,
             'item_class' => $class,
             'is_meeting_request' => str_starts_with($class, 'IPM.Schedule.Meeting.Request'),

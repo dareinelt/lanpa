@@ -933,6 +933,8 @@ def summary(meta: bytes, header_bytes: bytes) -> dict:
         "received": meta_internaldate(meta),
         "seen": "\\Seen" in flags,
         "flagged": "\\Flagged" in flags,
+        "answered": "\\Answered" in flags,
+        "forwarded": "$Forwarded" in flags,
         # Heuristik ohne BODYSTRUCTURE-Analyse; die Detailansicht ist exakt.
         "has_attachments": content_type.startswith("multipart/mixed"),
         "size": meta_int(meta, b"RFC822.SIZE"),

@@ -387,11 +387,27 @@ Runner::test('Orvanta: Nachrichtenliste und Nachricht werden gelesen', function 
     Assert::true(count($list['items']) > 0, 'Demo-Posteingang ist nicht leer.');
     $first = $list['items'][0];
     Assert::true(isset($first['id'], $first['subject'], $first['from']));
+    Assert::contains('item:IconIndex', $parts['transport']->last());
+    Assert::contains('PropertyTag="0x1081"', $parts['transport']->last());
+
+    $byId = [];
+    foreach ($list['items'] as $item) {
+        $byId[(string) $item['id']] = $item;
+    }
+    Assert::false($byId['demo-msg-1']['replied'], 'Unbeantwortete Nachricht bleibt ohne Indikator.');
+    Assert::false($byId['demo-msg-1']['forwarded']);
+    Assert::true($byId['demo-msg-3']['replied'], 'Antwort wird ueber PR_LAST_VERB_EXECUTED erkannt.');
+    Assert::true($byId['demo-msg-4']['replied'], 'Antwort wird ueber den Symbolindex erkannt.');
+    Assert::true($byId['demo-msg-4']['forwarded'], 'Weiterleitung wird ueber PR_LAST_VERB_EXECUTED erkannt.');
+    Assert::true($byId['demo-msg-6']['forwarded'], 'Weiterleitung wird ueber den Symbolindex erkannt.');
 
     $message = $parts['exchange']->message('demo@demo.local', (string) $first['id']);
     Assert::same((string) $first['id'], (string) $message['id']);
     Assert::true(is_string($message['body_html']));
     Assert::false(str_contains($message['body_html'], '<script'), 'Skripte werden entfernt.');
+
+    $detail = $parts['exchange']->message('demo@demo.local', 'demo-msg-4');
+    Assert::true($detail['replied'] && $detail['forwarded'], 'Einzelansicht liefert die Indikatoren ebenfalls.');
 });
 
 Runner::test('Orvanta: Info liefert rohe Kopfzeilen aus dem MIME-Inhalt', function (): void {

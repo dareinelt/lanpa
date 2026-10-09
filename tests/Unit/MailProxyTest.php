@@ -111,6 +111,14 @@ function mailProxyPdo(): PDO
         )"
     );
     $pdo->exec('INSERT INTO mail_proxy_state (id, generation) VALUES (1, 1)');
+    // Zustand je Identitaetsquelle (database/migrations/047_orvanta_flow_presence.sql)
+    $pdo->exec(
+        "CREATE TABLE mail_proxy_source_state (
+            identity_source_id INTEGER PRIMARY KEY, last_success_at TEXT NULL, last_error_at TEXT NULL,
+            last_error TEXT NOT NULL DEFAULT '', failures INTEGER NOT NULL DEFAULT 0, checked_at TEXT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )"
+    );
     $pdo->exec("INSERT INTO identity_sources (id, source_key, label, base_dn, active) VALUES (5, 'HAMBURG', 'Zweigstelle Hamburg', 'DC=hh,DC=example,DC=local', 1)");
     $pdo->exec("INSERT INTO identity_sources (id, source_key, label, base_dn, active) VALUES (6, 'ALT', 'Stillgelegt', 'DC=alt,DC=local', 0)");
     $insert = $pdo->prepare('INSERT INTO phonebook (id, identity_source_id, samaccount_name, display_name, email, department, active) VALUES (?, ?, ?, ?, ?, ?, ?)');
@@ -945,4 +953,108 @@ Runner::test('Mail-Proxy: Postfach- und Proxyänderungen invalidieren den Auflö
     $generation = $env['repository']->generation();
     $env['service']->deleteServer($ids['server']);
     Assert::same($generation + 1, $env['repository']->generation(), 'Löschen der Konfiguration hebt die Generation.');
+});
+
+Runner::test('Mail-Proxy: Verbindungstest je Identitätsquelle schreibt den Quellenzustand fort', static function (): void {
+    $env = mailProxyEnv();
+    $ids = mailProxySeed($env);
+    $env['transport']->responses['mailbox.test'] = ['checks' => [
+        ['name' => 'SMTP-Verbindung', 'ok' => true, 'message' => ''],
+        ['name' => 'IMAP-Anmeldung', 'ok' => true, 'message' => ''],
+    ]];
+
+    $result = $env['service']->testSources();
+    Assert::same(2, count($result), 'geprüft wird je aktiver Quelle (Hauptquelle 0 ohne Postfach, Hamburg)');
+    Assert::true(isset($result[0], $result[5]));
+    Assert::false(isset($result[6]), 'inaktive Quelle wird nicht geprüft');
+    Assert::true($result[5]['ok']);
+    Assert::true($result[5]['checked']);
+    Assert::same('jan@hh.example', $result[5]['mailbox'], 'geprüft wird das aktive Postfach der Quelle');
+    Assert::false($result[0]['checked'], 'Quelle ohne aktives Postfach gilt als ungeprüft');
+    Assert::same('', $result[0]['mailbox']);
+    Assert::same(1, count(array_keys($env['transport']->operations(), 'mailbox.test', true)), 'nur die belegte Quelle wird getestet');
+
+    $states = $env['repository']->sourceStates();
+    Assert::same(0, $states[5]['failures'], 'erfolgreicher Test lässt den Zähler bei 0');
+    Assert::same('', $states[5]['last_error']);
+    Assert::true($states[5]['last_success_at'] !== '', 'Erfolgszeitpunkt wird vermerkt');
+    Assert::true($states[5]['checked_at'] !== '', 'Prüfzeitpunkt wird vermerkt');
+    Assert::true($states[0]['checked_at'] !== '', 'auch die ungeprüfte Quelle erhält einen Prüfzeitpunkt');
+
+    // Fehlschlag: Quelle nicht erreichbar.
+    $env['transport']->responses['mailbox.test'] = new OrvantaException(
+        'Der Mailserver ist nicht erreichbar. Bitte später erneut versuchen oder die Administration informieren.',
+        502,
+        null,
+        OrvantaException::MAIL_SOURCE
+    );
+    $result = $env['service']->testSources();
+    Assert::false($result[5]['ok']);
+    $states = $env['repository']->sourceStates();
+    Assert::same(1, $states[5]['failures'], 'Fehlschlag zählt hoch');
+    Assert::true(str_contains($states[5]['last_error'], 'nicht erreichbar'), 'Fehlertext wird gespeichert');
+
+    // Zweiter Fehlschlag zählt weiter, ein Erfolg setzt den Zähler zurück.
+    $env['service']->testSources();
+    Assert::same(2, $env['repository']->sourceStates()[5]['failures']);
+    $env['transport']->responses['mailbox.test'] = ['checks' => [['name' => 'IMAP-Anmeldung', 'ok' => true, 'message' => '']]];
+    $env['service']->testSources();
+    $states = $env['repository']->sourceStates();
+    Assert::same(0, $states[5]['failures'], 'Erfolg beendet den Fehlerzustand');
+    Assert::true(str_contains($states[5]['last_error'], 'nicht erreichbar'), 'Fehlertext bleibt als Diagnose erhalten');
+});
+
+Runner::test('Mail-Proxy: Mailpfad erfasst den Zustand der Identitätsquelle', static function (): void {
+    $env = mailProxyEnv();
+    $route = MailProxyRoute::proxy(7, 3, 5, 'jan@hh.example');
+    $account = new MailProxyAccount(7, 3, 5, 'jan', 'jan@hh.example', 'Jan', 'geheim-123', [
+        'smtp_host' => 'smtp.hh.example.net', 'smtp_port' => 587, 'smtp_security' => 'starttls', 'smtp_auth' => true,
+        'imap_host' => 'imap.hh.example.net', 'imap_port' => 993, 'imap_security' => 'tls', 'verify_tls' => true, 'timeout' => 20,
+    ], 1, 0);
+    $backend = new ProxyMailBackend($route, static fn (): MailProxyAccount => $account, $env['transport'], $env['repository']);
+
+    $env['transport']->responses['imap.folders'] = ['folders' => []];
+    $backend->folders('jan@hh.example');
+    $states = $env['repository']->sourceStates();
+    Assert::same(0, $states[5]['failures'], 'erfolgreicher Aufruf: Quelle gesund');
+    Assert::true($states[5]['last_success_at'] !== '');
+
+    $expectFailure = static function (callable $callback): void {
+        try {
+            $callback();
+        } catch (OrvantaException) {
+            return;
+        }
+        throw new RuntimeException('Erwartete OrvantaException blieb aus.');
+    };
+
+    // Netzwerkfehler der Quelle (nicht erreichbar) zählt als Quellenstörung.
+    $env['transport']->responses['imap.messages'] = new OrvantaException(
+        'Der Mailserver ist nicht erreichbar.',
+        502,
+        null,
+        OrvantaException::MAIL_SOURCE
+    );
+    $expectFailure(fn () => $backend->messages('jan@hh.example', 'inbox'));
+    Assert::same(1, $env['repository']->sourceStates()[5]['failures'], 'Quellenstörung wird erfasst');
+
+    // Auslastung des Proxys ist keine Quellenstörung.
+    $env['transport']->responses['imap.messages'] = new OrvantaException('Der Mail-Proxy ist ausgelastet. Bitte gleich erneut versuchen.', 503);
+    $expectFailure(fn () => $backend->messages('jan@hh.example', 'inbox'));
+    Assert::same(1, $env['repository']->sourceStates()[5]['failures'], 'Proxy-Auslastung verändert den Quellenzustand nicht');
+
+    // Inhaltsfehler des Mailservers ist ebenfalls keine Quellenstörung.
+    $env['transport']->responses['imap.messages'] = new OrvantaException('Die Nachricht ist zu groß.', 413);
+    $expectFailure(fn () => $backend->messages('jan@hh.example', 'inbox'));
+    Assert::same(1, $env['repository']->sourceStates()[5]['failures'], 'Inhaltsfehler verändert den Quellenzustand nicht');
+
+    // Abgelehnte Anmeldung ist eine Quellenstörung (Auth).
+    $env['transport']->responses['imap.messages'] = new OrvantaException(
+        'Die Anmeldung am Postfach wurde abgelehnt.',
+        409,
+        null,
+        OrvantaException::MAIL_AUTH
+    );
+    $expectFailure(fn () => $backend->messages('jan@hh.example', 'inbox'));
+    Assert::same(2, $env['repository']->sourceStates()[5]['failures'], 'abgelehnte Anmeldung zählt als Quellenstörung');
 });

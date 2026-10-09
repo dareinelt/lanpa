@@ -40,6 +40,22 @@ final class HttpMailProxyTransport implements MailProxyTransportInterface
         'too_large' => ['Die Nachricht ist zu groß.', 413],
     ];
 
+    /**
+     * Fehlercode des Proxys => maschinenlesbarer Grund fuer den Nachrichtenfluss.
+     * Nur Fehler, die am Mailserver einer Identitaetsquelle liegen, sind
+     * Quellenstoerungen; Auslastung, Schluessel- und Inhaltsfehler des Proxys
+     * sind es bewusst nicht.
+     *
+     * @var array<string,string>
+     */
+    private const REASONS = [
+        'auth_failed' => OrvantaException::MAIL_AUTH,
+        'unreachable' => OrvantaException::MAIL_SOURCE,
+        'tls' => OrvantaException::MAIL_SOURCE,
+        'timeout' => OrvantaException::MAIL_SOURCE,
+        'forbidden_target' => OrvantaException::MAIL_SOURCE,
+    ];
+
     public function __construct(
         private readonly string $baseUrl,
         private readonly SecretBox $secrets,
@@ -87,7 +103,7 @@ final class HttpMailProxyTransport implements MailProxyTransportInterface
         $message = is_array($data['error'] ?? null) ? (string) ($data['error']['message'] ?? '') : '';
         [$text, $httpStatus] = self::ERRORS[$code] ?? [$message !== '' ? mb_substr($message, 0, 300) : 'Der Mail-Proxy meldet einen Fehler.', 502];
 
-        throw new OrvantaException($text, $httpStatus, null, $code === 'auth_failed' ? OrvantaException::MAIL_AUTH : '');
+        throw new OrvantaException($text, $httpStatus, null, self::REASONS[$code] ?? '');
     }
 
     public function health(): array

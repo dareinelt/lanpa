@@ -134,6 +134,22 @@ Runner::test('Nachrichtenfluss: Quelle ohne Postfach liefert Nullwerte statt Feh
     Assert::same(0, $counts[5]['mappings']);
 });
 
+Runner::test('Nachrichtenfluss: Prüfpostfach je Quelle bevorzugt ein zugeordnetes Postfach', static function (): void {
+    $pdo = flowPdo();
+    $proxy = flowProxy($pdo);
+    $pdo->exec("INSERT INTO mail_proxy_servers (id, identity_source_id, name, smtp_host, imap_host) VALUES (1, 0, 'Zentrale', 'smtp.z', 'imap.z')");
+    $pdo->exec("INSERT INTO mail_proxy_servers (id, identity_source_id, name, smtp_host, imap_host) VALUES (2, 5, 'Hamburg', 'smtp.hh', 'imap.hh')");
+    $pdo->exec("INSERT INTO mail_proxy_mailboxes (id, server_id, username, email_address, password_encrypted, active) VALUES (1, 1, 'frei', 'frei@zentrale.example', 'x', 1)");
+    $pdo->exec("INSERT INTO mail_proxy_mailboxes (id, server_id, username, email_address, password_encrypted, active) VALUES (2, 1, 'zu', 'zu@zentrale.example', 'x', 1)");
+    $pdo->exec("INSERT INTO mail_proxy_mailboxes (id, server_id, username, email_address, password_encrypted, active) VALUES (3, 1, 'aus', 'aus@zentrale.example', 'x', 0)");
+    $pdo->exec("INSERT INTO mail_proxy_mailboxes (id, server_id, username, email_address, password_encrypted, active) VALUES (4, 2, 'hh', 'hh@hh.example', 'x', 0)");
+    $pdo->exec("INSERT INTO mail_proxy_mappings (identity_source_id, phonebook_id, mailbox_id) VALUES (0, 9, 2)");
+
+    Assert::same(['id' => 2, 'email' => 'zu@zentrale.example'], $proxy->probeMailbox(0), 'zugeordnetes Postfach zuerst');
+    Assert::same(['id' => 0, 'email' => ''], $proxy->probeMailbox(5), 'inaktives Postfach wird nicht geprüft');
+    Assert::same(['id' => 0, 'email' => ''], $proxy->probeMailbox(6), 'Quelle ohne Server liefert keine Kennung');
+});
+
 Runner::test('Nachrichtenfluss: Quellenzustand erfasst Erfolg, Fehler und Prüfung', static function (): void {
     $pdo = flowPdo();
     $proxy = flowProxy($pdo);

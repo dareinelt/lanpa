@@ -598,6 +598,27 @@ final class MailProxyRepository extends Repository
     }
 
     /**
+     * Ein aktives Postfach einer Identitaetsquelle fuer den Verbindungstest.
+     * Bevorzugt ein zugeordnetes Postfach, weil das den Regelfall prueft.
+     *
+     * @return array{id:int,email:string} leere Kennung, wenn kein aktives Postfach existiert
+     */
+    public function probeMailbox(int $identitySourceId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT b.id AS id, b.email_address AS email FROM mail_proxy_mailboxes b'
+            . ' JOIN mail_proxy_servers s ON s.id = b.server_id'
+            . ' LEFT JOIN mail_proxy_mappings m ON m.mailbox_id = b.id'
+            . ' WHERE s.identity_source_id = :source AND b.active = 1'
+            . ' ORDER BY CASE WHEN m.id IS NULL THEN 1 ELSE 0 END ASC, b.id ASC LIMIT 1'
+        );
+        $statement->execute(['source' => $identitySourceId]);
+        $row = $statement->fetch(PDO::FETCH_ASSOC);
+
+        return is_array($row) ? ['id' => (int) $row['id'], 'email' => (string) $row['email']] : ['id' => 0, 'email' => ''];
+    }
+
+    /**
      * Gespeicherter Zustand je Identitaetsquelle, nach Kennung indiziert.
      *
      * @return array<int,array{identity_source_id:int,last_success_at:string,last_error_at:string,last_error:string,failures:int,checked_at:string}>

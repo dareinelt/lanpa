@@ -326,6 +326,7 @@
 .ov-field input:focus, .ov-field select:focus, .ov-field textarea:focus, .ov-editor:focus { outline: none; border-color: var(--ov-accent); box-shadow: 0 0 0 2px var(--ov-accent-soft); }
 .ov-field-row { display: flex; gap: .6rem; flex-wrap: wrap; align-items: flex-end; }
 .ov-field--grow { flex: 3; }
+.ov-field[hidden] { display: none; }
 /* Empfaenger-Vorschlaege aus der Telefonliste (Combobox wie AD-Gruppen im Adminbereich) */
 .ov-suggest { display: flex; flex-direction: column; min-width: 0; }
 .ov-suggest__list { position: fixed; z-index: 30; margin: 0; padding: .25rem 0; overflow-y: auto; list-style: none; border: 1px solid var(--ov-line); border-radius: .4rem; background: var(--color-surface, #fff); color: var(--color-text, inherit); box-shadow: 0 8px 24px rgba(0, 0, 0, .14); font-weight: 400; }
@@ -415,6 +416,10 @@
 .ov-folder--drop, .ov-folder--active.ov-folder--drop { background: var(--ov-accent-soft); border: 1px dashed var(--ov-accent); color: var(--ov-accent); }
 .ov-item--dragging { opacity: .5; }
 .ov-folder--event { align-items: flex-start; flex-direction: column; gap: .05rem; }
+.ov-folder--mailbox { font-weight: 700; }
+.ov-folder--collapsed { color: var(--ov-muted); }
+.ov-folder--mailbox .ov-folder__check { flex: none; margin: 0 .1rem 0 0; accent-color: var(--ov-accent); }
+label.ov-folder--mailbox { cursor: pointer; }
 .ov-folder--event .ov-folder__name { font-size: .82rem; white-space: normal; }
 .ov-folder__count--muted { color: var(--ov-muted); font-weight: 500; }
 .ov-folders__empty, .ov-list__empty { padding: 1.6rem 1rem; text-align: center; color: var(--ov-muted); font-size: .88rem; }
@@ -479,6 +484,8 @@
 .ov-month__cell--today .ov-month__num { background: var(--ov-accent); color: #fff; }
 .ov-event__subject { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ov-event--active { outline: 2px solid var(--ov-accent); outline-offset: 1px; }
+.ov-event--shared { border-left-style: double; }
+.ov-event__mailbox { flex: none; max-width: 8rem; overflow: hidden; text-overflow: ellipsis; font-size: .66rem; color: var(--ov-muted); }
 .ov-event--busy { border-left-color: var(--ov-accent); }
 .ov-event--workingelsewhere { border-left-color: #0f766e; background: #d9f3ef; }
 .ov-event--nodata { border-left-color: var(--ov-muted); }
@@ -527,6 +534,7 @@
 .ov-agenda__subject { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
 .ov-agenda__location { font-size: .78rem; color: var(--ov-muted); }
 .ov-agenda__badge { flex: none; padding: .05rem .5rem; border-radius: 999px; background: #fff6db; color: #6b4b00; font-size: .7rem; font-weight: 700; }
+.ov-agenda__badge--mailbox { background: var(--ov-accent-soft); color: var(--ov-accent); }
 
 /* Minikalender */
 .ov-minical__nav { display: flex; align-items: center; justify-content: space-between; gap: .3rem; margin-bottom: .3rem; }

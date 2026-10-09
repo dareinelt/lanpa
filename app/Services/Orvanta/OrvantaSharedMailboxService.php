@@ -17,13 +17,14 @@ use Throwable;
  * EWS ist das nicht abfragbar, wohl aber im AD: Exchange traegt den Benutzer
  * mit Auto-Mapping am Postfach ein, der Rueckverweis msExchDelegateListBL am
  * Benutzer nennt seine Postfaecher – derselbe Weg, ueber den Outlook sie
- * automatisch einbindet. Orvanta liest ihn bei der Anmeldung
- * (OrvantaDelegateDirectory) und gleicht die Zuordnungen ab (source
- * 'exchange'); der Adminbereich kann einzelne Postfaecher ergaenzen (source
- * 'admin', z. B. Vollzugriff ohne Auto-Mapping). Jede Zuordnung prueft Orvanta
- * ueber EWS als der Benutzer (Impersonation seines Postfachs, Zugriff auf das
- * zusaetzliche Postfach) und zeigt nur Postfaecher an, fuer die Exchange dem
- * Benutzer Vollzugriff gewaehrt. "Senden als" erzwingt Exchange beim Versand.
+ * automatisch einbindet. Orvanta liest ihn beim Oeffnen der App
+ * (OrvantaDelegateDirectory) und uebernimmt die Liste eins zu eins in
+ * orvanta_shared_mailboxes; eine manuelle Zuordnung gibt es nicht, der
+ * Adminbereich zeigt den Stand nur an und stoesst Pruefungen an. Jede
+ * Zuordnung prueft Orvanta ueber EWS als der Benutzer (Impersonation seines
+ * Postfachs, Zugriff auf das zusaetzliche Postfach) und zeigt nur Postfaecher
+ * an, fuer die Exchange dem Benutzer Vollzugriff gewaehrt. "Senden als"
+ * erzwingt Exchange beim Versand.
  *
  * Wichtig: Archiviert wird ausschliesslich das primaere Benutzerpostfach.
  * Zusaetzliche Postfaecher laufen nicht in die Archivierung ein.
@@ -164,7 +165,7 @@ final class OrvantaSharedMailboxService
     /**
      * Zuordnungen fuer den Adminbereich; ohne Kennung alle Benutzer.
      *
-     * @return list<array{id:int,uid:string,email:string,name:string,source:string,send_as:bool,active:bool,sort_order:int,calendar_visible:bool,verified:bool,error:string,checked_at:string}>
+     * @return list<array{id:int,uid:string,email:string,name:string,send_as:bool,active:bool,sort_order:int,calendar_visible:bool,verified:bool,error:string,checked_at:string}>
      */
     public function forAdmin(string $uid): array
     {
@@ -175,7 +176,6 @@ final class OrvantaSharedMailboxService
                 'uid' => $row['uid'],
                 'email' => $row['email'],
                 'name' => $row['display_name'],
-                'source' => $row['source'],
                 'send_as' => $row['send_as'],
                 'active' => $row['active'],
                 'sort_order' => $row['sort_order'],
@@ -187,59 +187,6 @@ final class OrvantaSharedMailboxService
         }
 
         return $list;
-    }
-
-    /**
-     * Benutzer fuer die Auswahl im Adminbereich (AD-Bestand der Telefonliste).
-     *
-     * @return list<array{uid:string,username:string,display_name:string,email:string,source:string}>
-     */
-    public function searchUsers(string $term): array
-    {
-        $term = trim($term);
-        if (mb_strlen($term) < 2) {
-            return [];
-        }
-
-        return $this->repository->searchUsers($term);
-    }
-
-    /**
-     * Zuordnung anlegen oder aktualisieren und anschliessend pruefen.
-     *
-     * @param array{send_as?:bool,active?:bool,sort_order?:int} $options
-     * @return array{id:int,ok:bool,error:string}
-     */
-    public function save(string $uid, string $email, string $displayName = '', array $options = []): array
-    {
-        $uid = trim($uid);
-        $email = strtolower(trim($email));
-        if ($uid === '' || mb_strlen($uid) > 190) {
-            throw new \InvalidArgumentException('Bitte den Benutzer angeben (Office-Kennung, z. B. mueller oder mueller@ZWEIG).');
-        }
-        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false || mb_strlen($email) > 254) {
-            throw new \InvalidArgumentException('Bitte eine gültige E-Mail-Adresse des zusätzlichen Postfachs angeben.');
-        }
-        if (mb_strlen($displayName) > 190) {
-            throw new \InvalidArgumentException('Der Anzeigename ist zu lang (höchstens 190 Zeichen).');
-        }
-
-        $id = $this->repository->save([
-            'uid' => $uid,
-            'email' => $email,
-            'display_name' => trim($displayName),
-            'send_as' => $options['send_as'] ?? true,
-            'active' => $options['active'] ?? true,
-            'sort_order' => max(0, (int) ($options['sort_order'] ?? 1)),
-        ]);
-        $error = $this->verify($id);
-
-        return ['id' => $id, 'ok' => $error === '', 'error' => $error];
-    }
-
-    public function delete(int $id): void
-    {
-        $this->repository->delete($id);
     }
 
     /**

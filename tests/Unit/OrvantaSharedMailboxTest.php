@@ -65,7 +65,6 @@ function sharedMailboxPdo(): PDO
         user_uid VARCHAR(190) NOT NULL COLLATE NOCASE,
         email VARCHAR(190) NOT NULL COLLATE NOCASE,
         display_name VARCHAR(190) NOT NULL DEFAULT \'\',
-        source VARCHAR(20) NOT NULL DEFAULT \'admin\',
         send_as INTEGER NOT NULL DEFAULT 1,
         active INTEGER NOT NULL DEFAULT 1,
         verified_at DATETIME NULL,
@@ -268,30 +267,29 @@ Runner::test('Orvanta: Erreichbarkeit zusätzlicher Postfächer prüft Orvanta �
     $service = $setup['service'];
     sharedMailboxPhonebook($setup['pdo']);
 
-    $team = $service->save('dreinelt', 'Team@Demo.Local', 'Team Postfach');
-    Assert::true($team['ok'], 'Das Beispielpostfach team@demo.local ist erreichbar: ' . $team['error']);
-    $row = $setup['repository']->find($team['id']);
-    Assert::same('team@demo.local', $row['email'], 'Adressen werden klein gespeichert.');
+    $teamId = sharedMailboxRow($setup['pdo'], ['email' => 'team@demo.local', 'display_name' => 'Team Postfach']);
+    Assert::same('', $service->verify($teamId, true), 'Das Beispielpostfach team@demo.local ist erreichbar.');
+    $row = $setup['repository']->find($teamId);
     Assert::true($row['verified'], 'Ein bestätigtes Postfach gilt als erreichbar.');
     Assert::same('', $row['verify_error']);
     Assert::true($row['checked_at'] !== '', 'Der Prüfzeitpunkt wird festgehalten.');
 
-    $buero = $service->save('dreinelt', 'buero@demo.local', 'Büro', ['send_as' => false, 'sort_order' => 2]);
-    Assert::true($buero['ok'], 'Das Beispielpostfach buero@demo.local ist erreichbar.');
+    $bueroId = sharedMailboxRow($setup['pdo'], ['email' => 'buero@demo.local', 'display_name' => 'Büro', 'send_as' => 0, 'sort_order' => 2]);
+    Assert::same('', $service->verify($bueroId, true), 'Das Beispielpostfach buero@demo.local ist erreichbar.');
 
-    $fremd = $service->save('dreinelt', 'fremd@example.local', 'Fremdes Postfach');
-    Assert::false($fremd['ok'], 'Ein unbekanntes Postfach gilt als nicht erreichbar.');
-    Assert::true($fremd['error'] !== '', 'Der Fehler der Prüfung wird gemeldet.');
-    $row = $setup['repository']->find($fremd['id']);
+    $fremdId = sharedMailboxRow($setup['pdo'], ['email' => 'fremd@example.local', 'display_name' => 'Fremdes Postfach']);
+    $error = $service->verify($fremdId, true);
+    Assert::true($error !== '', 'Ein unbekanntes Postfach gilt als nicht erreichbar; der Fehler wird gemeldet.');
+    $row = $setup['repository']->find($fremdId);
     Assert::false($row['verified']);
-    Assert::same($fremd['error'], $row['verify_error'], 'Der Fehlertext steht in der Zuordnung.');
+    Assert::same($error, $row['verify_error'], 'Der Fehlertext steht in der Zuordnung.');
     Assert::true($row['checked_at'] !== '', 'Auch eine gescheiterte Prüfung vermerkt den Zeitpunkt.');
 
     Assert::same(2, count($service->available(['username' => 'dreinelt'])), 'Nur erreichbare Postfächer erscheinen im Ordnerbaum.');
     Assert::same(3, count($service->forAdmin('')), 'Im Adminbereich bleibt die Zuordnung sichtbar.');
 
     // Eine erzwungene Prüfung liefert das Ergebnis erneut.
-    Assert::same('', $service->verify($team['id'], true));
+    Assert::same('', $service->verify($teamId, true));
     Assert::same('Zuordnung nicht gefunden.', $service->verify(999, true), 'Unbekannte Zuordnungen melden sich verständlich.');
 });
 
@@ -325,64 +323,60 @@ Runner::test('Orvanta: Postfächer mit Auto-Mapping werden aus dem AD übernomme
     $repository = $setup['repository'];
     $user = ['username' => 'dreinelt', 'source_id' => 0, 'id' => 7];
 
-    // Manuell gepflegte Zuordnung mit eingeblendetem Kalender bleibt erhalten und wird zur Exchange-Zuordnung.
-    $manual = sharedMailboxRow($setup['pdo'], ['email' => 'team@demo.local', 'display_name' => 'Altes Team', 'active' => 0, 'calendar_visible' => 1]);
-    $other = sharedMailboxRow($setup['pdo'], ['email' => 'buero@demo.local', 'display_name' => 'Büro']);
+    // Vorhandene Zeile mit eingeblendetem Kalender bleibt erhalten; ein nicht mehr berechtigtes Postfach verschwindet.
+    $manual = sharedMailboxRow($setup['pdo'], ['email' => 'team@demo.local', 'display_name' => 'Altes Team', 'active' => 0, 'calendar_visible' => 1, 'sort_order' => 5]);
+    sharedMailboxRow($setup['pdo'], ['email' => 'buero@demo.local', 'display_name' => 'Büro']);
 
     $service->refresh($user, 'dreinelt@demo.local');
 
     Assert::same([['source' => 0, 'username' => 'dreinelt']], $calls, 'Das AD wird mit der Quelle und dem Anmeldenamen des Benutzers abgefragt.');
     $rows = $repository->forUser('dreinelt', false);
-    Assert::same(3, count($rows), 'Doppelte Adressen aus dem AD werden zusammengefasst.');
+    Assert::same(2, count($rows), 'Doppelte Adressen aus dem AD werden zusammengefasst, nicht gelistete Postfächer entfernt.');
     $byEmail = [];
     foreach ($rows as $row) {
         $byEmail[$row['email']] = $row;
     }
-    Assert::same('exchange', $byEmail['team@demo.local']['source'], 'Ein im AD gelistetes Postfach gilt als Exchange-Zuordnung.');
     Assert::same($manual, $byEmail['team@demo.local']['id'], 'Die vorhandene Zeile wird weitergeführt.');
     Assert::true($byEmail['team@demo.local']['active'], 'Im AD gelistete Postfächer sind aktiv.');
+    Assert::same(1, $byEmail['team@demo.local']['sort_order'], 'Die Reihenfolge folgt dem AD.');
     Assert::true($byEmail['team@demo.local']['calendar_visible'], 'Die Kalender-Auswahl des Benutzers bleibt erhalten.');
     Assert::same('Team Postfach', $byEmail['team@demo.local']['display_name'], 'Der Anzeigename kommt aus dem AD.');
     Assert::true($byEmail['team@demo.local']['verified'], 'Neue Postfächer werden anschließend über EWS geprüft.');
-    Assert::same('exchange', $byEmail['fremd@example.local']['source']);
     Assert::true($byEmail['fremd@example.local']['send_as'], 'Aus dem AD übernommene Postfächer stehen mit „Senden als“ bereit; Exchange prüft den Versand.');
     Assert::false($byEmail['fremd@example.local']['verified'], 'Ein von Exchange abgelehntes Postfach bleibt ausgeblendet.');
-    Assert::same('admin', $byEmail['buero@demo.local']['source'], 'Manuell ergänzte Postfächer bleiben unberührt.');
+    Assert::false(isset($byEmail['buero@demo.local']), 'Ein im AD nicht gelistetes Postfach wird entfernt – das AD ist die einzige Quelle.');
 
     $available = array_map(static fn (array $mailbox): string => $mailbox['email'], $service->available($user));
     sort($available);
-    Assert::same(['buero@demo.local', 'team@demo.local'], $available, 'Im Ordnerbaum stehen alle bestätigten Postfächer.');
+    Assert::same(['team@demo.local'], $available, 'Im Ordnerbaum stehen alle bestätigten Postfächer.');
 
-    // Wird der Vollzugriff im ECP entzogen, verschwindet das Postfach; manuelle Zuordnungen bleiben.
+    // Wird der Vollzugriff im ECP entzogen, verschwindet das Postfach.
     $mailboxes = [['email' => 'fremd@example.local', 'name' => 'Fremd']];
     $_SESSION = [];
     $service->refresh($user, 'dreinelt@demo.local');
     $emails = array_map(static fn (array $row): string => $row['email'], $repository->forUser('dreinelt', false));
     sort($emails);
-    Assert::same(['buero@demo.local', 'fremd@example.local'], $emails, 'Nicht mehr gelistete Exchange-Zuordnungen werden entfernt.');
+    Assert::same(['fremd@example.local'], $emails, 'Nicht mehr gelistete Postfächer werden entfernt.');
     Assert::same('Fremd', $repository->find($byEmail['fremd@example.local']['id'])['display_name'], 'Der Anzeigename folgt dem AD.');
     Assert::same(2, count($calls), 'Je Sitzung wird das AD höchstens einmal je Gültigkeitsdauer abgefragt.');
 
     // Antwort aus der Sitzung: kein weiterer AD-Zugriff.
     $service->refresh($user, 'dreinelt@demo.local');
     Assert::same(2, count($calls));
-    Assert::same($other, $repository->find($other)['id']);
 });
 
 Runner::test('Orvanta: ohne AD-Antwort bleibt der Bestand der Postfächer unverändert', function (): void {
     $mailboxes = null;
     $setup = sharedMailboxSetup([], sharedMailboxDirectory($mailboxes));
     $id = sharedMailboxVerifiedRow($setup['pdo'], ['email' => 'team@demo.local']);
-    $setup['pdo']->exec("UPDATE orvanta_shared_mailboxes SET source = 'exchange'");
 
     Assert::false($setup['service']->syncFromDirectory(['username' => 'dreinelt', 'source_id' => 0, 'id' => 7]));
-    Assert::same('exchange', $setup['repository']->find($id)['source'], 'Ohne Ergebnis wird nichts entfernt.');
+    Assert::same('team@demo.local', $setup['repository']->find($id)['email'] ?? '', 'Ohne Ergebnis wird nichts entfernt.');
 
     // Demomodus und Testbenutzer fragen das AD nicht.
     $mailboxes = [];
     $demo = sharedMailboxSetup([], new OrvantaDelegateDirectory(orvantaConfig()['config'], orvantaIdentitySources(), null, static fn (): array => []));
-    $demoId = sharedMailboxVerifiedRow($demo['pdo'], ['email' => 'team@demo.local']);
-    $demo['pdo']->exec("UPDATE orvanta_shared_mailboxes SET source = 'exchange'");
+    sharedMailboxVerifiedRow($demo['pdo'], ['email' => 'team@demo.local']);
     Assert::false($demo['service']->syncFromDirectory(['username' => 'dreinelt', 'source_id' => 0, 'id' => 7]));
     Assert::same(1, count($demo['repository']->forUser('dreinelt')));
 
@@ -390,7 +384,6 @@ Runner::test('Orvanta: ohne AD-Antwort bleibt der Bestand der Postfächer unver�
     $fake = sharedMailboxDirectory($mailboxes);
     Assert::same(null, $fake->mailboxes(['username' => 'dreinelt', 'fake' => true, 'id' => 0]), 'Testbenutzer ohne Telefonbucheintrag existieren im AD nicht.');
     Assert::same(null, $fake->mailboxes(['username' => 'dreinelt', 'source_id' => 99]), 'Unbekannte Quelle: nicht ermittelbar.');
-    Assert::same(1, count($setup['repository']->find($id) !== null ? [1] : []));
 });
 
 Runner::test('Orvanta: automatisch eingebundenes Postfach aus dem LDAP-Eintrag', function (): void {
@@ -420,66 +413,6 @@ Runner::test('Orvanta: Prüfung wird erst nach Ablauf der Gültigkeit erneuert',
     sharedMailboxRow($setup['pdo'], ['email' => 'buero@demo.local', 'active' => 0]);
     $service->refresh(['username' => 'dreinelt'], 'dreinelt@demo.local');
     Assert::same(2, count($setup['transport']->requests), 'Inaktive Zuordnungen werden nicht geprüft.');
-});
-
-Runner::test('Orvanta: Zuordnung speichern prüft die Eingaben', function (): void {
-    $setup = sharedMailboxSetup();
-    $service = $setup['service'];
-    $fail = static function (string $uid, string $email, string $name = '') use ($service): string {
-        try {
-            $service->save($uid, $email, $name);
-        } catch (InvalidArgumentException $exception) {
-            return $exception->getMessage();
-        }
-
-        return '';
-    };
-
-    Assert::contains('Benutzer', $fail('', 'team@demo.local'), 'Ohne Benutzer wird nicht gespeichert.');
-    Assert::contains('E-Mail-Adresse', $fail('dreinelt', 'keine-adresse'), 'Ungültige Adressen werden abgewiesen.');
-    Assert::contains('zu lang', $fail('dreinelt', 'team@demo.local', str_repeat('x', 191)), 'Zu lange Anzeigenamen werden abgewiesen.');
-    Assert::same(0, (int) $setup['pdo']->query('SELECT COUNT(*) FROM orvanta_shared_mailboxes')->fetchColumn(), 'Fehlerhafte Eingaben landen nicht in der Datenbank.');
-
-    $first = $service->save('dreinelt', 'team@demo.local', 'Team Postfach');
-    Assert::true($first['id'] > 0, 'Die Zuordnung erhält eine Kennung.');
-
-    $again = $service->save('DREINELT', 'TEAM@demo.local', 'Team Postfach neu', ['send_as' => false, 'sort_order' => 4]);
-    Assert::same(1, (int) $setup['pdo']->query('SELECT COUNT(*) FROM orvanta_shared_mailboxes')->fetchColumn(), 'Eine erneute Zuordnung ersetzt die vorhandene.');
-    $row = $setup['repository']->find($again['id']);
-    Assert::same('Team Postfach neu', $row['display_name']);
-    Assert::same(false, $row['send_as'], 'Ohne "Senden als" wird die Adresse nicht als Absender angeboten.');
-    Assert::same(4, $row['sort_order']);
-    Assert::null($setup['service']->sender(['username' => 'dreinelt'], 'dreinelt@example.local', 'team@demo.local'), 'Ohne "Senden als" ist die Adresse kein Absender.');
-
-    $service->delete($first['id']);
-    Assert::same(0, (int) $setup['pdo']->query('SELECT COUNT(*) FROM orvanta_shared_mailboxes')->fetchColumn(), 'Eine entfernte Zuordnung ist weg.');
-});
-
-Runner::test('Orvanta: Benutzer für die Zuordnung suchen', function (): void {
-    $setup = sharedMailboxSetup();
-    $pdo = $setup['pdo'];
-    $pdo->exec("INSERT INTO identity_sources (id, source_key, label) VALUES (3, 'zweig', 'Zweigstelle Nord')");
-    $pdo->exec("INSERT INTO phonebook (id, identity_source_id, samaccount_name, display_name, email, active) VALUES
-        (1, 0, 'dreinelt', 'Daniel-André Reinelt', 'dreinelt@example.local', 1),
-        (2, 3, 'mueller', 'Anna Müller', 'anna.mueller@zweig.example.local', 1),
-        (3, 0, 'ausgeschieden', 'Ausgeschieden Person', '', 0),
-        (4, 0, NULL, 'Ohne Kennung', 'ohne@example.local', 1)");
-
-    $service = $setup['service'];
-    $users = $service->searchUsers('müller');
-    Assert::same(1, count($users));
-    Assert::same('mueller@ZWEIG', $users[0]['uid'], 'Weitere Identitätsquellen werden als name@KENNUNG geführt.');
-    Assert::same('Anna Müller', $users[0]['display_name']);
-    Assert::same('Zweigstelle Nord', $users[0]['source']);
-
-    Assert::same([], $service->searchUsers('m'), 'Erst ab zwei Zeichen wird gesucht.');
-    Assert::same('dreinelt', $service->searchUsers('dreinelt')[0]['uid'], 'Der Benutzername wird gefunden.');
-    Assert::same('Hauptquelle', $service->searchUsers('dreinelt')[0]['source'], 'Ohne Quelle gilt die Hauptquelle.');
-    Assert::same('dreinelt', $service->searchUsers('DANIEL')[0]['uid'], 'Die Suche ignoriert Groß-/Kleinschreibung.');
-    Assert::same('dreinelt', $service->searchUsers('dreinelt@example.local')[0]['uid'], 'Auch die eigene Adresse wird durchsucht.');
-    Assert::same([], $service->searchUsers('%'), 'Platzhalter der LIKE-Suche werden maskiert.');
-    Assert::same([], $service->searchUsers('ausgeschieden'), 'Inaktive Einträge werden nicht angeboten.');
-    Assert::same([], $service->searchUsers('ohne'), 'Einträge ohne SamAccountName haben keine Office-Kennung.');
 });
 
 Runner::test('Orvanta: Adminübersicht führt die Zuordnungen aller Benutzer', function (): void {
@@ -551,10 +484,6 @@ Runner::test('Orvanta: Adminseite für zusätzliche Postfächer', function (): v
     View::setViewPath(BASE_PATH . '/views');
     $data = [
         'entries' => [],
-        'entry' => null,
-        'term' => '',
-        'users' => [],
-        'uid' => '',
         'orvantaEnabled' => true,
         'orvantaDemo' => true,
         'tablesMissing' => false,
@@ -564,37 +493,20 @@ Runner::test('Orvanta: Adminseite für zusätzliche Postfächer', function (): v
     $html = View::render('admin.orvanta-shared-mailboxes', $data);
     Assert::contains('Archiviert wird weiterhin nur das primäre Benutzerpostfach', $html, 'Die Archivierungsregel steht auf der Seite.');
     Assert::contains('team@demo.local', $html, 'Der Demomodus nennt die prüfbaren Beispielpostfächer.');
-    Assert::contains('Noch keine zusätzlichen Postfächer zugeordnet.', $html);
-    Assert::contains('name="postfach"', $html);
-    Assert::contains('action="/admin/office/orvanta/postfaecher/speichern"', $html, 'Das Formular zeigt auf die Speicherroute.');
+    Assert::contains('Noch keine zusätzlichen Postfächer übernommen.', $html);
+    Assert::contains('ausschließlich im Exchange (ECP) gepflegt', $html, 'Die Seite erklärt, dass die Zuordnung nur in Exchange erfolgt.');
+    Assert::contains('msExchDelegateListBL', $html, 'Die Seite erklärt die Übernahme aus dem AD.');
+    Assert::false(str_contains($html, 'postfaecher/speichern'), 'Es gibt kein Formular zum Zuordnen.');
+    Assert::false(str_contains($html, 'postfaecher/loeschen'), 'Es gibt keine Schaltfläche zum Entfernen.');
+    Assert::false(str_contains($html, 'name="postfach"'), 'Es gibt kein Eingabefeld für Postfächer.');
     Assert::false(str_contains($html, 'style="'), 'Die Seite kommt ohne Inline-Stile aus.');
 
-    // Suche mit Ergebnis: Werte werden escaped und die Kennung übernommen.
-    $html = View::render('admin.orvanta-shared-mailboxes', [
-        'term' => 'dreinelt',
-        'users' => [[
-            'uid' => 'dreinelt<script>',
-            'username' => 'dreinelt',
-            'display_name' => 'Daniel & André',
-            'email' => 'dreinelt@example.local',
-            'source' => 'Hauptquelle',
-        ]],
-    ] + $data);
-    Assert::contains('Daniel &amp; André', $html);
-    Assert::contains('dreinelt&lt;script&gt;', $html);
-    Assert::false(str_contains($html, '<script>'), 'Die Ausgabe ist escaped.');
-    Assert::contains('href="/admin/office/orvanta/postfaecher?benutzer=dreinelt%3Cscript%3E#zuordnung"', $html, 'Die Auswahl übernimmt die Office-Kennung.');
-
-    $html = View::render('admin.orvanta-shared-mailboxes', ['term' => 'niemand', 'users' => []] + $data);
-    Assert::contains('Kein Benutzer gefunden', $html);
-
-    // Tabelle mit einer Zuordnung und Bearbeitungsformular.
+    // Tabelle mit einer Zuordnung: Werte werden escaped, nur die Prüfung lässt sich anstoßen.
     $entry = [
         'id' => 7,
-        'uid' => 'dreinelt',
+        'uid' => 'dreinelt<script>',
         'email' => 'team@demo.local',
-        'name' => 'Team Postfach',
-        'source' => 'exchange',
+        'name' => 'Team & Co',
         'send_as' => true,
         'active' => false,
         'sort_order' => 2,
@@ -603,18 +515,15 @@ Runner::test('Orvanta: Adminseite für zusätzliche Postfächer', function (): v
         'error' => 'Das Postfach konnte nicht geoeffnet werden.',
         'checked_at' => '2026-02-01 09:30:00',
     ];
-    $html = View::render('admin.orvanta-shared-mailboxes', ['entries' => [$entry], 'entry' => $entry] + $data);
-    Assert::contains('Zuordnung bearbeiten', $html);
-    Assert::contains('value="7"', $html, 'Das Formular bearbeitet die vorhandene Zuordnung.');
-    Assert::contains('value="team@demo.local"', $html);
+    $html = View::render('admin.orvanta-shared-mailboxes', ['entries' => [$entry]] + $data);
+    Assert::contains('dreinelt&lt;script&gt;', $html);
+    Assert::contains('Team &amp; Co', $html);
+    Assert::false(str_contains($html, '<script>'), 'Die Ausgabe ist escaped.');
     Assert::contains('nicht erreichbar', $html);
     Assert::contains('Das Postfach konnte nicht geoeffnet werden.', $html);
     Assert::contains('ausgeblendet', $html, 'Der Kalenderzustand steht in der Übersicht.');
-    Assert::contains('inaktiv', $html);
-    Assert::contains('Exchange (Auto-Mapping)', $html, 'Die Herkunft der Zuordnung steht in der Übersicht.');
-    Assert::contains('msExchDelegateListBL', $html, 'Die Seite erklärt die Übernahme aus dem AD.');
-    Assert::contains('data-confirm="Zuordnung „team@demo.local“ für „dreinelt“ wirklich entfernen?"', $html);
-    Assert::contains('href="/admin/office/orvanta/postfaecher?id=7#zuordnung"', $html);
+    Assert::contains('action="/admin/office/orvanta/postfaecher/pruefen"', $html, 'Die Prüfung lässt sich anstoßen.');
+    Assert::contains('<input type="hidden" name="id" value="7">', $html);
 
     $html = View::render('admin.orvanta-shared-mailboxes', [
         'entries' => [array_replace($entry, ['verified' => true, 'checked_at' => '2026-02-01 09:30:00', 'error' => ''])],
@@ -631,8 +540,8 @@ Runner::test('Orvanta: Adminseite für zusätzliche Postfächer', function (): v
 Runner::test('Orvanta: Postfachprüfung läuft mit den Rechten des Benutzers', function (): void {
     $setup = sharedMailboxSetup();
     sharedMailboxPhonebook($setup['pdo']);
-    $result = $setup['service']->save('dreinelt', 'team@demo.local', 'Team Postfach');
-    Assert::true($result['ok'], $result['error']);
+    $id = sharedMailboxRow($setup['pdo'], ['email' => 'team@demo.local', 'display_name' => 'Team Postfach']);
+    Assert::same('', $setup['service']->verify($id, true));
 
     $xml = $setup['transport']->last();
     Assert::contains('<t:PrimarySmtpAddress>dreinelt@demo.local</t:PrimarySmtpAddress>', $xml, 'Die Prüfung gibt sich als Benutzer aus, nicht als Dienstkonto.');
@@ -640,24 +549,23 @@ Runner::test('Orvanta: Postfachprüfung läuft mit den Rechten des Benutzers', f
 
     // Verweigert Exchange dem Benutzer den Zugriff, nennt die Meldung den Vollzugriff.
     $setup['transport']->forced = sharedMailboxEwsError('GetFolder', 'ErrorAccessDenied');
-    $denied = $setup['service']->verify($result['id'], true);
+    $denied = $setup['service']->verify($id, true);
     Assert::contains('keinen Vollzugriff', $denied);
-    Assert::false($setup['repository']->find($result['id'])['verified']);
+    Assert::false($setup['repository']->find($id)['verified']);
 });
 
 Runner::test('Orvanta: ohne Postfachadresse des Benutzers bleibt die Prüfung offen', function (): void {
     $setup = sharedMailboxSetup();
-    $result = $setup['service']->save('dreinelt', 'team@demo.local', 'Team Postfach');
-    Assert::false($result['ok']);
-    Assert::same(OrvantaSharedMailboxService::PENDING, $result['error']);
+    $id = sharedMailboxRow($setup['pdo'], ['email' => 'team@demo.local', 'display_name' => 'Team Postfach']);
+    Assert::same(OrvantaSharedMailboxService::PENDING, $setup['service']->verify($id, true));
     Assert::same(0, count($setup['transport']->requests), 'Ohne Benutzeradresse wird Exchange nicht befragt.');
-    $row = $setup['repository']->find($result['id']);
+    $row = $setup['repository']->find($id);
     Assert::false($row['verified']);
     Assert::same('', $row['checked_at'], 'Die Prüfung wird bei der nächsten Anmeldung nachgeholt.');
 
     // Bei der Anmeldung liefert Orvanta die Adresse des Benutzers mit.
     $setup['service']->refresh(['username' => 'dreinelt'], 'dreinelt@demo.local');
-    Assert::true($setup['repository']->find($result['id'])['verified']);
+    Assert::true($setup['repository']->find($id)['verified']);
 
     // Benutzer weiterer Quellen werden über die Quellenkennung gefunden.
     $setup['pdo']->exec("INSERT INTO identity_sources (id, source_key, label) VALUES (3, 'zweig', 'Zweigstelle Nord')");

@@ -383,9 +383,7 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/office/orvanta/nachrichtenfluss/quellen/pruefen', [OrvantaFlowController::class, 'checkSources']);
         // Orvanta: zusaetzlich berechtigte Postfaecher je Benutzer (Vollzugriff / "Senden als").
         $router->get('/admin/office/orvanta/postfaecher', [OrvantaSharedMailboxController::class, 'index']);
-        $router->post('/admin/office/orvanta/postfaecher/speichern', [OrvantaSharedMailboxController::class, 'save']);
         $router->post('/admin/office/orvanta/postfaecher/pruefen', [OrvantaSharedMailboxController::class, 'verify']);
-        $router->post('/admin/office/orvanta/postfaecher/loeschen', [OrvantaSharedMailboxController::class, 'delete']);
         $router->get('/admin/office/kachel/vorschau', [OfficeAdminController::class, 'tilePreview']);
         $router->get('/admin/office/apps', [OfficeAppsAdminController::class, 'index']);
         $router->post('/admin/office/apps/owa', [OfficeAppsAdminController::class, 'updateOwa']);

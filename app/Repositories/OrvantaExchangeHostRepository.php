@@ -165,6 +165,21 @@ final class OrvantaExchangeHostRepository extends Repository
     }
 
     /**
+     * Vermerkt IP-Adresse und Hostname des Clients an der Sitzungszeile
+     * (Migration 044). Beide Werte beschreiben den Beginn der Sitzung und
+     * bleiben bei einer Umleitung unveraendert.
+     */
+    public function storeSessionClient(string $hash, string $clientIp, string $clientHost): void
+    {
+        $statement = $this->pdo->prepare('UPDATE orvanta_exchange_sessions SET client_ip = :ip, client_host = :client_host WHERE session_hash = :hash');
+        $statement->execute([
+            'hash' => $hash,
+            'ip' => mb_substr(trim($clientIp), 0, 45),
+            'client_host' => mb_substr(trim($clientHost), 0, 190),
+        ]);
+    }
+
+    /**
      * Leitet eine Sitzung auf einen anderen Host um (Failover).
      */
     public function moveSession(string $hash, string $host, string $now): void
@@ -210,7 +225,9 @@ final class OrvantaExchangeHostRepository extends Repository
      */
     public function activeSessions(string $since, int $limit = 100): array
     {
-        $statement = $this->pdo->prepare('SELECT session_hash, user_uid, host, failovers, requests, started_at, last_seen_at FROM orvanta_exchange_sessions WHERE last_seen_at >= :since ORDER BY last_seen_at DESC LIMIT ' . max(1, $limit));
+        // SELECT *: die Liste bleibt auch ohne die Clientspalten der
+        // Migration 044 nutzbar (nur ohne IP und Hostname des Clients).
+        $statement = $this->pdo->prepare('SELECT * FROM orvanta_exchange_sessions WHERE last_seen_at >= :since ORDER BY last_seen_at DESC LIMIT ' . max(1, $limit));
         $statement->execute(['since' => $since]);
 
         return $statement->fetchAll(PDO::FETCH_ASSOC) ?: [];

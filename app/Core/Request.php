@@ -80,4 +80,28 @@ final class Request
 
         return strtolower((string) ($this->server['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
     }
+
+    /**
+     * IP-Adresse des Clients; '' wenn keine gueltige Adresse vorliegt.
+     *
+     * Hinter dem Auth-Proxy (docker/auth) steht der Client im LETZTEN Eintrag
+     * von X-Forwarded-For: mod_proxy haengt die Adresse des direkten
+     * Gegenuebers an eine vom Client mitgeschickte Liste an. Die vorderen
+     * Eintraege stammen damit aus dem Aufruf selbst und werden nicht
+     * ausgewertet. Direkte Aufrufe ohne Proxy nutzen REMOTE_ADDR.
+     */
+    public function clientIp(): string
+    {
+        $forwarded = trim((string) ($this->server['HTTP_X_FORWARDED_FOR'] ?? ''));
+        if ($forwarded !== '') {
+            $entries = explode(',', $forwarded);
+            $last = trim((string) end($entries));
+            if (filter_var($last, FILTER_VALIDATE_IP) !== false) {
+                return $last;
+            }
+        }
+        $remote = trim((string) ($this->server['REMOTE_ADDR'] ?? ''));
+
+        return filter_var($remote, FILTER_VALIDATE_IP) !== false ? $remote : '';
+    }
 }

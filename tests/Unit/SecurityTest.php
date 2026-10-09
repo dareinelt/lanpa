@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Core\Request;
 use App\Security\Auth;
 use App\Security\Csrf;
+use App\Support\ClientAddress;
 use Tests\Support\Assert;
 use Tests\Support\FakeAdminUserStore;
 use Tests\Support\Runner;
@@ -194,4 +196,42 @@ Runner::test('Explizites Abmelden rotiert das CSRF-Token', static function (): v
     $auth->logout();
 
     Assert::false(Csrf::isValid($token));
+});
+
+Runner::test('Client-Adresse stammt aus dem Aufruf (X-Forwarded-For, sonst REMOTE_ADDR)', static function (): void {
+    // mod_proxy haengt die Adresse des Clients an eine mitgeschickte Liste an;
+    // nur der letzte Eintrag stammt vom Proxy selbst.
+    $proxied = new Request('GET', '/office/orvanta', [], [], [
+        'REMOTE_ADDR' => '172.18.0.9',
+        'HTTP_X_FORWARDED_FOR' => '10.20.30.40, 172.18.0.5',
+    ]);
+    Assert::same('172.18.0.5', $proxied->clientIp(), 'Der Proxy ergaenzt die Adresse des Clients am Ende.');
+
+    $ohneVorwerts = new Request('GET', '/office/orvanta', [], [], [
+        'REMOTE_ADDR' => '172.18.0.9',
+        'HTTP_X_FORWARDED_FOR' => '172.18.0.5',
+    ]);
+    Assert::same('172.18.0.5', $ohneVorwerts->clientIp(), 'Ohne eigene Werte steht der Client allein im Kopf.');
+
+    $direct = new Request('GET', '/office/orvanta', [], [], ['REMOTE_ADDR' => '192.168.7.9']);
+    Assert::same('192.168.7.9', $direct->clientIp(), 'Ohne Proxy gilt REMOTE_ADDR.');
+
+    $unbrauchbar = new Request('GET', '/office/orvanta', [], [], [
+        'REMOTE_ADDR' => '192.168.7.9',
+        'HTTP_X_FORWARDED_FOR' => 'unbekannt',
+    ]);
+    Assert::same('192.168.7.9', $unbrauchbar->clientIp(), 'Unbrauchbare Werte fallen auf REMOTE_ADDR zurueck.');
+
+    $ohne = new Request('GET', '/office/orvanta', [], [], ['REMOTE_ADDR' => '']);
+    Assert::same('', $ohne->clientIp());
+    Assert::same(['ip' => '', 'host' => ''], ClientAddress::from($ohne), 'Ohne Adresse bleibt auch der Name leer.');
+});
+
+Runner::test('Client-Hostname kommt nur zu einer gueltigen Adresse', static function (): void {
+    Assert::same('', ClientAddress::hostname(''));
+    Assert::same('', ClientAddress::hostname('unbekannt'));
+
+    $lokal = ClientAddress::from(new Request('GET', '/', [], [], ['REMOTE_ADDR' => '127.0.0.1']));
+    Assert::same('127.0.0.1', $lokal['ip']);
+    Assert::false($lokal['host'] === $lokal['ip'], 'Der Name ist nie die Adresse selbst.');
 });

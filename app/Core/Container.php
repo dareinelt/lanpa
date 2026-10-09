@@ -465,7 +465,8 @@ final class Container
             static fn (): \App\Services\Orvanta\OrvantaExchangePool => new \App\Services\Orvanta\OrvantaExchangePool(
                 self::orvantaExchangeHostRepository(),
                 self::orvantaConfig(),
-                static fn (): string => \App\Security\Session::id()
+                static fn (): string => \App\Security\Session::id(),
+                static fn (): array => \App\Support\ClientAddress::from(\App\Core\Request::fromGlobals())
             )
         );
     }

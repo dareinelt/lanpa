@@ -1004,6 +1004,24 @@ Runner::test('Mail-Proxy: Verbindungstest je Identitätsquelle schreibt den Quel
     Assert::true(str_contains($states[5]['last_error'], 'nicht erreichbar'), 'Fehlertext bleibt als Diagnose erhalten');
 });
 
+Runner::test('Mail-Proxy: Verbindungstest lässt sich auf eine Identitätsquelle einschränken', static function (): void {
+    $env = mailProxyEnv();
+    mailProxySeed($env);
+    $env['transport']->responses['mailbox.test'] = ['checks' => [['name' => 'IMAP-Anmeldung', 'ok' => true, 'message' => '']]];
+
+    $result = $env['service']->testSources(5);
+    Assert::same([5], array_keys($result), 'nur die gewählte Quelle wird geprüft');
+    Assert::true($result[5]['ok']);
+    Assert::same(1, count(array_keys($env['transport']->operations(), 'mailbox.test', true)));
+
+    $states = $env['repository']->sourceStates();
+    Assert::true($states[5]['checked_at'] !== '', 'die gewählte Quelle erhält einen Prüfzeitpunkt');
+    Assert::same('', $states[0]['checked_at'] ?? '', 'die übrigen Quellen bleiben unangetastet');
+
+    Assert::same([], $env['service']->testSources(6), 'inaktive Quelle wird auch mit Filter nicht geprüft');
+    Assert::same([], $env['service']->testSources(99), 'unbekannte Quelle ergibt kein Ergebnis');
+});
+
 Runner::test('Mail-Proxy: Mailpfad erfasst den Zustand der Identitätsquelle', static function (): void {
     $env = mailProxyEnv();
     $route = MailProxyRoute::proxy(7, 3, 5, 'jan@hh.example');

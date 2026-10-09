@@ -553,18 +553,23 @@ final class MailProxyService
      * schreibt den Quellenzustand fort. Quellen ohne aktives Postfach gelten
      * als ungeprueft, inaktive Quellen werden nicht geprueft.
      *
+     * @param int|null $sourceId Nur diese Identitätsquelle prüfen (null = alle aktiven).
+     *
      * @return array<int,array{identity_source_id:int,label:string,mailbox:string,checked:bool,ok:bool,message:string}>
      */
-    public function testSources(): array
+    public function testSources(?int $sourceId = null): array
     {
         $result = [];
+        $filter = $sourceId;
         foreach ($this->sources() as $source) {
             if (!$source['active']) {
                 continue;
             }
             $sourceId = (int) $source['id'];
-            $probe = $this->repository->probeMailbox($sourceId);
-            if ($probe['id'] === 0) {
+            if ($filter !== null && $filter !== $sourceId) {
+                continue;
+            }
+            $probe = $this->repository->probeMailbox($sourceId);            if ($probe['id'] === 0) {
                 $this->safeState(fn () => $this->repository->touchSourceCheck($sourceId));
                 $result[$sourceId] = [
                     'identity_source_id' => $sourceId,

@@ -471,6 +471,30 @@ final class Container
         );
     }
 
+    public static function orvantaFlowRepository(): \App\Repositories\OrvantaFlowRepository
+    {
+        return self::make(
+            \App\Repositories\OrvantaFlowRepository::class,
+            static fn (): \App\Repositories\OrvantaFlowRepository => new \App\Repositories\OrvantaFlowRepository()
+        );
+    }
+
+    /**
+     * Praesenz der Orvanta-Benutzer (Nachrichtenfluss-Dashboard): erfasst die
+     * Aktivitaet an der Orvanta-Schnittstelle und schreibt Proben der aktiven
+     * Nutzer.
+     */
+    public static function orvantaPresence(): \App\Services\Orvanta\OrvantaPresenceService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaPresenceService::class,
+            static fn (): \App\Services\Orvanta\OrvantaPresenceService => new \App\Services\Orvanta\OrvantaPresenceService(
+                self::orvantaFlowRepository(),
+                self::orvantaRepository()
+            )
+        );
+    }
+
     public static function orvantaMailboxResolver(): \App\Services\Orvanta\OrvantaMailboxResolver
     {
         return self::make(

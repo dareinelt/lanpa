@@ -12,7 +12,10 @@ declare(strict_types=1);
  * AD-Gruppe (Standard: niemand). Mehrere
  * Instanzen sind durch die Job-Sperre in orvanta_archive_jobs ungefaehrlich.
  * Nebenbei raeumt der Worker beendete Orvanta-Sitzungen der Exchange-DAG-Hosts
- * auf (orvanta_exchange_sessions, siehe OrvantaExchangePool::purge()).
+ * auf (orvanta_exchange_sessions, siehe OrvantaExchangePool::purge()) und
+ * pflegt die Praesenz des Nachrichtenfluss-Dashboards: eine Probe der aktiven
+ * Nutzer je Zeitraster sowie das Aufraeumen alter Aktivitaetszeilen und Proben
+ * (siehe OrvantaPresenceService).
  *
  * Aufruf:
  *   php scripts/orvanta_archive_worker.php          Endlosschleife (Intervall aus der Konfiguration)
@@ -33,6 +36,12 @@ do {
         // Beendete Orvanta-Sitzungen der DAG-Hosts aufraeumen (Sitzungsaffinitaet
         // und Fair-use brauchen nur die laufenden Zuordnungen).
         Container::orvantaExchangePool()->purge();
+        // Praesenz des Nachrichtenfluss-Dashboards: Probe der aktiven Nutzer
+        // (hoechstens eine je Zeitraster) und Aufraeumen alter Zeilen. So
+        // entsteht auch in Ruhezeiten mindestens ein Wert je Worker-Lauf.
+        $presence = Container::orvantaPresence();
+        $presence->sample();
+        $presence->purge();
         if ($config->archiveEnabled()) {
             $service = Container::orvantaArchive();
             foreach (Container::orvantaArchiveRepository()->archives() as $archive) {

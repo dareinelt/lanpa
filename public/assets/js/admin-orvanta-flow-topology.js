@@ -259,6 +259,11 @@
             node.muted = raw.muted === true;
             node.mutedLabel = String(raw.muted_label || '');
             node.primary = raw.primary === true;
+            var transport = String(raw.transport || '');
+            if (node.transport !== undefined && node.transport !== transport) {
+                layoutDirty = true;
+            }
+            node.transport = transport;
             node.facts = Array.isArray(raw.facts) ? raw.facts : [];
             node.cloud = Array.isArray(raw.cloud) ? raw.cloud : [];
             node.cloudTitle = String(raw.cloud_title || '');
@@ -395,12 +400,19 @@
     }
 
     /**
-     * 3D: Nutzer im Zentrum, Proxy links davor mit den Quellen als Wolke
-     * dahinter, Hosts rechts als Ring, KI oben, Zwischenspeicher unten mit den
-     * Tiers darunter. 2D: klassisches Netzdiagramm in Spalten.
+     * 3D: Nutzer im Zentrum, Proxy links davor mit den Proxy-Quellen als Wolke
+     * dahinter, Hosts rechts als Ring mit den Exchange-Quellen (ohne Proxy)
+     * dahinter, KI oben, Zwischenspeicher unten mit den Tiers darunter.
+     * 2D: klassisches Netzdiagramm in Spalten.
      */
     function layout() {
-        var sources = byKind('source');
+        var allSources = byKind('source');
+        var sources = allSources.filter(function (key) {
+            return graph.nodes[key].transport !== 'exchange';
+        });
+        var exchangeSources = allSources.filter(function (key) {
+            return graph.nodes[key].transport === 'exchange';
+        });
         var hosts = byKind('host');
         var tiers = byKind('tier');
         var set = function (key, x, y, z) {
@@ -415,6 +427,7 @@
         set('cache', 40, -215, 90);
         ring(sources, { x: -450, y: 0, z: 0 }, Math.min(230, 70 + sources.length * 28), 'yz', 'src');
         ring(hosts, { x: 290, y: 0, z: 0 }, Math.min(220, 60 + hosts.length * 26), 'yz', 'host');
+        ring(exchangeSources, { x: 510, y: 0, z: 0 }, Math.min(230, 70 + exchangeSources.length * 28), 'yz', 'xsrc');
         ring(tiers, { x: 60, y: -360, z: 60 }, Math.min(240, 60 + tiers.length * 30), 'xz', 'tier');
 
         var set2 = function (key, x, y) {
@@ -426,6 +439,7 @@
         set2('proxy', -260, 0);
         set2('users', 0, 0);
         column(hosts, 300, 0, 100);
+        column(exchangeSources, 560, 0, 96);
         set2('ai', 0, -220);
         set2('cache', 0, 220);
         row(tiers, 380, 0, 150);

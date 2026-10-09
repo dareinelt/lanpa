@@ -1265,6 +1265,79 @@ Runner::test('Nachrichtenfluss: Kanten verbinden Quellen, Hosts und Endpunkte', 
     Assert::true(in_array(['from' => 'proxy', 'to' => 'users', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Der Nutzerknoten bleibt über Exchange erreichbar');
 });
 
+/**
+ * Identitaetsquelle ohne Proxy-Konfiguration (Transportweg Exchange).
+ *
+ * @return array<string,mixed>
+ */
+function flowExchangeSource(int $id = 7, bool $active = true): array
+{
+    return [
+        'id' => $id,
+        'label' => 'Werk Süd',
+        'domain' => 'sued.example',
+        'active' => $active,
+        'primary' => false,
+        'transport' => OrvantaFlowService::TRANSPORT_EXCHANGE,
+        'counts' => ['mailboxes' => 0, 'active_mailboxes' => 0, 'mapped_mailboxes' => 0, 'active_mapped_mailboxes' => 0, 'free_mailboxes' => 0, 'mappings' => 0],
+        'state' => ['last_success_at' => '', 'last_error_at' => '', 'last_error' => '', 'failures' => 0, 'checked_at' => ''],
+    ];
+}
+
+Runner::test('Nachrichtenfluss: Quelle ohne Proxy-Konfiguration steht im Exchange-Pfad vor den Hosts', static function (): void {
+    $input = flowInput();
+    $input['sources'][] = flowExchangeSource();
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $lanes = [];
+    foreach ($flow['lanes'] as $lane) {
+        $lanes[$lane['key']] = $lane;
+    }
+    Assert::same(['source-0', 'proxy'], $lanes['proxy']['nodes'], 'Der Proxy-Pfad enthält nur Quellen mit Mailserver');
+    Assert::same(['source-7', 'host-1', 'users'], $lanes['exchange']['nodes'], 'Die Exchange-Quelle steht vor dem Host');
+
+    $source = flowNode($flow, 'source-7');
+    Assert::same('ok', $source['state'], 'Eine nie geprüfte Exchange-Quelle ist keine Einschränkung');
+    Assert::same(OrvantaFlowService::TRANSPORT_EXCHANGE, $source['transport']);
+    Assert::same([], $source['cloud'], 'Keine Postfachwolke ohne Proxy');
+    Assert::same(0, $flow['overall']['warnings']);
+    Assert::same('ok', $flow['overall']['state']);
+    Assert::true(in_array(['from' => 'source-7', 'to' => 'host-1', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Quelle → Exchange-Host');
+    Assert::false(in_array(['from' => 'source-7', 'to' => 'proxy', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Keine Kante zum Proxy');
+    Assert::same(OrvantaFlowService::TRANSPORT_PROXY, flowNode($flow, 'source-0')['transport']);
+});
+
+Runner::test('Nachrichtenfluss: Exchange-Quelle folgt den Hosts – Ausfall aller Hosts dämpft sie, Proxy-Ausfall nicht', static function (): void {
+    $input = flowInput();
+    $input['sources'][] = flowExchangeSource();
+    $input['proxy']['ok'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('ok', flowNode($flow, 'source-7')['state'], 'Der Proxy-Ausfall berührt die Exchange-Quelle nicht');
+    Assert::false(flowNode($flow, 'source-7')['muted']);
+
+    $input = flowInput();
+    $input['sources'][] = flowExchangeSource();
+    $input['exchange']['hosts'][0]['status'] = 'offline';
+    $flow = OrvantaFlowService::evaluate($input);
+    $source = flowNode($flow, 'source-7');
+    Assert::same('error', $source['state']);
+    Assert::true($source['muted']);
+    Assert::same('Werte ausgegraut (Exchange nicht erreichbar)', $source['muted_label']);
+    Assert::true(in_array(['from' => 'source-7', 'to' => 'host-1', 'state' => 'error', 'label' => ''], $flow['edges'], true));
+
+    $input = flowInput();
+    $input['sources'][] = flowExchangeSource(7, false);
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('off', flowNode($flow, 'source-7')['state'], 'Eine deaktivierte Quelle ist aus');
+
+    $input = flowInput();
+    $input['sources'][] = flowExchangeSource();
+    $input['exchange'] = ['available' => false, 'configured' => false, 'hosts' => [], 'sessions' => [], 'totals' => []];
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('off', flowNode($flow, 'source-7')['state'], 'Ohne Exchange gibt es keinen Transportweg');
+    Assert::true(in_array(['from' => 'source-7', 'to' => 'users', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Ohne Hosts zeigt die Kante auf die Nutzer');
+});
+
 Runner::test('Nachrichtenfluss: Störungen werden mit Titel, Meldung und Verweis gesammelt', static function (): void {
     $input = flowInput();
     $input['proxy']['ok'] = false;

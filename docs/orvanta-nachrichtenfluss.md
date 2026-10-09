@@ -55,20 +55,31 @@ CSS-gezeichnete Verbindungen. Damit bleibt die Seite ohne JavaScript
 vollständig lesbar, druckbar und per Tastatur bedienbar.
 
 ```
-Proxy-Pfad:     [Identitätsquellen] --→ [IMAP-/SMTP-Proxy] --→ [Postfächer]
+Proxy-Pfad:     [Identitätsquellen mit Mailserver] --→ [IMAP-/SMTP-Proxy] --→ [Postfächer]
                                               │
-Exchange-Pfad:  [Exchange-Host / DAG-Hosts] --→ [verbundene Clients]
+Exchange-Pfad:  [Identitätsquellen ohne Mailserver] --→ [Exchange-Host / DAG-Hosts] --→ [verbundene Clients]
                                               │
                               beide  ────→  [Orvanta-Nutzer (Verlauf)]
                                               │
                               [KI-Endpunkt] ──┘   [Storagetiers]  [Zwischenspeicher]
 ```
 
+Welcher Spur eine Identitätsquelle angehört, entscheidet allein ihre
+Proxy-Konfiguration (`mail_proxy_servers`): Mit hinterlegtem Mailserver steht
+sie vor dem Proxy, ohne steht sie vor dem bzw. den Exchange-Hosts. Quellen im
+Exchange-Pfad hängen nicht hinter dem Proxy und werden deshalb **nicht
+geprüft** – sie zählen nie als „Einschränkung“ (ungeprüft), sondern folgen dem
+Zustand der Exchange-Hosts.
+
 ## 3. Elemente im Detail
 
 ### 3.1 Identitätsquellen (Wolkendarstellung)
 
-Je Identitätsquelle eine Karte mit einer **Wolke** aus den Postfachzahlen.
+Je Identitätsquelle **mit Proxy-Konfiguration** eine Karte mit einer **Wolke**
+aus den Postfachzahlen. Quellen **ohne** Proxy-Konfiguration erscheinen im
+Exchange-Pfad ohne Wolke mit den Fakten Transportweg „Exchange (EWS)“,
+Exchange-Hosts online/gesamt, „Proxy: nicht konfiguriert“ und „Prüfung: über die
+Exchange-Hosts“ (Feld `transport` = `exchange`).
 
 | Anzeige | Bedeutung | Datenquelle |
 | --- | --- | --- |
@@ -218,9 +229,10 @@ Text (`<span class="badge badge--warn">Gestört</span>` plus
 
 | Ursache | Folge |
 | --- | --- |
-| Proxy `error` (nicht erreichbar) | **alle Identitätsquellen und deren Postfächer** gedämpft, Hinweis am Proxy „Transportweg unterbrochen“ |
+| Proxy `error` (nicht erreichbar) | **alle Identitätsquellen des Proxy-Pfads und deren Postfächer** gedämpft, Hinweis am Proxy „Transportweg unterbrochen“ |
 | Identitätsquelle `error` (Netz/Auth) | **deren Postfächer** gedämpft |
 | Exchange-Host `error` | **dessen verbundene Clients** gedämpft |
+| **Alle** Exchange-Hosts `error` | **Identitätsquellen des Exchange-Pfads** gedämpft („Exchange nicht erreichbar“) |
 | Storagetier `offline`/`disabled` | Tier gedämpft, Warnhinweis statt Füllstand |
 | Zwischenspeicher `critical` | Karte rot, Hinweis auf Zwischenspeicher leeren (Link) |
 
@@ -481,7 +493,9 @@ Bildschirm oder die Leitwarte.
   Vollbild.
 - **Bühne (`<canvas>`):** räumliches Netz (Perspektivprojektion, Sternhimmel
   mit Parallaxe). Die Nutzer stehen im Zentrum, der Proxy links, die
-  Identitätsquellen als Ring dahinter, die Exchange-Hosts als Ring rechts, die
+  Identitätsquellen mit Proxy-Konfiguration als Ring dahinter, die
+  Exchange-Hosts als Ring rechts und die Identitätsquellen ohne
+  Proxy-Konfiguration (Transportweg Exchange) als Ring dahinter, die
   KI oben, der Zwischenspeicher unten, die Speicher-Tiers als Ring darunter.
   Kanten sind gebogene Leuchtbahnen; zwischen Tiers und Zwischenspeicher
   werden gestrichelte Hilfskanten ergänzt. Eine 2D-Spaltenansicht (Taste `2`)

@@ -52,6 +52,8 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             str_contains($xml, '<m:GetItem>') => $this->getItem($xml),
             str_contains($xml, '<m:GetAttachment>') => $this->attachment($xml),
             str_contains($xml, '<m:CreateItem') => $this->created($xml),
+            str_contains($xml, '<m:GetUserOofSettingsRequest>') => $this->oofSettings(),
+            str_contains($xml, '<m:SetUserOofSettingsRequest>') => $this->envelope('<m:SetUserOofSettingsResponse><m:ResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode></m:ResponseMessage></m:SetUserOofSettingsResponse>'),
             str_contains($xml, '<m:CreateAttachment>') => $this->envelope('<m:CreateAttachmentResponse><m:ResponseMessages><m:CreateAttachmentResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Attachments><t:FileAttachment><t:AttachmentId Id="demo-att-new" RootItemId="demo-draft" RootItemChangeKey="CK2"/></t:FileAttachment></m:Attachments></m:CreateAttachmentResponseMessage></m:ResponseMessages></m:CreateAttachmentResponse>'),
             default => $this->success(),
         };
@@ -81,6 +83,20 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
         };
 
         return $this->envelope('<m:CreateItemResponse><m:ResponseMessages><m:CreateItemResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:Items><t:' . $type . '><t:ItemId Id="demo-new-' . substr(sha1($xml), 0, 8) . '" ChangeKey="CK1"/></t:' . $type . '></m:Items></m:CreateItemResponseMessage></m:ResponseMessages></m:CreateItemResponse>');
+    }
+
+    /**
+     * Abwesenheitsnotiz: Im Demomodus ohne Exchange-Server traegt die
+     * gespeicherte Einstellung den Zustand; hier wird nur eine abgeschaltete
+     * Notiz mit Beispieltext gemeldet.
+     */
+    private function oofSettings(): string
+    {
+        return $this->envelope('<m:GetUserOofSettingsResponse><m:ResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode></m:ResponseMessage>'
+            . '<m:OofSettings><t:OofState>Disabled</t:OofState><t:ExternalAudience>All</t:ExternalAudience>'
+            . '<t:InternalReply><t:Message>Ich bin derzeit nicht im Haus.</t:Message></t:InternalReply>'
+            . '<t:ExternalReply><t:Message>Ich bin derzeit nicht im Haus.</t:Message></t:ExternalReply>'
+            . '</m:OofSettings></m:GetUserOofSettingsResponse>');
     }
 
     private function mailboxUsage(): string

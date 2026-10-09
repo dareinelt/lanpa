@@ -57,6 +57,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 18. Mail-Backends und SMTP-/IMAP-Proxy
 19. Rechtschreibprüfung
 20. Exchange-DAG (Lastverteilung, Failover und Dashboard)
+21. Abwesenheitsnotizen
 
 ---
 
@@ -96,6 +97,10 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaRecipientService.php` | `suggest()` (Verlauf + Telefonliste), `remember()` (nach Versand, schreibt `.empfaenger.json`), `recent()` (Nextcloud-Lesen mit Sitzungs-Cache); `FILE_NAME`, `MAX_ENTRIES`, `CACHE_TTL` |
 | `app/Services/Orvanta/OrvantaSignatureService.php` | Signaturvorlagen (Abschnitt 16): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)` → `{id,name,html}`, `person()`, `render()`, `preview()`, statisch `extension()`, `append(body, html)`, `strip(body)`; Konstanten `MARKER_CLASS`, `QUOTE_CLASS`, `PHONE_MODES`, `EXTENSION_LENGTH`, `LINE_HEIGHT`, `LOGO_MAX_WIDTH`, `DEFAULT_TEXT_COLOR`, `DEFAULT_SEPARATOR_COLOR`, `SAMPLE_PERSON`; statisch `logoSize()`, `imageDimensions()`, `scaleImage()` (verkleinert das Logo selbst auf die Anzeigegröße: Raster per GD als PNG, SVG über width/height) |
 | `app/Repositories/OrvantaSignatureRepository.php` | `all(activeOnly)`, `find()`, `save()`, `delete()`; `ad_groups` als JSON-Liste → `groups` |
+| `app/Services/Orvanta/OrvantaOofService.php` | Abwesenheitsnotizen (Abschnitt 21): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)`, `settings(uid, template)`, `validateSettings()`, `apply(uid, mailbox, template, input, exchange, ssoUser)`, `state(mailbox, exchange, settings)`, `status(uid, mailbox, exchange, ssoUser)`, `text()`, `message()`, `html()`, statisch `dateStart()/dateEnd()`; Konstanten `AUDIENCES`, `SCHEDULE_MODES`, `MAX_FIXED_TEXT` (4000), `MAX_DYNAMIC_TEXT` (2000) |
+| `app/Repositories/OrvantaOofRepository.php` | Vorlagen (`all(activeOnly)`, `find()`, `save()`, `delete()`) und Benutzereinstellungen (`settings(uid)`, `saveSettings(uid, …)`); `ad_groups` als JSON-Liste → `groups` |
+| `app/Controllers/Admin/OrvantaOofController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
+| `views/admin/orvanta-oof-templates.php`, `views/admin/orvanta-oof-template.php`, `public/assets/js/admin-oof.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/abwesenheit/vorschau`) |
 | `app/Controllers/Admin/OrvantaSignatureController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
 | `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `public/assets/js/admin-signature.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/signaturen/vorschau`) |
 | `views/admin/orvanta-hosts.php`, `public/assets/js/admin-orvanta-hosts.js` | DAG-Dashboard (Abschnitt 20): Host-Kacheln mit Status, Latenz, Sitzungen und Aktionen; Live-Aktualisierung über `GET …/hosts/daten` |
@@ -131,10 +136,12 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `database/migrations/042_orvanta_spellcheck_words.sql` | Tabelle `orvanta_spellcheck_words` (persönliches Wörterbuch, Abschnitt 19.12) |
 | `database/migrations/043_orvanta_exchange_dag.sql` | Tabellen `orvanta_exchange_hosts` und `orvanta_exchange_sessions` (Exchange-DAG, Abschnitt 20) |
 | `database/migrations/044_orvanta_exchange_session_client.sql` | Spalten `orvanta_exchange_sessions.client_ip`/`client_host` (Client der Sitzung, Abschnitt 20.5) |
+| `database/migrations/045_orvanta_oof.sql` | Tabellen `orvanta_oof_templates` und `orvanta_oof_settings` samt erster Vorlage (Abschnitt 21) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
 | `tests/Unit/OrvantaSignatureTest.php` | Tests der Signaturvorlagen gegen SQLite (Abschnitt 12) |
+| `tests/Unit/OrvantaOofTest.php` | Tests der Abwesenheitsnotizen gegen SQLite und `RecordingExchangeTransport` (Abschnitt 21) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Tests der Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (Abschnitt 19) |
 
 ## 3. Routen, Zugriff und API-Rahmen
@@ -185,6 +192,8 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | GET | `/api/orvanta/erinnerungen[?sync=1]` | `reminders` | Fällige und aktive Erinnerungen |
 | POST | `/api/orvanta/erinnerungen/erledigt` | `dismissReminder` | Erinnerung schließen |
 | POST | `/api/orvanta/erinnerungen/spaeter` | `snoozeReminder` | Erinnerung verschieben (`minutes` 1–1440, Standard 5) |
+| GET | `/api/orvanta/abwesenheit` | `oof` | Zustand, Vorlage und Einstellungen der Abwesenheitsnotiz (Abschnitt 21) |
+| POST | `/api/orvanta/abwesenheit` | `saveOof` | Abwesenheitsnotiz setzen oder abschalten (Abschnitt 21) |
 | POST | `/api/orvanta/ki/verbessern` | `aiImprove` | KI-Unterstützung: `mode`, `text`, `prompt`, optional `previous_text`, `context{subject, recipients}` → `{text, usage{input_tokens, output_tokens}}` (Abschnitt 15) |
 | POST | `/api/orvanta/rechtschreibung/pruefen` | `spellcheck` | Rechtschreibprüfung: `words[]` (≤ 400) → `{available, misspelled[]}` (Abschnitt 19) |
 | POST | `/api/orvanta/rechtschreibung/vorschlaege` | `spellcheckSuggest` | Vorschläge: `word` (≤ 64 Zeichen) → `{available, suggestions[]}` (Abschnitt 19) |
@@ -205,6 +214,10 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | GET/POST | `/admin/office/signaturen/vorlage[?id=…]` | `edit` / `save` | Vorlage anlegen/bearbeiten (CSRF) |
 | POST | `/admin/office/signaturen/loeschen` | `delete` | Vorlage löschen (`id`) |
 | GET | `/admin/office/signaturen/vorschau[?id=…\|Felder]` | `preview` | Eigenständige HTML-Seite mit eigener CSP (`img-src data:`, `style-src 'unsafe-inline'`, `frame-ancestors 'self'`) – Beispieldaten, gespeicherte oder ungespeicherte Vorlage |
+| GET | `/admin/office/abwesenheit` | `Admin\OrvantaOofController::index` | Abwesenheitsnotiz-Vorlagen (Liste, Vorschau-iframes) |
+| GET/POST | `/admin/office/abwesenheit/vorlage[?id=…]` | `edit` / `save` | Vorlage anlegen/bearbeiten (CSRF) |
+| POST | `/admin/office/abwesenheit/loeschen` | `delete` | Vorlage löschen (`id`) |
+| GET | `/admin/office/abwesenheit/vorschau[?id=…\|Felder]` | `preview` | Eigenständige HTML-Seite mit eigener CSP – fester Text, dynamischer Beispieltext und die erste Signaturvorlage |
 
 ### 3.2 Zugriffsprüfung (`OrvantaController::authorize()`)
 
@@ -250,7 +263,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 
 ## 4. Datenhaltung
 
-### 4.1 Tabellen (Migrationen 033–043)
+### 4.1 Tabellen (Migrationen 033–045)
 
 | Tabelle | Spalten (Auszug) | Hinweise |
 | --- | --- | --- |
@@ -262,6 +275,8 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_spellcheck_words` (Migration 042) | `user_uid` (≤ 100, klein geschrieben), `word` (≤ 64, `utf8mb4_bin`), `created_at` | Unique (`user_uid`, `word`); `OrvantaSpellcheckWordRepository`, Abschnitt 19.12 |
 | `orvanta_exchange_hosts` (Migration 043) | `host` (≤ 190, unique), `ews_url` (≤ 2048, leer = URL aus den Einstellungen), `is_primary`, `active` (0 = Wartung), `sort_order`, `latency_ms` (gleitender Mittelwert), `latency_samples`, `last_latency_ms`, `last_session_at`, `last_check_at`, `last_ok`, `last_error` (≤ 500), `failures` | Hosts der DAG samt Lastkennzahlen; `OrvantaExchangeHostRepository`, Abschnitt 20. Der Host aus `exchange_host` ist immer `is_primary = 1` und steht in `sort_order` 0 |
 | `orvanta_exchange_sessions` (Migrationen 043, 044) | `session_hash` = `sha1(session_id)`, `user_uid`, `client_ip` (≤ 45, IPv4/IPv6), `client_host` (≤ 190, Reverse-DNS oder leer), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
+| `orvanta_oof_templates` (Migration 045) | `name` (≤ 120), `fixed_text` (TEXT, ≤ 4000 Zeichen), `example_text` (TEXT, ≤ 2000 Zeichen), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Vorlagen der Abwesenheitsnotiz; Index (`active`, `sort_order`). Zuordnung wie bei den Signaturen: erste aktive Vorlage nach `sort_order`, deren Gruppe in den SSO-Gruppen vorkommt – ohne Treffer gibt es keine Abwesenheitsnotiz. Migration legt die Vorlage „Allgemeine Abwesenheit“ an. Abschnitt 21 |
+| `orvanta_oof_settings` (Migration 045) | `user_uid` (Primary Key), `template_id` (NULL, `ON DELETE SET NULL`), `dynamic_text` (≤ 2000), `external_audience` ∈ `none\|all` (Standard `none`), `schedule_mode` ∈ `range\|until_off` (Standard `until_off`), `start_date`, `end_date` (DATE, NULL), `active` | Benutzereinstellungen; die maßgebliche Einstellung liegt auf dem Exchange-Server, die Zeile hält den letzten Stand für Banner und Dialog. Abschnitt 21 |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -373,6 +388,8 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `createContact()`, `updateContact()` | `CreateItem` / `UpdateItem` (`SetItemField` je Feld) | mind. Vor-, Nachname oder Firma |
 | `tasks()`, `task()`, `createTask()`, `updateTask()` | `FindItem` (optional ohne `Completed`), `GetItem`, `CreateItem`, `UpdateItem` | `updateTask()` setzt nur übergebene Felder; Status `Completed` → 100 %, `NotStarted` → 0 % |
 | `notes()`, `note()`, `createNote()`, `updateNote()` | Ordner `notes`, `ItemClass IPM.StickyNote` | Betreff = erste Zeile (≤ 80 Zeichen); Farbe aus Property `0x8B00` |
+| `oofSettings(user)` | `GetUserOofSettings` | Abwesenheitsnotiz des Postfachs lesen: `State` (`Disabled`/`Enabled`/`Scheduled`), `ExternalAudience` (`None`/`All`), `Duration` (nur bei `Scheduled`), `InternalReply`/`ExternalReply`; liefert `state`, `external_audience`, `start`/`end` (Unix-Sekunden) und `message`/`external_message` (Abschnitt 21) |
+| `setOofSettings(user, settings)` | `SetUserOofSettings` | Abwesenheitsnotiz setzen oder abschalten: `State` und `ExternalAudience` sind Pflicht, `Duration` nur bei `Scheduled`, bei `Disabled` wird kein Antworttext übertragen (Abschnitt 21) |
 
 ### 5.3 IDs, Ordner und Zeit
 
@@ -413,6 +430,8 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `aufgaben/aufgabe` (POST) | `id, subject, body, importance, status` und optional `due, start, reminder, percent` (Unix-Sekunden bzw. %) | `{id, message}` |
 | `notizen/notiz` (POST) | `id, body` (nicht leer) | `{id, message}` |
 | `erinnerungen` | Query `sync=1` erzwingt Abgleich | `{due[], active[], server_time, warning}`; Element: `id, item_id, subject, location, start, remind_at, state, relative` |
+| `abwesenheit` | – | `{available, template{id,name}\|null, fixed_text, dynamic_text, external_audience, schedule_mode, start_date, end_date, saved_active, state, active, scheduled, server_audience, server_start, server_end, signature}`; ohne zugewiesene Vorlage ist `template` `null`, `available` false und `fixed_text` leer; `state` (`Disabled`/`Enabled`/`Scheduled`) stammt aus `GetUserOofSettings` (Abschnitt 21) |
+| `abwesenheit` (POST) | `active` (bool), `dynamic_text` (≤ 2000 Zeichen), `external_audience` ∈ `none\|all`, `schedule_mode` ∈ `range\|until_off`, bei `range` zusätzlich `start_date`, `end_date` (`JJJJ-MM-TT`) | `{ok, message, oof{…}}` wie GET; ohne zugewiesene Vorlage → 409 (Abschnitt 21) |
 
 Grenzwerte (Server maßgeblich):
 
@@ -432,6 +451,8 @@ Grenzwerte (Server maßgeblich):
 | Rechtschreibung: Wörter je Anfrage / Wortlänge | 400 / 64 Zeichen | `OrvantaSpellcheckService::MAX_WORDS_PER_REQUEST`, `MAX_WORD_LENGTH` (Client spiegelt `SPELL_MAX_WORDS`/`SPELL_MAX_WORD_LENGTH`) |
 | Rechtschreibung: Vorschläge | höchstens 8, nur für Wörter ≤ 32 Zeichen | `OrvantaSpellcheckService::MAX_SUGGESTIONS`, `SUGGEST_MAX_LENGTH` |
 | Rechtschreibung: Wörterbuch-Download | Zeitlimit `ORVANTA_SPELLCHECK_TIMEOUT` (Standard 120 s) | `scripts/spellcheck_dictionary.php` |
+| Abwesenheit: fester / dynamischer Text | ≤ 4 000 / ≤ 2 000 Zeichen | `OrvantaOofService::MAX_FIXED_TEXT`, `MAX_DYNAMIC_TEXT` |
+| Abwesenheit: Vorlagenname / Zeitraum | ≤ 120 Zeichen / `end_date >= start_date` | `OrvantaOofService::validate()`, `validateSettings()` |
 
 ## 7. Anhänge, Viewer und Zwischenspeicher
 
@@ -655,6 +676,18 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   geändertem Beginn/Ende über `kalender/termin/verschieben` (`{id,
   change_key, start, end}`) und lädt den Kalender anschließend neu; in allen
   anderen Fällen wird nur der Zustand zurückgesetzt.
+- Abwesenheitsnotiz (Abschnitt 21): `loadOof()` holt `abwesenheit` (beim Start
+  und bei jeder Aktualisierung über `refresh`); liegt eine aktive Notiz vor,
+  zeigt `renderOofBanner()` den Streifen `.ov-oof-banner` unter dem Menüband
+  (innerhalb von `.ov-ribbon`, `role="status"`), sonst ist er `hidden`.
+  `openOofDialog()` füllt den Dialog `[data-ov-dialog="oof"]` (fester Text aus
+  der Vorlage als nicht editierbarer Block, dynamischer Text im `textarea`,
+  Empfängerkreis und Zeitraum als Funkgruppen, Signatur als Vorschau),
+  `toggleOofRange()` blendet die Zeitraumfelder ein und aus, und
+  `saveOof(active)` sendet den Dialoginhalt mit gesetztem `active`
+  (`[data-ov-oof-submit="1"|"0"]`, auch „Abschalten“); Fehler erscheinen in
+  `[data-ov-form-error]`. Ohne zugewiesene Vorlage ist der Menüband-Punkt
+  „Abwesenheit“ ausgeblendet (`capabilities.oof`).
 - Tastatur (außerhalb von Eingabefeldern/Dialogen): `1`–`5` Module, `/` Suche,
   `N` Neu, `R` Antworten, `Entf` Löschen (je Modul), Pfeile hoch/runter in der
   Liste, `Esc` schließt das Erinnerungs-Popover.
@@ -686,7 +719,9 @@ Notfallplan-Editors, ist aber vollständig eigenständig (`.ov-*`, eigene
 Variablen `--ov-*` auf Basis der globalen `--color-*`). Grid: Titelleiste /
 Menüband / Arbeitsbereich / Statusleiste; Arbeitsbereich mit Modulleiste,
 Ordnern, Liste und Detail; Detail nur sichtbar mit `ov--detail-open`.
-Breakpoints 1200 px und 900 px, eigenes Drucklayout.
+Breakpoints 1200 px und 900 px, eigenes Drucklayout. Der Streifen
+`.ov-oof-banner` (Abschnitt 21) sitzt in der Zeile des Menübands und wird im
+Druck ausgeblendet.
 
 ## 10. HTML-Bereinigung und CSP
 
@@ -796,6 +831,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
+| `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
@@ -835,6 +871,8 @@ nach dem Neuladen wieder die alte.
 | **KI-Prompt oder Modellparameter ändern** | Nur `OrvantaAiService::messages()` bzw. `improve()` (Temperatur, `max_tokens`); nie Modell/URL in Orvanta speichern – sie stammen aus `OfficeAiService`. |
 | **Exchange-DAG erweitern** (weiterer Host, anderes Lastverteilungs-Gewicht) | Hosts nur über das Dashboard „Office → Orvanta – DAG-Hosts“ aufnehmen (`Admin\OrvantaHostController::add()`, `dag_confirmed`); die Verteilung ändert man ausschließlich in `OrvantaExchangePool::best()`/`disturbed()`/`fairUseRank()`/`latencyRank()` und den zugehörigen Konstanten – Affinität (`session()`) und Failover (`OrvantaExchangeService::request()`/`hostFailed()`) nicht umgehen. Test in `OrvantaServiceTest.php` mit **frischem** Pool je Anfrage, Doku in Abschnitt 20. |
 | **Rechtschreibprüfung erweitern** (weiterer Editor, andere Sprache) | Editor mit `contenteditable` und `data-ov-…-body`-Hook anlegen und in `orvanta.js` zu `spellEditors()` hinzufügen (nur dort wird geprüft; Signatur-/Zitatblöcke tragen `contenteditable="false"` und werden automatisch übersprungen). Andere Sprache/Wörterbuch: `ORVANTA_SPELLCHECK_URL`/`ORVANTA_SPELLCHECK_DIR` umstellen – der Übersetzer liest `SET`/`FLAG`/`AF`/`AM` aus der `.aff`, das Dateiformat bleibt gleich. **Nur** die Engine selbst ändern, wenn das Wörterbuch eine Hunspell-Funktion nutzt, die noch fehlt (`COMPOUNDRULE`, `CHECKCOMPOUNDPATTERN`, `SIMPLIFIEDTRIPLE`, `COMPLEXPREFIXES`, `FORCEUCASE`, `PHONE`); Referenz ist die Python-Umsetzung `spylls` (`algo/lookup.py`), gegen die die Prüfung unterschiedfrei validiert wurde (Abschnitt 19). Danach `php tests/run.php` **und** ein Differenzlauf gegen `spylls` über eine echte Wortliste. |
+
+| **Abwesenheitsnotiz erweitern** (weiteres Feld, weiterer Empfängerkreis) | Spalte per Migration **und** im SQLite-Schema von `tests/Unit/OrvantaOofTest.php` (`oofPdo()`); `OrvantaOofRepository` (`hydrate`/`hydrateSettings`, `save`/`saveSettings`), `OrvantaOofService` (`blank()`/`validate()`/`validateSettings()`/`apply()`/`state()`/`status()`), Formular `views/admin/orvanta-oof-template.php` bzw. Dialog `views/orvanta/index.php`, `admin-oof.js` (Query) und `OrvantaOofController::preview()`; neuer Empfängerkreis zusätzlich in `AUDIENCES` und in `EwsXml::oofSettings()`; Doku in Abschnitt 21. |
 
 Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 `docs/orvanta.md` und `agentsindex.md` aktualisieren.
@@ -1808,3 +1846,90 @@ Migration 044, und der Tooltipp der Verbindungsanzeige. Die Testbausteine
 `orvantaPool()`/`dagSettings()` tragen den primären Host explizit ein; jede
 simulierte Anfrage braucht einen **frischen** Pool, weil
 `OrvantaExchangePool::hosts()` das Hostabbild je Instanz speichert.
+
+---
+
+## 21. Abwesenheitsnotizen
+
+Orvanta kann die Abwesenheitsnotiz (Out-of-Office) eines Exchange-Postfachs
+setzen. Den Versand übernimmt **Exchange** – Orvanta muss dafür nicht geöffnet
+bleiben; der Zustand des Banners kommt deshalb aus `GetUserOofSettings` und
+nicht aus der lokalen Tabelle.
+
+```
+Admin: /admin/office/abwesenheit[/vorlage|/loeschen|/vorschau]
+          └─ Admin\OrvantaOofController ─► OrvantaOofService ─► OrvantaOofRepository (orvanta_oof_templates)
+
+Seite:  OrvantaApiController::oof() → OrvantaOofService::status(uid, mailbox, exchange, user)
+          forUser(user): match(user.groups) → settings(uid, template) → state(mailbox, exchange, settings)
+          state(): GetUserOofSettings (im Demomodus: gespeicherte Einstellung + Datumsfenster)
+Setzen: OrvantaApiController::saveOof() → OrvantaOofService::apply(uid, mailbox, template, input, exchange, user)
+          message(template, dynamic_text, user) = fester Text + dynamischer Text + Signatur (html())
+          → OrvantaExchangeService::setOofSettings() → SetUserOofSettings
+          → saveSettings(uid, …)   (nur der letzte Stand, keine Inhaltshoheit)
+Banner: orvanta.js → loadOof() → renderOofBanner() (Streifen unter dem Menüband, .ov-oof-banner)
+```
+
+### 21.1 Aufbau einer Vorlage
+
+| Teil | Herkunft | Sicht des Benutzers |
+| --- | --- | --- |
+| Fester Text (`fixed_text`) | Vorlage, im Adminbereich gepflegt | **schreibgeschützt** im Dialog (Absatz für Absatz) |
+| Dynamischer Text (`dynamic_text`) | Beispieltext der Vorlage (`example_text`), in Orvanta anpassbar | editierbares `textarea`, höchstens `MAX_DYNAMIC_TEXT` Zeichen |
+| Signatur | `OrvantaSignatureService::forUser()` | schreibgeschützte Vorschau unter dem Text, serverseitig angehängt |
+
+- `text()` verbindet festen und dynamischen Text mit einer Leerzeile; ist der
+  dynamische Text leer, entfällt er ganz.
+- `html()` escapt jede Zeile (`Html::e()`), verbindet sie mit `<br>`, fasst
+  alles in einen `<div>` mit `Arial, Helvetica, sans-serif; font-size:10pt`
+  (dieselben Werte wie die Signaturvorlagen, Abschnitt 16) und hängt die
+  Signatur mit `OrvantaSignatureService::append()` an.
+- Vorlagen werden wie Signaturen über AD-Gruppen zugewiesen: erste **aktive**
+  Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in
+  den SSO-Gruppen des Benutzers vorkommt. Ohne Treffer gibt es keine
+  Abwesenheitsnotiz – der Menüband-Punkt „Abwesenheit“ ist dann ausgeblendet
+  (`capabilities.oof`) und der POST-Endpunkt antwortet 409.
+- Ändert sich die zugewiesene Vorlage, übernimmt `settings()` deren
+  `example_text` und setzt `active` auf false; der Empfängerkreis bleibt
+  erhalten. Es wird also nie ungefragt etwas auf dem Server aktiviert.
+
+### 21.2 Zustand, Zeitraum und Empfängerkreis
+
+| Einstellung | Werte | Umsetzung in EWS |
+| --- | --- | --- |
+| `active` | ja/nein | `State` = `Enabled`/`Scheduled` bzw. `Disabled` |
+| `schedule_mode` | `until_off` (bis zum Abschalten), `range` (Zeitraum von–bis) | `Enabled` bzw. `Scheduled` mit `Duration` |
+| `start_date`, `end_date` | `JJJJ-MM-TT`, nur bei `range` | `dateStart()`/`dateEnd()` = lokaler Tagesbeginn/-ende; `end_date >= start_date` |
+| `external_audience` | `none` (nur intern), `all` (auch extern) | `ExternalAudience` = `None`/`All` |
+
+- Bei `Disabled` wird **kein** Antworttext übertragen (`reply` = `''`).
+- `validateSettings()` prüft nur bei `active` und `range` auf Datum und
+  Reihenfolge; im Demomodus entscheidet `state()` zusätzlich, ob der aktuelle
+  Tag im Fenster liegt.
+- Die lokale Zeile (`orvanta_oof_settings`) hält nur den letzten Stand für
+  Banner und Dialog (u. a. den dynamischen Text, der nirgends sonst
+  gespeichert ist). Fehlt `uid` (Demo-Benutzer), wird sie nicht geschrieben.
+
+### 21.3 Verwaltung und Vorschau
+
+- `/admin/office/abwesenheit` listet die Vorlagen samt Vorschau-iframe;
+  `/vorlage` legt an bzw. bearbeitet (CSRF, `ValidationException` → Flash und
+  erneutes Rendern mit 422), `/loeschen` entfernt, `/vorschau` liefert eine
+  eigenständige HTML-Seite mit eigener CSP (wie bei den Signaturen).
+- Die Vorschau zeigt den festen Text, den dynamischen Beispieltext und – als
+  Ersatz für die Benutzersignatur – die erste Signaturvorlage
+  (`OrvantaSignatureService::preview()`); `admin-oof.js` lädt sie bei jeder
+  Eingabe neu (350 ms Ruhe, Werte aus `data-oof-field`).
+- Das Menüband der App ist capability-gesteuert: `CAPABILITY_OOF` ist für
+  Exchange-Postfächer wahr, für Proxy-Postfächer falsch
+  (`ProxyMailBackend::capabilities()`) – die Notiz ist eine
+  Exchange-Funktion, der Proxy kann sie nicht zustellen.
+
+### 21.4 Tests
+
+`tests/Unit/OrvantaOofTest.php` (Abschnitt 12). Der Test legt seine Tabellen
+selbst an (`oofPdo()` übersetzt das MySQL-`INSERT … ON DUPLICATE KEY UPDATE`
+aus `saveSettings()` in SQLite) und nutzt `orvantaConfig()`/`orvantaExchange()`
+aus `OrvantaServiceTest.php`. Für den Demozweig (`isDemo()` verlangt
+`app.env ≠ production`) setzt `oofWithDemoEnv()` `APP_ENV=local` und bootet
+`Config` neu – danach wird der ursprüngliche Zustand wiederhergestellt.

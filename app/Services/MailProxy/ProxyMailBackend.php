@@ -69,6 +69,7 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
             self::CAPABILITY_NOTES => false,
             self::CAPABILITY_REMINDERS => false,
             self::CAPABILITY_ARCHIVE => false,
+            self::CAPABILITY_OOF => false,
         ];
     }
 

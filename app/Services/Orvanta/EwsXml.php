@@ -84,6 +84,11 @@ final class EwsXml
         }
 
         $errors = $xpath->query('//m:ResponseMessages/*[@ResponseClass="Error"]');
+        if ($errors === false || $errors->length === 0) {
+            // Antworten ohne <m:ResponseMessages>-Huelle (z. B. Abwesenheitsnotiz
+            // GetUserOofSettings/SetUserOofSettings) melden den Fehler direkt.
+            $errors = $xpath->query('//m:ResponseMessage[@ResponseClass="Error"]');
+        }
         if ($errors !== false && $errors->length > 0) {
             $node = $errors->item(0);
             $text = self::text($xpath, 'm:MessageText', $node);

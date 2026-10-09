@@ -29,6 +29,7 @@ use App\Controllers\Admin\NetworkDriveController as NetworkDriveAdminController;
 use App\Controllers\Admin\OfficeController as OfficeAdminController;
 use App\Controllers\Admin\OfficeAppsController as OfficeAppsAdminController;
 use App\Controllers\Admin\OrvantaHostController;
+use App\Controllers\Admin\OrvantaOofController;
 use App\Controllers\Admin\OrvantaSignatureController;
 use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
@@ -152,6 +153,8 @@ $router->get('/office/orvanta/anhang/oeffnen', [OrvantaController::class, 'openA
 $router->get('/office/orvanta/anhang/datei', [OrvantaController::class, 'attachmentFile']); // Token-Zugriff des DocumentServers
 $router->get('/api/orvanta/status', [OrvantaApiController::class, 'status']);
 $router->get('/api/orvanta/sitzung', [OrvantaApiController::class, 'keepAlive']); // Keep-alive + aktuelles CSRF-Token
+$router->get('/api/orvanta/abwesenheit', [OrvantaApiController::class, 'oof']); // Abwesenheitsnotiz (Exchange OOF)
+$router->post('/api/orvanta/abwesenheit', [OrvantaApiController::class, 'saveOof']); // Abwesenheitsnotiz setzen/abschalten
 $router->get('/api/orvanta/mail/ordner', [OrvantaApiController::class, 'folders']);
 $router->get('/api/orvanta/mail/ordner/eigenschaften', [OrvantaApiController::class, 'folderProperties']);
 $router->post('/api/orvanta/mail/ordner/neu', [OrvantaApiController::class, 'createFolder']);
@@ -384,6 +387,12 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/office/signaturen/vorlage', [OrvantaSignatureController::class, 'save']);
         $router->post('/admin/office/signaturen/loeschen', [OrvantaSignatureController::class, 'delete']);
         $router->get('/admin/office/signaturen/vorschau', [OrvantaSignatureController::class, 'preview']);
+        // Orvanta: Abwesenheitsnotizen (Vorlagen per AD-Gruppe, Uebertragung auf Exchange).
+        $router->get('/admin/office/abwesenheit', [OrvantaOofController::class, 'index']);
+        $router->get('/admin/office/abwesenheit/vorlage', [OrvantaOofController::class, 'edit']);
+        $router->post('/admin/office/abwesenheit/vorlage', [OrvantaOofController::class, 'save']);
+        $router->post('/admin/office/abwesenheit/loeschen', [OrvantaOofController::class, 'delete']);
+        $router->get('/admin/office/abwesenheit/vorschau', [OrvantaOofController::class, 'preview']);
         // Orvanta: SMTP-/IMAP-Proxy fuer Benutzer ohne Exchange-Postfach (Server, Postfaecher, Zuordnung).
         $router->get('/admin/office/mail-proxy', [MailProxyController::class, 'index']);
         $router->get('/admin/office/mail-proxy/server/neu', [MailProxyController::class, 'createServer']);

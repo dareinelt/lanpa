@@ -38,6 +38,7 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 | **Erinnerungen** | Terminerinnerungen als Dialog in der App, als Browser-Benachrichtigung (HTML5 Notifications API) und in den **Mitteilungen** der Intranet-Kopfzeile |
 | **KI-Unterstützung** 🤖 | Markierten Text per Rechtsklick vom lokalen KI-Modell (Office → Lokale KI) umformulieren lassen – in E-Mails, Terminen und Erinnerungen; Vorschläge hellblau markiert, verfeinerbar, zurücksetzbar; Marker werden vor dem Senden entfernt (Abschnitt 7) |
 | **Rechtschreibprüfung** ✍ | Deutsche Rechtschreibung in E-Mail- und Termin-Editoren: fehlerhafte Wörter rot gewellt unterstrichen, Rechtsklick → „Rechtschreibprüfung“ → „---Vorschläge---“ mit Ersetzen per Auswahl, „Alle ignorieren“ und „Zum Wörterbuch hinzufügen“ (persönliches Wörterbuch, Abschnitt 7b) |
+| **Abwesenheitsnotiz** 🌴 | Abwesenheitsnotiz des Exchange-Postfachs aus Orvanta setzen: Vorlage aus dem Adminbereich (fester Text + anpassbarer dynamischer Teil), Empfängerkreis (nur intern oder auch extern), Zeitraum von–bis oder bis zum Abschalten; Exchange versendet die Notiz selbstständig; Banner unter dem Menüband, solange die Notiz aktiv ist (Abschnitt 4d) |
 
 ![Kalender – Wochenansicht](screenshots/81-orvanta-kalender.png)
 
@@ -193,11 +194,14 @@ flowchart LR
 | `OrvantaSpellcheckCompiler` / `OrvantaSpellcheckDictionary` / `OrvantaSpellcheckCasing` | `app/Services/Orvanta/` | Übersetzt die Hunspell-Quelldateien einmalig in ein kompaktes Format bzw. liest es zur Laufzeit verzögert ein; gemeinsame Logik für Groß-/Kleinschreibung und scharfes S |
 | `scripts/spellcheck_dictionary.php` | `scripts/` | Einmaliger Download + Übersetzung des Wörterbuchs beim Containerstart (Abschnitt 7b) |
 | `Admin\OrvantaSignatureController` | `app/Controllers/Admin/OrvantaSignatureController.php` | Pflege der Signaturvorlagen unter `/admin/office/signaturen` (Liste, Formular, Vorschau-iframe) |
+| `OrvantaOofService` | `app/Services/Orvanta/` | Abwesenheitsnotizen (Abschnitt 4d): Vorlagen und Zuordnung per AD-Gruppe, Zusammensetzen von festem Text, dynamischem Text und Signatur, Übertragen auf den Exchange-Server (`SetUserOofSettings`), Zustand für Banner und Dialog |
+| `Admin\OrvantaOofController` | `app/Controllers/Admin/OrvantaOofController.php` | Pflege der Abwesenheitsnotiz-Vorlagen unter `/admin/office/abwesenheit` (Liste, Formular, Vorschau-iframe) |
 | `OrvantaRepository` | `app/Repositories/OrvantaRepository.php` | Zugriff auf die drei Orvanta-Tabellen |
 | `OrvantaSignatureRepository` | `app/Repositories/OrvantaSignatureRepository.php` | Tabelle `orvanta_signatures` |
-| Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `admin-orvanta-hosts.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer, Live-Aktualisierung des DAG-Dashboards |
-| Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `views/admin/orvanta-hosts.php` | |
-| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql`, `044_orvanta_exchange_session_client.sql` | |
+| `OrvantaOofRepository` | `app/Repositories/OrvantaOofRepository.php` | Tabellen `orvanta_oof_templates` und `orvanta_oof_settings` |
+| Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `admin-orvanta-hosts.js`, `admin-oof.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer, Live-Aktualisierung des DAG-Dashboards, Live-Vorschau der Abwesenheitsnotiz-Vorlage |
+| Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `views/admin/orvanta-oof-templates.php`, `views/admin/orvanta-oof-template.php`, `views/admin/orvanta-hosts.php` | |
+| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql`, `044_orvanta_exchange_session_client.sql`, `045_orvanta_oof.sql` | |
 | `OrvantaMailRouter`, `ProxyMailBackend` | `app/Services/MailProxy/` | Backend-Auswahl je Benutzer (Exchange oder SMTP-/IMAP-Proxy, gemeinsames `OrvantaMailBackendInterface`); Details in [mail-proxy.md](mail-proxy.md) |
 | Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/OrvantaSpellcheckTest.php`, `tests/Unit/MailProxyTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen gegen SQLite; Rechtschreibung gegen ein eigenes Mini-Wörterbuch |
 
@@ -210,6 +214,8 @@ flowchart LR
 | `orvanta_cache_items` | Bestand des Zwischenspeichers im Nextcloud-Bereich des Benutzers | `user_uid`, `kind` (attachment/message), `item_hash`, `name`, `path`, `content_type`, `size_bytes` |
 | `orvanta_ai_usage` | Zähler der KI-Unterstützung (Migration 034) – nur Metadaten, nie Texte | `user_uid`, `kind` (mail_compose/mail_reply/mail_forward/event/reminder), `model`, `input_tokens`, `output_tokens`, `created_at` |
 | `orvanta_signatures` | Signaturvorlagen (Migrationen 035–037) | `name`, `greeting`, `name_format` (first_last/last_first), `street`, `postal_city`, `phone_mode` (prefix/full), `phone_prefix`, `text_color`, `separator_color` (Schlüssel einer Designfarbe), `ad_groups` (JSON-Liste), `sort_order`, `active` |
+| `orvanta_oof_templates` | Vorlagen der Abwesenheitsnotiz (Migration 045) | `name`, `fixed_text` (fester, für den Benutzer schreibgeschützter Teil), `example_text` (dynamischer Beispieltext), `ad_groups` (JSON-Liste), `sort_order`, `active` |
+| `orvanta_oof_settings` | Letzter Stand der Abwesenheitsnotiz je Benutzer (Migration 045) | `user_uid`, `template_id`, `dynamic_text`, `external_audience` (none/all), `schedule_mode` (range/until_off), `start_date`, `end_date`, `active`; maßgeblich ist der Zustand auf dem Exchange-Server |
 | `orvanta_spellcheck_words` | Persönliches Wörterbuch der Rechtschreibprüfung (Migration 042) | `user_uid` (klein geschrieben), `word` (≤ 64, Schreibweise genau unterschieden; unique je Benutzer), `created_at` |
 | `orvanta_archives` | Langzeitarchiv je Benutzer (Migration 038) | `user_uid` (unique), `mailbox`, `storage_folder`, `format_version`, `status` (active/error), Zähler, `last_successful_run`, `last_notice` |
 | `orvanta_archive_folders` | Abbild der Exchange-Ordner im Archiv | `archive_id` + `folder_hash` (unique), `exchange_folder_id`, `name`, `path` |
@@ -238,12 +244,19 @@ flowchart LR
   (GET/POST) und `rechtschreibung/woerterbuch/entfernen` (POST, persönliches
   Wörterbuch),
   Langzeitarchiv (alle GET): `archiv/status`, `archiv/ordner`, `archiv/mail`,
-  `archiv/mail/detail`, `archiv/suche`.
+  `archiv/mail/detail`, `archiv/suche`,
+  `abwesenheit` (GET/POST: Abwesenheitsnotiz lesen bzw. setzen oder
+  abschalten, Abschnitt 4d).
 - Admin (`$requireAdmin`): `GET|POST /admin/office/orvanta`,
   `POST /admin/office/orvanta/pruefen`; Signaturvorlagen
   `GET /admin/office/signaturen`, `GET|POST /admin/office/signaturen/vorlage`,
   `POST /admin/office/signaturen/loeschen`,
   `GET /admin/office/signaturen/vorschau` (iframe mit eigener CSP);
+  Abwesenheitsnotiz-Vorlagen (Abschnitt 4d)
+  `GET /admin/office/abwesenheit`,
+  `GET|POST /admin/office/abwesenheit/vorlage`,
+  `POST /admin/office/abwesenheit/loeschen`,
+  `GET /admin/office/abwesenheit/vorschau` (iframe mit eigener CSP);
   Exchange-DAG (Abschnitt 4c):
   `GET /admin/office/orvanta/hosts` (Dashboard),
   `POST /admin/office/orvanta/hosts` (Hosts ergänzen, DAG bestätigt),
@@ -497,6 +510,70 @@ durch Orvanta. Ohne Migration 043 arbeitet Orvanta unverändert mit dem
 konfigurierten Server weiter (die Verteilung fällt still auf ihn zurück).
 Beendete Sitzungszeilen räumt der Archiv-Worker auf
 (`OrvantaExchangePool::purge()`, älter als 24 Stunden).
+
+---
+
+## 4d. Abwesenheitsnotizen
+
+Unter **Admin → Office → Abwesenheitsnotizen** (`/admin/office/abwesenheit`)
+werden die Vorlagen für Abwesenheitsnotizen gepflegt. Die Zuordnung zum
+Benutzer erfolgt wie bei den Signaturen über **AD-Gruppen**: Passen mehrere
+Vorlagen, gilt die mit der kleinsten Reihenfolge; ohne passende Vorlage steht
+den Benutzern die Abwesenheitsnotiz nicht zur Verfügung.
+
+![Übersicht der Abwesenheitsvorlagen mit Vorschau](screenshots/106-admin-orvanta-oof-vorlagen.png)
+
+Aufbau einer Vorlage:
+
+| Bestandteil | Quelle | Sicht des Benutzers |
+|---|---|---|
+| **Fester Text** | Vorlage | schreibgeschützt – kann in Orvanta nicht geändert werden |
+| **Dynamischer Beispieltext** | Vorlage | editierbar; wird beim Zuweisen einer neuen Vorlage übernommen und ist nur ein Muster (z. B. Vertretung, Durchwahl) |
+| **Signatur** | Signaturvorlagen (Abschnitt 4a) | schreibgeschützt, wird unter dem Text angehängt |
+
+Beispiel:
+
+```
+Sehr geehrte Damen und Herren,
+ich befinde mich derzeit nicht im Haus. Ihre Mails werden nicht weitergeleitet.
+
+Bei dringenden Themen oder Anfragen wenden Sie sich bitte an Herrn/Frau XY
+unter der example@khwf.de oder telefonisch unter der 05331/934-wxyz.
+
+[Signatur des Benutzers]
+```
+
+Der feste Text ist im Formular als schreibgeschützter Teil gepflegt, der
+dynamische Beispieltext daneben als Muster; die Vorschau zeigt beide Teile
+samt Signatur.
+
+![Abwesenheitsvorlage bearbeiten: fester Text, dynamischer Beispieltext, AD-Gruppen und Vorschau](screenshots/107-admin-orvanta-oof-vorlage.png)
+
+Verhalten in Orvanta:
+
+- Die Abwesenheitsnotiz wird über den Menüband-Punkt **Abwesenheit** gesetzt
+  und abgeschaltet. **Den Versand übernimmt der Exchange-Server** – Orvanta
+  muss dafür nicht geöffnet bleiben.
+- **Empfängerkreis:** nur interne Nutzer oder auch Antworten an Externe.
+- **Zeitraum:** von–bis oder bis zum manuellen Abschalten.
+- Solange die Notiz im Postfach aktiv ist, zeigt Orvanta unter dem Menüband
+  einen **Banner** mit dem Zustand; der Zustand kommt vom Exchange-Server, die
+  Anzeige stimmt also auch, wenn die Notiz an anderer Stelle gesetzt wurde.
+- Die Abwesenheitsnotiz ist eine Exchange-Funktion. Für Benutzer, die über den
+  SMTP-/IMAP-Proxy angebunden sind (Abschnitt 4b), steht sie nicht zur
+  Verfügung.
+
+Der Dialog zeigt den festen Vorlagentext schreibgeschützt, darunter die
+anpassbare Ergänzung, Empfängerkreis, Zeitraum und die Signatur:
+
+![Dialog „Abwesenheitsnotiz“: Vorlagentext, anpassbare Ergänzung, Empfänger und Zeitraum](screenshots/108-orvanta-abwesenheitsnotiz-dialog.png)
+
+Solange die Notiz aktiv ist, steht der Zustand als Banner unter dem Menüband:
+
+![Banner unter dem Menüband mit dem Zustand der Abwesenheitsnotiz](screenshots/109-orvanta-abwesenheitsnotiz-banner.png)
+
+Die Vorschau im Adminbereich zeigt den festen und den dynamischen Text; als
+Signatur dient die erste gepflegte Signaturvorlage.
 
 ---
 
@@ -843,6 +920,13 @@ Wort begrenzt, der Browser schickt nur Wörter, die er noch nicht kennt.
   Stichtag, Copy-Verify-Commit-Delete, Wiederaufnahme nach Abbrüchen,
   Korruptionserkennung, Sperren, Suche und einen Massentest mit 1000
   Nachrichten (verlustfrei archiviert und verifiziert).
+- `tests/Unit/OrvantaOofTest.php` prüft die Abwesenheitsnotizen gegen SQLite
+  und den aufzeichnenden Exchange-Transport: Vorlagenvalidierung, Zuordnung per
+  AD-Gruppe, Benutzereinstellungen und deren Validierung, den
+  `SetUserOofSettings`-Aufruf (Zustand, Empfängerkreis, Zeitraum, kein Text bei
+  „abgeschaltet“), die Signatur am Ende der Notiz sowie Zustand und HTML.
+  Im Demo-Modus bestätigt `DemoExchangeTransport` das Setzen nur – der Banner
+  folgt dort den gespeicherten Einstellungen und dem Datumsfenster.
 
   ```bash
   php tests/run.php

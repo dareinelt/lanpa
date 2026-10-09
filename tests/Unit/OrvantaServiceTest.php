@@ -693,6 +693,32 @@ Runner::test('Orvanta: Kalender, Kontakte, Aufgaben und Notizen liefern Elemente
     Assert::contains('Raum 1', $parts['transport']->last());
 });
 
+Runner::test('Orvanta: Termin verschieben aendert nur Beginn und Ende', function (): void {
+    $parts = orvantaExchange();
+    $start = strtotime('2025-05-12 09:00:00') ?: 0;
+    $end = strtotime('2025-05-12 10:00:00') ?: 0;
+    $parts['exchange']->moveEvent('demo@demo.local', 'demo-ev-1', $start, $end, 'CK1');
+    $xml = $parts['transport']->last();
+    Assert::contains('<m:UpdateItem', $xml);
+    Assert::contains('<t:ItemId Id="demo-ev-1" ChangeKey="CK1"/>', $xml);
+    Assert::contains('<t:FieldURI FieldURI="calendar:Start"/>', $xml);
+    Assert::contains('<t:FieldURI FieldURI="calendar:End"/>', $xml);
+    Assert::contains('<t:Start>' . EwsXml::dateTime($start) . '</t:Start>', $xml);
+    Assert::contains('<t:End>' . EwsXml::dateTime($end) . '</t:End>', $xml);
+    // Nur der Zeitraum wird gesetzt; alles andere am Termin bleibt erhalten.
+    Assert::false(str_contains($xml, 'item:Subject'), 'Der Betreff darf nicht ueberschrieben werden.');
+    Assert::false(str_contains($xml, 'IsAllDayEvent'), 'Das Ganztagig-Kennzeichen darf nicht ueberschrieben werden.');
+
+    foreach ([[0, $end], [$start, $start - 60]] as $range) {
+        try {
+            $parts['exchange']->moveEvent('demo@demo.local', 'demo-ev-1', $range[0], $range[1]);
+            Assert::true(false, 'Exception fuer ungueltigen Zeitraum erwartet.');
+        } catch (OrvantaException $exception) {
+            Assert::same(422, $exception->status());
+        }
+    }
+});
+
 Runner::test('Orvanta: Besprechungsantwort akzeptiert Gross- und Kleinschreibung', function (): void {
     $parts = orvantaExchange();
     // Das Frontend sendet die EWS-Schreibweise (Accept/Tentative/Decline).

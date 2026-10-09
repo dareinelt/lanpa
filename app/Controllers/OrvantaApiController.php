@@ -457,6 +457,22 @@ final class OrvantaApiController extends Controller
         }, true);
     }
 
+    /**
+     * Verschiebt einen Termin per Drag and Drop: nur Beginn und Ende aendern.
+     */
+    public function moveEvent(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            $id = $this->requireId($this->str('id'));
+            $start = $this->int('start');
+            $end = $this->int('end');
+            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->moveEvent($access['impersonate'], $id, $start, $end, $this->str('change_key'));
+            $this->resync($access);
+
+            return ['id' => $id, 'start' => $start, 'end' => $end, 'message' => 'Der Termin wurde verschoben.'];
+        }, true);
+    }
+
     public function deleteEvent(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {

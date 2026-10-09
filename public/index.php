@@ -177,6 +177,7 @@ $router->get('/api/orvanta/archiv/suche', [OrvantaApiController::class, 'archive
 $router->get('/api/orvanta/kalender', [OrvantaApiController::class, 'calendar']);
 $router->get('/api/orvanta/kalender/termin', [OrvantaApiController::class, 'event']);
 $router->post('/api/orvanta/kalender/termin', [OrvantaApiController::class, 'saveEvent']);
+$router->post('/api/orvanta/kalender/termin/verschieben', [OrvantaApiController::class, 'moveEvent']);
 $router->post('/api/orvanta/kalender/termin/loeschen', [OrvantaApiController::class, 'deleteEvent']);
 $router->post('/api/orvanta/kalender/antwort', [OrvantaApiController::class, 'meetingResponse']);
 $router->get('/api/orvanta/kontakte', [OrvantaApiController::class, 'contacts']);

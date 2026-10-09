@@ -6,6 +6,7 @@ use App\Repositories\MailProxyRepository;
 use App\Repositories\OrvantaFlowRepository;
 use App\Services\MailProxy\MailProxyRoute;
 use App\Services\Orvanta\OrvantaFlowCharts;
+use App\Services\Orvanta\OrvantaFlowCloud;
 use App\Services\Orvanta\OrvantaPresenceService;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
@@ -599,4 +600,74 @@ Runner::test('Nachrichtenfluss: Zeiträume haben feste Farben und Bezeichnungen'
     }
     Assert::same('#dc2626', OrvantaFlowCharts::color(14));
     Assert::same('#64748b', OrvantaFlowCharts::color(7), 'unbekannter Zeitraum erhält einen neutralen Ton');
+});
+
+Runner::test('Nachrichtenfluss: Wolkengröße staffelt sich am Höchstwert', static function (): void {
+    Assert::same(5, OrvantaFlowCloud::level(100, 100), 'Höchstwert ist die größte Stufe');
+    Assert::same(5, OrvantaFlowCloud::level(90, 100), '90 Prozent ist die Untergrenze der größten Stufe');
+    Assert::same(4, OrvantaFlowCloud::level(89, 100), 'knapp unter 90 Prozent');
+    Assert::same(4, OrvantaFlowCloud::level(70, 100), '70 Prozent');
+    Assert::same(3, OrvantaFlowCloud::level(69, 100), 'knapp unter 70 Prozent');
+    Assert::same(3, OrvantaFlowCloud::level(50, 100), '50 Prozent');
+    Assert::same(2, OrvantaFlowCloud::level(49, 100), 'knapp unter 50 Prozent');
+    Assert::same(2, OrvantaFlowCloud::level(30, 100), '30 Prozent');
+    Assert::same(1, OrvantaFlowCloud::level(29, 100), 'knapp unter 30 Prozent');
+    Assert::same(1, OrvantaFlowCloud::level(0, 100), 'Null bleibt kleinste Stufe');
+    Assert::same(1, OrvantaFlowCloud::level(5, 0), 'ohne Höchstwert keine Staffelung');
+});
+
+Runner::test('Nachrichtenfluss: Wolke staffelt Wörter abwechselnd und maskiert Text', static function (): void {
+    $cloud = new OrvantaFlowCloud();
+    $items = $cloud->items([
+        ['label' => 'domäne-a', 'value' => 40],
+        ['label' => 'domäne-b', 'value' => 12],
+        ['label' => 'domäne-c', 'value' => 40],
+    ]);
+
+    Assert::same(3, count($items));
+    Assert::same(['up', 'down', 'up'], array_column($items, 'direction'), 'Staffelung wechselt mit der Position');
+    Assert::same([5, 2, 5], array_column($items, 'level'));
+    Assert::same('domäne-b: 12', $items[1]['title'], 'Vorgabe-Titel aus Name und Wert');
+
+    $html = $cloud->render([['label' => '<script>alert(1)</script>', 'value' => 3]]);
+    Assert::false(str_contains($html, '<script>'), 'Beschriftung wird maskiert');
+    Assert::true(str_contains($html, '&lt;script&gt;'), 'maskierte Beschriftung bleibt lesbar');
+    Assert::false(str_contains($html, 'style="'), 'keine Inline-Stile (CSP)');
+    Assert::true(str_contains($html, 'cloud__word--l5 cloud__word--up'), 'Stufe und Staffelung als CSS-Klasse');
+});
+
+Runner::test('Nachrichtenfluss: Wolke verwirft leere Einträge und meldet leere Listen', static function (): void {
+    $cloud = new OrvantaFlowCloud();
+
+    $items = $cloud->items([
+        ['label' => '   ', 'value' => 5],
+        ['label' => 'gültig', 'value' => -7],
+    ]);
+    Assert::same(1, count($items), 'Einträge ohne Beschriftung entfallen');
+    Assert::same(0, $items[0]['value'], 'negative Werte werden auf 0 begrenzt');
+
+    Assert::same('', $cloud->table([]), 'ohne Werte keine Tabelle');
+    $empty = $cloud->render([], 'Noch keine Postfächer erfasst.');
+    Assert::true(str_contains($empty, 'cloud--empty'));
+    Assert::true(str_contains($empty, 'Noch keine Postfächer erfasst.'));
+    Assert::false(str_contains($empty, '<ul'), 'leere Liste erzeugt kein Listenelement');
+});
+
+Runner::test('Nachrichtenfluss: Wolkenwerte stehen zusätzlich als Tabelle bereit', static function (): void {
+    $cloud = new OrvantaFlowCloud();
+    $html = $cloud->table(
+        [
+            ['label' => 'Benutzer 1', 'value' => 42, 'url' => '/admin/office/orvanta/ki'],
+            ['label' => 'Benutzer 2', 'value' => 7],
+        ],
+        'Top-Nutzer als Tabelle',
+        'Benutzer'
+    );
+
+    Assert::true(str_contains($html, '<details class="cloud-values">'), 'aufklappbare Wertetabelle');
+    Assert::true(str_contains($html, '<summary>Top-Nutzer als Tabelle</summary>'));
+    Assert::true(str_contains($html, '<th scope="col">Benutzer</th>'));
+    Assert::true(str_contains($html, '<th scope="row"><a href="/admin/office/orvanta/ki">Benutzer 1</a></th><td>42</td>'));
+    Assert::true(str_contains($html, '<th scope="row">Benutzer 2</th><td>7</td>'), 'ohne URL reiner Text');
+    Assert::false(str_contains($html, 'style="'), 'keine Inline-Stile (CSP)');
 });

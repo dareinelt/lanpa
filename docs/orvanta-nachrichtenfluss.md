@@ -253,6 +253,21 @@ Wolke steht dieselbe Zahl immer auch in einer Werteliste
 (`<details><summary>Werte als Tabelle</summary>…`), damit die Wolke nie die
 einzige Quelle eines Werts ist.
 
+Die Stufen sind feste Bänder des Wertanteils am größten Wert der Liste
+(`OrvantaFlowCloud::level()`):
+
+| Stufe | Wertanteil am Höchstwert |
+| ----- | ------------------------ |
+| `l5`  | ≥ 90 %                   |
+| `l4`  | ≥ 70 %                   |
+| `l3`  | ≥ 50 %                   |
+| `l2`  | ≥ 30 %                   |
+| `l1`  | darunter (auch 0)        |
+
+Ohne Werte (Höchstwert 0) bleibt es bei `l1`. Die Staffelung wechselt mit der
+Position (`--up` an geraden, `--down` an ungeraden Positionen), die Reihenfolge
+der Einträge gibt also der Aufrufer vor: absteigend nach Wert.
+
 ## 6. Verlaufsgrafik (Overlay, retinafreundlich)
 
 Die Grafik liegt in einem `<details>`-Overlay und wird per Klick auf die

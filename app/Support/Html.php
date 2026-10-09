@@ -32,15 +32,23 @@ final class Html
      */
     public static function url(?string $url): string
     {
+        return self::e(self::safeUrl($url));
+    }
+
+    /**
+     * Geprueftes Ziel ohne Maskierung.
+     *
+     * Fuer Templates, die den Wert an mehreren Stellen ausgeben und erst dort
+     * maskieren (z. B. Kacheln mit href und data-nav-href). Ein zweimaliges
+     * Maskieren wuerde "&" zu "&amp;amp;" machen und die URL beschaedigen.
+     */
+    public static function safeUrl(?string $url): string
+    {
         $url = trim((string) $url);
-        if ($url === '') {
+        if ($url === '' || !Validator::isSafeUrl($url)) {
             return '#';
         }
 
-        if (!Validator::isSafeUrl($url)) {
-            return '#';
-        }
-
-        return self::e($url);
+        return $url;
     }
 }

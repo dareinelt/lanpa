@@ -288,6 +288,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 ### Support (`app/Support/`)
 
 - `Html::e()` – zentrales Escaping (htmlspecialchars, UTF-8).
+- `Html::safeUrl()` – prüft ein Ziel (`javascript:`/`data:` gesperrt) und gibt es unmaskiert zurück; `Html::url()` liefert dieselbe Prüfung maskiert für die direkte Ausgabe. In Templates, die einen Wert mehrfach ausgeben (z. B. `href` und `data-nav-href`), `safeUrl()` verwenden und erst an der Ausgabestelle maskieren.
 - `Validator` – Eingabe-/URL-/Farb-/Typ-Prüfung.
 - `Sanitizer` – HTML-Reinigung (Rich-Text).
 - `Color` – WCAG-Farbrechnung (`blend`, `relativeLuminance`, `contrastRatio`, `bestTextColor`, `ensureContrast`, `MIN_CONTRAST = 4.5`).

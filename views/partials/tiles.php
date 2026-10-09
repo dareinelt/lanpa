@@ -100,7 +100,10 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
             } elseif ($type === 'page') {
                 $href = '/seite?id=' . $id;
             } else {
-                $href = Html::url((string) $item['url']);
+                // Nur pruefen, nicht maskieren: die Maskierung erfolgt an der
+                // Ausgabestelle (href bzw. data-nav-href), sonst entstehen
+                // doppelt maskierte URLs (&amp;amp;).
+                $href = Html::safeUrl((string) $item['url']);
             }
             $isOfficeTile = $officeTileStatus && $type === 'internal' && rtrim((string) $item['url'], '/') === '/office-starten';
             ?>

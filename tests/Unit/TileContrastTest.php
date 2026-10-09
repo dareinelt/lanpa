@@ -257,3 +257,25 @@ Runner::test('Ungueltige Kachelfarbe erzeugt keine CSS-Regel', static function (
     Assert::false(str_contains($html, '<style'), 'Ungueltige Farbe darf nicht ausgegeben werden');
     Assert::false(str_contains($html, 'javascript'), 'Ungueltige Farbe darf nicht ausgegeben werden');
 });
+
+Runner::test('Kachel-URLs werden nur einmal maskiert', static function (): void {
+    $url = 'https://waveware.example/CustomPageLogin.html?redirect=1639/TicketNew.erb&installId=Echtumgebung&username=ticket';
+
+    $html = tileContrastRender([
+        tileContrastItem(['type' => 'external', 'url' => $url]),
+        tileContrastItem(['id' => 8, 'type' => 'external', 'url' => $url, 'protected_access' => 1]),
+    ]);
+
+    Assert::contains('href="' . str_replace('&', '&amp;', $url) . '"', $html);
+    Assert::contains('data-nav-href="' . str_replace('&', '&amp;', $url) . '"', $html);
+    Assert::false(str_contains($html, '&amp;amp;'), 'URLs duerfen nicht doppelt maskiert werden');
+});
+
+Runner::test('Kachel-URLs mit unsicherem Schema bleiben gesperrt', static function (): void {
+    $html = tileContrastRender([
+        tileContrastItem(['type' => 'external', 'url' => 'javascript:alert(1)']),
+    ]);
+
+    Assert::contains('href="#"', $html);
+    Assert::false(str_contains($html, 'javascript:alert'), 'Unsicheres Schema darf nicht ausgegeben werden');
+});

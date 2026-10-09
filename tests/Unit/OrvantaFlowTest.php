@@ -1536,3 +1536,139 @@ Runner::test('Nachrichtenfluss: Gestaltung deckt alle Zustände und die dunkle D
     Assert::contains('[data-theme="dark"] .flow-edge--error', $css, 'dunkle Darstellung der Störungen');
     Assert::same(substr_count($css, '{'), substr_count($css, '}'), 'die Gestaltung ist ausbalanciert');
 });
+
+// ------------------------------------------------------------------ Topologie-Ansicht
+
+/**
+ * Rendert die Topologie-Ansicht mit genau den Variablen, die
+ * OrvantaFlowController::topology() bereitstellt.
+ *
+ * @param callable(array<string,mixed>&):void|null $modify Aenderungen an der Eingabe
+ */
+function flowTopologyRender(?callable $modify = null): string
+{
+    $_SESSION = [];
+    $input = flowInput();
+    if ($modify !== null) {
+        $modify($input);
+    }
+    $flow = OrvantaFlowService::evaluate($input);
+    unset($flow['history']);
+    $base = '/admin/office/orvanta/nachrichtenfluss';
+    $orvantaEnabled = true;
+    $orvantaDemo = false;
+    $refreshInterval = 120;
+
+    ob_start();
+    require dirname(__DIR__, 2) . '/views/admin/orvanta-flow-topology.php';
+
+    return (string) ob_get_clean();
+}
+
+Runner::test('Topologie: Ansicht liefert Hülle, Startdaten als JSON und Noscript-Liste ohne Inline-Stile', static function (): void {
+    $html = flowTopologyRender();
+
+    Assert::contains('data-flow-topology', $html);
+    Assert::contains('data-refresh-url="/admin/office/orvanta/nachrichtenfluss/daten"', $html);
+    Assert::contains('data-refresh-interval="120"', $html);
+    Assert::contains('data-overall-state="ok"', $html);
+    Assert::contains('<script type="application/json" data-flow-initial>', $html, 'Startdaten als nicht ausführbares JSON');
+    Assert::false(str_contains($html, '<script>'), 'kein ausführbares Inline-Skript');
+    Assert::false(str_contains($html, 'style="'), 'keine Inline-Stile (CSP verbietet sie)');
+    Assert::false(str_contains($html, 'Array'), 'keine durchgereichten Arrays');
+    Assert::contains('data-topo-canvas', $html);
+    Assert::contains('data-topo-panel', $html);
+    Assert::contains('data-topo-log-list', $html);
+    Assert::contains('data-topo-incident-list', $html);
+    Assert::contains('data-topo-kind-filter', $html);
+    foreach (['mode-3d', 'mode-2d', 'rotate', 'particles', 'labels', 'focus-problems', 'zoom-in', 'zoom-out', 'fit', 'reset', 'refresh', 'fullscreen'] as $action) {
+        Assert::contains('data-topo-action="' . $action . '"', $html, 'Werkzeug ' . $action);
+    }
+    Assert::contains('<noscript>', $html);
+    Assert::contains('ex01.hh.example', $html, 'Noscript-Liste nennt die Knoten');
+    Assert::contains('href="/admin/office/orvanta/nachrichtenfluss"', $html, 'Rücksprung zum Kartendashboard');
+
+    preg_match('/<script type="application\/json" data-flow-initial>(.*?)<\/script>/s', $html, $match);
+    $json = json_decode($match[1] ?? '', true);
+    Assert::true(is_array($json), 'eingebettetes JSON ist gültig');
+    Assert::true(isset($json['nodes']['users'], $json['nodes']['proxy'], $json['edges']), 'Knoten und Kanten eingebettet');
+    Assert::false(isset($json['history']), 'kein Verlauf im Netz');
+    Assert::false(isset($json['nodes']['users']['chart']), 'keine Verlaufsgrafik im Netz');
+    Assert::false(str_contains($match[1] ?? '<', '<'), 'spitze Klammern im JSON sind maskiert');
+});
+
+Runner::test('Topologie: Ansicht zeigt Störungen im Band und im Gesamtstatus', static function (): void {
+    $html = flowTopologyRender(static function (array &$input): void {
+        $input['proxy'] = array_merge($input['proxy'], ['ok' => false, 'message' => 'Verbindung verweigert.']);
+    });
+
+    Assert::contains('data-overall-state="error"', $html);
+    Assert::contains('topo-incidents--open', $html);
+    Assert::contains('data-topo-focus="proxy"', $html, 'Störung springt zum Knoten');
+    Assert::contains('href="/admin/office/mail-proxy"', $html, 'Link zur Behebung');
+    Assert::contains('topo-pulse--error', $html);
+});
+
+Runner::test('Topologie: Ansicht nennt deaktiviertes Orvanta und Demo-Modus', static function (): void {
+    $_SESSION = [];
+    $flow = OrvantaFlowService::evaluate(flowInput());
+    $base = '/admin/office/orvanta/nachrichtenfluss';
+    $refreshInterval = 60;
+
+    $orvantaEnabled = false;
+    $orvantaDemo = false;
+    ob_start();
+    require dirname(__DIR__, 2) . '/views/admin/orvanta-flow-topology.php';
+    Assert::contains('Orvanta ist nicht aktiviert', (string) ob_get_clean());
+
+    $orvantaEnabled = true;
+    $orvantaDemo = true;
+    ob_start();
+    require dirname(__DIR__, 2) . '/views/admin/orvanta-flow-topology.php';
+    Assert::contains('Demo-Modus', (string) ob_get_clean());
+});
+
+Runner::test('Topologie: Route, Verweis, Skript und Gestaltung sind verdrahtet', static function (): void {
+    $root = dirname(__DIR__, 2);
+    $routes = (string) file_get_contents($root . '/public/index.php');
+    Assert::contains("\$router->get('/admin/office/orvanta/nachrichtenfluss/topologie', [OrvantaFlowController::class, 'topology']);", $routes);
+    Assert::true(method_exists(\App\Controllers\Admin\OrvantaFlowController::class, 'topology'));
+
+    $controller = (string) file_get_contents($root . '/app/Controllers/Admin/OrvantaFlowController.php');
+    Assert::contains("'layouts.editor'", $controller, 'eigener Tab ohne Seitenmenü');
+    Assert::contains("'admin-orvanta-flow-topology.js'", $controller);
+    Assert::contains("'orvanta-flow-topology.css'", $controller);
+    Assert::contains('overview(false)', $controller, 'ohne Verlauf');
+
+    $card = flowRender();
+    Assert::contains('href="/admin/office/orvanta/nachrichtenfluss/topologie" target="_blank" rel="noopener"', $card, 'Kartendashboard verweist in einen neuen Tab');
+
+    $script = (string) file_get_contents($root . '/public/assets/js/admin-orvanta-flow-topology.js');
+    Assert::contains('data-flow-topology', $script);
+    Assert::contains('data-flow-initial', $script);
+    Assert::contains('data-refresh-url', $script);
+    Assert::contains('requestAnimationFrame', $script);
+    Assert::contains('document.hidden', $script, 'Zeichnen und Abfrage pausieren im Hintergrund');
+    Assert::contains('prefers-reduced-motion', $script);
+    Assert::contains("'pointerdown'", $script);
+    Assert::contains("'wheel'", $script);
+    Assert::contains("'keydown'", $script);
+    Assert::contains('quadraticCurveTo', $script, 'gebogene Kanten');
+    Assert::false(str_contains($script, 'innerHTML'), 'DOM wird ohne innerHTML aufgebaut');
+    Assert::false(str_contains($script, 'eval('), 'kein dynamischer Code');
+    Assert::false(str_contains($script, 'document.write'), 'kein document.write');
+    foreach (['source', 'proxy', 'host', 'users', 'ai', 'cache', 'tier'] as $kind) {
+        Assert::contains("case '" . $kind . "'", $script, 'eigenes Symbol für ' . $kind);
+    }
+
+    $css = (string) file_get_contents($root . '/public/assets/css/orvanta-flow-topology.css');
+    foreach ([
+        '.topo', '.topo-head', '.topo-head__status--error', '.topo-pulse--error', '.topo-canvas', '.topo-toolbar',
+        '.topo-tool.is-active', '.topo-legend', '.topo-tooltip', '.topo-panel', '.topo-panel__facts', '.topo-log',
+        '.topo-log__item--error', '.topo-incidents--open', '.topo-incident', '.topo-noscript',
+        '@media (prefers-reduced-motion: reduce)', '@media print',
+    ] as $selector) {
+        Assert::contains($selector, $css);
+    }
+    Assert::same(substr_count($css, '{'), substr_count($css, '}'), 'die Gestaltung ist ausbalanciert');
+});

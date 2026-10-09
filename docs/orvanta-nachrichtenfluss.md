@@ -464,3 +464,76 @@ Ein Klick auf „Verlauf öffnen“ in der Nutzerkennzahl klappt die
 retinafreundliche SVG-Grafik auf: fünf Zeiträume als überlagerte Linienzüge,
 darunter die Legende mit Höchstwert und Durchschnitt sowie die Wertetabelle des
 kürzesten Zeitraums.
+
+## 14. Topologie-Ansicht (eigener Tab)
+
+Zusätzlich zum Kartendashboard öffnet die Schaltfläche „Topologie-Ansicht
+(neuer Tab)“ die Seite `/admin/office/orvanta/nachrichtenfluss/topologie`
+(`OrvantaFlowController::topology()`, Layout `layouts.editor` ohne
+Seitenmenü). Sie zeigt **dieselben Knoten, Kanten und Störungen** als
+zusammenhängendes Netz im dunklen NOC-Stil – gedacht für einen zweiten
+Bildschirm oder die Leitwarte.
+
+### 14.1 Aufbau
+
+- **Kopfzeile:** Gesamtstatus mit pulsierendem Ring, Zähler für Störungen,
+  Warnungen und Knoten, Zeitpunkt der Erhebung, „Jetzt aktualisieren“ und
+  Vollbild.
+- **Bühne (`<canvas>`):** räumliches Netz (Perspektivprojektion, Sternhimmel
+  mit Parallaxe). Die Nutzer stehen im Zentrum, der Proxy links, die
+  Identitätsquellen als Ring dahinter, die Exchange-Hosts als Ring rechts, die
+  KI oben, der Zwischenspeicher unten, die Speicher-Tiers als Ring darunter.
+  Kanten sind gebogene Leuchtbahnen; zwischen Tiers und Zwischenspeicher
+  werden gestrichelte Hilfskanten ergänzt. Eine 2D-Spaltenansicht (Taste `2`)
+  ordnet dieselben Knoten nach Art; der Wechsel ist animiert.
+- **Werkzeugleiste:** 3D/2D, Auto-Drehung, Partikel, Beschriftungen,
+  „Nur Probleme“ (dämpft alles ohne Störung), Zoom, Einpassen, Zurücksetzen.
+- **Legende** mit Filter je Knotenart (Quelle, Proxy, Host, Nutzer, KI,
+  Zwischenspeicher, Tier).
+- **Detailtafel:** Art, Titel, Zustand, Meldung, Ausgraugrund, Fakten,
+  Wolkenwerte als Balken, Mitglieder, benachbarte Knoten (anklickbar) und der
+  Link zur Behebung.
+- **Ereignisprotokoll** (einklappbar, höchstens 60 Einträge) mit allen
+  Zustandswechseln seit dem Öffnen der Seite.
+- **Störungsband** am unteren Rand, nur bei Störungen geöffnet; jeder Eintrag
+  springt zum betroffenen Knoten.
+- **Noscript:** ohne JavaScript listet die Seite alle Knoten und Kanten mit
+  Zustand als Text.
+
+### 14.2 Animationen
+
+- Partikel wandern entlang der Kanten; ihre Dichte folgt der Aktivität
+  (Postfachsummen, aktive Nutzer, KI-Anfragen). Auf gestörten Kanten
+  zerplatzen sie in der Mitte mit roter Bruchmarke.
+- Knoten pulsieren je Zustand (rot schnell, gelb langsam, grün ruhig, aus
+  ohne Puls); ein Zustandswechsel löst eine Welle vom Knoten aus und bringt
+  den Zähler in der Kopfzeile kurz zum Hüpfen.
+- Nach 4 Sekunden ohne Eingabe dreht sich das Netz langsam weiter
+  (abschaltbar, Taste `R`).
+- `prefers-reduced-motion` schaltet Partikel, Auto-Drehung und Wellen ab;
+  Zustände bleiben über Farbe, Ring und Ausrufezeichen erkennbar.
+
+### 14.3 Bedienung
+
+| Eingabe | Wirkung |
+|---|---|
+| Ziehen | 3D drehen; mit Umschalt-, mittlerer oder rechter Maustaste verschieben (2D: immer verschieben) |
+| Mausrad / Pinch | Zoom um den Zeiger |
+| Klick / Doppelklick | Knoten wählen bzw. zentrieren; Doppelklick ins Leere passt ein |
+| `←↑→↓`, `+`/`-`, `0` | drehen bzw. verschieben, zoomen, einpassen |
+| `2`/`3`, `R`, `P`, `L`, `!`, `F` | 2D/3D, Drehung, Partikel, Beschriftung, nur Probleme, Vollbild |
+| `N`, `Leertaste`, `Enter`, `Esc` | nächste Störung, Aktualisieren, Link des Knotens öffnen, Auswahl aufheben |
+
+### 14.4 Daten
+
+Die Seite bettet den Erstzustand als `<script type="application/json"
+data-flow-initial>` ein (ohne Verlauf und Verlaufsgrafiken) und zieht danach
+im eingestellten Intervall dieselbe JSON-Antwort wie das Kartendashboard
+(`…/nachrichtenfluss/daten`). Knoten behalten ihre Position über
+Aktualisierungen; neue oder entfernte Knoten lösen eine Neuanordnung aus.
+Zeichnen und Abfrage pausieren, solange der Tab verborgen ist. Der Aufbau
+der Oberfläche erfolgt ohne `innerHTML` und ohne Inline-Stile (CSP).
+Dateien: `views/admin/orvanta-flow-topology.php`,
+`public/assets/js/admin-orvanta-flow-topology.js`,
+`public/assets/css/orvanta-flow-topology.css`; Tests in
+`tests/Unit/OrvantaFlowTest.php` (Abschnitt „Topologie-Ansicht“).

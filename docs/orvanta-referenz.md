@@ -58,6 +58,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 19. Rechtschreibprüfung
 20. Exchange-DAG (Lastverteilung, Failover und Dashboard)
 21. Abwesenheitsnotizen
+22. Zusätzliche Postfächer (Vollzugriff / „Senden als“)
 
 ---
 
@@ -70,6 +71,8 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | Dienstkonto | `exchange_service_user` / `exchange_service_password` | Konto mit `ApplicationImpersonation`; Kennwort mit `SecretBox` verschlüsselt |
 | Element-ID | `id` + `change_key` | EWS-`ItemId` (Base64, opak); `change_key` wird nur bei `updateEvent()` mitgesendet |
 | Ordnerschlüssel | `folderKey()` (JS), `EwsXml::folderId()` | Systemordner als Kleinbuchstaben-Name (`inbox`, `drafts`, …), eigene Ordner als `FolderId` |
+| Zusätzliches Postfach | `orvanta_shared_mailboxes`, `OrvantaSharedMailboxService` | Per „Vollzugriff“ berechtigtes Postfach, das dem Benutzer im Adminbereich zugeordnet und über EWS geprüft wird (Abschnitt 22); **nicht** Teil der Archivierung |
+| Postfach-Präfix | `OrvantaApiController::MAILBOX_PREFIX` = `smb:` | Adressierung der Elemente eines zusätzlichen Postfachs: `smb:<id>\|<Original-ID>`; die Original-ID geht unverändert an EWS |
 | Zwischenspeicher | `orvanta_cache_items`, `OrvantaAttachmentService::cache()` | Kopie geöffneter Anhänge im Nextcloud-Ordner `<cache_folder>/` mit Quota `cache_quota_mb` |
 | Erinnerung | `orvanta_reminders`-Zeile | Lokaler Zustand einer Exchange-Terminerinnerung (`pending` → `delivered` → `dismissed`/`snoozed`) |
 | Demo-Modus | `OrvantaConfigService::isDemo()` | `exchange_host = demo` und `APP_ENV ≠ production` → `DemoExchangeTransport` |
@@ -99,6 +102,10 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Repositories/OrvantaSignatureRepository.php` | `all(activeOnly)`, `find()`, `save()`, `delete()`; `ad_groups` als JSON-Liste → `groups` |
 | `app/Services/Orvanta/OrvantaOofService.php` | Abwesenheitsnotizen (Abschnitt 21): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)`, `settings(uid, template)`, `validateSettings()`, `apply(uid, mailbox, template, input, exchange, ssoUser)`, `state(mailbox, exchange, settings)`, `status(uid, mailbox, exchange, ssoUser)`, `text()`, `message()`, `html()`, statisch `dateStart()/dateEnd()`; Konstanten `AUDIENCES`, `SCHEDULE_MODES`, `MAX_FIXED_TEXT` (4000), `MAX_DYNAMIC_TEXT` (2000) |
 | `app/Repositories/OrvantaOofRepository.php` | Vorlagen (`all(activeOnly)`, `find()`, `save()`, `delete()`) und Benutzereinstellungen (`settings(uid)`, `saveSettings(uid, …)`); `ad_groups` als JSON-Liste → `groups` |
+| `app/Services/Orvanta/OrvantaSharedMailboxService.php` | Zusätzliche Postfächer (Abschnitt 22): `available(ssoUser)` (aktive, erreichbare Zuordnungen in Reihenfolge), `calendarSelection(ssoUser)`, `setCalendarVisible(ssoUser, id, visible)`, `resolve(ssoUser, requested)` (Adressierung `smb:<id>\|…`), `sender(ssoUser, primary, address)` (Absenderprüfung), `forAdmin(uid)`, `searchUsers(term)`, `save(uid, email, displayName, options)`, `delete(id)`, `verify(id, force)`, `refresh(ssoUser)`, `uid(ssoUser)`; `VERIFY_TTL` (43200 s = 12 h) |
+| `app/Repositories/OrvantaSharedMailboxRepository.php` | Tabelle `orvanta_shared_mailboxes`: `forUser(uid, activeOnly)`, `all(uid)`, `find(id)`, `findByKey(uid, email)`, `searchUsers(term, limit)` (Telefonliste LEFT JOIN `identity_sources`, `LIKE … ESCAPE '!'`), `save(data)` (Upsert auf `user_uid` + `email`), `delete(id)`, `markVerified(id, error)`, `setCalendarVisible(id, visible)` |
+| `app/Controllers/Admin/OrvantaSharedMailboxController.php` | `index()` (GET `suche`, `id`, `benutzer`; ohne Migration 046 `tablesMissing`), `save()`, `verify()`, `delete()`; `BASE = '/admin/office/orvanta/postfaecher'` |
+| `views/admin/orvanta-shared-mailboxes.php` | Adminseite: Benutzersuche, Zuordnungsformular, Tabelle mit Prüfstatus und Aktionen |
 | `app/Controllers/Admin/OrvantaOofController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
 | `views/admin/orvanta-oof-templates.php`, `views/admin/orvanta-oof-template.php`, `public/assets/js/admin-oof.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/abwesenheit/vorschau`) |
 | `app/Controllers/Admin/OrvantaSignatureController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
@@ -137,12 +144,14 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `database/migrations/043_orvanta_exchange_dag.sql` | Tabellen `orvanta_exchange_hosts` und `orvanta_exchange_sessions` (Exchange-DAG, Abschnitt 20) |
 | `database/migrations/044_orvanta_exchange_session_client.sql` | Spalten `orvanta_exchange_sessions.client_ip`/`client_host` (Client der Sitzung, Abschnitt 20.5) |
 | `database/migrations/045_orvanta_oof.sql` | Tabellen `orvanta_oof_templates` und `orvanta_oof_settings` samt erster Vorlage (Abschnitt 21) |
+| `database/migrations/046_orvanta_shared_mailboxes.sql` | Tabelle `orvanta_shared_mailboxes` (Abschnitt 22) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
 | `tests/Unit/OrvantaSignatureTest.php` | Tests der Signaturvorlagen gegen SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaOofTest.php` | Tests der Abwesenheitsnotizen gegen SQLite und `RecordingExchangeTransport` (Abschnitt 21) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Tests der Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (Abschnitt 19) |
+| `tests/Unit/OrvantaSharedMailboxTest.php` | Tests der zusätzlichen Postfächer gegen SQLite und den Demo-Transport samt Rendertest der Adminseite (Abschnitt 22) |
 
 ## 3. Routen, Zugriff und API-Rahmen
 
@@ -180,6 +189,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/api/orvanta/kalender/termin/verschieben` | `moveEvent` | Termin per Drag&Drop verschieben: `id`, `start`, `end` (Unix-Sekunden), optional `change_key` (Abschnitt 6) |
 | POST | `/api/orvanta/kalender/termin/loeschen` | `deleteEvent` | Termin löschen (mit Absage an Teilnehmer) |
 | POST | `/api/orvanta/kalender/antwort` | `meetingResponse` | `response` = `accept`/`tentative`/`decline` |
+| POST | `/api/orvanta/kalender/postfach` | `setCalendarVisible` | Kalender eines zusätzlichen Postfachs ein-/ausblenden: `id`, `sichtbar` (Abschnitt 22) |
 | GET | `/api/orvanta/kontakte?q=` | `contacts` | Kontaktliste |
 | GET / POST | `/api/orvanta/kontakte/kontakt` | `contact` / `saveContact` | Kontakt lesen / speichern |
 | POST | `/api/orvanta/kontakte/loeschen` | `deleteContact` | Kontakt(e) löschen |
@@ -210,6 +220,10 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/admin/office/orvanta/hosts/pruefen` | `check` | Verbindungstest eines Hosts (mit Prüfpostfach `exchange_test_mailbox`) |
 | POST | `/admin/office/orvanta/hosts/pruefpostfach` | `testMailbox` | Prüfpostfach speichern (`test_mailbox`, leer = Dienstkonto) |
 | GET | `/admin/office/orvanta/hosts/daten` | `data` | Kachelwerte als JSON für die Live-Aktualisierung |
+| GET | `/admin/office/orvanta/postfaecher[?suche=…&id=…&benutzer=…]` | `Admin\OrvantaSharedMailboxController::index` | Zusätzliche Postfächer je Benutzer (Abschnitt 22) |
+| POST | `/admin/office/orvanta/postfaecher/speichern` | `save` | Zuordnung anlegen/ändern (CSRF; `benutzer`, `postfach`, `anzeigename`, `sortierung`, `senden_als`, `aktiv`) |
+| POST | `/admin/office/orvanta/postfaecher/pruefen` | `verify` | Erreichbarkeit über EWS prüfen (Dienstkonto, `GetFolder` auf `msgfolderroot`) |
+| POST | `/admin/office/orvanta/postfaecher/loeschen` | `delete` | Zuordnung entfernen (`id`) |
 | GET | `/admin/office/signaturen` | `Admin\OrvantaSignatureController::index` | Signaturvorlagen (Liste, Vorschau-iframes) |
 | GET/POST | `/admin/office/signaturen/vorlage[?id=…]` | `edit` / `save` | Vorlage anlegen/bearbeiten (CSRF) |
 | POST | `/admin/office/signaturen/loeschen` | `delete` | Vorlage löschen (`id`) |
@@ -229,7 +243,11 @@ Reihenfolge und Antwort bei Fehlschlag:
 4. Aktive Office-Kachel (`OfficeController::ENTRY_PATH`) für den Benutzer nicht zugänglich → **403**.
 5. Keine Postfachadresse (`OrvantaMailboxResolver::address()` leer) und kein Demo-Modus → **403**.
 
-Rückgabe: `{user, uid, impersonate}`. Der Browser bestimmt die Identität nie
+Rückgabe: `{user, uid, impersonate, primary, mailboxes, backend, route}`.
+`primary` ist das eigene Postfach (Adresse aus dem AD bzw. im Demo-Modus
+`username@demo.local`), `mailboxes` sind die zusätzlich berechtigten Postfächer
+(leer beim SMTP-/IMAP-Proxy und beim Demo-Backend ohne Zuordnungen, Abschnitt
+22). Der Browser bestimmt die Identität nie
 selbst – `impersonate` stammt ausschließlich aus SSO + Konfiguration.
 
 ### 3.3 API-Rahmen (`OrvantaApiController::handle()`)
@@ -263,7 +281,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 
 ## 4. Datenhaltung
 
-### 4.1 Tabellen (Migrationen 033–045)
+### 4.1 Tabellen (Migrationen 033–046)
 
 | Tabelle | Spalten (Auszug) | Hinweise |
 | --- | --- | --- |
@@ -277,6 +295,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_exchange_sessions` (Migrationen 043, 044) | `session_hash` = `sha1(session_id)`, `user_uid`, `client_ip` (≤ 45, IPv4/IPv6), `client_host` (≤ 190, Reverse-DNS oder leer), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
 | `orvanta_oof_templates` (Migration 045) | `name` (≤ 120), `fixed_text` (TEXT, ≤ 4000 Zeichen), `example_text` (TEXT, ≤ 2000 Zeichen), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Vorlagen der Abwesenheitsnotiz; Index (`active`, `sort_order`). Zuordnung wie bei den Signaturen: erste aktive Vorlage nach `sort_order`, deren Gruppe in den SSO-Gruppen vorkommt – ohne Treffer gibt es keine Abwesenheitsnotiz. Migration legt die Vorlage „Allgemeine Abwesenheit“ an. Abschnitt 21 |
 | `orvanta_oof_settings` (Migration 045) | `user_uid` (Primary Key), `template_id` (NULL, `ON DELETE SET NULL`), `dynamic_text` (≤ 2000), `external_audience` ∈ `none\|all` (Standard `none`), `schedule_mode` ∈ `range\|until_off` (Standard `until_off`), `start_date`, `end_date` (DATE, NULL), `active` | Benutzereinstellungen; die maßgebliche Einstellung liegt auf dem Exchange-Server, die Zeile hält den letzten Stand für Banner und Dialog. Abschnitt 21 |
+| `orvanta_shared_mailboxes` (Migration 046) | `user_uid` (≤ 190), `email` (≤ 190), `display_name` (≤ 190), `send_as`, `active`, `verified_at` (DATETIME, NULL), `verify_error` (≤ 500), `checked_at` (DATETIME, NULL), `calendar_visible`, `sort_order` (1–999), `created_at`, `updated_at` | Unique (`user_uid`, `email`); Index (`user_uid`, `active`, `sort_order`). Zusätzlich per Vollzugriff berechtigte Postfächer, Abschnitt 22. Collation `utf8mb4_unicode_ci`, Adressen werden also ohne Beachtung der Groß-/Kleinschreibung verglichen |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -1933,3 +1952,157 @@ aus `saveSettings()` in SQLite) und nutzt `orvantaConfig()`/`orvantaExchange()`
 aus `OrvantaServiceTest.php`. Für den Demozweig (`isDemo()` verlangt
 `app.env ≠ production`) setzt `oofWithDemoEnv()` `APP_ENV=local` und bootet
 `Config` neu – danach wird der ursprüngliche Zustand wiederhergestellt.
+
+---
+
+## 22. Zusätzliche Postfächer (Vollzugriff / „Senden als“)
+
+Benutzer, die auf dem Exchange-Server **Vollzugriff** auf weitere Postfächer
+haben, sehen diese in Outlook als zusätzliche Knoten im Ordnerbaum. Orvanta
+bildet das nach: Der Adminbereich ordnet einem Benutzer Postfachadressen zu,
+ein Dienstkonto prüft die Erreichbarkeit über EWS, und die App bedient die
+Postfächer per Impersonation (`$access['impersonate']` wird je Anfrage
+umgesetzt).
+
+```
+Admin: /admin/office/orvanta/postfaecher[/speichern|/pruefen|/loeschen]
+          └─ Admin\OrvantaSharedMailboxController ─► OrvantaSharedMailboxService
+                ├─ OrvantaSharedMailboxRepository (orvanta_shared_mailboxes)
+                └─ OrvantaExchangeService::probeMailbox()  (GetFolder auf msgfolderroot)
+
+App:   OrvantaController::authorize()
+          ├─ primary    = eigenes Postfach (OrvantaMailboxResolver, AD)
+          ├─ mailboxes  = OrvantaSharedMailboxService::available(ssoUser)
+          └─ index()    → OrvantaSharedMailboxService::refresh(ssoUser)  (nur faellige Pruefungen)
+
+API:   OrvantaApiController::withMailbox(access, request)
+          ├─ requestedMailbox(request)  aus `postfach`/`mailbox`, Ordner- oder Elementkennung
+          ├─ resolve(ssoUser, requested)  → Impersonationsadresse
+          └─ stripMailbox(access, id)     vor jedem EWS-Aufruf
+```
+
+### 22.1 Entdeckung: Zuordnung im Adminbereich, Prüfung über EWS
+
+- EWS kennt keine Abfrage der Postfachberechtigungen. Die Zuordnung wird
+  deshalb **gepflegt** (`orvanta_shared_mailboxes`) und anschließend
+  **geprüft**: `probeMailbox($email)` öffnet mit dem Dienstkonto
+  `GetFolder` auf `DistinguishedFolderId msgfolderroot` und liefert
+  `{ok, error}`. Nur so ist sichergestellt, dass die
+  `ApplicationImpersonation` des Dienstkontos das Postfach tatsächlich
+  erreicht.
+- `OrvantaSharedMailboxService::verify(id, force)` schreibt das Ergebnis
+  (`markVerified(id, error)` → `verified_at`/`verify_error`/`checked_at`) und
+  gibt den Fehlertext zurück. Geprüft wird nur, wenn die letzte Prüfung älter
+  als `VERIFY_TTL` (43200 s = 12 h) ist; `refresh(ssoUser)` macht das beim
+  Öffnen der App für alle aktiven Zuordnungen des Benutzers,
+  `OrvantaController::index()` ruft es vor dem Aufbau des Ordnerbaums auf.
+- `available(ssoUser)` liefert nur Zuordnungen mit `active = 1`, die als
+  erreichbar gelten (`verify_error = ''` **und** `verified_at ≠ ''`), sortiert
+  nach `sort_order` und `id`. Nicht erreichbare Postfächer verschwinden also
+  von selbst aus der App, bleiben aber im Adminbereich sichtbar.
+- Fehlt die Tabelle (Migration 046 nicht ausgeführt), fängt der Admincontroller
+  `PDOException` ab und rendert `tablesMissing`; `forUser()` in der App liefert
+  dann eine leere Liste, ohne die Seite zu brechen.
+
+### 22.2 Adressierung (`smb:<id>|`)
+
+Ordner- und Elementkennungen weiterer Postfächer bekommen das Präfix
+`smb:<MailboxId>|` (`OrvantaApiController::MAILBOX_PREFIX`), damit sie im
+Ordnerbaum und in der Kalenderansicht eindeutig bleiben. Der Ablauf je
+Anfrage:
+
+1. `requestedMailbox()` liest `postfach`/`mailbox` aus Body oder Query; fehlt
+   das, wird die Kennung aus dem Präfix von `ordner`/`folder` bzw. `id`
+   gelesen.
+2. `withMailbox()` setzt `$access['mailbox']` und
+   `$access['impersonate'] = mailbox.email`. Ohne Berechtigung → 403
+   (`OrvantaException`); `$access['primary']` bleibt **immer** das eigene
+   Postfach.
+3. `stripMailbox()` entfernt das Präfix vor dem EWS-Aufruf und wirft 409,
+   wenn das Präfix zu einem anderen als dem angesprochenen Postfach gehört.
+
+Der Ordnerbaum (`folders()`) liefert zuerst die Ordner des eigenen Postfachs
+und danach je weiterem Postfach einen Wurzelknoten `kind = 'mailbox'`
+(`id` = nur das Präfix, `parent = ''`) sowie dessen Ordner mit Präfix in `id`
+und `parent`. Ist ein Postfach inzwischen nicht mehr erreichbar, wird es
+übersprungen und nur geloggt
+(`Orvanta: Ordner eines zusaetzlichen Postfachs nicht abrufbar.`). Jede
+Ordnerzeile trägt zusätzlich `mailbox` (Kennung) für die Zuordnung in der
+Oberfläche.
+
+### 22.3 Module und Kalender
+
+- Alle Module laufen über denselben `withMailbox()`-Rahmen, also auch
+  Kontakte, Aufgaben und Notizen (`$access['impersonate']`).
+- **Kalender:** `calendars(access)` liefert `[null]` (eigenes Postfach) plus
+  die per Checkbox eingeblendeten Postfächer aus
+  `calendarSelection(ssoUser)['visible']`. Je sichtbarem Postfach entsteht
+  **ein eigener EWS-Aufruf** (`calendar()`), die Termine werden
+  zusammengeführt und mit `mailbox`/`mailbox_name` sowie dem Präfix in `id`
+  markiert (`calendarEvent()`). Die Auswahl wird beim Aufruf der
+  Kalenderansicht gemeldet (Checkbox-Zustand) und über
+  `POST /api/orvanta/kalender/postfach` gespeichert
+  (`setCalendarVisible()`); `setCalendarVisible()` prüft, dass die Kennung dem
+  Benutzer gehört (Fremdkennungen → `false`, API 422). Der eigene Kalender ist
+  nicht abwählbar.
+- `setCalendarVisible` ist eine **schreibende** Route (`$write = true`,
+  CSRF-Pflicht).
+
+### 22.4 Absender im Verfassen-Dialog
+
+- `OrvantaSharedMailboxService::sender(ssoUser, primary, address)`:
+  - `address` leer oder gleich `primary` → `['email' => '', 'name' => '']`
+    (kein `From`; Exchange setzt das eigene Postfach),
+  - bekannte Adresse mit `send_as = 1` → deren Daten,
+  - bekannte Adresse ohne `send_as` oder unbekannte Adresse → `null`.
+- `OrvantaApiController::sender(access)` liest `from` aus dem Body und fällt
+  ohne Angabe auf das Postfach zurück, **aus dem der Editor geöffnet wurde**
+  (`$access['mailbox']['email']`) – damit ist die Vorbelegung genau die des
+  geöffneten Postfachs. Ein nicht erlaubtes `from` ergibt 403; ein Postfach
+  ohne „Senden als“ sendet als eigenes Postfach.
+- Übertragen wird der Absender als `From` im Exchange-Auftrag
+  (`EwsXml::singleRecipient()`/`fromXml()`, `item:From` in `updateDraft()` und
+  `SendItem`/`CreateItem`). Ohne Auswahl bleibt das Feld weg, damit Exchange
+  wie bisher den Postfachinhaber einträgt.
+- Die **Signatur** stammt unverändert aus `OrvantaSignatureService::forUser()`
+  des **primären** Benutzerpostfachs (Abschnitt 16) – auch beim Senden aus
+  einem zusätzlichen Postfach.
+
+### 22.5 Abgrenzung zur Archivierung
+
+Archiviert wird **ausschließlich** das primäre Benutzerpostfach, also das
+Postfach, das dem angemeldeten Benutzer im Active Directory hinterlegt ist
+(`$access['primary']`, Abschnitt 17). `registerArchive()` verwendet
+ausschließlich `$access['primary']`; `withMailbox()` ändert `primary` nie.
+Zusätzlich berechtigte Postfächer werden **nie** automatisch archiviert, und
+auch Abwesenheitsnotiz (`oof`), Postfachbelegung (`mailboxUsage`) und
+Terminerinnerungen beziehen sich immer auf `$access['primary']`.
+
+### 22.6 Demo-Modus
+
+`DemoExchangeTransport` führt zwei Beispielpostfächer
+(`SHARED_MAILBOXES`): `team@demo.local` („Team Postfach“, `send_as = true`)
+und `buero@demo.local` („Büro“, `send_as = false`). Deren Ordner- und
+Elementkennungen tragen im Demo-Transport den Suffix `@team-demo-local` bzw.
+`@buero-demo-local` (aus der Adresse gebildet), damit die Kennungen über die
+Postfächer hinweg eindeutig sind. `probeMailbox()` antwortet für beide `ok`;
+für jede andere Adresse kommt `ErrorMailboxStoreUnavailable`.
+
+### 22.7 Tests
+
+`tests/Unit/OrvantaSharedMailboxTest.php` (Abschnitt 12). Der Test baut die
+Tabelle selbst auf (`sharedMailboxPdo()`: SQLite-Spiegel der Migration 046 mit
+`COLLATE NOCASE` auf `user_uid`/`email`, `NOW()`-Funktion und einer
+Übersetzung des MySQL-Upserts, die – wie MySQL – die vorhandene Kennung
+behält) und nutzt `orvantaConfig()`/`orvantaExchange()` aus
+`OrvantaServiceTest.php`. Abgedeckt sind Kennungsbildung (`uid()`),
+`available()` (Filter, Reihenfolge), `resolve()`, `sender()`,
+`calendarSelection()`/`setCalendarVisible()` samt Ablehnung fremder
+Kennungen, die Prüfung über `DemoExchangeTransport::probeMailbox()` und das
+`VERIFY_TTL`-Verhalten von `refresh()`, die Validierung und der Upsert in
+`save()`, `searchUsers()` (Kennungsbildung, Maskierung der LIKE-Platzhalter,
+Filter `active`/`samaccount_name`), `forAdmin()`, die Kennungs-Suffixe des
+Demo-Transports sowie ein Rendertest der Adminseite
+(`View::setViewPath(BASE_PATH . '/views')` + `View::render('admin.orvanta-shared-mailboxes', …)`),
+der Hinweise, Escaping, Formularwerte und den Hinweis auf die fehlende
+Migration 046 prüft.

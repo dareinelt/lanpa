@@ -1313,3 +1313,226 @@ Runner::test('Nachrichtenfluss: Gesamtbelegung ohne Einträge ist null', static 
     $totals = (new OrvantaRepository($pdo))->cacheTotals();
     Assert::same(['items' => 0, 'bytes' => 0, 'users' => 0], $totals);
 });
+
+// ------------------------------------------------------------------- Ansicht
+
+/**
+ * Rendert die Dashboard-Ansicht mit genau den Variablen, die
+ * OrvantaFlowController::index() bereitstellt.
+ *
+ * @param callable(array<string,mixed>&):void|null $modify Aenderungen an der Eingabe
+ */
+function flowRender(?callable $modify = null): string
+{
+    $_SESSION = [];
+    $input = flowInput();
+    if ($modify !== null) {
+        $modify($input);
+    }
+    $flow = OrvantaFlowService::evaluate($input);
+    $base = '/admin/office/orvanta/nachrichtenfluss';
+    $orvantaEnabled = true;
+    $orvantaDemo = false;
+    $refreshInterval = 120;
+    $checkLimit = 16;
+    $checkableSources = [['id' => 0, 'label' => 'Zentrale (primär)'], ['id' => 5, 'label' => 'Zweigstelle Hamburg']];
+
+    ob_start();
+    require dirname(__DIR__, 2) . '/views/admin/orvanta-flow.php';
+
+    return (string) ob_get_clean();
+}
+
+Runner::test('Nachrichtenfluss: Ansicht ist ohne Daten vollständig und ohne Inline-Stile', static function (): void {
+    $html = flowRender();
+
+    Assert::contains('data-orvanta-flow', $html);
+    Assert::contains('data-refresh-url="/admin/office/orvanta/nachrichtenfluss/daten"', $html);
+    Assert::contains('data-refresh-interval="120"', $html);
+    Assert::contains('data-flow-refresh', $html, 'Schalter zum manuellen Aktualisieren');
+    Assert::contains('data-flow-head', $html);
+    Assert::contains('data-flow-incident-list', $html);
+    Assert::false(str_contains($html, 'style="'), 'keine Inline-Stile (CSP verbietet sie)');
+    Assert::false(str_contains($html, 'Array'), 'keine durchgereichten Arrays');
+    Assert::false(str_contains($html, '<script>'), 'keine eingebetteten Skripte');
+});
+
+Runner::test('Nachrichtenfluss: Ansicht bindet jede Kennzahl, jeden Knoten und jede Spur an Datenattribute', static function (): void {
+    $html = flowRender();
+
+    foreach (['users', 'sources', 'mapping', 'proxy', 'exchange', 'storage', 'cache', 'ai'] as $key) {
+        Assert::contains('data-flow-kpi-item="' . $key . '"', $html);
+        Assert::contains('data-flow-kpi="' . $key . '"', $html);
+        Assert::contains('data-flow-kpi-hint="' . $key . '"', $html);
+    }
+    foreach (['proxy', 'source-0', 'host-1', 'users', 'ai', 'cache', 'tier-1'] as $key) {
+        Assert::contains('data-flow-node="' . $key . '"', $html);
+        Assert::contains('id="flow-' . $key . '"', $html);
+        Assert::contains('data-flow-node-state="', $html);
+    }
+    Assert::same(2, substr_count($html, 'data-flow-lane-label'), 'genau eine Zustandsbezeichnung je Spur');
+    Assert::contains('data-flow-lane="proxy"', $html);
+    Assert::contains('data-flow-lane="exchange"', $html);
+    Assert::contains('id="flow-proxy-lane"', $html);
+    Assert::contains('id="flow-exchange"', $html);
+    Assert::contains('data-flow-edge="source-0&gt;proxy"', $html);
+    Assert::contains('data-flow-edge="host-1&gt;users"', $html);
+    Assert::contains('data-flow-edge="ai&gt;users"', $html);
+    Assert::contains('data-flow-edge="cache&gt;users"', $html);
+});
+
+Runner::test('Nachrichtenfluss: Ansicht markiert Störungen mit Ausrufezeichen und blendet die Liste ein', static function (): void {
+    $healthy = flowRender();
+    Assert::false(str_contains($healthy, 'flow-alert'), 'ohne Störung kein Ausrufezeichen');
+    Assert::contains('data-flow-incidents hidden', $healthy, 'leere Störungsliste bleibt ausgeblendet');
+
+    $broken = flowRender(static function (array &$input): void {
+        $input['proxy']['ok'] = false;
+        $input['proxy']['message'] = 'Der Proxy-Dienst antwortet nicht.';
+    });
+
+    Assert::contains('data-flow-node="proxy" data-flow-node-state="error"', $broken);
+    Assert::contains('flow-alert', $broken, 'rotes Ausrufezeichen an der Störung');
+    Assert::false(str_contains($broken, 'data-flow-incidents hidden'), 'gefüllte Störungsliste ist sichtbar');
+    Assert::contains('IMAP-/SMTP-Proxy', $broken);
+    Assert::contains('Beheben', $broken, 'Verweis auf die zuständige Verwaltungsseite');
+});
+
+Runner::test('Nachrichtenfluss: Ansicht graut bei Proxy-Ausfall Quellen und Postfächer aus', static function (): void {
+    $html = flowRender(static function (array &$input): void {
+        $input['proxy']['ok'] = false;
+    });
+
+    Assert::contains('data-flow-node="source-0" data-flow-node-state="error"', $html);
+    Assert::contains('flow-node--muted', $html, 'gedämpfter Knoten');
+    Assert::contains('Werte ausgegraut (Proxy nicht erreichbar)', $html);
+    Assert::contains('flow-cloud--muted', $html, 'ausgegraute Postfachwolke');
+    Assert::true(
+        substr_count($html, 'data-flow-node-muted hidden') < substr_count($html, 'data-flow-node-muted'),
+        'mindestens ein Ausgrauhinweis ist sichtbar'
+    );
+});
+
+Runner::test('Nachrichtenfluss: Ansicht zeigt bei Quellenstörung Ausrufezeichen ohne die Quelle auszugrauen', static function (): void {
+    $html = flowRender(static function (array &$input): void {
+        $input['sources'][0]['state']['last_error_at'] = '2023-11-14 21:30:00';
+        $input['sources'][0]['state']['last_error'] = 'Anmeldung abgelehnt.';
+        $input['sources'][0]['state']['checked_at'] = '2023-11-14 21:30:00';
+    });
+
+    Assert::contains('data-flow-node="source-0" data-flow-node-state="error"', $html);
+    Assert::contains('data-flow-node="proxy" data-flow-node-state="ok"', $html, 'der Proxy bleibt in Ordnung');
+    Assert::contains('Anmeldung abgelehnt.', $html);
+    Assert::contains('flow-cloud--muted', $html, 'nur die Postfächer der Quelle sind ausgegraut');
+    Assert::false(str_contains($html, 'Werte ausgegraut'), 'die Quelle selbst bleibt lesbar');
+});
+
+Runner::test('Nachrichtenfluss: Ansicht graut bei Host-Störung nur dessen Clients aus', static function (): void {
+    $html = flowRender(static function (array &$input): void {
+        $input['exchange']['hosts'][0]['status'] = 'offline';
+        $input['exchange']['hosts'][0]['last_error'] = 'Der Host antwortet nicht.';
+    });
+
+    Assert::contains('data-flow-node="host-1" data-flow-node-state="error"', $html);
+    Assert::contains('Der Host antwortet nicht.', $html);
+    Assert::contains('flow-cloud--muted', $html, 'ausgegraute Clientwolke');
+    Assert::contains('data-flow-node="users" data-flow-node-state="ok"', $html, 'der Nutzerknoten bleibt erreichbar');
+});
+
+Runner::test('Nachrichtenfluss: Ansicht zeigt Wolken, Werte als Tabelle und den Verlauf', static function (): void {
+    $html = flowRender(static function (array &$input): void {
+        $input['history']['series'] = [14 => ['days' => 14, 'max' => 9, 'points' => [
+            ['day' => '2023-11-13', 'value' => 4],
+            ['day' => '2023-11-14', 'value' => 9],
+        ]]];
+    });
+
+    Assert::contains('Postfächer der Identitätsquelle', $html);
+    Assert::contains('Verbundene Clients', $html);
+    Assert::contains('Top-10 Nutzer (30 Tage)', $html);
+    Assert::contains('Größte Zwischenspeicher je Nutzer', $html);
+    Assert::contains('Werte als Tabelle', $html);
+    Assert::contains('data-flow-node="tier-1" data-flow-node-state="ok"', $html);
+    Assert::contains('class="cloud"', $html);
+    Assert::contains('ov-flow-chart', $html);
+    Assert::contains('flow-legend', $html, 'Legende der Zeiträume');
+    Assert::false(str_contains($html, 'Keine Verlaufsdaten vorhanden.'), 'mit Proben wird gezeichnet');
+});
+
+Runner::test('Nachrichtenfluss: Ansicht zeichnet den Verlauf erst mit Proben', static function (): void {
+    $html = flowRender();
+
+    Assert::false(str_contains($html, 'flow-overlay'), 'ohne Proben kein Verlaufselement');
+    Assert::false(str_contains($html, '<polyline'), 'ohne Proben keine Linien');
+    Assert::false(str_contains($html, 'flow-legend'), 'ohne Proben keine Legende');
+    Assert::contains('data-flow-node="users"', $html, 'der Nutzerknoten bleibt sichtbar');
+});
+
+Runner::test('Nachrichtenfluss: Prüfformular nutzt CSRF und begrenzt die Anzahl der Quellen', static function (): void {
+    $html = flowRender();
+
+    Assert::contains('method="post" action="/admin/office/orvanta/nachrichtenfluss/quellen/pruefen"', $html);
+    Assert::contains('name="_token"', $html);
+    Assert::contains('name="source"', $html);
+    Assert::contains('Alle aktiven Quellen', $html);
+    Assert::contains('Zweigstelle Hamburg', $html);
+    Assert::contains('bei mehr als 16 aktiven Quellen', $html, 'die Obergrenze steht im Klartext');
+});
+
+Runner::test('Nachrichtenfluss: Ansicht nennt den Ausfall der Quelle auch ohne Prüfmöglichkeit', static function (): void {
+    $html = flowRender(static function (array &$input): void {
+        $input['sources'] = [];
+    });
+
+    Assert::contains('Identitätsquellen', $html);
+    Assert::contains('data-flow-node="proxy"', $html);
+    Assert::contains('Keine Verbindungen erfasst.', $html, 'die Proxy-Spur bleibt ohne Quelle leer');
+});
+
+// ------------------------------------------------------------------ Verdrahtung
+
+Runner::test('Nachrichtenfluss: Routen, Navigation und Skript sind verdrahtet', static function (): void {
+    $root = dirname(__DIR__, 2);
+    $routes = (string) file_get_contents($root . '/public/index.php');
+    foreach ([
+        "\$router->get('/admin/office/orvanta/nachrichtenfluss', [OrvantaFlowController::class, 'index']);" => 'index',
+        "\$router->get('/admin/office/orvanta/nachrichtenfluss/daten', [OrvantaFlowController::class, 'data']);" => 'data',
+        "\$router->post('/admin/office/orvanta/nachrichtenfluss/quellen/pruefen', [OrvantaFlowController::class, 'checkSources']);" => 'checkSources',
+    ] as $route => $method) {
+        Assert::contains($route, $routes);
+        Assert::true(method_exists(\App\Controllers\Admin\OrvantaFlowController::class, $method), $method . ' fehlt.');
+    }
+
+    Assert::contains("office_orvanta_flow", (string) file_get_contents($root . '/views/layouts/admin.php'));
+    Assert::contains("'office_orvanta_flow'", (string) file_get_contents($root . '/app/Controllers/Admin/OrvantaFlowController.php'));
+
+    $script = (string) file_get_contents($root . '/public/assets/js/admin-orvanta-flow.js');
+    Assert::contains('data-orvanta-flow', $script);
+    Assert::contains('data-refresh-url', $script);
+    Assert::contains('data-flow-refresh', $script);
+    Assert::false(str_contains($script, 'innerHTML'), 'die Liste wird ohne innerHTML aufgebaut');
+    Assert::false(str_contains($script, 'eval('), 'kein dynamischer Code');
+    Assert::contains('document.hidden', $script, 'die Aktualisierung pausiert im Hintergrund');
+    Assert::contains('data-flow-node-muted', $script);
+    Assert::contains('flow-cloud--muted', $script, 'das Ausgrauen der Wolken wird live nachgeführt');
+
+    Assert::same(16, \App\Controllers\Admin\OrvantaFlowController::MAX_CHECK_SOURCES);
+    Assert::same('/admin/office/orvanta/nachrichtenfluss', \App\Controllers\Admin\OrvantaFlowController::BASE);
+});
+
+Runner::test('Nachrichtenfluss: Gestaltung deckt alle Zustände und die dunkle Darstellung ab', static function (): void {
+    $css = (string) file_get_contents(dirname(__DIR__, 2) . '/public/assets/css/admin.css');
+
+    foreach ([
+        '.flow-head', '.flow-incidents', '.flow-alert', '.flow-kpis', '.flow-kpi',
+        '.flow-lane', '.flow-edges', '.flow-edge', '.flow-grid', '.flow-node',
+        '.flow-node--muted', '.flow-node--error', '.flow-facts', '.flow-cloud-block',
+        '.flow-members', '.cloud', '.cloud__word--l1', '.cloud__word--l5', '.flow-cloud--muted',
+        '.flow-overlay', '.flow-chart', '.ov-flow-chart', '.ov-flow-line', '.ov-flow-axis-label',
+        '.flow-legend', '.flow-legend__swatch--d14', '.flow-legend__swatch--d365',
+    ] as $selector) {
+        Assert::contains($selector, $css);
+    }
+    Assert::contains('[data-theme="dark"] .flow-edge--error', $css, 'dunkle Darstellung der Störungen');
+    Assert::same(substr_count($css, '{'), substr_count($css, '}'), 'die Gestaltung ist ausbalanciert');
+});

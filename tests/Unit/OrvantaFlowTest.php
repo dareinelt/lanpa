@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Repositories\MailProxyRepository;
 use App\Repositories\OrvantaFlowRepository;
 use App\Services\MailProxy\MailProxyRoute;
+use App\Services\Orvanta\OrvantaFlowCharts;
 use App\Services\Orvanta\OrvantaPresenceService;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
@@ -521,3 +522,81 @@ Runner::test('Nachrichtenfluss: Präsenz räumt Aktivität nach 24 Stunden und P
 });
 
 
+
+// ---------------------------------------------------------------- Verlaufsgrafik
+
+Runner::test('Nachrichtenfluss: Overlay-Grafik zeichnet fünf Zeiträume mit gemeinsamer Achse', static function (): void {
+    $pdo = flowPdo();
+    $now = strtotime('2024-06-30 12:00:00');
+    $presence = flowPresence($pdo, static fn (): int => $now);
+    $flow = new OrvantaFlowRepository($pdo);
+    $flow->recordSample(date('Y-m-d H:i:s', $now), 8, 8, 0, 0);
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 20 * 86400), 4, 4, 0, 0);
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 200 * 86400), 2, 2, 0, 0);
+
+    $charts = new OrvantaFlowCharts();
+    $svg = $charts->overlay($presence->history());
+
+    Assert::true(str_starts_with($svg, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 340" width="100%" role="img"'), 'vektorbasiert, ohne feste Pixelbreite');
+    Assert::true(str_ends_with($svg, '</svg>'));
+    Assert::true(str_contains($svg, 'role="img"') && str_contains($svg, '<title>') && str_contains($svg, '<desc>'), 'Titel und Beschreibung für Screenreader');
+    Assert::false(str_contains($svg, 'style="'), 'keine Inline-Stile (CSP)');
+    Assert::same(5, substr_count($svg, 'class="ov-flow-line ov-flow-line--'), 'eine Linie je Zeitraum');
+    foreach ([14, 30, 90, 180, 365] as $days) {
+        Assert::true(str_contains($svg, 'ov-flow-line--' . $days . '"'), 'Zeitraum ' . $days . ' Tage vorhanden');
+    }
+    Assert::same(5, substr_count($svg, '<polyline'), 'nur Zeiträume mit Werten werden gezeichnet');
+    Assert::true(str_contains($svg, '>8</text>'), 'y-Achse reicht bis zum Höchstwert');
+    Assert::true(str_contains($svg, 'Anfang des Zeitraums') && str_contains($svg, 'heute'), 'relative x-Beschriftung');
+    Assert::true(str_contains($svg, '30.06.2024: 8 aktive Nutzer (14 Tage)'), 'letzter Punkt mit Datum und Wert');
+    Assert::same(5, substr_count($svg, 'ov-flow-grid'), 'vier Hilfslinien plus Nullinie');
+});
+
+Runner::test('Nachrichtenfluss: Overlay-Grafik unterbricht Lücken und zeigt keine Nullwerte', static function (): void {
+    $history = ['max' => 5, 'series' => [14 => ['days' => 14, 'max' => 5, 'points' => [
+        ['day' => '2024-06-17', 'value' => null],
+        ['day' => '2024-06-18', 'value' => 5],
+        ['day' => '2024-06-19', 'value' => null],
+        ['day' => '2024-06-20', 'value' => 3],
+    ]]]];
+    $svg = (new OrvantaFlowCharts())->overlay($history);
+
+    Assert::false(str_contains($svg, 'null'), 'Lücken werden nicht als Wert gezeichnet');
+    Assert::same(1, substr_count($svg, '<polyline'), 'zwei getrennte Tage ergeben kein Linienstück');
+    Assert::true(str_contains($svg, '20.06.2024: 3 aktive Nutzer (14 Tage)'), 'letzter Wert bleibt sichtbar');
+});
+
+Runner::test('Nachrichtenfluss: Overlay-Grafik ohne Daten meldet das verständlich', static function (): void {
+    $charts = new OrvantaFlowCharts();
+    $svg = $charts->overlay(['series' => []]);
+    Assert::true(str_contains($svg, 'Keine Verlaufsdaten vorhanden.'));
+    Assert::false(str_contains($svg, '<polyline>'));
+    Assert::same([], $charts->tableRows(['series' => []]), 'ohne Zeiträume keine Wertetabelle');
+});
+
+Runner::test('Nachrichtenfluss: Wertetabelle nutzt den kürzesten Zeitraum und lässt Lücken leer', static function (): void {
+    $history = ['max' => 5, 'series' => [
+        30 => ['points' => [['day' => '2024-06-01', 'value' => 1]]],
+        14 => ['points' => [
+            ['day' => '2024-06-17', 'value' => null],
+            ['day' => '2024-06-18', 'value' => 5],
+        ]],
+    ]];
+    $rows = (new OrvantaFlowCharts())->tableRows($history);
+
+    Assert::same(2, count($rows), 'nur der kürzeste Zeitraum');
+    Assert::same('2024-06-17', $rows[0]['day']);
+    Assert::null($rows[0]['value'], 'Tage ohne Probe bleiben leer');
+    Assert::same(5, $rows[1]['value']);
+});
+
+Runner::test('Nachrichtenfluss: Zeiträume haben feste Farben und Bezeichnungen', static function (): void {
+    $series = OrvantaFlowCharts::series();
+    Assert::same([365, 180, 90, 30, 14], array_keys($series), 'Reihenfolge vom längsten zum kürzesten Zeitraum');
+    foreach ($series as $days => $entry) {
+        Assert::true(preg_match('/^#[0-9a-f]{6}$/', $entry['color']) === 1, 'Farbe für ' . $days);
+        Assert::same($days . ' Tage', $entry['label']);
+    }
+    Assert::same('#dc2626', OrvantaFlowCharts::color(14));
+    Assert::same('#64748b', OrvantaFlowCharts::color(7), 'unbekannter Zeitraum erhält einen neutralen Ton');
+});

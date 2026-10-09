@@ -5,8 +5,8 @@ declare(strict_types=1);
 use App\Security\Csrf;
 use App\Support\Html;
 
-/** @var list<array{id:int,uid:string,email:string,name:string,send_as:bool,active:bool,sort_order:int,calendar_visible:bool,verified:bool,error:string,checked_at:string}> $entries */
-/** @var array{id:int,uid:string,email:string,name:string,send_as:bool,active:bool,sort_order:int,calendar_visible:bool,verified:bool,error:string,checked_at:string}|null $entry */
+/** @var list<array{id:int,uid:string,email:string,name:string,source:string,send_as:bool,active:bool,sort_order:int,calendar_visible:bool,verified:bool,error:string,checked_at:string}> $entries */
+/** @var array{id:int,uid:string,email:string,name:string,source:string,send_as:bool,active:bool,sort_order:int,calendar_visible:bool,verified:bool,error:string,checked_at:string}|null $entry */
 /** @var string $term */
 /** @var list<array{uid:string,username:string,display_name:string,email:string,source:string}> $users */
 /** @var string $uid */
@@ -29,8 +29,11 @@ $formatDate = static function (string $value): string {
 <p class="card__hint">
     Zusätzliche Postfächer, auf die ein Benutzer auf dem Exchange-Server per <strong>Vollzugriff</strong> oder
     <strong>„Senden als“</strong> berechtigt ist, erscheinen in Orvanta wie in Outlook als weiteres Postfach im
-    Ordnerbaum. Die Berechtigungen selbst lassen sich nicht über EWS abfragen – tragen Sie die Zuordnung daher hier
-    ein. Orvanta prüft jede Zuordnung als der Benutzer: Nur Postfächer, auf die Exchange ihm Vollzugriff gewährt,
+    Ordnerbaum. Die Zuordnung wird <strong>im Exchange (ECP) gepflegt</strong>: Mit dem Vollzugriff trägt Exchange
+    den Benutzer am Postfach ein (Auto-Mapping), Orvanta liest die so eingebundenen Postfächer bei der Anmeldung aus
+    dem Active Directory (<code>msExchDelegateListBL</code>) und übernimmt sie automatisch (Herkunft „Exchange“).
+    Hier lassen sich nur Postfächer <em>ergänzen</em>, die ohne Auto-Mapping berechtigt wurden (Herkunft „manuell“).
+    Orvanta prüft jede Zuordnung als der Benutzer: Nur Postfächer, auf die Exchange ihm Vollzugriff gewährt,
     erscheinen. Ist für den Benutzer keine Postfachadresse im Telefonbuch hinterlegt, erfolgt die Prüfung bei seiner
     nächsten Anmeldung in Orvanta.
 </p>
@@ -160,6 +163,7 @@ $formatDate = static function (string $value): string {
                         <th scope="col">Benutzer</th>
                         <th scope="col">Postfach</th>
                         <th scope="col">Anzeigename</th>
+                        <th scope="col">Herkunft</th>
                         <th scope="col">Reihenfolge</th>
                         <th scope="col">Senden als</th>
                         <th scope="col">Kalender</th>
@@ -174,6 +178,7 @@ $formatDate = static function (string $value): string {
                         <td><code><?= Html::e($row['uid']) ?></code></td>
                         <td><?= Html::e($row['email']) ?></td>
                         <td><?= Html::e($row['name']) ?></td>
+                        <td><?= $row['source'] === 'exchange' ? 'Exchange (Auto-Mapping)' : 'manuell' ?></td>
                         <td><?= (int) $row['sort_order'] ?></td>
                         <td><?= $row['send_as'] ? 'ja' : 'nein' ?></td>
                         <td><?= $row['calendar_visible'] ? 'eingeblendet' : 'ausgeblendet' ?></td>

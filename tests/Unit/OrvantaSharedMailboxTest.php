@@ -5,12 +5,14 @@ declare(strict_types=1);
 use App\Controllers\Admin\OrvantaSharedMailboxController;
 use App\Core\View;
 use App\Repositories\OrvantaSharedMailboxRepository;
+use App\Services\LdapClient;
+use App\Services\Orvanta\OrvantaDelegateDirectory;
 use App\Services\Orvanta\OrvantaSharedMailboxService;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
 
 /**
- * SQLite-Schema parallel zur Migration 046. NOW() aus MySQL wird als Funktion
+ * SQLite-Schema parallel zu den Migrationen 046 und 049. NOW() aus MySQL wird als Funktion
  * nachgereicht, der MySQL-Upsert in die SQLite-Schreibweise uebersetzt; die
  * eindeutige Zuordnung ist wie in MySQL (utf8mb4_unicode_ci) ohne Beachtung der
  * Gross-/Kleinschreibung.
@@ -63,6 +65,7 @@ function sharedMailboxPdo(): PDO
         user_uid VARCHAR(190) NOT NULL COLLATE NOCASE,
         email VARCHAR(190) NOT NULL COLLATE NOCASE,
         display_name VARCHAR(190) NOT NULL DEFAULT \'\',
+        source VARCHAR(20) NOT NULL DEFAULT \'admin\',
         send_as INTEGER NOT NULL DEFAULT 1,
         active INTEGER NOT NULL DEFAULT 1,
         verified_at DATETIME NULL,
@@ -132,14 +135,14 @@ function sharedMailboxRow(PDO $pdo, array $overrides = []): int
  * @param array<string,string> $settings
  * @return array{service:OrvantaSharedMailboxService,repository:OrvantaSharedMailboxRepository,pdo:PDO,transport:RecordingExchangeTransport}
  */
-function sharedMailboxSetup(array $settings = []): array
+function sharedMailboxSetup(array $settings = [], ?OrvantaDelegateDirectory $directory = null): array
 {
     $pdo = sharedMailboxPdo();
     $parts = orvantaExchange($settings);
     $repository = new OrvantaSharedMailboxRepository($pdo);
 
     return [
-        'service' => new OrvantaSharedMailboxService($repository, $parts['exchange']),
+        'service' => new OrvantaSharedMailboxService($repository, $parts['exchange'], null, $directory),
         'repository' => $repository,
         'pdo' => $pdo,
         'transport' => $parts['transport'],
@@ -290,6 +293,110 @@ Runner::test('Orvanta: Erreichbarkeit zusätzlicher Postfächer prüft Orvanta �
     // Eine erzwungene Prüfung liefert das Ergebnis erneut.
     Assert::same('', $service->verify($team['id'], true));
     Assert::same('Zuordnung nicht gefunden.', $service->verify(999, true), 'Unbekannte Zuordnungen melden sich verständlich.');
+});
+
+/**
+ * AD-Abfrage der automatisch eingebundenen Postfaecher durch eine feste
+ * Antwort ersetzen (null = nicht ermittelbar).
+ *
+ * @param list<array{email:string,name:string}>|null $mailboxes
+ */
+function sharedMailboxDirectory(?array &$mailboxes, array &$calls = []): OrvantaDelegateDirectory
+{
+    $_SESSION = [];
+    $config = orvantaConfig(['exchange_host' => 'exchange.example.local'])['config'];
+
+    return new OrvantaDelegateDirectory($config, orvantaIdentitySources(), null, static function (array $source, string $username) use (&$mailboxes, &$calls): ?array {
+        $calls[] = ['source' => (int) ($source['id'] ?? -1), 'username' => $username];
+
+        return $mailboxes;
+    });
+}
+
+Runner::test('Orvanta: Postfächer mit Auto-Mapping werden aus dem AD übernommen', function (): void {
+    $mailboxes = [
+        ['email' => 'Team@Demo.Local', 'name' => 'Team Postfach'],
+        ['email' => 'fremd@example.local', 'name' => ''],
+        ['email' => 'team@demo.local', 'name' => 'Doppelt'],
+    ];
+    $calls = [];
+    $setup = sharedMailboxSetup([], sharedMailboxDirectory($mailboxes, $calls));
+    $service = $setup['service'];
+    $repository = $setup['repository'];
+    $user = ['username' => 'dreinelt', 'source_id' => 0, 'id' => 7];
+
+    // Manuell gepflegte Zuordnung mit eingeblendetem Kalender bleibt erhalten und wird zur Exchange-Zuordnung.
+    $manual = sharedMailboxRow($setup['pdo'], ['email' => 'team@demo.local', 'display_name' => 'Altes Team', 'active' => 0, 'calendar_visible' => 1]);
+    $other = sharedMailboxRow($setup['pdo'], ['email' => 'buero@demo.local', 'display_name' => 'Büro']);
+
+    $service->refresh($user, 'dreinelt@demo.local');
+
+    Assert::same([['source' => 0, 'username' => 'dreinelt']], $calls, 'Das AD wird mit der Quelle und dem Anmeldenamen des Benutzers abgefragt.');
+    $rows = $repository->forUser('dreinelt', false);
+    Assert::same(3, count($rows), 'Doppelte Adressen aus dem AD werden zusammengefasst.');
+    $byEmail = [];
+    foreach ($rows as $row) {
+        $byEmail[$row['email']] = $row;
+    }
+    Assert::same('exchange', $byEmail['team@demo.local']['source'], 'Ein im AD gelistetes Postfach gilt als Exchange-Zuordnung.');
+    Assert::same($manual, $byEmail['team@demo.local']['id'], 'Die vorhandene Zeile wird weitergeführt.');
+    Assert::true($byEmail['team@demo.local']['active'], 'Im AD gelistete Postfächer sind aktiv.');
+    Assert::true($byEmail['team@demo.local']['calendar_visible'], 'Die Kalender-Auswahl des Benutzers bleibt erhalten.');
+    Assert::same('Team Postfach', $byEmail['team@demo.local']['display_name'], 'Der Anzeigename kommt aus dem AD.');
+    Assert::true($byEmail['team@demo.local']['verified'], 'Neue Postfächer werden anschließend über EWS geprüft.');
+    Assert::same('exchange', $byEmail['fremd@example.local']['source']);
+    Assert::true($byEmail['fremd@example.local']['send_as'], 'Aus dem AD übernommene Postfächer stehen mit „Senden als“ bereit; Exchange prüft den Versand.');
+    Assert::false($byEmail['fremd@example.local']['verified'], 'Ein von Exchange abgelehntes Postfach bleibt ausgeblendet.');
+    Assert::same('admin', $byEmail['buero@demo.local']['source'], 'Manuell ergänzte Postfächer bleiben unberührt.');
+
+    $available = array_map(static fn (array $mailbox): string => $mailbox['email'], $service->available($user));
+    sort($available);
+    Assert::same(['buero@demo.local', 'team@demo.local'], $available, 'Im Ordnerbaum stehen alle bestätigten Postfächer.');
+
+    // Wird der Vollzugriff im ECP entzogen, verschwindet das Postfach; manuelle Zuordnungen bleiben.
+    $mailboxes = [['email' => 'fremd@example.local', 'name' => 'Fremd']];
+    $_SESSION = [];
+    $service->refresh($user, 'dreinelt@demo.local');
+    $emails = array_map(static fn (array $row): string => $row['email'], $repository->forUser('dreinelt', false));
+    sort($emails);
+    Assert::same(['buero@demo.local', 'fremd@example.local'], $emails, 'Nicht mehr gelistete Exchange-Zuordnungen werden entfernt.');
+    Assert::same('Fremd', $repository->find($byEmail['fremd@example.local']['id'])['display_name'], 'Der Anzeigename folgt dem AD.');
+    Assert::same(2, count($calls), 'Je Sitzung wird das AD höchstens einmal je Gültigkeitsdauer abgefragt.');
+
+    // Antwort aus der Sitzung: kein weiterer AD-Zugriff.
+    $service->refresh($user, 'dreinelt@demo.local');
+    Assert::same(2, count($calls));
+    Assert::same($other, $repository->find($other)['id']);
+});
+
+Runner::test('Orvanta: ohne AD-Antwort bleibt der Bestand der Postfächer unverändert', function (): void {
+    $mailboxes = null;
+    $setup = sharedMailboxSetup([], sharedMailboxDirectory($mailboxes));
+    $id = sharedMailboxVerifiedRow($setup['pdo'], ['email' => 'team@demo.local']);
+    $setup['pdo']->exec("UPDATE orvanta_shared_mailboxes SET source = 'exchange'");
+
+    Assert::false($setup['service']->syncFromDirectory(['username' => 'dreinelt', 'source_id' => 0, 'id' => 7]));
+    Assert::same('exchange', $setup['repository']->find($id)['source'], 'Ohne Ergebnis wird nichts entfernt.');
+
+    // Demomodus und Testbenutzer fragen das AD nicht.
+    $mailboxes = [];
+    $demo = sharedMailboxSetup([], new OrvantaDelegateDirectory(orvantaConfig()['config'], orvantaIdentitySources(), null, static fn (): array => []));
+    $demoId = sharedMailboxVerifiedRow($demo['pdo'], ['email' => 'team@demo.local']);
+    $demo['pdo']->exec("UPDATE orvanta_shared_mailboxes SET source = 'exchange'");
+    Assert::false($demo['service']->syncFromDirectory(['username' => 'dreinelt', 'source_id' => 0, 'id' => 7]));
+    Assert::same(1, count($demo['repository']->forUser('dreinelt')));
+
+    $_SESSION = [];
+    $fake = sharedMailboxDirectory($mailboxes);
+    Assert::same(null, $fake->mailboxes(['username' => 'dreinelt', 'fake' => true, 'id' => 0]), 'Testbenutzer ohne Telefonbucheintrag existieren im AD nicht.');
+    Assert::same(null, $fake->mailboxes(['username' => 'dreinelt', 'source_id' => 99]), 'Unbekannte Quelle: nicht ermittelbar.');
+    Assert::same(1, count($setup['repository']->find($id) !== null ? [1] : []));
+});
+
+Runner::test('Orvanta: automatisch eingebundenes Postfach aus dem LDAP-Eintrag', function (): void {
+    $entry = ['proxyaddresses' => ['count' => 2, 'smtp:alias@demo.local', 'SMTP:Team@Demo.Local'], 'displayname' => ['count' => 1, ' Team ']];
+    Assert::same(['email' => 'team@demo.local', 'name' => 'Team'], LdapClient::delegatedMailboxFromEntry($entry));
+    Assert::same(null, LdapClient::delegatedMailboxFromEntry(['proxyaddresses' => ['count' => 1, 'smtp:nur-alias@demo.local']]), 'Ohne primäre SMTP-Adresse kein Postfach.');
 });
 
 Runner::test('Orvanta: Prüfung wird erst nach Ablauf der Gültigkeit erneuert', function (): void {
@@ -487,6 +594,7 @@ Runner::test('Orvanta: Adminseite für zusätzliche Postfächer', function (): v
         'uid' => 'dreinelt',
         'email' => 'team@demo.local',
         'name' => 'Team Postfach',
+        'source' => 'exchange',
         'send_as' => true,
         'active' => false,
         'sort_order' => 2,
@@ -503,6 +611,8 @@ Runner::test('Orvanta: Adminseite für zusätzliche Postfächer', function (): v
     Assert::contains('Das Postfach konnte nicht geoeffnet werden.', $html);
     Assert::contains('ausgeblendet', $html, 'Der Kalenderzustand steht in der Übersicht.');
     Assert::contains('inaktiv', $html);
+    Assert::contains('Exchange (Auto-Mapping)', $html, 'Die Herkunft der Zuordnung steht in der Übersicht.');
+    Assert::contains('msExchDelegateListBL', $html, 'Die Seite erklärt die Übernahme aus dem AD.');
     Assert::contains('data-confirm="Zuordnung „team@demo.local“ für „dreinelt“ wirklich entfernen?"', $html);
     Assert::contains('href="/admin/office/orvanta/postfaecher?id=7#zuordnung"', $html);
 

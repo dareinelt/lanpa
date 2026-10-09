@@ -193,6 +193,9 @@ final class LdapClient implements LdapClientInterface
     /** SMTP-Adressen des Postfachs am Benutzerobjekt (primaer + Aliase). */
     private const MAILBOX_ADDRESS_ATTRIBUTE = 'proxyAddresses';
 
+    /** Rueckverweis am Benutzer auf Postfaecher mit Vollzugriff und Auto-Mapping. */
+    private const DELEGATE_BACKLINK_ATTRIBUTE = 'msExchDelegateListBL';
+
     /**
      * Primaere SMTP-Adresse des Exchange-Postfachs eines Benutzers aus dem AD
      * (proxyAddresses). Nur diese Adresse ist als Postfach-Kennung eindeutig:
@@ -224,6 +227,74 @@ final class LdapClient implements LdapClientInterface
         } finally {
             @ldap_unbind($connection);
         }
+    }
+
+    /**
+     * Postfaecher, auf die ein Benutzer per Vollzugriff mit Auto-Mapping
+     * berechtigt ist – genau die Postfaecher, die Outlook automatisch
+     * einbindet. Exchange traegt beim Erteilen von Vollzugriff (ECP,
+     * Add-MailboxPermission mit AutoMapping) den Benutzer in
+     * msExchDelegateListLink des Postfachs ein; das AD liefert am Benutzer den
+     * Rueckverweis msExchDelegateListBL (DNs der Postfaecher). Jedes Postfach
+     * wird nachgelesen (primaere SMTP-Adresse, Anzeigename).
+     *
+     * null = Benutzer nicht (eindeutig) gefunden; leere Liste = keine
+     * zusaetzlichen Postfaecher.
+     *
+     * @return list<array{email:string,name:string}>|null
+     */
+    public function delegatedMailboxes(string $samAccountName): ?array
+    {
+        $attribute = (string) ($this->config['attributes']['samaccount_name'] ?? 'sAMAccountName');
+        if ($samAccountName === '' || !Validator::isLdapAttribute($attribute)) {
+            return null;
+        }
+        $connection = $this->connect();
+        try {
+            $filter = '(&(objectClass=user)(' . $attribute . '=' . ldap_escape($samAccountName, '', LDAP_ESCAPE_FILTER) . '))';
+            $result = @ldap_search($connection, (string) $this->config['base_dn'], $filter, [self::DELEGATE_BACKLINK_ATTRIBUTE], 0, 2);
+            if ($result === false) {
+                throw new RuntimeException('LDAP-Suche fehlgeschlagen: ' . ldap_error($connection));
+            }
+            $entries = ldap_get_entries($connection, $result);
+            if (!is_array($entries) || ($entries['count'] ?? 0) !== 1) {
+                return null;
+            }
+            /** @var array<string,mixed> $user */
+            $user = $entries[0];
+            $mailboxes = [];
+            foreach (self::allValues($user, self::DELEGATE_BACKLINK_ATTRIBUTE) as $dn) {
+                $read = @ldap_read($connection, $dn, '(objectClass=*)', [self::MAILBOX_ADDRESS_ATTRIBUTE, 'displayName']);
+                $mailboxEntries = $read !== false ? ldap_get_entries($connection, $read) : false;
+                if (!is_array($mailboxEntries) || ($mailboxEntries['count'] ?? 0) !== 1) {
+                    continue;
+                }
+                /** @var array<string,mixed> $mailbox */
+                $mailbox = $mailboxEntries[0];
+                $mailboxes[] = self::delegatedMailboxFromEntry($mailbox);
+            }
+
+            return array_values(array_filter($mailboxes));
+        } finally {
+            @ldap_unbind($connection);
+        }
+    }
+
+    /**
+     * Postfach aus dem LDAP-Eintrag eines automatisch eingebundenen
+     * Postfachs; null ohne primaere SMTP-Adresse.
+     *
+     * @param array<string,mixed> $mailbox
+     * @return array{email:string,name:string}|null
+     */
+    public static function delegatedMailboxFromEntry(array $mailbox): ?array
+    {
+        $email = self::primarySmtpFromProxyAddresses($mailbox);
+        if ($email === null) {
+            return null;
+        }
+
+        return ['email' => strtolower($email), 'name' => trim((string) (self::firstValue($mailbox, 'displayName') ?? ''))];
     }
 
     /**

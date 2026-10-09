@@ -14,11 +14,17 @@ namespace App\Repositories;
  * erreichbar ist, stellt Orvanta ueber EWS fest und haelt das Ergebnis in
  * `verified_at`/`verify_error` fest.
  *
- * @phpstan-type SharedMailboxRow array{id:int,uid:string,email:string,display_name:string,send_as:bool,active:bool,sort_order:int,verified_at:string,verify_error:string,checked_at:string,calendar_visible:bool,verified:bool}
+ * @phpstan-type SharedMailboxRow array{id:int,uid:string,email:string,display_name:string,source:string,send_as:bool,active:bool,sort_order:int,verified_at:string,verify_error:string,checked_at:string,calendar_visible:bool,verified:bool}
  */
 final class OrvantaSharedMailboxRepository extends Repository
 {
-    private const COLUMNS = 'id, user_uid, email, display_name, send_as, active, sort_order, verified_at, verify_error, checked_at, calendar_visible';
+    /** Herkunft: im Adminbereich gepflegt. */
+    public const SOURCE_ADMIN = 'admin';
+
+    /** Herkunft: aus dem AD uebernommen (Auto-Mapping, msExchDelegateListBL). */
+    public const SOURCE_EXCHANGE = 'exchange';
+
+    private const COLUMNS = 'id, user_uid, email, display_name, source, send_as, active, sort_order, verified_at, verify_error, checked_at, calendar_visible';
 
     /**
      * Zuordnungen eines Benutzers; die Office-Kennung wird ohne Beachtung der
@@ -144,6 +150,77 @@ final class OrvantaSharedMailboxRepository extends Repository
     }
 
     /**
+     * Aus dem AD gelesene Postfaecher eines Benutzers abgleichen: fehlende
+     * anlegen, vorhandene (auch manuell angelegte) als Exchange-Zuordnung
+     * fuehren und aktivieren, nicht mehr gelistete Exchange-Zuordnungen
+     * entfernen. Pruefstand und Kalender-Auswahl vorhandener Zeilen bleiben
+     * erhalten; ein manuell gesetzter Anzeigename gilt weiter, solange das AD
+     * keinen liefert.
+     *
+     * @param list<array{email:string,name:string}> $mailboxes
+     * @return bool true, wenn sich der Bestand geaendert hat
+     */
+    public function syncDiscovered(string $uid, array $mailboxes): bool
+    {
+        $changed = false;
+        $seen = [];
+        $existing = [];
+        foreach ($this->forUser($uid, false) as $row) {
+            $existing[strtolower($row['email'])] = $row;
+        }
+        $position = 0;
+        foreach ($mailboxes as $mailbox) {
+            $email = strtolower(trim($mailbox['email']));
+            if ($email === '' || isset($seen[$email])) {
+                continue;
+            }
+            $seen[$email] = true;
+            $position++;
+            $name = mb_substr(trim($mailbox['name']), 0, 190);
+            $row = $existing[$email] ?? null;
+            if ($row === null) {
+                $this->save([
+                    'uid' => $uid,
+                    'email' => $email,
+                    'display_name' => $name,
+                    'send_as' => true,
+                    'active' => true,
+                    'sort_order' => $position,
+                ]);
+                $this->setSource($uid, $email, self::SOURCE_EXCHANGE);
+                $changed = true;
+                continue;
+            }
+            if ($name === '') {
+                $name = $row['display_name'];
+            }
+            if ($row['source'] !== self::SOURCE_EXCHANGE || !$row['active'] || $row['display_name'] !== $name) {
+                $statement = $this->pdo->prepare(
+                    'UPDATE orvanta_shared_mailboxes SET source = :source, active = 1, display_name = :display_name WHERE id = :id'
+                );
+                $statement->execute(['source' => self::SOURCE_EXCHANGE, 'display_name' => $name, 'id' => $row['id']]);
+                $changed = true;
+            }
+        }
+        foreach ($existing as $email => $row) {
+            if ($row['source'] === self::SOURCE_EXCHANGE && !isset($seen[$email])) {
+                $this->delete($row['id']);
+                $changed = true;
+            }
+        }
+
+        return $changed;
+    }
+
+    private function setSource(string $uid, string $email, string $source): void
+    {
+        $statement = $this->pdo->prepare(
+            'UPDATE orvanta_shared_mailboxes SET source = :source WHERE LOWER(user_uid) = LOWER(:uid) AND LOWER(email) = LOWER(:email)'
+        );
+        $statement->execute(['source' => $source, 'uid' => $uid, 'email' => $email]);
+    }
+
+    /**
      * @return SharedMailboxRow|null
      */
     public function findByKey(string $uid, string $email): ?array
@@ -236,6 +313,7 @@ final class OrvantaSharedMailboxRepository extends Repository
             'uid' => (string) $row['user_uid'],
             'email' => (string) $row['email'],
             'display_name' => (string) ($row['display_name'] ?? ''),
+            'source' => (string) ($row['source'] ?? self::SOURCE_ADMIN),
             'send_as' => (int) ($row['send_as'] ?? 1) === 1,
             'active' => (int) ($row['active'] ?? 1) === 1,
             'sort_order' => (int) ($row['sort_order'] ?? 1),

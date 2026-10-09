@@ -22,9 +22,11 @@ use Throwable;
  *   POST /admin/office/orvanta/postfaecher/pruefen     Erreichbarkeit über EWS prüfen
  *   POST /admin/office/orvanta/postfaecher/loeschen    Zuordnung entfernen
  *
- * Über EWS lässt sich nicht ermitteln, wer auf welche Postfächer berechtigt
- * ist; die Liste wird deshalb hier gepflegt. Orvanta prüft jede Zuordnung als
- * der Benutzer (Exchange bestätigt dessen Vollzugriff) und blendet nicht
+ * Die Berechtigungen werden im Exchange (ECP) gepflegt; Orvanta übernimmt die
+ * per Auto-Mapping eingebundenen Postfächer bei der Anmeldung aus dem AD
+ * (OrvantaDelegateDirectory). Hier lassen sich Postfächer ergänzen, die ohne
+ * Auto-Mapping berechtigt wurden. Orvanta prüft jede Zuordnung als der
+ * Benutzer (Exchange bestätigt dessen Vollzugriff) und blendet nicht
  * erreichbare Postfächer aus. „Senden als“ prüft Exchange beim Versand. Archiviert
  * wird weiterhin ausschließlich das primäre Benutzerpostfach.
  */

@@ -595,6 +595,19 @@ final class Container
             static fn (): \App\Services\Orvanta\OrvantaSharedMailboxService => new \App\Services\Orvanta\OrvantaSharedMailboxService(
                 self::orvantaSharedMailboxRepository(),
                 self::orvantaExchange(),
+                app_logger(),
+                self::orvantaDelegateDirectory()
+            )
+        );
+    }
+
+    public static function orvantaDelegateDirectory(): \App\Services\Orvanta\OrvantaDelegateDirectory
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaDelegateDirectory::class,
+            static fn (): \App\Services\Orvanta\OrvantaDelegateDirectory => new \App\Services\Orvanta\OrvantaDelegateDirectory(
+                self::orvantaConfig(),
+                self::identitySources(),
                 app_logger()
             )
         );

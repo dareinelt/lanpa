@@ -12,13 +12,18 @@ use Throwable;
  * Zusaetzlich berechtigte Postfaecher eines Benutzers (Vollzugriff /
  * "Senden als").
  *
- * Welche Postfaecher ein Benutzer ausser seinem eigenen nutzen darf, ist auf
- * dem Exchange-Server in den Postfachberechtigungen hinterlegt und ueber EWS
- * nicht abfragbar. Der Adminbereich pflegt die Zuordnung daher je Benutzer;
- * Orvanta prueft sie ueber EWS als der Benutzer (Impersonation seines
- * Postfachs, Zugriff auf das zusaetzliche Postfach) und zeigt nur Postfaecher
- * an, fuer die Exchange dem Benutzer Vollzugriff gewaehrt. "Senden als"
- * erzwingt Exchange beim Versand: Orvanta sendet immer als der Benutzer.
+ * Welche Postfaecher ein Benutzer ausser seinem eigenen nutzen darf, pflegt
+ * der Exchange-Administrator im ECP (Postfachberechtigung Vollzugriff). Ueber
+ * EWS ist das nicht abfragbar, wohl aber im AD: Exchange traegt den Benutzer
+ * mit Auto-Mapping am Postfach ein, der Rueckverweis msExchDelegateListBL am
+ * Benutzer nennt seine Postfaecher – derselbe Weg, ueber den Outlook sie
+ * automatisch einbindet. Orvanta liest ihn bei der Anmeldung
+ * (OrvantaDelegateDirectory) und gleicht die Zuordnungen ab (source
+ * 'exchange'); der Adminbereich kann einzelne Postfaecher ergaenzen (source
+ * 'admin', z. B. Vollzugriff ohne Auto-Mapping). Jede Zuordnung prueft Orvanta
+ * ueber EWS als der Benutzer (Impersonation seines Postfachs, Zugriff auf das
+ * zusaetzliche Postfach) und zeigt nur Postfaecher an, fuer die Exchange dem
+ * Benutzer Vollzugriff gewaehrt. "Senden als" erzwingt Exchange beim Versand.
  *
  * Wichtig: Archiviert wird ausschliesslich das primaere Benutzerpostfach.
  * Zusaetzliche Postfaecher laufen nicht in die Archivierung ein.
@@ -34,7 +39,8 @@ final class OrvantaSharedMailboxService
     public function __construct(
         private readonly OrvantaSharedMailboxRepository $repository,
         private readonly OrvantaExchangeService $exchange,
-        private readonly ?Logger $logger = null
+        private readonly ?Logger $logger = null,
+        private readonly ?OrvantaDelegateDirectory $directory = null
     ) {
     }
 
@@ -158,7 +164,7 @@ final class OrvantaSharedMailboxService
     /**
      * Zuordnungen fuer den Adminbereich; ohne Kennung alle Benutzer.
      *
-     * @return list<array{id:int,uid:string,email:string,name:string,send_as:bool,active:bool,sort_order:int,calendar_visible:bool,verified:bool,error:string,checked_at:string}>
+     * @return list<array{id:int,uid:string,email:string,name:string,source:string,send_as:bool,active:bool,sort_order:int,calendar_visible:bool,verified:bool,error:string,checked_at:string}>
      */
     public function forAdmin(string $uid): array
     {
@@ -169,6 +175,7 @@ final class OrvantaSharedMailboxService
                 'uid' => $row['uid'],
                 'email' => $row['email'],
                 'name' => $row['display_name'],
+                'source' => $row['source'],
                 'send_as' => $row['send_as'],
                 'active' => $row['active'],
                 'sort_order' => $row['sort_order'],
@@ -280,19 +287,57 @@ final class OrvantaSharedMailboxService
     }
 
     /**
-     * Alle faelligen Zuordnungen eines Benutzers pruefen (hoechstens eine
-     * EWS-Anfrage je Postfach und Gueltigkeitsdauer).
+     * Zuordnungen eines Benutzers mit dem AD abgleichen (Auto-Mapping) und
+     * alle faelligen Zuordnungen pruefen (hoechstens eine EWS-Anfrage je
+     * Postfach und Gueltigkeitsdauer).
      *
      * @param array<string,mixed> $ssoUser
      * @param string $userAddress Postfachadresse des Benutzers (Impersonation)
      */
     public function refresh(array $ssoUser, string $userAddress = ''): void
     {
+        $this->syncFromDirectory($ssoUser);
         foreach ($this->repository->forUser($this->uid($ssoUser)) as $row) {
             if ($this->isStale($row)) {
                 $this->verify($row['id'], false, $userAddress);
             }
         }
+    }
+
+    /**
+     * Im AD automatisch eingebundene Postfaecher (msExchDelegateListBL) in die
+     * Zuordnungen uebernehmen; neue Postfaecher gelten als ungeprueft und
+     * werden anschliessend in refresh() ueber EWS bestaetigt. Ohne Ergebnis
+     * aus dem AD bleibt der Bestand unveraendert.
+     *
+     * @param array<string,mixed> $ssoUser
+     * @return bool true, wenn sich der Bestand geaendert hat
+     */
+    public function syncFromDirectory(array $ssoUser): bool
+    {
+        $uid = $this->uid($ssoUser);
+        if ($uid === '' || $this->directory === null) {
+            return false;
+        }
+        $mailboxes = $this->directory->mailboxes($ssoUser);
+        if ($mailboxes === null) {
+            return false;
+        }
+        try {
+            $changed = $this->repository->syncDiscovered($uid, $mailboxes);
+        } catch (Throwable $exception) {
+            $this->logger?->warning('Orvanta: Abgleich der automatisch eingebundenen Postfaecher fehlgeschlagen.', ['user' => $uid, 'error' => $exception->getMessage()]);
+
+            return false;
+        }
+        if ($changed) {
+            $this->logger?->info('Orvanta: automatisch eingebundene Postfaecher aus dem AD uebernommen.', [
+                'user' => $uid,
+                'mailboxes' => array_map(static fn (array $mailbox): string => $mailbox['email'], $mailboxes),
+            ]);
+        }
+
+        return $changed;
     }
 
     /**

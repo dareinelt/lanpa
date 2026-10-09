@@ -72,7 +72,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | Dienstkonto | `exchange_service_user` / `exchange_service_password` | Konto mit `ApplicationImpersonation`; Kennwort mit `SecretBox` verschlüsselt |
 | Element-ID | `id` + `change_key` | EWS-`ItemId` (Base64, opak); `change_key` wird nur bei `updateEvent()` mitgesendet |
 | Ordnerschlüssel | `folderKey()` (JS), `EwsXml::folderId()` | Systemordner als Kleinbuchstaben-Name (`inbox`, `drafts`, …), eigene Ordner als `FolderId` |
-| Zusätzliches Postfach | `orvanta_shared_mailboxes`, `OrvantaSharedMailboxService` | Per „Vollzugriff“ berechtigtes Postfach, das dem Benutzer im Adminbereich zugeordnet und über EWS geprüft wird (Abschnitt 22); **nicht** Teil der Archivierung |
+| Zusätzliches Postfach | `orvanta_shared_mailboxes`, `OrvantaSharedMailboxService`, `OrvantaDelegateDirectory` | Per „Vollzugriff“ berechtigtes Postfach, das aus dem Auto-Mapping des AD (`msExchDelegateListBL`) übernommen oder im Adminbereich ergänzt und über EWS geprüft wird (Abschnitt 22); **nicht** Teil der Archivierung |
 | Postfach-Präfix | `OrvantaApiController::MAILBOX_PREFIX` = `smb:` | Adressierung der Elemente eines zusätzlichen Postfachs: `smb:<id>\|<Original-ID>`; die Original-ID geht unverändert an EWS |
 | Zwischenspeicher | `orvanta_cache_items`, `OrvantaAttachmentService::cache()` | Kopie geöffneter Anhänge im Nextcloud-Ordner `<cache_folder>/` mit Quota `cache_quota_mb` |
 | Erinnerung | `orvanta_reminders`-Zeile | Lokaler Zustand einer Exchange-Terminerinnerung (`pending` → `delivered` → `dismissed`/`snoozed`) |
@@ -103,8 +103,9 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Repositories/OrvantaSignatureRepository.php` | `all(activeOnly)`, `find()`, `save()`, `delete()`; `ad_groups` als JSON-Liste → `groups` |
 | `app/Services/Orvanta/OrvantaOofService.php` | Abwesenheitsnotizen (Abschnitt 21): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)`, `settings(uid, template)`, `validateSettings()`, `apply(uid, mailbox, template, input, exchange, ssoUser)`, `state(mailbox, exchange, settings)`, `status(uid, mailbox, exchange, ssoUser)`, `text()`, `message()`, `html()`, statisch `dateStart()/dateEnd()`; Konstanten `AUDIENCES`, `SCHEDULE_MODES`, `MAX_FIXED_TEXT` (4000), `MAX_DYNAMIC_TEXT` (2000) |
 | `app/Repositories/OrvantaOofRepository.php` | Vorlagen (`all(activeOnly)`, `find()`, `save()`, `delete()`) und Benutzereinstellungen (`settings(uid)`, `saveSettings(uid, …)`); `ad_groups` als JSON-Liste → `groups` |
-| `app/Services/Orvanta/OrvantaSharedMailboxService.php` | Zusätzliche Postfächer (Abschnitt 22): `available(ssoUser)` (aktive, erreichbare Zuordnungen in Reihenfolge), `calendarSelection(ssoUser)`, `setCalendarVisible(ssoUser, id, visible)`, `resolve(ssoUser, requested)` (Adressierung `smb:<id>\|…`), `sender(ssoUser, primary, address)` (Absenderprüfung), `forAdmin(uid)`, `searchUsers(term)`, `save(uid, email, displayName, options)`, `delete(id)`, `verify(id, force)`, `refresh(ssoUser)`, `uid(ssoUser)`; `VERIFY_TTL` (43200 s = 12 h) |
-| `app/Repositories/OrvantaSharedMailboxRepository.php` | Tabelle `orvanta_shared_mailboxes`: `forUser(uid, activeOnly)`, `all(uid)`, `find(id)`, `findByKey(uid, email)`, `searchUsers(term, limit)` (Telefonliste LEFT JOIN `identity_sources`, `LIKE … ESCAPE '!'`), `save(data)` (Upsert auf `user_uid` + `email`), `delete(id)`, `markVerified(id, error)`, `setCalendarVisible(id, visible)` |
+| `app/Services/Orvanta/OrvantaSharedMailboxService.php` | Zusätzliche Postfächer (Abschnitt 22): `available(ssoUser)` (aktive, erreichbare Zuordnungen in Reihenfolge), `calendarSelection(ssoUser)`, `setCalendarVisible(ssoUser, id, visible)`, `resolve(ssoUser, requested)` (Adressierung `smb:<id>\|…`), `sender(ssoUser, primary, address)` (Absenderprüfung), `forAdmin(uid)`, `searchUsers(term)`, `save(uid, email, displayName, options)`, `delete(id)`, `verify(id, force, userAddress)`, `refresh(ssoUser, userAddress)` (erst `syncFromDirectory(ssoUser)`, dann fällige Prüfungen), `uid(ssoUser)`; `VERIFY_TTL` (43200 s = 12 h) |
+| `app/Services/Orvanta/OrvantaDelegateDirectory.php` | Auto-Mapping aus dem AD (Abschnitt 22.1): `mailboxes(ssoUser)` → `list<{email,name}>\|null`, Sitzungs-Cache `TTL` 900 s; Konstruktor mit `OrvantaConfigService`, `IdentitySourceService`, Logger und optionalem `Closure $lookup` (Tests) |
+| `app/Repositories/OrvantaSharedMailboxRepository.php` | Tabelle `orvanta_shared_mailboxes`: `forUser(uid, activeOnly)`, `all(uid)`, `find(id)`, `findByKey(uid, email)`, `searchUsers(term, limit)` (Telefonliste LEFT JOIN `identity_sources`, `LIKE … ESCAPE '!'`), `save(data)` (Upsert auf `user_uid` + `email`), `syncDiscovered(uid, mailboxes)` (Abgleich mit dem AD, `SOURCE_EXCHANGE`/`SOURCE_ADMIN`), `delete(id)`, `markVerified(id, error)`, `setCalendarVisible(id, visible)` |
 | `app/Controllers/Admin/OrvantaSharedMailboxController.php` | `index()` (GET `suche`, `id`, `benutzer`; ohne Migration 046 `tablesMissing`), `save()`, `verify()`, `delete()`; `BASE = '/admin/office/orvanta/postfaecher'` |
 | `app/Controllers/Admin/OrvantaFlowController.php` | Nachrichtenfluss-Dashboard (Abschnitt 23): `index()`, `data()` (JSON ohne Caching), `checkSources()` (CSRF zuerst, höchstens `MAX_CHECK_SOURCES` = 16 Quellen je Durchgang); `BASE = '/admin/office/orvanta/nachrichtenfluss'` |
 | `app/Services/Orvanta/OrvantaFlowService.php` | Nachrichtenfluss (Abschnitt 23): `overview(withHistory)` = `evaluate(collect())`; `collect()` liest Quellen, Proxy, Exchange, Tiers, Zwischenspeicher und KI, `evaluate()` ist rein; Grenzen `CACHE_WARN_PERCENT` (75), `CACHE_CRIT_PERCENT` (90), `AI_PERIOD_DAYS` (30), `AI_TOP_USERS`/`CACHE_TOP_USERS` (10), `STATE_LABELS` |
@@ -154,6 +155,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `database/migrations/045_orvanta_oof.sql` | Tabellen `orvanta_oof_templates` und `orvanta_oof_settings` samt erster Vorlage (Abschnitt 21) |
 | `database/migrations/046_orvanta_shared_mailboxes.sql` | Tabelle `orvanta_shared_mailboxes` (Abschnitt 22) |
 | `database/migrations/047_orvanta_shared_mailboxes_reverify.sql` | Setzt `checked_at` aller Zuordnungen zurück: Neuprüfung mit den Rechten des Benutzers (Abschnitt 22.1) |
+| `database/migrations/049_orvanta_shared_mailboxes_source.sql` | Spalte `source` (`admin`/`exchange`): Herkunft der Zuordnung, Abgleich mit dem Auto-Mapping des AD (Abschnitt 22.1) |
 | `database/migrations/048_orvanta_flow_presence.sql` | Tabellen `orvanta_activity`, `orvanta_user_samples` und `mail_proxy_source_state` (Nachrichtenfluss, Abschnitt 23.1) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
@@ -309,7 +311,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_exchange_sessions` (Migrationen 043, 044) | `session_hash` = `sha1('orvanta-dag:' . affinityKey)` (Benutzer + Client, Abschnitt 20.3), `user_uid`, `client_ip` (≤ 45, IPv4/IPv6), `client_host` (≤ 190, Reverse-DNS oder leer), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
 | `orvanta_oof_templates` (Migration 045) | `name` (≤ 120), `fixed_text` (TEXT, ≤ 4000 Zeichen), `example_text` (TEXT, ≤ 2000 Zeichen), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Vorlagen der Abwesenheitsnotiz; Index (`active`, `sort_order`). Zuordnung wie bei den Signaturen: erste aktive Vorlage nach `sort_order`, deren Gruppe in den SSO-Gruppen vorkommt – ohne Treffer gibt es keine Abwesenheitsnotiz. Migration legt die Vorlage „Allgemeine Abwesenheit“ an. Abschnitt 21 |
 | `orvanta_oof_settings` (Migration 045) | `user_uid` (Primary Key), `template_id` (NULL, `ON DELETE SET NULL`), `dynamic_text` (≤ 2000), `external_audience` ∈ `none\|all` (Standard `none`), `schedule_mode` ∈ `range\|until_off` (Standard `until_off`), `start_date`, `end_date` (DATE, NULL), `active` | Benutzereinstellungen; die maßgebliche Einstellung liegt auf dem Exchange-Server, die Zeile hält den letzten Stand für Banner und Dialog. Abschnitt 21 |
-| `orvanta_shared_mailboxes` (Migration 046) | `user_uid` (≤ 190), `email` (≤ 190), `display_name` (≤ 190), `send_as`, `active`, `verified_at` (DATETIME, NULL), `verify_error` (≤ 500), `checked_at` (DATETIME, NULL), `calendar_visible`, `sort_order` (1–999), `created_at`, `updated_at` | Unique (`user_uid`, `email`); Index (`user_uid`, `active`, `sort_order`). Zusätzlich per Vollzugriff berechtigte Postfächer, Abschnitt 22; Migration 047 setzt `checked_at` zurück (Neuprüfung als Benutzer). Collation `utf8mb4_unicode_ci`, Adressen werden also ohne Beachtung der Groß-/Kleinschreibung verglichen |
+| `orvanta_shared_mailboxes` (Migrationen 046, 049) | `user_uid` (≤ 190), `email` (≤ 190), `display_name` (≤ 190), `source` (≤ 20, `admin`/`exchange`, Migration 049), `send_as`, `active`, `verified_at` (DATETIME, NULL), `verify_error` (≤ 500), `checked_at` (DATETIME, NULL), `calendar_visible`, `sort_order` (1–999), `created_at`, `updated_at` | Unique (`user_uid`, `email`); Index (`user_uid`, `active`, `sort_order`). Zusätzlich per Vollzugriff berechtigte Postfächer, Abschnitt 22; Migration 047 setzt `checked_at` zurück (Neuprüfung als Benutzer). Collation `utf8mb4_unicode_ci`, Adressen werden also ohne Beachtung der Groß-/Kleinschreibung verglichen |
 | `orvanta_activity` (Migration 048) | `user_uid` (≤ 190, Primary Key), `backend` ∈ `exchange\|proxy`, `first_seen_at`, `last_seen_at`, `requests` | Aktive Nutzer der letzten Minuten, **ohne Inhalte**; `last_seen_at` entscheidet über `ACTIVE_WINDOW` (300 s), `purge()` räumt älter als `ACTIVITY_TTL` (86400 s). Abschnitt 23.2 |
 | `orvanta_user_samples` (Migration 048) | `sampled_at` (DATETIME, unique), `active_users`, `exchange_users`, `proxy_users`, `ai_users` | Genau eine Zeile je Zeitraster (`SAMPLE_INTERVAL` 300 s); Grundlage der Kennzahlen und des Verlaufs, `purge()` räumt älter als `HISTORY_DAYS` (400 Tage). Abschnitt 23.2 |
 | `mail_proxy_source_state` (Migration 048) | `identity_source_id` (INT, Primary Key, 0 = Hauptquelle), `last_success_at` (DATETIME, NULL), `last_error_at` (DATETIME, NULL), `last_error` (≤ 500), `failures`, `checked_at` (DATETIME, NULL) | Zustand je Identitätsquelle im Mailpfad; **ohne Fremdschlüssel**, weil Quelle 0 die Hauptquelle aus `orvanta_settings` ist. Geschrieben von `ProxyMailBackend` und `MailProxyService::testSources()`, gelesen vom Nachrichtenfluss-Dashboard. Abschnitt 23.1 |
@@ -2029,13 +2031,18 @@ aus `OrvantaServiceTest.php`. Für den Demozweig (`isDemo()` verlangt
 
 Benutzer, die auf dem Exchange-Server **Vollzugriff** auf weitere Postfächer
 haben, sehen diese in Outlook als zusätzliche Knoten im Ordnerbaum. Orvanta
-bildet das nach: Der Adminbereich ordnet einem Benutzer Postfachadressen zu,
+bildet das nach: Die Postfächer kommen wie bei Outlook aus dem **Auto-Mapping**
+des Active Directory (`msExchDelegateListBL` am Benutzer,
+`OrvantaDelegateDirectory`), der Adminbereich kann Postfächer ergänzen,
 Orvanta prüft mit den Rechten des Benutzers über EWS, ob Exchange ihm
 Vollzugriff gewährt, und die App bedient die
 Postfächer per Impersonation (`$access['impersonate']` wird je Anfrage
 umgesetzt).
 
 ```
+AD:    OrvantaDelegateDirectory::mailboxes(ssoUser)   (Sitzungs-Cache 900 s; null = nicht ermittelbar)
+          └─ LdapClient::delegatedMailboxes(username)  (msExchDelegateListBL → je DN proxyAddresses/displayName)
+
 Admin: /admin/office/orvanta/postfaecher[/speichern|/pruefen|/loeschen]
           └─ Admin\OrvantaSharedMailboxController ─► OrvantaSharedMailboxService
                 ├─ OrvantaSharedMailboxRepository (orvanta_shared_mailboxes)
@@ -2044,7 +2051,9 @@ Admin: /admin/office/orvanta/postfaecher[/speichern|/pruefen|/loeschen]
 App:   OrvantaController::authorize()
           ├─ primary    = eigenes Postfach (OrvantaMailboxResolver, AD)
           ├─ mailboxes  = OrvantaSharedMailboxService::available(ssoUser)
-          └─ index()    → OrvantaSharedMailboxService::refresh(ssoUser, primary)  (nur faellige Pruefungen)
+          └─ index()    → OrvantaSharedMailboxService::refresh(ssoUser, primary)
+                            ├─ syncFromDirectory(ssoUser) → Repository::syncDiscovered(uid, mailboxes)
+                            └─ verify(...) nur faellige Pruefungen
 
 API:   OrvantaApiController::withMailbox(access, request)
           ├─ requestedMailbox(request)  aus `postfach`/`mailbox`, Ordner- oder Elementkennung
@@ -2052,10 +2061,36 @@ API:   OrvantaApiController::withMailbox(access, request)
           └─ stripMailbox(access, id)     vor jedem EWS-Aufruf
 ```
 
-### 22.1 Entdeckung: Zuordnung im Adminbereich, Prüfung über EWS
+### 22.1 Entdeckung: Auto-Mapping aus dem AD, Ergänzung im Adminbereich, Prüfung über EWS
 
-- EWS kennt keine Abfrage der Postfachberechtigungen. Die Zuordnung wird
-  deshalb **gepflegt** (`orvanta_shared_mailboxes`) und anschließend
+- EWS kennt keine Abfrage der Postfachberechtigungen, das AD schon: Beim
+  Erteilen von Vollzugriff mit Auto-Mapping (Standard im ECP und bei
+  `Add-MailboxPermission`) schreibt Exchange den Benutzer in
+  `msExchDelegateListLink` des Postfachs; der Rückverweis
+  `msExchDelegateListBL` am Benutzer nennt alle seine Postfächer.
+  `LdapClient::delegatedMailboxes(samAccountName)` sucht den Benutzer in der
+  Identitätsquelle (Bind-Konto der AD-Synchronisation), liest je DN
+  `proxyAddresses` (primäre `SMTP:`-Adresse) und `displayName` nach und liefert
+  `list<{email,name}>`; `null` = Benutzer nicht eindeutig gefunden.
+- `OrvantaDelegateDirectory::mailboxes(ssoUser)` kapselt den Zugriff: `null`
+  im Demo-Modus, ohne LDAP-Erweiterung, bei Testbenutzern ohne
+  Telefonbucheintrag, unbekannter `source_id` oder AD-Fehler (Warnung im
+  Protokoll); das Ergebnis liegt 900 s in der PHP-Sitzung
+  (`orvanta_delegate_mailboxes`). Für Tests ersetzt ein `Closure`
+  (`$lookup(config, username)`) den `LdapClient`.
+- `OrvantaSharedMailboxService::syncFromDirectory(ssoUser)` (aus `refresh()`)
+  übergibt die Liste an `OrvantaSharedMailboxRepository::syncDiscovered(uid,
+  mailboxes)`: neue Adressen werden angelegt (`source = 'exchange'`,
+  `send_as = 1`, `active = 1`, ungeprüft), vorhandene Zeilen – auch manuell
+  angelegte – werden zur Exchange-Zuordnung, aktiviert und mit dem AD-Anzeigenamen
+  versehen (leerer AD-Name behält den bisherigen); Prüfstand und
+  `calendar_visible` bleiben erhalten. Exchange-Zuordnungen, die das AD nicht
+  mehr nennt, werden gelöscht; manuelle (`source = 'admin'`) bleiben. Bei
+  `null` aus dem AD ändert sich nichts. Doppelte Adressen werden
+  zusammengefasst, die Reihenfolge folgt dem AD.
+- Die Zuordnung kann zusätzlich im Adminbereich **gepflegt** werden
+  (`orvanta_shared_mailboxes`, `source = 'admin'`, z. B. Vollzugriff mit
+  `-AutoMapping $false`). Jede Zuordnung wird anschließend
   **geprüft**: `probeMailbox($email, $user)` gibt sich als der Benutzer aus
   (`ExchangeImpersonation` mit `$user`) und ruft `GetFolder` auf
   `DistinguishedFolderId msgfolderroot` mit `<t:Mailbox>` des weiteren

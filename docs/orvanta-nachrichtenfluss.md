@@ -47,6 +47,8 @@ Die Seite besteht aus vier Blöcken:
 | **Flussgrafik** | Zwei Spuren (Proxy-Pfad, Exchange-Pfad) mit den Knoten und Kanten |
 | **Speicher- und KI-Block** | Storagetiers, Orvanta-Zwischenspeicher, KI-Endpunkt |
 
+Abbildungen der fertigen Seite: Abschnitt [13. Abbildungen](#13-abbildungen).
+
 Die Flussgrafik ist **kein Canvas und kein fremdes Diagramm**, sondern
 serverseitig gerendertes HTML/CSS: Knoten sind `<article>`, Kanten sind
 CSS-gezeichnete Verbindungen. Damit bleibt die Seite ohne JavaScript
@@ -415,3 +417,50 @@ Jeder Schritt ist ein eigener Commit mit deutscher Betreffzeile
   und 24 Stunden Aktivität; das Räumen läuft im Archivierungs-Worker.
 - **Keine neuen Abhängigkeiten:** Wolken und Grafik sind HTML/CSS/SVG aus
   eigenen Mitteln, ohne Composer, npm oder CDN.
+
+## 13. Abbildungen
+
+Alle Aufnahmen stammen aus dem Docker-Demobetrieb (`docker compose up` mit
+`app`, `db` und `mail-proxy`) und wurden im hellen Design, im dunklen Design
+sowie in zwei Störungslagen erstellt.
+
+### 13.1 Regelbetrieb (helles Design)
+
+![Orvanta – Nachrichtenfluss im Regelbetrieb](screenshots/113-admin-orvanta-nachrichtenfluss.png)
+
+Oben die Gesamtstatus-Ampel mit acht Kennzahlen, darunter beide Spuren der
+Flussgrafik (Identitätsquellen → Proxy → Postfächer, Exchange-Hosts →
+verbundene Clients), anschließend Storagetiers, Orvanta-Zwischenspeicher und
+KI-Endpunkt. Alle zwölf Knoten stehen auf „In Ordnung“.
+
+### 13.2 Dunkles Design
+
+![Orvanta – Nachrichtenfluss im dunklen Design](screenshots/114-admin-orvanta-nachrichtenfluss-dunkel.png)
+
+Die Seite nutzt ausschließlich die Designvariablen des Themas; Knoten, Kanten,
+Wolkenstufen und die Verlaufsgrafik passen sich ohne eigene Regeln an.
+
+### 13.3 Proxy-Störung mit ausgegrauten Quellen
+
+![Proxy ausgefallen: rote Ausrufezeichen an Proxy und Identitätsquellen, deren Postfachwolken ausgegraut](screenshots/115-admin-orvanta-nachrichtenfluss-stoerung.png)
+
+Der Container `mail-proxy` wurde gestoppt. Der Proxy trägt ein rotes
+Ausrufezeichen, ebenso jede Identitätsquelle; deren Postfachwolken sind
+ausgegraut und tragen den Hinweis „Werte ausgegraut (Proxy nicht erreichbar)“.
+Die Exchange-Spur bleibt unverändert, weil sie nicht über den Proxy läuft.
+
+### 13.4 Zwischenspeicher über der kritischen Schwelle
+
+![Orvanta-Zwischenspeicher bei 93 Prozent Belegung: roter Rahmen, roter Balken, Hinweis zum Leeren](screenshots/116-admin-orvanta-nachrichtenfluss-zwischenspeicher.png)
+
+Bei 93 % Belegung (kritische Schwelle 90 %, Warnschwelle 75 %) färbt sich der
+Knoten rot und fordert zum Leeren des Zwischenspeichers auf.
+
+### 13.5 Verlaufsgrafik der Nutzerzahlen
+
+![Aufgeklappte Verlaufsgrafik: fünf Zeiträume 365/180/90/30/14 Tage überlagert, darunter Legende und Wertetabelle](screenshots/117-admin-orvanta-nachrichtenfluss-verlauf.png)
+
+Ein Klick auf „Verlauf öffnen“ in der Nutzerkennzahl klappt die
+retinafreundliche SVG-Grafik auf: fünf Zeiträume als überlagerte Linienzüge,
+darunter die Legende mit Höchstwert und Durchschnitt sowie die Wertetabelle des
+kürzesten Zeitraums.

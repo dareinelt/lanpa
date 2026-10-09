@@ -673,6 +673,8 @@ wie eine Nachricht durch die Umgebung läuft und wie es den beteiligten
 Elementen gerade geht. Die Seite ist rein lesend; sie ändert keine
 Einstellung und sendet nichts.
 
+![Orvanta – Nachrichtenfluss im Regelbetrieb](screenshots/113-admin-orvanta-nachrichtenfluss.png)
+
 **Aufbau (von links nach rechts):**
 
 - **Spur „Identitätsquellen und Proxy“** – jede Identitätsquelle als Wolke mit
@@ -693,6 +695,8 @@ Einstellung und sendet nichts.
   Daten bleiben sichtbar. Die Grafik ist für Retina-Displays als SVG gezeichnet
   und funktioniert in hellem und dunklem Design.
 
+![Aufgeklappte Verlaufsgrafik mit den Zeiträumen 365/180/90/30/14 Tage](screenshots/117-admin-orvanta-nachrichtenfluss-verlauf.png)
+
 **Störungen** werden sofort sichtbar: Ist der Proxy ausgefallen, trägt er ein
 rotes Ausrufezeichen, und die Identitätsquellen samt Postfächern werden
 ausgegraut. Ist eine einzelne Identitätsquelle gestört (Netzwerk oder
@@ -701,6 +705,8 @@ ausgegraut. Gestörte Exchange-Hosts grauen ihre Clientwolke aus, ausgefallene
 oder deaktivierte Tiers werden ausgegraut. Ein Hinweis am Knoten nennt immer
 den Grund („Werte ausgegraut (Proxy nicht erreichbar)“). Eine Störungsliste
 oben fasst alle Befunde zusammen.
+
+![Proxy ausgefallen: rote Ausrufezeichen an Proxy und Identitätsquellen, Postfachwolken ausgegraut](screenshots/115-admin-orvanta-nachrichtenfluss-stoerung.png)
 
 **Live-Aktualisierung:** Die Seite frischt Kennzahlen, Knotenzustände, Wolken
 und die Störungsliste selbstständig in einstellbarem Abstand nach (Ableitung

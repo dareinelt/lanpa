@@ -55,11 +55,15 @@ final class OrvantaExchangePool
     /**
      * @param Closure():string $sessionKey Kennung der aktuellen Orvanta-Sitzung
      *                                     ('' ausserhalb einer HTTP-Sitzung, z. B. CLI)
+     * @param Closure():array{ip:string,host:string}|null $client IP-Adresse und
+     *                                     Hostname des Clients des laufenden Aufrufs
+     *                                     (null ausserhalb einer HTTP-Anfrage)
      */
     public function __construct(
         private readonly OrvantaExchangeHostRepository $repository,
         private readonly OrvantaConfigService $config,
-        private readonly Closure $sessionKey
+        private readonly Closure $sessionKey,
+        private readonly ?Closure $client = null
     ) {
     }
 
@@ -268,6 +272,8 @@ final class OrvantaExchangePool
             'sessions' => array_map(static fn (array $row): array => [
                 'user' => (string) $row['user_uid'],
                 'host' => (string) $row['host'],
+                'client_ip' => (string) ($row['client_ip'] ?? ''),
+                'client_host' => (string) ($row['client_host'] ?? ''),
                 'failovers' => (int) $row['failovers'],
                 'requests' => (int) $row['requests'],
                 'started_label' => self::timeLabel((string) $row['started_at']),
@@ -499,9 +505,43 @@ final class OrvantaExchangePool
         } catch (\PDOException) {
             return $host;
         }
+        $this->storeClient($hash);
         $this->touchHost($host);
 
         return $host;
+    }
+
+    /**
+     * Vermerkt IP-Adresse und Hostname des Clients an der Sitzungszeile. Sie
+     * beschreiben den Beginn der Sitzung und bleiben bei einer Umleitung
+     * unveraendert. Ohne Client (CLI) oder ohne Migration 044 bleibt die
+     * Zeile ohne Clientangaben.
+     */
+    private function storeClient(string $hash): void
+    {
+        $client = $this->clientContext();
+        if ($client['ip'] === '' && $client['host'] === '') {
+            return;
+        }
+        try {
+            $this->repository->storeSessionClient($hash, $client['ip'], $client['host']);
+        } catch (\PDOException) {
+            // Clientspalten fehlen (Migration 044 ausstehend): die Zuordnung
+            // der Sitzung gilt unveraendert weiter.
+        }
+    }
+
+    /**
+     * @return array{ip:string,host:string}
+     */
+    private function clientContext(): array
+    {
+        if ($this->client === null) {
+            return ['ip' => '', 'host' => ''];
+        }
+        $client = ($this->client)();
+
+        return ['ip' => (string) ($client['ip'] ?? ''), 'host' => (string) ($client['host'] ?? '')];
     }
 
     /**

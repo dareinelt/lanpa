@@ -184,7 +184,7 @@ flowchart LR
 | `OrvantaSignatureRepository` | `app/Repositories/OrvantaSignatureRepository.php` | Tabelle `orvanta_signatures` |
 | Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `admin-orvanta-hosts.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer, Live-Aktualisierung des DAG-Dashboards |
 | Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `views/admin/orvanta-hosts.php` | |
-| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql` | |
+| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql`, `044_orvanta_exchange_session_client.sql` | |
 | `OrvantaMailRouter`, `ProxyMailBackend` | `app/Services/MailProxy/` | Backend-Auswahl je Benutzer (Exchange oder SMTP-/IMAP-Proxy, gemeinsames `OrvantaMailBackendInterface`); Details in [mail-proxy.md](mail-proxy.md) |
 | Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/OrvantaSpellcheckTest.php`, `tests/Unit/MailProxyTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen gegen SQLite; Rechtschreibung gegen ein eigenes Mini-Wörterbuch |
 
@@ -203,7 +203,7 @@ flowchart LR
 | `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (immer `mime`; `json` ist reserviert und wird nicht mehr geschrieben), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
 | `orvanta_archive_jobs` | Archivierungsläufe inkl. Sperre (höchstens ein Lauf je Archiv) | `archive_id`, `status` (running/completed/failed), `locked_until`, Zähler, `last_error` |
 | `orvanta_exchange_hosts` | Hosts der Exchange-DAG (Migration 043, Abschnitt 4c) | `host` (unique), `ews_url`, `is_primary`, `active` (Wartung), `sort_order`, `latency_ms`/`latency_samples`/`last_latency_ms`, `last_session_at` (Fair-use), `last_check_at`, `last_ok`, `last_error`, `failures` |
-| `orvanta_exchange_sessions` | Zuordnung laufender Orvanta-Sitzungen zu einem Host | `session_hash` (unique, `sha1` der PHP-Sitzung), `user_uid`, `host`, `failovers`, `requests`, `started_at`, `last_seen_at` |
+| `orvanta_exchange_sessions` | Zuordnung laufender Orvanta-Sitzungen zu einem Host (Migrationen 043, 044) | `session_hash` (unique, `sha1` der PHP-Sitzung), `user_uid`, `client_ip`, `client_host` (Client des Sitzungsbeginns), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` |
 
 ### Routen
 
@@ -466,6 +466,13 @@ Host in Wartung erhält keine neuen Sitzungen, bestehende werden beim nächsten
 Aufruf umgeleitet; der letzte aktive Host lässt sich nicht abschalten. Die
 Kacheln aktualisieren sich automatisch (`GET …/hosts/daten`, JSON, nur lesend,
 Intervall aus `poll_interval`), die Seite bleibt ohne JavaScript bedienbar.
+Unter den Kacheln stehen die aktiven Sitzungen (Benutzer, Host, Client-IP,
+Client-Host, Umleitungen, Aufrufe, Beginn, letzte Aktivität). IP und Hostname
+stammen aus dem Aufruf, der die Sitzung begonnen hat – zuletzt
+`X-Forwarded-For` (der Auth-Proxy hängt die Client-Adresse am Ende an), sonst
+`REMOTE_ADDR`; den Namen ermittelt Orvanta einmalig per Reverse-DNS und lässt
+die Spalte leer, wenn er sich nicht auflösen lässt. Die Liste entsteht beim
+Laden der Seite neu.
 Der Verbindungstest öffnet den Posteingang des **Prüfpostfachs** (auf dem
 Dashboard einstellbar, Impersonation); ohne Angabe den des Dienstkontos. Hat
 das Dienstkonto kein eigenes Postfach, muss ein Prüfpostfach eingetragen

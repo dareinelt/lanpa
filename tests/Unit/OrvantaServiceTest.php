@@ -136,6 +136,8 @@ function orvantaPdo(): PDO
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_hash CHAR(40) NOT NULL UNIQUE,
         user_uid VARCHAR(190) NOT NULL DEFAULT \'\',
+        client_ip VARCHAR(45) NOT NULL DEFAULT \'\',
+        client_host VARCHAR(190) NOT NULL DEFAULT \'\',
         host VARCHAR(190) NOT NULL,
         failovers INTEGER NOT NULL DEFAULT 0,
         requests INTEGER NOT NULL DEFAULT 0,
@@ -199,7 +201,8 @@ function orvantaExchange(array $settings = []): array
 /**
  * Orvanta mit Lastverteilung ueber die Hosts einer Exchange-DAG: der
  * konfigurierte Server (mail01) ist als primaerer Host eingetragen, dazu die
- * weiteren Mitglieder. setSession() wechselt die simulierte PHP-Sitzung.
+ * weiteren Mitglieder. setSession() wechselt die simulierte PHP-Sitzung, der
+ * simulierte Client des Aufrufs ist 10.20.30.40 (pc-anna.example.local).
  *
  * @param array<string,string> $settings
  * @param list<string> $extraHosts
@@ -218,7 +221,7 @@ function orvantaPool(array $settings = [], array $extraHosts = ['mail02.example.
     $session = ['key' => 'session-a'];
     $pool = new OrvantaExchangePool($hosts, $parts['config'], static function () use (&$session): string {
         return $session['key'];
-    });
+    }, static fn (): array => ['ip' => '10.20.30.40', 'host' => 'pc-anna.example.local']);
     $transport = new RecordingExchangeTransport();
 
     return [
@@ -1732,6 +1735,8 @@ Runner::test('Orvanta DAG: Kennzahlen werden gemittelt und Uebersicht aufgebaut'
     Assert::same(1, count($overview['sessions']));
     Assert::same('anna@example.local', $overview['sessions'][0]['user']);
     Assert::same('mail02.example.local', $overview['sessions'][0]['host'], 'Die Sitzung geht an den Host ohne Messung.');
+    Assert::same('10.20.30.40', $overview['sessions'][0]['client_ip'], 'Die IP des Clients steht in der Sitzungsliste.');
+    Assert::same('pc-anna.example.local', $overview['sessions'][0]['client_host']);
     Assert::same('Ø 150 ms', $overview['hosts'][0]['latency_label']);
     Assert::same('50 ms', $overview['hosts'][0]['last_latency_label']);
     Assert::same('online', $overview['hosts'][0]['status']);
@@ -1743,6 +1748,78 @@ Runner::test('Orvanta DAG: Kennzahlen werden gemittelt und Uebersicht aufgebaut'
     $parts['pdo']->exec("UPDATE orvanta_exchange_sessions SET last_seen_at = '2020-01-01 00:00:00'");
     Assert::same(1, $parts['pool']->purge());
     Assert::same(0, $parts['pool']->purge());
+});
+
+Runner::test('Orvanta DAG: Clientangaben entstehen beim Sitzungsbeginn und ueberdauern Umleitungen', function (): void {
+    $parts = orvantaPool();
+    $make = static function (string $key, string $ip = '', string $host = '') use ($parts): OrvantaExchangePool {
+        return new OrvantaExchangePool($parts['hosts'], $parts['config'], static fn (): string => $key, static fn (): array => ['ip' => $ip, 'host' => $host]);
+    };
+    $hash = sha1('orvanta-dag:session-a');
+    $id = (int) $parts['pdo']->query("SELECT id FROM orvanta_exchange_hosts WHERE host = 'mail01.example.local'")->fetchColumn();
+
+    Assert::same('mail01.example.local', $make('session-a', '10.20.30.40', 'pc-anna.example.local')->session('session-a', 'anna@example.local')['host']);
+    $row = $parts['hosts']->findSession($hash);
+    Assert::same('10.20.30.40', (string) $row['client_ip'], 'Die IP des Clients wird beim Sitzungsbeginn vermerkt.');
+    Assert::same('pc-anna.example.local', (string) $row['client_host'], 'Der Hostname des Clients wird beim Sitzungsbeginn vermerkt.');
+
+    // Weitere Aufrufe derselben Sitzung schreiben die Clientangaben nicht neu.
+    $make('session-a', '192.168.7.9', 'pc-bernd.example.local')->session('session-a', 'anna@example.local');
+    $row = $parts['hosts']->findSession($hash);
+    Assert::same('10.20.30.40', (string) $row['client_ip'], 'Der Client bleibt der des Sitzungsbeginns.');
+    Assert::same('pc-anna.example.local', (string) $row['client_host']);
+
+    // Eine Umleitung (Wartung, Ausfall) laesst die Clientangaben stehen.
+    $parts['hosts']->setActive($id, false);
+    Assert::same('mail02.example.local', $make('session-a', '192.168.7.9', 'pc-bernd.example.local')->session('session-a', 'anna@example.local')['host']);
+    $row = $parts['hosts']->findSession($hash);
+    Assert::same(1, (int) $row['failovers'], 'Die Sitzung wurde umgeleitet.');
+    Assert::same('10.20.30.40', (string) $row['client_ip']);
+    Assert::same('pc-anna.example.local', (string) $row['client_host']);
+
+    // Eine neue Sitzung uebernimmt den Client ihres eigenen Aufrufs.
+    $make('session-b', '192.168.7.9', 'pc-bernd.example.local')->session('session-b', 'bernd@example.local');
+    $row = $parts['hosts']->findSession(sha1('orvanta-dag:session-b'));
+    Assert::same('192.168.7.9', (string) $row['client_ip']);
+    Assert::same('pc-bernd.example.local', (string) $row['client_host']);
+
+    // Ohne Client (CLI, Archivierungs-Worker) bleibt die Zeile ohne Angaben.
+    $make('session-c')->session('session-c', 'carla@example.local');
+    $row = $parts['hosts']->findSession(sha1('orvanta-dag:session-c'));
+    Assert::same('', (string) $row['client_ip']);
+    Assert::same('', (string) $row['client_host']);
+});
+
+Runner::test('Orvanta DAG: ohne Clientspalten (Migration 044) bleibt die Sitzungsliste nutzbar', function (): void {
+    $parts = orvantaConfig(['exchange_host' => 'mail01.example.local']);
+    $pdo = $parts['pdo'];
+    $pdo->exec('DROP TABLE orvanta_exchange_sessions');
+    $pdo->exec('CREATE TABLE orvanta_exchange_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_hash CHAR(40) NOT NULL UNIQUE,
+        user_uid VARCHAR(190) NOT NULL DEFAULT \'\',
+        host VARCHAR(190) NOT NULL,
+        failovers INTEGER NOT NULL DEFAULT 0,
+        requests INTEGER NOT NULL DEFAULT 0,
+        started_at DATETIME NOT NULL,
+        last_seen_at DATETIME NOT NULL
+    )');
+    $hosts = new OrvantaExchangeHostRepository($pdo);
+    $hosts->insert('mail01.example.local', '', true, 0);
+    $pool = new OrvantaExchangePool(
+        $hosts,
+        $parts['config'],
+        static fn (): string => 'session-a',
+        static fn (): array => ['ip' => '10.20.30.40', 'host' => 'pc-anna.example.local']
+    );
+
+    Assert::same('mail01.example.local', $pool->session('session-a', 'anna@example.local')['host'], 'Die Zuordnung der Sitzung greift auch ohne Clientspalten.');
+    $overview = $pool->overview();
+    Assert::same(1, count($overview['sessions']), 'Die Sitzungsliste bleibt gefuellt.');
+    Assert::same('anna@example.local', $overview['sessions'][0]['user']);
+    Assert::same('', $overview['sessions'][0]['client_ip']);
+    Assert::same('', $overview['sessions'][0]['client_host']);
+    Assert::same(1, $overview['totals']['sessions'], 'Die Sitzung zaehlt weiter als verbunden.');
 });
 
 Runner::test('Orvanta DAG: ohne Hosttabelle greift nur der konfigurierte Server', function (): void {

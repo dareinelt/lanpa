@@ -173,12 +173,18 @@ $hosts = $overview['hosts'];
     <?php if ($overview['sessions'] === []) { ?>
         <p class="card__hint">Zurzeit ist keine Orvanta-Sitzung einem Host zugeordnet.</p>
     <?php } else { ?>
+        <p class="card__hint">
+            IP-Adresse und Hostname des Clients werden beim Beginn einer Sitzung ermittelt.
+            Ältere Sitzungen sowie Adressen ohne auflösbaren Namen bleiben leer.
+        </p>
         <div class="table-wrapper">
             <table class="table">
                 <thead>
                     <tr>
                         <th scope="col">Benutzer</th>
                         <th scope="col">Host</th>
+                        <th scope="col">Client-IP</th>
+                        <th scope="col">Client-Host</th>
                         <th scope="col">Aufrufe</th>
                         <th scope="col">Umleitungen</th>
                         <th scope="col">Begonnen</th>
@@ -190,6 +196,8 @@ $hosts = $overview['hosts'];
                     <tr>
                         <td><?= Html::e((string) $session['user'] !== '' ? (string) $session['user'] : 'unbekannt') ?></td>
                         <td><code><?= Html::e((string) $session['host']) ?></code></td>
+                        <td><?= Html::e((string) $session['client_ip'] !== '' ? (string) $session['client_ip'] : '–') ?></td>
+                        <td><?= (string) $session['client_host'] !== '' ? '<code>' . Html::e((string) $session['client_host']) . '</code>' : '–' ?></td>
                         <td><?= (int) $session['requests'] ?></td>
                         <td><?= (int) $session['failovers'] > 0 ? '<span class="badge badge--warn">' . (int) $session['failovers'] . '</span>' : '0' ?></td>
                         <td><?= Html::e((string) $session['started_label']) ?></td>

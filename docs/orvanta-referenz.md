@@ -130,6 +130,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `database/migrations/037_orvanta_signature_name_format.sql` | Spalte `orvanta_signatures.name_format` (`first_last`/`last_first`) |
 | `database/migrations/042_orvanta_spellcheck_words.sql` | Tabelle `orvanta_spellcheck_words` (persönliches Wörterbuch, Abschnitt 19.12) |
 | `database/migrations/043_orvanta_exchange_dag.sql` | Tabellen `orvanta_exchange_hosts` und `orvanta_exchange_sessions` (Exchange-DAG, Abschnitt 20) |
+| `database/migrations/044_orvanta_exchange_session_client.sql` | Spalten `orvanta_exchange_sessions.client_ip`/`client_host` (Client der Sitzung, Abschnitt 20.5) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
@@ -259,7 +260,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_signatures` (Migrationen 035–037) | `name` (≤ 120), `greeting` (≤ 120), `name_format` ∈ `first_last\|last_first` (Standard `first_last`), `street`, `postal_city` (≤ 190), `phone_mode` ∈ `prefix\|full`, `phone_prefix` (≤ 64, abschließendes Leerzeichen bleibt erhalten), `text_color`/`separator_color` (Schlüssel aus `SettingsService::THEME_COLORS`, Standard `color_text`/`color_accent`), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Zuordnung: erste aktive Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in den SSO-Gruppen vorkommt. Migration ergänzt zudem `phonebook.title` (Position aus dem AD, `LDAP_ATTR_TITLE`) |
 | `orvanta_spellcheck_words` (Migration 042) | `user_uid` (≤ 100, klein geschrieben), `word` (≤ 64, `utf8mb4_bin`), `created_at` | Unique (`user_uid`, `word`); `OrvantaSpellcheckWordRepository`, Abschnitt 19.12 |
 | `orvanta_exchange_hosts` (Migration 043) | `host` (≤ 190, unique), `ews_url` (≤ 2048, leer = URL aus den Einstellungen), `is_primary`, `active` (0 = Wartung), `sort_order`, `latency_ms` (gleitender Mittelwert), `latency_samples`, `last_latency_ms`, `last_session_at`, `last_check_at`, `last_ok`, `last_error` (≤ 500), `failures` | Hosts der DAG samt Lastkennzahlen; `OrvantaExchangeHostRepository`, Abschnitt 20. Der Host aus `exchange_host` ist immer `is_primary = 1` und steht in `sort_order` 0 |
-| `orvanta_exchange_sessions` (Migration 043) | `session_hash` = `sha1(session_id)`, `user_uid`, `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
+| `orvanta_exchange_sessions` (Migrationen 043, 044) | `session_hash` = `sha1(session_id)`, `user_uid`, `client_ip` (≤ 45, IPv4/IPv6), `client_host` (≤ 190, Reverse-DNS oder leer), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -1565,7 +1566,7 @@ Zugehörigkeit zur selben DAG – ein Start „von Null“ ist nicht vorgesehen.
 | Baustein | Aufgabe |
 | --- | --- |
 | `orvanta_exchange_hosts` | Hosts, Wartungszustand, Sortierung, Lastkennzahlen (Abschnitt 4.1) |
-| `orvanta_exchange_sessions` | Sitzungsaffinität: `sha1(session_id)` → Host, mit Zählern |
+| `orvanta_exchange_sessions` | Sitzungsaffinität: `sha1(session_id)` → Host, mit Zählern und Clientangaben (Abschnitt 20.5) |
 | `OrvantaExchangePool` | Verteilung, Affinität, Failover, Kachelwerte |
 | `OrvantaExchangeHostRepository` | Persistenz beider Tabellen |
 | `Admin\OrvantaHostController` | Dashboard und Verwaltung (Abschnitt 20.5) |
@@ -1575,6 +1576,9 @@ Zugehörigkeit zur selben DAG – ein Start „von Null“ ist nicht vorgesehen.
 - Fehlt die Migration 043, arbeitet der Pool mit einem synthetischen Host aus
   den Einstellungen (`id = 0`): Orvanta bleibt benutzbar, es wird nichts
   geschrieben, das Dashboard weist auf die fehlende Migration hin.
+- `client_ip`/`client_host` (Migration 044) entstehen beim Anlegen der
+  Sitzungszeile und bleiben bei einer Umleitung stehen; fehlt die Migration,
+  arbeitet die Sitzungsliste unverändert weiter – nur ohne diese Spalten.
 - Der Host aus `exchange_host` – ist nur ein EWS-Endpunkt eingetragen, dessen
   Hostname (`OrvantaConfigService::primaryHost()`) – ist immer
   `is_primary = 1` und steht vorn
@@ -1690,8 +1694,9 @@ zeigt je Host eine Kachel mit
   primären Host).
 
 Darüber stehen die Summen (Hosts, aktiv, online, Sitzungen) und die Tabelle
-der aktiven Sitzungen (Benutzer, Host, Umleitungen, Aufrufe, Beginn, letzte
-Aktivität). Die Seite bleibt ohne JavaScript vollständig bedienbar;
+der aktiven Sitzungen (Benutzer, Host, Client-IP, Client-Host, Umleitungen,
+Aufrufe, Beginn, letzte Aktivität). Die Seite bleibt ohne JavaScript
+vollständig bedienbar;
 `admin-orvanta-hosts.js` aktualisiert die Kacheln im Takt von `poll_interval`
 (5–120 s) über `GET …/hosts/daten` (`Cache-Control: no-store`), pausiert im
 verborgenen Tab und lässt Abfragen nicht überlappen. Der Verbindungstest
@@ -1715,6 +1720,26 @@ DAG bestätigt der Admin per Kontrollkästchen (`dag_confirmed`, Pflichtfeld)
 und per Rückfrage „Ja/Abbrechen“ (`data-confirm`); der Server prüft die
 Bestätigung erneut – ohne sie wird nichts gespeichert.
 
+Die Clientangaben der Sitzungsliste (Migration 044) stammen aus dem Aufruf,
+der die Sitzung begonnen hat: `ClientAddress::from()` nimmt die letzte Adresse
+aus `X-Forwarded-For` (`Request::clientIp()`), sonst `REMOTE_ADDR`, und
+ermittelt den Namen einmalig per Reverse-DNS (`gethostbyaddr()`); lässt er
+sich nicht auflösen oder ergibt er nur die Adresse selbst, bleibt die Spalte
+leer. Geschrieben wird nur beim Anlegen der Sitzungszeile – eine Umleitung
+behält die ursprünglichen Werte, spätere Aufrufe ändern sie nicht.
+
+Maßgeblich ist der letzte Eintrag, weil der Auth-Proxy die Anfragen mit
+`ProxyAddHeaders On` (Vorgabe) an die Anwendung weiterreicht: mod_proxy hängt
+dabei die Adresse des direkten Gegenübers – also des Clients – an eine vom
+Client mitgeschickte Liste an. Die vorderen Einträge sind damit frei wählbar
+und werden bewusst nicht ausgewertet; nur die Adresse des Proxys selbst gilt
+als gesichert. Steht vor dem Auth-Proxy ein weiterer Verteiler (etwa HAProxy
+im `TLS_PROXY`-Betrieb), zeigt die Spalte dessen Adresse, sofern er die
+Anfrage ohne eigenen `X-Forwarded-For`-Kopf weitergibt. Weil die
+Sitzungstabelle nur beim Neuladen der Seite neu entsteht, erscheinen die
+Werte erst mit dem nächsten Seitenaufruf. Fehlt Migration 044, bleiben die
+beiden Spalten leer und die Liste zeigt weiterhin alle Sitzungen.
+
 ### 20.6 Anzeige im Fußbereich der App
 
 `OrvantaController::exchangeHost($access)` liefert den Host der laufenden
@@ -1733,8 +1758,10 @@ In `tests/Unit/OrvantaServiceTest.php` (Abschnitt 12): Verteilung nach
 Fair-use, Sitzungszahl und Latenz, Affinität (inkl. Aktivitätsvermerk),
 Wartung und Umleitung, Failover nur bei Transportfehlern/5xx ohne fachlichen
 SOAP-Fehler, keine Wiederholung zugestellter ändernder Anfragen, EWS-Endpunkt
-ohne Hostnamen, `parseHostList()`, `overview()`, `syncPrimary()`
-und der Tooltipp der Verbindungsanzeige. Die Testbausteine
+ohne Hostnamen, `parseHostList()`, `overview()`, `syncPrimary()`, die
+Clientangaben beim Sitzungsbeginn (die Umleitung lässt sie stehen, eine neue
+Sitzung erhält eigene Werte) und die Sitzungsliste ohne die Clientspalten der
+Migration 044, und der Tooltipp der Verbindungsanzeige. Die Testbausteine
 `orvantaPool()`/`dagSettings()` tragen den primären Host explizit ein; jede
 simulierte Anfrage braucht einen **frischen** Pool, weil
 `OrvantaExchangePool::hosts()` das Hostabbild je Instanz speichert.

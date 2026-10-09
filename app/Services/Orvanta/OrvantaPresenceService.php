@@ -61,13 +61,15 @@ final class OrvantaPresenceService
 
     /**
      * Aktivitaet eines Benutzers erfassen (bei jedem Orvanta-Aufruf).
+     *
+     * @param int $sourceId Identitaetsquelle des Benutzers (0 = Hauptquelle)
      */
-    public function touch(string $userUid, string $backend = 'exchange'): void
+    public function touch(string $userUid, string $backend = 'exchange', int $sourceId = 0): void
     {
         if (trim($userUid) === '') {
             return;
         }
-        $this->repository->touchActivity($userUid, $backend, $this->stamp($this->now()));
+        $this->repository->touchActivity($userUid, $backend, $this->stamp($this->now()), $sourceId);
     }
 
     /**
@@ -84,28 +86,58 @@ final class OrvantaPresenceService
             return false;
         }
 
-        $active = $this->repository->activeUsers($this->stamp($now - self::ACTIVE_WINDOW), $this->stamp($now));
+        $since = $this->stamp($now - self::ACTIVE_WINDOW);
+        $until = $this->stamp($now);
+        $active = $this->repository->activeUsers($since, $until);
 
-        return $this->repository->recordSample(
+        $written = $this->repository->recordSample(
             $sampledAt,
             $active['total'],
             $active['exchange'],
             $active['proxy'],
             $this->aiUsers($now)
         );
+        if ($written) {
+            $this->repository->recordSourceSamples($sampledAt, $this->repository->activeUsersBySource($since, $until));
+        }
+
+        return $written;
     }
 
     /**
      * Kennzahlen der Nutzung: aktueller Wert aus der Aktivitaet, Minimum,
      * Maximum und Mittelwert aus den Proben der letzten 24 Stunden.
      *
-     * @return array{current:int,exchange:int,proxy:int,min:int,max:int,avg:float,samples:int,window:int,generated_at:string}
+     * `sources` nennt je Identitaetsquelle den aktuellen Wert und den Anteil
+     * am 24-h-Maximum (Wert zum Zeitpunkt der Spitzenprobe). Beide Summen
+     * ergeben exakt `current` bzw. `max`.
+     *
+     * @return array{current:int,exchange:int,proxy:int,min:int,max:int,avg:float,samples:int,window:int,generated_at:string,peak_at:string,sources:array<int,array{current:int,peak:int}>}
      */
     public function stats(): array
     {
         $now = $this->now();
-        $active = $this->repository->activeUsers($this->stamp($now - self::ACTIVE_WINDOW), $this->stamp($now));
-        $samples = $this->repository->sampleStats($this->stamp($now - 86400), $this->stamp($now));
+        $since = $this->stamp($now - self::ACTIVE_WINDOW);
+        $until = $this->stamp($now);
+        $active = $this->repository->activeUsers($since, $until);
+        $samples = $this->repository->sampleStats($this->stamp($now - 86400), $until);
+        $currentBySource = $this->repository->activeUsersBySource($since, $until);
+
+        $peakAt = '';
+        $peakBySource = $currentBySource;
+        if ($samples['samples'] > 0) {
+            $peakAt = $this->repository->peakSampleAt($this->stamp($now - 86400), $until);
+            $peakBySource = $this->repository->sourceUsersAt($peakAt);
+        }
+
+        $sources = [];
+        foreach (array_unique(array_merge(array_keys($currentBySource), array_keys($peakBySource))) as $sourceId) {
+            $sources[(int) $sourceId] = [
+                'current' => (int) ($currentBySource[$sourceId] ?? 0),
+                'peak' => (int) ($peakBySource[$sourceId] ?? 0),
+            ];
+        }
+        ksort($sources);
 
         return [
             'current' => $active['total'],
@@ -116,7 +148,9 @@ final class OrvantaPresenceService
             'avg' => $samples['samples'] > 0 ? $samples['avg'] : (float) $active['total'],
             'samples' => $samples['samples'],
             'window' => self::ACTIVE_WINDOW,
-            'generated_at' => $this->stamp($now),
+            'generated_at' => $until,
+            'peak_at' => $peakAt,
+            'sources' => $sources,
         ];
     }
 

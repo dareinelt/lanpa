@@ -270,6 +270,7 @@
             node.cloudTitle = String(raw.cloud_title || '');
             node.members = Array.isArray(raw.members) ? raw.members : [];
             node.link = raw.link && typeof raw.link === 'object' ? raw.link : null;
+            node.counters = countersOf(raw.counters);
             node.activity = activityOf(node, data);
             seen[key] = true;
         });
@@ -286,7 +287,6 @@
             return false;
         });
 
-        var edgeIndex = {};
         var edges = [];
         (Array.isArray(data.edges) ? data.edges : []).forEach(function (raw) {
             var from = String(raw.from || '');
@@ -295,12 +295,15 @@
                 return;
             }
             edges.push(makeEdge(from, to, raw.state === 'error' ? 'error' : 'ok', false));
-            edgeIndex[from + '>' + to] = true;
         });
-        // Speicher-Tiers tragen keine Kante im JSON; sie speisen den Zwischenspeicher.
+        // Speicher-Tiers ohne eigene Kante im JSON (aeltere Antworten) speisen den Zwischenspeicher.
+        var hasOutgoing = {};
+        edges.forEach(function (edge) {
+            hasOutgoing[edge.from] = true;
+        });
         graph.order.forEach(function (key) {
             var node = graph.nodes[key];
-            if (node.kind === 'tier' && graph.nodes.cache && !edgeIndex[key + '>cache']) {
+            if (node.kind === 'tier' && graph.nodes.cache && !hasOutgoing[key]) {
                 edges.push(makeEdge(key, 'cache', node.state === 'error' ? 'error' : 'ok', true));
             }
         });
@@ -364,6 +367,23 @@
 
     // ------------------------------------------------------------ Anordnung
 
+    /**
+     * Zaehler am Knotenrand (oben rechts = aktuell, oben links = 24 h).
+     */
+    function countersOf(raw) {
+        var result = { current: null, peak: null };
+        if (!raw || typeof raw !== 'object') {
+            return result;
+        }
+        ['current', 'peak'].forEach(function (slot) {
+            var entry = raw[slot];
+            if (entry && typeof entry === 'object' && entry.value !== undefined && entry.value !== null) {
+                result[slot] = { value: Math.max(0, parseInt(entry.value, 10) || 0), label: String(entry.label || '') };
+            }
+        });
+        return result;
+    }
+
     function byKind(kind) {
         return graph.order.filter(function (key) {
             return graph.nodes[key].kind === kind;
@@ -415,7 +435,14 @@
             return graph.nodes[key].transport === 'exchange';
         });
         var hosts = byKind('host');
-        var tiers = byKind('tier');
+        var allTiers = byKind('tier');
+        // Lokaler VM-Speicher sitzt direkt unter dem Zwischenspeicher, Cold-Tiers
+        // und Snapshot-Speicher haengen als Kinder darunter.
+        var hasLocal = !!graph.nodes['tier-local'];
+        var tiers = allTiers.filter(function (key) {
+            return key !== 'tier-local';
+        });
+        var tierDepth = hasLocal ? -480 : -360;
         var set = function (key, x, y, z) {
             if (graph.nodes[key]) {
                 graph.nodes[key].pos3 = { x: x, y: y, z: z };
@@ -426,10 +453,11 @@
         set('proxy', -230, 10, 40);
         set('ai', 90, 215, -140);
         set('cache', 40, -215, 90);
+        set('tier-local', 40, -360, 90);
         ring(sources, { x: -450, y: 0, z: 0 }, Math.min(230, 70 + sources.length * 28), 'yz', 'src');
         ring(hosts, { x: 290, y: 0, z: 0 }, Math.min(220, 60 + hosts.length * 26), 'yz', 'host');
         ring(exchangeSources, { x: 510, y: 0, z: 0 }, Math.min(230, 70 + exchangeSources.length * 28), 'yz', 'xsrc');
-        ring(tiers, { x: 60, y: -360, z: 60 }, Math.min(240, 60 + tiers.length * 30), 'xz', 'tier');
+        ring(tiers, { x: 60, y: tierDepth, z: 60 }, Math.min(240, 60 + tiers.length * 30), 'xz', 'tier');
 
         var set2 = function (key, x, y) {
             if (graph.nodes[key]) {
@@ -443,7 +471,8 @@
         column(exchangeSources, 560, 0, 96);
         set2('ai', 0, -220);
         set2('cache', 0, 220);
-        row(tiers, 380, 0, 150);
+        set2('tier-local', 0, 380);
+        row(tiers, hasLocal ? 520 : 380, 0, 150);
 
         graph.ambient = [];
         graph.order.forEach(function (key) {
@@ -906,6 +935,8 @@
                 ctx.fillText('!', p.x + r * 0.75, p.y - r * 0.72);
             }
 
+            drawCounters(node, p, r, alpha * depthFade, kindColor, hovered || selected);
+
             if (hovered || selected) {
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 1.5;
@@ -942,6 +973,53 @@
             }
         }
         ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Kennzahlen-Pillen am Badge: aktueller Wert oben rechts, 24-h-Wert oben links.
+     * Nur bei ausreichender Groesse bzw. Hover/Auswahl, damit entfernte Knoten ruhig bleiben.
+     */
+    function drawCounters(node, p, r, alpha, kindColor, emphasised) {
+        var counters = node.counters;
+        if (!counters || (!counters.current && !counters.peak)) {
+            return;
+        }
+        if (!view.labels || (p.s < 0.5 && !emphasised)) {
+            return;
+        }
+        var fontSize = Math.max(8, Math.min(13, 11 * p.s));
+        var padX = Math.max(4, fontSize * 0.5);
+        var h = fontSize + padX;
+        var cy = p.y - r * 1.25;
+        ctx.font = '700 ' + fontSize + 'px system-ui, sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.globalAlpha = Math.min(1, alpha + 0.2);
+
+        if (counters.current) {
+            var textR = String(counters.current.value);
+            var wR = ctx.measureText(textR).width + padX * 2;
+            var xR = p.x + r * 0.95;
+            ctx.fillStyle = node.muted ? STATE_COLORS.off : kindColor;
+            roundRect(xR, cy - h / 2, wR, h, h / 2);
+            ctx.fill();
+            ctx.fillStyle = '#070c18';
+            ctx.textAlign = 'left';
+            ctx.fillText(textR, xR + padX, cy + 0.5);
+        }
+        if (counters.peak) {
+            var textL = String(counters.peak.value);
+            var wL = ctx.measureText(textL).width + padX * 2;
+            var xL = p.x - r * 0.95 - wL;
+            ctx.fillStyle = 'rgba(6,11,22,0.85)';
+            roundRect(xL, cy - h / 2, wL, h, h / 2);
+            ctx.fill();
+            ctx.strokeStyle = node.muted ? STATE_COLORS.off : kindColor;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.fillStyle = node.muted ? '#93a4c4' : '#e6eefc';
+            ctx.textAlign = 'left';
+            ctx.fillText(textL, xL + padX, cy + 0.5);
+        }
     }
 
     function roundRect(x, y, w, h, r) {

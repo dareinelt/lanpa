@@ -194,6 +194,8 @@ Teil dieses Dashboards.
 | Erweiterungen (Extensions) des Tiers | `members` |
 | Synchronität, Rückstand (Lag), Datenrate | `in_sync`, `lag_seconds`, `read_bps`/`write_bps` |
 | Lokaler Puffer, Modus, Prognose | `overview()['local']`, `['mode']`, `['forecast_text']` |
+| Lokaler Speicher (VM) als eigener Tier (`tier-local`, immer vorhanden) | `overview()['local']`, `['mode']`, `['forecast_text']`; Zustand nur aus Füllstand/Modus, nie „offline“ (siehe 14.7) |
+| Snapshot-Speicher (`tier-snapshot`, wenn aktiviert) | `overview()['snapshot']` (`storage_snapshot_enabled`, `storage_snapshot_status`) |
 
 S3-Ziele ohne angegebene Kapazität haben keinen Füllstand; sie werden als
 „ohne feste Kapazität“ gekennzeichnet (Feld `unbounded`).
@@ -355,16 +357,22 @@ Einstellungen, um das Konfigurationsformular nicht zu überladen):
 | `OrvantaFlowService::CACHE_WARN_PERCENT` | `75` | Zwischenspeicher: gelb ab |
 | `OrvantaFlowService::CACHE_CRIT_PERCENT` | `90` | Zwischenspeicher: rot ab |
 
-## 9. Datenmodell-Erweiterungen (Migration 048)
+## 9. Datenmodell-Erweiterungen (Migrationen 048 und 049)
 
 ```sql
 orvanta_activity        -- letzte Aktivität je Orvanta-Benutzer
-  user_uid VARCHAR(190) PK, backend VARCHAR(16), first_seen_at, last_seen_at,
-  requests INT UNSIGNED, KEY idx_orvanta_activity_seen (last_seen_at)
+  user_uid VARCHAR(190) PK, backend VARCHAR(16), source_id INT UNSIGNED (049,
+  0 = Hauptquelle), first_seen_at, last_seen_at, requests INT UNSIGNED,
+  KEY idx_orvanta_activity_seen (last_seen_at),
+  KEY idx_orvanta_activity_source (source_id, last_seen_at)
 
 orvanta_user_samples   -- Proben der aktiven Nutzer
   id, sampled_at DATETIME UNIQUE, active_users, exchange_users, proxy_users,
   ai_users SMALLINT UNSIGNED, KEY idx_orvanta_user_samples_at (sampled_at)
+
+orvanta_source_samples -- Proben der aktiven Nutzer je Identitätsquelle (049)
+  id, sampled_at DATETIME, source_id INT UNSIGNED, active_users SMALLINT UNSIGNED,
+  UNIQUE (sampled_at, source_id), KEY (source_id, sampled_at)
 
 mail_proxy_source_state -- Zustand je Identitätsquelle
   identity_source_id INT UNSIGNED PK, last_success_at, last_error_at,
@@ -373,7 +381,8 @@ mail_proxy_source_state -- Zustand je Identitätsquelle
 
 Datenschutz: `orvanta_activity` enthält nur Benutzerkennung, Backend und
 Zeitstempel (keine Inhalte, keine Betreffzeilen, keine Empfänger) und wird nach
-24 Stunden geräumt. `orvanta_user_samples` enthält ausschließlich Zähler.
+24 Stunden geräumt. `orvanta_user_samples` und `orvanta_source_samples`
+enthalten ausschließlich Zähler.
 
 ## 10. Umsetzungsplan (Schritte)
 
@@ -502,10 +511,15 @@ Bildschirm oder die Leitwarte.
   Identitätsquellen des Proxy-Pfads als Ring dahinter, die
   Exchange-Hosts als Ring rechts und die Identitätsquellen des
   Exchange-Pfads (Transportweg Exchange) als Ring dahinter, die
-  KI oben, der Zwischenspeicher unten, die Speicher-Tiers als Ring darunter.
-  Kanten sind gebogene Leuchtbahnen; zwischen Tiers und Zwischenspeicher
-  werden gestrichelte Hilfskanten ergänzt. Eine 2D-Spaltenansicht (Taste `2`)
-  ordnet dieselben Knoten nach Art; der Wechsel ist animiert.
+  KI oben, der Zwischenspeicher unten, darunter der **lokale Speicher der
+  lanpa-VM** („Lokaler Speicher (VM)“, `tier-local`) und unter diesem als
+  Ring die Cold-Tiers sowie der Snapshot-Speicher (`tier-snapshot`).
+  Kanten sind gebogene Leuchtbahnen; Tiers ohne eigene Kante erhalten eine
+  gestrichelte Hilfskante zum Zwischenspeicher. Eine 2D-Spaltenansicht
+  (Taste `2`) ordnet dieselben Knoten nach Art; der Wechsel ist animiert.
+- **Kennzahlen am Knoten:** Kleine Pillen am Rand des Badges zeigen oben
+  rechts den aktuellen Wert und oben links den 24-Stunden-Wert
+  (Felder `counters.current` / `counters.peak` im JSON). Siehe 14.6.
 - **Werkzeugleiste:** 3D/2D, Auto-Drehung, Partikel, Beschriftungen,
   „Nur Probleme“ (dämpft alles ohne Störung), Zoom, Einpassen, Zurücksetzen.
 - **Legende** mit Filter je Knotenart (Quelle, Proxy, Host, Nutzer, KI,
@@ -570,3 +584,59 @@ den Exchange-Hosts. Die Identitätsquelle „MVZ Innere Medizin Wolfenbüttel“
 dem IMAP-/SMTP-Proxy – obwohl dort noch kein Mailserver eingetragen ist
 (Proxy „Nicht aktiv“, Quelle „Eingeschränkt“ mit dem Hinweis „Für diese
 Identitätsquelle ist im Proxy noch kein Mailserver hinterlegt.“).
+
+### 14.6 Kennzahlen an den Knoten (Screenshot)
+
+![Topologie mit Kennzahlen: Orvanta-Nutzer 9 aktuell / 14 Maximum, KHWF 7 / 11, MVZ 2 / 3, Lokale KI 1 / 6, exchange01 5 Sitzungen, exchange02 3 Sitzungen; darunter Zwischenspeicher, Lokaler Speicher (VM), Archiv NAS und Snapshot-Speicher](screenshots/119-admin-orvanta-nachrichtenfluss-topologie-kennzahlen.png)
+
+Jeder Knoten kann bis zu zwei Zähler tragen (JSON-Feld `counters` mit den
+Schlüsseln `current` und `peak`, jeweils `value` und `label`). Der aktuelle
+Wert sitzt **oben rechts**, der 24-Stunden-Wert **oben links** des Badges.
+
+| Knoten | Oben rechts (`current`) | Oben links (`peak`) |
+|---|---|---|
+| Orvanta-Nutzer | angemeldete Nutzer im Aktivitätsfenster | Maximum der angemeldeten Nutzer in 24 h |
+| Identitätsquelle | aktuell verbundene Nutzer dieser Quelle | Nutzer dieser Quelle zum Zeitpunkt des 24-h-Maximums |
+| Exchange-Host | aktuell verbundene Sitzungen | – |
+| Lokale KI | laufende Sitzungen (Aktivitätsfenster) | Sitzungen in den letzten 24 h |
+| Proxy, Zwischenspeicher, Tiers | – | – |
+
+**Mathematische Konsistenz:** Die Werte der Identitätsquellen stimmen mit
+dem Nutzerknoten überein. Der aktuelle Wert je Quelle ist `COUNT(*) …
+GROUP BY source_id` über *dasselbe* Zeitfenster wie der Gesamtwert
+(`OrvantaFlowRepository::activeUsersBySource()`), die Summe über alle
+Quellen ergibt daher exakt „Aktuell“ am Nutzerknoten. Der 24-h-Wert je
+Quelle wird nicht als eigenes Maximum gebildet (die Summe einzelner Maxima
+wäre größer als das Gesamtmaximum), sondern aus der Tabelle
+`orvanta_source_samples` zum Zeitpunkt der Probe, die das Gesamtmaximum
+geliefert hat (`peakSampleAt()` → `sourceUsersAt()`; bei gleichen Werten die
+jüngste Probe). Im Screenshot: 9 = 7 (KHWF) + 2 (MVZ), 14 = 11 + 3. Solange
+noch keine Quellenproben vorliegen (direkt nach Migration 049), entspricht
+der 24-h-Wert je Quelle dem aktuellen Wert.
+
+Dazu speichert `orvanta_activity` seit Migration 049 die Identitätsquelle
+(`source_id`, 0 = Hauptquelle); der Client übergibt sie beim Präsenz-Ping
+(`OrvantaApiController::recordPresence()` → `OrvantaPresenceService::touch()`).
+`OrvantaPresenceService::sample()` schreibt je Minute neben der Gesamtprobe
+eine Zeile je Quelle, `stats()` liefert `peak_at` und `sources`.
+
+### 14.7 Speicher-Tiers mit lokalem VM-Speicher (Screenshot)
+
+![2D-Ansicht: Orvanta-Zwischenspeicher, darunter Lokaler Speicher (VM), darunter Archiv NAS (eingeschränkt) und Snapshot-Speicher](screenshots/120-admin-orvanta-nachrichtenfluss-topologie-speicher-tiers.png)
+
+Der lokale Speicher der lanpa-VM erscheint **immer** als eigener Knoten
+(`tier-local`, „Lokaler Speicher (VM)“) – auch wenn kein Cold-Tier
+konfiguriert ist. Er hängt unter dem Zwischenspeicher; die Cold-Tiers
+(`tier-N`) und der Snapshot-Speicher (`tier-snapshot`, nur wenn
+`storage_snapshot_enabled` gesetzt ist) sind seine Kinder. Fehlt der lokale
+Knoten (Speicherdienst nicht verfügbar), hängen die Cold-Tiers direkt am
+Zwischenspeicher.
+
+Der lokale Tier kann **nicht „offline“** sein – ohne ihn liefe lanpa nicht.
+Sein Zustand folgt deshalb ausschließlich dem freien Platz und dem
+Betriebsmodus: in Ordnung, „Eingeschränkt“ bei Füllstand ≥ 85 %, bei einem
+Betriebsmodus ≠ `normal` (mit Prognosetext) oder solange noch keine
+Messwerte vorliegen, „Störung“ bei Füllstand ≥ 95 %. Er wird nie gedämpft.
+Der Snapshot-Speicher übernimmt den Zustand aus `storage_snapshot_status`
+(online → in Ordnung, unknown → eingeschränkt, disabled → nicht aktiv, sonst
+Störung) und wird bei offline/invalid/disabled gedämpft.

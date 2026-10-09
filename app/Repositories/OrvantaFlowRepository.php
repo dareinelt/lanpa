@@ -7,12 +7,14 @@ namespace App\Repositories;
 use PDO;
 
 /**
- * Datenzugriff fuer das Nachrichtenfluss-Dashboard (Migration 048):
- * Praesenz der Orvanta-Benutzer und Proben der aktiven Nutzer.
+ * Datenzugriff fuer das Nachrichtenfluss-Dashboard (Migrationen 048/049):
+ * Praesenz der Orvanta-Benutzer und Proben der aktiven Nutzer, jeweils auch
+ * je Identitaetsquelle.
  *
- * orvanta_activity enthaelt nur Benutzerkennung, Backend und Zeitstempel,
- * orvanta_user_samples ausschliesslich Zaehler - bewusst ohne Inhalte,
- * Betreffzeilen oder Empfaenger.
+ * orvanta_activity enthaelt nur Benutzerkennung, Backend, Quelle und
+ * Zeitstempel, orvanta_user_samples und orvanta_source_samples
+ * ausschliesslich Zaehler - bewusst ohne Inhalte, Betreffzeilen oder
+ * Empfaenger.
  *
  * Alle Zeitpunkte werden als Zeichenkette ('Y-m-d H:i:s') uebergeben, damit
  * die Abfragen ohne MySQL-Sonderformen auch in den SQLite-Tests laufen.
@@ -25,27 +27,28 @@ final class OrvantaFlowRepository extends Repository
      * Aktivitaet eines Benutzers erfassen. Vorhandene Zeilen werden
      * fortgeschrieben (letzte Sichtung, Zaehler, Backend), sonst angelegt.
      */
-    public function touchActivity(string $userUid, string $backend, string $seenAt): void
+    public function touchActivity(string $userUid, string $backend, string $seenAt, int $sourceId = 0): void
     {
         $uid = mb_substr(trim($userUid), 0, 190);
         if ($uid === '') {
             return;
         }
         $backend = $backend === 'proxy' ? 'proxy' : 'exchange';
+        $sourceId = max(0, $sourceId);
 
         $updated = $this->pdo->prepare(
-            'UPDATE orvanta_activity SET last_seen_at = :seen, backend = :backend, requests = requests + 1'
+            'UPDATE orvanta_activity SET last_seen_at = :seen, backend = :backend, source_id = :source, requests = requests + 1'
             . ' WHERE user_uid = :uid'
         );
-        $updated->execute(['seen' => $seenAt, 'backend' => $backend, 'uid' => $uid]);
+        $updated->execute(['seen' => $seenAt, 'backend' => $backend, 'source' => $sourceId, 'uid' => $uid]);
         if ($updated->rowCount() > 0) {
             return;
         }
 
         $this->pdo->prepare(
-            'INSERT INTO orvanta_activity (user_uid, backend, first_seen_at, last_seen_at, requests)'
-            . ' VALUES (:uid, :backend, :seen, :seen, 1)'
-        )->execute(['uid' => $uid, 'backend' => $backend, 'seen' => $seenAt]);
+            'INSERT INTO orvanta_activity (user_uid, backend, source_id, first_seen_at, last_seen_at, requests)'
+            . ' VALUES (:uid, :backend, :source, :seen, :seen, 1)'
+        )->execute(['uid' => $uid, 'backend' => $backend, 'source' => $sourceId, 'seen' => $seenAt]);
     }
 
     /**
@@ -72,6 +75,28 @@ final class OrvantaFlowRepository extends Repository
         }
 
         return ['total' => $exchange + $proxy, 'exchange' => $exchange, 'proxy' => $proxy];
+    }
+
+    /**
+     * Nutzer mit Aktivitaet im Zeitfenster je Identitaetsquelle. Die Summe
+     * aller Werte entspricht exakt activeUsers()['total'] desselben Fensters.
+     *
+     * @return array<int,int> Quellen-ID => aktive Nutzer (nur Quellen mit Aktivitaet)
+     */
+    public function activeUsersBySource(string $since, string $until): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT source_id, COUNT(*) AS users FROM orvanta_activity'
+            . ' WHERE last_seen_at >= :since AND last_seen_at <= :until GROUP BY source_id ORDER BY source_id ASC'
+        );
+        $statement->execute(['since' => $since, 'until' => $until]);
+
+        $users = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $users[(int) $row['source_id']] = (int) $row['users'];
+        }
+
+        return $users;
     }
 
     /**
@@ -111,6 +136,70 @@ final class OrvantaFlowRepository extends Repository
         ]);
 
         return true;
+    }
+
+    /**
+     * Aktive Nutzer je Identitaetsquelle zu einer Probe ablegen. Vorhandene
+     * Zeilen desselben Zeitpunkts bleiben unveraendert.
+     *
+     * @param array<int,int> $bySource Quellen-ID => aktive Nutzer
+     */
+    public function recordSourceSamples(string $sampledAt, array $bySource): void
+    {
+        if ($bySource === []) {
+            return;
+        }
+        $exists = $this->pdo->prepare('SELECT COUNT(*) FROM orvanta_source_samples WHERE sampled_at = :at');
+        $exists->execute(['at' => $sampledAt]);
+        if ((int) $exists->fetchColumn() > 0) {
+            return;
+        }
+
+        $insert = $this->pdo->prepare(
+            'INSERT INTO orvanta_source_samples (sampled_at, source_id, active_users) VALUES (:at, :source, :users)'
+        );
+        foreach ($bySource as $sourceId => $users) {
+            $insert->execute(['at' => $sampledAt, 'source' => max(0, (int) $sourceId), 'users' => max(0, (int) $users)]);
+        }
+    }
+
+    /**
+     * Aktive Nutzer je Identitaetsquelle zum Zeitpunkt einer Probe.
+     *
+     * @return array<int,int> Quellen-ID => aktive Nutzer
+     */
+    public function sourceUsersAt(string $sampledAt): array
+    {
+        if ($sampledAt === '') {
+            return [];
+        }
+        $statement = $this->pdo->prepare(
+            'SELECT source_id, active_users FROM orvanta_source_samples WHERE sampled_at = :at ORDER BY source_id ASC'
+        );
+        $statement->execute(['at' => $sampledAt]);
+
+        $users = [];
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) ?: [] as $row) {
+            $users[(int) $row['source_id']] = (int) $row['active_users'];
+        }
+
+        return $users;
+    }
+
+    /**
+     * Zeitpunkt der Probe mit den meisten aktiven Nutzern im Zeitfenster; bei
+     * Gleichstand die juengste. '' ohne Proben.
+     */
+    public function peakSampleAt(string $since, string $until): string
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT sampled_at FROM orvanta_user_samples WHERE sampled_at >= :since AND sampled_at <= :until'
+            . ' ORDER BY active_users DESC, sampled_at DESC LIMIT 1'
+        );
+        $statement->execute(['since' => $since, 'until' => $until]);
+        $value = $statement->fetchColumn();
+
+        return $value === false || $value === null ? '' : (string) $value;
     }
 
     public function hasSampleAt(string $sampledAt): bool
@@ -199,6 +288,9 @@ final class OrvantaFlowRepository extends Repository
 
         $samples = $this->pdo->prepare('DELETE FROM orvanta_user_samples WHERE sampled_at < :before');
         $samples->execute(['before' => $samplesBefore]);
+
+        $this->pdo->prepare('DELETE FROM orvanta_source_samples WHERE sampled_at < :before')
+            ->execute(['before' => $samplesBefore]);
 
         return ['activity' => $activity->rowCount(), 'samples' => $samples->rowCount()];
     }

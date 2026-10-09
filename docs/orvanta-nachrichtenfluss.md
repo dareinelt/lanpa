@@ -337,7 +337,7 @@ Einstellungen, um das Konfigurationsformular nicht zu überladen):
 | `OrvantaFlowService::CACHE_WARN_PERCENT` | `75` | Zwischenspeicher: gelb ab |
 | `OrvantaFlowService::CACHE_CRIT_PERCENT` | `90` | Zwischenspeicher: rot ab |
 
-## 9. Datenmodell-Erweiterungen (Migration 047)
+## 9. Datenmodell-Erweiterungen (Migration 048)
 
 ```sql
 orvanta_activity        -- letzte Aktivität je Orvanta-Benutzer
@@ -362,7 +362,7 @@ Zeitstempel (keine Inhalte, keine Betreffzeilen, keine Empfänger) und wird nach
 | # | Schritt | Inhalt | Prüfung | Stand |
 | --- | --- | --- | --- | --- |
 | 1 | Konzept | Diese Datei | — | erledigt (`5d88753`) |
-| 2 | Migration 047 | drei Tabellen, `database/migrations/AGENTS.md` nachziehen | `php -l`, `php scripts/migrate.php` (Docker) | erledigt (`c74d228`) |
+| 2 | Migration 048 | drei Tabellen, `database/migrations/AGENTS.md` nachziehen | `php -l`, `php scripts/migrate.php` (Docker) | erledigt (`c74d228`) |
 | 3 | Repository (Proxy) | `MailProxyRepository::sourceCounts()`, `sourceStates()`, `recordSourceSuccess()`, `recordSourceError()` | neue Unit-Tests | erledigt (`f559858`) |
 | 4 | Repository (Fluss) | `OrvantaFlowRepository`: Aktivität, Proben, Statistik, Verlauf, Räumen | neue Unit-Tests | erledigt (`8e83303`) |
 | 5 | Dienst Präsenz | `OrvantaPresenceService` (`touch()`, `sample()`, `stats()`, `history()`), `Container::orvantaPresence()` | neue Unit-Tests | erledigt (`51a36bd`) |

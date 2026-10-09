@@ -7,7 +7,7 @@ namespace App\Repositories;
 use PDO;
 
 /**
- * Datenzugriff fuer das Nachrichtenfluss-Dashboard (Migration 047):
+ * Datenzugriff fuer das Nachrichtenfluss-Dashboard (Migration 048):
  * Praesenz der Orvanta-Benutzer und Proben der aktiven Nutzer.
  *
  * orvanta_activity enthaelt nur Benutzerkennung, Backend und Zeitstempel,

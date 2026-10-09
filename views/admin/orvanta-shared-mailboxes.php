@@ -30,12 +30,15 @@ $formatDate = static function (string $value): string {
     Zusätzliche Postfächer, auf die ein Benutzer auf dem Exchange-Server per <strong>Vollzugriff</strong> oder
     <strong>„Senden als“</strong> berechtigt ist, erscheinen in Orvanta wie in Outlook als weiteres Postfach im
     Ordnerbaum. Die Berechtigungen selbst lassen sich nicht über EWS abfragen – tragen Sie die Zuordnung daher hier
-    ein. Orvanta prüft jedes Postfach mit dem Dienstkonto und zeigt nur erreichbare an.
+    ein. Orvanta prüft jede Zuordnung als der Benutzer: Nur Postfächer, auf die Exchange ihm Vollzugriff gewährt,
+    erscheinen. Ist für den Benutzer keine Postfachadresse im Telefonbuch hinterlegt, erfolgt die Prüfung bei seiner
+    nächsten Anmeldung in Orvanta.
 </p>
 <p class="card__hint">
     <strong>Archiviert wird weiterhin nur das primäre Benutzerpostfach</strong> (das im Active Directory hinterlegte
     Postfach des angemeldeten Benutzers). Zusätzliche Postfächer laufen nicht in die automatische Archivierung ein.
-    Mit <strong>„Senden als“</strong> steht die Adresse im Verfassen-Dialog als Absender zur Auswahl; die Signatur
+    Mit <strong>„Senden als“</strong> steht die Adresse im Verfassen-Dialog als Absender zur Auswahl; ob der Benutzer
+    tatsächlich so senden darf, prüft Exchange beim Versand (gesendet wird immer als der Benutzer). Die Signatur
     bleibt die des primären Postfachs. Der Kalender eines zusätzlichen Postfachs lässt sich in Orvanta per
     Kontrollkästchen ein- und ausblenden.
 </p>
@@ -177,6 +180,8 @@ $formatDate = static function (string $value): string {
                         <td>
                             <?php if ($row['verified']) { ?>
                                 erreichbar (<?= Html::e($formatDate($row['checked_at'])) ?>)
+                            <?php } elseif ($row['checked_at'] === '') { ?>
+                                noch nicht geprüft<?= $row['error'] !== '' ? '<br>' . Html::e($row['error']) : '' ?>
                             <?php } else { ?>
                                 <strong>nicht erreichbar</strong><?= $row['error'] !== '' ? '<br>' . Html::e($row['error']) : '' ?>
                             <?php } ?>

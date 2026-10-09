@@ -153,7 +153,8 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `database/migrations/044_orvanta_exchange_session_client.sql` | Spalten `orvanta_exchange_sessions.client_ip`/`client_host` (Client der Sitzung, Abschnitt 20.5) |
 | `database/migrations/045_orvanta_oof.sql` | Tabellen `orvanta_oof_templates` und `orvanta_oof_settings` samt erster Vorlage (Abschnitt 21) |
 | `database/migrations/046_orvanta_shared_mailboxes.sql` | Tabelle `orvanta_shared_mailboxes` (Abschnitt 22) |
-| `database/migrations/047_orvanta_flow_presence.sql` | Tabellen `orvanta_activity`, `orvanta_user_samples` und `mail_proxy_source_state` (Nachrichtenfluss, Abschnitt 23.1) |
+| `database/migrations/047_orvanta_shared_mailboxes_reverify.sql` | Setzt `checked_at` aller Zuordnungen zurück: Neuprüfung mit den Rechten des Benutzers (Abschnitt 22.1) |
+| `database/migrations/048_orvanta_flow_presence.sql` | Tabellen `orvanta_activity`, `orvanta_user_samples` und `mail_proxy_source_state` (Nachrichtenfluss, Abschnitt 23.1) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
@@ -161,7 +162,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `tests/Unit/OrvantaOofTest.php` | Tests der Abwesenheitsnotizen gegen SQLite und `RecordingExchangeTransport` (Abschnitt 21) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Tests der Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (Abschnitt 19) |
 | `tests/Unit/OrvantaSharedMailboxTest.php` | Tests der zusätzlichen Postfächer gegen SQLite und den Demo-Transport samt Rendertest der Adminseite (Abschnitt 22) |
-| `tests/Unit/OrvantaFlowTest.php` | Tests des Nachrichtenfluss-Dashboards gegen SQLite (Migration 047), Wolken, Grafik, Dienst und Ansicht (Abschnitt 23.7) |
+| `tests/Unit/OrvantaFlowTest.php` | Tests des Nachrichtenfluss-Dashboards gegen SQLite (Migration 048), Wolken, Grafik, Dienst und Ansicht (Abschnitt 23.7) |
 
 ## 3. Routen, Zugriff und API-Rahmen
 
@@ -213,7 +214,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/api/orvanta/erinnerungen/erledigt` | `dismissReminder` | Erinnerung schließen |
 | POST | `/api/orvanta/erinnerungen/spaeter` | `snoozeReminder` | Erinnerung verschieben (`minutes` 1–1440, Standard 5) |
 | GET | `/api/orvanta/abwesenheit` | `oof` | Zustand, Vorlage und Einstellungen der Abwesenheitsnotiz (Abschnitt 21) |
-| POST | `/api/orvanta/abwesenheit` | `saveOof` | Abwesenheitsnotiz setzen oder abschalten (Abschnitt 21) |
+| POST | `/api/orvanta/abwesenheit` | `saveOof` | Abwesenheitsnotiz setzen oder abschalten (Abschnitt 21); ohne zugewiesene Vorlage nur Abschalten (`active` false), sonst 409 |
 | POST | `/api/orvanta/ki/verbessern` | `aiImprove` | KI-Unterstützung: `mode`, `text`, `prompt`, optional `previous_text`, `context{subject, recipients}` → `{text, usage{input_tokens, output_tokens}}` (Abschnitt 15) |
 | POST | `/api/orvanta/rechtschreibung/pruefen` | `spellcheck` | Rechtschreibprüfung: `words[]` (≤ 400) → `{available, misspelled[]}` (Abschnitt 19) |
 | POST | `/api/orvanta/rechtschreibung/vorschlaege` | `spellcheckSuggest` | Vorschläge: `word` (≤ 64 Zeichen) → `{available, suggestions[]}` (Abschnitt 19) |
@@ -294,7 +295,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 
 ## 4. Datenhaltung
 
-### 4.1 Tabellen (Migrationen 033–047)
+### 4.1 Tabellen (Migrationen 033–048)
 
 | Tabelle | Spalten (Auszug) | Hinweise |
 | --- | --- | --- |
@@ -308,10 +309,10 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_exchange_sessions` (Migrationen 043, 044) | `session_hash` = `sha1(session_id)`, `user_uid`, `client_ip` (≤ 45, IPv4/IPv6), `client_host` (≤ 190, Reverse-DNS oder leer), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
 | `orvanta_oof_templates` (Migration 045) | `name` (≤ 120), `fixed_text` (TEXT, ≤ 4000 Zeichen), `example_text` (TEXT, ≤ 2000 Zeichen), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Vorlagen der Abwesenheitsnotiz; Index (`active`, `sort_order`). Zuordnung wie bei den Signaturen: erste aktive Vorlage nach `sort_order`, deren Gruppe in den SSO-Gruppen vorkommt – ohne Treffer gibt es keine Abwesenheitsnotiz. Migration legt die Vorlage „Allgemeine Abwesenheit“ an. Abschnitt 21 |
 | `orvanta_oof_settings` (Migration 045) | `user_uid` (Primary Key), `template_id` (NULL, `ON DELETE SET NULL`), `dynamic_text` (≤ 2000), `external_audience` ∈ `none\|all` (Standard `none`), `schedule_mode` ∈ `range\|until_off` (Standard `until_off`), `start_date`, `end_date` (DATE, NULL), `active` | Benutzereinstellungen; die maßgebliche Einstellung liegt auf dem Exchange-Server, die Zeile hält den letzten Stand für Banner und Dialog. Abschnitt 21 |
-| `orvanta_shared_mailboxes` (Migration 046) | `user_uid` (≤ 190), `email` (≤ 190), `display_name` (≤ 190), `send_as`, `active`, `verified_at` (DATETIME, NULL), `verify_error` (≤ 500), `checked_at` (DATETIME, NULL), `calendar_visible`, `sort_order` (1–999), `created_at`, `updated_at` | Unique (`user_uid`, `email`); Index (`user_uid`, `active`, `sort_order`). Zusätzlich per Vollzugriff berechtigte Postfächer, Abschnitt 22. Collation `utf8mb4_unicode_ci`, Adressen werden also ohne Beachtung der Groß-/Kleinschreibung verglichen |
-| `orvanta_activity` (Migration 047) | `user_uid` (≤ 190, Primary Key), `backend` ∈ `exchange\|proxy`, `first_seen_at`, `last_seen_at`, `requests` | Aktive Nutzer der letzten Minuten, **ohne Inhalte**; `last_seen_at` entscheidet über `ACTIVE_WINDOW` (300 s), `purge()` räumt älter als `ACTIVITY_TTL` (86400 s). Abschnitt 23.2 |
-| `orvanta_user_samples` (Migration 047) | `sampled_at` (DATETIME, unique), `active_users`, `exchange_users`, `proxy_users`, `ai_users` | Genau eine Zeile je Zeitraster (`SAMPLE_INTERVAL` 300 s); Grundlage der Kennzahlen und des Verlaufs, `purge()` räumt älter als `HISTORY_DAYS` (400 Tage). Abschnitt 23.2 |
-| `mail_proxy_source_state` (Migration 047) | `identity_source_id` (INT, Primary Key, 0 = Hauptquelle), `last_success_at` (DATETIME, NULL), `last_error_at` (DATETIME, NULL), `last_error` (≤ 500), `failures`, `checked_at` (DATETIME, NULL) | Zustand je Identitätsquelle im Mailpfad; **ohne Fremdschlüssel**, weil Quelle 0 die Hauptquelle aus `orvanta_settings` ist. Geschrieben von `ProxyMailBackend` und `MailProxyService::testSources()`, gelesen vom Nachrichtenfluss-Dashboard. Abschnitt 23.1 |
+| `orvanta_shared_mailboxes` (Migration 046) | `user_uid` (≤ 190), `email` (≤ 190), `display_name` (≤ 190), `send_as`, `active`, `verified_at` (DATETIME, NULL), `verify_error` (≤ 500), `checked_at` (DATETIME, NULL), `calendar_visible`, `sort_order` (1–999), `created_at`, `updated_at` | Unique (`user_uid`, `email`); Index (`user_uid`, `active`, `sort_order`). Zusätzlich per Vollzugriff berechtigte Postfächer, Abschnitt 22; Migration 047 setzt `checked_at` zurück (Neuprüfung als Benutzer). Collation `utf8mb4_unicode_ci`, Adressen werden also ohne Beachtung der Groß-/Kleinschreibung verglichen |
+| `orvanta_activity` (Migration 048) | `user_uid` (≤ 190, Primary Key), `backend` ∈ `exchange\|proxy`, `first_seen_at`, `last_seen_at`, `requests` | Aktive Nutzer der letzten Minuten, **ohne Inhalte**; `last_seen_at` entscheidet über `ACTIVE_WINDOW` (300 s), `purge()` räumt älter als `ACTIVITY_TTL` (86400 s). Abschnitt 23.2 |
+| `orvanta_user_samples` (Migration 048) | `sampled_at` (DATETIME, unique), `active_users`, `exchange_users`, `proxy_users`, `ai_users` | Genau eine Zeile je Zeitraster (`SAMPLE_INTERVAL` 300 s); Grundlage der Kennzahlen und des Verlaufs, `purge()` räumt älter als `HISTORY_DAYS` (400 Tage). Abschnitt 23.2 |
+| `mail_proxy_source_state` (Migration 048) | `identity_source_id` (INT, Primary Key, 0 = Hauptquelle), `last_success_at` (DATETIME, NULL), `last_error_at` (DATETIME, NULL), `last_error` (≤ 500), `failures`, `checked_at` (DATETIME, NULL) | Zustand je Identitätsquelle im Mailpfad; **ohne Fremdschlüssel**, weil Quelle 0 die Hauptquelle aus `orvanta_settings` ist. Geschrieben von `ProxyMailBackend` und `MailProxyService::testSources()`, gelesen vom Nachrichtenfluss-Dashboard. Abschnitt 23.1 |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -466,7 +467,7 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `aufgaben/aufgabe` (POST) | `id, subject, body, importance, status` und optional `due, start, reminder, percent` (Unix-Sekunden bzw. %) | `{id, message}` |
 | `notizen/notiz` (POST) | `id, body` (nicht leer) | `{id, message}` |
 | `erinnerungen` | Query `sync=1` erzwingt Abgleich | `{due[], active[], server_time, warning}`; Element: `id, item_id, subject, location, start, remind_at, state, relative` |
-| `abwesenheit` | – | `{available, template{id,name}\|null, fixed_text, dynamic_text, external_audience, schedule_mode, start_date, end_date, saved_active, state, active, scheduled, server_audience, server_start, server_end, signature}`; ohne zugewiesene Vorlage ist `template` `null`, `available` false und `fixed_text` leer; `state` (`Disabled`/`Enabled`/`Scheduled`) stammt aus `GetUserOofSettings` (Abschnitt 21) |
+| `abwesenheit` | – | `{available, template{id,name}\|null, fixed_text, dynamic_text, external_audience, schedule_mode, start_date, end_date, saved_active, template_changed, state, active, scheduled, server_audience, server_start, server_end, signature}`; ohne zugewiesene Vorlage ist `template` `null`, `available` false und `fixed_text` leer; `state` (`Disabled`/`Enabled`/`Scheduled`) stammt aus `GetUserOofSettings` (Abschnitt 21) |
 | `abwesenheit` (POST) | `active` (bool), `dynamic_text` (≤ 2000 Zeichen), `external_audience` ∈ `none\|all`, `schedule_mode` ∈ `range\|until_off`, bei `range` zusätzlich `start_date`, `end_date` (`JJJJ-MM-TT`) | `{ok, message, oof{…}}` wie GET; ohne zugewiesene Vorlage → 409 (Abschnitt 21) |
 
 Grenzwerte (Server maßgeblich):
@@ -722,8 +723,13 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   `toggleOofRange()` blendet die Zeitraumfelder ein und aus, und
   `saveOof(active)` sendet den Dialoginhalt mit gesetztem `active`
   (`[data-ov-oof-submit="1"|"0"]`, auch „Abschalten“); Fehler erscheinen in
-  `[data-ov-form-error]`. Ohne zugewiesene Vorlage ist der Menüband-Punkt
-  „Abwesenheit“ ausgeblendet (`capabilities.oof`).
+  `[data-ov-form-error]`. `fillOofForm()` übernimmt den Serverzustand
+  (`active`) in den Dialog, zeigt ihn in `[data-ov-oof-state]` (bei
+  `template_changed` mit Hinweis auf den neuen Vorlagentext) und beschriftet
+  die Hauptschaltfläche bei aktiver Notiz mit „Übernehmen“. Ohne zugewiesene
+  Vorlage fragt `openOofDialog()` bei aktiver Notiz nach und schaltet sie über
+  `disableOof()` (`{active: false}`) ab. Für Proxy-Postfächer ist der
+  Menüband-Punkt „Abwesenheit“ ausgeblendet (`capabilities.oof`).
 - Tastatur (außerhalb von Eingabefeldern/Dialogen): `1`–`5` Module, `/` Suche,
   `N` Neu, `R` Antworten, `Entf` Löschen (je Modul), Pfeile hoch/runter in der
   Liste, `Esc` schließt das Erinnerungs-Popover.
@@ -865,7 +871,7 @@ Druck ausgeblendet.
     Verbindungstest. Ein Proxy-Ausfall setzt alle Quellen auf `error` **und**
     `muted`; eine gestörte Quelle graut nur ihre eigenen Postfächer aus
     (Abschnitt 23.6).
-26. **Fehlende Migration 047 bricht nichts.** Präsenz und Verlauf liefern dann
+26. **Fehlende Migration 048 bricht nichts.** Präsenz und Verlauf liefern dann
     leer, der Quellenzustand `''`; die Seite zeigt weiter alle Knoten, nur ohne
     Nutzerzahlen und Verlauf.
 
@@ -883,8 +889,8 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
+| `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage, Zustand bleibt erhalten, `template_changed`), Abschalten ohne zugewiesene Vorlage (Text und Vorlage bleiben, Aktivieren abgelehnt), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
-| `tests/Unit/OrvantaFlowTest.php` | Nachrichtenfluss-Dashboard (Abschnitt 23) gegen SQLite (`flowPdo()`, Spiegel der Migration 047 **ohne** `orvanta_cache_items`): Repository (`touchActivity()`, `activeUsers()` inkl. Backend-Filter und Grenzen, `recordSample()` schreibt je Rasterplatz genau einmal und überschreibt nicht, `sampleStats()`, `dailyPeaks()`, `purge()`), Quellenzustand je Identitätsquelle im Mailpfad (Erfolg/Fehler, Quelle 0 ohne Zeile, `testSources()` überspringt inaktive Quellen), Präsenz (`backendFor()`, `stats()`, `history()` mit genau `<tage>` Punkten und `null`-Lücken), Wolken (`level()`-Schwellen, `items()`, `render()` ohne `style`, `table()`), Grafik (`overlay()` ohne `style`, fünf Reihen, leere Daten), Dienst (`evaluate()` mit vollständigem Eingabefeld: Zustände, Ausgrauregeln, Kanten, Spuren, Kennzahlen, Störungen, Gesamtstatus, Grenzwerte) und Ansicht (`flowRender()` rendert `views/admin/orvanta-flow.php` mit controllergleichen Variablen: Escaping, `data-`Hooks, ausgegraute Wolken, Kennzahlen, Verlauf erst mit Proben) |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
@@ -1963,6 +1969,14 @@ Banner: orvanta.js → loadOof() → renderOofBanner() (Streifen unter dem Menü
 - Die lokale Zeile (`orvanta_oof_settings`) hält nur den letzten Stand für
   Banner und Dialog (u. a. den dynamischen Text, der nirgends sonst
   gespeichert ist). Fehlt `uid` (Demo-Benutzer), wird sie nicht geschrieben.
+- Vorlagenwechsel: `settings()` übernimmt bei neu zugewiesener Vorlage deren
+  Beispieltext, lässt `active` aber unverändert – Banner und Dialog zeigen
+  denselben Zustand. `status()` meldet `template_changed`, solange die
+  gespeicherte `template_id` von der zugewiesenen Vorlage abweicht.
+- `apply()` nimmt `?array $template`: Ohne Vorlage ist nur das Abschalten
+  erlaubt (`active` → `ValidationException`, im Controller bereits 409).
+  Fehlende Eingaben ergänzt `apply()` aus der gespeicherten Zeile, damit
+  Abschalten ohne Formular den Text und die bisherige `template_id` behält.
 
 ### 21.3 Verwaltung und Vorschau
 
@@ -1995,7 +2009,8 @@ aus `OrvantaServiceTest.php`. Für den Demozweig (`isDemo()` verlangt
 Benutzer, die auf dem Exchange-Server **Vollzugriff** auf weitere Postfächer
 haben, sehen diese in Outlook als zusätzliche Knoten im Ordnerbaum. Orvanta
 bildet das nach: Der Adminbereich ordnet einem Benutzer Postfachadressen zu,
-ein Dienstkonto prüft die Erreichbarkeit über EWS, und die App bedient die
+Orvanta prüft mit den Rechten des Benutzers über EWS, ob Exchange ihm
+Vollzugriff gewährt, und die App bedient die
 Postfächer per Impersonation (`$access['impersonate']` wird je Anfrage
 umgesetzt).
 
@@ -2003,12 +2018,12 @@ umgesetzt).
 Admin: /admin/office/orvanta/postfaecher[/speichern|/pruefen|/loeschen]
           └─ Admin\OrvantaSharedMailboxController ─► OrvantaSharedMailboxService
                 ├─ OrvantaSharedMailboxRepository (orvanta_shared_mailboxes)
-                └─ OrvantaExchangeService::probeMailbox()  (GetFolder auf msgfolderroot)
+                └─ OrvantaExchangeService::probeMailbox(email, user)  (GetFolder auf msgfolderroot des Postfachs, als Benutzer)
 
 App:   OrvantaController::authorize()
           ├─ primary    = eigenes Postfach (OrvantaMailboxResolver, AD)
           ├─ mailboxes  = OrvantaSharedMailboxService::available(ssoUser)
-          └─ index()    → OrvantaSharedMailboxService::refresh(ssoUser)  (nur faellige Pruefungen)
+          └─ index()    → OrvantaSharedMailboxService::refresh(ssoUser, primary)  (nur faellige Pruefungen)
 
 API:   OrvantaApiController::withMailbox(access, request)
           ├─ requestedMailbox(request)  aus `postfach`/`mailbox`, Ordner- oder Elementkennung
@@ -2020,15 +2035,28 @@ API:   OrvantaApiController::withMailbox(access, request)
 
 - EWS kennt keine Abfrage der Postfachberechtigungen. Die Zuordnung wird
   deshalb **gepflegt** (`orvanta_shared_mailboxes`) und anschließend
-  **geprüft**: `probeMailbox($email)` öffnet mit dem Dienstkonto
-  `GetFolder` auf `DistinguishedFolderId msgfolderroot` und liefert
-  `{ok, error}`. Nur so ist sichergestellt, dass die
-  `ApplicationImpersonation` des Dienstkontos das Postfach tatsächlich
-  erreicht.
-- `OrvantaSharedMailboxService::verify(id, force)` schreibt das Ergebnis
+  **geprüft**: `probeMailbox($email, $user)` gibt sich als der Benutzer aus
+  (`ExchangeImpersonation` mit `$user`) und ruft `GetFolder` auf
+  `DistinguishedFolderId msgfolderroot` mit `<t:Mailbox>` des weiteren
+  Postfachs auf; Ergebnis `{ok, error}`. So bestätigt Exchange den
+  **Vollzugriff des Benutzers** – die `ApplicationImpersonation` des
+  Dienstkontos allein würde jedes Postfach erreichen. `ErrorAccessDenied`
+  wird als „Exchange gewährt dem Benutzer (…) keinen Vollzugriff auf dieses
+  Postfach.“ gemeldet. Ohne `$user` (Demo-Test) prüft das Dienstkonto.
+- Die Adresse des Benutzers kommt beim Öffnen der App aus
+  `$access['primary']`, im Adminbereich aus der Telefonliste
+  (`OrvantaSharedMailboxRepository::userAddress(uid)`: `samaccount_name` und
+  Quellenkennung aus `benutzer@KENNUNG`). Ist keine bekannt, setzt
+  `markPending()` `checked_at`/`verified_at` auf NULL und
+  `verify_error = OrvantaSharedMailboxService::PENDING`; die Prüfung folgt bei
+  der nächsten Anmeldung. Migration 047 setzt `checked_at` aller bestehenden
+  Zuordnungen zurück, damit sie so neu geprüft werden.
+- „Senden als“ lässt sich über EWS nicht vorab prüfen; Exchange setzt es beim
+  Versand durch (`ErrorSendAsDenied` → verständliche Meldung, Abschnitt 22.4).
+- `OrvantaSharedMailboxService::verify(id, force, userAddress)` schreibt das Ergebnis
   (`markVerified(id, error)` → `verified_at`/`verify_error`/`checked_at`) und
   gibt den Fehlertext zurück. Geprüft wird nur, wenn die letzte Prüfung älter
-  als `VERIFY_TTL` (43200 s = 12 h) ist; `refresh(ssoUser)` macht das beim
+  als `VERIFY_TTL` (43200 s = 12 h) ist; `refresh(ssoUser, userAddress)` macht das beim
   Öffnen der App für alle aktiven Zuordnungen des Benutzers,
   `OrvantaController::index()` ruft es vor dem Aufbau des Ordnerbaums auf.
 - `available(ssoUser)` liefert nur Zuordnungen mit `active = 1`, die als
@@ -2055,6 +2083,16 @@ Anfrage:
    Postfach.
 3. `stripMailbox()` entfernt das Präfix vor dem EWS-Aufruf und wirft 409,
    wenn das Präfix zu einem anderen als dem angesprochenen Postfach gehört.
+4. Verschieben (`mail/aktion` mit `move`) prüft das Ziel über
+   `moveTarget()`: Ziel und Quelle müssen im selben Postfach liegen (sonst
+   409), der Wurzelknoten `smb:<id>|` ist kein Ziel (422). Die Oberfläche
+   sendet `postfach` des Quellordners und nimmt per Drag & Drop nur Ordner
+   desselben Postfachs an.
+
+Elementbezogene Aufrufe der Oberfläche (`mail/nachricht`, Lesen-Aktion,
+`mail/kopfzeilen`, `kalender/antwort`, `anhang/link`, `anhang/nextcloud`,
+`mail/ordner/neu`) senden `postfach` ausdrücklich mit, da reine EWS-Kennungen
+kein Präfix tragen.
 
 Der Ordnerbaum (`folders()`) liefert zuerst die Ordner des eigenen Postfachs
 und danach je weiterem Postfach einen Wurzelknoten `kind = 'mailbox'`
@@ -2095,6 +2133,16 @@ Oberfläche.
   (`$access['mailbox']['email']`) – damit ist die Vorbelegung genau die des
   geöffneten Postfachs. Ein nicht erlaubtes `from` ergibt 403; ein Postfach
   ohne „Senden als“ sendet als eigenes Postfach.
+- `send()` und `respond()` laufen mit `$access['primary']` als
+  Impersonationsadresse, auch wenn der Editor aus einem weiteren Postfach
+  geöffnet wurde: So prüft Exchange „Senden als“ für den Benutzer
+  (`ErrorSendAsDenied` → „Exchange verweigert den Versand: Für diese
+  Absenderadresse fehlt Ihnen die Berechtigung „Senden als“.“). Weicht der
+  Absender vom eigenen Postfach ab, setzt `mailPayload()` `sent_mailbox`, und
+  `OrvantaExchangeService::send()` legt die Kopie in `sentitems` dieses
+  Postfachs ab (`SavedItemFolderId` mit `<t:Mailbox>`). Entwürfe werden
+  weiter im geöffneten Postfach gespeichert; deren Versand setzt den
+  geprüften Vollzugriff voraus.
 - Übertragen wird der Absender als `From` im Exchange-Auftrag
   (`EwsXml::singleRecipient()`/`fromXml()`, `item:From` in `updateDraft()` und
   `SendItem`/`CreateItem`). Ohne Auswahl bleibt das Feld weg, damit Exchange
@@ -2120,7 +2168,8 @@ Terminerinnerungen beziehen sich immer auf `$access['primary']`.
 und `buero@demo.local` („Büro“, `send_as = false`). Deren Ordner- und
 Elementkennungen tragen im Demo-Transport den Suffix `@team-demo-local` bzw.
 `@buero-demo-local` (aus der Adresse gebildet), damit die Kennungen über die
-Postfächer hinweg eindeutig sind. `probeMailbox()` antwortet für beide `ok`;
+Postfächer hinweg eindeutig sind. `probeMailbox()` liest das Zielpostfach aus
+`<t:Mailbox>` (sonst die Impersonationsadresse) und antwortet für beide `ok`;
 für jede andere Adresse kommt `ErrorMailboxStoreUnavailable`.
 
 ### 22.7 Tests
@@ -2134,7 +2183,11 @@ behält) und nutzt `orvantaConfig()`/`orvantaExchange()` aus
 `available()` (Filter, Reihenfolge), `resolve()`, `sender()`,
 `calendarSelection()`/`setCalendarVisible()` samt Ablehnung fremder
 Kennungen, die Prüfung über `DemoExchangeTransport::probeMailbox()` und das
-`VERIFY_TTL`-Verhalten von `refresh()`, die Validierung und der Upsert in
+`VERIFY_TTL`-Verhalten von `refresh()`, die Prüfung mit den Rechten des
+Benutzers (Impersonation, `<t:Mailbox>`, Meldung bei `ErrorAccessDenied`), der
+offene Zustand ohne Benutzeradresse samt `userAddress()` über
+Quellenkennungen, „Gesendete Elemente“ im Absenderpostfach und die Meldung
+bei `ErrorSendAsDenied`, die Validierung und der Upsert in
 `save()`, `searchUsers()` (Kennungsbildung, Maskierung der LIKE-Platzhalter,
 Filter `active`/`samaccount_name`), `forAdmin()`, die Kennungs-Suffixe des
 Demo-Transports sowie ein Rendertest der Adminseite
@@ -2170,7 +2223,7 @@ POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
                 └─ OrvantaFlowCharts   Verlaufsgrafik (SVG)
 ```
 
-### 23.1 Datenmodell (Migration 047)
+### 23.1 Datenmodell (Migration 048)
 
 | Tabelle | Zweck | Schlüssel |
 | --- | --- | --- |
@@ -2178,7 +2231,7 @@ POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
 | `orvanta_user_samples` | Minutenproben der Nutzerzahlen | `sampled_at` (unique), `active_users`, `exchange_users`, `proxy_users`, `ai_users` |
 | `mail_proxy_source_state` | Zustand je Identitätsquelle im Mailpfad | `identity_source_id` (Primary Key, 0 = Hauptquelle), `last_success_at`, `last_error_at`, `last_error`, `failures`, `checked_at` |
 
-- Fehlt Migration 047, laufen `OrvantaPresenceService` und
+- Fehlt Migration 048, laufen `OrvantaPresenceService` und
   `OrvantaFlowRepository` leer (`[]`/`0`/`false`) statt zu brechen; die
   Quellenzustände kommen dann als leerer Zustand an (`''`).
 - `mail_proxy_source_state` hat **keinen** Fremdschlüssel: Quelle `0` ist die
@@ -2275,7 +2328,7 @@ POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
 - Die Seite ist **lesend**; die einzige Aktion ist der Quellentest mit CSRF.
 - `evaluate()` darf keine Seiteneffekte haben (keine Datenbank, kein Netz) –
   sonst brechen die Tests und die JSON-Route wird langsam.
-- Fehlende Migration 047 darf die Seite nicht brechen.
+- Fehlende Migration 048 darf die Seite nicht brechen.
 - Der Zustand einer Quelle wird **nie** aus dem Vorhandensein eines Postfachs
   abgeleitet, sondern aus dem letzten Mailpfad-Kontakt oder einem Test.
 - Ist der Proxy gestört, werden die Identitätsquellen als `error` **und**
@@ -2289,7 +2342,7 @@ POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
 
 `tests/Unit/OrvantaFlowTest.php` (Abschnitt 12) deckt Repository, Präsenz,
 Quellenzustand im Mailpfad, Wolken, Grafik, Dienst und Ansicht ab. Der Test
-baut den SQLite-Spiegel der Migration 047 selbst auf (`flowPdo()`, **ohne**
+baut den SQLite-Spiegel der Migration 048 selbst auf (`flowPdo()`, **ohne**
 `orvanta_cache_items`) und ruft `OrvantaFlowService::evaluate()` mit
 `flowInput()` auf – einem vollständig gesunden Eingabefeld mit festem
 `now = 1_700_000_000`, damit die Erwartungen unabhängig von der Uhr sind.

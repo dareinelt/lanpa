@@ -92,7 +92,8 @@ final class OrvantaApiController extends Controller
             $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_OOF);
             $service = Container::orvantaOof();
             $template = $service->forUser($access['user']);
-            if ($template === null) {
+            // Ohne Vorlage bleibt nur das Abschalten einer noch aktiven Notiz.
+            if ($template === null && !empty($this->body['active'])) {
                 throw new OrvantaException('Für Ihr Konto ist keine Abwesenheitsvorlage hinterlegt. Bitte wenden Sie sich an die Administration.', 409);
             }
             $settings = $service->apply($access['uid'], $access['primary'], $template, $this->body, $exchange, $access['user']);
@@ -225,7 +226,9 @@ final class OrvantaApiController extends Controller
     public function send(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $result = $this->mail($access)->send($access['impersonate'], $this->withSignature($this->mailPayload($access), $access), $this->str('draft_id'), $this->str('change_key'));
+            // Gesendet wird immer als der Benutzer, auch aus einem weiteren
+            // Postfach: So prueft Exchange "Senden als" fuer den Absender.
+            $result = $this->mail($access)->send($access['primary'], $this->withSignature($this->mailPayload($access), $access), $this->str('draft_id'), $this->str('change_key'));
             $this->rememberRecipients($access);
 
             return $result + ['message' => 'Die Nachricht wurde gesendet.'];
@@ -268,7 +271,7 @@ final class OrvantaApiController extends Controller
     {
         return $this->handle($request, function (array $access): array {
             $result = $this->mail($access)->respond(
-                $access['impersonate'],
+                $access['primary'],
                 $this->requireId($this->str('id')),
                 $this->str('mode', 'reply'),
                 $this->withSignature($this->mailPayload($access), $access)
@@ -293,7 +296,7 @@ final class OrvantaApiController extends Controller
                 'unread' => $exchange->markRead($access['impersonate'], $ids, false),
                 'flag' => $exchange->flag($access['impersonate'], $ids, true),
                 'unflag' => $exchange->flag($access['impersonate'], $ids, false),
-                'move' => $exchange->move($access['impersonate'], $ids, $this->requireId($this->str('folder'))),
+                'move' => $exchange->move($access['impersonate'], $ids, $this->moveTarget($access, $this->requireId($this->str('folder')))),
                 'delete' => $exchange->delete($access['impersonate'], $ids, false),
                 'delete_permanent' => $exchange->delete($access['impersonate'], $ids, true),
                 default => throw new OrvantaException('Unbekannte Aktion.', 422),
@@ -1029,6 +1032,26 @@ final class OrvantaApiController extends Controller
     }
 
     /**
+     * Zielordner einer Verschiebung: Nachrichten bleiben in ihrem Postfach
+     * (Quelle = `postfach` der Anfrage). Ordner weiterer Postfaecher tragen
+     * deren Praefix, Ordner des eigenen Postfachs keines – ein Ziel ohne
+     * Praefix wuerde in einem weiteren Postfach sonst den gleichnamigen
+     * Standardordner dort treffen.
+     *
+     * @param array<string,mixed> $access
+     */
+    private function moveTarget(array $access, string $folder): string
+    {
+        $prefixed = str_starts_with($folder, self::MAILBOX_PREFIX) && str_contains($folder, '|');
+        if ($prefixed !== ($access['mailbox'] !== null)) {
+            throw new OrvantaException('Nachrichten lassen sich nur innerhalb eines Postfachs verschieben.', 409);
+        }
+        // stripMailbox() weist Ordner eines anderen weiteren Postfachs ab; der
+        // Wurzelknoten ("smb:<Id>|") ist kein Ablageziel.
+        return $this->requireId($this->stripMailbox($access, $folder));
+    }
+
+    /**
      * Kalender der Kalenderansicht: das eigene Postfach (null) und die per
      * Checkbox eingeblendeten Kalender zusaetzlich berechtigter Postfaecher.
      *
@@ -1284,6 +1307,10 @@ final class OrvantaApiController extends Controller
         if ($sender['email'] !== '') {
             $mail['from'] = $sender['email'];
             $mail['from_name'] = $sender['name'];
+            if (strcasecmp($sender['email'], (string) $access['primary']) !== 0) {
+                // Kopie in „Gesendete Elemente“ des Absenderpostfachs (wie Outlook).
+                $mail['sent_mailbox'] = $sender['email'];
+            }
         }
 
         return $mail;

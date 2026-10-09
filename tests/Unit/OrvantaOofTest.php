@@ -349,8 +349,8 @@ Runner::test('Abwesenheit: Einstellungen des Benutzers', function (): void {
     Assert::false($updated['active']);
     Assert::same(1, (int) $setup['pdo']->query('SELECT COUNT(*) FROM orvanta_oof_settings')->fetchColumn());
 
-    // Eine neu zugewiesene Vorlage bringt ihren Beispieltext mit und schaltet
-    // die Notiz nicht ungefragt wieder ein.
+    // Eine neu zugewiesene Vorlage bringt ihren Beispieltext mit; der Zustand
+    // bleibt der des Servers (keine Abweichung zwischen Banner und Dialog).
     $repository->saveSettings('dreinelt', [
         'template_id' => $template['id'],
         'dynamic_text' => 'Alt',
@@ -364,7 +364,7 @@ Runner::test('Abwesenheit: Einstellungen des Benutzers', function (): void {
     $switched = $service->settings('dreinelt', $other);
     Assert::same($other['id'], $switched['template_id']);
     Assert::same('Neuer Beispieltext', $switched['dynamic_text']);
-    Assert::false($switched['active']);
+    Assert::true($switched['active'], 'Die aktive Notiz bleibt aktiv, bis der Benutzer sie neu speichert.');
     Assert::same('all', $switched['external_audience'], 'Empfaengerkreis bleibt erhalten.');
 });
 
@@ -665,4 +665,60 @@ Runner::test('Abwesenheit: Text und HTML der Notiz', function (): void {
     $escaped = $service->html(oofTemplate($service, ['name' => 'Markup', 'fixed_text' => 'Zeile <b>fett</b>']), '', '');
     Assert::contains('Zeile &lt;b&gt;fett&lt;/b&gt;', $escaped);
     Assert::false(str_contains($escaped, '<b>'));
+});
+
+Runner::test('Abwesenheit: Abschalten ohne zugewiesene Vorlage', function (): void {
+    $setup = oofSetup();
+    $service = $setup['service'];
+    $repository = $setup['repository'];
+    $exchange = orvantaExchange();
+    $template = oofTemplate($service);
+    $service->apply('dreinelt', 'reinelt@example.local', $template, [
+        'active' => true,
+        'dynamic_text' => 'Vertretung: Frau Muster',
+        'external_audience' => 'all',
+        'schedule_mode' => 'until_off',
+    ], $exchange['exchange'], null);
+
+    // Gruppe entzogen: Aktivieren ist nicht mehr moeglich ...
+    try {
+        $service->apply('dreinelt', 'reinelt@example.local', null, ['active' => true], $exchange['exchange'], null);
+        Assert::true(false, 'Ohne Vorlage darf keine Notiz aktiviert werden.');
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['template_id']));
+    }
+
+    // ... Abschalten aber schon; fehlende Eingaben bleiben wie gespeichert.
+    $off = $service->apply('dreinelt', 'reinelt@example.local', null, ['active' => false], $exchange['exchange'], null);
+    Assert::contains('<t:OofState>Disabled</t:OofState>', $exchange['transport']->last());
+    Assert::false($off['active']);
+    $stored = $repository->settings('dreinelt');
+    Assert::false($stored['active']);
+    Assert::same('Vertretung: Frau Muster', $stored['dynamic_text'], 'Der Text des Benutzers bleibt erhalten.');
+    Assert::same('all', $stored['external_audience']);
+    Assert::same($template['id'], $stored['template_id'], 'Die bisherige Vorlage bleibt vermerkt.');
+});
+
+Runner::test('Abwesenheit: Vorlagenwechsel bei aktiver Notiz', function (): void {
+    oofWithDemoEnv(function (): void {
+        $setup = oofSetup();
+        $service = $setup['service'];
+        $exchange = orvantaExchange();
+        $template = oofTemplate($service, ['groups' => 'Verwaltung']);
+        $service->apply('dreinelt', 'reinelt@example.local', $template, [
+            'active' => true,
+            'dynamic_text' => 'Alt',
+            'schedule_mode' => 'until_off',
+        ], $exchange['exchange'], null);
+        $other = oofTemplate($service, ['name' => 'Neu', 'groups' => 'IT', 'example_text' => 'Neuer Text']);
+
+        $status = $service->status('dreinelt', 'reinelt@example.local', $exchange['exchange'], ['groups' => ['IT']]);
+        Assert::same($other['id'], $status['template']['id']);
+        Assert::true($status['active'], 'Der Banner meldet die weiterhin aktive Notiz.');
+        Assert::true($status['saved_active'], 'Auch der Dialog sieht die Notiz als aktiv.');
+        Assert::true($status['template_changed'], 'Der Dialog weist auf den Vorlagenwechsel hin.');
+
+        $same = $service->status('dreinelt', 'reinelt@example.local', $exchange['exchange'], ['groups' => ['Verwaltung']]);
+        Assert::false($same['template_changed']);
+    });
 });

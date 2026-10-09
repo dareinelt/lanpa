@@ -176,6 +176,44 @@ final class OrvantaSharedMailboxRepository extends Repository
     }
 
     /**
+     * Pruefung zuruecksetzen: Die Zuordnung gilt als nicht bestaetigt und
+     * wird bei der naechsten Anmeldung des Benutzers erneut geprueft.
+     */
+    public function markPending(int $id, string $note): void
+    {
+        $statement = $this->pdo->prepare('UPDATE orvanta_shared_mailboxes SET verify_error = :note, checked_at = NULL, verified_at = NULL WHERE id = :id');
+        $statement->execute(['id' => $id, 'note' => mb_substr($note, 0, 500)]);
+    }
+
+    /**
+     * Postfachadresse eines Benutzers aus dem Telefonbuch (AD-Bestand); die
+     * Office-Kennung ist "name" (Hauptquelle) oder "name@KENNUNG" (weitere
+     * Identitaetsquelle, wie in searchUsers()). Leer = nicht bekannt.
+     */
+    public function userAddress(string $uid): string
+    {
+        $uid = trim($uid);
+        $position = strrpos($uid, '@');
+        $username = $position === false ? $uid : substr($uid, 0, $position);
+        $source = $position === false ? '' : substr($uid, $position + 1);
+        if ($username === '') {
+            return '';
+        }
+        $statement = $this->pdo->prepare(
+            "SELECT p.email
+               FROM phonebook p
+               LEFT JOIN identity_sources s ON s.id = p.identity_source_id
+              WHERE p.active = 1 AND LOWER(p.samaccount_name) = :username
+                AND LOWER(COALESCE(s.source_key, '')) = :source
+                AND p.email IS NOT NULL AND p.email <> ''
+              ORDER BY p.id ASC LIMIT 1"
+        );
+        $statement->execute(['username' => mb_strtolower($username), 'source' => mb_strtolower($source)]);
+
+        return trim((string) ($statement->fetchColumn() ?: ''));
+    }
+
+    /**
      * Checkbox im Kalender des Benutzers speichern.
      */
     public function setCalendarVisible(int $id, bool $visible): void

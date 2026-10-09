@@ -111,7 +111,7 @@ function mailProxyPdo(): PDO
         )"
     );
     $pdo->exec('INSERT INTO mail_proxy_state (id, generation) VALUES (1, 1)');
-    // Zustand je Identitaetsquelle (database/migrations/047_orvanta_flow_presence.sql)
+    // Zustand je Identitaetsquelle (database/migrations/048_orvanta_flow_presence.sql)
     $pdo->exec(
         "CREATE TABLE mail_proxy_source_state (
             identity_source_id INTEGER PRIMARY KEY, last_success_at TEXT NULL, last_error_at TEXT NULL,

@@ -212,12 +212,13 @@ final class OrvantaOofService
                 'active' => false,
             ];
         }
-        // Eine neu zugewiesene Vorlage bringt ihren Beispieltext mit; die
-        // Notiz wird dabei nicht ungefragt auf dem Server aktiviert.
+        // Eine neu zugewiesene Vorlage bringt ihren Beispieltext mit. Der
+        // Zustand bleibt unveraendert: Eine auf dem Server aktive Notiz laeuft
+        // mit dem bisherigen Text weiter, bis der Benutzer sie neu speichert
+        // (status() meldet dafuer template_changed).
         if ($template !== null && $stored['template_id'] !== $template['id']) {
             $stored['template_id'] = $template['id'];
             $stored['dynamic_text'] = $template['example_text'];
-            $stored['active'] = false;
         }
 
         return $stored;
@@ -277,17 +278,28 @@ final class OrvantaOofService
      * Abwesenheitsnotiz setzen oder abschalten: Text zusammensetzen, auf den
      * Exchange-Server uebertragen und die Eingaben lokal merken.
      *
-     * @param OofTemplateRow $template
+     * Ohne Vorlage (z. B. nach Entzug der AD-Gruppe) laesst sich eine noch
+     * aktive Notiz nur abschalten. Fehlende Eingaben (Abschalten ueber den
+     * Banner) uebernehmen die gespeicherten Einstellungen.
+     *
+     * @param OofTemplateRow|null $template
      * @param array<string,mixed> $input
      * @param array<string,mixed>|null $ssoUser
      * @return OofSettingsRow
      */
-    public function apply(string $uid, string $mailbox, array $template, array $input, OrvantaExchangeService $exchange, ?array $ssoUser): array
+    public function apply(string $uid, string $mailbox, ?array $template, array $input, OrvantaExchangeService $exchange, ?array $ssoUser): array
     {
+        $stored = $uid !== '' ? $this->repository->settings($uid) : null;
+        if ($stored !== null) {
+            $input += $stored;
+        }
         $settings = $this->validateSettings($input);
-        $settings['template_id'] = $template['id'];
+        if ($template === null && $settings['active']) {
+            throw new ValidationException(['template_id' => 'Für Ihr Konto ist keine Abwesenheitsvorlage hinterlegt. Bitte wenden Sie sich an die Administration.']);
+        }
+        $settings['template_id'] = $template['id'] ?? ($stored['template_id'] ?? 0);
         $settings['uid'] = $uid;
-        if ($settings['active']) {
+        if ($settings['active'] && $template !== null) {
             $exchange->setOofSettings($mailbox, [
                 'state' => $settings['schedule_mode'] === 'range' ? 'Scheduled' : 'Enabled',
                 'external_audience' => $settings['external_audience'] === 'all' ? 'All' : 'None',
@@ -363,6 +375,7 @@ final class OrvantaOofService
     public function status(string $uid, string $mailbox, OrvantaExchangeService $exchange, ?array $ssoUser): array
     {
         $template = $this->forUser($ssoUser);
+        $stored = $uid !== '' ? $this->repository->settings($uid) : null;
         $settings = $this->settings($uid, $template);
         $state = $this->state($mailbox, $exchange, $settings);
         $signature = $this->signatures->forUser($ssoUser);
@@ -377,6 +390,8 @@ final class OrvantaOofService
             'start_date' => $settings['start_date'],
             'end_date' => $settings['end_date'],
             'saved_active' => $settings['active'],
+            // Die aktive Notiz auf dem Server stammt aus einer anderen Vorlage.
+            'template_changed' => $template !== null && $stored !== null && $stored['template_id'] !== $template['id'],
             'state' => $state['state'],
             'active' => $state['active'],
             'scheduled' => $state['scheduled'],

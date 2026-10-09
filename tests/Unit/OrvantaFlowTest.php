@@ -15,7 +15,7 @@ use Tests\Support\Runner;
 
 /**
  * SQLite-Abbild der fuer den Nachrichtenfluss relevanten Tabellen
- * (database/migrations/039_mail_proxy.sql, 047_orvanta_flow_presence.sql).
+ * (database/migrations/039_mail_proxy.sql, 048_orvanta_flow_presence.sql).
  */
 function flowPdo(): PDO
 {

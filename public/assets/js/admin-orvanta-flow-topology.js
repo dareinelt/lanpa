@@ -188,6 +188,7 @@
     var timer = null;
     var rafId = null;
     var lastFrame = 0;
+    var drawErrorLogged = false;
 
     function parseInitial() {
         var holder = root.querySelector('[data-flow-initial]');
@@ -484,7 +485,11 @@
         var z1 = -x * sy + z * cy;
         var y1 = y * cp - z1 * sp;
         var z2 = y * sp + z1 * cp;
-        var scale3 = FOCAL / (FOCAL - z2);
+        // Punkte hinter der Kamera (z2 >= FOCAL) wuerden einen negativen
+        // Massstab liefern; Canvas wirft dann bei negativen Radien und die
+        // Zeichenschleife bricht ab. Daher Abstand nach unten begrenzen.
+        var behind = z2 >= FOCAL - 40;
+        var scale3 = FOCAL / Math.max(40, FOCAL - z2);
         var px3 = x1 * scale3;
         var py3 = -y1 * scale3;
         var px = px3 * mix + (p2 ? p2.x : px3) * (1 - mix);
@@ -493,8 +498,9 @@
         return {
             x: view.width / 2 + view.panX + px * view.zoom,
             y: view.height / 2 + view.panY + py * view.zoom,
-            s: scale * view.zoom,
-            depth: z2 * mix
+            s: Math.max(0.0001, scale * view.zoom),
+            depth: z2 * mix,
+            behind: behind && mix > 0.5
         };
     }
 
@@ -583,7 +589,7 @@
         for (var i = 0; i < stars.length; i++) {
             var s = stars[i];
             var p = project(s, { x: s.x * 0.4, y: s.y * 0.4 });
-            if (p.x < -10 || p.y < -10 || p.x > view.width + 10 || p.y > view.height + 10) {
+            if (p.behind || p.x < -10 || p.y < -10 || p.x > view.width + 10 || p.y > view.height + 10) {
                 continue;
             }
             var tw = 0.5 + 0.5 * Math.sin(time * 0.0012 + s.tw);
@@ -612,6 +618,9 @@
             }
             var wob = Math.sin(time * 0.0009 + a.phase) * 4;
             var p = project({ x: node.pos3.x + a.dx + wob, y: node.pos3.y + a.dy - wob, z: node.pos3.z + a.dz }, null);
+            if (p.behind) {
+                continue;
+            }
             ctx.globalAlpha = alpha * view.mix * (0.18 + 0.2 * (0.5 + 0.5 * Math.sin(time * 0.002 + a.phase)));
             ctx.fillStyle = node.state === 'off' ? STATE_COLORS.off : KIND_COLORS[node.kind] || '#fff';
             ctx.beginPath();
@@ -1009,12 +1018,24 @@
             view.tYaw += 0.09 * dt;
         }
 
-        drawBackground(time);
-        drawAmbient(time);
-        drawEdges(time, dt);
-        drawNodes(time);
-        drawEffects(time);
-        drawVignette();
+        // Ein Zeichenfehler darf die Schleife nicht dauerhaft anhalten –
+        // sonst bleibt die Leinwand bis zum Neuladen leer.
+        try {
+            drawBackground(time);
+            drawAmbient(time);
+            drawEdges(time, dt);
+            drawNodes(time);
+            drawEffects(time);
+            drawVignette();
+        } catch (error) {
+            if (!drawErrorLogged && window.console && window.console.error) {
+                drawErrorLogged = true;
+                window.console.error('Topologie: Zeichenfehler', error);
+            }
+            ctx.setLineDash([]);
+            ctx.lineDashOffset = 0;
+            ctx.globalAlpha = 1;
+        }
 
         rafId = window.requestAnimationFrame(frame);
     }
@@ -1455,6 +1476,13 @@
 
     canvas.addEventListener('pointerup', endPointer);
     canvas.addEventListener('pointercancel', endPointer);
+    window.addEventListener('blur', function () {
+        // Fensterwechsel waehrend des Ziehens: Zeigerzustand zuruecksetzen.
+        pointers = {};
+        pinchStart = null;
+        dragging = false;
+        canvas.classList.remove('is-dragging', 'is-panning');
+    });
     canvas.addEventListener('pointerleave', function () {
         view.hovered = null;
         canvas.classList.remove('is-hovering');

@@ -207,6 +207,22 @@ final class EwsXml
     }
 
     /**
+     * XML-Fragment fuer ein einzelnes Absenderfeld (t:From bzw. t:Sender).
+     * Leere Adresse = kein Element (Exchange setzt den Absender dann selbst).
+     */
+    public static function singleRecipient(string $element, string $address, string $name = ''): string
+    {
+        if (trim($address) === '') {
+            return '';
+        }
+
+        return '<t:' . $element . '><t:Mailbox>'
+            . ($name !== '' ? '<t:Name>' . self::escape($name) . '</t:Name>' : '')
+            . '<t:EmailAddress>' . self::escape($address) . '</t:EmailAddress>'
+            . '</t:Mailbox></t:' . $element . '>';
+    }
+
+    /**
      * XML-Fragment fuer ItemId-Listen.
      *
      * @param list<array{id:string,change_key?:string}> $ids

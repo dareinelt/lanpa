@@ -830,7 +830,8 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
   – Overlay `folder-props` mit Elementen, Ungelesen, Größe und ggf.
   Unterordnern), auf Zeilen der Mail-Liste (Öffnen/Entwurf bearbeiten, Antworten, Allen antworten,
   Weiterleiten, gelesen/ungelesen, Kennzeichnen, Verschieben, Archivieren,
-  Löschen – bei angehakten Zeilen für alle markierten) und in Textfeldern
+  Löschen – bei angehakten Zeilen für alle markierten; zusätzlich „Markierung
+  aufheben“ (`clearChecked()`), sobald mehr als eine Zeile angehakt ist) und in Textfeldern
   (`input`, `textarea`, `contenteditable`: Rückgängig, Wiederholen,
   Ausschneiden, Kopieren, Einfügen, Alles auswählen; KI-Einträge davor, sofern
   Markierung bzw. KI-Block). Überall sonst (z. B. Lesebereich) bleibt das

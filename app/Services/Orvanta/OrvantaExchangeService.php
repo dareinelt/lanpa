@@ -1116,6 +1116,27 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
         );
     }
 
+    /**
+     * Verschiebt einen Termin auf einen neuen Zeitraum (Drag and Drop). Es
+     * werden nur Beginn und Ende geaendert, alle uebrigen Felder des Termins
+     * bleiben erhalten.
+     */
+    public function moveEvent(string $user, string $id, int $start, int $end, string $changeKey = ''): void
+    {
+        if ($start <= 0 || $end < $start) {
+            throw new OrvantaException('Ungueltiger Zeitraum fuer den Termin.', 422);
+        }
+        $set = static fn (string $field, string $inner): string => '<t:SetItemField><t:FieldURI FieldURI="' . $field . '"/><t:CalendarItem>' . $inner . '</t:CalendarItem></t:SetItemField>';
+        $updates = $set('calendar:Start', '<t:Start>' . EwsXml::dateTime($start) . '</t:Start>')
+            . $set('calendar:End', '<t:End>' . EwsXml::dateTime($end) . '</t:End>');
+        $this->call(
+            '<m:UpdateItem ConflictResolution="AlwaysOverwrite" SendMeetingInvitationsOrCancellations="SendToChangedAndSaveCopy"><m:ItemChanges><t:ItemChange>'
+            . '<t:ItemId Id="' . EwsXml::escape($id) . '"' . ($changeKey !== '' ? ' ChangeKey="' . EwsXml::escape($changeKey) . '"' : '') . '/>'
+            . '<t:Updates>' . $updates . '</t:Updates></t:ItemChange></m:ItemChanges></m:UpdateItem>',
+            $user
+        );
+    }
+
     public function deleteEvent(string $user, string $id): void
     {
         $this->call('<m:DeleteItem DeleteType="MoveToDeletedItems" SendMeetingCancellations="SendToAllAndSaveCopy">' . EwsXml::itemIds([['id' => $id]]) . '</m:DeleteItem>', $user);

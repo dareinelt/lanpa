@@ -170,6 +170,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/api/orvanta/zwischenspeicher/leeren` | `cacheClear` | Zwischenspeicher leeren |
 | GET | `/api/orvanta/kalender?start=&end=` | `calendar` | Termine im Zeitraum (≤ 100 Tage) |
 | GET / POST | `/api/orvanta/kalender/termin` | `event` / `saveEvent` | Termin lesen / anlegen oder ändern |
+| POST | `/api/orvanta/kalender/termin/verschieben` | `moveEvent` | Termin per Drag&Drop verschieben: `id`, `start`, `end` (Unix-Sekunden), optional `change_key` (Abschnitt 6) |
 | POST | `/api/orvanta/kalender/termin/loeschen` | `deleteEvent` | Termin löschen (mit Absage an Teilnehmer) |
 | POST | `/api/orvanta/kalender/antwort` | `meetingResponse` | `response` = `accept`/`tentative`/`decline` |
 | GET | `/api/orvanta/kontakte?q=` | `contacts` | Kontaktliste |
@@ -364,6 +365,7 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `event()` | `GetItem` (HTML-Body bereinigt, Teilnehmer, Anhänge, `recurring`) | |
 | `createEvent()` | `CreateItem` | Body wird bereinigt; Einladungen `SendToAllAndSaveCopy` nur mit Teilnehmern; `reminder < 0` = keine Erinnerung |
 | `updateEvent()` | `UpdateItem` `AlwaysOverwrite`, `SendToChangedAndSaveCopy` | Teilnehmer werden **nicht** geändert; `change_key` optional |
+| `moveEvent()` | `UpdateItem` `AlwaysOverwrite`, `SendToChangedAndSaveCopy` | nur `calendar:Start`/`calendar:End` (Drag&Drop, Abschnitt 6); `end >= start` und `start > 0`, sonst 422; Teilnehmer, Betreff und Erinnerung bleiben unberührt |
 | `deleteEvent()` | `DeleteItem` mit `SendToAllAndSaveCopy` | Absagen an Teilnehmer |
 | `respondToMeeting()` | `AcceptItem`/`TentativelyAcceptItem`/`DeclineItem` | |
 | `upcomingReminders()` | über `calendar()` (`from − 1 h` … `from + hours`) | nur Termine mit `ReminderIsSet` |
@@ -403,8 +405,10 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `anhang/link` | `attachment_id, name` | `{url, mode, expires_in}` |
 | `anhang/nextcloud` | `attachment_id, folder` (optionaler Unterordner) | `{ok, message, path, target}` (Fehler → 502) |
 | `zwischenspeicher` | – | `{used, quota, items, folder, percent, mailbox}`; `mailbox` = `{used, quota, warning, receive_limit, percent}` in Byte oder `null`, wenn Exchange die Werte nicht liefert (Fehler blockieren die Antwort nicht) |
-| `zwischenspeicher/leeren` | – | wie `zwischenspeicher` + `{removed, message}` | Query `start`, `end` (Standard: aktuelle Woche) | `{items[], start, end}`; Element: `id, change_key, subject, start, end, all_day, location, organizer, free_busy, type, reminder_set, reminder_minutes, is_meeting, my_response, categories` |
+| `zwischenspeicher/leeren` | – | wie `zwischenspeicher` + `{removed, message}` |
+| `kalender` | Query `start`, `end` (Standard: aktuelle Woche) | `{items[], start, end}`; Element: `id, change_key, subject, start, end, all_day, location, organizer, free_busy, type, reminder_set, reminder_minutes, is_meeting, my_response, categories` |
 | `kalender/termin` (POST) | `id` (leer = neu), `change_key, subject, start, end, all_day, location, body, reminder` (Standard 15, < 0 = aus), `free_busy, required[], optional[]` | `{id[, change_key], message}`; löst `resync()` aus |
+| `kalender/termin/verschieben` (POST) | `id`, `start`, `end` (Unix-Sekunden, `end >= start` und `start > 0`, sonst 422), optional `change_key` | `{id, start, end, message}`; ändert **nur** Beginn und Ende (Drag&Drop), Teilnehmer/Betreff/Erinnerung bleiben unberührt; löst `resync()` aus |
 | `kontakte/kontakt` (POST) | `id, given_name, surname, company, job_title, department, email, phone, mobile, notes` | `{id, message}` |
 | `aufgaben/aufgabe` (POST) | `id, subject, body, importance, status` und optional `due, start, reminder, percent` (Unix-Sekunden bzw. %) | `{id, message}` |
 | `notizen/notiz` (POST) | `id, body` (nicht leer) | `{id, message}` |
@@ -629,6 +633,28 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   behandelt ein Objekt ohne `id` als neue Aufgabe (Titel „Neue Aufgabe“,
   verstecktes `id`-Feld leer); gespeichert wird über den bestehenden Endpunkt
   `aufgaben/aufgabe` (leere `id` → `createTask()`).
+- Kalender – Termine per Drag&Drop verschieben: `eventNode()` setzt
+  `draggable` und bindet `dragstart` → `startEventDrag()`, `dragend` →
+  `endEventDrag(false)`. `bindEventDrop(node, mode)` hängt
+  `dragover`/`dragleave`/`drop` an die Spalten der Wochen-/Tagesansicht und die
+  Zellen des Ganztägig-Bereichs (`mode` = `slot`) sowie an die Monatszellen
+  (`mode` = `day`); `dragleave` ignoriert Wechsel in Kindknoten
+  (`relatedTarget`). `updateEventDrag(event, node, mode)` rechnet die
+  Zeigerposition in die Zielzeit um (`EVENT_DRAG_STEP` = 15 Minuten, am
+  Tagesrand begrenzt, Dauer bleibt erhalten) bzw. in ganze Tage unter
+  Beibehaltung der Uhrzeit, hebt das Ziel hervor (`highlightEventDrop()` →
+  `.ov-drop--target`) und aktualisiert Vorschau und Hinweisbox.
+  `showEventDragGhost()` stellt die Vorschau (`.ov-event--ghost`, Kopie des
+  Knotens) in die Zielspalte; das native Ziehen-Bild wird mit einem
+  unsichtbaren 1×1-Element (`eventDragBlankImage()`, `.ov-drag-none`) ersetzt.
+  `showEventDragHint()` positioniert `.ov-drag-hint` (`position: fixed`,
+  `pointer-events: none`, an `document.body`) am Zeiger und weicht am
+  Fensterrand aus; `eventDragLabel()` erzeugt den Text („Di, 06.10.2026 ·
+  14:30 – 16:30“, am selben Tag ohne Datum, ganztägig „… · ganztägig“).
+  `endEventDrag(save)` speichert nur bei `save`, vorhandenem Ziel und
+  geändertem Beginn/Ende über `kalender/termin/verschieben` (`{id,
+  change_key, start, end}`) und lädt den Kalender anschließend neu; in allen
+  anderen Fällen wird nur der Zustand zurückgesetzt.
 - Tastatur (außerhalb von Eingabefeldern/Dialogen): `1`–`5` Module, `/` Suche,
   `N` Neu, `R` Antworten, `Entf` Löschen (je Modul), Pfeile hoch/runter in der
   Liste, `Esc` schließt das Erinnerungs-Popover.
@@ -750,6 +776,11 @@ Breakpoints 1200 px und 900 px, eigenes Drucklayout.
     Anbindung oder im Demo-Modus wird nichts gespeichert. Falsche Hosts
     bedeuten Postfächer ohne Replikat – die Verteilung stützt sich allein auf
     diese Bestätigung (Abschnitt 20.5).
+22. **Termin verschieben ändert nur `calendar:Start`/`calendar:End`**
+    (`moveEvent()`); Betreff, Ort, Beschreibung, Erinnerung und Teilnehmer
+    bleiben unberührt. Ein `UpdateItem` über den gesamten Termin
+    (`updateEvent()`) darf dafür nicht verwendet werden – es würde
+    Erinnerungen und Beschreibungen überschreiben.
 
 ## 12. Tests
 
@@ -760,7 +791,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | --- | --- |
 | `tests/Unit/OrvantaAiTest.php` | `RecordingAiTransport`; Verfügbarkeit ohne Konfiguration (keine Anfrage), `GET /models` mit Datei-Cache und Fingerabdruck (URL\|Modell), `improve()` (Anfrageaufbau, Kontext, Token, `max_tokens`), Verfeinern (Assistenten-Turn), Bearer-Schlüssel, Validierung 422, 503 ohne KI, 502 bei Timeout/500/401/ungültigem JSON/leeren `choices`, `stripMarkers()`, Zähler und pseudonyme Auswertung (keine SIDs), `OrvantaAiCharts` (Zeitraum, SVG ohne `style`, leere Daten) |
 | `tests/Unit/OrvantaSignatureTest.php` | Validierung (Pflichtfelder, Modus, Reihenfolge, Gruppen-Dedupe, Präfix-Leerzeichen), Speichern/Laden/Löschen, Zuordnung (Reihenfolge, inaktiv, Schreibweise), Darstellung (AD-Daten, Präfix + Durchwahl vs. komplette Rufnummer, Farben, Logo als `data:`-URI, Sanitizer-Durchlauf), Logo in Zeilenhöhe und gewählte Designfarben (`logoSize()`, `imageDimensions()` inkl. SVG), Logo-Pixelgröße = Anzeigegröße (`scaleImage()`), Fallbacks (ohne Logo/Telefonbuch/inaktiver Eintrag), `extension()`, `append()` (Dedupe, vor Zitat), `strip()` |
-| `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen, Postfachbelegung (`mailboxUsage()`, Summe aller Ordner ohne Suchordner/Wiederherstellbare Elemente, Quota in KB, ohne Grenzen, AD-Grenzen, Ersatzgrenze `mailbox_quota_mb`, `LdapClient::mailboxQuotaFromEntries()`), `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen), Exchange-DAG (Verteilung nach Fair-use/Sitzungszahl/Latenz, Affinität, Wartung, Umleitung, Failover, `parseHostList()`, `overview()`, `syncPrimary()`, Tooltipp der Verbindungsanzeige; Abschnitt 20) |
+| `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen (inkl. `moveEvent()`: nur `calendar:Start`/`calendar:End` im `UpdateItem`, ungültiger Zeitraum → 422), Postfachbelegung (`mailboxUsage()`, Summe aller Ordner ohne Suchordner/Wiederherstellbare Elemente, Quota in KB, ohne Grenzen, AD-Grenzen, Ersatzgrenze `mailbox_quota_mb`, `LdapClient::mailboxQuotaFromEntries()`), `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen), Exchange-DAG (Verteilung nach Fair-use/Sitzungszahl/Latenz, Affinität, Wartung, Umleitung, Failover, `parseHostList()`, `overview()`, `syncPrimary()`, Tooltipp der Verbindungsanzeige; Abschnitt 20) |
 | `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), Freigabe per AD-Gruppe (`archive_group`, Standard: niemand; Mitglieder weiterer Quellen; Pflichtgruppe bei Aktivierung), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
 
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
@@ -780,7 +811,11 @@ Controller und JavaScript haben keine automatisierten Tests. Manuell im
 Demo-Modus prüfen (`exchange_host = demo`, `APP_ENV ≠ production`,
 `SSO_FAKE_USER`, siehe `docs/office.md` „Testmodus“): alle Module,
 Verfassen/Antworten mit und ohne Anhang, Anhang öffnen (Viewer, Browser,
-Download), Erinnerung in App und Kopfzeile, Statusleiste/Quota.
+Download), Erinnerung in App und Kopfzeile, Statusleiste/Quota, Termin per
+Drag&Drop verschieben (Wochenansicht mit 15-Minuten-Raster, Monatsansicht um
+ganze Tage, Abbruch beim Loslassen außerhalb des Kalenders). Im Demo-Modus
+bestätigt `DemoExchangeTransport` das `UpdateItem` nur – die neue Zeit ist
+nach dem Neuladen wieder die alte.
 
 ## 13. Änderungsrezepte
 
@@ -845,6 +880,14 @@ Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
   außer dem gerade geöffneten Ordner – und verschieben über
   `mailAction('move', ids, ordner)` (`POST /api/orvanta/mail/aktion`,
   EWS `MoveItem`). CSS: `.ov-item--dragging`, `.ov-folder--drop`.
+- Termine verschieben (Kalender) nutzt dieselbe Ereignisfolge, aber einen
+  eigenen Zustand (`eventDrag`) und eigene Endpunkte (`kalender/termin/
+  verschieben`). Nur ein Modus passt zum anderen: ein in der Wochenansicht
+  begonnener Zug (`slot`) wird über Monatszellen und Ganztägig-Zellen nicht
+  angenommen und umgekehrt; Loslassen ohne gültiges Ziel oder auf der
+  Ausgangszeit speichert nichts. Ganztägige Termine behalten beim Ziehen ihre
+  Länge in Tagen. CSS: `.ov-event--dragging`, `.ov-event--ghost`,
+  `.ov-drop--target`, `.ov-drag-hint`, `.ov-drag-none` (Abschnitt 9.1).
 - „Einfügen“ nutzt `navigator.clipboard.readText()` (nur sicherer Kontext,
   Browser kann nachfragen oder ablehnen → Hinweis-Toast auf Strg+V);
   Ausschneiden/Kopieren/Rückgängig laufen über `document.execCommand`. Die

@@ -2605,13 +2605,19 @@
     }
 
     function eventNode(event, showTime) {
-        var node = el('button', { type: 'button', 'class': eventClass(event), 'data-id': event.id, title: event.subject + (event.location ? ' – ' + event.location : '') }, [
+        var node = el('button', { type: 'button', 'class': eventClass(event), 'data-id': event.id, draggable: 'true', title: event.subject + (event.location ? ' – ' + event.location : '') }, [
             showTime && !event.all_day ? el('span', { 'class': 'ov-event__time', text: fmtTime(event.start) }) : null,
             el('span', { 'class': 'ov-event__subject', text: event.subject || '(ohne Betreff)' })
         ]);
         node.addEventListener('click', function (e) {
             e.stopPropagation();
             openEvent(event);
+        });
+        node.addEventListener('dragstart', function (e) {
+            startEventDrag(e, node, event);
+        });
+        node.addEventListener('dragend', function () {
+            endEventDrag(false);
         });
         return node;
     }
@@ -2647,7 +2653,8 @@
             (function () {
                 var day = addDays(range.start, i);
                 var cell = el('div', {
-                    'class': 'ov-month__cell' + (day.getMonth() !== state.calDate.getMonth() ? ' ov-month__cell--other' : '') + (sameDay(day, today) ? ' ov-month__cell--today' : '') + (day.getDay() === 0 || day.getDay() === 6 ? ' ov-month__cell--weekend' : '')
+                    'class': 'ov-month__cell' + (day.getMonth() !== state.calDate.getMonth() ? ' ov-month__cell--other' : '') + (sameDay(day, today) ? ' ov-month__cell--today' : '') + (day.getDay() === 0 || day.getDay() === 6 ? ' ov-month__cell--weekend' : ''),
+                    'data-day': toTs(day)
                 }, [el('div', { 'class': 'ov-month__num', text: day.getDate() === 1 ? day.getDate() + '. ' + MONTHS[day.getMonth()].slice(0, 3) : String(day.getDate()) })]);
                 var events = eventsOnDay(day);
                 events.slice(0, 4).forEach(function (event) {
@@ -2670,6 +2677,7 @@
                     state.calDate = day;
                     renderCalendarSidebar();
                 });
+                bindEventDrop(cell, 'day');
                 grid.appendChild(cell);
             })();
         }
@@ -2697,8 +2705,8 @@
                     el('span', { 'class': 'ov-week__daynum', text: String(day.getDate()) })
                 ]));
                 var events = eventsOnDay(day);
-                var allDayCell = el('div', { 'class': 'ov-week__alldaycell' });
-                var column = el('div', { 'class': 'ov-week__col' + (isToday ? ' ov-week__col--today' : '') });
+                var allDayCell = el('div', { 'class': 'ov-week__alldaycell', 'data-day': toTs(day) });
+                var column = el('div', { 'class': 'ov-week__col' + (isToday ? ' ov-week__col--today' : ''), 'data-day': toTs(day) });
                 for (var h2 = 0; h2 < 24; h2++) {
                     var slot = el('div', { 'class': 'ov-week__slot' + (h2 >= 8 && h2 < 18 ? ' ov-week__slot--work' : ''), 'data-hour': h2 });
                     column.appendChild(slot);
@@ -2712,6 +2720,8 @@
                 });
                 var dayStart = toTs(day);
                 var dayEnd = toTs(addDays(day, 1));
+                bindEventDrop(column, 'slot');
+                bindEventDrop(allDayCell, 'day');
                 var timed = events.filter(function (event) {
                     if (event.all_day || (event.end - event.start) >= 86400) {
                         allDayCell.appendChild(eventNode(event, false));
@@ -3059,6 +3069,259 @@
         }).catch(function (error) {
             toast(error.message, 'error');
         });
+    }
+
+    // ------------------------------------------------------------------
+    // Termine per Drag and Drop verschieben
+    // ------------------------------------------------------------------
+
+    /** Minutenraster, auf das eine verschobene Startzeit einrastet. */
+    var EVENT_DRAG_STEP = 15;
+
+    /** Laufender Verschiebevorgang (siehe startEventDrag) oder null. */
+    var eventDrag = null;
+
+    /** Kasten mit der neuen Startzeit; wird einmalig angelegt. */
+    var eventDragHintNode = null;
+
+    /** Transparentes Drag-Bild (siehe eventDragBlankImage). */
+    var eventDragImage = null;
+
+    /**
+     * Beginnt das Verschieben eines Termins. Ablageziel ist die Tagesspalte
+     * (Woche/Tag) bzw. die Tageszelle (Monat, Ganztagig), ueber der der Zeiger
+     * steht; ausserhalb des Kalenders wird das Ziehen abgebrochen.
+     */
+    function startEventDrag(pointerEvent, node, event) {
+        var container = node.parentNode;
+        var rect = container ? container.getBoundingClientRect() : null;
+        var day = container ? Number(container.getAttribute('data-day')) : 0;
+        var slot = !!(container && container.classList.contains('ov-week__col'));
+        if (!rect || !day || !pointerEvent.dataTransfer) {
+            pointerEvent.preventDefault();
+            return;
+        }
+        eventDrag = {
+            event: event,
+            node: node,
+            mode: slot ? 'slot' : 'day',
+            day: day,
+            // Griffpunkt innerhalb des Termins, damit der Termin beim Ziehen
+            // nicht unter dem Zeiger wegspringt.
+            offset: slot ? ((pointerEvent.clientY - rect.top) / (rect.height || 1) * 1440) - (event.start - day) / 60 : 0,
+            target: null,
+            ghost: null,
+            hint: eventDragHint()
+        };
+        node.classList.add('ov-event--dragging');
+        root.classList.add('ov--event-drag');
+        pointerEvent.dataTransfer.effectAllowed = 'move';
+        pointerEvent.dataTransfer.setData('text/plain', event.subject || '(ohne Betreff)');
+        // Das Ziehen selbst zeigt der Platzhalter am Zielort; der Zeitkasten
+        // bleibt so frei vom (sonst ueber dem Zeiger liegenden) Browserbild.
+        try {
+            pointerEvent.dataTransfer.setDragImage(eventDragBlankImage(), 0, 0);
+        } catch (error) {
+            // Ohne eigenes Bild bleibt das Standardbild des Browsers.
+        }
+    }
+
+    /** Transparentes Hilfselement als Drag-Bild (Inhalt kommt aus der Vorschau). */
+    function eventDragBlankImage() {
+        if (!eventDragImage) {
+            eventDragImage = el('div', { 'class': 'ov-drag-none', 'aria-hidden': 'true' });
+            document.body.appendChild(eventDragImage);
+        }
+        return eventDragImage;
+    }
+
+    /**
+     * Berechnet den Zeitraum unter dem Zeiger und aktualisiert Vorschau,
+     * Zielmarkierung und den Kasten mit der neuen Startzeit.
+     */
+    function updateEventDrag(pointerEvent, container, mode) {
+        var drag = eventDrag;
+        var day = Number(container.getAttribute('data-day'));
+        if (!drag || !day) {
+            return;
+        }
+        var rect = container.getBoundingClientRect();
+        var start;
+        var end;
+        if (mode === 'slot') {
+            var duration = Math.round((drag.event.end - drag.event.start) / 60);
+            var minutes = Math.round((((pointerEvent.clientY - rect.top) / (rect.height || 1) * 1440) - drag.offset) / EVENT_DRAG_STEP) * EVENT_DRAG_STEP;
+            start = day + Math.max(0, Math.min(1440 - duration, minutes)) * 60;
+            end = start + duration * 60;
+        } else {
+            var days = Math.round((day - drag.day) / 86400);
+            start = toTs(addDays(fromTs(drag.event.start), days));
+            end = toTs(addDays(fromTs(drag.event.end), days));
+        }
+        drag.target = { start: start, end: end, container: container };
+        highlightEventDrop(container);
+        showEventDragGhost(container, mode, start, end);
+        showEventDragHint(pointerEvent, drag, mode, start, end);
+    }
+
+    /** Zielzelle hervorheben (nur eine gleichzeitig). */
+    function highlightEventDrop(container) {
+        $$('.ov-drop--target').forEach(function (node) {
+            if (node !== container) {
+                node.classList.remove('ov-drop--target');
+            }
+        });
+        container.classList.add('ov-drop--target');
+    }
+
+    /** Ablageziel fuer gezogene Termine (Tagesspalte, Ganztagig-Zelle, Monatszelle). */
+    function bindEventDrop(node, mode) {
+        node.addEventListener('dragover', function (event) {
+            if (!eventDrag || eventDrag.mode !== mode) {
+                return;
+            }
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            updateEventDrag(event, node, mode);
+        });
+        node.addEventListener('dragleave', function (event) {
+            if (node.contains(event.relatedTarget)) {
+                return;
+            }
+            node.classList.remove('ov-drop--target');
+            if (eventDrag && eventDrag.target && eventDrag.target.container === node) {
+                eventDrag.target = null;
+                if (eventDrag.ghost) {
+                    eventDrag.ghost.remove();
+                    eventDrag.ghost = null;
+                }
+                if (eventDrag.hint) {
+                    eventDrag.hint.hidden = true;
+                }
+            }
+        });
+        node.addEventListener('drop', function (event) {
+            if (!eventDrag || eventDrag.mode !== mode) {
+                return;
+            }
+            event.preventDefault();
+            // Ziel aus der Ablageposition bestimmen, damit ein vorheriges
+            // Verlassen der Zelle keine Rolle spielt.
+            updateEventDrag(event, node, mode);
+            endEventDrag(true);
+        });
+    }
+
+    /**
+     * Beendet das Verschieben. Gespeichert wird nur, wenn tatsaechlich
+     * abgelegt wurde und sich der Zeitraum dadurch aendert.
+     */
+    function endEventDrag(drop) {
+        var drag = eventDrag;
+        eventDrag = null;
+        if (!drag) {
+            return;
+        }
+        if (drag.ghost) {
+            drag.ghost.remove();
+        }
+        if (drag.hint) {
+            drag.hint.hidden = true;
+        }
+        drag.node.classList.remove('ov-event--dragging');
+        root.classList.remove('ov--event-drag');
+        $$('.ov-drop--target').forEach(function (node) {
+            node.classList.remove('ov-drop--target');
+        });
+        if (!drop || !drag.target || (drag.target.start === drag.event.start && drag.target.end === drag.event.end)) {
+            return;
+        }
+        api('/kalender/termin/verschieben', {
+            body: { id: drag.event.id, change_key: drag.event.change_key || '', start: drag.target.start, end: drag.target.end }
+        }).then(function () {
+            toast('Termin verschoben: ' + eventDragLabel(drag, drag.mode, drag.target.start, drag.target.end), 'success');
+            if (state.selected && state.selected.id === drag.event.id) {
+                openEvent({ id: drag.event.id });
+            }
+            loadCalendar();
+            syncReminders(true);
+        }).catch(function (error) {
+            toast(error.message, 'error');
+            loadCalendar();
+        });
+    }
+
+    /** Vorschau des Termins an der neuen Position (nur in der Zeitspalte). */
+    function showEventDragGhost(container, mode, start, end) {
+        var drag = eventDrag;
+        if (mode !== 'slot') {
+            if (drag.ghost) {
+                drag.ghost.remove();
+                drag.ghost = null;
+            }
+            return;
+        }
+        if (!drag.ghost) {
+            var ghost = drag.node.cloneNode(true);
+            ghost.classList.remove('ov-event--active', 'ov-event--dragging');
+            ghost.classList.add('ov-event--ghost');
+            ghost.removeAttribute('data-id');
+            ghost.removeAttribute('draggable');
+            ghost.setAttribute('aria-hidden', 'true');
+            ghost.style.left = drag.node.style.left;
+            ghost.style.width = drag.node.style.width;
+            drag.ghost = ghost;
+        }
+        if (drag.ghost.parentNode !== container) {
+            container.appendChild(drag.ghost);
+        }
+        var day = Number(container.getAttribute('data-day'));
+        drag.ghost.style.top = ((start - day) / 86400 * 100) + '%';
+        drag.ghost.style.height = Math.max(1.6, (end - start) / 86400 * 100) + '%';
+    }
+
+    /**
+     * Dezenter Kasten neben dem angefassten Termin mit der neuen Startzeit.
+     * Die Position folgt dem Zeiger und weicht an den Fensterraendern aus.
+     */
+    function showEventDragHint(pointerEvent, drag, mode, start, end) {
+        var hint = drag.hint;
+        if (!hint) {
+            return;
+        }
+        hint.textContent = eventDragLabel(drag, mode, start, end);
+        hint.hidden = false;
+        var left = pointerEvent.clientX + 16;
+        if (left + hint.offsetWidth > window.innerWidth - 8) {
+            left = Math.max(8, pointerEvent.clientX - hint.offsetWidth - 16);
+        }
+        var top = pointerEvent.clientY - hint.offsetHeight - 14;
+        if (top < 8) {
+            top = pointerEvent.clientY + 20;
+        }
+        hint.style.left = left + 'px';
+        hint.style.top = top + 'px';
+    }
+
+    /** Beschriftung des Zeitkastens: Wochentag, ggf. Datum und der neue Zeitraum. */
+    function eventDragLabel(drag, mode, start, end) {
+        var day = fromTs(start);
+        var label = DAYS[(day.getDay() + 6) % 7];
+        if (mode === 'day' || !sameDay(day, fromTs(drag.day))) {
+            label += ', ' + fmtDate(start);
+        }
+        if (drag.event.all_day) {
+            return label + ' · ganztägig' + (end - start > 86400 ? ' bis ' + fmtDate(end - 86400) : '');
+        }
+        return label + ' · ' + fmtTime(start) + ' – ' + fmtTime(end);
+    }
+
+    function eventDragHint() {
+        if (!eventDragHintNode) {
+            eventDragHintNode = el('div', { 'class': 'ov-drag-hint', hidden: true, 'aria-hidden': 'true' });
+            document.body.appendChild(eventDragHintNode);
+        }
+        return eventDragHintNode;
     }
 
     // ------------------------------------------------------------------

@@ -31,7 +31,7 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 | Modul | Funktionen |
 |---|---|
 | **Mail** ✉ | Ordnerbaum (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner), Nachrichtenliste mit Suche, Lesen (HTML bereinigt durch `MailHtmlSanitizer`), Verfassen/Antworten/Allen antworten/Weiterleiten, Entwürfe, Kennzeichnen, Gelesen/Ungelesen, Verschieben (Dialog oder per Drag&Drop auf einen Ordner im Ordnerbaum), Löschen, Anhänge öffnen/speichern, **In Aufgabe übernehmen**; Indikatoren (↩/↪) in Liste und Nachrichtenkopf für beantwortete und weitergeleitete Nachrichten; Rechtsklick auf einen Ordner: Neuer Ordner, Alle als gelesen markieren, Eigenschaften (Größe und Anzahl der Elemente) |
-| **Kalender** 📅 | Monats-, Wochen- und Tagesansicht, Termine anlegen/bearbeiten/löschen (ganztägig, Ort, Teilnehmer, Erinnerung), Besprechungsanfragen annehmen/unter Vorbehalt/ablehnen |
+| **Kalender** 📅 | Monats-, Wochen- und Tagesansicht, Termine anlegen/bearbeiten/löschen (ganztägig, Ort, Teilnehmer, Erinnerung), Termine per **Drag&Drop** verschieben (neue Startzeit als eingeblendete Hinweisbox), Besprechungsanfragen annehmen/unter Vorbehalt/ablehnen |
 | **Kontakte** 👥 | Alphabetische Liste mit Buchstabengruppen, Details, Anlegen/Bearbeiten/Löschen, E-Mail direkt aus dem Kontakt |
 | **Aufgaben** ✓ | Liste mit Fälligkeit/Priorität, Erledigt-Schalter, Anlegen/Bearbeiten/Löschen, Übernahme einer E-Mail als Aufgabe |
 | **Notizen** 📝 | Kachelansicht, Anlegen/Bearbeiten/Löschen |
@@ -40,6 +40,8 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 | **Rechtschreibprüfung** ✍ | Deutsche Rechtschreibung in E-Mail- und Termin-Editoren: fehlerhafte Wörter rot gewellt unterstrichen, Rechtsklick → „Rechtschreibprüfung“ → „---Vorschläge---“ mit Ersetzen per Auswahl, „Alle ignorieren“ und „Zum Wörterbuch hinzufügen“ (persönliches Wörterbuch, Abschnitt 7b) |
 
 ![Kalender – Wochenansicht](screenshots/81-orvanta-kalender.png)
+
+![Termin verschieben – die neue Startzeit steht während des Ziehens in einer eigenen Hinweisbox neben dem Termin](screenshots/105-orvanta-kalender-verschieben.png)
 
 ![Kontakte](screenshots/82-orvanta-kontakte.png)
 
@@ -87,6 +89,17 @@ Notiz. Der Aufgabendialog öffnet sich vorausgefüllt, sodass Fälligkeitsdatum,
 Erinnerung, Status und Priorität vor dem Speichern ergänzt werden können. Die
 Aufgabe landet wie jede andere im Modul **Aufgaben** (Exchange); die E-Mail
 selbst bleibt unverändert.
+
+Termine lassen sich im Kalender mit der Maus **per Drag&Drop verschieben**.
+Während des Ziehens zeigt Orvanta neben dem Zeiger eine dezente Hinweisbox mit
+der neuen Startzeit („Di, 06.10.2026 · 14:30 – 16:30“, in der Monatsansicht
+zusätzlich das Tagesdatum); das Ziel wird hervorgehoben und der Termin als
+blasse Vorschau an der neuen Position angedeutet. In der Wochen- und
+Tagesansicht rastet die Zeit auf 15 Minuten ein, in der Monatsansicht und im
+Ganztägig-Bereich wandert der Termin um ganze Tage und behält seine Uhrzeit.
+Abgelegt wird nur, wenn sich Beginn oder Ende tatsächlich ändern; Loslassen
+außerhalb des Kalenders bricht ab. Die Details stehen in
+[docs/orvanta-referenz.md](orvanta-referenz.md) (Abschnitte 3.1, 6 und 9.1).
 
 ---
 

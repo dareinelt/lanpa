@@ -1513,6 +1513,19 @@
         updateActionState();
     }
 
+    /** Mehrfachauswahl der Mail-Liste aufheben. */
+    function clearChecked() {
+        state.selectedIds = [];
+        $$('.ov-item--checked', hook('list-body')).forEach(function (node) {
+            node.classList.remove('ov-item--checked');
+            var box = $('.ov-item__check input', node);
+            if (box) {
+                box.checked = false;
+            }
+        });
+        updateActionState();
+    }
+
     function currentMailIds() {
         if (state.selectedIds.length) {
             return state.selectedIds.slice();
@@ -4679,6 +4692,10 @@
             } });
         }
         items.push({ label: (trash ? 'Endgültig löschen' : 'Löschen') + suffix, icon: '🗑', key: 'Entf', run: function () { mailAction(trash ? 'delete_permanent' : 'delete', ids); } });
+        if (state.selectedIds.length > 1) {
+            items.push({ separator: true });
+            items.push({ label: 'Markierung aufheben', icon: '☐', run: clearChecked });
+        }
         items.push({ separator: true });
         items.push({ label: 'Info', icon: 'ℹ', disabled: many, run: function () { openHeadersDialog(message); } });
         return items;

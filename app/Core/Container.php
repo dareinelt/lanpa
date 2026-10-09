@@ -457,6 +457,8 @@ final class Container
     /**
      * Lastverteilung und Failover ueber die Hosts der Exchange-DAG. Ohne
      * gepflegte Hostliste wirkt nur der konfigurierte Exchange-Server.
+     * Die Sitzungsaffinitaet gilt je Benutzer und Client (nicht je PHP-
+     * Sitzung), damit ein Postfach nie auf mehrere Hosts verteilt wird.
      */
     public static function orvantaExchangePool(): \App\Services\Orvanta\OrvantaExchangePool
     {
@@ -465,7 +467,24 @@ final class Container
             static fn (): \App\Services\Orvanta\OrvantaExchangePool => new \App\Services\Orvanta\OrvantaExchangePool(
                 self::orvantaExchangeHostRepository(),
                 self::orvantaConfig(),
-                static fn (): string => \App\Security\Session::id(),
+                static function (): string {
+                    static $key = null;
+                    if ($key !== null) {
+                        return $key;
+                    }
+                    $sessionId = \App\Security\Session::id();
+                    if ($sessionId === '') {
+                        return '';
+                    }
+                    $request = Request::fromGlobals();
+                    try {
+                        $user = self::sso()->resolve($request);
+                    } catch (\Throwable) {
+                        $user = null;
+                    }
+
+                    return $key = \App\Services\Orvanta\OrvantaExchangePool::affinityKey($user, $request->clientIp(), $sessionId);
+                },
                 static fn (): array => \App\Support\ClientAddress::from(\App\Core\Request::fromGlobals())
             )
         );
@@ -576,6 +595,19 @@ final class Container
             static fn (): \App\Services\Orvanta\OrvantaSharedMailboxService => new \App\Services\Orvanta\OrvantaSharedMailboxService(
                 self::orvantaSharedMailboxRepository(),
                 self::orvantaExchange(),
+                app_logger(),
+                self::orvantaDelegateDirectory()
+            )
+        );
+    }
+
+    public static function orvantaDelegateDirectory(): \App\Services\Orvanta\OrvantaDelegateDirectory
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaDelegateDirectory::class,
+            static fn (): \App\Services\Orvanta\OrvantaDelegateDirectory => new \App\Services\Orvanta\OrvantaDelegateDirectory(
+                self::orvantaConfig(),
+                self::identitySources(),
                 app_logger()
             )
         );

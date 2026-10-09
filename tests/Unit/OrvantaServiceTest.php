@@ -1840,6 +1840,67 @@ Runner::test('Orvanta DAG: Clientangaben entstehen beim Sitzungsbeginn und ueber
     Assert::same('', (string) $row['client_host']);
 });
 
+Runner::test('Orvanta DAG: Sitzungskennung gilt je Benutzer und Client, nicht je PHP-Sitzung', function (): void {
+    $anna = ['username' => 'amuster', 'source_key' => 'FIRMA', 'office_uid' => 'amuster'];
+    // Eine neue PHP-Sitzungs-ID (Windows-/Admin-Anmeldung regeneriert sie,
+    // zweiter Browser-Tab) aendert die Kennung nicht: dieselbe Zuordnung,
+    // derselbe Host – das Postfach wird nie auf zwei DAG-Hosts verteilt.
+    $key = OrvantaExchangePool::affinityKey($anna, '10.20.30.40', 'php-sess-1');
+    Assert::same('user:amuster|client:10.20.30.40', $key);
+    Assert::same($key, OrvantaExchangePool::affinityKey($anna, '10.20.30.40', 'php-sess-2'), 'Neue PHP-Sitzung, gleiche Kennung.');
+    Assert::same($key, OrvantaExchangePool::affinityKey(['username' => 'AMuster', 'source_key' => 'firma', 'office_uid' => 'AMUSTER'], '10.20.30.40', 'x'), 'Gross-/Kleinschreibung spielt keine Rolle.');
+
+    // Ein anderer Client desselben Benutzers ist eine eigene Sitzung.
+    Assert::same('user:amuster|client:192.168.7.9', OrvantaExchangePool::affinityKey($anna, '192.168.7.9', 'php-sess-1'));
+
+    // Ohne Office-Kennung: Benutzername und Quelle.
+    Assert::same('user:bernd@zweig|client:10.0.0.1', OrvantaExchangePool::affinityKey(['username' => 'bernd', 'source_key' => 'ZWEIG'], '10.0.0.1', 's'));
+    Assert::same('user:bernd|client:10.0.0.1', OrvantaExchangePool::affinityKey(['username' => 'bernd'], '10.0.0.1', 's'));
+
+    // Ohne erkannten Benutzer gilt die PHP-Sitzung, ohne diese (CLI) nichts.
+    Assert::same('php-sess-1', OrvantaExchangePool::affinityKey(null, '10.0.0.1', 'php-sess-1'));
+    Assert::same('php-sess-1', OrvantaExchangePool::affinityKey(['username' => ''], '10.0.0.1', 'php-sess-1'));
+    Assert::same('', OrvantaExchangePool::affinityKey($anna, '10.0.0.1', ''));
+
+    // Im Pool: zwei PHP-Sitzungen desselben Benutzers am selben Client
+    // teilen sich eine Zuordnung – auch wenn Fair-use einen anderen Host
+    // bevorzugen wuerde.
+    $parts = orvantaPool();
+    $make = static function (string $sessionId) use ($parts, $anna): OrvantaExchangePool {
+        $key = OrvantaExchangePool::affinityKey($anna, '10.20.30.40', $sessionId);
+
+        return new OrvantaExchangePool($parts['hosts'], $parts['config'], static fn (): string => $key);
+    };
+    $first = $make('php-sess-1');
+    Assert::same('mail01.example.local', $first->session($first->sessionKey(), 'anna@example.local')['host']);
+    $second = $make('php-sess-2');
+    Assert::same('mail01.example.local', $second->session($second->sessionKey(), 'anna@example.local')['host'], 'Neue PHP-Sitzung bleibt auf dem Host der bestehenden Zuordnung.');
+    $counts = $parts['hosts']->sessionCounts('2000-01-01 00:00:00');
+    Assert::same(['mail01.example.local' => 1], $counts, 'Genau eine Sitzung je Benutzer und Client.');
+});
+
+Runner::test('Orvanta DAG: ohne Benutzer begonnene Sitzung erhaelt den Benutzer nach (kein „unbekannt“)', function (): void {
+    $parts = orvantaPool();
+    $pool = static function (string $key) use ($parts): OrvantaExchangePool {
+        return new OrvantaExchangePool($parts['hosts'], $parts['config'], static fn (): string => $key);
+    };
+    $hash = sha1('orvanta-dag:session-a');
+
+    // Hostanzeige im Fussbereich vor dem ersten EWS-Aufruf: mit Adresse.
+    Assert::same('mail01.example.local', (string) $pool('session-a')->currentHost('anna@example.local')['host']);
+    Assert::same('anna@example.local', (string) $parts['hosts']->findSession($hash)['user_uid'], 'currentHost() vermerkt den Benutzer.');
+
+    // Ohne Adresse begonnen (z. B. Keep-alive): der erste Aufruf mit Adresse traegt sie nach.
+    $pool('session-b')->currentHost();
+    Assert::same('', (string) $parts['hosts']->findSession(sha1('orvanta-dag:session-b'))['user_uid']);
+    $pool('session-b')->session('session-b', 'bernd@example.local');
+    Assert::same('bernd@example.local', (string) $parts['hosts']->findSession(sha1('orvanta-dag:session-b'))['user_uid']);
+
+    // Ein einmal vermerkter Benutzer wird nicht ueberschrieben (Zusatzpostfach).
+    $pool('session-b')->session('session-b', 'team@example.local');
+    Assert::same('bernd@example.local', (string) $parts['hosts']->findSession(sha1('orvanta-dag:session-b'))['user_uid']);
+});
+
 Runner::test('Orvanta DAG: ohne Clientspalten (Migration 044) bleibt die Sitzungsliste nutzbar', function (): void {
     $parts = orvantaConfig(['exchange_host' => 'mail01.example.local']);
     $pdo = $parts['pdo'];

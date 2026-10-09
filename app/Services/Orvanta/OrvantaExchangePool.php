@@ -13,6 +13,11 @@ use Closure;
  * Availability Group (DAG).
  *
  * Eine Orvanta-Sitzung bleibt moeglichst auf ihrem Host (Sitzungsaffinitaet).
+ * Eine Sitzung ist dabei das Paar aus Benutzer und Client (affinityKey()):
+ * je Benutzer und Arbeitsplatz gibt es genau eine Zuordnung, unabhaengig von
+ * PHP-Sitzungen (neue Sitzungs-ID bei der Anmeldung, zweiter Browser-Tab,
+ * Adminbereich). Eine Aufteilung desselben Postfachs auf mehrere Hosts der
+ * DAG wuerde den Synchronisationsaufwand vervielfachen und ist ausgeschlossen.
  * Neue Sitzungen verteilt die Prioritaetenfolge
  *   1. Fair-use: der Host, der am laengsten keine Sitzung mehr erhalten hat,
  *   2. der Host mit den wenigsten verbundenen Sitzungen,
@@ -76,6 +81,36 @@ final class OrvantaExchangePool
     }
 
     /**
+     * Kennung der Sitzungsaffinitaet: ein Benutzer an einem Client erhaelt
+     * genau eine Zuordnung. Die Kennung haengt nicht an der PHP-Sitzung,
+     * damit eine neue Sitzungs-ID (Windows- oder Admin-Anmeldung), ein
+     * zweiter Browser-Tab oder der Adminbereich dieselbe Zuordnung weiter
+     * nutzen und das Postfach nie auf zwei Hosts der DAG verteilt wird.
+     *
+     * Ohne erkannten Benutzer gilt die PHP-Sitzung ($sessionId); ohne diese
+     * (CLI) bleibt die Kennung leer und es wird keine Zuordnung gespeichert.
+     *
+     * @param array<string,mixed>|null $ssoUser angemeldeter Benutzer (office_uid bzw. username/source_key)
+     */
+    public static function affinityKey(?array $ssoUser, string $clientIp, string $sessionId): string
+    {
+        if ($sessionId === '') {
+            return '';
+        }
+        $uid = trim((string) ($ssoUser['office_uid'] ?? ''));
+        if ($uid === '') {
+            $username = trim((string) ($ssoUser['username'] ?? ''));
+            $source = strtolower(trim((string) ($ssoUser['source_key'] ?? '')));
+            $uid = $username !== '' && $source !== '' ? $username . '@' . $source : $username;
+        }
+        if ($uid === '') {
+            return $sessionId;
+        }
+
+        return 'user:' . mb_strtolower($uid) . '|client:' . trim($clientIp);
+    }
+
+    /**
      * Hosts in Auswahlreihenfolge (primaerer Host zuerst). Ohne
      * $includeInactive bleiben Hosts in Wartung aussen vor; ist kein Host
      * aktiv, gilt der primaere Host weiter (Orvanta bleibt benutzbar).
@@ -125,6 +160,15 @@ final class OrvantaExchangePool
         $hash = self::hash($key);
         $row = $this->findSession($hash);
         if ($row !== null) {
+            // Eine ohne Benutzer begonnene Zuordnung (z. B. Hostanzeige im
+            // Fussbereich) erhaelt den Benutzer nach, sobald er bekannt ist.
+            if ($identity !== '' && trim((string) ($row['user_uid'] ?? '')) === '') {
+                try {
+                    $this->repository->storeSessionUser($hash, $identity);
+                } catch (\PDOException) {
+                    // Anzeige-Beiwerk: die Zuordnung gilt auch ohne Benutzer.
+                }
+            }
             foreach ($hosts as $host) {
                 if (strcasecmp((string) $host['host'], (string) $row['host']) === 0) {
                     // Aktivitaet vermerken: sonst faellt eine laufende Sitzung nach
@@ -147,15 +191,17 @@ final class OrvantaExchangePool
 
     /**
      * Host, auf dem die aktuelle Sitzung laeuft (Anzeige im Fussbereich der
-     * App). Ohne Sitzung (CLI) gilt der zuerst gewaehlte Host.
+     * App). Ohne Sitzung (CLI) gilt der zuerst gewaehlte Host. $identity ist
+     * die Postfachadresse des Benutzers, damit eine hier begonnene Zuordnung
+     * nicht ohne Benutzer („unbekannt“) in der Sitzungsliste steht.
      *
      * @return array<string,mixed>|null
      */
-    public function currentHost(): ?array
+    public function currentHost(string $identity = ''): ?array
     {
         $key = $this->sessionKey();
         if ($key !== '') {
-            return $this->session($key, '', [], false);
+            return $this->session($key, $identity, [], false);
         }
         $hosts = $this->hosts();
 

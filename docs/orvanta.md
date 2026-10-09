@@ -198,7 +198,8 @@ flowchart LR
 | `OrvantaOofService` | `app/Services/Orvanta/` | Abwesenheitsnotizen (Abschnitt 4d): Vorlagen und Zuordnung per AD-Gruppe, Zusammensetzen von festem Text, dynamischem Text und Signatur, Übertragen auf den Exchange-Server (`SetUserOofSettings`), Zustand für Banner und Dialog |
 | `Admin\OrvantaOofController` | `app/Controllers/Admin/OrvantaOofController.php` | Pflege der Abwesenheitsnotiz-Vorlagen unter `/admin/office/abwesenheit` (Liste, Formular, Vorschau-iframe) |
 | `OrvantaSharedMailboxService` | `app/Services/Orvanta/` | Zusätzlich berechtigte Postfächer (Abschnitt 4e): Zuordnungen je Benutzer, Erreichbarkeitsprüfung über EWS (`probeMailbox()`), Absenderprüfung, Kalender-Sichtbarkeit |
-| `OrvantaSharedMailboxRepository` | `app/Repositories/` | Tabelle `orvanta_shared_mailboxes`; Benutzersuche für den Adminbereich (Telefonliste + Identitätsquellen) |
+| `OrvantaSharedMailboxRepository` | `app/Repositories/` | Tabelle `orvanta_shared_mailboxes`; Abgleich mit den AD-Postfächern (`syncDiscovered()`); Benutzersuche für den Adminbereich (Telefonliste + Identitätsquellen) |
+| `OrvantaDelegateDirectory` | `app/Services/Orvanta/` | Liest die per Auto-Mapping eingebundenen Postfächer des Benutzers aus dem AD (`msExchDelegateListBL`, `LdapClient::delegatedMailboxes()`), 15 Minuten je Sitzung zwischengespeichert |
 | `Admin\OrvantaSharedMailboxController` | `app/Controllers/Admin/OrvantaSharedMailboxController.php` | Zuordnung weiterer Postfächer unter `/admin/office/orvanta/postfaecher` (Suche, Zuordnung, Prüfen, Entfernen) |
 | `OrvantaRepository` | `app/Repositories/OrvantaRepository.php` | Zugriff auf die drei Orvanta-Tabellen |
 | `OrvantaSignatureRepository` | `app/Repositories/OrvantaSignatureRepository.php` | Tabelle `orvanta_signatures` |
@@ -221,13 +222,13 @@ flowchart LR
 | `orvanta_oof_templates` | Vorlagen der Abwesenheitsnotiz (Migration 045) | `name`, `fixed_text` (fester, für den Benutzer schreibgeschützter Teil), `example_text` (dynamischer Beispieltext), `ad_groups` (JSON-Liste), `sort_order`, `active` |
 | `orvanta_oof_settings` | Letzter Stand der Abwesenheitsnotiz je Benutzer (Migration 045) | `user_uid`, `template_id`, `dynamic_text`, `external_audience` (none/all), `schedule_mode` (range/until_off), `start_date`, `end_date`, `active`; maßgeblich ist der Zustand auf dem Exchange-Server |
 | `orvanta_spellcheck_words` | Persönliches Wörterbuch der Rechtschreibprüfung (Migration 042) | `user_uid` (klein geschrieben), `word` (≤ 64, Schreibweise genau unterschieden; unique je Benutzer), `created_at` |
-| `orvanta_shared_mailboxes` | Zusätzlich berechtigte Postfächer je Benutzer (Migration 046, Neuprüfung als Benutzer durch Migration 047, Abschnitt 4e) | `user_uid` + `email` (unique, ohne Beachtung der Groß-/Kleinschreibung), `display_name`, `send_as` („Senden als“ erlaubt), `active`, `verified_at`/`verify_error`/`checked_at` (Erreichbarkeitsprüfung), `calendar_visible` (Kalender eingeblendet), `sort_order` |
+| `orvanta_shared_mailboxes` | Zusätzlich berechtigte Postfächer je Benutzer (Migration 046, Neuprüfung als Benutzer durch Migration 047, Abschnitt 4e) | `user_uid` + `email` (unique, ohne Beachtung der Groß-/Kleinschreibung), `display_name`, `source` (`exchange` = Auto-Mapping aus dem AD, `admin` = manuell), `send_as` („Senden als“ erlaubt), `active`, `verified_at`/`verify_error`/`checked_at` (Erreichbarkeitsprüfung), `calendar_visible` (Kalender eingeblendet), `sort_order` |
 | `orvanta_archives` | Langzeitarchiv je Benutzer (Migration 038) | `user_uid` (unique), `mailbox`, `storage_folder`, `format_version`, `status` (active/error), Zähler, `last_successful_run`, `last_notice` |
 | `orvanta_archive_folders` | Abbild der Exchange-Ordner im Archiv | `archive_id` + `folder_hash` (unique), `exchange_folder_id`, `name`, `path` |
 | `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (immer `mime`; `json` ist reserviert und wird nicht mehr geschrieben), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
 | `orvanta_archive_jobs` | Archivierungsläufe inkl. Sperre (höchstens ein Lauf je Archiv) | `archive_id`, `status` (running/completed/failed), `locked_until`, Zähler, `last_error` |
 | `orvanta_exchange_hosts` | Hosts der Exchange-DAG (Migration 043, Abschnitt 4c) | `host` (unique), `ews_url`, `is_primary`, `active` (Wartung), `sort_order`, `latency_ms`/`latency_samples`/`last_latency_ms`, `last_session_at` (Fair-use), `last_check_at`, `last_ok`, `last_error`, `failures` |
-| `orvanta_exchange_sessions` | Zuordnung laufender Orvanta-Sitzungen zu einem Host (Migrationen 043, 044) | `session_hash` (unique, `sha1` der PHP-Sitzung), `user_uid`, `client_ip`, `client_host` (Client des Sitzungsbeginns), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` |
+| `orvanta_exchange_sessions` | Zuordnung laufender Orvanta-Sitzungen zu einem Host (Migrationen 043, 044) | `session_hash` (unique, `sha1` des Affinitätsschlüssels Benutzer + Client), `user_uid`, `client_ip`, `client_host` (Client des Sitzungsbeginns), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` |
 
 ### Routen
 
@@ -272,10 +273,9 @@ flowchart LR
   `POST /admin/office/orvanta/hosts/pruefpostfach` (Prüfpostfach für den Verbindungstest),
   `GET /admin/office/orvanta/hosts/daten` (Kachelwerte als JSON);
   zusätzlich berechtigte Postfächer (Abschnitt 4e):
-  `GET /admin/office/orvanta/postfaecher` (Zuordnungen pflegen),
-  `POST /admin/office/orvanta/postfaecher/speichern`,
-  `POST /admin/office/orvanta/postfaecher/pruefen` (Erreichbarkeit über EWS),
-  `POST /admin/office/orvanta/postfaecher/loeschen`;
+  `GET /admin/office/orvanta/postfaecher` (Übersicht der aus Exchange
+  übernommenen Postfächer),
+  `POST /admin/office/orvanta/postfaecher/pruefen` (Erreichbarkeit über EWS);
   Nachrichtenfluss-Dashboard (Abschnitt 4f):
   `GET /admin/office/orvanta/nachrichtenfluss` (Dashboard),
   `GET /admin/office/orvanta/nachrichtenfluss/daten` (Kennzahlen als JSON für
@@ -475,8 +475,16 @@ Reihenfolge:
 | 3 | Antwortzeit | Bleibt es gleich, entscheidet die geringste gemittelte Antwortzeit (`latency_ms`, gleitendes Mittel der letzten Messungen). Ein noch nicht gemessener Host gilt als bester Wert und wird dadurch zuerst geprüft. |
 
 Ist eine Sitzung einem Host zugeordnet, bleibt sie dort
-(**Sitzungsaffinität**). Der Schlüssel ist die PHP-Sitzung, als
-`sha1('orvanta-dag:' . session_id())` in `orvanta_exchange_sessions`.
+(**Sitzungsaffinität**). Eine Sitzung ist das Paar aus **Benutzer und
+Client**: der Schlüssel lautet `user:<office_uid>|client:<Client-IP>`
+(`OrvantaExchangePool::affinityKey()`) und steht als
+`sha1('orvanta-dag:' . Schlüssel)` in `orvanta_exchange_sessions`. Er hängt
+bewusst nicht an der PHP-Sitzung: eine neue Sitzungs-ID (Windows- oder
+Admin-Anmeldung), ein zweiter Browser-Tab oder der Adminbereich nutzen
+dieselbe Zuordnung weiter. Je Benutzer und Arbeitsplatz gibt es damit genau
+eine Sitzung – ein Postfach wird nie auf zwei Hosts der DAG verteilt, was den
+Synchronisationsaufwand vervielfachen würde. Ohne erkannten Benutzer gilt
+ersatzweise die PHP-Sitzung.
 
 **Failover:** Antwortet der gewählte Host nicht (Verbindungsfehler, Zeitlimit,
 HTTP ≥ 500 ohne fachlichen EWS-Fehler), markiert Orvanta ihn als gestört und
@@ -611,33 +619,41 @@ Postfächer stehen als eigene Knoten im Ordnerbaum, und **alle Module** (Mail,
 Kalender, Kontakte, Aufgaben, Notizen) lassen sich auf das jeweilige Postfach
 umschalten.
 
-Die Zuordnung wird **nicht** automatisch ermittelt, sondern im Adminbereich
-gepflegt und über EWS geprüft:
+Die Zuordnung wird **ausschließlich im Exchange gepflegt** (ECP bzw.
+`Add-MailboxPermission`), nicht im Intranet. Erteilt der Exchange-Administrator
+einem Benutzer Vollzugriff, trägt Exchange ihn am Postfach ein
+(**Auto-Mapping**, AD-Attribut `msExchDelegateListLink`); am Benutzer entsteht
+der Rückverweis `msExchDelegateListBL` mit allen so eingebundenen Postfächern.
+Outlook bindet genau diese Postfächer automatisch ein – Orvanta ebenso: Beim
+Öffnen der App liest es den Rückverweis aus der Identitätsquelle des Benutzers
+(LDAP, dasselbe Konto wie die AD-Synchronisation), übernimmt neue Postfächer
+(„Senden als“ vorbelegt, Exchange prüft es beim Versand), aktualisiert
+Anzeigenamen und Reihenfolge und entfernt Postfächer, deren Vollzugriff
+entzogen wurde. Das Ergebnis gilt 15 Minuten je Sitzung; ohne Antwort aus dem
+AD (Demo-Modus, kein LDAP, AD nicht erreichbar) bleibt der bisherige Bestand
+unverändert. Jedes Postfach wird anschließend über EWS **als der Benutzer**
+geprüft, bevor es im Ordnerbaum erscheint: Orvanta gibt sich als der Benutzer
+aus und öffnet dessen Zugriff auf das weitere Postfach (`GetFolder` auf
+`msgfolderroot` des Postfachs). Erfolgreich ist das nur, wenn Exchange dem
+Benutzer **Vollzugriff** gewährt; die Rechte des Dienstkontos allein genügen
+nicht. Das Ergebnis gilt 12 Stunden. Steht in der Telefonliste keine
+Postfachadresse des Benutzers, bleibt das Postfach „noch nicht geprüft“ und
+wird bei seiner nächsten Anmeldung in Orvanta geprüft. Schlägt die Prüfung
+fehl, wird das Postfach dem Benutzer nicht angeboten.
+
+Hinweis: Vollzugriff **ohne** Auto-Mapping (`-AutoMapping $false`) erzeugt
+keinen Rückverweis im AD und erscheint deshalb – wie in Outlook – nicht
+automatisch. Soll ein Postfach in Orvanta sichtbar sein, ist die Berechtigung
+mit Auto-Mapping zu erteilen.
 
 **Admin → Office → Orvanta → Weitere Postfächer**
-(`/admin/office/orvanta/postfaecher`)
+(`/admin/office/orvanta/postfaecher`) zeigt den aktuellen Bestand aller
+Benutzer nur lesend: Postfach, Anzeigename, Reihenfolge, Kalender-Zustand und
+das Ergebnis der EWS-Prüfung. Über **Prüfen** lässt sich die Prüfung eines
+Postfachs sofort wiederholen (z. B. nachdem die Berechtigung im ECP korrigiert
+wurde). Eine manuelle Zuordnung gibt es hier bewusst nicht.
 
-1. **Benutzer suchen** – gesucht wird in der Telefonliste (lokal
-   synchronisierter AD-Bestand); die Office-Kennung wird wie in der Anmeldung
-   gebildet (Benutzername der Hauptquelle, sonst `benutzer@KENNUNG` der
-   Identitätsquelle).
-2. **Postfach zuordnen** – SMTP-Adresse des weiteren Postfachs, optional
-   Anzeigename (leer = Adresse anzeigen), Reihenfolge, Schalter
-   **„Senden als“ erlaubt** und **Zuordnung aktiv**.
-3. **Prüfen** – Orvanta gibt sich über EWS als der **Benutzer** aus und öffnet
-   dessen Zugriff auf das weitere Postfach (`GetFolder` auf `msgfolderroot`
-   des Postfachs). Erfolgreich ist das nur, wenn Exchange dem Benutzer
-   **Vollzugriff** gewährt; die Rechte des Dienstkontos allein genügen nicht.
-   Das Ergebnis wird festgehalten („erreichbar“ mit Zeitpunkt bzw.
-   Fehlertext). Geprüft wird beim Öffnen der App und über die Schaltfläche
-   **Prüfen**; das Ergebnis gilt 12 Stunden. Steht in der Telefonliste keine
-   Postfachadresse des Benutzers, bleibt die Zuordnung „noch nicht geprüft“
-   und wird bei seiner nächsten Anmeldung in Orvanta geprüft. Schlägt die
-   Prüfung fehl, wird das Postfach dem Benutzer nicht angeboten.
-   „Senden als“ prüft Exchange beim Versand selbst: Fehlt die Berechtigung,
-   lehnt Exchange die Nachricht ab, und Orvanta meldet das verständlich.
-
-![Adminbereich: weitere Postfächer je Benutzer mit Erreichbarkeitsprüfung](screenshots/112-admin-orvanta-postfaecher.png)
+![Adminbereich: aus Exchange übernommene Postfächer je Benutzer mit Erreichbarkeitsprüfung](screenshots/112-admin-orvanta-postfaecher.png)
 
 In Orvanta:
 
@@ -677,7 +693,10 @@ In Orvanta:
 
 Migration 047 setzt bei bestehenden Zuordnungen den Prüfzeitpunkt zurück,
 damit sie bei der nächsten Anmeldung des Benutzers mit seinen Rechten erneut
-geprüft werden.
+geprüft werden. Vor dieser Version im Adminbereich angelegte Zuordnungen
+werden beim nächsten Öffnen der App durch den Benutzer mit dem AD abgeglichen
+und entfernt, falls Exchange das Postfach nicht (mehr) per Auto-Mapping
+zuweist.
 
 Ohne die Migration 046 fehlt die Tabelle `orvanta_shared_mailboxes`; der
 Adminbereich weist darauf hin, und die App arbeitet wie bisher nur mit dem

@@ -12,13 +12,19 @@ use Throwable;
  * Zusaetzlich berechtigte Postfaecher eines Benutzers (Vollzugriff /
  * "Senden als").
  *
- * Welche Postfaecher ein Benutzer ausser seinem eigenen nutzen darf, ist auf
- * dem Exchange-Server in den Postfachberechtigungen hinterlegt und ueber EWS
- * nicht abfragbar. Der Adminbereich pflegt die Zuordnung daher je Benutzer;
- * Orvanta prueft sie ueber EWS als der Benutzer (Impersonation seines
+ * Welche Postfaecher ein Benutzer ausser seinem eigenen nutzen darf, pflegt
+ * der Exchange-Administrator im ECP (Postfachberechtigung Vollzugriff). Ueber
+ * EWS ist das nicht abfragbar, wohl aber im AD: Exchange traegt den Benutzer
+ * mit Auto-Mapping am Postfach ein, der Rueckverweis msExchDelegateListBL am
+ * Benutzer nennt seine Postfaecher – derselbe Weg, ueber den Outlook sie
+ * automatisch einbindet. Orvanta liest ihn beim Oeffnen der App
+ * (OrvantaDelegateDirectory) und uebernimmt die Liste eins zu eins in
+ * orvanta_shared_mailboxes; eine manuelle Zuordnung gibt es nicht, der
+ * Adminbereich zeigt den Stand nur an und stoesst Pruefungen an. Jede
+ * Zuordnung prueft Orvanta ueber EWS als der Benutzer (Impersonation seines
  * Postfachs, Zugriff auf das zusaetzliche Postfach) und zeigt nur Postfaecher
  * an, fuer die Exchange dem Benutzer Vollzugriff gewaehrt. "Senden als"
- * erzwingt Exchange beim Versand: Orvanta sendet immer als der Benutzer.
+ * erzwingt Exchange beim Versand.
  *
  * Wichtig: Archiviert wird ausschliesslich das primaere Benutzerpostfach.
  * Zusaetzliche Postfaecher laufen nicht in die Archivierung ein.
@@ -34,7 +40,8 @@ final class OrvantaSharedMailboxService
     public function __construct(
         private readonly OrvantaSharedMailboxRepository $repository,
         private readonly OrvantaExchangeService $exchange,
-        private readonly ?Logger $logger = null
+        private readonly ?Logger $logger = null,
+        private readonly ?OrvantaDelegateDirectory $directory = null
     ) {
     }
 
@@ -183,59 +190,6 @@ final class OrvantaSharedMailboxService
     }
 
     /**
-     * Benutzer fuer die Auswahl im Adminbereich (AD-Bestand der Telefonliste).
-     *
-     * @return list<array{uid:string,username:string,display_name:string,email:string,source:string}>
-     */
-    public function searchUsers(string $term): array
-    {
-        $term = trim($term);
-        if (mb_strlen($term) < 2) {
-            return [];
-        }
-
-        return $this->repository->searchUsers($term);
-    }
-
-    /**
-     * Zuordnung anlegen oder aktualisieren und anschliessend pruefen.
-     *
-     * @param array{send_as?:bool,active?:bool,sort_order?:int} $options
-     * @return array{id:int,ok:bool,error:string}
-     */
-    public function save(string $uid, string $email, string $displayName = '', array $options = []): array
-    {
-        $uid = trim($uid);
-        $email = strtolower(trim($email));
-        if ($uid === '' || mb_strlen($uid) > 190) {
-            throw new \InvalidArgumentException('Bitte den Benutzer angeben (Office-Kennung, z. B. mueller oder mueller@ZWEIG).');
-        }
-        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false || mb_strlen($email) > 254) {
-            throw new \InvalidArgumentException('Bitte eine gültige E-Mail-Adresse des zusätzlichen Postfachs angeben.');
-        }
-        if (mb_strlen($displayName) > 190) {
-            throw new \InvalidArgumentException('Der Anzeigename ist zu lang (höchstens 190 Zeichen).');
-        }
-
-        $id = $this->repository->save([
-            'uid' => $uid,
-            'email' => $email,
-            'display_name' => trim($displayName),
-            'send_as' => $options['send_as'] ?? true,
-            'active' => $options['active'] ?? true,
-            'sort_order' => max(0, (int) ($options['sort_order'] ?? 1)),
-        ]);
-        $error = $this->verify($id);
-
-        return ['id' => $id, 'ok' => $error === '', 'error' => $error];
-    }
-
-    public function delete(int $id): void
-    {
-        $this->repository->delete($id);
-    }
-
-    /**
      * Berechtigung des Benutzers auf ein Postfach pruefen und Ergebnis
      * festhalten. $userAddress ist die Postfachadresse des Benutzers (bei der
      * Anmeldung bekannt); ohne sie wird die Adresse aus dem Telefonbuch
@@ -280,19 +234,57 @@ final class OrvantaSharedMailboxService
     }
 
     /**
-     * Alle faelligen Zuordnungen eines Benutzers pruefen (hoechstens eine
-     * EWS-Anfrage je Postfach und Gueltigkeitsdauer).
+     * Zuordnungen eines Benutzers mit dem AD abgleichen (Auto-Mapping) und
+     * alle faelligen Zuordnungen pruefen (hoechstens eine EWS-Anfrage je
+     * Postfach und Gueltigkeitsdauer).
      *
      * @param array<string,mixed> $ssoUser
      * @param string $userAddress Postfachadresse des Benutzers (Impersonation)
      */
     public function refresh(array $ssoUser, string $userAddress = ''): void
     {
+        $this->syncFromDirectory($ssoUser);
         foreach ($this->repository->forUser($this->uid($ssoUser)) as $row) {
             if ($this->isStale($row)) {
                 $this->verify($row['id'], false, $userAddress);
             }
         }
+    }
+
+    /**
+     * Im AD automatisch eingebundene Postfaecher (msExchDelegateListBL) in die
+     * Zuordnungen uebernehmen; neue Postfaecher gelten als ungeprueft und
+     * werden anschliessend in refresh() ueber EWS bestaetigt. Ohne Ergebnis
+     * aus dem AD bleibt der Bestand unveraendert.
+     *
+     * @param array<string,mixed> $ssoUser
+     * @return bool true, wenn sich der Bestand geaendert hat
+     */
+    public function syncFromDirectory(array $ssoUser): bool
+    {
+        $uid = $this->uid($ssoUser);
+        if ($uid === '' || $this->directory === null) {
+            return false;
+        }
+        $mailboxes = $this->directory->mailboxes($ssoUser);
+        if ($mailboxes === null) {
+            return false;
+        }
+        try {
+            $changed = $this->repository->syncDiscovered($uid, $mailboxes);
+        } catch (Throwable $exception) {
+            $this->logger?->warning('Orvanta: Abgleich der automatisch eingebundenen Postfaecher fehlgeschlagen.', ['user' => $uid, 'error' => $exception->getMessage()]);
+
+            return false;
+        }
+        if ($changed) {
+            $this->logger?->info('Orvanta: automatisch eingebundene Postfaecher aus dem AD uebernommen.', [
+                'user' => $uid,
+                'mailboxes' => array_map(static fn (array $mailbox): string => $mailbox['email'], $mailboxes),
+            ]);
+        }
+
+        return $changed;
     }
 
     /**

@@ -73,45 +73,6 @@ final class OrvantaSharedMailboxRepository extends Repository
     }
 
     /**
-     * Benutzer fuer die Auswahl im Adminbereich: durchsucht den synchronisierten
-     * AD-Bestand (Telefonliste) und bildet die Office-Kennung wie die Anmeldung
-     * (SamAccountName der Hauptquelle, sonst "name@KENNUNG").
-     *
-     * @return list<array{uid:string,username:string,display_name:string,email:string,source:string}>
-     */
-    public function searchUsers(string $term, int $limit = 20): array
-    {
-        // Getrennte Platzhalter je Vergleich: native Prepares erlauben keine
-        // Wiederverwendung benannter Platzhalter.
-        $statement = $this->pdo->prepare(
-            "SELECT p.samaccount_name, p.display_name, p.email, s.source_key, s.label
-               FROM phonebook p
-               LEFT JOIN identity_sources s ON s.id = p.identity_source_id
-              WHERE p.active = 1 AND p.samaccount_name IS NOT NULL AND p.samaccount_name <> ''
-                AND (LOWER(p.display_name) LIKE :name ESCAPE '!' OR LOWER(p.samaccount_name) LIKE :account ESCAPE '!' OR LOWER(p.email) LIKE :mail ESCAPE '!')
-              ORDER BY p.display_name ASC, p.id ASC LIMIT " . max(1, min(50, $limit))
-        );
-        $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], mb_strtolower(trim($term))) . '%';
-        $statement->execute(['name' => $like, 'account' => $like, 'mail' => $like]);
-
-        $users = [];
-        foreach ($statement->fetchAll() as $row) {
-            $username = (string) $row['samaccount_name'];
-            $key = strtoupper(trim((string) ($row['source_key'] ?? '')));
-
-            $users[] = [
-                'uid' => $key === '' ? $username : $username . '@' . $key,
-                'username' => $username,
-                'display_name' => (string) ($row['display_name'] ?? ''),
-                'email' => (string) ($row['email'] ?? ''),
-                'source' => trim((string) ($row['label'] ?? '')) !== '' ? (string) $row['label'] : 'Hauptquelle',
-            ];
-        }
-
-        return $users;
-    }
-
-    /**
      * Zuordnung anlegen oder aktualisieren; der Schluessel ist die Kombination
      * aus Office-Kennung und Postfachadresse.
      *
@@ -141,6 +102,67 @@ final class OrvantaSharedMailboxRepository extends Repository
         $existing = $this->findByKey($data['uid'], $data['email']);
 
         return $existing['id'] ?? 0;
+    }
+
+    /**
+     * Aus dem AD gelesene Postfaecher eines Benutzers abgleichen: Das AD ist
+     * die einzige Quelle. Fehlende Postfaecher werden angelegt, vorhandene
+     * aktiviert und mit dem Anzeigenamen aus dem AD versehen (ein leerer
+     * AD-Name laesst den bisherigen stehen), nicht mehr gelistete entfernt.
+     * Pruefstand und Kalender-Auswahl vorhandener Zeilen bleiben erhalten.
+     *
+     * @param list<array{email:string,name:string}> $mailboxes
+     * @return bool true, wenn sich der Bestand geaendert hat
+     */
+    public function syncDiscovered(string $uid, array $mailboxes): bool
+    {
+        $changed = false;
+        $seen = [];
+        $existing = [];
+        foreach ($this->forUser($uid, false) as $row) {
+            $existing[strtolower($row['email'])] = $row;
+        }
+        $position = 0;
+        foreach ($mailboxes as $mailbox) {
+            $email = strtolower(trim($mailbox['email']));
+            if ($email === '' || isset($seen[$email])) {
+                continue;
+            }
+            $seen[$email] = true;
+            $position++;
+            $name = mb_substr(trim($mailbox['name']), 0, 190);
+            $row = $existing[$email] ?? null;
+            if ($row === null) {
+                $this->save([
+                    'uid' => $uid,
+                    'email' => $email,
+                    'display_name' => $name,
+                    'send_as' => true,
+                    'active' => true,
+                    'sort_order' => $position,
+                ]);
+                $changed = true;
+                continue;
+            }
+            if ($name === '') {
+                $name = $row['display_name'];
+            }
+            if (!$row['active'] || $row['display_name'] !== $name || $row['sort_order'] !== $position) {
+                $statement = $this->pdo->prepare(
+                    'UPDATE orvanta_shared_mailboxes SET active = 1, display_name = :display_name, sort_order = :sort_order WHERE id = :id'
+                );
+                $statement->execute(['display_name' => $name, 'sort_order' => $position, 'id' => $row['id']]);
+                $changed = true;
+            }
+        }
+        foreach ($existing as $email => $row) {
+            if (!isset($seen[$email])) {
+                $this->delete($row['id']);
+                $changed = true;
+            }
+        }
+
+        return $changed;
     }
 
     /**

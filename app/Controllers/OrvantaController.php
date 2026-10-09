@@ -36,6 +36,13 @@ final class OrvantaController extends Controller
         $access = self::authorize($request);
         $config = Container::orvantaConfig();
         $attachments = Container::orvantaAttachments();
+        $shared = Container::orvantaSharedMailboxes();
+        if (!$access['route']->isProxy()) {
+            // Abgelaufene Pruefungen der zusaetzlichen Postfaecher auffrischen,
+            // damit der Ordnerbaum nur wirklich erreichbare Postfaecher zeigt.
+            $shared->refresh($access['user']);
+            $access['mailboxes'] = $shared->available($access['user']);
+        }
 
         return $this->view('orvanta.index', [
             'pageTitle' => 'Mail & Kalender',
@@ -72,6 +79,15 @@ final class OrvantaController extends Controller
                 'spellcheckAvailable' => Container::orvantaSpellcheck()->isAvailable(),
                 // Fest zugeordnete Signatur (nur Anzeige; angefuegt wird serverseitig).
                 'signature' => Container::orvantaSignatures()->forUser($access['user']),
+                // Zusaetzlich berechtigte Postfaecher (Vollzugriff / "Senden als")
+                // und die gemerkte Kalender-Auswahl. Das eigene Postfach steht
+                // immer an erster Stelle und ist nicht abwaehlbar.
+                'mailboxes' => array_merge(
+                    [['id' => 0, 'email' => $access['primary'], 'name' => '', 'send_as' => true]],
+                    $access['mailboxes']
+                ),
+                'calendarVisible' => $access['route']->isProxy() ? [] : array_map('intval', $shared->calendarSelection($access['user'])['visible']),
+                'primaryEmail' => $access['primary'],
             ],
         ], 'layouts.editor')->withHeader('Cache-Control', 'no-store')->withHeader('Vary', 'Cookie');
     }
@@ -154,7 +170,7 @@ final class OrvantaController extends Controller
      *  - Zuordnung auf deaktiviertes Postfach: kein Zugriff (kein Rueckfall)
      *  - sonst: Exchange-Anbindung (bestehendes Verhalten)
      *
-     * @return array{user:array<string,mixed>,uid:string,impersonate:string,backend:OrvantaMailBackendInterface,route:MailProxyRoute}
+     * @return array{user:array<string,mixed>,uid:string,impersonate:string,primary:string,mailboxes:list<array{id:int,email:string,name:string,send_as:bool}>,backend:OrvantaMailBackendInterface,route:MailProxyRoute}
      */
     public static function authorize(Request $request): array
     {
@@ -179,17 +195,23 @@ final class OrvantaController extends Controller
         }
         $uid = (string) ($ssoUser['office_uid'] ?? $ssoUser['username']);
         if ($route->isProxy()) {
-            return ['user' => $ssoUser, 'uid' => $uid, 'impersonate' => $route->email, 'backend' => $router->backendForRoute($route), 'route' => $route];
+            // Der SMTP-/IMAP-Proxy kennt nur das eine zugeordnete Postfach.
+            return ['user' => $ssoUser, 'uid' => $uid, 'impersonate' => $route->email, 'primary' => $route->email, 'mailboxes' => [], 'backend' => $router->backendForRoute($route), 'route' => $route];
         }
         $impersonate = Container::orvantaMailboxResolver()->address($ssoUser);
         if ($impersonate === '' && !Container::orvantaConfig()->isDemo()) {
             throw new HttpException(403, 'Für Ihr Konto ist im Active Directory keine E-Mail-Adresse hinterlegt. Orvanta kann Ihr Postfach nicht zuordnen.');
         }
+        $primary = $impersonate !== '' ? $impersonate : (string) $ssoUser['username'] . '@demo.local';
 
         return [
             'user' => $ssoUser,
             'uid' => $uid,
-            'impersonate' => $impersonate !== '' ? $impersonate : (string) $ssoUser['username'] . '@demo.local',
+            'impersonate' => $primary,
+            'primary' => $primary,
+            // Zusaetzlich berechtigte Postfaecher (Vollzugriff / "Senden als");
+            // nur ueber Exchange erreichbar, der Proxy kennt sie nicht.
+            'mailboxes' => Container::orvantaSharedMailboxes()->available($ssoUser),
             'backend' => $router->backendForRoute($route),
             'route' => $route,
         ];
@@ -200,7 +222,7 @@ final class OrvantaController extends Controller
      * (Tooltipp an der Verbindungsanzeige im Fussbereich). Leer, wenn kein
      * Exchange beteiligt ist: Proxy-Postfaecher (IMAP/SMTP) und Demomodus.
      *
-     * @param array{user:array<string,mixed>,uid:string,impersonate:string,backend:OrvantaMailBackendInterface,route:MailProxyRoute} $access
+     * @param array{route:MailProxyRoute} $access
      */
     public static function exchangeHost(array $access): string
     {

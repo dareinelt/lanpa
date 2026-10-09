@@ -357,25 +357,25 @@ Zeitstempel (keine Inhalte, keine Betreffzeilen, keine Empfänger) und wird nach
 
 ## 10. Umsetzungsplan (Schritte)
 
-| # | Schritt | Inhalt | Prüfung |
-| --- | --- | --- | --- |
-| 1 | Konzept | Diese Datei | — |
-| 2 | Migration 047 | drei Tabellen, `database/migrations/AGENTS.md` nachziehen | `php -l`, `php scripts/migrate.php` (Docker) |
-| 3 | Repository (Proxy) | `MailProxyRepository::sourceCounts()`, `sourceStates()`, `recordSourceSuccess()`, `recordSourceError()` | neue Unit-Tests |
-| 4 | Repository (Fluss) | `OrvantaFlowRepository`: Aktivität, Proben, Statistik, Verlauf, Räumen | neue Unit-Tests |
-| 5 | Dienst Präsenz | `OrvantaPresenceService` (`touch()`, `sample()`, `stats()`, `history()`), `Container::orvantaPresence()` | neue Unit-Tests |
-| 6 | Erfassung | `OrvantaApiController::handle()` ruft `touch()`; Archivierungs-Worker ruft `sample()` + `purge()` | `php -l`, bestehende Tests |
-| 7 | Quellenzustand | Erfolg/Fehler im Mailpfad je Identitätsquelle erfassen, Admin-Prüfung | neue Unit-Tests |
-| 8 | Grafik | `OrvantaFlowCharts`: Overlay-SVG 365/180/90/30/14 Tage | neue Unit-Tests |
-| 9 | Wolke | `OrvantaFlowCloud`: Werteliste, Größenstufen, Staffelung, Escaping | neue Unit-Tests |
-| 10 | Aggregation | `OrvantaFlowService`: Knoten, Kanten, Zustände, Dämpfung, Gesamtstatus, Kennzahlen | neue Unit-Tests |
-| 11 | Einstellung | `flow_ai_user_names` in `OrvantaConfigService` + Formular | `php -l`, bestehende Tests |
-| 12 | Controller, Routen, Navigation | `Admin\OrvantaFlowController`, drei Routen, Nav-Eintrag | `php -l` |
-| 13 | View | `views/admin/orvanta-flow.php` | — |
-| 14 | CSS | `public/assets/css/admin.css`: Knoten, Kanten, Wolke, Overlay, Verlauf | — |
-| 15 | JavaScript | `public/assets/js/admin-orvanta-flow.js`: Auto-Aktualisierung der Kachelwerte | — |
-| 16 | Tests | `tests/Unit/OrvantaFlowTest.php` | `php tests/run.php` |
-| 17 | Doku | `agentsindex.md` (Routen/Tabellen/Nav), `orvanta-referenz.md`, diese Datei, Screenshots | `php tests/run.php`, Sichtprüfung |
+| # | Schritt | Inhalt | Prüfung | Stand |
+| --- | --- | --- | --- | --- |
+| 1 | Konzept | Diese Datei | — | erledigt (`5d88753`) |
+| 2 | Migration 047 | drei Tabellen, `database/migrations/AGENTS.md` nachziehen | `php -l`, `php scripts/migrate.php` (Docker) | erledigt (`c74d228`) |
+| 3 | Repository (Proxy) | `MailProxyRepository::sourceCounts()`, `sourceStates()`, `recordSourceSuccess()`, `recordSourceError()` | neue Unit-Tests | erledigt (`f559858`) |
+| 4 | Repository (Fluss) | `OrvantaFlowRepository`: Aktivität, Proben, Statistik, Verlauf, Räumen | neue Unit-Tests | erledigt (`8e83303`) |
+| 5 | Dienst Präsenz | `OrvantaPresenceService` (`touch()`, `sample()`, `stats()`, `history()`), `Container::orvantaPresence()` | neue Unit-Tests | erledigt (`51a36bd`) |
+| 6 | Erfassung | `OrvantaApiController::handle()` ruft `touch()`; Archivierungs-Worker ruft `sample()` + `purge()` | `php -l`, bestehende Tests | erledigt (`51a36bd`) |
+| 7 | Quellenzustand | Erfolg/Fehler im Mailpfad je Identitätsquelle erfassen, Admin-Prüfung | neue Unit-Tests | erledigt (`97af08b`) |
+| 8 | Grafik | `OrvantaFlowCharts`: Overlay-SVG 365/180/90/30/14 Tage | neue Unit-Tests | erledigt (`d1038c2`) |
+| 9 | Wolke | `OrvantaFlowCloud`: Werteliste, Größenstufen, Staffelung, Escaping | neue Unit-Tests | erledigt (`540c317`) |
+| 10 | Aggregation | `OrvantaFlowService`: Knoten, Kanten, Zustände, Dämpfung, Gesamtstatus, Kennzahlen | neue Unit-Tests | erledigt (`4906daa`) |
+| 11 | Einstellung | `flow_ai_user_names` in `OrvantaConfigService` + Formular | `php -l`, bestehende Tests | erledigt (`f8e77d6`) |
+| 12 | Controller, Routen, Navigation | `Admin\OrvantaFlowController`, drei Routen, Nav-Eintrag | `php -l` | erledigt (`52323b2`) |
+| 13 | View | `views/admin/orvanta-flow.php` | — | erledigt (`ae6941a`) |
+| 14 | CSS | `public/assets/css/admin.css`: Knoten, Kanten, Wolke, Overlay, Verlauf | — | erledigt (`579364f`) |
+| 15 | JavaScript | `public/assets/js/admin-orvanta-flow.js`: Auto-Aktualisierung der Kachelwerte | — | erledigt (`409cb4e`, `685f961`) |
+| 16 | Tests | `tests/Unit/OrvantaFlowTest.php` | `php tests/run.php` | erledigt (`0cd6b66`) |
+| 17 | Doku | `agentsindex.md` (Routen/Tabellen/Nav), `orvanta-referenz.md`, `orvanta.md`, diese Datei, Screenshots | `php tests/run.php`, Sichtprüfung | erledigt |
 
 Jeder Schritt ist ein eigener Commit mit deutscher Betreffzeile
 (`AGENTS.md` → Git).

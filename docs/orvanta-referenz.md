@@ -59,6 +59,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 20. Exchange-DAG (Lastverteilung, Failover und Dashboard)
 21. Abwesenheitsnotizen
 22. Zusätzliche Postfächer (Vollzugriff / „Senden als“)
+23. Nachrichtenfluss-Dashboard
 
 ---
 
@@ -105,6 +106,13 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaSharedMailboxService.php` | Zusätzliche Postfächer (Abschnitt 22): `available(ssoUser)` (aktive, erreichbare Zuordnungen in Reihenfolge), `calendarSelection(ssoUser)`, `setCalendarVisible(ssoUser, id, visible)`, `resolve(ssoUser, requested)` (Adressierung `smb:<id>\|…`), `sender(ssoUser, primary, address)` (Absenderprüfung), `forAdmin(uid)`, `searchUsers(term)`, `save(uid, email, displayName, options)`, `delete(id)`, `verify(id, force)`, `refresh(ssoUser)`, `uid(ssoUser)`; `VERIFY_TTL` (43200 s = 12 h) |
 | `app/Repositories/OrvantaSharedMailboxRepository.php` | Tabelle `orvanta_shared_mailboxes`: `forUser(uid, activeOnly)`, `all(uid)`, `find(id)`, `findByKey(uid, email)`, `searchUsers(term, limit)` (Telefonliste LEFT JOIN `identity_sources`, `LIKE … ESCAPE '!'`), `save(data)` (Upsert auf `user_uid` + `email`), `delete(id)`, `markVerified(id, error)`, `setCalendarVisible(id, visible)` |
 | `app/Controllers/Admin/OrvantaSharedMailboxController.php` | `index()` (GET `suche`, `id`, `benutzer`; ohne Migration 046 `tablesMissing`), `save()`, `verify()`, `delete()`; `BASE = '/admin/office/orvanta/postfaecher'` |
+| `app/Controllers/Admin/OrvantaFlowController.php` | Nachrichtenfluss-Dashboard (Abschnitt 23): `index()`, `data()` (JSON ohne Caching), `checkSources()` (CSRF zuerst, höchstens `MAX_CHECK_SOURCES` = 16 Quellen je Durchgang); `BASE = '/admin/office/orvanta/nachrichtenfluss'` |
+| `app/Services/Orvanta/OrvantaFlowService.php` | Nachrichtenfluss (Abschnitt 23): `overview(withHistory)` = `evaluate(collect())`; `collect()` liest Quellen, Proxy, Exchange, Tiers, Zwischenspeicher und KI, `evaluate()` ist rein; Grenzen `CACHE_WARN_PERCENT` (75), `CACHE_CRIT_PERCENT` (90), `AI_PERIOD_DAYS` (30), `AI_TOP_USERS`/`CACHE_TOP_USERS` (10), `STATE_LABELS` |
+| `app/Services/Orvanta/OrvantaFlowCloud.php` | Wolkendarstellung (Abschnitt 23.4): `items()`, statisch `level()`, `render()`, `table()`; `LEVELS` (5), `THRESHOLDS` |
+| `app/Services/Orvanta/OrvantaFlowCharts.php` | Verlaufsgrafik 365/180/90/30/14 Tage (Abschnitt 23.4): `overlay()`, `tableRows()`, statisch `series()`/`color()`; `WIDTH` (960), `HEIGHT` (340) |
+| `app/Services/Orvanta/OrvantaPresenceService.php` | Aktive Nutzer und Proben (Abschnitt 23.2): `touch()`, `sample()`, `stats()`, `history()`, `purge()`, statisch `backendFor()`; `ACTIVE_WINDOW`/`SAMPLE_INTERVAL` (300), `ACTIVITY_TTL` (86400), `HISTORY_DAYS` (400), `PERIODS` |
+| `app/Repositories/OrvantaFlowRepository.php` | Tabellen `orvanta_activity`/`orvanta_user_samples`: `touchActivity()`, `activeUsers()`, `activityCount()`, `recordSample()`, `hasSampleAt()`, `lastSampleAt()`, `sampleStats()`, `dailyPeaks()`, `sampleCount()`, `purge()` |
+| `views/admin/orvanta-flow.php`, `public/assets/js/admin-orvanta-flow.js` | Nachrichtenfluss-Dashboard (Abschnitt 23.5): Spuren mit Knoten, Wolken, Tiers, Kennzahlen, Störungen, Verlaufsgrafik; Live-Aktualisierung über `GET …/nachrichtenfluss/daten` |
 | `views/admin/orvanta-shared-mailboxes.php` | Adminseite: Benutzersuche, Zuordnungsformular, Tabelle mit Prüfstatus und Aktionen |
 | `app/Controllers/Admin/OrvantaOofController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
 | `views/admin/orvanta-oof-templates.php`, `views/admin/orvanta-oof-template.php`, `public/assets/js/admin-oof.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/abwesenheit/vorschau`) |
@@ -145,6 +153,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `database/migrations/044_orvanta_exchange_session_client.sql` | Spalten `orvanta_exchange_sessions.client_ip`/`client_host` (Client der Sitzung, Abschnitt 20.5) |
 | `database/migrations/045_orvanta_oof.sql` | Tabellen `orvanta_oof_templates` und `orvanta_oof_settings` samt erster Vorlage (Abschnitt 21) |
 | `database/migrations/046_orvanta_shared_mailboxes.sql` | Tabelle `orvanta_shared_mailboxes` (Abschnitt 22) |
+| `database/migrations/047_orvanta_flow_presence.sql` | Tabellen `orvanta_activity`, `orvanta_user_samples` und `mail_proxy_source_state` (Nachrichtenfluss, Abschnitt 23.1) |
 | `public/index.php` | Routen (öffentliche Gruppe, Prüfung im Controller) und Admin-Routen in `$requireAdmin`; `/office/orvanta` gehört zu den Pfaden des automatischen SSO-Versuchs (`$ssoAttempt`) |
 | `tests/Unit/OrvantaServiceTest.php` | Tests mit `RecordingExchangeTransport` und SQLite (Abschnitt 12) |
 | `tests/Unit/OrvantaAiTest.php` | Tests der KI-Unterstützung mit `RecordingAiTransport` (Abschnitt 12) |
@@ -152,6 +161,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `tests/Unit/OrvantaOofTest.php` | Tests der Abwesenheitsnotizen gegen SQLite und `RecordingExchangeTransport` (Abschnitt 21) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Tests der Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (Abschnitt 19) |
 | `tests/Unit/OrvantaSharedMailboxTest.php` | Tests der zusätzlichen Postfächer gegen SQLite und den Demo-Transport samt Rendertest der Adminseite (Abschnitt 22) |
+| `tests/Unit/OrvantaFlowTest.php` | Tests des Nachrichtenfluss-Dashboards gegen SQLite (Migration 047), Wolken, Grafik, Dienst und Ansicht (Abschnitt 23.7) |
 
 ## 3. Routen, Zugriff und API-Rahmen
 
@@ -224,6 +234,9 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/admin/office/orvanta/postfaecher/speichern` | `save` | Zuordnung anlegen/ändern (CSRF; `benutzer`, `postfach`, `anzeigename`, `sortierung`, `senden_als`, `aktiv`) |
 | POST | `/admin/office/orvanta/postfaecher/pruefen` | `verify` | Erreichbarkeit über EWS prüfen (Dienstkonto, `GetFolder` auf `msgfolderroot`) |
 | POST | `/admin/office/orvanta/postfaecher/loeschen` | `delete` | Zuordnung entfernen (`id`) |
+| GET | `/admin/office/orvanta/nachrichtenfluss` | `Admin\OrvantaFlowController::index` | Nachrichtenfluss-Dashboard (Abschnitt 23) |
+| GET | `/admin/office/orvanta/nachrichtenfluss/daten` | `data` | Kennzahlen und Knoten als JSON für die Live-Aktualisierung (`Cache-Control: no-store`) |
+| POST | `/admin/office/orvanta/nachrichtenfluss/quellen/pruefen` | `checkSources` | Verbindungstest je Identitätsquelle (CSRF zuerst; `source` für eine einzelne Quelle) |
 | GET | `/admin/office/signaturen` | `Admin\OrvantaSignatureController::index` | Signaturvorlagen (Liste, Vorschau-iframes) |
 | GET/POST | `/admin/office/signaturen/vorlage[?id=…]` | `edit` / `save` | Vorlage anlegen/bearbeiten (CSRF) |
 | POST | `/admin/office/signaturen/loeschen` | `delete` | Vorlage löschen (`id`) |
@@ -281,7 +294,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 
 ## 4. Datenhaltung
 
-### 4.1 Tabellen (Migrationen 033–046)
+### 4.1 Tabellen (Migrationen 033–047)
 
 | Tabelle | Spalten (Auszug) | Hinweise |
 | --- | --- | --- |
@@ -296,6 +309,9 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_oof_templates` (Migration 045) | `name` (≤ 120), `fixed_text` (TEXT, ≤ 4000 Zeichen), `example_text` (TEXT, ≤ 2000 Zeichen), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Vorlagen der Abwesenheitsnotiz; Index (`active`, `sort_order`). Zuordnung wie bei den Signaturen: erste aktive Vorlage nach `sort_order`, deren Gruppe in den SSO-Gruppen vorkommt – ohne Treffer gibt es keine Abwesenheitsnotiz. Migration legt die Vorlage „Allgemeine Abwesenheit“ an. Abschnitt 21 |
 | `orvanta_oof_settings` (Migration 045) | `user_uid` (Primary Key), `template_id` (NULL, `ON DELETE SET NULL`), `dynamic_text` (≤ 2000), `external_audience` ∈ `none\|all` (Standard `none`), `schedule_mode` ∈ `range\|until_off` (Standard `until_off`), `start_date`, `end_date` (DATE, NULL), `active` | Benutzereinstellungen; die maßgebliche Einstellung liegt auf dem Exchange-Server, die Zeile hält den letzten Stand für Banner und Dialog. Abschnitt 21 |
 | `orvanta_shared_mailboxes` (Migration 046) | `user_uid` (≤ 190), `email` (≤ 190), `display_name` (≤ 190), `send_as`, `active`, `verified_at` (DATETIME, NULL), `verify_error` (≤ 500), `checked_at` (DATETIME, NULL), `calendar_visible`, `sort_order` (1–999), `created_at`, `updated_at` | Unique (`user_uid`, `email`); Index (`user_uid`, `active`, `sort_order`). Zusätzlich per Vollzugriff berechtigte Postfächer, Abschnitt 22. Collation `utf8mb4_unicode_ci`, Adressen werden also ohne Beachtung der Groß-/Kleinschreibung verglichen |
+| `orvanta_activity` (Migration 047) | `user_uid` (≤ 190, Primary Key), `backend` ∈ `exchange\|proxy`, `first_seen_at`, `last_seen_at`, `requests` | Aktive Nutzer der letzten Minuten, **ohne Inhalte**; `last_seen_at` entscheidet über `ACTIVE_WINDOW` (300 s), `purge()` räumt älter als `ACTIVITY_TTL` (86400 s). Abschnitt 23.2 |
+| `orvanta_user_samples` (Migration 047) | `sampled_at` (DATETIME, unique), `active_users`, `exchange_users`, `proxy_users`, `ai_users` | Genau eine Zeile je Zeitraster (`SAMPLE_INTERVAL` 300 s); Grundlage der Kennzahlen und des Verlaufs, `purge()` räumt älter als `HISTORY_DAYS` (400 Tage). Abschnitt 23.2 |
+| `mail_proxy_source_state` (Migration 047) | `identity_source_id` (INT, Primary Key, 0 = Hauptquelle), `last_success_at` (DATETIME, NULL), `last_error_at` (DATETIME, NULL), `last_error` (≤ 500), `failures`, `checked_at` (DATETIME, NULL) | Zustand je Identitätsquelle im Mailpfad; **ohne Fremdschlüssel**, weil Quelle 0 die Hauptquelle aus `orvanta_settings` ist. Geschrieben von `ProxyMailBackend` und `MailProxyService::testSources()`, gelesen vom Nachrichtenfluss-Dashboard. Abschnitt 23.1 |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
@@ -836,6 +852,22 @@ Druck ausgeblendet.
     bleiben unberührt. Ein `UpdateItem` über den gesamten Termin
     (`updateEvent()`) darf dafür nicht verwendet werden – es würde
     Erinnerungen und Beschreibungen überschreiben.
+23. **Das Nachrichtenfluss-Dashboard ist rein lesend.** Einzige Aktion ist der
+    Verbindungstest der Identitätsquellen (CSRF **zuerst**, höchstens
+    `MAX_CHECK_SOURCES` = 16 aktive Quellen je Durchgang, sonst nur einzeln).
+    Die Seite verändert keine Einstellung und sendet nichts (Abschnitt 23).
+24. **`OrvantaFlowService::evaluate()` bleibt rein** – keine Datenbank, kein
+    Netz, keine Zeitabhängigkeit außer dem übergebenen `now`. Nur `collect()`
+    liest Daten; sonst werden die JSON-Route und die Tests unbrauchbar.
+25. **Der Zustand einer Identitätsquelle kommt nie aus dem Vorhandensein eines
+    Postfachs**, sondern aus dem letzten Mailpfad-Kontakt
+    (`mail_proxy_source_state`, geschrieben von `ProxyMailBackend`) oder einem
+    Verbindungstest. Ein Proxy-Ausfall setzt alle Quellen auf `error` **und**
+    `muted`; eine gestörte Quelle graut nur ihre eigenen Postfächer aus
+    (Abschnitt 23.6).
+26. **Fehlende Migration 047 bricht nichts.** Präsenz und Verlauf liefern dann
+    leer, der Quellenzustand `''`; die Seite zeigt weiter alle Knoten, nur ohne
+    Nutzerzahlen und Verlauf.
 
 ## 12. Tests
 
@@ -852,6 +884,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
+| `tests/Unit/OrvantaFlowTest.php` | Nachrichtenfluss-Dashboard (Abschnitt 23) gegen SQLite (`flowPdo()`, Spiegel der Migration 047 **ohne** `orvanta_cache_items`): Repository (`touchActivity()`, `activeUsers()` inkl. Backend-Filter und Grenzen, `recordSample()` schreibt je Rasterplatz genau einmal und überschreibt nicht, `sampleStats()`, `dailyPeaks()`, `purge()`), Quellenzustand je Identitätsquelle im Mailpfad (Erfolg/Fehler, Quelle 0 ohne Zeile, `testSources()` überspringt inaktive Quellen), Präsenz (`backendFor()`, `stats()`, `history()` mit genau `<tage>` Punkten und `null`-Lücken), Wolken (`level()`-Schwellen, `items()`, `render()` ohne `style`, `table()`), Grafik (`overlay()` ohne `style`, fünf Reihen, leere Daten), Dienst (`evaluate()` mit vollständigem Eingabefeld: Zustände, Ausgrauregeln, Kanten, Spuren, Kennzahlen, Störungen, Gesamtstatus, Grenzwerte) und Ansicht (`flowRender()` rendert `views/admin/orvanta-flow.php` mit controllergleichen Variablen: Escaping, `data-`Hooks, ausgegraute Wolken, Kennzahlen, Verlauf erst mit Proben) |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
@@ -893,6 +926,7 @@ nach dem Neuladen wieder die alte.
 | **Rechtschreibprüfung erweitern** (weiterer Editor, andere Sprache) | Editor mit `contenteditable` und `data-ov-…-body`-Hook anlegen und in `orvanta.js` zu `spellEditors()` hinzufügen (nur dort wird geprüft; Signatur-/Zitatblöcke tragen `contenteditable="false"` und werden automatisch übersprungen). Andere Sprache/Wörterbuch: `ORVANTA_SPELLCHECK_URL`/`ORVANTA_SPELLCHECK_DIR` umstellen – der Übersetzer liest `SET`/`FLAG`/`AF`/`AM` aus der `.aff`, das Dateiformat bleibt gleich. **Nur** die Engine selbst ändern, wenn das Wörterbuch eine Hunspell-Funktion nutzt, die noch fehlt (`COMPOUNDRULE`, `CHECKCOMPOUNDPATTERN`, `SIMPLIFIEDTRIPLE`, `COMPLEXPREFIXES`, `FORCEUCASE`, `PHONE`); Referenz ist die Python-Umsetzung `spylls` (`algo/lookup.py`), gegen die die Prüfung unterschiedfrei validiert wurde (Abschnitt 19). Danach `php tests/run.php` **und** ein Differenzlauf gegen `spylls` über eine echte Wortliste. |
 
 | **Abwesenheitsnotiz erweitern** (weiteres Feld, weiterer Empfängerkreis) | Spalte per Migration **und** im SQLite-Schema von `tests/Unit/OrvantaOofTest.php` (`oofPdo()`); `OrvantaOofRepository` (`hydrate`/`hydrateSettings`, `save`/`saveSettings`), `OrvantaOofService` (`blank()`/`validate()`/`validateSettings()`/`apply()`/`state()`/`status()`), Formular `views/admin/orvanta-oof-template.php` bzw. Dialog `views/orvanta/index.php`, `admin-oof.js` (Query) und `OrvantaOofController::preview()`; neuer Empfängerkreis zusätzlich in `AUDIENCES` und in `EwsXml::oofSettings()`; Doku in Abschnitt 21. |
+| **Nachrichtenfluss-Dashboard erweitern** (weiterer Knoten, weitere Kennzahl) | Zuerst `docs/orvanta-nachrichtenfluss.md` (Elementliste und Ausgrauregeln) ergänzen, dann `OrvantaFlowService::collect*()` für die Daten und `evaluate()` für den Knoten samt `flowNode()`-Aufruf; Knoten in `views/admin/orvanta-flow.php` rendern (Spur, `data-flow-node`, `data-flow-node-muted` **immer** ausgeben, nur `hidden` schalten) und in `admin-orvanta-flow.js` in die Aktualisierung aufnehmen; Test in `OrvantaFlowTest.php` (`flowInput()` um das Feld erweitern – **`array_merge()`**, nie `+`, sonst gewinnt der Standard). Neue Tabellen/Spalten zusätzlich im SQLite-Schema von `flowPdo()` und in `database/migrations/AGENTS.md` nachziehen. Abschnitt 23. |
 
 Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 `docs/orvanta.md` und `agentsindex.md` aktualisieren.
@@ -2107,3 +2141,157 @@ Demo-Transports sowie ein Rendertest der Adminseite
 (`View::setViewPath(BASE_PATH . '/views')` + `View::render('admin.orvanta-shared-mailboxes', …)`),
 der Hinweise, Escaping, Formularwerte und den Hinweis auf die fehlende
 Migration 046 prüft.
+
+---
+
+## 23. Nachrichtenfluss-Dashboard
+
+Die Seite `/admin/office/orvanta/nachrichtenfluss` (Navigation
+„Orvanta – Nachrichtenfluss“, Schlüssel `office_orvanta_flow`) zeigt **einen**
+Zustandsüberblick über alles, was am Nachrichtenfluss beteiligt ist:
+Identitätsquellen, IMAP-/SMTP-Proxy, Exchange-DAG-Hosts mit ihren Clients,
+Speicher-Tiers, den Orvanta-Zwischenspeicher und die KI-Endpunkte. Konzept,
+Elementliste, Ausgrauregeln und Betriebsgrenzen stehen in
+`docs/orvanta-nachrichtenfluss.md`; dieser Abschnitt beschreibt die technische
+Umsetzung.
+
+```
+GET  /admin/office/orvanta/nachrichtenfluss[/daten]
+POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
+          └─ Admin\OrvantaFlowController
+                ├─ OrvantaFlowService::overview()      Knoten, Kanten, Kennzahlen
+                │     ├─ OrvantaConfigService          Einstellungen (Proxy, KI, Zwischenspeicher)
+                │     ├─ MailProxyService::sources()   Quellen, Postfaecher, Zuordnungen, Quellenzustand
+                │     ├─ OrvantaExchangePool::hosts()  DAG-Hosts und Clients
+                │     ├─ StorageService                Tiers und Belegung
+                │     ├─ OrvantaRepository             Zwischenspeicher, KI-Nutzung, Nutzer
+                │     └─ OrvantaPresenceService        aktive Nutzer und Verlauf
+                ├─ OrvantaFlowCloud    Wolken (SVG + Tabelle)
+                └─ OrvantaFlowCharts   Verlaufsgrafik (SVG)
+```
+
+### 23.1 Datenmodell (Migration 047)
+
+| Tabelle | Zweck | Schlüssel |
+| --- | --- | --- |
+| `orvanta_activity` | aktive Orvanta-Nutzer der letzten Minuten, ohne Inhalte | `user_uid`, `backend` (exchange/proxy), `first_seen_at`, `last_seen_at`, `requests` |
+| `orvanta_user_samples` | Minutenproben der Nutzerzahlen | `sampled_at` (unique), `active_users`, `exchange_users`, `proxy_users`, `ai_users` |
+| `mail_proxy_source_state` | Zustand je Identitätsquelle im Mailpfad | `identity_source_id` (Primary Key, 0 = Hauptquelle), `last_success_at`, `last_error_at`, `last_error`, `failures`, `checked_at` |
+
+- Fehlt Migration 047, laufen `OrvantaPresenceService` und
+  `OrvantaFlowRepository` leer (`[]`/`0`/`false`) statt zu brechen; die
+  Quellenzustände kommen dann als leerer Zustand an (`''`).
+- `mail_proxy_source_state` hat **keinen** Fremdschlüssel: Quelle `0` ist die
+  Hauptquelle aus `orvanta_settings` und hat keine Zeile in
+  `mail_proxy_servers`. Deshalb wird der Zustand immer mit `?? ''` gelesen.
+- Schreibpfade: `OrvantaPresenceService::touch()` (aus `OrvantaApiController`
+  bei jeder authentifizierten API-Anfrage), `sample()`/`purge()` (aus
+  `scripts/orvanta_archive_worker.php`) und
+  `ProxyMailBackend`/`MailProxyService::testSources()` für den Quellenzustand.
+
+### 23.2 Präsenz und Verlauf (`OrvantaPresenceService`)
+
+- `ACTIVE_WINDOW = 300` (5 Minuten), `SAMPLE_INTERVAL = 300`,
+  `HISTORY_DAYS = 400`, `ACTIVITY_TTL = 86400`,
+  `PERIODS = [14, 30, 90, 180, 365]`.
+- `touch(userUid, backend)` legt die Aktivität an bzw. schreibt
+  `last_seen_at`/`requests` fort; `backendFor(MailProxyRoute)` bildet das
+  Routingergebnis auf `exchange` oder `proxy` ab.
+- `sample()` schreibt **genau eine** Probe je Zeitraster: Ist der Rasterplatz
+  schon belegt, liefert es `false` und überschreibt nichts.
+- `stats()` liefert `current`, `min`, `max`, `avg` und `peak` der letzten
+  24 Stunden aus den Proben; `history()` die Tagesmaxima je Zeitraum in
+  `[14, 30, 90, 180, 365]` Tagen als `series[<tage>]['points'|'max'|'avg'|'active']`.
+  Ein Tag hat genau `<tage>` Punkte, fehlende Tage sind `null` (rechts steht
+  der heutige Tag).
+- `purge()` löscht Aktivität älter als `ACTIVITY_TTL` und Proben älter als
+  `HISTORY_DAYS`.
+
+### 23.3 Auswertung (`OrvantaFlowService`)
+
+- `overview(bool $withHistory = true)` = `self::evaluate($this->collect())`
+  und liefert `generated_at`, `generated_iso`, `overall`, `kpis`, `lanes`,
+  `nodes`, `edges`, `incidents`, `tiers`, `history`, `ai`, `presence`.
+- `collect()` liest die Datenbank, `evaluate()` ist **rein** und ohne
+  Datenbank testbar (der Test ruft es mit einem vollständigen Eingabefeld).
+- Knotenschlüssel: `proxy`, `source-<id>`, `host-<id>`, `users`, `ai`,
+  `cache`, `tier-<id>`. Knotenfelder: `key`, `kind`, `title`, `subtitle`,
+  `state`, `state_label`, `alert`, `muted`, `muted_reason`, `muted_label`,
+  `message`, `facts`, `cloud`, `cloud_title`, `cloud_empty`, `cloud_more`,
+  `cloud_muted`, `link`, `primary`, `chart`, `members`.
+- Zustände und Beschriftungen: `ok` „In Ordnung“, `warn` „Eingeschränkt“,
+  `error` „Störung“, `off` „Nicht aktiv“ (`STATE_LABELS`).
+- Spuren: `proxy` (Identitätsquellen in umgekehrter Reihenfolge + `proxy`) und
+  `exchange` (Hosts + `users`). Kanten: `source:<id>→proxy`,
+  `host:<id>→users`, `proxy→users`, `ai→users`, `cache→users` mit
+  `state` `ok`/`error`.
+- Grenzwerte: `CACHE_WARN_PERCENT = 75`, `CACHE_CRIT_PERCENT = 90`,
+  `AI_PERIOD_DAYS = 30`, `AI_TOP_USERS = 10`, `CACHE_TOP_USERS = 10`.
+- `muted_label` wird **im Dienst** gesetzt (`'Werte ausgegraut (<muted_reason>)'`),
+  damit die Ansicht und die Live-Aktualisierung denselben Text zeigen.
+
+### 23.4 Wolken und Grafik
+
+- `OrvantaFlowCloud` (`LEVELS = 5`, `THRESHOLDS = [5 => 0.9, 4 => 0.7, 3 => 0.5, 2 => 0.3]`)
+  zeichnet je Eintrag ein SVG mit `value`/`display`/`label`; `items()` rechnet
+  die Größenstufe aus `level(value, max)`, `render()` erzeugt die Wolke,
+  `table()` die gleichwertige Tabelle (Barrierefreiheit, immer mit
+  `display`-Werten).
+- `OrvantaFlowCharts` (`WIDTH = 960`, `HEIGHT = 340`) zeichnet die fünf
+  Verlaufsreihen 365/180/90/30/14 Tage in **einem** SVG; Lücken brechen die
+  Linie. Farben und Klassen: `ov-flow-chart`, `ov-flow-grid`, `ov-flow-line`,
+  `ov-flow-point`, `ov-flow-axis-label`, `ov-flow-axis-title`; die Reihenfolge
+  ist lang → kurz, damit die kurzen Zeiträume oben liegen.
+- Beide Klassen benutzen **ausschließlich** SVG-Attribute und CSS-Klassen –
+  keine `style`-Attribute (CSP, Abschnitt 10).
+
+### 23.5 Controller und Ansicht
+
+- `OrvantaFlowController::BASE` ist die Seitenwurzel, `MAX_CHECK_SOURCES = 16`
+  die Höchstzahl der in einem Durchgang geprüften Quellen. `index()` übergibt
+  `flow`, `base`, `orvantaEnabled`, `orvantaDemo`, `refreshInterval`,
+  `checkableSources` und `checkLimit`; `data()` antwortet mit
+  `Cache-Control: no-store`, weil die Anzeige immer den aktuellen Zustand
+  zeigen soll.
+- `checkSources()` prüft **zuerst** das CSRF-Token, dann die Quellen. Geprüft
+  wird je Quelle das erste aktive Postfach; Quellen ohne aktives Postfach
+  werden als „nicht geprüft“ gezählt. Über `MAX_CHECK_SOURCES` aktive Quellen
+  werden nur einzeln geprüft (Parameter `source`), sonst bricht der Durchgang
+  mit Hinweis ab. Vor dem Lauf wird `set_time_limit($active * 30 + 30)`
+  gesetzt, weil jeder Quellentest über das Netz geht.
+- Die Ansicht `views/admin/orvanta-flow.php` ist rein lesend. Alle
+  Aktualisierungen laufen über `data-`Attribute
+  (`data-orvanta-flow`, `data-refresh-url`, `data-refresh-interval`,
+  `data-flow-node`, `data-flow-node-state`, `data-flow-node-label`,
+  `data-flow-node-message`, `data-flow-node-muted`, `data-flow-field`,
+  `data-flow-kpi`, `data-flow-edge`, `data-flow-incident-list`,
+  `data-flow-head`); `public/assets/js/admin-orvanta-flow.js` liest dieselbe
+  JSON-Antwort wie die Seite selbst und aktualisiert nur Text, Klassen und
+  Sichtbarkeit. Die Klasse der ausgegrauten Wolke heißt `flow-cloud--muted`
+  (nicht `cloud--muted`).
+
+### 23.6 Invarianten
+
+- Die Seite ist **lesend**; die einzige Aktion ist der Quellentest mit CSRF.
+- `evaluate()` darf keine Seiteneffekte haben (keine Datenbank, kein Netz) –
+  sonst brechen die Tests und die JSON-Route wird langsam.
+- Fehlende Migration 047 darf die Seite nicht brechen.
+- Der Zustand einer Quelle wird **nie** aus dem Vorhandensein eines Postfachs
+  abgeleitet, sondern aus dem letzten Mailpfad-Kontakt oder einem Test.
+- Ist der Proxy gestört, werden die Identitätsquellen als `error` **und**
+  `muted` geführt; eine gestörte Quelle graut nur ihre eigenen Postfächer aus
+  (der Knoten selbst bleibt sichtbar, nicht ausgegraut).
+- Keine Inline-Stile in SVG oder Ansicht (CSP).
+- Der Nutzerknoten wird nur ausgegraut, wenn der Proxy liegt **und** keine
+  Exchange-Präsenz gemessen wurde (`presence['exchange'] === 0`).
+
+### 23.7 Tests
+
+`tests/Unit/OrvantaFlowTest.php` (Abschnitt 12) deckt Repository, Präsenz,
+Quellenzustand im Mailpfad, Wolken, Grafik, Dienst und Ansicht ab. Der Test
+baut den SQLite-Spiegel der Migration 047 selbst auf (`flowPdo()`, **ohne**
+`orvanta_cache_items`) und ruft `OrvantaFlowService::evaluate()` mit
+`flowInput()` auf – einem vollständig gesunden Eingabefeld mit festem
+`now = 1_700_000_000`, damit die Erwartungen unabhängig von der Uhr sind.
+`flowRender()` rendert die echte Ansicht mit controllergleichen Variablen und
+prüft Verdrahtung, Escaping und die Sichtbarkeitsregeln.

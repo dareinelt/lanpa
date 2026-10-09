@@ -275,7 +275,13 @@ flowchart LR
   `GET /admin/office/orvanta/postfaecher` (Zuordnungen pflegen),
   `POST /admin/office/orvanta/postfaecher/speichern`,
   `POST /admin/office/orvanta/postfaecher/pruefen` (Erreichbarkeit über EWS),
-  `POST /admin/office/orvanta/postfaecher/loeschen`.
+  `POST /admin/office/orvanta/postfaecher/loeschen`;
+  Nachrichtenfluss-Dashboard (Abschnitt 4f):
+  `GET /admin/office/orvanta/nachrichtenfluss` (Dashboard),
+  `GET /admin/office/orvanta/nachrichtenfluss/daten` (Kennzahlen als JSON für
+  die Live-Aktualisierung),
+  `POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen`
+  (Verbindungstest je Identitätsquelle).
 
 ---
 
@@ -656,6 +662,68 @@ eigenen Postfach. Im **Demo-Modus** (Abschnitt 8) stehen zwei Beispielpostfäche
 zur Verfügung: `team@demo.local` („Team Postfach“, „Senden als“ erlaubt) und
 `buero@demo.local` („Büro“, ohne „Senden als“); nur diese beiden lassen sich
 prüfen, jede andere Adresse meldet „nicht erreichbar“.
+
+---
+
+## 4f. Nachrichtenfluss-Dashboard
+
+Unter **Office → Orvanta – Nachrichtenfluss**
+(`/admin/office/orvanta/nachrichtenfluss`) zeigt Orvanta auf **einer** Seite,
+wie eine Nachricht durch die Umgebung läuft und wie es den beteiligten
+Elementen gerade geht. Die Seite ist rein lesend; sie ändert keine
+Einstellung und sendet nichts.
+
+**Aufbau (von links nach rechts):**
+
+- **Spur „Identitätsquellen und Proxy“** – jede Identitätsquelle als Wolke mit
+  der Zahl ihrer Postfächer (vorhanden / verbunden / aktiv), daneben der
+  IMAP-/SMTP-Proxy mit Containerstatus.
+- **Spur „Exchange“** – die Hosts der Exchange-DAG, an jedem Host eine Wolke
+  mit den verbundenen Clients, daneben der Knoten der Orvanta-Nutzer.
+- **Speicher-Tiers** mit belegt/von in GB je Tier.
+- **Orvanta-Zwischenspeicher** mit Belegung; die Einfärbung wechselt ab 75 %
+  auf „eingeschränkt“ und ab 90 % auf „Störung“.
+- **KI-Endpunkte** mit den Top-10-Nutzern der letzten 30 Tage (Zahl der
+  Anfragen) sowie „X weitere Nutzer“ und der Gesamtzahl der Anfragen.
+- **Kennzahlen** oben: Nutzer, Quellen, Zuordnungen, Proxy, Exchange,
+  Speicher, Zwischenspeicher und KI.
+- **Aktive Orvanta-Nutzer** (aktuell / Minimum / Maximum der letzten 24
+  Stunden). Ein Klick darauf öffnet die **Verlaufsgrafik** über 365, 180, 90,
+  30 und 14 Tage als Overlay – die kurzen Zeiträume liegen oben, Lücken in den
+  Daten bleiben sichtbar. Die Grafik ist für Retina-Displays als SVG gezeichnet
+  und funktioniert in hellem und dunklem Design.
+
+**Störungen** werden sofort sichtbar: Ist der Proxy ausgefallen, trägt er ein
+rotes Ausrufezeichen, und die Identitätsquellen samt Postfächern werden
+ausgegraut. Ist eine einzelne Identitätsquelle gestört (Netzwerk oder
+Anmeldung), trägt sie das Ausrufezeichen, und nur ihre Postfächer werden
+ausgegraut. Gestörte Exchange-Hosts grauen ihre Clientwolke aus, ausgefallene
+oder deaktivierte Tiers werden ausgegraut. Ein Hinweis am Knoten nennt immer
+den Grund („Werte ausgegraut (Proxy nicht erreichbar)“). Eine Störungsliste
+oben fasst alle Befunde zusammen.
+
+**Live-Aktualisierung:** Die Seite frischt Kennzahlen, Knotenzustände, Wolken
+und die Störungsliste selbstständig in einstellbarem Abstand nach (Ableitung
+aus `poll_interval`), ohne die Seite neu zu laden. Der Knopf **Aktualisieren**
+stößt das sofort an.
+
+**Verbindungstest:** Der Knopf **Identitätsquellen prüfen** testet je Quelle
+das erste aktive Postfach über den Proxy und schreibt das Ergebnis in den
+Quellenzustand. Sind mehr als 16 aktive Quellen eingerichtet, prüft die Seite
+sie nur einzeln (Auswahl je Quelle), damit die Anfrage nicht zu lange läuft.
+Quellen ohne aktives Postfach werden als „nicht geprüft“ gemeldet.
+
+**Einstellung:** `flow_ai_user_names` (Abschnitt 4, Adminbereich) schaltet die
+Klarnamen der KI-Nutzer frei; ohne die Einstellung stehen dort Pseudonyme
+(„Benutzer 1 …“). Die Nutzerzahlen des Verlaufs entstehen aus kurzen
+Minutenproben (5-Minuten-Raster, 400 Tage Vorhaltung); gespeichert werden
+ausschließlich Zähler, nie Inhalte.
+
+Ohne die Migration 047 fehlen die Tabellen für Präsenz und Verlauf; die Seite
+zeigt dann weiter alle Knoten, aber keine Nutzerzahlen und keine
+Verlaufsgrafik. Konzept und Umsetzungsplan stehen in
+[docs/orvanta-nachrichtenfluss.md](orvanta-nachrichtenfluss.md), die technische
+Umsetzung in [docs/orvanta-referenz.md](orvanta-referenz.md) Abschnitt 23.
 
 ---
 

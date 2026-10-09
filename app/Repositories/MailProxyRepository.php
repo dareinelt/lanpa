@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Services\SettingsService;
 use PDO;
 
 /**
@@ -465,14 +466,15 @@ final class MailProxyRepository extends Repository
     // ------------------------------------------------------------------ Identitaetsquellen
 
     /**
-     * Weitere Identitaetsquellen (ohne Zugangsdaten).
+     * Weitere Identitaetsquellen (ohne Zugangsdaten). `hosts` enthaelt die
+     * Verzeichnisserver (FQDN oder IP-Adresse) der Quelle.
      *
-     * @return list<array{id:int,source_key:string,label:string,base_dn:string,active:bool}>
+     * @return list<array{id:int,source_key:string,label:string,base_dn:string,hosts:list<string>,active:bool}>
      */
     public function identitySources(): array
     {
         try {
-            $statement = $this->pdo->query('SELECT id, source_key, label, base_dn, active FROM identity_sources ORDER BY sort_order ASC, label ASC, id ASC');
+            $statement = $this->pdo->query('SELECT id, source_key, label, hosts, base_dn, active FROM identity_sources ORDER BY sort_order ASC, label ASC, id ASC');
             $rows = $statement === false ? [] : $statement->fetchAll(PDO::FETCH_ASSOC);
         } catch (\PDOException) {
             return [];
@@ -483,6 +485,7 @@ final class MailProxyRepository extends Repository
             'source_key' => (string) $row['source_key'],
             'label' => (string) $row['label'],
             'base_dn' => (string) ($row['base_dn'] ?? ''),
+            'hosts' => SettingsService::splitHostList((string) ($row['hosts'] ?? '')),
             'active' => (int) $row['active'] === 1,
         ], $rows);
     }

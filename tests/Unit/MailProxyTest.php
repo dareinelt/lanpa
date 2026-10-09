@@ -74,7 +74,7 @@ function mailProxyPdo(): PDO
     );
     $pdo->exec(
         "CREATE TABLE identity_sources (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, source_key TEXT NOT NULL, label TEXT NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT, source_key TEXT NOT NULL, label TEXT NOT NULL, hosts TEXT NOT NULL DEFAULT '',
             base_dn TEXT NOT NULL DEFAULT '', sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1
         )"
     );

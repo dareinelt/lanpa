@@ -23,7 +23,7 @@ function flowPdo(): PDO
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->exec(
         'CREATE TABLE identity_sources (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, source_key TEXT NOT NULL, label TEXT NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT, source_key TEXT NOT NULL, label TEXT NOT NULL, hosts TEXT NOT NULL DEFAULT \'\',
             base_dn TEXT NOT NULL DEFAULT \'\', sort_order INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1
         )'
     );
@@ -1305,6 +1305,28 @@ Runner::test('Nachrichtenfluss: Quelle ohne Proxy-Konfiguration steht im Exchang
     Assert::true(in_array(['from' => 'source-7', 'to' => 'host-1', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Quelle → Exchange-Host');
     Assert::false(in_array(['from' => 'source-7', 'to' => 'proxy', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Keine Kante zum Proxy');
     Assert::same(OrvantaFlowService::TRANSPORT_PROXY, flowNode($flow, 'source-0')['transport']);
+});
+
+Runner::test('Nachrichtenfluss: Transportweg einer Quelle folgt der Domäne ihrer Verzeichnisserver', static function (): void {
+    Assert::same(['khwf.de'], OrvantaFlowService::hostDomains(['exchange01.khwf.de', 'EXCHANGE02.KHWF.DE.', '10.0.0.5', 'exchange03', '']), 'IP-Adressen und kurze Namen liefern keine Domäne');
+    Assert::same(['mvzintsz.local', 'khwf.de'], OrvantaFlowService::hostDomains(['dc01.mvzintsz.local', 'dc01.khwf.de']));
+
+    $exchange = OrvantaFlowService::hostDomains(['exchange01.khwf.de', 'exchange02.khwf.de']);
+    Assert::same(OrvantaFlowService::TRANSPORT_EXCHANGE, OrvantaFlowService::transportFor(['dc01.khwf.de', 'dc02.khwf.de'], $exchange, false), 'Gleiche Domäne wie die Exchange-Hosts → Exchange-Ast');
+    Assert::same(OrvantaFlowService::TRANSPORT_PROXY, OrvantaFlowService::transportFor(['dc01.mvzintsz.local'], $exchange, false), 'Abweichende Domäne → Proxy, auch ohne Mailserver');
+    Assert::same(OrvantaFlowService::TRANSPORT_PROXY, OrvantaFlowService::transportFor(['192.168.10.2'], $exchange, false), 'IP-Adresse → Proxy');
+    Assert::same(OrvantaFlowService::TRANSPORT_PROXY, OrvantaFlowService::transportFor(['dc01'], $exchange, false), 'Kurzer Hostname → Proxy');
+    Assert::same(OrvantaFlowService::TRANSPORT_PROXY, OrvantaFlowService::transportFor([], $exchange, false), 'Ohne Server → Proxy');
+    Assert::same(OrvantaFlowService::TRANSPORT_PROXY, OrvantaFlowService::transportFor(['dc01.khwf.de'], $exchange, true), 'Hinterlegter Mailserver legt den Proxy-Weg fest');
+    Assert::same(OrvantaFlowService::TRANSPORT_PROXY, OrvantaFlowService::transportFor(['dc01.khwf.de'], [], false), 'Ohne Exchange-Hosts gibt es keinen Exchange-Ast');
+    Assert::same(OrvantaFlowService::TRANSPORT_EXCHANGE, OrvantaFlowService::transportFor(['10.0.0.9', 'DC01.KHWF.DE'], $exchange, false), 'Ein passender FQDN genügt (Groß-/Kleinschreibung egal)');
+
+    $input = flowInput();
+    $input['sources'][0]['proxied'] = false;
+    $input['sources'][0]['state']['last_success_at'] = '';
+    $node = flowNode(OrvantaFlowService::evaluate($input), 'source-0');
+    Assert::same('warn', $node['state'], 'Proxy-Quelle ohne Mailserver bleibt eine Einschränkung');
+    Assert::same('Für diese Identitätsquelle ist im Proxy noch kein Mailserver hinterlegt.', $node['message']);
 });
 
 Runner::test('Nachrichtenfluss: Exchange-Quelle folgt den Hosts – Ausfall aller Hosts dämpft sie, Proxy-Ausfall nicht', static function (): void {

@@ -34,7 +34,7 @@ final class MailProxyService
     public const QUOTA_MAX_MB = 10485760;
 
     /**
-     * @param \Closure(): array{label:string,base_dn:string} $primarySource Hauptquelle aus den LDAP-Einstellungen
+     * @param \Closure(): array{label:string,base_dn:string,hosts?:list<string>} $primarySource Hauptquelle aus den LDAP-Einstellungen
      */
     public function __construct(
         private readonly MailProxyRepository $repository,
@@ -52,9 +52,10 @@ final class MailProxyService
     // ------------------------------------------------------------------
 
     /**
-     * Hauptquelle (id 0) und weitere Identitaetsquellen.
+     * Hauptquelle (id 0) und weitere Identitaetsquellen. `hosts` nennt die
+     * konfigurierten Verzeichnisserver (FQDN oder IP-Adresse).
      *
-     * @return list<array{id:int,key:string,label:string,base_dn:string,domain:string,active:bool}>
+     * @return list<array{id:int,key:string,label:string,base_dn:string,domain:string,hosts:list<string>,active:bool}>
      */
     public function sources(): array
     {
@@ -65,6 +66,7 @@ final class MailProxyService
             'label' => $primary['label'] !== '' ? $primary['label'] : 'Zentrale',
             'base_dn' => $primary['base_dn'],
             'domain' => self::domainFromDn($primary['base_dn']),
+            'hosts' => array_values(array_map('strval', (array) ($primary['hosts'] ?? []))),
             'active' => true,
         ]];
         foreach ($this->repository->identitySources() as $source) {
@@ -74,6 +76,7 @@ final class MailProxyService
                 'label' => $source['label'],
                 'base_dn' => $source['base_dn'],
                 'domain' => self::domainFromDn($source['base_dn']),
+                'hosts' => $source['hosts'],
                 'active' => $source['active'],
             ];
         }
@@ -82,7 +85,7 @@ final class MailProxyService
     }
 
     /**
-     * @return array{id:int,key:string,label:string,base_dn:string,domain:string,active:bool}|null
+     * @return array{id:int,key:string,label:string,base_dn:string,domain:string,hosts:list<string>,active:bool}|null
      */
     public function source(int $id): ?array
     {

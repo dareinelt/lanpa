@@ -2276,10 +2276,15 @@ POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
   `cloud_muted`, `link`, `primary`, `transport`, `chart`, `members`.
 - Zustände und Beschriftungen: `ok` „In Ordnung“, `warn` „Eingeschränkt“,
   `error` „Störung“, `off` „Nicht aktiv“ (`STATE_LABELS`).
-- Transportweg je Identitätsquelle (`collectSources()`): `transport` =
-  `TRANSPORT_PROXY` („proxy“) mit Eintrag in `mail_proxy_servers`, sonst
-  `TRANSPORT_EXCHANGE` („exchange“). Fehlt das Feld (ältere Eingaben, Tests),
-  gilt „proxy“.
+- Transportweg je Identitätsquelle (`collectSources()`, `transportFor()`):
+  `transport` = `TRANSPORT_EXCHANGE` („exchange“) nur, wenn mindestens ein
+  Verzeichnisserver der Quelle (`identity_sources.hosts` bzw. `ldap_host`) ein
+  FQDN in derselben Domäne wie ein Exchange-Host ist (`hostDomains()`: alles
+  nach dem ersten Label, z. B. `dc01.khwf.de` ↔ `exchange01.khwf.de`). Sonst
+  `TRANSPORT_PROXY` („proxy“) – also bei IP-Adressen, kurzen Hostnamen,
+  fremden Domänen (`dc01.mvzintsz.local`), ohne Exchange-Hosts und immer bei
+  einem Eintrag in `mail_proxy_servers`. Fehlt das Feld (ältere Eingaben,
+  Tests), gilt „proxy“.
 - Spuren: `proxy` (Proxy-Quellen in umgekehrter Reihenfolge + `proxy`) und
   `exchange` (Exchange-Quellen + Hosts + `users`). Kanten: `source:<id>→proxy`
   (Proxy-Quelle), `source:<id>→host:<id>` (Exchange-Quelle zu **jedem** Host,
@@ -2290,6 +2295,10 @@ POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
   Bedeutung. Zustand: `off` bei deaktivierter Quelle oder ohne
   Exchange-Konfiguration, `error` und gedämpft („Exchange nicht erreichbar“),
   wenn **alle** Hosts `error` sind, sonst `ok`; keine Postfachwolke.
+- Proxy-Quellen (`sourceNode()`) ohne `last_success_at` sind `warn`; die
+  Meldung lautet bei `proxied = false` (kein Eintrag in `mail_proxy_servers`)
+  „Für diese Identitätsquelle ist im Proxy noch kein Mailserver hinterlegt.“,
+  sonst „Die Identitätsquelle wurde noch nicht geprüft.“
 - Grenzwerte: `CACHE_WARN_PERCENT = 75`, `CACHE_CRIT_PERCENT = 90`,
   `AI_PERIOD_DAYS = 30`, `AI_TOP_USERS = 10`, `CACHE_TOP_USERS = 10`.
 - `muted_label` wird **im Dienst** gesetzt (`'Werte ausgegraut (<muted_reason>)'`),

@@ -319,6 +319,7 @@ Validierung in `OrvantaConfigService::save()`:
 | `mailbox_quota_mb` | 0–10 485 760 (0 = ohne Grenze); Ersatzgrenze der Postfachbelegung (`mailboxQuotaBytes()`), wenn weder EWS noch AD eine Grenze liefern |
 | `cache_folder` | `NextcloudFilesService::isSafeSegment()` (ein Pfadsegment) |
 | `reminder_lead_minutes` | 0–1440 |
+| `flow_ai_user_names` | `'1'`/`'0'` (Checkbox); steuert nur die Anzeige der KI-Nutzernamen im Nachrichtenfluss-Dashboard |
 | `poll_interval` | 15–900 |
 | `default_folder` | Schlüssel aus `DEFAULT_FOLDERS`, sonst `inbox` |
 

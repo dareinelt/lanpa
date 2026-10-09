@@ -342,6 +342,7 @@ Zuordnung 24 Stunden (`storage/cache/orvanta_primary_smtp.json`).
 | `cache_quota_mb` | Quota des Zwischenspeichers je Benutzer (0 = aus) | 250 |
 | `reminder_lead_minutes` | Vorlaufzeit, wenn ein Termin keine eigene Erinnerung hat | 15 |
 | `reminder_header` | Fällige Erinnerungen auch in den Mitteilungen der Kopfzeile | an |
+| `flow_ai_user_names` | Namen der KI-Nutzer im Nachrichtenfluss-Dashboard anzeigen (sonst pseudonym „Benutzer 1 …“) | aus |
 | `default_folder` | Startansicht (`inbox`, `calendar`, …) | `inbox` |
 | `poll_interval` | Abfrageintervall der App in Sekunden (neue E-Mails, Ungelesen-Zähler, Erinnerungen) | 60 |
 | `archive_enabled` | Langzeitarchiv aktivieren (siehe Abschnitt 7a) | aus |

@@ -647,6 +647,10 @@ $ov = $orvantaValues;
                 <input type="checkbox" id="reminder_header" name="reminder_header" value="1" <?= ($ov['reminder_header'] ?? '1') === '1' ? 'checked' : '' ?>>
                 <label for="reminder_header">Fällige Terminerinnerungen auch in den Mitteilungen der Intranet-Kopfzeile anzeigen</label>
             </div>
+            <div class="field field--check">
+                <input type="checkbox" id="flow_ai_user_names" name="flow_ai_user_names" value="1" <?= ($ov['flow_ai_user_names'] ?? '0') === '1' ? 'checked' : '' ?>>
+                <label for="flow_ai_user_names">Im Nachrichtenfluss-Dashboard die Namen der KI-Nutzer anzeigen (sonst pseudonym als „Benutzer 1 …“)</label>
+            </div>
         </fieldset>
 
         <fieldset class="fieldset">

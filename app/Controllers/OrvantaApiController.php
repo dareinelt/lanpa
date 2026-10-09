@@ -64,6 +64,47 @@ final class OrvantaApiController extends Controller
     }
 
     /**
+     * Abwesenheitsnotiz des Postfachs: Zustand auf dem Exchange-Server,
+     * Vorlage und die zuletzt in Orvanta gespeicherten Eingaben (Banner und
+     * Dialog). Massgeblich ist der Server – den Versand uebernimmt Exchange,
+     * Orvanta muss dafuer nicht geoeffnet bleiben.
+     */
+    public function oof(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_OOF);
+
+            return Container::orvantaOof()->status($access['uid'], $access['impersonate'], $exchange, $access['user']);
+        })->withHeader('Cache-Control', 'no-store');
+    }
+
+    /**
+     * Abwesenheitsnotiz setzen oder abschalten: Text aus Vorlage, dynamischem
+     * Text und Signatur zusammensetzen und auf den Exchange-Server
+     * uebertragen (SetUserOofSettings).
+     */
+    public function saveOof(Request $request): Response
+    {
+        return $this->handle($request, function (array $access): array {
+            $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_OOF);
+            $service = Container::orvantaOof();
+            $template = $service->forUser($access['user']);
+            if ($template === null) {
+                throw new OrvantaException('Für Ihr Konto ist keine Abwesenheitsvorlage hinterlegt. Bitte wenden Sie sich an die Administration.', 409);
+            }
+            $settings = $service->apply($access['uid'], $access['impersonate'], $template, $this->body, $exchange, $access['user']);
+
+            return [
+                'ok' => true,
+                'message' => $settings['active']
+                    ? 'Die Abwesenheitsnotiz ist aktiv. Exchange sendet sie automatisch.'
+                    : 'Die Abwesenheitsnotiz ist abgeschaltet.',
+                'oof' => $service->status($access['uid'], $access['impersonate'], $exchange, $access['user']),
+            ];
+        }, true);
+    }
+
+    /**
      * Keep-alive: haelt die Sitzung waehrend der Bearbeitung (z. B. langer
      * Antworten) am Leben und liefert das aktuelle CSRF-Token sowie den
      * Exchange-Host der Sitzung (Tooltipp im Fussbereich).

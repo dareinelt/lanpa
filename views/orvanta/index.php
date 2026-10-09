@@ -61,6 +61,7 @@ $icons = [
     'panel-right' => '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
     'save' => '<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/>',
     'send' => '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+    'oof' => '<path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5"/><path d="m9 16 4-4-4-4"/><path d="M13 12H3"/>',
 ];
 $icon = static fn (string $name, string $class = 'ov-icon'): string => '<svg class="' . $class . '" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' . $icons[$name] . '</svg>';
 $rb = static function (string $iconName, string $label, string $attributes, bool $small = false) use ($icon): string {
@@ -142,6 +143,9 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
             <div class="ov-rg"><div class="ov-rg__items"><?= $rb('reply', 'Antworten', 'data-ov-action="reply" data-ov-needs="message"') ?><?= $rb('replyall', 'Allen antworten', 'data-ov-action="replyall" data-ov-needs="message"') ?><?= $rb('forward', 'Weiterleiten', 'data-ov-action="forward" data-ov-needs="message"') ?></div><div class="ov-rg__label">Antworten</div></div>
             <div class="ov-rg"><div class="ov-rg__items ov-rg__items--column"><?= $rb('unread', 'Ungelesen/Gelesen', 'data-ov-action="toggle-read" data-ov-needs="message"', true) ?><?= $rb('flag', 'Zur Nachverfolgung', 'data-ov-action="toggle-flag" data-ov-needs="message"', true) ?><?= $rb('print', 'Drucken', 'data-ov-action="print" data-ov-needs="message"', true) ?></div><div class="ov-rg__label">Kategorien</div></div>
             <div class="ov-rg"><div class="ov-rg__items"><?= $rb('refresh', 'Senden/Empfangen', 'data-ov-action="refresh"') ?></div><div class="ov-rg__label">Senden/Empfangen</div></div>
+            <?php if (($capabilities['oof'] ?? false) === true) { ?>
+            <div class="ov-rg"><div class="ov-rg__items"><?= $rb('oof', 'Abwesenheit', 'data-ov-action="oof"') ?></div><div class="ov-rg__label">Abwesenheit</div></div>
+            <?php } ?>
         </div>
         <!-- Start: Kalender -->
         <div class="ov-ribbon__panel" role="tabpanel" data-ov-panel="start" data-ov-for="calendar" hidden>
@@ -182,6 +186,13 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         <div class="ov-ribbon__panel" id="ov-panel-help" role="tabpanel" data-ov-panel="help" hidden>
             <div class="ov-rg"><div class="ov-rg__items"><?= $rb('help', 'Kurzanleitung', 'data-ov-dialog-open="help"') ?></div><div class="ov-rg__label">Hilfe</div></div>
             <div class="ov-rg"><div class="ov-rg__items"><?= $rb('cloud', 'Zwischenspeicher', 'data-ov-dialog-open="settings"') ?></div><div class="ov-rg__label">Nextcloud</div></div>
+        </div>
+
+        <!-- Abwesenheitsnotiz: Hinweis unter dem Menueband, solange auf dem Exchange-Server eine Notiz aktiv ist -->
+        <div class="ov-oof-banner" data-ov-oof-banner role="status" hidden>
+            <?= $icon('oof') ?>
+            <span class="ov-oof-banner__text" data-ov-oof-banner-text></span>
+            <button type="button" class="button button--ghost" data-ov-action="oof">Abwesenheitsnotiz bearbeiten</button>
         </div>
     </div>
 
@@ -487,6 +498,43 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
             </div>
             <div class="ov-dialog__foot"><button type="button" class="button button--primary" data-ov-dialog-close>Schließen</button></div>
         </div>
+    </dialog>
+
+    <!-- Dialog: Abwesenheitsnotiz (Out-of-Office; wird auf dem Exchange-Server hinterlegt) -->
+    <dialog class="ov-dialog" data-ov-dialog="oof">
+        <form method="dialog" class="ov-dialog__form" data-ov-form="oof">
+            <div class="ov-dialog__head"><h2><?= $icon('oof') ?> Abwesenheitsnotiz</h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
+            <div class="ov-dialog__body ov-oof">
+                <p class="ov-muted">Die Abwesenheitsnotiz wird auf dem Exchange-Server hinterlegt. Er beantwortet eingehende E-Mails automatisch – Orvanta muss dafür nicht geöffnet bleiben.</p>
+                <input type="hidden" name="active" value="0" data-ov-oof-active>
+                <h3>Text der Vorlage <span class="ov-muted" data-ov-oof-template></span></h3>
+                <div class="ov-oof__fixed" data-ov-oof-fixed></div>
+                <label class="ov-field"><span>Ergänzung (von Ihnen anpassbar)</span><textarea name="dynamic_text" rows="4" maxlength="2000" placeholder="z. B. Vertretung mit E-Mail-Adresse und Telefonnummer" data-ov-oof-dynamic></textarea></label>
+                <h3>Empfänger</h3>
+                <div class="ov-field-row">
+                    <label class="ov-check"><input type="radio" name="external_audience" value="none" checked> Nur interne Absender</label>
+                    <label class="ov-check"><input type="radio" name="external_audience" value="all"> Auch externe Absender</label>
+                </div>
+                <h3>Zeitraum</h3>
+                <div class="ov-field-row">
+                    <label class="ov-check"><input type="radio" name="schedule_mode" value="until_off" checked data-ov-oof-mode> Bis zum Abschalten</label>
+                    <label class="ov-check"><input type="radio" name="schedule_mode" value="range" data-ov-oof-mode> Zeitraum von–bis</label>
+                </div>
+                <div class="ov-field-row" data-ov-oof-range hidden>
+                    <label class="ov-field"><span>Von</span><input type="date" name="start_date"></label>
+                    <label class="ov-field"><span>Bis</span><input type="date" name="end_date"></label>
+                </div>
+                <h3>Signatur</h3>
+                <p class="ov-muted">Die Abwesenheitsnotiz endet mit Ihrer zugeordneten Signatur.</p>
+                <div class="ov-oof__signature" data-ov-oof-signature></div>
+                <p class="ov-form-error" data-ov-form-error hidden></p>
+            </div>
+            <div class="ov-dialog__foot">
+                <button type="submit" class="button button--primary" data-ov-oof-submit="1"><?= $icon('check') ?> Aktivieren</button>
+                <button type="submit" class="button button--ghost" data-ov-oof-submit="0">Abschalten</button>
+                <button type="button" class="button button--ghost" data-ov-dialog-close>Abbrechen</button>
+            </div>
+        </form>
     </dialog>
 
     <!-- Dialog: Profil -->

@@ -4227,6 +4227,128 @@
     }
 
     // ------------------------------------------------------------------
+    // Abwesenheitsnotiz (Out-of-Office)
+    // Der Text liegt auf dem Exchange-Server; Orvanta zeigt nur den Zustand
+    // und schreibt Aenderungen dorthin. Der Versand laeuft ohne Orvanta.
+    // ------------------------------------------------------------------
+
+    function loadOof() {
+        if (!hasCapability('oof')) {
+            return Promise.resolve(null);
+        }
+
+        return api('/abwesenheit').then(function (status) {
+            renderOofBanner(status);
+
+            return status;
+        }).catch(function () {
+            renderOofBanner(null);
+
+            return null;
+        });
+    }
+
+    function renderOofBanner(status) {
+        var banner = hook('oof-banner');
+        if (!banner) {
+            return;
+        }
+        var text = hook('oof-banner-text');
+        if (!status || !status.active) {
+            banner.hidden = true;
+            if (text) {
+                text.textContent = '';
+            }
+            return;
+        }
+        if (text) {
+            text.textContent = oofStateText(status);
+        }
+        banner.hidden = false;
+    }
+
+    function oofStateText(status) {
+        var audience = status.server_audience === 'None' ? 'nur an interne Absender' : 'auch an externe Absender';
+        if (status.scheduled) {
+            var from = status.server_start ? fmtDate(status.server_start) : '';
+            var to = status.server_end ? fmtDate(status.server_end) : '';
+
+            return 'Abwesenheitsnotiz aktiv vom ' + from + ' bis ' + to + ' (' + audience + ').';
+        }
+
+        return 'Abwesenheitsnotiz aktiv, bis sie abgeschaltet wird (' + audience + ').';
+    }
+
+    function openOofDialog() {
+        if (!hasCapability('oof')) {
+            toast('Abwesenheitsnotizen stehen für Ihr Postfach (IMAP/SMTP) nicht zur Verfügung.', 'info');
+            return;
+        }
+        var form = hook('form-oof');
+        if (!form) {
+            return;
+        }
+        api('/abwesenheit').then(function (status) {
+            if (!status.available) {
+                toast('Für Ihr Konto ist keine Abwesenheitsvorlage hinterlegt. Bitte wenden Sie sich an die Administration.', 'info');
+                return;
+            }
+            fillOofForm(form, status);
+            openDialog('oof');
+        }).catch(function (error) {
+            toast(error.message, 'error');
+        });
+    }
+
+    function fillOofForm(form, status) {
+        form.elements.dynamic_text.value = status.dynamic_text || '';
+        form.elements.active.value = status.saved_active ? '1' : '0';
+        form.elements.external_audience.value = status.external_audience === 'all' ? 'all' : 'none';
+        form.elements.schedule_mode.value = status.schedule_mode === 'range' ? 'range' : 'until_off';
+        form.elements.start_date.value = status.start_date || '';
+        form.elements.end_date.value = status.end_date || '';
+        var name = hook('oof-template', form);
+        if (name) {
+            name.textContent = status.template ? '– ' + status.template.name : '';
+        }
+        var fixed = hook('oof-fixed', form);
+        if (fixed) {
+            fixed.textContent = status.fixed_text || '';
+        }
+        var signature = hook('oof-signature', form);
+        if (signature) {
+            signature.innerHTML = status.signature || '';
+        }
+        toggleOofRange(form);
+    }
+
+    function toggleOofRange(form) {
+        var row = hook('oof-range', form);
+        if (row) {
+            row.hidden = form.elements.schedule_mode.value !== 'range';
+        }
+    }
+
+    function saveOof(form) {
+        api('/abwesenheit', {
+            body: {
+                active: form.elements.active.value === '1',
+                dynamic_text: form.elements.dynamic_text.value,
+                external_audience: form.elements.external_audience.value,
+                schedule_mode: form.elements.schedule_mode.value,
+                start_date: form.elements.start_date.value,
+                end_date: form.elements.end_date.value
+            }
+        }).then(function (result) {
+            closeDialog('oof');
+            toast(result.message || 'Abwesenheitsnotiz gespeichert.', 'success');
+            renderOofBanner(result.oof);
+        }).catch(function (error) {
+            formError(form, error.message);
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Aktionen & Ereignisse
     // ------------------------------------------------------------------
 
@@ -4263,7 +4385,7 @@
             }
             case 'print': window.print(); break;
             case 'mail-to-task': mailToTask(); break;
-            case 'refresh': loadModule(); loadQuota(); syncReminders(true); break;
+            case 'refresh': loadModule(); loadQuota(); loadOof(); syncReminders(true); break;
             case 'more': loadMessages(true); break;
             case 'event-new': openEventDialog(null, state.module === 'calendar' ? state.calDate : null); break;
             case 'meeting-new': openEventDialog(null, state.calDate, true); break;
@@ -4319,6 +4441,7 @@
                 playSound();
                 break;
             case 'cache-clear': clearCache(); break;
+            case 'oof': openOofDialog(); break;
             case 'spell-word-remove': spellRemoveWord(value); break;
             case 'headers-copy': copyHeaders(); break;
             case 'send': sendCompose(hook('form-compose'), false); break;
@@ -4388,8 +4511,25 @@
                 else if (kind === 'folder-new') { createFolder(form); }
                 else if (kind === 'move') { submitMove(form); }
                 else if (kind === 'mail-password') { submitMailPassword(form); }
+                else if (kind === 'oof') { saveOof(form); }
             });
         });
+
+        // Abwesenheitsnotiz: Aktivieren/Schalten setzt den versteckten Wert,
+        // der Zeitraum erscheint nur bei "Zeitraum von–bis".
+        var oofForm = hook('form-oof');
+        if (oofForm) {
+            $$('[data-ov-oof-submit]', oofForm).forEach(function (button) {
+                button.addEventListener('click', function () {
+                    oofForm.elements.active.value = button.getAttribute('data-ov-oof-submit');
+                });
+            });
+            $$('[data-ov-oof-mode]', oofForm).forEach(function (radio) {
+                radio.addEventListener('change', function () {
+                    toggleOofRange(oofForm);
+                });
+            });
+        }
 
         var attachInput = hook('attach-input');
         if (attachInput) {
@@ -6502,6 +6642,7 @@
             openEvent({ id: eventId });
         }
         loadQuota();
+        loadOof();
         startReminderPolling();
         startMailPolling();
         $$('[data-ov-tasks-completed]').forEach(function (box) {

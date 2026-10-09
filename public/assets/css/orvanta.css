@@ -391,7 +391,7 @@
     .ov-ribbon__panel { min-height: 0; }
 }
 @media print {
-    .ov-titlebar, .ov-ribbon, .ov-modules, .ov-folders, .ov-list, .ov-statusbar, .ov-reminders, .ov-toasts, .ov-mail__actions, .ov-attachments { display: none !important; }
+    .ov-titlebar, .ov-ribbon, .ov-modules, .ov-folders, .ov-list, .ov-statusbar, .ov-reminders, .ov-toasts, .ov-mail__actions, .ov-attachments, .ov-oof-banner { display: none !important; }
     .ov-office { display: block; height: auto; }
     .ov-workspace { display: block; }
     .ov-mail__body { overflow: visible; }
@@ -705,3 +705,16 @@
 .ov-mail__archive-note { background: var(--ov-bar); border-left: 3px solid var(--ov-muted); }
 .ov-mail__signed-note { background: var(--ov-bar); border-left: 3px solid var(--ov-accent); }
 .ov-mail__hint { color: var(--ov-muted); font-size: .85rem; }
+
+/* Abwesenheitsnotiz (Out-of-Office): Hinweis unter dem Menueband und Dialog.
+   Der Text liegt auf dem Exchange-Server, der auch den Versand uebernimmt. */
+.ov-oof-banner { display: flex; align-items: center; gap: .6rem; padding: .4rem .7rem; border-top: 1px solid var(--ov-line); background: color-mix(in srgb, #d99a00 16%, var(--color-surface, #fff)); font-size: .88rem; }
+.ov-oof-banner[hidden] { display: none; }
+.ov-oof-banner .ov-icon { width: 1.15rem; height: 1.15rem; color: #8a6200; }
+.ov-oof-banner__text { flex: 1; min-width: 0; }
+.ov-oof-banner .button { flex: none; padding: .25rem .6rem; font-size: .82rem; }
+
+.ov-oof h3 { margin: .5rem 0 0; font-size: .92rem; }
+.ov-oof__fixed { white-space: pre-line; padding: .6rem .7rem; border: 1px solid var(--ov-line); border-radius: .4rem; background: var(--ov-bar); font-size: .9rem; color: var(--ov-muted); }
+.ov-oof__signature { padding: .6rem .7rem; border: 1px dashed var(--ov-line); border-radius: .4rem; overflow-x: auto; }
+.ov-oof__signature:empty::before { content: 'Keine Signatur zugeordnet.'; color: var(--ov-muted); font-size: .85rem; }

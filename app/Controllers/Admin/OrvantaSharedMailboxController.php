@@ -8,6 +8,7 @@ use App\Core\Container;
 use App\Core\Request;
 use App\Core\Response;
 use App\Security\Session;
+use App\Services\Orvanta\OrvantaSharedMailboxService;
 use PDOException;
 use Throwable;
 
@@ -22,8 +23,9 @@ use Throwable;
  *   POST /admin/office/orvanta/postfaecher/loeschen    Zuordnung entfernen
  *
  * Über EWS lässt sich nicht ermitteln, wer auf welche Postfächer berechtigt
- * ist; die Liste wird deshalb hier gepflegt. Orvanta prüft jede Zuordnung mit
- * dem Dienstkonto und blendet nicht erreichbare Postfächer aus. Archiviert
+ * ist; die Liste wird deshalb hier gepflegt. Orvanta prüft jede Zuordnung als
+ * der Benutzer (Exchange bestätigt dessen Vollzugriff) und blendet nicht
+ * erreichbare Postfächer aus. „Senden als“ prüft Exchange beim Versand. Archiviert
  * wird weiterhin ausschließlich das primäre Benutzerpostfach.
  */
 final class OrvantaSharedMailboxController extends AdminController
@@ -108,10 +110,12 @@ final class OrvantaSharedMailboxController extends AdminController
             'verified' => $result['ok'],
         ]);
         if ($result['ok']) {
-            Session::flash('success', 'Die Zuordnung wurde gespeichert; das Postfach ist über EWS erreichbar und erscheint für den Benutzer in Orvanta.');
+            Session::flash('success', 'Die Zuordnung wurde gespeichert; Exchange bestätigt den Vollzugriff des Benutzers, das Postfach erscheint für ihn in Orvanta.');
+        } elseif ($result['error'] === OrvantaSharedMailboxService::PENDING) {
+            Session::flash('success', 'Die Zuordnung wurde gespeichert. ' . $result['error']);
         } else {
             Session::flash('error', 'Die Zuordnung wurde gespeichert, das Postfach ist aber nicht erreichbar: ' . $result['error']
-                . ' Es erscheint erst, wenn es über das Dienstkonto geöffnet werden kann.');
+                . ' Es erscheint erst, wenn Exchange dem Benutzer Vollzugriff auf das Postfach gewährt.');
         }
 
         return $this->redirect(self::BASE);
@@ -137,7 +141,9 @@ final class OrvantaSharedMailboxController extends AdminController
             'ok' => $error === '',
         ]);
         if ($error === '') {
-            Session::flash('success', 'Das Postfach ist über EWS erreichbar und steht dem Benutzer in Orvanta zur Verfügung.');
+            Session::flash('success', 'Exchange bestätigt den Vollzugriff des Benutzers; das Postfach steht ihm in Orvanta zur Verfügung.');
+        } elseif ($error === OrvantaSharedMailboxService::PENDING) {
+            Session::flash('success', $error);
         } else {
             Session::flash('error', 'Das Postfach ist nicht erreichbar: ' . $error);
         }

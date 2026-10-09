@@ -146,6 +146,24 @@ function sharedMailboxSetup(array $settings = []): array
     ];
 }
 
+/** Telefonbucheintrag des Benutzers der Hauptquelle (Postfachadresse fuer die Pruefung). */
+function sharedMailboxPhonebook(PDO $pdo, string $account = 'dreinelt', string $email = 'dreinelt@demo.local', int $source = 0): void
+{
+    $statement = $pdo->prepare('INSERT INTO phonebook (identity_source_id, samaccount_name, display_name, email, active) VALUES (:source, :account, :name, :email, 1)');
+    $statement->execute(['source' => $source, 'account' => $account, 'name' => $account, 'email' => $email]);
+}
+
+/**
+ * EWS-Antwort mit Fehlercode fuer eine Operation.
+ *
+ * @return array{status:int,error:null,body:string}
+ */
+function sharedMailboxEwsError(string $operation, string $code): array
+{
+    return ['status' => 200, 'error' => null, 'body' => '<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
+        . '<m:' . $operation . 'Response><m:ResponseMessages><m:' . $operation . 'ResponseMessage ResponseClass="Error"><m:MessageText>Fehler</m:MessageText><m:ResponseCode>' . $code . '</m:ResponseCode></m:' . $operation . 'ResponseMessage></m:ResponseMessages></m:' . $operation . 'Response></s:Body></s:Envelope>'];
+}
+
 /** Bestaetigte Zuordnung (Pruefzeitpunkt jetzt). */
 function sharedMailboxVerifiedRow(PDO $pdo, array $overrides = []): int
 {
@@ -245,6 +263,7 @@ Runner::test('Orvanta: Kalender zusätzlicher Postfächer per Kontrollkästchen'
 Runner::test('Orvanta: Erreichbarkeit zusätzlicher Postfächer prüft Orvanta über EWS', function (): void {
     $setup = sharedMailboxSetup();
     $service = $setup['service'];
+    sharedMailboxPhonebook($setup['pdo']);
 
     $team = $service->save('dreinelt', 'Team@Demo.Local', 'Team Postfach');
     Assert::true($team['ok'], 'Das Beispielpostfach team@demo.local ist erreichbar: ' . $team['error']);
@@ -278,21 +297,21 @@ Runner::test('Orvanta: Prüfung wird erst nach Ablauf der Gültigkeit erneuert',
     $service = $setup['service'];
     $id = sharedMailboxRow($setup['pdo'], ['email' => 'team@demo.local']);
 
-    $service->refresh(['username' => 'dreinelt']);
+    $service->refresh(['username' => 'dreinelt'], 'dreinelt@demo.local');
     Assert::same(1, count($setup['transport']->requests), 'Ohne Prüfzeitpunkt wird geprüft.');
     Assert::true($setup['repository']->find($id)['verified'], 'Die Prüfung bestätigt das Postfach.');
 
-    $service->refresh(['username' => 'dreinelt']);
+    $service->refresh(['username' => 'dreinelt'], 'dreinelt@demo.local');
     Assert::same(1, count($setup['transport']->requests), 'Innerhalb der Gültigkeit wird nicht erneut geprüft.');
 
     $setup['pdo']->exec("UPDATE orvanta_shared_mailboxes SET checked_at = '2020-01-01 00:00:00' WHERE id = " . $id);
-    $service->refresh(['username' => 'dreinelt']);
+    $service->refresh(['username' => 'dreinelt'], 'dreinelt@demo.local');
     Assert::same(2, count($setup['transport']->requests), 'Nach Ablauf der Gültigkeit wird erneut geprüft.');
     Assert::true($setup['repository']->find($id)['verified'], 'Die erneute Prüfung bestätigt das Postfach wieder.');
 
     // Inaktive Zuordnungen werden nicht geprüft.
     sharedMailboxRow($setup['pdo'], ['email' => 'buero@demo.local', 'active' => 0]);
-    $service->refresh(['username' => 'dreinelt']);
+    $service->refresh(['username' => 'dreinelt'], 'dreinelt@demo.local');
     Assert::same(2, count($setup['transport']->requests), 'Inaktive Zuordnungen werden nicht geprüft.');
 });
 
@@ -497,4 +516,66 @@ Runner::test('Orvanta: Adminseite für zusätzliche Postfächer', function (): v
 
     $html = View::render('admin.orvanta-shared-mailboxes', ['orvantaEnabled' => false, 'orvantaDemo' => false] + $data);
     Assert::contains('nicht aktiviert', $html);
+});
+
+Runner::test('Orvanta: Postfachprüfung läuft mit den Rechten des Benutzers', function (): void {
+    $setup = sharedMailboxSetup();
+    sharedMailboxPhonebook($setup['pdo']);
+    $result = $setup['service']->save('dreinelt', 'team@demo.local', 'Team Postfach');
+    Assert::true($result['ok'], $result['error']);
+
+    $xml = $setup['transport']->last();
+    Assert::contains('<t:PrimarySmtpAddress>dreinelt@demo.local</t:PrimarySmtpAddress>', $xml, 'Die Prüfung gibt sich als Benutzer aus, nicht als Dienstkonto.');
+    Assert::contains('<t:DistinguishedFolderId Id="msgfolderroot"><t:Mailbox><t:EmailAddress>team@demo.local</t:EmailAddress></t:Mailbox>', $xml, 'Geprüft wird der Zugriff auf das zusätzliche Postfach.');
+
+    // Verweigert Exchange dem Benutzer den Zugriff, nennt die Meldung den Vollzugriff.
+    $setup['transport']->forced = sharedMailboxEwsError('GetFolder', 'ErrorAccessDenied');
+    $denied = $setup['service']->verify($result['id'], true);
+    Assert::contains('keinen Vollzugriff', $denied);
+    Assert::false($setup['repository']->find($result['id'])['verified']);
+});
+
+Runner::test('Orvanta: ohne Postfachadresse des Benutzers bleibt die Prüfung offen', function (): void {
+    $setup = sharedMailboxSetup();
+    $result = $setup['service']->save('dreinelt', 'team@demo.local', 'Team Postfach');
+    Assert::false($result['ok']);
+    Assert::same(OrvantaSharedMailboxService::PENDING, $result['error']);
+    Assert::same(0, count($setup['transport']->requests), 'Ohne Benutzeradresse wird Exchange nicht befragt.');
+    $row = $setup['repository']->find($result['id']);
+    Assert::false($row['verified']);
+    Assert::same('', $row['checked_at'], 'Die Prüfung wird bei der nächsten Anmeldung nachgeholt.');
+
+    // Bei der Anmeldung liefert Orvanta die Adresse des Benutzers mit.
+    $setup['service']->refresh(['username' => 'dreinelt'], 'dreinelt@demo.local');
+    Assert::true($setup['repository']->find($result['id'])['verified']);
+
+    // Benutzer weiterer Quellen werden über die Quellenkennung gefunden.
+    $setup['pdo']->exec("INSERT INTO identity_sources (id, source_key, label) VALUES (3, 'zweig', 'Zweigstelle Nord')");
+    sharedMailboxPhonebook($setup['pdo'], 'mmuster', 'muster@zweig.local', 3);
+    sharedMailboxPhonebook($setup['pdo'], 'mmuster', 'muster@haupt.local');
+    Assert::same('muster@zweig.local', $setup['repository']->userAddress('mmuster@ZWEIG'));
+    Assert::same('muster@haupt.local', $setup['repository']->userAddress('MMuster'));
+    Assert::same('', $setup['repository']->userAddress('unbekannt'));
+});
+
+Runner::test('Orvanta: Senden aus weiteren Postfächern (Gesendete Elemente, „Senden als“)', function (): void {
+    $parts = orvantaExchange();
+    $parts['exchange']->send('dreinelt@demo.local', [
+        'to' => ['kollegin@demo.local'],
+        'subject' => 'Test',
+        'body' => 'Hallo',
+        'from' => 'team@demo.local',
+        'sent_mailbox' => 'team@demo.local',
+    ]);
+    $xml = $parts['transport']->last();
+    Assert::contains('<t:PrimarySmtpAddress>dreinelt@demo.local</t:PrimarySmtpAddress>', $xml, 'Gesendet wird als Benutzer; Exchange prüft „Senden als“.');
+    Assert::contains('<m:SavedItemFolderId><t:DistinguishedFolderId Id="sentitems"><t:Mailbox><t:EmailAddress>team@demo.local</t:EmailAddress></t:Mailbox></t:DistinguishedFolderId></m:SavedItemFolderId>', $xml, 'Die Kopie landet im Postfach des Absenders.');
+
+    $parts['transport']->forced = sharedMailboxEwsError('CreateItem', 'ErrorSendAsDenied');
+    try {
+        $parts['exchange']->send('dreinelt@demo.local', ['to' => ['kollegin@demo.local'], 'subject' => 'Test', 'body' => 'Hallo', 'from' => 'team@demo.local', 'sent_mailbox' => 'team@demo.local']);
+        Assert::true(false, 'Ohne „Senden als“ muss der Versand scheitern.');
+    } catch (\App\Services\Orvanta\OrvantaException $exception) {
+        Assert::contains('„Senden als“', $exception->getMessage());
+    }
 });

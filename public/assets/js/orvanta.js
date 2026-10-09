@@ -1305,7 +1305,7 @@
                 node.addEventListener('click', function () {
                     selectFolder(key, FOLDER_LABELS[folder.kind] || folder.name);
                 });
-                bindFolderDrop(node, key);
+                bindFolderDrop(node, key, folder);
                 body.appendChild(node);
                 render(folder.id, depth + 1);
             });
@@ -1319,11 +1319,13 @@
 
     /**
      * Ordner als Ablageziel fuer per Drag&Drop gezogene Nachrichten; der
-     * aktuell geoeffnete Ordner nimmt keine Ablage an.
+     * aktuell geoeffnete Ordner, Postfach-Wurzelknoten und Ordner anderer
+     * Postfaecher nehmen keine Ablage an.
      */
-    function bindFolderDrop(node, key) {
+    function bindFolderDrop(node, key, folder) {
         function accepts() {
-            return !!(state.dragIds && state.dragIds.length) && key !== state.folder;
+            return !!(state.dragIds && state.dragIds.length) && key !== state.folder
+                && !(folder && folder.kind === 'mailbox') && mailboxOf(key) === mailboxOf(state.folder);
         }
         node.addEventListener('dragenter', function (event) {
             if (accepts()) {
@@ -1696,14 +1698,18 @@
         }
         var loading = el('div', { 'class': 'ov-mail ov-mail--loading', text: 'Nachricht wird geladen …' });
         showDetail(loading);
-        return api('/mail/nachricht', { query: { id: summary.id } }).then(function (message) {
+        var mailbox = mailboxOf(state.folder);
+        return api('/mail/nachricht', { query: { id: summary.id, postfach: mailbox } }).then(function (message) {
             if (!state.selected || state.selected.id !== message.id) {
                 return null;
             }
+            // Folgeaufrufe (Anhaenge, Kopfzeilen, Besprechungsantwort) gehen
+            // an das Postfach, aus dem die Nachricht stammt.
+            message.mailbox = mailbox;
             state.selected = message;
             showDetail(renderMessage(message));
             if (!summary.is_read && baseFolder(state.folder) !== 'drafts') {
-                api('/mail/aktion', { body: { action: 'read', ids: [message.id] } }).then(function () {
+                api('/mail/aktion', { body: { action: 'read', ids: [message.id], postfach: mailbox } }).then(function () {
                     summary.is_read = true;
                     message.is_read = true;
                     patchFolderUnread(-1);
@@ -1818,7 +1824,7 @@
             [['Accept', 'Zusagen'], ['Tentative', 'Mit Vorbehalt'], ['Decline', 'Ablehnen']].forEach(function (pair) {
                 var button = el('button', { type: 'button', 'class': 'button button--ghost', text: pair[1] });
                 button.addEventListener('click', function () {
-                    api('/kalender/antwort', { body: { id: message.id, response: pair[0] } }).then(function () {
+                    api('/kalender/antwort', { body: { id: message.id, response: pair[0], postfach: message.mailbox || '' } }).then(function () {
                         toast('Antwort gesendet: ' + pair[1], 'success');
                         loadMessages();
                     }).catch(function (error) {
@@ -1847,7 +1853,7 @@
 
         var attachments = (message.attachments || []).filter(function (a) { return !a.inline; });
         if (attachments.length) {
-            wrap.appendChild(renderAttachments(attachments));
+            wrap.appendChild(renderAttachments(attachments, message.mailbox || ''));
         }
 
         var body = el('div', { 'class': 'ov-mail__body' });
@@ -1880,7 +1886,8 @@
         return '📎';
     }
 
-    function renderAttachments(attachments) {
+    /** mailbox: zusaetzliches Postfach, aus dem die Anhaenge stammen ('' = eigenes). */
+    function renderAttachments(attachments, mailbox) {
         var list = el('div', { 'class': 'ov-attachments' }, [
             el('div', { 'class': 'ov-attachments__title', text: attachments.length + ' Anhang' + (attachments.length === 1 ? '' : 'änge') })
         ]);
@@ -1892,14 +1899,14 @@
             ]);
             var open = el('button', { type: 'button', 'class': 'ov-attachment__action', title: 'Öffnen', text: 'Öffnen' });
             open.addEventListener('click', function () {
-                openAttachment(attachment);
+                openAttachment(attachment, mailbox);
             });
             chip.appendChild(open);
             if (config.nextcloudAvailable) {
                 var save = el('button', { type: 'button', 'class': 'ov-attachment__action', title: 'In Nextcloud speichern', text: '☁ Nextcloud' });
                 save.addEventListener('click', function () {
                     save.disabled = true;
-                    api('/anhang/nextcloud', { body: { attachment_id: attachment.id, name: attachment.name } }).then(function (result) {
+                    api('/anhang/nextcloud', { body: { attachment_id: attachment.id, name: attachment.name, postfach: mailbox || '' } }).then(function (result) {
                         toast(result.message || 'Anhang in Nextcloud gespeichert.', result.ok === false ? 'error' : 'success');
                     }).catch(function (error) {
                         toast(error.message, 'error');
@@ -1923,7 +1930,7 @@
         return BROWSER_EXT.test(ext) ? 'browser' : 'download';
     }
 
-    function openAttachment(attachment) {
+    function openAttachment(attachment, mailbox) {
         var ext = String(attachment.name || '').split('.').pop().toLowerCase();
         var mode = attachmentMode(attachment.name);
         // Nur Vorschau-faehige Anhaenge in einen neuen Tab; alles andere als Download
@@ -1936,7 +1943,7 @@
             popup.document.write('<!doctype html><title>Orvanta – Anhang wird geöffnet …</title><p>Anhang wird geöffnet …</p>');
             popup.document.close();
         }
-        api('/anhang/link', { body: { attachment_id: attachment.id, name: attachment.name } }).then(function (result) {
+        api('/anhang/link', { body: { attachment_id: attachment.id, name: attachment.name, postfach: mailbox || '' } }).then(function (result) {
             if (popup) {
                 popup.location.href = result.url;
             } else {
@@ -1960,7 +1967,9 @@
             toast('Bitte zuerst eine Nachricht auswählen.', 'info');
             return Promise.resolve();
         }
-        return api('/mail/aktion', { body: { action: action, ids: ids, folder: folder || '', postfach: mailboxOf(folder || state.folder) } }).then(function () {
+        // Postfach der Nachrichten ist das des geoeffneten Ordners; ein
+        // Verschiebeziel muss im selben Postfach liegen (prueft der Server).
+        return api('/mail/aktion', { body: { action: action, ids: ids, folder: folder || '', postfach: mailboxOf(state.folder) } }).then(function () {
             var labels = { read: 'Als gelesen markiert.', unread: 'Als ungelesen markiert.', flag: 'Gekennzeichnet.', unflag: 'Kennzeichnung entfernt.', move: 'Verschoben.', 'delete': 'In „Gelöschte Elemente“ verschoben.', delete_permanent: 'Endgültig gelöscht.' };
             toast(labels[action] || 'Erledigt.', 'success');
             if (action === 'delete' || action === 'delete_permanent' || action === 'move') {
@@ -2056,7 +2065,7 @@
             raw.classList.add('is-loading');
         }
         openDialog('headers');
-        api('/mail/kopfzeilen', { query: { id: message.id } }).then(function (info) {
+        api('/mail/kopfzeilen', { query: { id: message.id, postfach: message.mailbox || '' } }).then(function (info) {
             if (raw) {
                 raw.textContent = info.headers || '';
                 raw.classList.remove('is-loading');
@@ -2126,7 +2135,7 @@
         }
         var button = form.querySelector('[type=submit]');
         button.disabled = true;
-        api('/mail/ordner/neu', { body: { parent: form.elements.parent.value, name: name } }).then(function (result) {
+        api('/mail/ordner/neu', { body: { parent: form.elements.parent.value, name: name, postfach: mailboxOf(form.elements.parent.value) } }).then(function (result) {
             closeDialog('folder-new');
             toast(result.message || 'Der Ordner wurde angelegt.', 'success');
             return loadFolders();
@@ -3216,7 +3225,7 @@
         }
         var attachments = (event.attachments || []).filter(function (a) { return !a.inline; });
         if (attachments.length) {
-            wrap.appendChild(renderAttachments(attachments));
+            wrap.appendChild(renderAttachments(attachments, mailboxOf(event.id)));
         }
         var body = el('div', { 'class': 'ov-mail__body' });
         body.innerHTML = event.body_html || '<p class="ov-muted">Keine Beschreibung.</p>';
@@ -4557,7 +4566,15 @@
         }
         api('/abwesenheit').then(function (status) {
             if (!status.available) {
-                toast('Für Ihr Konto ist keine Abwesenheitsvorlage hinterlegt. Bitte wenden Sie sich an die Administration.', 'info');
+                // Ohne Vorlage (z. B. Gruppe entzogen) laesst sich eine noch
+                // aktive Notiz weiterhin abschalten.
+                if (status.active && confirmAction('Für Ihr Konto ist keine Abwesenheitsvorlage mehr hinterlegt. Die aktive Abwesenheitsnotiz jetzt abschalten?')) {
+                    disableOof();
+                    return;
+                }
+                if (!status.active) {
+                    toast('Für Ihr Konto ist keine Abwesenheitsvorlage hinterlegt. Bitte wenden Sie sich an die Administration.', 'info');
+                }
                 return;
             }
             fillOofForm(form, status);
@@ -4569,7 +4586,20 @@
 
     function fillOofForm(form, status) {
         form.elements.dynamic_text.value = status.dynamic_text || '';
-        form.elements.active.value = status.saved_active ? '1' : '0';
+        // Massgeblich ist der Zustand auf dem Exchange-Server.
+        form.elements.active.value = status.active ? '1' : '0';
+        var state = hook('oof-state', form);
+        if (state) {
+            var text = status.active ? oofStateText(status) : 'Die Abwesenheitsnotiz ist abgeschaltet.';
+            if (status.active && status.template_changed) {
+                text += ' Ihnen wurde inzwischen eine andere Vorlage zugewiesen – mit „Übernehmen“ gilt der neue Text.';
+            }
+            state.textContent = text;
+        }
+        var label = hook('oof-submit-label', form);
+        if (label) {
+            label.textContent = status.active ? 'Übernehmen' : 'Aktivieren';
+        }
         form.elements.external_audience.value = status.external_audience === 'all' ? 'all' : 'none';
         form.elements.schedule_mode.value = status.schedule_mode === 'range' ? 'range' : 'until_off';
         form.elements.start_date.value = status.start_date || '';
@@ -4594,6 +4624,15 @@
         if (row) {
             row.hidden = form.elements.schedule_mode.value !== 'range';
         }
+    }
+
+    function disableOof() {
+        api('/abwesenheit', { body: { active: false } }).then(function (result) {
+            toast(result.message || 'Die Abwesenheitsnotiz ist abgeschaltet.', 'success');
+            renderOofBanner(result.oof);
+        }).catch(function (error) {
+            toast(error.message, 'error');
+        });
     }
 
     function saveOof(form) {

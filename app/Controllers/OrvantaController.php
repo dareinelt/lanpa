@@ -40,7 +40,9 @@ final class OrvantaController extends Controller
         if (!$access['route']->isProxy()) {
             // Abgelaufene Pruefungen der zusaetzlichen Postfaecher auffrischen,
             // damit der Ordnerbaum nur wirklich erreichbare Postfaecher zeigt.
-            $shared->refresh($access['user']);
+            // Die Pruefung laeuft als der Benutzer (sein Postfach), damit
+            // Exchange dessen Vollzugriff bestaetigt.
+            $shared->refresh($access['user'], $access['primary']);
             $access['mailboxes'] = $shared->available($access['user']);
         }
 

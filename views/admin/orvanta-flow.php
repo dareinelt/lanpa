@@ -137,10 +137,9 @@ $renderNode = static function (array $node) use ($badge, $stateLabel, $cloud, $r
     $html .= '<p class="flow-node__message" data-flow-node-message' . ($message === '' ? ' hidden' : '') . '>'
         . Html::e($message) . '</p>';
 
-    if ($muted) {
-        $reason = trim((string) ($node['muted_reason'] ?? ''));
-        $html .= '<p class="flow-node__muted">Werte ausgegraut (' . Html::e($reason !== '' ? $reason : 'nicht erreichbar') . ')</p>';
-    }
+    $mutedLabel = trim((string) ($node['muted_label'] ?? ''));
+    $html .= '<p class="flow-node__muted" data-flow-node-muted' . ($mutedLabel === '' ? ' hidden' : '') . '>'
+        . Html::e($mutedLabel) . '</p>';
 
     $facts = (array) ($node['facts'] ?? []);
     if ($facts !== []) {
@@ -213,6 +212,7 @@ $edgeLabel = static function (array $edge) use ($nodes): string {
     <a class="button button--ghost" href="/admin/office/orvanta/hosts">Exchange-DAG-Hosts</a>
     <a class="button button--ghost" href="/admin/office/mail-proxy">SMTP-/IMAP-Proxy</a>
     <a class="button button--ghost" href="/admin/speicher-ha">Speicher (HA)</a>
+    <button class="button button--ghost" type="button" data-flow-refresh>Aktualisieren</button>
 </div>
 
 <p class="card__hint">
@@ -233,7 +233,7 @@ $edgeLabel = static function (array $edge) use ($nodes): string {
      data-refresh-url="<?= Html::e($base . '/daten') ?>"
      data-refresh-interval="<?= (int) $refreshInterval ?>">
 
-    <section class="card flow-head flow-head--<?= Html::e($overallState) ?>" aria-labelledby="flow-head-title">
+    <section class="card flow-head flow-head--<?= Html::e($overallState) ?>" data-flow-head aria-labelledby="flow-head-title">
         <div class="card__head">
             <h2 class="card__title" id="flow-head-title">Gesamtstatus</h2>
             <span class="badge <?= $badge($overallState) ?>" data-flow-field="overall-label"><?= Html::e((string) ($overall['label'] ?? '')) ?></span>
@@ -247,26 +247,24 @@ $edgeLabel = static function (array $edge) use ($nodes): string {
         </p>
     </section>
 
-    <?php if ($incidents !== []) { ?>
-        <section class="card flow-incidents" aria-labelledby="flow-incidents-title">
-            <h2 class="card__title" id="flow-incidents-title">Offene Störungen</h2>
-            <ul class="flow-incident-list">
-                <?php foreach ($incidents as $incident) { ?>
-                    <li class="flow-incident">
-                        <span class="flow-alert" aria-hidden="true">!</span>
-                        <span class="visually-hidden">Störung</span>
-                        <strong><?= Html::e((string) ($incident['title'] ?? '')) ?></strong>
-                        <?php if (trim((string) ($incident['message'] ?? '')) !== '') { ?>
-                            <span class="flow-incident__message"><?= Html::e((string) $incident['message']) ?></span>
-                        <?php } ?>
-                        <?php if (trim((string) ($incident['url'] ?? '')) !== '') { ?>
-                            <a href="<?= Html::url((string) $incident['url']) ?>">Beheben</a>
-                        <?php } ?>
-                    </li>
-                <?php } ?>
-            </ul>
-        </section>
-    <?php } ?>
+    <section class="card flow-incidents" data-flow-incidents<?= $incidents === [] ? ' hidden' : '' ?> aria-labelledby="flow-incidents-title">
+        <h2 class="card__title" id="flow-incidents-title">Offene Störungen</h2>
+        <ul class="flow-incident-list" data-flow-incident-list>
+            <?php foreach ($incidents as $incident) { ?>
+                <li class="flow-incident">
+                    <span class="flow-alert" aria-hidden="true">!</span>
+                    <span class="visually-hidden">Störung</span>
+                    <strong><?= Html::e((string) ($incident['title'] ?? '')) ?></strong>
+                    <?php if (trim((string) ($incident['message'] ?? '')) !== '') { ?>
+                        <span class="flow-incident__message"><?= Html::e((string) $incident['message']) ?></span>
+                    <?php } ?>
+                    <?php if (trim((string) ($incident['url'] ?? '')) !== '') { ?>
+                        <a href="<?= Html::url((string) $incident['url']) ?>">Beheben</a>
+                    <?php } ?>
+                </li>
+            <?php } ?>
+        </ul>
+    </section>
 
     <section class="card" aria-labelledby="flow-kpis-title">
         <h2 class="card__title" id="flow-kpis-title">Kennzahlen</h2>
@@ -299,7 +297,7 @@ $edgeLabel = static function (array $edge) use ($nodes): string {
                  aria-labelledby="flow-lane-<?= Html::e($laneKey) ?>-title">
             <div class="card__head">
                 <h2 class="card__title" id="flow-lane-<?= Html::e($laneKey) ?>-title"><?= Html::e((string) ($lane['title'] ?? '')) ?></h2>
-                <span class="badge <?= $badge($laneState) ?>"><?= Html::e($stateLabel($laneState)) ?></span>
+                <span class="badge <?= $badge($laneState) ?>" data-flow-lane-label><?= Html::e((string) ($lane['state_label'] ?? $stateLabel($laneState))) ?></span>
             </div>
 
             <ul class="flow-edges" aria-label="Verbindungen dieser Spur">
@@ -307,7 +305,8 @@ $edgeLabel = static function (array $edge) use ($nodes): string {
                     <li class="flow-edge flow-edge--none">Keine Verbindungen erfasst.</li>
                 <?php } else {
                     foreach ($laneEdges as $edge) { ?>
-                        <li class="flow-edge flow-edge--<?= Html::e((string) ($edge['state'] ?? 'ok')) ?>">
+                        <li class="flow-edge flow-edge--<?= Html::e((string) ($edge['state'] ?? 'ok')) ?>"
+                            data-flow-edge="<?= Html::e((string) ($edge['from'] ?? '') . '>' . (string) ($edge['to'] ?? '')) ?>">
                             <span class="flow-edge__label"><?= Html::e($edgeLabel($edge)) ?></span>
                         </li>
                     <?php }

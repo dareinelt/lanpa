@@ -383,7 +383,9 @@ final class OrvantaFlowService
         }
 
         foreach ($lanes as $laneKey => $lane) {
-            $lanes[$laneKey]['state'] = self::laneState($lane['nodes'], $nodes);
+            $state = self::laneState($lane['nodes'], $nodes);
+            $lanes[$laneKey]['state'] = $state;
+            $lanes[$laneKey]['state_label'] = self::STATE_LABELS[$state] ?? $state;
         }
 
         $kpis = self::kpis($proxy, $sources, $exchange, $presence, $storage, $cache, $ai);
@@ -1154,6 +1156,7 @@ final class OrvantaFlowService
             'alert' => $state === 'error',
             'muted' => false,
             'muted_reason' => '',
+            'muted_label' => '',
             'message' => '',
             'facts' => [],
             'cloud' => [],
@@ -1167,7 +1170,12 @@ final class OrvantaFlowService
             'members' => [],
         ];
 
-        return array_merge($defaults, $extra);
+        $node = array_merge($defaults, $extra);
+        $node['muted_label'] = $node['muted'] === true
+            ? 'Werte ausgegraut (' . ($node['muted_reason'] !== '' ? (string) $node['muted_reason'] : 'nicht erreichbar') . ')'
+            : '';
+
+        return $node;
     }
 
     /**

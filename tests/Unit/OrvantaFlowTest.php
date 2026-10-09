@@ -1214,6 +1214,41 @@ Runner::test('Nachrichtenfluss: Spuren tragen den schlechtesten Zustand ihrer Kn
     }
 });
 
+Runner::test('Nachrichtenfluss: Spuren nennen ihren Zustand im Klartext', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+    foreach ($flow['lanes'] as $lane) {
+        Assert::same('In Ordnung', $lane['state_label'], 'Die Spur „' . $lane['key'] . '“ nennt ihren Zustand');
+    }
+
+    $input = flowInput();
+    $input['proxy']['ok'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+    foreach ($flow['lanes'] as $lane) {
+        $expected = $lane['key'] === 'proxy' ? 'Störung' : 'In Ordnung';
+        Assert::same($expected, $lane['state_label'], 'Die Spur „' . $lane['key'] . '“ trägt ihren eigenen Zustand');
+    }
+});
+
+Runner::test('Nachrichtenfluss: gedämpfte Knoten nennen den Grund im Klartext', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+    Assert::same('', flowNode($flow, 'source-0')['muted_label'], 'Ein gesunder Knoten nennt keinen Grund');
+
+    $input = flowInput();
+    $input['proxy']['ok'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+    $source = flowNode($flow, 'source-0');
+    Assert::true($source['muted'], 'Die Quelle ist gedämpft');
+    Assert::true(str_contains($source['muted_label'], $source['muted_reason']), 'Der Grund steht im Klartext');
+    Assert::same('Werte ausgegraut (Proxy nicht erreichbar)', $source['muted_label']);
+
+    $input = flowInput();
+    $input['proxy']['ok'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+    $users = flowNode($flow, 'users');
+    Assert::false($users['muted'], 'Der Nutzerknoten bleibt erreichbar');
+    Assert::same('', $users['muted_label'], 'Ein erreichbarer Knoten nennt keinen Grund');
+});
+
 Runner::test('Nachrichtenfluss: Kanten verbinden Quellen, Hosts und Endpunkte', static function (): void {
     $flow = OrvantaFlowService::evaluate(flowInput());
 

@@ -509,6 +509,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
             <div class="ov-dialog__body ov-oof">
                 <p class="ov-muted">Die Abwesenheitsnotiz wird auf dem Exchange-Server hinterlegt. Er beantwortet eingehende E-Mails automatisch – Orvanta muss dafür nicht geöffnet bleiben.</p>
                 <input type="hidden" name="active" value="0" data-ov-oof-active>
+                <p class="ov-muted" data-ov-oof-state role="status"></p>
                 <h3>Text der Vorlage <span class="ov-muted" data-ov-oof-template></span></h3>
                 <div class="ov-oof__fixed" data-ov-oof-fixed></div>
                 <label class="ov-field"><span>Ergänzung (von Ihnen anpassbar)</span><textarea name="dynamic_text" rows="4" maxlength="2000" placeholder="z. B. Vertretung mit E-Mail-Adresse und Telefonnummer" data-ov-oof-dynamic></textarea></label>
@@ -532,7 +533,7 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
                 <p class="ov-form-error" data-ov-form-error hidden></p>
             </div>
             <div class="ov-dialog__foot">
-                <button type="submit" class="button button--primary" data-ov-oof-submit="1"><?= $icon('check') ?> Aktivieren</button>
+                <button type="submit" class="button button--primary" data-ov-oof-submit="1"><?= $icon('check') ?> <span data-ov-oof-submit-label>Aktivieren</span></button>
                 <button type="submit" class="button button--ghost" data-ov-oof-submit="0">Abschalten</button>
                 <button type="button" class="button button--ghost" data-ov-dialog-close>Abbrechen</button>
             </div>

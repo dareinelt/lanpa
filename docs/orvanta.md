@@ -205,7 +205,7 @@ flowchart LR
 | `OrvantaOofRepository` | `app/Repositories/OrvantaOofRepository.php` | Tabellen `orvanta_oof_templates` und `orvanta_oof_settings` |
 | Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `admin-orvanta-hosts.js`, `admin-oof.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer, Live-Aktualisierung des DAG-Dashboards, Live-Vorschau der Abwesenheitsnotiz-Vorlage |
 | Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `views/admin/orvanta-oof-templates.php`, `views/admin/orvanta-oof-template.php`, `views/admin/orvanta-hosts.php`, `views/admin/orvanta-shared-mailboxes.php` | |
-| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql`, `044_orvanta_exchange_session_client.sql`, `045_orvanta_oof.sql`, `046_orvanta_shared_mailboxes.sql` | |
+| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql`, `044_orvanta_exchange_session_client.sql`, `045_orvanta_oof.sql`, `046_orvanta_shared_mailboxes.sql`, `047_orvanta_shared_mailboxes_reverify.sql` | |
 | `OrvantaMailRouter`, `ProxyMailBackend` | `app/Services/MailProxy/` | Backend-Auswahl je Benutzer (Exchange oder SMTP-/IMAP-Proxy, gemeinsames `OrvantaMailBackendInterface`); Details in [mail-proxy.md](mail-proxy.md) |
 | Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/OrvantaSpellcheckTest.php`, `tests/Unit/MailProxyTest.php`, `tests/Unit/OrvantaSharedMailboxTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen und zusätzliche Postfächer gegen SQLite; Rechtschreibung gegen ein eigenes Mini-Wörterbuch |
 
@@ -221,7 +221,7 @@ flowchart LR
 | `orvanta_oof_templates` | Vorlagen der Abwesenheitsnotiz (Migration 045) | `name`, `fixed_text` (fester, für den Benutzer schreibgeschützter Teil), `example_text` (dynamischer Beispieltext), `ad_groups` (JSON-Liste), `sort_order`, `active` |
 | `orvanta_oof_settings` | Letzter Stand der Abwesenheitsnotiz je Benutzer (Migration 045) | `user_uid`, `template_id`, `dynamic_text`, `external_audience` (none/all), `schedule_mode` (range/until_off), `start_date`, `end_date`, `active`; maßgeblich ist der Zustand auf dem Exchange-Server |
 | `orvanta_spellcheck_words` | Persönliches Wörterbuch der Rechtschreibprüfung (Migration 042) | `user_uid` (klein geschrieben), `word` (≤ 64, Schreibweise genau unterschieden; unique je Benutzer), `created_at` |
-| `orvanta_shared_mailboxes` | Zusätzlich berechtigte Postfächer je Benutzer (Migration 046, Abschnitt 4e) | `user_uid` + `email` (unique, ohne Beachtung der Groß-/Kleinschreibung), `display_name`, `send_as` („Senden als“ erlaubt), `active`, `verified_at`/`verify_error`/`checked_at` (Erreichbarkeitsprüfung), `calendar_visible` (Kalender eingeblendet), `sort_order` |
+| `orvanta_shared_mailboxes` | Zusätzlich berechtigte Postfächer je Benutzer (Migration 046, Neuprüfung als Benutzer durch Migration 047, Abschnitt 4e) | `user_uid` + `email` (unique, ohne Beachtung der Groß-/Kleinschreibung), `display_name`, `send_as` („Senden als“ erlaubt), `active`, `verified_at`/`verify_error`/`checked_at` (Erreichbarkeitsprüfung), `calendar_visible` (Kalender eingeblendet), `sort_order` |
 | `orvanta_archives` | Langzeitarchiv je Benutzer (Migration 038) | `user_uid` (unique), `mailbox`, `storage_folder`, `format_version`, `status` (active/error), Zähler, `last_successful_run`, `last_notice` |
 | `orvanta_archive_folders` | Abbild der Exchange-Ordner im Archiv | `archive_id` + `folder_hash` (unique), `exchange_folder_id`, `name`, `path` |
 | `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (immer `mime`; `json` ist reserviert und wird nicht mehr geschrieben), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
@@ -570,6 +570,13 @@ Verhalten in Orvanta:
 - Solange die Notiz im Postfach aktiv ist, zeigt Orvanta unter dem Menüband
   einen **Banner** mit dem Zustand; der Zustand kommt vom Exchange-Server, die
   Anzeige stimmt also auch, wenn die Notiz an anderer Stelle gesetzt wurde.
+  Auch der Dialog zeigt oben diesen Zustand.
+- **Vorlagenwechsel:** Wird dem Benutzer eine andere Vorlage zugewiesen,
+  bleibt eine aktive Notiz mit dem bisherigen Text aktiv; der Dialog weist
+  darauf hin, und „Übernehmen“ überträgt den neuen Text.
+- **Ohne Vorlage:** Wurde die Vorlage entzogen (z. B. AD-Gruppe entfernt),
+  lässt sich eine noch aktive Notiz weiterhin abschalten – Orvanta fragt beim
+  Öffnen des Dialogs nach. Aktivieren ist ohne Vorlage nicht möglich.
 - Die Abwesenheitsnotiz ist eine Exchange-Funktion. Für Benutzer, die über den
   SMTP-/IMAP-Proxy angebunden sind (Abschnitt 4b), steht sie nicht zur
   Verfügung.
@@ -610,11 +617,18 @@ gepflegt und über EWS geprüft:
 2. **Postfach zuordnen** – SMTP-Adresse des weiteren Postfachs, optional
    Anzeigename (leer = Adresse anzeigen), Reihenfolge, Schalter
    **„Senden als“ erlaubt** und **Zuordnung aktiv**.
-3. **Prüfen** – Orvanta öffnet mit dem Dienstkonto das Postfach über EWS
-   (`GetFolder` auf `msgfolderroot`) und hält das Ergebnis fest
-   („erreichbar“ mit Zeitpunkt bzw. Fehlertext). Geprüft wird beim Öffnen der
-   App und über die Schaltfläche **Prüfen**; das Ergebnis gilt 12 Stunden.
-   Schlägt die Prüfung fehl, wird das Postfach dem Benutzer nicht angeboten.
+3. **Prüfen** – Orvanta gibt sich über EWS als der **Benutzer** aus und öffnet
+   dessen Zugriff auf das weitere Postfach (`GetFolder` auf `msgfolderroot`
+   des Postfachs). Erfolgreich ist das nur, wenn Exchange dem Benutzer
+   **Vollzugriff** gewährt; die Rechte des Dienstkontos allein genügen nicht.
+   Das Ergebnis wird festgehalten („erreichbar“ mit Zeitpunkt bzw.
+   Fehlertext). Geprüft wird beim Öffnen der App und über die Schaltfläche
+   **Prüfen**; das Ergebnis gilt 12 Stunden. Steht in der Telefonliste keine
+   Postfachadresse des Benutzers, bleibt die Zuordnung „noch nicht geprüft“
+   und wird bei seiner nächsten Anmeldung in Orvanta geprüft. Schlägt die
+   Prüfung fehl, wird das Postfach dem Benutzer nicht angeboten.
+   „Senden als“ prüft Exchange beim Versand selbst: Fehlt die Berechtigung,
+   lehnt Exchange die Nachricht ab, und Orvanta meldet das verständlich.
 
 ![Adminbereich: weitere Postfächer je Benutzer mit Erreichbarkeitsprüfung](screenshots/112-admin-orvanta-postfaecher.png)
 
@@ -624,7 +638,10 @@ In Orvanta:
   Postfach und allen aktiven, erreichbaren weiteren Postfächern; die
   Unterknoten (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner) sind
   ausklappbar. Jeder Ordner, jede Nachricht und jede Aktion (Verschieben,
-  Löschen, Kennzeichnen, Entwurf speichern) gilt für das gewählte Postfach.
+  Löschen, Kennzeichnen, Entwurf speichern, Anhänge, Kopfzeilen,
+  Terminantworten, neue Ordner) gilt für das gewählte Postfach. Verschoben
+  wird nur innerhalb eines Postfachs; Ordner anderer Postfächer und die
+  Postfach-Wurzelknoten nehmen keine Nachrichten per Drag & Drop an.
 - **Kalender:** Die Kalender der weiteren Postfächer werden über
   **Checkboxen** über der Kalenderansicht ein- und ausgeblendet; der eigene
   Kalender ist immer sichtbar. Termine aus weiteren Postfächern sind mit dem
@@ -636,7 +653,9 @@ In Orvanta:
   aus dem der Editor geöffnet wurde – aus dem eigenen Posteingang also die
   eigene Adresse, aus einem weiteren Postfach dessen Adresse. Die **Signatur
   bleibt die des primären Benutzerpostfachs**; beim Senden trägt Orvanta die
-  gewählte Adresse als `From` in den Exchange-Auftrag ein.
+  gewählte Adresse als `From` in den Exchange-Auftrag ein. Gesendet wird mit
+  den Rechten des Benutzers, damit Exchange „Senden als“ durchsetzt; die
+  Kopie unter „Gesendete Elemente“ landet im Postfach des Absenders.
 - **Archivierung:** In die Langzeitarchivierung (Abschnitt 7a) läuft
   **weiterhin nur das primäre Benutzerpostfach** ein – also das Postfach, das
   dem angemeldeten Benutzer im Active Directory hinterlegt ist. Zusätzlich
@@ -648,6 +667,10 @@ In Orvanta:
 ![Weiteres Postfach im Ordnerbaum und Absender-Dropdown im Verfassen-Dialog](screenshots/110-orvanta-postfaecher-ordnerbaum.png)
 
 ![Kalender der weiteren Postfächer per Checkbox ein- und ausblenden](screenshots/111-orvanta-kalender-postfaecher.png)
+
+Migration 047 setzt bei bestehenden Zuordnungen den Prüfzeitpunkt zurück,
+damit sie bei der nächsten Anmeldung des Benutzers mit seinen Rechten erneut
+geprüft werden.
 
 Ohne die Migration 046 fehlt die Tabelle `orvanta_shared_mailboxes`; der
 Adminbereich weist darauf hin, und die App arbeitet wie bisher nur mit dem

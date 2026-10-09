@@ -934,11 +934,19 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
      * $mail['reference'] (id, mode) entsteht eine Antwort/Weiterleitung mit
      * Bezug zur Originalnachricht.
      *
-     * @param array{to?:list<string>,cc?:list<string>,bcc?:list<string>,subject?:string,body?:string,html?:bool,importance?:string,from?:string,from_name?:string,attachments?:list<array{name:string,content_type:string,content:string}>,reference?:array{id:string,mode:string,change_key?:string}} $mail
+     * $mail['sent_mailbox'] legt die Kopie in „Gesendete Elemente“ eines
+     * zusaetzlichen Postfachs ab (Absender per „Senden als“); gesendet wird
+     * trotzdem als $user, damit Exchange die Berechtigung „Senden als“ prueft.
+     *
+     * @param array{to?:list<string>,cc?:list<string>,bcc?:list<string>,subject?:string,body?:string,html?:bool,importance?:string,from?:string,from_name?:string,sent_mailbox?:string,attachments?:list<array{name:string,content_type:string,content:string}>,reference?:array{id:string,mode:string,change_key?:string}} $mail
      * @return array{id:string}
      */
     public function send(string $user, array $mail, string $draftId = '', string $changeKey = ''): array
     {
+        $sentMailbox = trim((string) ($mail['sent_mailbox'] ?? ''));
+        $sentItems = $sentMailbox !== '' && strcasecmp($sentMailbox, $user) !== 0
+            ? '<t:DistinguishedFolderId Id="sentitems"><t:Mailbox><t:EmailAddress>' . EwsXml::escape($sentMailbox) . '</t:EmailAddress></t:Mailbox></t:DistinguishedFolderId>'
+            : '<t:DistinguishedFolderId Id="sentitems"/>';
         $reference = $this->reference($user, $mail);
         if ($reference !== null) {
             $mail['reference'] = $reference;
@@ -948,7 +956,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             throw new OrvantaException($reference !== null ? 'Bitte einen Empfänger für die Weiterleitung angeben.' : 'Bitte mindestens einen Empfänger angeben.', 422);
         }
         if ($draftId === '' && ($mail['attachments'] ?? []) === []) {
-            $xpath = $this->call('<m:CreateItem MessageDisposition="SendAndSaveCopy"><m:SavedItemFolderId><t:DistinguishedFolderId Id="sentitems"/></m:SavedItemFolderId><m:Items>' . $this->outgoingXml($mail, $reference) . '</m:Items></m:CreateItem>', $user);
+            $xpath = $this->call('<m:CreateItem MessageDisposition="SendAndSaveCopy"><m:SavedItemFolderId>' . $sentItems . '</m:SavedItemFolderId><m:Items>' . $this->outgoingXml($mail, $reference) . '</m:Items></m:CreateItem>', $user);
 
             return ['id' => EwsXml::attr($xpath, '//m:Items/t:Message/t:ItemId', 'Id')];
         }
@@ -956,7 +964,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
         $draft = $this->saveDraft($user, $mail, $draftId, $changeKey);
         $this->call(
             '<m:SendItem SaveItemToFolder="true">' . EwsXml::itemIds([$draft])
-            . '<m:SavedItemFolderId><t:DistinguishedFolderId Id="sentitems"/></m:SavedItemFolderId></m:SendItem>',
+            . '<m:SavedItemFolderId>' . $sentItems . '</m:SavedItemFolderId></m:SendItem>',
             $user
         );
 
@@ -1513,26 +1521,37 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     // ------------------------------------------------------------------
 
     /**
-     * Prueft, ob das Dienstkonto ein Postfach per ExchangeImpersonation
-     * erreicht. Nur so kann Orvanta ein zusaetzlich berechtigtes Postfach
-     * bedienen; die Pruefung ersetzt die fehlende EWS-Abfrage der
-     * Postfachberechtigungen.
+     * Prueft, ob ein Benutzer ein zusaetzliches Postfach oeffnen darf. Die
+     * Postfachberechtigungen sind ueber EWS nicht abfragbar; Orvanta greift
+     * deshalb als der Benutzer ($user, per ExchangeImpersonation) auf die
+     * Ordnerwurzel des Postfachs zu (DistinguishedFolderId mit Mailbox).
+     * Exchange prueft dabei den Vollzugriff des Benutzers – das Dienstkonto
+     * allein wuerde mit ApplicationImpersonation jedes Postfach erreichen.
+     * Ohne $user wird nur die Erreichbarkeit ueber das Dienstkonto geprueft.
      *
      * @return array{ok:bool,error:string}
      */
-    public function probeMailbox(string $email): array
+    public function probeMailbox(string $email, string $user = ''): array
     {
         $email = trim($email);
+        $user = trim($user);
         if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
             return ['ok' => false, 'error' => 'Ungültige E-Mail-Adresse.'];
         }
+        $folder = $user !== ''
+            ? '<t:DistinguishedFolderId Id="msgfolderroot"><t:Mailbox><t:EmailAddress>' . EwsXml::escape($email) . '</t:EmailAddress></t:Mailbox></t:DistinguishedFolderId>'
+            : '<t:DistinguishedFolderId Id="msgfolderroot"/>';
         try {
             $this->call(
                 '<m:GetFolder><m:FolderShape><t:BaseShape>IdOnly</t:BaseShape></m:FolderShape><m:FolderIds>'
-                . '<t:DistinguishedFolderId Id="msgfolderroot"/></m:FolderIds></m:GetFolder>',
-                $email
+                . $folder . '</m:FolderIds></m:GetFolder>',
+                $user !== '' ? $user : $email
             );
         } catch (OrvantaException $exception) {
+            if ($user !== '' && str_starts_with($exception->getMessage(), 'Zugriff verweigert')) {
+                return ['ok' => false, 'error' => 'Exchange gewährt dem Benutzer (' . $user . ') keinen Vollzugriff auf dieses Postfach.'];
+            }
+
             return ['ok' => false, 'error' => $exception->getMessage()];
         } catch (Throwable $exception) {
             return ['ok' => false, 'error' => 'Exchange ist nicht erreichbar: ' . $exception->getMessage()];
@@ -1839,6 +1858,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             str_contains($error, 'ErrorItemNotFound') => 'Das Element wurde nicht gefunden (möglicherweise bereits verschoben oder gelöscht).',
             str_contains($error, 'ErrorFolderNotFound') => 'Der Ordner wurde nicht gefunden.',
             str_contains($error, 'ErrorFolderExists') => 'Ein Ordner mit diesem Namen ist hier bereits vorhanden.',
+            str_contains($error, 'ErrorSendAsDenied') => 'Exchange verweigert den Versand: Für diese Absenderadresse fehlt Ihnen die Berechtigung „Senden als“.',
             str_contains($error, 'ErrorAccessDenied') => 'Zugriff verweigert: ' . $error,
             str_contains($error, 'ErrorSchemaValidation') => 'Exchange hat die Anfrage abgelehnt (Schemafehler): ' . $error,
             default => 'Exchange-Fehler: ' . $error,

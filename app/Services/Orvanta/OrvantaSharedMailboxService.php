@@ -15,8 +15,10 @@ use Throwable;
  * Welche Postfaecher ein Benutzer ausser seinem eigenen nutzen darf, ist auf
  * dem Exchange-Server in den Postfachberechtigungen hinterlegt und ueber EWS
  * nicht abfragbar. Der Adminbereich pflegt die Zuordnung daher je Benutzer;
- * Orvanta prueft sie ueber EWS mit dem Dienstkonto und zeigt nur erreichbare
- * Postfaecher an.
+ * Orvanta prueft sie ueber EWS als der Benutzer (Impersonation seines
+ * Postfachs, Zugriff auf das zusaetzliche Postfach) und zeigt nur Postfaecher
+ * an, fuer die Exchange dem Benutzer Vollzugriff gewaehrt. "Senden als"
+ * erzwingt Exchange beim Versand: Orvanta sendet immer als der Benutzer.
  *
  * Wichtig: Archiviert wird ausschliesslich das primaere Benutzerpostfach.
  * Zusaetzliche Postfaecher laufen nicht in die Archivierung ein.
@@ -25,6 +27,9 @@ final class OrvantaSharedMailboxService
 {
     /** Gueltigkeit der EWS-Pruefung, danach wird erneut geprueft (Sekunden). */
     private const VERIFY_TTL = 43200;
+
+    /** Zustand ohne Postfachadresse des Benutzers: Pruefung bei der naechsten Anmeldung. */
+    public const PENDING = 'Die Berechtigung wird bei der nächsten Anmeldung des Benutzers in Orvanta geprüft (keine Postfachadresse im Telefonbuch).';
 
     public function __construct(
         private readonly OrvantaSharedMailboxRepository $repository,
@@ -231,11 +236,15 @@ final class OrvantaSharedMailboxService
     }
 
     /**
-     * Erreichbarkeit eines Postfachs pruefen und Ergebnis festhalten.
+     * Berechtigung des Benutzers auf ein Postfach pruefen und Ergebnis
+     * festhalten. $userAddress ist die Postfachadresse des Benutzers (bei der
+     * Anmeldung bekannt); ohne sie wird die Adresse aus dem Telefonbuch
+     * genommen. Fehlt auch diese, bleibt die Zuordnung bis zur naechsten
+     * Anmeldung des Benutzers ungeprueft (und damit nicht sichtbar).
      *
      * @return string Fehlertext, leer = erreichbar
      */
-    public function verify(int $id, bool $force = false): string
+    public function verify(int $id, bool $force = false, string $userAddress = ''): string
     {
         $row = $this->repository->find($id);
         if ($row === null) {
@@ -245,16 +254,26 @@ final class OrvantaSharedMailboxService
             return $row['verify_error'];
         }
 
+        $userAddress = trim($userAddress);
+        if ($userAddress === '') {
+            $userAddress = $this->repository->userAddress($row['uid']);
+        }
+        if ($userAddress === '') {
+            $this->repository->markPending($id, self::PENDING);
+
+            return self::PENDING;
+        }
+
         $error = '';
         try {
-            $result = $this->exchange->probeMailbox($row['email']);
+            $result = $this->exchange->probeMailbox($row['email'], $userAddress);
             $error = $result['ok'] ? '' : $result['error'];
         } catch (Throwable $exception) {
             $error = 'Pruefung fehlgeschlagen: ' . $exception->getMessage();
         }
         $this->repository->markVerified($id, $error);
         if ($error !== '') {
-            $this->logger?->info('Orvanta: zusaetzliches Postfach nicht erreichbar.', ['mailbox' => $row['email'], 'error' => $error]);
+            $this->logger?->info('Orvanta: zusaetzliches Postfach nicht erreichbar.', ['mailbox' => $row['email'], 'user' => $userAddress, 'error' => $error]);
         }
 
         return $error;
@@ -265,12 +284,13 @@ final class OrvantaSharedMailboxService
      * EWS-Anfrage je Postfach und Gueltigkeitsdauer).
      *
      * @param array<string,mixed> $ssoUser
+     * @param string $userAddress Postfachadresse des Benutzers (Impersonation)
      */
-    public function refresh(array $ssoUser): void
+    public function refresh(array $ssoUser, string $userAddress = ''): void
     {
         foreach ($this->repository->forUser($this->uid($ssoUser)) as $row) {
             if ($this->isStale($row)) {
-                $this->verify($row['id']);
+                $this->verify($row['id'], false, $userAddress);
             }
         }
     }

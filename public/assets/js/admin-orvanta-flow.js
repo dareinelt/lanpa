@@ -155,7 +155,7 @@
 
         var cloud = element.querySelector('.flow-cloud');
         if (cloud) {
-            cloud.classList.toggle('cloud--muted', node.cloud_muted === true);
+            cloud.classList.toggle('flow-cloud--muted', node.cloud_muted === true);
         }
     }
 

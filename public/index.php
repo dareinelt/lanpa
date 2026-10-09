@@ -380,6 +380,7 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         // Orvanta: Nachrichtenfluss-Dashboard (Identitaetsquellen, Proxy, DAG-Hosts, Speicher, KI).
         $router->get('/admin/office/orvanta/nachrichtenfluss', [OrvantaFlowController::class, 'index']);
         $router->get('/admin/office/orvanta/nachrichtenfluss/daten', [OrvantaFlowController::class, 'data']);
+        $router->get('/admin/office/orvanta/nachrichtenfluss/topologie', [OrvantaFlowController::class, 'topology']);
         $router->post('/admin/office/orvanta/nachrichtenfluss/quellen/pruefen', [OrvantaFlowController::class, 'checkSources']);
         // Orvanta: zusaetzlich berechtigte Postfaecher je Benutzer (Vollzugriff / "Senden als").
         $router->get('/admin/office/orvanta/postfaecher', [OrvantaSharedMailboxController::class, 'index']);

@@ -52,6 +52,12 @@ final class OrvantaFlowService
     /** Anzahl der in der Zwischenspeicher-Wolke genannten Nutzer. */
     public const CACHE_TOP_USERS = 10;
 
+    /** Transportweg einer Identitaetsquelle: ueber den IMAP-/SMTP-Proxy. */
+    public const TRANSPORT_PROXY = 'proxy';
+
+    /** Transportweg einer Identitaetsquelle: direkt ueber Exchange (EWS). */
+    public const TRANSPORT_EXCHANGE = 'exchange';
+
     public function __construct(
         private readonly OrvantaPresenceService $presence,
         private readonly MailProxyService $mailProxy,
@@ -142,6 +148,8 @@ final class OrvantaFlowService
 
     /**
      * Identitaetsquellen mit Postfachzahlen und gespeichertem Zustand.
+     * `transport` nennt den Weg der Quelle: 'proxy' mit hinterlegtem
+     * Mailserver, sonst 'exchange' (die Quelle haengt nicht hinter dem Proxy).
      *
      * @return list<array<string,mixed>>
      */
@@ -150,6 +158,10 @@ final class OrvantaFlowService
         try {
             $counts = $this->mailProxyRepository->sourceCounts();
             $states = $this->mailProxyRepository->sourceStates();
+            $proxied = [];
+            foreach ($this->mailProxyRepository->servers() as $server) {
+                $proxied[(int) $server['identity_source_id']] = true;
+            }
         } catch (\PDOException) {
             return [];
         }
@@ -163,6 +175,7 @@ final class OrvantaFlowService
                 'domain' => (string) $source['domain'],
                 'active' => (bool) $source['active'],
                 'primary' => $id === 0,
+                'transport' => isset($proxied[$id]) ? self::TRANSPORT_PROXY : self::TRANSPORT_EXCHANGE,
                 'counts' => $counts[$id] ?? [
                     'mailboxes' => 0,
                     'active_mailboxes' => 0,
@@ -350,7 +363,14 @@ final class OrvantaFlowService
         ];
         $edges = [];
 
+        // Quellen ohne Proxy-Konfiguration haengen nicht hinter dem Proxy,
+        // sondern vor den Exchange-Hosts; sie folgen weiter unten.
+        $exchangeSources = [];
         foreach ($sources as $source) {
+            if ((string) ($source['transport'] ?? self::TRANSPORT_PROXY) === self::TRANSPORT_EXCHANGE) {
+                $exchangeSources[] = $source;
+                continue;
+            }
             $node = self::sourceNode($source, $proxyDown);
             $key = 'source-' . (int) $source['id'];
             $nodes[$key] = $node;
@@ -358,9 +378,27 @@ final class OrvantaFlowService
             $edges[] = self::edge($key, 'proxy', $node['state']);
         }
 
+        $hostKeys = [];
+        $hostNodes = [];
         foreach ((array) ($exchange['hosts'] ?? []) as $host) {
             $node = self::hostNode($host, (array) ($exchange['sessions'] ?? []), (bool) ($exchange['configured'] ?? false));
             $key = 'host-' . (int) $host['id'];
+            $hostNodes[$key] = $node;
+            $hostKeys[] = $key;
+        }
+        $exchangeDown = $hostKeys !== [] && array_filter($hostNodes, static fn (array $node): bool => $node['state'] !== 'error') === [];
+
+        foreach ($exchangeSources as $source) {
+            $node = self::exchangeSourceNode($source, $exchange, $exchangeDown);
+            $key = 'source-' . (int) $source['id'];
+            $nodes[$key] = $node;
+            $lanes['exchange']['nodes'][] = $key;
+            foreach ($hostKeys === [] ? ['users'] : $hostKeys as $target) {
+                $edges[] = self::edge($key, $target, $node['state']);
+            }
+        }
+
+        foreach ($hostNodes as $key => $node) {
             $nodes[$key] = $node;
             $lanes['exchange']['nodes'][] = $key;
             $edges[] = self::edge($key, 'users', $node['state']);
@@ -570,7 +608,57 @@ final class OrvantaFlowService
             'primary' => (bool) ($source['primary'] ?? false),
             'muted' => $proxyDown,
             'muted_reason' => $proxyDown ? 'Proxy nicht erreichbar' : '',
+            'transport' => self::TRANSPORT_PROXY,
             'link' => ['url' => '/admin/office/mail-proxy?source=' . $id, 'label' => 'Identitätsquelle verwalten'],
+        ]);
+    }
+
+    /**
+     * Identitaetsquelle ohne Proxy-Konfiguration: ihre Benutzer sprechen direkt
+     * mit Exchange. Die Quelle selbst wird nicht geprueft; ihr Zustand folgt
+     * den Exchange-Hosts, vor denen sie in der Topologie steht.
+     *
+     * @param array<string,mixed> $source
+     * @param array<string,mixed> $exchange
+     *
+     * @return array<string,mixed>
+     */
+    private static function exchangeSourceNode(array $source, array $exchange, bool $exchangeDown): array
+    {
+        $id = (int) ($source['id'] ?? 0);
+        $active = (bool) ($source['active'] ?? false);
+        $configured = (bool) ($exchange['configured'] ?? false);
+        $totals = (array) ($exchange['totals'] ?? []);
+        $hosts = count((array) ($exchange['hosts'] ?? []));
+        $stateKey = 'ok';
+        $message = '';
+
+        if (!$active) {
+            $stateKey = 'off';
+            $message = 'Die Identitätsquelle ist deaktiviert.';
+        } elseif (!$configured) {
+            $stateKey = 'off';
+            $message = 'Exchange ist nicht konfiguriert; für diese Identitätsquelle ist kein Transportweg eingerichtet.';
+        } elseif ($exchangeDown) {
+            $stateKey = 'error';
+            $message = 'Kein Exchange-Host ist erreichbar; die Benutzer dieser Quelle sind nicht verbunden.';
+        }
+
+        $facts = [
+            self::fact('Transportweg', 'Exchange (EWS)'),
+            self::fact('Exchange-Hosts', $hosts > 0 ? (int) ($totals['online'] ?? 0) . ' von ' . $hosts . ' online' : '–', $exchangeDown ? 'error' : ''),
+            self::fact('Proxy', 'nicht konfiguriert'),
+            self::fact('Prüfung', 'über die Exchange-Hosts'),
+        ];
+
+        return self::node('source-' . $id, 'source', (string) ($source['label'] ?? 'Quelle'), (string) ($source['domain'] ?? ''), $stateKey, [
+            'message' => $message,
+            'facts' => $facts,
+            'primary' => (bool) ($source['primary'] ?? false),
+            'muted' => $exchangeDown,
+            'muted_reason' => $exchangeDown ? 'Exchange nicht erreichbar' : '',
+            'transport' => self::TRANSPORT_EXCHANGE,
+            'link' => ['url' => '/admin/office/orvanta/hosts', 'label' => 'Exchange-Hosts verwalten'],
         ]);
     }
 
@@ -1166,6 +1254,7 @@ final class OrvantaFlowService
             'cloud_muted' => false,
             'link' => null,
             'primary' => false,
+            'transport' => '',
             'chart' => [],
             'members' => [],
         ];

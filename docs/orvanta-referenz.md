@@ -2273,13 +2273,23 @@ POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
   `cache`, `tier-<id>`. Knotenfelder: `key`, `kind`, `title`, `subtitle`,
   `state`, `state_label`, `alert`, `muted`, `muted_reason`, `muted_label`,
   `message`, `facts`, `cloud`, `cloud_title`, `cloud_empty`, `cloud_more`,
-  `cloud_muted`, `link`, `primary`, `chart`, `members`.
+  `cloud_muted`, `link`, `primary`, `transport`, `chart`, `members`.
 - Zustände und Beschriftungen: `ok` „In Ordnung“, `warn` „Eingeschränkt“,
   `error` „Störung“, `off` „Nicht aktiv“ (`STATE_LABELS`).
-- Spuren: `proxy` (Identitätsquellen in umgekehrter Reihenfolge + `proxy`) und
-  `exchange` (Hosts + `users`). Kanten: `source:<id>→proxy`,
-  `host:<id>→users`, `proxy→users`, `ai→users`, `cache→users` mit
-  `state` `ok`/`error`.
+- Transportweg je Identitätsquelle (`collectSources()`): `transport` =
+  `TRANSPORT_PROXY` („proxy“) mit Eintrag in `mail_proxy_servers`, sonst
+  `TRANSPORT_EXCHANGE` („exchange“). Fehlt das Feld (ältere Eingaben, Tests),
+  gilt „proxy“.
+- Spuren: `proxy` (Proxy-Quellen in umgekehrter Reihenfolge + `proxy`) und
+  `exchange` (Exchange-Quellen + Hosts + `users`). Kanten: `source:<id>→proxy`
+  (Proxy-Quelle), `source:<id>→host:<id>` (Exchange-Quelle zu **jedem** Host,
+  ohne Hosts `→users`), `host:<id>→users`, `proxy→users`, `ai→users`,
+  `cache→users` mit `state` `ok`/`error`.
+- Exchange-Quellen (`exchangeSourceNode()`) werden **nicht geprüft** – sie
+  hängen nicht hinter dem Proxy, `mail_proxy_source_state` bleibt für sie ohne
+  Bedeutung. Zustand: `off` bei deaktivierter Quelle oder ohne
+  Exchange-Konfiguration, `error` und gedämpft („Exchange nicht erreichbar“),
+  wenn **alle** Hosts `error` sind, sonst `ok`; keine Postfachwolke.
 - Grenzwerte: `CACHE_WARN_PERCENT = 75`, `CACHE_CRIT_PERCENT = 90`,
   `AI_PERIOD_DAYS = 30`, `AI_TOP_USERS = 10`, `CACHE_TOP_USERS = 10`.
 - `muted_label` wird **im Dienst** gesetzt (`'Werte ausgegraut (<muted_reason>)'`),

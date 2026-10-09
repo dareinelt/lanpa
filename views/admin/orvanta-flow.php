@@ -289,10 +289,11 @@ $edgeLabel = static function (array $edge) use ($nodes): string {
         $laneState = (string) ($lane['state'] ?? 'off');
         $laneNodes = (array) ($lane['nodes'] ?? []);
         $laneAnchor = $laneAnchors[$laneKey] ?? ('flow-lane-' . $laneKey);
-        $laneTarget = $laneKey === 'proxy' ? 'proxy' : 'users';
+        // Kanten der Spur: alle, die auf einen Knoten dieser Spur zeigen
+        // (Quelle → Proxy, Quelle → Exchange-Host, Host/Proxy/KI/Cache → Nutzer).
         $laneEdges = array_values(array_filter(
             $edges,
-            static fn (array $edge): bool => (string) ($edge['to'] ?? '') === $laneTarget
+            static fn (array $edge): bool => in_array((string) ($edge['to'] ?? ''), $laneNodes, true)
         )); ?>
         <section class="card flow-lane" id="<?= Html::e($laneAnchor) ?>" data-flow-lane="<?= Html::e($laneKey) ?>"
                  aria-labelledby="flow-lane-<?= Html::e($laneKey) ?>-title">

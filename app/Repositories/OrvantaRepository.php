@@ -246,6 +246,22 @@ final class OrvantaRepository extends Repository
     }
 
     /**
+     * Gesamtbelegung des Zwischenspeichers ueber alle Benutzer.
+     *
+     * @return array{items:int,bytes:int,users:int}
+     */
+    public function cacheTotals(): array
+    {
+        $row = $this->pdo->query('SELECT COUNT(*) AS items, COALESCE(SUM(size_bytes), 0) AS bytes, COUNT(DISTINCT user_uid) AS users FROM orvanta_cache_items')?->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        return [
+            'items' => (int) ($row['items'] ?? 0),
+            'bytes' => (int) ($row['bytes'] ?? 0),
+            'users' => (int) ($row['users'] ?? 0),
+        ];
+    }
+
+    /**
      * Belegung je Benutzer (Adminuebersicht).
      *
      * @return list<array{user_uid:string,items:int,bytes:int}>
@@ -300,6 +316,28 @@ final class OrvantaRepository extends Repository
         }
 
         return $rows;
+    }
+
+    /**
+     * Anfragen je Benutzer im Zeitraum, absteigend nach Anzahl, mit Kennung.
+     * Fuer Auswertungen, die den Benutzer benennen duerfen (Nachrichtenfluss-
+     * Dashboard mit freigegebener Namensanzeige); die pseudonyme Variante ist
+     * aiUsagePerUser().
+     *
+     * @return list<array{user_uid:string,requests:int,input_tokens:int,output_tokens:int}>
+     */
+    public function aiUsageTopUsers(string $from, string $to, int $limit = 10): array
+    {
+        $statement = $this->pdo->prepare('SELECT user_uid, COUNT(*) AS requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, COALESCE(SUM(output_tokens), 0) AS output_tokens
+            FROM orvanta_ai_usage WHERE created_at >= :from AND created_at < :to GROUP BY user_uid ORDER BY requests DESC, user_uid ASC LIMIT ' . max(1, $limit));
+        $statement->execute(['from' => $from, 'to' => $to]);
+
+        return array_map(static fn (array $row): array => [
+            'user_uid' => (string) $row['user_uid'],
+            'requests' => (int) $row['requests'],
+            'input_tokens' => (int) $row['input_tokens'],
+            'output_tokens' => (int) $row['output_tokens'],
+        ], $statement->fetchAll(PDO::FETCH_ASSOC) ?: []);
     }
 
     /**

@@ -495,6 +495,27 @@ final class Container
         );
     }
 
+    /**
+     * Nachrichtenfluss-Dashboard: Knoten, Kanten, Kennzahlen und Gesamtstatus
+     * der am Mail- und Kalenderfluss beteiligten Bausteine.
+     */
+    public static function orvantaFlow(): \App\Services\Orvanta\OrvantaFlowService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaFlowService::class,
+            static fn (): \App\Services\Orvanta\OrvantaFlowService => new \App\Services\Orvanta\OrvantaFlowService(
+                self::orvantaPresence(),
+                self::mailProxy(),
+                self::mailProxyRepository(),
+                self::orvantaExchangePool(),
+                self::storage(),
+                self::officeAi(),
+                self::orvantaRepository(),
+                self::orvantaConfig()
+            )
+        );
+    }
+
     public static function orvantaMailboxResolver(): \App\Services\Orvanta\OrvantaMailboxResolver
     {
         return self::make(

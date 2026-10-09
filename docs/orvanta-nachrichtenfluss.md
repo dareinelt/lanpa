@@ -149,15 +149,16 @@ pro Worker-Lauf.
 | --- | --- |
 | Name, Adresse, Modell, Audio/Bilder | `OfficeAiService` (`enabled()`, `name()`, `url()`, `model()`, `audioEnabled()`, `imagesEnabled()`) |
 | Zustand (aktiv/konfiguriert/aus) | `OfficeAiService::isActive()`, `isConfigured()`, `hasApiKey()` |
-| **Top-10-Nutzer (Wolke)** | `OrvantaRepository::aiUsagePerUser()` (30 Tage), Größe nach Anfragen |
+| **Top-10-Nutzer (Wolke)** | `OrvantaRepository::aiUsageTopUsers()` (30 Tage), Größe nach Anfragen |
 | **X weitere Nutzer** | `OrvantaRepository::aiTokenTotals()['users']` minus 10 |
 | **Gesamtzahl Anfragen 30 Tage** | `aiTokenTotals()['requests']` |
 | Token (Ein-/Ausgabe) | `aiTokenTotals()` |
 
 Die Namen der Nutzer werden **nur** angezeigt, wenn die Einstellung
 `flow_ai_user_names` gesetzt ist; sonst bleiben die Werte pseudonym
-(„Benutzer 1 …“), wie in der bestehenden KI-Statistik
-(`OrvantaRepository::aiUsagePerUser()`).
+(„Benutzer 1 …“, Rangfolge nach Anfragen). Die pseudonyme Variante
+`OrvantaRepository::aiUsagePerUser()` der KI-Statistik ordnet dagegen nach
+erster Nutzung im Zeitraum.
 
 Der LLMInt-Stack unter `/ki/` (siehe [`llmint.md`](llmint.md)) ist ein eigenes
 Compose-Projekt ohne Nutzungszähler in dieser Datenbank und daher **nicht**

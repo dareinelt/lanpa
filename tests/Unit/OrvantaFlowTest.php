@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Repositories\MailProxyRepository;
 use App\Repositories\OrvantaFlowRepository;
+use App\Repositories\OrvantaRepository;
 use App\Services\MailProxy\MailProxyRoute;
 use App\Services\Orvanta\OrvantaFlowCharts;
 use App\Services\Orvanta\OrvantaFlowCloud;
+use App\Services\Orvanta\OrvantaFlowService;
 use App\Services\Orvanta\OrvantaPresenceService;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
@@ -670,4 +672,591 @@ Runner::test('Nachrichtenfluss: Wolkenwerte stehen zusätzlich als Tabelle berei
     Assert::true(str_contains($html, '<th scope="row"><a href="/admin/office/orvanta/ki">Benutzer 1</a></th><td>42</td>'));
     Assert::true(str_contains($html, '<th scope="row">Benutzer 2</th><td>7</td>'), 'ohne URL reiner Text');
     Assert::false(str_contains($html, 'style="'), 'keine Inline-Stile (CSP)');
+});
+
+// ------------------------------------------------------- Nachrichtenflussdienst
+
+/**
+ * Gesunde Ausgangslage des Dashboards; einzelne Bereiche lassen sich gezielt
+ * ueberschreiben, damit jeder Test nur seine Abweichung beschreibt.
+ *
+ * @param array<string,mixed> $overrides
+ *
+ * @return array<string,mixed>
+ */
+function flowInput(array $overrides = []): array
+{
+    $input = [
+        'now' => 1_700_000_000,
+        'proxy' => [
+            'available' => true,
+            'configured' => true,
+            'ok' => true,
+            'message' => 'Der Proxy-Dienst antwortet.',
+            'details' => ['status' => 'ok', 'version' => '1.4.0', 'uptime' => 7200, 'connections' => 3, 'max_connections' => 32, 'pooled' => 1, 'requests' => 1200, 'errors' => 0],
+            'counts' => ['servers' => 1, 'active_servers' => 1, 'mailboxes' => 12, 'active_mailboxes' => 10, 'mappings' => 8],
+            'state' => ['generation' => 4, 'last_success_at' => '2023-11-14 21:00:00', 'last_error_at' => '', 'last_error' => ''],
+            'cache_ttl' => 300,
+            'servers' => [['smtp_host' => 'smtp.hh.example', 'smtp_port' => 587, 'imap_host' => 'imap.hh.example', 'imap_port' => 993]],
+        ],
+        'sources' => [[
+            'id' => 0,
+            'label' => 'Zentrale',
+            'domain' => 'hh.example',
+            'active' => true,
+            'primary' => true,
+            'counts' => ['mailboxes' => 12, 'active_mailboxes' => 10, 'mapped_mailboxes' => 8, 'active_mapped_mailboxes' => 8, 'free_mailboxes' => 2, 'mappings' => 8],
+            'state' => ['last_success_at' => '2023-11-14 21:00:00', 'last_error_at' => '', 'last_error' => '', 'failures' => 0, 'checked_at' => '2023-11-14 21:00:00'],
+        ]],
+        'exchange' => [
+            'available' => true,
+            'configured' => true,
+            'hosts' => [[
+                'id' => 1, 'host' => 'ex01.hh.example', 'ews_url' => 'https://ex01.hh.example/EWS/Exchange.asmx',
+                'is_primary' => true, 'active' => true, 'status' => 'online', 'status_label' => 'Online', 'sessions' => 2,
+                'latency_label' => '12 ms', 'last_latency_label' => '11 ms', 'last_session_label' => 'vor 1 min',
+                'last_check_label' => 'vor 1 min', 'url' => '/admin/office/orvanta/hosts', 'last_error' => '',
+            ]],
+            'sessions' => [
+                ['user' => 'anna', 'host' => 'ex01.hh.example', 'client_ip' => '10.0.0.5', 'client_host' => 'nb-anna', 'failovers' => 0, 'requests' => 40, 'started_label' => 'vor 2 min', 'last_seen_label' => 'vor 1 min'],
+                ['user' => 'bob', 'host' => 'ex01.hh.example', 'client_ip' => '10.0.0.6', 'client_host' => 'nb-anna', 'failovers' => 1, 'requests' => 12, 'started_label' => 'vor 5 min', 'last_seen_label' => 'vor 1 min'],
+            ],
+            'totals' => ['hosts' => 1, 'active' => 1, 'online' => 1, 'sessions' => 2],
+        ],
+        'presence' => ['current' => 4, 'exchange' => 3, 'proxy' => 1, 'min' => 1, 'max' => 9, 'avg' => 3.5, 'samples' => 288, 'window' => 300],
+        'history' => ['periods' => [14, 30, 90, 180, 365], 'series' => [], 'max' => 9],
+        'storage' => ['targets' => [[
+            'id' => 1, 'label' => 'Tier A', 'kind' => 'smb', 'state' => 'online', 'message' => '',
+            'unbounded' => false, 'total_bytes' => 1000, 'free_bytes' => 400,
+            'fill' => ['percent' => 60.0, 'state' => 'ok'], 'in_sync' => true, 'lag_seconds' => 0,
+            'read_bps' => 0, 'write_bps' => 0,
+            'members' => [
+                ['id' => 1, 'label' => 'Tier A', 'state' => 'online', 'role' => 'root'],
+                ['id' => 2, 'label' => 'Tier A Teil 2', 'state' => 'online', 'role' => 'extension'],
+            ],
+        ]]],
+        'cache' => [
+            'used' => 50 * 1024 * 1024,
+            'quota' => 100 * 1024 * 1024,
+            'items' => 20,
+            'users' => 3,
+            'percent' => 50,
+            'top' => [['user_uid' => 'anna', 'items' => 9, 'bytes' => 30 * 1024 * 1024]],
+        ],
+        'ai' => [
+            'enabled' => true, 'configured' => true, 'active' => true, 'has_key' => true,
+            'name' => 'Lokale KI', 'url' => 'https://ki.hh.example/v1', 'model' => 'llama-3',
+            'audio' => false, 'images' => true, 'names' => false, 'period_days' => 30,
+            'from' => '2023-10-16', 'to' => '2023-11-14',
+            'top' => [
+                ['label' => 'Benutzer 1', 'value' => 42, 'title' => 'Benutzer 1: 42 Anfragen'],
+                ['label' => 'Benutzer 2', 'value' => 7, 'title' => 'Benutzer 2: 7 Anfragen'],
+            ],
+            'remaining' => 5, 'requests' => 49, 'users' => 7, 'input_tokens' => 1000, 'output_tokens' => 2000,
+        ],
+    ];
+
+    foreach ($overrides as $key => $value) {
+        $input[$key] = $value;
+    }
+
+    return $input;
+}
+
+/**
+ * Kennzahl nach Schluessel.
+ *
+ * @param array<string,mixed> $flow
+ *
+ * @return array<string,mixed>
+ */
+function flowKpi(array $flow, string $key): array
+{
+    foreach ($flow['kpis'] as $kpi) {
+        if ($kpi['key'] === $key) {
+            return $kpi;
+        }
+    }
+
+    return [];
+}
+
+/**
+ * Knoten nach Schluessel.
+ *
+ * @param array<string,mixed> $flow
+ *
+ * @return array<string,mixed>
+ */
+function flowNode(array $flow, string $key): array
+{
+    return $flow['nodes'][$key] ?? [];
+}
+
+Runner::test('Nachrichtenfluss: gesunde Ausgangslage ergibt Gesamtstatus "In Ordnung"', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+
+    Assert::same('ok', $flow['overall']['state']);
+    Assert::same('In Ordnung', $flow['overall']['label']);
+    Assert::same(0, $flow['overall']['errors']);
+    Assert::same(0, $flow['overall']['warnings']);
+    Assert::same([], $flow['incidents']);
+    Assert::same(date('d.m.Y H:i:s', 1_700_000_000), $flow['generated_at']);
+    Assert::same(date('Y-m-d H:i:s', 1_700_000_000), $flow['generated_iso']);
+});
+
+Runner::test('Nachrichtenfluss: alle Bausteine erscheinen als Knoten mit Zustandsbezeichnung', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+
+    Assert::same(
+        ['proxy', 'source-0', 'host-1', 'users', 'ai', 'cache', 'tier-1'],
+        array_keys($flow['nodes']),
+        'Proxy, Quelle, Host, Nutzer, KI, Zwischenspeicher und Tier sind vorhanden'
+    );
+    foreach ($flow['nodes'] as $key => $node) {
+        Assert::true(in_array($node['state'], ['ok', 'warn', 'error', 'off'], true), $key . ' hat einen gültigen Zustand');
+        Assert::true(isset(OrvantaFlowService::STATE_LABELS[$node['state']]), $key . ' hat eine Zustandsbezeichnung');
+        Assert::same($node['state'] === 'error', $node['alert'], $key . ' zeigt das Ausrufezeichen nur bei Störung');
+    }
+});
+
+Runner::test('Nachrichtenfluss: Proxy-Ausfall stört alle Quellen und dämpft deren Postfächer', static function (): void {
+    $input = flowInput();
+    $input['proxy']['ok'] = false;
+    $input['proxy']['message'] = 'Der Proxy-Dienst ist nicht erreichbar.';
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $proxy = flowNode($flow, 'proxy');
+    Assert::same('error', $proxy['state']);
+    Assert::true(str_contains($proxy['message'], 'Transportweg ist unterbrochen'), 'Der Proxy erklärt die Folge');
+
+    $source = flowNode($flow, 'source-0');
+    Assert::same('error', $source['state']);
+    Assert::true($source['muted'], 'Die Identitätsquelle wird gedämpft');
+    Assert::true($source['cloud_muted'], 'Die Postfachwolke wird gedämpft');
+    Assert::true($source['alert'], 'Die Quelle zeigt ein Ausrufezeichen');
+
+    Assert::same('error', $flow['overall']['state']);
+    Assert::same(2, $flow['overall']['errors']);
+    Assert::same(2, count($flow['incidents']));
+});
+
+Runner::test('Nachrichtenfluss: Ausfall einer Identitätsquelle dämpft nur deren Postfächer', static function (): void {
+    $input = flowInput();
+    $input['sources'][] = [
+        'id' => 4,
+        'label' => 'Niederlassung',
+        'domain' => 'nb.example',
+        'active' => true,
+        'primary' => false,
+        'counts' => ['mailboxes' => 3, 'active_mailboxes' => 2, 'mapped_mailboxes' => 1, 'active_mapped_mailboxes' => 1, 'free_mailboxes' => 1, 'mappings' => 1],
+        'state' => ['last_success_at' => '2023-11-14 18:00:00', 'last_error_at' => '2023-11-14 21:00:00', 'last_error' => 'Anmeldung abgelehnt.', 'failures' => 3, 'checked_at' => '2023-11-14 21:00:00'],
+    ];
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $broken = flowNode($flow, 'source-4');
+    Assert::same('error', $broken['state']);
+    Assert::same('Anmeldung abgelehnt.', $broken['message']);
+    Assert::true($broken['cloud_muted'], 'Nur die Postfächer der gestörten Quelle werden gedämpft');
+    Assert::false($broken['muted'], 'Die Quelle selbst bleibt sichtbar');
+
+    $healthy = flowNode($flow, 'source-0');
+    Assert::same('ok', $healthy['state']);
+    Assert::false($healthy['cloud_muted'], 'Die gesunde Quelle bleibt unverändert');
+    Assert::false($healthy['muted']);
+});
+
+Runner::test('Nachrichtenfluss: noch nie geprüfte Quelle ist eingeschränkt, deaktivierte Quelle aus', static function (): void {
+    $input = flowInput();
+    $input['sources'][0]['state'] = ['last_success_at' => '', 'last_error_at' => '', 'last_error' => '', 'failures' => 0, 'checked_at' => ''];
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('warn', flowNode($flow, 'source-0')['state']);
+    Assert::same('warn', $flow['overall']['state']);
+
+    $input['sources'][0]['active'] = false;
+    $input['sources'][0]['state'] = ['last_success_at' => '2023-11-14 21:00:00', 'last_error_at' => '', 'last_error' => '', 'failures' => 0, 'checked_at' => '2023-11-14 21:00:00'];
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('off', flowNode($flow, 'source-0')['state']);
+    Assert::false(flowNode($flow, 'source-0')['alert'], 'Eine deaktivierte Quelle ist keine Störung');
+});
+
+Runner::test('Nachrichtenfluss: ohne Proxy-Konfiguration bleibt der Proxy aus statt gestört', static function (): void {
+    $input = flowInput();
+    $input['proxy'] = [
+        'available' => false, 'configured' => false, 'ok' => false,
+        'message' => 'Nicht geprüft (keine Proxy-Konfiguration).',
+        'details' => [], 'counts' => [], 'state' => [], 'cache_ttl' => 0, 'servers' => [],
+    ];
+    $flow = OrvantaFlowService::evaluate($input);
+
+    Assert::same('off', flowNode($flow, 'proxy')['state']);
+    Assert::same('Kein Mailserver konfiguriert', flowNode($flow, 'proxy')['subtitle']);
+    Assert::same('ok', flowNode($flow, 'source-0')['state'], 'Ohne Proxy bleiben die Quellen unberührt');
+    Assert::same('off', flowKpi($flow, 'proxy')['state']);
+});
+
+Runner::test('Nachrichtenfluss: Proxy mit inaktiven Mailservern gilt als eingeschränkt', static function (): void {
+    $input = flowInput();
+    $input['proxy']['counts']['servers'] = 3;
+    $input['proxy']['counts']['active_servers'] = 2;
+    $flow = OrvantaFlowService::evaluate($input);
+
+    Assert::same('warn', flowNode($flow, 'proxy')['state']);
+    Assert::same('warn', flowKpi($flow, 'proxy')['state']);
+    Assert::same('warn', $flow['overall']['state']);
+});
+
+Runner::test('Nachrichtenfluss: Clients werden je Exchange-Host gesammelt und nach Anzahl sortiert', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+
+    $host = flowNode($flow, 'host-1');
+    Assert::same('ok', $host['state']);
+    Assert::same('Verbundene Clients', $host['cloud_title']);
+    Assert::same(
+        [
+            ['label' => 'nb-anna', 'value' => 2, 'title' => 'nb-anna: 2 Sitzung(en)'],
+        ],
+        $host['cloud'],
+        'Gleiche Clientnamen werden zusammengefasst'
+    );
+    Assert::false($host['cloud_muted']);
+    Assert::true(in_array(['label' => 'Umleitungen', 'value' => '1', 'state' => ''], $host['facts'], true), 'Umleitungen werden summiert');
+});
+
+Runner::test('Nachrichtenfluss: gestörter Exchange-Host zeigt Ausrufezeichen und dämpft seine Clients', static function (): void {
+    $input = flowInput();
+    $input['exchange']['hosts'][0]['status'] = 'offline';
+    $input['exchange']['hosts'][0]['status_label'] = 'Gestört';
+    $input['exchange']['hosts'][0]['last_error'] = 'Verbindung abgelehnt.';
+    $input['exchange']['totals']['online'] = 0;
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $host = flowNode($flow, 'host-1');
+    Assert::same('error', $host['state']);
+    Assert::true($host['alert']);
+    Assert::true($host['cloud_muted']);
+    Assert::same('Verbindung abgelehnt.', $host['message']);
+    Assert::same('error', flowKpi($flow, 'exchange')['state']);
+    Assert::same('error', $flow['overall']['state']);
+});
+
+Runner::test('Nachrichtenfluss: Hosts in Wartung sind eingeschränkt, ohne Clients zu dämpfen', static function (): void {
+    $input = flowInput();
+    $input['exchange']['hosts'][0]['status'] = 'maintenance';
+    $input['exchange']['hosts'][0]['status_label'] = 'Wartung';
+    $flow = OrvantaFlowService::evaluate($input);
+
+    Assert::same('warn', flowNode($flow, 'host-1')['state']);
+    Assert::false(flowNode($flow, 'host-1')['cloud_muted']);
+    Assert::same('warn', $flow['overall']['state']);
+    Assert::same('warn', flowKpi($flow, 'exchange')['state']);
+});
+
+Runner::test('Nachrichtenfluss: ohne Exchange-Konfiguration sind die Hosts gedämpft und aus', static function (): void {
+    $input = flowInput();
+    $input['exchange']['configured'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $host = flowNode($flow, 'host-1');
+    Assert::same('off', $host['state']);
+    Assert::true($host['muted']);
+    Assert::same('Proxy-Betrieb', $host['muted_reason']);
+    Assert::false($host['alert']);
+});
+
+Runner::test('Nachrichtenfluss: Nutzerknoten zeigt aktuell, min und max der letzten 24 Stunden', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+
+    $users = flowNode($flow, 'users');
+    Assert::same('ok', $users['state']);
+    Assert::true(in_array(['label' => 'Aktuell', 'value' => '4', 'state' => ''], $users['facts'], true));
+    Assert::true(in_array(['label' => 'Minimum 24 h', 'value' => '1', 'state' => ''], $users['facts'], true));
+    Assert::true(in_array(['label' => 'Maximum 24 h', 'value' => '9', 'state' => ''], $users['facts'], true));
+    Assert::true(in_array(['label' => 'Mittelwert 24 h', 'value' => '3,5', 'state' => ''], $users['facts'], true));
+    Assert::same(['periods' => [14, 30, 90, 180, 365], 'series' => [], 'max' => 9], $users['chart'], 'Der Verlauf hängt am Nutzerknoten');
+
+    $kpi = flowKpi($flow, 'users');
+    Assert::same('4', $kpi['value']);
+    Assert::same('24 h: min 1 / max 9', $kpi['hint']);
+    Assert::same('flow-users', $kpi['anchor']);
+});
+
+Runner::test('Nachrichtenfluss: ohne Messwerte ist der Nutzerknoten eingeschränkt statt gestört', static function (): void {
+    $input = flowInput();
+    $input['presence'] = ['current' => 0, 'exchange' => 0, 'proxy' => 0, 'min' => 0, 'max' => 0, 'avg' => 0.0, 'samples' => 0, 'window' => 300];
+    $flow = OrvantaFlowService::evaluate($input);
+
+    Assert::same('warn', flowNode($flow, 'users')['state']);
+    Assert::false(flowNode($flow, 'users')['alert']);
+});
+
+Runner::test('Nachrichtenfluss: Proxy-Ausfall dämpft den Nutzerknoten nur ohne Exchange-Nutzer', static function (): void {
+    $input = flowInput();
+    $input['proxy']['ok'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::false(flowNode($flow, 'users')['muted'], 'Exchange-Nutzer bleiben sichtbar');
+    Assert::same('Nur Proxy-Nutzer betroffen', flowNode($flow, 'users')['muted_reason']);
+
+    $input['presence']['exchange'] = 0;
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::true(flowNode($flow, 'users')['muted']);
+});
+
+Runner::test('Nachrichtenfluss: Zuordnungsquote wird aus aktiven und verbundenen Postfächern berechnet', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+    $kpi = flowKpi($flow, 'mapping');
+    Assert::same('80 %', $kpi['value']);
+    Assert::same('8 von 10 aktiven Postfächern zugeordnet', $kpi['hint']);
+    Assert::same('warn', $kpi['state']);
+
+    $input = flowInput();
+    $input['sources'][0]['counts']['active_mapped_mailboxes'] = 10;
+    Assert::same('ok', flowKpi(OrvantaFlowService::evaluate($input), 'mapping')['state']);
+
+    $input = flowInput();
+    $input['sources'][0]['counts']['active_mailboxes'] = 0;
+    $input['sources'][0]['counts']['active_mapped_mailboxes'] = 0;
+    Assert::same('off', flowKpi(OrvantaFlowService::evaluate($input), 'mapping')['state']);
+});
+
+Runner::test('Nachrichtenfluss: Kennzahlen fassen Quellen, Postfächer und Sitzungen zusammen', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+
+    Assert::same('1 von 1', flowKpi($flow, 'sources')['value']);
+    Assert::same('12 Postfächer, 10 aktiv', flowKpi($flow, 'sources')['hint']);
+    Assert::same('1 von 1', flowKpi($flow, 'exchange')['value']);
+    Assert::same('2 verbundene Sitzungen', flowKpi($flow, 'exchange')['hint']);
+    Assert::same('flow-proxy', flowKpi($flow, 'proxy')['anchor']);
+    Assert::same('flow-exchange', flowKpi($flow, 'exchange')['anchor']);
+});
+
+Runner::test('Nachrichtenfluss: Zwischenspeicher wechselt bei 75 und 90 Prozent auf gelb und rot', static function (): void {
+    $quota = 100 * 1024 * 1024;
+    foreach ([74 => 'ok', 75 => 'warn', 89 => 'warn', 90 => 'error', 100 => 'error'] as $percent => $expected) {
+        $input = flowInput();
+        $input['cache']['quota'] = $quota;
+        $input['cache']['used'] = (int) round($quota * $percent / 100);
+        $input['cache']['percent'] = $percent;
+        $flow = OrvantaFlowService::evaluate($input);
+
+        Assert::same($expected, flowNode($flow, 'cache')['state'], $percent . ' % ergibt ' . $expected);
+        Assert::same($expected, flowKpi($flow, 'cache')['state'], $percent . ' % in der Kennzahl');
+    }
+
+    $input = flowInput();
+    $input['cache']['percent'] = 90;
+    $input['cache']['used'] = (int) round($quota * 0.9);
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('error', $flow['overall']['state']);
+    Assert::true(str_contains(flowNode($flow, 'cache')['message'], 'fast voll'), 'Der Zwischenspeicher meldet den Grund');
+});
+
+Runner::test('Nachrichtenfluss: Zwischenspeicher ohne Quota ist aus und nennt die Belegung', static function (): void {
+    $input = flowInput();
+    $input['cache']['quota'] = 0;
+    $input['cache']['percent'] = 0;
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $cache = flowNode($flow, 'cache');
+    Assert::same('off', $cache['state']);
+    Assert::false($cache['alert']);
+    Assert::same('Ohne feste Grenze', $cache['subtitle']);
+    Assert::same('–', flowKpi($flow, 'cache')['value']);
+    Assert::same('ok', $flow['overall']['state'], 'Ohne Quota entsteht keine Störung');
+});
+
+Runner::test('Nachrichtenfluss: Tier zeigt Belegung in GB und Zustand je Tier', static function (): void {
+    $input = flowInput();
+    $input['storage']['targets'][0]['total_bytes'] = 4 * 1024 ** 3;
+    $input['storage']['targets'][0]['free_bytes'] = 1 * 1024 ** 3;
+    $input['storage']['targets'][0]['fill'] = ['percent' => 75.0, 'state' => 'degraded'];
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $tier = flowNode($flow, 'tier-1');
+    Assert::same('warn', $tier['state'], 'Ein füllender Tier ist eingeschränkt');
+    Assert::same('SMB', $tier['subtitle']);
+    Assert::true(in_array(['label' => 'Belegt', 'value' => '3,0 GB von 4,0 GB', 'state' => 'warn'], $tier['facts'], true), 'Belegung wird in GB genannt');
+    Assert::same(
+        [
+            ['label' => 'Tier A', 'value' => 'In Ordnung', 'state' => 'ok', 'title' => 'Tier A: In Ordnung'],
+            ['label' => 'Tier A Teil 2 (Erweiterung)', 'value' => 'In Ordnung', 'state' => 'ok', 'title' => 'Tier A Teil 2: In Ordnung'],
+        ],
+        $tier['members']
+    );
+
+    Assert::same('3,0 GB von 4,0 GB belegt', flowKpi($flow, 'storage')['hint']);
+    Assert::same('1 von 1', flowKpi($flow, 'storage')['value']);
+});
+
+Runner::test('Nachrichtenfluss: gestörter Tier ist rot, deaktivierter Tier ausgegraut', static function (): void {
+    $input = flowInput();
+    $input['storage']['targets'][0]['state'] = 'offline';
+    $input['storage']['targets'][0]['message'] = 'Der Freigabepfad ist nicht erreichbar.';
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('error', flowNode($flow, 'tier-1')['state']);
+    Assert::true(flowNode($flow, 'tier-1')['muted']);
+    Assert::same('Der Freigabepfad ist nicht erreichbar.', flowNode($flow, 'tier-1')['message']);
+
+    $input = flowInput();
+    $input['storage']['targets'][0]['state'] = 'disabled';
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('off', flowNode($flow, 'tier-1')['state']);
+    Assert::true(flowNode($flow, 'tier-1')['muted']);
+    Assert::false(flowNode($flow, 'tier-1')['alert']);
+});
+
+Runner::test('Nachrichtenfluss: Tier ohne feste Kapazität nennt keine Belegung', static function (): void {
+    $input = flowInput();
+    $input['storage']['targets'][0]['unbounded'] = true;
+    $input['storage']['targets'][0]['kind'] = 's3';
+    $input['storage']['targets'][0]['total_bytes'] = 0;
+    $input['storage']['targets'][0]['free_bytes'] = 0;
+    $input['storage']['targets'][0]['fill'] = ['percent' => null, 'state' => 'disabled'];
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $tier = flowNode($flow, 'tier-1');
+    Assert::same('S3', $tier['subtitle']);
+    Assert::true(in_array(['label' => 'Belegt', 'value' => 'ohne feste Kapazität', 'state' => ''], $tier['facts'], true));
+    Assert::same('Keine Kapazität hinterlegt', flowKpi($flow, 'storage')['hint']);
+});
+
+Runner::test('Nachrichtenfluss: KI-Endpunkt zeigt Wolke, Restzahl und Gesamtanfragen', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+
+    $ai = flowNode($flow, 'ai');
+    Assert::same('ok', $ai['state']);
+    Assert::same('Lokale KI', $ai['title']);
+    Assert::same(2, count($ai['cloud']));
+    Assert::same('Top-10 Nutzer (30 Tage)', $ai['cloud_title']);
+    Assert::same('5 weitere Nutzer in den letzten 30 Tagen', $ai['cloud_more']);
+    Assert::true(in_array(['label' => 'Anfragen 30 Tage', 'value' => '49', 'state' => ''], $ai['facts'], true));
+
+    $kpi = flowKpi($flow, 'ai');
+    Assert::same('49', $kpi['value']);
+    Assert::same('7 Nutzer, Top-10 in der Wolke', $kpi['hint']);
+});
+
+Runner::test('Nachrichtenfluss: freigegebene Namensanzeige zeigt Kennungen, sonst Pseudonyme', static function (): void {
+    $input = flowInput();
+    $input['ai']['names'] = true;
+    $input['ai']['top'] = [['label' => 'anna@hh.example', 'value' => 42, 'title' => 'anna@hh.example: 42 Anfragen']];
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('anna@hh.example', flowNode($flow, 'ai')['cloud'][0]['label']);
+
+    $flow = OrvantaFlowService::evaluate(flowInput());
+    Assert::same('Benutzer 1', flowNode($flow, 'ai')['cloud'][0]['label']);
+});
+
+Runner::test('Nachrichtenfluss: deaktivierter oder unkonfigurierter KI-Endpunkt ist aus bzw. eingeschränkt', static function (): void {
+    $input = flowInput();
+    $input['ai']['enabled'] = false;
+    $input['ai']['active'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('off', flowNode($flow, 'ai')['state']);
+    Assert::false(flowNode($flow, 'ai')['alert']);
+    Assert::same('off', flowKpi($flow, 'ai')['state']);
+
+    $input = flowInput();
+    $input['ai']['active'] = false;
+    $input['ai']['configured'] = false;
+    $input['ai']['url'] = '';
+    $input['ai']['model'] = '';
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('warn', flowNode($flow, 'ai')['state']);
+    Assert::true(str_contains(flowNode($flow, 'ai')['message'], 'nicht vollständig konfiguriert'));
+
+    $input = flowInput();
+    $input['ai']['active'] = false;
+    $input['ai']['has_key'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('warn', flowNode($flow, 'ai')['state']);
+    Assert::true(str_contains(flowNode($flow, 'ai')['message'], 'Zugangsschlüssel'));
+});
+
+Runner::test('Nachrichtenfluss: Spuren tragen den schlechtesten Zustand ihrer Knoten', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+    $lanes = [];
+    foreach ($flow['lanes'] as $lane) {
+        $lanes[$lane['key']] = $lane;
+    }
+
+    Assert::same('Proxy-Pfad (IMAP/SMTP)', $lanes['proxy']['title']);
+    Assert::same(['source-0', 'proxy'], $lanes['proxy']['nodes']);
+    Assert::same(['host-1', 'users'], $lanes['exchange']['nodes']);
+    Assert::same('ok', $lanes['proxy']['state']);
+    Assert::same('ok', $lanes['exchange']['state']);
+
+    $input = flowInput();
+    $input['exchange']['hosts'][0]['status'] = 'offline';
+    $flow = OrvantaFlowService::evaluate($input);
+    foreach ($flow['lanes'] as $lane) {
+        if ($lane['key'] === 'exchange') {
+            Assert::same('error', $lane['state'], 'Die Exchange-Spur übernimmt die Störung');
+        }
+    }
+});
+
+Runner::test('Nachrichtenfluss: Kanten verbinden Quellen, Hosts und Endpunkte', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+
+    Assert::true(in_array(['from' => 'source-0', 'to' => 'proxy', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Quelle → Proxy');
+    Assert::true(in_array(['from' => 'host-1', 'to' => 'users', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Host → Nutzer');
+    Assert::true(in_array(['from' => 'proxy', 'to' => 'users', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Proxy → Nutzer');
+    Assert::true(in_array(['from' => 'ai', 'to' => 'users', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'KI → Nutzer');
+    Assert::true(in_array(['from' => 'cache', 'to' => 'users', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Zwischenspeicher → Nutzer');
+
+    $input = flowInput();
+    $input['proxy']['ok'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::true(in_array(['from' => 'source-0', 'to' => 'proxy', 'state' => 'error', 'label' => ''], $flow['edges'], true), 'Gestörte Quelle färbt die Kante rot');
+    Assert::true(in_array(['from' => 'proxy', 'to' => 'users', 'state' => 'ok', 'label' => ''], $flow['edges'], true), 'Der Nutzerknoten bleibt über Exchange erreichbar');
+});
+
+Runner::test('Nachrichtenfluss: Störungen werden mit Titel, Meldung und Verweis gesammelt', static function (): void {
+    $input = flowInput();
+    $input['proxy']['ok'] = false;
+    $input['storage']['targets'][0]['state'] = 'offline';
+    $flow = OrvantaFlowService::evaluate($input);
+
+    Assert::same(3, count($flow['incidents']));
+    Assert::same('proxy', $flow['incidents'][0]['key']);
+    Assert::same('IMAP-/SMTP-Proxy', $flow['incidents'][0]['title']);
+    Assert::same('/admin/office/mail-proxy', $flow['incidents'][0]['url']);
+    Assert::same('tier-1', $flow['incidents'][2]['key']);
+    Assert::true(str_contains($flow['overall']['message'], 'Offene Vorfälle: 3'), 'Der Gesamtstatus nennt die Anzahl');
+});
+
+Runner::test('Nachrichtenfluss: fehlende Bereiche verhindern die Auswertung nicht', static function (): void {
+    $flow = OrvantaFlowService::evaluate(['now' => 1_700_000_000]);
+
+    Assert::same('off', flowNode($flow, 'proxy')['state']);
+    Assert::same('warn', flowNode($flow, 'users')['state']);
+    Assert::same('off', flowNode($flow, 'ai')['state']);
+    Assert::same('off', flowNode($flow, 'cache')['state']);
+    Assert::same([], $flow['incidents']);
+    Assert::same('warn', $flow['overall']['state'], 'Ohne Messwerte bleibt es bei einer Einschränkung');
+    Assert::same(8, count($flow['kpis']), 'Alle Kennzahlen sind auch ohne Daten vorhanden');
+});
+
+Runner::test('Nachrichtenfluss: Zwischenspeicher-Gesamtbelegung wird über alle Nutzer summiert', static function (): void {
+    $pdo = flowPdo();
+    $pdo->exec("CREATE TABLE orvanta_cache_items (id INTEGER PRIMARY KEY AUTOINCREMENT, user_uid TEXT NOT NULL, kind TEXT NOT NULL, item_hash TEXT NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL, content_type TEXT NOT NULL DEFAULT 'application/octet-stream', size_bytes INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+    $pdo->exec("INSERT INTO orvanta_cache_items (user_uid, kind, item_hash, name, path, size_bytes) VALUES ('anna', 'attachment', 'a', 'A', '/a', 500), ('anna', 'attachment', 'b', 'B', '/b', 300), ('bob', 'attachment', 'c', 'C', '/c', 200)");
+
+    $totals = (new OrvantaRepository($pdo))->cacheTotals();
+    Assert::same(3, $totals['items']);
+    Assert::same(1000, $totals['bytes']);
+    Assert::same(2, $totals['users']);
+
+    $perUser = (new OrvantaRepository($pdo))->cacheUsagePerUser(10);
+    Assert::same('anna', $perUser[0]['user_uid']);
+    Assert::same(800, $perUser[0]['bytes']);
+});
+
+Runner::test('Nachrichtenfluss: Gesamtbelegung ohne Einträge ist null', static function (): void {
+    $pdo = flowPdo();
+    $pdo->exec("CREATE TABLE orvanta_cache_items (id INTEGER PRIMARY KEY AUTOINCREMENT, user_uid TEXT NOT NULL, kind TEXT NOT NULL, item_hash TEXT NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL, content_type TEXT NOT NULL DEFAULT 'application/octet-stream', size_bytes INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+
+    $totals = (new OrvantaRepository($pdo))->cacheTotals();
+    Assert::same(['items' => 0, 'bytes' => 0, 'users' => 0], $totals);
 });

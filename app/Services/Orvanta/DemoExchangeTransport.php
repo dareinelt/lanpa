@@ -205,7 +205,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     }
 
     /**
-     * @return list<array{id:string,subject:string,from:array{0:string,1:string},received:int,read:bool,att:bool,preview:string,importance?:string}>
+     * @return list<array{id:string,subject:string,from:array{0:string,1:string},received:int,read:bool,att:bool,preview:string,importance?:string,replied?:bool,forwarded?:bool}>
      */
     private function sampleMessages(): array
     {
@@ -214,10 +214,10 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
         return [
             ['id' => 'demo-msg-1', 'subject' => 'Protokoll Dienstbesprechung KW ' . date('W'), 'from' => ['Sabine Krüger', 'sabine.krueger@example.org'], 'received' => $today + 3600 * 2, 'read' => false, 'att' => true, 'preview' => 'Hallo zusammen, anbei das Protokoll der heutigen Dienstbesprechung mit den vereinbarten Maßnahmen …', 'importance' => 'High'],
             ['id' => 'demo-msg-2', 'subject' => 'Wartungsfenster Rechenzentrum am Samstag', 'from' => ['IT-Service', 'it-service@example.org'], 'received' => $today + 1800, 'read' => false, 'att' => false, 'preview' => 'Am kommenden Samstag von 06:00 bis 10:00 Uhr werden die zentralen Speichersysteme gewartet.'],
-            ['id' => 'demo-msg-3', 'subject' => 'Urlaubsantrag genehmigt', 'from' => ['Personalabteilung', 'personal@example.org'], 'received' => $today - 86400 + 7200, 'read' => true, 'att' => true, 'preview' => 'Ihr Urlaubsantrag für den Zeitraum 14.–25. des nächsten Monats wurde genehmigt.'],
-            ['id' => 'demo-msg-4', 'subject' => 'Re: Angebot Büromöbel – Rückfrage zur Lieferzeit', 'from' => ['Markus Vogel', 'm.vogel@moebel-beispiel.de'], 'received' => $today - 86400 + 3000, 'read' => true, 'att' => true, 'preview' => 'vielen Dank für Ihre Anfrage. Die Lieferzeit beträgt derzeit etwa vier Wochen …'],
+            ['id' => 'demo-msg-3', 'subject' => 'Urlaubsantrag genehmigt', 'from' => ['Personalabteilung', 'personal@example.org'], 'received' => $today - 86400 + 7200, 'read' => true, 'att' => true, 'preview' => 'Ihr Urlaubsantrag für den Zeitraum 14.–25. des nächsten Monats wurde genehmigt.', 'replied' => true],
+            ['id' => 'demo-msg-4', 'subject' => 'Re: Angebot Büromöbel – Rückfrage zur Lieferzeit', 'from' => ['Markus Vogel', 'm.vogel@moebel-beispiel.de'], 'received' => $today - 86400 + 3000, 'read' => true, 'att' => true, 'preview' => 'vielen Dank für Ihre Anfrage. Die Lieferzeit beträgt derzeit etwa vier Wochen …', 'replied' => true, 'forwarded' => true],
             ['id' => 'demo-msg-5', 'subject' => 'Einladung: Schulung Notfallplan-Editor', 'from' => ['Daniel Andre', 'daniel.andre@example.org'], 'received' => $today - 2 * 86400, 'read' => false, 'att' => false, 'preview' => 'Wir laden Sie herzlich zur Schulung des neuen Notfallplan-Editors ein.'],
-            ['id' => 'demo-msg-6', 'subject' => 'Quartalszahlen Q3 – Entwurf zur Durchsicht', 'from' => ['Controlling', 'controlling@example.org'], 'received' => $today - 3 * 86400, 'read' => true, 'att' => true, 'preview' => 'Anbei der Entwurf der Quartalszahlen. Bitte prüfen Sie die Abteilungsbudgets bis Freitag.'],
+            ['id' => 'demo-msg-6', 'subject' => 'Quartalszahlen Q3 – Entwurf zur Durchsicht', 'from' => ['Controlling', 'controlling@example.org'], 'received' => $today - 3 * 86400, 'read' => true, 'att' => true, 'preview' => 'Anbei der Entwurf der Quartalszahlen. Bitte prüfen Sie die Abteilungsbudgets bis Freitag.', 'forwarded' => true],
             ['id' => 'demo-msg-7', 'subject' => 'Newsletter Intranet: Neue Office-Apps verfügbar', 'from' => ['Intranet-Redaktion', 'intranet@example.org'], 'received' => $today - 4 * 86400, 'read' => true, 'att' => false, 'preview' => 'Ab sofort stehen Euro-Office Writer, Calc und Impress direkt über die Office-Seite bereit.'],
             ['id' => 'demo-msg-8', 'subject' => 'Parkplatzregelung ab nächstem Monat', 'from' => ['Facility Management', 'facility@example.org'], 'received' => $today - 6 * 86400, 'read' => true, 'att' => false, 'preview' => 'Bitte beachten Sie die geänderte Zuordnung der Parkflächen im Innenhof.'],
         ];
@@ -302,9 +302,16 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     private function messageXml(array $message, bool $full = false, string $extra = ''): string
     {
         $e = static fn (string $value): string => EwsXml::escape($value);
+        // Wie bei Exchange traegt der Symbolindex die Antwort und
+        // PR_LAST_VERB_EXECUTED das zuletzt ausgefuehrte Verb (NOTEIVERB);
+        // demo-msg-4 deckt beide Quellen ab.
+        $icon = !empty($message['replied']) ? 0x0105 : (!empty($message['forwarded']) ? 0x0106 : 0);
+        $verb = !empty($message['forwarded']) ? 104 : (!empty($message['replied']) ? 102 : 0);
         $xml = '<t:Message>' . $extra . '<t:ItemId Id="' . $message['id'] . '" ChangeKey="CK1"/><t:ItemClass>IPM.Note</t:ItemClass><t:Subject>' . $e($message['subject']) . '</t:Subject>'
             . '<t:Importance>' . ($message['importance'] ?? 'Normal') . '</t:Importance><t:DateTimeReceived>' . EwsXml::dateTime((int) $message['received']) . '</t:DateTimeReceived><t:DateTimeSent>' . EwsXml::dateTime((int) $message['received'] - 60) . '</t:DateTimeSent>'
             . '<t:Size>' . (12000 + strlen($message['subject']) * 97) . '</t:Size><t:HasAttachments>' . ($message['att'] ? 'true' : 'false') . '</t:HasAttachments>'
+            . ($icon > 0 ? '<t:IconIndex>' . $icon . '</t:IconIndex>' : '')
+            . ($verb > 0 ? '<t:ExtendedProperty><t:ExtendedFieldURI PropertyTag="0x1081" PropertyType="Integer"/><t:Value>' . $verb . '</t:Value></t:ExtendedProperty>' : '')
             . ($full ? '<t:Body BodyType="HTML">' . $e($this->bodyFor($message)) . '</t:Body>' : '')
             . ($full && $message['att'] ? $this->attachmentsXml($message['id']) : '')
             . '<t:ToRecipients><t:Mailbox><t:Name>Ich</t:Name><t:EmailAddress>ich@example.org</t:EmailAddress></t:Mailbox></t:ToRecipients>'

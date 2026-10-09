@@ -1456,6 +1456,8 @@
                     el('span', { 'class': 'ov-item__icons' }, [
                         message.archived ? el('span', { title: 'Archivierte Nachricht (Langzeitarchiv)', 'class': 'ov-item__archive', text: '📦' }) : null,
                         message.importance === 'High' ? el('span', { title: 'Hohe Wichtigkeit', 'class': 'ov-item__important', text: '!' }) : null,
+                        message.replied ? el('span', { title: 'Sie haben auf diese Nachricht geantwortet', 'class': 'ov-item__verb', text: '↩' }) : null,
+                        message.forwarded ? el('span', { title: 'Sie haben diese Nachricht weitergeleitet', 'class': 'ov-item__verb', text: '↪' }) : null,
                         message.has_attachments ? el('span', { title: 'Anhang', text: '📎' }) : null,
                         message.is_meeting_request ? el('span', { title: 'Besprechungsanfrage', text: '📅' }) : null,
                         message.flagged ? el('span', { title: 'Gekennzeichnet', 'class': 'ov-item__flag', text: '⚑' }) : null
@@ -1609,6 +1611,10 @@
         var wrap = el('div', { 'class': 'ov-mail' });
         var head = el('header', { 'class': 'ov-mail__head' }, [
             el('h2', { 'class': 'ov-mail__subject', text: message.subject || '(kein Betreff)' }),
+            (message.replied || message.forwarded) ? el('div', { 'class': 'ov-mail__verbs' }, [
+                message.replied ? el('span', { 'class': 'ov-mail__verb ov-mail__verb--replied', title: 'Sie haben auf diese Nachricht geantwortet.', text: '↩ Beantwortet' }) : null,
+                message.forwarded ? el('span', { 'class': 'ov-mail__verb ov-mail__verb--forwarded', title: 'Sie haben diese Nachricht weitergeleitet.', text: '↪ Weitergeleitet' }) : null
+            ]) : null,
             el('div', { 'class': 'ov-mail__meta' }, [
                 el('div', { 'class': 'ov-mail__avatar', text: initials(mailboxName(message.from)) }),
                 el('div', { 'class': 'ov-mail__who' }, [

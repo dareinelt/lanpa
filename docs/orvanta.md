@@ -30,7 +30,7 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 
 | Modul | Funktionen |
 |---|---|
-| **Mail** ✉ | Ordnerbaum (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner), Nachrichtenliste mit Suche, Lesen (HTML bereinigt durch `MailHtmlSanitizer`), Verfassen/Antworten/Allen antworten/Weiterleiten, Entwürfe, Kennzeichnen, Gelesen/Ungelesen, Verschieben (Dialog oder per Drag&Drop auf einen Ordner im Ordnerbaum), Löschen, Anhänge öffnen/speichern, **In Aufgabe übernehmen**; Rechtsklick auf einen Ordner: Neuer Ordner, Alle als gelesen markieren, Eigenschaften (Größe und Anzahl der Elemente) |
+| **Mail** ✉ | Ordnerbaum (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner), Nachrichtenliste mit Suche, Lesen (HTML bereinigt durch `MailHtmlSanitizer`), Verfassen/Antworten/Allen antworten/Weiterleiten, Entwürfe, Kennzeichnen, Gelesen/Ungelesen, Verschieben (Dialog oder per Drag&Drop auf einen Ordner im Ordnerbaum), Löschen, Anhänge öffnen/speichern, **In Aufgabe übernehmen**; Indikatoren (↩/↪) in Liste und Nachrichtenkopf für beantwortete und weitergeleitete Nachrichten; Rechtsklick auf einen Ordner: Neuer Ordner, Alle als gelesen markieren, Eigenschaften (Größe und Anzahl der Elemente) |
 | **Kalender** 📅 | Monats-, Wochen- und Tagesansicht, Termine anlegen/bearbeiten/löschen (ganztägig, Ort, Teilnehmer, Erinnerung), Besprechungsanfragen annehmen/unter Vorbehalt/ablehnen |
 | **Kontakte** 👥 | Alphabetische Liste mit Buchstabengruppen, Details, Anlegen/Bearbeiten/Löschen, E-Mail direkt aus dem Kontakt |
 | **Aufgaben** ✓ | Liste mit Fälligkeit/Priorität, Erledigt-Schalter, Anlegen/Bearbeiten/Löschen, Übernahme einer E-Mail als Aufgabe |
@@ -48,6 +48,18 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 ![Notizen](screenshots/84-orvanta-notizen.png)
 
 ![Nachricht verfassen](screenshots/85-orvanta-verfassen.png)
+
+![Beantwortete und weitergeleitete Nachricht – Indikatoren in der Nachrichtenliste und im Nachrichtenkopf](screenshots/104-orvanta-mail-indikatoren.png)
+
+Nachrichten, die schon beantwortet oder weitergeleitet wurden, kennzeichnet
+Orvanta in der Nachrichtenliste mit einem kleinen **↩** (beantwortet) bzw.
+**↪** (weitergeleitet) neben dem Betreff und im Nachrichtenkopf zusätzlich mit
+den Marken „↩ Beantwortet“ und „↪ Weitergeleitet“. Die Angaben kommen aus dem
+Exchange-Postfach selbst (`IconIndex`, `PR_LAST_VERB_EXECUTED`) bzw. bei
+Postfächern ohne Exchange aus den IMAP-Flags (`\Answered`, `$Forwarded`); die
+genauen Felder stehen in
+[docs/orvanta-referenz.md](orvanta-referenz.md) (Abschnitt 5.2) und
+[docs/mail-proxy-referenz.md](mail-proxy-referenz.md).
 
 Der Verfassen-Dialog lässt sich über die Schaltfläche „In neuem Tab öffnen“
 (Kopfzeile des Dialogs) aus dem Overlay in einen eigenen Browser-Tab

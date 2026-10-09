@@ -439,6 +439,7 @@
 .ov-item__date { font-size: .72rem; color: var(--ov-muted); white-space: nowrap; flex: none; }
 .ov-item__icons { display: inline-flex; gap: .25rem; font-size: .75rem; color: var(--ov-muted); flex: none; }
 .ov-item__important { color: #b42318; font-weight: 800; }
+.ov-item__verb { color: var(--ov-accent); font-weight: 700; }
 .ov-item__badge { display: inline-block; padding: 0 .45rem; border-radius: 999px; background: var(--ov-bar); border: 1px solid var(--ov-line); font-size: .7rem; font-weight: 600; color: var(--color-text); }
 .ov-item__avatar--small { width: 1.6rem; height: 1.6rem; font-size: .65rem; grid-row: auto; }
 .ov-item--contact .ov-item__avatar { grid-row: auto; }
@@ -457,6 +458,10 @@
 .ov-mail__to { font-size: .82rem; color: var(--ov-muted); overflow-wrap: anywhere; }
 .ov-mail__meeting { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .5rem 1.4rem; font-size: .85rem; background: var(--ov-accent-soft); border-bottom: 1px solid var(--ov-line); }
 .ov-mail__meeting .button { min-height: 30px; padding: .2rem .6rem; font-size: .8rem; }
+.ov-mail__verbs { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 .6rem; }
+.ov-mail__verb { display: inline-flex; align-items: center; gap: .25rem; padding: .1rem .55rem; border: 1px solid var(--ov-line); border-radius: 999px; background: var(--color-background); color: var(--ov-muted); font-size: .75rem; font-weight: 600; white-space: nowrap; }
+.ov-mail__verb--replied { border-color: var(--ov-accent); color: var(--ov-accent); }
+.ov-mail__verb--forwarded { border-color: var(--ov-accent-2); color: color-mix(in srgb, var(--ov-accent-2) 70%, #000); }
 .ov-quote hr { border: none; border-top: 1px solid var(--ov-line); margin: .6rem 0; }
 .ov-attachments__title { width: 100%; font-size: .78rem; font-weight: 700; color: var(--ov-muted); text-transform: uppercase; letter-spacing: .03em; }
 .ov-attachment__icon { font-size: 1.15rem; flex: none; }

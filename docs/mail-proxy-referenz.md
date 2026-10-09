@@ -276,7 +276,8 @@ Admin-Test via `accountForTest()`). Entschlüsselung fehlgeschlagen → 503.
 - Ordner: `imap.folders` (Systemordner per SPECIAL-USE, sonst Namensliste
   `KIND_NAMES`; INBOX heißt „Posteingang“). `noselect`-Ordner ohne Zähler.
 - Liste: `imap.messages` (`limit` 1…200, Suche ≤ 200 Zeichen, IMAP `TEXT`,
-  neueste UID zuerst) liefert `uidvalidity`, `total`, `items`.
+  neueste UID zuerst) liefert `uidvalidity`, `total`, `items`; jedes Element
+  führt die IMAP-Flags (`seen`, `flagged`, `answered`, `forwarded`).
 - Nachricht: `imap.message` lädt die Rohnachricht (vorher Größenprüfung
   `MAX_MESSAGE`); PHP säubert HTML mit `MailHtmlSanitizer::clean()`.
 - Anhang: `imap.attachment` (Base64), PHP dekodiert und liefert
@@ -316,7 +317,8 @@ sequenceDiagram
 
 ### 6.7 Aktionen
 
-`imap.flags` (nur `ALLOWED_FLAGS`, z. B. `\Seen`, `\Flagged`), `imap.move`
+`imap.flags` (nur `ALLOWED_FLAGS`: `\Seen`, `\Flagged`, `\Answered`,
+`\Deleted`, `\Draft`, `$Forwarded`), `imap.move`
 (UID MOVE oder COPY + Löschen), `imap.delete` (`permanent` oder in den
 Papierkorb; im Papierkorb selbst endgültig), `imap.mark_folder_read`,
 `imap.create_folder` (Trennzeichen im Namen verboten, mUTF-7),
@@ -442,7 +444,7 @@ Postfächer) → `mailbox.test`. Ergebnis ist eine Liste von Prüfschritten
 | `imap.create_folder` | `parent` (Spec oder leer), `name` | `{raw}` | `createFolder()` |
 | `imap.mark_folder_read` | `folder` | `{updated}` | `markFolderRead()` |
 | `imap.folder_status` | `folder` | `{raw, name, total, unread, subfolders, size, total_with_subfolders, size_with_subfolders}` | `folderProperties()` |
-| `imap.messages` | `folder`, `offset`, `limit`, `search` | `{uidvalidity, total, items[]}` | `messages()` |
+| `imap.messages` | `folder`, `offset`, `limit`, `search` | `{uidvalidity, total, items[]}` (Element: `uid, subject, from, to, date, size, seen, flagged, answered, forwarded, has_attachments, …`) | `messages()` |
 | `imap.message` | `folder`, `uidvalidity`, `uid` | Kopf, Text/HTML, Anhänge | `message()` |
 | `imap.headers` | `folder`, `uidvalidity`, `uid` | Rohkopfzeilen | `messageHeaders()` |
 | `imap.attachment` | `folder`, `uidvalidity`, `uid`, `index` | `{name, content_type, content (Base64)}` | `attachment()` |

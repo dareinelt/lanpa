@@ -213,6 +213,7 @@ $edgeLabel = static function (array $edge) use ($nodes): string {
     <a class="button button--ghost" href="/admin/office/mail-proxy">SMTP-/IMAP-Proxy</a>
     <a class="button button--ghost" href="/admin/speicher-ha">Speicher (HA)</a>
     <button class="button button--ghost" type="button" data-flow-refresh>Aktualisieren</button>
+    <a class="button button--primary" href="<?= Html::e($base . '/topologie') ?>" target="_blank" rel="noopener" data-flow-topology-link>Topologie-Ansicht (neuer Tab)</a>
 </div>
 
 <p class="card__hint">

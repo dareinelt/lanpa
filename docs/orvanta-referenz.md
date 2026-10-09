@@ -106,13 +106,14 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaSharedMailboxService.php` | Zusätzliche Postfächer (Abschnitt 22): `available(ssoUser)` (aktive, erreichbare Zuordnungen in Reihenfolge), `calendarSelection(ssoUser)`, `setCalendarVisible(ssoUser, id, visible)`, `resolve(ssoUser, requested)` (Adressierung `smb:<id>\|…`), `sender(ssoUser, primary, address)` (Absenderprüfung), `forAdmin(uid)`, `searchUsers(term)`, `save(uid, email, displayName, options)`, `delete(id)`, `verify(id, force)`, `refresh(ssoUser)`, `uid(ssoUser)`; `VERIFY_TTL` (43200 s = 12 h) |
 | `app/Repositories/OrvantaSharedMailboxRepository.php` | Tabelle `orvanta_shared_mailboxes`: `forUser(uid, activeOnly)`, `all(uid)`, `find(id)`, `findByKey(uid, email)`, `searchUsers(term, limit)` (Telefonliste LEFT JOIN `identity_sources`, `LIKE … ESCAPE '!'`), `save(data)` (Upsert auf `user_uid` + `email`), `delete(id)`, `markVerified(id, error)`, `setCalendarVisible(id, visible)` |
 | `app/Controllers/Admin/OrvantaSharedMailboxController.php` | `index()` (GET `suche`, `id`, `benutzer`; ohne Migration 046 `tablesMissing`), `save()`, `verify()`, `delete()`; `BASE = '/admin/office/orvanta/postfaecher'` |
-| `app/Controllers/Admin/OrvantaFlowController.php` | Nachrichtenfluss-Dashboard (Abschnitt 23): `index()`, `data()` (JSON ohne Caching), `checkSources()` (CSRF zuerst, höchstens `MAX_CHECK_SOURCES` = 16 Quellen je Durchgang); `BASE = '/admin/office/orvanta/nachrichtenfluss'` |
+| `app/Controllers/Admin/OrvantaFlowController.php` | Nachrichtenfluss-Dashboard (Abschnitt 23): `index()`, `data()` (JSON ohne Caching), `topology()` (Topologie-Ansicht im eigenen Tab, Layout `layouts.editor`), `checkSources()` (CSRF zuerst, höchstens `MAX_CHECK_SOURCES` = 16 Quellen je Durchgang); `BASE = '/admin/office/orvanta/nachrichtenfluss'` |
 | `app/Services/Orvanta/OrvantaFlowService.php` | Nachrichtenfluss (Abschnitt 23): `overview(withHistory)` = `evaluate(collect())`; `collect()` liest Quellen, Proxy, Exchange, Tiers, Zwischenspeicher und KI, `evaluate()` ist rein; Grenzen `CACHE_WARN_PERCENT` (75), `CACHE_CRIT_PERCENT` (90), `AI_PERIOD_DAYS` (30), `AI_TOP_USERS`/`CACHE_TOP_USERS` (10), `STATE_LABELS` |
 | `app/Services/Orvanta/OrvantaFlowCloud.php` | Wolkendarstellung (Abschnitt 23.4): `items()`, statisch `level()`, `render()`, `table()`; `LEVELS` (5), `THRESHOLDS` |
 | `app/Services/Orvanta/OrvantaFlowCharts.php` | Verlaufsgrafik 365/180/90/30/14 Tage (Abschnitt 23.4): `overlay()`, `tableRows()`, statisch `series()`/`color()`; `WIDTH` (960), `HEIGHT` (340) |
 | `app/Services/Orvanta/OrvantaPresenceService.php` | Aktive Nutzer und Proben (Abschnitt 23.2): `touch()`, `sample()`, `stats()`, `history()`, `purge()`, statisch `backendFor()`; `ACTIVE_WINDOW`/`SAMPLE_INTERVAL` (300), `ACTIVITY_TTL` (86400), `HISTORY_DAYS` (400), `PERIODS` |
 | `app/Repositories/OrvantaFlowRepository.php` | Tabellen `orvanta_activity`/`orvanta_user_samples`: `touchActivity()`, `activeUsers()`, `activityCount()`, `recordSample()`, `hasSampleAt()`, `lastSampleAt()`, `sampleStats()`, `dailyPeaks()`, `sampleCount()`, `purge()` |
 | `views/admin/orvanta-flow.php`, `public/assets/js/admin-orvanta-flow.js` | Nachrichtenfluss-Dashboard (Abschnitt 23.5): Spuren mit Knoten, Wolken, Tiers, Kennzahlen, Störungen, Verlaufsgrafik; Live-Aktualisierung über `GET …/nachrichtenfluss/daten` |
+| `views/admin/orvanta-flow-topology.php`, `public/assets/js/admin-orvanta-flow-topology.js`, `public/assets/css/orvanta-flow-topology.css` | Topologie-Ansicht des Nachrichtenflusses (Abschnitt 23.8, Konzept `docs/orvanta-nachrichtenfluss.md` Abschnitt 14): Canvas-Netz mit 3D-Projektion, Partikeln, Zustandswellen, Detailtafel, Ereignisprotokoll und Störungsband; Startdaten als JSON-Block, danach `GET …/nachrichtenfluss/daten` |
 | `views/admin/orvanta-shared-mailboxes.php` | Adminseite: Benutzersuche, Zuordnungsformular, Tabelle mit Prüfstatus und Aktionen |
 | `app/Controllers/Admin/OrvantaOofController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
 | `views/admin/orvanta-oof-templates.php`, `views/admin/orvanta-oof-template.php`, `public/assets/js/admin-oof.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/abwesenheit/vorschau`) |
@@ -237,6 +238,7 @@ Alle App- und API-Routen liegen **außerhalb** der Admin-Gruppen in
 | POST | `/admin/office/orvanta/postfaecher/loeschen` | `delete` | Zuordnung entfernen (`id`) |
 | GET | `/admin/office/orvanta/nachrichtenfluss` | `Admin\OrvantaFlowController::index` | Nachrichtenfluss-Dashboard (Abschnitt 23) |
 | GET | `/admin/office/orvanta/nachrichtenfluss/daten` | `data` | Kennzahlen und Knoten als JSON für die Live-Aktualisierung (`Cache-Control: no-store`) |
+| GET | `/admin/office/orvanta/nachrichtenfluss/topologie` | `topology` | Topologie-Ansicht als Netz im eigenen Tab (Abschnitt 23.8, `Cache-Control: no-store`) |
 | POST | `/admin/office/orvanta/nachrichtenfluss/quellen/pruefen` | `checkSources` | Verbindungstest je Identitätsquelle (CSRF zuerst; `source` für eine einzelne Quelle) |
 | GET | `/admin/office/signaturen` | `Admin\OrvantaSignatureController::index` | Signaturvorlagen (Liste, Vorschau-iframes) |
 | GET/POST | `/admin/office/signaturen/vorlage[?id=…]` | `edit` / `save` | Vorlage anlegen/bearbeiten (CSRF) |
@@ -2209,7 +2211,7 @@ Elementliste, Ausgrauregeln und Betriebsgrenzen stehen in
 Umsetzung.
 
 ```
-GET  /admin/office/orvanta/nachrichtenfluss[/daten]
+GET  /admin/office/orvanta/nachrichtenfluss[/daten|/topologie]
 POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
           └─ Admin\OrvantaFlowController
                 ├─ OrvantaFlowService::overview()      Knoten, Kanten, Kennzahlen
@@ -2347,4 +2349,22 @@ baut den SQLite-Spiegel der Migration 048 selbst auf (`flowPdo()`, **ohne**
 `flowInput()` auf – einem vollständig gesunden Eingabefeld mit festem
 `now = 1_700_000_000`, damit die Erwartungen unabhängig von der Uhr sind.
 `flowRender()` rendert die echte Ansicht mit controllergleichen Variablen und
-prüft Verdrahtung, Escaping und die Sichtbarkeitsregeln.
+prüft Verdrahtung, Escaping und die Sichtbarkeitsregeln; `flowTopologyRender()`
+tut dasselbe für die Topologie-Ansicht (Abschnitt 23.8).
+
+### 23.8 Topologie-Ansicht
+
+`GET …/nachrichtenfluss/topologie` rendert `views/admin/orvanta-flow-topology.php`
+im Layout `layouts.editor` (Vollbild, kein Seitenmenü) und wird vom
+Kartendashboard mit `target="_blank" rel="noopener"` geöffnet. Der Controller
+übergibt `overview(false)` (ohne Verlauf); die Ansicht entfernt zusätzlich die
+Verlaufsgrafik je Knoten und bettet den Rest über `Html::json()` in
+`<script type="application/json" data-flow-initial>` ein – nicht ausführbar,
+daher mit `script-src 'self'` verträglich. `admin-orvanta-flow-topology.js`
+(ES5, IIFE) baut daraus den Graphen, projiziert ihn perspektivisch auf ein
+`<canvas>`, animiert Partikel und Zustandswellen und zieht im Intervall
+dieselbe JSON-Antwort wie das Kartendashboard. Alle DOM-Updates laufen über
+`textContent`/`createElement`, Zustände über Klassen (`topo-pulse--*`,
+`topo-log__item--*`, `topo-incidents--open`); Inline-Stile gibt es nicht.
+Bedienung, Animationen und Tastenbelegung: `docs/orvanta-nachrichtenfluss.md`
+Abschnitt 14.

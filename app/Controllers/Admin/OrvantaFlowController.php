@@ -16,6 +16,7 @@ use Throwable;
  *
  *   GET  /admin/office/orvanta/nachrichtenfluss              Dashboard
  *   GET  /admin/office/orvanta/nachrichtenfluss/daten        Kennzahlen als JSON (Live-Aktualisierung)
+ *   GET  /admin/office/orvanta/nachrichtenfluss/topologie    Topologie-Ansicht (eigener Tab, Vollbild, 3D)
  *   POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen  Verbindungstest je Identitaetsquelle
  *
  * Die Seite ist lesend. Die einzige Aktion ist der Verbindungstest der
@@ -59,6 +60,29 @@ final class OrvantaFlowController extends AdminController
     {
         return Response::json(Container::orvantaFlow()->overview(true), 200)
             ->withHeader('Cache-Control', 'no-store');
+    }
+
+    /**
+     * Topologie-Ansicht: alle Bausteine als verbundenes Netz in einem eigenen
+     * Browser-Tab (Vollbild-Layout ohne Seitenmenue). Die Ansicht erhaelt den
+     * aktuellen Zustand ohne Verlauf eingebettet und aktualisiert sich danach
+     * ueber denselben JSON-Endpunkt wie das Kartendashboard.
+     */
+    public function topology(Request $request): Response
+    {
+        $config = Container::orvantaConfig();
+
+        return $this->adminView('admin.orvanta-flow-topology', [
+            'pageTitle' => 'Nachrichtenfluss – Topologie',
+            'titleSuffix' => 'Orvanta',
+            'pageScript' => 'admin-orvanta-flow-topology.js',
+            'extraStyles' => ['orvanta-flow-topology.css'],
+            'flow' => Container::orvantaFlow()->overview(false),
+            'base' => self::BASE,
+            'orvantaEnabled' => $config->isEnabled(),
+            'orvantaDemo' => $config->isDemo(),
+            'refreshInterval' => $this->refreshInterval(),
+        ], 200, 'layouts.editor')->withHeader('Cache-Control', 'no-store');
     }
 
     /**

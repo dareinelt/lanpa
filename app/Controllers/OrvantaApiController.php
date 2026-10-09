@@ -1178,7 +1178,11 @@ final class OrvantaApiController extends Controller
             return;
         }
         try {
-            Container::orvantaPresence()->touch((string) $access['uid'], OrvantaPresenceService::backendFor($route));
+            Container::orvantaPresence()->touch(
+                (string) $access['uid'],
+                OrvantaPresenceService::backendFor($route),
+                (int) ($access['user']['source_id'] ?? 0)
+            );
         } catch (Throwable) {
             // Die Praesenz ist nachrangig und darf Orvanta nie stoeren.
         }

@@ -289,6 +289,7 @@ final class OrvantaFlowService
             'enabled' => false,
             'targets' => [],
             'local' => [],
+            'snapshot' => [],
             'mode' => '',
             'forecast_text' => '',
             'health' => [],
@@ -302,6 +303,7 @@ final class OrvantaFlowService
                 : (bool) ($overview['office_enabled'] ?? false);
             $storage['targets'] = $overview['targets'];
             $storage['local'] = $overview['local'];
+            $storage['snapshot'] = (array) ($overview['snapshot'] ?? []);
             $storage['mode'] = (string) $overview['mode'];
             $storage['forecast_text'] = (string) $overview['forecast_text'];
             $storage['health'] = $overview['health'];
@@ -354,9 +356,15 @@ final class OrvantaFlowService
 
         $top = [];
         $totals = ['requests' => 0, 'users' => 0, 'input_tokens' => 0, 'output_tokens' => 0];
+        $activeUsers = 0;
+        $dayUsers = 0;
         try {
             $rows = $this->orvanta->aiUsageTopUsers($from, $to, self::AI_TOP_USERS);
             $totals = $this->orvanta->aiTokenTotals($from, $to);
+            $stamp = static fn (int $time): string => date('Y-m-d H:i:s', $time);
+            // Sitzungen: Nutzer mit KI-Anfragen im Aktivitaetsfenster bzw. in 24 Stunden.
+            $activeUsers = (int) $this->orvanta->aiTokenTotals($stamp($now - OrvantaPresenceService::ACTIVE_WINDOW), $stamp($now + 1))['users'];
+            $dayUsers = (int) $this->orvanta->aiTokenTotals($stamp($now - 86400), $stamp($now + 1))['users'];
         } catch (\PDOException) {
             $rows = [];
         }
@@ -390,6 +398,9 @@ final class OrvantaFlowService
             'remaining' => max(0, (int) $totals['users'] - count($top)),
             'requests' => (int) $totals['requests'],
             'users' => (int) $totals['users'],
+            'active_users' => $activeUsers,
+            'day_users' => $dayUsers,
+            'window' => OrvantaPresenceService::ACTIVE_WINDOW,
             'input_tokens' => (int) $totals['input_tokens'],
             'output_tokens' => (int) $totals['output_tokens'],
         ];
@@ -427,13 +438,14 @@ final class OrvantaFlowService
 
         // Quellen ohne Proxy-Konfiguration haengen nicht hinter dem Proxy,
         // sondern vor den Exchange-Hosts; sie folgen weiter unten.
+        $presenceBySource = (array) ($presence['sources'] ?? []);
         $exchangeSources = [];
         foreach ($sources as $source) {
             if ((string) ($source['transport'] ?? self::TRANSPORT_PROXY) === self::TRANSPORT_EXCHANGE) {
                 $exchangeSources[] = $source;
                 continue;
             }
-            $node = self::sourceNode($source, $proxyDown);
+            $node = self::sourceNode($source, $proxyDown, (array) ($presenceBySource[(int) $source['id']] ?? []));
             $key = 'source-' . (int) $source['id'];
             $nodes[$key] = $node;
             array_unshift($lanes['proxy']['nodes'], $key);
@@ -451,7 +463,7 @@ final class OrvantaFlowService
         $exchangeDown = $hostKeys !== [] && array_filter($hostNodes, static fn (array $node): bool => $node['state'] !== 'error') === [];
 
         foreach ($exchangeSources as $source) {
-            $node = self::exchangeSourceNode($source, $exchange, $exchangeDown);
+            $node = self::exchangeSourceNode($source, $exchange, $exchangeDown, (array) ($presenceBySource[(int) $source['id']] ?? []));
             $key = 'source-' . (int) $source['id'];
             $nodes[$key] = $node;
             $lanes['exchange']['nodes'][] = $key;
@@ -474,12 +486,28 @@ final class OrvantaFlowService
         $edges[] = self::edge('ai', 'users', $nodes['ai']['state']);
         $edges[] = self::edge('cache', 'users', $nodes['cache']['state']);
 
+        // Speicher: der lokale Speicher der VM ist immer sichtbar, sobald der
+        // Speicherdienst antwortet; Cold-Tiers und Snapshot-Speicher haengen
+        // als Kinder daran.
         $tiers = [];
+        $hasLocal = (bool) ($storage['available'] ?? false);
+        if ($hasLocal) {
+            $nodes['tier-local'] = self::localTierNode($storage);
+            $tiers[] = 'tier-local';
+            $edges[] = self::edge('tier-local', 'cache', $nodes['tier-local']['state']);
+        }
         foreach ((array) ($storage['targets'] ?? []) as $tier) {
             $node = self::tierNode($tier);
             $key = 'tier-' . (int) $tier['id'];
             $nodes[$key] = $node;
             $tiers[] = $key;
+            $edges[] = self::edge($key, $hasLocal ? 'tier-local' : 'cache', $node['state']);
+        }
+        $snapshot = (array) ($storage['snapshot'] ?? []);
+        if ($hasLocal && (bool) ($snapshot['enabled'] ?? false)) {
+            $nodes['tier-snapshot'] = self::snapshotTierNode($snapshot);
+            $tiers[] = 'tier-snapshot';
+            $edges[] = self::edge('tier-snapshot', 'tier-local', $nodes['tier-snapshot']['state']);
         }
 
         foreach ($lanes as $laneKey => $lane) {
@@ -608,7 +636,7 @@ final class OrvantaFlowService
      *
      * @return array<string,mixed>
      */
-    private static function sourceNode(array $source, bool $proxyDown): array
+    private static function sourceNode(array $source, bool $proxyDown, array $users = []): array
     {
         $counts = (array) ($source['counts'] ?? []);
         $state = (array) ($source['state'] ?? []);
@@ -616,6 +644,8 @@ final class OrvantaFlowService
         $active = (bool) ($source['active'] ?? false);
         $stateKey = 'ok';
         $message = '';
+        $usersNow = (int) ($users['current'] ?? 0);
+        $usersPeak = (int) ($users['peak'] ?? 0);
 
         if (!$active) {
             $stateKey = 'off';
@@ -651,6 +681,8 @@ final class OrvantaFlowService
         ];
 
         $facts = [
+            self::fact('Aktive Nutzer', (string) $usersNow),
+            self::fact('Maximum 24 h', (string) $usersPeak),
             self::fact('Postfächer', $mailboxes . ' vorhanden, ' . $activeMailboxes . ' aktiv'),
             self::fact('Verbunden', $mapped . ' zugeordnet, ' . $free . ' frei'),
             self::fact('Zuordnungen', (string) (int) ($counts['mappings'] ?? 0)),
@@ -666,6 +698,7 @@ final class OrvantaFlowService
         return self::node('source-' . $id, 'source', (string) ($source['label'] ?? 'Quelle'), (string) ($source['domain'] ?? ''), $stateKey, [
             'message' => $message,
             'facts' => $facts,
+            'counters' => self::userCounters($usersNow, $usersPeak),
             'cloud' => $cloud,
             'cloud_title' => 'Postfächer der Identitätsquelle',
             'cloud_muted' => $proxyDown || $stateKey === 'error',
@@ -684,10 +717,11 @@ final class OrvantaFlowService
      *
      * @param array<string,mixed> $source
      * @param array<string,mixed> $exchange
+     * @param array<string,mixed> $users   Praesenz der Quelle (current/peak)
      *
      * @return array<string,mixed>
      */
-    private static function exchangeSourceNode(array $source, array $exchange, bool $exchangeDown): array
+    private static function exchangeSourceNode(array $source, array $exchange, bool $exchangeDown, array $users = []): array
     {
         $id = (int) ($source['id'] ?? 0);
         $active = (bool) ($source['active'] ?? false);
@@ -696,6 +730,8 @@ final class OrvantaFlowService
         $hosts = count((array) ($exchange['hosts'] ?? []));
         $stateKey = 'ok';
         $message = '';
+        $usersNow = (int) ($users['current'] ?? 0);
+        $usersPeak = (int) ($users['peak'] ?? 0);
 
         if (!$active) {
             $stateKey = 'off';
@@ -709,6 +745,8 @@ final class OrvantaFlowService
         }
 
         $facts = [
+            self::fact('Aktive Nutzer', (string) $usersNow),
+            self::fact('Maximum 24 h', (string) $usersPeak),
             self::fact('Transportweg', 'Exchange (EWS)'),
             self::fact('Exchange-Hosts', $hosts > 0 ? (int) ($totals['online'] ?? 0) . ' von ' . $hosts . ' online' : '–', $exchangeDown ? 'error' : ''),
             self::fact('Proxy', 'nicht konfiguriert'),
@@ -718,6 +756,7 @@ final class OrvantaFlowService
         return self::node('source-' . $id, 'source', (string) ($source['label'] ?? 'Quelle'), (string) ($source['domain'] ?? ''), $stateKey, [
             'message' => $message,
             'facts' => $facts,
+            'counters' => self::userCounters($usersNow, $usersPeak),
             'primary' => (bool) ($source['primary'] ?? false),
             'muted' => $exchangeDown,
             'muted_reason' => $exchangeDown ? 'Exchange nicht erreichbar' : '',
@@ -799,6 +838,9 @@ final class OrvantaFlowService
         return self::node('host-' . (int) $host['id'], 'host', (string) $host['host'], (string) ($host['ews_url'] ?? ''), $stateKey, [
             'message' => $message,
             'facts' => $facts,
+            'counters' => [
+                'current' => self::counter((int) ($host['sessions'] ?? 0), 'Verbundene Sitzungen'),
+            ],
             'cloud' => $cloud,
             'cloud_title' => 'Verbundene Clients',
             'cloud_empty' => 'Keine Clients verbunden.',
@@ -841,6 +883,7 @@ final class OrvantaFlowService
         return self::node('users', 'users', 'Orvanta-Nutzer', 'Aktivität aus Exchange und Proxy', $stateKey, [
             'message' => $message,
             'facts' => $facts,
+            'counters' => self::userCounters($current, $max),
             'muted' => $proxyDown && (int) ($presence['exchange'] ?? 0) === 0,
             'muted_reason' => $proxyDown ? 'Nur Proxy-Nutzer betroffen' : '',
             'chart' => (array) $history,
@@ -876,9 +919,13 @@ final class OrvantaFlowService
 
         $days = (int) ($ai['period_days'] ?? self::AI_PERIOD_DAYS);
         $remaining = (int) ($ai['remaining'] ?? 0);
+        $sessionsNow = (int) ($ai['active_users'] ?? 0);
+        $sessionsDay = (int) ($ai['day_users'] ?? 0);
 
         $facts = [
             self::fact('Zustand', $active ? 'aktiv' : ($configured ? 'konfiguriert' : 'nicht konfiguriert'), $stateKey === 'warn' ? 'warn' : ''),
+            self::fact('Sitzungen aktuell', (string) $sessionsNow),
+            self::fact('Sitzungen 24 h', (string) $sessionsDay),
             self::fact('Adresse', (string) ($ai['url'] ?? '') !== '' ? (string) $ai['url'] : '–'),
             self::fact('Modell', (string) ($ai['model'] ?? '') !== '' ? (string) $ai['model'] : '–'),
             self::fact('Zugangsschlüssel', $hasKey ? 'hinterlegt' : 'fehlt', $hasKey ? '' : 'warn'),
@@ -891,6 +938,10 @@ final class OrvantaFlowService
         return self::node('ai', 'ai', (string) ($ai['name'] ?? 'KI-Endpunkt'), (string) ($ai['url'] ?? ''), $stateKey, [
             'message' => $message,
             'facts' => $facts,
+            'counters' => [
+                'current' => self::counter($sessionsNow, 'Sitzungen aktuell'),
+                'peak' => self::counter($sessionsDay, 'Sitzungen in 24 h'),
+            ],
             'cloud' => $top,
             'cloud_title' => 'Top-' . self::AI_TOP_USERS . ' Nutzer (' . $days . ' Tage)',
             'cloud_empty' => 'Keine Anfragen im Zeitraum.',
@@ -1024,6 +1075,118 @@ final class OrvantaFlowService
             ],
             'members' => $members,
             'muted' => in_array($state, ['offline', 'disabled'], true),
+            'muted_reason' => $state === 'disabled' ? 'deaktiviert' : 'nicht erreichbar',
+            'link' => ['url' => '/admin/storage', 'label' => 'Speicher verwalten'],
+        ]);
+    }
+
+    /**
+     * Lokaler Speicher der lanpa-VM (Hot-Tier). Er ist immer vorhanden und
+     * damit auch ohne eingerichtete Speicherziele sichtbar; Cold-Tiers und
+     * der Snapshot-Speicher haengen in der Topologie an ihm.
+     *
+     * @param array<string,mixed> $storage
+     *
+     * @return array<string,mixed>
+     */
+    private static function localTierNode(array $storage): array
+    {
+        $local = (array) ($storage['local'] ?? []);
+        $fill = (array) ($local['fill'] ?? ['percent' => null, 'state' => 'disabled']);
+        $total = (int) ($local['total_bytes'] ?? 0);
+        $free = (int) ($local['free_bytes'] ?? 0);
+        $used = (int) ($local['used_bytes'] ?? max(0, $total - $free));
+        $mode = (string) ($storage['mode'] ?? 'normal');
+        $targets = count((array) ($storage['targets'] ?? []));
+
+        $stateKey = 'ok';
+        $message = '';
+        if ($total <= 0) {
+            $stateKey = 'warn';
+            $message = 'Noch keine Messwerte des lokalen Speichers; der Speicher-Worker liefert sie im Betrieb.';
+        } elseif (($fill['state'] ?? '') === 'critical') {
+            $stateKey = 'error';
+            $message = 'Der lokale Speicher ist fast voll; Anhänge können nicht mehr abgelegt werden.';
+        } elseif (($fill['state'] ?? '') === 'degraded') {
+            $stateKey = 'warn';
+            $message = 'Der lokale Speicher füllt sich.';
+        } elseif ($mode !== '' && $mode !== 'normal') {
+            $stateKey = 'warn';
+            $message = (string) ($storage['forecast_text'] ?? '') !== ''
+                ? (string) $storage['forecast_text']
+                : 'Der Speicher läuft im Modus „' . $mode . '“.';
+        }
+
+        $limit = (int) ($local['limit_bytes'] ?? 0);
+        $facts = [
+            self::fact('Zustand', self::STATE_LABELS[$stateKey], $stateKey),
+            self::fact('Belegt', $total > 0 ? StorageHealth::formatBytes($used) . ' von ' . StorageHealth::formatBytes($total) : '–', $stateKey === 'ok' ? '' : $stateKey),
+            self::fact('Belegung', $total > 0 ? (string) ($fill['percent'] ?? '–') . ' %' : '–'),
+            self::fact('Orvanta-Daten lokal', StorageHealth::formatBytes((int) ($local['bytes_local'] ?? 0))),
+            self::fact('Grenze', $limit > 0 ? StorageHealth::formatBytes($limit) . (($local['limit_auto'] ?? false) ? ' (automatisch)' : '') : 'keine'),
+            self::fact('Datenrate', StorageHealth::formatRate((int) ($local['read_bps'] ?? 0)) . ' lesen / ' . StorageHealth::formatRate((int) ($local['write_bps'] ?? 0)) . ' schreiben'),
+            self::fact('Modus', $mode !== '' ? $mode : 'normal', $mode !== '' && $mode !== 'normal' ? 'warn' : ''),
+            self::fact('Cold-Tiers', (string) $targets),
+        ];
+        if ((string) ($storage['forecast_text'] ?? '') !== '') {
+            $facts[] = self::fact('Prognose', (string) $storage['forecast_text']);
+        }
+
+        return self::node('tier-local', 'tier', 'Lokaler Speicher (VM)', 'Hot-Tier', $stateKey, [
+            'message' => $message,
+            'facts' => $facts,
+            'primary' => true,
+            'link' => ['url' => '/admin/storage', 'label' => 'Speicher verwalten'],
+        ]);
+    }
+
+    /**
+     * Snapshot-Speicher (Versionen) als Kind des lokalen Speichers.
+     *
+     * @param array<string,mixed> $snapshot
+     *
+     * @return array<string,mixed>
+     */
+    private static function snapshotTierNode(array $snapshot): array
+    {
+        $state = (string) ($snapshot['state'] ?? 'unknown');
+        $fill = (array) ($snapshot['fill'] ?? ['percent' => null, 'state' => 'disabled']);
+        $stateKey = match ($state) {
+            'online' => 'ok',
+            'unknown' => 'warn',
+            'disabled' => 'off',
+            default => 'error',
+        };
+        if ($stateKey === 'ok' && ($fill['state'] ?? '') === 'critical') {
+            $stateKey = 'error';
+        } elseif ($stateKey === 'ok' && ($fill['state'] ?? '') === 'degraded') {
+            $stateKey = 'warn';
+        }
+
+        $total = (int) ($snapshot['total_bytes'] ?? 0);
+        $used = (int) ($snapshot['used_bytes'] ?? 0);
+        $message = '';
+        if ($stateKey === 'error') {
+            $message = (string) ($snapshot['message'] ?? '') !== ''
+                ? (string) $snapshot['message']
+                : ($state === 'online' ? 'Der Snapshot-Speicher ist fast voll.' : 'Der Snapshot-Speicher ist nicht erreichbar.');
+        } elseif ($stateKey === 'warn') {
+            $message = (string) ($snapshot['message'] ?? '');
+        }
+        $failed = (int) ($snapshot['failed'] ?? 0);
+
+        return self::node('tier-snapshot', 'tier', 'Snapshot-Speicher', (string) ($snapshot['unc_path'] ?? '') !== '' ? (string) $snapshot['unc_path'] : 'Versionen', $stateKey, [
+            'message' => $message,
+            'facts' => [
+                self::fact('Zustand', (string) ($snapshot['state_label'] ?? self::STATE_LABELS[$stateKey]), $stateKey),
+                self::fact('Belegt', $total > 0 ? StorageHealth::formatBytes($used) . ' von ' . StorageHealth::formatBytes($total) : '–', $stateKey === 'ok' ? '' : $stateKey),
+                self::fact('Belegung', $total > 0 ? (string) ($fill['percent'] ?? '–') . ' %' : '–'),
+                self::fact('Versionen', (string) (int) ($snapshot['snapshots_total'] ?? 0) . ' (' . StorageHealth::formatBytes((int) ($snapshot['snapshots_bytes'] ?? 0)) . ')'),
+                self::fact('Vorgemerkt / fehlgeschlagen', (string) (int) ($snapshot['pending'] ?? 0) . ' / ' . $failed, $failed > 0 ? 'warn' : ''),
+                self::fact('Letzter Snapshot', self::timeLabel((string) ($snapshot['last_snapshot_at'] ?? ''))),
+                self::fact('Aufbewahrung', (string) (int) ($snapshot['retention_days'] ?? 0) . ' Tage, höchstens ' . (string) (int) ($snapshot['max_versions'] ?? 0) . ' Versionen'),
+            ],
+            'muted' => in_array($state, ['offline', 'invalid', 'disabled'], true),
             'muted_reason' => $state === 'disabled' ? 'deaktiviert' : 'nicht erreichbar',
             'link' => ['url' => '/admin/storage', 'label' => 'Speicher verwalten'],
         ]);
@@ -1321,6 +1484,7 @@ final class OrvantaFlowService
             'transport' => '',
             'chart' => [],
             'members' => [],
+            'counters' => [],
         ];
 
         $node = array_merge($defaults, $extra);
@@ -1337,6 +1501,32 @@ final class OrvantaFlowService
     private static function fact(string $label, string $value, string $state = ''): array
     {
         return ['label' => $label, 'value' => $value, 'state' => $state];
+    }
+
+    /**
+     * Zaehler am Knotenrand der Topologie. `current` erscheint oben rechts,
+     * `peak` oben links des Badges.
+     *
+     * @return array{value:int,label:string}
+     */
+    private static function counter(int $value, string $label): array
+    {
+        return ['value' => max(0, $value), 'label' => $label];
+    }
+
+    /**
+     * Zaehlerpaar fuer Nutzerknoten: aktuell verbundene Nutzer und das
+     * 24-h-Maximum. Die Werte der Identitaetsquellen summieren sich exakt zu
+     * denen des Knotens "Orvanta-Nutzer" (siehe OrvantaPresenceService::stats()).
+     *
+     * @return array{current:array{value:int,label:string},peak:array{value:int,label:string}}
+     */
+    private static function userCounters(int $current, int $peak): array
+    {
+        return [
+            'current' => self::counter($current, 'Aktive Nutzer'),
+            'peak' => self::counter($peak, 'Maximum 24 h'),
+        ];
     }
 
     private static function timeLabel(string $stamp): string

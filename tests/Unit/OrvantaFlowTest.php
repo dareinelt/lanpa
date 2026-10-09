@@ -69,8 +69,14 @@ function flowPdo(): PDO
     );
     $pdo->exec(
         'CREATE TABLE orvanta_activity (
-            user_uid TEXT PRIMARY KEY, backend TEXT NOT NULL DEFAULT \'exchange\',
+            user_uid TEXT PRIMARY KEY, backend TEXT NOT NULL DEFAULT \'exchange\', source_id INTEGER NOT NULL DEFAULT 0,
             first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, requests INTEGER NOT NULL DEFAULT 0
+        )'
+    );
+    $pdo->exec(
+        'CREATE TABLE orvanta_source_samples (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, sampled_at TEXT NOT NULL, source_id INTEGER NOT NULL DEFAULT 0,
+            active_users INTEGER NOT NULL DEFAULT 0, UNIQUE (sampled_at, source_id)
         )'
     );
     $pdo->exec(
@@ -743,16 +749,33 @@ function flowInput(array $overrides = []): array
         ],
         'presence' => ['current' => 4, 'exchange' => 3, 'proxy' => 1, 'min' => 1, 'max' => 9, 'avg' => 3.5, 'samples' => 288, 'window' => 300],
         'history' => ['periods' => [14, 30, 90, 180, 365], 'series' => [], 'max' => 9],
-        'storage' => ['targets' => [[
-            'id' => 1, 'label' => 'Tier A', 'kind' => 'smb', 'state' => 'online', 'message' => '',
-            'unbounded' => false, 'total_bytes' => 1000, 'free_bytes' => 400,
-            'fill' => ['percent' => 60.0, 'state' => 'ok'], 'in_sync' => true, 'lag_seconds' => 0,
-            'read_bps' => 0, 'write_bps' => 0,
-            'members' => [
-                ['id' => 1, 'label' => 'Tier A', 'state' => 'online', 'role' => 'root'],
-                ['id' => 2, 'label' => 'Tier A Teil 2', 'state' => 'online', 'role' => 'extension'],
+        'storage' => [
+            'available' => true,
+            'mode' => 'normal',
+            'forecast_text' => '',
+            'local' => [
+                'total_bytes' => 100_000, 'free_bytes' => 70_000, 'used_bytes' => 30_000,
+                'fill' => ['percent' => 30.0, 'state' => 'ok'], 'limit_bytes' => 0, 'limit_auto' => false,
+                'bytes_local' => 12_000, 'read_bps' => 0, 'write_bps' => 0,
             ],
-        ]]],
+            'snapshot' => [
+                'enabled' => true, 'configured' => true, 'unc_path' => '\\\\nas\\snapshots', 'state' => 'online',
+                'state_label' => 'Online', 'message' => '', 'total_bytes' => 50_000, 'free_bytes' => 40_000,
+                'used_bytes' => 10_000, 'fill' => ['percent' => 20.0, 'state' => 'ok'],
+                'snapshots_total' => 3, 'snapshots_bytes' => 9_000, 'pending' => 0, 'failed' => 0,
+                'last_snapshot_at' => '2023-11-14 20:00:00', 'retention_days' => 30, 'max_versions' => 10,
+            ],
+            'targets' => [[
+                'id' => 1, 'label' => 'Tier A', 'kind' => 'smb', 'state' => 'online', 'message' => '',
+                'unbounded' => false, 'total_bytes' => 1000, 'free_bytes' => 400,
+                'fill' => ['percent' => 60.0, 'state' => 'ok'], 'in_sync' => true, 'lag_seconds' => 0,
+                'read_bps' => 0, 'write_bps' => 0,
+                'members' => [
+                    ['id' => 1, 'label' => 'Tier A', 'state' => 'online', 'role' => 'root'],
+                    ['id' => 2, 'label' => 'Tier A Teil 2', 'state' => 'online', 'role' => 'extension'],
+                ],
+            ]],
+        ],
         'cache' => [
             'used' => 50 * 1024 * 1024,
             'quota' => 100 * 1024 * 1024,
@@ -827,9 +850,9 @@ Runner::test('Nachrichtenfluss: alle Bausteine erscheinen als Knoten mit Zustand
     $flow = OrvantaFlowService::evaluate(flowInput());
 
     Assert::same(
-        ['proxy', 'source-0', 'host-1', 'users', 'ai', 'cache', 'tier-1'],
+        ['proxy', 'source-0', 'host-1', 'users', 'ai', 'cache', 'tier-local', 'tier-1', 'tier-snapshot'],
         array_keys($flow['nodes']),
-        'Proxy, Quelle, Host, Nutzer, KI, Zwischenspeicher und Tier sind vorhanden'
+        'Proxy, Quelle, Host, Nutzer, KI, Zwischenspeicher, lokaler Speicher, Tier und Snapshot sind vorhanden'
     );
     foreach ($flow['nodes'] as $key => $node) {
         Assert::true(in_array($node['state'], ['ok', 'warn', 'error', 'off'], true), $key . ' hat einen gültigen Zustand');
@@ -1460,7 +1483,7 @@ Runner::test('Nachrichtenfluss: Ansicht bindet jede Kennzahl, jeden Knoten und j
         Assert::contains('data-flow-kpi="' . $key . '"', $html);
         Assert::contains('data-flow-kpi-hint="' . $key . '"', $html);
     }
-    foreach (['proxy', 'source-0', 'host-1', 'users', 'ai', 'cache', 'tier-1'] as $key) {
+    foreach (['proxy', 'source-0', 'host-1', 'users', 'ai', 'cache', 'tier-local', 'tier-1', 'tier-snapshot'] as $key) {
         Assert::contains('data-flow-node="' . $key . '"', $html);
         Assert::contains('id="flow-' . $key . '"', $html);
         Assert::contains('data-flow-node-state="', $html);
@@ -1766,4 +1789,221 @@ Runner::test('Topologie: Route, Verweis, Skript und Gestaltung sind verdrahtet',
         Assert::contains($selector, $css);
     }
     Assert::same(substr_count($css, '{'), substr_count($css, '}'), 'die Gestaltung ist ausbalanciert');
+});
+
+// ----------------------------------------------------- Präsenz je Identitätsquelle
+
+Runner::test('Nachrichtenfluss: Aktivität merkt sich die Identitätsquelle des Nutzers', static function (): void {
+    $pdo = flowPdo();
+    $presence = flowPresence($pdo, static fn (): int => 1700000000);
+
+    $presence->touch('mueller', 'proxy', 5);
+    $presence->touch('schmidt', 'exchange');
+    $presence->touch('mueller', 'proxy', 5);
+
+    Assert::same(5, (int) $pdo->query("SELECT source_id FROM orvanta_activity WHERE user_uid = 'mueller'")->fetchColumn());
+    Assert::same(0, (int) $pdo->query("SELECT source_id FROM orvanta_activity WHERE user_uid = 'schmidt'")->fetchColumn());
+
+    $bySource = (new OrvantaFlowRepository($pdo))->activeUsersBySource(
+        date('Y-m-d H:i:s', 1700000000 - 300),
+        date('Y-m-d H:i:s', 1700000000)
+    );
+    Assert::same([0 => 1, 5 => 1], $bySource);
+});
+
+Runner::test('Nachrichtenfluss: Probe je Quelle entsteht gemeinsam mit der Gesamtprobe', static function (): void {
+    $pdo = flowPdo();
+    $now = 1700000000;
+    $presence = flowPresence($pdo, static fn (): int => $now);
+    $presence->touch('a', 'exchange', 0);
+    $presence->touch('b', 'exchange', 0);
+    $presence->touch('c', 'proxy', 5);
+
+    Assert::true($presence->sample());
+    Assert::false($presence->sample(), 'zweite Probe im selben Raster wird verworfen');
+
+    $sampledAt = date('Y-m-d H:i:s', $now - ($now % OrvantaPresenceService::SAMPLE_INTERVAL));
+    $rows = $pdo->query('SELECT source_id, active_users FROM orvanta_source_samples ORDER BY source_id')->fetchAll(PDO::FETCH_ASSOC);
+    Assert::same([['source_id' => 0, 'active_users' => 2], ['source_id' => 5, 'active_users' => 1]], array_map(static fn (array $r): array => ['source_id' => (int) $r['source_id'], 'active_users' => (int) $r['active_users']], $rows));
+    Assert::same([0 => 2, 5 => 1], (new OrvantaFlowRepository($pdo))->sourceUsersAt($sampledAt));
+    Assert::same(3, array_sum(array_column($rows, 'active_users')), 'Quellen summieren sich zur Gesamtprobe');
+});
+
+Runner::test('Nachrichtenfluss: Kennzahlen je Quelle summieren sich exakt zu den Gesamtwerten', static function (): void {
+    $pdo = flowPdo();
+    $now = 1700000000;
+    $presence = flowPresence($pdo, static fn (): int => $now);
+    $flow = new OrvantaFlowRepository($pdo);
+
+    // Spitze vor einer Stunde (6 Nutzer: 4 Zentrale, 2 Hamburg), danach weniger.
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 3600), 6, 4, 2, 0);
+    $flow->recordSourceSamples(date('Y-m-d H:i:s', $now - 3600), [0 => 4, 5 => 2]);
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 60), 3, 2, 1, 0);
+    $flow->recordSourceSamples(date('Y-m-d H:i:s', $now - 60), [0 => 1, 5 => 2]);
+    // Außerhalb der 24 Stunden
+    $flow->recordSample(date('Y-m-d H:i:s', $now - 90000), 40, 40, 0, 0);
+    $flow->recordSourceSamples(date('Y-m-d H:i:s', $now - 90000), [0 => 40]);
+
+    $presence->touch('a', 'exchange', 0);
+    $presence->touch('b', 'proxy', 5);
+    $presence->touch('c', 'proxy', 5);
+
+    $stats = $presence->stats();
+    Assert::same(3, $stats['current']);
+    Assert::same(6, $stats['max']);
+    Assert::same(date('Y-m-d H:i:s', $now - 3600), $stats['peak_at']);
+    Assert::same(1, $stats['sources'][0]['current']);
+    Assert::same(2, $stats['sources'][5]['current']);
+    Assert::same(4, $stats['sources'][0]['peak']);
+    Assert::same(2, $stats['sources'][5]['peak']);
+    Assert::same($stats['current'], array_sum(array_column($stats['sources'], 'current')), 'aktuelle Werte summieren sich');
+    Assert::same($stats['max'], array_sum(array_column($stats['sources'], 'peak')), 'Maxima summieren sich zum Gesamtmaximum');
+});
+
+Runner::test('Nachrichtenfluss: ohne Proben entspricht das Quellenmaximum dem aktuellen Wert', static function (): void {
+    $pdo = flowPdo();
+    $presence = flowPresence($pdo, static fn (): int => 1700000000);
+    $presence->touch('a', 'exchange', 0);
+    $presence->touch('b', 'proxy', 5);
+
+    $stats = $presence->stats();
+    Assert::same(['current' => 1, 'peak' => 1], $stats['sources'][0]);
+    Assert::same(['current' => 1, 'peak' => 1], $stats['sources'][5]);
+    Assert::same($stats['max'], array_sum(array_column($stats['sources'], 'peak')));
+});
+
+Runner::test('Nachrichtenfluss: Räumen entfernt auch alte Quellenproben', static function (): void {
+    $pdo = flowPdo();
+    $now = 1700000000;
+    $flow = new OrvantaFlowRepository($pdo);
+    $flow->recordSourceSamples(date('Y-m-d H:i:s', $now - 500 * 86400), [0 => 3]);
+    $flow->recordSourceSamples(date('Y-m-d H:i:s', $now - 60), [0 => 2]);
+
+    flowPresence($pdo, static fn (): int => $now)->purge();
+
+    Assert::same(1, (int) $pdo->query('SELECT COUNT(*) FROM orvanta_source_samples')->fetchColumn());
+});
+
+// --------------------------------------------------------------- Zähler am Badge
+
+Runner::test('Nachrichtenfluss: Knoten tragen Zähler für aktuell und 24 Stunden', static function (): void {
+    $input = flowInput();
+    $input['presence']['sources'] = [0 => ['current' => 4, 'peak' => 9]];
+    $input['ai']['active_users'] = 2;
+    $input['ai']['day_users'] = 11;
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $users = flowNode($flow, 'users')['counters'];
+    Assert::same(4, $users['current']['value']);
+    Assert::same(9, $users['peak']['value']);
+
+    $source = flowNode($flow, 'source-0')['counters'];
+    Assert::same(4, $source['current']['value']);
+    Assert::same(9, $source['peak']['value']);
+    Assert::same($users['current']['value'], $source['current']['value'], 'Quelle und Nutzerknoten stimmen überein');
+
+    $ai = flowNode($flow, 'ai')['counters'];
+    Assert::same(2, $ai['current']['value']);
+    Assert::same(11, $ai['peak']['value']);
+
+    $host = flowNode($flow, 'host-1')['counters'];
+    Assert::same(2, $host['current']['value']);
+    Assert::false(isset($host['peak']), 'Hosts zeigen nur den aktuellen Wert');
+
+    Assert::same([], flowNode($flow, 'cache')['counters']);
+    Assert::same([], flowNode($flow, 'tier-1')['counters']);
+});
+
+Runner::test('Nachrichtenfluss: Quellen ohne Präsenzdaten zeigen 0', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+    $source = flowNode($flow, 'source-0')['counters'];
+    Assert::same(0, $source['current']['value']);
+    Assert::same(0, $source['peak']['value']);
+    Assert::same('0', $source['facts'][0]['value'] ?? flowNode($flow, 'source-0')['facts'][0]['value']);
+});
+
+Runner::test('Nachrichtenfluss: Exchange-Quellen tragen Zähler aus der Präsenz', static function (): void {
+    $input = flowInput();
+    $input['sources'][0]['transport'] = 'exchange';
+    $input['presence']['sources'] = [0 => ['current' => 3, 'peak' => 7]];
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $source = flowNode($flow, 'source-0');
+    Assert::same('exchange', $source['transport']);
+    Assert::same(3, $source['counters']['current']['value']);
+    Assert::same(7, $source['counters']['peak']['value']);
+});
+
+// ----------------------------------------------------------- Speicher-Hierarchie
+
+Runner::test('Nachrichtenfluss: lokaler Speicher ist Wurzel, Cold-Tier und Snapshot hängen daran', static function (): void {
+    $flow = OrvantaFlowService::evaluate(flowInput());
+
+    $local = flowNode($flow, 'tier-local');
+    Assert::same('tier', $local['kind']);
+    Assert::same('ok', $local['state']);
+    Assert::true($local['primary']);
+    Assert::same('/admin/storage', $local['link']['url']);
+
+    $snapshot = flowNode($flow, 'tier-snapshot');
+    Assert::same('ok', $snapshot['state']);
+    Assert::same('\\\\nas\\snapshots', $snapshot['subtitle']);
+
+    $edgeKeys = array_map(static fn (array $e): string => $e['from'] . '>' . $e['to'], $flow['edges']);
+    Assert::true(in_array('tier-local>cache', $edgeKeys, true), 'lokaler Speicher speist den Zwischenspeicher');
+    Assert::true(in_array('tier-1>tier-local', $edgeKeys, true), 'Cold-Tier hängt am lokalen Speicher');
+    Assert::true(in_array('tier-snapshot>tier-local', $edgeKeys, true), 'Snapshot hängt am lokalen Speicher');
+    Assert::false(in_array('tier-1>cache', $edgeKeys, true));
+
+    Assert::same(['tier-local', 'tier-1', 'tier-snapshot'], $flow['tiers']);
+});
+
+Runner::test('Nachrichtenfluss: lokaler Speicher erscheint auch ohne Speicherziele', static function (): void {
+    $input = flowInput();
+    $input['storage']['targets'] = [];
+    $input['storage']['snapshot']['enabled'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+
+    Assert::same(['tier-local'], $flow['tiers']);
+    Assert::true(isset($flow['nodes']['tier-local']));
+    Assert::false(isset($flow['nodes']['tier-snapshot']));
+    Assert::same('0', flowNode($flow, 'tier-local')['facts'][7]['value'], 'keine Cold-Tiers');
+});
+
+Runner::test('Nachrichtenfluss: ohne Speicherdienst hängen Tiers direkt am Zwischenspeicher', static function (): void {
+    $input = flowInput();
+    $input['storage']['available'] = false;
+    $flow = OrvantaFlowService::evaluate($input);
+
+    Assert::false(isset($flow['nodes']['tier-local']));
+    Assert::false(isset($flow['nodes']['tier-snapshot']));
+    $edgeKeys = array_map(static fn (array $e): string => $e['from'] . '>' . $e['to'], $flow['edges']);
+    Assert::true(in_array('tier-1>cache', $edgeKeys, true));
+});
+
+Runner::test('Nachrichtenfluss: lokaler Speicher warnt ohne Messwerte und stört bei kritischer Belegung', static function (): void {
+    $input = flowInput();
+    $input['storage']['local']['total_bytes'] = 0;
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('warn', flowNode($flow, 'tier-local')['state']);
+    Assert::contains('Noch keine Messwerte', flowNode($flow, 'tier-local')['message']);
+
+    $input = flowInput();
+    $input['storage']['local']['fill'] = ['percent' => 97.0, 'state' => 'critical'];
+    $flow = OrvantaFlowService::evaluate($input);
+    Assert::same('error', flowNode($flow, 'tier-local')['state']);
+    Assert::true(flowNode($flow, 'tier-local')['alert']);
+});
+
+Runner::test('Nachrichtenfluss: Snapshot-Speicher offline wird gedämpft und als Störung geführt', static function (): void {
+    $input = flowInput();
+    $input['storage']['snapshot']['state'] = 'offline';
+    $input['storage']['snapshot']['message'] = 'Der Snapshot-Pfad ist nicht erreichbar.';
+    $flow = OrvantaFlowService::evaluate($input);
+
+    $snapshot = flowNode($flow, 'tier-snapshot');
+    Assert::same('error', $snapshot['state']);
+    Assert::true($snapshot['muted']);
+    Assert::same('Der Snapshot-Pfad ist nicht erreichbar.', $snapshot['message']);
+    Assert::same('tier-snapshot', $flow['incidents'][0]['key']);
 });

@@ -223,7 +223,7 @@ final class OrvantaFlowCharts
                 $y
             );
             $svg .= sprintf(
-                '<text x="%d" y="%.1f" font-size="10" text-anchor="end" fill="#64748b">%d</text>',
+                '<text x="%d" y="%.1f" font-size="10" text-anchor="end" fill="#64748b" class="ov-flow-axis-label">%d</text>',
                 self::PAD_LEFT - 6,
                 $y + 3,
                 (int) round($max * $s / $steps)
@@ -244,7 +244,7 @@ final class OrvantaFlowCharts
         $svg = '';
         foreach ($labels as [$fraction, $label]) {
             $svg .= sprintf(
-                '<text x="%.1f" y="%d" font-size="10" text-anchor="%s" fill="#475569">%s</text>',
+                '<text x="%.1f" y="%d" font-size="10" text-anchor="%s" fill="#475569" class="ov-flow-axis-label">%s</text>',
                 self::PAD_LEFT + $plotW * $fraction,
                 self::HEIGHT - self::PAD_BOTTOM + 16,
                 $fraction === 0.0 ? 'start' : ($fraction === 1.0 ? 'end' : 'middle'),
@@ -278,7 +278,7 @@ final class OrvantaFlowCharts
     private function empty(string $message): string
     {
         return $this->open(0) . sprintf(
-            '<text x="%d" y="%d" font-size="13" text-anchor="middle" fill="#64748b">%s</text></svg>',
+            '<text x="%d" y="%d" font-size="13" text-anchor="middle" fill="#64748b" class="ov-flow-axis-title">%s</text></svg>',
             (int) (self::WIDTH / 2),
             (int) (self::HEIGHT / 2),
             $this->esc($message)

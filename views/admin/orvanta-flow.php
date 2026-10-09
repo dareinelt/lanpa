@@ -110,7 +110,10 @@ $renderNode = static function (array $node) use ($badge, $stateLabel, $cloud, $r
     $key = (string) ($node['key'] ?? '');
     $state = (string) ($node['state'] ?? 'off');
     $muted = (bool) ($node['muted'] ?? false);
-    $classes = 'flow-node flow-node--' . $state . ($muted ? ' flow-node--muted' : '');
+    $chart = (array) ($node['chart'] ?? []);
+    $classes = 'flow-node flow-node--' . $state
+        . ($muted ? ' flow-node--muted' : '')
+        . ($chart !== [] ? ' flow-node--chart' : '');
 
     $html = '<article class="' . $classes . '" id="flow-' . Html::e($key) . '"'
         . ' data-flow-node="' . Html::e($key) . '" data-flow-node-state="' . Html::e($state) . '">';
@@ -184,7 +187,6 @@ $renderNode = static function (array $node) use ($badge, $stateLabel, $cloud, $r
         $html .= '</ul>';
     }
 
-    $chart = (array) ($node['chart'] ?? []);
     if ($chart !== []) {
         $html .= $renderChart($chart);
     }

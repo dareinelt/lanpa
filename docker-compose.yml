@@ -327,41 +327,41 @@ services:
   # Laedt beim ersten Start ein kleines Modell (ca. 400 MB) von Hugging Face.
   # Anschliessend im Adminbereich unter Office -> Lokale KI eintragen oder
   # per OFFICE_AI_SEED_URL/OFFICE_AI_SEED_MODEL durch scripts/seed.php setzen.
-  ki:
-    image: ghcr.io/ggml-org/llama.cpp:server
-    profiles: ["ki"]
-    restart: unless-stopped
-    command:
-      - "--hf-repo"
-      - "${KI_MODEL_REPO:-Qwen/Qwen2.5-0.5B-Instruct-GGUF}"
-      - "--hf-file"
-      - "${KI_MODEL_FILE:-qwen2.5-0.5b-instruct-q4_k_m.gguf}"
-      - "--alias"
-      - "${KI_MODEL_ALIAS:-qwen2.5-0.5b-instruct}"
-      - "--host"
-      - "0.0.0.0"
-      - "--port"
-      - "8080"
-      - "--ctx-size"
-      - "4096"
-      - "--threads"
-      - "${KI_THREADS:-4}"
-    environment:
-      LLAMA_CACHE: /models
-      # Denkmodelle (z. B. Qwen3.5) antworten ohne "Thinking" deutlich schneller.
-      LLAMA_ARG_REASONING: "${KI_REASONING:-off}"
-    volumes:
-      - ki_models:/models
-    ports:
-      - "${KI_PORT:-8089}:8080"
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 20
-      start_period: 120s
-    networks:
-      - intranet
+  #ki:
+  #  image: ghcr.io/ggml-org/llama.cpp:server
+  #  profiles: ["ki"]
+  #  restart: unless-stopped
+  #  command:
+  #    - "--hf-repo"
+  #    - "${KI_MODEL_REPO:-Qwen/Qwen2.5-0.5B-Instruct-GGUF}"
+  #    - "--hf-file"
+  #    - "${KI_MODEL_FILE:-qwen2.5-0.5b-instruct-q4_k_m.gguf}"
+  #    - "--alias"
+  #    - "${KI_MODEL_ALIAS:-qwen2.5-0.5b-instruct}"
+  #    - "--host"
+  #    - "0.0.0.0"
+  #    - "--port"
+  #    - "8080"
+  #    - "--ctx-size"
+  #    - "4096"
+  #    - "--threads"
+  #    - "${KI_THREADS:-4}"
+  #  environment:
+  #    LLAMA_CACHE: /models
+  #    # Denkmodelle (z. B. Qwen3.5) antworten ohne "Thinking" deutlich schneller.
+  #    LLAMA_ARG_REASONING: "${KI_REASONING:-off}"
+  #  volumes:
+  #    - ki_models:/models
+  #  ports:
+  #    - "${KI_PORT:-8089}:8080"
+  #  healthcheck:
+  #    test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+  #    interval: 30s
+  #    timeout: 5s
+  #    retries: 20
+  #    start_period: 120s
+  #  networks:
+  #    - intranet
 
   # SNMP-Agent: Status der Container/Dienste/Workflows per SNMP abfragbar.
   # Liest den Docker-Socket (read-only) und die Datenbank (sync_log) aus.

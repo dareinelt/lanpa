@@ -37,6 +37,7 @@ use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
 use App\Controllers\Admin\SourceNetworksController;
 use App\Controllers\Admin\StatisticsController;
+use App\Controllers\Admin\TopologyController;
 use App\Controllers\Admin\StorageQuotaController;
 use App\Controllers\Admin\StorageController as StorageAdminController;
 use App\Controllers\BackgroundImageController;
@@ -472,6 +473,12 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
 
         $router->get('/admin/snmp', [SnmpController::class, 'index']);
         $router->post('/admin/snmp', [SnmpController::class, 'update']);
+
+        // Gesamt-Topologie der Anwendung: lesende Uebersicht ueber alle Module,
+        // Dienste, Container, Netze und Speicherziele.
+        $router->get('/admin/topologie', [TopologyController::class, 'index']);
+        $router->get('/admin/topologie/daten', [TopologyController::class, 'data']);
+        $router->post('/admin/topologie/entwurf', [TopologyController::class, 'saveVisibility']);
 
         $router->get('/admin/quellnetze', [SourceNetworksController::class, 'index']);
         $router->post('/admin/quellnetze', [SourceNetworksController::class, 'update']);

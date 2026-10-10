@@ -2518,4 +2518,6 @@ dieselbe JSON-Antwort wie das Kartendashboard. Alle DOM-Updates laufen über
 `textContent`/`createElement`, Zustände über Klassen (`topo-pulse--*`,
 `topo-log__item--*`, `topo-incidents--open`); Inline-Stile gibt es nicht.
 Bedienung, Animationen und Tastenbelegung: `docs/orvanta-nachrichtenfluss.md`
-Abschnitt 14.
+Abschnitt 14. Aufbau, Datenvertrag, Zustands- und Dämpfungsregeln, Anordnung
+und Projektion, Aktualisierung und bekannte Eigenheiten:
+`docs/topologie-referenz.md`.

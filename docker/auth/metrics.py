@@ -7,6 +7,13 @@ Proxys); jede Probe umfasst das Messfenster seit der vorherigen Probe:
   cpu_percent  CPU-Auslastung bezogen auf das CPU-Limit des Containers
                (cpu.max bzw. cfs_quota/cfs_period; ohne Limit gilt ein Kern)
   cpu_limit    Bezugsgroesse der Messung in Kernen
+  ram_percent  Arbeitsspeicher-Auslastung bezogen auf die Bezugsgroesse des
+               Containers (memory.max; ohne Limit der Arbeitsspeicher des
+               Hosts). Belegt ist memory.current abzueglich des nicht mehr
+               benoetigten Dateicaches (inactive_file) - derselbe Wert, den
+               "docker stats" zeigt.
+  ram_used     belegter Arbeitsspeicher in Byte
+  ram_total    Bezugsgroesse in Byte
   connections  im Messfenster aufgebaute Verbindungen von Clients; Quelle ist
                das Zugriffsprotokoll (LOG_PATH), das je Zeile die
                Client-Adresse und den Quellport enthaelt. Mehrere Anfragen
@@ -74,6 +81,25 @@ CGROUP_USAGE_FILES = (
     "/sys/fs/cgroup/cpu/cpuacct.usage",
 )
 
+# Arbeitsspeicher des Containers: cgroup v2 und die Pfade von cgroup v1.
+CGROUP_MEMORY_FILES = (
+    "/sys/fs/cgroup/memory.current",
+    "/sys/fs/cgroup/memory/memory.usage_in_bytes",
+)
+
+CGROUP_MEMORY_LIMIT_FILES = (
+    "/sys/fs/cgroup/memory.max",
+    "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+)
+
+# Dateicache, der ohne Bedarf freigegeben wuerde, zaehlt nicht als Verbrauch.
+CGROUP_MEMORY_STAT = "/sys/fs/cgroup/memory.stat"
+
+# cgroup v1 meldet ohne Limit einen riesigen Platzhalterwert; alles darueber
+# gilt als "kein Limit" (dann ist der Arbeitsspeicher des Hosts die
+# Bezugsgroesse, wie bei "docker stats").
+NO_LIMIT_BYTES = 1 << 60
+
 
 def log(message: str) -> None:
     print(f"[auth] {message}", flush=True)
@@ -130,6 +156,75 @@ def cpu_limit_cores() -> float:
         return int(quota) / int(period)
 
     return 1.0
+
+
+def memory_bytes() -> tuple[int, int] | None:
+    """Belegter Arbeitsspeicher und Bezugsgroesse des Containers in Byte.
+
+    Belegt ist memory.current abzueglich des Dateicaches, der ohne Bedarf
+    freigegeben wuerde (inactive_file in memory.stat) - derselbe Wert wie in
+    "docker stats". Bezugsgroesse ist memory.max; ohne Limit ("max" oder der
+    Platzhalterwert von cgroup v1) der Arbeitsspeicher des Hosts aus
+    /proc/meminfo. None, wenn sich der Verbrauch nicht lesen laesst.
+    """
+    used = None
+    for path in CGROUP_MEMORY_FILES:
+        value = read_file(path).strip()
+        if value.isdigit():
+            used = int(value)
+            break
+
+    if used is None:
+        return None
+
+    used = max(0, used - memory_inactive_bytes())
+
+    total = None
+    for path in CGROUP_MEMORY_LIMIT_FILES:
+        value = read_file(path).strip()
+        if value.isdigit() and int(value) < NO_LIMIT_BYTES:
+            total = int(value)
+            break
+
+    if total is None:
+        total = host_memory_bytes()
+
+    if total is None or total <= 0:
+        return None
+
+    return used, total
+
+
+def memory_inactive_bytes() -> int:
+    """Dateicache des Containers, der ohne Bedarf freigegeben wuerde."""
+    for line in read_file(CGROUP_MEMORY_STAT).splitlines():
+        fields = line.split()
+        if len(fields) == 2 and fields[0] == "inactive_file" and fields[1].isdigit():
+            return int(fields[1])
+
+    return 0
+
+
+def host_memory_bytes() -> int | None:
+    """Arbeitsspeicher des Hosts in Byte (MemTotal aus /proc/meminfo)."""
+    for line in read_file("/proc/meminfo").splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[0] == "MemTotal:" and fields[1].isdigit():
+            return int(fields[1]) * 1024
+
+    return None
+
+
+def human_bytes(value: int) -> str:
+    """Groesse in Byte lesbar, z. B. 1610612736 => "1.5 GiB"."""
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    size = float(max(0, value))
+    index = 0
+    while size >= 1024 and index < len(units) - 1:
+        size /= 1024
+        index += 1
+
+    return f"{size:.0f} {units[index]}" if index == 0 else f"{size:.1f} {units[index]}"
 
 
 def source_label(address: str) -> str:
@@ -230,6 +325,7 @@ def measure(
     values: dict[str, object] = {
         "percent": percent,
         "limit": limit,
+        "memory": memory_bytes(),
         "connections": connections,
         "sources": compact_sources(sources),
     }
@@ -238,15 +334,28 @@ def measure(
 
 
 def payload(values: dict[str, object]) -> dict[str, str]:
-    """Formularfelder der Meldung (sources als JSON-Objekt)."""
+    """Formularfelder der Meldung (sources als JSON-Objekt).
+
+    Ohne lesbaren Arbeitsspeicher entfallen ram_percent, ram_used und
+    ram_total; die Anwendung zeigt dann nur CPU und Verbindungen.
+    """
     percent = values["percent"]
 
-    return {
+    fields = {
         "cpu_percent": f"{0.0 if percent is None else float(percent):.2f}",
         "cpu_limit": f"{float(values['limit']):.2f}",
         "connections": str(int(values["connections"])),
         "sources": json.dumps(values["sources"], sort_keys=True),
     }
+
+    memory = values.get("memory")
+    if isinstance(memory, tuple) and memory[1] > 0:
+        used, total = memory
+        fields["ram_percent"] = f"{used / total * 100:.2f}"
+        fields["ram_used"] = str(used)
+        fields["ram_total"] = str(total)
+
+    return fields
 
 
 def read_token(path: str) -> str:
@@ -275,9 +384,19 @@ def describe(values: dict[str, object]) -> str:
     requests = sum(sources.values()) if isinstance(sources, dict) else 0
     percent = 0.0 if values["percent"] is None else float(values["percent"])
 
+    memory = values.get("memory")
+    if isinstance(memory, tuple) and memory[1] > 0:
+        used, total = memory
+        ram = (
+            f"Arbeitsspeicher {used / total * 100:.2f} % "
+            f"({human_bytes(used)} von {human_bytes(total)}), "
+        )
+    else:
+        ram = ""
+
     return (
         f"CPU {percent:.2f} % von {float(values['limit']):.2f} Kern(en), "
-        f"{int(values['connections'])} Verbindungen und {requests} Anfragen im Messfenster"
+        f"{ram}{int(values['connections'])} Verbindungen und {requests} Anfragen im Messfenster"
     )
 
 
@@ -322,6 +441,9 @@ def run_loop(url: str, token_file: str, interval: int) -> int:
 
         if values["percent"] is None:
             warn("CPU-Zeit des Containers nicht lesbar (cgroup nicht eingebunden); Auslastung wird als 0 gemeldet.")
+
+        if values["memory"] is None:
+            warn("Arbeitsspeicher des Containers nicht lesbar (cgroup nicht eingebunden); Auslastung wird nicht gemeldet.")
 
         send(url, token_file, values)
         window = interval

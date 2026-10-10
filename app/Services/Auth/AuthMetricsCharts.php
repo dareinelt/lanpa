@@ -34,6 +34,9 @@ final class AuthMetricsCharts
     /** Farbe der CPU-Linie. */
     private const CPU_COLOR = '#2563eb';
 
+    /** Farbe der Arbeitsspeicher-Linie. */
+    private const RAM_COLOR = '#7c3aed';
+
     /** Farbe der Verbindungslinie. */
     private const TCP_COLOR = '#0f766e';
 
@@ -80,6 +83,33 @@ final class AuthMetricsCharts
             'Verlauf der CPU-Auslastung im Container als Mittel je Zeitabschnitt. '
             . 'Die gestrichelten Linien markieren die Schwellen 75 und 90 Prozent.',
             [['values' => $values, 'color' => self::CPU_COLOR, 'label' => 'CPU-Auslastung']],
+            ['max' => 100.0, 'step' => 25.0],
+            [
+                ['value' => AuthMetricsService::WARN_PERCENT, 'color' => '#bf8700', 'label' => '75 %', 'level' => 'warn'],
+                ['value' => AuthMetricsService::CRIT_PERCENT, 'color' => '#c8102e', 'label' => '90 %', 'level' => 'crit'],
+            ],
+            'percent'
+        );
+    }
+
+    /**
+     * Arbeitsspeicher-Auslastung mit denselben Schwellen wie die CPU.
+     *
+     * @param array<string,mixed> $history Verlauf aus AuthMetricsService::history()
+     */
+    public function ram(array $history): string
+    {
+        $values = self::values($history['ram']['values'] ?? null);
+        if ($values === []) {
+            return $this->empty('Keine Verlaufsdaten der Arbeitsspeicher-Auslastung vorhanden.');
+        }
+
+        return $this->render(
+            $history,
+            'Arbeitsspeicher-Auslastung im Reverse-Proxy',
+            'Verlauf der Arbeitsspeicher-Auslastung des Containers als Mittel je Zeitabschnitt. '
+            . 'Die gestrichelten Linien markieren die Schwellen 75 und 90 Prozent.',
+            [['values' => $values, 'color' => self::RAM_COLOR, 'label' => 'Arbeitsspeicher']],
             ['max' => 100.0, 'step' => 25.0],
             [
                 ['value' => AuthMetricsService::WARN_PERCENT, 'color' => '#bf8700', 'label' => '75 %', 'level' => 'warn'],

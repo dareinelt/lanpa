@@ -15,9 +15,9 @@ use App\Support\Dates;
  * Der auth-Container misst selbst (docker/auth/metrics.py) und meldet jede
  * Probe an POST /internal/auth-metrics; die Anwendung prueft die Werte und
  * speichert sie in der Tabelle auth_metrics. Aus den Proben entstehen der
- * aktuelle Wert, die Spitze und das Mittel der letzten 12 Stunden (CPU) bzw.
- * 24 Stunden (Verbindungen) sowie die Verteilung der Anfragen auf die
- * Quellnetze.
+ * aktuelle Wert, die Spitze und das Mittel der letzten 12 Stunden (CPU und
+ * Arbeitsspeicher) bzw. 24 Stunden (Verbindungen) sowie die Verteilung der
+ * Anfragen auf die Quellnetze.
  *
  * CPU-Auslastung und Verbindungen sind Werte des Messfensters zwischen zwei
  * Proben (AUTH_METRICS_INTERVAL, Standard 60 s): die CPU-Auslastung aus der
@@ -30,7 +30,10 @@ use App\Support\Dates;
  *
  * Die CPU-Auslastung bezieht sich auf das CPU-Limit des Containers (cpu.max);
  * ohne Limit gilt ein Kern als Bezugsgroesse. Der Wert ist damit unabhaengig
- * von der Groesse des Hosts und von anderen Containern.
+ * von der Groesse des Hosts und von anderen Containern. Der Arbeitsspeicher
+ * wird ebenso im Container gemessen und auf seine Bezugsgroesse bezogen
+ * (memory.max; ohne Limit die Groesse des Arbeitsspeichers) - gemeldet wird
+ * zusaetzlich der absolute Verbrauch in Byte.
  *
  * Die Aufbewahrung ist auf RETENTION_HOURS begrenzt; geraeumt wird beim
  * Schreiben (kein eigener Worker noetig, da der auth-Container jede Minute
@@ -42,6 +45,9 @@ final class AuthMetricsService
 {
     /** Zeitfenster der CPU-Kennzahlen (Stunden). */
     public const CPU_WINDOW_HOURS = 12;
+
+    /** Zeitfenster der Arbeitsspeicher-Kennzahlen (Stunden). */
+    public const RAM_WINDOW_HOURS = 12;
 
     /** Zeitfenster der Verbindungs- und Anfrage-Kennzahlen (Stunden). */
     public const TCP_WINDOW_HOURS = 24;
@@ -63,6 +69,9 @@ final class AuthMetricsService
 
     /** Hoechstwert der im Messfenster aufgebauten Verbindungen je Probe. */
     public const MAX_CONNECTIONS = 1000000;
+
+    /** Hoechstwert einer gemeldeten Speichergroesse (Byte, 1 PiB). */
+    public const MAX_MEMORY_BYTES = 1125899906842624;
 
     /** Ab dieser Zeit ohne Probe gelten die Werte als veraltet (Sekunden). */
     public const STALE_SECONDS = 300;
@@ -98,6 +107,9 @@ final class AuthMetricsService
             date('Y-m-d H:i:s', $now),
             $sample['cpu_percent'],
             $sample['cpu_limit'],
+            $sample['ram'] === null ? null : $sample['ram']['percent'],
+            $sample['ram'] === null ? null : $sample['ram']['used'],
+            $sample['ram'] === null ? null : $sample['ram']['total'],
             $sample['connections'],
             $sample['sources']
         );
@@ -138,10 +150,12 @@ final class AuthMetricsService
      * Prueft und normalisiert eine Probe des auth-Containers.
      *
      * Erwartet cpu_percent, cpu_limit, connections und sources; sources ist ein
-     * JSON-Objekt (Quellnetz => Anfragen) oder ein Array.
+     * JSON-Objekt (Quellnetz => Anfragen) oder ein Array. ram_percent,
+     * ram_used und ram_total sind optional (aeltere Fassung des Messskripts);
+     * sie gelten nur gemeinsam.
      *
      * @param array<string,mixed> $payload
-     * @return array{cpu_percent:float,cpu_limit:float,connections:int,sources:array<string,int>}
+     * @return array{cpu_percent:float,cpu_limit:float,ram:?array{percent:float,used:int,total:int},connections:int,sources:array<string,int>}
      * @throws ValidationException
      */
     public static function validate(array $payload): array
@@ -168,6 +182,13 @@ final class AuthMetricsService
             $errors['sources'] = 'Die Quellnetze muessen als Objekt aus Netz und Anzahl uebergeben werden.';
         }
 
+        $ram = self::ram($payload);
+        if ($ram === false) {
+            $errors['ram_percent'] = 'Die Arbeitsspeicher-Auslastung muss eine Zahl zwischen 0 und 100 sein.';
+            $errors['ram_used'] = 'Der belegte Arbeitsspeicher muss eine Groesse in Byte sein.';
+            $errors['ram_total'] = 'Die Bezugsgroesse des Arbeitsspeichers muss eine Groesse in Byte sein.';
+        }
+
         if ($errors !== []) {
             throw new ValidationException($errors);
         }
@@ -175,6 +196,7 @@ final class AuthMetricsService
         return [
             'cpu_percent' => (float) $cpuPercent,
             'cpu_limit' => (float) $cpuLimit,
+            'ram' => $ram === false ? null : $ram,
             'connections' => (int) $connections,
             'sources' => (array) $sources,
         ];
@@ -196,7 +218,7 @@ final class AuthMetricsService
     /**
      * Baut die Anzeige der Karte aus den Proben der letzten 24 Stunden.
      *
-     * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,connections:int,sources:?string}> $rows
+     * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,ram_percent:?float,ram_used:?int,ram_total:?int,connections:int,sources:?string}> $rows
      * @return array<string,mixed>
      */
     public static function buildCard(array $rows, int $now): array
@@ -208,6 +230,7 @@ final class AuthMetricsService
                 'stale' => true,
                 'recorded_at' => null,
                 'cpu' => null,
+                'ram' => null,
                 'tcp' => null,
                 'sources' => [],
                 'source_total' => 0,
@@ -217,11 +240,15 @@ final class AuthMetricsService
         $latest = $rows[count($rows) - 1];
         $latestAt = strtotime($latest['recorded_at']);
         $cpuFrom = $now - self::CPU_WINDOW_HOURS * 3600;
+        $ramFrom = $now - self::RAM_WINDOW_HOURS * 3600;
         $tcpFrom = $now - self::TCP_WINDOW_HOURS * 3600;
 
         $cpuValues = [];
         $cpuPeak = null;
         $cpuPeakAt = null;
+        $ramValues = [];
+        $ramPeak = null;
+        $ramPeakAt = null;
         $tcpValues = [];
 
         foreach ($rows as $row) {
@@ -235,6 +262,17 @@ final class AuthMetricsService
                 if ($cpuPeak === null || $row['cpu_percent'] > $cpuPeak) {
                     $cpuPeak = $row['cpu_percent'];
                     $cpuPeakAt = $at;
+                }
+            }
+
+            if ($at >= $ramFrom) {
+                $ramPercent = $row['ram_percent'] ?? null;
+                if ($ramPercent !== null) {
+                    $ramValues[] = $ramPercent;
+                    if ($ramPeak === null || $ramPercent > $ramPeak) {
+                        $ramPeak = $ramPercent;
+                        $ramPeakAt = $at;
+                    }
                 }
             }
 
@@ -267,6 +305,7 @@ final class AuthMetricsService
                 'level' => self::level($cpuCurrent),
                 'window' => self::CPU_WINDOW_HOURS,
             ],
+            'ram' => self::ramCard($rows, $ramValues, $ramPeak, $ramPeakAt),
             'tcp' => [
                 'connections' => $latest['connections'],
                 'peak' => $tcpValues === [] ? $latest['connections'] : max($tcpValues),
@@ -279,13 +318,54 @@ final class AuthMetricsService
     }
 
     /**
+     * Arbeitsspeicher-Anzeige: letzter gemessener Wert (auch wenn die juengste
+     * Probe keinen Speicher meldet) mit Spitze und Mittel des Zeitfensters.
+     * null, wenn keine Probe Speicherwerte enthaelt (aeltere Fassung von
+     * docker/auth/metrics.py).
+     *
+     * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,ram_percent:?float,ram_used:?int,ram_total:?int,connections:int,sources:?string}> $rows
+     * @param list<float> $values
+     * @return array<string,mixed>|null
+     */
+    private static function ramCard(array $rows, array $values, ?float $peak, ?int $peakAt): ?array
+    {
+        $latest = null;
+        for ($index = count($rows) - 1; $index >= 0; $index--) {
+            if (($rows[$index]['ram_percent'] ?? null) !== null) {
+                $latest = $rows[$index];
+                break;
+            }
+        }
+
+        if ($latest === null) {
+            return null;
+        }
+
+        $current = round((float) $latest['ram_percent'], 1);
+
+        return [
+            'current' => $current,
+            'used' => $latest['ram_used'] ?? null,
+            'total' => $latest['ram_total'] ?? null,
+            'peak' => $peak === null ? $current : round($peak, 1),
+            'peak_at' => $peakAt === null
+                ? null
+                : Dates::formatDateTime(date('Y-m-d H:i:s', $peakAt)),
+            'avg' => $values === [] ? $current : round(self::average($values), 1),
+            'level' => self::level($current),
+            'window' => self::RAM_WINDOW_HOURS,
+            'recorded_at' => Dates::formatDateTime($latest['recorded_at']),
+        ];
+    }
+
+    /**
      * Verlauf der Aufbewahrung als gleichmaessige Zeitabschnitte.
      *
      * Der Verlauf beginnt an einer Abschnittsgrenze und endet mit dem
      * laufenden Abschnitt; fehlende Proben bleiben leer (Luecke), sie zaehlen
      * nicht als Nullwert. Jeder Abschnitt traegt das Mittel seiner Proben.
      *
-     * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,connections:int,sources:?string}> $rows
+     * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,ram_percent:?float,ram_used:?int,ram_total:?int,connections:int,sources:?string}> $rows
      * @return array<string,mixed>
      */
     public static function buildHistory(array $rows, int $now): array
@@ -296,12 +376,16 @@ final class AuthMetricsService
         $start = $end - $buckets * $bucket;
 
         $cpuBuckets = array_fill(0, $buckets, []);
+        $ramBuckets = array_fill(0, $buckets, []);
         $tcpBuckets = array_fill(0, $buckets, []);
         $sourceBuckets = [];
         $cpuValues = [];
+        $ramValues = [];
         $tcpValues = [];
         $cpuPeak = null;
         $cpuPeakAt = null;
+        $ramPeak = null;
+        $ramPeakAt = null;
         $samples = 0;
 
         foreach ($rows as $row) {
@@ -324,6 +408,17 @@ final class AuthMetricsService
             if ($cpuPeak === null || $row['cpu_percent'] > $cpuPeak) {
                 $cpuPeak = $row['cpu_percent'];
                 $cpuPeakAt = $at;
+            }
+
+            $ramPercent = $row['ram_percent'] ?? null;
+            if ($ramPercent !== null) {
+                $ramBuckets[$index][] = $ramPercent;
+                $ramValues[] = $ramPercent;
+
+                if ($ramPeak === null || $ramPercent > $ramPeak) {
+                    $ramPeak = $ramPercent;
+                    $ramPeakAt = $at;
+                }
             }
 
             foreach (self::sourcesOf($row) as $source) {
@@ -368,6 +463,15 @@ final class AuthMetricsService
                     : Dates::formatDateTime(date('Y-m-d H:i:s', $cpuPeakAt)),
                 'avg' => round(self::average($cpuValues), 1),
                 'limit' => $rows === [] ? 1.0 : round($rows[count($rows) - 1]['cpu_limit'], 2),
+            ],
+            'ram' => [
+                'values' => self::bucketsAverage($ramBuckets),
+                'peak' => round((float) $ramPeak, 1),
+                'peak_at' => $ramPeakAt === null
+                    ? null
+                    : Dates::formatDateTime(date('Y-m-d H:i:s', $ramPeakAt)),
+                'avg' => round(self::average($ramValues), 1),
+                'window' => self::RAM_WINDOW_HOURS,
             ],
             'tcp' => [
                 'values' => self::bucketsAverage($tcpBuckets),
@@ -464,6 +568,49 @@ final class AuthMetricsService
         }
 
         return round($number, 2);
+    }
+
+    /**
+     * Arbeitsspeicher der Probe: null, wenn keine der drei Angaben enthalten
+     * ist; false, wenn sie unvollstaendig oder ungueltig sind.
+     *
+     * @param array<string,mixed> $payload
+     * @return array{percent:float,used:int,total:int}|null|false
+     */
+    private static function ram(array $payload): array|null|false
+    {
+        $percent = $payload['ram_percent'] ?? null;
+        $used = $payload['ram_used'] ?? null;
+        $total = $payload['ram_total'] ?? null;
+
+        if ($percent === null && $used === null && $total === null) {
+            return null;
+        }
+
+        $percent = self::percent($percent);
+        $used = self::bytes($used);
+        $total = self::bytes($total);
+
+        if ($percent === null || $used === null || $total === null) {
+            return false;
+        }
+
+        return ['percent' => $percent, 'used' => $used, 'total' => $total];
+    }
+
+    private static function bytes(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            $bytes = $value;
+        } elseif (is_float($value) && $value === floor($value)) {
+            $bytes = (int) $value;
+        } elseif (is_string($value) && ctype_digit(trim($value))) {
+            $bytes = (int) trim($value);
+        } else {
+            return null;
+        }
+
+        return $bytes >= 0 && $bytes <= self::MAX_MEMORY_BYTES ? $bytes : null;
     }
 
     private static function number(mixed $value): ?float

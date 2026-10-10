@@ -58,7 +58,7 @@ $charts = new AuthMetricsCharts();
                             <?= Html::e($percent((float) $cpu['current'])) ?>
                         </p>
                         <p class="auth-metrics__reference">
-                            Bezugsgröße <?= Html::e(number_format((float) $cpu['limit'], 2, ',', '.')) ?> Kerne
+                            Zugewiesen: <?= Html::e(number_format((float) $cpu['limit'], 2, ',', '.')) ?> Kerne
                         </p>
                         <p class="card__hint">CPU-Last im Container (aktuell)</p>
                         <ul class="status-list">

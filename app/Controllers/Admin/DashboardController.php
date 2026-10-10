@@ -20,6 +20,7 @@ final class DashboardController extends AdminController
         $statistics = Container::statistics();
         $phonebook = Container::phonebook();
         $settings = Container::settings();
+        $containerMetrics = Container::containerMetrics()->dashboard();
 
         return $this->adminView('admin.dashboard', [
             'pageTitle' => 'Dashboard',
@@ -38,6 +39,8 @@ final class DashboardController extends AdminController
             'incidentAlert' => Container::incidents()->dashboardAlert(),
             'authMetrics' => Container::authMetrics()->card(),
             'authMetricsHistory' => Container::authMetrics()->history(),
+            'containerMetrics' => $containerMetrics['cards'],
+            'containerMetricsHistory' => $containerMetrics['history'],
             'extraScripts' => ['admin-auth-metrics.js', 'admin-auth-metrics-chart.js'],
         ]);
     }

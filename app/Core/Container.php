@@ -515,6 +515,30 @@ final class Container
         );
     }
 
+    public static function containerMetricsRepository(): \App\Repositories\ContainerMetricsRepository
+    {
+        return self::make(
+            \App\Repositories\ContainerMetricsRepository::class,
+            static fn (): \App\Repositories\ContainerMetricsRepository => new \App\Repositories\ContainerMetricsRepository()
+        );
+    }
+
+    /**
+     * Kennzahlen der uebrigen Container (CPU und Arbeitsspeicher) fuer die
+     * Kacheln auf dem Admin-Dashboard: der Sammel-Container meldet sie ueber
+     * POST /internal/container-metrics (docker/monitor/metrics.py), die
+     * Anzeige entsteht aus den Proben.
+     */
+    public static function containerMetrics(): \App\Services\Monitoring\ContainerMetricsService
+    {
+        return self::make(
+            \App\Services\Monitoring\ContainerMetricsService::class,
+            static fn (): \App\Services\Monitoring\ContainerMetricsService => new \App\Services\Monitoring\ContainerMetricsService(
+                self::containerMetricsRepository()
+            )
+        );
+    }
+
     public static function orvantaFlowRepository(): \App\Repositories\OrvantaFlowRepository
     {
         return self::make(

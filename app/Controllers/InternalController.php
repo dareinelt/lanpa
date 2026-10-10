@@ -16,10 +16,13 @@ use App\Services\IdentitySourceService;
  * Interne Schnittstelle fuer die auth-Container: Beim Start ruft jede
  * auth-Instanz ihre Domaenen-Konfiguration (inkl. entschluesseltem Konto fuer
  * den Domaenenbeitritt) ab, damit keine Zugangsdaten in der .env stehen.
+ * Ebenso meldet der auth-Container seine Kennzahlen (CPU, Arbeitsspeicher,
+ * Verbindungen) und der Sammel-Container die Kennzahlen der uebrigen Container
+ * (CPU und Arbeitsspeicher, siehe docker/monitor/metrics.py).
  *
  * Schutz:
- * - Gemeinsames Token aus dem Volume "sso_token" (nur app und auth-*),
- *   Header X-Intranet-Sso-Token.
+ * - Gemeinsames Token aus dem Volume "sso_token" (nur app, auth-* und
+ *   monitor), Header X-Intranet-Sso-Token.
  * - Die Anfrage muss direkt vom Container der angefragten Instanz stammen
  *   ("auth" bzw. "auth-<kennung>"); eine Zweigstellen-Instanz erhaelt so nie
  *   die Zugangsdaten einer anderen Domaene.
@@ -142,6 +145,45 @@ final class InternalController
     }
 
     /**
+     * Kennzahlen der uebrigen Container (CPU- und Arbeitsspeicher-Auslastung
+     * je Container). Die Container app, db, mail-proxy, nextcloud und
+     * eurooffice messen nicht selbst; der Sammel-Container
+     * (docker/monitor/metrics.py) liest die Werte ueber den Docker-Socket aus
+     * der Docker-Engine und meldet je Container eine Probe. Die Anwendung
+     * prueft und speichert sie fuer die Kacheln auf dem Admin-Dashboard.
+     */
+    public function containerMetrics(Request $request): Response
+    {
+        if (!$this->authorized($request, '', (string) Env::get('MONITOR_METRICS_SERVICE', 'monitor'))) {
+            app_logger()->warning('Meldung der Kennzahlen der uebrigen Container abgelehnt.', [
+                'remote' => (string) ($request->server['REMOTE_ADDR'] ?? ''),
+            ]);
+
+            return $this->deny(403);
+        }
+
+        try {
+            Container::containerMetrics()->record([
+                'service' => $request->input('service'),
+                'cpu_percent' => $request->input('cpu_percent'),
+                'cpu_limit' => $request->input('cpu_limit'),
+                'cpu_limited' => $request->input('cpu_limited'),
+                'ram_percent' => $request->input('ram_percent'),
+                'ram_used' => $request->input('ram_used'),
+                'ram_total' => $request->input('ram_total'),
+            ]);
+        } catch (ValidationException $exception) {
+            app_logger()->warning('Ungueltige Kennzahlen eines Containers abgelehnt.', [
+                'errors' => $exception->errors(),
+            ]);
+
+            return $this->deny(422);
+        }
+
+        return Response::noContent();
+    }
+
+    /**
      * Je Zeile NAME=base64(wert): keine Shell-Interpretation beim Einlesen.
      *
      * @param array<string,string> $values
@@ -157,7 +199,7 @@ final class InternalController
             ->withHeader('Cache-Control', 'no-store');
     }
 
-    private function authorized(Request $request, string $key): bool
+    private function authorized(Request $request, string $key, ?string $service = null): bool
     {
         $file = (string) Env::get('SSO_CONFIG_TOKEN_FILE', '/run/intranet-sso/token');
         $expected = is_readable($file) ? trim((string) @file_get_contents($file)) : '';
@@ -171,7 +213,7 @@ final class InternalController
         }
 
         $remote = (string) ($request->server['REMOTE_ADDR'] ?? '');
-        $service = $key === '' ? (string) Env::get('SSO_PRIMARY_SERVICE', 'auth') : IdentitySourceService::serviceName($key);
+        $service ??= $key === '' ? (string) Env::get('SSO_PRIMARY_SERVICE', 'auth') : IdentitySourceService::serviceName($key);
 
         return $remote !== '' && in_array($remote, SsoAuth::resolveHost($service), true);
     }

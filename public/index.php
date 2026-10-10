@@ -135,11 +135,13 @@ $router->group([$requireUnlocked, $ssoAttempt], static function (Router $router)
     $router->get('/office-starten', [OfficeController::class, 'start']);
 });
 
-// Interne Schnittstelle fuer die auth-Container (Token + Absenderpruefung).
+// Interne Schnittstelle fuer die auth-Container und den Sammel-Container
+// (Token + Absenderpruefung).
 $router->get('/internal/sso-config', [InternalController::class, 'ssoConfig']);
 $router->get('/internal/tls-config', [InternalController::class, 'tlsConfig']);
 $router->get('/internal/nav-proxy-config', [InternalController::class, 'navProxyConfig']);
 $router->post('/internal/auth-metrics', [InternalController::class, 'authMetrics']);
+$router->post('/internal/container-metrics', [InternalController::class, 'containerMetrics']);
 
 // Office-Integration: Hinweisseite (auch Fehlerseite des auth-Proxys) und
 // Endpunkte fuer die Fusszeile in Nextcloud bzw. den Kachelstatus.

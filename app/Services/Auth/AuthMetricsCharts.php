@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Auth;
 
 /**
- * Verlaufsgrafiken der Karte "Reverse-Proxy" (Overlay auf dem Dashboard).
+ * Verlaufsgrafiken der Karte "Reverse-Proxy" und der Container-Kacheln
+ * (Overlay auf dem Dashboard). Die Ueberschrift der CPU- und der
+ * Arbeitsspeicher-Grafik ist austauschbar (Container-Kacheln).
  *
  * Die Grafiken sind serverseitiges SVG mit viewBox und CSS-Groesse; dadurch
  * sind sie auf jeder Bildschirmdichte scharf. Es werden ausschliesslich
@@ -69,8 +71,9 @@ final class AuthMetricsCharts
      * CPU-Auslastung mit den Schwellen fuer gelb und rot.
      *
      * @param array<string,mixed> $history Verlauf aus AuthMetricsService::history()
+     * @param string|null $title Ueberschrift der Grafik; ohne Angabe die der Karte "Reverse-Proxy"
      */
-    public function cpu(array $history): string
+    public function cpu(array $history, ?string $title = null): string
     {
         $values = self::values($history['cpu']['values'] ?? null);
         if ($values === []) {
@@ -79,7 +82,7 @@ final class AuthMetricsCharts
 
         return $this->render(
             $history,
-            'CPU-Auslastung im Reverse-Proxy',
+            $title ?? 'CPU-Auslastung im Reverse-Proxy',
             'Verlauf der CPU-Auslastung im Container als Mittel je Zeitabschnitt. '
             . 'Die gestrichelten Linien markieren die Schwellen 75 und 90 Prozent.',
             [['values' => $values, 'color' => self::CPU_COLOR, 'label' => 'CPU-Auslastung']],
@@ -96,8 +99,9 @@ final class AuthMetricsCharts
      * Arbeitsspeicher-Auslastung mit denselben Schwellen wie die CPU.
      *
      * @param array<string,mixed> $history Verlauf aus AuthMetricsService::history()
+     * @param string|null $title Ueberschrift der Grafik; ohne Angabe die der Karte "Reverse-Proxy"
      */
-    public function ram(array $history): string
+    public function ram(array $history, ?string $title = null): string
     {
         $values = self::values($history['ram']['values'] ?? null);
         if ($values === []) {
@@ -106,7 +110,7 @@ final class AuthMetricsCharts
 
         return $this->render(
             $history,
-            'Arbeitsspeicher-Auslastung im Reverse-Proxy',
+            $title ?? 'Arbeitsspeicher-Auslastung im Reverse-Proxy',
             'Verlauf der Arbeitsspeicher-Auslastung des Containers als Mittel je Zeitabschnitt. '
             . 'Die gestrichelten Linien markieren die Schwellen 75 und 90 Prozent.',
             [['values' => $values, 'color' => self::RAM_COLOR, 'label' => 'Arbeitsspeicher']],

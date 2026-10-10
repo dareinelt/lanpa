@@ -115,6 +115,7 @@ installieren, nicht starten).
 | `mail` | Dauerhafter SMTP-Versand der KAEP-Benachrichtigungen; Konfiguration nur durch Admins unter E-Mail (SMTP) | Versandstatus im Adminbereich |
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
+| `monitor` | CPU- und Arbeitsspeicher-Auslastung der übrigen Container für die Kacheln des Admin-Dashboards (read-only Docker-Socket, Python-Standardbibliothek) | – |
 | `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter, optional `/ki/` an LLMInt ([docs/llmint.md](docs/llmint.md)); Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
 | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
 | `storage-sync` | optional, Profil `office` – Speicher-Tiering und HA-Synchronisation der Office-Daten auf SMB-Freigaben und S3-kompatible Objektspeicher (s3fs/FUSE) ([docs/storage.md](docs/storage.md), Container-Übersicht [docs/storage-stack.md](docs/storage-stack.md)) | `agent.alive` jünger als 30 s |
@@ -188,6 +189,7 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | `ALARM_PASSWORD` / `ALARM_PASSWORD_FILE` | Gateway-Passwort (nur ENV bzw. Docker-Secret) | – |
 | `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` | SNMP-Agent (Community-String, Standort, Kontakt) | `public` / `Intranet` / `admin@example.internal` |
 | `SNMP_PORT` | Am Host veröffentlichter UDP-Port des SNMP-Agenten (nur Docker-Port-Mapping) | `161` |
+| `MONITOR_INTERVAL`, `MONITOR_SERVICES` | Kennzahlen der übrigen Container für das Admin-Dashboard: Abstand der Messungen (Sekunden) und beobachtete Compose-Dienste | `60` / `app,db,mail-proxy,nextcloud,eurooffice` |
 | `SSO_ENABLED` | Windows-Anmeldung (Kerberos/NTLM) global ein-/ausschalten; Domänen werden im Adminbereich gepflegt | `false` |
 | `SSO_REALM` | Kerberos-Realm der Hauptdomäne; leer = automatisch vom Domänencontroller ermittelt | leer |
 | `SSO_SPN_HOSTS` | Weitere Hostnamen (kommagetrennt), unter denen das Intranet aufgerufen wird (Kerberos-SPNs zusätzlich zum Hostnamen aus `APP_URL`) | leer |
@@ -572,6 +574,18 @@ Hinweise:
 - Schlüssel sind an `storage/keys/secrets.key` gebunden und nicht Teil der ZIP-Sicherung. Nach einer
   Wiederherstellung ohne diesen Schlüssel neuen Request erstellen und das Zertifikat neu ausstellen lassen.
 - Die Gültigkeit des aktiven Zertifikats liefert SNMP (`tls_certificate`, Index 11 und 12).
+
+### Kennzahlen der Container auf dem Dashboard
+
+Der Adminbereich zeigt für die Container `app`, `db`, `mail-proxy`, `nextcloud`
+und `eurooffice` je eine Kachel mit CPU- und Arbeitsspeicher-Auslastung –
+analog zur Kachel „Reverse-Proxy“, die der `auth`-Container selbst füllt. Ein
+Klick auf eine Kachel öffnet Details und Verlaufsgrafiken. Die Werte liest der
+Dienst `monitor` über den read-only eingebundenen Docker-Socket aus (dieselben
+Zahlen wie `docker stats`) und meldet sie an die Anwendung; er braucht keine
+Konfiguration und keine zusätzlichen Ports. Vorgaben und Prüfung:
+[installation.md](docs/installation.md), Abschnitt „Kennzahlen der übrigen
+Container“.
 
 ### SNMP-Überwachung
 

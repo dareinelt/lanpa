@@ -1,7 +1,8 @@
 /**
- * Verlaufsgrafiken im Overlay "Reverse-Proxy": beim Ueberfahren zeigt eine
- * senkrechte Linie den angenavigierten Zeitpunkt, daneben stehen Zeitpunkt und
- * Werte der Linien. Die Werte liefert die Grafik als JSON in data-chart
+ * Verlaufsgrafiken in den Overlays der Kennzahl-Kacheln ("Reverse-Proxy" und
+ * die Container-Kacheln): beim Ueberfahren zeigt eine senkrechte Linie den
+ * angenavigierten Zeitpunkt, daneben stehen Zeitpunkt und Werte der Linien.
+ * Die Werte liefert die Grafik als JSON in data-chart
  * (siehe App\Services\Auth\AuthMetricsCharts); es wird nichts nachgerechnet,
  * angezeigt werden die gezeichneten Punkte.
  *
@@ -219,7 +220,7 @@
     }
 
     Array.prototype.forEach.call(
-        document.querySelectorAll('#reverse-proxy-dialog svg.auth-chart[data-chart]'),
+        document.querySelectorAll('.auth-metrics-dialog svg.auth-chart[data-chart]'),
         setup
     );
 })();

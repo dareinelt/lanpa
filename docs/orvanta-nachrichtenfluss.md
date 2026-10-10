@@ -149,11 +149,17 @@ zeigt dann nur den konfigurierten Host mit dem Hinweis „Proxy-Betrieb“.
 Ein Klick auf die Kachel öffnet die Verlaufsgrafik als Overlay (siehe § 6).
 
 **Definition „aktiver Nutzer“:** ein Benutzer, dessen letzte Orvanta-Aktivität
-höchstens 300 Sekunden zurückliegt. Die Aktivität wird an der einzigen
-Eintrittstelle der Orvanta-Schnittstelle (`OrvantaApiController::handle()`)
-erfasst, unabhängig davon, ob der Zugriff über Exchange oder den Proxy läuft.
-Damit ist auch der reine Proxy-Betrieb messbar, in dem keine
-Exchange-Sitzungstabelle gefüllt wird.
+höchstens 300 Sekunden zurückliegt. Erfasst wird an beiden Eintrittstellen der
+App (`OrvantaPresenceService::touchAccess()`): beim Aufruf der Seite
+(`OrvantaController::index()`) und bei jeder Anfrage der JSON-Schnittstelle
+(`OrvantaApiController::handle()`), unabhängig davon, ob der Zugriff über
+Exchange oder den Proxy läuft. Damit ist auch der reine Proxy-Betrieb messbar,
+in dem keine Exchange-Sitzungstabelle gefüllt wird. Und weil schon der
+Seitenaufruf die Exchange-Sitzung erzeugt bzw. erneuert
+(`OrvantaController::exchangeHost()`), erscheint jeder Client mit offener
+Sitzung im Nachrichtenfluss auch als aktiver Nutzer – die Knoten
+„Exchange-Host“ (Sitzungen) und „Orvanta-Nutzer“ widersprechen sich damit
+nicht mehr.
 
 **Proben:** `OrvantaPresenceService` schreibt bei Bedarf (höchstens alle 300 s)
 eine Probe des aktuellen Werts nach `orvanta_user_samples`. Zusätzlich schreibt

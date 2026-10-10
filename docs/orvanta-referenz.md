@@ -111,7 +111,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaFlowService.php` | Nachrichtenfluss (Abschnitt 23): `overview(withHistory)` = `evaluate(collect())`; `collect()` liest Quellen, Proxy, Exchange, Tiers, Zwischenspeicher und KI, `evaluate()` ist rein; Grenzen `CACHE_WARN_PERCENT` (75), `CACHE_CRIT_PERCENT` (90), `AI_PERIOD_DAYS` (30), `AI_TOP_USERS`/`CACHE_TOP_USERS` (10), `STATE_LABELS` |
 | `app/Services/Orvanta/OrvantaFlowCloud.php` | Wolkendarstellung (Abschnitt 23.4): `items()`, statisch `level()`, `render()`, `table()`; `LEVELS` (5), `THRESHOLDS` |
 | `app/Services/Orvanta/OrvantaFlowCharts.php` | Verlaufsgrafik 365/180/90/30/14 Tage (Abschnitt 23.4): `overlay()`, `tableRows()`, statisch `series()`/`color()`; `WIDTH` (960), `HEIGHT` (340) |
-| `app/Services/Orvanta/OrvantaPresenceService.php` | Aktive Nutzer und Proben (Abschnitt 23.2): `touch()`, `sample()`, `stats()`, `history()`, `purge()`, statisch `backendFor()`; `ACTIVE_WINDOW`/`SAMPLE_INTERVAL` (300), `ACTIVITY_TTL` (86400), `HISTORY_DAYS` (400), `PERIODS` |
+| `app/Services/Orvanta/OrvantaPresenceService.php` | Aktive Nutzer und Proben (Abschnitt 23.2): `touch()`, `touchAccess()` (Zugriffsdatensatz von `OrvantaController::authorize()`), `sample()`, `stats()`, `history()`, `purge()`, statisch `backendFor()`; `ACTIVE_WINDOW`/`SAMPLE_INTERVAL` (300), `ACTIVITY_TTL` (86400), `HISTORY_DAYS` (400), `PERIODS` |
 | `app/Repositories/OrvantaFlowRepository.php` | Tabellen `orvanta_activity`/`orvanta_user_samples`: `touchActivity()`, `activeUsers()`, `activityCount()`, `recordSample()`, `hasSampleAt()`, `lastSampleAt()`, `sampleStats()`, `dailyPeaks()`, `sampleCount()`, `purge()` |
 | `views/admin/orvanta-flow.php`, `public/assets/js/admin-orvanta-flow.js` | Nachrichtenfluss-Dashboard (Abschnitt 23.5): Spuren mit Knoten, Wolken, Tiers, Kennzahlen, Störungen, Verlaufsgrafik; Live-Aktualisierung über `GET …/nachrichtenfluss/daten` |
 | `views/admin/orvanta-flow-topology.php`, `public/assets/js/admin-orvanta-flow-topology.js`, `public/assets/css/orvanta-flow-topology.css` | Topologie-Ansicht des Nachrichtenflusses (Abschnitt 23.8, Konzept `docs/orvanta-nachrichtenfluss.md` Abschnitt 14): Canvas-Netz mit 3D-Projektion, Partikeln, Zustandswellen, Detailtafel, Ereignisprotokoll und Störungsband; Startdaten als JSON-Block, danach `GET …/nachrichtenfluss/daten` |
@@ -2307,9 +2307,10 @@ POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
 - `mail_proxy_source_state` hat **keinen** Fremdschlüssel: Quelle `0` ist die
   Hauptquelle aus `orvanta_settings` und hat keine Zeile in
   `mail_proxy_servers`. Deshalb wird der Zustand immer mit `?? ''` gelesen.
-- Schreibpfade: `OrvantaPresenceService::touch()` (aus `OrvantaApiController`
-  bei jeder authentifizierten API-Anfrage), `sample()`/`purge()` (aus
-  `scripts/orvanta_archive_worker.php`) und
+- Schreibpfade: `OrvantaPresenceService::touchAccess()` (aus
+  `OrvantaApiController::handle()` bei jeder authentifizierten API-Anfrage
+  **und** aus `OrvantaController::index()` beim Aufruf der App-Seite),
+  `sample()`/`purge()` (aus `scripts/orvanta_archive_worker.php`) und
   `ProxyMailBackend`/`MailProxyService::testSources()` für den Quellenzustand.
 
 ### 23.2 Präsenz und Verlauf (`OrvantaPresenceService`)
@@ -2319,7 +2320,13 @@ POST /admin/office/orvanta/nachrichtenfluss/quellen/pruefen
   `PERIODS = [14, 30, 90, 180, 365]`.
 - `touch(userUid, backend)` legt die Aktivität an bzw. schreibt
   `last_seen_at`/`requests` fort; `backendFor(MailProxyRoute)` bildet das
-  Routingergebnis auf `exchange` oder `proxy` ab.
+  Routingergebnis auf `exchange` oder `proxy` ab. `touchAccess(array $access)`
+  nimmt den Zugriffsdatensatz von `OrvantaController::authorize()` entgegen
+  (Kennung, Backend aus der Route, `source_id` des Benutzers) und schluckt
+  Fehler, weil die Präsenz nachrangig ist. Beide Eintrittstellen der App –
+  Seitenaufruf (`OrvantaController::index()`) und JSON-Schnittstelle
+  (`OrvantaApiController::handle()`) – rufen es auf, damit ein Client bereits
+  mit dem Öffnen der App als aktiver Nutzer zählt.
 - `sample()` schreibt **genau eine** Probe je Zeitraster: Ist der Rasterplatz
   schon belegt, liefert es `false` und überschreibt nichts.
 - `stats()` liefert `current`, `min`, `max`, `avg` und `peak` der letzten

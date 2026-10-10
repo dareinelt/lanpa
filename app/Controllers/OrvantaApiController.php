@@ -13,11 +13,9 @@ use App\Exceptions\ValidationException;
 use App\Security\Csrf;
 use App\Security\Session;
 use App\Services\LdapClient;
-use App\Services\MailProxy\MailProxyRoute;
 use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaExchangeService;
-use App\Services\Orvanta\OrvantaPresenceService;
 use App\Services\Orvanta\OrvantaSignatureService;
 use App\Services\Orvanta\OrvantaSpellcheckService;
 use Throwable;
@@ -1201,19 +1199,7 @@ final class OrvantaApiController extends Controller
      */
     private function recordPresence(array $access): void
     {
-        $route = $access['route'] ?? null;
-        if (!$route instanceof MailProxyRoute) {
-            return;
-        }
-        try {
-            Container::orvantaPresence()->touch(
-                (string) $access['uid'],
-                OrvantaPresenceService::backendFor($route),
-                (int) ($access['user']['source_id'] ?? 0)
-            );
-        } catch (Throwable) {
-            // Die Praesenz ist nachrangig und darf Orvanta nie stoeren.
-        }
+        Container::orvantaPresence()->touchAccess($access);
     }
 
     /**

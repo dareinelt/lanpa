@@ -500,8 +500,8 @@ final class Container
 
     /**
      * Praesenz der Orvanta-Benutzer (Nachrichtenfluss-Dashboard): erfasst die
-     * Aktivitaet an der Orvanta-Schnittstelle und schreibt Proben der aktiven
-     * Nutzer.
+     * Aktivitaet an den Eintrittstellen der App (Seitenaufruf und
+     * JSON-Schnittstelle) und schreibt Proben der aktiven Nutzer.
      */
     public static function orvantaPresence(): \App\Services\Orvanta\OrvantaPresenceService
     {

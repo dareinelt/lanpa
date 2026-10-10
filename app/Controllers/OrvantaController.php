@@ -34,6 +34,11 @@ final class OrvantaController extends Controller
     public function index(Request $request): Response
     {
         $access = self::authorize($request);
+        // Der Seitenaufruf ist die zweite Eintrittstelle der App: Er erzeugt
+        // bereits die Exchange-Sitzung (siehe exchangeHost()), daher zaehlt er
+        // auch als Aktivitaet. Sonst erscheint ein Client mit offener Sitzung
+        // im Nachrichtenfluss als Sitzung, aber nicht als Nutzer.
+        Container::orvantaPresence()->touchAccess($access);
         $config = Container::orvantaConfig();
         $attachments = Container::orvantaAttachments();
         $shared = Container::orvantaSharedMailboxes();

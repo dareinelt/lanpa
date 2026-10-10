@@ -399,6 +399,32 @@ Runner::test('Nachrichtenfluss: Präsenz erfasst die Aktivität mit dem Backend'
     Assert::same(date('Y-m-d H:i:s', 1700000000), (string) $pdo->query("SELECT last_seen_at FROM orvanta_activity WHERE user_uid = 'mueller'")->fetchColumn());
 });
 
+Runner::test('Nachrichtenfluss: Präsenz wird auch beim Aufruf der App-Seite erfasst', static function (): void {
+    $pdo = flowPdo();
+    $now = 1700000000;
+    $presence = flowPresence($pdo, static fn (): int => $now);
+    $flow = new OrvantaFlowRepository($pdo);
+
+    // Zugriffsdatensatz von OrvantaController::authorize() beim Seitenaufruf
+    $presence->touchAccess(['uid' => 'mueller', 'route' => MailProxyRoute::exchange(), 'user' => ['source_id' => 0]]);
+    $presence->touchAccess(['uid' => 'schmidt', 'route' => MailProxyRoute::proxy(4, 2, 3, 'schmidt@mvz.example'), 'user' => ['source_id' => 3]]);
+    // Ohne Postfachauflösung bzw. ohne Kennung entsteht keine Aktivität
+    $presence->touchAccess(['uid' => 'ohne-route', 'user' => ['source_id' => 0]]);
+    $presence->touchAccess(['uid' => '', 'route' => MailProxyRoute::exchange(), 'user' => []]);
+
+    Assert::same(2, $flow->activityCount(), 'Seitenaufruf zählt als Aktivität');
+    Assert::same('exchange', (string) $pdo->query("SELECT backend FROM orvanta_activity WHERE user_uid = 'mueller'")->fetchColumn());
+    Assert::same('proxy', (string) $pdo->query("SELECT backend FROM orvanta_activity WHERE user_uid = 'schmidt'")->fetchColumn());
+    Assert::same(3, (int) $pdo->query("SELECT source_id FROM orvanta_activity WHERE user_uid = 'schmidt'")->fetchColumn(), 'Aktivität hängt an der Identitätsquelle des Benutzers');
+
+    $stats = $presence->stats();
+    Assert::same(2, $stats['current'], 'Offene Sitzung erscheint als aktiver Nutzer');
+    Assert::same(1, $stats['exchange']);
+    Assert::same(1, $stats['proxy']);
+    $since = date('Y-m-d H:i:s', $now - OrvantaPresenceService::ACTIVE_WINDOW);
+    Assert::same([0 => 1, 3 => 1], $flow->activeUsersBySource($since, date('Y-m-d H:i:s', $now)), 'Summe der Quellen ergibt den Nutzerknoten');
+});
+
 Runner::test('Nachrichtenfluss: Probe entsteht einmal je Zeitraster', static function (): void {
     $pdo = flowPdo();
     $now = 1700000000;

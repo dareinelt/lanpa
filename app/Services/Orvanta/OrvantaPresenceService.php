@@ -12,9 +12,13 @@ use App\Services\MailProxy\MailProxyRoute;
  * Praesenz der Orvanta-Benutzer fuer das Nachrichtenfluss-Dashboard.
  *
  * "Aktiver Nutzer" ist, wer innerhalb von ACTIVE_WINDOW Sekunden Orvanta
- * benutzt hat. Die Aktivitaet wird an der einzigen Eintrittstelle der
- * Orvanta-Schnittstelle erfasst und ist damit unabhaengig davon, ob der
- * Zugriff ueber Exchange oder den SMTP-/IMAP-Proxy laeuft.
+ * benutzt hat. Erfasst wird an beiden Eintrittstellen der App: beim Aufruf
+ * der Seite (OrvantaController::index()) und bei jeder Anfrage der
+ * JSON-Schnittstelle (OrvantaApiController::handle()). Damit ist die Zahl
+ * unabhaengig davon, ob der Zugriff ueber Exchange oder den SMTP-/IMAP-Proxy
+ * laeuft, und jeder Client mit offener Sitzung zaehlt als aktiver Nutzer -
+ * auch wenn er innerhalb des Fensters keine Schnittstellen-Anfrage gestellt
+ * hat (z. B. ein Client, der nur die Seite geladen hat).
  *
  * Aus der Aktivitaet entsteht im SAMPLE_INTERVAL-Raster eine Probe der
  * aktiven Nutzer (nur Zaehler, keine Kennungen). Die Proben bilden den
@@ -70,6 +74,34 @@ final class OrvantaPresenceService
             return;
         }
         $this->repository->touchActivity($userUid, $backend, $this->stamp($this->now()), $sourceId);
+    }
+
+    /**
+     * Aktivitaet aus dem Zugriffsdatensatz von OrvantaController::authorize()
+     * erfassen. Seitenaufruf und JSON-Schnittstelle rufen diese Methode auf,
+     * damit ein Client bereits mit dem Oeffnen der App als aktiver Nutzer
+     * zaehlt (die Exchange-Sitzung entsteht ebenfalls schon beim Seitenaufruf).
+     *
+     * Fehler bleiben folgenlos: die Praesenz ist nachrangig und darf Orvanta
+     * nie stoeren.
+     *
+     * @param array<string,mixed> $access Zugriffsdatensatz der Anfrage
+     */
+    public function touchAccess(array $access): void
+    {
+        $route = $access['route'] ?? null;
+        if (!$route instanceof MailProxyRoute) {
+            return;
+        }
+        try {
+            $this->touch(
+                (string) ($access['uid'] ?? ''),
+                self::backendFor($route),
+                (int) ($access['user']['source_id'] ?? 0)
+            );
+        } catch (\Throwable) {
+            // Die Praesenz ist nachrangig und darf Orvanta nie stoeren.
+        }
     }
 
     /**

@@ -345,3 +345,44 @@ Blöcken (eigene Transaktion je 200 Konten statt einer Transaktion über den
 gesamten Lauf), und eine unveränderte Laufwerksmeldung löst keinen Schreibzugriff
 aus. Details unter „AD-Synchronisation“ in der [README.md](../README.md) bzw.
 [office.md](office.md), Abschnitt „Netzlaufwerke der Windows-Clients“.
+
+### Ressourcen des `auth`-Containers
+
+Der `auth`-Container ist der Eintrittspunkt für alle Zugriffe (TLS-Terminierung,
+Windows-Anmeldung, Weiterleitungen). Er läuft ohne Grenze, solange in der `.env`
+nichts gesetzt ist; die Werte übergibt `docker-compose.yml`:
+
+| Stellschraube | Compose | Vorgabe | Bedeutung |
+| --- | --- | --- | --- |
+| `AUTH_CPUS` | `cpus` | `0` (keine Grenze) | Zugewiesene CPU-Kerne (Obergrenze), auch Bruchwerte wie `1.5`. |
+| `AUTH_MEMORY_LIMIT` | `mem_limit` | `0` (keine Grenze) | Zugewiesener Arbeitsspeicher (Obergrenze), z. B. `2G`. |
+| `AUTH_MEMORY_RESERVED` | `mem_reservation` | `0` (keine Reservierung) | Reservierter Arbeitsspeicher (Soft-Limit): Bei Speicherknappheit hält der Kernel den Verbrauch möglichst unter diesem Wert. |
+| `AUTH_CPU_SHARES` | `cpu_shares` | `1024` (Docker-Standard) | Relative CPU-Gewichtung bei Konkurrenz mit den übrigen Containern. Eine echte CPU-Reservierung gibt es außerhalb von Docker Swarm nicht. |
+
+Für eine kleine bis mittlere Umgebung genügen `AUTH_MEMORY_RESERVED=512M` und
+`AUTH_MEMORY_LIMIT=2G`: Im Container laufen TLS, Kerberos/NTLM und die
+Weiterleitungen, die Fachanwendung selbst liegt im `app`-Container.
+`AUTH_CPUS` ist zugleich die Bezugsgröße der CPU-Anzeige: `docker/auth/metrics.py`
+liest die zugewiesenen Kerne aus dem cgroup-Limit und meldet die Last als Prozent
+davon (ohne `AUTH_CPUS` gilt ein Kern) – die Kachel „Reverse-Proxy“ im
+Admin-Dashboard wird dadurch aussagekräftiger.
+
+```bash
+# Wirksame Grenzen prüfen
+docker inspect --format 'cpus={{.HostConfig.NanoCpus}} mem={{.HostConfig.Memory}} reserviert={{.HostConfig.MemoryReservation}} shares={{.HostConfig.CpuShares}}' \
+  "$(docker compose ps -q auth)"
+docker compose exec auth sh -c 'cat /sys/fs/cgroup/cpu.max /sys/fs/cgroup/memory.max'
+```
+
+Änderungen greifen erst, wenn der Container neu angelegt wird:
+
+```bash
+docker compose up -d auth      # übernimmt geänderte Werte (legt den Container neu an)
+docker compose restart auth    # genügt NICHT: Docker ändert die Ressourcen
+                               # eines laufenden Containers nicht
+```
+
+Der Domänenbeitritt bleibt beim Neuanlegen erhalten (Volume `sso_samba`),
+laufende Zugriffe werden dabei kurz unterbrochen. Die von
+`scripts/sso-domains.sh` erzeugten Instanzen `auth-<kennung>` für weitere
+Domänen sind eigene Dienste und haben eigene Grenzen.

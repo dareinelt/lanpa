@@ -44,6 +44,11 @@
 #                        fuer die freigegebenen Quellnetze erlaubt. Nur in der
 #                        Hauptinstanz (nicht bei SSO_SOURCE). Aus (false) z. B.
 #                        hinter einem externen TLS-Proxy.
+# - Kennzahlen:          Hauptinstanz misst CPU-Last und offene TCP-Verbindungen
+#                        im Container und meldet sie alle 60 s an
+#                        /internal/auth-metrics (Karte auf dem Admin-Dashboard,
+#                        docker/auth/metrics.py; AUTH_METRICS_INTERVAL aendert
+#                        den Abstand).
 set -e
 
 : "${SSO_ENABLED:=false}"
@@ -537,5 +542,15 @@ if [ -n "$LLMINT_HOST" ] && ! printf '%s' "$LLMINT_HOST" | grep -Eq '^[0-9.]+$';
 fi
 # shellcheck disable=SC2086
 /usr/local/bin/backend-watch.sh $backend_hosts &
+
+# Kennzahlen fuer das Admin-Dashboard: CPU-Last im Container und offene
+# TCP-Verbindungen (Quellnetze) werden im Container gemessen und an
+# POST /internal/auth-metrics gemeldet (Token aus dem Volume sso_token).
+# Nur die Hauptinstanz: die Instanzen weiterer Identitaetsquellen haben eine
+# eigene Domaene und wuerden sonst mehrfach melden.
+if [ -z "$SSO_SOURCE" ]; then
+    python3 /usr/local/bin/metrics.py loop &
+    echo "[auth] Kennzahlen des Containers aktiv (alle 60 s an /internal/auth-metrics)."
+fi
 
 exec "$@"

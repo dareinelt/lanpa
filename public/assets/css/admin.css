@@ -220,6 +220,340 @@
     color: var(--color-muted);
 }
 
+/* Karte "Reverse-Proxy" auf dem Dashboard: CPU-Last und Verbindungen */
+.auth-metrics {
+    border-top: 3px solid var(--color-border);
+}
+
+.auth-metrics[data-state="ok"] {
+    border-top-color: #1a7f37;
+}
+
+.auth-metrics[data-state="warn"] {
+    border-top-color: #bf8700;
+}
+
+.auth-metrics[data-state="crit"] {
+    border-top-color: #c8102e;
+}
+
+.auth-metrics__value--warn {
+    color: #8a6100;
+}
+
+.auth-metrics__value--crit {
+    color: #a40e26;
+}
+
+/* Abschnitte "Offene TCP-Verbindungen" und "Verbindungen nach Quellnetz"
+   der Karte "Reverse-Proxy": einklappbar, der aktuelle Wert steht in der
+   Kopfzeile (summary), damit er auch eingeklappt sichtbar bleibt. */
+.auth-metrics__details {
+    margin-top: 1rem;
+}
+
+.auth-metrics__subtitle {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: .5rem;
+    font-size: .95rem;
+    font-weight: 600;
+    padding: .2rem 0;
+    cursor: pointer;
+    list-style: none;
+}
+
+.auth-metrics__subtitle::-webkit-details-marker {
+    display: none;
+}
+
+.auth-metrics__subtitle::after {
+    content: "";
+    width: .45em;
+    height: .45em;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+    transition: transform .15s ease;
+}
+
+.auth-metrics__details[open] > .auth-metrics__subtitle::after {
+    transform: rotate(225deg);
+}
+
+.auth-metrics__details[open] > .auth-metrics__subtitle {
+    margin-bottom: .5rem;
+}
+
+.auth-metrics__subtitle:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: .2rem;
+}
+
+.auth-metrics__summary-value {
+    font-variant-numeric: tabular-nums;
+    color: var(--color-muted);
+}
+
+.auth-metrics__sources {
+    list-style: none;
+    margin: 0 0 .5rem;
+    padding: 0;
+    display: grid;
+    gap: .6rem;
+}
+
+.auth-metrics__sources li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: .1rem .75rem;
+}
+
+.auth-metrics__sources .fillbar {
+    grid-column: 1 / -1;
+}
+
+.auth-metrics__network {
+    overflow-wrap: anywhere;
+}
+
+.auth-metrics__count {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+/* Klick auf die Karte oeffnet das Detail-Overlay mit den Verlaufsgrafiken. */
+.auth-metrics[data-auth-metrics-card] {
+    cursor: pointer;
+}
+
+.auth-metrics[data-auth-metrics-card]:hover,
+.auth-metrics[data-auth-metrics-card]:focus-within {
+    border-color: var(--color-primary);
+}
+
+.auth-metrics[data-auth-metrics-card]:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: .2rem;
+}
+
+.auth-metrics-dialog {
+    --auth-chart-warn: #bf8700;
+    --auth-chart-crit: #c8102e;
+
+    width: min(64rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    color: inherit;
+}
+
+.auth-metrics-dialog[open] {
+    display: flex;
+    flex-direction: column;
+}
+
+.auth-metrics-dialog::backdrop {
+    background: rgba(5, 18, 32, .55);
+}
+
+.auth-metrics-dialog__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.auth-metrics-dialog__title {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.auth-metrics-dialog__close {
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.auth-metrics-dialog__close:hover {
+    background: var(--color-surface-hover);
+}
+
+.auth-metrics-dialog__body {
+    overflow: auto;
+    padding: 1.25rem;
+}
+
+.auth-metrics-dialog__section + .auth-metrics-dialog__section {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--color-border);
+}
+
+.auth-metrics-dialog__section h3 {
+    margin: 0 0 .75rem;
+    font-size: .95rem;
+}
+
+.auth-metrics-dialog__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 1.25rem;
+}
+
+.auth-metrics-dialog__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.auth-metrics-dialog__table caption {
+    margin-bottom: .5rem;
+    text-align: left;
+}
+
+.auth-metrics-dialog__table th,
+.auth-metrics-dialog__table td {
+    padding: .4rem .5rem;
+    border-bottom: 1px solid var(--color-border);
+    text-align: left;
+}
+
+.auth-metrics-dialog__table thead th {
+    font-size: .85rem;
+    color: var(--color-muted);
+}
+
+.auth-metrics-dialog__table thead th:not(:first-child),
+.auth-metrics-dialog__table td:not(:first-child) {
+    text-align: right;
+}
+
+.auth-metrics-dialog__figure {
+    margin: 0 0 1.5rem;
+}
+
+.auth-metrics-dialog__figure:last-child {
+    margin-bottom: 0;
+}
+
+.auth-metrics-dialog__figure figcaption {
+    margin-bottom: .35rem;
+    font-weight: 600;
+}
+
+.auth-metrics-dialog__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem 1rem;
+    list-style: none;
+    margin: .5rem 0 0;
+    padding: 0;
+}
+
+.auth-metrics-dialog__legend li {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+}
+
+.auth-chart {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: var(--color-surface-hover);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+}
+
+.auth-chart__grid {
+    stroke: var(--color-border);
+}
+
+.auth-chart__axis {
+    fill: var(--color-muted);
+}
+
+.auth-chart__line,
+.auth-chart__threshold {
+    vector-effect: non-scaling-stroke;
+}
+
+.auth-chart__threshold--warn {
+    stroke: var(--auth-chart-warn);
+}
+
+.auth-chart__threshold--crit {
+    stroke: var(--auth-chart-crit);
+}
+
+.auth-chart__threshold-label--warn {
+    fill: var(--auth-chart-warn);
+}
+
+.auth-chart__threshold-label--crit {
+    fill: var(--auth-chart-crit);
+}
+
+.auth-chart__swatch {
+    flex: none;
+}
+
+/* Anzeige beim Ueberfahren der Verlaufsgrafiken: senkrechte Linie, Punkte der
+   Linien und das Hinweisfeld mit dem Zeitpunkt und den Werten. Gezeichnet im
+   Koordinatensystem der Grafik, daher ohne eigene Groessenangaben. */
+.auth-chart__cursor {
+    stroke: var(--color-muted);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+    vector-effect: non-scaling-stroke;
+}
+
+.auth-chart__cursor,
+.auth-chart__points,
+.auth-chart__tip {
+    pointer-events: none;
+}
+
+.auth-chart__tip-box {
+    fill: var(--color-surface);
+    stroke: var(--color-border);
+    stroke-width: 1;
+}
+
+.auth-chart__tip-time {
+    fill: var(--color-text);
+    font-weight: 600;
+}
+
+.auth-chart__tip-value {
+    fill: var(--color-muted);
+}
+
+[data-theme="dark"] .auth-metrics-dialog {
+    --auth-chart-warn: #e3b341;
+    --auth-chart-crit: #ff7b72;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .auth-metrics-dialog {
+        --auth-chart-warn: #e3b341;
+        --auth-chart-crit: #ff7b72;
+    }
+}
+
 /* Formulare */
 .form {
     background: var(--color-surface);

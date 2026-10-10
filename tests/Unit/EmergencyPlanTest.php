@@ -423,7 +423,7 @@ Runner::test('Notfallplan: Rücknahme durch Prüfer erzeugt keine künstliche Mi
 function emergencyAlarmTables(PDO $pdo, array $alarms): void
 {
     $pdo->exec('CREATE TABLE alarm_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, group_number TEXT, description TEXT, type TEXT)');
-    $pdo->exec('CREATE TABLE navigation_items (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, url TEXT, type TEXT, parent_id INTEGER, icon TEXT, background_color TEXT, background_opacity INTEGER, override_background INTEGER, short_description TEXT, description TEXT, content TEXT, alarm_text TEXT, alarm_group_id INTEGER, protected_access INTEGER, sort_order INTEGER, active INTEGER, created_at TEXT, updated_at TEXT)');
+    $pdo->exec('CREATE TABLE navigation_items (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, url TEXT, type TEXT, parent_id INTEGER, icon TEXT, background_color TEXT, background_opacity INTEGER, override_background INTEGER, short_description TEXT, description TEXT, content TEXT, alarm_text TEXT, alarm_group_id INTEGER, protected_access INTEGER, proxy_enabled INTEGER NOT NULL DEFAULT 0, proxy_bypass_networks TEXT NOT NULL DEFAULT \'\', sort_order INTEGER, active INTEGER, created_at TEXT, updated_at TEXT)');
     foreach ($alarms as [$title, $text, $number]) {
         $pdo->prepare("INSERT INTO alarm_groups (group_number, description, type) VALUES (?, '', 'group')")->execute([$number]);
         $pdo->prepare("INSERT INTO navigation_items (title, type, alarm_text, alarm_group_id, active, sort_order) VALUES (?, 'alarm', ?, ?, 1, 0)")

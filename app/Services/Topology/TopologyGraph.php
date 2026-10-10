@@ -107,7 +107,9 @@ final class TopologyGraph
         $definition['__duplicate'] = false;
         // Ein Knoten ohne ausdruecklichen Zustand ist nicht gesund, sondern
         // unbekannt: fehlende Messungen duerfen nie als "ok" durchgehen.
-        $definition['state'] = TopologyStatus::normalize((string) ($definition['state'] ?? TopologyStatus::UNKNOWN));
+        // Quellvokabeln der Module (z. B. "disabled") laufen ueber die
+        // zentrale Abbildung, damit "nicht aktiviert" als abgeschaltet gilt.
+        $definition['state'] = TopologyStatus::fromSource((string) ($definition['state'] ?? TopologyStatus::UNKNOWN));
         $this->nodes[$id] = $definition;
     }
 
@@ -167,7 +169,7 @@ final class TopologyGraph
         if (!isset($this->nodes[$id])) {
             throw new InvalidArgumentException(sprintf('Unbekannter Knoten "%s".', $id));
         }
-        $this->nodes[$id]['state'] = TopologyStatus::normalize($state);
+        $this->nodes[$id]['state'] = TopologyStatus::fromSource($state);
         $this->nodes[$id]['state_label'] = TopologyStatus::label($this->nodes[$id]['state']);
         if ($message !== '') {
             $this->nodes[$id]['message'] = $message;

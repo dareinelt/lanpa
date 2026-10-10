@@ -294,7 +294,7 @@ final class LanpaTopologyService
             'message' => (string) ($tls['message'] ?? ''),
             'evidence' => (bool) ($tls['available'] ?? false) ? 'proven' : 'unwatched',
             'measured_at' => $tls['measured_at'] ?? null,
-            'link' => '/admin/certificates',
+            'link' => '/admin/zertifikate',
             'facts' => array_values(array_filter([
                 ['label' => 'Modus', 'value' => (string) ($tlsData['mode'] ?? '')],
                 ['label' => 'Zustand', 'value' => (string) ($tlsData['active_status'] ?? '')],
@@ -354,7 +354,7 @@ final class LanpaTopologyService
                 : 'Es ist kein Verzeichnisdienst konfiguriert.',
             'evidence' => $configured ? 'derived' : 'proven',
             'measured_at' => $section['measured_at'] ?? null,
-            'link' => '/admin/identity-sources',
+            'link' => '/admin/ad',
             'facts' => [
                 ['label' => 'Quellen', 'value' => (string) ($data['count'] ?? 0)],
             ],
@@ -432,7 +432,7 @@ final class LanpaTopologyService
                     : ($lastError !== '' ? 'Letzter Fehler: ' . $lastError : 'Kein Fehler vermerkt; die Erreichbarkeit wird hier nicht geprüft.'),
                 'evidence' => 'derived',
                 'measured_at' => $section['measured_at'] ?? null,
-                'link' => '/admin/identity-sources',
+                'link' => '/admin/ad',
                 'facts' => array_values(array_filter([
                     ['label' => 'Domäne', 'value' => (string) ($source['domain'] ?? '')],
                     ['label' => 'Transportweg', 'value' => $transport === 'exchange' ? 'Exchange (EWS)' : 'SMTP-/IMAP-Proxy'],
@@ -501,12 +501,13 @@ final class LanpaTopologyService
             'layer' => 4,
             'state' => (string) ($section['state'] ?? 'unknown'),
             'message' => (string) ($section['message'] ?? ''),
-            'evidence' => (bool) ($section['available'] ?? false) ? 'derived' : 'unwatched',
+            'evidence' => (bool) ($section['available'] ?? false) ? 'derived'
+                : (TopologyStatus::fromSource((string) ($section['state'] ?? '')) === TopologyStatus::OFF ? 'proven' : 'unwatched'),
             'measured_at' => $section['measured_at'] ?? null,
             'link' => '/admin/smtp',
             'facts' => array_values(array_filter([
-                ['label' => 'Server', 'value' => (string) ($data['host'] ?? '')],
-                ['label' => 'Absender', 'value' => (string) ($data['from'] ?? '')],
+                (string) ($data['host'] ?? '') !== '' ? ['label' => 'Server', 'value' => (string) $data['host']] : null,
+                (string) ($data['from'] ?? '') !== '' ? ['label' => 'Absender', 'value' => (string) $data['from']] : null,
             ])),
         ]);
 
@@ -576,6 +577,22 @@ final class LanpaTopologyService
         $cache = (array) ($data['cache'] ?? []);
         $ai = (array) ($data['ai'] ?? []);
         $measuredAt = $section['measured_at'] ?? null;
+        $limitations = self::flowLimitations($nodes);
+        $sectionState = (string) ($section['state'] ?? 'unknown');
+        $sectionMessage = (string) ($section['message'] ?? '');
+
+        // Ein nicht aktiviertes Modul ist abgeschaltet, auch wenn die
+        // Nachrichtenfluss-Auswertung Konfigurationshinweise meldet.
+        if (!$enabled && ($section['available'] ?? false)) {
+            $coreState = TopologyStatus::OFF;
+            $coreMessage = 'Orvanta ist nicht aktiviert.';
+        } else {
+            $coreState = $sectionState;
+            $coreMessage = $sectionMessage;
+            if ($limitations !== [] && TopologyStatus::isProblem(TopologyStatus::fromSource($sectionState))) {
+                $coreMessage = ($coreMessage !== '' ? $coreMessage . ': ' : '') . implode('; ', $limitations);
+            }
+        }
 
         $graph->node('orvanta:core', [
             'title' => 'Orvanta',
@@ -584,14 +601,15 @@ final class LanpaTopologyService
             'group' => 'group:orvanta',
             'layer' => 3,
             'optional' => !$enabled,
-            'state' => (string) ($section['state'] ?? 'unknown'),
-            'message' => (string) ($section['message'] ?? ''),
+            'state' => $coreState,
+            'message' => $coreMessage,
             'evidence' => 'proven',
             'measured_at' => $measuredAt,
-            'link' => '/admin/orvanta',
+            'link' => '/admin/office/orvanta',
             'facts' => array_values(array_filter([
-                ['label' => 'Zustand', 'value' => (string) (($nodes['proxy'] ?? [])['state_label'] ?? '')],
+                ($section['available'] ?? false) ? ['label' => 'Zustand', 'value' => $enabled ? 'Aktiviert' : 'Nicht aktiviert'] : null,
                 !empty($data['demo']) ? ['label' => 'Betriebsart', 'value' => 'Demo-Daten'] : null,
+                !$enabled && $limitations !== [] ? ['label' => 'Offene Hinweise', 'value' => implode('; ', $limitations)] : null,
             ])),
         ]);
 
@@ -601,11 +619,15 @@ final class LanpaTopologyService
             'kind' => 'service',
             'group' => 'group:orvanta.exchange',
             'layer' => 4,
-            'state' => TopologyStatus::fromSource((string) (($nodes['exchange'] ?? [])['state'] ?? 'unknown')),
-            'message' => 'Der Poolzustand ergibt sich aus den einzelnen Hosts.',
-            'evidence' => (bool) ($exchange['available'] ?? false) ? 'proven' : 'unwatched',
+            'state' => $enabled
+                ? TopologyStatus::fromSource((string) (($nodes['exchange'] ?? [])['state'] ?? 'unknown'))
+                : TopologyStatus::OFF,
+            'message' => $enabled
+                ? 'Der Poolzustand ergibt sich aus den einzelnen Hosts.'
+                : 'Orvanta ist nicht aktiviert; der Host-Pool wird nicht genutzt.',
+            'evidence' => (bool) ($exchange['available'] ?? false) || !$enabled ? 'proven' : 'unwatched',
             'measured_at' => $measuredAt,
-            'link' => '/admin/orvanta-hosts',
+            'link' => '/admin/office/orvanta/hosts',
             'facts' => array_values(array_filter([
                 (bool) ($exchange['available'] ?? false)
                     ? ['label' => 'Hosts', 'value' => (string) ((($exchange['totals'] ?? [])['hosts']) ?? 0)] : null,
@@ -680,37 +702,46 @@ final class LanpaTopologyService
             ]);
         }
 
-        $cacheEnabled = (bool) ($cache['available'] ?? false);
+        $cacheNode = (array) ($nodes['cache'] ?? []);
+        $cacheEnabled = $enabled && ($cache !== [] || $cacheNode !== []);
         $graph->node('orvanta:attachment-cache', [
             'title' => 'Anhang-Zwischenspeicher',
             'subtitle' => 'Abgelegte Anhänge und Dateispeicher',
             'kind' => 'cache',
             'group' => 'group:orvanta',
             'layer' => 4,
-            'state' => $cacheEnabled ? TopologyStatus::fromSource((string) (($nodes['cache'] ?? [])['state'] ?? 'unknown')) : TopologyStatus::OFF,
-            'message' => (string) (($nodes['cache'] ?? [])['message'] ?? ''),
-            'evidence' => $cacheEnabled ? 'derived' : 'unwatched',
+            'state' => $cacheEnabled ? TopologyStatus::fromSource((string) ($cacheNode['state'] ?? 'unknown')) : TopologyStatus::OFF,
+            'message' => $cacheEnabled
+                ? ((string) ($cacheNode['message'] ?? '') !== '' ? (string) $cacheNode['message'] : 'Belegung des Anhang-Zwischenspeichers.')
+                : 'Orvanta ist nicht aktiviert; der Zwischenspeicher wird nicht genutzt.',
+            'evidence' => $cacheEnabled ? 'derived' : 'proven',
             'measured_at' => $measuredAt,
             'facts' => array_values(array_filter([
-                isset($cache['count']) ? ['label' => 'Einträge', 'value' => (string) $cache['count']] : null,
-                isset($cache['bytes_label']) ? ['label' => 'Belegt', 'value' => (string) $cache['bytes_label']] : null,
+                isset($cache['items']) ? ['label' => 'Einträge', 'value' => (string) $cache['items']] : null,
+                isset($cache['percent']) ? ['label' => 'Belegt', 'value' => (string) $cache['percent'] . ' %'] : null,
             ])),
         ]);
 
-        $presenceAvailable = (bool) ($presence['available'] ?? false);
+        $presenceAvailable = $enabled && $presence !== [];
         $graph->node('orvanta:presence', [
             'title' => 'Anwesenheit und Erinnerungen',
             'subtitle' => 'Sitzungs- und Erinnerungsdienst',
             'kind' => 'service',
             'group' => 'group:orvanta',
             'layer' => 4,
-            'state' => $presenceAvailable ? TopologyStatus::fromSource((string) (($nodes['presence'] ?? [])['state'] ?? 'unknown')) : TopologyStatus::OFF,
-            'message' => (string) (($nodes['presence'] ?? [])['message'] ?? ''),
-            'evidence' => $presenceAvailable ? 'derived' : 'unwatched',
+            'state' => $presenceAvailable
+                ? ((int) ($presence['samples'] ?? 0) > 0 ? TopologyStatus::OK : TopologyStatus::UNKNOWN)
+                : TopologyStatus::OFF,
+            'message' => $presenceAvailable
+                ? ((int) ($presence['samples'] ?? 0) > 0
+                    ? 'Es liegen aktuelle Anwesenheitsmessungen vor.'
+                    : 'Noch keine Anwesenheitsmessung im Beobachtungsfenster.')
+                : 'Orvanta ist nicht aktiviert; Anwesenheit wird nicht erfasst.',
+            'evidence' => $presenceAvailable ? 'derived' : 'proven',
             'measured_at' => $measuredAt,
             'facts' => array_values(array_filter([
-                isset($presence['active']) ? ['label' => 'Angemeldet', 'value' => (string) $presence['active']] : null,
-                isset($presence['total']) ? ['label' => 'Erfasst', 'value' => (string) $presence['total']] : null,
+                isset($presence['current']) ? ['label' => 'Angemeldet', 'value' => (string) $presence['current']] : null,
+                isset($presence['max']) ? ['label' => 'Höchstwert', 'value' => (string) $presence['max']] : null,
             ])),
         ]);
 
@@ -953,7 +984,7 @@ final class LanpaTopologyService
             'message' => (string) ($section['message'] ?? ''),
             'evidence' => $available ? 'proven' : 'unwatched',
             'measured_at' => $measuredAt,
-            'link' => '/admin/storage',
+            'link' => '/admin/speicher-ha',
             'containers' => ['storage-sync'],
             'facts' => array_values(array_filter([
                 ['label' => 'Betriebsart', 'value' => (string) ($data['mode'] ?? '')],
@@ -963,19 +994,35 @@ final class LanpaTopologyService
             ])),
         ]);
 
+        // Ohne Messwert ist der Hot-Tier nicht "abgeschaltet", sondern
+        // unbewertet – ausser das Tiering ist insgesamt nicht aktiv.
+        $hotFill = self::fillLabel($local);
+        if (!$available) {
+            $hotState = TopologyStatus::UNKNOWN;
+            $hotMessage = 'Der Füllstand ist nicht lesbar.';
+        } elseif ($hotFill === '') {
+            $hotState = $enabled ? TopologyStatus::UNKNOWN : TopologyStatus::OFF;
+            $hotMessage = $enabled
+                ? 'Noch keine Messwerte des lokalen Speichers; der Speicher-Worker liefert sie im Betrieb.'
+                : 'Speicher-Tiering ist nicht aktiv; der Füllstand wird nicht gemessen.';
+        } else {
+            $hotState = TopologyStatus::fromSource(self::fillState($local));
+            $hotMessage = 'Füllstand des lokalen Speichers: ' . $hotFill . '.';
+        }
+
         $graph->node('storage:hot', [
             'title' => 'Lokaler Hot-Tier',
             'subtitle' => 'Schneller Speicher der Anwendung',
             'kind' => 'storage',
             'group' => 'group:storage.tiers',
             'layer' => 4,
-            'state' => $available ? TopologyStatus::fromSource(self::fillState($local)) : TopologyStatus::UNKNOWN,
-            'message' => $available ? 'Füllstand des lokalen Speichers.' : 'Der Füllstand ist nicht lesbar.',
-            'evidence' => $available ? 'proven' : 'unwatched',
-            'measured_at' => $measuredAt,
+            'state' => $hotState,
+            'message' => $hotMessage,
+            'evidence' => $available && $hotFill !== '' ? 'proven' : ($hotState === TopologyStatus::OFF ? 'proven' : 'unwatched'),
+            'measured_at' => $available && $hotFill !== '' ? $measuredAt : null,
             'facts' => array_values(array_filter([
-                self::fillLabel($local) !== '' ? ['label' => 'Füllstand', 'value' => self::fillLabel($local)] : null,
-                isset($local['metrics_source']) ? ['label' => 'Messquelle', 'value' => (string) $local['metrics_source']] : null,
+                $hotFill !== '' ? ['label' => 'Füllstand', 'value' => $hotFill] : null,
+                (string) ($local['metrics_source'] ?? '') !== '' ? ['label' => 'Messquelle', 'value' => (string) $local['metrics_source']] : null,
             ])),
         ]);
 
@@ -1070,10 +1117,12 @@ final class LanpaTopologyService
             'layer' => 5,
             'optional' => !$snapshotEnabled,
             'state' => (string) ($snapshotSection['state'] ?? 'unknown'),
-            'message' => (string) ($snapshotSection['message'] ?? ''),
+            'message' => trim((string) ($snapshotSection['message'] ?? '')) !== ''
+                ? (string) $snapshotSection['message']
+                : ($snapshotEnabled ? 'Der Snapshot-Dienst liefert keine Meldung.' : 'Snapshots sind nicht eingerichtet.'),
             'evidence' => (bool) ($snapshotSection['available'] ?? false) ? 'proven' : 'unwatched',
             'measured_at' => $snapshotSection['measured_at'] ?? null,
-            'link' => '/admin/storage-snapshots',
+            'link' => '/admin/speicher-ha/dateiversionen',
             'facts' => array_values(array_filter([
                 ['label' => 'Aufnahmen', 'value' => (string) ($snapshotData['snapshots_total'] ?? 0)],
                 (int) ($snapshotData['failed'] ?? 0) > 0
@@ -1107,7 +1156,8 @@ final class LanpaTopologyService
             'optional' => !$available,
             'state' => (string) ($section['state'] ?? 'unknown'),
             'message' => (string) ($section['message'] ?? ''),
-            'evidence' => $available ? 'proven' : 'unwatched',
+            // "Nicht eingerichtet" ist eine belegte Konfiguration, keine fehlende Messung.
+            'evidence' => $available || TopologyStatus::fromSource((string) ($section['state'] ?? '')) === TopologyStatus::OFF ? 'proven' : 'unwatched',
             'measured_at' => $measuredAt,
             'containers' => ['office-backup'],
             'facts' => array_values(array_filter([
@@ -1146,7 +1196,7 @@ final class LanpaTopologyService
             'message' => 'Eine Wiederherstellung wurde nicht geprüft; aus einer vorhandenen Sicherung folgt kein geprüfter Wiederherstellungspunkt.',
             'evidence' => 'suspected',
             'measured_at' => null,
-            'link' => '/admin/backup',
+            'link' => '/admin/office/sicherung',
             'facts' => [['label' => 'Stand', 'value' => 'nicht geprüft']],
         ]);
     }
@@ -1182,7 +1232,7 @@ final class LanpaTopologyService
             'message' => (string) ($containers['message'] ?? ''),
             'evidence' => (bool) ($containers['available'] ?? false) ? 'proven' : 'unwatched',
             'measured_at' => $containers['measured_at'] ?? null,
-            'link' => '/admin/monitoring',
+            'link' => '/admin',
             'containers' => ['monitor'],
             'facts' => array_values(array_filter([
                 $observed !== [] ? ['label' => 'Beobachtet', 'value' => implode(', ', $observed)] : null,
@@ -1223,7 +1273,7 @@ final class LanpaTopologyService
             'message' => (string) ($alarm['message'] ?? ''),
             'evidence' => 'derived',
             'measured_at' => $alarm['measured_at'] ?? null,
-            'link' => '/admin/settings',
+            'link' => '/admin/alarmierung',
         ]);
 
         $emergency = self::sec($facts, 'emergency');
@@ -1910,6 +1960,32 @@ final class LanpaTopologyService
         }
 
         return number_format((float) $percent, 1, ',', '.') . ' % belegt';
+    }
+
+    /**
+     * Eingeschraenkte oder gestoerte Bausteine der Nachrichtenfluss-Auswertung
+     * als lesbare Ursachen ("Titel: Meldung").
+     *
+     * @param array<string,mixed> $nodes
+     * @return list<string>
+     */
+    private static function flowLimitations(array $nodes): array
+    {
+        $out = [];
+        foreach ($nodes as $node) {
+            if (!is_array($node)) {
+                continue;
+            }
+            $state = TopologyStatus::fromSource((string) ($node['state'] ?? ''));
+            if ($state !== TopologyStatus::WARN && $state !== TopologyStatus::ERROR) {
+                continue;
+            }
+            $title = trim((string) ($node['title'] ?? ''));
+            $message = trim((string) ($node['message'] ?? ''));
+            $out[] = $title !== '' && $message !== '' ? $title . ': ' . $message : ($title !== '' ? $title : $message);
+        }
+
+        return array_values(array_filter($out, static fn (string $line): bool => $line !== ''));
     }
 
     /**

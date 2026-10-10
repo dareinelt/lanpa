@@ -695,3 +695,87 @@ Runner::test('Topologie: der Renderer blendet per Rechtsklick ein und aus', stat
     Assert::contains('.topo-draft', $style, 'die Entwurfsleiste ist gestaltet');
     Assert::contains('.topo-menu', $style, 'das Kontextmenue ist gestaltet');
 });
+
+Runner::test('Topologie: jeder Verweis zeigt auf eine vorhandene Admin-Route', static function (): void {
+    $routes = (string) file_get_contents(dirname(__DIR__, 2) . '/public/index.php');
+    preg_match_all('/\$router->get\(\'([^\']+)\'/', $routes, $match);
+    $known = array_flip($match[1]);
+    Assert::true(isset($known['/admin/topologie']), 'die Routenliste ist lesbar');
+
+    $contract = topologyContract([
+        'orvanta' => ['state' => 'ok', 'message' => 'Bereit.', 'measured_at' => time(), 'available' => true, 'data' => ['enabled' => true]],
+    ]);
+    $links = 0;
+    foreach (['nodes', 'groups'] as $kind) {
+        foreach ((array) ($contract[$kind] ?? []) as $id => $entry) {
+            $link = $entry['link'] ?? null;
+            if ($link === null || $link === '') {
+                continue;
+            }
+            $links++;
+            $path = (string) parse_url((string) $link, PHP_URL_PATH);
+            Assert::true(isset($known[$path]), 'Verweis von ' . $id . ' (' . $link . ') ist eine GET-Route');
+        }
+    }
+    Assert::true($links > 5, 'die Bausteine verweisen auf ihre Verwaltungsseiten');
+});
+
+Runner::test('Topologie: abgeschaltete Abschnitte werden als "aus" dargestellt', static function (): void {
+    $contract = topologyContract([
+        'mail_dispatch' => ['state' => 'disabled', 'message' => 'Der Mailversand ist nicht aktiviert.', 'measured_at' => time(), 'available' => true, 'data' => []],
+    ]);
+
+    Assert::same('off', $contract['nodes']['mail:dispatch']['state'] ?? null, 'disabled wird zu off');
+    Assert::same([], array_values(array_filter(
+        $contract['incidents'],
+        static fn (array $incident): bool => ($incident['node'] ?? '') === 'mail:dispatch'
+    )), 'ein abgeschalteter Mailversand ist keine Stoerung');
+});
+
+Runner::test('Topologie: nicht aktiviertes Orvanta ist abgeschaltet, Hinweise bleiben sichtbar', static function (): void {
+    $contract = topologyContract([
+        'orvanta' => [
+            'state' => 'warn',
+            'message' => '1 Einschränkung',
+            'measured_at' => time(),
+            'available' => true,
+            'data' => [
+                'enabled' => false,
+                'nodes' => ['ai' => ['title' => 'KI-Anbindung', 'state' => 'warn', 'message' => 'Kein Modell gewählt.']],
+            ],
+        ],
+    ]);
+
+    $core = $contract['nodes']['orvanta:core'];
+    Assert::same('off', $core['state'], 'nicht aktiviert heisst abgeschaltet');
+    Assert::same('off', $contract['nodes']['orvanta:exchange-pool']['state'] ?? null, 'der Host-Pool ist ebenfalls aus');
+    Assert::false(in_array('orvanta:core', array_column($contract['incidents'], 'node'), true), 'keine Stoerung');
+    Assert::contains('KI-Anbindung: Kein Modell gewählt.', json_encode($core['facts'], JSON_UNESCAPED_UNICODE), 'die offenen Hinweise bleiben als Kennzahl erhalten');
+});
+
+Runner::test('Topologie: aktiviertes Orvanta nennt die Ursachen einer Einschraenkung', static function (): void {
+    $contract = topologyContract([
+        'orvanta' => [
+            'state' => 'warn',
+            'message' => '1 Einschränkung',
+            'measured_at' => time(),
+            'available' => true,
+            'data' => [
+                'enabled' => true,
+                'nodes' => ['ai' => ['title' => 'KI-Anbindung', 'state' => 'warn', 'message' => 'Kein Modell gewählt.']],
+            ],
+        ],
+    ]);
+
+    $core = $contract['nodes']['orvanta:core'];
+    Assert::same('warn', $core['state']);
+    Assert::contains('KI-Anbindung: Kein Modell gewählt.', $core['message'], 'die Ursache steht in der Meldung');
+});
+
+Runner::test('Topologie: Notfall-Zertifikat ist eine Warnung, kein unbekannter Zustand', static function (): void {
+    $contract = topologyContract([
+        'tls' => ['state' => 'warn', 'message' => 'Notfall-Zertifikat.', 'measured_at' => time(), 'available' => true, 'data' => ['active_status' => 'none']],
+    ]);
+
+    Assert::same('warn', $contract['nodes']['access:tls']['state'] ?? null);
+});

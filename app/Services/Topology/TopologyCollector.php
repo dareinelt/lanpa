@@ -405,8 +405,16 @@ final class TopologyCollector
             ? 'Ein gültiges Zertifikat ist hinterlegt' . ($stale ? ', die Auslieferung an den Proxy ist aber überfällig.' : '.')
             : 'Es ist kein gültiges Zertifikat hinterlegt; der Proxy verwendet das Notfall-Zertifikat.';
 
+        // Ohne gueltiges Zertifikat liefert der Proxy das Notfall-Zertifikat
+        // aus: Betrieb moeglich, aber eingeschraenkt – nicht "abgeschaltet".
+        if ($activeStatus === 'valid') {
+            $sectionState = $stale ? 'stale' : 'valid';
+        } else {
+            $sectionState = $activeStatus === 'none' || $activeStatus === '' ? 'warn' : $activeStatus;
+        }
+
         return self::section(
-            $stale ? 'stale' : $activeStatus,
+            $sectionState,
             $message,
             $now,
             [

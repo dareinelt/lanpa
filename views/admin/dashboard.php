@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Security\Csrf;
 use App\Services\Auth\AuthMetricsService;
+use App\Services\Monitoring\ContainerMetricsService;
 use App\Support\Bytes;
 use App\Support\Dates;
 use App\Support\Html;
@@ -12,7 +13,9 @@ use App\Support\Html;
 /** @var array<string,mixed>|null $lastSuccessfulSync */
 /** @var array{count:int,users:list<string>,target:string,freeze:bool,title:string,message:string}|null $incidentAlert */
 /** @var array<string,mixed> $authMetrics Kennzahlen des auth-Containers (siehe AuthMetricsService::card()) */
+/** @var list<array<string,mixed>> $containerMetrics Kacheln der uebrigen Container (siehe ContainerMetricsService::dashboard()) */
 $incidentAlert = $incidentAlert ?? null;
+$containerMetrics = $containerMetrics ?? [];
 ?>
 <?php if ($incidentAlert !== null) { ?>
     <section class="incident-alert" role="alert">
@@ -213,5 +216,96 @@ $incidentAlert = $incidentAlert ?? null;
             <?php } ?>
         <?php } ?>
     </section>
+
+    <?php
+    /** @var list<array<string,mixed>> $containerMetrics Kacheln der uebrigen Container (ContainerMetricsService::dashboard()) */
+    foreach ($containerMetrics as $container) {
+        $containerCpu = is_array($container['cpu'] ?? null) ? $container['cpu'] : null;
+        $containerRam = is_array($container['ram'] ?? null) ? $container['ram'] : null;
+        $containerCpuLevel = (string) ($containerCpu['level'] ?? 'ok');
+        $containerRamLevel = (string) ($containerRam['level'] ?? 'ok');
+        $containerRamUsed = $containerRam !== null && is_int($containerRam['used'] ?? null) ? $containerRam['used'] : null;
+        $containerRamTotal = $containerRam !== null && is_int($containerRam['total'] ?? null) ? $containerRam['total'] : null;
+        $containerDialogId = 'container-metrics-dialog-' . (string) $container['service'];
+        ?>
+        <section
+            class="card auth-metrics auth-metrics--wide"
+            data-state="<?= Html::e(ContainerMetricsService::state($container)) ?>"<?= $containerCpu === null ? '' : ' data-auth-metrics-card data-auth-metrics-dialog="' . Html::e($containerDialogId) . '" tabindex="0" aria-haspopup="dialog"' ?>
+        >
+            <h2 class="card__title"><?= Html::e((string) $container['title']) ?></h2>
+            <?php if ($containerCpu === null) { ?>
+                <p class="card__hint">
+                    Noch keine Messwerte empfangen. Der Sammel-Container liest die CPU- und Arbeitsspeicher-Auslastung
+                    der laufenden Container im Minutentakt aus; ein gestoppter oder nicht eingerichteter Container
+                    meldet nichts.
+                </p>
+            <?php } else { ?>
+                <div class="auth-metrics__gauges">
+                    <div class="auth-metrics__gauge">
+                        <p class="metric auth-metrics__value auth-metrics__value--<?= Html::e($containerCpuLevel) ?>">
+                            <?= Html::e($percent((float) $containerCpu['current'])) ?>
+                        </p>
+                        <p class="auth-metrics__reference"><?= Html::e(ContainerMetricsService::cpuReference($containerCpu)) ?></p>
+                        <p class="card__hint">CPU-Last im Container (aktuell)</p>
+                        <ul class="status-list">
+                            <li>
+                                <span>Spitze (<?= (int) $containerCpu['window'] ?> h)</span>
+                                <span>
+                                    <?= Html::e($percent((float) $containerCpu['peak'])) ?>
+                                    <?php if (($containerCpu['peak_at'] ?? null) !== null) { ?>
+                                        <span class="card__hint"><?= Html::e((string) $containerCpu['peak_at']) ?></span>
+                                    <?php } ?>
+                                </span>
+                            </li>
+                            <li>
+                                <span>Mittel (<?= (int) $containerCpu['window'] ?> h)</span>
+                                <span><?= Html::e($percent((float) $containerCpu['avg'])) ?></span>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="auth-metrics__gauge">
+                        <p class="metric auth-metrics__value auth-metrics__value--<?= Html::e($containerRamLevel) ?>">
+                            <?= $containerRam === null ? '–' : Html::e($percent((float) $containerRam['current'])) ?>
+                        </p>
+                        <p class="auth-metrics__reference"><?= Html::e(Bytes::formatPair($containerRamUsed, $containerRamTotal)) ?></p>
+                        <p class="card__hint">Arbeitsspeicher im Container (aktuell)</p>
+                        <?php if ($containerRam === null) { ?>
+                            <p class="card__hint">Der Container meldet noch keinen Arbeitsspeicher.</p>
+                        <?php } else { ?>
+                            <ul class="status-list">
+                                <li>
+                                    <span>Spitze (<?= (int) $containerRam['window'] ?> h)</span>
+                                    <span>
+                                        <?= Html::e($percent((float) $containerRam['peak'])) ?>
+                                        <?php if (($containerRam['peak_at'] ?? null) !== null) { ?>
+                                            <span class="card__hint"><?= Html::e((string) $containerRam['peak_at']) ?></span>
+                                        <?php } ?>
+                                    </span>
+                                </li>
+                                <li>
+                                    <span>Mittel (<?= (int) $containerRam['window'] ?> h)</span>
+                                    <span><?= Html::e($percent((float) $containerRam['avg'])) ?></span>
+                                </li>
+                            </ul>
+                        <?php } ?>
+                    </div>
+                </div>
+                <?php if (!empty($container['stale'])) { ?>
+                    <p class="flash flash--error">
+                        Seit <?= Html::e((string) $container['recorded_at']) ?> sind keine neuen Messwerte eingegangen –
+                        der Sammel-Container meldet diesen Container derzeit nicht.
+                    </p>
+                <?php } ?>
+            <?php } ?>
+        </section>
+    <?php } ?>
 </div>
 <?php require __DIR__ . '/reverse-proxy-dialog.php'; ?>
+<?php
+/** @var array<string,array<string,mixed>> $containerMetricsHistory Verlauf je Container (ContainerMetricsService::dashboard()) */
+foreach ($containerMetrics as $container) {
+    $containerCard = $container;
+    $containerHistory = $containerMetricsHistory[(string) $container['service']] ?? [];
+    $containerDialogId = 'container-metrics-dialog-' . (string) $container['service'];
+    require __DIR__ . '/container-metrics-dialog.php';
+} ?>

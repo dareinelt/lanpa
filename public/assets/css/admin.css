@@ -245,9 +245,9 @@
     color: #a40e26;
 }
 
-/* Abschnitte "Offene TCP-Verbindungen" und "Verbindungen nach Quellnetz"
-   der Karte "Reverse-Proxy": einklappbar, der aktuelle Wert steht in der
-   Kopfzeile (summary), damit er auch eingeklappt sichtbar bleibt. */
+/* Abschnitte "Verbindungen (seit der letzten Messung)" und "Anfragen nach
+   Quellnetz" der Karte "Reverse-Proxy": einklappbar, der aktuelle Wert steht in
+   der Kopfzeile (summary), damit er auch eingeklappt sichtbar bleibt. */
 .auth-metrics__details {
     margin-top: 1rem;
 }

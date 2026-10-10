@@ -263,8 +263,9 @@ services:
       # APP_URL liefert auch den Hostnamen fuer den Kerberos-SPN (HTTP/<host>).
 
       APP_URL: ${APP_URL:-http://localhost:8080}
-      # Kennzahlen fuer das Admin-Dashboard: die Hauptinstanz misst CPU-Last
-      # und offene TCP-Verbindungen im Container und meldet sie an
+      # Kennzahlen fuer das Admin-Dashboard: die Hauptinstanz misst CPU-Last,
+      # im Messfenster aufgebaute Client-Verbindungen und Anfragen je Quellnetz
+      # im Container und meldet sie an
       # POST /internal/auth-metrics (docker/auth/metrics.py, Kachel
       # "Reverse-Proxy"). Abstand in Sekunden.
       AUTH_METRICS_INTERVAL: ${AUTH_METRICS_INTERVAL:-60}

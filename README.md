@@ -236,6 +236,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Aktivierungs-Rufnummern | Für den geschützten Zugriffsmodus erlaubte Rufnummern pflegen |
 | Zertifikate (HTTPS) | Request (CSR) für den `auth`-Container erstellen und herunterladen, von der CA ausgestelltes Zertifikat (PEM/CRT) mit Vorschau importieren, aktives Zertifikat wählen, Verlauf aller Requests und Zertifikate, Quellnetze für HTTP ohne gültiges Zertifikat |
 | SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
+| Bekannte Quellnetze | Größere Netze des eigenen Hauses in CIDR-Schreibweise eintragen (z. B. `192.168.200.0/21`); der Adressbereich wird aus dem Präfix errechnet und angezeigt. Die vom `auth`-Container je /24 bzw. /64 gemeldeten Quellen der Kachel „Reverse-Proxy“ werden darin zusammengefasst – auch rückwirkend für bereits gemessene Proben |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |
 | Benutzer | Benutzerverwaltung: Konten anlegen/bearbeiten/deaktivieren/löschen, Rollenvergabe (nur für Administratoren); **Administratoren aus AD-Gruppen**: Mitglieder festzulegender AD-Gruppen werden Intranet-Administratoren (Anmeldung per Windows-Anmeldung) bzw. Nextcloud-Administratoren ([docs/office.md](docs/office.md#nextcloud-administratoren-aus-ad-gruppen)) |
 | Sicherung | Vollständige Sicherung als ZIP exportieren und wieder einspielen |
@@ -494,6 +495,20 @@ hinter dem Hostnamen des Ziels – die Zielanwendung bekommt von der Weiterleitu
 Ist ein Ziel nicht erreichbar, erscheint eine eigene Hinweisseite statt einer Apache-Fehlerseite.
 Adressraum, Umschreibungen, Grenzen, Betriebsparameter (`NAV_PROXY_*`) und Fehlersuche:
 [docs/weiterleitung.md](docs/weiterleitung.md).
+
+### Quellnetze der Kachel „Reverse-Proxy“ zusammenfassen
+
+Der `auth`-Container meldet die Anfragen je Quellnetz verfeinert: bei IPv4 je `/24`, bei IPv6 je
+`/64`. Größere Netze des eigenen Hauses lassen sich deshalb im Adminbereich unter **System →
+Bekannte Quellnetze** eintragen (CIDR, z. B. `192.168.200.0/21`; mehrere Netze durch Zeilenumbruch,
+Leerzeichen, Komma oder Semikolon, höchstens 32). Der Adressbereich wird aus dem Präfix errechnet
+und angezeigt (`192.168.200.0/21` = `192.168.200.0` – `192.168.207.255`); alle darin liegenden
+gemeldeten Netze werden in der Statistik zu dem bekannten Netz zusammengefasst – auch rückwirkend
+für bereits gemessene Proben. Ist das Feld leer, bleibt jedes gemeldete Netz einzeln.
+
+![Adminbereich „Bekannte Quellnetze“: errechneter Adressbereich und Zuordnung der gemeldeten Netze](docs/screenshots/128-admin-quellnetze.png)
+
+![Kachel „Reverse-Proxy“: die gemeldeten /24-Netze sind zu einem bekannten Quellnetz zusammengefasst](docs/screenshots/129-admin-reverse-proxy-quellnetze.png)
 
 ### Zugangsdaten und Schlüssel
 
@@ -809,6 +824,7 @@ aus der Anwendung heraus verlinkt (`public/manuals/`); die Anzeige lässt sich i
 | Zertifikate: HTTP-Quellnetze | <img src="docs/screenshots/65-admin-zertifikate-http-netze.png" alt="HTTP-Quellnetze" width="520"> |
 | AD-Gruppen-Pfad | <img src="docs/screenshots/41-admin-ad-gruppenpfad.png" alt="AD-Gruppen-Pfad" width="520"> |
 | Berechtigungen mit Gruppenvorschlägen | <img src="docs/screenshots/40-admin-ad-gruppen-vorschlaege.png" alt="Gruppenvorschläge" width="520"> |
+| Bekannte Quellnetze | <img src="docs/screenshots/128-admin-quellnetze.png" alt="Bekannte Quellnetze" width="520"> |
 
 </details>
 

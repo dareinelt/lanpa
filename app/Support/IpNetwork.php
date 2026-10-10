@@ -92,6 +92,42 @@ final class IpNetwork
     }
 
     /**
+     * Grenzen eines Netzes, aus dem Praefix errechnet: erste (Netz-) und
+     * letzte (Broadcast-)Adresse. "192.168.200.0/21" reicht damit von
+     * 192.168.200.0 bis 192.168.207.255 (2048 Adressen).
+     *
+     * @return array{first:string,last:string,prefix:int,host_bits:int,addresses:int|float}|null
+     */
+    public static function bounds(string $network): ?array
+    {
+        $normalized = self::normalize($network);
+        if ($normalized === null) {
+            return null;
+        }
+
+        [$address, $prefix] = explode('/', $normalized, 2);
+        $packed = self::pack($address);
+        if ($packed === null) {
+            return null;
+        }
+
+        $hostBits = strlen($packed) * 8 - (int) $prefix;
+        $first = inet_ntop(self::mask($packed, (int) $prefix));
+        $last = inet_ntop(self::broadcast($packed, (int) $prefix));
+        if ($first === false || $last === false) {
+            return null;
+        }
+
+        return [
+            'first' => $first,
+            'last' => $last,
+            'prefix' => (int) $prefix,
+            'host_bits' => $hostBits,
+            'addresses' => 2 ** $hostBits,
+        ];
+    }
+
+    /**
      * Prueft, ob die Adresse in einem der Netze liegt. Ohne Netze: false.
      *
      * @param list<string> $networks
@@ -144,6 +180,27 @@ final class IpNetwork
         $packed = @inet_pton($address);
 
         return $packed === false ? null : $packed;
+    }
+
+    /**
+     * Setzt alle Bits hinter dem Praefix auf 1 (Broadcast-Adresse des Netzes).
+     */
+    private static function broadcast(string $packed, int $prefix): string
+    {
+        $bytes = strlen($packed);
+        $result = '';
+        for ($index = 0; $index < $bytes; $index++) {
+            $remaining = $prefix - $index * 8;
+            if ($remaining >= 8) {
+                $result .= $packed[$index];
+            } elseif ($remaining <= 0) {
+                $result .= "\xFF";
+            } else {
+                $result .= chr(ord($packed[$index]) | (0xFF >> $remaining));
+            }
+        }
+
+        return $result;
     }
 
     /**

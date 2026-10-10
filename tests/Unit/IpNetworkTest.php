@@ -49,3 +49,29 @@ Runner::test('IpNetwork: matchesAny und unbekannte Adressen', function (): void 
     Assert::false(IpNetwork::matchesAny(['10.0.0.0/24'], ''));
     Assert::false(IpNetwork::matchesAny(['10.0.0.0/24'], 'keine-adresse'));
 });
+
+Runner::test('IpNetwork: Grenzen werden aus dem Praefix errechnet', function (): void {
+    Assert::same(
+        ['first' => '192.168.200.0', 'last' => '192.168.207.255', 'prefix' => 21, 'host_bits' => 11, 'addresses' => 2048],
+        IpNetwork::bounds('192.168.200.0/21'),
+        'Ein /21 reicht von 192.168.200.0 bis 192.168.207.255'
+    );
+    Assert::same(
+        ['first' => '192.168.204.0', 'last' => '192.168.204.255', 'prefix' => 24, 'host_bits' => 8, 'addresses' => 256],
+        IpNetwork::bounds('192.168.204.5/24'),
+        'Adresse wird auf die Netzgrenze gerundet'
+    );
+    Assert::same(
+        ['first' => '10.0.0.0', 'last' => '10.0.0.0', 'prefix' => 32, 'host_bits' => 0, 'addresses' => 1],
+        IpNetwork::bounds('10.0.0.0'),
+        'Ohne Praefix gilt die einzelne Adresse'
+    );
+    Assert::same(
+        ['first' => '0.0.0.0', 'last' => '255.255.255.255', 'prefix' => 0, 'host_bits' => 32, 'addresses' => 4294967296],
+        IpNetwork::bounds('0.0.0.0/0'),
+        'Alles-Netz'
+    );
+    Assert::same('2001:db8:ffff:ffff:ffff:ffff:ffff:ffff', IpNetwork::bounds('2001:db8::/32')['last'] ?? null, 'IPv6-Grenze');
+    Assert::null(IpNetwork::bounds('kaputt'), 'Ungueltige Angabe');
+    Assert::null(IpNetwork::bounds('10.0.0.0/33'), 'Zu grosses Praefix');
+});

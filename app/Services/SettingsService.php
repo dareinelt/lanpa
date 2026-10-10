@@ -105,6 +105,10 @@ final class SettingsService
             'sms_code_secret' => '',
             // Quellnetze mit reinem HTTP-Zugriff, solange kein gueltiges Zertifikat aktiv ist ('none' = keine).
             'tls_http_networks' => TlsCertificateService::DEFAULT_HTTP_NETWORKS,
+            // Bekannte Quellnetze der Reverse-Proxy-Statistik ('none' = keine); der Bereich
+            // wird aus dem Praefix errechnet, z. B. fasst 192.168.200.0/21 die gemeldeten
+            // Netze 192.168.200.0/24 bis 192.168.207.0/24 zusammen.
+            'auth_known_source_networks' => '',
         ];
     }
 

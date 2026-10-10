@@ -508,7 +508,9 @@ final class Container
         return self::make(
             \App\Services\Auth\AuthMetricsService::class,
             static fn (): \App\Services\Auth\AuthMetricsService => new \App\Services\Auth\AuthMetricsService(
-                self::authMetricsRepository()
+                self::authMetricsRepository(),
+                null,
+                self::settings()
             )
         );
     }

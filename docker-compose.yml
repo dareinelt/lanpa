@@ -233,6 +233,18 @@ services:
       context: .
       dockerfile: docker/auth/Dockerfile
     restart: unless-stopped
+    # Ressourcen des Containers (Schalter in der .env): Zugewiesen = Obergrenze
+    # (cpus, mem_limit), Reserviert = Reservierung (mem_reservation; cpu_shares
+    # als relative Gewichtung). 0 = keine Grenze/Reservierung. Wirksam erst nach
+    # "docker compose up -d auth" (Neuanlegen des Containers), ein
+    # "docker compose restart auth" uebernimmt die Werte nicht.
+    # Siehe docs/installation.md, Abschnitt "Dimensionierung".
+    cpus: ${AUTH_CPUS:-0}
+    mem_limit: ${AUTH_MEMORY_LIMIT:-0}
+    mem_reservation: ${AUTH_MEMORY_RESERVED:-0}
+    # Relative CPU-Gewichtung im Wettbewerb mit anderen Containern
+    # (Docker-Standard 1024).
+    cpu_shares: ${AUTH_CPU_SHARES:-1024}
     # Fester Computername fuer den Domaenenbeitritt (NetBIOS, max. 15 Zeichen);
     # der Beitritt bleibt im Volume sso_samba erhalten.
     hostname: ${SSO_NETBIOS_NAME:-lanpa-sso}

@@ -404,6 +404,33 @@ services:
       - intranet
       - office
 
+  # Kennzahlen-Sammler: liest CPU- und Arbeitsspeicher-Auslastung der uebrigen
+  # Container ueber den Docker-Socket (read-only) aus und meldet sie an
+  # POST /internal/container-metrics. Daraus entstehen die Kacheln "Anwendung",
+  # "Datenbank", "SMTP-/IMAP-Proxy", "Nextcloud" und "Euro-Office" auf dem
+  # Admin-Dashboard. Die Container app, db, mail-proxy, nextcloud und
+  # eurooffice messen nicht selbst.
+  monitor:
+    build:
+      context: .
+      dockerfile: docker/monitor/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    environment:
+      MONITOR_METRICS_URL: ${MONITOR_METRICS_URL:-http://app/internal/container-metrics}
+      MONITOR_INTERVAL: ${MONITOR_INTERVAL:-60}
+      MONITOR_SERVICES: ${MONITOR_SERVICES:-app,db,mail-proxy,nextcloud,eurooffice}
+      MONITOR_METRICS_SERVICE: ${MONITOR_METRICS_SERVICE:-monitor}
+    env_file:
+      - .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - sso_token:/run/intranet-sso:ro
+    networks:
+      - intranet
+
   # ---------------------------------------------------------------------------
   # Office-Erweiterung (Profil "office"): Nextcloud + Euro-Office DocumentServer
   # ---------------------------------------------------------------------------

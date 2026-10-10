@@ -390,3 +390,38 @@ Der Domänenbeitritt bleibt beim Neuanlegen erhalten (Volume `sso_samba`),
 laufende Zugriffe werden dabei kurz unterbrochen. Die von
 `scripts/sso-domains.sh` erzeugten Instanzen `auth-<kennung>` für weitere
 Domänen sind eigene Dienste und haben eigene Grenzen.
+
+### Kennzahlen der übrigen Container
+
+Auf dem Admin-Dashboard zeigt jeder der Container `app`, `db`, `mail-proxy`,
+`nextcloud` und `eurooffice` eine eigene Kachel mit CPU- und
+Arbeitsspeicher-Auslastung. Diese Container messen sich nicht selbst; die Werte
+liest der kleine Dienst `monitor` (Python-Standardbibliothek, `docker/monitor/`)
+über den **read-only** eingebundenen Docker-Socket aus und meldet sie an die
+Anwendung. Er braucht keine eigene Konfiguration und keine zusätzlichen Ports –
+die Vorgaben in `docker-compose.yml` genügen:
+
+| Stellschraube | Vorgabe | Bedeutung |
+| --- | --- | --- |
+| `MONITOR_INTERVAL` | `60` | Abstand der Messungen in Sekunden. |
+| `MONITOR_SERVICES` | `app,db,mail-proxy,nextcloud,eurooffice` | Beobachtete Compose-Dienste; nicht laufende Dienste werden ausgelassen (die Kachel zeigt dann nur einen Hinweis). |
+| `MONITOR_METRICS_URL` | `http://app/internal/container-metrics` | Ziel der Meldung innerhalb des internen Netzes. |
+| `MONITOR_METRICS_SERVICE` | `monitor` | Name, unter dem sich der Dienst gegenüber der Anwendung ausweist (muss vom `app`-Container auflösbar sein). |
+
+Bezugsgröße der CPU-Anzeige ist das CPU-Limit des jeweiligen Containers, ohne
+Limit die Kerne des Hosts (dieselben Werte wie `docker stats`); die
+Arbeitsspeicher-Anzeige bezieht sich auf das Speicher-Limit, ohne Limit auf den
+Arbeitsspeicher des Hosts. Gemessen wird dieselbe Größe wie bei `docker stats`
+(`memory.usage` abzüglich des freigebbaren Dateicaches). Die Proben werden 48
+Stunden aufbewahrt; ältere werden beim Schreiben entfernt. Ein Klick auf eine
+Kachel öffnet Details und Verlaufsgrafiken. Prüfen lässt sich der Dienst mit:
+
+```bash
+docker compose logs monitor          # Meldungen und Fehler
+docker compose exec monitor python3 /app/metrics.py once   # eine Probe von Hand
+```
+
+Die Kacheln bleiben leer, solange der Dienst `monitor` nicht läuft (z. B. wenn
+er in `COMPOSE_FILE` fehlt). Ohne Zugriff auf den Docker-Socket oder ohne
+erreichbare Anwendung verwirft der Dienst die Probe und versucht es im nächsten
+Intervall erneut.

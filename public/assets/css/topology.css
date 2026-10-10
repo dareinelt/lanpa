@@ -117,7 +117,8 @@
     border-radius: .75rem;
     border: 1px solid var(--topo-border);
     background: rgba(255, 255, 255, .03);
-    min-width: 0;
+    justify-self: start;
+    min-width: max-content;
     transition: border-color .4s, box-shadow .4s;
 }
 
@@ -172,7 +173,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 48vw;
+    max-width: min(22rem, 30vw);
 }
 
 .topo-head__counters {
@@ -633,7 +634,7 @@
 }
 
 .topo-panel__state { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .75rem 0 .5rem; font-size: .8rem; }
-.topo-panel__state code { color: var(--topo-muted); font-size: .75rem; overflow-wrap: anywhere; }
+.topo-panel__state code { padding: 0; border: 0; background: none; color: var(--topo-muted); font-family: inherit; font-size: .75rem; overflow-wrap: anywhere; }
 
 .topo-panel .badge { padding: .15rem .55rem; border-radius: 1rem; font-size: .72rem; font-weight: 700; background: rgba(255, 255, 255, .08); }
 .topo-panel .badge--ok { background: rgba(42, 212, 160, .2); color: var(--topo-ok); }
@@ -643,7 +644,6 @@
 .topo-panel .badge--off { background: rgba(86, 96, 114, .3); color: var(--topo-muted); }
 .topo-panel .badge--unknown { background: rgba(159, 176, 199, .18); color: var(--topo-unknown); border: 1px dashed rgba(159, 176, 199, .55); }
 .topo-panel .badge--stale { background: rgba(192, 132, 252, .2); color: var(--topo-stale); }
-.topo-panel__state code { font-size: .72rem; color: var(--topo-muted); }
 
 .topo-panel__message {
     margin: .5rem 0;
@@ -864,6 +864,7 @@
 /* ---------------------------------------------------------- Stoerungsband */
 
 .topo-incidents {
+    flex: 0 0 auto;
     display: grid;
     grid-template-columns: auto 1fr;
     align-items: center;

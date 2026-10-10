@@ -197,9 +197,9 @@ Gesamtansicht nicht verhindern, sondern erscheint als `unknown` mit
 | `office_backup` | Office-Sicherungsagent | Verfügbarkeit und Status des Agenten. |
 | `storage` | `StorageService::overview()` | Speicher-HA und Synchronisation. |
 | `snapshots` | Snapshot-Status | Anzahl Snapshots; `restore_tested` ist fest `false`. |
-| `tls` | Zertifikatsverwaltung | Aktives Zertifikat; `sync_stale` → `stale`. |
+| `tls` | Zertifikatsverwaltung | Gültiges Zertifikat → `valid` (bei überfälliger Auslieferung `stale`); kein gültiges Zertifikat (Notfall-Zertifikat, Status `none`/leer) → `warn`; sonst der Status der Verwaltung (`expired`, `invalid` …). |
 | `identity` | Identitätsquellen, SSO-Worker, AD-Synchronisation | Konfigurierte Quellen und Anzahl. |
-| `mail_dispatch` | SMTP-Konfiguration und Warteschlange | `enabled`, `queued`, `sending`, `failed`. |
+| `mail_dispatch` | SMTP-Konfiguration und Warteschlange | `enabled`, `queued`, `sending`, `failed`; nicht eingerichtet → `disabled` (→ `off`). |
 | `alarm` | Alarmierungskonfiguration | Nur Konfigurationsprüfung. |
 | `emergency` | Notfallplan | Nur Konfigurationsprüfung. |
 | `monitoring` | SNMP-Konfiguration | Nur Konfigurationsprüfung. |
@@ -329,6 +329,30 @@ Fachmodule auf diese sechs Werte ab:
 - → `off`: `off`, `disabled`, `inactive`, `not_configured`, `none`, `skipped`
 - → `stale`: `stale`, `outdated`
 - → `unknown`: `unknown`, leer
+
+**Zentrale Normalisierung.** `TopologyGraph::node()` und `setState()` leiten
+jeden übergebenen Zustand durch `fromSource()`. Bereiche dürfen also ihr
+eigenes Vokabular liefern (`disabled`, `valid`, `degraded` …); im Graphen steht
+immer einer der sechs Zustände. Ein abgeschaltetes Modul (`disabled`) wird
+dadurch `off` und nicht `unknown`.
+
+**Abbildungsregeln einzelner Bausteine** (`LanpaTopologyService`):
+
+| Baustein | Regel |
+|---|---|
+| `orvanta:core` | Orvanta nicht aktiviert → `off` mit „Orvanta ist nicht aktiviert.“; offene Hinweise der Flussauswertung bleiben als Fakt „Offene Hinweise“ sichtbar. Aktiviert und `warn`/`error` → die Ursachen aus `flowLimitations()` werden an die Meldung angehängt. |
+| `orvanta:exchange-pool`, `orvanta:attachment-cache`, `orvanta:presence` | Bei abgeschaltetem Orvanta `off` statt `unknown`. |
+| `access:tls` | Zustand aus dem Bereich `tls` (siehe Abschnitt 5); das Notfall-Zertifikat ist eine Einschränkung (`warn`). |
+| `storage:hot` | Ohne Speicher-HA `off` bzw. ohne Messung `unknown` mit erklärender Meldung; `measured_at` nur bei echter Messung. |
+| `storage:snapshots` | Meldung fällt auf die Bereichsmeldung zurück, wenn keine eigene vorliegt. |
+| `protect:office-backup`, `mail:dispatch` | Abgeschaltet → `off` mit Aussagekraft `proven` (die Abschaltung ist belegt); leere Fakten werden ausgelassen. |
+
+**Verweise.** Jeder Knoten-`link` zeigt auf eine vorhandene GET-Route unter
+`/admin` (z. B. `/admin/zertifikate`, `/admin/ad`, `/admin/office/orvanta`,
+`/admin/office/orvanta/hosts`, `/admin/speicher-ha`,
+`/admin/speicher-ha/dateiversionen`, `/admin/office/sicherung`,
+`/admin/alarmierung`). Ein Test gleicht alle Verweise gegen
+`public/index.php` ab.
 
 **Nicht überwacht ≠ unbekannt.** Beim Bau des Vertrags gilt:
 
@@ -468,9 +492,23 @@ das Skript das Band `[data-topo-banner="stale"]` ein.
 **Aktualisierung.** Das Skript pollt `data-refresh-url`
 (`/admin/topologie/daten`) mit `credentials: 'same-origin'`, `Accept:
 application/json` und `cache: 'no-store'`. Das Intervall kommt aus
-`data-refresh-interval`. Ist der Tab verborgen (`document.hidden`), wird die
-Abfrage übersprungen, der Zeitgeber aber neu gesetzt. Die Schaltfläche
-„Aktualisieren“ (`r`) löst eine sofortige Abfrage aus.
+`data-refresh-interval`; der Controller leitet es aus dem Abfrageintervall der
+Orvanta-Überwachung ab (`pollInterval() × 3`, begrenzt auf 60–600 s, ohne
+Konfiguration 120 s). Eine eigene Einstellung oder Route dafür gibt es nicht.
+Ist der Tab verborgen (`document.hidden`), wird die Abfrage übersprungen; beim
+Zurückkehren wird sofort abgefragt und der Zeitgeber neu gestartet. Die
+Schaltfläche „Aktualisieren“ (`r`) löst eine sofortige Abfrage aus und dreht
+dabei ihr Symbol (`is-busy`).
+
+**Robustheit.** `load()` startet keinen automatischen Abruf, solange einer
+läuft; eine Folgenummer sorgt dafür, dass nur die jüngste Antwort angewendet
+wird. Eine Antwort gilt nur als gültig, wenn sie ein Objekt mit `nodes` ist
+und – falls vorhanden – `schema_version` 1.x trägt. Schlägt ein Abruf fehl
+(HTTP-Fehler, kein JSON, unerwartete Form), bleibt der letzte Stand sichtbar,
+das Band `[data-topo-banner="stale"]` erscheint mit „Aktualisierung
+fehlgeschlagen (…)“ und das Protokoll meldet den Fehler einmalig. Der nächste
+erfolgreiche Abruf meldet „Aktualisierung wieder erfolgreich.“ und stellt den
+normalen Text des Bandes wieder her.
 
 **Differenzbildung.** `diff(data)` vergleicht die Zustände gegen die letzte
 Antwort und schreibt Änderungen ins Ereignisprotokoll:
@@ -493,19 +531,38 @@ hinzukommen oder entfallen.
 `AMBIENT_PER_NODE` = 8, `STARS` = 200, `IDLE_BEFORE_ROTATE` = 4000,
 `GROUP_RING_PAD` = 96.
 
-**3D-Anordnung** (`layout()`, Teil 1): jede Wurzelgruppe bildet einen Cluster
-auf einem großen Ring (`groupRadius = min(620, 240 + count * 34)`). Innerhalb
-eines Clusters liegen die Wurzelknoten auf einem eigenen Ring
-(`radius = min(210, 62 + roots.length * 26)`), die Kindknoten um ihren
-Elternknoten (`min(150, 46 + kids.length * 24)`). Kinder ohne sichtbaren
-Elternknoten werden trotzdem im Cluster untergebracht. Anschließend verschiebt
-`layer` jeden Knoten vertikal (`pos3.y += (3 - layer) * 26`), damit Zugriffe
-oben und Speicher unten liegen.
+**lanpa ist das Zentrum.** Der Kernknoten (`kind = core`, `core:lanpa`)
+steht in beiden Modi in der Mitte; `fit()` richtet die Ansicht auf ihn aus.
 
-**2D-Anordnung** (`layout()`, Teil 2): Modulgruppen bilden ein Raster mit
-`columns = ceil(sqrt(count))` und 560 px Spaltenabstand. Wurzelknoten stehen
-untereinander (Abstand 84 px, Block vertikal um die Zeilenmitte zentriert),
-Kindknoten rechts daneben (190 px, 62 px Abstand).
+**3D-Anordnung** (`layout()`): `core:lanpa` liegt im Ursprung. Die übrigen
+Bausteine seiner Gruppe (Zugriffsweg: Clients, Proxy, TLS, App-Speicher)
+bilden einen engen Ring um ihn (`min(230, 150 + n * 14)`). Alle anderen
+Wurzelgruppen liegen als Cluster auf einem äußeren Ring
+(`min(700, 320 + count * 34)`). Anschließend verschiebt `layer` jeden Knoten
+außer dem Kern vertikal (`pos3.y += (3 - layer) * 26`), damit Zugriffe oben
+und Speicher unten liegen. Die Wolkenpunkte entstehen danach in
+`buildAmbient()`.
+
+**2D-Anordnung** (`layout2d()`): Die Kerngruppe steht in der Mittelspalte
+(x = 0, lanpa auf y = 0, Zeilenabstand `ROW_GAP_2D × 1,6`). Die übrigen
+Gruppen werden gierig der jeweils kürzesten Spalte links bzw. rechts
+zugeteilt (±1·Abstand, ±2·Abstand …) und innerhalb der Spalte vertikal
+zentriert. Konstanten: `ROW_GAP_2D` = 56 (Welt), `GROUP_HEAD_PX` = 84,
+`LABEL_MAX_2D` = 190 und `TITLE_RESERVE_2D` = 46 (Bildschirmpunkte),
+`MAX_ZOOM_2D` = 0,75 und `MIN_ZOOM_2D` = 0,12. Weil Schrift und Gruppenkopf
+nicht mitzoomen, rechnet `layout2d()` in Bildschirmpunkten des freien
+Bereichs: Für 1–4 Spalten je Seite ergibt sich die Beschriftungsbreite
+`L = min(190, (halbe Breite − 30 − 60 · Spalten) / (Spalten + 1))`
+(mindestens 80, mehr Spalten werden bei kleinerem `L` nicht versucht), der
+Spaltenabstand ist `L + 60` Bildschirmpunkte. Die höchste Spalte samt
+Gruppenköpfen bestimmt den Zoom; gewählt wird die Variante mit der besten
+Bewertung `Zoom × (0,3 + 0,7 · L / 190)`, gekürzte Beschriftungen zählen
+also deutlich weniger. `L` gilt danach als `labelMax2d` für Beschriftungen,
+Rahmen und Einpassen; Gruppentitel werden auf die Rahmenbreite gekürzt.
+Abstand und Gruppenkopf werden mit dem Zoom in Weltkoordinaten umgerechnet
+(`layout2dState.apply(zoom)`); `fit()` wiederholt Einpassen und Anordnen,
+bis sich der Zoom um weniger als 1 % ändert. Die Anordnung hängt deshalb
+von der Bühnengröße beim Empfang bzw. bei „Einpassen“ ab.
 
 **Streuung und Zufall.** `hashString()` (FNV-1a) und `rng()` (xorshift) erzeugen
 für jede Kennung reproduzierbare Streuung. Sterne (`buildStars()`) und
@@ -522,8 +579,19 @@ Wolkenpunkte (`graph.ambient`) sehen deshalb nach jedem Laden gleich aus.
 2. **Weiche Überblendung.** `view.mix` (1 = 3D, 0 = 2D) mischt 3D- und
    2D-Koordinaten, damit der Wechsel nicht springt.
 
-**Einpassen.** `fit()` setzt Zoom und Verschiebung so, dass das gesamte Netz
-sichtbar ist.
+**Einpassen.** `fit()` setzt Zoom und Verschiebung so, dass alle gezeichneten
+Bausteine im **freien Bereich** liegen. `freeArea()` zieht dafür die
+überlagernden Bedienelemente ab: hochkant liegende (Werkzeugleiste links,
+Legende rechts) belegen eine Seite, quer liegende (Ereignisse unten links,
+Hinweiszeile) oben bzw. unten. Die Detailtafel zählt nicht dazu, damit die
+Ansicht beim Anklicken nicht springt. Ist lanpa sichtbar, wird um lanpa
+symmetrisch eingepasst, sonst um die Mitte des Sichtbaren. In 2D wird der
+Überstand der Beschriftungen rechts der äußersten Spalte in Bildschirmpunkten
+freigehalten (`labelWidth()`); in 3D bleibt bei laufender Auto-Drehung 12 %
+Reserve; in 2D bleiben oben und unten je `TITLE_RESERVE_2D` für
+Gruppentitel frei. Zoom in 3D 0,2–1,6, in 2D 0,12–0,75. `fit()` läuft beim Start (`boot()`, sofort), beim
+Moduswechsel (`setMode()`), bei „Einpassen“ und bei „Ansicht zurücksetzen“
+(`resetView()`, Neigung 0,42).
 
 ---
 
@@ -533,15 +601,22 @@ Reihenfolge im Bildaufbau:
 
 1. **Hintergrund und Sterne** – dunkle Fläche, deterministisch verteilte
    Sterne mit leichtem Funkeln.
-2. **Gruppenringe** – je Wurzelgruppe ein Ring mit Titel, Zustandsfarbe und
-   Knotenzahl; bei eingeklappten Gruppen bleibt der wichtigste Knoten als
-   Anker sichtbar (`isGroupAnchor()`).
+2. **Gruppen** – in 3D je Wurzelgruppe ein Ring mit Titel, Zustandsfarbe und
+   Knotenzahl (überlappende Titel entfallen, außer bei der Fokusgruppe); in 2D
+   ein abgerundeter Rahmen um Bausteine **samt Beschriftungen**
+   (`groupFrameRect()`/`drawGroupFrame()`), der Titel steht über dem Rahmen.
+   Bei eingeklappten Gruppen bleibt der wichtigste Knoten als Anker sichtbar
+   (`isGroupAnchor()`).
 3. **Kanten** – gefüllt oder gestrichelt; `edgeAlpha()` dämpft Kanten, die zum
    ausgewählten Knoten oder zur Fokusgruppe nicht passen.
 4. **Partikel** – auf `FLOW_TYPES`-Kanten; die Anzahl je Kante richtet sich
    nach `edge.activity` (`min(MAX_PARTICLES_PER_EDGE, 1 + round(log(activity+1) * 2.2))`).
-5. **Knoten** – Form und Farbe nach `kind`, Zustandsring nach `state`,
-   Beschriftung bei `view.labels`.
+5. **Knoten** – Form und Farbe nach `kind`, Zustandsring nach `state`.
+   Beschriftungen (bei `view.labels`, ab 3,5 px Radius) sammelt `drawNodes()`
+   mit Vorrang (Auswahl, Hover, lanpa, Problemzustände, dann Größe);
+   `drawLabels()` zeichnet sie ohne Überlappung – eine verdeckte Beschriftung
+   entfällt. In 2D stehen sie rechts neben dem Knoten und werden mit
+   `truncate()` auf `labelMax2d` (höchstens `LABEL_MAX_2D`) gekürzt („…“), in 3D unter dem Knoten.
 6. **Wolkenpunkte** – je Knoten `AMBIENT_PER_NODE` Punkte (Kernknoten doppelt),
    langsam um den Knoten kreisend.
 7. **Effekte** – Pulse bei neu aufgetretenen Störungen.
@@ -693,7 +768,8 @@ Protokoll schreibt jeden Ein-/Ausblendevorgang mit.
 `createElement`/`textContent` (kein `innerHTML`), setzt `role="menu"`/
 `role="menuitem"`, fokussiert den ersten Eintrag, ist mit `↑`/`↓` bedienbar,
 schließt bei `Escape` und bei Zeigerdruck außerhalb und wird am Fensterrand
-geklemmt. Der Titel lautet `Baustein: …` bzw. `Gruppe: …`.
+geklemmt. Der Titel lautet `Baustein: …` bzw. `Gruppe: …`. Solange es offen ist,
+bleibt die Kurzinfo beim Überfahren verborgen.
 
 **Sonderfall: Gruppe ausgeblendet, Einzelbaustein einblenden.** `toggleNode()`
 entfernt in diesem Fall zuerst den Gruppeneintrag, sonst bliebe der Baustein
@@ -767,6 +843,10 @@ unsichtbar.
   `overall`-Rechenregel, `freshness`, zwölf Kennzahlen, `safeLink()`.
 - **Zustände** (`TopologyStatus`): Rangfolge, `worst()`, `fromSource()`-Tabelle,
   `isHealthy()`/`isProblem()`/`isUnrated()`/`fresh()`.
+- **Verweise und Zustandsabbildung**: jeder Knoten-`link` ist eine GET-Route
+  in `public/index.php`; `mail_dispatch` abgeschaltet → `off`; Orvanta nicht
+  aktiviert → `off` mit erhaltenen Hinweisen; aktiviertes Orvanta nennt die
+  Ursachen; Notfall-Zertifikat → `warn`.
 - **Entwurfsmodus** (`TopologyVisibilityService`, Hülle, Skript, Stil):
   Normalisierung, Herkunftsbezeichnungen, global/persönlich/löschen samt
   Vorrang, beschädigtes JSON (über Reflexion), Hüllenmarkup und eingebettetes
@@ -821,6 +901,14 @@ z. B. der Weg eines Sicherungsziels oder die Wirkung eines Replikats.
   Exchange-Hosts und Proxy-Server **nicht** als eigene Bausteine – die
   Modulgruppen bleiben dann leer. Das ist eine Datenlage, kein Fehler.
 - Die Ansicht ist eine Übersicht: sie ersetzt keine Moduldiagnose.
+- Kanten tragen derzeit keinen eigenen Messzustand (`unknown`); ihre
+  Aussagekraft ergibt sich aus `evidence`.
+- Die Kante Identitätsquelle → `orvanta:proxy` wird auch ohne eingerichteten
+  Proxy-Server gezeichnet (abgeleitet aus der Konfiguration der Quelle).
+- `office:app-storage` gehört zur Kerngruppe (Zugriffsweg), weil der
+  App-Speicher unmittelbar an lanpa hängt.
+- `FLOW_TYPES` im Skript enthält `mail`, das der Server derzeit nicht als
+  Kantentyp liefert; das ist unschädlich.
 - Ein falsches CSRF-Token erzeugt eine `419`-Fehlerseite, aber die
   HTTP-Statuszeile lautet `500`. Das ist **vorbestehendes** globales Verhalten
   (z. B. auch bei `POST /admin/design`) und wird hier bewusst nicht geändert.

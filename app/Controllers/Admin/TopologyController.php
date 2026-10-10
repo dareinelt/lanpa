@@ -104,7 +104,7 @@ final class TopologyController extends AdminController
                 'ok' => false,
                 'error' => 'Unbekannter Speicherbereich.',
                 'selection' => $visibility->selection($username),
-            ], 422);
+            ], 422)->withHeader('Cache-Control', 'no-store');
         }
 
         return Response::json(['ok' => true, 'selection' => $selection], 200)

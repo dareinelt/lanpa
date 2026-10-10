@@ -226,8 +226,8 @@
     var view = {
         mode3d: true,
         mix: 1,               // 1 = 3D-Anordnung, 0 = 2D-Anordnung (weich ueberblendet)
-        yaw: -0.35, pitch: 0.22, zoom: 1, panX: 0, panY: 0,
-        tYaw: -0.35, tPitch: 0.22, tZoom: 1, tPanX: 0, tPanY: 0,
+        yaw: -0.35, pitch: 0.42, zoom: 1, panX: 0, panY: 0,
+        tYaw: -0.35, tPitch: 0.42, tZoom: 1, tPanX: 0, tPanY: 0,
         rotate: !reducedMotion,
         particles: !reducedMotion,
         labels: true,
@@ -546,16 +546,34 @@
     }
 
     /**
-     * 3D: Jede oberste Modulgruppe bildet einen Cluster auf einem grossen Ring,
-     * darin liegen die Wurzeln auf einem eigenen Ring und die Kindknoten um
-     * ihren Elternknoten. Die Ebene (layer) verschiebt einen Knoten nach oben
-     * oder unten, damit Zugriffe, Dienste und Speicher unterscheidbar bleiben.
-     * 2D: Modulgruppen als Spalten, darin die Knoten von oben nach unten.
+     * Die Anwendung (Knoten der Art "core") ist das optische Zentrum.
+     * 3D: lanpa liegt im Ursprung, die uebrigen Bausteine seiner Gruppe auf
+     * einem engen Ring darum. Jede weitere oberste Modulgruppe bildet einen
+     * Cluster auf einem grossen Ring um die Mitte; die Ebene (layer) verschiebt
+     * einen Knoten nach oben oder unten, damit Zugriffe, Dienste und Speicher
+     * unterscheidbar bleiben. Die Auto-Drehung kreist damit um lanpa.
+     * 2D: lanpa in der mittleren Spalte, darueber der Zugriffsweg; die
+     * Modulgruppen verteilen sich ausgewogen auf Spalten links und rechts.
      */
     function layout() {
-        var groups = topGroupIds();
+        var coreKey = graph.order.filter(function (key) {
+            return graph.nodes[key].kind === 'core';
+        })[0] || null;
+        var coreGroup = coreKey ? graph.nodes[coreKey].topGroup : null;
+        var groups = topGroupIds().filter(function (groupId) {
+            return groupId !== coreGroup;
+        });
         var count = Math.max(1, groups.length);
-        var groupRadius = Math.min(620, 240 + count * 34);
+        var groupRadius = Math.min(700, 320 + count * 34);
+
+        if (coreKey) {
+            var core = graph.nodes[coreKey];
+            core.pos3 = { x: 0, y: 0, z: 0 };
+            var around = membersOfGroup(coreGroup).filter(function (key) {
+                return key !== coreKey;
+            });
+            ringAround(around, { x: 0, y: 0, z: 0 }, Math.min(230, 150 + around.length * 14), 'core:' + coreGroup, 'xz', 0);
+        }
 
         groups.forEach(function (groupId, index) {
             var angle = (index / count) * Math.PI * 2;
@@ -571,7 +589,7 @@
             var children = members.filter(function (key) {
                 return !!graph.nodes[key].parent;
             });
-            var radius = roots.length <= 1 ? 0 : Math.min(210, 62 + roots.length * 26);
+            var radius = roots.length <= 1 ? 0 : Math.min(190, 62 + roots.length * 24);
 
             ringAround(roots, center, radius, 'g:' + groupId, 'xz', 0);
             roots.forEach(function (key) {
@@ -596,44 +614,141 @@
         });
 
         // Ebene als vertikale Feinkorrektur: Zugriff oben, Speicher unten.
+        // lanpa selbst bleibt exakt im Ursprung.
         graph.order.forEach(function (key) {
+            if (key === coreKey) {
+                return;
+            }
             var node = graph.nodes[key];
             node.pos3.y += (3 - node.layer) * 26;
         });
 
-        var columns = Math.max(1, Math.ceil(Math.sqrt(count)));
-        groups.forEach(function (groupId, index) {
-            var col = index % columns;
-            var rowIndex = Math.floor(index / columns);
-            var cx = (col - (columns - 1) / 2) * 560;
-            var members = membersOfGroup(groupId);
-            var roots = members.filter(function (key) {
-                return !graph.nodes[key].parent;
+        layout2d(coreKey, coreGroup, groups);
+        buildAmbient();
+    }
+
+    /**
+     * 2D-Masse: Zeilenabstand in Weltkoordinaten; Gruppenkopf (Rahmen unten,
+     * Ueberschrift, Rahmen oben) und Beschriftungsbreite in Bildschirmpunkten,
+     * weil Schrift und Rahmenabstand nicht mitzoomen.
+     */
+    var ROW_GAP_2D = 56;
+    var GROUP_HEAD_PX = 84;
+    var LABEL_MAX_2D = 190;
+    /** Tatsaechliche 2D-Beschriftungsbreite; schmaler, wenn die Buehne eng ist. */
+    var labelMax2d = LABEL_MAX_2D;
+    /** Platz ueber der obersten Zeile fuer Gruppentitel (Bildschirmpunkte, je Seite). */
+    var TITLE_RESERVE_2D = 46;
+    /** Hoechster Einpass-Zoom in 2D, damit Knoten die Nachbarspalten nicht ueberdecken. */
+    var MAX_ZOOM_2D = 0.75;
+    var MIN_ZOOM_2D = 0.12;
+
+    /** Letzte 2D-Spaltenaufteilung; fit() passt Abstaende an den echten Zoom an. */
+    var layout2dState = null;
+
+    /**
+     * 2D-Anordnung: Zugriffsweg und lanpa in der Mitte, Modulgruppen in
+     * Spalten links und rechts. Die Gruppen werden der jeweils kuerzesten
+     * Spalte zugeteilt (innen vor aussen), damit das Bild ausgewogen bleibt
+     * und lanpa auch vertikal in der Mitte steht.
+     */
+    function layout2d(coreKey, coreGroup, groups) {
+        var placeColumn = function (list, x, head) {
+            var total = 0;
+            list.forEach(function (groupId, i) {
+                total += (i > 0 ? head : 0) + Math.max(0, membersOfGroup(groupId).length - 1) * ROW_GAP_2D;
             });
-            var children = members.filter(function (key) {
-                return !!graph.nodes[key].parent;
-            });
-            var gap = 84;
-            var height = (roots.length - 1) * gap;
-            var top = rowIndex * 520 - height / 2;
-            roots.forEach(function (key, i) {
-                var node = graph.nodes[key];
-                node.pos2 = { x: cx, y: top + i * gap };
-                var kids = children.filter(function (childKey) {
-                    return graph.nodes[childKey].parent === key;
+            var y = -total / 2;
+            list.forEach(function (groupId, i) {
+                if (i > 0) {
+                    y += head;
+                }
+                membersOfGroup(groupId).forEach(function (key, j) {
+                    if (j > 0) {
+                        y += ROW_GAP_2D;
+                    }
+                    graph.nodes[key].pos2 = { x: x, y: y };
                 });
-                kids.forEach(function (childKey, j) {
-                    graph.nodes[childKey].pos2 = { x: cx + 190, y: top + i * gap + (j - (kids.length - 1) / 2) * 62 };
-                });
             });
-            children.forEach(function (childKey) {
-                var node = graph.nodes[childKey];
-                if (!node.pos2 || (node.pos2.x === 0 && node.pos2.y === 0)) {
-                    node.pos2 = { x: cx + 190, y: top + 60 };
+        };
+
+        var coreRows = 0;
+        if (coreKey) {
+            var members = membersOfGroup(coreGroup);
+            var at = members.indexOf(coreKey);
+            members.forEach(function (key, i) {
+                graph.nodes[key].pos2 = { x: 0, y: (i - at) * ROW_GAP_2D * 1.6 };
+            });
+            coreRows = 2 * Math.max(at, members.length - 1 - at) * 1.6;
+        }
+
+        var distribute = function (perSide, gap) {
+            var columns = [];
+            for (var c = 0; c < perSide; c++) {
+                columns.push({ x: -(c + 1) * gap, list: [], rows: 0, heads: 0 });
+                columns.push({ x: (c + 1) * gap, list: [], rows: 0, heads: 0 });
+            }
+            groups.forEach(function (groupId) {
+                var size = membersOfGroup(groupId).length;
+                var target = columns[0];
+                columns.forEach(function (column) {
+                    if (column.rows + column.heads < target.rows + target.heads - 0.01) {
+                        target = column;
+                    }
+                });
+                target.heads += target.list.length ? 1 : 0;
+                target.rows += Math.max(0, size - 1);
+                target.list.push(groupId);
+            });
+            return columns;
+        };
+
+        // Spaltenzahl und -abstand so waehlen, dass das Bild die Buehne am
+        // besten ausfuellt. Gerechnet wird in Bildschirmpunkten mit denselben
+        // Raendern wie fit(): Der Spaltenabstand ist eine feste Bildschirm-
+        // breite, damit passt die Breite immer; die hoechste Spalte samt
+        // Gruppenkoepfen bestimmt den Zoom.
+        var area = freeArea();
+        var halfW = Math.max(200, (area.right - area.left - 80) / 2);
+        var availH = Math.max(240, area.bottom - area.top - 90 - 2 * TITLE_RESERVE_2D);
+        var zoomFor = function (columns) {
+            var zoom = coreRows > 0 ? availH / (coreRows * ROW_GAP_2D) : 1.4;
+            columns.forEach(function (column) {
+                var room = Math.max(availH * 0.25, availH - column.heads * GROUP_HEAD_PX);
+                if (column.rows > 0) {
+                    zoom = Math.min(zoom, room / (column.rows * ROW_GAP_2D));
                 }
             });
-        });
+            return Math.max(MIN_ZOOM_2D, Math.min(MAX_ZOOM_2D, zoom));
+        };
+        // Je Spaltenzahl die Beschriftungsbreite L so waehlen, dass die Breite
+        // passt: halbe Breite = Ueberstand (L + 30) + Spalten x Abstand (L + 60).
+        // Gekuerzte Beschriftungen werden gegenueber mehr Zoom deutlich abgewertet.
+        var best = null;
+        for (var perSide = 1; perSide <= 4; perSide++) {
+            var label = Math.min(LABEL_MAX_2D, (halfW - 30 - 60 * perSide) / (perSide + 1));
+            if (perSide > 1 && label < 80) {
+                break;
+            }
+            label = Math.max(80, label);
+            var zoom = zoomFor(distribute(perSide, 1));
+            var score = zoom * (0.3 + 0.7 * label / LABEL_MAX_2D);
+            if (best === null || score > best.score) {
+                best = { zoom: zoom, score: score, perSide: perSide, gapPx: label + 60, label: label };
+            }
+        }
+        labelMax2d = best.label;
+        layout2dState = { zoom: 0, apply: function (zoom) {
+            layout2dState.zoom = zoom;
+            distribute(best.perSide, best.gapPx / zoom).forEach(function (column) {
+                placeColumn(column.list, column.x, GROUP_HEAD_PX / zoom);
+            });
+        } };
+        layout2dState.apply(best.zoom);
+    }
 
+    /** Schwebeteilchen um jeden Baustein (rein dekorativ). */
+    function buildAmbient() {
         graph.ambient = [];
         graph.order.forEach(function (key) {
             var node = graph.nodes[key];
@@ -859,6 +974,7 @@
 
     function drawGroups() {
         var groups = topGroupIds();
+        var titles = [];
         groups.forEach(function (groupId) {
             var group = graph.groups[groupId];
             if (!group) {
@@ -900,6 +1016,13 @@
             var collapsed = isCollapsedGroup(groupId);
             var focused = view.focusGroup === groupId;
             var color = STATE_RGB[group.state] || STATE_RGB.unknown;
+
+            // In 2D umschliesst ein Rahmen die Spalte samt Beschriftungen, die
+            // Ueberschrift steht darueber und ueberdeckt so keinen Baustein.
+            if (view.mix < 0.5) {
+                drawGroupFrame(group, members, collapsed, focused, color);
+                return;
+            }
             var p = project(center3, center2);
             if (p.behind) {
                 return;
@@ -931,9 +1054,70 @@
             ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
+            var ty = p.y - Math.max(10, radiusY) - 10;
+            var tw = ctx.measureText(label).width;
+            // Gruppentitel, die sich ueberdecken wuerden, entfallen; der Titel
+            // bleibt in der Gruppenliste unter der Buehne lesbar.
+            var clash = titles.some(function (other) {
+                return Math.abs(other.x - p.x) < (other.w + tw) / 2 + 8 && Math.abs(other.y - ty) < 16;
+            });
+            if (clash && !focused) {
+                return;
+            }
+            titles.push({ x: p.x, y: ty, w: tw });
             ctx.fillStyle = 'rgba(203,213,225,' + (focused ? 0.95 : collapsed ? 0.8 : 0.55).toFixed(3) + ')';
-            ctx.fillText(label, p.x, p.y - Math.max(10, radiusY) - 10);
+            ctx.fillText(label, p.x, ty);
         });
+    }
+
+    /** 2D-Gruppenrahmen in Bildschirmpunkten (Bausteine samt Beschriftung). */
+    function groupFrameRect(members) {
+        var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        ctx.save();
+        ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", sans-serif';
+        members.forEach(function (key) {
+            var node = graph.nodes[key];
+            var p = project(node.pos3, node.pos2);
+            var r = (KIND_RADIUS[node.kind] || 17) * p.s * 1.4;
+            var labelWidth = view.labels ? Math.min(labelMax2d, ctx.measureText(node.title).width) + 24 : 0;
+            minX = Math.min(minX, p.x - r);
+            minY = Math.min(minY, p.y - r);
+            maxX = Math.max(maxX, p.x + r + labelWidth);
+            maxY = Math.max(maxY, p.y + r);
+        });
+        ctx.restore();
+        var pad = 10;
+        return { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 };
+    }
+
+    function drawGroupFrame(group, members, collapsed, focused, color) {
+        var rect = groupFrameRect(members);
+        var x = rect.x, y = rect.y, w = rect.w, h = rect.h;
+        ctx.save();
+        ctx.beginPath();
+        if (ctx.roundRect) {
+            ctx.roundRect(x, y, w, h, 10);
+        } else {
+            ctx.rect(x, y, w, h);
+        }
+        ctx.setLineDash(collapsed ? [6, 6] : [2, 6]);
+        ctx.lineWidth = focused ? 2 : 1;
+        ctx.strokeStyle = 'rgba(' + color + ',' + (focused ? 0.5 : collapsed ? 0.26 : 0.22).toFixed(3) + ')';
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(' + color + ',' + (collapsed ? 0.05 : 0.025) + ')';
+        ctx.fill();
+        if (view.labels) {
+            ctx.font = '600 12px system-ui, -apple-system, "Segoe UI", sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = 'rgba(203,213,225,' + (focused ? 0.95 : 0.7).toFixed(3) + ')';
+            // Titel nicht breiter als der Rahmen, sonst ueberdeckt er die Nachbarspalte.
+            var count = ' · ' + group.nodeCount;
+            var room = Math.max(40, w - 4 - ctx.measureText(count).width);
+            ctx.fillText(truncate(group.title, room) + count, x + 2, y - 4);
+        }
+        ctx.restore();
     }
 
     function edgePath(edge) {
@@ -1096,6 +1280,7 @@
     }
 
     function drawNodes(time) {
+        var labels = [];
         var order = graph.order.slice().sort(function (a, b) {
             return graph.nodes[a].depth - graph.nodes[b].depth;
         });
@@ -1166,24 +1351,78 @@
             ctx.stroke();
             ctx.restore();
 
-            if (view.labels && (radius * view.zoom > 5 || isSelected || isHovered)) {
-                ctx.save();
-                ctx.globalAlpha = Math.min(1, alpha + 0.1);
-                ctx.font = (node.kind === 'core' ? '700 13px ' : '600 12px ') + 'system-ui, -apple-system, "Segoe UI", sans-serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                var label = node.title;
+            if (view.labels && (radius > 3.5 || isSelected || isHovered)) {
+                var text = node.title;
                 if (node.state === 'unknown' || node.state === 'stale') {
-                    label += ' (' + STATE_LABELS[node.state] + ')';
+                    text += ' (' + STATE_LABELS[node.state] + ')';
                 }
-                var metrics = ctx.measureText(label);
-                var ly = p.y + radius * 1.5 + 4;
-                ctx.fillStyle = 'rgba(9,12,20,0.55)';
-                ctx.fillRect(p.x - metrics.width / 2 - 4, ly - 1, metrics.width + 8, 15);
-                ctx.fillStyle = 'rgba(226,232,240,0.94)';
-                ctx.fillText(label, p.x, ly);
-                ctx.restore();
+                labels.push({
+                    text: text,
+                    x: p.x,
+                    y: p.y,
+                    radius: radius,
+                    alpha: Math.min(1, alpha + 0.1),
+                    core: node.kind === 'core',
+                    force: isSelected || isHovered,
+                    priority: (isSelected ? 1000 : 0) + (isHovered ? 900 : 0) + (node.kind === 'core' ? 800 : 0)
+                        + (PROBLEM_STATES[node.state] ? 400 : 0) + radius * 4 + alpha * 50
+                });
             }
+        });
+        drawLabels(labels);
+    }
+
+    /**
+     * Beschriftungen nach Wichtigkeit setzen und Ueberlagerungen vermeiden:
+     * Auswahl, lanpa und Stoerungen zuerst, danach grosse (nahe) Bausteine.
+     * Eine Beschriftung, die eine bereits gesetzte ueberdecken wuerde, entfaellt
+     * – der Name erscheint dann beim Ueberfahren oder nach dem Heranzoomen.
+     * In 2D steht die Beschriftung rechts neben dem Baustein, in 3D darunter.
+     */
+    function truncate(text, max) {
+        if (ctx.measureText(text).width <= max) {
+            return text;
+        }
+        var cut = text;
+        while (cut.length > 1 && ctx.measureText(cut + '…').width > max) {
+            cut = cut.slice(0, -1);
+        }
+        return cut.replace(/\s+$/, '') + '…';
+    }
+
+    function drawLabels(labels) {
+        var flat = view.mix < 0.5;
+        var placed = [];
+        labels.sort(function (a, b) {
+            return b.priority - a.priority;
+        });
+        labels.forEach(function (label) {
+            ctx.font = (label.core ? '700 13px ' : '600 12px ') + 'system-ui, -apple-system, "Segoe UI", sans-serif';
+            // In 2D stehen Spalten nebeneinander: lange Namen werden gekuerzt,
+            // der volle Name steht im Tooltip und in der Detailtafel.
+            if (flat && !label.force) {
+                label.text = truncate(label.text, labelMax2d);
+            }
+            var width = ctx.measureText(label.text).width + 8;
+            var box = flat
+                ? { x: label.x + label.radius * 1.5 + 4, y: label.y - 8, w: width, h: 16 }
+                : { x: label.x - width / 2, y: label.y + label.radius * 1.5 + 3, w: width, h: 16 };
+            var clash = placed.some(function (other) {
+                return box.x < other.x + other.w && other.x < box.x + box.w && box.y < other.y + other.h && other.y < box.y + box.h;
+            });
+            if (clash && !label.force) {
+                return;
+            }
+            placed.push(box);
+            ctx.save();
+            ctx.globalAlpha = label.alpha;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(9,12,20,0.62)';
+            ctx.fillRect(box.x, box.y, box.w, box.h);
+            ctx.fillStyle = 'rgba(226,232,240,0.94)';
+            ctx.fillText(label.text, box.x + 4, box.y + box.h / 2 + 0.5);
+            ctx.restore();
         });
     }
 
@@ -1343,6 +1582,25 @@
     function groupAt(point) {
         var best = null;
         var bestRadius = Infinity;
+        // In 2D zaehlt der gezeichnete Rahmen samt Ueberschrift darueber.
+        if (view.mix < 0.5) {
+            topGroupIds().forEach(function (groupId) {
+                var members = membersOfGroup(groupId).filter(function (key) {
+                    return isDrawn(graph.nodes[key]);
+                });
+                if (!members.length) {
+                    return;
+                }
+                var rect = groupFrameRect(members);
+                if (point.x >= rect.x && point.x <= rect.x + rect.w
+                    && point.y >= rect.y - 22 && point.y <= rect.y + rect.h
+                    && rect.w * rect.h < bestRadius) {
+                    bestRadius = rect.w * rect.h;
+                    best = groupId;
+                }
+            });
+            return best;
+        }
         topGroupIds().forEach(function (groupId) {
             var circle = groupCircle(groupId);
             if (!circle) {
@@ -1426,6 +1684,11 @@
 
     function showTooltip(key, point) {
         if (!tooltip || !key) {
+            return;
+        }
+        // Das offene Kontextmenue nicht ueberdecken.
+        if (menuOpen()) {
+            hideTooltip();
             return;
         }
         var node = graph.nodes[key];
@@ -1612,51 +1875,202 @@
         view.tZoom = Math.max(1.15, view.tZoom);
     }
 
+    /**
+     * Ungezoomte Bildschirmlage eines Bausteins fuer die Zielansicht (2D/3D,
+     * Ziel-Drehung) – unabhaengig vom gerade laufenden Uebergang.
+     */
+    function projectRaw(node, mix, yaw, pitch) {
+        var cy = Math.cos(yaw), sy = Math.sin(yaw);
+        var cp = Math.cos(pitch), sp = Math.sin(pitch);
+        var x1 = node.pos3.x * cy + node.pos3.z * sy;
+        var z1 = -node.pos3.x * sy + node.pos3.z * cy;
+        var y1 = node.pos3.y * cp - z1 * sp;
+        var z2 = node.pos3.y * sp + z1 * cp;
+        var scale3 = FOCAL / Math.max(40, FOCAL - z2);
+        return {
+            x: x1 * scale3 * mix + node.pos2.x * (1 - mix),
+            y: -y1 * scale3 * mix + node.pos2.y * (1 - mix)
+        };
+    }
+
+    /** Breite der Beschriftung in Bildschirmpunkten (unabhaengig vom Zoom). */
+    function labelWidth(node) {
+        ctx.font = (node.kind === 'core' ? '700 13px ' : '600 12px ') + 'system-ui, -apple-system, "Segoe UI", sans-serif';
+        var text = node.title + (node.state === 'unknown' || node.state === 'stale' ? ' (' + STATE_LABELS[node.state] + ')' : '');
+        return Math.min(labelMax2d, ctx.measureText(text).width) + 30;
+    }
+
     function boundsOfVisible() {
         var min = { x: Infinity, y: Infinity };
         var max = { x: -Infinity, y: -Infinity };
+        var mix = view.mode3d ? 1 : 0;
+        var labelRight = -Infinity;
+        var yaws = [view.tYaw];
         graph.order.filter(function (key) {
             // Im Entwurfsmodus zaehlen auch die blassen Bausteine, damit die
             // Auswahl beim Einpassen nicht aus dem Bild faellt.
             return isDrawn(graph.nodes[key]);
         }).forEach(function (key) {
             var node = graph.nodes[key];
-            var p = project(node.pos3, node.pos2);
-            min.x = Math.min(min.x, p.x);
-            min.y = Math.min(min.y, p.y);
-            max.x = Math.max(max.x, p.x);
-            max.y = Math.max(max.y, p.y);
+            yaws.forEach(function (yaw) {
+                var p = projectRaw(node, mix, yaw, view.tPitch);
+                min.x = Math.min(min.x, p.x);
+                min.y = Math.min(min.y, p.y);
+                max.x = Math.max(max.x, p.x);
+                max.y = Math.max(max.y, p.y);
+            });
+            // In 2D steht die Beschriftung rechts daneben; sie gehoert mit ins Bild.
+            if (!view.mode3d && view.labels) {
+                var p2 = projectRaw(node, 0, 0, 0);
+                labelRight = Math.max(labelRight, p2.x + labelWidth(node));
+            }
         });
         if (!isFinite(min.x) || !isFinite(min.y)) {
             return null;
         }
-        return { min: min, max: max };
+        return { min: min, max: max, labelRight: labelRight };
     }
 
-    function fit() {
-        var bounds = boundsOfVisible();
-        if (!bounds) {
+    /**
+     * Freie Zeichenflaeche: Werkzeugleiste, Legende, Ereignisprotokoll und
+     * Bedienhinweis liegen ueber der Buehne und werden ausgespart.
+     */
+    function freeArea() {
+        var area = { left: 0, top: 0, right: view.width, bottom: view.height };
+        var stageRect = stage.getBoundingClientRect();
+        ['.topo-toolbar', '.topo-legend', '[data-topo-log]', '[data-topo-hint]'].forEach(function (selector) {
+            var element = root.querySelector(selector);
+            if (!element || element.hidden || !element.offsetParent) {
+                return;
+            }
+            var rect = element.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) {
+                return;
+            }
+            var left = rect.left - stageRect.left;
+            var right = rect.right - stageRect.left;
+            var top = rect.top - stageRect.top;
+            var bottom = rect.bottom - stageRect.top;
+            // Hochkant (Werkzeugleiste, Legende) belegt eine Seite, quer (Protokoll, Hinweis) oben/unten.
+            if (rect.height > rect.width) {
+                if (left + right < view.width) {
+                    area.left = Math.max(area.left, right + 12);
+                } else {
+                    area.right = Math.min(area.right, left - 12);
+                }
+            } else if (top + bottom > view.height) {
+                area.bottom = Math.min(area.bottom, top - 8);
+            } else {
+                area.top = Math.max(area.top, bottom + 8);
+            }
+        });
+        // Bei sehr kleiner Buehne lieber Ueberlagerung als gar kein Bild.
+        if (area.right - area.left < view.width * 0.4) {
+            area.left = 0;
+            area.right = view.width;
+        }
+        if (area.bottom - area.top < view.height * 0.4) {
+            area.top = 0;
+            area.bottom = view.height;
+        }
+        return area;
+    }
+
+    function coreNode() {
+        for (var i = 0; i < graph.order.length; i++) {
+            if (graph.nodes[graph.order[i]].kind === 'core') {
+                return graph.nodes[graph.order[i]];
+            }
+        }
+        return null;
+    }
+
+    function fit(immediate) {
+        // In 2D haengen Spaltenabstand und Gruppenkopf (Weltkoordinaten) vom
+        // Zoom ab, weil Schrift nicht mitzoomt: so lange neu anordnen, bis
+        // Anordnung und Einpassung zum selben Zoom passen.
+        if (!view.mode3d && layout2dState) {
+            for (var pass = 0; pass < 8; pass++) {
+                var zoom2d = fitZoom();
+                if (!zoom2d || Math.abs(zoom2d - layout2dState.zoom) / zoom2d < 0.01) {
+                    break;
+                }
+                layout2dState.apply(zoom2d);
+            }
+        }
+        var target = fitZoom(true);
+        if (!target) {
             return;
         }
-        var width = Math.max(1, bounds.max.x - bounds.min.x);
-        var height = Math.max(1, bounds.max.y - bounds.min.y);
-        var zoom = Math.min(view.width / (width + 180), view.height / (height + 180));
-        view.tZoom = Math.max(0.25, Math.min(1.6, zoom));
+        view.tZoom = target.zoom;
+        view.tPanX = target.panX;
+        view.tPanY = target.panY;
+        if (immediate) {
+            view.zoom = view.tZoom;
+            view.panX = view.tPanX;
+            view.panY = view.tPanY;
+        }
+    }
+
+    /** Zoom (bzw. mit full=true Zoom und Verschiebung), der alles Sichtbare einpasst. */
+    function fitZoom(full) {
+        var bounds = boundsOfVisible();
+        if (!bounds) {
+            return null;
+        }
+        var area = freeArea();
+        // Rand fuer Knotenradien und Beschriftungen (in 2D rechts daneben).
+        var marginX = view.mode3d ? 120 : 80;
+        var marginY = 90;
         var centerX = (bounds.min.x + bounds.max.x) / 2;
         var centerY = (bounds.min.y + bounds.max.y) / 2;
-        view.tPanX = view.tPanX + (view.width / 2 - centerX);
-        view.tPanY = view.tPanY + (view.height / 2 - centerY);
+        // lanpa ist das optische Zentrum: ist der Kern sichtbar, wird um ihn
+        // herum symmetrisch eingepasst, sonst um die Mitte des Sichtbaren.
+        var core = coreNode();
+        if (core && isDrawn(core)) {
+            var c = projectRaw(core, view.mode3d ? 1 : 0, view.tYaw, view.tPitch);
+            centerX = c.x;
+            centerY = c.y;
+        }
+        var height = Math.max(1, 2 * Math.max(centerY - bounds.min.y, bounds.max.y - centerY));
+        // Beschriftungen haben feste Schriftgroesse: ihr Ueberstand rechts der
+        // aeussersten Spalte wird in Bildschirmpunkten freigehalten.
+        var labelOverhang = isFinite(bounds.labelRight) ? Math.max(0, bounds.labelRight - bounds.max.x) : 0;
+        var halfW = Math.max(40, (area.right - area.left - marginX) / 2);
+        if (!view.mode3d) {
+            marginY += 2 * TITLE_RESERVE_2D;
+        }
+        var availH = Math.max(80, area.bottom - area.top - marginY);
+        var zoom = Math.min(
+            halfW / Math.max(1, centerX - bounds.min.x),
+            Math.max(20, halfW - labelOverhang) / Math.max(1, bounds.max.x - centerX),
+            availH / height
+        );
+        // Die Auto-Drehung bringt nahe Bausteine naeher: etwas Reserve lassen.
+        if (view.mode3d && view.rotate && !reducedMotion) {
+            zoom *= 0.88;
+        }
+        zoom = view.mode3d ? Math.max(0.2, Math.min(1.6, zoom)) : Math.max(MIN_ZOOM_2D, Math.min(MAX_ZOOM_2D, zoom));
+        if (!full) {
+            return zoom;
+        }
+        return {
+            zoom: zoom,
+            panX: (area.left + area.right) / 2 - view.width / 2 - centerX * zoom,
+            panY: (area.top + area.bottom) / 2 - view.height / 2 - centerY * zoom
+        };
     }
 
     function resetView() {
         view.tYaw = -0.35;
-        view.tPitch = 0.22;
+        view.tPitch = 0.42;
         view.tZoom = 1;
         view.tPanX = 0;
         view.tPanY = 0;
         view.focusGroup = null;
         view.collapse = false;
         setPressed('collapse', false);
+        fit();
     }
 
     function setPressed(action, pressed) {
@@ -1671,10 +2085,15 @@
         });
     }
 
-    function setMode(mode3d) {
+    function setMode(mode3d, immediate) {
+        var changed = view.mode3d !== mode3d;
         view.mode3d = mode3d;
         setPressed('mode-3d', mode3d);
         setPressed('mode-2d', !mode3d);
+        // 2D und 3D haben verschiedene Anordnungen: neu einpassen.
+        if (changed || immediate) {
+            fit(immediate);
+        }
     }
 
     function cycleSelection(step) {
@@ -1823,7 +2242,7 @@
             }
         }
         setDraftUi();
-        log(view.draft
+        log('info', view.draft
             ? 'Entwurfsmodus aktiviert: Rechtsklick auf Baustein oder Gruppe blendet aus bzw. ein.'
             : 'Entwurfsmodus beendet.');
     }
@@ -1842,10 +2261,10 @@
         }
         if (view.hiddenNodes[key] === true) {
             delete view.hiddenNodes[key];
-            log('Eingeblendet: ' + node.title);
+            log('info', 'Eingeblendet: ' + node.title);
         } else {
             view.hiddenNodes[key] = true;
-            log('Ausgeblendet: ' + node.title);
+            log('info', 'Ausgeblendet: ' + node.title);
         }
         visibility.nodes = Object.keys(view.hiddenNodes).sort();
         afterVisibilityChange(key);
@@ -1859,10 +2278,10 @@
         }
         if (view.hiddenGroups[id] === true) {
             delete view.hiddenGroups[id];
-            log('Gruppe eingeblendet: ' + group.title);
+            log('info', 'Gruppe eingeblendet: ' + group.title);
         } else {
             view.hiddenGroups[id] = true;
-            log('Gruppe ausgeblendet: ' + group.title);
+            log('info', 'Gruppe ausgeblendet: ' + group.title);
         }
         visibility.groups = Object.keys(view.hiddenGroups).sort();
         afterVisibilityChange(null);
@@ -1902,9 +2321,9 @@
             }
             applySelection(result.data.selection);
             setDraftStatus(scope === 'personal'
-                ? 'Persoenliche Einstellung gespeichert.'
+                ? 'Persönliche Einstellung gespeichert.'
                 : 'Globale Einstellung gespeichert.', false);
-            log('Auswahl gespeichert (' + (scope === 'personal' ? 'persoenlich' : 'global') + ').');
+            log('info', 'Auswahl gespeichert (' + (scope === 'personal' ? 'persönlich' : 'global') + ').');
         }).catch(function (error) {
             setDraftStatus('Speichern fehlgeschlagen: ' + (error && error.message ? error.message : 'unbekannter Fehler'), true);
         });
@@ -1915,7 +2334,7 @@
         if (!saveUrl || !personalAvailable) {
             return;
         }
-        setDraftStatus('Persoenliche Einstellung wird geloescht …', false);
+        setDraftStatus('Persönliche Einstellung wird gelöscht …', false);
         window.fetch(saveUrl, {
             method: 'POST',
             credentials: 'same-origin',
@@ -1931,8 +2350,8 @@
                 return;
             }
             applySelection(result.data.selection);
-            setDraftStatus('Persoenliche Einstellung geloescht.', false);
-            log('Persoenliche Einstellung geloescht.');
+            setDraftStatus('Persönliche Einstellung gelöscht.', false);
+            log('info', 'Persönliche Einstellung gelöscht.');
         }).catch(function (error) {
             setDraftStatus('Loeschen fehlgeschlagen: ' + (error && error.message ? error.message : 'unbekannter Fehler'), true);
         });
@@ -1947,8 +2366,8 @@
         view.hiddenNodes = nodes;
         view.hiddenGroups = groups;
         setDraftUi();
-        setDraftStatus('Auf gespeicherte Auswahl zurueckgesetzt.', false);
-        log('Entwurfsauswahl zurueckgesetzt.');
+        setDraftStatus('Auf gespeicherte Auswahl zurückgesetzt.', false);
+        log('info', 'Entwurfsauswahl zurückgesetzt.');
     }
 
     // ------------------------------------------------------------ Kontextmenue
@@ -2002,9 +2421,10 @@
         }
         if (menuHint) {
             menuHint.textContent = target.type === 'node'
-                ? 'Einzelner Baustein; die Gesamtkennzahlen bleiben unveraendert.'
+                ? 'Einzelner Baustein; die Gesamtkennzahlen bleiben unverändert.'
                 : 'Alle Bausteine dieser Gruppe.';
         }
+        hideTooltip();
         menu.hidden = false;
         menu.classList.add('is-open');
         var rect = menu.getBoundingClientRect();
@@ -2288,13 +2708,33 @@
         });
     }
 
+    var staleText = staleBanner ? staleBanner.textContent.trim() : '';
+    var loadFailed = false;
+
+    /**
+     * Veraltet-Hinweis: zeigt veraltete Messwerte an und – solange die letzte
+     * Aktualisierung fehlgeschlagen ist – dass die Anzeige nicht mehr dem
+     * aktuellen Stand entspricht.
+     */
     function setFreshness(data) {
         var freshness = (data && data.freshness) || {};
         if (staleBanner) {
             staleBanner.hidden = freshness.fresh !== false;
+            staleBanner.textContent = staleText;
         }
         if (data && data.generated_at) {
             setField('generated', data.generated_at, true);
+        }
+    }
+
+    function markLoadFailed(message) {
+        if (!loadFailed) {
+            log('error', 'Aktualisierung fehlgeschlagen: ' + message);
+        }
+        loadFailed = true;
+        if (staleBanner) {
+            staleBanner.textContent = 'Aktualisierung fehlgeschlagen (' + message + '). Die Anzeige zeigt den letzten bekannten Stand und ist möglicherweise veraltet.';
+            staleBanner.hidden = false;
         }
     }
 
@@ -2342,12 +2782,31 @@
         }
     }
 
+    var loading = false;
+    var loadSeq = 0;
+
+    /** Gueltige Antwort: Objekt mit Bausteinen (Liste oder Schluesselobjekt, Schema 1). */
+    function isPayload(data) {
+        return !!data && typeof data === 'object' && !!data.nodes && typeof data.nodes === 'object'
+            && (data.schema_version === undefined || parseInt(data.schema_version, 10) === 1);
+    }
+
     function load(manual) {
         if (!refreshUrl || typeof window.fetch !== 'function') {
             return;
         }
+        // Keine ueberlappenden Abrufe; nur die juengste Antwort zaehlt.
+        if (loading && !manual) {
+            return;
+        }
+        var seq = ++loadSeq;
+        loading = true;
+        var button = root.querySelector('[data-topo-action="refresh"]');
         if (manual) {
             log('info', 'Aktualisierung angefordert.');
+            if (button) {
+                button.classList.add('is-busy');
+            }
         }
         window.fetch(refreshUrl, {
             credentials: 'same-origin',
@@ -2359,9 +2818,28 @@
             }
             return response.json();
         }).then(function (data) {
+            if (seq !== loadSeq) {
+                return;
+            }
+            if (!isPayload(data)) {
+                throw new Error('unerwartete Antwort');
+            }
+            if (loadFailed) {
+                log('info', 'Aktualisierung wieder erfolgreich.');
+            }
+            loadFailed = false;
             apply(data);
         })['catch'](function (error) {
-            log('error', 'Aktualisierung fehlgeschlagen: ' + (error && error.message ? error.message : 'unbekannter Fehler'));
+            if (seq === loadSeq) {
+                markLoadFailed(error && error.message ? error.message : 'unbekannter Fehler');
+            }
+        }).then(function () {
+            if (seq === loadSeq) {
+                loading = false;
+                if (button) {
+                    button.classList.remove('is-busy');
+                }
+            }
         });
     }
 
@@ -2651,6 +3129,7 @@
                 stop();
             } else {
                 load(false);
+                scheduleRefresh();
                 start();
             }
         });
@@ -2679,6 +3158,8 @@
         setPressed('labels', view.labels);
         setPressed('collapse', view.collapse);
         applySelection(parseVisibility());
+        // Startansicht: lanpa in der Mitte, alles Sichtbare im freien Bereich.
+        fit(true);
         bindPointer();
         bindKeyboard();
         bindActions();

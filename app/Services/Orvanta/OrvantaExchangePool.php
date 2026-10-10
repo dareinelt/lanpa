@@ -43,6 +43,12 @@ final class OrvantaExchangePool
     /** So lange gilt ein gestoerter Host fuer neue Sitzungen als nachrangig (Sekunden). */
     public const FAILURE_COOLDOWN = 60;
 
+    /**
+     * So lange gilt der Zustand „Gestoert“ als aktuell; danach wird der Host
+     * automatisch nachgeprueft (Sekunden), siehe staleHosts().
+     */
+    public const AUTO_CHECK_INTERVAL = 120;
+
     /** Hoechstzahl der Hosts einer DAG (Exchange erlaubt bis zu 16 Mitglieder). */
     public const MAX_HOSTS = 16;
 
@@ -276,6 +282,46 @@ final class OrvantaExchangePool
             return;
         }
         $this->apply($id, ['last_ok' => 0, 'last_error' => mb_substr($error, 0, 500), 'last_check_at' => $now, 'failures' => (int) $host['failures'] + 1]);
+    }
+
+    /**
+     * Gestoerte Hosts, deren letzte Pruefung laenger als $interval zurueckliegt.
+     *
+     * Der Zustand eines gestoerten Hosts kann veralten: nach einem Ausfall
+     * (z. B. VM-Snapshot, Neustart) erhaelt der Host ohne Orvanta-Verkehr keine
+     * neue Antwort mehr – die Sitzungsaffinitaet bindet die Benutzer an andere
+     * Hosts der DAG – und bliebe deshalb dauerhaft „Gestoert“, obwohl er
+     * laengst wieder erreichbar ist. Solche Hosts prueft der Aufrufer nach und
+     * schreibt das Ergebnis ueber recordSuccess()/recordFailure() zurueck
+     * (Selbstheilung, siehe OrvantaHostHealthService).
+     *
+     * Nie gepruefte Hosts („Ungeprueft“) bleiben aussen vor: ihr Zustand ist
+     * keine veraltete Stoerung, sondern offen – ihn setzt allein der manuelle
+     * Verbindungstest.
+     *
+     * @return list<array<string,mixed>> aelteste Pruefung zuerst
+     */
+    public function staleHosts(int $interval = self::AUTO_CHECK_INTERVAL): array
+    {
+        $limit = time() - max(1, $interval);
+        $stale = [];
+        foreach ($this->all() as $host) {
+            if ((int) $host['active'] !== 1 || (int) $host['last_ok'] === 1) {
+                continue;
+            }
+            $checked = $host['last_check_at'];
+            if ($checked === null) {
+                continue;
+            }
+            $at = strtotime($checked);
+            if ($at !== false && $at > $limit) {
+                continue;
+            }
+            $stale[] = $host;
+        }
+        usort($stale, static fn (array $a, array $b): int => strcmp((string) $a['last_check_at'], (string) $b['last_check_at']));
+
+        return $stale;
     }
 
     /**

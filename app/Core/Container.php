@@ -530,6 +530,24 @@ final class Container
                 self::storage(),
                 self::officeAi(),
                 self::orvantaRepository(),
+                self::orvantaConfig(),
+                self::orvantaHostHealth()
+            )
+        );
+    }
+
+    /**
+     * Selbstheilung des Host-Status der Exchange-DAG: prueft gestoerte Hosts
+     * mit veraltetem Zustand nach, damit die Ansichten den aktuellen Stand
+     * zeigen, ohne dass ein Administrator „Verbindung testen“ ausloesen muss.
+     */
+    public static function orvantaHostHealth(): \App\Services\Orvanta\OrvantaHostHealthService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaHostHealthService::class,
+            static fn (): \App\Services\Orvanta\OrvantaHostHealthService => new \App\Services\Orvanta\OrvantaHostHealthService(
+                self::orvantaExchangePool(),
+                self::orvantaExchange(),
                 self::orvantaConfig()
             )
         );

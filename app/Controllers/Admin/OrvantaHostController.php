@@ -314,6 +314,8 @@ final class OrvantaHostController extends AdminController
      */
     public function data(Request $request): Response
     {
+        // Gestoerte Hosts mit veraltetem Zustand nachpruefen (Selbstheilung).
+        Container::orvantaHostHealth()->refresh();
         $overview = Container::orvantaExchangePool()->overview();
 
         return Response::json($overview, 200)->withHeader('Cache-Control', 'no-store');
@@ -344,6 +346,10 @@ final class OrvantaHostController extends AdminController
             $repository->hosts();
         } catch (PDOException) {
             $tablesMissing = true;
+        }
+        if (!$tablesMissing) {
+            // Gestoerte Hosts mit veraltetem Zustand nachpruefen (Selbstheilung).
+            Container::orvantaHostHealth()->refresh();
         }
 
         return $this->adminView('admin.orvanta-hosts', [

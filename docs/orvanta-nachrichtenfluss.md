@@ -136,6 +136,16 @@ Die Client-Wolke zeigt je Host die aktiven Clients (`client_host`, sonst
 Exchange-Konfiguration (reiner Proxy-Betrieb) entfällt die Wolke; die Karte
 zeigt dann nur den konfigurierten Host mit dem Hinweis „Proxy-Betrieb“.
 
+Der angezeigte Status ist aktuell, auch ohne dass jemand eingreift: Vor dem
+Einsammeln prüft `OrvantaHostHealthService::refresh()` gestörte Hosts mit
+veraltetem Zustand (`last_ok = 0`, letzte Prüfung älter als
+`AUTO_CHECK_INTERVAL = 120 s`) über denselben Weg wie „Verbindung testen“
+nach und schreibt das Ergebnis zurück (höchstens `MAX_CHECKS` = 4 je
+Durchgang). Ein Host, der nach einem Neustart oder VM-Snapshot wieder
+antwortet, steht damit beim nächsten Aufbau der Karte oder Topologie wieder
+auf „Online“ – ohne Zutun des Administrators. Ausführlich: `docs/orvanta-referenz.md`,
+Abschnitt 20.5.
+
 ### 3.4 Orvanta-Nutzer (aktuell / min / max) mit Verlaufsgrafik
 
 | Anzeige | Bedeutung | Datenquelle |
@@ -261,6 +271,13 @@ Die Kopfleiste fasst zusammen: `error`, sobald ein Knoten `error` ist; sonst
 `warn`, sobald ein Knoten `warn` ist; sonst `ok`. Die Anzahl der Störungen und
 die betroffenen Bereiche werden als Text genannt („2 Störungen: Exchange-Host
 ex2019b, Identitätsquelle dom2“).
+
+Der Status eines Exchange-Hosts beschreibt den **letzten** Kontakt, nicht
+einen dauerhaften Zustand: Ein gestörter Host, dessen letzte Prüfung älter als
+`AUTO_CHECK_INTERVAL = 120 s` ist, wird beim Aufbau der Ansicht automatisch
+nachgeprüft (Abschnitt 3.3), damit die Karte nicht auf einer überholten
+Störung stehen bleibt. Solange ein Host tatsächlich nicht antwortet, bleibt
+der Fehler sichtbar und der Durchgang wird im nächsten Takt wiederholt.
 
 ## 5. Wolkendarstellung
 
@@ -448,6 +465,12 @@ Jeder Schritt ist ein eigener Commit mit deutscher Betreffzeile
   (Tagesmaximum bleibt korrekt).
 - **Aufbewahrung:** 400 Tage Proben (rund 115 000 Zeilen im 5-Minuten-Raster)
   und 24 Stunden Aktivität; das Räumen läuft im Archivierungs-Worker.
+- **Antwortzeit bei Störungen:** Der Aufbau der Ansicht prüft gestörte
+  Exchange-Hosts nach (Abschnitt 3.3). Antwortet ein Host weiterhin nicht,
+  wartet die Seite bis zu dessen Zeitlimit (`exchange_timeout`, Vorgabe 20 s)
+  je Host und Durchgang – höchstens `MAX_CHECKS` = 4 Hosts. Das ist der Preis
+  dafür, dass der Status nie veraltet ist; der nächste Durchgang folgt erst
+  nach `AUTO_CHECK_INTERVAL` (120 s).
 - **Keine neuen Abhängigkeiten:** Wolken und Grafik sind HTML/CSS/SVG aus
   eigenen Mitteln, ohne Composer, npm oder CDN.
 

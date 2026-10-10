@@ -25,11 +25,19 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
         ['Folder', 'demo-recoverable', 'demo-root', 300000000], ['Folder', 'demo-deletions', 'demo-recoverable', 200000000],
     ];
 
-    /** E-Mail-Ordner: [Id, Name, Elemente, ungelesen] */
+    /**
+     * E-Mail-Ordner: [Id, Name, Elemente, ungelesen, Elternordner]. Wie bei
+     * Exchange liegt der Elternordner der obersten Ebene im Stammordner
+     * ("demo-root"), der selbst nicht Teil der Ordnerliste ist (FindFolder ab
+     * "msgfolderroot" liefert nur die Unterordner). Unterordner bilden die
+     * Hierarchie ab, damit sich der Ordnerbaum im Demomodus wie am
+     * Exchange-Server prüfen lässt.
+     */
     private const MAIL_FOLDERS = [
-        ['demo-inbox', 'Posteingang', 8, 3], ['demo-drafts', 'Entwürfe', 1, 0], ['demo-sentitems', 'Gesendete Elemente', 42, 0],
-        ['demo-deleteditems', 'Gelöschte Elemente', 5, 0], ['demo-junkemail', 'Junk-E-Mail', 0, 0], ['demo-outbox', 'Postausgang', 0, 0],
-        ['demo-projekte', 'Projekte', 17, 1], ['demo-rechnungen', 'Rechnungen', 9, 0],
+        ['demo-inbox', 'Posteingang', 8, 3, 'demo-root'], ['demo-drafts', 'Entwürfe', 1, 0, 'demo-root'],
+        ['demo-sentitems', 'Gesendete Elemente', 42, 0, 'demo-root'], ['demo-deleteditems', 'Gelöschte Elemente', 5, 0, 'demo-root'],
+        ['demo-junkemail', 'Junk-E-Mail', 0, 0, 'demo-root'], ['demo-outbox', 'Postausgang', 0, 0, 'demo-root'],
+        ['demo-projekte', 'Projekte', 17, 1, 'demo-inbox'], ['demo-rechnungen', 'Rechnungen', 9, 0, 'demo-projekte'],
     ];
 
     /**
@@ -231,8 +239,8 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     {
         $folders = self::MAIL_FOLDERS;
         $out = '';
-        foreach ($folders as [$id, $name, $total, $unread]) {
-            $out .= '<t:Folder><t:FolderId Id="' . $id . '" ChangeKey="A"/><t:ParentFolderId Id="demo-root" ChangeKey="A"/><t:FolderClass>IPF.Note</t:FolderClass><t:DisplayName>' . $name . '</t:DisplayName><t:TotalCount>' . $total . '</t:TotalCount><t:ChildFolderCount>0</t:ChildFolderCount><t:UnreadCount>' . $unread . '</t:UnreadCount></t:Folder>';
+        foreach ($folders as [$id, $name, $total, $unread, $parent]) {
+            $out .= '<t:Folder><t:FolderId Id="' . $id . '" ChangeKey="A"/><t:ParentFolderId Id="' . $parent . '" ChangeKey="A"/><t:FolderClass>IPF.Note</t:FolderClass><t:DisplayName>' . $name . '</t:DisplayName><t:TotalCount>' . $total . '</t:TotalCount><t:ChildFolderCount>0</t:ChildFolderCount><t:UnreadCount>' . $unread . '</t:UnreadCount></t:Folder>';
         }
 
         return $this->envelope('<m:FindFolderResponse><m:ResponseMessages><m:FindFolderResponseMessage ResponseClass="Success"><m:ResponseCode>NoError</m:ResponseCode><m:RootFolder TotalItemsInView="' . count($folders) . '" IncludesLastItemInRange="true"><t:Folders>' . $out . '</t:Folders></m:RootFolder></m:FindFolderResponseMessage></m:ResponseMessages></m:FindFolderResponse>');

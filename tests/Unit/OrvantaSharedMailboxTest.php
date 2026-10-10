@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\Admin\OrvantaSharedMailboxController;
+use App\Controllers\OrvantaApiController;
 use App\Core\View;
 use App\Repositories\OrvantaSharedMailboxRepository;
 use App\Services\LdapClient;
@@ -453,6 +454,30 @@ Runner::test('Orvanta: Demo liefert zusätzliche Postfächer getrennt vom eigene
     Assert::true($exchange->probeMailbox('buero@demo.local')['ok'], 'Das Beispielpostfach ohne "Senden als" ist erreichbar.');
     Assert::false($exchange->probeMailbox('fremd@example.local')['ok'], 'Unbekannte Postfächer sind nicht erreichbar.');
     Assert::false($exchange->probeMailbox('keine-adresse')['ok'], 'Ungültige Adressen sind nicht erreichbar.');
+});
+
+Runner::test('Orvanta: Ordner zusätzlicher Postfächer hängen unter dem Wurzelknoten', function (): void {
+    $exchange = orvantaExchange()['exchange'];
+    $root = OrvantaApiController::MAILBOX_PREFIX . '3|';
+    $prepared = OrvantaApiController::mailboxFolders($exchange->folders('team@demo.local'), $root, 3);
+    $ids = array_column($prepared, 'id');
+
+    Assert::same([], array_values(array_filter($ids, static fn (string $id): bool => !str_starts_with($id, $root))), 'Jede Ordnerkennung trägt das Präfix des Postfachs.');
+    Assert::same([], array_values(array_filter(array_column($prepared, 'parent'), static fn (string $parent): bool => $parent !== $root && !in_array($parent, $ids, true))), 'Als Elternordner steht nur der Wurzelknoten oder ein Ordner der Liste.');
+    Assert::true(count(array_filter(array_column($prepared, 'parent'), static fn (string $parent): bool => $parent === $root)) > 0, 'Die oberste Ebene hängt am Wurzelknoten des Postfachs.');
+    Assert::same([3], array_values(array_unique(array_column($prepared, 'mailbox'))), 'Jeder Ordner trägt die Kennung des Postfachs.');
+
+    // Der eigene Stammordner kommt aus dem Elternverweis: Ordner der obersten
+    // Ebene tragen den des Postfachs, Unterordner bleiben untereinander.
+    $nested = OrvantaApiController::mailboxFolders([
+        ['id' => 'f1', 'name' => 'Posteingang', 'parent' => 'msgfolderroot', 'kind' => 'inbox'],
+        ['id' => 'f2', 'name' => 'Projekte', 'parent' => 'f1', 'kind' => 'folder'],
+        ['id' => 'f3', 'name' => 'Ablage', 'parent' => '', 'kind' => 'folder'],
+    ], $root, 3);
+    Assert::same($root . 'f1', $nested[0]['id']);
+    Assert::same($root, $nested[0]['parent'], 'Die oberste Ebene hängt am Wurzelknoten des Postfachs.');
+    Assert::same($root, $nested[2]['parent'], 'Ohne Elternverweis (Proxy-Postfach) gilt der Wurzelknoten.');
+    Assert::same($root . 'f1', $nested[1]['parent'], 'Unterordner bleiben unter ihrem Elternordner.');
 });
 
 Runner::test('Orvanta: Absenderfeld im Verfassen-Dialog ist am Label verankert', function (): void {

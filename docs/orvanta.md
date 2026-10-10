@@ -660,7 +660,9 @@ In Orvanta:
 - **Ordnerbaum:** Über der Ordnerliste steht ein Umschalter mit dem eigenen
   Postfach und allen aktiven, erreichbaren weiteren Postfächern; die
   Unterknoten (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner) sind
-  ausklappbar. Jeder Ordner, jede Nachricht und jede Aktion (Verschieben,
+  ausklappbar und folgen der Ordnerhierarchie des Exchange-Servers – auch
+  Unterordner wie „Projekte“ unter „Posteingang“ erscheinen eingerückt.
+  Jeder Ordner, jede Nachricht und jede Aktion (Verschieben,
   Löschen, Kennzeichnen, Entwurf speichern, Anhänge, Kopfzeilen,
   Terminantworten, neue Ordner) gilt für das gewählte Postfach. Verschoben
   wird nur innerhalb eines Postfachs; Ordner anderer Postfächer und die
@@ -688,6 +690,8 @@ In Orvanta:
   Terminerinnerungen ausschließlich auf das eigene Postfach.
 
 ![Weiteres Postfach im Ordnerbaum und Absender-Dropdown im Verfassen-Dialog](screenshots/110-orvanta-postfaecher-ordnerbaum.png)
+
+![Ordnerbaum: Wurzelknoten „Team Postfach“ aufgeklappt mit der Hierarchie des Exchange-Servers, „Büro“ eingeklappt](screenshots/121-orvanta-postfaecher-hierarchie.png)
 
 ![Kalender der weiteren Postfächer per Checkbox ein- und ausblenden](screenshots/111-orvanta-kalender-postfaecher.png)
 

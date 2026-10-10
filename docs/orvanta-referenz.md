@@ -73,7 +73,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | Element-ID | `id` + `change_key` | EWS-`ItemId` (Base64, opak); `change_key` wird nur bei `updateEvent()` mitgesendet |
 | Ordnerschlüssel | `folderKey()` (JS), `EwsXml::folderId()` | Systemordner als Kleinbuchstaben-Name (`inbox`, `drafts`, …), eigene Ordner als `FolderId` |
 | Zusätzliches Postfach | `orvanta_shared_mailboxes`, `OrvantaSharedMailboxService`, `OrvantaDelegateDirectory` | Per „Vollzugriff“ berechtigtes Postfach, das ausschließlich aus dem Auto-Mapping des AD (`msExchDelegateListBL`) übernommen und über EWS geprüft wird (Abschnitt 22); **nicht** Teil der Archivierung |
-| Postfach-Präfix | `OrvantaApiController::MAILBOX_PREFIX` = `smb:` | Adressierung der Elemente eines zusätzlichen Postfachs: `smb:<id>\|<Original-ID>`; die Original-ID geht unverändert an EWS |
+| Postfach-Präfix | `OrvantaApiController::MAILBOX_PREFIX` = `smb:` | Adressierung der Elemente eines zusätzlichen Postfachs: `smb:<id>\|<Original-ID>`; die Original-ID geht unverändert an EWS. Im Ordnerbaum ist `smb:<id>\|` der Wurzelknoten des Postfachs und damit Elternordner seiner obersten Ebene |
 | Zwischenspeicher | `orvanta_cache_items`, `OrvantaAttachmentService::cache()` | Kopie geöffneter Anhänge im Nextcloud-Ordner `<cache_folder>/` mit Quota `cache_quota_mb` |
 | Erinnerung | `orvanta_reminders`-Zeile | Lokaler Zustand einer Exchange-Terminerinnerung (`pending` → `delivered` → `dismissed`/`snoozed`) |
 | Demo-Modus | `OrvantaConfigService::isDemo()` | `exchange_host = demo` und `APP_ENV ≠ production` → `DemoExchangeTransport` |
@@ -83,7 +83,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | Datei | Verantwortung |
 | --- | --- |
 | `app/Controllers/OrvantaController.php` | `index()` (App-Seite im Layout `layouts.editor`, Konfiguration als `$orvanta`), `openAttachment()` (Viewer/Inline/Download), `attachmentFile()` (Rohdatei für den DocumentServer), statisch `authorize()` (gemeinsame Zugriffsprüfung), statisch `exchangeHost($access)` (aktueller DAG-Host für den Tooltipp im Fußbereich, Abschnitt 20), `inlineType()` (sichere Inline-Typen) |
-| `app/Controllers/OrvantaApiController.php` | JSON-API; Rahmen `handle()` (Zugriff, Body, CSRF, Fehlerabbildung), Hilfen `readBody()`, `mailPayload()`, `addresses()`, `ids()`, `requireId()`, `str()/int()/bool()`, `resync()`; `keepAlive()` liefert zusätzlich `exchange_host` (Abschnitt 20) |
+| `app/Controllers/OrvantaApiController.php` | JSON-API; Rahmen `handle()` (Zugriff, Body, CSRF, Fehlerabbildung), Hilfen `readBody()`, `mailPayload()`, `addresses()`, `ids()`, `requireId()`, `str()/int()/bool()`, `resync()`, statisch `mailboxFolders()` (Ordner weiterer Postfächer mit Präfix und Wurzelknoten als `parent`); `keepAlive()` liefert zusätzlich `exchange_host` (Abschnitt 20) |
 | `app/Controllers/Admin/OrvantaHostController.php` | Adminbereich „Orvanta – DAG-Hosts“ (Abschnitt 20): `index()`, `add()` (bestätigte DAG-Zugehörigkeit), `toggle()` (Wartung), `remove()`, `check()` (Verbindungstest), `data()` (Kachelwerte als JSON), `render()` |
 | `app/Controllers/Admin/OfficeController.php` | `showOrvanta()` (Unterseite `/admin/office/orvanta`), `updateOrvanta()` (Formular → `OrvantaConfigService::save()`), `testOrvanta()` (`testConnection()`), `render('orvanta', …)` übergibt `orvanta*`-Variablen an `views/admin/office.php` |
 | `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung; zieht den primären Host der DAG-Hostliste nach, Abschnitt 20), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()` |
@@ -2150,11 +2150,25 @@ kein Präfix tragen.
 Der Ordnerbaum (`folders()`) liefert zuerst die Ordner des eigenen Postfachs
 und danach je weiterem Postfach einen Wurzelknoten `kind = 'mailbox'`
 (`id` = nur das Präfix, `parent = ''`) sowie dessen Ordner mit Präfix in `id`
-und `parent`. Ist ein Postfach inzwischen nicht mehr erreichbar, wird es
-übersprungen und nur geloggt
+und `parent` (`OrvantaApiController::mailboxFolders()`). Ist ein Postfach
+inzwischen nicht mehr erreichbar, wird es übersprungen und nur geloggt
 (`Orvanta: Ordner eines zusaetzlichen Postfachs nicht abrufbar.`). Jede
 Ordnerzeile trägt zusätzlich `mailbox` (Kennung) für die Zuordnung in der
 Oberfläche.
+
+Die Ordnerhierarchie bleibt erhalten: Ein Ordner, dessen Elternordner nicht
+selbst in der Liste steht, bekommt den Wurzelknoten als `parent`. Das betrifft
+die oberste Ebene, denn deren Elternordner ist der Stammordner des Postfachs,
+den `FindFolder` (Deep ab `msgfolderroot`) nicht mitliefert; im Proxy-Postfach
+fehlt der Elternverweis ganz. Dadurch hängen die Ordner im Baum unter dem
+Postfach (ein-/ausklappbar, wie die Postfächer in Outlook) statt auf einer
+Ebene daneben. Die Oberfläche bildet denselben Rückfall ab: Ein unbekannter
+`parent` wird bei Ordnern eines weiteren Postfachs (`mailbox`) auf dessen
+Wurzelknoten `smb:<id>|` gelegt (`mailboxKey()` in `orvanta.js`), sonst auf die
+oberste Ebene des eigenen Postfachs. Die Wurzelknoten selbst (`kind =
+'mailbox'`) stehen unabhängig von ihrem `parent` immer auf der obersten Ebene;
+sie werden nicht auf ihren eigenen Schlüssel abgebildet, da sie sonst nur
+innerhalb sich selbst hingen und nicht mehr sichtbar wären.
 
 ### 22.3 Module und Kalender
 
@@ -2243,7 +2257,10 @@ Quellenkennungen, „Gesendete Elemente“ im Absenderpostfach und die Meldung
 bei `ErrorSendAsDenied`, der Abgleich mit dem AD in `syncDiscovered()`
 (Übernahme, Umbenennung, Entfernen, Sitzungs-Cache, `null`-Antwort,
 Demo-Modus), `LdapClient::delegatedMailboxFromEntry()`, `forAdmin()`, die
-Kennungs-Suffixe des Demo-Transports sowie ein Rendertest der Adminseite
+Kennungs-Suffixe des Demo-Transports, der Ordnerbaum zusätzlicher Postfächer
+(`OrvantaApiController::mailboxFolders()`: Präfix in `id` und `parent`,
+Stammordner-Elternverweis auf den Wurzelknoten `smb:<id>|`) sowie ein
+Rendertest der Adminseite
 (`View::setViewPath(BASE_PATH . '/views')` + `View::render('admin.orvanta-shared-mailboxes', …)`),
 der Hinweise, Escaping, das Fehlen von Formular- und Löschrouten und den
 Hinweis auf die fehlende Migration 046 prüft.

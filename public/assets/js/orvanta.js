@@ -1177,16 +1177,24 @@
         return position === -1 ? key : key.slice(position + 1);
     }
 
+    /** Praefix der Postfachkennung in Ordner-/Elementkennungen ("smb:<Id>|…"). */
+    var MAILBOX_PREFIX = 'smb:';
+
+    /** Wurzelknoten eines zusaetzlichen Postfachs ("smb:<Id>|"). */
+    function mailboxKey(id) {
+        return MAILBOX_PREFIX + id + '|';
+    }
+
     /**
      * Zusaetzliches Postfach aus einer Ordner-Kennung ("smb:<Id>|…").
      */
     function mailboxOf(key) {
         key = String(key || '');
-        if (key.indexOf('smb:') !== 0) {
+        if (key.indexOf(MAILBOX_PREFIX) !== 0) {
             return '';
         }
         var position = key.indexOf('|');
-        return key.slice(4, position === -1 ? key.length : position);
+        return key.slice(MAILBOX_PREFIX.length, position === -1 ? key.length : position);
     }
 
     /** Ordner zusaetzlicher Postfaecher als Wurzelknoten im Baum. */
@@ -1257,7 +1265,20 @@
             known[folder.id] = true;
         });
         state.folders.forEach(function (folder) {
-            var parent = known[folder.parent] ? folder.parent : '';
+            var parent = '';
+            // Wurzelknoten zusaetzlicher Postfaecher stehen immer auf der
+            // obersten Ebene.
+            if (folder.kind !== 'mailbox') {
+                if (known[folder.parent]) {
+                    parent = folder.parent;
+                } else if (folder.mailbox) {
+                    // Unbekannter Elternordner eines zusaetzlichen Postfachs:
+                    // der Stammordner (msgfolderroot) steht nicht in der Liste,
+                    // also haengen seine obersten Ordner am Wurzelknoten des
+                    // Postfachs.
+                    parent = mailboxKey(folder.mailbox);
+                }
+            }
             (byParent[parent] = byParent[parent] || []).push(folder);
         });
         function render(parent, depth) {

@@ -46,6 +46,25 @@ $icons = [
         <?php } ?>
     </div>
 
+    <div class="field field--check" data-editor-proxy>
+        <input type="checkbox" id="proxy_enabled" name="proxy_enabled" value="1"
+               data-proxy-toggle
+               <?= (int) ($item['proxy_enabled'] ?? 0) === 1 ? 'checked' : '' ?>>
+        <label for="proxy_enabled">Ziel über den Reverse-Proxy dieser Anwendung aufrufen</label>
+        <p class="field__hint">Der Aufruf läuft dann über diesen Intranet-Host; die Adresse der Zielanwendung erscheint nicht im Browser. Gedacht für Ziele, deren DNS-Name oder Zertifikat in Zweigstellen bzw. Außenstellen nicht auflösbar oder nicht vertrauenswürdig ist. Es wird ausschließlich die oben angegebene URL angesprochen.</p>
+    </div>
+
+    <div class="field" data-editor-proxy data-proxy-networks>
+        <label for="proxy_bypass_networks">Quellnetze ohne Weiterleitung (CIDR)</label>
+        <textarea id="proxy_bypass_networks" name="proxy_bypass_networks" rows="3" maxlength="1000"
+                  placeholder="192.168.10.0/24"
+                  <?= isset($errors['proxy_bypass_networks']) ? 'aria-invalid="true" aria-describedby="proxy_bypass_networks-error"' : '' ?>><?= Html::e((string) ($item['proxy_bypass_networks'] ?? '')) ?></textarea>
+        <p class="field__hint">Aufrufe aus diesen Netzen rufen das Ziel direkt auf (klassische URL). Mehrere Netze durch Komma, Leerzeichen oder Zeilenumbruch trennen. Beispiele: 192.168.10.0/24, 10.20.30.7/32, 2001:db8::/32. Leer lassen, um alle Aufrufe über den Reverse-Proxy zu leiten.</p>
+        <?php if (isset($errors['proxy_bypass_networks'])) { ?>
+            <p class="field__error" id="proxy_bypass_networks-error"><?= Html::e($errors['proxy_bypass_networks']) ?></p>
+        <?php } ?>
+    </div>
+
     <div class="field" data-editor-alarm>
         <label for="alarm_text">Freitext <span aria-hidden="true">*</span></label>
         <textarea id="alarm_text" name="alarm_text" rows="4" maxlength="255"

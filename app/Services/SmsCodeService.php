@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Repositories\ActivationNumberRepository;
 use App\Repositories\NavigationRepository;
 use App\Security\Session;
+use App\Support\TileProxy;
 use App\Support\Validator;
 
 /**
@@ -88,7 +89,7 @@ final class SmsCodeService
     /**
      * @return array<string,mixed>
      */
-    public function verify(int $navigationId, string $phone, string $code): array
+    public function verify(int $navigationId, string $phone, string $code, ?string $clientIp = null): array
     {
         $item = $this->navigation->find($navigationId);
         if ($item === null || (int) $item['active'] !== 1 || (int) ($item['protected_access'] ?? 0) !== 1) {
@@ -128,7 +129,7 @@ final class SmsCodeService
 
         return [
             'status' => 'success',
-            'href' => $this->targetUrl($item),
+            'href' => $this->targetUrl($item, $clientIp),
             'external' => ((string) $item['type']) === 'external',
         ];
     }
@@ -218,7 +219,7 @@ final class SmsCodeService
      *
      * @param array<string,mixed> $item
      */
-    public function targetUrl(array $item): string
+    public function targetUrl(array $item, ?string $clientIp = null): string
     {
         $type = (string) $item['type'];
         if ($type === 'subpage') {
@@ -226,6 +227,13 @@ final class SmsCodeService
         }
         if ($type === 'page') {
             return '/seite?id=' . (int) $item['id'];
+        }
+
+        // Externe Ziele laufen auf Wunsch ueber den Reverse-Proxy dieser
+        // Anwendung; Clients aus den Ausnahmenetzen erhalten die direkte URL.
+        $proxyPath = TileProxy::target($item, $clientIp);
+        if ($proxyPath !== null) {
+            return $proxyPath;
         }
 
         return (string) ($item['url'] ?? '');

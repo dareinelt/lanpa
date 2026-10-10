@@ -72,6 +72,38 @@ final class InternalController
     }
 
     /**
+     * Weiterleitungsziele fuer den auth-Container: aktive externe
+     * Navigationskacheln mit aktivierter Weiterleitung ueber den
+     * Reverse-Proxy. Der Container erzeugt daraus seine Proxy-Konfiguration
+     * (docker/auth/weiterleitung-sync.sh); die Quellnetz-Ausnahmen wertet die
+     * Anwendung beim Ausliefern der Kacheln aus.
+     *
+     * Jede Instanz des auth-Containers ruft die Ziele mit ihrer eigenen Kennung
+     * ab (?source=<KENNUNG>), damit auch Zweigstellen-Instanzen den Proxy
+     * erhalten.
+     */
+    public function navProxyConfig(Request $request): Response
+    {
+        // Instanzen weiterer Identitaetsquellen (Zweigstellen) brauchen dieselbe
+        // Weiterleitungskonfiguration und weisen sich mit ihrer Kennung aus.
+        $key = IdentitySourceService::normalizeKey((string) $request->query('source', ''));
+        if ($key !== '' && !IdentitySourceService::isValidKey($key)) {
+            return $this->deny(400);
+        }
+
+        if (!$this->authorized($request, $key)) {
+            app_logger()->warning('Abruf der Weiterleitungskonfiguration abgelehnt.', [
+                'source' => $key,
+                'remote' => (string) ($request->server['REMOTE_ADDR'] ?? ''),
+            ]);
+
+            return $this->deny(403);
+        }
+
+        return $this->lines(Container::navigation()->proxyConfig());
+    }
+
+    /**
      * Kennzahlen des auth-Containers (CPU-Auslastung im Container, offene
      * TCP-Verbindungen und deren Quellnetze). Der Container misst selbst
      * (docker/auth/metrics.py) und meldet jede Probe; die Anwendung prueft und

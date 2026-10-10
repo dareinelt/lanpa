@@ -92,6 +92,24 @@ final class Validator
     }
 
     /**
+     * Quellnetze in CIDR-Schreibweise (Leerzeichen, Komma oder Zeilenumbruch
+     * getrennt). Leer ist erlaubt: kein Netz wird direkt bedient.
+     */
+    public static function isIpNetworkList(string $value, int $max = 1000): bool
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return true;
+        }
+
+        if (mb_strlen($value) > $max) {
+            return false;
+        }
+
+        return IpNetwork::parseListDetailed($value)['invalid'] === [];
+    }
+
+    /**
      * Reduziert eine Telefonnummer auf Ziffern (fuer die Suche).
      */
     public static function normalizePhone(?string $phone): string

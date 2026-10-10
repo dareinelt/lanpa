@@ -20,6 +20,9 @@
 #    eurooffice (inkl. WebSockets). Nur aktiv bei OFFICE_ENABLED=true.
 # 4. Reverse-Proxy fuer LLMInt (KI-Oberflaeche, eigener Stack): /ki/ ->
 #    LLMINT_UPSTREAM. Nur aktiv bei LLMINT_ENABLED=true.
+# 5. Kennzahlen fuer das Admin-Dashboard: CPU-Last und offene TCP-Verbindungen
+#    werden im Container gemessen (cgroup, /proc/net/tcp) und an die Anwendung
+#    gemeldet (docker/auth/metrics.py). Nur die Hauptinstanz.
 
 # --- Stufe 1: gss-ntlmssp aus den Debian-Quellen mit Patches bauen ----------
 # Das Debian-Paket gss-ntlmssp 1.2.0 weist NTLM-NEGOTIATE-Nachrichten ohne
@@ -62,6 +65,7 @@ RUN set -eux; \
         chrony \
         haproxy \
         samba-common-bin \
+        python3 \
         ca-certificates \
         curl \
         openssl \
@@ -94,8 +98,9 @@ COPY docker/auth/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/auth/sso-routes.sh /usr/local/bin/sso-routes.sh
 COPY docker/auth/tls-sync.sh /usr/local/bin/tls-sync.sh
 COPY docker/auth/backend-watch.sh /usr/local/bin/backend-watch.sh
+COPY docker/auth/metrics.py /usr/local/bin/metrics.py
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/sso-routes.sh /usr/local/bin/tls-sync.sh \
-        /usr/local/bin/backend-watch.sh
+        /usr/local/bin/backend-watch.sh /usr/local/bin/metrics.py
 
 EXPOSE 80 443
 

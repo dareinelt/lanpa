@@ -136,6 +136,7 @@ $router->group([$requireUnlocked, $ssoAttempt], static function (Router $router)
 // Interne Schnittstelle fuer die auth-Container (Token + Absenderpruefung).
 $router->get('/internal/sso-config', [InternalController::class, 'ssoConfig']);
 $router->get('/internal/tls-config', [InternalController::class, 'tlsConfig']);
+$router->post('/internal/auth-metrics', [InternalController::class, 'authMetrics']);
 
 // Office-Integration: Hinweisseite (auch Fehlerseite des auth-Proxys) und
 // Endpunkte fuer die Fusszeile in Nextcloud bzw. den Kachelstatus.

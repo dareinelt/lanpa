@@ -263,6 +263,11 @@ services:
       # APP_URL liefert auch den Hostnamen fuer den Kerberos-SPN (HTTP/<host>).
 
       APP_URL: ${APP_URL:-http://localhost:8080}
+      # Kennzahlen fuer das Admin-Dashboard: die Hauptinstanz misst CPU-Last
+      # und offene TCP-Verbindungen im Container und meldet sie an
+      # POST /internal/auth-metrics (docker/auth/metrics.py, Kachel
+      # "Reverse-Proxy"). Abstand in Sekunden.
+      AUTH_METRICS_INTERVAL: ${AUTH_METRICS_INTERVAL:-60}
       SSO_REALM: ${SSO_REALM:-}
       SSO_SPN_HOSTS: ${SSO_SPN_HOSTS:-}
       # HTTPS mit dem Zertifikat aus Adminbereich -> Zertifikate (alle 60 s

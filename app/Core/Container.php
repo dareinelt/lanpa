@@ -490,6 +490,29 @@ final class Container
         );
     }
 
+    public static function authMetricsRepository(): \App\Repositories\AuthMetricsRepository
+    {
+        return self::make(
+            \App\Repositories\AuthMetricsRepository::class,
+            static fn (): \App\Repositories\AuthMetricsRepository => new \App\Repositories\AuthMetricsRepository()
+        );
+    }
+
+    /**
+     * Kennzahlen des auth-Containers (Einstieg/Reverse-Proxy) fuer die Karte
+     * auf dem Admin-Dashboard: der Container meldet sie ueber
+     * POST /internal/auth-metrics, die Anzeige entsteht aus den Proben.
+     */
+    public static function authMetrics(): \App\Services\Auth\AuthMetricsService
+    {
+        return self::make(
+            \App\Services\Auth\AuthMetricsService::class,
+            static fn (): \App\Services\Auth\AuthMetricsService => new \App\Services\Auth\AuthMetricsService(
+                self::authMetricsRepository()
+            )
+        );
+    }
+
     public static function orvantaFlowRepository(): \App\Repositories\OrvantaFlowRepository
     {
         return self::make(

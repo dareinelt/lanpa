@@ -8,6 +8,7 @@ use App\Core\Container;
 use App\Core\Env;
 use App\Core\Request;
 use App\Core\Response;
+use App\Exceptions\ValidationException;
 use App\Security\SsoAuth;
 use App\Services\IdentitySourceService;
 
@@ -68,6 +69,40 @@ final class InternalController
         }
 
         return $this->lines(Container::tlsCertificates()->authConfig());
+    }
+
+    /**
+     * Kennzahlen des auth-Containers (CPU-Auslastung im Container, offene
+     * TCP-Verbindungen und deren Quellnetze). Der Container misst selbst
+     * (docker/auth/metrics.py) und meldet jede Probe; die Anwendung prueft und
+     * speichert sie fuer die Karte auf dem Admin-Dashboard.
+     */
+    public function authMetrics(Request $request): Response
+    {
+        if (!$this->authorized($request, '')) {
+            app_logger()->warning('Meldung der Kennzahlen des auth-Containers abgelehnt.', [
+                'remote' => (string) ($request->server['REMOTE_ADDR'] ?? ''),
+            ]);
+
+            return $this->deny(403);
+        }
+
+        try {
+            Container::authMetrics()->record([
+                'cpu_percent' => $request->input('cpu_percent'),
+                'cpu_limit' => $request->input('cpu_limit'),
+                'tcp_open' => $request->input('tcp_open'),
+                'sources' => $request->input('sources'),
+            ]);
+        } catch (ValidationException $exception) {
+            app_logger()->warning('Ungueltige Kennzahlen des auth-Containers abgelehnt.', [
+                'errors' => $exception->errors(),
+            ]);
+
+            return $this->deny(422);
+        }
+
+        return Response::noContent();
     }
 
     /**

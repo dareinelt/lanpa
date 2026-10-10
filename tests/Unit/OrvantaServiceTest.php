@@ -21,6 +21,7 @@ use App\Services\Orvanta\OrvantaConfigService;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaExchangePool;
 use App\Services\Orvanta\OrvantaExchangeService;
+use App\Services\Orvanta\OrvantaHostHealthService;
 use App\Services\Orvanta\OrvantaMailboxResolver;
 use App\Services\Orvanta\OrvantaNotificationService;
 use App\Services\SettingsService;
@@ -1752,6 +1753,100 @@ Runner::test('Orvanta DAG: Verbindungstest eines Hosts misst die Antwortzeit', f
         Assert::contains('mail02.example.local', $exception->getMessage());
         Assert::contains('Verbindung fehlgeschlagen', $exception->getMessage());
     }
+});
+
+Runner::test('Orvanta DAG: gestoerter Host mit veraltetem Status wird automatisch nachgeprueft', function (): void {
+    $parts = orvantaPool();
+    $id = (int) $parts['pdo']->query("SELECT id FROM orvanta_exchange_hosts WHERE host = 'mail02.example.local'")->fetchColumn();
+    // Ausfall (z. B. VM-Snapshot): der Host gilt als gestoert. Danach liegt der
+    // Orvanta-Verkehr auf anderen Hosts der DAG (Sitzungsaffinitaet), der Host
+    // erhaelt keine Antwort mehr und bliebe dauerhaft „Gestoert“ – bis ihn
+    // bisher ein Administrator mit „Verbindung testen“ zuruecksetzte.
+    $parts['hosts']->recordFailure($id, 'Timeout', '2024-01-01 08:00:00');
+    $pool = new OrvantaExchangePool($parts['hosts'], $parts['config'], static fn (): string => 'session-a');
+    $health = new OrvantaHostHealthService($pool, $parts['exchange'], $parts['config']);
+    Assert::same('offline', $pool->overview()['hosts'][1]['status'], 'Der Host gilt zunaechst als gestoert.');
+
+    $results = $health->refresh();
+    Assert::same(1, count($results), 'Nur der gestoerte Host wird geprueft.');
+    Assert::same('mail02.example.local', $results[0]['host']);
+    Assert::true($results[0]['ok'], 'Der wieder erreichbare Host antwortet.');
+    Assert::same(1, count($parts['transport']->requests), 'Nur ein Aufruf an Exchange.');
+    Assert::same('https://mail02.example.local/EWS/Exchange.asmx', $parts['transport']->requests[0]['url'], 'Geprueft wird der gestoerte Host.');
+    Assert::same('online', $pool->overview()['hosts'][1]['status'], 'Der Status ist ohne Zutun des Administrators wieder aktuell.');
+    Assert::same(1, (int) $parts['pdo']->query("SELECT last_ok FROM orvanta_exchange_hosts WHERE host = 'mail02.example.local'")->fetchColumn(), 'Der neue Zustand ist gespeichert.');
+    Assert::same([], $health->refresh(), 'Der Zustand ist jetzt aktuell: kein weiterer Aufruf.');
+    Assert::same(1, count($parts['transport']->requests), 'Der Aufruf wird nicht wiederholt.');
+});
+
+Runner::test('Orvanta DAG: ein weiterhin nicht erreichbarer Host bleibt gestoert', function (): void {
+    $parts = orvantaPool();
+    $id = (int) $parts['pdo']->query("SELECT id FROM orvanta_exchange_hosts WHERE host = 'mail02.example.local'")->fetchColumn();
+    $parts['hosts']->recordFailure($id, 'Timeout', '2024-01-01 08:00:00');
+    $parts['transport']->byUrl['https://mail02.example.local/EWS/Exchange.asmx'] = ['status' => 0, 'body' => '', 'error' => 'Verbindung fehlgeschlagen'];
+    $pool = new OrvantaExchangePool($parts['hosts'], $parts['config'], static fn (): string => 'session-a');
+    $health = new OrvantaHostHealthService($pool, $parts['exchange'], $parts['config']);
+
+    $results = $health->refresh();
+    Assert::same(1, count($results), 'Auch eine erfolglose Pruefung wird gemeldet.');
+    Assert::false($results[0]['ok'], 'Der Host antwortet weiterhin nicht.');
+    Assert::contains('Verbindung fehlgeschlagen', $results[0]['message']);
+    Assert::same('offline', $pool->overview()['hosts'][1]['status'], 'Der Status bleibt gestoert.');
+    $row = $parts['pdo']->query("SELECT last_ok, failures, last_error FROM orvanta_exchange_hosts WHERE host = 'mail02.example.local'")->fetch();
+    Assert::same(0, (int) $row['last_ok']);
+    Assert::same(2, (int) $row['failures'], 'Die erneute Stoerung wird gezaehlt.');
+    Assert::contains('Verbindung fehlgeschlagen', (string) $row['last_error'], 'Der aktuelle Fehler steht in der Statusfuehrung.');
+});
+
+Runner::test('Orvanta DAG: frische Stoerungen werden nicht sofort nachgeprueft', function (): void {
+    $parts = orvantaPool();
+    $pool = new OrvantaExchangePool($parts['hosts'], $parts['config'], static fn (): string => 'session-a');
+    $pool->recordFailure($pool->hosts()[1], 'Timeout');
+    $health = new OrvantaHostHealthService($pool, $parts['exchange'], $parts['config']);
+
+    Assert::same([], $health->refresh(), 'Ein gerade geprueftes Ergebnis bleibt stehen.');
+    Assert::same('offline', $pool->overview()['hosts'][1]['status']);
+    Assert::same(0, count($parts['transport']->requests), 'Kein Aufruf an Exchange.');
+});
+
+Runner::test('Orvanta DAG: ungepruefte und in Wartung genommene Hosts werden nicht automatisch geprueft', function (): void {
+    $parts = orvantaPool();
+    $pool = new OrvantaExchangePool($parts['hosts'], $parts['config'], static fn (): string => 'session-a');
+    $health = new OrvantaHostHealthService($pool, $parts['exchange'], $parts['config']);
+    // „Ungeprueft“ ist keine veraltete Stoerung: diesen Zustand setzt allein der
+    // manuelle Verbindungstest (sonst markierte eine fehlende Pruefpostfach-
+    // Konfiguration jeden Host als gestoert).
+    Assert::same([], $health->refresh(), 'Ungepruefte Hosts bleiben dem manuellen Test vorbehalten.');
+
+    $id = (int) $parts['pdo']->query("SELECT id FROM orvanta_exchange_hosts WHERE host = 'mail02.example.local'")->fetchColumn();
+    $parts['hosts']->setActive($id, false);
+    $parts['hosts']->recordFailure($id, 'Timeout', '2024-01-01 08:00:00');
+    $wartung = new OrvantaExchangePool($parts['hosts'], $parts['config'], static fn (): string => 'session-a');
+    Assert::same([], (new OrvantaHostHealthService($wartung, $parts['exchange'], $parts['config']))->refresh(), 'Ein Host in Wartung wird nicht geprueft.');
+    Assert::same(0, count($parts['transport']->requests), 'Kein Aufruf an Exchange.');
+});
+
+Runner::test('Orvanta DAG: ein Durchgang prueft nur die aeltesten Stoerungen (MAX_CHECKS)', function (): void {
+    $parts = orvantaPool([], ['mail02.example.local', 'mail03.example.local', 'mail04.example.local', 'mail05.example.local']);
+    foreach ([
+        'mail01.example.local' => '2024-05-01 08:00:00',
+        'mail02.example.local' => '2024-04-01 08:00:00',
+        'mail03.example.local' => '2024-03-01 08:00:00',
+        'mail04.example.local' => '2024-02-01 08:00:00',
+        'mail05.example.local' => '2024-01-01 08:00:00',
+    ] as $host => $checkedAt) {
+        $id = (int) $parts['pdo']->query('SELECT id FROM orvanta_exchange_hosts WHERE host = ' . $parts['pdo']->quote($host))->fetchColumn();
+        $parts['hosts']->recordFailure($id, 'Timeout', $checkedAt);
+    }
+    $pool = new OrvantaExchangePool($parts['hosts'], $parts['config'], static fn (): string => 'session-a');
+    $results = (new OrvantaHostHealthService($pool, $parts['exchange'], $parts['config']))->refresh();
+
+    Assert::same(OrvantaHostHealthService::MAX_CHECKS, count($results), 'Hoechstens MAX_CHECKS Hosts je Durchgang.');
+    Assert::same(
+        ['mail05.example.local', 'mail04.example.local', 'mail03.example.local', 'mail02.example.local'],
+        array_column($results, 'host'),
+        'Die aeltesten Pruefungen zuerst, damit kein Host liegen bleibt.'
+    );
 });
 
 Runner::test('Orvanta DAG: Kennzahlen werden gemittelt und Uebersicht aufgebaut', function (): void {

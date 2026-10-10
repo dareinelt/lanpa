@@ -67,6 +67,7 @@ final class OrvantaFlowService
         private readonly OfficeAiService $ai,
         private readonly OrvantaRepository $orvanta,
         private readonly OrvantaConfigService $config,
+        private readonly ?OrvantaHostHealthService $hostHealth = null,
         private readonly ?\Closure $clock = null
     ) {
     }
@@ -266,6 +267,10 @@ final class OrvantaFlowService
     {
         $exchange = ['available' => false, 'configured' => false, 'hosts' => [], 'sessions' => [], 'totals' => []];
         try {
+            // Gestoerte Hosts mit veraltetem Zustand zuerst nachpruefen: der
+            // Status soll den aktuellen Stand zeigen, ohne dass jemand
+            // „Verbindung testen“ ausloest.
+            $this->hostHealth?->refresh();
             $overview = $this->exchange->overview();
             $exchange['available'] = true;
             $exchange['hosts'] = $overview['hosts'];

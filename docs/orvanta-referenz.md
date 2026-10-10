@@ -88,7 +88,8 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/Admin/OfficeController.php` | `showOrvanta()` (Unterseite `/admin/office/orvanta`), `updateOrvanta()` (Formular → `OrvantaConfigService::save()`), `testOrvanta()` (`testConnection()`), `render('orvanta', …)` übergibt `orvanta*`-Variablen an `views/admin/office.php` |
 | `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung; zieht den primären Host der DAG-Hostliste nach, Abschnitt 20), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()` |
 | `app/Services/Orvanta/OrvantaExchangeService.php` | Fachlogik je Modul (siehe Abschnitt 5), `call()` (SOAP + Fehlerbehandlung), `request()` (Lastverteilung und Failover, Abschnitt 20), `testConnection()`/`testHost()` (Verbindungstest), `translate()` (EWS-Fehlercodes → deutsche Meldung), Mapper `messageSummary()`, `calendarSummary()`, `contactData()`, `taskData()`, `attachmentList()` |
-| `app/Services/Orvanta/OrvantaExchangePool.php` | Lastverteilung und Failover über die Hosts der DAG (Abschnitt 20): `sessionKey()`, statisch `affinityKey()`, `hosts()`, `session()`, `currentHost()`, `failover()`, `recordSuccess()`, `recordFailure()`, `overview()`, `purge()`, statisch `parseHostList()`; Konstanten `SESSION_TTL`, `PURGE_AFTER`, `LATENCY_SAMPLES`, `FAILURE_COOLDOWN`, `MAX_HOSTS` |
+| `app/Services/Orvanta/OrvantaExchangePool.php` | Lastverteilung und Failover über die Hosts der DAG (Abschnitt 20): `sessionKey()`, statisch `affinityKey()`, `hosts()`, `session()`, `currentHost()`, `failover()`, `recordSuccess()`, `recordFailure()`, `staleHosts()`, `overview()`, `purge()`, statisch `parseHostList()`; Konstanten `SESSION_TTL`, `PURGE_AFTER`, `LATENCY_SAMPLES`, `FAILURE_COOLDOWN`, `AUTO_CHECK_INTERVAL`, `MAX_HOSTS` |
+| `app/Services/Orvanta/OrvantaHostHealthService.php` | Selbstheilung des Host-Status (Abschnitt 20.5): `refresh()` prüft gestörte Hosts mit veraltetem Zustand (`OrvantaExchangePool::staleHosts()`) über `OrvantaExchangeService::testHost()` nach und schreibt das Ergebnis zurück; `MAX_CHECKS` (4) |
 | `app/Repositories/OrvantaExchangeHostRepository.php` | Hosts und Sitzungszuordnungen der DAG (Abschnitt 20): `hosts()`, `find()`, `hostCount()`, `nextSortOrder()`, `insert()`, `setActive()`, `deleteHost()`, `syncPrimary()`, `recordLatency()`, `recordSuccess()`, `recordFailure()`, `touchHostSession()`, `findSession()`, `startSession()`, `moveSession()`, `touchSession()`, `sessionCounts()`, `activeSessions()`, `purgeSessions()` |
 | `app/Services/Orvanta/OrvantaMailboxResolver.php` | `address($ssoUser)`: primäre SMTP-Adresse des Postfachs aus dem AD (`LdapClient::primaryMailboxAddress()`, `proxyAddresses`), je Sitzung 15 min in `orvanta_mailbox_address`; ohne AD-Treffer, ohne `ldap`-Erweiterung, im Demo-Modus und für Testbenutzer gilt `OrvantaConfigService::impersonationAddress()` |
 | `app/Services/Orvanta/EwsXml.php` | `envelope()`, `parse()`, `error()`, `text()/attr()/bool()/elements()`, `itemId()/itemIds()`, `mailbox()/mailboxes()/recipients()`, `folderId()`, `dateTime()` (UTC), `timestamp()`, `escape()` |
@@ -848,9 +849,10 @@ Druck ausgeblendet.
 20. **Failover nur bei echten Host-Ausfällen** (Transportfehler, Status 0,
     HTTP ≥ 500 ohne fachlichen EWS-Fehlercode). **401/403 und fachliche
     SOAP-Fehler sind kein Host-Ausfall**; ebenso wenig darf ein Fehler einen
-    Host dauerhaft ausschließen (Selbstheilung nach `FAILURE_COOLDOWN`,
-    Abschnitt 20.4). **Ändernde EWS-Operationen werden nach Zustellung nie auf
-    einem anderen Host wiederholt** (kein doppelter Versand).
+    Host dauerhaft ausschließen (Selbstheilung nach `FAILURE_COOLDOWN` und
+    automatische Nachprüfung gestörter Hosts mit veraltetem Zustand,
+    Abschnitt 20.4/20.5). **Ändernde EWS-Operationen werden nach Zustellung nie
+    auf einem anderen Host wiederholt** (kein doppelter Versand).
 21. **Hosts einer DAG werden nur mit ausdrücklicher Bestätigung aufgenommen.**
     Der Server prüft `dag_confirmed` selbst; ohne Bestätigung, ohne aktivierte
     Anbindung oder im Demo-Modus wird nichts gespeichert. Falsche Hosts
@@ -865,6 +867,9 @@ Druck ausgeblendet.
     Verbindungstest der Identitätsquellen (CSRF **zuerst**, höchstens
     `MAX_CHECK_SOURCES` = 16 aktive Quellen je Durchgang, sonst nur einzeln).
     Die Seite verändert keine Einstellung und sendet nichts (Abschnitt 23).
+    Ausnahme ohne Benutzeraktion: gestörte Exchange-Hosts mit veraltetem
+    Zustand werden beim Aufbau der Ansicht nachgeprüft, damit der angezeigte
+    Status aktuell ist (Abschnitt 20.5).
 24. **`OrvantaFlowService::evaluate()` bleibt rein** – keine Datenbank, kein
     Netz, keine Zeitabhängigkeit außer dem übergebenen `now`. Nur `collect()`
     liest Daten; sonst werden die JSON-Route und die Tests unbrauchbar.
@@ -1712,6 +1717,7 @@ Zugehörigkeit zur selben DAG – ein Start „von Null“ ist nicht vorgesehen.
 | `orvanta_exchange_hosts` | Hosts, Wartungszustand, Sortierung, Lastkennzahlen (Abschnitt 4.1) |
 | `orvanta_exchange_sessions` | Sitzungsaffinität: `sha1('orvanta-dag:' . affinityKey)` (Benutzer + Client) → Host, mit Zählern und Clientangaben (Abschnitt 20.5) |
 | `OrvantaExchangePool` | Verteilung, Affinität, Failover, Kachelwerte |
+| `OrvantaHostHealthService` | prüft gestörte Hosts mit veraltetem Zustand automatisch nach (Abschnitt 20.5) |
 | `OrvantaExchangeHostRepository` | Persistenz beider Tabellen |
 | `Admin\OrvantaHostController` | Dashboard und Verwaltung (Abschnitt 20.5) |
 | `OrvantaExchangeService::request()` | nutzt den Pool bei **jedem** EWS-Aufruf (Abschnitt 20.4) |
@@ -1752,6 +1758,14 @@ Zugehörigkeit zur selben DAG – ein Start „von Null“ ist nicht vorgesehen.
 `LATENCY_SAMPLES = 200` Messungen und setzt `last_ok = 1`, `failures = 0`;
 `recordFailure()` setzt `last_ok = 0`, `last_error` (≤ 500 Zeichen) und erhöht
 `failures`.
+
+`FAILURE_COOLDOWN` lockert nur die Verteilungsreihenfolge: Es heilt einen Host
+erst, wenn er wieder **Orvanta-Verkehr** erhält. Genau der fehlt aber, wenn die
+Sitzungsaffinität die Benutzer nach dem Ausfall auf andere Mitglieder der DAG
+gebunden hat – der Host bliebe dauerhaft „Gestört“, obwohl er längst wieder
+antwortet. Deshalb prüft `OrvantaHostHealthService` gestörte Hosts mit
+veraltetem Zustand beim Aufbau der statusanzeigenden Ansichten selbst nach
+(Abschnitt 20.5).
 
 Ohne Sitzungskennung (`Session::id()` leer, z. B. im Archivierungs-Worker)
 wird verteilt, aber **nichts gespeichert**; mit Kennung legt `start()` die
@@ -1843,6 +1857,40 @@ session($key) ─▶ Host + URL ─▶ transport->post()
 
 ### 20.5 Dashboard (Admin → Office → Orvanta – DAG-Hosts)
 
+**Statusaktualität (Selbstheilung).** Der Status eines Hosts entsteht aus
+echten Orvanta-Antworten. Fällt ein Host aus – etwa durch einen VM-Snapshot,
+einen Neustart oder eine kurze Netzstörung –, steht er auf „Gestört“; weil die
+Sitzungsaffinität die Benutzer danach auf anderen Mitgliedern der DAG hält,
+erhält er ohne neuen Verkehr keine Antwort mehr und der Zustand bliebe stehen,
+bis ihn ein Administrator mit „Verbindung testen“ von Hand zurücksetzt.
+`OrvantaHostHealthService::refresh()` prüft solche Hosts deshalb selbst nach
+und übernimmt das Ergebnis in die Statusführung:
+
+- **Was geprüft wird:** `OrvantaExchangePool::staleHosts()` liefert aktive
+  Hosts mit `last_ok = 0`, deren `last_check_at` älter als
+  `AUTO_CHECK_INTERVAL = 120 s` ist, älteste Prüfung zuerst. Nur bereits
+  gestörte Hosts werden geprüft – die Nachprüfung kann also keine neue Störung
+  erzeugen. Noch nie geprüfte Hosts (`last_check_at = NULL`, „Ungeprüft“)
+  bleiben dem manuellen Test vorbehalten.
+- **Wie geprüft wird:** `OrvantaExchangeService::testHost()` – derselbe Weg
+  wie der manuelle Verbindungstest (Posteingang des Prüfpostfachs,
+  Impersonation), der die Affinität umgeht. Erfolg ruft
+  `recordSuccess()` (Status „Online“, Latenz im gleitenden Mittel), ein Fehler
+  `recordFailure()`. Geheilte Hosts stehen als `app_logger()->info()` im
+  Protokoll.
+- **Wann geprüft wird:** beim Aufbau der Ansichten, die den Status zeigen –
+  Nachrichtenfluss-Karte und -Topologie (`OrvantaFlowService::collectExchange()`,
+  Abschnitt 23) sowie DAG-Hosts-Kacheln (`render()`, `data()`). Die Prüfung
+  hängt an keiner Benutzeraktion.
+- **Belastungsgrenzen:** höchstens `MAX_CHECKS = 4` Hosts je Durchgang und je
+  Host höchstens ein Durchgang pro `AUTO_CHECK_INTERVAL`. Parallele Aufrufe
+  entschärfen sich über `last_check_at`, das `recordSuccess()`/`recordFailure()`
+  sofort schreibt; das Zeitbudget wird wie beim manuellen Test über
+  `@set_time_limit()` erweitert. Im Demo-Modus und ohne aktivierte Anbindung
+  geschieht nichts.
+- **Voraussetzung:** ein konfiguriertes Prüfpostfach (siehe unten); ohne es
+  meldet auch die Nachprüfung „Gestört“.
+
 `GET /admin/office/orvanta/hosts` (`$requireAdmin`, `activeNav =
 office_orvanta_hosts`, Einstieg zusätzlich über `views/admin/office.php`)
 zeigt je Host eine Kachel mit
@@ -1865,7 +1913,9 @@ vollständig bedienbar;
 verborgenen Tab und lässt Abfragen nicht überlappen. Der Verbindungstest
 (`POST …/hosts/pruefen`, optional `id`) misst je Host über `testHost()`
 (umgeht die Affinität), übernimmt die Zeit in die Lastverteilung und markiert
-Fehler als Störung. Geprüft wird der Posteingang des Prüfpostfachs
+Fehler als Störung. Dieselbe Prüfung erledigt der Aufbau der Seite und der
+JSON-Aktualisierung automatisch für gestörte Hosts mit veraltetem Zustand
+(siehe oben). Geprüft wird der Posteingang des Prüfpostfachs
 (`exchange_test_mailbox` in `orvanta_settings`, Impersonation;
 `OrvantaConfigService::testMailbox()`), leer der Posteingang des
 Dienstkontos. Das Prüfpostfach setzt `POST …/hosts/pruefpostfach`
@@ -1924,7 +1974,14 @@ SOAP-Fehler, keine Wiederholung zugestellter ändernder Anfragen, EWS-Endpunkt
 ohne Hostnamen, `parseHostList()`, `overview()`, `syncPrimary()`, die
 Clientangaben beim Sitzungsbeginn (die Umleitung lässt sie stehen, eine neue
 Sitzung erhält eigene Werte) und die Sitzungsliste ohne die Clientspalten der
-Migration 044, und der Tooltipp der Verbindungsanzeige. Die Testbausteine
+Migration 044, und der Tooltipp der Verbindungsanzeige. Die automatische
+Nachprüfung ist mit eigenen Tests abgedeckt: ein gestörter Host mit veraltetem
+Status wird geprüft und gilt danach wieder als online (ein Aufruf, an den
+gestörten Host, danach kein weiterer), ein weiterhin nicht erreichbarer Host
+bleibt gestört (mit Fehlermeldung und erhöhtem `failures`), frische Störungen
+werden nicht sofort nachgeprüft, ungeprüfte und in Wartung genommene Hosts
+bleiben außen vor, und ein Durchgang prüft höchstens `MAX_CHECKS` Hosts
+(älteste zuerst). Die Testbausteine
 `orvantaPool()`/`dagSettings()` tragen den primären Host explizit ein; jede
 simulierte Anfrage braucht einen **frischen** Pool, weil
 `OrvantaExchangePool::hosts()` das Hostabbild je Instanz speichert.

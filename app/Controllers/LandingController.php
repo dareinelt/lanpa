@@ -7,6 +7,7 @@ namespace App\Controllers;
 use App\Core\Container;
 use App\Core\Request;
 use App\Core\Response;
+use App\Support\TileProxy;
 
 final class LandingController extends Controller
 {
@@ -14,6 +15,7 @@ final class LandingController extends Controller
     {
         $ssoUser = Container::sso()->resolve($request);
         $items = Container::officeApps()->filterNavigation(Container::navigation()->activeTopLevelFor($ssoUser), $ssoUser);
+        $items = TileProxy::decorate($items, $request->clientIp());
 
         return $this->view('landing.index', [
             'pageTitle' => Container::settings()->get('site_title'),

@@ -28,7 +28,7 @@ final class ProtectedAccessController extends Controller
         }
 
         if (Container::smsCode()->isVerified((int) $item['id'])) {
-            return $this->redirect(Container::smsCode()->targetUrl($item));
+            return $this->redirect(Container::smsCode()->targetUrl($item, $request->clientIp()));
         }
 
         $id = (int) $item['id'];
@@ -37,7 +37,7 @@ final class ProtectedAccessController extends Controller
             'pageTitle' => 'Geschützter Zugriff',
             'item' => $item,
             'breadcrumb' => Container::navigation()->breadcrumb($id),
-            'href' => Container::smsCode()->targetUrl($item),
+            'href' => Container::smsCode()->targetUrl($item, $request->clientIp()),
             'pageScript' => 'landing.js',
         ]);
     }

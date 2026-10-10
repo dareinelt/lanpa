@@ -6,7 +6,7 @@ namespace App\Repositories;
 
 final class NavigationRepository extends Repository
 {
-    private const COLUMNS = 'n.id, n.title, n.url, n.type, n.parent_id, n.icon, n.background_color, n.background_opacity, n.override_background, n.short_description, n.description, n.content, n.alarm_text, n.alarm_group_id, n.protected_access, n.sort_order, n.active, n.created_at, n.updated_at, g.group_number AS alarm_group_number, g.description AS alarm_group_description, g.type AS alarm_group_type';
+    private const COLUMNS = 'n.id, n.title, n.url, n.type, n.parent_id, n.icon, n.background_color, n.background_opacity, n.override_background, n.short_description, n.description, n.content, n.alarm_text, n.alarm_group_id, n.protected_access, n.proxy_enabled, n.proxy_bypass_networks, n.sort_order, n.active, n.created_at, n.updated_at, g.group_number AS alarm_group_number, g.description AS alarm_group_description, g.type AS alarm_group_type';
 
     private const FROM = ' FROM navigation_items n LEFT JOIN alarm_groups g ON g.id = n.alarm_group_id';
 
@@ -39,6 +39,26 @@ final class NavigationRepository extends Repository
     public function activeChildren(int $parentId): array
     {
         return $this->activeChildrenWhere('parent_id = :parent_id', ['parent_id' => $parentId]);
+    }
+
+    /**
+     * Aktive externe Kacheln, deren Ziel ueber den Reverse-Proxy laufen soll.
+     * Grundlage fuer die Konfiguration im auth-Container.
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function activeExternalWithProxy(): array
+    {
+        $statement = $this->pdo->query(
+            'SELECT ' . self::COLUMNS . self::FROM
+            . " WHERE n.active = 1 AND n.type = 'external' AND n.proxy_enabled = 1"
+            . ' ORDER BY n.id ASC'
+        );
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement === false ? [] : $statement->fetchAll();
+
+        return $rows;
     }
 
     /**
@@ -377,8 +397,8 @@ final class NavigationRepository extends Repository
     public function create(array $data): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, override_background, short_description, description, content, alarm_text, alarm_group_id, protected_access, sort_order, active)
-             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :override_background, :short_description, :description, :content, :alarm_text, :alarm_group_id, :protected_access, :sort_order, :active)'
+            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, override_background, short_description, description, content, alarm_text, alarm_group_id, protected_access, proxy_enabled, proxy_bypass_networks, sort_order, active)
+             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :override_background, :short_description, :description, :content, :alarm_text, :alarm_group_id, :protected_access, :proxy_enabled, :proxy_bypass_networks, :sort_order, :active)'
         );
         $statement->execute($this->bindings($data));
 
@@ -406,6 +426,8 @@ final class NavigationRepository extends Repository
                     alarm_text = :alarm_text,
                     alarm_group_id = :alarm_group_id,
                     protected_access = :protected_access,
+                    proxy_enabled = :proxy_enabled,
+                    proxy_bypass_networks = :proxy_bypass_networks,
                     sort_order = :sort_order,
                     active = :active
               WHERE id = :id'
@@ -569,6 +591,8 @@ final class NavigationRepository extends Repository
             'alarm_text' => $alarmText === null ? null : (string) $alarmText,
             'alarm_group_id' => $alarmGroupId === null ? null : (int) $alarmGroupId,
             'protected_access' => !empty($data['protected_access']) ? 1 : 0,
+            'proxy_enabled' => !empty($data['proxy_enabled']) ? 1 : 0,
+            'proxy_bypass_networks' => (string) ($data['proxy_bypass_networks'] ?? ''),
             'sort_order' => (int) ($data['sort_order'] ?? 1),
             'active' => !empty($data['active']) ? 1 : 0,
         ];

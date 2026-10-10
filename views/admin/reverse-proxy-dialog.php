@@ -3,17 +3,22 @@
 declare(strict_types=1);
 
 use App\Services\Auth\AuthMetricsCharts;
+use App\Support\Bytes;
 use App\Support\Html;
 
 /** @var array<string,mixed> $authMetrics Kennzahlen (AuthMetricsService::card()) */
 /** @var array<string,mixed> $authMetricsHistory Verlauf (AuthMetricsService::history()) */
 $cpu = is_array($authMetrics['cpu'] ?? null) ? $authMetrics['cpu'] : null;
+$ram = is_array($authMetrics['ram'] ?? null) ? $authMetrics['ram'] : null;
 $tcp = is_array($authMetrics['tcp'] ?? null) ? $authMetrics['tcp'] : null;
 $sources = is_array($authMetrics['sources'] ?? null) ? $authMetrics['sources'] : [];
 $history = is_array($authMetricsHistory ?? null) ? $authMetricsHistory : [];
 $historyCpu = is_array($history['cpu'] ?? null) ? $history['cpu'] : [];
+$historyRam = is_array($history['ram'] ?? null) ? $history['ram'] : [];
 $historyTcp = is_array($history['tcp'] ?? null) ? $history['tcp'] : [];
 $historySources = is_array($history['sources'] ?? null) ? $history['sources'] : [];
+$ramUsed = $ram !== null && is_int($ram['used'] ?? null) ? $ram['used'] : null;
+$ramTotal = $ram !== null && is_int($ram['total'] ?? null) ? $ram['total'] : null;
 $percent = static fn (float $value): string => number_format($value, 1, ',', '.') . ' %';
 $number = static fn (float $value): string => number_format($value, 1, ',', '.');
 /** Spitze eines Quellnetzes im Verlauf, sofern es dort vorkommt. */
@@ -52,6 +57,9 @@ $charts = new AuthMetricsCharts();
                         <p class="metric auth-metrics__value auth-metrics__value--<?= Html::e((string) $cpu['level']) ?>">
                             <?= Html::e($percent((float) $cpu['current'])) ?>
                         </p>
+                        <p class="auth-metrics__reference">
+                            Bezugsgröße <?= Html::e(number_format((float) $cpu['limit'], 2, ',', '.')) ?> Kerne
+                        </p>
                         <p class="card__hint">CPU-Last im Container (aktuell)</p>
                         <ul class="status-list">
                             <li>
@@ -67,13 +75,38 @@ $charts = new AuthMetricsCharts();
                                 <span>Mittel (<?= (int) $cpu['window'] ?> h)</span>
                                 <span><?= Html::e($percent((float) $cpu['avg'])) ?></span>
                             </li>
-                            <li>
-                                <span>Bezugsgröße</span>
-                                <span><?= Html::e($number((float) $cpu['limit'])) ?> Kern(e)</span>
-                            </li>
                         </ul>
                     </div>
                     <div>
+                        <p class="metric auth-metrics__value auth-metrics__value--<?= Html::e((string) ($ram['level'] ?? 'ok')) ?>">
+                            <?= $ram === null ? '–' : Html::e($percent((float) $ram['current'])) ?>
+                        </p>
+                        <p class="auth-metrics__reference"><?= Html::e(Bytes::formatPair($ramUsed, $ramTotal)) ?></p>
+                        <p class="card__hint">Arbeitsspeicher im Container (aktuell)</p>
+                        <ul class="status-list">
+                            <?php if ($ram === null) { ?>
+                                <li>
+                                    <span>Messung</span>
+                                    <span class="card__hint">Der auth-Container meldet noch keinen Arbeitsspeicher.</span>
+                                </li>
+                            <?php } else { ?>
+                                <li>
+                                    <span>Spitze (<?= (int) $ram['window'] ?> h)</span>
+                                    <span>
+                                        <?= Html::e($percent((float) $ram['peak'])) ?>
+                                        <?php if (($ram['peak_at'] ?? null) !== null) { ?>
+                                            <span class="card__hint"><?= Html::e((string) $ram['peak_at']) ?></span>
+                                        <?php } ?>
+                                    </span>
+                                </li>
+                                <li>
+                                    <span>Mittel (<?= (int) $ram['window'] ?> h)</span>
+                                    <span><?= Html::e($percent((float) $ram['avg'])) ?></span>
+                                </li>
+                            <?php } ?>
+                        </ul>
+                    </div>
+                    <div class="auth-metrics-dialog__traffic">
                         <p class="metric"><?= (int) $tcp['connections'] ?></p>
                         <p class="card__hint">Verbindungen seit der letzten Messung</p>
                         <ul class="status-list">
@@ -143,6 +176,19 @@ $charts = new AuthMetricsCharts();
                             ?>, <?= Html::e((string) $historyCpu['peak_at']) ?><?php
                         }
                         ?>, Mittel <?= Html::e($percent((float) ($historyCpu['avg'] ?? 0))) ?>.
+                    </p>
+                </figure>
+
+                <figure class="auth-metrics-dialog__figure">
+                    <figcaption>Arbeitsspeicher-Auslastung</figcaption>
+                    <?= $charts->ram($history) ?>
+                    <p class="card__hint">
+                        Belegt / gesamt <?= Html::e(Bytes::formatPair($ramUsed, $ramTotal)) ?>,
+                        Spitze <?= Html::e($percent((float) ($historyRam['peak'] ?? 0))) ?><?php
+                        if (($historyRam['peak_at'] ?? null) !== null) {
+                            ?>, <?= Html::e((string) $historyRam['peak_at']) ?><?php
+                        }
+                        ?>, Mittel <?= Html::e($percent((float) ($historyRam['avg'] ?? 0))) ?>.
                     </p>
                 </figure>
 

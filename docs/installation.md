@@ -365,7 +365,11 @@ Weiterleitungen, die Fachanwendung selbst liegt im `app`-Container.
 `AUTH_CPUS` ist zugleich die Bezugsgröße der CPU-Anzeige: `docker/auth/metrics.py`
 liest die zugewiesenen Kerne aus dem cgroup-Limit und meldet die Last als Prozent
 davon (ohne `AUTH_CPUS` gilt ein Kern) – die Kachel „Reverse-Proxy“ im
-Admin-Dashboard wird dadurch aussagekräftiger.
+Admin-Dashboard wird dadurch aussagekräftiger. Ebenso ist
+`AUTH_MEMORY_LIMIT` die Bezugsgröße der Anzeige des Arbeitsspeichers auf
+derselben Kachel: gemessen wird im Container (`memory.current` abzüglich des
+freigebbaren Dateicaches, derselbe Wert wie `docker stats`), ohne Grenze gilt der
+Arbeitsspeicher des Hosts.
 
 ```bash
 # Wirksame Grenzen prüfen

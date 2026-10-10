@@ -245,6 +245,87 @@
     color: #a40e26;
 }
 
+/* Die Kachel ist breiter als die uebrigen Kacheln, damit CPU-Last und
+   Arbeitsspeicher nebeneinander stehen koennen. Unterhalb der Breite, ab der
+   das Kartenraster zwei Spalten hat, bleibt sie einspaltig (die beiden
+   Bereiche stehen dann untereinander). */
+@media (min-width: 900px) {
+    .auth-metrics--wide {
+        grid-column: span 2;
+    }
+}
+
+/* CPU-Last und Arbeitsspeicher nebeneinander. Mit Subgrid teilen beide
+   Bereiche dieselben Zeilenspuren (Wert, Bezugsgroesse, Beschriftung,
+   Kennzahlen) und stehen dadurch auf einer Hoehe. */
+.auth-metrics__gauges {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+    gap: .25rem 1.5rem;
+}
+
+@supports (grid-template-rows: subgrid) {
+    .auth-metrics__gauge {
+        display: grid;
+        grid-row: span 4;
+        grid-template-rows: subgrid;
+        row-gap: .25rem;
+    }
+}
+
+/* Prozentwert und Bezugsgroesse (CPU: Kerne, Arbeitsspeicher: belegt/gesamt)
+   stehen in der jeweiligen Haelfte der Kachel zentriert. */
+.auth-metrics__gauge > .auth-metrics__value,
+.auth-metrics__reference {
+    text-align: center;
+}
+
+.auth-metrics__reference {
+    margin: 0;
+    font-size: .9rem;
+    color: var(--color-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Auch die Beschriftung des Bereichs ("CPU-Last im Container (aktuell)")
+   steht in der jeweiligen Haelfte der Kachel zentriert. */
+.auth-metrics__gauge .card__hint {
+    text-align: center;
+}
+
+/* Waagerechte Linie: trennt CPU-Last und Arbeitsspeicher von Verbindungen und
+   Anfragen. */
+.auth-metrics__divider {
+    border: 0;
+    border-top: 1px solid var(--color-border);
+    margin: 1rem 0;
+}
+
+/* Verbindungen und Anfragen stehen zentriert unter der Linie. */
+.auth-metrics__traffic {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: start;
+    gap: .5rem 2rem;
+    text-align: center;
+}
+
+.auth-metrics__details--traffic {
+    flex: 0 1 17rem;
+    min-width: 0;
+    margin-top: 0;
+}
+
+.auth-metrics__details--traffic > .auth-metrics__subtitle {
+    grid-template-columns: auto auto auto;
+    justify-content: center;
+}
+
+.auth-metrics__details--traffic .auth-metrics__sources {
+    text-align: left;
+}
+
 /* Abschnitte "Verbindungen (seit der letzten Messung)" und "Anfragen nach
    Quellnetz" der Karte "Reverse-Proxy": einklappbar, der aktuelle Wert steht in
    der Kopfzeile (summary), damit er auch eingeklappt sichtbar bleibt. */
@@ -411,6 +492,22 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
     gap: 1.25rem;
+}
+
+/* Wie in der Kachel stehen die Kennzahlen (Prozentwerte, Bezugsgroesse,
+   belegter Arbeitsspeicher) in ihrer Spalte zentriert. */
+.auth-metrics-dialog__grid .metric {
+    text-align: center;
+}
+
+/* Ebenso die Beschriftung des jeweiligen Bereichs. */
+.auth-metrics-dialog__grid .card__hint {
+    text-align: center;
+}
+
+/* Verbindungen stehen wie im Fussbereich der Kachel zentriert. */
+.auth-metrics-dialog__traffic {
+    text-align: center;
 }
 
 .auth-metrics-dialog__table {

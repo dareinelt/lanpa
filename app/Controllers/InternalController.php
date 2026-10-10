@@ -124,6 +124,9 @@ final class InternalController
             Container::authMetrics()->record([
                 'cpu_percent' => $request->input('cpu_percent'),
                 'cpu_limit' => $request->input('cpu_limit'),
+                'ram_percent' => $request->input('ram_percent'),
+                'ram_used' => $request->input('ram_used'),
+                'ram_total' => $request->input('ram_total'),
                 'connections' => $request->input('connections'),
                 'sources' => $request->input('sources'),
             ]);

@@ -149,16 +149,44 @@ final class OrvantaApiController extends Controller
                 // Wurzelknoten des Postfachs (wie in Outlook); das eigene
                 // Postfach braucht ihn nicht.
                 $folders[] = ['id' => $root, 'parent' => '', 'name' => $mailbox['name'], 'kind' => 'mailbox', 'unread' => 0, 'total' => 0, 'mailbox' => $mailbox['id']];
-                foreach ($shared as $folder) {
-                    $folder['id'] = $root . $folder['id'];
-                    $folder['parent'] = $folder['parent'] !== '' ? $root . $folder['parent'] : $root;
-                    $folder['mailbox'] = $mailbox['id'];
+                foreach (self::mailboxFolders($shared, $root, (int) $mailbox['id']) as $folder) {
                     $folders[] = $folder;
                 }
             }
 
             return ['folders' => $folders, 'mailboxes' => array_values($access['mailboxes'])];
         });
+    }
+
+    /**
+     * Ordner eines zusaetzlichen Postfachs fuer den Baum aufbereiten:
+     * Kennungen mit dem Postfachpraefix versehen und als Elternordner den
+     * Wurzelknoten des Postfachs setzen, wenn der gelieferte Elternordner
+     * nicht selbst in der Liste steht. Das betrifft die oberste Ebene: deren
+     * Elternordner ist der Stammordner des Postfachs, den FindFolder (Deep ab
+     * "msgfolderroot") nicht mitliefert. Ohne diese Zuordnung haengen die
+     * Ordner im Baum neben statt unter dem Postfach und lassen sich nicht
+     * ein-/ausklappen.
+     *
+     * @param list<array<string,mixed>> $folders
+     * @return list<array<string,mixed>>
+     */
+    public static function mailboxFolders(array $folders, string $root, int $mailboxId): array
+    {
+        $known = [];
+        foreach ($folders as $folder) {
+            $known[(string) ($folder['id'] ?? '')] = true;
+        }
+        $prepared = [];
+        foreach ($folders as $folder) {
+            $parent = (string) ($folder['parent'] ?? '');
+            $folder['id'] = $root . $folder['id'];
+            $folder['parent'] = $parent !== '' && isset($known[$parent]) ? $root . $parent : $root;
+            $folder['mailbox'] = $mailboxId;
+            $prepared[] = $folder;
+        }
+
+        return $prepared;
     }
 
     /**

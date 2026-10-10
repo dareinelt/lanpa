@@ -20,8 +20,9 @@
 #    eurooffice (inkl. WebSockets). Nur aktiv bei OFFICE_ENABLED=true.
 # 4. Reverse-Proxy fuer LLMInt (KI-Oberflaeche, eigener Stack): /ki/ ->
 #    LLMINT_UPSTREAM. Nur aktiv bei LLMINT_ENABLED=true.
-# 5. Kennzahlen fuer das Admin-Dashboard: CPU-Last und offene TCP-Verbindungen
-#    werden im Container gemessen (cgroup, /proc/net/tcp) und an die Anwendung
+# 5. Kennzahlen fuer das Admin-Dashboard: CPU-Last, im Messfenster aufgebaute
+#    Client-Verbindungen und Anfragen je Quellnetz (Zugriffsprotokoll) werden
+#    im Container gemessen und an die Anwendung
 #    gemeldet (docker/auth/metrics.py). Nur die Hauptinstanz.
 
 # --- Stufe 1: gss-ntlmssp aus den Debian-Quellen mit Patches bauen ----------

@@ -9,7 +9,8 @@ use Tests\Support\Assert;
 use Tests\Support\Runner;
 
 /**
- * Spiegelt database/migrations/050_auth_metrics.sql (manuell, SQLite).
+ * Spiegelt database/migrations/050_auth_metrics.sql und 052_auth_metrics_window.sql
+ * (manuell, SQLite).
  */
 function authMetricsPdo(): PDO
 {
@@ -21,7 +22,7 @@ function authMetricsPdo(): PDO
             recorded_at TEXT NOT NULL,
             cpu_percent NUMERIC NOT NULL DEFAULT 0,
             cpu_limit NUMERIC NOT NULL DEFAULT 1,
-            tcp_open INTEGER NOT NULL DEFAULT 0,
+            connections INTEGER NOT NULL DEFAULT 0,
             sources TEXT NULL
         )'
     );
@@ -38,7 +39,7 @@ function authMetricsSample(array $overrides = []): array
     return $overrides + [
         'cpu_percent' => '42.5',
         'cpu_limit' => '2.00',
-        'tcp_open' => '12',
+        'connections' => '12',
         'sources' => '{"192.168.200.0/24":5,"10.20.0.0/24":7}',
     ];
 }
@@ -49,15 +50,15 @@ function authMetricsSample(array $overrides = []): array
 function authMetricsSeed(PDO $pdo, array $rows): void
 {
     $statement = $pdo->prepare(
-        'INSERT INTO auth_metrics (recorded_at, cpu_percent, cpu_limit, tcp_open, sources)'
-        . ' VALUES (:at, :cpu, :limit, :tcp, :sources)'
+        'INSERT INTO auth_metrics (recorded_at, cpu_percent, cpu_limit, connections, sources)'
+        . ' VALUES (:at, :cpu, :limit, :connections, :sources)'
     );
     foreach ($rows as $row) {
         $statement->execute([
             'at' => $row['recorded_at'],
             'cpu' => $row['cpu_percent'] ?? 0,
             'limit' => $row['cpu_limit'] ?? 1,
-            'tcp' => $row['tcp_open'] ?? 0,
+            'connections' => $row['connections'] ?? 0,
             'sources' => $row['sources'] ?? null,
         ]);
     }
@@ -68,10 +69,10 @@ Runner::test('AuthMetrics: Probe wird geprueft und normalisiert', static functio
 
     Assert::same(42.5, $sample['cpu_percent'], 'CPU-Auslastung');
     Assert::same(2.0, $sample['cpu_limit'], 'CPU-Limit');
-    Assert::same(12, $sample['tcp_open'], 'Verbindungen');
+    Assert::same(12, $sample['connections'], 'Verbindungen');
     Assert::same(['10.20.0.0/24' => 7, '192.168.200.0/24' => 5], $sample['sources'], 'Quellnetze');
 
-    $empty = AuthMetricsService::validate(authMetricsSample(['tcp_open' => 0, 'sources' => '']));
+    $empty = AuthMetricsService::validate(authMetricsSample(['connections' => 0, 'sources' => '']));
     Assert::same([], $empty['sources'], 'Leere Quellnetze sind erlaubt');
 });
 
@@ -79,7 +80,7 @@ Runner::test('AuthMetrics: ungueltige Proben werden abgelehnt', static function 
     $cases = [
         'cpu_percent' => authMetricsSample(['cpu_percent' => '101']),
         'cpu_limit' => authMetricsSample(['cpu_limit' => '0']),
-        'tcp_open' => authMetricsSample(['tcp_open' => '-1']),
+        'connections' => authMetricsSample(['connections' => '-1']),
         'sources' => authMetricsSample(['sources' => '{kaputt']),
     ];
 
@@ -118,7 +119,7 @@ Runner::test('AuthMetrics: fehlende Werte werden beanstandet', static function (
         Assert::true(false, 'Leere Probe wurde angenommen.');
     } catch (ValidationException $exception) {
         Assert::same(
-            ['cpu_percent', 'cpu_limit', 'tcp_open'],
+            ['cpu_percent', 'cpu_limit', 'connections'],
             array_keys($exception->errors()),
             'Alle Pflichtfelder'
         );
@@ -144,13 +145,13 @@ Runner::test('AuthMetrics: Proben werden gespeichert und alte geraeumt', static 
     $service = new AuthMetricsService(new AuthMetricsRepository($pdo), static fn (): int => $now);
     $service->record(authMetricsSample());
 
-    $rows = $pdo->query('SELECT recorded_at, cpu_percent, cpu_limit, tcp_open, sources FROM auth_metrics')
+    $rows = $pdo->query('SELECT recorded_at, cpu_percent, cpu_limit, connections, sources FROM auth_metrics')
         ->fetchAll(PDO::FETCH_ASSOC);
     Assert::same(1, count($rows), 'Alte Probe wurde entfernt');
     Assert::same(date('Y-m-d H:i:s', $now), (string) $rows[0]['recorded_at'], 'Zeitpunkt der Probe');
     Assert::same(42.5, (float) $rows[0]['cpu_percent'], 'CPU-Auslastung');
     Assert::same(2.0, (float) $rows[0]['cpu_limit'], 'CPU-Limit');
-    Assert::same(12, (int) $rows[0]['tcp_open'], 'Verbindungen');
+    Assert::same(12, (int) $rows[0]['connections'], 'Verbindungen');
     Assert::same(
         '{"10.20.0.0/24":7,"192.168.200.0/24":5}',
         (string) $rows[0]['sources'],
@@ -171,9 +172,9 @@ Runner::test('AuthMetrics: Anzeige ohne Proben', static function (): void {
 Runner::test('AuthMetrics: Kennzahlen aus den Proben', static function (): void {
     $now = time();
     $rows = [
-        ['recorded_at' => date('Y-m-d H:i:s', $now - 3600), 'cpu_percent' => 10.0, 'cpu_limit' => 2.0, 'tcp_open' => 10, 'sources' => '{"10.20.0.0/24":10}'],
-        ['recorded_at' => date('Y-m-d H:i:s', $now - 1800), 'cpu_percent' => 90.0, 'cpu_limit' => 2.0, 'tcp_open' => 30, 'sources' => null],
-        ['recorded_at' => date('Y-m-d H:i:s', $now), 'cpu_percent' => 50.0, 'cpu_limit' => 2.0, 'tcp_open' => 20, 'sources' => '{"10.20.0.0/24":5,"192.168.200.0/24":15}'],
+        ['recorded_at' => date('Y-m-d H:i:s', $now - 3600), 'cpu_percent' => 10.0, 'cpu_limit' => 2.0, 'connections' => 10, 'sources' => '{"10.20.0.0/24":10}'],
+        ['recorded_at' => date('Y-m-d H:i:s', $now - 1800), 'cpu_percent' => 90.0, 'cpu_limit' => 2.0, 'connections' => 30, 'sources' => null],
+        ['recorded_at' => date('Y-m-d H:i:s', $now), 'cpu_percent' => 50.0, 'cpu_limit' => 2.0, 'connections' => 20, 'sources' => '{"10.20.0.0/24":5,"192.168.200.0/24":15}'],
     ];
     $card = AuthMetricsService::buildCard($rows, $now);
 
@@ -188,7 +189,7 @@ Runner::test('AuthMetrics: Kennzahlen aus den Proben', static function (): void 
     Assert::same('ok', $card['cpu']['level'], 'CPU-Zustand');
     Assert::same(12, $card['cpu']['window'], 'CPU-Fenster');
 
-    Assert::same(20, $card['tcp']['open'], 'Verbindungen offen');
+    Assert::same(20, $card['tcp']['connections'], 'Verbindungen im Messfenster');
     Assert::same(30, $card['tcp']['peak'], 'Verbindungen Spitze');
     Assert::same(20.0, $card['tcp']['avg'], 'Verbindungen Mittel');
     Assert::same(24, $card['tcp']['window'], 'Verbindungs-Fenster');
@@ -207,8 +208,8 @@ Runner::test('AuthMetrics: Kennzahlen aus den Proben', static function (): void 
 Runner::test('AuthMetrics: Fenster von CPU und Verbindungen sind getrennt', static function (): void {
     $now = time();
     $rows = [
-        ['recorded_at' => date('Y-m-d H:i:s', $now - 13 * 3600), 'cpu_percent' => 99.0, 'cpu_limit' => 1.0, 'tcp_open' => 99, 'sources' => null],
-        ['recorded_at' => date('Y-m-d H:i:s', $now - 3600), 'cpu_percent' => 80.0, 'cpu_limit' => 1.0, 'tcp_open' => 40, 'sources' => null],
+        ['recorded_at' => date('Y-m-d H:i:s', $now - 13 * 3600), 'cpu_percent' => 99.0, 'cpu_limit' => 1.0, 'connections' => 99, 'sources' => null],
+        ['recorded_at' => date('Y-m-d H:i:s', $now - 3600), 'cpu_percent' => 80.0, 'cpu_limit' => 1.0, 'connections' => 40, 'sources' => null],
     ];
     $card = AuthMetricsService::buildCard($rows, $now);
 
@@ -222,7 +223,7 @@ Runner::test('AuthMetrics: Fenster von CPU und Verbindungen sind getrennt', stat
 Runner::test('AuthMetrics: veraltete Messwerte werden erkannt', static function (): void {
     $now = time();
     $rows = [
-        ['recorded_at' => date('Y-m-d H:i:s', $now - (AuthMetricsService::STALE_SECONDS + 60)), 'cpu_percent' => 95.0, 'cpu_limit' => 1.0, 'tcp_open' => 1, 'sources' => null],
+        ['recorded_at' => date('Y-m-d H:i:s', $now - (AuthMetricsService::STALE_SECONDS + 60)), 'cpu_percent' => 95.0, 'cpu_limit' => 1.0, 'connections' => 1, 'sources' => null],
     ];
     $card = AuthMetricsService::buildCard($rows, $now);
 
@@ -234,8 +235,8 @@ Runner::test('AuthMetrics: Karte entsteht aus den gespeicherten Proben', static 
     $pdo = authMetricsPdo();
     $now = time();
     authMetricsSeed($pdo, [
-        ['recorded_at' => date('Y-m-d H:i:s', $now - 120), 'cpu_percent' => 91.0, 'cpu_limit' => 1.0, 'tcp_open' => 4, 'sources' => '{"lokal":4}'],
-        ['recorded_at' => date('Y-m-d H:i:s', $now - (AuthMetricsService::TCP_WINDOW_HOURS + 1) * 3600), 'cpu_percent' => 5.0, 'tcp_open' => 500],
+        ['recorded_at' => date('Y-m-d H:i:s', $now - 120), 'cpu_percent' => 91.0, 'cpu_limit' => 1.0, 'connections' => 4, 'sources' => '{"lokal":4}'],
+        ['recorded_at' => date('Y-m-d H:i:s', $now - (AuthMetricsService::TCP_WINDOW_HOURS + 1) * 3600), 'cpu_percent' => 5.0, 'connections' => 500],
     ]);
 
     $service = new AuthMetricsService(new AuthMetricsRepository($pdo), static fn (): int => $now);
@@ -244,8 +245,31 @@ Runner::test('AuthMetrics: Karte entsteht aus den gespeicherten Proben', static 
     Assert::same(1, $card['samples'], 'Nur Proben des Fensters');
     Assert::same(91.0, $card['cpu']['current'], 'CPU aktuell');
     Assert::same('crit', $card['cpu']['level'], 'CPU-Zustand rot');
-    Assert::same(4, $card['tcp']['open'], 'Verbindungen offen');
+    Assert::same(4, $card['tcp']['connections'], 'Verbindungen im Messfenster');
     Assert::same(4, $card['tcp']['peak'], 'Verbindungen Spitze im Fenster');
     Assert::same([['network' => 'lokal', 'count' => 4, 'share' => 100.0]], $card['sources'], 'Quellnetze');
     Assert::same(date('d.m.Y H:i', $now - 120), $card['recorded_at'], 'Stand der Messwerte');
+});
+
+Runner::test('AuthMetrics: Verlauf der Verbindungen und Anfragen', static function (): void {
+    $now = time();
+    $rows = [
+        ['recorded_at' => date('Y-m-d H:i:s', $now - 600), 'cpu_percent' => 20.0, 'cpu_limit' => 1.0, 'connections' => 10, 'sources' => '{"10.20.0.0/24":4}'],
+        ['recorded_at' => date('Y-m-d H:i:s', $now - 300), 'cpu_percent' => 40.0, 'cpu_limit' => 1.0, 'connections' => 20, 'sources' => '{"10.20.0.0/24":6}'],
+    ];
+    $history = AuthMetricsService::buildHistory($rows, $now);
+
+    $present = static fn (array $values): array => array_values(
+        array_filter($values, static fn ($value) => $value !== null)
+    );
+
+    Assert::same(2, $history['samples'], 'Proben im Verlauf');
+    Assert::same(20, $history['tcp']['peak'], 'Spitze der Verbindungen');
+    Assert::same(15.0, $history['tcp']['avg'], 'Mittel der Verbindungen');
+    Assert::same([10.0, 20.0], $present($history['tcp']['values']), 'Verbindungen je Abschnitt');
+
+    Assert::same(1, count($history['sources']), 'Quellnetze im Verlauf');
+    Assert::same('10.20.0.0/24', $history['sources'][0]['network'], 'Netz im Verlauf');
+    Assert::same(6, $history['sources'][0]['peak'], 'Spitze der Anfragen');
+    Assert::same([4.0, 6.0], $present($history['sources'][0]['values']), 'Anfragen je Abschnitt');
 });

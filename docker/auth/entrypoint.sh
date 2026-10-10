@@ -44,8 +44,9 @@
 #                        fuer die freigegebenen Quellnetze erlaubt. Nur in der
 #                        Hauptinstanz (nicht bei SSO_SOURCE). Aus (false) z. B.
 #                        hinter einem externen TLS-Proxy.
-# - Kennzahlen:          Hauptinstanz misst CPU-Last und offene TCP-Verbindungen
-#                        im Container und meldet sie alle 60 s an
+# - Kennzahlen:          Hauptinstanz misst CPU-Last, im Messfenster
+#                        aufgebaute Client-Verbindungen und die Anfragen je
+#                        Quellnetz im Container und meldet sie alle 60 s an
 #                        /internal/auth-metrics (Karte auf dem Admin-Dashboard,
 #                        docker/auth/metrics.py; AUTH_METRICS_INTERVAL aendert
 #                        den Abstand).
@@ -486,6 +487,13 @@ else
 fi
 export AUTH_HTTP_PORT
 
+# Kennzahlen fuer das Admin-Dashboard: nur die Hauptinstanz misst und meldet
+# (siehe unten). Nur dann schreibt Apache das Zugriffsprotokoll mit, aus dem
+# metrics.py die Anfragen je Quellnetz zaehlt (common.conf).
+if [ -z "$SSO_SOURCE" ]; then
+    APACHE_DEFINES="${APACHE_DEFINES} -D AUTH_METRICS"
+fi
+
 if is_true "$SSO_PROXY_PROTOCOL"; then
     APACHE_DEFINES="${APACHE_DEFINES} -D PROXY_PROTOCOL"
 fi
@@ -561,9 +569,10 @@ fi
 /usr/local/bin/weiterleitung-sync.sh loop &
 echo "[auth] Weiterleitung ueber den Proxy aktiv (Adressraum /weiterleitung/<id>/)."
 
-# Kennzahlen fuer das Admin-Dashboard: CPU-Last im Container und offene
-# TCP-Verbindungen (Quellnetze) werden im Container gemessen und an
-# POST /internal/auth-metrics gemeldet (Token aus dem Volume sso_token).
+# Kennzahlen fuer das Admin-Dashboard: CPU-Last im Container sowie die im
+# Messfenster aufgebauten Client-Verbindungen und die Anfragen je Quellnetz
+# werden im Container gemessen und an POST /internal/auth-metrics gemeldet
+# (Token aus dem Volume sso_token).
 # Nur die Hauptinstanz: die Instanzen weiterer Identitaetsquellen haben eine
 # eigene Domaene und wuerden sonst mehrfach melden.
 if [ -z "$SSO_SOURCE" ]; then

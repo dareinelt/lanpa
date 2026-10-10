@@ -1,0 +1,19 @@
+-- Kennzahlen des auth-Containers: Messwerte des Messfensters statt einer
+-- Momentaufnahme.
+--
+-- Eine Momentaufnahme offener TCP-Verbindungen (ESTABLISHED) traf den
+-- Reverse-Proxy praktisch nie: Apache schliesst eine Verbindung schon wenige
+-- Sekunden nach der letzten Anfrage (KeepAliveTimeout), die Probe erfolgt aber
+-- nur alle 60 s. Die Kachel "Reverse-Proxy" blieb deshalb ohne Verbindungen und
+-- ohne Quellnetze. Gemessen wird nun das Messfenster zwischen zwei Proben:
+--
+--   connections   im Messfenster aufgebaute Client-Verbindungen aus dem
+--                 Zugriffsprotokoll des Proxys (Adresse und Quellport je
+--                 Anfrage; mehrere Anfragen einer Keep-Alive-Verbindung
+--                 zaehlen nur einmal)
+--   sources       Anfragen je Quellnetz im Messfenster als JSON-Objekt
+--                 ("192.168.200.0/24": 5), null ohne Anfragen
+--
+-- tcp_open (Momentaufnahme) entfaellt; die bisherigen Werte gelten als
+-- Verbindungen des Fensters.
+ALTER TABLE auth_metrics CHANGE COLUMN tcp_open connections INT UNSIGNED NOT NULL DEFAULT 0;

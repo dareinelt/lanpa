@@ -16,8 +16,17 @@ use App\Support\Dates;
  * Probe an POST /internal/auth-metrics; die Anwendung prueft die Werte und
  * speichert sie in der Tabelle auth_metrics. Aus den Proben entstehen der
  * aktuelle Wert, die Spitze und das Mittel der letzten 12 Stunden (CPU) bzw.
- * 24 Stunden (Verbindungen) sowie die Verteilung der offenen Verbindungen auf
- * die Quellnetze.
+ * 24 Stunden (Verbindungen) sowie die Verteilung der Anfragen auf die
+ * Quellnetze.
+ *
+ * CPU-Auslastung und Verbindungen sind Werte des Messfensters zwischen zwei
+ * Proben (AUTH_METRICS_INTERVAL, Standard 60 s): die CPU-Auslastung aus der
+ * Differenz der verbrauchten CPU-Zeit und die Verbindungen aus dem
+ * Zugriffsprotokoll des Proxys (Adresse und Quellport je Anfrage; mehrere
+ * Anfragen einer Keep-Alive-Verbindung zaehlen nur einmal). Eine
+ * Momentaufnahme waere hier unbrauchbar, weil der Reverse-Proxy eine
+ * Verbindung schon wenige Sekunden nach der letzten Anfrage schliesst
+ * (KeepAliveTimeout) und die Probe nur einmal je Minute erfolgt.
  *
  * Die CPU-Auslastung bezieht sich auf das CPU-Limit des Containers (cpu.max);
  * ohne Limit gilt ein Kern als Bezugsgroesse. Der Wert ist damit unabhaengig
@@ -34,7 +43,7 @@ final class AuthMetricsService
     /** Zeitfenster der CPU-Kennzahlen (Stunden). */
     public const CPU_WINDOW_HOURS = 12;
 
-    /** Zeitfenster der Verbindungs-Kennzahlen (Stunden). */
+    /** Zeitfenster der Verbindungs- und Anfrage-Kennzahlen (Stunden). */
     public const TCP_WINDOW_HOURS = 24;
 
     /** Aufbewahrung der Proben (Stunden). */
@@ -52,7 +61,7 @@ final class AuthMetricsService
     /** Laengenbegrenzung eines Quellnetz-Namens (Zeichen). */
     public const MAX_SOURCE_LENGTH = 64;
 
-    /** Hoechstwert der Verbindungen je Probe. */
+    /** Hoechstwert der im Messfenster aufgebauten Verbindungen je Probe. */
     public const MAX_CONNECTIONS = 1000000;
 
     /** Ab dieser Zeit ohne Probe gelten die Werte als veraltet (Sekunden). */
@@ -89,7 +98,7 @@ final class AuthMetricsService
             date('Y-m-d H:i:s', $now),
             $sample['cpu_percent'],
             $sample['cpu_limit'],
-            $sample['tcp_open'],
+            $sample['connections'],
             $sample['sources']
         );
         $this->repository->prune(date('Y-m-d H:i:s', $now - self::RETENTION_HOURS * 3600));
@@ -128,11 +137,11 @@ final class AuthMetricsService
     /**
      * Prueft und normalisiert eine Probe des auth-Containers.
      *
-     * Erwartet cpu_percent, cpu_limit, tcp_open und sources; sources ist ein
-     * JSON-Objekt (Quellnetz => Verbindungen) oder ein Array.
+     * Erwartet cpu_percent, cpu_limit, connections und sources; sources ist ein
+     * JSON-Objekt (Quellnetz => Anfragen) oder ein Array.
      *
      * @param array<string,mixed> $payload
-     * @return array{cpu_percent:float,cpu_limit:float,tcp_open:int,sources:array<string,int>}
+     * @return array{cpu_percent:float,cpu_limit:float,connections:int,sources:array<string,int>}
      * @throws ValidationException
      */
     public static function validate(array $payload): array
@@ -149,9 +158,9 @@ final class AuthMetricsService
             $errors['cpu_limit'] = 'Das CPU-Limit muss eine Zahl groesser 0 sein.';
         }
 
-        $tcpOpen = self::count($payload['tcp_open'] ?? null);
-        if ($tcpOpen === null) {
-            $errors['tcp_open'] = 'Die Zahl der Verbindungen muss eine ganze Zahl sein.';
+        $connections = self::count($payload['connections'] ?? null);
+        if ($connections === null) {
+            $errors['connections'] = 'Die Zahl der Verbindungen muss eine ganze Zahl sein.';
         }
 
         $sources = self::sources($payload['sources'] ?? null);
@@ -166,7 +175,7 @@ final class AuthMetricsService
         return [
             'cpu_percent' => (float) $cpuPercent,
             'cpu_limit' => (float) $cpuLimit,
-            'tcp_open' => (int) $tcpOpen,
+            'connections' => (int) $connections,
             'sources' => (array) $sources,
         ];
     }
@@ -187,7 +196,7 @@ final class AuthMetricsService
     /**
      * Baut die Anzeige der Karte aus den Proben der letzten 24 Stunden.
      *
-     * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,tcp_open:int,sources:?string}> $rows
+     * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,connections:int,sources:?string}> $rows
      * @return array<string,mixed>
      */
     public static function buildCard(array $rows, int $now): array
@@ -230,7 +239,7 @@ final class AuthMetricsService
             }
 
             if ($at >= $tcpFrom) {
-                $tcpValues[] = $row['tcp_open'];
+                $tcpValues[] = $row['connections'];
             }
         }
 
@@ -259,8 +268,8 @@ final class AuthMetricsService
                 'window' => self::CPU_WINDOW_HOURS,
             ],
             'tcp' => [
-                'open' => $latest['tcp_open'],
-                'peak' => $tcpValues === [] ? $latest['tcp_open'] : max($tcpValues),
+                'connections' => $latest['connections'],
+                'peak' => $tcpValues === [] ? $latest['connections'] : max($tcpValues),
                 'avg' => round(self::average($tcpValues), 1),
                 'window' => self::TCP_WINDOW_HOURS,
             ],
@@ -276,7 +285,7 @@ final class AuthMetricsService
      * laufenden Abschnitt; fehlende Proben bleiben leer (Luecke), sie zaehlen
      * nicht als Nullwert. Jeder Abschnitt traegt das Mittel seiner Proben.
      *
-     * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,tcp_open:int,sources:?string}> $rows
+     * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,connections:int,sources:?string}> $rows
      * @return array<string,mixed>
      */
     public static function buildHistory(array $rows, int $now): array
@@ -308,9 +317,9 @@ final class AuthMetricsService
 
             $samples++;
             $cpuBuckets[$index][] = $row['cpu_percent'];
-            $tcpBuckets[$index][] = $row['tcp_open'];
+            $tcpBuckets[$index][] = $row['connections'];
             $cpuValues[] = $row['cpu_percent'];
-            $tcpValues[] = $row['tcp_open'];
+            $tcpValues[] = $row['connections'];
 
             if ($cpuPeak === null || $row['cpu_percent'] > $cpuPeak) {
                 $cpuPeak = $row['cpu_percent'];
@@ -394,10 +403,9 @@ final class AuthMetricsService
     }
 
     /**
-     * Verteilung der offenen Verbindungen der letzten Probe, groesste Gruppe
-     * zuerst.
+     * Verteilung der Anfragen der letzten Probe, groesste Gruppe zuerst.
      *
-     * @param array{recorded_at:string,cpu_percent:float,cpu_limit:float,tcp_open:int,sources:?string} $latest
+     * @param array{recorded_at:string,cpu_percent:float,cpu_limit:float,connections:int,sources:?string} $latest
      * @return list<array{network:string,count:int,share:float}>
      */
     private static function sourcesOf(array $latest): array

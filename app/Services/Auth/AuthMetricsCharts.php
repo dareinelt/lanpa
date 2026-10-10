@@ -90,7 +90,7 @@ final class AuthMetricsCharts
     }
 
     /**
-     * Offene TCP-Verbindungen.
+     * Verbindungen je Messung (Summe des Messfensters).
      *
      * @param array<string,mixed> $history
      */
@@ -103,9 +103,9 @@ final class AuthMetricsCharts
 
         return $this->render(
             $history,
-            'Offene TCP-Verbindungen im Reverse-Proxy',
-            'Verlauf der offenen eingehenden TCP-Verbindungen als Mittel je Zeitabschnitt.',
-            [['values' => $values, 'color' => self::TCP_COLOR, 'label' => 'Offene Verbindungen']],
+            'Verbindungen im Reverse-Proxy je Messung',
+            'Verlauf der im Messfenster aufgebauten eingehenden TCP-Verbindungen als Mittel je Zeitabschnitt.',
+            [['values' => $values, 'color' => self::TCP_COLOR, 'label' => 'Verbindungen']],
             self::axis(self::peak($values)),
             [],
             'count'
@@ -113,7 +113,7 @@ final class AuthMetricsCharts
     }
 
     /**
-     * Offene Verbindungen je Quellnetz (eine Linie je Netz).
+     * Anfragen je Quellnetz (eine Linie je Netz).
      *
      * @param array<string,mixed> $history
      */
@@ -141,8 +141,8 @@ final class AuthMetricsCharts
 
         return $this->render(
             $history,
-            'Offene Verbindungen je Quellnetz',
-            'Verlauf der offenen eingehenden TCP-Verbindungen je Quellnetz als Mittel je Zeitabschnitt.',
+            'Anfragen je Quellnetz',
+            'Verlauf der Anfragen je Quellnetz als Mittel je Zeitabschnitt.',
             $series,
             self::axis($peak),
             [],

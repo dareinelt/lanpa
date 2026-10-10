@@ -1,20 +1,30 @@
 #!/usr/bin/env python3
 """Kennzahlen des auth-Containers fuer die Karte auf dem Admin-Dashboard.
 
-Gemessen wird im Container selbst (cgroup des Containers, /proc/net/tcp):
+Gemessen wird im Container selbst (cgroup und das Zugriffsprotokoll des
+Proxys); jede Probe umfasst das Messfenster seit der vorherigen Probe:
 
   cpu_percent  CPU-Auslastung bezogen auf das CPU-Limit des Containers
                (cpu.max bzw. cfs_quota/cfs_period; ohne Limit gilt ein Kern)
   cpu_limit    Bezugsgroesse der Messung in Kernen
-  tcp_open     offene eingehende TCP-Verbindungen (Zustand ESTABLISHED auf
-               einem Port, auf dem der Container lauscht)
-  sources      deren Quellnetze als JSON-Objekt (IPv4 /24, IPv6 /64,
-               "lokal" fuer Loopback; ab MAX_SOURCES als "weitere")
+  connections  im Messfenster aufgebaute Verbindungen von Clients; Quelle ist
+               das Zugriffsprotokoll (LOG_PATH), das je Zeile die
+               Client-Adresse und den Quellport enthaelt. Mehrere Anfragen
+               einer Keep-Alive-Verbindung zaehlen dadurch nur einmal.
+  sources      Anfragen je Quellnetz im Messfenster als JSON-Objekt
+               (IPv4 /24, IPv6 /64, "lokal" fuer Loopback; ab MAX_SOURCES als
+               "weitere"); dieselbe Quelle, nach jedem Lesen geleert
+
+Eine Momentaufnahme offener Verbindungen waere hier unbrauchbar: Apache
+schliesst eine untaetige Verbindung nach wenigen Sekunden (KeepAliveTimeout),
+sodass eine Probe im Minutentakt sie fast nie antrifft. Ein Zaehler des
+Betriebssystems (PassiveOpens) zaehlt ausserdem die Healthchecks des
+Containers mit und stuende damit dauerhaft ueber null.
 
 Jede Probe geht an POST /internal/auth-metrics der Anwendung (gemeinsames
 Token aus dem Volume sso_token, Header X-Intranet-Sso-Token). Gespeichert
-werden nur Zaehler; die Anwendung bildet daraus aktuelle Werte, Spitzen und
-Mittel.
+werden nur Zaehler; die Anwendung bildet daraus die Werte des Messfensters,
+Spitzen und Mittel.
 
 Aufruf:
   metrics.py loop   Endlosschleife (vom entrypoint gestartet)
@@ -53,10 +63,10 @@ MAX_SOURCES = 12
 # Zeitlimit fuer die Meldung an die Anwendung (Sekunden).
 TIMEOUT = 10
 
-# Zustaende einer TCP-Verbindung in /proc/net/tcp (01 = ESTABLISHED,
-# 0A = LISTEN).
-TCP_ESTABLISHED = "01"
-TCP_LISTEN = "0A"
+# Zugriffsprotokoll des Proxys: eine Zeile je Anfrage mit der Client-Adresse
+# und ihrem Quellport (common.conf, CustomLog nur mit -D AUTH_METRICS). Es wird
+# nach jedem Lesen geleert und bleibt damit klein.
+LOG_PATH = "/var/log/apache2/intranet-metrics.log"
 
 CGROUP_USAGE_FILES = (
     "/sys/fs/cgroup/cpu.stat",
@@ -122,35 +132,17 @@ def cpu_limit_cores() -> float:
     return 1.0
 
 
-def decode_address(address: str) -> bytes | None:
-    """Adresse aus /proc/net/tcp dekodieren (je 32-Bit-Wort umgekehrte Bytes)."""
-    try:
-        packed = bytes.fromhex(address)
-    except ValueError:
-        return None
-
-    if len(packed) not in (4, 16):
-        return None
-
-    return b"".join(packed[offset : offset + 4][::-1] for offset in range(0, len(packed), 4))
-
-
 def source_label(address: str) -> str:
-    """Quellnetz einer Verbindung aus der Adresse in /proc/net/tcp."""
-    packed = decode_address(address)
-    if packed is None:
-        return "unbekannt"
-
+    """Quellnetz einer Client-Adresse aus dem Zugriffsprotokoll."""
     try:
-        if len(packed) == 16:
-            host = ipaddress.IPv6Address(packed)
-            mapped = host.ipv4_mapped
-            if mapped is not None:
-                host = mapped
-        else:
-            host = ipaddress.IPv4Address(packed)
+        host = ipaddress.ip_address(address)
     except ValueError:
         return "unbekannt"
+
+    if host.version == 6:
+        mapped = host.ipv4_mapped
+        if mapped is not None:
+            host = mapped
 
     if host.is_loopback:
         return "lokal"
@@ -160,46 +152,46 @@ def source_label(address: str) -> str:
     return str(ipaddress.ip_network(f"{host}/{prefix}", strict=False))
 
 
-def port_of(address: str) -> int | None:
-    """Port aus "ADRESSE:PORT" in /proc/net/tcp (Hexadezimal)."""
-    try:
-        return int(address.rsplit(":", 1)[1], 16)
-    except (IndexError, ValueError):
-        return None
+def read_log(path: str) -> list[str]:
+    """Zeilen des Zugriffsprotokolls im Messfenster; die Datei wird danach geleert.
 
-
-def tcp_connections() -> tuple[int, dict[str, int]]:
-    """Offene eingehende TCP-Verbindungen und ihre Quellnetze (nur Zaehler).
-
-    Gezaehlt werden nur Verbindungen auf einem Port, auf dem der Container
-    lauscht; ausgehende Verbindungen des Proxys zum Anwendungsserver bleiben
-    damit aussen vor.
+    Gelesen wird von vorne; damit sind ein Umlauf oder eine Kuerzung der Datei
+    unproblematisch. Zwischen Lesen und Leeren eintreffende Zeilen gehen
+    verloren (selten und fuer die Anzeige unerheblich).
     """
-    entries: list[list[str]] = []
-    ports: set[int] = set()
+    try:
+        with open(path, "r+", encoding="ascii", errors="replace") as handle:
+            lines = handle.read()
+            handle.seek(0)
+            handle.truncate(0)
+    except OSError:
+        return []
 
-    for path in ("/proc/net/tcp", "/proc/net/tcp6"):
-        for line in read_file(path).splitlines()[1:]:
-            fields = line.split()
-            if len(fields) < 4:
-                continue
-            entries.append(fields)
-            if fields[3] == TCP_LISTEN:
-                port = port_of(fields[1])
-                if port is not None:
-                    ports.add(port)
+    return lines.splitlines()
 
-    total = 0
+
+def window_traffic(path: str) -> tuple[int, dict[str, int]]:
+    """Verbindungen und Anfragen je Quellnetz im Messfenster.
+
+    Eine Zeile ist "<Client-Adresse> <Quellport>" (common.conf). Verbindungen
+    werden ueber Adresse und Quellport unterschieden, sodass eine
+    Keep-Alive-Verbindung mit mehreren Anfragen nur einmal zaehlt.
+    """
+    connections: set[tuple[str, str]] = set()
     sources: dict[str, int] = {}
 
-    for fields in entries:
-        if fields[3] != TCP_ESTABLISHED or port_of(fields[1]) not in ports:
+    for line in read_log(path):
+        fields = line.split()
+        if not fields:
             continue
-        total += 1
-        label = source_label(fields[2].rsplit(":", 1)[0])
+
+        address = fields[0]
+        port = fields[1] if len(fields) > 1 else ""
+        connections.add((address, port))
+        label = source_label(address)
         sources[label] = sources.get(label, 0) + 1
 
-    return total, sources
+    return len(connections), sources
 
 
 def compact_sources(sources: dict[str, int]) -> dict[str, int]:
@@ -214,7 +206,10 @@ def compact_sources(sources: dict[str, int]) -> dict[str, int]:
     return kept
 
 
-def measure(previous: tuple[float, float | None] | None, window: int) -> tuple[dict[str, object], tuple[float, float | None]]:
+def measure(
+    previous: tuple[float, float | None] | None,
+    window: int,
+) -> tuple[dict[str, object], tuple[float, float | None]]:
     """Eine Probe; ohne vorherige Messung wird `window` Sekunden gemessen."""
     if previous is None:
         previous = (time.monotonic(), cpu_usage_seconds())
@@ -230,11 +225,12 @@ def measure(previous: tuple[float, float | None] | None, window: int) -> tuple[d
         percent = (usage - previous[1]) / (elapsed * limit) * 100
         percent = min(100.0, max(0.0, percent))
 
-    total, sources = tcp_connections()
+    connections, sources = window_traffic(LOG_PATH)
+
     values: dict[str, object] = {
         "percent": percent,
         "limit": limit,
-        "tcp_open": total,
+        "connections": connections,
         "sources": compact_sources(sources),
     }
 
@@ -248,7 +244,7 @@ def payload(values: dict[str, object]) -> dict[str, str]:
     return {
         "cpu_percent": f"{0.0 if percent is None else float(percent):.2f}",
         "cpu_limit": f"{float(values['limit']):.2f}",
-        "tcp_open": str(int(values["tcp_open"])),
+        "connections": str(int(values["connections"])),
         "sources": json.dumps(values["sources"], sort_keys=True),
     }
 
@@ -274,8 +270,15 @@ def report(url: str, token: str, fields: dict[str, str]) -> int:
         return int(response.status)
 
 
-def describe(fields: dict[str, str]) -> str:
-    return f"CPU {fields['cpu_percent']} % von {fields['cpu_limit']} Kern(en), {fields['tcp_open']} offene Verbindungen"
+def describe(values: dict[str, object]) -> str:
+    sources = values["sources"]
+    requests = sum(sources.values()) if isinstance(sources, dict) else 0
+    percent = 0.0 if values["percent"] is None else float(values["percent"])
+
+    return (
+        f"CPU {percent:.2f} % von {float(values['limit']):.2f} Kern(en), "
+        f"{int(values['connections'])} Verbindungen und {requests} Anfragen im Messfenster"
+    )
 
 
 def send(url: str, token_file: str, values: dict[str, object]) -> bool:
@@ -293,7 +296,7 @@ def send(url: str, token_file: str, values: dict[str, object]) -> bool:
 
         return False
 
-    log(f"Kennzahlen gemeldet (HTTP {status}): {describe(fields)}.")
+    log(f"Kennzahlen gemeldet (HTTP {status}): {describe(values)}.")
 
     return True
 

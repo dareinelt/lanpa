@@ -123,8 +123,8 @@ $incidentAlert = $incidentAlert ?? null;
             </ul>
             <details class="auth-metrics__details">
                 <summary class="auth-metrics__subtitle">
-                    <span>Offene TCP-Verbindungen</span>
-                    <span class="auth-metrics__summary-value"><?= (int) $tcp['open'] ?></span>
+                    <span>Verbindungen (seit der letzten Messung)</span>
+                    <span class="auth-metrics__summary-value"><?= (int) $tcp['connections'] ?></span>
                 </summary>
                 <ul class="status-list">
                     <li><span>Spitze (<?= (int) $tcp['window'] ?> h)</span><span><?= (int) $tcp['peak'] ?></span></li>
@@ -136,13 +136,13 @@ $incidentAlert = $incidentAlert ?? null;
             </details>
             <details class="auth-metrics__details">
                 <summary class="auth-metrics__subtitle">
-                    <span>Verbindungen nach Quellnetz</span>
+                    <span>Anfragen nach Quellnetz</span>
                     <span class="auth-metrics__summary-value">
                         <?= count($sources) ?> <?= count($sources) === 1 ? 'Netz' : 'Netze' ?>
                     </span>
                 </summary>
                 <?php if ($sources === []) { ?>
-                    <p class="card__hint">Zur letzten Messung bestanden keine offenen Verbindungen.</p>
+                    <p class="card__hint">Zur letzten Messung sind keine Anfragen aus Quellnetzen eingegangen.</p>
                 <?php } else { ?>
                     <ul class="auth-metrics__sources">
                         <?php foreach ($sources as $source) { ?>

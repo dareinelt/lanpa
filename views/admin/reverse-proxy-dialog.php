@@ -74,8 +74,8 @@ $charts = new AuthMetricsCharts();
                         </ul>
                     </div>
                     <div>
-                        <p class="metric"><?= (int) $tcp['open'] ?></p>
-                        <p class="card__hint">Offene TCP-Verbindungen (aktuell)</p>
+                        <p class="metric"><?= (int) $tcp['connections'] ?></p>
+                        <p class="card__hint">Verbindungen seit der letzten Messung</p>
                         <ul class="status-list">
                             <li>
                                 <span>Spitze (<?= (int) $tcp['window'] ?> h)</span>
@@ -95,18 +95,18 @@ $charts = new AuthMetricsCharts();
             </section>
 
             <section class="auth-metrics-dialog__section">
-                <h3>Verbindungen nach Quellnetz</h3>
+                <h3>Anfragen nach Quellnetz</h3>
                 <?php if ($sources === []) { ?>
-                    <p class="card__hint">Zur letzten Messung bestanden keine offenen Verbindungen.</p>
+                    <p class="card__hint">Zur letzten Messung sind keine Anfragen aus Quellnetzen eingegangen.</p>
                 <?php } else { ?>
                     <table class="auth-metrics-dialog__table">
                         <caption class="card__hint">
-                            Offene Verbindungen der letzten Messung, Anteil daran und Spitze im Verlauf.
+                            Anfragen der letzten Messung, Anteil daran und Spitze im Verlauf.
                         </caption>
                         <thead>
                             <tr>
                                 <th scope="col">Quellnetz</th>
-                                <th scope="col">Offen</th>
+                                <th scope="col">Anfragen</th>
                                 <th scope="col">Anteil</th>
                                 <th scope="col">Spitze (<?= $historyHours ?> h)</th>
                             </tr>
@@ -147,7 +147,7 @@ $charts = new AuthMetricsCharts();
                 </figure>
 
                 <figure class="auth-metrics-dialog__figure">
-                    <figcaption>Offene TCP-Verbindungen</figcaption>
+                    <figcaption>Verbindungen je Messung</figcaption>
                     <?= $charts->tcp($history) ?>
                     <p class="card__hint">
                         Spitze <?= (int) ($historyTcp['peak'] ?? 0) ?>,
@@ -156,7 +156,7 @@ $charts = new AuthMetricsCharts();
                 </figure>
 
                 <figure class="auth-metrics-dialog__figure">
-                    <figcaption>Offene Verbindungen je Quellnetz</figcaption>
+                    <figcaption>Anfragen je Quellnetz</figcaption>
                     <?= $charts->sources($history) ?>
                     <?php if ($historySources !== []) { ?>
                         <ul class="auth-metrics-dialog__legend">

@@ -104,10 +104,11 @@ final class InternalController
     }
 
     /**
-     * Kennzahlen des auth-Containers (CPU-Auslastung im Container, offene
-     * TCP-Verbindungen und deren Quellnetze). Der Container misst selbst
-     * (docker/auth/metrics.py) und meldet jede Probe; die Anwendung prueft und
-     * speichert sie fuer die Karte auf dem Admin-Dashboard.
+     * Kennzahlen des auth-Containers (CPU-Auslastung im Container sowie die im
+     * Messfenster aufgebauten Client-Verbindungen und die Anfragen je
+     * Quellnetz). Der Container misst selbst (docker/auth/metrics.py) und
+     * meldet jede Probe; die Anwendung prueft und speichert sie fuer die Karte
+     * auf dem Admin-Dashboard.
      */
     public function authMetrics(Request $request): Response
     {
@@ -123,7 +124,7 @@ final class InternalController
             Container::authMetrics()->record([
                 'cpu_percent' => $request->input('cpu_percent'),
                 'cpu_limit' => $request->input('cpu_limit'),
-                'tcp_open' => $request->input('tcp_open'),
+                'connections' => $request->input('connections'),
                 'sources' => $request->input('sources'),
             ]);
         } catch (ValidationException $exception) {

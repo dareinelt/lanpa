@@ -253,7 +253,13 @@ sync_once() {
     if [ -f "$CONF_FILE" ]; then
         cp "$CONF_FILE" "$work/previous"
     fi
-    install -m 0644 "$work/conf" "$CONF_FILE"
+    conf_dir="$(dirname "$CONF_FILE")"
+    [ -d "$conf_dir" ] || mkdir -p "$conf_dir"
+    if ! install -m 0644 "$work/conf" "$CONF_FILE"; then
+        warn "Weiterleitungskonfiguration konnte nicht nach ${CONF_FILE} geschrieben werden."
+        rm -rf "$work"
+        return 2
+    fi
     if ! apache2ctl -t >/dev/null 2>&1; then
         warn "Erzeugte Weiterleitungskonfiguration ist ungueltig - bisherige bleibt aktiv."
         apache2ctl -t >&2 || true
@@ -279,6 +285,8 @@ case "${1:-once}" in
         # Ohne erreichbare Anwendung bleibt die Konfiguration leer; der
         # Adressraum /weiterleitung/ zeigt dann die Hinweisseite.
         if [ "$result" -eq 2 ] && [ ! -f "$CONF_FILE" ]; then
+            conf_dir="$(dirname "$CONF_FILE")"
+            [ -d "$conf_dir" ] || mkdir -p "$conf_dir"
             generate /dev/null > "$CONF_FILE"
             log "Weiterleitungsziele noch nicht verfuegbar - leerer Adressraum aktiv."
         fi

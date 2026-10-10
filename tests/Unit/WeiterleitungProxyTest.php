@@ -128,6 +128,9 @@ Runner::test('Weiterleitung: Zertifikat des Ziels wird geprueft, Reload nur nach
     $reload = strpos($script, 'apache2ctl graceful');
     Assert::true($test !== false && $reload !== false && $test < $reload, 'Reload erst nach apache2ctl -t.');
     Assert::contains('cmp -s "$work/conf" "$CONF_FILE"', $script);
+    // Zielverzeichnis anlegen und Schreibfehler melden, statt Erfolg zu behaupten.
+    Assert::contains('mkdir -p "$conf_dir"', $script);
+    Assert::contains('konnte nicht nach ${CONF_FILE} geschrieben werden', $script);
     Assert::contains('-H "@${work}/header"', $script);
     Assert::contains('X-Intranet-Sso-Token', $script);
 });

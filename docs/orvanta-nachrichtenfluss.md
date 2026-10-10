@@ -583,9 +583,10 @@ Bildschirm oder die Leitwarte.
 | Ziehen | 3D drehen; mit Umschalt-, mittlerer oder rechter Maustaste verschieben (2D: immer verschieben) |
 | Mausrad / Pinch | Zoom um den Zeiger |
 | Klick / Doppelklick | Knoten wählen bzw. zentrieren; Doppelklick ins Leere passt ein |
-| `←↑→↓`, `+`/`-`, `0` | drehen bzw. verschieben, zoomen, einpassen |
-| `2`/`3`, `R`, `P`, `L`, `!`, `F` | 2D/3D, Drehung, Partikel, Beschriftung, nur Probleme, Vollbild |
-| `N`, `Leertaste`, `Enter`, `Esc` | nächste Störung, Aktualisieren, Link des Knotens öffnen, Auswahl aufheben |
+| `←↑→↓`, `+`/`-` | drehen bzw. verschieben, zoomen |
+| `0`, `F` | Ansicht zurücksetzen, einpassen |
+| `2`/`3`, `R`, `P`, `L`, `!` | 2D/3D, Aktualisieren, Partikel, Beschriftung, nur Probleme |
+| `N`, `Umschalt+N`, `Leertaste`, `Enter`, `Esc` | nächster/voriger Knoten mit Störung, Auto-Drehung, Auswahl zentrieren, Auswahl aufheben |
 
 ### 14.4 Daten
 
@@ -600,6 +601,9 @@ Dateien: `views/admin/orvanta-flow-topology.php`,
 `public/assets/js/admin-orvanta-flow-topology.js`,
 `public/assets/css/orvanta-flow-topology.css`; Tests in
 `tests/Unit/OrvantaFlowTest.php` (Abschnitt „Topologie-Ansicht“).
+Technische Referenz: [`docs/topologie-referenz.md`](topologie-referenz.md)
+(Aufbau, Datenvertrag, Zustandsregeln, Anordnung, Animationen, Interaktion,
+Aktualisierung, Eigenheiten).
 
 ### 14.5 Zuordnung der Identitätsquellen (Screenshot)
 

@@ -3,12 +3,14 @@
 declare(strict_types=1);
 
 use App\Security\Csrf;
+use App\Services\Auth\AuthMetricsService;
 use App\Support\Dates;
 use App\Support\Html;
 
 /** @var array<string,mixed>|null $lastSync */
 /** @var array<string,mixed>|null $lastSuccessfulSync */
 /** @var array{count:int,users:list<string>,target:string,freeze:bool,title:string,message:string}|null $incidentAlert */
+/** @var array<string,mixed> $authMetrics Kennzahlen des auth-Containers (siehe AuthMetricsService::card()) */
 $incidentAlert = $incidentAlert ?? null;
 ?>
 <?php if ($incidentAlert !== null) { ?>
@@ -78,4 +80,95 @@ $incidentAlert = $incidentAlert ?? null;
         </ul>
         <p><a class="button button--ghost" href="/admin/statistik">Zur Statistik</a></p>
     </section>
+
+    <?php
+    /** @var array<string,mixed> $authMetrics */
+    /** @var array<string,mixed> $authMetricsHistory Verlauf (AuthMetricsService::history()) */
+    $cpu = is_array($authMetrics['cpu'] ?? null) ? $authMetrics['cpu'] : null;
+    $tcp = is_array($authMetrics['tcp'] ?? null) ? $authMetrics['tcp'] : null;
+    $sources = is_array($authMetrics['sources'] ?? null) ? $authMetrics['sources'] : [];
+    $cpuLevel = (string) ($cpu['level'] ?? 'ok');
+    $hasMetrics = $cpu !== null && $tcp !== null;
+    $percent = static fn (float $value): string => number_format($value, 1, ',', '.') . ' %';
+    ?>
+    <section
+        class="card auth-metrics"
+        data-state="<?= Html::e($cpuLevel) ?>"<?= $hasMetrics ? ' data-auth-metrics-card tabindex="0" aria-haspopup="dialog"' : '' ?>
+    >
+        <h2 class="card__title">Reverse-Proxy</h2>
+        <?php if (!$hasMetrics) { ?>
+            <p class="card__hint">
+                Noch keine Messwerte empfangen. Der auth-Container misst die Werte in seinem Inneren und meldet sie
+                im Minutentakt.
+            </p>
+        <?php } else { ?>
+            <p class="metric auth-metrics__value auth-metrics__value--<?= Html::e($cpuLevel) ?>">
+                <?= Html::e($percent((float) $cpu['current'])) ?>
+            </p>
+            <p class="card__hint">CPU-Last im Container (aktuell)</p>
+            <ul class="status-list">
+                <li>
+                    <span>Spitze (<?= (int) $cpu['window'] ?> h)</span>
+                    <span>
+                        <?= Html::e($percent((float) $cpu['peak'])) ?>
+                        <?php if (($cpu['peak_at'] ?? null) !== null) { ?>
+                            <span class="card__hint"><?= Html::e((string) $cpu['peak_at']) ?></span>
+                        <?php } ?>
+                    </span>
+                </li>
+                <li>
+                    <span>Mittel (<?= (int) $cpu['window'] ?> h)</span>
+                    <span><?= Html::e($percent((float) $cpu['avg'])) ?></span>
+                </li>
+            </ul>
+            <details class="auth-metrics__details">
+                <summary class="auth-metrics__subtitle">
+                    <span>Offene TCP-Verbindungen</span>
+                    <span class="auth-metrics__summary-value"><?= (int) $tcp['open'] ?></span>
+                </summary>
+                <ul class="status-list">
+                    <li><span>Spitze (<?= (int) $tcp['window'] ?> h)</span><span><?= (int) $tcp['peak'] ?></span></li>
+                    <li>
+                        <span>Mittel (<?= (int) $tcp['window'] ?> h)</span>
+                        <span><?= Html::e(number_format((float) $tcp['avg'], 1, ',', '.')) ?></span>
+                    </li>
+                </ul>
+            </details>
+            <details class="auth-metrics__details">
+                <summary class="auth-metrics__subtitle">
+                    <span>Verbindungen nach Quellnetz</span>
+                    <span class="auth-metrics__summary-value">
+                        <?= count($sources) ?> <?= count($sources) === 1 ? 'Netz' : 'Netze' ?>
+                    </span>
+                </summary>
+                <?php if ($sources === []) { ?>
+                    <p class="card__hint">Zur letzten Messung bestanden keine offenen Verbindungen.</p>
+                <?php } else { ?>
+                    <ul class="auth-metrics__sources">
+                        <?php foreach ($sources as $source) { ?>
+                            <?php $share = (float) ($source['share'] ?? 0); ?>
+                            <li>
+                                <span class="auth-metrics__network"><?= Html::e((string) $source['network']) ?></span>
+                                <span class="auth-metrics__count"><?= (int) $source['count'] ?></span>
+                                <progress
+                                    class="fillbar"
+                                    max="100"
+                                    value="<?= Html::e(number_format($share, 1, '.', '')) ?>"
+                                    aria-label="<?= Html::e('Anteil ' . (string) $source['network']) ?>"
+                                    aria-valuetext="<?= Html::e($percent($share)) ?>"
+                                ><?= Html::e($percent($share)) ?></progress>
+                            </li>
+                        <?php } ?>
+                    </ul>
+                <?php } ?>
+            </details>
+            <?php if (!empty($authMetrics['stale'])) { ?>
+                <p class="flash flash--error">
+                    Seit <?= Html::e((string) $authMetrics['recorded_at']) ?> sind keine neuen Messwerte eingegangen –
+                    der auth-Container meldet derzeit nicht.
+                </p>
+            <?php } ?>
+        <?php } ?>
+    </section>
 </div>
+<?php require __DIR__ . '/reverse-proxy-dialog.php'; ?>

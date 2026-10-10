@@ -36,6 +36,9 @@ final class DashboardController extends AdminController
             'ldapConfigured' => $settings->isLdapConfigured(),
             'ldapExtensionAvailable' => LdapClient::isSupported(),
             'incidentAlert' => Container::incidents()->dashboardAlert(),
+            'authMetrics' => Container::authMetrics()->card(),
+            'authMetricsHistory' => Container::authMetrics()->history(),
+            'extraScripts' => ['admin-auth-metrics.js', 'admin-auth-metrics-chart.js'],
         ]);
     }
 }

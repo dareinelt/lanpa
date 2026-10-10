@@ -61,6 +61,7 @@ $navItems = $isAdmin ? [
     'statistics' => ['/admin/statistik', 'Statistik'],
     'system' => ['/admin/zertifikate', 'System', [
         'certificates' => ['/admin/zertifikate', 'Zertifikate (HTTPS)'],
+        'topology' => ['/admin/topologie', 'Topologie'],
         'snmp' => ['/admin/snmp', 'SNMP'],
         'source_networks' => ['/admin/quellnetze', 'Bekannte Quellnetze'],
         'users' => ['/admin/benutzer', 'Benutzer'],

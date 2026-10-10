@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Core;
 
 use App\Repositories\ActivationNumberRepository;
+use App\Repositories\AdminUserPreferenceRepository;
 use App\Repositories\AdminUserRepository;
 use App\Repositories\AlarmGroupRepository;
 use App\Repositories\AlarmLogRepository;
@@ -65,6 +66,9 @@ use App\Services\Storage\SnapshotService;
 use App\Services\Storage\StorageService;
 use App\Services\ThemeService;
 use App\Services\Tls\TlsCertificateService;
+use App\Services\Topology\LanpaTopologyService;
+use App\Services\Topology\TopologyCollector;
+use App\Services\Topology\TopologyVisibilityService;
 
 /**
  * Sehr einfacher Service-Container (Singletons pro Request).
@@ -1348,6 +1352,33 @@ final class Container
                         return false;
                     }
                 }
+            )
+        );
+    }
+
+    /**
+     * Gesamt-Topologie der Anwendung: Sammelt vorhandene Zustaende (lesend) und
+     * baut daraus den Graphen fuer die Topologie-Ansicht.
+     */
+    public static function lanpaTopology(): LanpaTopologyService
+    {
+        return self::make(
+            LanpaTopologyService::class,
+            static fn (): LanpaTopologyService => new LanpaTopologyService(new TopologyCollector())
+        );
+    }
+
+    /**
+     * Im Entwurfsmodus ausgeblendete Bausteine der Topologie-Ansicht: global in
+     * der Tabelle settings, persoenlich in admin_user_preferences.
+     */
+    public static function topologyVisibility(): TopologyVisibilityService
+    {
+        return self::make(
+            TopologyVisibilityService::class,
+            static fn (): TopologyVisibilityService => new TopologyVisibilityService(
+                self::settings(),
+                new AdminUserPreferenceRepository()
             )
         );
     }

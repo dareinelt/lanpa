@@ -62,6 +62,7 @@ $navItems = $isAdmin ? [
     'system' => ['/admin/zertifikate', 'System', [
         'certificates' => ['/admin/zertifikate', 'Zertifikate (HTTPS)'],
         'snmp' => ['/admin/snmp', 'SNMP'],
+        'source_networks' => ['/admin/quellnetze', 'Bekannte Quellnetze'],
         'users' => ['/admin/benutzer', 'Benutzer'],
         'backup' => ['/admin/sicherung', 'Sicherung'],
         'smtp' => ['/admin/smtp', 'E-Mail (SMTP)'],

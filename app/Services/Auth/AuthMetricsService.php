@@ -6,7 +6,9 @@ namespace App\Services\Auth;
 
 use App\Exceptions\ValidationException;
 use App\Repositories\AuthMetricsRepository;
+use App\Services\SettingsService;
 use App\Support\Dates;
+use App\Support\SourceNetworks;
 
 /**
  * Kennzahlen des auth-Containers (Einstieg/Reverse-Proxy) fuer die Karte auf
@@ -40,6 +42,13 @@ use App\Support\Dates;
  * meldet). Aus derselben Aufbewahrung entsteht der Verlauf fuer das Overlay der
  * Karte: gleichmaessige Zeitabschnitte von HISTORY_BUCKET_MINUTES Minuten mit
  * dem Mittel der Proben je Abschnitt.
+ *
+ * Der auth-Container meldet die Quellnetze verfeinert (IPv4 /24, IPv6 /64).
+ * Unter Admin → System → Bekannte Quellnetze lassen sich groessere Netze
+ * eintragen; deren Adressbereich wird aus dem Praefix errechnet
+ * (App\Support\SourceNetworks) und die enthaltenen gemeldeten Netze werden
+ * beim Lesen zu dem bekannten Netz zusammengefasst - auch rueckwirkend fuer
+ * bereits gespeicherte Proben.
  */
 final class AuthMetricsService
 {
@@ -85,10 +94,15 @@ final class AuthMetricsService
     /**
      * @param \Closure():int|null $clock liefert den aktuellen Zeitstempel
      *                                    (Tests); ohne Angabe gilt time()
+     * @param SettingsService|null $settings fuer die bekannten Quellnetze
+     *                                      (Admin → System → Bekannte
+     *                                      Quellnetze); ohne Angabe wird
+     *                                      nichts zusammengefasst
      */
     public function __construct(
         private readonly AuthMetricsRepository $repository,
-        private readonly ?\Closure $clock = null
+        private readonly ?\Closure $clock = null,
+        private readonly ?SettingsService $settings = null
     ) {
     }
 
@@ -127,7 +141,8 @@ final class AuthMetricsService
 
         return self::buildCard(
             $this->repository->window(date('Y-m-d H:i:s', $now - self::TCP_WINDOW_HOURS * 3600)),
-            $now
+            $now,
+            $this->knownNetworks()
         );
     }
 
@@ -142,8 +157,65 @@ final class AuthMetricsService
 
         return self::buildHistory(
             $this->repository->window(date('Y-m-d H:i:s', $now - self::RETENTION_HOURS * 3600)),
-            $now
+            $now,
+            $this->knownNetworks()
         );
+    }
+
+    /**
+     * Bekannte Quellnetze aus den Einstellungen (Admin → System → Bekannte
+     * Quellnetze). Leer, wenn keine eingetragen sind.
+     *
+     * @return list<string>
+     */
+    public function knownNetworks(): array
+    {
+        if ($this->settings === null) {
+            return [];
+        }
+
+        return SourceNetworks::fromSetting($this->settings->get('auth_known_source_networks'));
+    }
+
+    /**
+     * Wirkung der bekannten Quellnetze auf die juengste Probe: je gemeldetem
+     * Quellnetz die Zahl der Anfragen und das bekannte Netz, in dem es liegt
+     * (null = bleibt einzeln), dazu die zusammengefasste Anzeige wie auf der
+     * Karte. Grundlage fuer die Vorschau im Adminbereich.
+     *
+     * @return array{recorded_at:?string,rows:list<array{network:string,count:int,target:?string}>,merged:list<array{network:string,count:int,share:float}>}
+     */
+    public function groupingPreview(): array
+    {
+        $known = $this->knownNetworks();
+        $rows = $this->repository->window(
+            date('Y-m-d H:i:s', $this->now() - self::RETENTION_HOURS * 3600)
+        );
+        if ($rows === []) {
+            return ['recorded_at' => null, 'rows' => [], 'merged' => []];
+        }
+
+        $latest = $rows[count($rows) - 1];
+        $preview = [];
+        foreach (self::rawSources($latest) as $network => $count) {
+            $preview[] = [
+                'network' => $network,
+                'count' => $count,
+                'target' => SourceNetworks::group($network, $known),
+            ];
+        }
+
+        usort(
+            $preview,
+            static fn (array $left, array $right): int => $right['count'] <=> $left['count']
+                ?: strcmp($left['network'], $right['network'])
+        );
+
+        return [
+            'recorded_at' => Dates::formatDateTime($latest['recorded_at']),
+            'rows' => $preview,
+            'merged' => self::sourcesOf($latest, $known),
+        ];
     }
 
     /**
@@ -219,9 +291,10 @@ final class AuthMetricsService
      * Baut die Anzeige der Karte aus den Proben der letzten 24 Stunden.
      *
      * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,ram_percent:?float,ram_used:?int,ram_total:?int,connections:int,sources:?string}> $rows
+     * @param list<string> $knownNetworks bekannte Quellnetze (siehe SourceNetworks)
      * @return array<string,mixed>
      */
-    public static function buildCard(array $rows, int $now): array
+    public static function buildCard(array $rows, int $now, array $knownNetworks = []): array
     {
         if ($rows === []) {
             return [
@@ -281,7 +354,7 @@ final class AuthMetricsService
             }
         }
 
-        $sources = self::sourcesOf($latest);
+        $sources = self::sourcesOf($latest, $knownNetworks);
         $sourceTotal = 0;
         foreach ($sources as $source) {
             $sourceTotal += $source['count'];
@@ -366,9 +439,10 @@ final class AuthMetricsService
      * nicht als Nullwert. Jeder Abschnitt traegt das Mittel seiner Proben.
      *
      * @param list<array{recorded_at:string,cpu_percent:float,cpu_limit:float,ram_percent:?float,ram_used:?int,ram_total:?int,connections:int,sources:?string}> $rows
+     * @param list<string> $knownNetworks bekannte Quellnetze (siehe SourceNetworks)
      * @return array<string,mixed>
      */
-    public static function buildHistory(array $rows, int $now): array
+    public static function buildHistory(array $rows, int $now, array $knownNetworks = []): array
     {
         $bucket = self::HISTORY_BUCKET_MINUTES * 60;
         $buckets = intdiv(self::RETENTION_HOURS * 3600, $bucket);
@@ -421,7 +495,7 @@ final class AuthMetricsService
                 }
             }
 
-            foreach (self::sourcesOf($row) as $source) {
+            foreach (self::sourcesOf($row, $knownNetworks) as $source) {
                 $sourceBuckets[$source['network']][$index][] = $source['count'];
             }
         }
@@ -508,28 +582,23 @@ final class AuthMetricsService
 
     /**
      * Verteilung der Anfragen der letzten Probe, groesste Gruppe zuerst.
+     * Quellnetze, die in einem bekannten Quellnetz liegen, werden zu diesem
+     * zusammengefasst (SourceNetworks::merge).
      *
      * @param array{recorded_at:string,cpu_percent:float,cpu_limit:float,connections:int,sources:?string} $latest
+     * @param list<string> $knownNetworks
      * @return list<array{network:string,count:int,share:float}>
      */
-    private static function sourcesOf(array $latest): array
+    private static function sourcesOf(array $latest, array $knownNetworks = []): array
     {
-        $raw = $latest['sources'];
-        if (!is_string($raw) || $raw === '') {
-            return [];
-        }
-
-        $decoded = json_decode($raw, true);
-        if (!is_array($decoded)) {
+        $decoded = self::rawSources($latest);
+        if ($decoded === []) {
             return [];
         }
 
         $sources = [];
-        foreach ($decoded as $network => $count) {
-            if (!is_string($network) || $network === '') {
-                continue;
-            }
-            $sources[] = ['network' => $network, 'count' => max(0, (int) $count)];
+        foreach (SourceNetworks::merge($decoded, $knownNetworks) as $network => $count) {
+            $sources[] = ['network' => (string) $network, 'count' => $count];
         }
 
         usort(
@@ -545,6 +614,35 @@ final class AuthMetricsService
 
         foreach ($sources as $index => $source) {
             $sources[$index]['share'] = $total > 0 ? round($source['count'] * 100 / $total, 1) : 0.0;
+        }
+
+        return $sources;
+    }
+
+    /**
+     * Quellnetze einer Probe ohne Zusammenfassung.
+     *
+     * @param array{sources:?string} $row
+     * @return array<string,int>
+     */
+    private static function rawSources(array $row): array
+    {
+        $raw = $row['sources'] ?? null;
+        if (!is_string($raw) || $raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $sources = [];
+        foreach ($decoded as $network => $count) {
+            if (!is_string($network) || $network === '') {
+                continue;
+            }
+            $sources[$network] = max(0, (int) $count);
         }
 
         return $sources;

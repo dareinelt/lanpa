@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use App\Exceptions\ValidationException;
 use App\Repositories\AuthMetricsRepository;
+use App\Repositories\SettingsRepository;
 use App\Services\Auth\AuthMetricsService;
+use App\Services\SettingsService;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
 
@@ -71,6 +73,24 @@ function authMetricsSeed(PDO $pdo, array $rows): void
             'sources' => $row['sources'] ?? null,
         ]);
     }
+}
+
+/**
+ * Dienst mit bekannten Quellnetzen (Einstellung in SQLite).
+ */
+function authMetricsService(PDO $pdo, int $now, string $knownNetworks = ''): AuthMetricsService
+{
+    $pdo->exec('CREATE TABLE IF NOT EXISTS settings (setting_key TEXT PRIMARY KEY, setting_value TEXT)');
+    $pdo->prepare('DELETE FROM settings WHERE setting_key = :key')
+        ->execute(['key' => 'auth_known_source_networks']);
+    $pdo->prepare('INSERT INTO settings (setting_key, setting_value) VALUES (:key, :value)')
+        ->execute(['key' => 'auth_known_source_networks', 'value' => $knownNetworks]);
+
+    return new AuthMetricsService(
+        new AuthMetricsRepository($pdo),
+        static fn (): int => $now,
+        new SettingsService(new SettingsRepository($pdo))
+    );
 }
 
 Runner::test('AuthMetrics: Probe wird geprueft und normalisiert', static function (): void {
@@ -370,4 +390,116 @@ Runner::test('AuthMetrics: Verlauf der Verbindungen und Anfragen', static functi
     Assert::same('10.20.0.0/24', $history['sources'][0]['network'], 'Netz im Verlauf');
     Assert::same(6, $history['sources'][0]['peak'], 'Spitze der Anfragen');
     Assert::same([4.0, 6.0], $present($history['sources'][0]['values']), 'Anfragen je Abschnitt');
+});
+
+Runner::test('AuthMetrics: bekannte Quellnetze fassen die Anzeige zusammen', static function (): void {
+    $pdo = authMetricsPdo();
+    $now = time();
+    authMetricsSeed($pdo, [
+        [
+            'recorded_at' => date('Y-m-d H:i:s', $now - 60),
+            'cpu_percent' => 20.0,
+            'cpu_limit' => 1.0,
+            'connections' => 20,
+            'sources' => '{"192.168.204.0/24":5,"192.168.206.0/24":7,"10.20.0.0/24":8}',
+        ],
+    ]);
+
+    $card = authMetricsService($pdo, $now, '192.168.200.0/21')->card();
+
+    Assert::same(
+        [
+            ['network' => '192.168.200.0/21', 'count' => 12, 'share' => 60.0],
+            ['network' => '10.20.0.0/24', 'count' => 8, 'share' => 40.0],
+        ],
+        $card['sources'],
+        'Die gemeldeten /24-Netze des bekannten /21 werden summiert'
+    );
+    Assert::same(20, $card['source_total'], 'Summe der Anfragen bleibt gleich');
+});
+
+Runner::test('AuthMetrics: ohne bekannte Quellnetze bleibt die Anzeige einzeln', static function (): void {
+    $pdo = authMetricsPdo();
+    $now = time();
+    authMetricsSeed($pdo, [
+        [
+            'recorded_at' => date('Y-m-d H:i:s', $now - 60),
+            'cpu_percent' => 20.0,
+            'cpu_limit' => 1.0,
+            'connections' => 20,
+            'sources' => '{"192.168.204.0/24":5,"192.168.206.0/24":7,"10.20.0.0/24":8}',
+        ],
+    ]);
+
+    $card = authMetricsService($pdo, $now)->card();
+
+    Assert::same(
+        [
+            ['network' => '10.20.0.0/24', 'count' => 8, 'share' => 40.0],
+            ['network' => '192.168.206.0/24', 'count' => 7, 'share' => 35.0],
+            ['network' => '192.168.204.0/24', 'count' => 5, 'share' => 25.0],
+        ],
+        $card['sources'],
+        'Ohne bekannte Netze bleibt jedes gemeldete Netz einzeln'
+    );
+});
+
+Runner::test('AuthMetrics: bekannte Quellnetze fassen den Verlauf zusammen', static function (): void {
+    $now = time();
+    $rows = [
+        ['recorded_at' => date('Y-m-d H:i:s', $now - 600), 'cpu_percent' => 20.0, 'cpu_limit' => 1.0, 'connections' => 10, 'sources' => '{"192.168.204.0/24":5,"10.20.0.0/24":4}'],
+        ['recorded_at' => date('Y-m-d H:i:s', $now - 300), 'cpu_percent' => 40.0, 'cpu_limit' => 1.0, 'connections' => 20, 'sources' => '{"192.168.206.0/24":7,"10.20.0.0/24":6}'],
+    ];
+
+    $history = AuthMetricsService::buildHistory($rows, $now, ['192.168.200.0/21']);
+
+    $present = static fn (array $values): array => array_values(
+        array_filter($values, static fn ($value) => $value !== null)
+    );
+
+    Assert::same(2, count($history['sources']), 'Beide /24-Netze bilden eine Reihe');
+    Assert::same('192.168.200.0/21', $history['sources'][0]['network'], 'Zusammengefasstes Netz zuerst');
+    Assert::same(7, $history['sources'][0]['peak'], 'Spitze der Anfragen');
+    Assert::same([5.0, 7.0], $present($history['sources'][0]['values']), 'Anfragen je Abschnitt');
+    Assert::same('10.20.0.0/24', $history['sources'][1]['network'], 'Fremdes Netz bleibt einzeln');
+});
+
+Runner::test('AuthMetrics: Vorschau der bekannten Quellnetze', static function (): void {
+    $pdo = authMetricsPdo();
+    $now = time();
+    authMetricsSeed($pdo, [
+        [
+            'recorded_at' => date('Y-m-d H:i:s', $now - 60),
+            'cpu_percent' => 20.0,
+            'cpu_limit' => 1.0,
+            'connections' => 20,
+            'sources' => '{"192.168.204.0/24":5,"192.168.206.0/24":7,"10.20.0.0/24":8}',
+        ],
+    ]);
+
+    $preview = authMetricsService($pdo, $now, '192.168.200.0/21')->groupingPreview();
+
+    Assert::same(date('d.m.Y H:i', $now - 60), $preview['recorded_at'], 'Stand der Messwerte');
+    Assert::same(
+        [
+            ['network' => '10.20.0.0/24', 'count' => 8, 'target' => null],
+            ['network' => '192.168.206.0/24', 'count' => 7, 'target' => '192.168.200.0/21'],
+            ['network' => '192.168.204.0/24', 'count' => 5, 'target' => '192.168.200.0/21'],
+        ],
+        $preview['rows'],
+        'Zuordnung der gemeldeten Netze'
+    );
+    Assert::same(
+        [
+            ['network' => '192.168.200.0/21', 'count' => 12, 'share' => 60.0],
+            ['network' => '10.20.0.0/24', 'count' => 8, 'share' => 40.0],
+        ],
+        $preview['merged'],
+        'Anzeige der Statistik nach der Zusammenfassung'
+    );
+
+    $empty = authMetricsService(authMetricsPdo(), $now, '192.168.200.0/21')->groupingPreview();
+    Assert::null($empty['recorded_at'], 'Ohne Proben kein Stand');
+    Assert::same([], $empty['rows'], 'Ohne Proben keine Zuordnung');
+    Assert::same([], $empty['merged'], 'Ohne Proben keine Anzeige');
 });

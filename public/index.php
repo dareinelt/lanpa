@@ -35,6 +35,7 @@ use App\Controllers\Admin\OrvantaSignatureController;
 use App\Controllers\Admin\OrvantaSharedMailboxController;
 use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
+use App\Controllers\Admin\SourceNetworksController;
 use App\Controllers\Admin\StatisticsController;
 use App\Controllers\Admin\StorageQuotaController;
 use App\Controllers\Admin\StorageController as StorageAdminController;
@@ -469,6 +470,9 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
 
         $router->get('/admin/snmp', [SnmpController::class, 'index']);
         $router->post('/admin/snmp', [SnmpController::class, 'update']);
+
+        $router->get('/admin/quellnetze', [SourceNetworksController::class, 'index']);
+        $router->post('/admin/quellnetze', [SourceNetworksController::class, 'update']);
 
         $router->get('/admin/alarmierung', [AlarmController::class, 'index']);
         $router->post('/admin/alarmierung', [AlarmController::class, 'update']);

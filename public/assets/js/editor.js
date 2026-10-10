@@ -11,6 +11,15 @@
     var parentField = form.querySelector('[data-editor-parent]');
     var contentField = form.querySelector('[data-editor-content]');
     var alarmFields = form.querySelectorAll('[data-editor-alarm]');
+    var proxyFields = form.querySelectorAll('[data-editor-proxy]');
+    var proxyToggle = form.querySelector('[data-proxy-toggle]');
+    var proxyNetworkField = form.querySelector('[data-proxy-networks]');
+
+    function syncProxyNetworks() {
+        if (proxyNetworkField) {
+            proxyNetworkField.hidden = !(proxyToggle && proxyToggle.checked);
+        }
+    }
 
     function syncFields() {
         var type = typeSelect ? typeSelect.value : 'external';
@@ -34,10 +43,19 @@
         for (var i = 0; i < alarmFields.length; i++) {
             alarmFields[i].hidden = type !== 'alarm';
         }
+
+        for (var j = 0; j < proxyFields.length; j++) {
+            proxyFields[j].hidden = type !== 'external';
+        }
+
+        syncProxyNetworks();
     }
 
     if (typeSelect) {
         typeSelect.addEventListener('change', syncFields);
+    }
+    if (proxyToggle) {
+        proxyToggle.addEventListener('change', syncProxyNetworks);
     }
     syncFields();
 

@@ -82,7 +82,8 @@ RUN --mount=type=bind,from=gssntlmssp-build,source=/out,target=/tmp/gss-out \
 # Apache-Module; Apache (www-data) benoetigt fuer die NTLM-Pruefung Zugriff
 # auf die privilegierte winbind-Pipe (Gruppe winbindd_priv).
 RUN set -eux; \
-    a2enmod proxy proxy_http proxy_wstunnel headers auth_gssapi rewrite alias remoteip ssl; \
+    a2enmod proxy proxy_http proxy_wstunnel headers auth_gssapi rewrite alias remoteip ssl \
+        proxy_html substitute xml2enc; \
     getent group winbindd_priv >/dev/null || groupadd -r winbindd_priv; \
     usermod -a -G winbindd_priv www-data; \
     printf '%s\n' 'ServerName localhost' 'ServerTokens Prod' 'ServerSignature Off' 'TraceEnable Off' \
@@ -98,10 +99,11 @@ COPY docker/auth/llmint.conf /etc/apache2/intranet/llmint.conf
 COPY docker/auth/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/auth/sso-routes.sh /usr/local/bin/sso-routes.sh
 COPY docker/auth/tls-sync.sh /usr/local/bin/tls-sync.sh
+COPY docker/auth/weiterleitung-sync.sh /usr/local/bin/weiterleitung-sync.sh
 COPY docker/auth/backend-watch.sh /usr/local/bin/backend-watch.sh
 COPY docker/auth/metrics.py /usr/local/bin/metrics.py
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/sso-routes.sh /usr/local/bin/tls-sync.sh \
-        /usr/local/bin/backend-watch.sh /usr/local/bin/metrics.py
+        /usr/local/bin/weiterleitung-sync.sh /usr/local/bin/backend-watch.sh /usr/local/bin/metrics.py
 
 EXPOSE 80 443
 

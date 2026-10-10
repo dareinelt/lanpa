@@ -37,7 +37,8 @@ final class SmsCodeController extends Controller
         $result = Container::smsCode()->verify(
             $request->inputInt('navigation_id', 0),
             (string) $request->input('phone', ''),
-            (string) $request->input('code', '')
+            (string) $request->input('code', ''),
+            $request->clientIp()
         );
 
         return Response::json($result, $result['status'] === 'success' ? 200 : 422);

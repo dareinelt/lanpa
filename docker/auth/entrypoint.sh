@@ -50,6 +50,12 @@
 #                        /internal/auth-metrics (Karte auf dem Admin-Dashboard,
 #                        docker/auth/metrics.py; AUTH_METRICS_INTERVAL aendert
 #                        den Abstand).
+# - Weiterleitung:       Externe Navigationskacheln mit "ueber den Proxy" werden
+#                        unter /weiterleitung/<id>/ von diesem Container
+#                        uebernommen (weiterleitung-sync.sh, alle 60 s
+#                        abgeglichen; NAV_PROXY_INTERVAL aendert den Abstand).
+#                        Die Ziele stehen im Adminbereich der Anwendung, hier
+#                        ist keine Einstellung noetig.
 set -e
 
 : "${SSO_ENABLED:=false}"
@@ -530,6 +536,12 @@ if is_true "$LLMINT_ENABLED"; then
 fi
 export LLMINT_PATH LLMINT_UPSTREAM
 
+# Weiterleitung von Navigationskacheln ueber diesen Proxy: Ziele aus dem
+# Adminbereich der Anwendung abholen und daraus die Apache-Konfiguration
+# erzeugen. Vor dem Start einmal, damit die Datei vorliegt (auch wenn die
+# Anwendung noch nicht erreichbar ist - dann bleibt der Adressraum leer).
+/usr/local/bin/weiterleitung-sync.sh once || true
+
 # apache2ctl uebergibt APACHE_ARGUMENTS an httpd.
 export APACHE_ARGUMENTS="${APACHE_ARGUMENTS:-}${APACHE_DEFINES}"
 
@@ -550,6 +562,12 @@ if [ -n "$LLMINT_HOST" ] && ! printf '%s' "$LLMINT_HOST" | grep -Eq '^[0-9.]+$';
 fi
 # shellcheck disable=SC2086
 /usr/local/bin/backend-watch.sh $backend_hosts &
+
+# Abgleich der Weiterleitungsziele im Hintergrund: Aenderungen im Adminbereich
+# werden so ohne Neustart uebernommen (auch fuer Instanzen weiterer
+# Identitaetsquellen, der Abruf erfolgt mit SSO_SOURCE).
+/usr/local/bin/weiterleitung-sync.sh loop &
+echo "[auth] Weiterleitung ueber den Proxy aktiv (Adressraum /weiterleitung/<id>/)."
 
 # Kennzahlen fuer das Admin-Dashboard: CPU-Last im Container sowie die im
 # Messfenster aufgebauten Client-Verbindungen und die Anfragen je Quellnetz

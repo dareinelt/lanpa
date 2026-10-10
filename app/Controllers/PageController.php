@@ -8,6 +8,7 @@ use App\Core\Container;
 use App\Core\Request;
 use App\Core\Response;
 use App\Exceptions\HttpException;
+use App\Support\TileProxy;
 
 /**
  * Rendert oeffentliche Unterseiten und formatierte Textseiten.
@@ -24,13 +25,15 @@ final class PageController extends Controller
             return $gate;
         }
 
+        $children = Container::officeApps()->filterNavigation(
+            Container::navigation()->activeChildrenFor((int) $item['id'], $ssoUser),
+            $ssoUser
+        );
+
         return $this->view('pages.subpage', [
             'pageTitle' => (string) $item['title'],
             'item' => $item,
-            'items' => Container::officeApps()->filterNavigation(
-                Container::navigation()->activeChildrenFor((int) $item['id'], $ssoUser),
-                $ssoUser
-            ),
+            'items' => TileProxy::decorate($children, $request->clientIp()),
             'breadcrumb' => Container::navigation()->breadcrumb((int) $item['id']),
             'descriptionMode' => Container::settings()->descriptionMode(),
             'activeNav' => '',

@@ -99,6 +99,10 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
                 $href = '/unterseite?id=' . $id;
             } elseif ($type === 'page') {
                 $href = '/seite?id=' . $id;
+            } elseif (!empty($item['proxy_url'])) {
+                // Ziel laeuft ueber den Reverse-Proxy dieser Anwendung; der Pfad
+                // wird serverseitig erzeugt (siehe App\Support\TileProxy).
+                $href = (string) $item['proxy_url'];
             } else {
                 // Nur pruefen, nicht maskieren: die Maskierung erfolgt an der
                 // Ausgabestelle (href bzw. data-nav-href), sonst entstehen

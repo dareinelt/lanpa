@@ -21,6 +21,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | Office (optional) | Nextcloud mit Euro-Office DocumentServer hinter demselben Einstieg, Einrichtung per Einzeiler, Updates aus den offiziellen Quellen, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, gestaltbare Kachel mit Verfügbarkeitsstatus, Office-Apps (Euro-Office-Webapps, Dateien, Outlook Web App) mit Freigabe per AD-Gruppe/App-Paket, Mail- und Kalender-App **Orvanta** (Exchange On-Premise ≥ 2016/2019 via EWS mit SSO-Identität, Anhänge in Euro-Office öffnen oder in Nextcloud speichern, Zwischenspeicher mit eigenem Quota, Terminerinnerungen als Browser-Benachrichtigung und in den Mitteilungen der Kopfzeile – siehe [docs/orvanta.md](docs/orvanta.md)), lokaler KI-Endpunkt für alle Benutzer (Nextcloud-Assistent, KI-Plugin der Editoren; Audio/Bilder optional), Speicherplatz-Kontingente je Benutzer (Standard 500 MB, je AD-Gruppe, individuell mit Begründung und Verlauf), Netzlaufwerke der Windows-Clients in „Dateien“ (Opt-in je Benutzer, Ausschlussliste im Adminbereich), App-Store im Adminbereich abschaltbar, verschlüsselte Sicherung – siehe [docs/office.md](docs/office.md) |
 | Notfallnummern | Eigene, farblich abgesetzte Kacheln für Notfallnummern (z. B. Werkschutz, Feuerwehr), im Adminbereich pflegbar |
 | KI-Oberfläche LLMInt (optional) | [LLMInt](https://github.com/dareinelt/LLMInt) (eigener Stack) hinter demselben Einstieg unter `/ki/` – gleiches HTTPS-Zertifikat, Windows-Anmeldung über den `auth`-Container, Streaming der Antworten – siehe [docs/llmint.md](docs/llmint.md) |
+| Weiterleitung externer Kacheln (optional) | Je Kachel einschaltbar: externe Ziele (neuer Tab) laufen über den Reverse-Proxy des `auth`-Containers unter `/weiterleitung/<id>/` – damit entfallen DNS- und Zertifikatsprobleme in Zweigstellen/Außenstellen, die Zielanwendung merkt von der Weiterleitung nichts; Ausnahmen je Kachel als CIDR-Quellnetze, die weiterhin direkt aufrufen – siehe [docs/weiterleitung.md](docs/weiterleitung.md) |
 | Notfallpläne / KAEP | Roter Button mit AD-Gruppenfreigabe, visueller Ablaufeditor, AD-Kennwortbestätigung, Maßnahmenstatus/Kommentare, separat bestätigte SMS, automatische KAEP-E-Mails, historische Auswertung sowie Export/Import von Plänen zwischen Systemen (nur Administratoren); [Einrichtung](docs/notfallplan.md), [bebilderte Einsatzanleitung](docs/notfallplan-anleitung.md), [Editor-Referenz](docs/notfallplan-editor-referenz.md) |
 | Mitteilungen | Aufklappbares Mitteilungs-Overlay auf der Startseite, im Adminbereich pflegbar |
 | Alarmierungen | Alarm-Kacheln, die per Klick eine SMS über ein konfigurierbares SMS-Gateway auslösen – an eine Gruppe oder eine einzelne Rufnummer, mit Verlauf |
@@ -216,7 +217,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Menüpunkt | Funktion |
 | --- | --- |
 | Übersicht | Kennzahlen zu Navigation, Telefonliste, Klicks und letztem AD-Lauf |
-| Navigation | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Sortieren, Löschen |
+| Navigation | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Sortieren, Löschen; bei externen Kacheln optional „Ziel über den Reverse-Proxy dieser Anwendung aufrufen“ mit Quellnetz-Ausnahmen in CIDR ([docs/weiterleitung.md](docs/weiterleitung.md)) |
 | Wichtige Links | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Löschen; Favicon wird automatisch geladen, Reihenfolge stets alphabetisch (keine manuelle Sortierung) |
 | Notfallnummern | Notfallnummern-Kacheln anlegen, bearbeiten, sortieren, ein-/ausblenden |
 | Telefonliste | Alle Einträge auflisten und je Eintrag ein-/ausblenden (Standard für neu synchronisierte Einträge: eingeblendet); Filter nach „Hat E-Mail-Adresse“, „Ist aktiv“, „Hat Telefonnummer“ und „Nur eingeblendete“ |
@@ -472,6 +473,27 @@ docker compose up -d
 Danach eine Kachel mit der URL `/ki/` anlegen. LLMInt läuft im selben Origin wie die Landingpage –
 Einrichtung beider Seiten, Variante „anderer Host“, Sicherheitshinweise und Fehlersuche:
 [docs/llmint.md](docs/llmint.md).
+
+### Externe Kacheln über den Reverse-Proxy
+
+Externe Kacheln (Typ „extern (neuer Tab)“) können ihr Ziel wahlweise über den `auth`-Container
+aufrufen lassen. Im Formular der Kachel (Adminbereich → **Navigation**) dafür die Option
+**„Ziel über den Reverse-Proxy dieser Anwendung aufrufen“** setzen; Clients aus den angegebenen
+**Quellnetzen** (CIDR, z. B. `192.168.10.0/24`, mehrere durch Komma oder Zeilenumbruch) rufen das
+Ziel weiterhin direkt auf.
+
+```bash
+# Ziele und Quellnetze ausschließlich im Adminbereich pflegen – keine .env nötig.
+# Änderungen übernimmt der auth-Container im Betrieb (Abgleich alle 60 s):
+docker compose logs auth | grep -i weiterleitung
+```
+
+Die Kachel zeigt dann auf `/weiterleitung/<id>/…`; der `auth`-Container holt das Ziel, schreibt
+Adressen in HTML/CSS/JavaScript, Cookies und Umleitungen um und verbirgt seinen eigenen Zugriff
+hinter dem Hostnamen des Ziels – die Zielanwendung bekommt von der Weiterleitung nichts mit.
+Ist ein Ziel nicht erreichbar, erscheint eine eigene Hinweisseite statt einer Apache-Fehlerseite.
+Adressraum, Umschreibungen, Grenzen, Betriebsparameter (`NAV_PROXY_*`) und Fehlersuche:
+[docs/weiterleitung.md](docs/weiterleitung.md).
 
 ### Zugangsdaten und Schlüssel
 

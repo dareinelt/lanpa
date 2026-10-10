@@ -7,7 +7,9 @@ namespace App\Services;
 use App\Exceptions\ValidationException;
 use App\Repositories\AlarmGroupRepository;
 use App\Repositories\NavigationRepository;
+use App\Support\IpNetwork;
 use App\Support\Sanitizer;
+use App\Support\TileProxy;
 use App\Support\Validator;
 
 final class NavigationService
@@ -295,6 +297,17 @@ final class NavigationService
             $errors['sort_order'] = 'Sortierung muss zwischen 1 und 9999 liegen.';
         }
 
+        // Weiterleitung ueber den Reverse-Proxy: nur externe Ziele. Die
+        // Quellnetze werden normalisiert gespeichert (Adresse auf Netzgrenze).
+        $proxyEnabled = $type === 'external' && !empty($input['proxy_enabled']);
+        $proxyBypassRaw = (string) ($input['proxy_bypass_networks'] ?? '');
+        if ($proxyEnabled && !TileProxy::isProxyableUrl($url)) {
+            $errors['url'] = 'Diese Adresse kann nicht über den Reverse-Proxy laufen. Bitte eine vollständige http(s)-Adresse ohne Zugangsdaten, Platzhalter und Leerzeichen angeben.';
+        }
+        if ($proxyEnabled && !Validator::isIpNetworkList($proxyBypassRaw, 1000)) {
+            $errors['proxy_bypass_networks'] = 'Bitte Quellnetze in CIDR-Schreibweise angeben (z. B. 192.168.10.0/24), durch Komma oder Zeilenumbruch getrennt.';
+        }
+
         if ($errors !== []) {
             throw new ValidationException($errors);
         }
@@ -316,7 +329,43 @@ final class NavigationService
             'sort_order' => $sortOrder,
             'active' => !empty($input['active']),
             'protected_access' => !empty($input['protected_access']),
+            'proxy_enabled' => $proxyEnabled,
+            'proxy_bypass_networks' => $proxyEnabled ? implode(' ', IpNetwork::parseList($proxyBypassRaw)) : '',
         ];
+    }
+
+    /**
+     * Weiterleitungsziele fuer den auth-Container: aktive externe Kacheln mit
+     * aktivierter Weiterleitung. Die Quellnetz-Ausnahmen wertet die Anwendung
+     * beim Ausliefern der Kacheln aus (Adresse des Clients), nicht der Proxy.
+     *
+     * @return array<string,string> Werte fuer GET /internal/nav-proxy-config
+     */
+    public function proxyConfig(): array
+    {
+        $routes = [];
+        foreach ($this->repository->activeExternalWithProxy() as $item) {
+            $id = (int) ($item['id'] ?? 0);
+            $target = trim((string) ($item['url'] ?? ''));
+            if ($id < 1 || !TileProxy::isProxyableUrl($target)) {
+                continue;
+            }
+
+            $routes[] = [
+                'id' => $id,
+                'target' => $target,
+                'title' => (string) ($item['title'] ?? ''),
+            ];
+        }
+
+        $values = ['NAV_PROXY_COUNT' => (string) count($routes)];
+        foreach ($routes as $index => $route) {
+            $values['NAV_PROXY_' . $index . '_PATH'] = TileProxy::path($route['id']);
+            $values['NAV_PROXY_' . $index . '_TARGET'] = $route['target'];
+            $values['NAV_PROXY_' . $index . '_TITLE'] = $route['title'];
+        }
+
+        return $values;
     }
 
     private function resolveParentId(mixed $value): ?int

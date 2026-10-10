@@ -56,6 +56,7 @@ use App\Controllers\PhonebookController;
 use App\Controllers\ProtectedAccessController;
 use App\Controllers\SmsCodeController;
 use App\Controllers\SsoController;
+use App\Controllers\WeiterleitungController;
 use App\Core\Config;
 use App\Core\Container;
 use App\Core\Request;
@@ -136,6 +137,7 @@ $router->group([$requireUnlocked, $ssoAttempt], static function (Router $router)
 // Interne Schnittstelle fuer die auth-Container (Token + Absenderpruefung).
 $router->get('/internal/sso-config', [InternalController::class, 'ssoConfig']);
 $router->get('/internal/tls-config', [InternalController::class, 'tlsConfig']);
+$router->get('/internal/nav-proxy-config', [InternalController::class, 'navProxyConfig']);
 $router->post('/internal/auth-metrics', [InternalController::class, 'authMetrics']);
 
 // Office-Integration: Hinweisseite (auch Fehlerseite des auth-Proxys) und
@@ -145,6 +147,9 @@ $router->get('/api/office/footer', [OfficeController::class, 'footer']);
 $router->get('/api/office/status', [OfficeController::class, 'status']);
 // LLMInt unter /ki/: Fehlerseite des auth-Proxys, wenn LLMInt nicht erreichbar ist.
 $router->get('/ki-nicht-verfuegbar', [KiController::class, 'unavailable']);
+// Weiterleitung unter /weiterleitung/<id>/: Fehlerseite des auth-Proxys, wenn das
+// Ziel nicht erreichbar ist oder die Weiterleitung noch nicht eingerichtet wurde.
+$router->get('/weiterleitung-nicht-verfuegbar', [WeiterleitungController::class, 'unavailable']);
 $router->group([$ssoAttempt], static function (Router $router): void {
     $router->get('/office-app', [OfficeController::class, 'launch']);
     $router->get('/office/orvanta', [OrvantaController::class, 'index']);

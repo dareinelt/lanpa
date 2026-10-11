@@ -50,6 +50,7 @@ final class TopologyCollector
         'alarm',
         'emergency',
         'monitoring',
+        'malware',
         'ai',
         'optional',
     ];
@@ -86,6 +87,7 @@ final class TopologyCollector
         $facts['alarm'] = $this->alarm($now);
         $facts['emergency'] = $this->emergency($now);
         $facts['monitoring'] = $this->monitoring($now);
+        $facts['malware'] = $this->malware($now);
         $facts['ai'] = $this->ai($now);
         $facts['optional'] = $this->optional($now);
 
@@ -583,6 +585,60 @@ final class TopologyCollector
                 'snmp_configured' => $configured,
                 'sys_location' => (string) ($snmp['sys_location'] ?? ''),
             ],
+        ]);
+    }
+
+    /**
+     * Malware-Protection: Virenpruefung der Anhaenge ueber den Container clamav.
+     *
+     * Geprueft wird nur die Konfiguration und der Bestand offener Befunde, nicht
+     * die Erreichbarkeit des Scanners (keine Live-Probe). Eine eingeschaltete
+     * Pruefung ohne Befund erscheint deshalb als "unbekannt" und nie als
+     * "in Ordnung"; den Signaturstand zeigt der Adminbereich
+     * (System -> Malware-Protection).
+     *
+     * @return array<string,mixed>
+     */
+    private function malware(int $now): array
+    {
+        try {
+            $settings = Container::settings();
+            $enabled = $settings->bool('malware_protection_enabled');
+            $host = (string) $settings->get('malware_host');
+            $port = (int) $settings->int('malware_port');
+            $failClosed = $settings->bool('malware_fail_closed');
+            $open = Container::malwareScanRepository()->openCount();
+        } catch (Throwable $exception) {
+            return self::section('unknown', 'Die Virenprüfung der Anhänge ist nicht lesbar: ' . self::reason($exception), $now);
+        }
+
+        $data = [
+            'enabled' => $enabled,
+            'host' => $host,
+            'port' => $port,
+            'fail_closed' => $failClosed,
+            'open' => $open,
+        ];
+
+        if (!$enabled) {
+            return self::section('disabled', 'Die Virenprüfung der Anhänge ist nicht aktiviert.', $now, [
+                'available' => true,
+                'data' => $data,
+            ]);
+        }
+
+        if ($open > 0) {
+            return self::section('warn', $open === 1
+                ? 'Ein Anhang ist gesperrt und wartet auf eine Entscheidung.'
+                : $open . ' Anhänge sind gesperrt und warten auf eine Entscheidung.', $now, [
+                'available' => true,
+                'data' => $data,
+            ]);
+        }
+
+        return self::section('unknown', 'Die Virenprüfung der Anhänge ist eingeschaltet; die Erreichbarkeit des Scanners wird hier nicht geprüft.', $now, [
+            'available' => true,
+            'data' => $data,
         ]);
     }
 

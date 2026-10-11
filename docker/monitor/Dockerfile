@@ -21,7 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MONITOR_METRICS_URL=http://app/internal/container-metrics \
     MONITOR_SOCKET=/var/run/docker.sock \
     MONITOR_INTERVAL=60 \
-    MONITOR_SERVICES=app,db,mail-proxy,nextcloud,eurooffice \
+    MONITOR_SERVICES=app,db,mail-proxy,clamav,nextcloud,eurooffice \
     SSO_CONFIG_TOKEN_FILE=/run/intranet-sso/token
 
 HEALTHCHECK --interval=60s --timeout=5s --start-period=30s --retries=3 \

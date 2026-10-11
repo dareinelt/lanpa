@@ -2,7 +2,7 @@
 """Kennzahlen der uebrigen Container fuer die Kacheln auf dem Admin-Dashboard.
 
 Anders als der auth-Container kann sich diese Messung nicht selbst
-durchfuehren: app, db, mail-proxy, nextcloud und eurooffice bringen kein
+durchfuehren: app, db, mail-proxy, clamav, nextcloud und eurooffice bringen kein
 Messskript mit. Dieser Container liest die Werte deshalb ueber den (nur lesend
 gemounteten) Docker-Socket aus der Docker-Engine - dieselben Zahlen, die
 "docker stats" zeigt.
@@ -10,8 +10,8 @@ gemounteten) Docker-Socket aus der Docker-Engine - dieselben Zahlen, die
 Je Container und Messfenster:
 
   service      Kennung des Containers aus docker-compose.yml (app, db,
-               mail-proxy, nextcloud, eurooffice); die Anwendung kennt nur
-               diese Kennungen
+               mail-proxy, clamav, nextcloud, eurooffice); die Anwendung kennt
+               nur diese Kennungen
   cpu_percent  CPU-Auslastung bezogen auf die Bezugsgroesse (0-100)
   cpu_limit    Bezugsgroesse der CPU-Messung in Kernen: die zugewiesene
                Obergrenze des Containers (NanoCpus bzw. cpu_quota/cpu_period),
@@ -49,6 +49,7 @@ Umgebung:
   MONITOR_SOCKET         Docker-Socket (Standard /var/run/docker.sock)
   MONITOR_INTERVAL       Abstand der Proben in Sekunden (Standard 60)
   MONITOR_SERVICES       Kennungen der Container, mit Komma getrennt
+                         (Standard app,db,mail-proxy,clamav,nextcloud,eurooffice)
 """
 
 from __future__ import annotations
@@ -66,7 +67,7 @@ import urllib.request
 URL_DEFAULT = "http://app/internal/container-metrics"
 TOKEN_FILE_DEFAULT = "/run/intranet-sso/token"
 SOCKET_DEFAULT = "/var/run/docker.sock"
-SERVICES_DEFAULT = "app,db,mail-proxy,nextcloud,eurooffice"
+SERVICES_DEFAULT = "app,db,mail-proxy,clamav,nextcloud,eurooffice"
 INTERVAL_DEFAULT = 60
 
 # Erste Probe kurz nach dem Start, damit das Dashboard nicht eine Minute leer

@@ -13,6 +13,7 @@ use App\Exceptions\ValidationException;
 use App\Security\Csrf;
 use App\Security\Session;
 use App\Services\LdapClient;
+use App\Services\Malware\MalwareScanService;
 use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaExchangeService;
@@ -341,7 +342,17 @@ final class OrvantaApiController extends Controller
         return $this->handle($request, function (array $access): array {
             $attachments = Container::orvantaAttachments();
             $name = $this->str('name', 'anhang');
-            $token = $attachments->token($access['uid'], $access['impersonate'], $this->requireId($this->str('attachment_id')), $name);
+            $attachmentId = $this->requireId($this->str('attachment_id'));
+            // Vor dem Ausstellen des Links pruefen: Ein Befund der
+            // Malware-Protection erreicht so den Client, der das Ergebnis im
+            // Overlay anzeigt, statt einer Fehlerseite im Vorschaufenster.
+            $attachments->precheck($access['uid'], $access['impersonate'], $attachmentId, [
+                'mailbox' => $access['impersonate'],
+                'message_id' => $this->str('message_id'),
+                'subject' => $this->str('subject'),
+                'source' => MalwareScanService::SOURCE_ORVANTA,
+            ]);
+            $token = $attachments->token($access['uid'], $access['impersonate'], $attachmentId, $name);
 
             return [
                 'url' => OrvantaController::PATH . '/anhang/oeffnen?' . http_build_query(['token' => $token]),
@@ -354,7 +365,17 @@ final class OrvantaApiController extends Controller
     public function attachmentToNextcloud(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $result = Container::orvantaAttachments()->saveToNextcloud($access['uid'], $access['impersonate'], $this->requireId($this->str('attachment_id')), $this->str('folder'));
+            $result = Container::orvantaAttachments()->saveToNextcloud(
+                $access['uid'],
+                $access['impersonate'],
+                $this->requireId($this->str('attachment_id')),
+                $this->str('folder'),
+                [
+                    'mailbox' => $access['impersonate'],
+                    'message_id' => $this->str('message_id'),
+                    'subject' => $this->str('subject'),
+                ]
+            );
             if (!$result['ok']) {
                 throw new OrvantaException($result['message'], 502);
             }

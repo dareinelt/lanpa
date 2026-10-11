@@ -1874,7 +1874,7 @@
 
         var attachments = (message.attachments || []).filter(function (a) { return !a.inline; });
         if (attachments.length) {
-            wrap.appendChild(renderAttachments(attachments, message.mailbox || ''));
+            wrap.appendChild(renderAttachments(attachments, message.mailbox || '', message));
         }
 
         var body = el('div', { 'class': 'ov-mail__body' });
@@ -1908,7 +1908,13 @@
     }
 
     /** mailbox: zusaetzliches Postfach, aus dem die Anhaenge stammen ('' = eigenes). */
-    function renderAttachments(attachments, mailbox) {
+    function renderAttachments(attachments, mailbox, message) {
+        message = message || {};
+        var context = {
+            postfach: mailbox || '',
+            message_id: message.id || '',
+            subject: message.subject || ''
+        };
         var list = el('div', { 'class': 'ov-attachments' }, [
             el('div', { 'class': 'ov-attachments__title', text: attachments.length + ' Anhang' + (attachments.length === 1 ? '' : 'änge') })
         ]);
@@ -1920,17 +1926,28 @@
             ]);
             var open = el('button', { type: 'button', 'class': 'ov-attachment__action', title: 'Öffnen', text: 'Öffnen' });
             open.addEventListener('click', function () {
-                openAttachment(attachment, mailbox);
+                openAttachment(attachment, mailbox, message);
             });
             chip.appendChild(open);
             if (config.nextcloudAvailable) {
                 var save = el('button', { type: 'button', 'class': 'ov-attachment__action', title: 'In Nextcloud speichern', text: '☁ Nextcloud' });
                 save.addEventListener('click', function () {
                     save.disabled = true;
-                    api('/anhang/nextcloud', { body: { attachment_id: attachment.id, name: attachment.name, postfach: mailbox || '' } }).then(function (result) {
-                        toast(result.message || 'Anhang in Nextcloud gespeichert.', result.ok === false ? 'error' : 'success');
+                    var overlay = scanOverlay();
+                    api('/anhang/nextcloud', {
+                        body: Object.assign({ attachment_id: attachment.id, name: attachment.name }, context)
+                    }).then(function (result) {
+                        return overlay.close().then(function () {
+                            toast(result.message || 'Anhang in Nextcloud gespeichert.', result.ok === false ? 'error' : 'success');
+                        });
                     }).catch(function (error) {
-                        toast(error.message, 'error');
+                        if (scanBlocked(error)) {
+                            overlay.blocked();
+                            return;
+                        }
+                        return overlay.close().then(function () {
+                            toast(error.message, 'error');
+                        });
                     }).then(function () {
                         save.disabled = false;
                     });
@@ -1951,7 +1968,64 @@
         return BROWSER_EXT.test(ext) ? 'browser' : 'download';
     }
 
-    function openAttachment(attachment, mailbox) {
+    // ------------------------------------------------------------------
+    // Malware-Protection: Pruef-Overlay
+    // ------------------------------------------------------------------
+
+    // Mindestanzeigedauer, damit der Fortschritt auch bei sehr kurzen
+    // Pruefungen sichtbar wird (kein Aufblitzen).
+    var SCAN_MIN_MS = 450;
+
+    /** Befund oder nicht erreichbare Pruefung: der Client erhaelt keine Details. */
+    function scanBlocked(error) {
+        var code = error && error.data ? error.data.code : '';
+        return code === 'malware' || code === 'malware_unavailable';
+    }
+
+    /**
+     * Overlay "Datei wird überprüft …" im aktuellen Fenster. Bewusst im
+     * Oeffner-Fenster (nicht im Vorschaufenster), weil das Vorschaufenster
+     * waehrend der Pruefung noch leer ist.
+     */
+    function scanOverlay() {
+        var card = el('div', { 'class': 'ov-scan__card', role: 'status', 'aria-live': 'polite' });
+        var overlay = el('div', { 'class': 'ov-scan' }, [card]);
+        card.appendChild(el('div', { 'class': 'ov-scan__spinner', 'aria-hidden': 'true' }));
+        card.appendChild(el('p', { 'class': 'ov-scan__text', text: 'Datei wird überprüft …' }));
+        card.appendChild(el('div', { 'class': 'ov-scan__progress' }, [el('div', { 'class': 'ov-scan__bar' })]));
+        card.appendChild(el('p', { 'class': 'ov-scan__hint', text: 'Dies kann einen Moment dauern.' }));
+        document.body.appendChild(overlay);
+        var started = Date.now();
+
+        return {
+            /** Schliesst das Overlay nach der Mindestanzeigedauer. */
+            close: function () {
+                var wait = Math.max(0, SCAN_MIN_MS - (Date.now() - started));
+                return new Promise(function (resolve) {
+                    window.setTimeout(function () {
+                        overlay.remove();
+                        resolve();
+                    }, wait);
+                });
+            },
+            /** Neutrale Meldung bei Befund; bleibt bis zur Bestaetigung stehen. */
+            blocked: function () {
+                card.textContent = '';
+                card.classList.add('ov-scan__card--blocked');
+                card.appendChild(el('div', { 'class': 'ov-scan__icon', 'aria-hidden': 'true', text: '⚠' }));
+                card.appendChild(el('p', { 'class': 'ov-scan__text', text: 'Die Datei kann derzeit nicht geöffnet werden.' }));
+                var button = el('button', { type: 'button', 'class': 'ov-btn ov-btn--primary', text: 'Schließen' });
+                button.addEventListener('click', function () {
+                    overlay.remove();
+                });
+                card.appendChild(el('div', { 'class': 'ov-scan__actions' }, [button]));
+                button.focus();
+            }
+        };
+    }
+
+    function openAttachment(attachment, mailbox, message) {
+        message = message || {};
         var ext = String(attachment.name || '').split('.').pop().toLowerCase();
         var mode = attachmentMode(attachment.name);
         // Nur Vorschau-faehige Anhaenge in einen neuen Tab; alles andere als Download
@@ -1964,17 +2038,34 @@
             popup.document.write('<!doctype html><title>Orvanta – Anhang wird geöffnet …</title><p>Anhang wird geöffnet …</p>');
             popup.document.close();
         }
-        api('/anhang/link', { body: { attachment_id: attachment.id, name: attachment.name, postfach: mailbox || '' } }).then(function (result) {
-            if (popup) {
-                popup.location.href = result.url;
-            } else {
-                window.location.href = result.url;
+        var overlay = scanOverlay();
+        api('/anhang/link', {
+            body: {
+                attachment_id: attachment.id,
+                name: attachment.name,
+                postfach: mailbox || '',
+                message_id: message.id || '',
+                subject: message.subject || ''
             }
+        }).then(function (result) {
+            return overlay.close().then(function () {
+                if (popup) {
+                    popup.location.href = result.url;
+                } else {
+                    window.location.href = result.url;
+                }
+            });
         }).catch(function (error) {
             if (popup) {
                 popup.close();
             }
-            toast(error.message, 'error');
+            if (scanBlocked(error)) {
+                overlay.blocked();
+                return;
+            }
+            return overlay.close().then(function () {
+                toast(error.message, 'error');
+            });
         });
     }
 
@@ -3246,7 +3337,7 @@
         }
         var attachments = (event.attachments || []).filter(function (a) { return !a.inline; });
         if (attachments.length) {
-            wrap.appendChild(renderAttachments(attachments, mailboxOf(event.id)));
+            wrap.appendChild(renderAttachments(attachments, mailboxOf(event.id), event));
         }
         var body = el('div', { 'class': 'ov-mail__body' });
         body.innerHTML = event.body_html || '<p class="ov-muted">Keine Beschreibung.</p>';

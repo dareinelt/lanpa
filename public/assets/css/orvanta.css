@@ -726,3 +726,21 @@ label.ov-folder--mailbox { cursor: pointer; }
 .ov-oof__fixed { white-space: pre-line; padding: .6rem .7rem; border: 1px solid var(--ov-line); border-radius: .4rem; background: var(--ov-bar); font-size: .9rem; color: var(--ov-muted); }
 .ov-oof__signature { padding: .6rem .7rem; border: 1px dashed var(--ov-line); border-radius: .4rem; overflow-x: auto; }
 .ov-oof__signature:empty::before { content: 'Keine Signatur zugeordnet.'; color: var(--ov-muted); font-size: .85rem; }
+
+/* Malware-Protection: Overlay waehrend der Anhangpruefung. Es liegt im
+   Oeffner-Fenster, weil das Vorschaufenster bis zum Ergebnis leer bleibt. */
+.ov-scan { position: fixed; inset: 0; z-index: 1400; display: flex; align-items: center; justify-content: center; padding: 1rem; background: rgba(9, 18, 30, .45); }
+.ov-scan__card { width: min(360px, 92vw); display: flex; flex-direction: column; align-items: center; gap: .7rem; padding: 1.4rem 1.2rem; border: 1px solid var(--ov-line); border-radius: .7rem; background: var(--color-background, #fff); color: var(--color-text, inherit); text-align: center; box-shadow: 0 18px 48px rgba(0, 0, 0, .32); }
+.ov-scan__spinner { width: 2.2rem; height: 2.2rem; border: 3px solid var(--ov-line); border-top-color: var(--ov-accent); border-radius: 50%; animation: ov-scan-spin .9s linear infinite; }
+@keyframes ov-scan-spin { to { transform: rotate(360deg); } }
+.ov-scan__text { margin: 0; font-size: .95rem; font-weight: 600; }
+.ov-scan__hint { margin: 0; color: var(--ov-muted); font-size: .82rem; }
+.ov-scan__progress { width: 100%; height: .4rem; overflow: hidden; border-radius: 999px; background: var(--ov-bar); border: 1px solid var(--ov-line); }
+.ov-scan__bar { width: 40%; height: 100%; border-radius: 999px; background: var(--ov-accent); animation: ov-scan-slide 1.3s ease-in-out infinite; }
+@keyframes ov-scan-slide { 0% { transform: translateX(-105%); } 100% { transform: translateX(260%); } }
+.ov-scan__card--blocked .ov-scan__icon { font-size: 2rem; line-height: 1; color: #b3261e; }
+.ov-scan__actions { display: flex; gap: .5rem; margin-top: .2rem; }
+@media (prefers-reduced-motion: reduce) {
+    .ov-scan__spinner { animation-duration: 3s; }
+    .ov-scan__bar { width: 100%; animation: none; }
+}

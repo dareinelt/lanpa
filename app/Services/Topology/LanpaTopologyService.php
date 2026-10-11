@@ -96,6 +96,7 @@ final class LanpaTopologyService
         'mail' => ['intranet'],
         'mail-archive' => ['intranet', 'office'],
         'mail-proxy' => ['mail_proxy', 'mail_egress'],
+        'clamav' => ['intranet'],
         'auth' => ['intranet', 'office'],
         'sync' => ['intranet'],
         'phpmyadmin' => ['intranet'],
@@ -1260,6 +1261,32 @@ final class LanpaTopologyService
             ])),
         ]);
 
+        $malware = self::sec($facts, 'malware');
+        $malwareData = (array) ($malware['data'] ?? []);
+        $malwareEnabled = (bool) ($malwareData['enabled'] ?? false);
+        $graph->node('monitor:clamav', [
+            'title' => 'Virenschutz (ClamAV)',
+            'subtitle' => 'Container clamav – Prüfung der Anhänge',
+            'kind' => 'service',
+            'group' => 'group:monitor',
+            'layer' => 3,
+            'optional' => !$malwareEnabled,
+            'state' => (string) ($malware['state'] ?? 'unknown'),
+            'message' => (string) ($malware['message'] ?? ''),
+            'evidence' => (bool) ($malware['available'] ?? false) ? 'proven' : 'unwatched',
+            'measured_at' => $malware['measured_at'] ?? null,
+            'link' => '/admin/malware-protection',
+            'containers' => ['clamav'],
+            'facts' => array_values(array_filter([
+                $malwareEnabled ? ['label' => 'Prüfung', 'value' => 'eingeschaltet'] : null,
+                (string) ($malwareData['host'] ?? '') !== ''
+                    ? ['label' => 'Adresse', 'value' => (string) $malwareData['host'] . ':' . (string) ($malwareData['port'] ?? '')] : null,
+                $malwareEnabled && (int) ($malwareData['open'] ?? 0) > 0
+                    ? ['label' => 'Gesperrt', 'value' => (string) $malwareData['open']] : null,
+                $malwareEnabled && !($malwareData['fail_closed'] ?? true) ? ['label' => 'Ohne Scanner', 'value' => 'ungeprüft ausliefern'] : null,
+            ])),
+        ]);
+
         $alarm = self::sec($facts, 'alarm');
         $alarmConfigured = (bool) ($alarm['data']['configured'] ?? false);
         $graph->node('monitor:alarm', [
@@ -1401,6 +1428,7 @@ final class LanpaTopologyService
         $graph->edge('e:orvanta-pool', 'orvanta:core', 'orvanta:exchange-pool', $proven + ['type' => 'depends', 'protocol' => 'EWS']);
         $graph->edge('e:orvanta-proxy', 'orvanta:core', 'orvanta:proxy', $proven + ['type' => 'depends', 'protocol' => 'IMAP/SMTP']);
         $graph->edge('e:orvanta-cache', 'orvanta:core', 'orvanta:attachment-cache', $derived + ['type' => 'stores']);
+        $graph->edge('e:orvanta-clamav', 'orvanta:core', 'monitor:clamav', $derived + ['type' => 'depends', 'protocol' => 'ClamAV (INSTREAM)']);
         $graph->edge('e:orvanta-presence', 'orvanta:core', 'orvanta:presence', $derived + ['type' => 'depends']);
         $graph->edge('e:orvanta-ai', 'orvanta:core', 'orvanta:ai', $derived + ['type' => 'depends', 'protocol' => 'HTTPS']);
         $graph->edge('e:cache-nextcloud', 'orvanta:attachment-cache', 'office:nextcloud', $derived + ['type' => 'stores', 'protocol' => 'HTTP']);
@@ -1453,6 +1481,7 @@ final class LanpaTopologyService
         $graph->edge('e:monitor-app', 'monitor:container-metrics', self::ROOT, $proven + ['type' => 'monitors', 'protocol' => 'HTTP']);
         $graph->edge('e:monitor-db', 'monitor:container-metrics', 'data:mysql', $derived + ['type' => 'monitors']);
         $graph->edge('e:monitor-proxy', 'monitor:container-metrics', 'orvanta:proxy', $derived + ['type' => 'monitors']);
+        $graph->edge('e:monitor-clamav', 'monitor:container-metrics', 'monitor:clamav', $derived + ['type' => 'monitors']);
         $graph->edge('e:monitor-nextcloud', 'monitor:container-metrics', 'office:nextcloud', $derived + ['type' => 'monitors']);
         $graph->edge('e:monitor-eurooffice', 'monitor:container-metrics', 'office:eurooffice', $derived + ['type' => 'monitors']);
         $graph->edge('e:snmp-app', 'monitor:snmp', self::ROOT, $derived + ['type' => 'monitors', 'protocol' => 'SNMP']);

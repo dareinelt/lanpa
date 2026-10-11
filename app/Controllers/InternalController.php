@@ -146,7 +146,7 @@ final class InternalController
 
     /**
      * Kennzahlen der uebrigen Container (CPU- und Arbeitsspeicher-Auslastung
-     * je Container). Die Container app, db, mail-proxy, nextcloud und
+     * je Container). Die Container app, db, mail-proxy, clamav, nextcloud und
      * eurooffice messen nicht selbst; der Sammel-Container
      * (docker/monitor/metrics.py) liest die Werte ueber den Docker-Socket aus
      * der Docker-Engine und meldet je Container eine Probe. Die Anwendung

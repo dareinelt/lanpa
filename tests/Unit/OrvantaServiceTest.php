@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\ExchangeTransportInterface;
+use App\Contracts\MalwareScannerInterface;
 use App\Core\View;
 use App\Exceptions\ValidationException;
 use App\Repositories\IdentitySourceRepository;
@@ -24,6 +25,7 @@ use App\Services\Orvanta\OrvantaExchangeService;
 use App\Services\Orvanta\OrvantaHostHealthService;
 use App\Services\Orvanta\OrvantaMailboxResolver;
 use App\Services\Orvanta\OrvantaNotificationService;
+use App\Services\Malware\MalwareScanService;
 use App\Services\SettingsService;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
@@ -268,7 +270,7 @@ function dagSettings(string $host): array
  * @param array<string,string> $settings
  * @return array{attachments:OrvantaAttachmentService,probe:FakeOfficeProbe,repository:OrvantaRepository,config:OrvantaConfigService}
  */
-function orvantaAttachments(array $settings = [], bool $nextcloudOk = true): array
+function orvantaAttachments(array $settings = [], bool $nextcloudOk = true, ?MalwareScanService $malware = null): array
 {
     $parts = orvantaExchange($settings);
     $probe = new FakeOfficeProbe();
@@ -283,7 +285,10 @@ function orvantaAttachments(array $settings = [], bool $nextcloudOk = true): arr
         $office,
         new NextcloudFilesService($office, $probe),
         $parts['exchange'],
-        orvantaSecrets()
+        orvantaSecrets(),
+        null,
+        null,
+        $malware
     );
 
     return ['attachments' => $service, 'probe' => $probe, 'repository' => $parts['repository'], 'config' => $parts['config']];
@@ -1329,6 +1334,78 @@ Runner::test('Orvanta: Ablage in Nextcloud legt die Datei im Orvanta-Ordner ab',
     $posts = array_values(array_filter($parts['probe']->requests, static fn (array $r): bool => $r['method'] === 'POST'));
     Assert::true(count($posts) >= 1);
     Assert::true(str_starts_with((string) ($posts[0]['headers']['Authorization'] ?? ''), 'Bearer '));
+});
+
+Runner::test('Orvanta: Malware-Protection prueft Anhaenge vor der Auslieferung', function (): void {
+    $malware = malwareService();
+    $parts = orvantaAttachments([], true, $malware['service']);
+
+    $clean = $parts['attachments']->load('u1', 'demo@demo.local', 'demo-att-1');
+    Assert::true($clean['size'] > 0, 'Ohne Befund wird der Anhang ausgeliefert.');
+    Assert::same(0, $malware['repository']->openCount(), 'Kein Befund ohne Fund.');
+
+    $malware['scanner']->result = [
+        'status' => MalwareScannerInterface::INFECTED,
+        'signature' => 'Eicar-Test-Signature',
+        'error' => '',
+    ];
+
+    try {
+        $parts['attachments']->load('u1', 'demo@demo.local', 'demo-att-2', ['mailbox' => 'demo@demo.local', 'message_id' => 'demo-msg-1']);
+        Assert::true(false, 'Der befallene Anhang wurde ausgeliefert.');
+    } catch (OrvantaException $exception) {
+        Assert::same(403, $exception->status(), 'Die Auslieferung wird unterbunden.');
+        Assert::same(OrvantaException::MALWARE, $exception->reason(), 'Grund der Sperre');
+        Assert::same(MalwareScanService::BLOCKED_MESSAGE, $exception->getMessage(), 'Meldung ohne Details');
+    }
+
+    $entries = $malware['repository']->blocked();
+    Assert::same(1, count($entries), 'Der Befund steht im Protokoll.');
+    Assert::same('demo@demo.local', $entries[0]['mailbox'], 'Postfach im Protokoll');
+    Assert::same('demo-msg-1', $entries[0]['message_id'], 'Nachricht im Protokoll');
+    Assert::same(MalwareScanService::SOURCE_ORVANTA, $entries[0]['source'], 'Fundort Oeffnen');
+});
+
+Runner::test('Orvanta: Malware-Protection prueft Anhaenge vor der Ablage in Nextcloud', function (): void {
+    $malware = malwareService();
+    $parts = orvantaAttachments([], true, $malware['service']);
+    $malware['scanner']->result = [
+        'status' => MalwareScannerInterface::INFECTED,
+        'signature' => 'Eicar-Test-Signature',
+        'error' => '',
+    ];
+
+    try {
+        $parts['attachments']->saveToNextcloud('u1', 'demo@demo.local', 'demo-att-1');
+        Assert::true(false, 'Der befallene Anhang wurde abgelegt.');
+    } catch (OrvantaException $exception) {
+        Assert::same(OrvantaException::MALWARE, $exception->reason(), 'Grund der Sperre');
+    }
+
+    Assert::same(
+        [],
+        array_values(array_filter($parts['probe']->requests, static fn (array $r): bool => $r['method'] === 'POST')),
+        'Nichts wird nach Nextcloud uebertragen.'
+    );
+    Assert::same(MalwareScanService::SOURCE_NEXTCLOUD, $malware['repository']->blocked()[0]['source'], 'Fundort Ablage');
+});
+
+Runner::test('Orvanta: Ausfall des Scanners unterbindet die Auslieferung', function (): void {
+    $malware = malwareService();
+    $malware['scanner']->result = ['status' => MalwareScannerInterface::ERROR, 'signature' => '', 'error' => 'Der Virenscanner ist nicht erreichbar.'];
+    $parts = orvantaAttachments([], true, $malware['service']);
+
+    try {
+        $parts['attachments']->precheck('u1', 'demo@demo.local', 'demo-att-1');
+        Assert::true(false, 'Ohne Pruefung wurde ausgeliefert.');
+    } catch (OrvantaException $exception) {
+        Assert::same(OrvantaException::MALWARE_UNAVAILABLE, $exception->reason(), 'Grund der Sperre');
+        Assert::same(403, $exception->status(), 'Die Auslieferung wird unterbunden.');
+    }
+
+    $malware['scanner']->result = ['status' => MalwareScannerInterface::CLEAN, 'signature' => '', 'error' => ''];
+    $parts['attachments']->precheck('u1', 'demo@demo.local', 'demo-att-1');
+    Assert::same(1, $parts['attachments']->usage('u1')['items'], 'Die Vorabpruefung fuellt den Zwischenspeicher.');
 });
 
 Runner::test('Orvanta: Viewer-Konfiguration fuer Euro-Office', function (): void {

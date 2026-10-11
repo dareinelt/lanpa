@@ -122,6 +122,22 @@ Runner::test('ContainerMetrics: unbekannter Container wird abgelehnt', static fu
     }
 });
 
+Runner::test('ContainerMetrics: der Virenscanner wird beobachtet', static function (): void {
+    $sample = ContainerMetricsService::validate(containerMetricsSample([
+        'service' => 'clamav',
+        'cpu_percent' => '8.0',
+        'ram_percent' => '30.0',
+    ]));
+
+    Assert::same('clamav', $sample['service'], 'Container des Virenscanners');
+    Assert::same('Virenscanner (ClamAV)', ContainerMetricsService::SERVICES['clamav'], 'Bezeichnung der Kachel');
+
+    $cards = containerMetricsService(containerMetricsPdo(), time())->dashboard()['cards'];
+    $clamav = array_values(array_filter($cards, static fn (array $card): bool => $card['service'] === 'clamav'));
+    Assert::same(1, count($clamav), 'Der Virenscanner hat eine Kachel.');
+    Assert::same(false, $clamav[0]['available'], 'Ohne Proben zeigt die Kachel den Hinweis.');
+});
+
 Runner::test('ContainerMetrics: ungueltige Arbeitsspeicher-Angaben werden abgelehnt', static function (): void {
     $cases = [
         'ram_percent' => containerMetricsSample(['ram_percent' => '101']),

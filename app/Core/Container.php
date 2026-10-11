@@ -23,6 +23,7 @@ use App\Repositories\SettingsRepository;
 use App\Repositories\NetworkDriveRepository;
 use App\Repositories\StorageQuotaRepository;
 use App\Repositories\IncidentRepository;
+use App\Repositories\MalwareScanRepository;
 use App\Repositories\StorageRepository;
 use App\Repositories\SyncLogRepository;
 use App\Repositories\TlsCertificateRepository;
@@ -45,6 +46,8 @@ use App\Services\ImportService;
 use App\Services\BackgroundImageService;
 use App\Services\LdapClient;
 use App\Services\LogoService;
+use App\Services\Malware\ClamdScanner;
+use App\Services\Malware\MalwareScanService;
 use App\Services\NavigationService;
 use App\Services\Office\OfficeAiService;
 use App\Services\Office\OfficeAppService;
@@ -696,7 +699,8 @@ final class Container
                 self::orvantaExchange(),
                 self::secretBox(),
                 self::orvantaArchive(),
-                self::orvantaMail()
+                self::orvantaMail(),
+                self::malwareScans()
             )
         );
     }
@@ -1313,6 +1317,38 @@ final class Container
     public static function incidentRepository(): IncidentRepository
     {
         return self::make(IncidentRepository::class, static fn (): IncidentRepository => new IncidentRepository());
+    }
+
+    public static function malwareScanRepository(): MalwareScanRepository
+    {
+        return self::make(MalwareScanRepository::class, static fn (): MalwareScanRepository => new MalwareScanRepository());
+    }
+
+    /**
+     * Virenscanner (ClamAV/clamd) mit den im Adminbereich gepflegten Werten.
+     */
+    public static function malwareScanner(): \App\Contracts\MalwareScannerInterface
+    {
+        return self::make(
+            \App\Contracts\MalwareScannerInterface::class,
+            static fn (): \App\Contracts\MalwareScannerInterface => new ClamdScanner(
+                self::settings()->get('malware_host', (string) Config::get('malware.host', 'clamav')),
+                self::settings()->int('malware_port', (int) Config::get('malware.port', 3310)),
+                self::settings()->int('malware_timeout', (int) Config::get('malware.timeout', 15))
+            )
+        );
+    }
+
+    public static function malwareScans(): MalwareScanService
+    {
+        return self::make(
+            MalwareScanService::class,
+            static fn (): MalwareScanService => new MalwareScanService(
+                self::malwareScanRepository(),
+                self::settings(),
+                self::malwareScanner()
+            )
+        );
     }
 
     public static function snapshots(): SnapshotService

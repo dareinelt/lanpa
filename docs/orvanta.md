@@ -185,7 +185,7 @@ flowchart LR
 | `CurlExchangeTransport` / `DemoExchangeTransport` | `app/Services/Orvanta/` | EWS-SOAP per cURL (`ExchangeTransportInterface`) bzw. Beispieldaten ohne Server |
 | `EwsXml` | `app/Services/Orvanta/` | Aufbau/Auswertung der SOAP-Nachrichten (`DOMDocument`) |
 | `MailHtmlSanitizer` | `app/Services/Orvanta/` | HTML-Mails bereinigen (Skripte, externe Inhalte, Event-Handler entfernen) |
-| `OrvantaAttachmentService` | `app/Services/Orvanta/` | Anhänge: signierte Kurzzeit-Links, Öffnungsmodus (`office`/`browser`/`download`), Zwischenspeicher und Ablage in Nextcloud (WebDAV), Quota |
+| `OrvantaAttachmentService` | `app/Services/Orvanta/` | Anhänge: signierte Kurzzeit-Links, Öffnungsmodus (`office`/`browser`/`download`), Zwischenspeicher und Ablage in Nextcloud (WebDAV), Quota, Virenprüfung über `Malware\MalwareScanService` ([malware-protection.md](malware-protection.md)) |
 | `OrvantaRecipientService` | `app/Services/Orvanta/` | Empfänger-Vorschläge für An/Cc/Bcc: Telefonliste + Verlauf gesendeter Adressen (versteckte Datei `.empfaenger.json` in der Nextcloud des Benutzers, kurz in der Sitzung gehalten) |
 | `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile |
 | `OrvantaSignatureService` | `app/Services/Orvanta/` | Signaturvorlagen (Abschnitt 4a): Validierung, Zuordnung per AD-Gruppe, E-Mail-taugliches HTML aus Vorlage + Telefonliste + Design, `append()`/`strip()` beim Senden |
@@ -781,6 +781,23 @@ Umsetzung in [docs/orvanta-referenz.md](orvanta-referenz.md) Abschnitt 23.
 
 ## 5. Anhänge, Zwischenspeicher und Nextcloud
 
+- **Virenprüfung (optional):** Ist die Malware-Protection eingeschaltet, prüft
+  Orvanta jeden Anhang vor dem Öffnen und vor der Übertragung nach Nextcloud im
+  Container `clamav` (`MalwareScanService`, Vorgaben in `config/malware.php`,
+  Schalter und Grenzen unter System → Malware-Protection). Während der Prüfung
+  liegt ein Overlay über der Ansicht („Datei wird überprüft …“); ohne Befund
+  schließt es sich und die Datei öffnet sich wie gewohnt. Bei einem Befund oder
+  wenn der Scanner nicht erreichbar ist (je nach Einstellung) unterdrückt
+  Orvanta die Auslieferung und meldet nur, dass die Datei derzeit nicht geöffnet
+  werden kann – Einzelheiten gibt es bewusst nicht. Der Befund wird
+  protokolliert und kann im Adminbereich freigegeben werden; danach ist die
+  Datei für diesen Benutzer wieder zugänglich. Details:
+  [malware-protection.md](malware-protection.md).
+
+  ![Prüf-Overlay beim Öffnen eines Anhangs](screenshots/137-orvanta-scan-overlay.png)
+
+  ![Befund: Der Anhang kann nicht geöffnet werden](screenshots/138-orvanta-scan-befund.png)
+
 - **Öffnen:** Klick auf einen Anhang → `POST /api/orvanta/anhang/link` liefert
   eine kurzlebige, signierte URL (`OrvantaAttachmentService::token()`/`verify()`, HMAC
   mit `APP_KEY`, Ablauf wenige Minuten). Der Browser öffnet sie in einem neuen
@@ -1129,6 +1146,15 @@ Wort begrenzt, der Browser schickt nur Wörter, die er noch nicht kennt.
   „abgeschaltet“), die Signatur am Ende der Notiz sowie Zustand und HTML.
   Im Demo-Modus bestätigt `DemoExchangeTransport` das Setzen nur – der Banner
   folgt dort den gespeicherten Einstellungen und dem Datumsfenster.
+- `tests/Unit/MalwareScanTest.php` prüft die Virenprüfung mit einem
+  aufzeichnenden `FakeMalwareScanner` (gegen SQLite): Abschaltung und leere
+  Inhalte, Auslieferung ohne Befund, Sperre bei Befund samt Protokolleintrag
+  (dasselbe Paar aus Kennung und Prüfsumme wird nur einmal geführt), Freigabe
+  und Entfernen durch die Administration, Ausfall des Scanners mit und ohne
+  Fail-Closed, Größenbegrenzung, Zuordnung unbekannter Fundorte, Aufbewahrung,
+  Stand des Scanners für den Adminbereich, Auswertung der clamd-Antworten und
+  des Signaturstands sowie ein fehlender Scanner
+  ([malware-protection.md](malware-protection.md)).
 
   ```bash
   php tests/run.php
@@ -1152,6 +1178,11 @@ Wort begrenzt, der Browser schickt nur Wörter, die er noch nicht kennt.
   Ressourcen, keine Inline-Styles → CSP-konform über CSSOM).
 - Anhang-Links sind signiert, benutzergebunden und kurzlebig; Dateinamen werden
   für Nextcloud-Pfade bereinigt.
+- Virenprüfung: Ist sie eingeschaltet, verlässt ein Anhang den Server erst nach
+  der Prüfung im `clamav`-Container; bei einem Befund erhält der Benutzer keine
+  Details, nur den Hinweis, dass die Datei nicht geöffnet werden kann. Der
+  Befund wird im Adminbereich protokolliert und kann dort freigegeben oder die
+  Nachricht aus dem Postfach entfernt werden ([malware-protection.md](malware-protection.md)).
 - Rechtschreibprüfung: Der Text bleibt im Haus – geprüft wird auf dem
   Intranet-Server gegen ein lokales Wörterbuch, es gibt keine externe
   Rechtschreib-API. Nur einzelne Wörter (nie Zusammenhänge, nie Adressen)

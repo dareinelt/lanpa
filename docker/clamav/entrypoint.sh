@@ -43,7 +43,11 @@ if ! echo "${checks}" | grep -Eq '^[0-9]+$' || [ "${checks}" -lt 1 ]; then
     checks="24"
 fi
 
+# Analysegrenzen folgen der Stream-Obergrenze: Sonst nimmt clamd groessere
+# Streams an, prueft sie aber nur bis MaxScanSize/MaxFileSize.
 sed -i "s|^StreamMaxLength .*|StreamMaxLength ${max_stream_length}|" "${clamd_conf}"
+sed -i "s|^MaxScanSize .*|MaxScanSize ${max_stream_length}|" "${clamd_conf}"
+sed -i "s|^MaxFileSize .*|MaxFileSize ${max_stream_length}|" "${clamd_conf}"
 sed -i "s|^Checks .*|Checks ${checks}|" "${freshclam_conf}"
 
 # freshclam stoesst nach einer Aktualisierung ein RELOAD der laufenden

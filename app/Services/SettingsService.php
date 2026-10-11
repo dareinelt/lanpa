@@ -100,6 +100,17 @@ final class SettingsService
             'snmp_community' => (string) Config::get('snmp.community', 'public'),
             'snmp_sys_location' => (string) Config::get('snmp.sys_location', 'Intranet'),
             'snmp_sys_contact' => (string) Config::get('snmp.sys_contact', 'admin@example.internal'),
+            // Malware-Protection (ClamAV): standardmaessig aus, damit eine
+            // Installation ohne ClamAV-Container unveraendert laeuft.
+            'malware_protection_enabled' => '0',
+            'malware_host' => (string) Config::get('malware.host', 'clamav'),
+            'malware_port' => (string) Config::get('malware.port', 3310),
+            'malware_timeout' => (string) Config::get('malware.timeout', 15),
+            // Ohne Antwort des Scanners sperren (1) oder ungeprueft ausliefern (0).
+            'malware_fail_closed' => '1',
+            // Groesste Datei, die geprueft wird (0 = ohne Grenze).
+            'malware_max_bytes' => (string) Config::get('malware.max_bytes', 0),
+            'malware_log_retention_days' => '90',
             'sms_code_template' => 'Ihr Zugangscode: {code}',
             'sms_code_timeout' => '120',
             'sms_code_secret' => '',

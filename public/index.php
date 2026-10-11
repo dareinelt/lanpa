@@ -24,6 +24,7 @@ use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\IncidentController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\MailProxyController;
+use App\Controllers\Admin\MalwareController;
 use App\Controllers\Admin\NavigationController;
 use App\Controllers\Admin\NetworkDriveController as NetworkDriveAdminController;
 use App\Controllers\Admin\OfficeController as OfficeAdminController;
@@ -473,6 +474,13 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
 
         $router->get('/admin/snmp', [SnmpController::class, 'index']);
         $router->post('/admin/snmp', [SnmpController::class, 'update']);
+
+        // Malware-Protection (ClamAV): Befunde gesperrter Anhaenge, Freigabe
+        // oder Entfernen der Nachricht sowie die Einstellungen der Pruefung.
+        $router->get('/admin/malware-protection', [MalwareController::class, 'index']);
+        $router->post('/admin/malware-protection/einstellungen', [MalwareController::class, 'updateSettings']);
+        $router->post('/admin/malware-protection/freigeben', [MalwareController::class, 'release']);
+        $router->post('/admin/malware-protection/entfernen', [MalwareController::class, 'remove']);
 
         // Gesamt-Topologie der Anwendung: lesende Uebersicht ueber alle Module,
         // Dienste, Container, Netze und Speicherziele.

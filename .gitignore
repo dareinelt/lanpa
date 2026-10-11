@@ -29,3 +29,4 @@ Thumbs.db
 /backups/
 /docker-compose.sso.yml
 __pycache__/
+storage/cache/

@@ -97,7 +97,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/CurlExchangeTransport.php` | cURL-POST, Auth `negotiate` (mit Dienstkonto `CURLAUTH_NTLM`, da GSSAPI Benutzer/Kennwort ignoriert und `app` kein Kerberos-Ticket hat; ohne Konto `CURLAUTH_NEGOTIATE` mit `:`), `ntlm`, `basic`; keine Redirects, nur HTTP(S); liefert `auth_offered` (WWW-Authenticate der letzten Antwort) |
 | `app/Services/Orvanta/DemoExchangeTransport.php` | Beispieldaten; erkennt die Operation per `str_contains()` am SOAP-Text; schreibende Aufrufe werden bestätigt, nicht gespeichert |
 | `app/Services/Orvanta/MailHtmlSanitizer.php` | `clean(html): {html, blocked_images}` – Whitelist für Tags/Attribute (Abschnitt 10) |
-| `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()` |
+| `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()`, `inspect()` (Virenprüfung über `App\Services\Malware\MalwareScanService`, siehe Abschnitt 7.1) |
 | `app/Services/Orvanta/OrvantaNotificationService.php` | `sync()`, `poll()`, `dismiss()`, `snooze()`, `relative()` |
 | `app/Services/Orvanta/OrvantaRecipientService.php` | `suggest()` (Verlauf + Telefonliste), `remember()` (nach Versand, schreibt `.empfaenger.json`), `recent()` (Nextcloud-Lesen mit Sitzungs-Cache); `FILE_NAME`, `MAX_ENTRIES`, `CACHE_TTL` |
 | `app/Services/Orvanta/OrvantaSignatureService.php` | Signaturvorlagen (Abschnitt 16): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)` → `{id,name,html}`, `person()`, `render()`, `preview()`, statisch `extension()`, `append(body, html)`, `strip(body)`; Konstanten `MARKER_CLASS`, `QUOTE_CLASS`, `PHONE_MODES`, `EXTENSION_LENGTH`, `LINE_HEIGHT`, `LOGO_MAX_WIDTH`, `DEFAULT_TEXT_COLOR`, `DEFAULT_SEPARATOR_COLOR`, `SAMPLE_PERSON`; statisch `logoSize()`, `imageDimensions()`, `scaleImage()` (verkleinert das Logo selbst auf die Anzeigegröße: Raster per GD als PNG, SVG über width/height) |
@@ -485,6 +485,7 @@ Grenzwerte (Server maßgeblich):
 | Snooze | 1–1440 Minuten | `snoozeReminder()`, `OrvantaNotificationService::snooze()` |
 | Anhang-Token | 300 s | `OrvantaAttachmentService::TOKEN_LIFETIME` |
 | Datei im Zwischenspeicher / in Nextcloud | ≤ 16 MiB und ≤ Quota | `NextcloudFilesService::MAX_BYTES` |
+| Virenprüfung: geprüfte Dateigröße / Zeitlimit | `malware_max_bytes` (0 = ohne Grenze, größere Anhänge werden gesperrt) / `malware_timeout` Sekunden | `MalwareScanService::inspect()`, `ClamdScanner` |
 | KI: markierter Text / Anweisung / Kontextfelder | ≤ 8 000 / ≤ 1 000 / ≤ 300 Zeichen; Antwort ≤ 1 200 Token | `OrvantaAiService::MAX_*`; Client spiegelt `AI_MAX_TEXT`/`AI_MAX_PROMPT` |
 | KI: Zeitlimits | Erreichbarkeit 3 s (Cache 60 s), Anfrage `ORVANTA_AI_TIMEOUT` (5–120 s, Standard 30) | `AVAILABILITY_TIMEOUT`, `AVAILABILITY_TTL`, `Container::orvantaAi()` |
 | Rechtschreibung: Wörter je Anfrage / Wortlänge | 400 / 64 Zeichen | `OrvantaSpellcheckService::MAX_WORDS_PER_REQUEST`, `MAX_WORD_LENGTH` (Client spiegelt `SPELL_MAX_WORDS`/`SPELL_MAX_WORD_LENGTH`) |
@@ -529,6 +530,18 @@ Klick in orvanta.js
   Download-Fallback.
 - `attachmentFile()` prüft **nur** das Token (der DocumentServer hat keine
   Intranet-Session) und lädt die Datei für `claims.uid`/`claims.impersonate`.
+- **Virenprüfung (Malware-Protection, optional):** `attachmentLink` prüft den
+  Anhang vorab (`OrvantaAttachmentService::inspect()`) und antwortet bei einem
+  Befund mit `OrvantaException` (`malware` bzw. `malware_unavailable`), damit
+  der Client kein Popup mit einer gesperrten Datei öffnet. `load()` prüft
+  zusätzlich jeden tatsächlich geladenen Inhalt; `saveToNextcloud()` ruft
+  `inspect()` mit dem Fundort `orvanta-nextcloud` auf. Die Entscheidung trifft
+  `App\Services\Malware\MalwareScanService::inspect()` (Schalter
+  `malware_protection_enabled`, Grenze `malware_max_bytes`, Fail-Closed über
+  `malware_fail_closed`, Ausnahme bereits freigegebener Inhalte über
+  `MalwareScanRepository::isReleased()`); Befunde landen in
+  `malware_scans_log`, die Meldung ist immer `MalwareScanService::BLOCKED_MESSAGE`.
+  Details: [malware-protection.md](malware-protection.md).
 
 ### 7.2 Laden und Zwischenspeicher (`OrvantaAttachmentService`)
 
@@ -755,6 +768,16 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   `spellMenuItems()`/`spellMenuEntries()` bauen das Untermenü,
   `spellReplace()` ersetzt das Wort, `spellSchedule()`/`spellScan()` prüfen
   nach 400 ms Ruhe, `initSpellcheck()` bindet Editoren und `MutationObserver`.
+- Virenprüfung (Abschnitt 7.1): `scanOverlay()` legt ein Overlay
+  (`.ov-scan`, Spinner, „Datei wird überprüft …“, laufender Balken) über die
+  Ansicht und gibt `{close, blocked}` zurück; `close()` wartet mindestens
+  `SCAN_MIN_MS` (450 ms), damit die Anzeige nicht flackert, `blocked()` ersetzt
+  die Karte durch `.ov-scan__card--blocked` („⚠“, „Die Datei kann derzeit
+  nicht geöffnet werden.“, „Schließen“). `scanBlocked(err)` erkennt die Gründe `malware` und
+  `malware_unavailable` am Fehlercode der API. Beide Wege – „Öffnen“ und
+  „In Nextcloud speichern“ – laufen darüber; die Gestaltung steht in
+  `orvanta.css` (`.ov-scan*`), `prefers-reduced-motion` verlangsamt die
+  Animationen.
 
 ### 9.2 Gestaltung
 
@@ -899,6 +922,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage, Zustand bleibt erhalten, `template_changed`), Abschalten ohne zugewiesene Vorlage (Text und Vorlage bleiben, Aktivieren abgelehnt), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
+| `tests/Unit/MalwareScanTest.php` | Virenprüfung (Abschnitt 7.1): Abschaltung, leere Inhalte, Auslieferung ohne Befund, Sperre bei Befund mit Protokolleintrag (dasselbe Paar aus Kennung und Prüfsumme nur einmal), Freigabe/Entfernen, Ausfall des Scanners mit und ohne Fail-Closed, Größenbegrenzung, Fundort-Zuordnung, Aufbewahrung, Scanner-Stand, clamd-Antworten und Signaturstand – mit `FakeMalwareScanner` gegen SQLite; Testbausteine `malwarePdo()` und `malwareService()` in `tests/Unit/MalwareScanTest.php` |
 
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema

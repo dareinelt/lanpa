@@ -19,6 +19,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | Telefonliste | Suche über Name, Vorname, Nachname, Abteilung und Telefonnummer (Live-Suche, Paginierung); Einträge ohne E-Mail-Adresse sind nur für angemeldete Administratoren sichtbar; einzelne Einträge lassen sich im Adminbereich ein-/ausblenden (Standard: eingeblendet) |
 | AD-Synchronisation | LDAP/LDAPS-Abgleich in die lokale Datenbank, konfigurierbares Intervall und Attribut-Mapping; optional AD-Gruppen aus konfigurierbaren Pfaden (inkl. verschachtelter Mitgliedschaften) für die Rechtevergabe |
 | Office (optional) | Nextcloud mit Euro-Office DocumentServer hinter demselben Einstieg, Einrichtung per Einzeiler, Updates aus den offiziellen Quellen, Rechte über Benutzer/AD-Gruppen, Intranet-Fußzeile, gestaltbare Kachel mit Verfügbarkeitsstatus, Office-Apps (Euro-Office-Webapps, Dateien, Outlook Web App) mit Freigabe per AD-Gruppe/App-Paket, Mail- und Kalender-App **Orvanta** (Exchange On-Premise ≥ 2016/2019 via EWS mit SSO-Identität, Anhänge in Euro-Office öffnen oder in Nextcloud speichern, Zwischenspeicher mit eigenem Quota, Terminerinnerungen als Browser-Benachrichtigung und in den Mitteilungen der Kopfzeile – siehe [docs/orvanta.md](docs/orvanta.md)), lokaler KI-Endpunkt für alle Benutzer (Nextcloud-Assistent, KI-Plugin der Editoren; Audio/Bilder optional), Speicherplatz-Kontingente je Benutzer (Standard 500 MB, je AD-Gruppe, individuell mit Begründung und Verlauf), Netzlaufwerke der Windows-Clients in „Dateien“ (Opt-in je Benutzer, Ausschlussliste im Adminbereich), App-Store im Adminbereich abschaltbar, verschlüsselte Sicherung – siehe [docs/office.md](docs/office.md) |
+| Malware-Protection (optional) | Virenprüfung (ClamAV) aller Anhänge, die in Orvanta geöffnet oder nach Nextcloud übertragen werden: der Container `clamav` prüft jede Datei vor der Auslieferung, ein Overlay zeigt „Datei wird überprüft …“, befundete Dateien werden nicht ausgeliefert, sondern unter System → Malware-Protection protokolliert und können dort freigegeben oder aus dem Postfach entfernt werden – siehe [docs/malware-protection.md](docs/malware-protection.md) |
 | Notfallnummern | Eigene, farblich abgesetzte Kacheln für Notfallnummern (z. B. Werkschutz, Feuerwehr), im Adminbereich pflegbar |
 | KI-Oberfläche LLMInt (optional) | [LLMInt](https://github.com/dareinelt/LLMInt) (eigener Stack) hinter demselben Einstieg unter `/ki/` – gleiches HTTPS-Zertifikat, Windows-Anmeldung über den `auth`-Container, Streaming der Antworten – siehe [docs/llmint.md](docs/llmint.md) |
 | Weiterleitung externer Kacheln (optional) | Je Kachel einschaltbar: externe Ziele (neuer Tab) laufen über den Reverse-Proxy des `auth`-Containers unter `/weiterleitung/<id>/` – damit entfallen DNS- und Zertifikatsprobleme in Zweigstellen/Außenstellen, die Zielanwendung merkt von der Weiterleitung nichts; Ausnahmen je Kachel als CIDR-Quellnetze, die weiterhin direkt aufrufen – siehe [docs/weiterleitung.md](docs/weiterleitung.md) |
@@ -116,6 +117,7 @@ installieren, nicht starten).
 | `phpmyadmin` | optional, Profil `tools` | – |
 | `snmp` | net-snmp-Agent, Status der Dienste/Workflows per SNMP (UDP 161) | – |
 | `monitor` | CPU- und Arbeitsspeicher-Auslastung der übrigen Container für die Kacheln des Admin-Dashboards (read-only Docker-Socket, Python-Standardbibliothek) | – |
+| `clamav` | ClamAV (clamd über TCP 3310) und Signaturaktualisierung (`freshclam`) für die Malware-Protection der Orvanta-Anhänge, kein Port nach außen ([docs/malware-protection.md](docs/malware-protection.md)) | `clamdscan --ping` |
 | `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter, optional `/ki/` an LLMInt ([docs/llmint.md](docs/llmint.md)); Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
 | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
 | `storage-sync` | optional, Profil `office` – Speicher-Tiering und HA-Synchronisation der Office-Daten auf SMB-Freigaben und S3-kompatible Objektspeicher (s3fs/FUSE) ([docs/storage.md](docs/storage.md), Container-Übersicht [docs/storage-stack.md](docs/storage-stack.md)) | `agent.alive` jünger als 30 s |
@@ -189,7 +191,10 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | `ALARM_PASSWORD` / `ALARM_PASSWORD_FILE` | Gateway-Passwort (nur ENV bzw. Docker-Secret) | – |
 | `SNMP_COMMUNITY`, `SNMP_SYS_LOCATION`, `SNMP_SYS_CONTACT` | SNMP-Agent (Community-String, Standort, Kontakt) | `public` / `Intranet` / `admin@example.internal` |
 | `SNMP_PORT` | Am Host veröffentlichter UDP-Port des SNMP-Agenten (nur Docker-Port-Mapping) | `161` |
-| `MONITOR_INTERVAL`, `MONITOR_SERVICES` | Kennzahlen der übrigen Container für das Admin-Dashboard: Abstand der Messungen (Sekunden) und beobachtete Compose-Dienste | `60` / `app,db,mail-proxy,nextcloud,eurooffice` |
+| `MONITOR_INTERVAL`, `MONITOR_SERVICES` | Kennzahlen der übrigen Container für das Admin-Dashboard: Abstand der Messungen (Sekunden) und beobachtete Compose-Dienste | `60` / `app,db,mail-proxy,clamav,nextcloud,eurooffice` |
+| `CLAMAV_HOST`, `CLAMAV_PORT` | Adresse des `clamav`-Containers für die Malware-Protection (im Adminbereich überschreibbar) | `clamav` / `3310` |
+| `CLAMAV_TIMEOUT`, `CLAMAV_MAX_BYTES` | Zeitlimit einer Prüfung (Sekunden) und größte geprüfte Datei (Byte, `0` = ohne Grenze; größere Anhänge werden gesperrt) | `15` / `0` |
+| `CLAMAV_MAX_STREAM_LENGTH`, `CLAMAV_FRESHCLAM_CHECKS` | Grenze eines Prüfauftrags im `clamav`-Container und Abstand der Signaturaktualisierung (Stunden) | `100M` / `24` |
 | `SSO_ENABLED` | Windows-Anmeldung (Kerberos/NTLM) global ein-/ausschalten; Domänen werden im Adminbereich gepflegt | `false` |
 | `SSO_REALM` | Kerberos-Realm der Hauptdomäne; leer = automatisch vom Domänencontroller ermittelt | leer |
 | `SSO_SPN_HOSTS` | Weitere Hostnamen (kommagetrennt), unter denen das Intranet aufgerufen wird (Kerberos-SPNs zusätzlich zum Hostnamen aus `APP_URL`) | leer |
@@ -238,6 +243,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Aktivierungs-Rufnummern | Für den geschützten Zugriffsmodus erlaubte Rufnummern pflegen |
 | Zertifikate (HTTPS) | Request (CSR) für den `auth`-Container erstellen und herunterladen, von der CA ausgestelltes Zertifikat (PEM/CRT) mit Vorschau importieren, aktives Zertifikat wählen, Verlauf aller Requests und Zertifikate, Quellnetze für HTTP ohne gültiges Zertifikat |
 | SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
+| Malware-Protection | Zustand der Virenprüfung (Schalter, Scanner und Signaturstand des `clamav`-Containers), Liste der blockierten Anhänge mit Freigabe oder Entfernen aus dem Postfach, Verlauf der bearbeiteten Befunde, Einstellungen ([docs/malware-protection.md](docs/malware-protection.md)) |
 | Bekannte Quellnetze | Größere Netze des eigenen Hauses in CIDR-Schreibweise eintragen (z. B. `192.168.200.0/21`); der Adressbereich wird aus dem Präfix errechnet und angezeigt. Die vom `auth`-Container je /24 bzw. /64 gemeldeten Quellen der Kachel „Reverse-Proxy“ werden darin zusammengefasst – auch rückwirkend für bereits gemessene Proben |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |
 | Benutzer | Benutzerverwaltung: Konten anlegen/bearbeiten/deaktivieren/löschen, Rollenvergabe (nur für Administratoren); **Administratoren aus AD-Gruppen**: Mitglieder festzulegender AD-Gruppen werden Intranet-Administratoren (Anmeldung per Windows-Anmeldung) bzw. Nextcloud-Administratoren ([docs/office.md](docs/office.md#nextcloud-administratoren-aus-ad-gruppen)) |
@@ -251,7 +257,7 @@ unter dem aufklappbaren Punkt **Storage** zusammengefasst (der Zähler offener V
 Punkt Storage); ihre Pfade bleiben unverändert.
 
 Die Punkte Zertifikate (HTTPS), SNMP, Benutzer, Sicherung und E-Mail (SMTP) sind in der Admin-Navigation
-unter dem aufklappbaren Punkt **System** zusammengefasst; ihre Pfade bleiben unverändert.
+unter dem aufklappbaren Punkt **System** zusammengefasst (dort auch Malware-Protection); ihre Pfade bleiben unverändert.
 
 Rollen: **Administrator** darf den gesamten Adminbereich verwalten, inkl. Benutzerverwaltung. Die Gruppe
 **Redaktion** darf ausschließlich die „Wichtigen Links“ bearbeiten; alle anderen Admin-Bereiche sind für sie
@@ -577,8 +583,8 @@ Hinweise:
 
 ### Kennzahlen der Container auf dem Dashboard
 
-Der Adminbereich zeigt für die Container `app`, `db`, `mail-proxy`, `nextcloud`
-und `eurooffice` je eine Kachel mit CPU- und Arbeitsspeicher-Auslastung –
+Der Adminbereich zeigt für die Container `app`, `db`, `mail-proxy`, `clamav`,
+`nextcloud` und `eurooffice` je eine Kachel mit CPU- und Arbeitsspeicher-Auslastung –
 analog zur Kachel „Reverse-Proxy“, die der `auth`-Container selbst füllt. Ein
 Klick auf eine Kachel öffnet Details und Verlaufsgrafiken. Die Werte liest der
 Dienst `monitor` über den read-only eingebundenen Docker-Socket aus (dieselben
@@ -586,6 +592,18 @@ Zahlen wie `docker stats`) und meldet sie an die Anwendung; er braucht keine
 Konfiguration und keine zusätzlichen Ports. Vorgaben und Prüfung:
 [installation.md](docs/installation.md), Abschnitt „Kennzahlen der übrigen
 Container“.
+
+### Malware-Protection (Virenprüfung)
+
+Der Container `clamav` prüft Anhänge, die in Orvanta geöffnet oder nach Nextcloud
+übertragen werden, bevor sie den Benutzer erreichen. Ohne Befund wird die Datei
+wie gewohnt ausgeliefert, bei einem Befund nicht – der Benutzer sieht nur den
+Hinweis, dass die Datei derzeit nicht geöffnet werden kann. Der Befund erscheint
+unter **System → Malware-Protection** mit Freigabe und der Möglichkeit, die
+Nachricht aus dem Postfach zu entfernen. Die Signaturdatenbank lädt `freshclam`
+im Container und hält sie selbst aktuell; der Adminbereich zeigt Signaturstand
+und Erreichbarkeit des Scanners. Einzelheiten, Grenzen und Fehlersuche:
+[malware-protection.md](docs/malware-protection.md).
 
 ### SNMP-Überwachung
 
@@ -839,6 +857,8 @@ aus der Anwendung heraus verlinkt (`public/manuals/`); die Anzeige lässt sich i
 | AD-Gruppen-Pfad | <img src="docs/screenshots/41-admin-ad-gruppenpfad.png" alt="AD-Gruppen-Pfad" width="520"> |
 | Berechtigungen mit Gruppenvorschlägen | <img src="docs/screenshots/40-admin-ad-gruppen-vorschlaege.png" alt="Gruppenvorschläge" width="520"> |
 | Bekannte Quellnetze | <img src="docs/screenshots/128-admin-quellnetze.png" alt="Bekannte Quellnetze" width="520"> |
+| Malware-Protection: Status und Einstellungen | <img src="docs/screenshots/135-admin-malware-protection.png" alt="Malware-Protection" width="520"> |
+| Malware-Protection: blockierte Anhänge | <img src="docs/screenshots/136-admin-malware-protection-befunde.png" alt="Blockierte Anhänge" width="520"> |
 
 </details>
 

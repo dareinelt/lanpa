@@ -176,7 +176,7 @@ GET /admin/topologie
 
 ## 5. Datenquellen und Erhebungslogik
 
-`TopologyCollector::collect()` ruft 17 Bereiche auf. Jeder Bereich ist einzeln
+`TopologyCollector::collect()` ruft 18 Bereiche auf. Jeder Bereich ist einzeln
 in `try/catch` gefasst: ein defektes oder nicht migriertes Modul darf die
 Gesamtansicht nicht verhindern, sondern erscheint als `unknown` mit
 „unbekannt“-Meldung. Jeder Bereich liefert dieselbe Form:
@@ -203,6 +203,7 @@ Gesamtansicht nicht verhindern, sondern erscheint als `unknown` mit
 | `alarm` | Alarmierungskonfiguration | Nur Konfigurationsprüfung. |
 | `emergency` | Notfallplan | Nur Konfigurationsprüfung. |
 | `monitoring` | SNMP-Konfiguration | Nur Konfigurationsprüfung. |
+| `malware` | Virenprüfung der Anhänge (ClamAV) | `disabled` ohne Aktivierung; `warn`, solange gesperrte Anhänge auf eine Entscheidung warten; sonst `unknown` (die Erreichbarkeit des Scanners wird hier nicht geprüft). |
 | `ai` | KI-Konfiguration | Konfiguriert, aber **bewusst** `unknown`: Erreichbarkeit wird hier nicht geprüft. |
 | `optional` | Optionale Erweiterungen | Immer `unknown` – „werden von der Anwendung aus nicht überwacht“. |
 
@@ -346,13 +347,14 @@ dadurch `off` und nicht `unknown`.
 | `storage:hot` | Ohne Speicher-HA `off` bzw. ohne Messung `unknown` mit erklärender Meldung; `measured_at` nur bei echter Messung. |
 | `storage:snapshots` | Meldung fällt auf die Bereichsmeldung zurück, wenn keine eigene vorliegt. |
 | `protect:office-backup`, `mail:dispatch` | Abgeschaltet → `off` mit Aussagekraft `proven` (die Abschaltung ist belegt); leere Fakten werden ausgelassen. |
+| `monitor:clamav` | Zustand aus dem Bereich `malware` (siehe Abschnitt 5): abgeschaltet → `off`, gesperrte Anhänge → `warn`, sonst `unknown`; `optional`, solange die Virenprüfung nicht eingeschaltet ist; Verweis `/admin/malware-protection`. |
 
 **Verweise.** Jeder Knoten-`link` zeigt auf eine vorhandene GET-Route unter
 `/admin` (z. B. `/admin/zertifikate`, `/admin/ad`, `/admin/office/orvanta`,
 `/admin/office/orvanta/hosts`, `/admin/speicher-ha`,
 `/admin/speicher-ha/dateiversionen`, `/admin/office/sicherung`,
-`/admin/alarmierung`). Ein Test gleicht alle Verweise gegen
-`public/index.php` ab.
+`/admin/alarmierung`, `/admin/malware-protection`). Ein Test gleicht alle
+Verweise gegen `public/index.php` ab.
 
 **Nicht überwacht ≠ unbekannt.** Beim Bau des Vertrags gilt:
 
@@ -893,6 +895,9 @@ z. B. der Weg eines Sicherungsziels oder die Wirkung eines Replikats.
   nicht automatisch geprüft.
 - `alarm`, `emergency` und `monitoring` prüfen nur die Konfiguration, nicht die
   Wirkung.
+- Der Bereich `malware` prüft ebenfalls nur die Konfiguration und die Zahl der
+  gesperrten Anhänge; ob clamd antwortet, zeigt erst die Prüfung eines Anhangs
+  bzw. der Adminbereich unter System → Malware-Protection.
 
 **Weitere Grenzen:**
 

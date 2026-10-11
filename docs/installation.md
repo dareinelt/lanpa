@@ -394,7 +394,7 @@ Domänen sind eigene Dienste und haben eigene Grenzen.
 ### Kennzahlen der übrigen Container
 
 Auf dem Admin-Dashboard zeigt jeder der Container `app`, `db`, `mail-proxy`,
-`nextcloud` und `eurooffice` eine eigene Kachel mit CPU- und
+`clamav`, `nextcloud` und `eurooffice` eine eigene Kachel mit CPU- und
 Arbeitsspeicher-Auslastung. Diese Container messen sich nicht selbst; die Werte
 liest der kleine Dienst `monitor` (Python-Standardbibliothek, `docker/monitor/`)
 über den **read-only** eingebundenen Docker-Socket aus und meldet sie an die
@@ -404,7 +404,7 @@ die Vorgaben in `docker-compose.yml` genügen:
 | Stellschraube | Vorgabe | Bedeutung |
 | --- | --- | --- |
 | `MONITOR_INTERVAL` | `60` | Abstand der Messungen in Sekunden. |
-| `MONITOR_SERVICES` | `app,db,mail-proxy,nextcloud,eurooffice` | Beobachtete Compose-Dienste; nicht laufende Dienste werden ausgelassen (die Kachel zeigt dann nur einen Hinweis). |
+| `MONITOR_SERVICES` | `app,db,mail-proxy,clamav,nextcloud,eurooffice` | Beobachtete Compose-Dienste; nicht laufende Dienste werden ausgelassen (die Kachel zeigt dann nur einen Hinweis). |
 | `MONITOR_METRICS_URL` | `http://app/internal/container-metrics` | Ziel der Meldung innerhalb des internen Netzes. |
 | `MONITOR_METRICS_SERVICE` | `monitor` | Name, unter dem sich der Dienst gegenüber der Anwendung ausweist (muss vom `app`-Container auflösbar sein). |
 

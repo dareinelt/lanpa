@@ -9,6 +9,7 @@ use App\Contracts\OrvantaMailBackendInterface;
 use App\Security\SecretBox;
 use App\Services\MailProxy\OrvantaMailRouter;
 use App\Services\MailProxy\ProxyMailBackend;
+use App\Services\Malware\MalwareScanService;
 use App\Services\Office\NextcloudFilesService;
 use App\Services\Office\OfficeAppCatalog;
 use App\Services\Office\OfficeConfigService;
@@ -20,6 +21,10 @@ use App\Services\Office\OfficeJwt;
  * persoenlichen Nextcloud-Bereich und Zwischenspeicher empfangener Inhalte
  * im Nextcloud-Ordner des Benutzers mit eigenem Quota (aelteste Eintraege
  * werden verdraengt).
+ *
+ * Jeder Inhalt passiert vor der Auslieferung die Malware-Protection
+ * (MalwareScanService): ein Befund unterbindet die Auslieferung und wird im
+ * Adminbereich gefuehrt.
  */
 final class OrvantaAttachmentService
 {
@@ -44,7 +49,8 @@ final class OrvantaAttachmentService
         private readonly OrvantaExchangeService $exchange,
         private readonly SecretBox $secrets,
         private readonly ?OrvantaArchiveService $archive = null,
-        private readonly ?OrvantaMailRouter $router = null
+        private readonly ?OrvantaMailRouter $router = null,
+        private readonly ?MalwareScanService $malware = null
     ) {
     }
 
@@ -124,11 +130,14 @@ final class OrvantaAttachmentService
 
     /**
      * Laedt einen Anhang: zuerst aus dem Nextcloud-Zwischenspeicher, sonst von
-     * Exchange (und legt ihn danach im Zwischenspeicher ab).
+     * Exchange (und legt ihn danach im Zwischenspeicher ab). Der Inhalt passiert
+     * dabei die Malware-Protection; ein Befund wirft eine OrvantaException mit
+     * dem Grund "malware".
      *
+     * @param array{mailbox?:string,message_id?:string,subject?:string,source?:string} $context Angaben fuer das Befundprotokoll
      * @return array{name:string,content_type:string,content:string,size:int,cached:bool}
      */
-    public function load(string $uid, string $impersonate, string $attachmentId): array
+    public function load(string $uid, string $impersonate, string $attachmentId, array $context = []): array
     {
         // Anhaenge archivierter Nachrichten kommen aus dem Langzeitarchiv
         // (Container in Nextcloud), nicht von Exchange.
@@ -136,13 +145,13 @@ final class OrvantaAttachmentService
             $parts = explode(':', $attachmentId, 3);
             $archived = $this->archive->attachment($uid, (int) ($parts[1] ?? 0), (int) ($parts[2] ?? -1));
 
-            return [
+            return $this->inspect($uid, $attachmentId, [
                 'name' => $archived['name'],
                 'content_type' => $archived['content_type'],
                 'content' => $archived['content'],
                 'size' => strlen($archived['content']),
                 'cached' => false,
-            ];
+            ], $context);
         }
         // Backend des Benutzers (Exchange oder Proxy-Postfach) vor dem
         // Zwischenspeicher pruefen: Kennungen eines anderen Backends bzw.
@@ -157,21 +166,62 @@ final class OrvantaAttachmentService
         if ($cached !== null && $this->config->cacheQuotaBytes() > 0) {
             $fetched = $this->nextcloud->fetch($uid, $this->cacheFolder(), (string) $cached['name']);
             if ($fetched['ok'] && $fetched['content'] !== '') {
-                return [
+                return $this->inspect($uid, $attachmentId, [
                     'name' => self::displayName((string) $cached['name']),
                     'content_type' => (string) ($cached['content_type'] ?? ($fetched['content_type'] ?: 'application/octet-stream')),
                     'content' => $fetched['content'],
                     'size' => strlen($fetched['content']),
                     'cached' => true,
-                ];
+                ], $context);
             }
             $this->repository->deleteCacheItem((int) $cached['id']);
         }
 
         $attachment = $backend->attachment($impersonate, $attachmentId);
+        $attachment = $this->inspect($uid, $attachmentId, $attachment + ['cached' => false], $context);
         $this->cache($uid, $hash, $attachment);
 
-        return $attachment + ['cached' => false];
+        return $attachment;
+    }
+
+    /**
+     * Anhang pruefen, ohne ihn auszuliefern: der Client erfaehrt damit schon
+     * vor dem Oeffnen, ob die Datei gesperrt ist (Overlay "Datei wird
+     * ueberprueft ..."), und der Zwischenspeicher ist danach gefuellt.
+     *
+     * @param array{mailbox?:string,message_id?:string,subject?:string,source?:string} $context
+     */
+    public function precheck(string $uid, string $impersonate, string $attachmentId, array $context = []): void
+    {
+        $this->load($uid, $impersonate, $attachmentId, $context);
+    }
+
+    /**
+     * Inhalt durch die Malware-Protection schicken; bei einer Sperre wird die
+     * Auslieferung mit einer OrvantaException unterbunden.
+     *
+     * @param array{name:string,content_type:string,content:string,size:int} $file
+     * @param array{mailbox?:string,message_id?:string,subject?:string,source?:string} $context
+     * @return array{name:string,content_type:string,content:string,size:int}
+     */
+    private function inspect(string $uid, string $attachmentId, array $file, array $context): array
+    {
+        if ($this->malware === null) {
+            return $file;
+        }
+        $verdict = $this->malware->inspect($uid, $file['name'], $file['content'], $context + [
+            'attachment_id' => $attachmentId,
+            'content_type' => $file['content_type'],
+        ]);
+        if (!$verdict['allowed']) {
+            $reason = $verdict['reason'] === MalwareScanService::REASON_MALWARE
+                ? OrvantaException::MALWARE
+                : OrvantaException::MALWARE_UNAVAILABLE;
+
+            throw new OrvantaException(MalwareScanService::BLOCKED_MESSAGE, 403, null, $reason);
+        }
+
+        return $file;
     }
 
     /**
@@ -263,17 +313,22 @@ final class OrvantaAttachmentService
 
     /**
      * Speichert einen Anhang dauerhaft im Nextcloud-Bereich des Benutzers
-     * (Ordner „Orvanta/Anhänge“ bzw. gewaehlter Unterordner).
+     * (Ordner „Orvanta/Anhänge“ bzw. gewaehlter Unterordner). Der Inhalt
+     * passiert vorher die Malware-Protection; ein Befund wirft eine
+     * OrvantaException mit dem Grund "malware" (keine Ablage in Nextcloud).
      *
+     * @param array{mailbox?:string,message_id?:string,subject?:string} $context Angaben fuer das Befundprotokoll
      * @return array{ok:bool,message:string,path:string,target:string}
      */
-    public function saveToNextcloud(string $uid, string $impersonate, string $attachmentId, string $subfolder = ''): array
+    public function saveToNextcloud(string $uid, string $impersonate, string $attachmentId, string $subfolder = '', array $context = []): array
     {
         $reason = $this->nextcloud->unavailableReason();
         if ($reason !== null) {
             return ['ok' => false, 'message' => $reason, 'path' => '', 'target' => ''];
         }
-        $attachment = $this->load($uid, $impersonate, $attachmentId);
+        $attachment = $this->load($uid, $impersonate, $attachmentId, $context + [
+            'source' => MalwareScanService::SOURCE_NEXTCLOUD,
+        ]);
         $folder = $this->cacheFolder() . '/Anhänge';
         if ($subfolder !== '') {
             $folder .= '/' . NextcloudFilesService::segment($subfolder, 'Sonstiges');

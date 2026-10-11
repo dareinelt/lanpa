@@ -13,6 +13,8 @@ use RuntimeException;
  * MAIL_AUTH, wenn der Mailserver das hinterlegte Kennwort ablehnt, oder
  * MAIL_SOURCE, wenn der Mailserver einer Identitaetsquelle nicht erreichbar
  * ist (beides wertet der Nachrichtenfluss je Identitaetsquelle aus).
+ * MALWARE kennzeichnet einen Anhang, den die Malware-Protection gesperrt hat;
+ * das Frontend zeigt dazu nur eine allgemeine Meldung ohne Details.
  */
 final class OrvantaException extends RuntimeException
 {
@@ -21,6 +23,12 @@ final class OrvantaException extends RuntimeException
 
     /** Mailserver einer Identitaetsquelle ist nicht erreichbar (Netz, TLS, Zeit). */
     public const MAIL_SOURCE = 'mail_source';
+
+    /** Anhang durch die Malware-Protection gesperrt (keine Details an den Benutzer). */
+    public const MALWARE = 'malware';
+
+    /** Pruefung durch die Malware-Protection nicht moeglich (Scanner nicht erreichbar). */
+    public const MALWARE_UNAVAILABLE = 'malware_unavailable';
 
     public function __construct(string $message, private readonly int $status = 502, ?\Throwable $previous = null, private readonly string $reason = '')
     {

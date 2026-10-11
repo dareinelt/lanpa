@@ -14,7 +14,7 @@ use App\Support\Dates;
  *
  * Anders als beim auth-Container (App\Services\Auth\AuthMetricsService) kann
  * sich diese Messung nicht im Container selbst durchfuehren: app, db,
- * mail-proxy, nextcloud und eurooffice bringen kein Messskript mit. Der
+ * mail-proxy, clamav, nextcloud und eurooffice bringen kein Messskript mit. Der
  * Sammel-Container (docker/monitor/metrics.py) liest die Werte deshalb ueber
  * den read-only gemounteten Docker-Socket aus der Docker-Engine - dieselben
  * Zahlen wie "docker stats" - und meldet je Container eine Probe an
@@ -54,6 +54,7 @@ final class ContainerMetricsService
         'app' => 'Anwendung',
         'db' => 'Datenbank',
         'mail-proxy' => 'SMTP-/IMAP-Proxy',
+        'clamav' => 'Virenscanner (ClamAV)',
         'nextcloud' => 'Nextcloud',
         'eurooffice' => 'Euro-Office',
     ];

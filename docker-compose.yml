@@ -177,6 +177,36 @@ services:
       - intranet
       - office
 
+  # Virenscanner fuer die Malware-Protection der Orvanta-Anhaenge (Adminbereich
+  # -> System -> Malware-Protection, docs/malware-protection.md). clamd prueft
+  # die Dateiinhalte ueber TCP 3310, freshclam haelt die Signaturdatenbank
+  # aktuell. Kein Port nach aussen; die Anwendung erreicht den Container ueber
+  # CLAMAV_HOST/CLAMAV_PORT im Netz intranet. Er braucht ausgehende
+  # Verbindungen fuer die Signaturaktualisierung und liegt deshalb nicht in
+  # einem internen Netz. Der Dienst ist optional: ohne ihn startet die
+  # Anwendung unveraendert (Malware-Protection bleibt dann abgeschaltet).
+  clamav:
+    build:
+      context: .
+      dockerfile: docker/clamav/Dockerfile
+    restart: unless-stopped
+    environment:
+      CLAMAV_MAX_STREAM_LENGTH: ${CLAMAV_MAX_STREAM_LENGTH:-100M}
+      CLAMAV_FRESHCLAM_CHECKS: ${CLAMAV_FRESHCLAM_CHECKS:-24}
+    volumes:
+      - clamav_data:/var/lib/clamav
+    # clamd laeuft beschreibbar nur im Signatur-Volume; alles andere ist
+    # schreibgeschuetzt bzw. fluechtig.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /var/log/clamav
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - intranet
+
   # SMTP-/IMAP-Proxy fuer Orvanta-Benutzer ohne Exchange-Postfach
   # (Adminbereich -> Office -> SMTP-/IMAP-Proxy, docs/mail-proxy.md). Nur aus
   # dem internen Netz mail_proxy erreichbar (keine Portfreigabe), ohne
@@ -407,9 +437,9 @@ services:
   # Kennzahlen-Sammler: liest CPU- und Arbeitsspeicher-Auslastung der uebrigen
   # Container ueber den Docker-Socket (read-only) aus und meldet sie an
   # POST /internal/container-metrics. Daraus entstehen die Kacheln "Anwendung",
-  # "Datenbank", "SMTP-/IMAP-Proxy", "Nextcloud" und "Euro-Office" auf dem
-  # Admin-Dashboard. Die Container app, db, mail-proxy, nextcloud und
-  # eurooffice messen nicht selbst.
+  # "Datenbank", "SMTP-/IMAP-Proxy", "Virenscanner (ClamAV)", "Nextcloud" und
+  # "Euro-Office" auf dem Admin-Dashboard. Die Container app, db, mail-proxy,
+  # clamav, nextcloud und eurooffice messen nicht selbst.
   monitor:
     build:
       context: .
@@ -421,7 +451,7 @@ services:
     environment:
       MONITOR_METRICS_URL: ${MONITOR_METRICS_URL:-http://app/internal/container-metrics}
       MONITOR_INTERVAL: ${MONITOR_INTERVAL:-60}
-      MONITOR_SERVICES: ${MONITOR_SERVICES:-app,db,mail-proxy,nextcloud,eurooffice}
+      MONITOR_SERVICES: ${MONITOR_SERVICES:-app,db,mail-proxy,clamav,nextcloud,eurooffice}
       MONITOR_METRICS_SERVICE: ${MONITOR_METRICS_SERVICE:-monitor}
     env_file:
       - .env
@@ -728,6 +758,7 @@ services:
 
 volumes:
   db_data:
+  clamav_data:
   ki_models:
   app_storage:
   sso_token:

@@ -86,17 +86,19 @@ final class LanpaTopologyService
         'office_backend' => 'Netz office_backend (intern)',
         'mail_proxy' => 'Netz mail_proxy (intern)',
         'mail_egress' => 'Netz mail_egress',
+        'malware' => 'Netz malware (intern)',
+        'malware_egress' => 'Netz malware_egress',
         'storage_catalog' => 'Netz storage_catalog (intern)',
     ];
 
     /** Container aus docker-compose.yml => Netzwerke. */
     private const CONTAINER_NETWORKS = [
-        'app' => ['intranet', 'office', 'office_backend', 'mail_proxy'],
+        'app' => ['intranet', 'office', 'office_backend', 'mail_proxy', 'malware'],
         'db' => ['intranet'],
         'mail' => ['intranet'],
         'mail-archive' => ['intranet', 'office'],
         'mail-proxy' => ['mail_proxy', 'mail_egress'],
-        'clamav' => ['intranet'],
+        'clamav' => ['malware', 'malware_egress'],
         'auth' => ['intranet', 'office'],
         'sync' => ['intranet'],
         'phpmyadmin' => ['intranet'],

@@ -412,7 +412,7 @@ sind – die Linienart ist damit ein sichtbarer Hinweis auf die Belastbarkeit.
 **Aufbau.** `baseEdges()` legt die festen Beziehungen aus der Konfiguration an
 (`derived`); `dynamicEdges()` ergänzt Kanten aus den Tatsachen, z. B.
 Ausfälle oder Replikationsrichtungen. Netzwerkkanten entstehen aus
-`NETWORKS` (6 Netze) und `CONTAINER_NETWORKS` (21 Container), die
+`NETWORKS` (8 Netze) und `CONTAINER_NETWORKS` (21 Container), die
 `docker-compose.yml` spiegeln – sie sind `contains` + `derived`.
 
 ---

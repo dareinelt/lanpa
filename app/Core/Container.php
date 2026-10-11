@@ -48,6 +48,7 @@ use App\Services\LdapClient;
 use App\Services\LogoService;
 use App\Services\Malware\ClamdScanner;
 use App\Services\Malware\MalwareScanService;
+use App\Services\Malware\MalwareVerdictCache;
 use App\Services\NavigationService;
 use App\Services\Office\OfficeAiService;
 use App\Services\Office\OfficeAppService;
@@ -1346,7 +1347,8 @@ final class Container
             static fn (): MalwareScanService => new MalwareScanService(
                 self::malwareScanRepository(),
                 self::settings(),
-                self::malwareScanner()
+                self::malwareScanner(),
+                new MalwareVerdictCache(BASE_PATH . '/storage/cache/malware')
             )
         );
     }

@@ -132,6 +132,8 @@ services:
       - office_backend
       # SMTP-/IMAP-Proxy fuer Orvanta (nur app <-> mail-proxy).
       - mail_proxy
+      # Virenscanner der Malware-Protection (nur app <-> clamav).
+      - malware
 
   mail:
     build:
@@ -181,9 +183,9 @@ services:
   # -> System -> Malware-Protection, docs/malware-protection.md). clamd prueft
   # die Dateiinhalte ueber TCP 3310, freshclam haelt die Signaturdatenbank
   # aktuell. Kein Port nach aussen; die Anwendung erreicht den Container ueber
-  # CLAMAV_HOST/CLAMAV_PORT im Netz intranet. Er braucht ausgehende
-  # Verbindungen fuer die Signaturaktualisierung und liegt deshalb nicht in
-  # einem internen Netz. Der Dienst ist optional: ohne ihn startet die
+  # CLAMAV_HOST/CLAMAV_PORT im internen Netz malware (nur app <-> clamav, da
+  # clamd keine Anmeldung kennt und z. B. SHUTDOWN annimmt). Fuer die
+  # Signaturaktualisierung dient das Netz malware_egress. Der Dienst ist optional: ohne ihn startet die
   # Anwendung unveraendert (Malware-Protection bleibt dann abgeschaltet).
   clamav:
     build:
@@ -205,7 +207,8 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - intranet
+      - malware
+      - malware_egress
 
   # SMTP-/IMAP-Proxy fuer Orvanta-Benutzer ohne Exchange-Postfach
   # (Adminbereich -> Office -> SMTP-/IMAP-Proxy, docs/mail-proxy.md). Nur aus
@@ -794,6 +797,13 @@ networks:
     internal: true
   # Ausgehender Weg des mail-proxy zu den Mailservern (ohne Datenbank/app).
   mail_egress:
+    driver: bridge
+  # app <-> clamav (Malware-Protection); kein Zugang von aussen.
+  malware:
+    driver: bridge
+    internal: true
+  # Ausgehender Weg von clamav zu den Signaturquellen (freshclam).
+  malware_egress:
     driver: bridge
   # Katalog-Datenbank und Redis von storage-sync: nur storage-sync hat Zugang.
   storage_catalog:

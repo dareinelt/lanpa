@@ -3337,7 +3337,9 @@
         }
         var attachments = (event.attachments || []).filter(function (a) { return !a.inline; });
         if (attachments.length) {
-            wrap.appendChild(renderAttachments(attachments, mailboxOf(event.id), event));
+            // Bewusst ohne Kennung: Ein Termin ist keine Nachricht, die die
+            // Administration bei einem Befund aus dem Postfach entfernen soll.
+            wrap.appendChild(renderAttachments(attachments, mailboxOf(event.id), { subject: event.subject || '' }));
         }
         var body = el('div', { 'class': 'ov-mail__body' });
         body.innerHTML = event.body_html || '<p class="ov-muted">Keine Beschreibung.</p>';

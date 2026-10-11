@@ -130,7 +130,7 @@ final class OrvantaController extends Controller
         }
 
         try {
-            $file = $service->load($access['uid'], $claims['impersonate'], $claims['attachment_id']);
+            $file = $service->load($access['uid'], $claims['impersonate'], $claims['attachment_id'], ['mailbox' => $claims['impersonate']]);
         } catch (OrvantaException $exception) {
             throw new HttpException($exception->status() >= 500 ? 502 : $exception->status(), $exception->getMessage());
         }
@@ -160,7 +160,7 @@ final class OrvantaController extends Controller
             throw new HttpException(403, 'Ungültiger oder abgelaufener Anhang-Link.');
         }
         try {
-            $file = $service->load($claims['uid'], $claims['impersonate'], $claims['attachment_id']);
+            $file = $service->load($claims['uid'], $claims['impersonate'], $claims['attachment_id'], ['mailbox' => $claims['impersonate']]);
         } catch (OrvantaException $exception) {
             throw new HttpException(502, $exception->getMessage());
         }

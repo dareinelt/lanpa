@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Repositories\PhonebookRepository;
+use App\Services\PhonebookService;
 use App\Services\ThemeService;
 use App\Support\Html;
 use Tests\Support\Assert;
@@ -64,6 +65,18 @@ Runner::test('LIKE-Platzhalter in der Eingabe werden maskiert', static function 
     [, $params] = $repository->buildSearchCondition('100%_a');
 
     Assert::same('100\%\_a%', $params['t0_0']);
+    Assert::same('% 100\%\_a%', $params['w0_0']);
+});
+
+Runner::test('Suchbegriff trifft den Anfang eines Namensbestandteils', static function (): void {
+    /** @var PhonebookRepository $repository */
+    $repository = (new ReflectionClass(PhonebookRepository::class))->newInstanceWithoutConstructor();
+
+    [$sql, $params] = $repository->buildSearchCondition('Ulf');
+
+    Assert::contains('display_name LIKE :w0_0', $sql);
+    Assert::same('% Ulf%', $params['w0_0']);
+    Assert::same('% Ulf%', $params['w0_3']);
 });
 
 Runner::test('Jeder Platzhalter kommt nur einmal in der Bedingung vor', static function (): void {
@@ -121,4 +134,45 @@ Runner::test('Ausgeblendete Eintraege bleiben in der oeffentlichen Suche ausgesc
     [$sql] = $repository->buildSearchCondition('Muster');
 
     Assert::contains('visible = 1', $sql);
+});
+
+function searchTestPdo(): PDO
+{
+    $pdo = new PDO('sqlite::memory:');
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->exec(
+        'CREATE TABLE phonebook (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            identity_source_id INTEGER NOT NULL DEFAULT 0,
+            display_name VARCHAR(120) NOT NULL DEFAULT \'\',
+            first_name VARCHAR(64) NULL,
+            last_name VARCHAR(64) NULL,
+            phone VARCHAR(40) NULL,
+            phone_digits VARCHAR(40) NULL,
+            mobile VARCHAR(40) NULL,
+            email VARCHAR(120) NULL,
+            department VARCHAR(120) NULL,
+            ad_modified VARCHAR(32) NULL,
+            synced_at TEXT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            visible INTEGER NOT NULL DEFAULT 1
+        )'
+    );
+
+    return $pdo;
+}
+
+Runner::test('Vorname wird auch gefunden, wenn er nur im Anzeigenamen steht', static function (): void {
+    $pdo = searchTestPdo();
+    $pdo->exec("INSERT INTO phonebook (display_name, first_name, last_name, department, phone, phone_digits, email, active, visible) VALUES
+        ('Harding, Ulf', NULL, 'Harding', 'Zentrum fuer Notfallmedizin', '3809', '3809', 'ulf@example.de', 1, 1),
+        ('Muster, Erika', 'Erika', 'Muster', 'Verwaltung', '1234', '1234', 'erika@example.de', 1, 1)");
+
+    $service = new PhonebookService(new PhonebookRepository($pdo));
+
+    Assert::same(1, $service->search('Ulf')['total'], 'Vorname aus dem Anzeigenamen ("Nachname, Vorname") muss auffindbar sein.');
+    Assert::same(1, $service->search('Harding Ulf')['total'], 'Nach- und Vorname kombiniert muessen den Eintrag finden.');
+    Assert::same(1, $service->search('Notfallmedizin')['total'], 'Auch mehrteilige Bereiche werden am Wortanfang gefunden.');
+    Assert::same(1, $service->search('Erika')['total'], 'Ein gefuelltes Feld first_name wird weiterhin per Praefix gefunden.');
+    Assert::same(0, $service->search('ding')['total'], 'Teilwoerter innerhalb eines Namensbestandteils treffen nicht.');
 });

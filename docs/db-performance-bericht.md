@@ -116,7 +116,8 @@ relevant wird.
 | `LOWER(user_uid) = LOWER(:uid)` beim Löschen von Netzlaufwerken | `NetworkDriveRepository.php:53`, `77` | `uniq_network_drives_user_letter` wird nicht genutzt → Scan. |
 | `LOWER(p.group_name) IN (LOWER(:p0), …)` in der Kachel-Berechtigung | `NavigationRepository.php:139`, `103` | `idx_nav_perm_group (group_name)` wird nicht genutzt. Tabelle ist klein, daher moderat — aber es ist die häufigste Query der Anwendung. |
 | `NOT IN (SELECT …) OR IN (SELECT …)` über `navigation_item_permissions` | `NavigationRepository.php:146-148` | Erzwingt Materialisierung der Subquery bzw. Semi-Join statt eines einfachen Index-Lookups. Läuft pro Navigationsebene und pro Request. |
-| `phone_digits LIKE '%…%'` bei der Telefonnummernsuche | `PhonebookRepository.php:105` | Leading Wildcard → `idx_phonebook_phone` nicht nutzbar; Vollscan der `phonebook`-Tabelle pro Suchanfrage. |
+| `phone_digits LIKE '%…%'` bei der Telefonnummernsuche | `PhonebookRepository.php:117` | Leading Wildcard → `idx_phonebook_phone` nicht nutzbar; Vollscan der `phonebook`-Tabelle pro Suchanfrage. |
+| `display_name`/`first_name`/`last_name`/`department LIKE '%…%'` (Wortanfang) | `PhonebookRepository.php:111-113` | Leading Wildcard je Suchbegriff und Feld → Indizes nicht nutzbar; Vollscan der `phonebook`-Tabelle pro Suchanfrage. Bewusst in Kauf genommen, damit ein Vorname auch dann gefunden wird, wenn er nur im Anzeigenamen steht („Nachname, Vorname“) und `first_name` leer ist. |
 | 7× `LOWER(...) LIKE '%…%'` über TEXT-Spalten der Archivsuche | `OrvantaArchiveRepository.php:~330-345` | Vollscan über `search_text`, `recipients`, `attachment_names`. Kein `FULLTEXT`-Index vorhanden. |
 | Keine funktionalen Indizes | — | Für die `LOWER()`-Vergleiche existiert keine `(LOWER(col))`-Indexvariante. |
 
@@ -397,7 +398,11 @@ Projektprinzipien (Zero-Dependency, keine Migrationen ändern, nur neue `0NN_*.s
 - Die Telefonnummernsuche über `phone_digits LIKE '%…%'` ist strukturell nicht indizierbar.
   Optionen: (a) Suche auf Präfix umstellen, (b) normalisierte Ziffernfolge in einer separaten,
   indexierbaren Spalte mit Präfix-/Suffixsuche, (c) `FULLTEXT` mit `ngram`-Parser für
-  Teilstringsuche. Die Namenssuche (Präfix-LIKE) ist bereits in Ordnung.
+  Teilstringsuche. Die Namenssuche nutzt Präfix-LIKE (indizierbar) und zusätzlich je Feld ein
+  Wortanfangs-Muster `'% begriff%'` (`PhonebookRepository::buildTermCondition()`, Zeilen 111–113),
+  damit ein Vorname auch dann gefunden wird, wenn er nur im Anzeigenamen steht („Nachname,
+  Vorname“) und das Feld `first_name` leer ist. Das Muster ist wie die Telefonnummernsuche nicht
+  indizierbar; bei 1500 Zeilen vertretbar, sonst über Option (c) mitlösbar.
 - `COUNT(*)` nur berechnen, wenn die Gesamtzahl tatsächlich angezeigt wird (oder gecacht).
 - `allForAdmin()`/`visibleForExport()` ohne `LIMIT` prüfen — bei 1500+ Einträgen und wachsender
   Soft-Delete-Historie relevant.

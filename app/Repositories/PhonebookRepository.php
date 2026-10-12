@@ -22,8 +22,9 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     /**
      * Sucht im lokalen Datenbestand (nicht im AD).
      *
-     * Es werden bewusst Praefix-Suchen (`term%`) verwendet, damit die Indizes
-     * greifen; nur die Telefonnummer wird als Teilstring gesucht.
+     * Ein Suchbegriff muss am Anfang eines Namensbestandteils stehen: direkt am
+     * Anfang des Feldwerts (Praefix `term%`, damit die Indizes greifen) oder
+     * nach einem Leerzeichen. Die Telefonnummer wird als Teilstring gesucht.
      *
      * @return array{items:list<array<string,mixed>>,total:int}
      */
@@ -78,6 +79,12 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
      * Baut aus den eingegebenen Suchbegriffen eine LIKE-Bedingung ohne die
      * Aktiv-/Sichtbarkeitsfilter.
      *
+     * Je Begriff und Feld greifen zwei Muster: der Praefix (Index bleibt
+     * nutzbar) und der Wortanfang nach einem Leerzeichen. Das zweite Muster ist
+     * noetig, weil der Vorname nur im Anzeigenamen stehen kann (Format
+     * "Nachname, Vorname") – ohne es waere "Ulf" in "Harding, Ulf" nicht
+     * auffindbar, solange das Feld `first_name` leer ist.
+     *
      * @return array{0:string,1:array<string,string>}
      */
     private function buildTermCondition(string $term): array
@@ -90,7 +97,8 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
 
         foreach ($tokens as $index => $token) {
             $token = mb_substr($token, 0, 64);
-            $prefix = $this->escapeLike($token) . '%';
+            $escaped = $this->escapeLike($token);
+            $prefix = $escaped . '%';
             $digits = Validator::normalizePhone($token);
 
             $parts = [];
@@ -99,6 +107,10 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
                 $name = 't' . $index . '_' . $column;
                 $parts[] = $field . ' LIKE :' . $name;
                 $params[$name] = $prefix;
+
+                $wordName = 'w' . $index . '_' . $column;
+                $parts[] = $field . ' LIKE :' . $wordName;
+                $params[$wordName] = '% ' . $escaped . '%';
             }
 
             if ($digits !== '') {

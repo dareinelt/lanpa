@@ -39,7 +39,9 @@ $ssoInstanceHints = static function (array $instance): array {
         $hints[] = 'Domänenbeitritt fehlgeschlagen';
     }
     if ((string) $instance['ntp'] === 'failed') {
-        $hints[] = 'Uhrzeit weicht ab (Kerberos braucht unter 5 Minuten)';
+        $hints[] = 'Uhrzeit nicht geprüft oder weicht ab (Kerberos braucht unter 5 Minuten)';
+    } elseif ((string) $instance['ntp'] === 'warn') {
+        $hints[] = 'Uhrzeit nicht abgeglichen, Kerberos läuft (Abweichung unter 5 Minuten)';
     }
     return $hints;
 };

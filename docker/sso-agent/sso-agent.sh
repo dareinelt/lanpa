@@ -198,8 +198,12 @@ read_facts() {
             *"WARNUNG: Kerberos nicht verfuegbar"*) kerberos=false ;;
             *"Uhrzeit mit "*"abgeglichen"*) ntp=ok ;;
             *"Uhrzeit geprueft"*) ntp=ok ;;
+            # Uhr nicht abgeglichen, Kerberos laeuft aber: der Domaenenbeitritt
+            # beweist eine Abweichung unter 5 Minuten - unkritisch.
+            *"Uhrzeit nicht abgeglichen, Kerberos"*) ntp=warn ;;
             *"WARNUNG: Zeitserver "*"nicht erreichbar"*) ntp=failed ;;
             *"WARNUNG: Uhrzeit weicht um "*) ntp=failed ;;
+            *"WARNUNG: Uhrzeit nicht geprueft"*) ntp=failed ;;
         esac
         case "$line" in
             *WARNUNG*|*FEHLER*) notes="${notes:+$notes

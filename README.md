@@ -338,10 +338,18 @@ bei jeder Anfrage erneut gegen das Telefonbuch.
   Computerkonto setzen. Ist kein Kerberos möglich (SPN belegt, Realm unbekannt), bleibt NTLM.
   Beim Zugriff per IP-Adresse oder ohne Ticket fällt der Browser auf NTLM zurück.
 - Zeitabgleich: Der auth-Container stellt seine Uhr beim Start (chrony) nach den Zeitservern aus
-  der AD-Konfiguration (Adminbereich → Active Directory → „Zeitserver (NTP)“; leer = die
-  Domänencontroller) und hält sie laufend nach. Dafür hat der Dienst in `docker-compose.yml` die
-  Berechtigung `cap_add: SYS_TIME`; fehlt sie, wird die Abweichung nur gemessen und im Protokoll
-  gemeldet (Warnung ab 5 Minuten).
+  der AD-Konfiguration (Adminbereich → Active Directory → „Zeitserver (NTP)“) und hält sie laufend
+  nach. Als Ausfallreserve werden zusätzlich die konfigurierten Domänencontroller abgefragt (ein
+  DC ist immer auch NTP-Server); ein falsch gesetzter Zeitserver verhindert den Abgleich also
+  nicht. Dafür hat der Dienst in `docker-compose.yml` die Berechtigung `cap_add: SYS_TIME`; fehlt
+  sie, wird die Abweichung nur gemessen und im Protokoll gemeldet (Warnung ab 5 Minuten).
+  Ist kein Zeitserver erreichbar, bleibt die Uhr ungeprüft; die Meldung nennt dann die Folge
+  („Kerberos toleriert höchstens 5 Minuten Abweichung“) und die Prüfung (SSO_NTP, Firewall
+  UDP 123). Ob es wirklich klemmt, entscheidet der Domänenbeitritt, der selbst über Kerberos
+  läuft: Danach folgt entweder „Uhrzeit nicht abgeglichen, Kerberos gegen <Domäne> funktioniert
+  aber – Abweichung unter 5 Minuten.“ (unkritisch) oder „Warnung: Uhrzeit nicht geprüft – eine
+  Abweichung über 5 Minuten verhindert Kerberos.“ Derselbe Zustand steht im Adminbereich an der
+  jeweiligen Instanz.
 
 ### Schritt für Schritt: Frische Installation in eine Windows-Domäne heben
 
@@ -378,8 +386,10 @@ per LDAP, Domänenbeitritt des auth-Containers und unbemerkte Browser-Anmeldung 
    `docker compose logs -f auth`. Erwartet werden „Uhrzeit mit … abgeglichen“, der Domänenbeitritt
    und abschließend `Windows-Anmeldung aktiv: Kerberos (SPNs: HTTP/intranet.firma.local) und NTLM`.
    Steht dort nur „NTLM“, nennt die Zeile davor die Ursache (Realm nicht ermittelt, SPN belegt,
-   Beitrittskonto darf keine SPNs setzen). Das Computerkonto erscheint jetzt im AD; der Beitritt
-   bleibt im Volume `sso_samba` erhalten.
+   Beitrittskonto darf keine SPNs setzen). Meldet der Container „Zeitserver … nicht erreichbar“,
+   ist das kein Fehler, solange „Kerberos aktiv“ folgt – dann liegt die Abweichung nachweislich
+   unter 5 Minuten; andernfalls nennt die Zeile „Uhrzeit nicht geprüft“ die Folge. Das
+   Computerkonto erscheint jetzt im AD; der Beitritt bleibt im Volume `sso_samba` erhalten.
 5. **Clients vorbereiten – Anmeldedialog vermeiden** (per Gruppenrichtlinie oder mit
    `scripts/sso-client-setup.ps1`, siehe unten). Ohne diesen Schritt erscheint bei jedem Besuch ein
    Anmeldedialog, weil der Browser die Windows-Anmeldung nicht automatisch an „Internet“-Adressen sendet:

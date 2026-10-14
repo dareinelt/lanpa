@@ -62,4 +62,10 @@ return [
     // Kennung der Identitaetsquelle des Testbenutzers (leer = Hauptquelle).
     'fake_source' => Env::get('SSO_FAKE_SOURCE', ''),
     'fake_allowed' => strtolower((string) Env::get('APP_ENV', 'production')) !== 'production',
+
+    // Auftragsverzeichnis des Dienstes sso-agent (Container mit Docker-Socket).
+    // Die Anwendung legt dort request.json ab und liest status.json. Im
+    // Docker-Setup zeigt der Pfad in den gemeinsamen Speicher (app_storage);
+    // der Dienst arbeitet dort unter /storage/sso-agent.
+    'agent_control_dir' => BASE_PATH . '/storage/sso-agent',
 ];

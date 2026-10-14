@@ -128,7 +128,14 @@ fetch_config() {
     done
     rm -f "$header_file"
 
-    while IFS='=' read -r name value || [ -n "$name" ]; do
+    # Zeilenweise lesen und erst am ersten '=' trennen. Mit IFS='=' verschluckt
+    # read bei base64-Werten mit genau einem '=' am Ende dieses Zeichen
+    # (z. B. MVZINTSZ -> TVZaSU5UU1o=). base64 -d scheitert dann an der
+    # fehlenden Auffuellung, der Wert fehlt und die Instanz faellt auf
+    # WORKGROUP ohne Beitrittskonto zurueck.
+    while IFS= read -r line || [ -n "$line" ]; do
+        name="${line%%=*}"
+        value="${line#*=}"
         case "$name" in
             SSO_CONFIGURED|SSO_ENABLED|SSO_DOMAIN|SSO_DC|SSO_DC_IP|SSO_NTP|SSO_JOIN_USER|SSO_JOIN_PASSWORD|SSO_ROUTES) ;;
             *) continue ;;

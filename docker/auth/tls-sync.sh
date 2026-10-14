@@ -194,7 +194,11 @@ sync_once() {
     label=""
     : > "$work/cert.pem"
     : > "$work/key.pem"
-    while IFS='=' read -r name value || [ -n "$name" ]; do
+    # Wie in entrypoint.sh: nicht mit IFS='=' trennen, sonst geht das
+    # abschliessende '=' der base64-Auffuellung verloren.
+    while IFS= read -r line || [ -n "$line" ]; do
+        name="${line%%=*}"
+        value="${line#*=}"
         case "$name" in
             TLS_MODE) mode="$(printf '%s' "$value" | base64 -d 2>/dev/null || true)" ;;
             TLS_HTTP_NETWORKS) networks="$(printf '%s' "$value" | base64 -d 2>/dev/null || true)" ;;

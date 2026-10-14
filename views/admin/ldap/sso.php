@@ -102,12 +102,16 @@ $ssoInvalid = static function (string $field) use ($errors): string {
             </div>
         </div>
         <p class="field__hint">
-            Nach dem Aktivieren bzw. Entfernen einer Domäne auf dem Server <code>./scripts/sso-domains.sh</code> ausführen
-            und prüfen, dass die Instanz läuft (<code>docker compose ps</code>); fehlt sie, bedient die Hauptinstanz die
-            Anmeldung dieser Domäne und der Browser fragt endlos nach Zugangsdaten.
-            Bei geänderten Zugangsdaten genügt <code>docker compose restart auth <?= Html::e($serviceName !== '' ? $serviceName : '') ?></code>.
+            Nach dem Speichern auf der Übersichtsseite „Windows-Anmeldung anwenden“ drücken: die Instanz
+            <code><?= Html::e($serviceName !== '' ? $serviceName : 'auth-<kennung>') ?></code> wird dabei automatisch
+            angelegt, gebaut, gestartet und ihr Zustand zurückgemeldet. Fehlt die Instanz, bedient die Hauptinstanz die
+            Anmeldung dieser Domäne und der Browser fragt endlos nach Zugangsdaten. Ohne den Dienst
+            <code>sso-agent</code> bleibt der Weg auf dem Server: <code>./scripts/sso-domains.sh</code> und
+            <code>docker compose up -d --build</code>.
         </p>
     <?php } else { ?>
-        <p class="field__hint">Nach Änderungen: <code>docker compose restart auth</code>.</p>
+        <p class="field__hint">
+            Nach dem Speichern auf der Übersichtsseite „Windows-Anmeldung anwenden“ drücken (Instanz <code>auth</code>).
+        </p>
     <?php } ?>
 </fieldset>

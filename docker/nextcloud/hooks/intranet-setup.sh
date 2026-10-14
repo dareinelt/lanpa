@@ -141,7 +141,12 @@ fi
 # Bind-DN und Bind-Passwort stammen so aus derselben Quelle.
 ldap_cfg_file="${NEXTCLOUD_LDAP_CONFIG_FILE:-}"
 if [ -n "$ldap_cfg_file" ] && [ -s "$ldap_cfg_file" ]; then
-    while IFS='=' read -r key value || [ -n "$key" ]; do
+    # Erst am ersten '=' trennen: mit IFS='=' ginge ein abschliessendes '='
+    # im Wert verloren (z. B. Kennwort oder base64-Wert).
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in *=*) ;; *) continue ;; esac
+        key="${line%%=*}"
+        value="${line#*=}"
         value=$(printf '%s' "$value" | tr -d '\r')
         [ -n "$value" ] || continue
         case "$key" in

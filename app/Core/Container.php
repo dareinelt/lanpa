@@ -64,6 +64,7 @@ use App\Services\Office\StreamOfficeProbe;
 use App\Services\PhonebookService;
 use App\Services\SettingsService;
 use App\Services\SmsCodeService;
+use App\Services\Sso\SsoAgentService;
 use App\Services\StatisticsService;
 use App\Services\Storage\IncidentService;
 use App\Services\Storage\SnapshotService;
@@ -1292,6 +1293,16 @@ final class Container
             OfficeBackupService::class,
             static fn (): OfficeBackupService => new OfficeBackupService(
                 (string) Config::get('office.backup_control_dir', BASE_PATH . '/storage/office-backup')
+            )
+        );
+    }
+
+    public static function ssoAgent(): SsoAgentService
+    {
+        return self::make(
+            SsoAgentService::class,
+            static fn (): SsoAgentService => new SsoAgentService(
+                (string) Config::get('sso.agent_control_dir', BASE_PATH . '/storage/sso-agent')
             )
         );
     }

@@ -30,6 +30,7 @@ fi
 services=""
 volumes=""
 keys=""
+names=""
 
 compose_file=""
 if [ -f "$ENV_FILE" ]; then
@@ -51,6 +52,7 @@ while read -r key service; do
         exit 1
     fi
     keys="${keys:+$keys }${key}"
+    names="${names:+$names }${service}"
     volume="$(printf '%s' "$service" | tr '-' '_')_samba"
     volumes="${volumes}
   ${volume}:"
@@ -113,4 +115,33 @@ case "$compose_file" in
     *docker-compose.sso.yml*) ;;
     *) echo "Bitte in der .env docker-compose.sso.yml zu COMPOSE_FILE hinzufuegen, z. B. COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml (ggf. :docker-compose.llmint.yml)" ;;
 esac
+
+# Fehlt ein Dienst im Compose-Projekt, laeuft die Instanz nicht, und die
+# Anmeldeversuche dieser Domaene landen auf der Hauptinstanz: die gehoert zu
+# einer anderen Domaene, ihre Pruefung schlaegt fehl und der Browser fragt
+# endlos nach Zugangsdaten. Deshalb hier hart pruefen.
+known_services="$(docker compose config --services 2>/dev/null || true)"
+if [ -z "$known_services" ]; then
+    echo "Warnung: 'docker compose config --services' liefert keine Dienste - bitte pruefen, ob docker compose in ${ROOT_DIR} funktioniert." >&2
+else
+    missing=""
+    for service in $names; do
+        case " $(printf '%s' "$known_services" | tr '\n' ' ') " in
+            *" ${service} "*) ;;
+            *) missing="${missing:+$missing }${service}" ;;
+        esac
+    done
+    if [ -n "$missing" ]; then
+        echo "" >&2
+        echo "FEHLER: nicht im Compose-Projekt: ${missing}" >&2
+        echo "        Ohne diese Dienste bedient die Hauptinstanz die Anmeldeversuche der" >&2
+        echo "        weiteren Domaene (falsche Domaene, der Browser fragt endlos nach" >&2
+        echo "        Zugangsdaten). Ursache ist meist ein fehlender Eintrag in der .env:" >&2
+        echo "        COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml" >&2
+        echo "        Danach: docker compose up -d --build --remove-orphans && docker compose restart auth" >&2
+        exit 1
+    fi
+    echo "Dienste im Compose-Projekt vorhanden: ${names}"
+fi
+
 echo "Danach: docker compose up -d --build --remove-orphans && docker compose restart auth"

@@ -14,6 +14,14 @@
 # Keep-Alive und bindet Server-Verbindungen nach einer NTLM-/Negotiate-
 # Aufforderung automatisch exklusiv an die Client-Verbindung.
 #
+# Ist die Instanz einer Route nicht erreichbar, duerfen deren Anmelde-Pfade
+# (login_paths, siehe unten) nicht auf der Hauptinstanz landen: die gehoert zu
+# einer anderen Domaene, ihre Anmeldepruefung schlaegt fehl und der Browser
+# fragt endlos nach Zugangsdaten. Diese Anfragen beantwortet der Verteiler
+# selbst mit 503 und einer Meldung, die die fehlende Instanz nennt; jede
+# betroffene Anfrage steht mit Log-Level warning im Protokoll
+# (docker compose logs auth).
+#
 # TLS (TLS_ENABLED=true, Dateien von tls-sync.sh in TLS_DIR): HAProxy
 # terminiert HTTPS auf :443 (nur HTTP/1.1, NTLM ist verbindungsgebunden) und
 # leitet HTTP auf HTTPS um - im Modus "fallback" ausser fuer die
@@ -24,6 +32,25 @@ routes="${1:-}"
 tls_dir="${TLS_DIR:-/etc/intranet-tls}"
 https_port="${HTTPS_PUBLIC_PORT:-443}"
 public_scheme="${OFFICE_PUBLIC_SCHEME:-http}"
+
+# Pfade, an denen Apache eine Windows-Anmeldung verlangt (AuthType GSSAPI in
+# common.conf, llmint.conf, office.conf). Bei neuen Einstiegspunkten ergaenzen.
+login_paths="/sso/anmelden /sso/laufwerke"
+
+enabled() {
+    case "$(printf '%s' "${1:-false}" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on) return 0 ;;
+    esac
+
+    return 1
+}
+
+if enabled "${LLMINT_ENABLED:-false}" && printf '%s' "${LLMINT_PATH:-}" | grep -Eq '^/[a-z0-9][a-z0-9_-]*$'; then
+    login_paths="${login_paths} ${LLMINT_PATH}/sso.php"
+fi
+if enabled "${OFFICE_ENABLED:-false}"; then
+    login_paths="${login_paths} /office/index.php/apps/user_saml/saml/login /office/apps/user_saml/saml/login"
+fi
 
 tls=false
 case "$(printf '%s' "${TLS_ENABLED:-false}" | tr '[:upper:]' '[:lower:]')" in
@@ -39,6 +66,9 @@ defaults
     mode http
     log global
     option dontlognull
+    # HTTP-Protokollformat: die Warnung bei fehlender Instanz (siehe unten)
+    # zeigt damit Pfad, Backend und Server.
+    option httplog
     timeout connect 5s
     timeout client 5m
     timeout server 1h
@@ -91,6 +121,11 @@ fi
 backends=""
 host_rules=""
 net_rules=""
+down_vars=""
+down_rules=""
+down_backends=""
+route_keys=""
+route_names=""
 
 old_ifs="$IFS"
 IFS=';'
@@ -132,8 +167,34 @@ for route in $routes; do
         continue
     fi
 
-    # Ist die Instanz nicht erreichbar, bedient die Hauptinstanz die Anfrage
-    # (Seite bleibt nutzbar, nur ohne automatische Anmeldung dieser Domaene).
+    # Ohne erreichbare Instanz dieser Domaene wuerde die Hauptinstanz die
+    # Anfrage beantworten und die Anmeldung gegen die falsche Domaene
+    # versuchen (Browser-Anmeldedialog ohne Ende). Deshalb: die Anmeldepfade
+    # selbst mit 503 beantworten und jede betroffene Anfrage protokollieren.
+    service="${target%%:*}"
+    down_page="<!DOCTYPE html><html lang=de><head><meta charset=utf-8><title>Anmeldung nicht verfügbar</title><style>body{font-family:system-ui,sans-serif;margin:3rem auto;max-width:36rem;padding:0 1rem;color:#1f2933}h1{font-size:1.3rem}code{background:#eef2f7;padding:.1rem .3rem;border-radius:.2rem}a{color:#1a56db}</style></head><body><h1>Windows-Anmeldung derzeit nicht verfügbar</h1><p>Die Anmelde-Instanz <code>${service}</code> der Domäne <code>${key}</code> ist nicht erreichbar. Die Anmeldung wurde deshalb nicht durchgeführt.</p><p>Bitte die Administration informieren: auf dem Server <code>./scripts/sso-domains.sh</code> ausführen und prüfen, ob der Dienst <code>${service}</code> läuft (<code>docker compose ps</code>).</p><p><a href=/>Zur Startseite</a></p></body></html>"
+    if [ -n "$hosts" ]; then
+        down_vars="${down_vars}    http-request set-var(txn.down_${key}) str(${key}) if { var(txn.host) -m str ${hosts} } !{ nbsrv(src_${key}) gt 0 }
+"
+        down_rules="${down_rules}    use_backend down_${key} if { path_beg ${login_paths} } { var(txn.host) -m str ${hosts} } !{ nbsrv(src_${key}) gt 0 }
+"
+    fi
+    if [ -n "$nets" ]; then
+        down_vars="${down_vars}    http-request set-var(txn.down_${key}) str(${key}) if { src ${nets} } !{ nbsrv(src_${key}) gt 0 }
+"
+        down_rules="${down_rules}    use_backend down_${key} if { path_beg ${login_paths} } { src ${nets} } !{ nbsrv(src_${key}) gt 0 }
+"
+    fi
+    down_vars="${down_vars}    http-request set-log-level warning if { var(txn.down_${key}) -m found } { path_beg ${login_paths} }
+"
+    down_backends="${down_backends}
+backend down_${key}
+    # Keine Anmeldung gegen die falsche Domaene: Meldung statt Dialog.
+    http-request return status 503 content-type text/html string \"${down_page}\"
+"
+    route_keys="${route_keys:+$route_keys }${key}"
+    route_names="${route_names:+$route_names }${service}"
+
     [ -n "$hosts" ] && host_rules="${host_rules}    use_backend src_${key} if { var(txn.host) -m str ${hosts} } { nbsrv(src_${key}) gt 0 }
 "
     [ -n "$nets" ] && net_rules="${net_rules}    use_backend src_${key} if { src ${nets} } { nbsrv(src_${key}) gt 0 }
@@ -148,11 +209,17 @@ backend src_${key}
 done
 IFS="$old_ifs"
 
+printf '%s' "$down_vars"
 printf '%s%s' "$host_rules" "$net_rules"
+printf '%s' "$down_rules"
 cat <<'CFG'
     default_backend primary
 
 backend primary
     server primary 127.0.0.1:8081 send-proxy
 CFG
-printf '%s' "$backends"
+printf '%s%s' "$backends" "$down_backends"
+
+if [ -n "$route_keys" ]; then
+    echo "sso-routes: weitere Domaenen mit eigener Anmeldung: ${route_keys} (Instanzen: ${route_names})" >&2
+fi

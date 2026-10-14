@@ -447,7 +447,11 @@ Weitere Domänen ohne Vertrauensstellung siehe nächster Abschnitt.
 Domänen ohne Vertrauensstellung (Zweigstellen, Tochtergesellschaften) erhalten je eine eigene
 Anmelde-Instanz `auth-<kennung>`, die der jeweiligen Domäne beitritt. Die Hauptinstanz `auth`
 verteilt die Anfragen per HAProxy anhand des aufgerufenen Hostnamens bzw. des Client-Netzes; ist
-eine Instanz nicht erreichbar, bedient die Hauptinstanz die Anfrage (ohne automatische Anmeldung).
+eine Instanz nicht erreichbar, bedient die Hauptinstanz die übrigen Seiten der Domäne (ohne
+automatische Anmeldung). Die Anmeldepfade beantwortet der Verteiler in diesem Fall dagegen mit
+503 und einem Hinweis auf die fehlende Instanz (`docker compose logs auth` protokolliert jede
+solche Anfrage) – sonst würde die Hauptinstanz die Anmeldung gegen die falsche Domäne prüfen und
+der Browser endlos nach Zugangsdaten fragen.
 
 1. `SSO_ENABLED=true` in der `.env`.
 2. Adminbereich → Active Directory: bei der Hauptquelle und jeder weiteren Quelle Domäne,
@@ -456,6 +460,9 @@ eine Instanz nicht erreichbar, bedient die Hauptinstanz die Anfrage (ohne automa
 3. `./scripts/sso-domains.sh` erzeugt `docker-compose.sso.yml` mit den Instanzen (ohne
    Zugangsdaten), anschließend `COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml` in der
    `.env` setzen und `docker compose up -d --build --remove-orphans && docker compose restart auth`.
+   Das Skript bricht mit Fehler ab, wenn ein Dienst im Compose-Projekt fehlt; danach prüfen, dass
+   jede Instanz läuft (`docker compose ps`, z. B. `auth-mvzintwf`) – ohne sie schlägt die
+   Windows-Anmeldung dieser Domäne fehl (siehe oben).
 
 Die auth-Container rufen ihre Konfiguration beim Start über `/internal/sso-config` von der
 Anwendung ab (Token im Volume `sso_token`, Prüfung des absendenden Containers; über den

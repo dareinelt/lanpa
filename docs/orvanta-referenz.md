@@ -128,7 +128,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaAiCharts.php` | Anonymisierter Nutzungsbericht für den Adminbereich: `period()`, `report(days)`, SVG-Erzeuger `usersChart()`, `daysChart()`, `tokensChart()` (Präsentationsattribute, kein `style`) |
 | `app/Contracts/AiTransportInterface.php` | `request(method, url, headers, body, timeout): {status, body, error}` |
 | `app/Services/Orvanta/CurlAiTransport.php` | cURL zum OpenAI-kompatiblen Endpunkt; keine Redirects, nur HTTP(S) (Zulässigkeit der Adresse wie im Admin-Verbindungstest über `OfficeAiService::isValidUrl`) |
-| `app/Repositories/OrvantaRepository.php` | Einstellungen, Erinnerungen (`syncReminders()`, `dueReminders()`, `activeReminders()`, `markDelivered()`, `dismissReminder()`, `snoozeReminder()`, `purgeReminders()`), Zwischenspeicher (`cacheUsage()`, `findCacheItem()`, `addCacheItem()`, `oldestCacheItems()`, `deleteCacheItem()`, `cacheItems()`, `cacheUsagePerUser()`), KI-Nutzung (`recordAiUsage()`, `aiUsagePerUser()` (Pseudonyme „Benutzer n“), `aiUsagePerDay()`, `aiTokenTotals()`); SQL kompatibel zu MySQL und SQLite |
+| `app/Repositories/OrvantaRepository.php` | Einstellungen, Erinnerungen (`syncReminders()`, `removeReminders()`, `dueReminders()`, `activeReminders()`, `markDelivered()`, `dismissReminder()`, `snoozeReminder()`, `purgeReminders()`), Zwischenspeicher (`cacheUsage()`, `findCacheItem()`, `addCacheItem()`, `oldestCacheItems()`, `deleteCacheItem()`, `cacheItems()`, `cacheUsagePerUser()`), KI-Nutzung (`recordAiUsage()`, `aiUsagePerUser()` (Pseudonyme „Benutzer n“), `aiUsagePerDay()`, `aiTokenTotals()`); SQL kompatibel zu MySQL und SQLite |
 | `app/Services/Orvanta/OrvantaSpellcheckService.php` | Rechtschreibprüfung (Abschnitt 19): `isAvailable()` (billig, nur `meta.json`), `isUsable()` (lädt Index + Regelwerk), `check(word)` (Hunspell-Algorithmus), `suggest(word)` (dreistufig, ranggeordnet); intern `collectCandidates()`/`editCandidates()`/`distance()`, `goodForms()`/`affixForms()`/`produceAffixForms()`/`desuffix()`/`deprefix()`/`isUsableAffix()`, `compoundForms()`/`compoundsByFlags()`/`isBadCompound()`/`hasAnyAffixForm()`, `isGoodForm()`/`formFlags()`/`hasAffixes()`/`allAffixes()`, `breakWord()` (Generator mit Arbeitsbudget), `tryLetterList()`; Grenzen `MAX_WORDS_PER_REQUEST` (400), `MAX_WORD_LENGTH` (64), `MAX_SUGGESTIONS` (8), `BREAK_BUDGET` (256) |
 | `app/Services/Orvanta/OrvantaSpellcheckCompiler.php` | Übersetzt `.aff`/`.dic` einmalig nach `aff.ser`/`words.dat`/`words.idx`/`words.case`/`meta.json`/`QUELLE.txt`: `compile()`, `parseAff()`, `readAffixRules()`, `compileCondition()`, `readTable()`, `parseMapGroup()`, `parseDic()`, `detectCharset()`, `toUtf8()`; `FORMAT_VERSION` |
 | `app/Services/Orvanta/OrvantaSpellcheckDictionary.php` | Verzögertes Lesen des übersetzten Wörterbuchs: `isAvailable()` (nur `meta.json`), `isUsable()` (Index + Regelwerk), `meta()`, `flagsOf(word)`, `caseEntries(key)`, `wordsWithPrefix(prefix, limit)`, `suffixRules()/suffixLengths()`, `prefixRules()/prefixLengths()`, `breaks()/replacements()/maps()/tryLetters()`, `flag(name)`, `compoundMin()/compoundMax()/checkSharps()`; `words.dat` wird über `read()` (`fseek`/`fread`) gelesen; `INDEX_ENTRY_SIZE` |
@@ -417,14 +417,14 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `markRead()`, `flag()` | `UpdateItem` `AlwaysOverwrite` | Lesebestätigungen unterdrückt |
 | `move()` | `MoveItem` | Zielordner per `EwsXml::folderId()` |
 | `delete()` | `DeleteItem` `MoveToDeletedItems` bzw. `HardDelete` | `SendMeetingCancellations = SendToNone`; genutzt für Mail, Kontakte, Aufgaben, Notizen |
-| `calendar()` | `FindItem` mit `CalendarView` (≤ 500) | Serien als Einzelvorkommen; nach Start sortiert |
+| `calendar()` | `FindItem` mit `CalendarView` (≤ 500) | Serien als Einzelvorkommen; nach Start sortiert; `calendar:IsCancelled` und `calendar:MyResponseType` werden mitgelesen (`is_cancelled`, `my_response`) |
 | `event()` | `GetItem` (HTML-Body bereinigt, Teilnehmer, Anhänge, `recurring`); die Ausgabe erhält zusätzlich die Kontrastanpassung (`MailBodyContrast`, Abschnitt 9.2) | |
 | `createEvent()` | `CreateItem` | Body wird bereinigt; Einladungen `SendToAllAndSaveCopy` nur mit Teilnehmern; `reminder < 0` = keine Erinnerung |
 | `updateEvent()` | `UpdateItem` `AlwaysOverwrite`, `SendToChangedAndSaveCopy` | Teilnehmer werden **nicht** geändert; `change_key` optional |
 | `moveEvent()` | `UpdateItem` `AlwaysOverwrite`, `SendToChangedAndSaveCopy` | nur `calendar:Start`/`calendar:End` (Drag&Drop, Abschnitt 6); `end >= start` und `start > 0`, sonst 422; Teilnehmer, Betreff und Erinnerung bleiben unberührt |
 | `deleteEvent()` | `DeleteItem` mit `SendToAllAndSaveCopy` | Absagen an Teilnehmer |
 | `respondToMeeting()` | `AcceptItem`/`TentativelyAcceptItem`/`DeclineItem` | |
-| `upcomingReminders()` | über `calendar()` (`from − 1 h` … `from + hours`) | nur Termine mit `ReminderIsSet` |
+| `upcomingReminders()` | über `calendar()` (`from − 1 h` … `from + hours`) | nur Termine mit `ReminderIsSet`; abgesagte und abgelehnte Termine werden markiert mitgeliefert und vom Erinnerungsdienst übersprungen (Abschnitt 8.1) |
 | `contacts()`, `contact()` | `FindItem`/`GetItem` `AllProperties` (≤ 500, nach `FileAs`) | `email` = erste Adresse ohne `smtp:`/`sip:` |
 | `createContact()`, `updateContact()` | `CreateItem` / `UpdateItem` (`SetItemField` je Feld) | mind. Vor-, Nachname oder Firma |
 | `tasks()`, `task()`, `createTask()`, `updateTask()` | `FindItem` (optional ohne `Completed`), `GetItem`, `CreateItem`, `UpdateItem` | `updateTask()` setzt nur übergebene Felder; Status `Completed` → 100 %, `NotStarted` → 0 % |
@@ -464,7 +464,7 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `anhang/nextcloud` | `attachment_id, folder` (optionaler Unterordner) | `{ok, message, path, target}` (Fehler → 502) |
 | `zwischenspeicher` | – | `{used, quota, items, folder, percent, mailbox}`; `mailbox` = `{used, quota, warning, receive_limit, percent}` in Byte oder `null`, wenn Exchange die Werte nicht liefert (Fehler blockieren die Antwort nicht) |
 | `zwischenspeicher/leeren` | – | wie `zwischenspeicher` + `{removed, message}` |
-| `kalender` | Query `start`, `end` (Standard: aktuelle Woche) | `{items[], start, end}`; Element: `id, change_key, subject, start, end, all_day, location, organizer, free_busy, type, reminder_set, reminder_minutes, is_meeting, my_response, categories` |
+| `kalender` | Query `start`, `end` (Standard: aktuelle Woche) | `{items[], start, end}`; Element: `id, change_key, subject, start, end, all_day, location, organizer, free_busy, type, reminder_set, reminder_minutes, is_meeting, is_cancelled, my_response, categories` |
 | `kalender/termin` (POST) | `id` (leer = neu), `change_key, subject, start, end, all_day, location, body, reminder` (Standard 15, < 0 = aus), `free_busy, required[], optional[]` | `{id[, change_key], message}`; löst `resync()` aus |
 | `kalender/termin/verschieben` (POST) | `id`, `start`, `end` (Unix-Sekunden, `end >= start` und `start > 0`, sonst 422), optional `change_key` | `{id, start, end, message}`; ändert **nur** Beginn und Ende (Drag&Drop), Teilnehmer/Betreff/Erinnerung bleiben unberührt; löst `resync()` aus |
 | `kontakte/kontakt` (POST) | `id, given_name, surname, company, job_title, department, email, phone, mobile, notes` | `{id, message}` |
@@ -585,6 +585,8 @@ GET /api/orvanta/erinnerungen
   ├─ ?sync=1 oder letzter Abgleich (Session orvanta_sync_<uid>) ≥ 300 s:
   │     OrvantaNotificationService::sync(uid, impersonate)
   │       upcomingReminders(now, 48 h) → je Termin:
+  │         abgesagt (calendar:IsCancelled) oder abgelehnt (MyResponseType = Decline)
+  │           → übersprungen, vorhandene Erinnerung wird entfernt (removeReminders)
   │         eigene Erinnerung → remind_at = start − ReminderMinutesBeforeStart
   │         keine Erinnerung, reminder_lead_minutes > 0 → remind_at = start − lead
   │         keine Erinnerung, lead = 0 → übersprungen
@@ -616,6 +618,9 @@ Nach `saveEvent`, `deleteEvent` und `meetingResponse` ruft der Controller
   `delivered`/`dismissed` zurück auf `pending`; bei `snoozed` bleibt
   `remind_at` erhalten. Nicht mehr gelieferte Termine werden **nur** in den
   Zuständen `pending`/`snoozed` gelöscht.
+- `removeReminders()` löscht die Erinnerung abgesagter Termine und abgelehnter
+  Besprechungen **unabhängig vom Zustand**, damit auch eine bereits
+  ausgelieferte Erinnerung (Overlay, OS-Meldung, Mitteilungen) verschwindet.
 - `snooze` ist aus jedem Zustand möglich und setzt `remind_at = now + minutes`.
 - `dismiss`/`snooze` filtern immer zusätzlich auf `user_uid`.
 
@@ -1006,7 +1011,7 @@ nach dem Neuladen wieder die alte.
 | **Neue EWS-Operation** | In `OrvantaExchangeService` über `call()` (nie direkt am Transport), Werte mit `EwsXml::escape()`; neuen Fehlercode ggf. in `translate()`; `DemoExchangeTransport::post()` um Erkennung erweitern, sonst antwortet die Demo mit generischem Erfolg. |
 | **Neuer Anhangs-Öffnungsmodus / Dateityp** | `OFFICE_TYPES` bzw. `BROWSER_TYPES`, bei Inline zusätzlich `OrvantaController::inlineType()`; Test „Oeffnungsart je Dateityp“. |
 | **Zwischenspeicher für Nachrichten** (`kind = message`) | Spalte existiert; `OrvantaAttachmentService::cache(..., 'message')` mit eigenem Hash-Schema verwenden, damit keine Kollision mit `sha1(attachment_id)` entsteht. |
-| **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()` (Zustandsübergänge Abschnitt 8.2); beide Clients prüfen; Tests „Erinnerungen …“, „Repository-Sync …“. |
+| **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()`/`removeReminders()` (Zustandsübergänge Abschnitt 8.2); beide Clients prüfen; Tests „Erinnerungen …“, „Abgesagte und abgelehnte Termine …“, „Repository-Sync …“. |
 | **Neues Modul** | `DEFAULT_FOLDERS`, Modulliste/Menüband/Dialog in `views/orvanta/index.php`, `switchModule()`/`loadModule()`/Tastenkürzel in `orvanta.js`, Service-Methoden + API, Demo-Daten, Doku. |
 | **KI-Unterstützung in weiterem Editor** | Editor mit `contenteditable` und eigenem `data-ov-…-body`-Hook; in `orvanta.js` `aiEditors()`, `aiMode()` und `aiContext()` erweitern; neuer Wert in `OrvantaAiService::MODES` + ENUM in `orvanta_ai_usage.kind` (Migration) + Systemprompt in `messages()`; serverseitig `stripMarkers()` vor dem Sanitizer aufrufen; Test. |
 | **Signaturaufbau ändern** (Zeilen, Trennzeichen, Logo-Größe) | Nur `OrvantaSignatureService::render()`/`phoneLine()` (E-Mail-tauglich: Tabelle, Inline-Styles ohne `url(`, Bilder nur als `data:`-URI – sonst entfernt sie `MailHtmlSanitizer`); Schriftfarbe aus `text_color` (`resolveColor()`: Hex-Wert der Vorlage, sonst Designfarbe), Trennzeichenfarbe über den Farbschlüssel aus `SettingsService::theme()`; Logo-Höhe = `LINE_HEIGHT` × Zeilenzahl, das Bild wird per `scaleImage()` selbst auf diese Größe gebracht (Outlook/Exchange ignorieren width/height); Test „Darstellung …“ anpassen; Screenshot 88/90 erneuern. |

@@ -37,7 +37,13 @@ final class OrvantaNotificationService
         }
         $lead = $this->config->reminderLeadMinutes();
         $items = [];
+        $cancelled = [];
         foreach ($events as $event) {
+            // Abgesagte Termine und abgelehnte Besprechungen erinnern nicht mehr.
+            if (!empty($event['is_cancelled']) || $event['my_response'] === 'Decline') {
+                $cancelled[] = $event['id'];
+                continue;
+            }
             if ($event['end'] > 0 && $event['end'] < $now) {
                 continue;
             }
@@ -59,6 +65,9 @@ final class OrvantaNotificationService
             ];
         }
         $this->repository->syncReminders($uid, $items);
+        if ($cancelled !== []) {
+            $this->repository->removeReminders($uid, $cancelled);
+        }
         $this->repository->purgeReminders(self::sql($now - 7 * 86400));
 
         return null;

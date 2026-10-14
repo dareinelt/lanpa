@@ -56,7 +56,8 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
     private const CALENDAR_FIELDS = '<t:FieldURI FieldURI="item:Subject"/><t:FieldURI FieldURI="calendar:Start"/><t:FieldURI FieldURI="calendar:End"/>'
         . '<t:FieldURI FieldURI="calendar:IsAllDayEvent"/><t:FieldURI FieldURI="calendar:Location"/><t:FieldURI FieldURI="calendar:Organizer"/>'
         . '<t:FieldURI FieldURI="calendar:LegacyFreeBusyStatus"/><t:FieldURI FieldURI="calendar:CalendarItemType"/><t:FieldURI FieldURI="item:ReminderIsSet"/>'
-        . '<t:FieldURI FieldURI="item:ReminderMinutesBeforeStart"/><t:FieldURI FieldURI="calendar:IsMeeting"/><t:FieldURI FieldURI="calendar:MyResponseType"/><t:FieldURI FieldURI="item:Categories"/>';
+        . '<t:FieldURI FieldURI="item:ReminderMinutesBeforeStart"/><t:FieldURI FieldURI="calendar:IsMeeting"/><t:FieldURI FieldURI="calendar:IsCancelled"/>'
+        . '<t:FieldURI FieldURI="calendar:MyResponseType"/><t:FieldURI FieldURI="item:Categories"/>';
 
     /** @var array<string,array{primary:string,at:int}>|null */
     private ?array $primaryAddresses = null;
@@ -1245,9 +1246,11 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
 
     /**
      * Anstehende Termine fuer den Erinnerungsdienst (mit und ohne eigene
-     * Exchange-Erinnerung; remind_at = 0, wenn keine gesetzt ist).
+     * Exchange-Erinnerung; remind_at = 0, wenn keine gesetzt ist). Abgesagte
+     * Termine und abgelehnte Besprechungen werden mitgeliefert, aber markiert;
+     * der Erinnerungsdienst ueberspringt sie.
      *
-     * @return list<array{id:string,subject:string,location:string,start:int,end:int,reminder_set:bool,remind_at:int}>
+     * @return list<array{id:string,subject:string,location:string,start:int,end:int,reminder_set:bool,remind_at:int,is_cancelled:bool,my_response:string}>
      */
     public function upcomingReminders(string $user, int $from, int $hours = 48): array
     {
@@ -1261,6 +1264,8 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
                 'end' => $event['end'],
                 'reminder_set' => (bool) $event['reminder_set'],
                 'remind_at' => $event['reminder_set'] ? $event['start'] - $event['reminder_minutes'] * 60 : 0,
+                'is_cancelled' => (bool) $event['is_cancelled'],
+                'my_response' => (string) $event['my_response'],
             ];
         }
 
@@ -1955,6 +1960,7 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             'reminder_set' => EwsXml::bool($xpath, 't:ReminderIsSet', $item),
             'reminder_minutes' => (int) EwsXml::text($xpath, 't:ReminderMinutesBeforeStart', $item),
             'is_meeting' => EwsXml::bool($xpath, 't:IsMeeting', $item),
+            'is_cancelled' => EwsXml::bool($xpath, 't:IsCancelled', $item),
             'my_response' => EwsXml::text($xpath, 't:MyResponseType', $item),
             'categories' => $categories,
         ];

@@ -1218,6 +1218,36 @@ Runner::test('Orvanta: Snooze verschiebt die Faelligkeit, Sync-Fehler wird gemel
     Assert::true(is_string($message) && $message !== '', 'Fehler wird als Text gemeldet, nicht geworfen.');
 });
 
+Runner::test('Orvanta: Abgesagte und abgelehnte Termine erinnern nicht', function (): void {
+    $parts = orvantaExchange(['reminder_lead_minutes' => '60']);
+    $service = new OrvantaNotificationService($parts['repository'], $parts['exchange'], $parts['config']);
+    $now = time();
+
+    $events = [];
+    foreach ($parts['exchange']->upcomingReminders('demo@demo.local', $now) as $event) {
+        $events[$event['id']] = $event;
+    }
+    Assert::true($events['demo-ev-10']['is_cancelled'], 'Abgesagter Termin wird als abgesagt geliefert.');
+    Assert::same('Decline', $events['demo-ev-11']['my_response'], 'Abgelehnte Besprechung wird als abgelehnt geliefert.');
+    Assert::false($events['demo-ev-6']['is_cancelled'], 'Normale Termine gelten nicht als abgesagt.');
+
+    Assert::null($service->sync('u1', 'demo@demo.local', $now));
+    $ids = array_column($parts['repository']->dueReminders('u1', '2031-01-01 00:00:00'), 'item_id');
+    Assert::true(in_array('demo-ev-6', $ids, true), 'Normale Termine erinnern weiterhin.');
+    Assert::false(in_array('demo-ev-10', $ids, true), 'Abgesagter Termin erzeugt keine Erinnerung.');
+    Assert::false(in_array('demo-ev-11', $ids, true), 'Abgelehnte Besprechung erzeugt keine Erinnerung.');
+
+    // Bereits ausgelieferte Erinnerung verschwindet beim naechsten Abgleich.
+    $parts['repository']->syncReminders('u1', [
+        ['item_id' => 'demo-ev-10', 'subject' => 'Planungsrunde Bauhof', 'location' => '', 'starts_at' => '2030-01-01 10:00:00', 'remind_at' => '2030-01-01 09:45:00'],
+    ]);
+    $delivered = $parts['repository']->dueReminders('u1', '2031-01-01 00:00:00');
+    $parts['repository']->markDelivered('u1', [(int) $delivered[0]['id']], '2030-01-01 09:45:00');
+    Assert::same(1, count($parts['repository']->activeReminders('u1')));
+    Assert::null($service->sync('u1', 'demo@demo.local', $now));
+    Assert::same([], $parts['repository']->activeReminders('u1'), 'Abgesagter Termin verschwindet aus den Mitteilungen.');
+});
+
 Runner::test('Orvanta: Repository-Sync aktualisiert verschobene Termine und entfernt alte', function (): void {
     $repository = new OrvantaRepository(orvantaPdo());
     $repository->syncReminders('u1', [

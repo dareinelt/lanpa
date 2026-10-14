@@ -566,7 +566,7 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
     }
 
     /**
-     * @return list<array{id:string,subject:string,start:int,end:int,location:string,all_day:bool,reminder:int,busy:string,meeting:bool}>
+     * @return list<array{id:string,subject:string,start:int,end:int,location:string,all_day:bool,reminder:int,busy:string,meeting:bool,cancelled?:bool,response?:string}>
      */
     private function sampleEvents(): array
     {
@@ -583,6 +583,8 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             ['id' => 'demo-ev-7', 'subject' => 'Sprechstunde Personalrat', 'start' => $monday + 7 * 86400 + 13 * 3600, 'end' => $monday + 7 * 86400 + 14 * 3600, 'location' => 'Raum 1.03', 'all_day' => false, 'reminder' => 15, 'busy' => 'Busy', 'meeting' => false],
             ['id' => 'demo-ev-9', 'subject' => 'Rückruf Bürgerbüro', 'start' => $now + 1200, 'end' => $now + 1500, 'location' => 'Telefon', 'all_day' => false, 'reminder' => -1, 'busy' => 'Busy', 'meeting' => false],
             ['id' => 'demo-ev-8', 'subject' => 'Wartungsfenster Rechenzentrum', 'start' => $monday + 5 * 86400 + 6 * 3600, 'end' => $monday + 5 * 86400 + 10 * 3600, 'location' => 'Rechenzentrum', 'all_day' => false, 'reminder' => 60, 'busy' => 'WorkingElsewhere', 'meeting' => false],
+            ['id' => 'demo-ev-10', 'subject' => 'Planungsrunde Bauhof', 'start' => $now + 1800, 'end' => $now + 5400, 'location' => 'Besprechungsraum 1.04', 'all_day' => false, 'reminder' => 15, 'busy' => 'Free', 'meeting' => true, 'cancelled' => true],
+            ['id' => 'demo-ev-11', 'subject' => 'Abstimmung Personaleinsatz', 'start' => $now + 3600, 'end' => $now + 7200, 'location' => 'Online (Teams)', 'all_day' => false, 'reminder' => 15, 'busy' => 'Free', 'meeting' => true, 'response' => 'Decline'],
         ];
     }
 
@@ -614,7 +616,8 @@ final class DemoExchangeTransport implements ExchangeTransportInterface
             . '<t:Start>' . EwsXml::dateTime($event['start']) . '</t:Start><t:End>' . EwsXml::dateTime($event['end']) . '</t:End>'
             . '<t:IsAllDayEvent>' . ($event['all_day'] ? 'true' : 'false') . '</t:IsAllDayEvent><t:LegacyFreeBusyStatus>' . $event['busy'] . '</t:LegacyFreeBusyStatus>'
             . '<t:Location>' . EwsXml::escape($event['location']) . '</t:Location><t:IsMeeting>' . ($event['meeting'] ? 'true' : 'false') . '</t:IsMeeting><t:CalendarItemType>Single</t:CalendarItemType>'
-            . '<t:MyResponseType>' . ($event['meeting'] ? 'Accept' : 'Organizer') . '</t:MyResponseType>'
+            . '<t:IsCancelled>' . (!empty($event['cancelled']) ? 'true' : 'false') . '</t:IsCancelled>'
+            . '<t:MyResponseType>' . ($event['response'] ?? ($event['meeting'] ? 'Accept' : 'Organizer')) . '</t:MyResponseType>'
             . '<t:Organizer><t:Mailbox><t:Name>Sabine Krüger</t:Name><t:EmailAddress>sabine.krueger@example.org</t:EmailAddress></t:Mailbox></t:Organizer>'
             . ($full && $event['meeting'] ? '<t:RequiredAttendees><t:Attendee><t:Mailbox><t:Name>Ich</t:Name><t:EmailAddress>ich@example.org</t:EmailAddress></t:Mailbox><t:ResponseType>Accept</t:ResponseType></t:Attendee><t:Attendee><t:Mailbox><t:Name>Markus Vogel</t:Name><t:EmailAddress>m.vogel@example.org</t:EmailAddress></t:Mailbox><t:ResponseType>Tentative</t:ResponseType></t:Attendee></t:RequiredAttendees>' : '')
             . '</t:CalendarItem>';

@@ -125,6 +125,26 @@ final class OrvantaRepository extends Repository
     }
 
     /**
+     * Entfernt Erinnerungen zu Terminen, die nicht mehr erinnert werden sollen
+     * (abgesagte Termine, abgelehnte Besprechungen), unabhaengig vom Zustand,
+     * damit auch bereits ausgelieferte Eintraege aus den Mitteilungen
+     * verschwinden.
+     *
+     * @param list<string> $itemIds
+     */
+    public function removeReminders(string $uid, array $itemIds): int
+    {
+        $removed = 0;
+        $statement = $this->pdo->prepare('DELETE FROM orvanta_reminders WHERE user_uid = :uid AND item_hash = :hash');
+        foreach ($itemIds as $itemId) {
+            $statement->execute(['uid' => $uid, 'hash' => sha1($itemId)]);
+            $removed += $statement->rowCount();
+        }
+
+        return $removed;
+    }
+
+    /**
      * Faellige, noch nicht ausgelieferte Erinnerungen (remind_at <= now).
      *
      * @return list<array<string,mixed>>

@@ -45,6 +45,7 @@ final class OrvantaConfigService
         'reminder_header' => '1',
         'default_folder' => 'inbox',
         'poll_interval' => '60',
+        'editor_text_color' => '',
         'archive_enabled' => '0',
         'archive_group' => '',
         'archive_threshold' => '80',
@@ -202,6 +203,16 @@ final class OrvantaConfigService
     public function pollInterval(): int
     {
         return max(15, min(900, (int) $this->get('poll_interval')));
+    }
+
+    /**
+     * Standardschriftfarbe des Editors als Hex-Wert; '' ohne Vorgabe (dann gilt
+     * die Textfarbe der Designeinstellungen). Ungeprueft gespeicherte Werte
+     * werden verworfen.
+     */
+    public function editorTextColor(): string
+    {
+        return (string) Validator::normalizeHexColor($this->get('editor_text_color'));
     }
 
     // ------------------------------------------------------------------ Langzeitarchiv
@@ -454,6 +465,16 @@ final class OrvantaConfigService
 
         $default = $text('default_folder', 20);
         $values['default_folder'] = isset(self::DEFAULT_FOLDERS[$default]) ? $default : 'inbox';
+
+        // Standardschriftfarbe des Editors: leer = Textfarbe der Designeinstellungen.
+        if (array_key_exists('editor_text_color', $input)) {
+            $editorColor = $text('editor_text_color', 7);
+            $normalized = $editorColor === '' ? '' : Validator::normalizeHexColor($editorColor);
+            if ($normalized === null) {
+                $errors['editor_text_color'] = 'Bitte einen gültigen Hex-Farbwert angeben (z. B. #1f4e79).';
+            }
+            $values['editor_text_color'] = $normalized ?? '';
+        }
 
         $values['archive_enabled'] = !empty($input['archive_enabled']) ? '1' : '0';
         // Fehlende Archivfelder (z. B. API-Aufrufe ohne Archivformular)

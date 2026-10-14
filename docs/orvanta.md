@@ -188,7 +188,7 @@ flowchart LR
 | `OrvantaAttachmentService` | `app/Services/Orvanta/` | Anhänge: signierte Kurzzeit-Links, Öffnungsmodus (`office`/`browser`/`download`), Zwischenspeicher und Ablage in Nextcloud (WebDAV), Quota, Virenprüfung über `Malware\MalwareScanService` ([malware-protection.md](malware-protection.md)) |
 | `OrvantaRecipientService` | `app/Services/Orvanta/` | Empfänger-Vorschläge für An/Cc/Bcc: Telefonliste + Verlauf gesendeter Adressen (versteckte Datei `.empfaenger.json` in der Nextcloud des Benutzers, kurz in der Sitzung gehalten) |
 | `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile |
-| `OrvantaSignatureService` | `app/Services/Orvanta/` | Signaturvorlagen (Abschnitt 4a): Validierung, Zuordnung per AD-Gruppe, E-Mail-taugliches HTML aus Vorlage + Telefonliste + Design, `append()`/`strip()` beim Senden |
+| `OrvantaSignatureService` | `app/Services/Orvanta/` | Signaturvorlagen (Abschnitt 4a): Validierung, Zuordnung per AD-Gruppe, E-Mail-taugliches HTML aus Vorlage + Telefonliste + Design, `append()`/`strip()` beim Senden, `wrapTextColor()`/`stripTextColor()` für die Standardschriftfarbe des Editors |
 | `OrvantaSpellcheckService` | `app/Services/Orvanta/` | Deutsche Rechtschreibprüfung (Abschnitt 7b): `check()` (Hunspell-Algorithmus: Affixe, Zusammensetzungen, Bindestrich-Zerlegung, Groß-/Kleinschreibung) und `suggest()` (Vorschläge, der wahrscheinlichste zuerst) |
 | `OrvantaSpellcheckSupplement` | `app/Services/Orvanta/` | Mitgelieferte Ergänzungen zum Wörterbuch (`Hr.`, `OK`, `Homeoffice`, `MfG`, …) |
 | `OrvantaSpellcheckUserWords` / `OrvantaSpellcheckWordRepository` | `app/Services/Orvanta/`, `app/Repositories/` | Persönliches Wörterbuch je Benutzer (Tabelle `orvanta_spellcheck_words`): Validierung, Obergrenze 1000 Wörter |
@@ -218,7 +218,7 @@ flowchart LR
 | `orvanta_reminders` | Lokal zwischengespeicherte Terminerinnerungen je Benutzer | `user_uid`, `item_hash` (unique je Benutzer), `subject`, `location`, `starts_at`, `remind_at`, `state` (pending/delivered/dismissed/snoozed) |
 | `orvanta_cache_items` | Bestand des Zwischenspeichers im Nextcloud-Bereich des Benutzers | `user_uid`, `kind` (attachment/message), `item_hash`, `name`, `path`, `content_type`, `size_bytes` |
 | `orvanta_ai_usage` | Zähler der KI-Unterstützung (Migration 034) – nur Metadaten, nie Texte | `user_uid`, `kind` (mail_compose/mail_reply/mail_forward/event/reminder), `model`, `input_tokens`, `output_tokens`, `created_at` |
-| `orvanta_signatures` | Signaturvorlagen (Migrationen 035–037) | `name`, `greeting`, `name_format` (first_last/last_first), `street`, `postal_city`, `phone_mode` (prefix/full), `phone_prefix`, `text_color`, `separator_color` (Schlüssel einer Designfarbe), `ad_groups` (JSON-Liste), `sort_order`, `active` |
+| `orvanta_signatures` | Signaturvorlagen (Migrationen 035–037) | `name`, `greeting`, `name_format` (first_last/last_first), `street`, `postal_city`, `phone_mode` (prefix/full), `phone_prefix`, `text_color` (Hex-Wert der Schriftfarbe; leer = Designfarbe, Altbestand: Schlüssel einer Designfarbe), `separator_color` (Schlüssel einer Designfarbe), `ad_groups` (JSON-Liste), `sort_order`, `active` |
 | `orvanta_oof_templates` | Vorlagen der Abwesenheitsnotiz (Migration 045) | `name`, `fixed_text` (fester, für den Benutzer schreibgeschützter Teil), `example_text` (dynamischer Beispieltext), `ad_groups` (JSON-Liste), `sort_order`, `active` |
 | `orvanta_oof_settings` | Letzter Stand der Abwesenheitsnotiz je Benutzer (Migration 045) | `user_uid`, `template_id`, `dynamic_text`, `external_audience` (none/all), `schedule_mode` (range/until_off), `start_date`, `end_date`, `active`; maßgeblich ist der Zustand auf dem Exchange-Server |
 | `orvanta_spellcheck_words` | Persönliches Wörterbuch der Rechtschreibprüfung (Migration 042) | `user_uid` (klein geschrieben), `word` (≤ 64, Schreibweise genau unterschieden; unique je Benutzer), `created_at` |
@@ -351,6 +351,7 @@ Zuordnung 24 Stunden (`storage/cache/orvanta_primary_smtp.json`).
 | `flow_ai_user_names` | Namen der KI-Nutzer im Nachrichtenfluss-Dashboard anzeigen (sonst pseudonym „Benutzer 1 …“) | aus |
 | `default_folder` | Startansicht (`inbox`, `calendar`, …) | `inbox` |
 | `poll_interval` | Abfrageintervall der App in Sekunden (neue E-Mails, Ungelesen-Zähler, Erinnerungen) | 60 |
+| `editor_text_color` | Standardschriftfarbe des Editors als Hex-Wert (`#rrggbb`); leer = Textfarbe der Designeinstellungen. Gilt beim Verfassen, Antworten und Weiterleiten sowie für Terminbeschreibungen | leer |
 | `archive_enabled` | Langzeitarchiv aktivieren (siehe Abschnitt 7a) | aus |
 | `archive_group` | AD-Gruppe, deren Mitglieder archiviert werden; Pflicht bei aktivierter Archivierung, ohne Gruppe wird niemand archiviert | leer |
 | `archive_threshold`, `archive_threshold_unit` | Auslöse-Schwelle der Postfachbelegung (`percent` der Postfachgrenze oder `mb` absolut) | 80 / `percent` |
@@ -358,6 +359,12 @@ Zuordnung 24 Stunden (`storage/cache/orvanta_primary_smtp.json`).
 | `archive_folder` | Ordner im Nextcloud-Bereich des Benutzers für die Archivcontainer | `Orvanta-Archiv` |
 | `archive_batch_size` | Nachrichten je Verarbeitungsschritt (1–200) | 50 |
 | `archive_poll_interval` | Prüfintervall des Archiv-Workers in Sekunden (60–86400) | 3600 |
+
+Die **Standardschriftfarbe des Editors** (`editor_text_color`) steht im selben
+Formular: Farbfeld und Hex-Eingabefeld bleiben synchron, ein leeres Feld
+bedeutet „Textfarbe der Designeinstellungen“.
+
+![Adminbereich – Orvanta: Standardschriftfarbe des Editors als Hex-Wert](screenshots/139-admin-orvanta-editor-schriftfarbe.png)
 
 Der **Verbindungstest** ruft `GetFolder` auf dem Posteingang auf – optional im
 Namen eines angegebenen Postfachs – und meldet Version, Dauer und Fehlertext.
@@ -383,6 +390,8 @@ Vorlage wird keine Signatur angefügt.
 
 ![Signaturvorlage bearbeiten](screenshots/88-admin-orvanta-signatur-vorlage.png)
 
+![Signaturvorlage: Feld „Farben“ mit der Schriftfarbe als Hex-Wert und der Farbe der Trennzeichen](screenshots/140-admin-orvanta-signatur-vorlage-farbe.png)
+
 Aufbau der Signatur (Beispiel):
 
 ```
@@ -399,7 +408,8 @@ Mit freundlichen Grüßen
 | Name, Position, Abteilung | Active Directory (Telefonliste: `first_name`, `last_name`, `title`, `department`; LDAP-Attribut `LDAP_ATTR_TITLE`, Standard `title`) |
 | Darstellung des Namens | je Vorlage wählbar: **Vorname Nachname** (Standard) oder **Nachname, Vorname**; fehlt im AD Vor- oder Nachname, wird der Anzeigename (`display_name`) unverändert übernommen |
 | Rufnummer | wählbar: **Präfix aus der Vorlage + vierstellige Durchwahl** (letzte vier Ziffern der AD-Rufnummer, fett) oder **komplette Rufnummer aus dem AD** (`T.: …`); ohne AD-Rufnummer entfällt die Zeile |
-| Schriftfarbe / Farbe der Trennzeichen (■) | je Vorlage wählbar aus den Farben der Designeinstellungen (Standard „Textfarbe (hell)“ `color_text` / „Akzentfarbe“ `color_accent`); gespeichert wird der Farbschlüssel, Designänderungen wirken also sofort |
+| Schriftfarbe | je Vorlage als **Hex-Wert** (`#rrggbb`, auch Kurzform `#abc`); leer lassen heißt „Textfarbe der Designeinstellungen“ (`color_text`). Gespeichert wird der Hex-Wert, er übersteuert also die Designfarbe |
+| Farbe der Trennzeichen (■) | je Vorlage wählbar aus den Farben der Designeinstellungen (Standard „Akzentfarbe“ `color_accent`); gespeichert wird der Farbschlüssel, Designänderungen wirken also sofort |
 | Logo links neben dem Text | das im Adminbereich hochgeladene Logo (als `data:`-URI eingebettet; Höhe = Anzahl Textzeilen × 18 px, Breite proportional, höchstens 240 px; feste `width`/`height`-Attribute, damit Outlook es nicht in Originalgröße zeigt) |
 
 Verhalten in Orvanta:
@@ -414,6 +424,14 @@ Verhalten in Orvanta:
   Entwürfen angefügte Fassung (`OrvantaSignatureService::append()`): Bereits
   enthaltene Blöcke (z. B. aus einem Entwurf) werden ersetzt, es gibt also nie
   zwei Signaturen und keine manipulierte Fassung.
+- Die **Standardschriftfarbe des Editors** (`editor_text_color`, Abschnitt 3)
+  wird ebenfalls serverseitig gesetzt: `OrvantaSignatureService::wrapTextColor()`
+  umschließt den eigenen Text (ohne Signatur und Zitat) mit einem
+  `<div class="ov-text-color" style="color:#…">`. Im Editor selbst färbt die
+  CSS-Variable `--ov-editor-text` den Text; die im Entwurf mitgeführte Farbe des
+  Blocks wird dort neutralisiert (`color: inherit !important` in `orvanta.css`),
+  damit ein wieder geöffneter Entwurf die aktuelle Einstellung zeigt und beim
+  Einfügen kein fremder Farbwert entsteht.
 - Benutzer können die Signatur weder abwählen noch bearbeiten.
 
 ![Verfassen-Dialog mit fest zugeordneter Signatur](screenshots/90-orvanta-verfassen-signatur.png)

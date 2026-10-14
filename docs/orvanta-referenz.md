@@ -86,7 +86,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/OrvantaApiController.php` | JSON-API; Rahmen `handle()` (Zugriff, Body, CSRF, Fehlerabbildung), Hilfen `readBody()`, `mailPayload()`, `addresses()`, `ids()`, `requireId()`, `str()/int()/bool()`, `resync()`, statisch `mailboxFolders()` (Ordner weiterer Postfächer mit Präfix und Wurzelknoten als `parent`); `keepAlive()` liefert zusätzlich `exchange_host` (Abschnitt 20) |
 | `app/Controllers/Admin/OrvantaHostController.php` | Adminbereich „Orvanta – DAG-Hosts“ (Abschnitt 20): `index()`, `add()` (bestätigte DAG-Zugehörigkeit), `toggle()` (Wartung), `remove()`, `check()` (Verbindungstest), `data()` (Kachelwerte als JSON), `render()` |
 | `app/Controllers/Admin/OfficeController.php` | `showOrvanta()` (Unterseite `/admin/office/orvanta`), `updateOrvanta()` (Formular → `OrvantaConfigService::save()`), `testOrvanta()` (`testConnection()`), `render('orvanta', …)` übergibt `orvanta*`-Variablen an `views/admin/office.php` |
-| `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung; zieht den primären Host der DAG-Hostliste nach, Abschnitt 20), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()` |
+| `app/Services/Orvanta/OrvantaConfigService.php` | `DEFAULTS`, `AUTH_MODES`, `IDENTITY_MODES`, `VERSIONS`, `DEFAULT_FOLDERS`; `all()` (gecacht, vor Migration nur Defaults), `isEnabled()`, `isDemo()`, `ewsUrl()`, `transportOptions()`, `impersonationAddress()`, `save()` (Validierung; zieht den primären Host der DAG-Hostliste nach, Abschnitt 20), Grenzen `pollInterval()`, `reminderLeadMinutes()`, `cacheQuotaBytes()`, `editorTextColor()` |
 | `app/Services/Orvanta/OrvantaExchangeService.php` | Fachlogik je Modul (siehe Abschnitt 5), `call()` (SOAP + Fehlerbehandlung), `request()` (Lastverteilung und Failover, Abschnitt 20), `testConnection()`/`testHost()` (Verbindungstest), `translate()` (EWS-Fehlercodes → deutsche Meldung), Mapper `messageSummary()`, `calendarSummary()`, `contactData()`, `taskData()`, `attachmentList()` |
 | `app/Services/Orvanta/OrvantaExchangePool.php` | Lastverteilung und Failover über die Hosts der DAG (Abschnitt 20): `sessionKey()`, statisch `affinityKey()`, `hosts()`, `session()`, `currentHost()`, `failover()`, `recordSuccess()`, `recordFailure()`, `staleHosts()`, `overview()`, `purge()`, statisch `parseHostList()`; Konstanten `SESSION_TTL`, `PURGE_AFTER`, `LATENCY_SAMPLES`, `FAILURE_COOLDOWN`, `AUTO_CHECK_INTERVAL`, `MAX_HOSTS` |
 | `app/Services/Orvanta/OrvantaHostHealthService.php` | Selbstheilung des Host-Status (Abschnitt 20.5): `refresh()` prüft gestörte Hosts mit veraltetem Zustand (`OrvantaExchangePool::staleHosts()`) über `OrvantaExchangeService::testHost()` nach und schreibt das Ergebnis zurück; `MAX_CHECKS` (4) |
@@ -100,7 +100,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()`, `inspect()` (Virenprüfung über `App\Services\Malware\MalwareScanService`, siehe Abschnitt 7.1) |
 | `app/Services/Orvanta/OrvantaNotificationService.php` | `sync()`, `poll()`, `dismiss()`, `snooze()`, `relative()` |
 | `app/Services/Orvanta/OrvantaRecipientService.php` | `suggest()` (Verlauf + Telefonliste), `remember()` (nach Versand, schreibt `.empfaenger.json`), `recent()` (Nextcloud-Lesen mit Sitzungs-Cache); `FILE_NAME`, `MAX_ENTRIES`, `CACHE_TTL` |
-| `app/Services/Orvanta/OrvantaSignatureService.php` | Signaturvorlagen (Abschnitt 16): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)` → `{id,name,html}`, `person()`, `render()`, `preview()`, statisch `extension()`, `append(body, html)`, `strip(body)`; Konstanten `MARKER_CLASS`, `QUOTE_CLASS`, `PHONE_MODES`, `EXTENSION_LENGTH`, `LINE_HEIGHT`, `LOGO_MAX_WIDTH`, `DEFAULT_TEXT_COLOR`, `DEFAULT_SEPARATOR_COLOR`, `SAMPLE_PERSON`; statisch `logoSize()`, `imageDimensions()`, `scaleImage()` (verkleinert das Logo selbst auf die Anzeigegröße: Raster per GD als PNG, SVG über width/height) |
+| `app/Services/Orvanta/OrvantaSignatureService.php` | Signaturvorlagen (Abschnitt 16): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)` → `{id,name,html}`, `person()`, `render()`, `preview()`, statisch `extension()`, `append(body, html)`, `strip(body)`, statisch `resolveColor(value, fallbackKey, theme)`, `wrapTextColor(body, color)`, `stripTextColor(body)`; Konstanten `MARKER_CLASS`, `QUOTE_CLASS`, `TEXT_COLOR_CLASS`, `PHONE_MODES`, `EXTENSION_LENGTH`, `LINE_HEIGHT`, `LOGO_MAX_WIDTH`, `DEFAULT_TEXT_COLOR`, `DEFAULT_SEPARATOR_COLOR`, `SAMPLE_PERSON`; statisch `logoSize()`, `imageDimensions()`, `scaleImage()` (verkleinert das Logo selbst auf die Anzeigegröße: Raster per GD als PNG, SVG über width/height) |
 | `app/Repositories/OrvantaSignatureRepository.php` | `all(activeOnly)`, `find()`, `save()`, `delete()`; `ad_groups` als JSON-Liste → `groups` |
 | `app/Services/Orvanta/OrvantaOofService.php` | Abwesenheitsnotizen (Abschnitt 21): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)`, `settings(uid, template)`, `validateSettings()`, `apply(uid, mailbox, template, input, exchange, ssoUser)`, `state(mailbox, exchange, settings)`, `status(uid, mailbox, exchange, ssoUser)`, `text()`, `message()`, `html()`, statisch `dateStart()/dateEnd()`; Konstanten `AUDIENCES`, `SCHEDULE_MODES`, `MAX_FIXED_TEXT` (4000), `MAX_DYNAMIC_TEXT` (2000) |
 | `app/Repositories/OrvantaOofRepository.php` | Vorlagen (`all(activeOnly)`, `find()`, `save()`, `delete()`) und Benutzereinstellungen (`settings(uid)`, `saveSettings(uid, …)`); `ad_groups` als JSON-Liste → `groups` |
@@ -120,7 +120,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/Admin/OrvantaOofController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
 | `views/admin/orvanta-oof-templates.php`, `views/admin/orvanta-oof-template.php`, `public/assets/js/admin-oof.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/abwesenheit/vorschau`) |
 | `app/Controllers/Admin/OrvantaSignatureController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
-| `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `public/assets/js/admin-signature.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/signaturen/vorschau`) |
+| `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `public/assets/js/admin-signature.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/signaturen/vorschau`); Schriftfarbe als Hex-Feld mit Color-Picker (`data-color-sync`, `data-signature-field`), Trennzeichenfarbe als Auswahl der Designfarben |
 | `views/admin/orvanta-hosts.php`, `public/assets/js/admin-orvanta-hosts.js` | DAG-Dashboard (Abschnitt 20): Host-Kacheln mit Status, Latenz, Sitzungen und Aktionen; Live-Aktualisierung über `GET …/hosts/daten` |
 | `app/Services/Orvanta/OrvantaException.php` | Fehler mit anzeigbarer Meldung und HTTP-Status (`status()`, Standard 502) |
 | `app/Services/Orvanta/OrvantaAiService.php` | KI-Unterstützung (Abschnitt 15): `isAvailable()` (globale KI aktiv + `GET /models`, Datei-Cache 60 s), `resetAvailability()`, `improve()` (`POST /chat/completions`, Systemprompt je `MODES`, Verfeinern per Assistenten-Turn), `recordUsage()`, statisch `stripMarkers()`; Konstanten `MODES`, `MAX_TEXT`, `MAX_PROMPT`, `MAX_CONTEXT`, `MAX_OUTPUT_TOKENS`, `MARKER_CLASS`, `MARKER_ATTR_PREFIX` |
@@ -144,12 +144,12 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `public/assets/js/orvanta.js` | App (Abschnitt 9); Kontextmenü mit Untermenüs, Rechtschreibprüfung (Abschnitt 19) |
 | `public/assets/js/orvanta-reminders.js` | Erinnerungen in der Kopfzeile aller übrigen Seiten |
 | `public/assets/js/orvanta-viewer.js` | Lädt `api.js` des DocumentServers und startet `DocsAPI.DocEditor` |
-| `public/assets/css/orvanta.css` | Präfix `.ov-*`, Grid-Layout, Breakpoints 1200/900 px, Druck; `.ov-ai-*` (Indikator, Menü, Dialog, Block); `.ov-ctx-menu__sub*` (Untermenüs), `::highlight(ov-spell-error)` (Abschnitt 19) |
+| `public/assets/css/orvanta.css` | Präfix `.ov-*`, Grid-Layout, Breakpoints 1200/900 px, Druck; `.ov-ai-*` (Indikator, Menü, Dialog, Block); `.ov-ctx-menu__sub*` (Untermenüs), `::highlight(ov-spell-error)` (Abschnitt 19); `--ov-editor-text` (Standardschriftfarbe des Editors) |
 | `public/assets/images/orvanta-ai-robot*.png` | Roboter-Grafiken (klein 36×48/72×96 für Statusleiste/Menü, groß 180×240/360×480 für Hilfe und Admin) |
 | `database/migrations/033_create_orvanta_tables.sql` | Drei Tabellen (Abschnitt 4) |
 | `database/migrations/034_create_orvanta_ai_usage.sql` | Tabelle `orvanta_ai_usage` (Abschnitt 4.1) |
 | `database/migrations/035_orvanta_signatures.sql` | Tabelle `orvanta_signatures` und Spalte `phonebook.title` (Abschnitt 4.1) |
-| `database/migrations/036_orvanta_signature_colors.sql` | Spalten `orvanta_signatures.text_color`/`separator_color` (Schlüssel einer Designfarbe) |
+| `database/migrations/036_orvanta_signature_colors.sql` | Spalten `orvanta_signatures.text_color`/`separator_color` (seit dem Hex-Feld der Schriftfarbe: `text_color` = Hex-Wert oder leer, sonst Schlüssel einer Designfarbe; `separator_color` = Schlüssel einer Designfarbe) |
 | `database/migrations/037_orvanta_signature_name_format.sql` | Spalte `orvanta_signatures.name_format` (`first_last`/`last_first`) |
 | `database/migrations/042_orvanta_spellcheck_words.sql` | Tabelle `orvanta_spellcheck_words` (persönliches Wörterbuch, Abschnitt 19.12) |
 | `database/migrations/043_orvanta_exchange_dag.sql` | Tabellen `orvanta_exchange_hosts` und `orvanta_exchange_sessions` (Exchange-DAG, Abschnitt 20) |
@@ -305,7 +305,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_reminders` | `user_uid`, `item_id` (≤ 512), `item_hash` = `sha1(item_id)`, `subject`, `location`, `starts_at`, `remind_at`, `state` ∈ `pending\|delivered\|dismissed\|snoozed`, `delivered_at`, `dismissed_at` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `state`, `remind_at`) |
 | `orvanta_cache_items` | `user_uid`, `kind` ∈ `attachment\|message`, `item_hash` = `sha1(attachment_id)`, `name` (Dateiname in Nextcloud), `path`, `content_type`, `size_bytes` | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `created_at`) für FIFO |
 | `orvanta_ai_usage` (Migration 034) | `user_uid`, `kind` ∈ `mail_compose\|mail_reply\|mail_forward\|event\|reminder`, `model`, `input_tokens`, `output_tokens`, `created_at` | Nur Zähler, nie Texte; Index (`created_at`), (`user_uid`, `created_at`) |
-| `orvanta_signatures` (Migrationen 035–037) | `name` (≤ 120), `greeting` (≤ 120), `name_format` ∈ `first_last\|last_first` (Standard `first_last`), `street`, `postal_city` (≤ 190), `phone_mode` ∈ `prefix\|full`, `phone_prefix` (≤ 64, abschließendes Leerzeichen bleibt erhalten), `text_color`/`separator_color` (Schlüssel aus `SettingsService::THEME_COLORS`, Standard `color_text`/`color_accent`), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Zuordnung: erste aktive Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in den SSO-Gruppen vorkommt. Migration ergänzt zudem `phonebook.title` (Position aus dem AD, `LDAP_ATTR_TITLE`) |
+| `orvanta_signatures` (Migrationen 035–037) | `name` (≤ 120), `greeting` (≤ 120), `name_format` ∈ `first_last\|last_first` (Standard `first_last`), `street`, `postal_city` (≤ 190), `phone_mode` ∈ `prefix\|full`, `phone_prefix` (≤ 64, abschließendes Leerzeichen bleibt erhalten), `text_color` (Hex-Wert `#rrggbb`/`#rgb` der Schriftfarbe, leer = `color_text`; Altbestand: Schlüssel aus `SettingsService::THEME_COLORS`), `separator_color` (Schlüssel aus `SettingsService::THEME_COLORS`, Standard `color_accent`), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Zuordnung: erste aktive Vorlage nach `sort_order`, deren Gruppe (ohne Beachtung der Schreibweise) in den SSO-Gruppen vorkommt. Migration ergänzt zudem `phonebook.title` (Position aus dem AD, `LDAP_ATTR_TITLE`) |
 | `orvanta_spellcheck_words` (Migration 042) | `user_uid` (≤ 100, klein geschrieben), `word` (≤ 64, `utf8mb4_bin`), `created_at` | Unique (`user_uid`, `word`); `OrvantaSpellcheckWordRepository`, Abschnitt 19.12 |
 | `orvanta_exchange_hosts` (Migration 043) | `host` (≤ 190, unique), `ews_url` (≤ 2048, leer = URL aus den Einstellungen), `is_primary`, `active` (0 = Wartung), `sort_order`, `latency_ms` (gleitender Mittelwert), `latency_samples`, `last_latency_ms`, `last_session_at`, `last_check_at`, `last_ok`, `last_error` (≤ 500), `failures` | Hosts der DAG samt Lastkennzahlen; `OrvantaExchangeHostRepository`, Abschnitt 20. Der Host aus `exchange_host` ist immer `is_primary = 1` und steht in `sort_order` 0 |
 | `orvanta_exchange_sessions` (Migrationen 043, 044) | `session_hash` = `sha1('orvanta-dag:' . affinityKey)` (Benutzer + Client, Abschnitt 20.3), `user_uid`, `client_ip` (≤ 45, IPv4/IPv6), `client_host` (≤ 190, Reverse-DNS oder leer), `host`, `failovers`, `requests`, `started_at`, `last_seen_at` | Unique (`session_hash`); Index (`host`, `last_seen_at`) für die Sitzungszählung. Sitzungsaffinität und Fair-use; abgelaufene Zeilen (30 Tage) räumt `purgeSessions()` ab |
@@ -341,6 +341,7 @@ Validierung in `OrvantaConfigService::save()`:
 | `flow_ai_user_names` | `'1'`/`'0'` (Checkbox); steuert nur die Anzeige der KI-Nutzernamen im Nachrichtenfluss-Dashboard |
 | `poll_interval` | 15–900 |
 | `default_folder` | Schlüssel aus `DEFAULT_FOLDERS`, sonst `inbox` |
+| `editor_text_color` | leer oder `Validator::isHexColor()`; gespeichert wird `Validator::normalizeHexColor()` (`#abc` → `#aabbcc`, klein geschrieben), leer = Textfarbe des Designs. Nur wenn der Schlüssel im Formular enthalten ist – `saveTestMailbox()` lässt ihn unberührt |
 
 `OrvantaConfigService` cacht `all()` je Instanz; `save()` setzt den Cache
 zurück und zieht den primären Host in der DAG-Hostliste nach
@@ -636,7 +637,9 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
 - IIFE, startet nur bei `[data-orvanta]`; liest `data-config` (JSON aus
   `OrvantaController::index()`: `user{name,email,username}`, `defaultModule`,
   `pollInterval`, `reminderLead`, `officeAvailable`, `nextcloudAvailable`,
-  `cacheFolder`, `cacheQuota`, `demo`, `owaUrl`) und `data-csrf`.
+  `cacheFolder`, `cacheQuota`, `demo`, `owaUrl`, `editorTextColor`) und `data-csrf`.
+  `applyEditorTextColor()` setzt daraus die CSS-Variable `--ov-editor-text`
+  auf `.ov-office` (ungültiger oder leerer Wert → Textfarbe des Designs).
 - Zentraler Zustand `state` (`module`, `folders`/`folder`, `messages`/`total`/`hasMore`,
   `selected`/`selectedIds`, `filter`/`search`, `calView` (`day`/`workweek`/`week`/`month`/`agenda`),
   `calDate`/`events`, `contacts`, `tasks`/`tasksCompleted`, `notes`/`noteDraft`,
@@ -957,7 +960,7 @@ nach dem Neuladen wieder die alte.
 | **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()` (Zustandsübergänge Abschnitt 8.2); beide Clients prüfen; Tests „Erinnerungen …“, „Repository-Sync …“. |
 | **Neues Modul** | `DEFAULT_FOLDERS`, Modulliste/Menüband/Dialog in `views/orvanta/index.php`, `switchModule()`/`loadModule()`/Tastenkürzel in `orvanta.js`, Service-Methoden + API, Demo-Daten, Doku. |
 | **KI-Unterstützung in weiterem Editor** | Editor mit `contenteditable` und eigenem `data-ov-…-body`-Hook; in `orvanta.js` `aiEditors()`, `aiMode()` und `aiContext()` erweitern; neuer Wert in `OrvantaAiService::MODES` + ENUM in `orvanta_ai_usage.kind` (Migration) + Systemprompt in `messages()`; serverseitig `stripMarkers()` vor dem Sanitizer aufrufen; Test. |
-| **Signaturaufbau ändern** (Zeilen, Trennzeichen, Logo-Größe) | Nur `OrvantaSignatureService::render()`/`phoneLine()` (E-Mail-tauglich: Tabelle, Inline-Styles ohne `url(`, Bilder nur als `data:`-URI – sonst entfernt sie `MailHtmlSanitizer`); Farben über die Farbschlüssel der Vorlage aus `SettingsService::theme()`; Logo-Höhe = `LINE_HEIGHT` × Zeilenzahl, das Bild wird per `scaleImage()` selbst auf diese Größe gebracht (Outlook/Exchange ignorieren width/height); Test „Darstellung …“ anpassen; Screenshot 88/90 erneuern. |
+| **Signaturaufbau ändern** (Zeilen, Trennzeichen, Logo-Größe) | Nur `OrvantaSignatureService::render()`/`phoneLine()` (E-Mail-tauglich: Tabelle, Inline-Styles ohne `url(`, Bilder nur als `data:`-URI – sonst entfernt sie `MailHtmlSanitizer`); Schriftfarbe aus `text_color` (`resolveColor()`: Hex-Wert der Vorlage, sonst Designfarbe), Trennzeichenfarbe über den Farbschlüssel aus `SettingsService::theme()`; Logo-Höhe = `LINE_HEIGHT` × Zeilenzahl, das Bild wird per `scaleImage()` selbst auf diese Größe gebracht (Outlook/Exchange ignorieren width/height); Test „Darstellung …“ anpassen; Screenshot 88/90 erneuern. |
 | **Neues Vorlagenfeld der Signatur** | Spalte per Migration + SQLite-Schema in `OrvantaSignatureTest.php`; `OrvantaSignatureRepository` (`hydrate`, `save`), `OrvantaSignatureService::blank()/validate()/render()`, Formular `views/admin/orvanta-signature.php` (`data-signature-field`), Query in `admin-signature.js` und `OrvantaSignatureController::preview()`; Doku. |
 | **KI-Prompt oder Modellparameter ändern** | Nur `OrvantaAiService::messages()` bzw. `improve()` (Temperatur, `max_tokens`); nie Modell/URL in Orvanta speichern – sie stammen aus `OfficeAiService`. |
 | **Exchange-DAG erweitern** (weiterer Host, anderes Lastverteilungs-Gewicht) | Hosts nur über das Dashboard „Office → Orvanta – DAG-Hosts“ aufnehmen (`Admin\OrvantaHostController::add()`, `dag_confirmed`); die Verteilung ändert man ausschließlich in `OrvantaExchangePool::best()`/`disturbed()`/`fairUseRank()`/`latencyRank()` und den zugehörigen Konstanten – Affinität (`session()`) und Failover (`OrvantaExchangeService::request()`/`hostFailed()`) nicht umgehen. Test in `OrvantaServiceTest.php` mit **frischem** Pool je Anfrage, Doku in Abschnitt 20. |
@@ -1141,7 +1144,7 @@ Seite:  OrvantaController::index() → $orvanta['signature'] = OrvantaSignatureS
           forUser(): match(user.groups) → person(user.id → phonebook.findActiveById) → render()
 Editor: renderComposeSignature() fügt den Block schreibgeschützt ein; guardComposeSignature() schützt ihn
 Senden: OrvantaApiController::withSignature(mail, access) → OrvantaSignatureService::append(body, forUser().html)
-          → OrvantaExchangeService (stripMarkers → MailHtmlSanitizer) → EWS
+          → OrvantaSignatureService::wrapTextColor(body, editorTextColor()) → OrvantaExchangeService (stripMarkers → MailHtmlSanitizer) → EWS
 ```
 
 - `render()` erzeugt E-Mail-taugliches HTML: `<div class="ov-signature-block">`
@@ -1155,9 +1158,10 @@ Senden: OrvantaApiController::withSignature(mail, access) → OrvantaSignatureSe
   Breite proportional aus `imageDimensions()` (Raster per
   `getimagesizefromstring`, SVG per `width`/`height` bzw. `viewBox`), höchstens
   `LOGO_MAX_WIDTH` 240 px; ohne ermittelbare Maße nur `height`. Trennzeichen
-  `&#9632;` in `separator_color`, Text in `text_color` (Schlüssel aus
-  `SettingsService::THEME_COLORS`, Werte aus `SettingsService::theme()`,
-  geprüfte Hex-Werte).
+  `&#9632;` in `separator_color` (Schlüssel aus
+  `SettingsService::THEME_COLORS`), Text in `text_color` – `resolveColor()`
+  nimmt einen Hex-Wert direkt, sonst den Designfarben-Schlüssel und zuletzt
+  `DEFAULT_TEXT_COLOR` (geprüfte Hex-Werte).
   Leere Bestandteile entfallen samt Trennzeichen.
 - Rufnummer: `prefix` → `rtrim(phone_prefix) . ' <b>' . extension(phone) . '</b>'`
   (letzte `EXTENSION_LENGTH` Ziffern der AD-Rufnummer); `full` → `T.: ` +
@@ -1165,6 +1169,17 @@ Senden: OrvantaApiController::withSignature(mail, access) → OrvantaSignatureSe
 - `append()` entfernt vorhandene Marker-Blöcke (`strip()`), fügt die Signatur
   vor dem ersten `div.ov-quote` ein, sonst am Ende; leere Signatur → Body
   unverändert. `withSignature()` greift nur bei `html === true`.
+- `wrapTextColor(body, color)` (statisch) setzt die Standardschriftfarbe des
+  Editors (`OrvantaConfigService::editorTextColor()`, Abschnitt 4.2): erst
+  `stripTextColor()`, dann – nur bei gültigem Hex-Wert und nicht leerem Text –
+  Umschließen des eigenen Textes (alles vor Signatur-Marker bzw. `div.ov-quote`)
+  mit `<div class="ov-text-color" style="color:#…">`. Aufrufer:
+  `OrvantaApiController::withSignature()` (Senden, Entwurf, Antwort) und
+  `saveEvent()` (Terminbeschreibungen). Im Editor färbt stattdessen die
+  CSS-Variable `--ov-editor-text` (`applyEditorTextColor()` in `orvanta.js`);
+  `orvanta.css` neutralisiert die Farbe des Blocks (`.ov-editor .ov-text-color
+  { color: inherit !important; }`), damit ein wieder geöffneter Entwurf die
+  aktuelle Einstellung zeigt und das Einfügen keinen fremden Farb-Style erzeugt.
 - Person-Fallback: ohne Telefonbuchzeile (z. B. `SSO_FAKE_USER`, `id = 0`)
   nur `display_name`/`username`, keine Position/Abteilung/Rufnummer.
 - Logo-Loader ist eine Closure (`Container::orvantaSignatures()` →

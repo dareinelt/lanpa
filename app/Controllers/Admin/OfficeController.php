@@ -16,6 +16,7 @@ use App\Services\Office\OfficeConfigService;
 use App\Services\Orvanta\OrvantaAiCharts;
 use App\Services\Orvanta\OrvantaConfigService;
 use App\Services\Orvanta\OrvantaException;
+use App\Services\Orvanta\OrvantaSignatureService;
 use RuntimeException;
 use Throwable;
 
@@ -527,6 +528,11 @@ final class OfficeController extends AdminController
             'aiActive' => $ai->isActive(),
             'appStoreValues' => Container::nextcloudAppStore()->formValues(),
             'orvantaValues' => array_merge($orvanta->formValues(), $orvantaValues),
+            'orvantaEditorColor' => OrvantaSignatureService::resolveColor(
+                (string) ($orvantaValues['editor_text_color'] ?? $orvanta->get('editor_text_color')),
+                OrvantaSignatureService::DEFAULT_TEXT_COLOR,
+                Container::settings()->theme()
+            ),
             'orvantaErrors' => $orvantaErrors,
             'orvantaHasPassword' => $orvanta->hasServicePassword(),
             'orvantaEnabled' => $orvanta->isEnabled(),

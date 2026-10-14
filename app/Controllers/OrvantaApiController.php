@@ -576,7 +576,9 @@ final class OrvantaApiController extends Controller
                 'end' => $this->int('end'),
                 'all_day' => $this->bool('all_day'),
                 'location' => $this->str('location'),
-                'body' => $this->str('body'),
+                // Standardschriftfarbe des Editors wie in Nachrichten auch in der
+                // Terminbeschreibung (leer bzw. ohne Vorgabe bleibt unveraendert).
+                'body' => OrvantaSignatureService::wrapTextColor($this->str('body'), Container::orvantaConfig()->editorTextColor()),
                 'reminder' => $this->int('reminder', 15),
                 'free_busy' => $this->str('free_busy', 'Busy'),
                 'required' => $this->addresses('required'),
@@ -1266,11 +1268,10 @@ final class OrvantaApiController extends Controller
     }
 
     /**
-     * @return array<string,mixed>
-     */
-    /**
      * Fuegt die per AD-Gruppe zugeordnete Signatur serverseitig an – der
-     * Benutzer kann sie im Editor weder entfernen noch veraendern.
+     * Benutzer kann sie im Editor weder entfernen noch veraendern – und legt die
+     * Standardschriftfarbe des Editors um den eigenen Text. Beides wird erst
+     * hier geschrieben: der Editor selbst liefert nur seinen HTML-Inhalt.
      *
      * @param array<string,mixed> $mail
      * @param array{user:array<string,mixed>,uid:string,impersonate:string} $access
@@ -1282,7 +1283,8 @@ final class OrvantaApiController extends Controller
             return $mail;
         }
         $signature = Container::orvantaSignatures()->forUser($access['user']);
-        $mail['body'] = OrvantaSignatureService::append((string) ($mail['body'] ?? ''), $signature['html'] ?? '');
+        $body = OrvantaSignatureService::append((string) ($mail['body'] ?? ''), $signature['html'] ?? '');
+        $mail['body'] = OrvantaSignatureService::wrapTextColor($body, Container::orvantaConfig()->editorTextColor());
 
         return $mail;
     }

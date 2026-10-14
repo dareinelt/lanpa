@@ -643,6 +643,23 @@ $ov = $orvantaValues;
                     </select>
                 </div>
             </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="editor_text_color">Standardschriftfarbe des Editors</label>
+                    <div class="color-input">
+                        <input type="color" id="editor_text_color_picker" value="<?= Html::e($orvantaEditorColor) ?>"
+                               data-color-sync="editor_text_color" aria-label="Standardschriftfarbe auswählen">
+                        <input type="text" id="editor_text_color" name="editor_text_color" maxlength="7"
+                               pattern="#[0-9a-fA-F]{6}" placeholder="#1f4e79"
+                               value="<?= Html::e($ov['editor_text_color'] ?? '') ?>" <?= $ovField('editor_text_color') ?>>
+                    </div>
+                    <p class="field__hint">
+                        Hex-Wert für neue Nachrichten und Terminbeschreibungen. Leer lassen für die Textfarbe der
+                        <a href="/admin/design">Designeinstellungen</a>.
+                    </p>
+                    <?= $ovFieldError('editor_text_color') ?>
+                </div>
+            </div>
             <div class="field field--check">
                 <input type="checkbox" id="reminder_header" name="reminder_header" value="1" <?= ($ov['reminder_header'] ?? '1') === '1' ? 'checked' : '' ?>>
                 <label for="reminder_header">Fällige Terminerinnerungen auch in den Mitteilungen der Intranet-Kopfzeile anzeigen</label>

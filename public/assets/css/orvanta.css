@@ -344,7 +344,10 @@
 .ov-editor-tools button:hover, .ov-attach-btn:hover { background: var(--ov-hover); border-color: var(--ov-line); }
 .ov-editor-tools__spacer { flex: 1; }
 .ov-attach-btn .ov-icon { width: 1rem; height: 1rem; }
-.ov-editor { min-height: 220px; max-height: 45vh; overflow: auto; padding: .7rem .8rem; border: 1px solid var(--ov-line); border-radius: 0 0 .4rem .4rem; line-height: 1.5; }
+.ov-editor { min-height: 220px; max-height: 45vh; overflow: auto; padding: .7rem .8rem; border: 1px solid var(--ov-line); border-radius: 0 0 .4rem .4rem; line-height: 1.5; color: var(--ov-editor-text, inherit); }
+/* Eigener Text in der Standardschriftfarbe (serverseitig in gesendete Nachrichten und Termine geschrieben).
+   !important, weil der Block beim Laden eines Entwurfs seine Farbe als Inline-Stil (CSSOM) traegt. */
+.ov-editor .ov-text-color { color: inherit !important; }
 /* Fest zugeordnete Signatur im Editor: schreibgeschuetzt, sieht aus wie Teil des Textes. */
 .ov-editor .ov-signature-block { cursor: default; }
 .ov-editor .ov-signature-block img { max-width: 240px; height: auto; }

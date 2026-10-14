@@ -102,8 +102,10 @@ $ssoInvalid = static function (string $field) use ($errors): string {
             </div>
         </div>
         <p class="field__hint">
-            Nach dem Aktivieren bzw. Entfernen einer Domäne auf dem Server <code>./scripts/sso-domains.sh</code> ausführen;
-            bei geänderten Zugangsdaten genügt <code>docker compose restart auth <?= Html::e($serviceName !== '' ? $serviceName : '') ?></code>.
+            Nach dem Aktivieren bzw. Entfernen einer Domäne auf dem Server <code>./scripts/sso-domains.sh</code> ausführen
+            und prüfen, dass die Instanz läuft (<code>docker compose ps</code>); fehlt sie, bedient die Hauptinstanz die
+            Anmeldung dieser Domäne und der Browser fragt endlos nach Zugangsdaten.
+            Bei geänderten Zugangsdaten genügt <code>docker compose restart auth <?= Html::e($serviceName !== '' ? $serviceName : '') ?></code>.
         </p>
     <?php } else { ?>
         <p class="field__hint">Nach Änderungen: <code>docker compose restart auth</code>.</p>

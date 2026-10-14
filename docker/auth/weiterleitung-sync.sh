@@ -41,9 +41,11 @@ warn() {
 
 # Wert eines Schluessels aus der Antwort der Anwendung (base64 dekodiert).
 value() {
-    while IFS='=' read -r name encoded || [ -n "$name" ]; do
-        if [ "$name" = "$2" ]; then
-            printf '%s' "$encoded" | base64 -d 2>/dev/null || true
+    # Nicht mit IFS='=' trennen: das abschliessende '=' der base64-Auffuellung
+    # wuerde verschluckt (siehe entrypoint.sh).
+    while IFS= read -r line || [ -n "$line" ]; do
+        if [ "${line%%=*}" = "$2" ]; then
+            printf '%s' "${line#*=}" | base64 -d 2>/dev/null || true
             return 0
         fi
     done < "$1"

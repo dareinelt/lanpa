@@ -24,6 +24,9 @@ final class MailHtmlSanitizer
 {
     public const ATTR_BLOCKED = 'data-blocked-src';
     public const ATTR_CID = 'data-cid';
+
+    /** Hilfsangabe fuer den Kontrast im dunklen Modus (Orvanta\MailBodyContrast). */
+    private const HELPER_PROPERTIES = '/;?\s*--ov-(?:dark|light)-color\s*:[^;]*/i';
     /** @var list<string> */
     private const ALLOWED_TAGS = [
         'p', 'div', 'span', 'br', 'hr', 'strong', 'b', 'em', 'i', 'u', 's', 'strike', 'del', 'ins',
@@ -136,6 +139,7 @@ final class MailHtmlSanitizer
     private static function cleanAttributes(DOMElement $element, string $tag, int &$blocked, bool $blockExternal): void
     {
         $remove = [];
+        $updates = [];
         $source = null;
         foreach ($element->attributes as $attribute) {
             $name = strtolower($attribute->nodeName);
@@ -161,12 +165,24 @@ final class MailHtmlSanitizer
                 $remove[] = $attribute->nodeName;
                 continue;
             }
-            if ($name === 'style' && preg_match('/expression|url\s*\(|javascript|behavior|@import|position\s*:\s*fixed/i', $value) === 1) {
-                $remove[] = $attribute->nodeName;
+            if ($name === 'style') {
+                if (preg_match('/expression|url\s*\(|javascript|behavior|@import|position\s*:\s*fixed/i', $value) === 1) {
+                    $remove[] = $attribute->nodeName;
+                    continue;
+                }
+                $style = self::stripHelperProperties($value);
+                if ($style === '') {
+                    $remove[] = $attribute->nodeName;
+                } elseif ($style !== $value) {
+                    $updates[$attribute->nodeName] = $style;
+                }
             }
         }
         foreach ($remove as $name) {
             $element->removeAttribute($name);
+        }
+        foreach ($updates as $name => $value) {
+            $element->setAttribute($name, $value);
         }
         if ($tag === 'a' && $element->hasAttribute('href')) {
             $element->setAttribute('target', '_blank');
@@ -175,6 +191,19 @@ final class MailHtmlSanitizer
         if ($tag === 'img' && $source !== null) {
             self::applyImageSource($element, $source, $blocked, $blockExternal);
         }
+    }
+
+    /**
+     * Eigene Hilfsangaben aus dem style-Attribut entfernen. Die kontrastsicheren
+     * Ersatzfarben fuer den dunklen Modus gelten nur in der Anzeige und haben
+     * fuer den Empfaenger keine Bedeutung.
+     */
+    private static function stripHelperProperties(string $style): string
+    {
+        $style = (string) preg_replace(self::HELPER_PROPERTIES, '', $style);
+        $style = (string) preg_replace('/;{2,}/', ';', $style);
+
+        return trim($style, "; \t");
     }
 
     /**

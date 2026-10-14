@@ -147,6 +147,18 @@ final class ThemeService
         return [
             'tileBackground' => $this->settings->tileBackgroundColor(),
             'tileOpacity' => $this->settings->tileBackgroundOpacity(),
+        ] + $this->contrastModes();
+    }
+
+    /**
+     * Designfarben beider Modi als Kontrastbasis fuer Flaechen mit eigener
+     * Hintergrundfarbe (Kacheln, Nachrichtentexte).
+     *
+     * @return array{light:array<string,string>,dark:array<string,string>}
+     */
+    public function contrastModes(): array
+    {
+        return [
             'light' => $this->contrastBase($this->lightVariables()),
             'dark' => $this->contrastBase($this->darkVariables()),
         ];

@@ -14,6 +14,7 @@ use App\Security\Csrf;
 use App\Security\Session;
 use App\Services\LdapClient;
 use App\Services\Malware\MalwareScanService;
+use App\Services\Orvanta\MailBodyContrast;
 use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaExchangeService;
@@ -238,7 +239,7 @@ final class OrvantaApiController extends Controller
         return $this->handle($request, function (array $access) use ($request): array {
             $message = $this->mail($access)->message($access['impersonate'], $this->requireId($request->query('id')));
 
-            return Container::orvantaAttachments()->embedInlineImages($access['uid'], $access['impersonate'], $message);
+            return $this->withReadableBody(Container::orvantaAttachments()->embedInlineImages($access['uid'], $access['impersonate'], $message));
         });
     }
 
@@ -460,7 +461,9 @@ final class OrvantaApiController extends Controller
 
     public function archiveMessage(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => Container::orvantaArchive()->message($access['uid'], max(1, $request->queryInt('id', 0))));
+        return $this->handle($request, fn (array $access): array => $this->withReadableBody(
+            Container::orvantaArchive()->message($access['uid'], max(1, $request->queryInt('id', 0)))
+        ));
     }
 
     public function archiveSearch(Request $request): Response
@@ -564,7 +567,9 @@ final class OrvantaApiController extends Controller
 
     public function event(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->event($access['impersonate'], $this->requireId($this->stripMailbox($access, (string) $request->query('id', '')))));
+        return $this->handle($request, fn (array $access): array => $this->withReadableBody(
+            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->event($access['impersonate'], $this->requireId($this->stripMailbox($access, (string) $request->query('id', ''))))
+        ));
     }
 
     public function saveEvent(Request $request): Response
@@ -1287,6 +1292,29 @@ final class OrvantaApiController extends Controller
         $mail['body'] = OrvantaSignatureService::wrapTextColor($body, Container::orvantaConfig()->editorTextColor());
 
         return $mail;
+    }
+
+    /**
+     * Ergaenzt den Nachrichtentext um kontrastsichere Ersatzfarben fuer den
+     * dunklen Modus: Farben aus der Nachricht, die auf der dunklen
+     * Design-Oberflaeche nicht lesbar waeren, werden dort ersetzt (siehe
+     * Orvanta\MailBodyContrast). Gilt fuer die Anzeige; beim Versand und beim
+     * Speichern eines Entwurfs entfernt MailHtmlSanitizer die Hilfsangaben
+     * wieder.
+     *
+     * @param array<string,mixed> $message
+     * @return array<string,mixed>
+     */
+    private function withReadableBody(array $message): array
+    {
+        $body = $message['body_html'] ?? null;
+        if (!is_string($body) || $body === '') {
+            return $message;
+        }
+        $modes = Container::theme()->contrastModes();
+        $message['body_html'] = MailBodyContrast::apply($body, $modes['light'], $modes['dark']);
+
+        return $message;
     }
 
     /**

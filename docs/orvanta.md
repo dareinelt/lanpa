@@ -144,6 +144,11 @@ Typografie, Statusleiste):
 
 ![Orvanta – Einstellungen mit Postfachbelegung](screenshots/91-orvanta-einstellungen-postfach.png)
 
+Bestätigungen – Löschen von Termin, Kontakt, Aufgabe oder Notiz, Leeren des
+Anhang-Zwischenspeichers und Abschalten der Abwesenheitsnotiz – erscheinen als
+Dialog im Orvanta-Overlay (Titel, Fragetext, passende Schaltfläche und
+„Abbrechen“) und nicht mehr als Meldung des Browsers.
+
 Alle Styles liegen in `public/assets/css/orvanta.css`. Da die Content Security
 Policy inline-`style`-Attribute verbietet, setzt das Frontend Styles
 ausschließlich über das CSSOM (`node.style.cssText`); HTML-Mails werden dafür

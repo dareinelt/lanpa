@@ -463,6 +463,15 @@ $initials = mb_substr($initials !== '' ? $initials : '?', 0, 2);
         </div>
     </dialog>
 
+    <!-- Dialog: Bestätigung (Overlay statt Browser-Meldung; Text und Beschriftung setzt orvanta.js) -->
+    <dialog class="ov-dialog ov-dialog--small" data-ov-dialog="confirm">
+        <form method="dialog" class="ov-dialog__form">
+            <div class="ov-dialog__head"><h2 data-ov-confirm-title>Bestätigen</h2><button type="button" class="ov-mini ov-mini--light" data-ov-dialog-close aria-label="Schließen"><?= $icon('close') ?></button></div>
+            <div class="ov-dialog__body"><p data-ov-confirm-message></p></div>
+            <div class="ov-dialog__foot"><button type="submit" class="button button--danger" data-ov-confirm-accept>OK</button><button type="button" class="button button--ghost" data-ov-dialog-close>Abbrechen</button></div>
+        </form>
+    </dialog>
+
     <!-- Dialog: Über Orvanta -->
     <dialog class="ov-dialog" data-ov-dialog="about">
         <div class="ov-dialog__form">

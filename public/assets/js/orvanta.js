@@ -751,8 +751,75 @@
         }
     }
 
-    function confirmAction(message) {
-        return window.confirm(message);
+    // ------------------------------------------------------------------
+    // Bestätigungen (Overlay statt Browser-Meldung)
+    // ------------------------------------------------------------------
+
+    var confirmPrompt = null;
+
+    /**
+     * Fragt eine Aktion im Dialog [data-ov-dialog="confirm"] ab (ersetzt
+     * window.confirm). Erfuellt sich mit true bei Bestaetigung und mit false
+     * beim Abbrechen oder Schliessen. Solange ein Dialog offen ist, teilen
+     * sich weitere Anfragen dieselbe Abfrage.
+     *
+     * @param {string} message Fragetext
+     * @param {{title?: string, accept?: string, danger?: boolean}} [options]
+     *        Beschriftung von Titel und Bestaetigungsschaltflaeche; `danger`
+     *        faerbt die Bestaetigung als Loeschschaltflaeche (Standard).
+     * @returns {Promise<boolean>}
+     */
+    function confirmAction(message, options) {
+        options = options || {};
+        var dialog = $('[data-ov-dialog="confirm"]');
+        if (!dialog) {
+            return Promise.resolve(false);
+        }
+        if (confirmPrompt) {
+            return confirmPrompt.promise;
+        }
+        var pending = { accepted: false };
+        pending.promise = new Promise(function (resolve) {
+            pending.resolve = resolve;
+        });
+        confirmPrompt = pending;
+        var title = hook('confirm-title', dialog);
+        if (title) {
+            title.textContent = options.title || 'Bestätigen';
+        }
+        var text = hook('confirm-message', dialog);
+        if (text) {
+            text.textContent = message;
+        }
+        var accept = hook('confirm-accept', dialog);
+        if (accept) {
+            accept.textContent = options.accept || 'OK';
+            accept.className = options.danger === false ? 'button button--primary' : 'button button--danger';
+        }
+        var markAccepted = function () {
+            pending.accepted = true;
+        };
+        var onClose = function () {
+            dialog.removeEventListener('close', onClose);
+            if (accept) {
+                accept.removeEventListener('click', markAccepted);
+            }
+            if (confirmPrompt === pending) {
+                confirmPrompt = null;
+                pending.resolve(pending.accepted);
+            }
+        };
+        if (accept) {
+            accept.addEventListener('click', markAccepted);
+        }
+        dialog.addEventListener('close', onClose);
+        openDialog('confirm');
+        if (accept) {
+            window.setTimeout(function () {
+                accept.focus();
+            }, 30);
+        }
+        return pending.promise;
     }
 
     // ------------------------------------------------------------------
@@ -3457,20 +3524,23 @@
     }
 
     function deleteEvent() {
-        if (!state.selected || !state.selected.id) {
+        var selected = state.selected;
+        if (!selected || !selected.id) {
             toast('Bitte zuerst einen Termin auswählen.', 'info');
             return;
         }
-        if (!confirmAction('Termin „' + (state.selected.subject || '') + '“ wirklich löschen?')) {
-            return;
-        }
-        api('/kalender/termin/loeschen', { body: { id: state.selected.id } }).then(function () {
-            toast('Termin gelöscht.', 'success');
-            state.selected = null;
-            showDetailEmpty();
-            loadCalendar();
-        }).catch(function (error) {
-            toast(error.message, 'error');
+        confirmAction('Termin „' + (selected.subject || '') + '“ wirklich löschen?', { title: 'Termin löschen', accept: 'Löschen' }).then(function (confirmed) {
+            if (!confirmed) {
+                return;
+            }
+            api('/kalender/termin/loeschen', { body: { id: selected.id } }).then(function () {
+                toast('Termin gelöscht.', 'success');
+                state.selected = null;
+                showDetailEmpty();
+                loadCalendar();
+            }).catch(function (error) {
+                toast(error.message, 'error');
+            });
         });
     }
 
@@ -3905,20 +3975,23 @@
     }
 
     function deleteContact() {
-        if (!state.selected) {
+        var selected = state.selected;
+        if (!selected) {
             toast('Bitte zuerst einen Kontakt auswählen.', 'info');
             return;
         }
-        if (!confirmAction('Kontakt „' + (state.selected.display_name || '') + '“ löschen?')) {
-            return;
-        }
-        api('/kontakte/loeschen', { body: { ids: [state.selected.id], postfach: moduleMailbox() } }).then(function () {
-            toast('Kontakt gelöscht.', 'success');
-            state.selected = null;
-            showDetailEmpty();
-            loadContacts();
-        }).catch(function (error) {
-            toast(error.message, 'error');
+        confirmAction('Kontakt „' + (selected.display_name || '') + '“ löschen?', { title: 'Kontakt löschen', accept: 'Löschen' }).then(function (confirmed) {
+            if (!confirmed) {
+                return;
+            }
+            api('/kontakte/loeschen', { body: { ids: [selected.id], postfach: moduleMailbox() } }).then(function () {
+                toast('Kontakt gelöscht.', 'success');
+                state.selected = null;
+                showDetailEmpty();
+                loadContacts();
+            }).catch(function (error) {
+                toast(error.message, 'error');
+            });
         });
     }
 
@@ -4138,20 +4211,23 @@
     }
 
     function deleteTask() {
-        if (!state.selected) {
+        var selected = state.selected;
+        if (!selected) {
             toast('Bitte zuerst eine Aufgabe auswählen.', 'info');
             return;
         }
-        if (!confirmAction('Aufgabe „' + (state.selected.subject || '') + '“ löschen?')) {
-            return;
-        }
-        api('/aufgaben/loeschen', { body: { ids: [state.selected.id], postfach: moduleMailbox() } }).then(function () {
-            toast('Aufgabe gelöscht.', 'success');
-            state.selected = null;
-            showDetailEmpty();
-            loadTasks();
-        }).catch(function (error) {
-            toast(error.message, 'error');
+        confirmAction('Aufgabe „' + (selected.subject || '') + '“ löschen?', { title: 'Aufgabe löschen', accept: 'Löschen' }).then(function (confirmed) {
+            if (!confirmed) {
+                return;
+            }
+            api('/aufgaben/loeschen', { body: { ids: [selected.id], postfach: moduleMailbox() } }).then(function () {
+                toast('Aufgabe gelöscht.', 'success');
+                state.selected = null;
+                showDetailEmpty();
+                loadTasks();
+            }).catch(function (error) {
+                toast(error.message, 'error');
+            });
         });
     }
 
@@ -4273,23 +4349,26 @@
     }
 
     function deleteNote() {
-        if (!state.selected) {
+        var selected = state.selected;
+        if (!selected) {
             if (state.noteDraft) {
                 state.noteDraft = false;
                 showDetailEmpty();
             }
             return;
         }
-        if (!confirmAction('Notiz löschen?')) {
-            return;
-        }
-        api('/notizen/loeschen', { body: { ids: [state.selected.id], postfach: moduleMailbox() } }).then(function () {
-            toast('Notiz gelöscht.', 'success');
-            state.selected = null;
-            showDetailEmpty();
-            loadNotes();
-        }).catch(function (error) {
-            toast(error.message, 'error');
+        confirmAction('Notiz löschen?', { title: 'Notiz löschen', accept: 'Löschen' }).then(function (confirmed) {
+            if (!confirmed) {
+                return;
+            }
+            api('/notizen/loeschen', { body: { ids: [selected.id], postfach: moduleMailbox() } }).then(function () {
+                toast('Notiz gelöscht.', 'success');
+                state.selected = null;
+                showDetailEmpty();
+                loadNotes();
+            }).catch(function (error) {
+                toast(error.message, 'error');
+            });
         });
     }
 
@@ -4589,14 +4668,16 @@
     }
 
     function clearCache() {
-        if (!confirmAction('Alle zwischengespeicherten Anhänge aus Ihrem Nextcloud-Bereich entfernen?')) {
-            return;
-        }
-        api('/zwischenspeicher/leeren', { body: {} }).then(function (usage) {
-            renderQuota(usage);
-            toast(usage.message || 'Zwischenspeicher geleert.', 'success');
-        }).catch(function (error) {
-            toast(error.message, 'error');
+        confirmAction('Alle zwischengespeicherten Anhänge aus Ihrem Nextcloud-Bereich entfernen?', { title: 'Zwischenspeicher leeren', accept: 'Entfernen' }).then(function (confirmed) {
+            if (!confirmed) {
+                return;
+            }
+            api('/zwischenspeicher/leeren', { body: {} }).then(function (usage) {
+                renderQuota(usage);
+                toast(usage.message || 'Zwischenspeicher geleert.', 'success');
+            }).catch(function (error) {
+                toast(error.message, 'error');
+            });
         });
     }
 
@@ -4695,13 +4776,15 @@
             if (!status.available) {
                 // Ohne Vorlage (z. B. Gruppe entzogen) laesst sich eine noch
                 // aktive Notiz weiterhin abschalten.
-                if (status.active && confirmAction('Für Ihr Konto ist keine Abwesenheitsvorlage mehr hinterlegt. Die aktive Abwesenheitsnotiz jetzt abschalten?')) {
-                    disableOof();
+                if (status.active) {
+                    confirmAction('Für Ihr Konto ist keine Abwesenheitsvorlage mehr hinterlegt. Die aktive Abwesenheitsnotiz jetzt abschalten?', { title: 'Abwesenheitsnotiz abschalten', accept: 'Abschalten', danger: false }).then(function (confirmed) {
+                        if (confirmed) {
+                            disableOof();
+                        }
+                    });
                     return;
                 }
-                if (!status.active) {
-                    toast('Für Ihr Konto ist keine Abwesenheitsvorlage hinterlegt. Bitte wenden Sie sich an die Administration.', 'info');
-                }
+                toast('Für Ihr Konto ist keine Abwesenheitsvorlage hinterlegt. Bitte wenden Sie sich an die Administration.', 'info');
                 return;
             }
             fillOofForm(form, status);

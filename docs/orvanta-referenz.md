@@ -138,7 +138,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/Controller.php` | `orvantaRemindersVisible()` → View-Variable `$orvantaReminders` (Kopfzeilen-Erinnerungen auf allen Seiten) |
 | `app/Services/Office/OfficeAppCatalog.php` | App `orvanta` (`kind = intranet`), `ORVANTA_PATH = '/office/orvanta'` |
 | `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`/`isSafeFileName()` (führender Punkt nur bei Dateinamen), `MAX_BYTES` (16 MiB) |
-| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`, der Verbindungsanzeige `[data-ov-status-conn]` samt Tooltipp zum aktuellen Exchange-Host und Autoren-Button `.ov-statusbar__credit[data-ov-dialog-open="about"]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, headers, folder-new, folder-props, profile, settings, help, about, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Ordnerbaum, Mail-Liste, Textfelder, KI; Einträge per JS) |
+| `views/orvanta/index.php` | App-Gerüst `.ov-office[data-orvanta]` mit `data-config` (JSON), `data-csrf`, `data-module`; Titelleiste, Menüband, Modulleiste, Ordner/Liste/Detail, Statusleiste (mit `[data-ov-ai-indicator]`, der Verbindungsanzeige `[data-ov-status-conn]` samt Tooltipp zum aktuellen Exchange-Host und Autoren-Button `.ov-statusbar__credit[data-ov-dialog-open="about"]`), `<dialog data-ov-dialog="…">` (compose, event, contact, task, note, move, headers, folder-new, folder-props, profile, settings, help, confirm, about, reminder, ai), App-Kontextmenü `[data-ov-ctx-menu]` (Ordnerbaum, Mail-Liste, Textfelder, KI; Einträge per JS) |
 | `views/orvanta/viewer.php` | Euro-Office-Viewer `.ov-viewer[data-orvanta-viewer]` mit `data-api`, `data-config`, `data-download` und Download-Fallback |
 | `views/admin/office.php` | Abschnitt `$section === 'orvanta'`, Karte `#orvanta` (Formular, Verbindungstest, Zwischenspeicher je Benutzer, KI-Nutzungsbericht `#orvanta-ki`) |
 | `views/layouts/base.php` | Mitteilungsmenü mit `data-orvanta-reminders` / `data-orvanta-reminder-list`, lädt `orvanta-reminders.js` (mit `data-csrf`) |
@@ -669,6 +669,14 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   Antwort des Servers.“; HTTP-Fehler → `Error(data.error)`. Netzwerkfehler und
   502/503/504 setzen den Offline-Status (`setOnline(false)`), Erfolg wieder
   online. **Kein Timeout/AbortController.**
+- Bestätigungen: `confirmAction(message, {title, accept, danger})` öffnet den
+  Overlay-Dialog `[data-ov-dialog="confirm"]` (`<dialog>`, Titel, Text und
+  Beschriftung werden per `textContent` gesetzt) und liefert ein Promise
+  (`true` = bestätigt, `false` = abgebrochen oder geschlossen). Verwendet für
+  Termin, Kontakt, Aufgabe, Notiz, Zwischenspeicher und das Abschalten der
+  Abwesenheitsnotiz; die Bestätigungsschaltfläche trägt `button--danger`,
+  sofern `danger` nicht `false` ist. Eine offene Abfrage teilen sich weitere
+  Aufrufe (kein zweiter Dialog).
 - Verfassen: `openCompose(mode, message)` (`new`/`reply`/`replyall`/`forward`/
   `draft`), `contenteditable`-Editor, `composePayload()` (nur noch nicht
   hochgeladene Anhänge, `draft_id`, `change_key`), `sendCompose(form, asDraft)`:

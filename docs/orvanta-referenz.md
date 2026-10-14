@@ -96,7 +96,8 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Contracts/ExchangeTransportInterface.php` | `post(url, xml, options): {status, body, error}` |
 | `app/Services/Orvanta/CurlExchangeTransport.php` | cURL-POST, Auth `negotiate` (mit Dienstkonto `CURLAUTH_NTLM`, da GSSAPI Benutzer/Kennwort ignoriert und `app` kein Kerberos-Ticket hat; ohne Konto `CURLAUTH_NEGOTIATE` mit `:`), `ntlm`, `basic`; keine Redirects, nur HTTP(S); liefert `auth_offered` (WWW-Authenticate der letzten Antwort) |
 | `app/Services/Orvanta/DemoExchangeTransport.php` | Beispieldaten; erkennt die Operation per `str_contains()` am SOAP-Text; schreibende Aufrufe werden bestätigt, nicht gespeichert |
-| `app/Services/Orvanta/MailHtmlSanitizer.php` | `clean(html): {html, blocked_images}` – Whitelist für Tags/Attribute (Abschnitt 10) |
+| `app/Services/Orvanta/MailHtmlSanitizer.php` | `clean(html): {html, blocked_images}` – Whitelist für Tags/Attribute (Abschnitt 10); `stripHelperProperties()` entfernt beim Senden die Hilfsangaben der Kontrastanpassung |
+| `app/Services/Orvanta/MailBodyContrast.php` | `apply(html, light, dark): html` – Kontrastanpassung für Nachrichten- und Termintexte (Abschnitt 9.2): läuft den DOM-Baum ab, ermittelt die wirksame Textfarbe und den wirksamen Hintergrund (eigenes `background-color`/`bgcolor`, sonst geerbt) und hängt je Modus eine kontrastsichere Ersatzfarbe als CSS-Variable `--ov-dark-color`/`--ov-light-color` samt Markierungsattribut `data-ov-dark-color`/`data-ov-light-color` an (Rechnung über `App\Support\Color::ensureContrast()`); `ATTR_DARK`/`ATTR_LIGHT` |
 | `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()`, `inspect()` (Virenprüfung über `App\Services\Malware\MalwareScanService`, siehe Abschnitt 7.1) |
 | `app/Services/Orvanta/OrvantaNotificationService.php` | `sync()`, `poll()`, `dismiss()`, `snooze()`, `relative()` |
 | `app/Services/Orvanta/OrvantaRecipientService.php` | `suggest()` (Verlauf + Telefonliste), `remember()` (nach Versand, schreibt `.empfaenger.json`), `recent()` (Nextcloud-Lesen mit Sitzungs-Cache); `FILE_NAME`, `MAX_ENTRIES`, `CACHE_TTL` |
@@ -408,7 +409,7 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `mailboxUsage()` | `GetFolder` `root` + `recoverableitemsroot` (`$strict = false`) mit `ExtendedFieldURI` `0x0E08` (PR_MESSAGE_SIZE_EXTENDED, Byte), `0x3FF5` (PR_STORAGE_QUOTA_LIMIT), `0x666E` (PR_PROHIBIT_SEND_QUOTA), `0x666A` (PR_PROHIBIT_RECEIVE_QUOTA; alle in KB); danach `FindFolder` Deep ab `root` mit `0x0E08` und `folder:ParentFolderId` (Seiten à 1000, max. 20) | `used` = Stammordner + alle Unterordner (`0x0E08` gilt je Ordner nur für dessen eigene Elemente), ohne `SearchFolder` und ohne den Teilbaum „Wiederherstellbare Elemente“; Tags werden per `hexdec()` normalisiert (Exchange schreibt `0xe08`); liefert EWS keine Grenze, gelten die AD-Grenzen `$directory` (`LdapClient::mailboxQuota()`, vom `OrvantaApiController` nur für Exchange-Postfächer gelesen und je Sitzung 15 min in `orvanta_directory_quota` gehalten; Proxy-Postfächer: Belegung per IMAP `QUOTA`, Grenze = feste Postfachgröße `mail_proxy_mailboxes.quota_mb`, `source` = `setting`, kein AD-Zugriff); `limit` = Sendegrenze, ersatzweise Empfangsgrenze, Warnschwelle, dann `mailbox_quota_mb`; `source` = `exchange`/`directory`/`setting`/leer; `percent` gegen `limit`; fehlende Grenzen = 0 |
 | `folders()` | `GetFolder` (Systemordner, `$strict = false`) + `FindFolder` Deep ab `msgfolderroot` (≤ 500) | nur `FolderClass` `IPF.Note*`; Sortierung Systemordner (`MAIL_FOLDERS`) vor Namen |
 | `messages()` | `FindItem` Shallow, `IndexedPageItemView`, absteigend nach `DateTimeReceived`, optional `QueryString` (AQS) | `limit` 1–200 (API: 1–100), `has_more` aus `IncludesLastItemInRange`; `replied`/`forwarded` aus dem zuletzt ausgeführten Verb: `item:IconIndex` (`PidTagIconIndex`, `0x0105` = beantwortet, `0x0106` = weitergeleitet) und `PidTagLastVerbExecuted` (`ExtendedFieldURI` `0x1081`, NOTEIVERB `102`/`103` = Antwort, `104` = Weiterleitung) – je nach Server ist nur eine der beiden Quellen gefüllt, deshalb werden beide ausgewertet (`extendedInt()`, weil `propertyTag()` das führende `1` von `0x1081` abschneidet) |
-| `message()` | `GetItem` mit `BodyType = HTML` | Text-Body → `nl2br(htmlspecialchars())`, sonst `MailHtmlSanitizer::clean()`; externe Bilder landen in `data-blocked-src`, eingebettete in `data-cid` (Anhänge liefern `content_id`). S/MIME (`ItemClass` beginnt mit `IPM.Note.SMIME`): `unwrapSigned()` liest zusätzlich den MIME-Inhalt (`messageMime()`) und ersetzt bei signierten Nachrichten Text und Anhänge durch den signierten Inhalt (`signed = true`, Anhang-IDs `orvanta-signed:<index>:<itemId>`); verschlüsselte Nachrichten bleiben unverändert. Angehängte signierte Outlook-Elemente (`ItemAttachment`, z. B. von einem Mail-Gateway gekapselt): `unwrapSignedItems()` liest je Element (max. 5) per `GetAttachment` mit `IncludeMimeContent` den MIME-Inhalt; ist er signiert, wird sein Text direkt an den Nachrichtentext angefügt (z. B. unter das Gateway-Banner; bei leerem Text ersetzt er ihn), und seine Anhänge (`orvanta-signeditem:<index>:<attachmentId>`) ersetzen das Element in der Anhangliste |
+| `message()` | `GetItem` mit `BodyType = HTML` | Text-Body → `nl2br(htmlspecialchars())`, sonst `MailHtmlSanitizer::clean()`; die Ausgabe erhält zusätzlich die Kontrastanpassung (`MailBodyContrast`, Abschnitt 9.2). Externe Bilder landen in `data-blocked-src`, eingebettete in `data-cid` (Anhänge liefern `content_id`). S/MIME (`ItemClass` beginnt mit `IPM.Note.SMIME`): `unwrapSigned()` liest zusätzlich den MIME-Inhalt (`messageMime()`) und ersetzt bei signierten Nachrichten Text und Anhänge durch den signierten Inhalt (`signed = true`, Anhang-IDs `orvanta-signed:<index>:<itemId>`); verschlüsselte Nachrichten bleiben unverändert. Angehängte signierte Outlook-Elemente (`ItemAttachment`, z. B. von einem Mail-Gateway gekapselt): `unwrapSignedItems()` liest je Element (max. 5) per `GetAttachment` mit `IncludeMimeContent` den MIME-Inhalt; ist er signiert, wird sein Text direkt an den Nachrichtentext angefügt (z. B. unter das Gateway-Banner; bei leerem Text ersetzt er ihn), und seine Anhänge (`orvanta-signeditem:<index>:<attachmentId>`) ersetzen das Element in der Anhangliste |
 | `attachment()` | `GetAttachment` | `FileAttachment` → Base64-Inhalt; `ItemAttachment` → Body als `<Name>.html` (`text/html`); `orvanta-signed:`-IDs → `GetItem` mit `IncludeMimeContent`, `orvanta-signeditem:`-IDs → `GetAttachment` mit `IncludeMimeContent`; Teil `<index>` aus `MimeMessageParser` |
 | `send(user, mail, draftId, changeKey)` | ohne Entwurf und Anhänge `CreateItem SendAndSaveCopy`; sonst `saveDraft()` → `SendItem SaveItemToFolder` | mind. ein Empfänger in to/cc/bcc (außer `reference` mit `reply`/`replyall`); `mail.reference = {id, mode}` erzeugt `ReplyToItem`/`ReplyAllToItem`/`ForwardItem` statt `Message` |
 | `saveDraft(user, mail, draftId, changeKey)` | neu: `CreateItem SaveOnly` in drafts; bestehend: `UpdateItem SaveOnly` (Subject, Body, Importance, To/Cc/Bcc) | anschließend `CreateAttachment` für neue Anhänge; liefert `{id, change_key}` |
@@ -417,7 +418,7 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `move()` | `MoveItem` | Zielordner per `EwsXml::folderId()` |
 | `delete()` | `DeleteItem` `MoveToDeletedItems` bzw. `HardDelete` | `SendMeetingCancellations = SendToNone`; genutzt für Mail, Kontakte, Aufgaben, Notizen |
 | `calendar()` | `FindItem` mit `CalendarView` (≤ 500) | Serien als Einzelvorkommen; nach Start sortiert |
-| `event()` | `GetItem` (HTML-Body bereinigt, Teilnehmer, Anhänge, `recurring`) | |
+| `event()` | `GetItem` (HTML-Body bereinigt, Teilnehmer, Anhänge, `recurring`); die Ausgabe erhält zusätzlich die Kontrastanpassung (`MailBodyContrast`, Abschnitt 9.2) | |
 | `createEvent()` | `CreateItem` | Body wird bereinigt; Einladungen `SendToAllAndSaveCopy` nur mit Teilnehmern; `reminder < 0` = keine Erinnerung |
 | `updateEvent()` | `UpdateItem` `AlwaysOverwrite`, `SendToChangedAndSaveCopy` | Teilnehmer werden **nicht** geändert; `change_key` optional |
 | `moveEvent()` | `UpdateItem` `AlwaysOverwrite`, `SendToChangedAndSaveCopy` | nur `calendar:Start`/`calendar:End` (Drag&Drop, Abschnitt 6); `end >= start` und `start > 0`, sonst 422; Teilnehmer, Betreff und Erinnerung bleiben unberührt |
@@ -700,12 +701,16 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   `beforeunload`-Hinweis schützt ungesendete Inhalte.
 - Mail-Anzeige: `body.innerHTML = inlineStylesToCssom(message.body_html)`,
   danach `data-ov-style` → `node.style.cssText`; Links erhalten
-  `target=_blank` und `rel="noopener noreferrer nofollow"`.
+  `target=_blank` und `rel="noopener noreferrer nofollow"`. Der Server hat
+  `body_html` vorher kontrastsicher gemacht (Abschnitt 9.2); das CSS wählt
+  die zum Modus passende Ersatzfarbe.
 - Aufgabe aus E-Mail: Menüband-Schaltfläche `data-ov-action="mail-to-task"`
   (Reiter Start, `data-ov-needs="message"`) → `mailToTask()` lädt die
   vollständige Nachricht (`withFullMessage()`), wandelt das bereinigte
   `body_html` mit `htmlToPlainText()` in Text um und öffnet den Aufgabendialog
-  vorausgefüllt (`openTaskDialog({subject, body})`). `openTaskDialog()`
+  vorausgefüllt (`openTaskDialog({subject, body})`). `htmlToPlainText()`
+  ignoriert `style`-Attribute, die Kontrast-Hilfsangaben gelangen also nicht
+  in den Aufgabentext. `openTaskDialog()`
   behandelt ein Objekt ohne `id` als neue Aufgabe (Titel „Neue Aufgabe“,
   verstecktes `id`-Feld leer); gespeichert wird über den bestehenden Endpunkt
   `aufgaben/aufgabe` (leere `id` → `createTask()`).
@@ -795,6 +800,41 @@ Breakpoints 1200 px und 900 px, eigenes Drucklayout. Der Streifen
 `.ov-oof-banner` (Abschnitt 21) sitzt in der Zeile des Menübands und wird im
 Druck ausgeblendet.
 
+**Lesbarkeit im dunklen Modus (Kontrastanpassung).** Mitgeschickte
+Schriftfarben sind auf dem dunklen Hintergrund oft kaum lesbar. Der Server
+prüft deshalb jeden Nachrichten- und Termintext vor der Ausgabe
+(`OrvantaApiController::withReadableBody()` in `message()`, `event()` und
+`archiveMessage()`) und stützt sich dabei auf dieselbe Rechnung wie die
+Kacheln der Startseite (`App\Support\Color`, Mindestkontrast 4,5:1):
+
+- `ThemeService::contrastModes()` liefert die Kontrastgrundlagen beider Modi
+  (`light`/`dark` – Hintergrund, Text, gedämpfter Text, Akzent, Flächen). Die
+  Methode ist aus `tileContrastBase()` herausgezogen, damit Kacheln und
+  Nachrichten dieselben Werte benutzen.
+- `MailBodyContrast::apply()` läuft den DOM-Baum eltern-zuerst ab, liest je
+  Element die angegebene Textfarbe (`style="color"`, `color`-Attribut,
+  `rgb()`/benannte Farben) und den wirksamen Hintergrund (eigene
+  `background-color`/`bgcolor`, sonst der des Elternelements, sonst die
+  Seitenfläche). Reicht der Kontrast nicht, wird die Ersatzfarbe aus
+  `Color::ensureContrast()` **je Modus** als CSS-Variable an das vorhandene
+  `style`-Attribut angehängt (`--ov-dark-color`, `--ov-light-color`) und ein
+  leeres Markierungsattribut (`data-ov-dark-color`, `data-ov-light-color`)
+  gesetzt. Ist die Farbe bereits lesbar, bleibt das Element unverändert.
+- `orvanta.css` wählt je Modus die passende Variable mit `!important`:
+  `.ov-mail__body [data-ov-dark-color], .ov-quote [data-ov-dark-color]` bzw.
+  die `light`-Variante. `!important` ist nötig, weil `inlineStylesToCssom()`
+  die Absenderfarbe über `style.cssText` (CSSOM) setzt und Inline-Styles jede
+  Autorenregel schlagen. Die ursprüngliche Absenderfarbe bleibt im
+  `style`-Attribut stehen – sie gilt weiter im anderen Modus, beim Zitieren
+  und beim Empfänger.
+- Der `.ov-editor` bleibt bewusst außen vor: dort gilt weiter die
+  Schriftfarbe des Editors (`--ov-editor-text`, Abschnitt 16).
+- `MailHtmlSanitizer::stripHelperProperties()` entfernt die Hilfsvariablen
+  wieder aus `style` (und das Attribut selbst, wenn nichts übrig bleibt); die
+  Markierungsattribute fallen ohnehin weg, weil sie nicht in
+  `ALLOWED_ATTRIBUTES` stehen. Empfänger bekommen also nur die
+  Originalfarben.
+
 ## 10. HTML-Bereinigung und CSP
 
 - `MailHtmlSanitizer::clean()` parst mit `DOMDocument` (`LIBXML_NONET`) und
@@ -808,11 +848,17 @@ Druck ausgeblendet.
     `@import`, `position: fixed`;
   - `a[href]` nur `http`, `https`, `mailto`, `tel`, `#…`; erhält `target`/`rel`;
   - `img[src]` nur `data:image/…` – alles andere (auch `cid:`) wird entfernt,
-    gezählt (`blocked_images`) und das Bild durch `span.orv-img-blocked` ersetzt.
+    gezählt (`blocked_images`) und das Bild durch `span.orv-img-blocked` ersetzt;
+  - `style` verliert beim Senden die Hilfsvariablen der Kontrastanpassung
+    (`--ov-dark-color`, `--ov-light-color`, Abschnitt 9.2); ein danach leeres
+    `style`-Attribut wird entfernt.
 - Angewendet auf: empfangene Mails (`message()`), Terminbeschreibungen
   (`event()`), ausgehende HTML-Bodys (`messageXml()`, `createEvent()`,
   `updateEvent()`). `respond()` sendet `NewBodyContent` **unbereinigt**
-  (nur XML-escaped) an Exchange.
+  (nur XML-escaped) an Exchange. Anschließend an die Bereinigung läuft für
+  die Ausgabe `MailBodyContrast::apply()` (Abschnitt 9.2); die dort
+  angehängten Hilfsangaben entfernt der Sanitizer beim nächsten Senden
+  wieder.
 - Die Seiten-CSP (`public/index.php`) erlaubt `style-src 'self' 'nonce-…'` –
   `style`-Attribute würden blockiert. Deshalb ersetzt `inlineStylesToCssom()`
   per Regex `style="…"` durch `data-ov-style="…"` (bewusst ohne
@@ -922,6 +968,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaSignatureTest.php` | Validierung (Pflichtfelder, Modus, Reihenfolge, Gruppen-Dedupe, Präfix-Leerzeichen), Speichern/Laden/Löschen, Zuordnung (Reihenfolge, inaktiv, Schreibweise), Darstellung (AD-Daten, Präfix + Durchwahl vs. komplette Rufnummer, Farben, Logo als `data:`-URI, Sanitizer-Durchlauf), Logo in Zeilenhöhe und gewählte Designfarben (`logoSize()`, `imageDimensions()` inkl. SVG), Logo-Pixelgröße = Anzeigegröße (`scaleImage()`), Fallbacks (ohne Logo/Telefonbuch/inaktiver Eintrag), `extension()`, `append()` (Dedupe, vor Zitat), `strip()` |
 | `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen (inkl. `moveEvent()`: nur `calendar:Start`/`calendar:End` im `UpdateItem`, ungültiger Zeitraum → 422), Postfachbelegung (`mailboxUsage()`, Summe aller Ordner ohne Suchordner/Wiederherstellbare Elemente, Quota in KB, ohne Grenzen, AD-Grenzen, Ersatzgrenze `mailbox_quota_mb`, `LdapClient::mailboxQuotaFromEntries()`), `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen), Exchange-DAG (Verteilung nach Fair-use/Sitzungszahl/Latenz, Affinität, Wartung, Umleitung, Failover, `parseHostList()`, `overview()`, `syncPrimary()`, Tooltipp der Verbindungsanzeige; Abschnitt 20) |
 | `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), Freigabe per AD-Gruppe (`archive_group`, Standard: niemand; Mitglieder weiterer Quellen; Pflichtgruppe bei Aktivierung), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
+| `tests/Unit/OrvantaMailContrastTest.php` | Kontrastanpassung der Nachrichtentexte (Abschnitt 9.2): dunkle Absenderfarbe wird nur im dunklen Modus ersetzt, helle nur im hellen, eigener Hintergrund (weisse Tabellenzelle) und geerbter Hintergrund des Elternelements bestimmen die Ersatzfarbe, `rgb()` und benannte Farben, ungültige Farben bleiben unverändert, Umlaute/Entities überstehen den Durchlauf, Text ohne Farbe bleibt unverändert, `MailHtmlSanitizer` entfernt die Hilfsangaben beim Senden (und das leere `style`-Attribut), Stylesheet enthält die Modusregeln mit `!important` |
 
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
@@ -970,6 +1017,7 @@ nach dem Neuladen wieder die alte.
 
 | **Abwesenheitsnotiz erweitern** (weiteres Feld, weiterer Empfängerkreis) | Spalte per Migration **und** im SQLite-Schema von `tests/Unit/OrvantaOofTest.php` (`oofPdo()`); `OrvantaOofRepository` (`hydrate`/`hydrateSettings`, `save`/`saveSettings`), `OrvantaOofService` (`blank()`/`validate()`/`validateSettings()`/`apply()`/`state()`/`status()`), Formular `views/admin/orvanta-oof-template.php` bzw. Dialog `views/orvanta/index.php`, `admin-oof.js` (Query) und `OrvantaOofController::preview()`; neuer Empfängerkreis zusätzlich in `AUDIENCES` und in `EwsXml::oofSettings()`; Doku in Abschnitt 21. |
 | **Nachrichtenfluss-Dashboard erweitern** (weiterer Knoten, weitere Kennzahl) | Zuerst `docs/orvanta-nachrichtenfluss.md` (Elementliste und Ausgrauregeln) ergänzen, dann `OrvantaFlowService::collect*()` für die Daten und `evaluate()` für den Knoten samt `flowNode()`-Aufruf; Knoten in `views/admin/orvanta-flow.php` rendern (Spur, `data-flow-node`, `data-flow-node-muted` **immer** ausgeben, nur `hidden` schalten) und in `admin-orvanta-flow.js` in die Aktualisierung aufnehmen; Test in `OrvantaFlowTest.php` (`flowInput()` um das Feld erweitern – **`array_merge()`**, nie `+`, sonst gewinnt der Standard). Neue Tabellen/Spalten zusätzlich im SQLite-Schema von `flowPdo()` und in `database/migrations/AGENTS.md` nachziehen. Abschnitt 23. |
+| **Kontrastanpassung der Nachrichtentexte ändern** (anderer Mindestkontrast, weitere Farbquellen, weitere Ansicht) | Nur `MailBodyContrast` (Farbquellen: `declaredTextColor()`/`declaredBackground()`, Rechnung: `App\Support\Color::ensureContrast()`) und die Modusregeln in `orvanta.css` anfassen; Grundlagen kommen aus `ThemeService::contrastModes()`, die Ausgabe-Hooks sitzen in `OrvantaApiController::withReadableBody()` (`message()`, `event()`, `archiveMessage()`). Wird eine neue Ansicht ausgegeben, dort ebenfalls durch `withReadableBody()` schicken. Der Sanitizer muss die Hilfsangaben weiterhin entfernen (`HELPER_PROPERTIES`), sonst landen sie in ausgehenden Mails. Tests in `OrvantaMailContrastTest.php`. Abschnitt 9.2. |
 
 Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 `docs/orvanta.md` und `agentsindex.md` aktualisieren.

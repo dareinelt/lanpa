@@ -430,6 +430,33 @@ Adminbereich den Ausfall und nennt den manuellen Weg:
 und `docker compose restart auth`. Die Anmeldung selbst funktioniert weiter –
 nur das Anwenden neuer oder geänderter Quellen ist dann Handarbeit.
 
+### Uhrzeit und Kerberos
+
+Kerberos akzeptiert zwischen Domänencontroller, Client und Anmelde-Instanz
+höchstens 5 Minuten Abweichung. Jede Instanz gleicht ihre Uhr deshalb beim Start
+über `chrony` mit den Zeitservern der Identitätsquelle ab (`SSO_NTP`, im
+Adminbereich unter „Zeitserver (NTP)“) und fragt zusätzlich die
+Domänencontroller ab – ein DC ist immer auch NTP-Server, ein falsch gesetzter
+Zeitserver verhindert den Abgleich also nicht. Mit `cap_add: SYS_TIME` (siehe
+`docker-compose.yml`) stellt die Instanz ihre Uhr selbst; ohne diese
+Berechtigung wird die Abweichung nur gemessen.
+
+| Zeile im Protokoll | Bedeutung |
+| --- | --- |
+| `Uhrzeit mit … abgeglichen` | Uhr gestellt bzw. nachgeführt. |
+| `Uhrzeit geprueft (Abweichung … s)` | Abweichung gemessen und unter 5 Minuten, Stellen nicht erlaubt. |
+| `WARNUNG: Zeitserver … nicht erreichbar – Uhrzeit nicht geprueft` | Kein Zeitserver und kein DC antwortet (UDP 123). Die Folge für Kerberos und die Prüfung stehen in derselben Zeile. |
+| `WARNUNG: Uhrzeit weicht um … s ab` | Abweichung über 5 Minuten: Kerberos schlägt fehl. |
+| `Uhrzeit nicht abgeglichen, Kerberos gegen … funktioniert aber` | Entwarnung: der Domänenbeitritt läuft selbst über Kerberos, die Abweichung liegt damit unter 5 Minuten. |
+
+Dieselbe Einordnung steht im Adminbereich an der Instanz (Badge bzw. Hinweis
+unter Active Directory → „Windows-Anmeldung“); eine ungeprüfte Uhr wird dort
+sichtbar gemeldet, damit sie nicht als Ursache übersehen wird. Bleibt die
+Meldung „Uhrzeit nicht geprueft“ ohne Entwarnung, ist die Uhr des Docker-Hosts zu
+stellen (`timedatectl set-ntp true`, auf dem Host nachsehen) oder dem Dienst
+`cap_add: SYS_TIME` zu geben; zusätzlich `SSO_NTP` prüfen und UDP 123 zum
+Zeitserver bzw. zu den Domänencontrollern freigeben.
+
 ### Kennzahlen der übrigen Container
 
 Auf dem Admin-Dashboard zeigt jeder der Container `app`, `db`, `mail-proxy`,

@@ -236,7 +236,7 @@ Runner::test('SSO-Agent: Adminseite zeigt Zustand und Schaltfläche', function (
     Assert::contains('Kerberos aktiv', $html);
     Assert::contains('nur NTLM – Kerberos nicht verfügbar', $html, 'Der fehlende Kerberos-Ticketpfad wird benannt.');
     Assert::contains('Domänenbeitritt fehlgeschlagen', $html);
-    Assert::contains('Uhrzeit weicht ab', $html, 'Der Zeitserver-Hinweis steht an der Instanz.');
+    Assert::contains('Uhrzeit nicht geprüft oder weicht ab', $html, 'Der Zeitserver-Hinweis steht an der Instanz.');
     Assert::contains('MVZ &lt;script&gt;', $html, 'Beschriftungen werden escaped.');
     Assert::false(str_contains($html, '<script>'), 'Die Ausgabe ist escaped.');
     Assert::contains('<code>auth-mvzintwf</code>', $html, 'Die Instanz wird der Quelle zugeordnet.');
@@ -273,4 +273,61 @@ Runner::test('SSO-Agent: COMPOSE_FILE steht vor dem Erzeugen der Instanzen', fun
     Assert::contains('COPY docker/sso-agent/sso-agent.sh /usr/local/bin/sso-agent', $dockerfile);
     Assert::contains('docker-cli-compose', $dockerfile);
     Assert::contains('jq', $dockerfile);
+});
+
+Runner::test('SSO-Agent: Zeithinweis nennt die Folge fuer Kerberos', function (): void {
+    View::setViewPath(BASE_PATH . '/views');
+    $ssoAgent = ['available' => false, 'state' => 'unknown', 'action' => '', 'message' => '', 'request_id' => '',
+        'updated_at' => '', 'project' => '', 'compose_file' => '', 'running' => false, 'pending' => false,
+        'pending_stale' => false, 'instances' => []];
+    $sources = ssoAgentViewSources();
+    $data = ['primarySecretStates' => [], 'ldapExtensionAvailable' => true, 'dialog' => null, 'ssoAgent' => $ssoAgent];
+
+    // Uhr nicht abgeglichen, Kerberos laeuft (Abweichung nachgewiesen unter 5 Minuten).
+    $sources[1]['instance']['ntp'] = 'warn';
+    $html = View::render('admin.ldap', ['sources' => $sources] + $data);
+    Assert::contains('Uhrzeit nicht abgeglichen, Kerberos läuft', $html,
+        'Die Entwarnung steht an der Instanz.');
+    Assert::false(str_contains($html, 'Kerberos braucht unter 5 Minuten'),
+        'Bei laufendem Kerberos entfaellt die Warnung.');
+
+    // Kein Zeitserver erreichbar bzw. Abweichung zu gross: die Folge wird benannt.
+    $sources[1]['instance']['ntp'] = 'failed';
+    $html = View::render('admin.ldap', ['sources' => $sources] + $data);
+    Assert::contains('Uhrzeit nicht geprüft oder weicht ab (Kerberos braucht unter 5 Minuten)', $html,
+        'Ohne Nachweis wird die Uhr als ungeprueft gemeldet.');
+    Assert::false(str_contains($html, 'Kerberos läuft'), 'Der Fehlerfall wird nicht als Entwarnung gezeigt.');
+});
+
+Runner::test('auth-Container: unerreichbarer Zeitserver wird eingeordnet', function (): void {
+    $entrypoint = ssoAgentFile('docker/auth/entrypoint.sh');
+
+    // Die Domaenencontroller sind NTP-Server und dienen als Rueckfallebene:
+    // ein falsch gesetzter SSO_NTP darf die Uhrpruefung nicht verhindern.
+    $fallback = strpos($entrypoint, 'for s in ${DCS}; do');
+    Assert::true($fallback !== false, 'Die DCs werden als Zeitserver ergaenzt.');
+    Assert::true($fallback < strpos($entrypoint, 'NTP_SERVERS="${NTP_SERVERS# }"'),
+        'Die Rueckfallebene steht vor der Ausgabe der Serverliste.');
+
+    // Meldung nennt Ursache, Folge und Pruefung - vorher stand dort nur
+    // "nicht erreichbar", ohne Hinweis ob die Anmeldung dadurch ausfaellt.
+    Assert::contains('WARNUNG: Zeitserver ${NTP_SERVERS} nicht erreichbar - Uhrzeit nicht geprueft', $entrypoint);
+    Assert::contains('Kerberos toleriert hoechstens 5 Minuten', $entrypoint,
+        'Die Folge fuer Kerberos wird benannt.');
+    Assert::contains('SSO_NTP bzw. Firewall (UDP 123) pruefen', $entrypoint,
+        'Die Ursache laesst sich pruefen.');
+
+    // Der Domaenenbeitritt laeuft ueber Kerberos und belegt damit die
+    // Abweichung - danach ist die Warnung entschaerft.
+    Assert::contains('Uhrzeit nicht abgeglichen, Kerberos gegen ${SSO_DOMAIN} funktioniert aber', $entrypoint);
+    Assert::contains('WARNUNG: Uhrzeit nicht geprueft - eine Abweichung ueber 5 Minuten verhindert Kerberos', $entrypoint);
+    Assert::true(strpos($entrypoint, 'chronyd -q -t 15') < strpos($entrypoint, 'Uhrzeit nicht abgeglichen, Kerberos gegen'),
+        'Die Einordnung steht nach dem Zeitabgleich.');
+
+    $agent = ssoAgentFile('docker/sso-agent/sso-agent.sh');
+    Assert::contains('*"Uhrzeit nicht abgeglichen, Kerberos"*) ntp=warn ;;', $agent,
+        'Der Dienst erkennt die Entwarnung.');
+    Assert::contains('*"WARNUNG: Uhrzeit nicht geprueft"*) ntp=failed ;;', $agent);
+    Assert::true(strpos($agent, 'ntp=warn') < strpos($agent, 'ntp=failed'),
+        'Die Entwarnung muss vor den Fehlerfaellen stehen.');
 });

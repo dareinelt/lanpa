@@ -202,12 +202,22 @@ if is_true "$SSO_ENABLED"; then
     fi
 
     # Zeitabgleich: Kerberos toleriert hoechstens 5 Minuten Abweichung zwischen
-    # Client, DC und diesem Container. Zeitserver aus SSO_NTP, sonst die DCs
-    # (AD-Domaenencontroller sind immer auch NTP-Server). Mit CAP_SYS_TIME
-    # (cap_add: SYS_TIME) wird die Uhr sofort gestellt und chronyd haelt sie
-    # laufend nach; ohne die Berechtigung wird die Abweichung nur gemessen.
+    # Client, DC und diesem Container. Zeitserver aus SSO_NTP plus die DCs als
+    # Rueckfallebene (AD-Domaenencontroller sind immer auch NTP-Server). Mit
+    # CAP_SYS_TIME (cap_add: SYS_TIME) wird die Uhr sofort gestellt und chronyd
+    # haelt sie laufend nach; ohne die Berechtigung wird die Abweichung nur
+    # gemessen. Ist kein Zeitserver erreichbar, bleibt die Uhr ungeprueft - der
+    # Zustand wird im Protokoll und im Adminbereich gemeldet.
+    TIME_UNVERIFIED=false
     NTP_SERVERS="$(split_list "${SSO_NTP:-}")"
-    [ -z "$NTP_SERVERS" ] && NTP_SERVERS="$DCS"
+    # Domaenencontroller sind ebenfalls NTP-Server: als Rueckfallebene
+    # ergaenzen, damit ein nicht erreichbarer SSO_NTP die Uhrpruefung nicht
+    # verhindert (chrony nimmt den ersten erreichbaren Server).
+    for s in ${DCS}; do
+        case " ${NTP_SERVERS} " in *" ${s} "*) continue ;; esac
+        NTP_SERVERS="${NTP_SERVERS} ${s}"
+    done
+    NTP_SERVERS="${NTP_SERVERS# }"
     if [ -n "$NTP_SERVERS" ]; then
         mkdir -p /run/chrony /var/lib/chrony
         {
@@ -223,15 +233,18 @@ if is_true "$SSO_ENABLED"; then
             if chronyd -Q -t 15 -f /etc/chrony/chrony.conf >/tmp/chrony.log 2>&1 \
                 && offset="$(grep -o 'System clock wrong by [^ ]* seconds' /tmp/chrony.log | tail -1 | awk '{print $5}')" && [ -n "$offset" ]; then
                 if awk -v o="$offset" 'BEGIN { exit ((o < 0 ? -o : o) > 300) ? 0 : 1 }'; then
-                    echo "[auth] WARNUNG: Uhrzeit weicht um ${offset} s von ${NTP_SERVERS} ab - Kerberos wird fehlschlagen. Uhr des Docker-Hosts stellen oder dem auth-Dienst cap_add: SYS_TIME geben." >&2
+                    TIME_UNVERIFIED=true
+                    echo "[auth] WARNUNG: Uhrzeit weicht um ${offset} s von ${NTP_SERVERS} ab - Kerberos wird fehlschlagen. Uhr des Docker-Hosts stellen oder dem Dienst cap_add: SYS_TIME geben." >&2
                 else
                     echo "[auth] Uhrzeit geprueft (Abweichung ${offset} s zu ${NTP_SERVERS}); Stellen der Uhr nicht erlaubt (cap_add: SYS_TIME fehlt)."
                 fi
             else
-                echo "[auth] WARNUNG: Zeitserver ${NTP_SERVERS} nicht erreichbar - Uhrzeit nicht geprueft." >&2
+                TIME_UNVERIFIED=true
+                echo "[auth] WARNUNG: Zeitserver ${NTP_SERVERS} nicht erreichbar - Uhrzeit nicht geprueft. Kerberos toleriert hoechstens 5 Minuten Abweichung zwischen DC, Client und diesem Dienst; SSO_NTP bzw. Firewall (UDP 123) pruefen und die Uhr des Docker-Hosts stellen." >&2
             fi
         else
-            echo "[auth] WARNUNG: Zeitserver ${NTP_SERVERS} nicht erreichbar - Uhrzeit nicht abgeglichen." >&2
+            TIME_UNVERIFIED=true
+            echo "[auth] WARNUNG: Zeitserver ${NTP_SERVERS} nicht erreichbar - Uhrzeit nicht abgeglichen. Kerberos toleriert hoechstens 5 Minuten Abweichung zwischen DC, Client und diesem Dienst; SSO_NTP bzw. Firewall (UDP 123) pruefen und die Uhr des Docker-Hosts stellen." >&2
         fi
         rm -f /tmp/chrony.log
     fi
@@ -443,6 +456,16 @@ CONF
         mechs="Kerberos (SPNs: $(for h in ${spn_hosts}; do printf 'HTTP/%s ' "$h"; done | sed 's/ $//')) und NTLM"
     elif [ -n "$SSO_REALM" ]; then
         echo "[auth] WARNUNG: Kerberos nicht verfuegbar - nur NTLM." >&2
+    fi
+    # Der Domaenenbeitritt laeuft ueber Kerberos: gelingt er, liegt die
+    # Abweichung der Uhr unter der Grenze von 5 Minuten - der fehlgeschlagene
+    # Zeitabgleich ist dann kein Grund mehr fuer eine Warnung.
+    if [ "$TIME_UNVERIFIED" = true ]; then
+        if [ "$KRB5_ACTIVE" = true ]; then
+            echo "[auth] Uhrzeit nicht abgeglichen, Kerberos gegen ${SSO_DOMAIN} funktioniert aber - Abweichung unter 5 Minuten."
+        else
+            echo "[auth] WARNUNG: Uhrzeit nicht geprueft - eine Abweichung ueber 5 Minuten verhindert Kerberos." >&2
+        fi
     fi
     if [ -n "$SSO_SOURCE" ]; then
         echo "[auth] Windows-Anmeldung aktiv: ${mechs} (Domaene ${SSO_DOMAIN}, Identitaetsquelle ${SSO_SOURCE})."

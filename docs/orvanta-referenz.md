@@ -750,7 +750,9 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   Menüband-Punkt „Abwesenheit“ ausgeblendet (`capabilities.oof`).
 - Tastatur (außerhalb von Eingabefeldern/Dialogen): `1`–`5` Module, `/` Suche,
   `N` Neu, `R` Antworten, `Entf` Löschen (je Modul), Pfeile hoch/runter in der
-  Liste, `Esc` schließt das Erinnerungs-Popover.
+  Liste, `Esc` schließt das Erinnerungs-Popover. Das Auswahlkästchen einer
+  Listenzeile gilt dabei nicht als Eingabefeld: nach dem Markieren per Klick
+  verschiebt `Entf` die markierten Nachrichten in die Gelöschten Elemente.
 - Ansicht-Einstellungen (`orvanta.prefs`) setzt `applyPrefs()` als Klassen
   am Wurzelelement (u. a. `ov--no-folders`, `ov--no-reading`).
 - Statusleiste: Verbindung, letzte Aktualisierung (`markSync()`), Quota

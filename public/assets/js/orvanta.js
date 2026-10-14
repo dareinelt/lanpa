@@ -5064,7 +5064,10 @@
 
         document.addEventListener('keydown', function (event) {
             var tag = (event.target.tagName || '').toLowerCase();
-            var typing = tag === 'input' || tag === 'textarea' || tag === 'select' || event.target.isContentEditable || event.target.closest('dialog[open]');
+            // Das Auswahlkaestchen einer Listenzeile ist kein Eingabefeld: nach
+            // dem Markieren per Klick soll Entf das Element loeschen.
+            var listCheckbox = tag === 'input' && event.target.type === 'checkbox' && !!event.target.closest('.ov-item__check');
+            var typing = (tag === 'input' && !listCheckbox) || tag === 'textarea' || tag === 'select' || event.target.isContentEditable || event.target.closest('dialog[open]');
             if (event.key === 'Escape') {
                 toggleRemindersPopover(false);
                 return;

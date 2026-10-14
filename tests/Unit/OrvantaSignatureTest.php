@@ -118,15 +118,18 @@ Runner::test('Signaturen: Validierung der Vorlage', function (): void {
     // Abschliessendes Leerzeichen des Praefixes bleibt erhalten.
     Assert::same('T.: +49 (05331) 934 - ', $service->validate(signatureInput())['phone_prefix']);
 
-    // Farben: Standard = Text-/Akzentfarbe, nur Designfarben erlaubt.
+    // Farben: Schriftfarbe als Hex-Wert (oder Designfarbe aus Altbestand),
+    // Trennzeichen weiterhin nur aus den Designfarben.
     $clean = $service->validate(signatureInput());
-    Assert::same('color_text', $clean['text_color']);
+    Assert::same('', $clean['text_color'], 'Ohne Angabe gilt die Textfarbe des Designs.');
     Assert::same('color_accent', $clean['separator_color']);
-    $clean = $service->validate(signatureInput(['text_color' => 'color_primary', 'separator_color' => 'color_secondary']));
-    Assert::same('color_primary', $clean['text_color']);
+    $clean = $service->validate(signatureInput(['text_color' => '#FF0000', 'separator_color' => 'color_secondary']));
+    Assert::same('#ff0000', $clean['text_color'], 'Hex-Werte werden normalisiert.');
     Assert::same('color_secondary', $clean['separator_color']);
+    $clean = $service->validate(signatureInput(['text_color' => 'color_primary']));
+    Assert::same('color_primary', $clean['text_color'], 'Altbestand: Designfarbe bleibt gueltig.');
     try {
-        $service->validate(signatureInput(['text_color' => '#ff0000', 'separator_color' => 'red']));
+        $service->validate(signatureInput(['text_color' => 'red', 'separator_color' => 'red']));
         Assert::true(false);
     } catch (ValidationException $exception) {
         Assert::true(isset($exception->errors()['text_color']));
@@ -228,6 +231,13 @@ Runner::test('Signaturen: Logo in Hoehe der Textzeilen, waehlbare Designfarben',
         Assert::contains('color:#0000aa', $html, 'Gewaehlte Schriftfarbe.');
         Assert::contains('<span style="color:#00aa00">&#9632;</span>', $html, 'Gewaehlte Trennzeichenfarbe.');
         Assert::false(str_contains($html, '#112233'));
+
+        // Schriftfarbe als Hex-Wert der Vorlage hat Vorrang vor dem Design.
+        $service->save($id, signatureInput(['text_color' => '#0a0b0c', 'separator_color' => 'color_secondary']));
+        $html = $service->forUser(['id' => 7, 'groups' => ['IT']])['html'];
+        Assert::contains('color:#0a0b0c', $html, 'Schriftfarbe aus der Vorlage.');
+        Assert::false(str_contains($html, '#0000aa'), 'Die Designfarbe gilt dann nicht mehr.');
+        Assert::contains('<span style="color:#00aa00">&#9632;</span>', $html, 'Trennzeichen weiterhin aus dem Design.');
     } finally {
         @unlink($logo);
     }
@@ -357,4 +367,47 @@ Runner::test('Signaturen: Anfuegen ersetzt vorhandene Signatur und steht vor dem
 
     // strip() laesst Texte ohne Marker unangetastet.
     Assert::same('<p>Nur Text</p>', OrvantaSignatureService::strip('<p>Nur Text</p>'));
+});
+
+Runner::test('Signaturen: Standardschriftfarbe umschliesst nur den eigenen Text', function (): void {
+    $signature = '<div class="ov-signature-block"><table><tr><td>Sig</td></tr></table></div>';
+    $quote = '<div class="ov-quote"><hr><p><b>Von:</b> x</p></div>';
+
+    // Ohne bzw. mit ungueltiger Farbe bleibt der Text unveraendert.
+    Assert::same('<p>Hallo</p>', OrvantaSignatureService::wrapTextColor('<p>Hallo</p>', ''));
+    Assert::same('<p>Hallo</p>', OrvantaSignatureService::wrapTextColor('<p>Hallo</p>', 'rot'));
+
+    // Hex-Werte werden normalisiert (Kurzform wird expandiert).
+    Assert::same(
+        '<div class="ov-text-color" style="color:#aabbcc"><p>Hallo</p></div>',
+        OrvantaSignatureService::wrapTextColor('<p>Hallo</p>', '#ABC')
+    );
+
+    // Signatur und Zitat bleiben ausserhalb der Umschliessung.
+    $body = '<p>Antwort</p>' . $signature . $quote;
+    $wrapped = '<div class="ov-text-color" style="color:#123456"><p>Antwort</p></div>' . $signature . $quote;
+    Assert::same($wrapped, OrvantaSignatureService::wrapTextColor($body, '#123456'));
+
+    // Erneutes Anwenden ersetzt die Umschliessung, statt sie zu verschachteln.
+    Assert::same($wrapped, OrvantaSignatureService::wrapTextColor($wrapped, '#123456'));
+    Assert::same(
+        '<div class="ov-text-color" style="color:#654321"><p>Antwort</p></div>' . $signature . $quote,
+        OrvantaSignatureService::wrapTextColor($wrapped, '#654321')
+    );
+
+    // Auch ohne Zitat endet der eigene Text vor der Signatur.
+    $body = '<p>Text</p>' . $signature;
+    Assert::same('<div class="ov-text-color" style="color:#123456"><p>Text</p></div>' . $signature, OrvantaSignatureService::wrapTextColor($body, '#123456'));
+    Assert::same($body, OrvantaSignatureService::stripTextColor(OrvantaSignatureService::wrapTextColor($body, '#123456')));
+    Assert::same($body, OrvantaSignatureService::stripTextColor($body), 'Texte ohne Umschliessung bleiben unveraendert.');
+
+    // Ohne eigenen Text (z. B. reine Weiterleitung) bleibt der Text unveraendert.
+    Assert::same($quote, OrvantaSignatureService::wrapTextColor($quote, '#123456'));
+
+    // Serverseitiges Anhaengen der Signatur nach dem Faerben ist idempotent.
+    $colored = OrvantaSignatureService::wrapTextColor('<p>Antwort</p>', '#123456');
+    Assert::same(
+        '<div class="ov-text-color" style="color:#123456"><p>Antwort</p></div>' . $signature,
+        OrvantaSignatureService::wrapTextColor(OrvantaSignatureService::append($colored, $signature), '#123456')
+    );
 });

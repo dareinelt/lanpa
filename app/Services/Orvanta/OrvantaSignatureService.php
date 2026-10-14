@@ -18,7 +18,9 @@ use App\Support\Validator;
  * Vorlagen werden im Adminbereich gepflegt und ueber AD-Gruppen zugeordnet.
  * Name, Position, Abteilung und Rufnummer stammen aus dem Active Directory
  * (Telefonliste), Strasse/Ort und optional der Rufnummern-Praefix aus der
- * Vorlage, Schrift-/Trennzeichenfarbe und Logo aus den Designeinstellungen.
+ * Vorlage, Schrift-/Trennzeichenfarbe als Hex-Wert aus der Vorlage (ohne
+ * Angabe bzw. in Altbestand aus den Designeinstellungen), Logo aus den
+ * Designeinstellungen.
  *
  * Die fertige Signatur wird serverseitig beim Senden, Antworten und Speichern
  * von Entwuerfen angefuegt (append()); der Benutzer kann sie in Orvanta weder
@@ -35,6 +37,9 @@ final class OrvantaSignatureService
 
     /** Zitatblock des Editors – die Signatur wird davor eingefuegt. */
     public const QUOTE_CLASS = 'ov-quote';
+
+    /** Rahmen um den Nachrichtentext, der die Standardschriftfarbe des Editors traegt. */
+    public const TEXT_COLOR_CLASS = 'ov-text-color';
 
     public const PHONE_MODES = ['prefix', 'full'];
 
@@ -116,7 +121,7 @@ final class OrvantaSignatureService
             'postal_city' => '',
             'phone_mode' => 'prefix',
             'phone_prefix' => 'T.: +49 (05331) 934 - ',
-            'text_color' => self::DEFAULT_TEXT_COLOR,
+            'text_color' => '',
             'separator_color' => self::DEFAULT_SEPARATOR_COLOR,
             'groups' => [],
             'sort_order' => 1,
@@ -163,12 +168,19 @@ final class OrvantaSignatureService
         }
         $colors = [];
         foreach (['text_color' => self::DEFAULT_TEXT_COLOR, 'separator_color' => self::DEFAULT_SEPARATOR_COLOR] as $field => $default) {
-            $value = is_scalar($input[$field] ?? null) ? (string) $input[$field] : '';
+            $value = is_scalar($input[$field] ?? null) ? trim((string) $input[$field]) : '';
             if ($value === '') {
-                $value = $default;
+                // Schriftfarbe: ohne eigene Angabe gilt die Textfarbe der
+                // Designeinstellungen. Das Trennzeichen folgt weiterhin dem Design.
+                $value = $field === 'text_color' ? '' : $default;
+            } elseif (Validator::isHexColor($value)) {
+                $value = (string) Validator::normalizeHexColor($value);
             } elseif (!isset(SettingsService::THEME_COLORS[$value])) {
-                $errors[$field] = 'Bitte eine der Designfarben auswählen.';
-                $value = $default;
+                // Altbestand: Vorlagen speicherten den Schluessel einer Designfarbe.
+                $errors[$field] = $field === 'text_color'
+                    ? 'Bitte einen gültigen Hex-Farbwert angeben (z. B. #1f4e79).'
+                    : 'Bitte eine der Designfarben auswählen.';
+                $value = $field === 'text_color' ? '' : $default;
             }
             $colors[$field] = $value;
         }
@@ -306,6 +318,25 @@ final class OrvantaSignatureService
     // ------------------------------------------------------------------ Darstellung
 
     /**
+     * Farbwert einer Vorlage aufloesen: Hex-Werte werden direkt verwendet,
+     * Schluessel der Designeinstellungen (Altbestand) daraus aufgeloest. Ohne
+     * eigene Angabe gilt die uebergebene Designfarbe.
+     *
+     * @param array<string,string> $theme
+     */
+    public static function resolveColor(string $value, string $fallbackKey, array $theme): string
+    {
+        if (Validator::isHexColor($value)) {
+            return (string) Validator::normalizeHexColor($value);
+        }
+        if (isset($theme[$value])) {
+            return $theme[$value];
+        }
+
+        return $theme[$fallbackKey] ?? '#000000';
+    }
+
+    /**
      * HTML der Signatur (E-Mail-tauglich: Tabelle, Inline-Styles, Logo als
      * data-URI). Alle Werte werden escaped; Farben sind geprueft Hex-Werte.
      *
@@ -315,8 +346,8 @@ final class OrvantaSignatureService
     public function render(array $signature, array $person): string
     {
         $theme = $this->settings->theme();
-        $text = $theme[$signature['text_color'] ?? ''] ?? $theme[self::DEFAULT_TEXT_COLOR];
-        $accent = $theme[$signature['separator_color'] ?? ''] ?? $theme[self::DEFAULT_SEPARATOR_COLOR];
+        $text = self::resolveColor($signature['text_color'] ?? '', self::DEFAULT_TEXT_COLOR, $theme);
+        $accent = self::resolveColor($signature['separator_color'] ?? '', self::DEFAULT_SEPARATOR_COLOR, $theme);
         $separator = ' <span style="color:' . $accent . '">&#9632;</span> ';
         $base = 'font-family:' . self::FONT . ';font-size:10pt;color:' . $text;
 
@@ -630,5 +661,72 @@ final class OrvantaSignatureService
         }
 
         return (int) $match[0][1];
+    }
+
+    // ------------------------------------------------- Standardschriftfarbe
+
+    /**
+     * Standardschriftfarbe des Editors auf einen Nachrichtentext anwenden: der
+     * eigene Text – ohne Signatur und Zitat – wird von einem farbigen div
+     * umschlossen. Eine bereits vorhandene Umschliessung wird ersetzt, damit
+     * ein wieder geoeffneter Entwurf keine Verschachtelung erzeugt. Ohne
+     * gueltige Farbe oder ohne eigenen Text bleibt der Text unveraendert.
+     */
+    public static function wrapTextColor(string $body, string $color): string
+    {
+        $body = self::stripTextColor($body);
+        $color = Validator::normalizeHexColor($color);
+        if ($color === null) {
+            return $body;
+        }
+        $position = self::textEnd($body);
+        $text = $position === null ? $body : substr($body, 0, $position);
+        $rest = $position === null ? '' : substr($body, $position);
+        if (trim($text) === '') {
+            return $body;
+        }
+
+        return '<div class="' . self::TEXT_COLOR_CLASS . '" style="color:' . $color . '">' . $text . '</div>' . $rest;
+    }
+
+    /**
+     * Umschliessung der Standardschriftfarbe entfernen (erste Fundstelle). Ein
+     * Text ohne schliessendes Tag bleibt unveraendert.
+     */
+    public static function stripTextColor(string $body): string
+    {
+        $pattern = '~<div[^>]*\bclass\s*=\s*["\'][^"\']*\b' . preg_quote(self::TEXT_COLOR_CLASS, '~') . '\b[^"\']*["\'][^>]*>~i';
+        if (preg_match($pattern, $body, $match, PREG_OFFSET_CAPTURE) !== 1) {
+            return $body;
+        }
+        $start = (int) $match[0][1];
+        $prefix = substr($body, 0, $start);
+        $rest = substr($body, $start + strlen($match[0][0]));
+        $position = self::textEnd($rest);
+        $text = $position === null ? $rest : substr($rest, 0, $position);
+        // Das schliessende </div> steht unmittelbar vor Signatur/Zitat bzw. am Ende.
+        if (preg_match('~^(.*)</div>(\s*)$~s', $text, $parts) !== 1) {
+            return $body;
+        }
+
+        return $prefix . $parts[1] . $parts[2] . ($position === null ? '' : substr($rest, $position));
+    }
+
+    /**
+     * Beginn von Signatur bzw. Zitat im Nachrichtentext.
+     */
+    private static function textEnd(string $body): ?int
+    {
+        $positions = [];
+        $marker = '~<div[^>]*\bclass\s*=\s*["\'][^"\']*\b' . preg_quote(self::MARKER_CLASS, '~') . '\b[^"\']*["\'][^>]*>~i';
+        if (preg_match($marker, $body, $match, PREG_OFFSET_CAPTURE) === 1) {
+            $positions[] = (int) $match[0][1];
+        }
+        $quote = self::quotePosition($body);
+        if ($quote !== null) {
+            $positions[] = $quote;
+        }
+
+        return $positions === [] ? null : min($positions);
     }
 }

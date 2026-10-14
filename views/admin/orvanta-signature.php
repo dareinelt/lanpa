@@ -3,12 +3,17 @@
 declare(strict_types=1);
 
 use App\Security\Csrf;
+use App\Services\Orvanta\OrvantaSignatureService;
 use App\Support\Html;
 
 /** @var array{id:int,name:string,greeting:string,name_format:string,street:string,postal_city:string,phone_mode:string,phone_prefix:string,text_color:string,separator_color:string,groups:list<string>,sort_order:int,active:bool} $signature */
 /** @var array<string,string> $theme */
 /** @var array<string,string> $colorLabels */
 /** @var array<string,string> $errors */
+
+// Der Farbwaehler braucht immer einen Hex-Wert; ohne eigene Angabe zeigt er die
+// Textfarbe der Designeinstellungen (das Feld selbst bleibt dann leer).
+$textColor = OrvantaSignatureService::resolveColor($signature['text_color'], OrvantaSignatureService::DEFAULT_TEXT_COLOR, $theme);
 
 $error = static fn (string $key): string => isset($errors[$key])
     ? '<p class="field__error" id="signature-' . Html::e($key) . '-error">' . Html::e($errors[$key]) . '</p>'
@@ -110,19 +115,33 @@ $invalid = static fn (string $key): string => isset($errors[$key])
 
     <fieldset class="fieldset">
         <legend>Farben</legend>
-        <p class="field__hint">Zur Auswahl stehen die Farben der <a href="/admin/design">Designeinstellungen</a>; ändert sich dort eine Farbe, übernehmen die Signaturen sie automatisch.</p>
+        <p class="field__hint">
+            Schriftfarbe als Hex-Wert (z.&nbsp;B. <code>#1f4e79</code>) – die Vorlage folgt damit nicht mehr
+            den <a href="/admin/design">Designeinstellungen</a>; leer lassen heißt „Textfarbe der
+            Designeinstellungen“. Die Farbe der Trennzeichen (■) stammt weiterhin aus den
+            Designeinstellungen und wird dort zentral geändert.
+        </p>
         <div class="field-grid">
-            <?php foreach (['text_color' => 'Schriftfarbe', 'separator_color' => 'Farbe der Trennzeichen (■)'] as $colorField => $colorLabel) { ?>
-                <div class="field">
-                    <label for="signature_<?= Html::e($colorField) ?>"><?= Html::e($colorLabel) ?></label>
-                    <select id="signature_<?= Html::e($colorField) ?>" name="<?= Html::e($colorField) ?>" <?= $invalid($colorField) ?> data-signature-field>
-                        <?php foreach ($colorLabels as $colorKey => $label) { ?>
-                            <option value="<?= Html::e($colorKey) ?>" <?= $signature[$colorField] === $colorKey ? 'selected' : '' ?>><?= Html::e($label . ' (' . ($theme[$colorKey] ?? '') . ')') ?></option>
-                        <?php } ?>
-                    </select>
-                    <?= $error($colorField) ?>
+            <div class="field">
+                <label for="signature_text_color">Schriftfarbe</label>
+                <div class="color-input">
+                    <input type="color" id="signature_text_color_picker" value="<?= Html::e($textColor) ?>"
+                           data-color-sync="signature_text_color" data-signature-field aria-label="Schriftfarbe auswählen">
+                    <input type="text" id="signature_text_color" name="text_color" value="<?= Html::e($signature['text_color']) ?>"
+                           pattern="#[0-9a-fA-F]{6}" maxlength="7" placeholder="#1f4e79" <?= $invalid('text_color') ?>
+                           data-signature-field>
                 </div>
-            <?php } ?>
+                <?= $error('text_color') ?>
+            </div>
+            <div class="field">
+                <label for="signature_separator_color">Farbe der Trennzeichen (■)</label>
+                <select id="signature_separator_color" name="separator_color" <?= $invalid('separator_color') ?> data-signature-field>
+                    <?php foreach ($colorLabels as $colorKey => $label) { ?>
+                        <option value="<?= Html::e($colorKey) ?>" <?= $signature['separator_color'] === $colorKey ? 'selected' : '' ?>><?= Html::e($label . ' (' . ($theme[$colorKey] ?? '') . ')') ?></option>
+                    <?php } ?>
+                </select>
+                <?= $error('separator_color') ?>
+            </div>
         </div>
     </fieldset>
 

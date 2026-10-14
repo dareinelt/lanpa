@@ -271,6 +271,19 @@
         return text === '' && !editor.querySelector('img, li') ? '' : editor.innerHTML;
     }
 
+    /**
+     * Standardschriftfarbe des Editors aus den Orvanta-Einstellungen: als
+     * CSS-Variable am Wurzelelement (CSP-konform ueber das CSSOM), damit die
+     * Editoren fuer Nachrichten und Termine den eigenen Text in dieser Farbe
+     * anzeigen. Leer bzw. ungueltig = Textfarbe des Designs.
+     */
+    function applyEditorTextColor() {
+        var color = config.editorTextColor || '';
+        if (/^#[0-9a-fA-F]{6}$/.test(color)) {
+            root.style.setProperty('--ov-editor-text', color);
+        }
+    }
+
     function el(tag, attrs, children) {
         var node = document.createElement(tag);
         Object.keys(attrs || {}).forEach(function (key) {
@@ -7042,6 +7055,7 @@
 
     function init() {
         applyPrefs();
+        applyEditorTextColor();
         bindEvents();
         initContextMenu();
         initAi();

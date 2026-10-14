@@ -307,6 +307,7 @@ Runner::test('Orvanta: Standardwerte und EWS-Adresse aus dem Hostnamen', functio
     Assert::same('Orvanta', $config->cacheFolder());
     Assert::same(15, $config->reminderLeadMinutes());
     Assert::true($config->reminderHeaderEnabled());
+    Assert::same('', $config->editorTextColor(), 'Standard ist die Textfarbe des Designs.');
 });
 
 Runner::test('Orvanta: explizite EWS-URL hat Vorrang und Deaktivierung greift', function (): void {
@@ -331,11 +332,12 @@ Runner::test('Orvanta: Validierung der Admin-Einstellungen', function (): void {
             'cache_folder' => 'Orv/anta',
             'reminder_lead_minutes' => '5000',
             'poll_interval' => '1',
+            'editor_text_color' => 'blau',
         ]);
         Assert::true(false, 'ValidationException erwartet.');
     } catch (ValidationException $exception) {
         $errors = $exception->errors();
-        foreach (['exchange_ews_url', 'exchange_timeout', 'cache_quota_mb', 'mailbox_quota_mb', 'cache_folder', 'reminder_lead_minutes', 'poll_interval'] as $field) {
+        foreach (['exchange_ews_url', 'exchange_timeout', 'cache_quota_mb', 'mailbox_quota_mb', 'cache_folder', 'reminder_lead_minutes', 'poll_interval', 'editor_text_color'] as $field) {
             Assert::true(isset($errors[$field]), 'Fehler erwartet für ' . $field);
         }
     }
@@ -358,6 +360,7 @@ Runner::test('Orvanta: Einstellungen werden gespeichert, Passwort verschluesselt
         'reminder_lead_minutes' => '10',
         'poll_interval' => '45',
         'default_folder' => 'calendar',
+        'editor_text_color' => '#1F4E79',
     ]);
     $stored = $parts['repository']->settings();
     Assert::same('ntlm', $stored['exchange_auth']);
@@ -371,6 +374,7 @@ Runner::test('Orvanta: Einstellungen werden gespeichert, Passwort verschluesselt
     Assert::same('0', $config->get('flow_ai_user_names'), 'Standard ist die pseudonyme Anzeige');
     Assert::same('calendar', $config->get('default_folder'));
     Assert::same(45, $config->pollInterval());
+    Assert::same('#1f4e79', $config->editorTextColor(), 'Hex-Wert wird normalisiert gespeichert.');
     Assert::same('jdoe@example.local', $config->impersonationAddress(['username' => 'jdoe', 'email' => 'john@mail.example']));
     Assert::same('john@mail.example', orvantaConfig()['config']->impersonationAddress(['username' => 'jdoe', 'email' => 'john@mail.example']));
 });

@@ -86,6 +86,10 @@ final class OrvantaController extends Controller
                 'spellcheckAvailable' => Container::orvantaSpellcheck()->isAvailable(),
                 // Fest zugeordnete Signatur (nur Anzeige; angefuegt wird serverseitig).
                 'signature' => Container::orvantaSignatures()->forUser($access['user']),
+                // Standardschriftfarbe des Editors (Hex-Wert, '' = Textfarbe des
+                // Designs). Sie faerbt den eigenen Text in Nachrichten und
+                // Terminbeschreibungen und wird serverseitig in den Text geschrieben.
+                'editorTextColor' => $config->editorTextColor(),
                 // Zusaetzlich berechtigte Postfaecher (Vollzugriff / "Senden als")
                 // und die gemerkte Kalender-Auswahl. Das eigene Postfach steht
                 // immer an erster Stelle und ist nicht abwaehlbar.

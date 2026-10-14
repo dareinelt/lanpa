@@ -12,6 +12,7 @@ use App\Security\Session;
 use App\Services\Office\OfficeAppService;
 use App\Services\Orvanta\OrvantaSignatureService;
 use App\Services\SettingsService;
+use App\Support\Validator;
 
 /**
  * Adminbereich "Office → Orvanta → Signaturen": Signaturvorlagen anlegen,
@@ -98,7 +99,7 @@ final class OrvantaSignatureController extends AdminController
                 'postal_city' => $input['postal_city'],
                 'phone_mode' => in_array($input['phone_mode'], OrvantaSignatureService::PHONE_MODES, true) ? $input['phone_mode'] : 'prefix',
                 'phone_prefix' => $input['phone_prefix'],
-                'text_color' => isset(SettingsService::THEME_COLORS[$input['text_color']]) ? $input['text_color'] : OrvantaSignatureService::DEFAULT_TEXT_COLOR,
+                'text_color' => Validator::cleanText($input['text_color'], 40),
                 'separator_color' => isset(SettingsService::THEME_COLORS[$input['separator_color']]) ? $input['separator_color'] : OrvantaSignatureService::DEFAULT_SEPARATOR_COLOR,
                 'groups' => OfficeAppService::splitGroups($input['groups']),
                 'sort_order' => max(1, (int) $input['sort_order']),
@@ -144,8 +145,8 @@ final class OrvantaSignatureController extends AdminController
                     'postal_city' => (string) ($request->query['postal_city'] ?? ''),
                     'phone_mode' => (string) ($request->query['phone_mode'] ?? 'prefix'),
                     'phone_prefix' => (string) ($request->query['phone_prefix'] ?? ''),
-                    'text_color' => (string) ($request->query['text_color'] ?? ''),
-                    'separator_color' => (string) ($request->query['separator_color'] ?? ''),
+                    'text_color' => self::previewColor((string) ($request->query['text_color'] ?? '')),
+                    'separator_color' => self::previewColor((string) ($request->query['separator_color'] ?? '')),
                     'groups' => '',
                     'sort_order' => '1',
                     'active' => true,
@@ -163,6 +164,17 @@ final class OrvantaSignatureController extends AdminController
             ->withHeader('Cache-Control', 'no-store')
             ->withHeader('X-Frame-Options', 'SAMEORIGIN')
             ->withHeader('Content-Security-Policy', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'self'");
+    }
+
+    /**
+     * Farbwert fuer die Live-Vorschau: unvollstaendige Eingaben (z. B. waehrend
+     * des Tippens) werden verworfen, damit die Vorschau nicht leer bleibt.
+     */
+    private static function previewColor(string $value): string
+    {
+        $value = trim($value);
+
+        return Validator::isHexColor($value) || isset(SettingsService::THEME_COLORS[$value]) ? $value : '';
     }
 
     /**

@@ -881,6 +881,11 @@ sequenceDiagram
 
 - Die App fragt beim Benutzer einmalig die Berechtigung für
   Desktop-Benachrichtigungen an (`Notification.requestPermission`).
+- **Abgesagte Termine und abgelehnte Besprechungen erinnern nicht mehr.**
+  Sagt der Organisator einen Termin ab (`calendar:IsCancelled`) oder hat der
+  Benutzer die Besprechung abgelehnt (`MyResponseType = Decline`), entfallen
+  Dialog, Browser-Benachrichtigung und Eintrag unter **Mitteilungen**; eine
+  bereits angezeigte Erinnerung wird beim nächsten Abgleich entfernt.
 - `public/assets/js/orvanta-reminders.js` wird auf allen Intranet-Seiten
   geladen, wenn `reminder_header` aktiv ist und der Benutzer die App nutzen
   darf. Fällige Erinnerungen erscheinen unter **Mitteilungen** in der Kopfzeile

@@ -23,7 +23,7 @@ final class LdapController extends AdminController
 {
     private const SYNC_PATH = '/admin/ad/synchronisation';
 
-    private const SSO_RESTART_HINT = ' Die Windows-Anmeldung übernimmt geänderte Domänen-Einstellungen erst nach einem Neustart der auth-Container (docker compose restart auth bzw. ./scripts/sso-domains.sh bei neuen oder entfernten Domänen).';
+    private const SSO_RESTART_HINT = ' Die Windows-Anmeldung übernimmt geänderte Domänen-Einstellungen erst, wenn die Anmelde-Instanzen angewendet wurden (Schaltfläche „Windows-Anmeldung anwenden“ auf dieser Seite).';
 
     public function index(Request $request): Response
     {
@@ -36,6 +36,31 @@ final class LdapController extends AdminController
     public function editPrimary(Request $request): Response
     {
         return $this->render($this->primaryDialog());
+    }
+
+    /**
+     * Wendet die Windows-Anmeldung aller Identitaetsquellen an: der Dienst
+     * sso-agent erzeugt die Anmelde-Instanzen, baut und startet sie neu.
+     */
+    public function applySso(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        try {
+            $id = Container::ssoAgent()->request('apply');
+        } catch (\RuntimeException $exception) {
+            Session::flash('error', $exception->getMessage());
+
+            return $this->redirect('/admin/ad');
+        }
+
+        app_logger()->info('Windows-Anmeldung angewendet.', [
+            'admin' => Container::auth()->username(),
+            'request_id' => $id,
+        ]);
+        Session::flash('success', 'Die Windows-Anmeldung wird angewendet (Instanzen werden erzeugt, gebaut und neu gestartet). Der Fortschritt steht unten auf dieser Seite.');
+
+        return $this->redirect('/admin/ad');
     }
 
     /**
@@ -564,6 +589,10 @@ final class LdapController extends AdminController
         $service = Container::identitySources();
         $primary = $settings->ldapConfig();
 
+        $agent = Container::ssoAgent();
+        $agentStatus = $agent->status();
+        $instance = static fn (string $name): ?array => $agentStatus['instances'][$name] ?? null;
+
         $counts = $this->safeCountsBySource();
         $sources = [[
             'id' => 0,
@@ -577,6 +606,8 @@ final class LdapController extends AdminController
             'password_state' => $service->secretStates(null)['ldap_bind_password'],
             'sso' => $settings->get('sso_domain') !== '' ? $settings->get('sso_domain') : null,
             'users' => $counts[0] ?? 0,
+            'service' => 'auth',
+            'instance' => $instance('auth'),
         ]];
         $rows = [];
         foreach ($service->additionalRows(false) as $row) {
@@ -587,6 +618,7 @@ final class LdapController extends AdminController
                 continue;
             }
             $row = $rows[(int) $config['id']] ?? [];
+            $serviceName = IdentitySourceService::serviceName((string) $config['key']);
             $sources[] = [
                 'id' => (int) $config['id'],
                 'key' => (string) $config['key'],
@@ -599,6 +631,8 @@ final class LdapController extends AdminController
                 'password_state' => $service->secretState((string) ($row['bind_password'] ?? '')),
                 'sso' => !empty($row['sso_enabled']) ? (string) ($row['sso_domain'] ?? '') : null,
                 'users' => $counts[(int) $config['id']] ?? 0,
+                'service' => $serviceName,
+                'instance' => $instance($serviceName),
             ];
         }
 
@@ -611,6 +645,7 @@ final class LdapController extends AdminController
             'dialog' => $dialog,
             'attributeKeys' => IdentitySourceService::ATTRIBUTE_KEYS,
             'ssoEnabled' => (bool) Config::get('sso.enabled', false),
+            'ssoAgent' => $agentStatus,
             'pageScript' => 'admin-ldap.js',
         ], $status);
     }

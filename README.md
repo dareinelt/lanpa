@@ -119,6 +119,7 @@ installieren, nicht starten).
 | `monitor` | CPU- und Arbeitsspeicher-Auslastung der übrigen Container für die Kacheln des Admin-Dashboards (read-only Docker-Socket, Python-Standardbibliothek) | – |
 | `clamav` | ClamAV (clamd über TCP 3310) und Signaturaktualisierung (`freshclam`) für die Malware-Protection der Orvanta-Anhänge, kein Port nach außen ([docs/malware-protection.md](docs/malware-protection.md)) | `clamdscan --ping` |
 | `auth` | Apache als Einstieg/Reverse-Proxy (HTTP + HTTPS), optional Windows-Anmeldung (Kerberos/NTLM); leitet `/office/` und `/eurooffice/` weiter, optional `/ki/` an LLMInt ([docs/llmint.md](docs/llmint.md)); Zertifikat aus Admin → Zertifikate | `GET /auth-health` |
+| `sso-agent` | wendet die Windows-Anmeldung aus dem Adminbereich an (Active Directory → „Windows-Anmeldung anwenden“): erzeugt `docker-compose.sso.yml`, pflegt `COMPOSE_FILE` in der `.env`, baut und startet die `auth`-Instanzen und meldet deren Zustand zurück; braucht den Docker-Socket (einzige Stelle im Projekt mit Socket-Zugriff), ohne ihn bleibt `./scripts/sso-domains.sh` der manuelle Weg | `/tmp/sso-agent-alive` jünger als 120 s |
 | `nextcloud`, `nextcloud-cron`, `nextcloud-ai-worker`, `nextcloud-db`, `nextcloud-redis`, `eurooffice`, `office-backup` | optional, Profil `office` – Einrichtung mit `./scripts/office-setup.sh` ([docs/office.md](docs/office.md)) | ja |
 | `storage-sync` | optional, Profil `office` – Speicher-Tiering und HA-Synchronisation der Office-Daten auf SMB-Freigaben und S3-kompatible Objektspeicher (s3fs/FUSE) ([docs/storage.md](docs/storage.md), Container-Übersicht [docs/storage-stack.md](docs/storage-stack.md)) | `agent.alive` jünger als 30 s |
 | `storage-sync-catalog` | optional, Profil `office` – MySQL-Katalog von `storage-sync` (Zugangsdaten wie `db`, nur internes Netz `storage_catalog`) | `mysqladmin ping` |
@@ -201,6 +202,8 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | `SSO_AUTO_LOGIN` | Automatischer Windows-Anmeldeversuch einmal je Sitzung (sonst nur über „Mit Windows anmelden“) | `true` |
 | `SSO_NETBIOS_NAME` | Computername des auth-Containers im AD (max. 15 Zeichen, je Installation eindeutig); der Beitritt bleibt im Volume `sso_samba` erhalten | `lanpa-sso` |
 | `SSO_SESSION_LIFETIME` | Gültigkeit der erkannten Windows-Anmeldung in der Sitzung (Sekunden, `0` = Sitzungsende) | `28800` |
+| `COMPOSE_FILE` | Compose-Dateien des Projekts; wird von `sso-agent` beim Anwenden der Windows-Anmeldung um `docker-compose.sso.yml` ergänzt bzw. nach der letzten weiteren Domäne wieder gekürzt | `docker-compose.yml` |
+| `SSO_AGENT_POLL_SECONDS`, `SSO_AGENT_STATUS_SECONDS`, `SSO_AGENT_APPLY_TIMEOUT`, `SSO_AGENT_APP_UID` | Dienst `sso-agent`: Abstand der Auftragsabfrage und der Zustandsmeldung (Sekunden), Höchstdauer für Bauen und Starten der Anmelde-Instanzen (Sekunden), Benutzerkennung der Anwendung im gemeinsamen Speicher | `5` / `60` / `1800` / `33` |
 | `SECRETS_KEY_FILE` | Schlüssel für gespeicherte Zugangsdaten | `storage/keys/secrets.key` |
 
 Jede Variable unterstützt zusätzlich die Datei-Variante `<NAME>_FILE` für Docker-Secrets.
@@ -457,17 +460,27 @@ der Browser endlos nach Zugangsdaten fragen.
 2. Adminbereich → Active Directory: bei der Hauptquelle und jeder weiteren Quelle Domäne,
    Domänencontroller (je Zeile `host [ip]`, mehrere als Ausfallreserve), optional Zeitserver,
    Beitrittskonto und Passwort eintragen; bei weiteren Quellen zusätzlich Client-Netze bzw. Hostnamen.
-3. `./scripts/sso-domains.sh` erzeugt `docker-compose.sso.yml` mit den Instanzen (ohne
-   Zugangsdaten), anschließend `COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml` in der
-   `.env` setzen und `docker compose up -d --build --remove-orphans && docker compose restart auth`.
-   Das Skript bricht mit Fehler ab, wenn ein Dienst im Compose-Projekt fehlt; danach prüfen, dass
-   jede Instanz läuft (`docker compose ps`, z. B. `auth-mvzintwf`) – ohne sie schlägt die
-   Windows-Anmeldung dieser Domäne fehl (siehe oben).
+3. Im Adminbereich unter **Active Directory** die Schaltfläche **„Windows-Anmeldung anwenden“**
+   drücken. Der Dienst `sso-agent` erzeugt daraus `docker-compose.sso.yml` (ohne Zugangsdaten),
+   trägt `COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml` in der `.env` ein, baut und
+   startet die Instanzen neu und meldet den Zustand jeder Instanz (Domäne, Domänenbeitritt,
+   Kerberos, Uhrzeit) auf derselben Seite zurück. Nach jeder Änderung an Domäne,
+   Domänencontrollern, Zeitservern oder Zugangsdaten erneut anwenden: eine neue Domäne erhält dabei
+   automatisch ihre Instanz, eine entfernte verschwindet wieder. Der Dienst braucht den
+   Docker-Socket des Hosts (vergleichbar root, einzige Stelle im Projekt mit Socket-Zugriff) und
+   lässt sich mit `SSO_AGENT_*` in der `.env` steuern.
+   Manuell ohne diesen Dienst: `./scripts/sso-domains.sh` erzeugt die Datei, danach
+   `COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml` in der `.env` setzen und
+   `docker compose up -d --build --remove-orphans && docker compose restart auth`. Das Skript bricht
+   mit Fehler ab, wenn ein Dienst im Compose-Projekt fehlt; danach prüfen, dass jede Instanz läuft
+   (`docker compose ps`, z. B. `auth-mvzintwf`) – ohne sie schlägt die Windows-Anmeldung dieser
+   Domäne fehl (siehe oben).
 
 Die auth-Container rufen ihre Konfiguration beim Start über `/internal/sso-config` von der
 Anwendung ab (Token im Volume `sso_token`, Prüfung des absendenden Containers; über den
-öffentlichen Proxy gesperrt). Nach geänderten Zugangsdaten genügt `docker compose restart auth
-auth-<kennung>`. Jede Instanz darf nur Benutzer ihrer eigenen Quelle melden.
+öffentlichen Proxy gesperrt). Nach geänderten Zugangsdaten genügt ebenfalls „Windows-Anmeldung
+anwenden“ im Adminbereich (oder manuell `docker compose restart auth auth-<kennung>`). Jede Instanz
+darf nur Benutzer ihrer eigenen Quelle melden.
 
 ### KI-Oberfläche LLMInt unter `/ki/`
 

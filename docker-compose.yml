@@ -331,6 +331,53 @@ services:
       - intranet
       - office
 
+  # Wendet Aenderungen an den Identitaetsquellen an (Windows-Anmeldung) und
+  # meldet den Zustand der Instanzen zurueck. Beauftragt wird der Dienst
+  # ausschliesslich aus dem Adminbereich (Active Directory -> Windows-Anmeldung):
+  # die Anwendung legt im gemeinsamen Speicher eine Auftragsdatei ab
+  # (storage/sso-agent/request.json), der Agent erzeugt daraus
+  # docker-compose.sso.yml (scripts/sso-domains.sh), ergaenzt COMPOSE_FILE in
+  # der .env, baut und startet die auth-Instanzen und schreibt das Ergebnis
+  # nach status.json.
+  #
+  # ACHTUNG: Der Dienst braucht den Docker-Socket des Hosts und damit
+  # weitreichende Rechte (vergleichbar root). Er ist die einzige Stelle im
+  # Projekt mit Socket-Zugriff; die Anwendung selbst hat keinen. Ohne diesen
+  # Dienst bleibt ./scripts/sso-domains.sh der manuelle Weg.
+  sso-agent:
+    build:
+      context: .
+      dockerfile: docker/sso-agent/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      # Projektverzeichnis (docker-compose*.yml, .env, scripts/) und
+      # Auftragsverzeichnis im gemeinsamen Speicher der Anwendung
+      # (app_storage -> BASE_PATH/storage/sso-agent).
+      SSO_AGENT_PROJECT_DIR: /project
+      SSO_AGENT_CONTROL_DIR: /storage/sso-agent
+      SSO_AGENT_POLL_SECONDS: ${SSO_AGENT_POLL_SECONDS:-5}
+      SSO_AGENT_STATUS_SECONDS: ${SSO_AGENT_STATUS_SECONDS:-60}
+      SSO_AGENT_APPLY_TIMEOUT: ${SSO_AGENT_APPLY_TIMEOUT:-1800}
+      SSO_AGENT_APP_UID: ${SSO_AGENT_APP_UID:-33}
+    volumes:
+      # Projektverzeichnis: docker-compose.sso.yml und .env werden geschrieben.
+      - ./:/project
+      # Docker-Socket: Bauen, Erstellen und Neustarten der auth-Instanzen.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - app_storage:/storage
+    healthcheck:
+      # Aelter als zwei Minuten = die Schleife des Agenten steht.
+      test: ["CMD-SHELL", "find /tmp/sso-agent-alive -mmin -2 2>/dev/null | grep -q ."]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - intranet
+
   sync:
     build:
       context: .

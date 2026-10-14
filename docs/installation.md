@@ -391,6 +391,45 @@ laufende Zugriffe werden dabei kurz unterbrochen. Die von
 `scripts/sso-domains.sh` erzeugten Instanzen `auth-<kennung>` für weitere
 Domänen sind eigene Dienste und haben eigene Grenzen.
 
+### Windows-Anmeldung anwenden (Dienst `sso-agent`)
+
+Weitere Domänen ohne Vertrauensstellung erhalten je eine eigene Anmelde-Instanz
+`auth-<kennung>`. Angewendet wird das im Adminbereich (Active Directory →
+**„Windows-Anmeldung anwenden“**): der Dienst `sso-agent` erzeugt daraus
+`docker-compose.sso.yml`, trägt
+`COMPOSE_FILE=docker-compose.yml:docker-compose.sso.yml` in der `.env` ein,
+baut und startet die Instanzen neu und meldet den Zustand jeder Instanz (Domäne,
+Domänenbeitritt, Kerberos, Uhrzeit) auf derselben Seite zurück. Nach jeder
+Änderung an Domäne, Domänencontrollern, Zeitservern oder Zugangsdaten erneut
+anwenden; eine neue Domäne erhält dabei automatisch ihre Instanz, eine entfernte
+verschwindet wieder.
+
+Der Dienst ist die einzige Stelle im Projekt mit Zugriff auf den Docker-Socket
+(vergleichbar root): er schreibt `docker-compose.sso.yml` und die `.env` und
+führt `docker compose` aus. Er hat keinen veröffentlichten Port und keine
+Zugangsdaten – die Instanzen holen ihre Konfiguration wie bisher beim Start über
+`/internal/sso-config` von der Anwendung.
+
+| Stellschraube | Vorgabe | Bedeutung |
+| --- | --- | --- |
+| `SSO_AGENT_POLL_SECONDS` | `5` | Abstand der Auftragsabfrage in Sekunden. |
+| `SSO_AGENT_STATUS_SECONDS` | `60` | Abstand der Zustandsmeldung in Sekunden. |
+| `SSO_AGENT_APPLY_TIMEOUT` | `1800` | Höchstdauer für Bauen und Starten der Instanzen in Sekunden. |
+| `SSO_AGENT_APP_UID` | `33` | Benutzerkennung der Anwendung im gemeinsamen Speicher (Auftragsdatei). |
+
+```bash
+docker compose ps sso-agent                     # läuft und ist gesund
+docker compose logs sso-agent                   # Auftrag, Bauen, Start, Fehler
+docker compose exec sso-agent sso-agent status  # Zustand als JSON
+docker compose exec sso-agent sso-agent apply   # anwenden ohne Adminbereich
+```
+
+Ohne den Dienst (nicht gestartet, kein Docker-Socket, Datei fehlt) meldet der
+Adminbereich den Ausfall und nennt den manuellen Weg:
+`./scripts/sso-domains.sh`, danach `docker compose up -d --build --remove-orphans`
+und `docker compose restart auth`. Die Anmeldung selbst funktioniert weiter –
+nur das Anwenden neuer oder geänderter Quellen ist dann Handarbeit.
+
 ### Kennzahlen der übrigen Container
 
 Auf dem Admin-Dashboard zeigt jeder der Container `app`, `db`, `mail-proxy`,

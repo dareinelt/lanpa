@@ -1511,6 +1511,14 @@
 
     var lastMailRefresh = 0;
     var mailRefreshBusy = false;
+    var mailRefreshStartedAt = 0;
+    var mailRefreshSeq = 0;
+    var mailRefreshFailures = 0;
+    var mailPollTimer = null;
+    var mailPollInterval = 60000;
+    // Notbremse: Haengt eine Abfrage (z. B. unterbrochene Verbindung ohne
+    // Antwort), darf sie den Hintergrundabgleich nicht dauerhaft sperren.
+    var MAIL_REFRESH_TIMEOUT = 120000;
 
     /**
      * Hintergrundabgleich nur, wenn er den Benutzer nicht stoert: Mail-Modul
@@ -1518,7 +1526,8 @@
      * Kontextmenue.
      */
     function mailRefreshAllowed() {
-        return state.module === 'mail' && !document.hidden && !mailRefreshBusy
+        return state.module === 'mail' && !document.hidden
+            && !(mailRefreshBusy && Date.now() - mailRefreshStartedAt < MAIL_REFRESH_TIMEOUT)
             && !isArchiveFolder(state.folder) && !state.search && !state.dragIds
             && !(ctx.menu && !ctx.menu.hidden);
     }
@@ -1527,30 +1536,61 @@
      * Ordner (Ungelesen-Zaehler) und die erste Seite des aktuellen Ordners
      * still nachladen – ohne Ladeanzeige, Fehler-Toasts oder Kennwortabfrage.
      * Auswahl, Detailansicht und Scrollposition bleiben erhalten.
+     *
+     * Ergebnis: 'ok' (abgeglichen), 'skipped' (gerade nicht erlaubt) oder
+     * 'failed' (Server nicht erreichbar, Anmeldung abgelaufen). Fehler werden
+     * nicht verschluckt: Der Takt verlangsamt sich, und beim Zurueckkehren in
+     * den Tab laedt der Aufrufer den Ordner sichtbar neu.
      */
     function refreshMail() {
         if (!mailRefreshAllowed()) {
-            return Promise.resolve();
+            return Promise.resolve('skipped');
         }
+        var seq = ++mailRefreshSeq;
         mailRefreshBusy = true;
-        lastMailRefresh = Date.now();
+        mailRefreshStartedAt = Date.now();
         var folder = state.folder;
         var before = state.messages;
         var limit = Math.min(100, Math.max(50, before.length));
+        var failed = null;
+        var note = function (error) {
+            if (failed === null) {
+                failed = error;
+            }
+        };
+        // Ordner und Liste nacheinander abfragen – wie beim Seitenaufruf. Der
+        // Mailserver (Exchange/EWS, IMAP-Proxy) wird so nicht mit parallelen
+        // Abfragen belastet, die sonst still scheitern koennen.
         var folders = api('/mail/ordner', { noPasswordPrompt: true }).then(function (data) {
             if (state.module === 'mail' && !state.dragIds) {
                 applyFolders(data);
             }
-        }).catch(function () {});
-        var messages = api('/mail', { query: { ordner: folder, offset: 0, limit: limit }, noPasswordPrompt: true }).then(function (data) {
-            // Zwischenzeitlich gewechselt oder neu geladen: Ergebnis verwerfen.
-            if (state.module !== 'mail' || state.folder !== folder || state.search || state.messages !== before || state.dragIds) {
-                return;
+        }).catch(note);
+        var messages = folders.then(function () {
+            return api('/mail', { query: { ordner: folder, offset: 0, limit: limit }, noPasswordPrompt: true }).then(function (data) {
+                // Zwischenzeitlich gewechselt oder neu geladen: Ergebnis verwerfen.
+                if (state.module !== 'mail' || state.folder !== folder || state.search || state.messages !== before || state.dragIds) {
+                    return;
+                }
+                applyRefreshedMessages(data, limit);
+            });
+        }).catch(note);
+        // Sperre und Zeitstempel in jedem Fall zuruecksetzen: Ein Fehler darf
+        // den Hintergrundabgleich nicht dauerhaft blockieren.
+        return messages.then(function () {
+            if (seq === mailRefreshSeq) {
+                mailRefreshBusy = false;
             }
-            applyRefreshedMessages(data, limit);
-        }).catch(function () {});
-        return Promise.all([folders, messages]).then(function () {
-            mailRefreshBusy = false;
+            if (failed === null) {
+                lastMailRefresh = Date.now();
+                mailRefreshFailures = 0;
+                return 'ok';
+            }
+            mailRefreshFailures = Math.min(mailRefreshFailures + 1, 4);
+            if (window.console && window.console.warn) {
+                window.console.warn('Orvanta: Hintergrundabgleich fehlgeschlagen.', failed);
+            }
+            return 'failed';
         });
     }
 
@@ -1617,14 +1657,74 @@
         }
     }
 
+    /**
+     * Takt des Hintergrundabgleichs. Statt eines festen Intervalls plant sich
+     * der Takt selbst nach: Ein langsamer Abgleich laeuft nicht auf, Fehler
+     * werden seltener wiederholt (max. 60 s), und nach dem Zurueckkehren in
+     * den Tab laeuft der Takt sofort wieder an.
+     */
+    function scheduleMailPoll(delay) {
+        window.clearTimeout(mailPollTimer);
+        mailPollTimer = window.setTimeout(mailPoll, delay);
+    }
+
+    function mailPoll() {
+        window.clearTimeout(mailPollTimer);
+        if (document.hidden) {
+            // Im Hintergrund pausieren; das Zurueckkehren in den Tab gleicht ab.
+            scheduleMailPoll(mailPollInterval);
+            return;
+        }
+        refreshMail().then(function (result) {
+            scheduleMailPoll(result === 'ok' ? mailPollInterval : Math.min(60000, mailPollInterval * Math.pow(2, mailRefreshFailures)));
+        });
+    }
+
     function startMailPolling() {
-        var interval = Math.max(15, parseInt(config.pollInterval, 10) || 60) * 1000;
-        window.setInterval(refreshMail, interval);
+        mailPollInterval = Math.max(15, parseInt(config.pollInterval, 10) || 60) * 1000;
+        scheduleMailPoll(mailPollInterval);
         document.addEventListener('visibilitychange', function () {
             // Beim Zurueckkehren in den Tab sofort abgleichen, falls faellig.
-            if (!document.hidden && Date.now() - lastMailRefresh > 15000) {
-                refreshMail();
+            if (document.hidden) {
+                return;
             }
+            // Ein beim Tabwechsel abgebrochenes Ziehen darf nicht dauerhaft
+            // den Hintergrundabgleich sperren.
+            state.dragIds = null;
+            window.clearTimeout(mailPollTimer);
+            if (Date.now() - lastMailRefresh <= 15000) {
+                scheduleMailPoll(mailPollInterval);
+                return;
+            }
+            refreshMail().then(function (result) {
+                if (result !== 'failed') {
+                    scheduleMailPoll(mailPollInterval);
+                    return;
+                }
+                // Der stille Abgleich kommt nicht durch (z. B. abgelaufene
+                // Sitzung oder geaendertes Kennwort): sichtbar neu laden.
+                reloadMailAfterFailedRefresh();
+            });
+        });
+    }
+
+    /**
+     * Nach fehlgeschlagenem Hintergrundabgleich Ordnerbaum und Liste sichtbar
+     * neu laden – das entspricht dem Aktualisieren der Seite und stellt auch
+     * die Kennwortabfrage fuer Proxy-Postfaecher wieder her.
+     */
+    function reloadMailAfterFailedRefresh() {
+        if (state.module !== 'mail' || isArchiveFolder(state.folder) || state.search) {
+            scheduleMailPoll(mailPollInterval);
+            return;
+        }
+        loadFolders().then(function () {
+            return loadMessages();
+        }).then(function () {
+            mailRefreshFailures = 0;
+            scheduleMailPoll(mailPollInterval);
+        }, function () {
+            scheduleMailPoll(mailPollInterval);
         });
     }
 

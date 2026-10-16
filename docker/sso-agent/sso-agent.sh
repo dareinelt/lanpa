@@ -3,9 +3,12 @@
 # Identitaetsquellen.
 #
 #   sso-agent agent    Dienstbetrieb: wartet auf Auftraege des Adminbereichs
-#                      (request.json) und meldet den Zustand (status.json).
+#                      (request.json/logs-request.json) und meldet den Zustand
+#                      (status.json).
 #   sso-agent apply    Sofort anwenden (ohne Adminbereich).
 #   sso-agent status   Zustand als JSON ausgeben.
+#   sso-agent logs <dienst>
+#                      Protokoll einer Anmelde-Instanz abholen.
 #
 # Dies ist der einzige Dienst mit Zugriff auf den Docker-Socket; die Anwendung
 # selbst hat keinen. Der Adminbereich legt im gemeinsamen Speicher einen Auftrag
@@ -26,6 +29,12 @@
 #   4. Der Zustand je Instanz (Domaene, Domaenenbeitritt, Kerberos, Uhrzeit)
 #      wird aus dem Container-Protokoll gelesen und als status.json gemeldet.
 #
+# Ablauf beim Protokoll (Adminbereich -> Windows-Anmeldung -> Protokoll):
+#   logs-request.json nennt die Instanz (auth oder auth-<kennung>). Der Agent
+#   holt die letzten Eintraege (Overlay) und die letzten 48 Stunden (Download)
+#   und legt beides unter logs/ ab. Die Anwendung kann diese Dateien lesen,
+#   aber selbst kein "docker logs" ausfuehren.
+#
 # Zugangsdaten stehen nicht in dieser Datei: sie werden verschluesselt in der
 # Anwendung gepflegt und von jeder Instanz ueber /internal/sso-config abgerufen.
 set -euo pipefail
@@ -36,6 +45,9 @@ CONTROL_DIR=${SSO_AGENT_CONTROL_DIR:-/storage/sso-agent}
 POLL_SECONDS=${SSO_AGENT_POLL_SECONDS:-5}
 STATUS_SECONDS=${SSO_AGENT_STATUS_SECONDS:-60}
 APPLY_TIMEOUT=${SSO_AGENT_APPLY_TIMEOUT:-1800}
+LOG_TIMEOUT=${SSO_AGENT_LOG_TIMEOUT:-30}
+LOG_TAIL_LINES=${SSO_AGENT_LOG_TAIL_LINES:-100}
+LOG_DOWNLOAD_HOURS=${SSO_AGENT_LOG_DOWNLOAD_HOURS:-48}
 APP_UID=${SSO_AGENT_APP_UID:-33}
 COMPOSE_ENTRY=docker-compose.sso.yml
 
@@ -138,6 +150,16 @@ auth_services() {
     compose config --services 2>/dev/null | grep -E '^auth(-[a-z0-9-]+)?$' | sort || true
 }
 
+# Nur die eigenen Anmelde-Instanzen: der Dienstname kommt aus dem Adminbereich
+# und darf nicht in eine Docker-Abfrage gelangen.
+valid_service() {
+    case "$1" in
+        auth|auth-*) ;;
+        *) return 1 ;;
+    esac
+    printf '%s' "$1" | grep -qE '^auth(-[a-z0-9]+)*$'
+}
+
 # Letzte Fehlerzeilen als kurze Meldung.
 summarize() {
     { printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | tail -n 3 | tr '\n' ' ' | cut -c1-400; } || true
@@ -175,7 +197,7 @@ read_facts() {
     [ -n "$started" ] || started=24h
     # Nur den laufenden Start betrachten und die Ausgabe begrenzen: die
     # entscheidenden Zeilen stehen am Anfang, das Protokoll kann aber gross sein.
-    lines="$(timeout 15 docker logs --since "$started" "$id" 2>/dev/null \
+    lines="$(timeout 15 docker logs --tail 500 --since "$started" "$id" 2>/dev/null \
         | grep -a '^\[auth\]' | head -n 200)" || true
     while IFS= read -r line; do
         [ -n "$line" ] || continue
@@ -362,10 +384,96 @@ do_apply() {
     return 0
 }
 
+# Protokoll einer Anmelde-Instanz abholen: die letzten Eintraege fuer das
+# Overlay und die letzten 48 Stunden fuer den Download. Beide Dateien landen im
+# Austauschverzeichnis, damit die Anwendung sie lesen kann.
+do_logs() {
+    local id="${1:-}" service="${2:-}" dir="${CONTROL_DIR}/logs" container="" state=""
+    local tail_tmp="" download_tmp="" meta_tmp="" lines=0 bytes=0 error=""
+    local generated=""
+
+    if ! valid_service "$service"; then
+        write_status failed logs "Unbekannte Anmelde-Instanz (${service})." "$id"
+        return 1
+    fi
+
+    mkdir -p "$dir"
+    chown "${APP_UID}:${APP_UID}" "$dir" 2>/dev/null || true
+    chmod 0775 "$dir"
+
+    # Erst schreiben, dann umbenennen: der Adminbereich liest die Dateien
+    # waehrenddessen und darf nie einen halben Stand sehen.
+    tail_tmp="${dir}/.${service}.tail.$$.tmp"
+    download_tmp="${dir}/.${service}.download.$$.tmp"
+    meta_tmp="${dir}/.${service}.meta.$$.tmp"
+    : > "$tail_tmp"
+    : > "$download_tmp"
+    chmod 0644 "$tail_tmp" "$download_tmp" 2>/dev/null || true
+
+    container="$(compose ps -q "$service" 2>/dev/null | head -n 1)" || container=""
+    if [ -z "$container" ]; then
+        error="Die Instanz ${service} laeuft nicht - bitte die Windows-Anmeldung anwenden."
+    else
+        state="$(docker inspect -f '{{.State.Status}}' "$container" 2>/dev/null)" || state=""
+        if [ "$state" != "running" ]; then
+            error="Die Instanz ${service} laeuft nicht (Zustand: ${state:-unbekannt})."
+        else
+            # Eine gerade gestartete Instanz hat noch keine Eintraege: eine leere
+            # Ausgabe ist kein Fehler.
+            timeout "$LOG_TIMEOUT" docker logs --tail "$LOG_TAIL_LINES" "$container" \
+                > "$tail_tmp" 2>/dev/null || true
+            timeout "$LOG_TIMEOUT" docker logs --since "${LOG_DOWNLOAD_HOURS}h" "$container" \
+                > "$download_tmp" 2>/dev/null || true
+        fi
+    fi
+
+    lines="$(wc -l < "$tail_tmp" | tr -d ' ')" || lines=0
+    bytes="$(wc -c < "$download_tmp" | tr -d ' ')" || bytes=0
+    generated="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    if [ -n "$error" ]; then
+        rm -f "$tail_tmp" "$download_tmp"
+        # Ein frueheres Ergebnis bleibt liegen: laeuft die Instanz spaeter
+        # wieder, ist der letzte Stand weiterhin lesbar.
+        jq -n --arg service "$service" --arg id "$id" --arg generated "$generated" \
+            --arg error "$error" \
+            '{service:$service, request_id:$id, generated_at:$generated, lines:0,
+              download_bytes:0, error:$error}' > "$meta_tmp"
+        chmod 0644 "$meta_tmp"
+        mv -f "$meta_tmp" "${dir}/${service}.json"
+        write_status failed logs "$error" "$id"
+        return 1
+    fi
+
+    mv -f "$tail_tmp" "${dir}/${service}.tail.log"
+    mv -f "$download_tmp" "${dir}/${service}.download.log"
+    jq -n --arg service "$service" --arg id "$id" --arg generated "$generated" \
+        --argjson lines "$lines" --argjson bytes "$bytes" \
+        '{service:$service, request_id:$id, generated_at:$generated, lines:$lines,
+          download_bytes:$bytes, error:""}' > "$meta_tmp"
+    chmod 0644 "$meta_tmp"
+    mv -f "$meta_tmp" "${dir}/${service}.json"
+
+    # Den bisherigen Zustand beibehalten (der Auftrag "anwenden" bleibt
+    # sichtbar), aber "zuletzt gemeldet" auffrischen.
+    refresh_status || true
+    log "Protokoll ${service}: ${lines} Eintraege, ${bytes} Bytes (${LOG_DOWNLOAD_HOURS} h)."
+    return 0
+}
+
 # Auftrag des Adminbereichs abarbeiten.
 process_request() {
     local request="${CONTROL_DIR}/request.json" processing="${CONTROL_DIR}/.request.processing"
-    local action="" id=""
+    local logs_request="${CONTROL_DIR}/logs-request.json" logs_processing="${CONTROL_DIR}/.logs-request.processing"
+    local action="" id="" service=""
+    if [ -f "$logs_request" ]; then
+        mv -f "$logs_request" "$logs_processing" 2>/dev/null || return 0
+        service="$(jq -r '.service // ""' "$logs_processing" 2>/dev/null | tr -cd 'a-z0-9-' | cut -c1-64)" || service=""
+        id="$(jq -r '.id // ""' "$logs_processing" 2>/dev/null | tr -cd 'a-zA-Z0-9-' | cut -c1-64)" || id=""
+        rm -f "$logs_processing"
+        do_logs "$id" "$service" || true
+        return 0
+    fi
     [ -f "$request" ] || return 0
     mv -f "$request" "$processing" 2>/dev/null || return 0
     action="$(jq -r '.action // ""' "$processing" 2>/dev/null)" || action=""
@@ -387,9 +495,13 @@ process_request() {
 
 agent() {
     mkdir -p "$CONTROL_DIR"
-    # Der Adminbereich (uid 33) muss Auftragsdateien anlegen koennen.
+    # Der Adminbereich (uid 33) muss Auftragsdateien anlegen und Protokolle
+    # lesen koennen.
     chown "${APP_UID}:${APP_UID}" "$CONTROL_DIR" 2>/dev/null || true
     chmod 0775 "$CONTROL_DIR"
+    mkdir -p "${CONTROL_DIR}/logs"
+    chown "${APP_UID}:${APP_UID}" "${CONTROL_DIR}/logs" 2>/dev/null || true
+    chmod 0775 "${CONTROL_DIR}/logs"
     # Ein abgebrochener Lauf darf nicht als "laeuft" stehen bleiben.
     if [ "$(status_field state idle)" = "running" ]; then
         write_status failed apply "Der vorherige Lauf wurde unterbrochen." "$(status_field request_id '')"
@@ -415,12 +527,13 @@ PROJECT="$(project_name)"
 case "${1:-agent}" in
     agent) agent ;;
     apply) do_apply "cli" ;;
+    logs) do_logs "cli" "${2:-}" ;;
     status)
         refresh_status
         jq . "${CONTROL_DIR}/status.json"
         ;;
     *)
-        printf 'Verwendung: sso-agent {agent|apply|status}\n' >&2
+        printf 'Verwendung: sso-agent {agent|apply|status|logs <dienst>}\n' >&2
         exit 2
         ;;
 esac

@@ -2461,6 +2461,75 @@ body.has-nav-tree-overlay {
 .ad-sync__summary--ok { color: var(--ad-sync-ok); }
 .ad-sync__summary--error { color: var(--ad-sync-error); }
 
+/* Active Directory: Protokoll einer Anmelde-Instanz im Overlay */
+.ad-logs {
+    --ad-logs-ok: #1a7f37;
+    --ad-logs-error: #cf222e;
+    width: min(64rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    background: var(--color-surface);
+    color: inherit;
+}
+
+[data-theme="dark"] .ad-logs {
+    --ad-logs-ok: #7ee787;
+    --ad-logs-error: #ff7b72;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .ad-logs {
+        --ad-logs-ok: #7ee787;
+        --ad-logs-error: #ff7b72;
+    }
+}
+
+.ad-logs::backdrop {
+    background: rgba(5, 18, 32, .55);
+}
+
+.ad-logs h2 {
+    margin-top: 0;
+}
+
+.ad-logs__hint {
+    margin: 0 0 .6rem;
+    font-size: .8125rem;
+    color: var(--color-muted);
+}
+
+.ad-logs__status {
+    margin: 0 0 .75rem;
+    font-weight: 600;
+    color: var(--color-muted);
+}
+
+.ad-logs__status--ok { color: var(--ad-logs-ok); }
+.ad-logs__status--error { color: var(--ad-logs-error); }
+
+.ad-logs__output {
+    margin: 0 0 1rem;
+    max-height: min(28rem, 55vh);
+    overflow: auto;
+    padding: .75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-background);
+    font: .8125rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    tab-size: 4;
+    user-select: text;
+}
+
+.ad-logs__output:empty::before {
+    content: "Keine Ausgabe.";
+    color: var(--color-muted);
+}
+
 /* Cold-Tier-Erweiterungen: gestapelte Kapazitaet und Ziele innerhalb einer Kachel */
 .tier-members {
     display: grid;

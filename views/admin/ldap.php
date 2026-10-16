@@ -197,13 +197,14 @@ $ssoInstances = array_values(array_filter($sources, static fn (array $source): b
                     <th scope="col">Instanz</th>
                     <th scope="col">Domäne</th>
                     <th scope="col">Zustand</th>
+                    <th scope="col">Protokoll</th>
                     <th scope="col">Hinweise</th>
                 </tr>
                 </thead>
                 <tbody>
                 <?php if ($ssoInstances === []) { ?>
                     <tr>
-                        <td colspan="4"><span class="table__hint">Keine Windows-Anmeldung eingerichtet. Domäne in einer Identitätsquelle eintragen und die Windows-Anmeldung aktivieren.</span></td>
+                        <td colspan="5"><span class="table__hint">Keine Windows-Anmeldung eingerichtet. Domäne in einer Identitätsquelle eintragen und die Windows-Anmeldung aktivieren.</span></td>
                     </tr>
                 <?php } ?>
                 <?php foreach ($ssoInstances as $source) {
@@ -222,6 +223,17 @@ $ssoInstances = array_values(array_filter($sources, static fn (array $source): b
                             <?php foreach ($hints as $hint) { ?>
                                 <div class="table__hint"><?= Html::e($hint) ?></div>
                             <?php } ?>
+                        </td>
+                        <td>
+                            <form method="post" action="/admin/ad/anmeldeinstanzen/protokoll" class="inline-form" data-ad-logs>
+                                <?= Csrf::field() ?>
+                                <input type="hidden" name="service" value="<?= Html::e((string) $source['service']) ?>">
+                                <button type="submit" class="button button--ghost"
+                                        aria-label="Protokoll der Anmelde-Instanz <?= Html::e((string) $source['service']) ?> anzeigen">Protokoll anzeigen</button>
+                            </form>
+                            <div class="table__hint">
+                                <a href="/admin/ad/anmeldeinstanzen/protokoll/download?service=<?= rawurlencode((string) $source['service']) ?>">Letzte 48 Stunden herunterladen</a>
+                            </div>
                         </td>
                         <td>
                             <?php if ($notes === []) { ?>
@@ -252,6 +264,10 @@ $ssoInstances = array_values(array_filter($sources, static fn (array $source): b
             anwenden. Eine neue Domäne wird dabei automatisch als eigene Instanz angelegt; wird die Windows-Anmeldung
             entfernt, verschwindet die Instanz wieder.
         </p>
+
+        <?php if ($ssoInstances !== []) {
+            require __DIR__ . '/ldap/logs-dialog.php';
+        } ?>
     <?php } ?>
 </section>
 

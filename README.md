@@ -203,7 +203,7 @@ Datenbank gespeichert – sie gehören nicht in die `.env`.
 | `SSO_NETBIOS_NAME` | Computername des auth-Containers im AD (max. 15 Zeichen, je Installation eindeutig); der Beitritt bleibt im Volume `sso_samba` erhalten | `lanpa-sso` |
 | `SSO_SESSION_LIFETIME` | Gültigkeit der erkannten Windows-Anmeldung in der Sitzung (Sekunden, `0` = Sitzungsende) | `28800` |
 | `COMPOSE_FILE` | Compose-Dateien des Projekts; wird von `sso-agent` beim Anwenden der Windows-Anmeldung um `docker-compose.sso.yml` ergänzt bzw. nach der letzten weiteren Domäne wieder gekürzt | `docker-compose.yml` |
-| `SSO_AGENT_POLL_SECONDS`, `SSO_AGENT_STATUS_SECONDS`, `SSO_AGENT_APPLY_TIMEOUT`, `SSO_AGENT_APP_UID` | Dienst `sso-agent`: Abstand der Auftragsabfrage und der Zustandsmeldung (Sekunden), Höchstdauer für Bauen und Starten der Anmelde-Instanzen (Sekunden), Benutzerkennung der Anwendung im gemeinsamen Speicher | `5` / `60` / `1800` / `33` |
+| `SSO_AGENT_POLL_SECONDS`, `SSO_AGENT_STATUS_SECONDS`, `SSO_AGENT_APPLY_TIMEOUT`, `SSO_AGENT_LOG_TIMEOUT`, `SSO_AGENT_LOG_TAIL_LINES`, `SSO_AGENT_LOG_DOWNLOAD_HOURS`, `SSO_AGENT_APP_UID` | Dienst `sso-agent`: Abstand der Auftragsabfrage und der Zustandsmeldung (Sekunden), Höchstdauer für Bauen und Starten der Anmelde-Instanzen (Sekunden), Höchstdauer je `docker logs` (Sekunden), Einträge im Protokoll-Overlay, Zeitraum des Protokoll-Downloads (Stunden), Benutzerkennung der Anwendung im gemeinsamen Speicher | `5` / `60` / `1800` / `30` / `100` / `48` / `33` |
 | `SECRETS_KEY_FILE` | Schlüssel für gespeicherte Zugangsdaten | `storage/keys/secrets.key` |
 
 Jede Variable unterstützt zusätzlich die Datei-Variante `<NAME>_FILE` für Docker-Secrets.

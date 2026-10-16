@@ -331,3 +331,241 @@ Runner::test('auth-Container: unerreichbarer Zeitserver wird eingeordnet', funct
     Assert::true(strpos($agent, 'ntp=warn') < strpos($agent, 'ntp=failed'),
         'Die Entwarnung muss vor den Fehlerfaellen stehen.');
 });
+
+/**
+ * Protokolle der Anmelde-Instanzen. Die Anwendung hat keinen Docker-Socket und
+ * kann selbst kein "docker logs" ausfuehren: sie fordert das Protokoll ueber
+ * logs-request.json an und liest die Dateien, die der Dienst ablegt
+ * (Overlay: letzte 100 Eintraege, Download: letzte 48 Stunden).
+ */
+function ssoAgentWriteLogs(string $dir, string $service, array $meta, ?string $tail = null, ?string $download = null): void
+{
+    $logs = $dir . '/logs';
+    if (!is_dir($logs)) {
+        mkdir($logs, 0700, true);
+    }
+    file_put_contents($logs . '/' . $service . '.json', json_encode($meta, JSON_THROW_ON_ERROR));
+    if ($tail !== null) {
+        file_put_contents($logs . '/' . $service . '.tail.log', $tail);
+    }
+    if ($download !== null) {
+        file_put_contents($logs . '/' . $service . '.download.log', $download);
+    }
+}
+
+function ssoAgentLogsMeta(string $service, string $requestId, string $generatedAt = '', string $error = ''): array
+{
+    return [
+        'service' => $service,
+        'request_id' => $requestId,
+        'generated_at' => $generatedAt !== '' ? $generatedAt : gmdate('Y-m-d\TH:i:s\Z'),
+        'lines' => 2,
+        'download_bytes' => 6,
+        'error' => $error,
+    ];
+}
+
+Runner::test('SSO-Agent: Protokollauftrag wird abgelegt und Ergebnis gelesen', function (): void {
+    $dir = ssoAgentDir();
+    ssoAgentWriteStatus($dir, ['state' => 'done']);
+    $service = new SsoAgentService($dir);
+
+    // Nur Dienstnamen der Anmelde-Instanzen duerfen in Auftrag und Dateiname
+    // eingehen (der Agent fragt damit Docker ab).
+    Assert::true($service->isAuthService('auth'));
+    Assert::true($service->isAuthService('auth-mvzintwf'));
+    Assert::true($service->isAuthService('auth-mvz-int-wf'));
+    Assert::false($service->isAuthService('web'));
+    Assert::false($service->isAuthService('auth-'));
+    Assert::false($service->isAuthService('auth-MVZ'));
+    Assert::false($service->isAuthService('auth_mvz'));
+    Assert::false($service->isAuthService('../auth'));
+
+    $id = $service->requestLogs('auth');
+    Assert::same(16, strlen($id));
+    $request = json_decode((string) file_get_contents($dir . '/logs-request.json'), true);
+    Assert::same('logs', $request['action']);
+    Assert::same('auth', $request['service']);
+    Assert::same($id, $request['id']);
+    Assert::same([], glob($dir . '/.logs-request.*.tmp') ?: [], 'Der Auftrag wird atomar abgelegt.');
+    Assert::false(is_file($dir . '/request.json'), 'Ein Protokollauftrag ersetzt kein "anwenden".');
+    Assert::true($service->hasPendingLogsRequest());
+
+    $pending = $service->logsResult('auth', $id);
+    Assert::same('pending', $pending['state'], 'Ohne Ergebnis bleibt der Auftrag offen.');
+    Assert::same('', $pending['tail']);
+    Assert::false($pending['download_ready']);
+
+    ssoAgentWriteLogs($dir, 'auth', ssoAgentLogsMeta('auth', $id), "Zeile 1\nZeile 2\n", "letzte 48 Stunden\n");
+    $result = $service->logsResult('auth', $id);
+    Assert::same('ready', $result['state']);
+    Assert::same(2, $result['lines']);
+    Assert::same("Zeile 1\nZeile 2\n", $result['tail'], 'Das Overlay zeigt die letzten Eintraege.');
+    Assert::true($result['download_ready']);
+    Assert::same('auth-protokoll-' . gmdate('Y-m-d') . '.log', $result['download_name']);
+    Assert::same("letzte 48 Stunden\n", $service->logDownload('auth'));
+
+    // Nur das Ergebnis des eigenen Auftrags zaehlt (sonst zeigt ein zweiter
+    // Auftrag den Stand des vorherigen).
+    Assert::same('pending', $service->logsResult('auth', 'ffffffffffffffff')['state']);
+    Assert::same('ready', $service->logsResult('auth')['state'], 'Ein frisches Ergebnis steht auch ohne Auftragskennung bereit.');
+});
+
+Runner::test('SSO-Agent: Protokoll ohne Dienst, ohne Ergebnis und mit Fehler', function (): void {
+    $dir = ssoAgentDir();
+    $offline = new SsoAgentService($dir . '/fehlt');
+    $message = '';
+    try {
+        $offline->requestLogs('auth');
+    } catch (RuntimeException $exception) {
+        $message = $exception->getMessage();
+    }
+    Assert::contains('sso-agent', $message, 'Ohne Dienst muss der Auftrag mit Hinweis abgelehnt werden.');
+    Assert::false(is_file($dir . '/fehlt/logs-request.json'));
+
+    $service = new SsoAgentService($dir);
+    ssoAgentWriteStatus($dir, ['state' => 'done']);
+    $message = '';
+    try {
+        $service->requestLogs('web');
+    } catch (RuntimeException $exception) {
+        $message = $exception->getMessage();
+    }
+    Assert::same('Unbekannte Anmelde-Instanz.', $message);
+    Assert::false(is_file($dir . '/logs-request.json'));
+
+    Assert::same('error', $service->logsResult('web')['state']);
+    Assert::null($service->logDownload('web'));
+
+    // Der Dienst meldet sich seit Stunden nicht: das Overlay darf nicht ewig
+    // "wird erstellt" anzeigen.
+    $silent = ssoAgentDir();
+    ssoAgentWriteStatus($silent, ['state' => 'done']);
+    touch($silent . '/status.json', time() - 3600);
+    $result = (new SsoAgentService($silent))->logsResult('auth');
+    Assert::same('error', $result['state']);
+    Assert::contains('sso-agent', $result['message']);
+
+    // Ein liegen gebliebener Auftrag (Dienst neu gestartet) wird als Fehler
+    // gemeldet statt als endlose Wartezeit.
+    $stale = ssoAgentDir();
+    ssoAgentWriteStatus($stale, ['state' => 'done']);
+    $staleService = new SsoAgentService($stale);
+    $staleService->requestLogs('auth');
+    touch($stale . '/logs-request.json', time() - 300);
+    Assert::false($staleService->hasPendingLogsRequest());
+    Assert::same('error', $staleService->logsResult('auth')['state']);
+
+    // Eine nicht laufende Instanz meldet der Dienst als Fehler (leere
+    // Ausgabe waere hier irrefuehrend).
+    $failed = ssoAgentDir();
+    ssoAgentWriteStatus($failed, ['state' => 'failed', 'message' => 'Die Instanz laeuft nicht.']);
+    ssoAgentWriteLogs($failed, 'auth-mvzintwf', ssoAgentLogsMeta('auth-mvzintwf', 'abc', '',
+        'Die Instanz auth-mvzintwf laeuft nicht (Zustand: exited).'));
+    $failedService = new SsoAgentService($failed);
+    $error = $failedService->logsResult('auth-mvzintwf');
+    Assert::same('error', $error['state']);
+    Assert::contains('laeuft nicht', $error['message']);
+    Assert::null($failedService->logDownload('auth-mvzintwf'), 'Ohne Datei gibt es keinen Download.');
+
+    // Nach zehn Minuten gilt ein Ergebnis nicht mehr als frisch: die Uebersicht
+    // fordert ein neues an, der letzte Download bleibt aber lesbar.
+    $old = ssoAgentDir();
+    ssoAgentWriteStatus($old, ['state' => 'done']);
+    ssoAgentWriteLogs($old, 'auth', ssoAgentLogsMeta('auth', 'abc', gmdate('Y-m-d\TH:i:s\Z', time() - 3600)), 'alt', 'alt');
+    $oldService = new SsoAgentService($old);
+    Assert::same('pending', $oldService->logsResult('auth')['state']);
+    Assert::same('alt', $oldService->logDownload('auth'));
+});
+
+Runner::test('SSO-Agent: Dienst liest die Protokolle der Anmelde-Instanzen', function (): void {
+    $script = ssoAgentFile('docker/sso-agent/sso-agent.sh');
+
+    Assert::contains('logs-request.json', $script);
+    Assert::contains('do_logs()', $script);
+    Assert::contains('valid_service()', $script);
+    Assert::contains('docker logs --tail "$LOG_TAIL_LINES"', $script, 'Das Overlay bekommt die letzten Eintraege.');
+    Assert::contains('docker logs --since "${LOG_DOWNLOAD_HOURS}h"', $script, 'Der Download umfasst die letzten Stunden.');
+    Assert::contains('${dir}/${service}.tail.log', $script);
+    Assert::contains('${dir}/${service}.download.log', $script);
+    Assert::contains('SSO_AGENT_LOG_TIMEOUT:-30', $script);
+    Assert::contains('SSO_AGENT_LOG_TAIL_LINES:-100', $script);
+    Assert::contains('SSO_AGENT_LOG_DOWNLOAD_HOURS:-48', $script);
+    Assert::contains('chown "${APP_UID}:${APP_UID}" "$dir"', $script,
+        'Die Anwendung muss die abgelegten Dateien lesen koennen.');
+
+    // Ein Protokollauftrag wird vor "anwenden" bearbeitet: ein langer Auftrag
+    // darf das Overlay nicht blockieren, und waehrend eines Laufs ist das
+    // Protokoll besonders wichtig.
+    $logsBranch = strpos($script, 'if [ -f "$logs_request" ]');
+    Assert::true($logsBranch !== false, 'Der Protokollauftrag wird bearbeitet.');
+    Assert::true($logsBranch < strpos($script, '[ -f "$request" ] || return 0'),
+        'Der Protokollauftrag steht vor dem Auftrag "anwenden".');
+
+    $index = ssoAgentFile('public/index.php');
+    Assert::contains("'/admin/ad/anmeldeinstanzen/protokoll', [LdapController::class, 'logRequest']", $index);
+    Assert::contains("'/admin/ad/anmeldeinstanzen/protokoll/inhalt', [LdapController::class, 'logContent']", $index);
+    Assert::contains("'/admin/ad/anmeldeinstanzen/protokoll/download', [LdapController::class, 'logDownload']", $index);
+});
+
+Runner::test('SSO-Agent: Adminseite zeigt Protokoll und Download je Instanz', function (): void {
+    View::setViewPath(BASE_PATH . '/views');
+    $ssoAgent = [
+        'available' => true, 'state' => 'done', 'action' => 'apply', 'message' => 'Windows-Anmeldung angewendet.',
+        'request_id' => 'abc', 'updated_at' => '2026-01-01T00:00:00Z', 'project' => 'lanpa', 'compose_file' => '',
+        'running' => false, 'pending' => false, 'pending_stale' => false,
+        'instances' => [
+            'auth' => ['service' => 'auth', 'state' => 'running', 'health' => 'healthy', 'domain' => 'KHWF',
+                'active' => true, 'enabled' => true, 'kerberos' => true, 'join' => 'ok', 'ntp' => 'ok', 'notes' => []],
+            'auth-mvzintwf' => ['service' => 'auth-mvzintwf', 'state' => 'running', 'health' => 'healthy',
+                'domain' => 'MVZINTSZ', 'active' => true, 'enabled' => true, 'kerberos' => true, 'join' => 'ok',
+                'ntp' => 'ok', 'notes' => []],
+        ],
+    ];
+    $data = [
+        'primarySecretStates' => [], 'ldapExtensionAvailable' => true, 'dialog' => null, 'ssoAgent' => $ssoAgent,
+        'sources' => ssoAgentViewSources(),
+    ];
+
+    $html = View::render('admin.ldap', $data);
+    Assert::contains('Protokoll anzeigen', $html, 'Jede Instanz bietet ihr Protokoll an.');
+    Assert::contains('action="/admin/ad/anmeldeinstanzen/protokoll"', $html);
+    Assert::contains('name="service" value="auth-mvzintwf"', $html);
+    Assert::contains('name="_token"', $html, 'Der Protokollauftrag ist CSRF-geschützt.');
+    Assert::contains('/admin/ad/anmeldeinstanzen/protokoll/download?service=auth-mvzintwf', $html,
+        'Der Download der letzten 48 Stunden steht an der Instanz.');
+    Assert::contains('Letzte 48 Stunden herunterladen', $html);
+    Assert::contains('<dialog id="ad-logs-dialog"', $html);
+    Assert::contains('ad-logs-output', $html);
+    Assert::contains('100 Einträge', $html, 'Das Overlay benennt den Umfang.');
+
+    // Ohne JavaScript liefert der Server das Overlay fertig aus.
+    $ready = ['service' => 'auth-mvzintwf', 'label' => 'MVZ', 'domain' => 'MVZINTSZ', 'state' => 'ready',
+        'message' => '', 'lines' => 2, 'generated_at' => '2026-01-01T00:00:00Z',
+        'tail' => "Zeile 1\n<script>alert(1)</script>\n",
+        'download_url' => '/admin/ad/anmeldeinstanzen/protokoll/download?service=auth-mvzintwf'];
+    $html = View::render('admin.ldap', ['logs' => $ready] + $data);
+    Assert::contains('id="ad-logs-dialog" class="ad-logs" aria-labelledby="ad-logs-title" open', $html,
+        'Mit Ergebnis wird das Overlay geoeffnet ausgeliefert.');
+    Assert::contains('2 Einträge', $html, 'Die Anzahl der Eintraege steht im Overlay.');
+    Assert::contains('Zeile 1', $html);
+    Assert::contains('&lt;script&gt;alert(1)&lt;/script&gt;', $html, 'Die Protokollausgabe wird escaped.');
+    Assert::false(str_contains($html, '<script>alert(1)</script>'), 'Protokollinhalte werden nie als Markup ausgegeben.');
+    Assert::contains('href="/admin/ad/anmeldeinstanzen/protokoll/download?service=auth-mvzintwf"', $html);
+
+    $error = ['service' => 'auth', 'state' => 'error', 'message' => 'Die Instanz auth läuft nicht.',
+        'tail' => '', 'lines' => 0, 'generated_at' => '', 'download_url' => ''];
+    $html = View::render('admin.ldap', ['logs' => $error] + $data);
+    Assert::contains('Die Instanz auth läuft nicht.', $html, 'Der Fehler wird im Overlay benannt.');
+    Assert::contains('ad-logs__status--error', $html);
+    Assert::contains('id="ad-logs-download" href="#" hidden', $html, 'Ohne Protokoll gibt es keinen Download-Link.');
+    Assert::contains('Keine Ausgabe.', ssoAgentFile('public/assets/css/admin.css'));
+
+    // Das Overlay holt das Ergebnis nach (Auftrag sofort bestaetigen, dann im
+    // Sekundentakt nachfragen) - sonst laeuft die Anfrage in max_execution_time.
+    $js = ssoAgentFile('public/assets/js/admin-ldap.js');
+    Assert::contains("'/admin/ad/anmeldeinstanzen/protokoll/inhalt'", $js);
+    Assert::contains('ad-logs-dialog', $js);
+    Assert::contains('showModal', $js);
+    Assert::contains('data-ad-logs', ssoAgentFile('views/admin/ldap.php'));
+});

@@ -362,6 +362,9 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/ad/quellen/loeschen', [LdapController::class, 'deleteSource']);
         $router->post('/admin/ad/quellen/testen', [LdapController::class, 'testSource']);
         $router->post('/admin/ad/anmeldeinstanzen/anwenden', [LdapController::class, 'applySso']);
+        $router->post('/admin/ad/anmeldeinstanzen/protokoll', [LdapController::class, 'logRequest']);
+        $router->get('/admin/ad/anmeldeinstanzen/protokoll/inhalt', [LdapController::class, 'logContent']);
+        $router->get('/admin/ad/anmeldeinstanzen/protokoll/download', [LdapController::class, 'logDownload']);
         $router->get('/admin/ad/gruppen', [LdapController::class, 'groups']);
 
         $router->get('/admin/office', [OfficeAdminController::class, 'index']);

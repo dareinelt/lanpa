@@ -282,6 +282,14 @@ Admin-Test via `accountForTest()`). Entschlüsselung fehlgeschlagen → 503.
   `MAX_MESSAGE`); PHP säubert HTML mit `MailHtmlSanitizer::clean()`.
 - Anhang: `imap.attachment` (Base64), PHP dekodiert und liefert
   `name`/`content_type`/`content`/`size`.
+- Terminteile: `imap.message` liefert zusätzlich `calendar[]` mit
+  `{method, content}` (Klartext-iCalendar, `content` = unveränderter Teil).
+  Übernommen werden nur `text/calendar`-Teile mit dem Methodenparameter
+  `REQUEST`, `CANCEL` oder `REPLY` (RFC 5546) bis `MAIL_PROXY_MAX_CALENDAR_KB`;
+  ein reiner ICS-Anhang ohne `METHOD` ist keine Einladung und bleibt Anhang.
+  Die Liste (`imap.messages`) lädt dafür keinen Nachrichtenrumpf, sondern
+  wertet die ohnehin abgerufene BODYSTRUCTURE aus und setzt `meeting_request`
+  (Abschnitt 16).
 
 **Zeichensatz.** Der Proxy dekodiert Text selbst, statt der Deklaration des
 Absenders zu vertrauen: `_text()` holt die CTE-dekodierten Bytes
@@ -340,7 +348,14 @@ sequenceDiagram
 ```
 
 - PHP: mindestens ein Empfänger (sonst 422); `outgoing()` entfernt
-  KI-Markierungen (`OrvantaAiService`). `respond()` = `send()` mit
+  KI-Markierungen (`OrvantaAiService`). Optional trägt `message.calendar[]`
+  (`{method, content}`) Terminteile mit: höchstens drei Stück, nur die
+  Methoden `REQUEST`/`CANCEL`/`REPLY`, leere Inhalte werden verworfen, der
+  Inhalt geht **base64-kodiert** an den Proxy (nur so bleiben CRLF und
+  Umlaute erhalten). Der Proxy hängt sie als
+  `text/calendar; charset=utf-8; method=…` in das `multipart/alternative` der
+  Nachricht ein und weist unbekannte Methoden, fehlende Inhalte und zu große
+  Teile mit 422/413 ab. `respond()` = `send()` mit
   `reference {folder, uidvalidity, uid, mode}`, `mode` ∈ `reply`/`replyall`/`forward`.
 - Proxy: `From` ist **immer** `display_name <email>` des Postfachs;
   `In-Reply-To`/`References` bei Antworten; Weiterleitung übernimmt Anhänge
@@ -482,8 +497,8 @@ Postfächer) → `mailbox.test`. Ergebnis ist eine Liste von Prüfschritten
 | `imap.create_folder` | `parent` (Spec oder leer), `name` | `{raw}` | `createFolder()` |
 | `imap.mark_folder_read` | `folder` | `{updated}` | `markFolderRead()` |
 | `imap.folder_status` | `folder` | `{raw, name, total, unread, subfolders, size, total_with_subfolders, size_with_subfolders}` | `folderProperties()` |
-| `imap.messages` | `folder`, `offset`, `limit`, `search` | `{uidvalidity, total, items[]}` (Element: `uid, subject, from, to, date, size, seen, flagged, answered, forwarded, has_attachments, …`) | `messages()` |
-| `imap.message` | `folder`, `uidvalidity`, `uid` | Kopf, Text/HTML, Anhänge | `message()` |
+| `imap.messages` | `folder`, `offset`, `limit`, `search` | `{uidvalidity, total, items[]}` (Element: `uid, subject, from, to, date, size, seen, flagged, answered, forwarded, has_attachments, meeting_request, …`) | `messages()` |
+| `imap.message` | `folder`, `uidvalidity`, `uid` | Kopf, Text/HTML, Anhänge, `calendar[] {method, content}` | `message()` |
 | `imap.headers` | `folder`, `uidvalidity`, `uid` | Rohkopfzeilen | `messageHeaders()` |
 | `imap.attachment` | `folder`, `uidvalidity`, `uid`, `index` | `{name, content_type, content (Base64)}` | `attachment()` |
 | `imap.flags` | `folder`, `uidvalidity`, `uids[]`, `add[]`, `remove[]` | `{updated}` | `markRead()`, `flag()` |
@@ -495,7 +510,7 @@ Postfächer) → `mailbox.test`. Ergebnis ist eine Liste von Prüfschritten
 | `mailbox.test` | – | `{checks[]}` | `testConnection()`, `updateUserPassword()` |
 | `cache.invalidate` | – (kein `account`) | `{closed}` | `invalidate()` |
 
-`message` = `{to[], cc[], bcc[], subject, body, html, importance (Normal/High/Low), attachments[] {name, content_type, content}}`.
+`message` = `{to[], cc[], bcc[], subject, body, html, importance (Normal/High/Low), attachments[] {name, content_type, content}, calendar[] {method, content (Base64)}}`.
 `reference`/`draft` = `{folder, uidvalidity, uid}` (+ `mode` bei `reference`).
 
 ---
@@ -560,6 +575,7 @@ Zugangsdaten. `mail_proxy_state.last_error` speichert nur diese Meldungen.
 | `MAIL_PROXY_POOL_SIZE` | 32 | Gepoolte IMAP-Sitzungen (0 = kein Pool) | Python |
 | `MAIL_PROXY_POOL_IDLE_SECONDS` | 90 | Leerlauf bis zum Schließen | Python |
 | `MAIL_PROXY_MAX_MESSAGE_MB` | 35 | Max. Nachrichtengröße | Python |
+| `MAIL_PROXY_MAX_CALENDAR_KB` | 256 | Max. Größe **je** Kalenderteil (1…2048 KB); die Summe aller Teile einer Nachricht wird ebenfalls begrenzt | Python |
 | `MAIL_PROXY_MAX_BODY_MB` | 48 | Max. Anfragegröße | Python |
 | `MAIL_PROXY_DENY_CIDRS` | leer | Zusätzlich gesperrte Netze (kommagetrennt) | Python |
 | `MAIL_PROXY_LISTEN_HOST`/`_PORT`/`_KEY_FILE` | `0.0.0.0`/8025/`/run/mail-proxy/keys/secrets.key` | Dienst | Python/Compose |
@@ -595,6 +611,12 @@ Serverwerte (Admin): `timeout_seconds` 5…60, `quota_mb` 0…`QUOTA_MAX_MB`
     `parse_headers()` (Kopfzeilen); nie `part.get_content()` oder ein direktes
     `bytes.decode("utf-8")` verwenden – sonst gehen Umlaute nach der
     Heuristik in 6.5 wieder verloren.
+13. Kalenderteile nur über `CALENDAR_METHODS` (`REQUEST`, `CANCEL`, `REPLY`)
+    übertragen und nur mit Methodenparameter; die Liste der Methoden in Python
+    und in `App\Services\Orvanta\ICalendar::METHODS` synchron halten. Ein
+    `text/calendar`-Teil wird **nie** als Nachrichtenrumpf verwendet, und der
+    Kalenderinhalt wird unverändert durchgereicht (kein Parsen, kein
+    Umschreiben im Proxy).
 
 ---
 
@@ -637,7 +659,9 @@ Der Selbsttest im Dienst (`selftest()`, Aufruf über `--selftest`, Exit-Code 1
 bei Fehlern) prüft ohne Netzzugriff und ohne Abhängigkeiten: `decode_text()`
 gegen die Matrix aus deklariertem Zeichensatz und tatsächlicher Kodierung,
 Text-/HTML-Teile (Quoted-Printable, Base64, 8bit), rohe 8-Bit-Kopfzeilen,
-`summary()`, den Kopfzeilenblock sowie die Teilwahl des Nachrichtentexts
+`summary()`, den Kopfzeilenblock, Kalenderteile (Aufbau des
+`text/calendar`-Teils, Erkennung in der BODYSTRUCTURE) sowie die Teilwahl des
+Nachrichtentexts
 (`message_parts()`, 6.5) bei typischen MIME-Formen: HTML hinter einem Bild in
 `multipart/related`, `start` auf das Bild, HTML unter `related` innerhalb von
 `alternative`, als Anhang ausgezeichneter HTML-Teil und die Anhangsliste samt
@@ -653,8 +677,10 @@ Postfachgröße/Belegung, Zuordnungsregeln, Vorschläge, Entscheidungstabelle,
 Cache/Invalidierung/TTL/Generation, frische Zugangsdaten, Router ohne
 Rückfall, Postfach-Bindung der IDs, umkehrbare Ordner-IDs, Signatur-Referenzwert
 und Basis-URL, Verbindungstest/Diagnose, Kennwortübernahme, `mail_auth`,
-CSRF-Pflicht der schreibenden Admin-Aktionen und Admin-Gruppenzugehörigkeit
-aller Routen.
+CSRF-Pflicht der schreibenden Admin-Aktionen, Admin-Gruppenzugehörigkeit
+aller Routen sowie die Übertragung von Termineinladungen (ausgehend
+base64-kodierte `text/calendar`-Teile mit Methodenprüfung, eingehend
+`calendar[]` und `meeting_request`).
 
 Nicht automatisiert: der Python-Dienst gegen echte Server. Manuell z. B. mit
 GreenMail/Dovecot im Netz `mail_egress` und `docker compose up mail-proxy`.
@@ -745,6 +771,16 @@ Diagnose-Karte unter Admin → Office.
   in der Anhangsliste auf. Textteile innerhalb eines `multipart/alternative`,
   die weder als Nachrichtentext gewählt noch ausdrücklich als Anhang
   ausgezeichnet sind, können als zusätzlicher Textanhang in der Liste stehen.
+- Terminteile (6.5): `meeting_request` in der Liste stammt allein aus der
+  BODYSTRUCTURE, nicht aus dem Nachrichtenrumpf – die Liste bleibt dadurch so
+  schnell wie vorher. Erkannt wird ein Teil `text/calendar` **mit**
+  Methodenparameter (Groß-/Kleinschreibung egal, auch wenn Parameter wie
+  `TEXT`/`CALENDAR` davorstehen); eine Kalenderdatei ohne `METHOD` gilt nicht
+  als Einladung. Reicht für die Kennzeichnung schon die Struktur, so
+  entscheidet erst `imap.message` anhand des geparsten Inhalts, ob es
+  tatsächlich eine Einladung ist: eine Nachricht mit ausschließlich
+  `REPLY`- oder `CANCEL`-Teil trägt in der Liste `meeting_request = true`,
+  in der Nachricht aber `is_meeting_request = false`.
 - Kein TNEF: Nachrichten, die den formatierten Text nur in
   `application/ms-tnef` (`winmail.dat`) mitführen – Outlook/Exchange bei
   „RTF an externe Empfänger“ –, enthalten überhaupt kein `text/html`. Der

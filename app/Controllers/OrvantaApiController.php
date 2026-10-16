@@ -13,11 +13,14 @@ use App\Exceptions\ValidationException;
 use App\Security\Csrf;
 use App\Security\Session;
 use App\Services\LdapClient;
+use App\Services\MailProxy\ProxyMailBackend;
 use App\Services\Malware\MalwareScanService;
 use App\Services\Orvanta\MailBodyContrast;
 use App\Services\Orvanta\OrvantaAiService;
+use App\Services\Orvanta\OrvantaCalendarService;
 use App\Services\Orvanta\OrvantaException;
 use App\Services\Orvanta\OrvantaExchangeService;
+use App\Services\Orvanta\OrvantaNotificationService;
 use App\Services\Orvanta\OrvantaSignatureService;
 use App\Services\Orvanta\OrvantaSpellcheckService;
 use Throwable;
@@ -57,7 +60,7 @@ final class OrvantaApiController extends Controller
                 'host' => $access['route']->isProxy() ? '' : $config->get('exchange_host'),
                 'exchange_host' => OrvantaController::exchangeHost($access),
                 'backend' => $this->mail($access)->backendName(),
-                'capabilities' => $this->mail($access)->capabilities(),
+                'capabilities' => OrvantaController::capabilities($access),
                 'cache' => Container::orvantaAttachments()->usage($access['uid']),
                 'archive' => Container::orvantaArchive()->status($access['uid'], $this->archiveEnabledFor($access)),
                 'server_time' => time(),
@@ -237,7 +240,19 @@ final class OrvantaApiController extends Controller
     public function message(Request $request): Response
     {
         return $this->handle($request, function (array $access) use ($request): array {
-            $message = $this->mail($access)->message($access['impersonate'], $this->requireId($request->query('id')));
+            $id = $this->requireId($request->query('id'));
+            $message = $this->mail($access)->message($access['impersonate'], $id);
+            $local = $this->localCalendar($access);
+            if ($local !== null) {
+                // Termineinladungen werden beim Oeffnen in den lokalen Kalender
+                // uebernommen; das ist idempotent. Ein Fehler dabei darf die
+                // Anzeige der Nachricht nie verhindern.
+                try {
+                    $local->ingest($access['uid'], $id, $this->calendarPartsOf($access, $id));
+                } catch (Throwable) {
+                    // Die Nachricht bleibt lesbar.
+                }
+            }
 
             return $this->withReadableBody(Container::orvantaAttachments()->embedInlineImages($access['uid'], $access['impersonate'], $message));
         });
@@ -548,6 +563,17 @@ final class OrvantaApiController extends Controller
                 throw new OrvantaException('Ungültiger Zeitraum.', 422);
             }
 
+            $local = $this->localCalendar($access);
+            if ($local !== null) {
+                // Lokaler Kalender des Proxy-Postfachs: Es gibt keine weiteren
+                // Postfaecher, also auch nur die eigenen Termine. Faellige
+                // Einladungen werden dabei nachgesendet.
+                $local->dispatch($access['uid']);
+                $this->syncLocalReminders($access, $local);
+
+                return ['items' => $local->range($access['uid'], $start, $end), 'start' => $start, 'end' => $end];
+            }
+
             $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR);
             // Eigenes Postfach und die im Kalender eingeblendeten Kalender
             // zusaetzlich berechtigter Postfaecher zusammenfuehren. Termine aus
@@ -567,9 +593,16 @@ final class OrvantaApiController extends Controller
 
     public function event(Request $request): Response
     {
-        return $this->handle($request, fn (array $access): array => $this->withReadableBody(
-            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->event($access['impersonate'], $this->requireId($this->stripMailbox($access, (string) $request->query('id', ''))))
-        ));
+        return $this->handle($request, function (array $access) use ($request): array {
+            $local = $this->localCalendar($access);
+            if ($local !== null) {
+                return $local->event($access['uid'], $this->requireId((string) $request->query('id', '')));
+            }
+
+            return $this->withReadableBody(
+                $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->event($access['impersonate'], $this->requireId($this->stripMailbox($access, (string) $request->query('id', ''))))
+            );
+        });
     }
 
     public function saveEvent(Request $request): Response
@@ -589,6 +622,15 @@ final class OrvantaApiController extends Controller
                 'required' => $this->addresses('required'),
                 'optional' => $this->addresses('optional'),
             ];
+            $local = $this->localCalendar($access);
+            if ($local !== null) {
+                // Die Kennung des lokalen Termins ist eine Zahl; ein
+                // Postfach-Praefix gibt es hier nicht (nur ein Postfach).
+                $result = $local->save($access['uid'], ['email' => $access['primary'], 'name' => (string) ($access['user']['display_name'] ?? '')], $event + ['id' => $this->localEventId($this->str('id'))]);
+                $this->syncLocalReminders($access, $local);
+
+                return $result;
+            }
             $id = $this->stripMailbox($access, $this->str('id'));
             $exchange = $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR);
             if ($id === '') {
@@ -609,9 +651,16 @@ final class OrvantaApiController extends Controller
     public function moveEvent(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $id = $this->requireId($this->stripMailbox($access, $this->str('id')));
             $start = $this->int('start');
             $end = $this->int('end');
+            $local = $this->localCalendar($access);
+            if ($local !== null) {
+                $result = $local->move($access['uid'], ['id' => $this->localEventId($this->str('id')), 'start' => $start, 'end' => $end]);
+                $this->syncLocalReminders($access, $local);
+
+                return $result;
+            }
+            $id = $this->requireId($this->stripMailbox($access, $this->str('id')));
             $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->moveEvent($access['impersonate'], $id, $start, $end, $this->str('change_key'));
             $this->resync($access);
 
@@ -622,6 +671,13 @@ final class OrvantaApiController extends Controller
     public function deleteEvent(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
+            $local = $this->localCalendar($access);
+            if ($local !== null) {
+                $result = $local->remove($access['uid'], $access['primary'], (string) $this->localEventId($this->str('id')));
+                $this->syncLocalReminders($access, $local);
+
+                return ['ok' => true] + $result;
+            }
             $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->deleteEvent($access['impersonate'], $this->requireId($this->stripMailbox($access, $this->str('id'))));
             $this->resync($access);
 
@@ -632,7 +688,23 @@ final class OrvantaApiController extends Controller
     public function meetingResponse(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->respondToMeeting($access['impersonate'], $this->requireId($this->stripMailbox($access, $this->str('id'))), $this->str('response', 'accept'));
+            $id = $this->str('id');
+            $response = $this->str('response', 'accept');
+            $local = $this->localCalendar($access);
+            if ($local !== null) {
+                // Zwei Absender: Die Antwortleiste im Termin sendet die
+                // Terminkennung, die Leiste in der Nachrichtenansicht die
+                // Nachrichtenkennung des Proxys (Praefix "mpx."). Nur der
+                // Termin wird ueber die Kennung, die Nachricht ausschliesslich
+                // ueber die iCalendar-Kennung aus dem Anhang zugeordnet.
+                $result = ProxyMailBackend::isProxyId($id)
+                    ? $local->respondToMessage($access['uid'], $access['primary'], $this->requireId($id), $this->calendarPartsOf($access, $id), $response)
+                    : $local->respond($access['uid'], $access['primary'], $this->requireId($id), $response);
+                $this->syncLocalReminders($access, $local);
+
+                return ['ok' => true] + $result;
+            }
+            $this->exchange($access, OrvantaMailBackendInterface::CAPABILITY_CALENDAR)->respondToMeeting($access['impersonate'], $this->requireId($this->stripMailbox($access, $id)), $response);
             $this->resync($access);
 
             return ['ok' => true, 'message' => 'Die Antwort wurde gesendet.'];
@@ -793,7 +865,8 @@ final class OrvantaApiController extends Controller
 
     /**
      * Abfrage faelliger Erinnerungen; synchronisiert hoechstens alle fuenf
-     * Minuten (oder mit ?sync=1) die anstehenden Termine aus Exchange.
+     * Minuten (oder mit ?sync=1) die anstehenden Termine aus Exchange bzw. aus
+     * dem lokalen Kalender der Proxy-Postfaecher.
      */
     public function reminders(Request $request): Response
     {
@@ -802,8 +875,14 @@ final class OrvantaApiController extends Controller
             $warning = null;
             $key = 'orvanta_sync_' . $access['uid'];
             $last = (int) Session::get($key, 0);
-            // Proxy-Postfaecher haben keinen Kalender: keine EWS-Synchronisation.
-            if ($this->can($access, OrvantaMailBackendInterface::CAPABILITY_REMINDERS)
+            $local = $this->localCalendar($access);
+            if ($local !== null) {
+                // Lokaler Kalender: Die Termine liegen in der eigenen Datenbank,
+                // Exchange wird nicht befragt (kein stiller Ausweichweg).
+                if ($request->query('sync') === '1' || time() - $last >= self::SYNC_INTERVAL) {
+                    $this->syncLocalReminders($access, $local);
+                }
+            } elseif ($this->can($access, OrvantaMailBackendInterface::CAPABILITY_REMINDERS)
                 && ($request->query('sync') === '1' || time() - $last >= self::SYNC_INTERVAL)) {
                 $warning = $notifications->sync($access['uid'], $access['impersonate']);
                 Session::put($key, time());
@@ -1269,6 +1348,80 @@ final class OrvantaApiController extends Controller
             return;
         }
         Container::orvantaNotifications()->sync($access['uid'], $access['primary']);
+        Session::put('orvanta_sync_' . $access['uid'], time());
+    }
+
+    // ------------------------------------------------------------------
+    // Lokaler Kalender (Proxy-Postfaecher)
+    // ------------------------------------------------------------------
+
+    /**
+     * Lokaler Kalender fuer Proxy-Postfaecher (IMAP/SMTP), sonst null.
+     *
+     * Jeder Kalenderaufruf waehlt damit genau ein Backend: Entweder EWS oder
+     * die eigene Datenbank. Es gibt keinen stillen Ausweichweg und der
+     * Exchange-Weg bleibt unveraendert.
+     *
+     * @param array<string,mixed> $access
+     */
+    private function localCalendar(array $access): ?OrvantaCalendarService
+    {
+        return $access['route']->isProxy() ? Container::orvantaCalendar() : null;
+    }
+
+    /**
+     * Kennung eines lokalen Termins aus der Anfrage; leer legt einen neuen
+     * Termin an. Kennungen weiterer Postfaecher (Praefix "smb:") sind hier
+     * unzulaessig, weil das Proxy-Postfach nur einen Kalender hat.
+     */
+    private function localEventId(string $id): int
+    {
+        $id = trim($id);
+        if ($id === '') {
+            return 0;
+        }
+        if (preg_match('/^\d{1,18}$/', $id) !== 1) {
+            throw new OrvantaException('Der Termin wurde nicht gefunden.', 404);
+        }
+
+        return (int) $id;
+    }
+
+    /**
+     * iCalendar-Texte einer Nachricht (Termineinladung). Nur die Nachricht
+     * selbst liefert die Zuordnung: Die Terminkennung steht im Kalenderteil,
+     * der Betreff wird dafuer nie ausgewertet.
+     *
+     * @param array<string,mixed> $access
+     * @return list<string>
+     */
+    private function calendarPartsOf(array $access, string $messageId): array
+    {
+        $parts = [];
+        $message = $this->mail($access)->message($access['impersonate'], $messageId);
+        foreach ((array) ($message['calendar'] ?? []) as $part) {
+            $content = is_array($part) ? ($part['content'] ?? '') : '';
+            if (is_string($content) && $content !== '') {
+                $parts[] = $content;
+            }
+        }
+
+        return $parts;
+    }
+
+    /**
+     * Uebernimmt die anstehenden Termine des lokalen Kalenders in die
+     * Erinnerungsliste. Die Terminkennung bleibt die Kennung des Termins,
+     * damit "Oeffnen" den Termin laden kann.
+     *
+     * @param array<string,mixed> $access
+     */
+    private function syncLocalReminders(array $access, OrvantaCalendarService $calendar): void
+    {
+        Container::orvantaNotifications()->syncLocal(
+            $access['uid'],
+            $calendar->upcomingReminders($access['uid'], time(), OrvantaNotificationService::SYNC_WINDOW_HOURS)
+        );
         Session::put('orvanta_sync_' . $access['uid'], time());
     }
 

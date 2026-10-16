@@ -123,17 +123,42 @@ erreichbar, bleibt es beim Exchange-Verhalten.
 
 | Verfügbar | Nicht verfügbar |
 | --- | --- |
-| Mail lesen (HTML bereinigt wie bei EWS), Kopfzeilen | Kalender, Termine, Besprechungsanfragen |
-| Senden, Antworten, Allen antworten, Weiterleiten (mit Anhängen) | Kontakte |
-| Entwürfe speichern und aus Entwürfen senden | Aufgaben, Notizen |
-| Ordner (inkl. Anlegen, mUTF-7), Suche (auch Umlaute) | Terminerinnerungen |
-| Gelesen/Ungelesen, Kennzeichnung, Verschieben, Löschen (Papierkorb/endgültig) | Langzeitarchiv (Worker benötigt EWS) |
+| Mail lesen (HTML bereinigt wie bei EWS), Kopfzeilen | Kontakte |
+| Senden, Antworten, Allen antworten, Weiterleiten (mit Anhängen) | Aufgaben, Notizen |
+| Entwürfe speichern und aus Entwürfen senden | Langzeitarchiv (Worker benötigt EWS) |
+| Ordner (inkl. Anlegen, mUTF-7), Suche (auch Umlaute) | |
+| Gelesen/Ungelesen, Kennzeichnung, Verschieben, Löschen (Papierkorb/endgültig) | |
 | Anhänge öffnen/speichern (Euro-Office, Browser, Download, Nextcloud) | |
 | Kontingent (Belegung per IMAP `QUOTA`; Grenze = feste Postfachgröße des Postfachs, ersatzweise IMAP-Grenze; kein Exchange-/AD-Zugriff) | |
+| Kalender, Termine, Besprechungsanfragen – lokal in Orvanta geführt (Abschnitt 4a) | |
+| Terminerinnerungen für diese lokalen Termine | |
 
 Nicht verfügbare Funktionen sind per Capability-Flag in der Oberfläche
 ausgeblendet; die API antwortet darauf mit **409**. Gesendete Mails legt der
 Proxy per IMAP `APPEND` im Gesendet-Ordner ab.
+
+### 4a. Kalender und Erinnerungen (lokal in Orvanta)
+
+Der Proxy überträgt weiterhin **nur** Mail – Kalenderdaten speichert Orvanta
+für diese Benutzer selbst in eigenen Tabellen
+([orvanta.md](orvanta.md) Abschnitt 4b). Möglich ist das, weil der Proxy
+Termineinladungen als MIME-Teil mitführt:
+
+- **Empfangen:** `imap.message` liefert `text/calendar`-Teile (`REQUEST`,
+  `CANCEL`, `REPLY`) mit; Orvanta liest daraus Termin, Teilnehmer und Antwort
+  und legt sie dem angemeldeten Benutzer zugeordnet ab. Die Mail bleibt
+  unverändert im Postfach. In der Nachrichtenliste kennzeichnet der Proxy
+  Einladungen vorab über `meeting_request` (aus der BODYSTRUCTURE, ohne den
+  Rumpf zu laden).
+- **Senden:** Einladungen, Absagen und Antworten erzeugt Orvanta als
+  iCalendar-Datei und hängt sie über `message.calendar[]` an die Mail; der
+  Proxy verschickt sie im `multipart/alternative` der Nachricht.
+- **Erinnerungen:** laufen aus den lokalen Terminen (nicht aus dem Postfach)
+  und nutzen dieselbe Erinnerungsliste wie bei Exchange.
+
+Der Wechsel des Backends bleibt ohne Datenverlust: Wer über Exchange arbeitet,
+nutzt weiterhin den Exchange-Kalender; für Benutzer ohne gültige Zuordnung
+ändert sich nichts.
 
 Systemordner werden über SPECIAL-USE (RFC 6154) erkannt, sonst über übliche
 deutsche und englische Namen (`Sent`, `Gesendete Elemente`, `Trash`,
@@ -241,6 +266,7 @@ Kennwort.
 | `MAIL_PROXY_POOL_SIZE` | `32` | Gepoolte IMAP-Verbindungen |
 | `MAIL_PROXY_POOL_IDLE_SECONDS` | `90` | Leerlaufzeit gepoolter Verbindungen |
 | `MAIL_PROXY_MAX_MESSAGE_MB` | `35` | Maximale Größe einer gesendeten/geladenen Nachricht |
+| `MAIL_PROXY_MAX_CALENDAR_KB` | `256` | Maximale Größe **je** Kalenderteil einer gesendeten Einladung (1…2048 KB) |
 | `MAIL_PROXY_DENY_CIDRS` | leer | Zusätzlich gesperrte Netze (kommagetrennt), z. B. Docker-Netze interner Dienste |
 
 Postfach-Zugangsdaten gehören **nicht** in die `.env`.
@@ -324,6 +350,11 @@ siehe Abschnitt 5a.
   `imap.folder_status`, `imap.messages`, `imap.message`, `imap.headers`,
   `imap.attachment`, `imap.flags`, `imap.move`, `imap.delete`, `imap.quota`,
   `imap.save_draft`, `smtp.send`, `mailbox.test`, `cache.invalidate`.
+- Kalender: `smtp.send` nimmt optional `message.calendar[]` (`{method, content}`
+  mit Base64-Inhalt, Methoden `REQUEST`/`CANCEL`/`REPLY`, höchstens drei Teile)
+  und hängt sie als `text/calendar; charset=utf-8; method=…` in die Nachricht
+  ein; `imap.message` liefert vorhandene Kalenderteile als `calendar[]`, die
+  Nachrichtenliste kennzeichnet Einladungen mit `meeting_request`.
 - `GET /health` (ohne Signatur): Status, Version, Verbindungen, Pool, Zähler.
 
 ### Invarianten
@@ -334,6 +365,10 @@ siehe Abschnitt 5a.
 - Absender ist immer das gebundene Postfach (vom Proxy erzwungen).
 - Signaturformat in PHP (`HttpMailProxyTransport::signature()`) und Python
   (`signature()`) identisch halten – der Test vergleicht einen festen Referenzwert.
+- Kalenderteile nur mit Methode `REQUEST`/`CANCEL`/`REPLY` übertragen, Inhalt
+  unverändert durchreichen und nie als Nachrichtenrumpf verwenden; die
+  Methodenliste in Python und `App\Services\Orvanta\ICalendar::METHODS`
+  synchron halten.
 
 ### Tests
 
@@ -346,5 +381,11 @@ Verbindungstest und Diagnose, Kennwort-Übernahme durch den Benutzer (nur nach
 bestätigter Anmeldung) und Grund `mail_auth`. Zusätzlich prüft die Suite, dass
 alle schreibenden Admin-Aktionen das CSRF-Token als Erstes validieren (419) und
 dass sämtliche Mail-Proxy-Routen in der Admin-Gruppe liegen, sowie dass jede
-Server- und Postfachänderung den Auflösungs-Cache invalidiert. Ende-zu-Ende-Tests gegen einen echten Mailserver
+Server- und Postfachänderung den Auflösungs-Cache invalidiert. Für
+Termineinladungen prüft die Suite zusätzlich, dass ausgehende Kalenderteile
+base64-kodiert und auf die Methoden `REQUEST`/`CANCEL`/`REPLY` begrenzt
+werden, dass unbekannte Methoden und leere Inhalte verworfen werden und dass
+eingehende Kalenderteile samt `meeting_request` ankommen. Der Selbsttest des
+Dienstes (`python3 docker/mail-proxy/mail_proxy.py --selftest`) deckt den
+Aufbau und die Erkennung der Kalenderteile mit ab. Ende-zu-Ende-Tests gegen einen echten Mailserver
 (z. B. GreenMail) sind manuell durchzuführen.

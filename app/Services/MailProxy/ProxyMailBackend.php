@@ -8,6 +8,7 @@ use App\Contracts\MailProxyTransportInterface;
 use App\Contracts\OrvantaMailBackendInterface;
 use App\Core\Logger;
 use App\Repositories\MailProxyRepository;
+use App\Services\Orvanta\ICalendar;
 use App\Services\Orvanta\MailHtmlSanitizer;
 use App\Services\Orvanta\OrvantaAiService;
 use App\Services\Orvanta\OrvantaException;
@@ -240,8 +241,45 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
         }
         $message['attachments'] = $attachments;
         $message['has_attachments'] = $message['has_attachments'] || $attachments !== [];
+        $message['calendar'] = self::calendarParts($data);
+        $message['is_meeting_request'] = false;
+        foreach ($message['calendar'] as $part) {
+            if ($part['method'] === 'REQUEST' && ICalendar::parseInvitation($part['content']) !== null) {
+                $message['is_meeting_request'] = true;
+                break;
+            }
+        }
 
         return $message;
+    }
+
+    /**
+     * Kalenderteile der Nachricht (text/calendar) in der Form, die der lokale
+     * Kalender erwartet. Die Terminerkennung wird hier exakt ausgewertet: Nur
+     * eine gueltige Einladung zeigt die Antwortleiste in der Nachrichtenansicht.
+     *
+     * @param array<string,mixed> $data Antwort des Proxys
+     * @return list<array{method:string,content:string}>
+     */
+    private static function calendarParts(array $data): array
+    {
+        $parts = [];
+        foreach ((array) ($data['calendar'] ?? []) as $part) {
+            if (!is_array($part)) {
+                continue;
+            }
+            $content = (string) ($part['content'] ?? '');
+            $method = strtoupper(trim((string) ($part['method'] ?? '')));
+            if ($content === '' || !in_array($method, ICalendar::METHODS, true)) {
+                continue;
+            }
+            $parts[] = ['method' => $method, 'content' => $content];
+            if (count($parts) >= 3) {
+                break;
+            }
+        }
+
+        return $parts;
     }
 
     public function messageHeaders(string $user, string $id): array
@@ -531,7 +569,9 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
             'forwarded' => !empty($item['forwarded']),
             'categories' => [],
             'item_class' => 'IPM.Note',
-            'is_meeting_request' => false,
+            // Terminerkennung aus der Nachrichtenstruktur (BODYSTRUCTURE);
+            // die Detailansicht ersetzt das durch das Ergebnis der Auswertung.
+            'is_meeting_request' => !empty($item['meeting_request']),
         ];
     }
 
@@ -584,7 +624,7 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
      * Postfach (vom Proxy erzwungen), der Text wird wie bei EWS bereinigt.
      *
      * @param array<string,mixed> $mail
-     * @return array{to:list<string>,cc:list<string>,bcc:list<string>,subject:string,body:string,html:bool,importance:string,attachments:list<array{name:string,content_type:string,content:string}>}
+     * @return array{to:list<string>,cc:list<string>,bcc:list<string>,subject:string,body:string,html:bool,importance:string,attachments:list<array{name:string,content_type:string,content:string}>,calendar:list<array{method:string,content:string}>}
      */
     private function outgoing(array $mail): array
     {
@@ -601,6 +641,23 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
                 'content' => base64_encode((string) ($attachment['content'] ?? '')),
             ];
         }
+        // Termineinladungen gehen als eigener text/calendar-Teil mit; der
+        // Proxy kodiert sie base64, damit die CRLF-Zeilenenden erhalten bleiben.
+        $calendar = [];
+        foreach ((array) ($mail['calendar'] ?? []) as $part) {
+            if (!is_array($part)) {
+                continue;
+            }
+            $content = (string) ($part['content'] ?? '');
+            $method = strtoupper(trim((string) ($part['method'] ?? '')));
+            if ($content === '' || !in_array($method, ICalendar::METHODS, true)) {
+                continue;
+            }
+            $calendar[] = ['method' => $method, 'content' => base64_encode($content)];
+            if (count($calendar) >= 3) {
+                break;
+            }
+        }
         $importance = (string) ($mail['importance'] ?? 'Normal');
         $list = static fn (mixed $value): array => array_values(array_filter(array_map('strval', is_array($value) ? $value : []), static fn (string $a): bool => $a !== ''));
 
@@ -613,6 +670,7 @@ final class ProxyMailBackend implements OrvantaMailBackendInterface
             'html' => $html,
             'importance' => in_array($importance, ['High', 'Normal', 'Low'], true) ? $importance : 'Normal',
             'attachments' => $attachments,
+            'calendar' => $calendar,
         ];
     }
 

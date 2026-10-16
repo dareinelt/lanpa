@@ -4787,7 +4787,7 @@
             return;
         }
         dl.innerHTML = '';
-        [['Postfach', config.user && config.user.email], ['Modus', config.demo ? 'Demo (ohne Exchange-Verbindung)' : (isProxyBackend() ? 'IMAP/SMTP über Mail-Proxy (nur E-Mail)' : 'Exchange Web Services (SSO)')], ['Erinnerungsvorlauf', (config.reminderLead || 15) + ' Minuten'], ['Abfrageintervall', (config.pollInterval || 60) + ' Sekunden'], ['Euro-Office', config.officeAvailable ? 'Verfügbar' : 'Nicht konfiguriert'], ['Nextcloud', config.nextcloudAvailable ? 'Verfügbar' : 'Nicht konfiguriert']].forEach(function (pair) {
+        [['Postfach', config.user && config.user.email], ['Modus', config.demo ? 'Demo (ohne Exchange-Verbindung)' : (isProxyBackend() ? 'IMAP/SMTP über Mail-Proxy, Kalender lokal' : 'Exchange Web Services (SSO)')], ['Erinnerungsvorlauf', (config.reminderLead || 15) + ' Minuten'], ['Abfrageintervall', (config.pollInterval || 60) + ' Sekunden'], ['Euro-Office', config.officeAvailable ? 'Verfügbar' : 'Nicht konfiguriert'], ['Nextcloud', config.nextcloudAvailable ? 'Verfügbar' : 'Nicht konfiguriert']].forEach(function (pair) {
             dl.appendChild(el('dt', { text: pair[0] }));
             dl.appendChild(el('dd', { text: String(pair[1] || '–') }));
         });

@@ -8,8 +8,8 @@ On-Premise ab Version 2016/2019 (inkl. Subscription Edition). Der Zugriff
 erfolgt im Namen des per Windows-Anmeldung (SSO) erkannten Benutzers.
 
 Benutzer **ohne Exchange-Postfach** können einem IMAP-/SMTP-Postfach zugeordnet
-werden; Orvanta nutzt dann statt EWS den internen SMTP-/IMAP-Proxy (nur Mail,
-siehe [Abschnitt 4b](#4b-smtp-imap-proxy-benutzer-ohne-exchange) und
+werden; Orvanta nutzt dann statt EWS den internen SMTP-/IMAP-Proxy (Mail und ein
+**lokaler Kalender**, siehe [Abschnitt 4b](#4b-smtp-imap-proxy-benutzer-ohne-exchange) und
 [docs/mail-proxy.md](mail-proxy.md)).
 
 Stellt Exchange die Postfächer in einer **Database Availability Group (DAG)**
@@ -31,7 +31,7 @@ API-Verträge, EWS-Aufrufe, Invarianten, Änderungsrezepte):
 | Modul | Funktionen |
 |---|---|
 | **Mail** ✉ | Ordnerbaum (Posteingang, Entwürfe, Gesendet, Gelöscht, eigene Ordner), Nachrichtenliste mit Suche, Lesen (HTML bereinigt durch `MailHtmlSanitizer`), Verfassen/Antworten/Allen antworten/Weiterleiten, Entwürfe, Kennzeichnen, Gelesen/Ungelesen, Verschieben (Dialog oder per Drag&Drop auf einen Ordner im Ordnerbaum), Löschen, Anhänge öffnen/speichern, **In Aufgabe übernehmen**; Indikatoren (↩/↪) in Liste und Nachrichtenkopf für beantwortete und weitergeleitete Nachrichten; Rechtsklick auf einen Ordner: Neuer Ordner, Alle als gelesen markieren, Eigenschaften (Größe und Anzahl der Elemente) |
-| **Kalender** 📅 | Monats-, Wochen- und Tagesansicht, Termine anlegen/bearbeiten/löschen (ganztägig, Ort, Teilnehmer, Erinnerung), Termine per **Drag&Drop** verschieben (neue Startzeit als eingeblendete Hinweisbox), Besprechungsanfragen annehmen/unter Vorbehalt/ablehnen |
+| **Kalender** 📅 | Monats-, Wochen- und Tagesansicht, Termine anlegen/bearbeiten/löschen (ganztägig, Ort, Teilnehmer, Erinnerung), Termine per **Drag&Drop** verschieben (neue Startzeit als eingeblendete Hinweisbox), Besprechungsanfragen annehmen/unter Vorbehalt/ablehnen; Benutzer am SMTP-/IMAP-Proxy führen den Kalender lokal in Orvanta (Abschnitt 4b-1) |
 | **Kontakte** 👥 | Alphabetische Liste mit Buchstabengruppen, Details, Anlegen/Bearbeiten/Löschen, E-Mail direkt aus dem Kontakt |
 | **Aufgaben** ✓ | Liste mit Fälligkeit/Priorität, Erledigt-Schalter, Anlegen/Bearbeiten/Löschen, Übernahme einer E-Mail als Aufgabe |
 | **Notizen** 📝 | Kachelansicht, Anlegen/Bearbeiten/Löschen |
@@ -207,7 +207,9 @@ flowchart LR
 | `MailBodyContrast` | `app/Services/Orvanta/` | Nachrichten- und Termintexte im dunklen Design lesbar machen (Abschnitt 2, „Lesbarkeit im dunklen Modus“): ermittelt die wirksame Textfarbe je Element und hängt bei zu geringem Kontrast eine kontrastsichere Ersatzfarbe an; im hellen Modus bleibt die Schriftfarbe immer unverändert |
 | `OrvantaAttachmentService` | `app/Services/Orvanta/` | Anhänge: signierte Kurzzeit-Links, Öffnungsmodus (`office`/`browser`/`download`), Zwischenspeicher und Ablage in Nextcloud (WebDAV), Quota, Virenprüfung über `Malware\MalwareScanService` ([malware-protection.md](malware-protection.md)) |
 | `OrvantaRecipientService` | `app/Services/Orvanta/` | Empfänger-Vorschläge für An/Cc/Bcc: Telefonliste + Verlauf gesendeter Adressen (versteckte Datei `.empfaenger.json` in der Nextcloud des Benutzers, kurz in der Sitzung gehalten) |
-| `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile |
+| `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile; für Proxy-Benutzer aus dem lokalen Kalender (`syncLocal()`, entfernt auch Erinnerungen zu gelöschten Terminen) |
+| `OrvantaCalendarService` | `app/Services/Orvanta/` | Lokaler Kalender für Proxy-Benutzer (Abschnitt 4b-1): Termine anlegen/ändern/verschieben/löschen, Einladungen (`REQUEST`), Absagen (`CANCEL`) und Antworten (`REPLY`) verarbeiten, idempotenter Versand über die Auftragstabelle, Erinnerungsquelle |
+| `ICalendar` | `app/Services/Orvanta/` | iCalendar nach RFC 5545 schreiben und lesen (Einladung, Absage, Antwort, Teilnehmerstatus); Grenzen gegen übergroße und verschachtelte Inhalte |
 | `OrvantaSignatureService` | `app/Services/Orvanta/` | Signaturvorlagen (Abschnitt 4a): Validierung, Zuordnung per AD-Gruppe, E-Mail-taugliches HTML aus Vorlage + Telefonliste + Design, `append()`/`strip()` beim Senden, `wrapTextColor()`/`stripTextColor()` für die Standardschriftfarbe des Editors |
 | `OrvantaSpellcheckService` | `app/Services/Orvanta/` | Deutsche Rechtschreibprüfung (Abschnitt 7b): `check()` (Hunspell-Algorithmus: Affixe, Zusammensetzungen, Bindestrich-Zerlegung, Groß-/Kleinschreibung) und `suggest()` (Vorschläge, der wahrscheinlichste zuerst) |
 | `OrvantaSpellcheckSupplement` | `app/Services/Orvanta/` | Mitgelieferte Ergänzungen zum Wörterbuch (`Hr.`, `OK`, `Homeoffice`, `MfG`, …) |
@@ -222,13 +224,14 @@ flowchart LR
 | `OrvantaDelegateDirectory` | `app/Services/Orvanta/` | Liest die per Auto-Mapping eingebundenen Postfächer des Benutzers aus dem AD (`msExchDelegateListBL`, `LdapClient::delegatedMailboxes()`), 15 Minuten je Sitzung zwischengespeichert |
 | `Admin\OrvantaSharedMailboxController` | `app/Controllers/Admin/OrvantaSharedMailboxController.php` | Zuordnung weiterer Postfächer unter `/admin/office/orvanta/postfaecher` (Suche, Zuordnung, Prüfen, Entfernen) |
 | `OrvantaRepository` | `app/Repositories/OrvantaRepository.php` | Zugriff auf die drei Orvanta-Tabellen |
+| `OrvantaCalendarRepository` | `app/Repositories/OrvantaCalendarRepository.php` | Tabellen `orvanta_calendar_*`: Termine und Teilnehmer je Benutzer (fremde Termine bleiben unlesbar), Aufträge (`enqueue`/`claimOutbox`/`finishOutbox`/`recoverOutbox`), Verarbeitungsnachweis |
 | `OrvantaSignatureRepository` | `app/Repositories/OrvantaSignatureRepository.php` | Tabelle `orvanta_signatures` |
 | `OrvantaOofRepository` | `app/Repositories/OrvantaOofRepository.php` | Tabellen `orvanta_oof_templates` und `orvanta_oof_settings` |
 | Frontend | `public/assets/js/orvanta.js`, `orvanta-reminders.js`, `orvanta-viewer.js`, `admin-orvanta-hosts.js`, `admin-oof.js`, `public/assets/css/orvanta.css` | App, Erinnerungen in der Kopfzeile, Anhang-Viewer, Live-Aktualisierung des DAG-Dashboards, Live-Vorschau der Abwesenheitsnotiz-Vorlage |
 | Ansichten | `views/orvanta/index.php`, `views/orvanta/viewer.php`, `views/admin/office.php` (Karte `#orvanta`), `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `views/admin/orvanta-oof-templates.php`, `views/admin/orvanta-oof-template.php`, `views/admin/orvanta-hosts.php`, `views/admin/orvanta-shared-mailboxes.php` | |
-| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql`, `044_orvanta_exchange_session_client.sql`, `045_orvanta_oof.sql`, `046_orvanta_shared_mailboxes.sql`, `047_orvanta_shared_mailboxes_reverify.sql`, `048_orvanta_flow_presence.sql` | |
+| Migrationen | `database/migrations/033_create_orvanta_tables.sql`, `034_create_orvanta_ai_usage.sql`, `035_orvanta_signatures.sql`, `036_orvanta_signature_colors.sql`, `037_orvanta_signature_name_format.sql`, `042_orvanta_spellcheck_words.sql`, `043_orvanta_exchange_dag.sql`, `044_orvanta_exchange_session_client.sql`, `045_orvanta_oof.sql`, `046_orvanta_shared_mailboxes.sql`, `047_orvanta_shared_mailboxes_reverify.sql`, `048_orvanta_flow_presence.sql`, `057_orvanta_local_calendar.sql` | |
 | `OrvantaMailRouter`, `ProxyMailBackend` | `app/Services/MailProxy/` | Backend-Auswahl je Benutzer (Exchange oder SMTP-/IMAP-Proxy, gemeinsames `OrvantaMailBackendInterface`); Details in [mail-proxy.md](mail-proxy.md) |
-| Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/OrvantaSpellcheckTest.php`, `tests/Unit/MailProxyTest.php`, `tests/Unit/OrvantaSharedMailboxTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen und zusätzliche Postfächer gegen SQLite; Rechtschreibung gegen ein eigenes Mini-Wörterbuch |
+| Tests | `tests/Unit/OrvantaServiceTest.php`, `tests/Unit/OrvantaSignatureTest.php`, `tests/Unit/OrvantaSpellcheckTest.php`, `tests/Unit/OrvantaLocalCalendarTest.php`, `tests/Unit/MailProxyTest.php`, `tests/Unit/OrvantaSharedMailboxTest.php` | Fakes für den Exchange-Transport bzw. den Proxy; Signaturen, zusätzliche Postfächer und der lokale Kalender gegen SQLite; Rechtschreibung gegen ein eigenes Mini-Wörterbuch |
 
 ### Datenbank
 
@@ -243,6 +246,10 @@ flowchart LR
 | `orvanta_oof_settings` | Letzter Stand der Abwesenheitsnotiz je Benutzer (Migration 045) | `user_uid`, `template_id`, `dynamic_text`, `external_audience` (none/all), `schedule_mode` (range/until_off), `start_date`, `end_date`, `active`; maßgeblich ist der Zustand auf dem Exchange-Server |
 | `orvanta_spellcheck_words` | Persönliches Wörterbuch der Rechtschreibprüfung (Migration 042) | `user_uid` (klein geschrieben), `word` (≤ 64, Schreibweise genau unterschieden; unique je Benutzer), `created_at` |
 | `orvanta_shared_mailboxes` | Zusätzlich berechtigte Postfächer je Benutzer (Migration 046, Neuprüfung als Benutzer durch Migration 047, Abschnitt 4e) | `user_uid` + `email` (unique, ohne Beachtung der Groß-/Kleinschreibung), `display_name`, `source` (`exchange` = Auto-Mapping aus dem AD, `admin` = manuell), `send_as` („Senden als“ erlaubt), `active`, `verified_at`/`verify_error`/`checked_at` (Erreichbarkeitsprüfung), `calendar_visible` (Kalender eingeblendet), `sort_order` |
+| `orvanta_calendar_events` | Lokale Termine je Benutzer für Postfächer am IMAP-/SMTP-Proxy (Migration 057, Abschnitt 4b-1); Zeiten in der Zeitzone der Anwendung, nach außen (iCalendar) immer UTC | `user_uid` + `event_uid` (unique), `subject`, `description`, `location`, `organizer_email`/`organizer_name`, `is_organizer`, `starts_at`/`ends_at`, `all_day`, `timezone`, `free_busy`, `status` (CONFIRMED/CANCELLED), `sequence`, `reminder_minutes` (−1 = keine eigene Erinnerung), `my_response`, `attendee_count` (denormalisiert, vermeidet N+1-Abfragen), `source` (local/invitation), `origin_message_id` |
+| `orvanta_calendar_attendees` | Teilnehmer eines lokalen Termins (FK auf den Termin, Löschen kaskadiert) | `event_id` + `email` (unique), `display_name`, `role` (REQ-PARTICIPANT/OPT-PARTICIPANT), `response` (NEEDS-ACTION/ACCEPTED/TENTATIVE/DECLINED), `responded_at` |
+| `orvanta_calendar_outbox` | Idempotente Versandaufträge für Einladungen, Aktualisierungen, Absagen und Antworten; entstehen in derselben Transaktion wie der Termin | `idempotency_key` (unique), `user_uid`, `event_id`, `kind` (invite/…), `from_email` (Absender, damit ein späterer Versuch ohne Sitzung auskommt), `recipients`, `payload` (JSON), `status` (pending/sending/sent/failed), `attempts`, `last_error`, `next_attempt_at`, `sent_at` |
+| `orvanta_calendar_processed` | Bereits verarbeitete eingehende iCalendar-Objekte je Benutzer (gegen doppelte Termine und mehrfach versendete Antworten) | `user_uid` + `item_hash` (unique), `event_uid`, `method` (REQUEST/CANCEL/REPLY), `sequence`, `event_id` |
 | `orvanta_archives` | Langzeitarchiv je Benutzer (Migration 038) | `user_uid` (unique), `mailbox`, `storage_folder`, `format_version`, `status` (active/error), Zähler, `last_successful_run`, `last_notice` |
 | `orvanta_archive_folders` | Abbild der Exchange-Ordner im Archiv | `archive_id` + `folder_hash` (unique), `exchange_folder_id`, `name`, `path` |
 | `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (immer `mime`; `json` ist reserviert und wird nicht mehr geschrieben), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
@@ -469,10 +476,11 @@ einzelnen Postfächern zugeordnet. Für zugeordnete Benutzer wählt
 `OrvantaMailRouter` das `ProxyMailBackend` statt `OrvantaExchangeService`.
 
 - Verfügbar: Mail lesen/senden/antworten/weiterleiten, Anhänge, Ordner, Suche,
-  Entwürfe, Markierungen, Verschieben/Löschen, Kontingent.
-- Nicht verfügbar: Kalender, Kontakte, Aufgaben, Notizen, Erinnerungen,
-  Langzeitarchiv. Die Oberfläche blendet sie aus (`capabilities` in der
-  Seitenkonfiguration und in `/api/orvanta/status`), die API antwortet mit 409.
+  Entwürfe, Markierungen, Verschieben/Löschen, Kontingent, **Kalender**
+  (Abschnitt 4b-1) und **Terminerinnerungen**.
+- Nicht verfügbar: Kontakte, Aufgaben, Notizen, Langzeitarchiv. Die Oberfläche
+  blendet sie aus (`capabilities` in der Seitenkonfiguration und in
+  `/api/orvanta/status`), die API antwortet mit 409.
 - Ohne gültige Zuordnung bleibt alles beim Exchange-Verhalten; ein deaktiviertes
   Postfach sperrt Orvanta für den Benutzer (403) ohne Rückfall.
 - Orvanta wird in der Office-Kachel auch angeboten, wenn Exchange nicht
@@ -483,6 +491,39 @@ einzelnen Postfächern zugeordnet. Für zugeordnete Benutzer wählt
   (`POST /api/orvanta/mail/kennwort`).
 
 Einrichtung, Sicherheit, Cache und Fehlersuche: [docs/mail-proxy.md](mail-proxy.md).
+
+### 4b-1. Lokaler Kalender für Proxy-Benutzer
+
+Der Proxy überträgt nur Mail, kennt keine Kalenderdaten und wird dafür auch
+nicht erweitert. Damit Proxy-Benutzer trotzdem einen vollständigen Kalender
+haben, führt Orvanta ihn **selbst** – in eigenen Tabellen, gebunden an das
+AD-Konto (`user_uid`), nicht am Postfach:
+
+- **Termine:** anlegen, bearbeiten, verschieben (Drag&Drop wie bei Exchange)
+  und löschen; ganztägig, Ort, Beschreibung, Teilnehmer (erforderlich/optional),
+  Sichtbarkeit (frei/„Beschäftigt“/vorläufig/außer Haus) und Erinnerung.
+- **Besprechungsanfragen:** Orvanta erzeugt die Einladung als iCalendar-Datei
+  (RFC 5545, `REQUEST`), hängt sie über den Proxy an die Mail und legt sie im
+  lokalen Kalender ab. Eingehende Einladungen erkennt Orvanta am
+  `text/calendar`-Teil der Nachricht (der Proxy liefert ihn mit und markiert die
+  Mail in der Liste), legt den Termin an und bietet **Annehmen / Vorbehalt /
+  Ablehnen** an; die Antwort (`REPLY`) geht als Mail an den Organisator.
+  Absagen (`CANCEL`) und Rückzüge werden übernommen.
+- **Antworten von Teilnehmern** an den Benutzer als Organisator werden am
+  Kalenderteil der eingegangenen Mail erkannt und im Termin hinterlegt.
+- **Erinnerungen:** laufen aus den lokalen Terminen und nutzen dieselbe
+  Erinnerungsliste wie bei Exchange (Abschnitt 6).
+- **Versand** läuft über eine idempotente Auftragstabelle: Einladung, Absage
+  oder Antwort werden als Auftrag gespeichert und über den normalen Mailweg
+  (Proxy) verschickt; wiederholte Zustellversuche erzeugen keine Duplikate, und
+  ein fehlgeschlagener Versand wird mit Wartezeit erneut versucht.
+- Einladungen ohne Antwortmöglichkeit (Mailprogramme anderer Hersteller,
+  reine ICS-Anhänge ohne `METHOD`) bleiben unverändert im Postfach.
+
+Sicherheit und Grenzen: Beschreibungen werden vor der Anzeige wie Mail-HTML
+bereinigt, Termin-IDs sind an den Benutzer gebunden (fremde Termine sind nicht
+lesbar, auch nicht durch Raten), Einladungen werden auf Größe und Anzahl
+begrenzt, und Termine werden **nicht** ins Exchange-System geschrieben.
 
 ---
 
@@ -885,13 +926,19 @@ sequenceDiagram
     App->>API: erledigt / spaeter (+5 Min.)
 ```
 
+- **Zwei Quellen, ein Verhalten:** Für Exchange-Benutzer kommt die Terminliste
+  aus EWS (`FindItem`), für Benutzer am SMTP-/IMAP-Proxy aus dem lokalen
+  Kalender (Abschnitt 4b-1). Die Erinnerungsliste, die Anzeige in App,
+  Browser und Kopfzeile sowie „erledigt“/„5 Min. später“ sind identisch.
 - Die App fragt beim Benutzer einmalig die Berechtigung für
   Desktop-Benachrichtigungen an (`Notification.requestPermission`).
 - **Abgesagte Termine und abgelehnte Besprechungen erinnern nicht mehr.**
   Sagt der Organisator einen Termin ab (`calendar:IsCancelled`) oder hat der
   Benutzer die Besprechung abgelehnt (`MyResponseType = Decline`), entfallen
   Dialog, Browser-Benachrichtigung und Eintrag unter **Mitteilungen**; eine
-  bereits angezeigte Erinnerung wird beim nächsten Abgleich entfernt.
+  bereits angezeigte Erinnerung wird beim nächsten Abgleich entfernt. Bei
+  lokalen Terminen stehen dafür `status = CANCELLED` bzw.
+  `my_response = Decline`.
 - `public/assets/js/orvanta-reminders.js` wird auf allen Intranet-Seiten
   geladen, wenn `reminder_header` aktiv ist und der Benutzer die App nutzen
   darf. Fällige Erinnerungen erscheinen unter **Mitteilungen** in der Kopfzeile
@@ -1198,6 +1245,15 @@ Wort begrenzt, der Browser schickt nur Wörter, die er noch nicht kennt.
   Stand des Scanners für den Adminbereich, Auswertung der clamd-Antworten und
   des Signaturstands sowie ein fehlender Scanner
   ([malware-protection.md](malware-protection.md)).
+- `tests/Unit/OrvantaLocalCalendarTest.php` prüft den lokalen Kalender gegen
+  SQLite und einen aufzeichnenden Mail-Fake: Aufbau und Auswertung der
+  iCalendar-Dateien (inkl. Zeitzonen, ganztägig, Teilnehmerstatus) und das
+  Verwerfen unbrauchbarer Inhalte, Anlegen/Lesen/Verschieben/Löschen,
+  Eingabeprüfung, Trennung der Benutzer, Annehmen/Vorbehalt/Ablehnen und
+  Antworten über die Terminkennung, Absage und Rückzug, Idempotenz der
+  Versandaufträge (höchstens drei Zustellungen, Wiederholung nach Fehlern),
+  das Verhalten ohne Mail-Proxy, Erinnerungen samt Aufräumen veralteter
+  Einträge sowie die Bereinigung von Beschreibungen.
 
   ```bash
   php tests/run.php
@@ -1232,14 +1288,23 @@ Wort begrenzt, der Browser schickt nur Wörter, die er noch nicht kennt.
   gehen als JSON an `/api/orvanta/rechtschreibung/*`. Gespeichert werden nur
   die Wörter, die ein Benutzer selbst ins persönliche Wörterbuch aufnimmt.
 - TLS-Prüfung gegenüber Exchange ist standardmäßig aktiv.
+- Lokaler Kalender: Termine sind an den Benutzer gebunden (`user_uid`) –
+  fremde Termine sind auch mit geratener Kennung nicht lesbar. iCalendar-
+  Inhalte werden auf Größe, Zeilenzahl sowie Termin- und Teilnehmerzahl
+  begrenzt, Beschreibungen vor der Anzeige wie Mail-HTML bereinigt. Eine
+  Einladung wird nie von selbst angenommen und eine Antwort nie ohne Zutun des
+  Benutzers versendet.
 
 ---
 
 ## 10. Grenzen und Hinweise
 
 - Keine Exchange-Online-/Graph-Anbindung; Ziel ist On-Premise ab 2016/2019.
-- Proxy-Postfächer (IMAP/SMTP) bieten nur Mail; Kalender, Kontakte, Aufgaben,
-  Notizen, Erinnerungen und Langzeitarchiv setzen Exchange voraus.
+- Proxy-Postfächer (IMAP/SMTP) bieten Mail und einen **lokalen Kalender**
+  samt Terminerinnerungen (Abschnitt 4b-1); Kontakte, Aufgaben, Notizen und
+  Langzeitarchiv setzen Exchange voraus. Der lokale Kalender kennt keine
+  Serien, keine Stellvertretungen und keine Raum-/Auslastungsdaten und wird
+  nicht nach Exchange übertragen; er bleibt beim Backendwechsel bestehen.
 - Serienregeln werden angezeigt und als Vorkommen geladen, aber nicht als
   Serie bearbeitet.
 - S/MIME-Verschlüsselung und -Signatur werden nicht unterstützt.

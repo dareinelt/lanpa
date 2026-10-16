@@ -145,6 +145,30 @@ final class OrvantaRepository extends Repository
     }
 
     /**
+     * Entfernt Erinnerungen zu geloeschten lokalen Terminen. Der lokale Kalender
+     * vergibt numerische Kennungen, Exchange-Kennungen sind undurchsichtige
+     * Zeichenketten und bleiben deshalb unberuehrt.
+     *
+     * @param list<string> $itemIds Kennungen der noch vorhandenen lokalen Termine
+     */
+    public function pruneLocalReminders(string $uid, array $itemIds): int
+    {
+        $statement = $this->pdo->prepare('SELECT item_id FROM orvanta_reminders WHERE user_uid = :uid');
+        $statement->execute(['uid' => $uid]);
+        $known = array_flip($itemIds);
+        $removed = 0;
+        foreach ($statement->fetchAll(PDO::FETCH_COLUMN) ?: [] as $itemId) {
+            $itemId = (string) $itemId;
+            if (isset($known[$itemId]) || !ctype_digit($itemId)) {
+                continue;
+            }
+            $removed += $this->removeReminders($uid, [$itemId]);
+        }
+
+        return $removed;
+    }
+
+    /**
      * Faellige, noch nicht ausgelieferte Erinnerungen (remind_at <= now).
      *
      * @return list<array<string,mixed>>

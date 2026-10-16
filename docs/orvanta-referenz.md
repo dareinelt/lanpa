@@ -60,6 +60,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 21. Abwesenheitsnotizen
 22. Zusätzliche Postfächer (Vollzugriff / „Senden als“)
 23. Nachrichtenfluss-Dashboard
+24. Lokaler Kalender (Proxy-Benutzer)
 
 ---
 
@@ -99,8 +100,10 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/MailHtmlSanitizer.php` | `clean(html): {html, blocked_images}` – Whitelist für Tags/Attribute (Abschnitt 10); `stripHelperProperties()` entfernt beim Senden die Hilfsangaben der Kontrastanpassung |
 | `app/Services/Orvanta/MailBodyContrast.php` | `apply(html, dark): html` – Kontrastanpassung für Nachrichten- und Termintexte im dunklen Modus (Abschnitt 9.2): läuft den DOM-Baum ab, ermittelt die wirksame Textfarbe und den wirksamen Hintergrund (eigenes `background-color`/`bgcolor`, sonst geerbt) und hängt bei zu geringem Kontrast eine kontrastsichere Ersatzfarbe als CSS-Variable `--ov-dark-color` samt Markierungsattribut `data-ov-dark-color` an (Rechnung über `App\Support\Color::ensureContrast()`); `ATTR_DARK`. Im hellen Modus bleibt die Schriftfarbe immer unverändert |
 | `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()`, `inspect()` (Virenprüfung über `App\Services\Malware\MalwareScanService`, siehe Abschnitt 7.1) |
-| `app/Services/Orvanta/OrvantaNotificationService.php` | `sync()`, `poll()`, `dismiss()`, `snooze()`, `relative()` |
-| `app/Services/Orvanta/OrvantaRecipientService.php` | `suggest()` (Verlauf + Telefonliste), `remember()` (nach Versand, schreibt `.empfaenger.json`), `recent()` (Nextcloud-Lesen mit Sitzungs-Cache); `FILE_NAME`, `MAX_ENTRIES`, `CACHE_TTL` |
+| `app/Services/Orvanta/OrvantaNotificationService.php` | `sync()`, `syncLocal()` (lokaler Kalender, Abschnitt 24), `apply()`, `poll()`, `dismiss()`, `snooze()`, `relative()` |
+| `app/Services/Orvanta/ICalendar.php` | iCalendar nach RFC 5545 (Abschnitt 24): `build()`, `parse()`, `parseInvitation()`, `newUid()`, `toText()`, `escape()/unescape()`, `fold()`, `normalize()`, `partstat()`, `freeBusy()`, `clip()`; `METHODS` = `REQUEST\|CANCEL\|REPLY`, Grenzen `MAX_BYTES` (524288), `MAX_LINES` (20000), `MAX_EVENTS` (50), `MAX_ATTENDEES` (200), `MAX_TEXT` (20000) |
+| `app/Services/Orvanta/OrvantaCalendarService.php` | Lokaler Kalender der Proxy-Benutzer (Abschnitt 24): `save()`, `move()`, `remove()`, `respond()`, `respondToMessage()`, `upcomingReminders()`, `ingest()`, `dispatch()`, `applyRequest()`, `applyReply()`, `attendeeRows()`, `deliver()`, `enqueueEvent()`, `cleanAddresses()`, `times()`; Grenzen `MAX_RANGE_DAYS` (100), `MAX_ATTENDEES` (100), `MAX_DESCRIPTION` (60000), `REMINDER_MAX` (10080), `MAX_ATTEMPTS` (5), `MAX_DISPATCH` (3), `CLAIM_TIMEOUT` (900) |
+| `app/Repositories/OrvantaCalendarRepository.php` | Tabellen `orvanta_calendar_*` (Abschnitt 24): `range()`, `reminderWindow()`, `find()`, `findByUid()`, `attendeesFor()`, `create()`, `update()`, `delete()`, `replaceAttendees()`, `setAttendeeResponse()`, `setMyResponse()`, `markProcessed()`, `enqueue()`, `dueOutbox()`, `claimOutbox()`, `finishOutbox()`, `recoverOutbox()`, `outboxState()` |
 | `app/Services/Orvanta/OrvantaSignatureService.php` | Signaturvorlagen (Abschnitt 16): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)` → `{id,name,html}`, `person()`, `render()`, `preview()`, statisch `extension()`, `append(body, html)`, `strip(body)`, statisch `resolveColor(value, fallbackKey, theme)`, `wrapTextColor(body, color)`, `stripTextColor(body)`; Konstanten `MARKER_CLASS`, `QUOTE_CLASS`, `TEXT_COLOR_CLASS`, `PHONE_MODES`, `EXTENSION_LENGTH`, `LINE_HEIGHT`, `LOGO_MAX_WIDTH`, `DEFAULT_TEXT_COLOR`, `DEFAULT_SEPARATOR_COLOR`, `SAMPLE_PERSON`; statisch `logoSize()`, `imageDimensions()`, `scaleImage()` (verkleinert das Logo selbst auf die Anzeigegröße: Raster per GD als PNG, SVG über width/height) |
 | `app/Repositories/OrvantaSignatureRepository.php` | `all(activeOnly)`, `find()`, `save()`, `delete()`; `ad_groups` als JSON-Liste → `groups` |
 | `app/Services/Orvanta/OrvantaOofService.php` | Abwesenheitsnotizen (Abschnitt 21): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)`, `settings(uid, template)`, `validateSettings()`, `apply(uid, mailbox, template, input, exchange, ssoUser)`, `state(mailbox, exchange, settings)`, `status(uid, mailbox, exchange, ssoUser)`, `text()`, `message()`, `html()`, statisch `dateStart()/dateEnd()`; Konstanten `AUDIENCES`, `SCHEDULE_MODES`, `MAX_FIXED_TEXT` (4000), `MAX_DYNAMIC_TEXT` (2000) |
@@ -298,7 +301,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 
 ## 4. Datenhaltung
 
-### 4.1 Tabellen (Migrationen 033–048)
+### 4.1 Tabellen (Migrationen 033–057)
 
 | Tabelle | Spalten (Auszug) | Hinweise |
 | --- | --- | --- |
@@ -313,12 +316,19 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_oof_templates` (Migration 045) | `name` (≤ 120), `fixed_text` (TEXT, ≤ 4000 Zeichen), `example_text` (TEXT, ≤ 2000 Zeichen), `ad_groups` (JSON-Liste), `sort_order` (1–999), `active` | Vorlagen der Abwesenheitsnotiz; Index (`active`, `sort_order`). Zuordnung wie bei den Signaturen: erste aktive Vorlage nach `sort_order`, deren Gruppe in den SSO-Gruppen vorkommt – ohne Treffer gibt es keine Abwesenheitsnotiz. Migration legt die Vorlage „Allgemeine Abwesenheit“ an. Abschnitt 21 |
 | `orvanta_oof_settings` (Migration 045) | `user_uid` (Primary Key), `template_id` (NULL, `ON DELETE SET NULL`), `dynamic_text` (≤ 2000), `external_audience` ∈ `none\|all` (Standard `none`), `schedule_mode` ∈ `range\|until_off` (Standard `until_off`), `start_date`, `end_date` (DATE, NULL), `active` | Benutzereinstellungen; die maßgebliche Einstellung liegt auf dem Exchange-Server, die Zeile hält den letzten Stand für Banner und Dialog. Abschnitt 21 |
 | `orvanta_shared_mailboxes` (Migration 046) | `user_uid` (≤ 190), `email` (≤ 190), `display_name` (≤ 190), `send_as`, `active`, `verified_at` (DATETIME, NULL), `verify_error` (≤ 500), `checked_at` (DATETIME, NULL), `calendar_visible`, `sort_order` (1–999), `created_at`, `updated_at` | Unique (`user_uid`, `email`); Index (`user_uid`, `active`, `sort_order`). Zusätzlich per Vollzugriff berechtigte Postfächer, Abschnitt 22; Migration 047 setzt `checked_at` zurück (Neuprüfung als Benutzer). Collation `utf8mb4_unicode_ci`, Adressen werden also ohne Beachtung der Groß-/Kleinschreibung verglichen |
+| `orvanta_calendar_events` (Migration 057) | `user_uid` (≤ 100), `event_uid` (≤ 191), `subject` (≤ 255), `description` (MEDIUMTEXT), `location` (≤ 255), `organizer_email`/`organizer_name` (≤ 190), `is_organizer`, `starts_at`/`ends_at` (DATETIME, Zeitzone der Anwendung), `all_day`, `timezone` (≤ 64), `free_busy` ∈ `Free\|Tentative\|Busy\|Oof\|WorkingElsewhere` (Standard `Busy`), `status` ∈ `CONFIRMED\|CANCELLED`, `sequence`, `reminder_minutes` (−1 = keine eigene Erinnerung), `my_response`, `attendee_count`, `source` ∈ `local\|invitation`, `origin_message_id` (≤ 255) | Unique (`user_uid`, `event_uid`); Index (`user_uid`, `starts_at`, `ends_at`) für die Bereichsabfrage, (`user_uid`, `status`, `starts_at`) und (`user_uid`, `status`, `reminder_minutes`). Lokaler Kalender der Proxy-Benutzer, Abschnitt 24. Zeiten werden nach außen (iCalendar) immer als UTC übertragen, `attendee_count` ist denormalisiert (keine N+1-Abfragen) |
+| `orvanta_calendar_attendees` (Migration 057) | `event_id` (FK → `orvanta_calendar_events`, `ON DELETE CASCADE`), `email` (≤ 190), `display_name` (≤ 190), `role` ∈ `REQ-PARTICIPANT\|OPT-PARTICIPANT`, `response` ∈ `NEEDS-ACTION\|ACCEPTED\|TENTATIVE\|DECLINED`, `responded_at` (NULL) | Unique (`event_id`, `email`); Index (`email`) für die Antwortzuordnung. Adressen werden klein geschrieben gespeichert und verglichen. Abschnitt 24 |
+| `orvanta_calendar_outbox` (Migration 057) | `user_uid`, `event_id` (FK, `ON DELETE SET NULL`), `kind` (Standard `invite`), `idempotency_key` (≤ 191, unique), `from_email` (≤ 190), `recipients` (TEXT), `payload` (MEDIUMTEXT, JSON), `status` ∈ `pending\|sending\|sent\|failed`, `attempts`, `last_error` (≤ 500), `next_attempt_at`, `sent_at` (NULL) | Unique (`idempotency_key`); Index (`status`, `next_attempt_at`) für die Fälligkeit, (`user_uid`, `status`), (`event_id`). Versandaufträge für Einladungen, Aktualisierungen, Absagen und Antworten; entstehen in derselben Transaktion wie der Termin. Abschnitt 24.3 |
+| `orvanta_calendar_processed` (Migration 057) | `user_uid`, `item_hash` (CHAR(40)), `event_uid` (≤ 191), `method` ∈ `REQUEST\|CANCEL\|REPLY`, `sequence`, `event_id` (FK, `ON DELETE SET NULL`) | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `event_uid`). Verhindert doppelte Termine und mehrfach versendete Antworten beim wiederholten Öffnen derselben Einladung. Abschnitt 24 |
 | `orvanta_activity` (Migration 048) | `user_uid` (≤ 190, Primary Key), `backend` ∈ `exchange\|proxy`, `first_seen_at`, `last_seen_at`, `requests` | Aktive Nutzer der letzten Minuten, **ohne Inhalte**; `last_seen_at` entscheidet über `ACTIVE_WINDOW` (300 s), `purge()` räumt älter als `ACTIVITY_TTL` (86400 s). Abschnitt 23.2 |
 | `orvanta_user_samples` (Migration 048) | `sampled_at` (DATETIME, unique), `active_users`, `exchange_users`, `proxy_users`, `ai_users` | Genau eine Zeile je Zeitraster (`SAMPLE_INTERVAL` 300 s); Grundlage der Kennzahlen und des Verlaufs, `purge()` räumt älter als `HISTORY_DAYS` (400 Tage). Abschnitt 23.2 |
 | `mail_proxy_source_state` (Migration 048) | `identity_source_id` (INT, Primary Key, 0 = Hauptquelle), `last_success_at` (DATETIME, NULL), `last_error_at` (DATETIME, NULL), `last_error` (≤ 500), `failures`, `checked_at` (DATETIME, NULL) | Zustand je Identitätsquelle im Mailpfad; **ohne Fremdschlüssel**, weil Quelle 0 die Hauptquelle aus `orvanta_settings` ist. Geschrieben von `ProxyMailBackend` und `MailProxyService::testSources()`, gelesen vom Nachrichtenfluss-Dashboard. Abschnitt 23.1 |
 
 Zeitspalten von `orvanta_reminders` werden mit PHP-`date('Y-m-d H:i:s')`
 (Zeitzone des PHP-Prozesses) geschrieben und mit `strtotime()` gelesen.
+Für `orvanta_calendar_events` gilt dasselbe; nach außen (iCalendar) gehen die
+Zeiten als UTC (`…Z`), ganztägig als `VALUE=DATE`, und beim Lesen wird eine
+`TZID`-Angabe auf die Zeitzone des Servers umgerechnet (Abschnitt 24.1).
 
 ### 4.2 Einstellungen (`orvanta_settings`)
 
@@ -602,6 +612,16 @@ GET /api/orvanta/erinnerungen
 Nach `saveEvent`, `deleteEvent` und `meetingResponse` ruft der Controller
 `resync()` auf (sofortiger Abgleich, Session-Zeitstempel wird gesetzt).
 
+**Proxy-Benutzer** haben keine Exchange-Terminliste; für sie liefert
+`OrvantaCalendarService::upcomingReminders()` die Termine (48-h-Fenster,
+dieselben Regeln für eigene Erinnerung und globalen Vorlauf) und
+`OrvantaNotificationService::syncLocal()` schreibt sie über
+`OrvantaRepository::syncReminders()` in dieselbe Tabelle. Danach räumt
+`pruneLocalReminders(uid, itemIds)` Erinnerungen mit **rein numerischer**
+`item_id` ab, die nicht mehr in der Liste stehen – EWS-IDs sind nie numerisch,
+Exchange-Erinnerungen bleiben also unberührt. Die Terminliste wird beim Aufruf
+der Kalenderansicht und beim Erinnerungs-Polling neu berechnet (Abschnitt 24.4).
+
 ### 8.2 Zustandsautomat (`orvanta_reminders.state`)
 
 ```
@@ -621,6 +641,9 @@ Nach `saveEvent`, `deleteEvent` und `meetingResponse` ruft der Controller
 - `removeReminders()` löscht die Erinnerung abgesagter Termine und abgelehnter
   Besprechungen **unabhängig vom Zustand**, damit auch eine bereits
   ausgelieferte Erinnerung (Overlay, OS-Meldung, Mitteilungen) verschwindet.
+- Für lokale Termine (Proxy-Benutzer) übernimmt `pruneLocalReminders()` das
+  Aufräumen verschwundener Termine: `syncReminders()` allein löscht nichts,
+  weil es die Terminliste des Backends nur ergänzt/aktualisiert.
 - `snooze` ist aus jedem Zustand möglich und setzt `remind_at = now + minutes`.
 - `dismiss`/`snooze` filtern immer zusätzlich auf `user_uid`.
 
@@ -908,7 +931,9 @@ Schriftfarbe einer Nachricht nie verändert:
 3. **Schreibende Endpunkte sind POST mit CSRF** (`handle(..., true)`).
 4. **Exchange ist führend.** Lokale Tabellen enthalten keine Inhalte außer
    Erinnerungs-Metadaten; der Zwischenspeicher ist verwerfbar und Fehler darin
-   dürfen nie eine Anfrage scheitern lassen.
+   dürfen nie eine Anfrage scheitern lassen. Einzige Ausnahme ist der lokale
+   Kalender der Proxy-Benutzer (Abschnitt 24): Er ist für sie die führende
+   Quelle, wird aber nie nach Exchange übertragen.
 5. **Alle Werte in SOAP über `EwsXml::escape()`**, Zeiten über
    `EwsXml::dateTime()`, Ordner über `EwsXml::folderId()`.
 6. **HTML aus Exchange erreicht den Browser nur über `MailHtmlSanitizer`**;
@@ -942,10 +967,14 @@ Schriftfarbe einer Nachricht nie verändert:
 17. **Kein `serialize()` im Archivformat** – Container enthalten originales
     MIME oder JSON (`kind`), Lesen über `MimeMessageParser`/`json_decode`.
 18. **Mail nur über `OrvantaMailRouter`.** Controller holen das Backend über
-    den Router (`$this->mail($access)`); Kalender, Kontakte, Aufgaben, Notizen,
-    Erinnerungen und Archiv nur über `exchange($access, CAPABILITY_…)`, das bei
-    Proxy-Postfächern 409 liefert. Ein deaktiviertes Proxy-Postfach fällt nie
-    auf Exchange zurück (Abschnitt 18).
+    den Router (`$this->mail($access)`). Der **Kalender** läuft für
+    Proxy-Benutzer ausschließlich über den lokalen Kalender
+    (`$this->localCalendar($access)`, Abschnitt 24) und für
+    Exchange-Benutzer über `exchange($access, CAPABILITY_CALENDAR)`; Kontakte,
+    Aufgaben, Notizen, Erinnerungen und Archiv nur über
+    `exchange($access, CAPABILITY_…)`, das bei Proxy-Postfächern 409 liefert.
+    Ein deaktiviertes Proxy-Postfach fällt nie auf Exchange zurück
+    (Abschnitt 18).
 19. **Eine Sitzung bleibt auf ihrem Exchange-Host** (Sitzungsaffinität,
     `orvanta_exchange_sessions`); umgeleitet wird nur, wenn der Host nicht
     mehr wählbar ist. **Je Benutzer und Client genau eine Sitzung**
@@ -989,6 +1018,12 @@ Schriftfarbe einer Nachricht nie verändert:
 26. **Fehlende Migration 048 bricht nichts.** Präsenz und Verlauf liefern dann
     leer, der Quellenzustand `''`; die Seite zeigt weiter alle Knoten, nur ohne
     Nutzerzahlen und Verlauf.
+27. **Der lokale Kalender gehört dem Benutzer, nicht dem Postfach.** Jede
+    Abfrage und jede Änderung filtert auf `user_uid` aus `authorize()`; eine
+    fremde Terminkennung ergibt 404, nie Inhalt. Kalenderdaten verlassen den
+    Server nur über die Antworten der Kalender-Endpunkte und über
+    iCalendar-Teile ausgehender Mails. Einladungen werden nie automatisch
+    angenommen, Antworten nie ohne Benutzeraktion gesendet (Abschnitt 24).
 
 ## 12. Tests
 
@@ -1004,7 +1039,8 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaMailContrastTest.php` | Kontrastanpassung der Nachrichtentexte (Abschnitt 9.2): dunkle Absenderfarbe wird nur im dunklen Modus ersetzt, im hellen Modus wird die Schriftfarbe nie angepasst, eigener Hintergrund (weisse Tabellenzelle) und geerbter Hintergrund des Elternelements bestimmen die Ersatzfarbe, `rgb()` und benannte Farben, ungültige Farben bleiben unverändert, Umlaute/Entities überstehen den Durchlauf, Text ohne Farbe bleibt unverändert, `MailHtmlSanitizer` entfernt die Hilfsangaben beim Senden (und das leere `style`-Attribut), Stylesheet enthält die Modusregeln für den dunklen Modus mit `!important` |
 
 | `tests/Unit/OrvantaMailRefreshTest.php` | Hintergrundabgleich der Mail-Liste (Abschnitt 9.1, Quelltextprüfung von `orvanta.js`): Fehler werden nicht still verschluckt, beide Abfragen melden ihren Fehler und die Sperre `mailRefreshBusy` wird in jedem Fall freigegeben (nicht über ein abgelehntes `Promise.all`), eine hängende Abfrage sperrt höchstens `MAIL_REFRESH_TIMEOUT`, der Takt plant sich selbst neu (`scheduleMailPoll()`/`mailPoll()`, kein `setInterval(refreshMail`), pausiert im verborgenen Tab und lädt beim Zurückkehren nach fehlgeschlagenem Abgleich sichtbar neu (`reloadMailAfterFailedRefresh()`) |
-| `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
+| `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose, Übertragung von Termineinladungen (ausgehende base64-Kalenderteile mit Methodenprüfung, eingehende `calendar[]`-Teile und `meeting_request`; `FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
+| `tests/Unit/OrvantaLocalCalendarTest.php` | Lokaler Kalender der Proxy-Benutzer (Abschnitt 24): iCalendar-Aufbau und -Auswertung (Zeitzonen, ganztägig, Teilnehmerstatus, Grenzen) und Verwerfen unbrauchbarer Inhalte, Anlegen/Lesen/Verschieben/Löschen, Eingabeprüfung, Trennung der Benutzer (fremder Termin → 404), Annehmen/Vorbehalt/Ablehnen und Antwort über die Terminkennung, Absage und Rückzug, Idempotenz der Versandaufträge (höchstens drei Zustellungen, Wiederholung nach Fehlern, Aufräumen hängender Aufträge), Verhalten ohne Mail-Proxy, Erinnerungen samt Aufräumen veralteter Einträge, abgelehnte Einladungen und bereinigte Beschreibungen |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage, Zustand bleibt erhalten, `template_changed`), Abschalten ohne zugewiesene Vorlage (Text und Vorlage bleiben, Aktivieren abgelehnt), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
@@ -1013,7 +1049,9 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 Testbausteine: `RecordingExchangeTransport` (zeichnet SOAP auf, antwortet mit
 `DemoExchangeTransport` oder `$forced`), `orvantaPdo()` (SQLite-Schema
 **parallel zur Migration pflegen**), `orvantaConfig()`, `orvantaExchange()`,
-`orvantaAttachments()`. `FakeOfficeProbe` und `officeConfig()` stammen aus
+`orvantaAttachments()`. Für den lokalen Kalender kommen `localCalendarPdo()`
+(SQLite-Schema von Migration 057), `localCalendarEnv()`, `localCalendarInput()`
+und `FakeLocalCalendarBackend` hinzu (Abschnitt 24). `FakeOfficeProbe` und `officeConfig()` stammen aus
 `tests/Unit/OfficeTest.php` (wird wegen alphabetischer Ladereihenfolge vorher
 geladen). Für die Exchange-DAG liefern `orvantaPool()` und `dagSettings()` die
 Hostliste; der primäre Host wird explizit eingetragen, und jede simulierte
@@ -1040,7 +1078,8 @@ nach dem Neuladen wieder die alte.
 | **Neue EWS-Operation** | In `OrvantaExchangeService` über `call()` (nie direkt am Transport), Werte mit `EwsXml::escape()`; neuen Fehlercode ggf. in `translate()`; `DemoExchangeTransport::post()` um Erkennung erweitern, sonst antwortet die Demo mit generischem Erfolg. |
 | **Neuer Anhangs-Öffnungsmodus / Dateityp** | `OFFICE_TYPES` bzw. `BROWSER_TYPES`, bei Inline zusätzlich `OrvantaController::inlineType()`; Test „Oeffnungsart je Dateityp“. |
 | **Zwischenspeicher für Nachrichten** (`kind = message`) | Spalte existiert; `OrvantaAttachmentService::cache(..., 'message')` mit eigenem Hash-Schema verwenden, damit keine Kollision mit `sha1(attachment_id)` entsteht. |
-| **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()`/`removeReminders()` (Zustandsübergänge Abschnitt 8.2); beide Clients prüfen; Tests „Erinnerungen …“, „Abgesagte und abgelehnte Termine …“, „Repository-Sync …“. |
+| **Lokalen Kalender erweitern** (weiteres Feld, weiterer iCalendar-Wert) | Spalte per Migration **und** im SQLite-Schema von `tests/Unit/OrvantaLocalCalendarTest.php` (`localCalendarPdo()`); `OrvantaCalendarRepository` (Hydration, `create()`/`update()`), `OrvantaCalendarService::save()`/`times()`/`attendeeRows()` und die iCalendar-Abbildung in `ICalendar::build()`/`parseInvitation()`/`normalize()`; Formular und Anzeige in `orvanta.js` (Kalenderdialog), Doku in Abschnitt 24. Neue Werte zusätzlich in `FREE_BUSY`/`RESPONSE_PARTSTAT`/`PARTSTAT_RESPONSE` führen. |
+| **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()`/`removeReminders()` (Zustandsübergänge Abschnitt 8.2); für den lokalen Kalender zusätzlich `syncLocal()`/`apply()` und `pruneLocalReminders()`; beide Clients prüfen; Tests „Erinnerungen …“, „Abgesagte und abgelehnte Termine …“, „Repository-Sync …“. |
 | **Neues Modul** | `DEFAULT_FOLDERS`, Modulliste/Menüband/Dialog in `views/orvanta/index.php`, `switchModule()`/`loadModule()`/Tastenkürzel in `orvanta.js`, Service-Methoden + API, Demo-Daten, Doku. |
 | **KI-Unterstützung in weiterem Editor** | Editor mit `contenteditable` und eigenem `data-ov-…-body`-Hook; in `orvanta.js` `aiEditors()`, `aiMode()` und `aiContext()` erweitern; neuer Wert in `OrvantaAiService::MODES` + ENUM in `orvanta_ai_usage.kind` (Migration) + Systemprompt in `messages()`; serverseitig `stripMarkers()` vor dem Sanitizer aufrufen; Test. |
 | **Signaturaufbau ändern** (Zeilen, Trennzeichen, Logo-Größe) | Nur `OrvantaSignatureService::render()`/`phoneLine()` (E-Mail-tauglich: Tabelle, Inline-Styles ohne `url(`, Bilder nur als `data:`-URI – sonst entfernt sie `MailHtmlSanitizer`); Schriftfarbe aus `text_color` (`resolveColor()`: Hex-Wert der Vorlage, sonst Designfarbe), Trennzeichenfarbe über den Farbschlüssel aus `SettingsService::theme()`; Logo-Höhe = `LINE_HEIGHT` × Zeilenzahl, das Bild wird per `scaleImage()` selbst auf diese Größe gebracht (Outlook/Exchange ignorieren width/height); Test „Darstellung …“ anpassen; Screenshot 88/90 erneuern. |
@@ -1413,7 +1452,17 @@ Benutzerdoku, Einrichtung und vollständige technische Referenz:
   und `/api/orvanta/status` liefern `capabilities` (Status zusätzlich
   `backend`); `orvanta.js` blendet Module und Aktionen per `hasCapability()` aus.
   Serverseitig erzwingt `OrvantaApiController::exchange($access, CAPABILITY_…)`
-  die Grenze (409).
+  die Grenze (409). `ProxyMailBackend::capabilities()` bleibt bei „nur Mail“;
+  die **wirksame** Menge berechnet `OrvantaController::capabilities($access)`
+  und ergänzt für Proxy-Routen `calendar` und `reminders` (Abschnitt 24.2).
+- **Lokaler Kalender:** Für Proxy-Benutzer laufen die Kalenderendpunkte gegen
+  den lokalen Kalender (`OrvantaCalendarService`, Tabellen
+  `orvanta_calendar_*`), nicht gegen Exchange – Details Abschnitt 24.
+- **Termineinladungen:** `ProxyMailBackend::message()` liefert
+  `calendar[]` (Base64, Methoden `REQUEST`/`CANCEL`/`REPLY`) und setzt
+  `is_meeting_request` neu; `summary()` liefert `meeting_request` aus der
+  BODYSTRUCTURE. Ausgehend schickt `outgoing()` bis zu drei Kalenderteile mit.
+  Vertrag: `docs/mail-proxy.md`.
 - **IDs:** Proxy-Kennungen beginnen mit `mpx.` (Ordner `mpx.f.<b64url>`,
   Nachrichten `mpx.<mailbox>.<ordner>.<uidvalidity>.<uid>`, Anhänge
   zusätzlich `.<index>`); EWS-IDs enthalten nie einen Punkt.
@@ -1432,7 +1481,8 @@ Benutzerdoku, Einrichtung und vollständige technische Referenz:
   einmal. `MailProxyService::updateUserPassword()` speichert nur nach
   bestätigter IMAP-(und ggf. SMTP-)Anmeldung per `mailbox.test`.
 
-Tests: `tests/Unit/MailProxyTest.php`.
+Tests: `tests/Unit/MailProxyTest.php` (u. a. Kalenderteil-Übertragung und
+-ererkennung).
 
 ---
 
@@ -2644,3 +2694,161 @@ Bedienung, Animationen und Tastenbelegung: `docs/orvanta-nachrichtenfluss.md`
 Abschnitt 14. Aufbau, Datenvertrag, Zustands- und Dämpfungsregeln, Anordnung
 und Projektion, Aktualisierung und bekannte Eigenheiten:
 `docs/topologie-referenz.md`.
+
+---
+
+## 24. Lokaler Kalender (Proxy-Benutzer)
+
+Benutzerdoku: `docs/orvanta.md` (Abschnitt 4b-1). Dieser Abschnitt beschreibt
+Aufbau, Verträge und Grenzen.
+
+### 24.1 Zweck, Datenmodell und iCalendar
+
+Postfächer, die über den SMTP-/IMAP-Proxy laufen, haben kein Exchange-Postfach
+und damit auch keinen Exchange-Kalender. Statt den Kalender auszublenden,
+führt Orvanta für diese Benutzer einen **eigenen Kalender** in der
+Anwendungsdatenbank, gebunden an die AD-Kennung (`user_uid` aus `authorize()`).
+Der Exchange-Weg bleibt unverändert; für Exchange-Benutzer wird keine der
+folgenden Tabellen benutzt.
+
+Vier Tabellen (Migration 057, Spalten und Indizes in Abschnitt 4.1):
+
+| Tabelle | Inhalt |
+| --- | --- |
+| `orvanta_calendar_events` | Termine inkl. Status, Sequenz, Erinnerung, eigener Antwort |
+| `orvanta_calendar_attendees` | Teilnehmer je Termin mit Rolle und Antwort |
+| `orvanta_calendar_outbox` | idempotente Versandaufträge (Einladung, Aktualisierung, Absage, Antwort) |
+| `orvanta_calendar_processed` | bereits verarbeitete Nachrichten (Einladungen und Antworten) |
+
+Zeiten liegen wie bei den Erinnerungen als lokale Zeit in der Datenbank
+(`date('Y-m-d H:i:s')`, Zeitzone des PHP-Prozesses). Nach außen schreibt
+`ICalendar` sie als UTC (`DTSTART:…Z`), ganztägige Termine als `VALUE=DATE`;
+beim Lesen wird `Z` als UTC und ein `TZID` in der angegebenen Zone ausgewertet
+und in die Serverzeitzone umgerechnet. `timezone` speichert die Zone, in der
+der Termin angelegt wurde.
+
+`App\Services\Orvanta\ICalendar` ist ein von Hand geschriebener RFC-5545-Leser
+und -Schreiber (keine Abhängigkeit): `build()` für `REQUEST`/`CANCEL`/`REPLY`,
+`parse()`/`parseInvitation()` für eingehende Teile, `newUid()` für neue
+Kennungen, `toText()` für die Umwandlung von HTML-Beschreibungen in Text,
+`escape()`/`unescape()`/`fold()`/`normalize()` für die Zeilenregeln,
+`partstat()`/`freeBusy()` für die Statusabbildung. Grenzen: `MAX_BYTES`
+(524288), `MAX_LINES` (20000), `MAX_EVENTS` (50), `MAX_ATTENDEES` (200),
+`MAX_TEXT` (20000); unbekannte oder unbrauchbare Teile werden verworfen, nie
+„best effort“ übernommen. Zeilen werden bei 75 Oktetten gefaltet, Sonderzeichen
+maskiert; `toText()` entfernt `<script>`/`<style>` **samt Inhalt**, damit keine
+Skripttexte in der Terminbeschreibung landen.
+
+### 24.2 Backendwahl und Capabilities
+
+`OrvantaApiController::localCalendar($access)` liefert genau dann den
+`OrvantaCalendarService`, wenn die Route `proxy` ist, sonst `null`. Damit wählt
+jeder Kalender- und Erinnerungsaufruf **genau ein** Backend: entweder EWS oder
+die eigene Datenbank – es gibt keinen stillen Ausweichweg. `localEventId()`
+akzeptiert nur rein numerische Kennungen (das Proxy-Postfach hat nur einen
+Kalender); Kennungen weiterer Postfächer (`smb:`) sind hier 404.
+
+`ProxyMailBackend::capabilities()` bleibt bewusst bei „nur Mail“ (der Proxy
+selbst kennt keinen Kalender). Die **wirksame** Capability-Menge berechnet
+`OrvantaController::capabilities($access)` und ergänzt für Proxy-Routen
+`calendar` und `reminders`; sie wird in `index()` an die Ansicht und in
+`status()` an `/api/orvanta/status` geliefert. `orvanta.js` behandelt ein
+fehlendes Capability-Feld wie bisher als „erlaubt“.
+
+### 24.3 Endpunkte und Abläufe
+
+Es sind dieselben Endpunkte wie für Exchange – nur die Umsetzung wechselt:
+
+| Endpunkt | Lokaler Zweig |
+| --- | --- |
+| `GET /api/orvanta/kalender` | `dispatch()`, Erinnerungsabgleich, `range()` |
+| `GET /api/orvanta/kalender/termin` | `event()` |
+| `POST /api/orvanta/kalender/termin` | `save()` (anlegen/ändern) |
+| `POST /api/orvanta/kalender/termin/verschieben` | `move()` |
+| `POST /api/orvanta/kalender/termin/loeschen` | `remove()` |
+| `POST /api/orvanta/kalender/antwort` | `respond()` bzw. `respondToMessage()` |
+| `GET /api/orvanta/erinnerungen` | `syncLocalReminders()` statt `sync()` |
+
+`save()` schreibt Termin, Teilnehmer und Versandauftrag in **einer**
+Transaktion und legt fest, ob es sich um eine neue Einladung oder eine
+Aktualisierung handelt (Sequenz steigt). Neue Termine bekommen eine Kennung
+nach RFC 5545 (`ICalendar::newUid()`), damit sie in anderen Programmen
+funktionieren. `remove()` versendet eine Absage (`CANCEL`, gleiche
+Terminkennung, erhöhte Sequenz), wenn der Benutzer Organisator war.
+
+`respond()` (Antwortleiste im Termin) und `respondToMessage()` (Antwortleiste
+in der Nachrichtenansicht) schreiben die eigene Antwort (`my_response`) und den
+eigenen Teilnehmerstatus und legen eine `REPLY`-Nachricht in die Outbox. Die
+Zuordnung läuft ausschließlich über die Terminkennung aus dem iCalendar-Teil
+(`calendarPartsOf()` liest `message.calendar[]` des Proxys) – der Betreff wird
+nie ausgewertet. Adressen werden klein geschrieben gespeichert und verglichen.
+
+`ingest()` verarbeitet eingehende Kalenderteile aus der Nachrichtenansicht:
+`REQUEST` legt an oder aktualisiert, `CANCEL` sagt ab, `REPLY` übernimmt die
+Antwort einer anderen Person. `orvanta_calendar_processed` (`item_hash` je
+Benutzer) verhindert, dass dieselbe Einladung mehrfach angelegt oder dieselbe
+Antwort mehrfach versendet wird. **Nichts davon passiert automatisch**: Eine
+Einladung wird nie im Hintergrund angenommen, eine Antwort nie ohne
+Benutzeraktion gesendet.
+
+**Outbox:** `enqueue()` erzeugt den Auftrag mit
+`idempotency_key = methode:sha1(event_uid):sequenz[:suffix]` und liefert bei
+einer Wiederholung `false`. `dispatch()` läuft inline nach jedem Schreibvorgang
+und beim Öffnen der Kalenderansicht: `recoverOutbox()` holt hängende Aufträge
+zurück (`CLAIM_TIMEOUT` 900 s), `dueOutbox()` nimmt höchstens `MAX_DISPATCH`
+(3) fällige Aufträge, `claimOutbox()` setzt `sending` und erhöht `attempts`,
+`deliver()` übergibt an das Mail-Backend. Erfolg → `sent` + `sent_at`;
+Fehler → `failed` mit Fehlertext und `next_attempt_at` (`60 s · 2^Versuche`,
+höchstens 1 h; `MAX_ATTEMPTS` 5, danach kein weiterer Versuch). Ein Versand
+läuft also nie doppelt, nur weil ein Benutzer mehrfach klickt oder die Seite
+neu lädt. Weil es keinen Cron gibt, ist der Inline-Versand die einzige
+Auslösung.
+
+### 24.4 Erinnerungen
+
+`upcomingReminders(uid, now, 48)` liefert die Termine im 48-h-Fenster mit
+`reminder_set`/`remind_at` – dieselben Regeln wie bei Exchange (eigene
+Erinnerung, sonst globaler Vorlauf; abgesagte und abgelehnte Termine fallen
+heraus). `OrvantaNotificationService::syncLocal()` schreibt sie über
+`OrvantaRepository::syncReminders()` in `orvanta_reminders` (die Terminkennung
+bleibt die numerische Termin-ID, damit „Öffnen“ lädt) und ruft danach
+`pruneLocalReminders()` auf. Dieser Aufruf ist nötig, weil `syncReminders()`
+nur ergänzt und aktualisiert: Erinnerungen mit rein numerischer `item_id`, die
+nicht mehr in der Liste stehen, werden gelöscht – EWS-IDs sind nie numerisch,
+Exchange-Erinnerungen bleiben also unberührt.
+
+Der Abgleich läuft nach jedem Schreibvorgang (Anlegen, Ändern, Verschieben,
+Löschen, Antwort) und beim Abruf der Erinnerungen (höchstens alle
+`SYNC_INTERVAL` Sekunden oder mit `?sync=1`). Danach läuft die bestehende
+Kette (`poll()`, `dismiss()`, `snooze()`) unverändert weiter.
+
+### 24.5 Grenzen und Sicherheit
+
+- Jede Abfrage und jede Änderung filtert auf `user_uid`; eine fremde Kennung
+  ergibt 404, nie Inhalt. Alle Werte laufen über Prepared Statements.
+- Nur der Benutzer selbst sieht seine Termine; es gibt keine Freigaben,
+  Stellvertretungen oder Serientermine. Wiederholungsregeln (RRULE/RDATE)
+  werden nicht abgebildet: Eine Serieneinladung wird nur mit ihrem ersten
+  Termin gespeichert (`ICalendar::normalize()` liefert dafür `recurrence`).
+- Eingaben werden begrenzt: Zeitraum `MAX_RANGE_DAYS` (100 Tage), Länge
+  `MAX_LENGTH` (366 Tage), `MAX_ATTENDEES` (100), `MAX_DESCRIPTION` (60000
+  Zeichen), Erinnerung `REMINDER_MAX` (10080 Minuten); Verstöße → 422.
+- Beschreibungen werden beim Versand in Text umgewandelt und von Skript- und
+  Stilblöcken befreit; Teilnehmeradressen werden validiert und dedupliziert.
+- Ausgehende Kalenderteile gehen über den bestehenden Proxy-Weg (maximal drei
+  Teile, Gesamtgrenze `MAIL_PROXY_MAX_CALENDAR_KB`), es gibt keinen direkten
+  SMTP-Versand aus Orvanta.
+- Ein ICS-Anhang **ohne** `METHOD` bleibt reine Anhangsinformation und wird
+  nicht als Einladung interpretiert.
+- Der lokale Kalender wird nie nach Exchange übertragen. Wechselt ein Benutzer
+  auf ein Exchange-Postfach, ist sein lokaler Kalender dort nicht sichtbar
+  (und umgekehrt).
+
+### 24.6 Tests
+
+`tests/Unit/OrvantaLocalCalendarTest.php` (SQLite-Schema von Migration 057,
+`FakeLocalCalendarBackend`) prüft iCalendar-Aufbau und -Auswertung, die
+Endpunktlogik, die Benutzertrennung, Antworten und Absagen, die Idempotenz der
+Outbox und die Erinnerungen samt Aufräumen. `tests/Unit/MailProxyTest.php`
+prüft die Übertragung der Kalenderteile über den Proxy (ausgehend Base64 mit
+Methodenprüfung, eingehend `calendar[]` und `meeting_request`).

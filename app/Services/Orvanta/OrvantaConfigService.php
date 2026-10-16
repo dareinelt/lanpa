@@ -56,6 +56,9 @@ final class OrvantaConfigService
         'archive_batch_size' => '50',
         'archive_poll_interval' => '3600',
         'flow_ai_user_names' => '0',
+        // Texte der Kalendermails des lokalen Kalenders (Platzhalter siehe
+        // OrvantaCalendarMail::PLACEHOLDERS).
+        ...OrvantaCalendarMail::DEFAULTS,
     ];
 
     /** @var array<string,string>|null */
@@ -477,25 +480,25 @@ final class OrvantaConfigService
         }
 
         $values['archive_enabled'] = !empty($input['archive_enabled']) ? '1' : '0';
-        // Fehlende Archivfelder (z. B. API-Aufrufe ohne Archivformular)
+        // Fehlende Felder (z. B. API-Aufrufe ohne vollstaendiges Formular)
         // fallen auf die Standardwerte zurueck statt Fehler auszuloesen.
-        $archiveText = static fn (string $key, int $max): string => Validator::cleanText(
+        $defaultText = static fn (string $key, int $max): string => Validator::cleanText(
             array_key_exists($key, $input) && is_scalar($input[$key]) ? (string) $input[$key] : self::DEFAULTS[$key],
             $max
         );
-        $archiveGroup = trim($archiveText('archive_group', 190), " \t,;");
+        $archiveGroup = trim($defaultText('archive_group', 190), " \t,;");
         if (preg_match('/[,;\r\n]/', $archiveGroup) === 1) {
             $errors['archive_group'] = 'Bitte genau eine AD-Gruppe angeben.';
         } elseif ($values['archive_enabled'] === '1' && $archiveGroup === '') {
             $errors['archive_group'] = 'Die Archivierung ist nur für Mitglieder einer AD-Gruppe möglich. Bitte eine Gruppe angeben.';
         }
         $values['archive_group'] = $archiveGroup;
-        $archiveUnit = $archiveText('archive_threshold_unit', 10);
+        $archiveUnit = $defaultText('archive_threshold_unit', 10);
         if (!isset(self::ARCHIVE_THRESHOLD_UNITS[$archiveUnit])) {
             $archiveUnit = 'percent';
         }
         $values['archive_threshold_unit'] = $archiveUnit;
-        $archiveThreshold = (int) $archiveText('archive_threshold', 8);
+        $archiveThreshold = (int) $defaultText('archive_threshold', 8);
         if ($archiveUnit === 'percent' && ($archiveThreshold < 1 || $archiveThreshold > 100)) {
             $errors['archive_threshold'] = 'Die Schwelle muss zwischen 1 und 100 Prozent liegen.';
         } elseif ($archiveUnit === 'mb' && ($archiveThreshold < 1 || $archiveThreshold > 10485760)) {
@@ -503,13 +506,13 @@ final class OrvantaConfigService
         }
         $values['archive_threshold'] = (string) $archiveThreshold;
 
-        $archiveAge = (int) $archiveText('archive_age_days', 5);
+        $archiveAge = (int) $defaultText('archive_age_days', 5);
         if ($archiveAge < 1 || $archiveAge > 3650) {
             $errors['archive_age_days'] = 'Das Mindestalter muss zwischen 1 und 3650 Tagen liegen.';
         }
         $values['archive_age_days'] = (string) $archiveAge;
 
-        $archiveFolder = $archiveText('archive_folder', 120);
+        $archiveFolder = $defaultText('archive_folder', 120);
         if ($archiveFolder === '' || !\App\Services\Office\NextcloudFilesService::isSafeSegment($archiveFolder)) {
             $errors['archive_folder'] = 'Der Ordnername darf nicht leer sein und keine Sonderzeichen wie / \\ : * ? " < > | enthalten.';
         }
@@ -518,17 +521,25 @@ final class OrvantaConfigService
         // Format-Invariante: aktuell ausschliesslich gzip (format_version 1).
         $values['archive_compression'] = 'gzip';
 
-        $archiveBatch = (int) $archiveText('archive_batch_size', 4);
+        $archiveBatch = (int) $defaultText('archive_batch_size', 4);
         if ($archiveBatch < 1 || $archiveBatch > 200) {
             $errors['archive_batch_size'] = 'Die Batchgröße muss zwischen 1 und 200 Nachrichten liegen.';
         }
         $values['archive_batch_size'] = (string) $archiveBatch;
 
-        $archivePoll = (int) $archiveText('archive_poll_interval', 6);
+        $archivePoll = (int) $defaultText('archive_poll_interval', 6);
         if ($archivePoll < 60 || $archivePoll > 86400) {
             $errors['archive_poll_interval'] = 'Das Prüfintervall muss zwischen 60 und 86.400 Sekunden liegen.';
         }
         $values['archive_poll_interval'] = (string) $archivePoll;
+
+        // Vorlagen der Kalendermails: ein leeres Feld stellt den Standardtext
+        // wieder her, damit eine Nachricht nie ohne Inhalt verschickt wird.
+        foreach (OrvantaCalendarMail::DEFAULTS as $key => $default) {
+            $max = str_ends_with($key, '_subject') ? OrvantaCalendarMail::MAX_SUBJECT : OrvantaCalendarMail::MAX_BODY;
+            $template = $defaultText($key, $max);
+            $values[$key] = $template !== '' ? $template : $default;
+        }
 
         if ($errors !== []) {
             throw new ValidationException($errors);

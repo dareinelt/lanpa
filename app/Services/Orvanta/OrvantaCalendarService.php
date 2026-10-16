@@ -7,7 +7,6 @@ namespace App\Services\Orvanta;
 use App\Contracts\OrvantaMailBackendInterface;
 use App\Core\Logger;
 use App\Repositories\OrvantaCalendarRepository;
-use App\Support\Html;
 use Closure;
 use Throwable;
 
@@ -68,6 +67,7 @@ final class OrvantaCalendarService
      */
     public function __construct(
         private readonly OrvantaCalendarRepository $repository,
+        private readonly OrvantaConfigService $config,
         Closure $backendFor,
         private readonly ?Logger $logger = null
     ) {
@@ -749,8 +749,8 @@ final class OrvantaCalendarService
         $payload = json_encode([
             'method' => $method,
             'ics' => ICalendar::build($event, $method),
-            'subject' => $this->mailSubject($row, $method),
-            'body' => $this->mailBody($row, $method, (string) ($overrides['partstat'] ?? '')),
+            'subject' => $this->mailSubject($row, $method, (string) ($overrides['partstat'] ?? '')),
+            'body' => $this->mailBody($row, $method, (string) ($overrides['partstat'] ?? ''), $attendees),
         ], JSON_UNESCAPED_UNICODE);
         if ($payload === false) {
             return false;
@@ -770,18 +770,17 @@ final class OrvantaCalendarService
     }
 
     /**
+     * Betreff der Kalendernachricht aus der im Adminbereich gepflegten Vorlage.
+     *
      * @param array<string,mixed> $row
      */
-    private function mailSubject(array $row, string $method): string
+    private function mailSubject(array $row, string $method, string $partstat): string
     {
-        $subject = trim((string) $row['subject']);
-        $subject = $subject !== '' ? $subject : 'Termin';
-
-        return match ($method) {
-            'CANCEL' => 'Absage: ' . $subject,
-            'REPLY' => 'Antwort: ' . $subject,
-            default => 'Einladung: ' . $subject,
-        };
+        return OrvantaCalendarMail::subject(
+            $this->mailTemplate($method, 'subject'),
+            $row,
+            $partstat
+        );
     }
 
     /**
@@ -789,36 +788,28 @@ final class OrvantaCalendarService
      * Kalenderteil, damit Mailprogramme ihn auswerten koennen).
      *
      * @param array<string,mixed> $row
+     * @param list<array<string,mixed>> $attendees
      */
-    private function mailBody(array $row, string $method, string $partstat): string
+    private function mailBody(array $row, string $method, string $partstat, array $attendees): string
     {
-        $when = date('d.m.Y H:i', (int) strtotime((string) $row['starts_at'])) . ' bis ' . date('d.m.Y H:i', (int) strtotime((string) $row['ends_at']));
-        $lines = [];
-        if ($method === 'REPLY') {
-            $answer = match ($partstat) {
-                'ACCEPTED' => 'zugesagt',
-                'TENTATIVE' => 'mit Vorbehalt geantwortet',
-                'DECLINED' => 'abgesagt',
-                default => 'geantwortet',
-            };
-            $lines[] = '<p>' . Html::e((string) ($row['organizer_name'] !== '' ? $row['organizer_name'] : (string) $row['organizer_email'])) . ' hat für den Termin „' . Html::e((string) $row['subject']) . '“ ' . $answer . '.</p>';
-        } elseif ($method === 'CANCEL') {
-            $lines[] = '<p>Der Termin „' . Html::e((string) $row['subject']) . '“ wurde abgesagt.</p>';
-        } else {
-            $lines[] = '<p>' . Html::e((string) ($row['organizer_name'] !== '' ? $row['organizer_name'] : (string) $row['organizer_email'])) . ' lädt zu einem Termin ein.</p>';
-        }
-        $lines[] = '<p><strong>' . Html::e((string) $row['subject']) . '</strong><br>' . Html::e($when);
-        if (trim((string) $row['location']) !== '') {
-            $lines[] = '<br>' . Html::e((string) $row['location']);
-        }
-        $lines[] = '</p>';
-        $description = trim((string) ($row['description'] ?? ''));
-        if ($description !== '') {
-            $clean = MailHtmlSanitizer::clean($description);
-            $lines[] = $clean['html'];
-        }
+        return OrvantaCalendarMail::body(
+            $this->mailTemplate($method, 'body'),
+            $row,
+            $partstat,
+            $attendees
+        );
+    }
 
-        return implode("\n", $lines);
+    /**
+     * Vorlage aus den Orvanta-Einstellungen; ein leerer Wert bedeutet den
+     * Standardtext.
+     */
+    private function mailTemplate(string $method, string $part): string
+    {
+        $key = OrvantaCalendarMail::settingKey($method, $part);
+        $value = $this->config->get($key);
+
+        return $value !== '' ? $value : (OrvantaCalendarMail::DEFAULTS[$key] ?? '');
     }
 
     /**

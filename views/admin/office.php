@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Security\Csrf;
 use App\Services\Office\OfficeAiService;
+use App\Services\Orvanta\OrvantaCalendarMail;
 use App\Support\Html;
 
 /** @var string $section Unterseite: status|footer|ai|appstore|orvanta|tile|backup */
@@ -452,6 +453,7 @@ $ovFieldError = static function (string $name) use ($orvantaErrors): string {
         : '';
 };
 $ov = $orvantaValues;
+$ovSubjectPlaceholders = OrvantaCalendarMail::subjectPlaceholders();
 ?>
 <section class="card" id="orvanta" aria-labelledby="office-orvanta-title">
     <h2 class="card__title" id="office-orvanta-title">
@@ -737,7 +739,45 @@ $ov = $orvantaValues;
             </div>
             <p class="field__hint">Komprimierung: gzip (Formatversion 1, fest).</p>
         </fieldset>
+
         <script src="/assets/js/admin-group-autocomplete.js?v=<?= Html::e((string) ($assetVersion ?? '1')) ?>" defer></script>
+
+        <fieldset class="fieldset">
+            <legend>Kalendermails des lokalen Kalenders (Einladung, Absage, Antwort)</legend>
+            <p class="field__hint">
+                Betreff und Begleittext der Nachrichten des lokalen Kalenders: Einladung und Absage an die
+                Teilnehmer, Antwort an den Organisator. Der Termin selbst geht zusätzlich als Kalenderdatei mit,
+                damit Mailprogramme die Einladung übernehmen können.
+                Ein leeres Feld stellt den Standardtext wieder her. Steht ein Platzhalter für einen fehlenden Wert
+                (etwa ein Termin ohne Ort), entfällt im Text auch der Zeilenumbruch davor. Die Vorlagen gelten für
+                neu eingereihte Nachrichten; bereits wartende Aufträge behalten ihren Text.
+            </p>
+            <ul class="field__hint">
+                <?php foreach (OrvantaCalendarMail::PLACEHOLDERS as $ovPlaceholder => $ovPlaceholderHint) { ?>
+                    <li>
+                        <code><?= Html::e($ovPlaceholder) ?></code> – <?= Html::e($ovPlaceholderHint) ?><?= isset($ovSubjectPlaceholders[$ovPlaceholder]) ? '' : ' (nur im Text)' ?>
+                    </li>
+                <?php } ?>
+            </ul>
+            <?php foreach (OrvantaCalendarMail::METHODS as $ovMethod => $ovMethodLabel) {
+                $ovMailKey = 'calendar_mail_' . strtolower($ovMethod);
+            ?>
+                <div class="field">
+                    <label for="<?= Html::e($ovMailKey) ?>_subject">Betreff – <?= Html::e($ovMethodLabel) ?></label>
+                    <input type="text" id="<?= Html::e($ovMailKey) ?>_subject" name="<?= Html::e($ovMailKey) ?>_subject"
+                           maxlength="<?= (int) OrvantaCalendarMail::MAX_SUBJECT ?>" spellcheck="false"
+                           value="<?= Html::e($ov[$ovMailKey . '_subject'] ?? '') ?>" <?= $ovField($ovMailKey . '_subject') ?>>
+                    <?= $ovFieldError($ovMailKey . '_subject') ?>
+                </div>
+                <div class="field">
+                    <label for="<?= Html::e($ovMailKey) ?>_body">Text – <?= Html::e($ovMethodLabel) ?></label>
+                    <textarea id="<?= Html::e($ovMailKey) ?>_body" name="<?= Html::e($ovMailKey) ?>_body" rows="5"
+                              maxlength="<?= (int) OrvantaCalendarMail::MAX_BODY ?>" <?= $ovField($ovMailKey . '_body') ?>><?= Html::e($ov[$ovMailKey . '_body'] ?? '') ?></textarea>
+                    <p class="field__hint">HTML ist erlaubt; die Beschreibung des Termins bringt ihre eigene Formatierung mit.</p>
+                    <?= $ovFieldError($ovMailKey . '_body') ?>
+                </div>
+            <?php } ?>
+        </fieldset>
 
         <div class="form__actions">
             <button type="submit" class="button button--primary">Orvanta-Einstellungen speichern</button>

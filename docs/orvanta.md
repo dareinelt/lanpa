@@ -209,6 +209,7 @@ flowchart LR
 | `OrvantaRecipientService` | `app/Services/Orvanta/` | Empfänger-Vorschläge für An/Cc/Bcc: Telefonliste + Verlauf gesendeter Adressen (versteckte Datei `.empfaenger.json` in der Nextcloud des Benutzers, kurz in der Sitzung gehalten) |
 | `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile; für Proxy-Benutzer aus dem lokalen Kalender (`syncLocal()`, entfernt auch Erinnerungen zu gelöschten Terminen) |
 | `OrvantaCalendarService` | `app/Services/Orvanta/` | Lokaler Kalender für Proxy-Benutzer (Abschnitt 4b-1): Termine anlegen/ändern/verschieben/löschen, Einladungen (`REQUEST`), Absagen (`CANCEL`) und Antworten (`REPLY`) verarbeiten, idempotenter Versand über die Auftragstabelle, Erinnerungsquelle |
+| `OrvantaCalendarMail` | `app/Services/Orvanta/` | Betreff und Text der Kalendermails (Einladung, Absage, Antwort) aus den Vorlagen `calendar_mail_*` samt Platzhaltern; Textwerte werden maskiert, die Beschreibung bleibt geprüftes HTML |
 | `ICalendar` | `app/Services/Orvanta/` | iCalendar nach RFC 5545 schreiben und lesen (Einladung, Absage, Antwort, Teilnehmerstatus); Grenzen gegen übergroße und verschachtelte Inhalte |
 | `OrvantaSignatureService` | `app/Services/Orvanta/` | Signaturvorlagen (Abschnitt 4a): Validierung, Zuordnung per AD-Gruppe, E-Mail-taugliches HTML aus Vorlage + Telefonliste + Design, `append()`/`strip()` beim Senden, `wrapTextColor()`/`stripTextColor()` für die Standardschriftfarbe des Editors |
 | `OrvantaSpellcheckService` | `app/Services/Orvanta/` | Deutsche Rechtschreibprüfung (Abschnitt 7b): `check()` (Hunspell-Algorithmus: Affixe, Zusammensetzungen, Bindestrich-Zerlegung, Groß-/Kleinschreibung) und `suggest()` (Vorschläge, der wahrscheinlichste zuerst) |
@@ -386,10 +387,17 @@ Zuordnung 24 Stunden (`storage/cache/orvanta_primary_smtp.json`).
 | `archive_folder` | Ordner im Nextcloud-Bereich des Benutzers für die Archivcontainer | `Orvanta-Archiv` |
 | `archive_batch_size` | Nachrichten je Verarbeitungsschritt (1–200) | 50 |
 | `archive_poll_interval` | Prüfintervall des Archiv-Workers in Sekunden (60–86400) | 3600 |
+| `calendar_mail_request_subject`, `calendar_mail_request_body` | Betreff und Text der Einladung an die Teilnehmer; Platzhalter wie `{Betreff}`, `{Beginn}`, `{Ort}`, `{Teilnehmer}` (Abschnitt 4b-1) | `Einladung: {Betreff}` / Terminübersicht |
+| `calendar_mail_cancel_subject`, `calendar_mail_cancel_body` | Betreff und Text der Absage | `Absage: {Betreff}` / Terminübersicht |
+| `calendar_mail_reply_subject`, `calendar_mail_reply_body` | Betreff und Text der Antwort an den Organisator; `{Antwort}` nennt die Antwort in Worten | `Antwort: {Betreff}` / Terminübersicht |
 
 Die **Standardschriftfarbe des Editors** (`editor_text_color`) steht im selben
 Formular: Farbfeld und Hex-Eingabefeld bleiben synchron, ein leeres Feld
 bedeutet „Textfarbe der Designeinstellungen“.
+
+Die **Kalendermails des lokalen Kalenders** (`calendar_mail_*`) stehen im
+Abschnitt darunter: je Methode ein Betreff und ein Text mit den Platzhaltern
+aus Abschnitt 4b-1. Ein leeres Feld stellt den Standardtext wieder her.
 
 ![Adminbereich – Orvanta: Standardschriftfarbe des Editors als Hex-Wert](screenshots/139-admin-orvanta-editor-schriftfarbe.png)
 
@@ -517,6 +525,15 @@ AD-Konto (`user_uid`), nicht am Postfach:
   oder Antwort werden als Auftrag gespeichert und über den normalen Mailweg
   (Proxy) verschickt; wiederholte Zustellversuche erzeugen keine Duplikate, und
   ein fehlgeschlagener Versand wird mit Wartezeit erneut versucht.
+- **Texte der Kalendermails:** Betreff und Begleittext von Einladung, Absage
+  und Antwort sind im Adminbereich unter **Office → Orvanta** (Abschnitt
+  „Kalendermails des lokalen Kalenders“) pflegbar. Die Platzhalter lauten
+  `{Organisator}`, `{Organisator-Mail}`, `{Betreff}`, `{Beginn}`, `{Ende}`,
+  `{Ort}`, `{Teilnehmer}`, `{Beschreibung}` und `{Antwort}`; im Betreff stehen
+  `{Teilnehmer}` und `{Beschreibung}` nicht zur Verfügung. Ein leeres Feld
+  stellt den Standardtext wieder her. Die Texte werden beim Einreihen in die
+  Auftragstabelle festgehalten – eine Änderung wirkt daher nur für danach
+  erzeugte Nachrichten. Der iCalendar-Teil bleibt unverändert.
 - Einladungen ohne Antwortmöglichkeit (Mailprogramme anderer Hersteller,
   reine ICS-Anhänge ohne `METHOD`) bleiben unverändert im Postfach.
 
@@ -1253,7 +1270,9 @@ Wort begrenzt, der Browser schickt nur Wörter, die er noch nicht kennt.
   Antworten über die Terminkennung, Absage und Rückzug, Idempotenz der
   Versandaufträge (höchstens drei Zustellungen, Wiederholung nach Fehlern),
   das Verhalten ohne Mail-Proxy, Erinnerungen samt Aufräumen veralteter
-  Einträge sowie die Bereinigung von Beschreibungen.
+  Einträge sowie die Bereinigung von Beschreibungen. Dieselbe Datei prüft die
+  Kalendermails: Platzhalter und Maskierung, Standardtexte, das Speichern der
+  Vorlagen in den Orvanta-Einstellungen und den Versand mit eigenen Vorlagen.
 
   ```bash
   php tests/run.php

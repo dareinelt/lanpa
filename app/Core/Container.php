@@ -814,6 +814,7 @@ final class Container
             \App\Services\Orvanta\OrvantaCalendarService::class,
             static fn (): \App\Services\Orvanta\OrvantaCalendarService => new \App\Services\Orvanta\OrvantaCalendarService(
                 self::orvantaCalendarRepository(),
+                self::orvantaConfig(),
                 static fn (string $uid, string $email): \App\Contracts\OrvantaMailBackendInterface => self::orvantaMail()->backendForUid($uid, $email),
                 app_logger()
             )

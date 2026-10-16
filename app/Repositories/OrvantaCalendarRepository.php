@@ -226,7 +226,7 @@ final class OrvantaCalendarRepository extends Repository
         $this->pdo->prepare('DELETE FROM orvanta_calendar_attendees WHERE event_id = :id')->execute(['id' => $eventId]);
         $insert = $this->pdo->prepare('INSERT INTO orvanta_calendar_attendees
             (event_id, email, display_name, role, response, responded_at, created_at, updated_at)
-            VALUES (:event_id, :email, :name, :role, :response, :responded_at, :now, :now)');
+            VALUES (:event_id, :email, :name, :role, :response, :responded_at, :created_at, :updated_at)');
         foreach ($attendees as $attendee) {
             $known = $existing[strtolower($attendee['email'])] ?? null;
             $response = $known === null ? $attendee['response'] : (string) $known['response'];
@@ -237,7 +237,8 @@ final class OrvantaCalendarRepository extends Repository
                 'role' => $attendee['role'],
                 'response' => $response,
                 'responded_at' => $known === null ? null : $known['responded_at'],
-                'now' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
             ]);
         }
         $this->setAttendeeCount($eventId, count($attendees));
@@ -249,13 +250,14 @@ final class OrvantaCalendarRepository extends Repository
     public function setAttendeeResponse(string $uid, int $eventId, string $email, string $response, string $now): int
     {
         $statement = $this->pdo->prepare('UPDATE orvanta_calendar_attendees
-            SET response = :response, responded_at = :now, updated_at = :now
+            SET response = :response, responded_at = :responded_at, updated_at = :updated_at
             WHERE event_id = :event_id AND email = :email
               AND EXISTS (SELECT 1 FROM orvanta_calendar_events e
                           WHERE e.id = orvanta_calendar_attendees.event_id AND e.user_uid = :uid)');
         $statement->execute([
             'response' => $response,
-            'now' => $now,
+            'responded_at' => $now,
+            'updated_at' => $now,
             'event_id' => $eventId,
             'email' => $email,
             'uid' => $uid,
@@ -341,7 +343,8 @@ final class OrvantaCalendarRepository extends Repository
         $insert = $this->pdo->prepare('INSERT INTO orvanta_calendar_outbox
             (user_uid, event_id, kind, idempotency_key, from_email, recipients, payload, status, attempts,
              next_attempt_at, created_at, updated_at)
-            VALUES (:uid, :event_id, :kind, :key, :from_email, :recipients, :payload, \'pending\', 0, :now, :now, :now)');
+            VALUES (:uid, :event_id, :kind, :key, :from_email, :recipients, :payload, \'pending\', 0,
+                    :next_attempt_at, :created_at, :updated_at)');
         try {
             $insert->execute([
                 'uid' => $uid,
@@ -351,7 +354,9 @@ final class OrvantaCalendarRepository extends Repository
                 'from_email' => $from,
                 'recipients' => json_encode(array_values($recipients), JSON_UNESCAPED_UNICODE),
                 'payload' => $payload,
-                'now' => $now,
+                'next_attempt_at' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
             ]);
         } catch (PDOException) {
             return false;
@@ -421,9 +426,9 @@ final class OrvantaCalendarRepository extends Repository
     public function recoverOutbox(string $staleBefore, string $now): int
     {
         $statement = $this->pdo->prepare('UPDATE orvanta_calendar_outbox
-            SET status = \'pending\', next_attempt_at = :now, updated_at = :now
+            SET status = \'pending\', next_attempt_at = :next_attempt_at, updated_at = :updated_at
             WHERE status = \'sending\' AND updated_at <= :stale');
-        $statement->execute(['now' => $now, 'stale' => $staleBefore]);
+        $statement->execute(['next_attempt_at' => $now, 'updated_at' => $now, 'stale' => $staleBefore]);
 
         return $statement->rowCount();
     }

@@ -938,13 +938,72 @@ def _leaves(part: Message) -> list:
     return [part]
 
 
+def _disposition(part: Message) -> str:
+    try:
+        return part.get_content_disposition() or ""
+    except Exception:  # noqa: BLE001 - defekte Teile
+        return ""
+
+
+def _filename(part: Message) -> str:
+    try:
+        return part.get_filename() or ""
+    except Exception:  # noqa: BLE001 - defekte Teile
+        return ""
+
+
+def _is_body_candidate(part: Message) -> bool:
+    """Teil darf als Nachrichtentext dienen.
+
+    Als Anhang ausgezeichnete Teile ohne Dateinamen sind kein echter Anhang,
+    sondern falsch ausgezeichneter Nachrichtentext (kommt bei manchen
+    Programmen vor); ein `Content-Disposition: attachment` mit Dateinamen ist
+    dagegen eine angehaengte Datei.
+    """
+    return _disposition(part) != "attachment" or not _filename(part)
+
+
+def _text_leaves(msg: Message) -> list:
+    """Alle Textteile (HTML, Text) der Nachricht in Dokumentreihenfolge."""
+    return [p for p in _leaves(msg) if p.get_content_type() in ("text/html", "text/plain")]
+
+
+def _first_text_part(leaves: list, content_type: str, other: Message | None) -> Message | None:
+    """Ersten Textteil der gesuchten Art liefern, der kein Anhang ist."""
+    for part in leaves:
+        if part.get_content_type() != content_type or part is other:
+            continue
+        if _is_body_candidate(part):
+            return part
+    return None
+
+
 def message_parts(msg: Message) -> tuple:
-    """(HTML-Teil, Text-Teil, Anhaenge) in stabiler Reihenfolge (Index = Anhangskennung)."""
+    """(HTML-Teil, Text-Teil, Anhaenge) in stabiler Reihenfolge (Index = Anhangskennung).
+
+    `get_body()` folgt der MIME-Konvention, dass in `multipart/related` nur der
+    erste Teil (bzw. der ueber `start` benannte) die Wurzel ist. Manche
+    Programme legen dort zuerst ein Bild ab oder stellen `text/plain` daneben;
+    der HTML-Teil bleibt dann unentdeckt und Orvanta zeigt statt der
+    formatierten Mail den Ersatztext (Schriftgroessen, Tabellen und
+    eingebettete Bilder gehen verloren). Deshalb werden beide Teile zusaetzlich
+    in Dokumentreihenfolge gesucht (siehe docs/mail-proxy-referenz.md).
+    """
     try:
         html_part = msg.get_body(preferencelist=("html",))
         text_part = msg.get_body(preferencelist=("plain",))
     except Exception:  # noqa: BLE001
         html_part = text_part = None
+    if html_part is None or text_part is None:
+        leaves = _text_leaves(msg)
+        if html_part is None:
+            html_part = _first_text_part(leaves, "text/html", text_part)
+        if text_part is None:
+            text_part = _first_text_part(leaves, "text/plain", html_part)
+        if html_part is None and text_part is None:
+            # Letzter Ausweg: ein als Anhang ausgewiesener HTML-Teil, damit die
+            # formatierte Nachricht nicht durch einen leeren Text ersetzt wird.
+            html_part = next((p for p in leaves if p.get_content_type() == "text/html"), None)
     attachments = [p for p in _leaves(msg) if p is not html_part and p is not text_part]
     return html_part, text_part, attachments
 
@@ -1804,6 +1863,61 @@ def selftest() -> int:
         ("Empfaenger mit Rohbytes", _addresses(parse_headers(header_block).get("To")), [{"name": "Jörg", "email": "j@example.de"}]),
         ("Listenzusammenfassung", summary(b"", header_block)["subject"], "Grüße aus München"),
         ("Kopfblock als Text", decode_text(header_block).splitlines()[1], "To: Jörg <j@example.de>"),
+    ]
+
+    # MIME-Formen: der HTML-Teil muss auch dann gefunden werden, wenn er nicht
+    # an der von get_body() erwarteten Stelle steht (siehe message_parts()).
+    html_body = '<div style="font-size:18pt">Hallo</div><img src="cid:img1@x">'
+    h = "Content-Type: text/html; charset=utf-8\r\n\r\n" + html_body + "\r\n"
+    t = "Content-Type: text/plain; charset=utf-8\r\n\r\nHallo\r\n"
+    img = ("Content-Type: image/png\r\nContent-Transfer-Encoding: base64\r\n"
+           "Content-ID: <img1@x>\r\nContent-Disposition: inline; filename=\"image001.png\"\r\n\r\niVBORw0KGgo=\r\n")
+    h_att = ("Content-Type: text/html; charset=utf-8\r\n"
+             "Content-Disposition: attachment; filename=\"nachricht.html\"\r\n\r\n" + html_body + "\r\n")
+    alt = "Content-Type: multipart/alternative; boundary=A\r\n\r\n--A\r\n" + t + "--A\r\n" + h + "--A--\r\n"
+
+    def mime(content_type: str, body: str) -> Message:
+        return part("Content-Type: " + content_type + "\r\n", body.encode("utf-8"))
+
+    def chosen(msg: Message) -> str:
+        html_part, text_part, _ = message_parts(msg)
+        if html_part is not None:
+            return "html:" + _text(html_part).strip()
+        return "text:" + _text(text_part).strip() if text_part is not None else "leer"
+
+    def listed(msg: Message) -> list:
+        return [(p.get_content_type(), _content_id(p)) for p in message_parts(msg)[2]]
+
+    related_first_image = mime(
+        'multipart/related; boundary=R; type="multipart/alternative"',
+        "--R\r\n" + img + "--R\r\n" + alt + "--R--\r\n")
+    related_start_image = mime(
+        'multipart/related; boundary=R; type="multipart/alternative"; start="<img1@x>"',
+        "--R\r\n" + alt + "--R\r\n" + img + "--R--\r\n")
+    alternative_image_first = mime(
+        "multipart/alternative; boundary=A",
+        "--A\r\n" + t + "--A\r\nContent-Type: multipart/related; boundary=R; type=\"text/html\"\r\n\r\n"
+        "--R\r\n" + img + "--R\r\n" + h + "--R--\r\n--A--\r\n")
+    related_plain_root = mime(
+        'multipart/related; boundary=R; type="multipart/alternative"',
+        "--R\r\n" + t + "--R\r\n" + alt + "--R--\r\n")
+    html_attachment_unnamed = mime(
+        "multipart/mixed; boundary=B",
+        "--B\r\n" + t + "--B\r\nContent-Type: text/html; charset=utf-8\r\n"
+        "Content-Disposition: attachment\r\n\r\n" + html_body + "\r\n--B--\r\n")
+    html_attachment_named = mime("multipart/mixed; boundary=B", "--B\r\n" + t + "--B\r\n" + h_att + "--B--\r\n")
+    only_html_attachment = mime("multipart/mixed; boundary=B", "--B\r\n" + h_att + "--B--\r\n")
+
+    checks += [
+        ("html in related hinter dem Bild", chosen(related_first_image), "html:" + html_body),
+        ("html in related, start zeigt aufs Bild", chosen(related_start_image), "html:" + html_body),
+        ("html in related innerhalb alternative", chosen(alternative_image_first), "html:" + html_body),
+        ("html in alternative neben dem Text von related", chosen(related_plain_root), "html:" + html_body),
+        ("html-Teil ohne Dateinamen gilt als Nachrichtentext", chosen(html_attachment_unnamed), "html:" + html_body),
+        ("html-Anhang mit Dateiname bleibt Anhang", chosen(html_attachment_named), "text:Hallo"),
+        ("nur html-Anhang liefert trotzdem HTML", chosen(only_html_attachment), "html:" + html_body),
+        ("eingebettetes Bild bleibt Anhang mit Content-ID",
+         listed(alternative_image_first), [("image/png", "img1@x")]),
     ]
     failed = 0
     for name, got, want in checks:

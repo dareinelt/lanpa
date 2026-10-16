@@ -309,6 +309,18 @@ bereits im Parser der Standardbibliothek verloren (RFC 2047 verlangt
 kodierte Wörter) und werden nicht repariert; korrekt kodierte Anhangsnamen
 sind unverändert.
 
+**Teilwahl.** Für den Nachrichtentext reicht `get_body()` nicht: Die
+Standardbibliothek folgt in `multipart/related` nur dem ersten Teil bzw. dem
+über `start` benannten und übersieht den HTML-Teil, wenn dort zuerst ein Bild
+steht, `text/plain` danebenliegt oder das HTML in einem
+`multipart/alternative` unterhalb von `related` steckt. `message_parts()`
+prüft deshalb zusätzlich alle Textteile in Dokumentreihenfolge und bevorzugt
+HTML vor Text; ein als Anhang ausgezeichneter Teil **mit** Dateinamen bleibt
+Anhang, ein solcher **ohne** Dateinamen gilt als falsch ausgezeichneter
+Nachrichtentext. Ohne diese Nachsuche liefert der Proxy `html: ""`, und
+Orvanta zeigt statt der formatierten Mail den Ersatztext – Schriftgrößen,
+Tabellen und eingebettete Bilder (`cid:`) gehen dann verloren.
+
 ### 6.6 Senden, Antworten, Weiterleiten, Entwurf
 
 ```mermaid
@@ -625,7 +637,11 @@ Der Selbsttest im Dienst (`selftest()`, Aufruf über `--selftest`, Exit-Code 1
 bei Fehlern) prüft ohne Netzzugriff und ohne Abhängigkeiten: `decode_text()`
 gegen die Matrix aus deklariertem Zeichensatz und tatsächlicher Kodierung,
 Text-/HTML-Teile (Quoted-Printable, Base64, 8bit), rohe 8-Bit-Kopfzeilen,
-`summary()` und den Kopfzeilenblock. Er läuft im Container wie lokal und
+`summary()`, den Kopfzeilenblock sowie die Teilwahl des Nachrichtentexts
+(`message_parts()`, 6.5) bei typischen MIME-Formen: HTML hinter einem Bild in
+`multipart/related`, `start` auf das Bild, HTML unter `related` innerhalb von
+`alternative`, als Anhang ausgezeichneter HTML-Teil und die Anhangsliste samt
+`Content-ID` des eingebetteten Bildes. Er läuft im Container wie lokal und
 braucht weder Datenbank noch Mailserver.
 
 `tests/Unit/MailProxyTest.php`: SQLite-Schema (`mailProxyPdo()`, manuell an
@@ -699,6 +715,7 @@ direkt Cache/Generation manipulieren).
 | 404 „neu aufgebaut“ | `uidvalidity` geändert → Liste neu laden |
 | 503 `busy` | `MAX_CONNECTIONS` erschöpft oder lange Operation auf demselben Postfach |
 | Umlaute in eingehenden Mails verstümmelt (`fÃ¼r`, `f��r`) | Zeichensatz-Heuristik in 6.5 prüfen: `decode_text()`/`parse_headers()`; Test mit `python3 docker/mail-proxy/mail_proxy.py --selftest`. Bleibt nur der Anhangsname betroffen, ist es die bekannte Grenze des Parsers (16.) |
+| Formatierung, Schriftgrößen oder eingebettete Bilder fehlen, Mail erscheint als Text | Proxy liefert `html: ""` → Orvanta zeigt den Ersatztext. Teilwahl in 6.5 prüfen (`message_parts()`); Test mit `python3 docker/mail-proxy/mail_proxy.py --selftest`. Betroffene Mail als `.eml` speichern und mit `email.message_from_bytes(…, policy=POLICY)` gegen `message_parts()` legen. Enthält die Mail gar kein HTML (z. B. nur `application/ms-tnef`, 16.), ist die Textdarstellung erwartet |
 
 Logs: `docker compose logs mail-proxy` (JSON-Zeilen `request`, `request failed`,
 `cache invalidated`, `sent copy failed` …), PHP-Log (`mail-proxy …`).
@@ -720,6 +737,19 @@ Diagnose-Karte unter Admin → Office.
   Praxis. Unkodierte 8-Bit-Umlaute in Anhangsnamen (`name=`, `filename=`)
   bleiben verloren, weil die Standardbibliothek sie schon beim Parsen ersetzt
   (RFC 2047 verlangt kodierte Wörter); kodierte Namen sind unberührt.
+- Teilwahl des Nachrichtentexts (6.5): Ein `text/html`-Teil, den der Absender
+  ausdrücklich **mit** Dateinamen als Anhang auszeichnet, bleibt Anhang – die
+  Mail wird als Text angezeigt, das HTML ist als Anhang abrufbar. Nur wenn die
+  Nachricht sonst keinen Text enthält, dient ein solcher HTML-Anhang als
+  Anzeigetext, damit die Mail nicht leer erscheint; er taucht dann nicht mehr
+  in der Anhangsliste auf. Textteile innerhalb eines `multipart/alternative`,
+  die weder als Nachrichtentext gewählt noch ausdrücklich als Anhang
+  ausgezeichnet sind, können als zusätzlicher Textanhang in der Liste stehen.
+- Kein TNEF: Nachrichten, die den formatierten Text nur in
+  `application/ms-tnef` (`winmail.dat`) mitführen – Outlook/Exchange bei
+  „RTF an externe Empfänger“ –, enthalten überhaupt kein `text/html`. Der
+  Proxy wertet TNEF nicht aus; solche Mails erscheinen als Text. Der Anhang
+  `winmail.dat` bleibt als Anhang abrufbar.
 - Ohne UIDPLUS wird die neue UID über die `Message-ID` gesucht; kann 0 sein
   (dann liefert `saveDraft()` einen Fehler, `send()` eine leere ID).
 - `with_imap()` wiederholt einen abgebrochenen Pool-Aufruf genau einmal (nicht

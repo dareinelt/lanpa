@@ -458,7 +458,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 
 ## 11. Sicherheitsmodell
 
-- **DB:** ausschließlich Prepared Statements (`ATTR_EMULATE_PREPARES = false`).
+- **DB:** ausschließlich Prepared Statements (`ATTR_EMULATE_PREPARES = false`). Ein benannter Platzhalter darf je Anweisung **nur einmal** vorkommen (MySQL ersetzt ihn nativ positionell; Wiederholungen → `SQLSTATE[HY093]`, SQLite bindet nach Namen und schluckt sie) – mehrfach gleiche Werte über getrennte Namen binden; Prüfung durch `tests/Unit/SqlPlaceholderTest.php`.
 - **Ausgabe:** konsequent `Html::e()` (htmlspecialchars, UTF-8); kein ungefiltertes Echo.
 - **CSRF:** jedes schreibende Formular; ungültiger Token → HTTP 419.
 - **Header:** `Content-Security-Policy` (`script-src 'self'`, Nonce für das Farbschema), `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`.
@@ -546,6 +546,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 - Dependency-freier Testrunner: `php tests/run.php`.
 - `tests/Support/Runner.php`, `Assert.php`, `Fakes.php` (Fake-Implementierungen der Contracts).
 - Unit-Tests in `tests/Unit/*Test.php` (u. a. `AdSyncServiceTest`, `NavigationServiceTest`, `SecurityTest`, `StatisticsServiceTest`, `ValidatorTest`).
+- `tests/Unit/SqlPlaceholderTest.php` prüft statisch alle SQL-Literale unter `app/` auf mehrfach verwendete benannte Platzhalter (Fehlerklasse, die nur mit MySQL auftritt und in SQLite-Tests unbemerkt bleibt).
 - Tests nutzen `Database::set()` mit einer SQLite-In-Memory-PDO bzw. Fake-Repositories.
 
 ### Alarmierung & SMS-Zugangscode

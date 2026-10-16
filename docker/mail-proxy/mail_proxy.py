@@ -830,6 +830,60 @@ def with_imap(account: Account, work):
 
 POLICY = email.policy.default.clone(max_line_length=998)
 
+# Zeichensaetze, die jedes Byte einzeln abbilden (ASCII-kompatibel). Ist nur
+# ein solcher (oder gar keiner) deklariert, die Bytefolge aber gueltiges UTF-8
+# mit Mehrbyte-Sequenzen, dann hat der Absender UTF-8 ohne passende
+# Deklaration verschickt - Outlook/Exchange tun das haeufig, andere Programme
+# deklarieren umgekehrt ISO-8859-1, obwohl die Bytes UTF-8 sind.
+LEGACY_SINGLE_BYTE_CHARSETS = frozenset(
+    {"ascii", "us-ascii", "ansi_x3.4-1968", "iso-ir-6", "cp819", "latin1", "latin-1", "latin_1", "iso8859-1"}
+    | {f"iso-8859-{n}" for n in range(1, 17)}
+    | {f"iso8859-{n}" for n in range(1, 17)}
+    | {f"latin-{n}" for n in range(1, 11)}
+    | {f"windows-125{n}" for n in range(0, 9)}
+    | {f"cp125{n}" for n in range(0, 9)}
+    | {f"ibm-125{n}" for n in range(0, 9)}
+)
+
+
+def decode_text(payload: bytes, charset: str | None = None) -> str:
+    """Text-Bytes als UTF-8-Text zurueckgeben (Grundlage aller Textausgaben).
+
+    Der deklarierte Zeichensatz gilt nur, wenn er zur Bytefolge passt: fehlt
+    er, ist er US-ASCII oder ein westeuropaeischer Einzelbyte-Zeichensatz und
+    sind die Bytes zugleich gueltiges UTF-8, dann gilt UTF-8 - so wie Browser
+    es bei HTML handhaben. Umgekehrt faengt ISO-8859-1 als letzter Ausweg
+    Nachrichten ab, die als UTF-8 deklariert sind, aber Einzelbyte-Zeichen
+    enthalten. Eine Ersatzdarstellung entsteht erst, wenn keine Bytefolge
+    passt.
+    """
+    if not payload:
+        return ""
+    declared = (charset or "").strip().lower() or None
+    candidates: list = []
+    if declared and declared not in LEGACY_SINGLE_BYTE_CHARSETS:
+        # Eindeutige Deklaration (UTF-8, UTF-16, Shift_JIS, ...) hat Vorrang.
+        candidates.append(declared)
+    candidates.append("utf-8")
+    if declared:
+        candidates.append(declared)
+    candidates.append("iso-8859-1")
+    for name in candidates:
+        try:
+            return payload.decode(name)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return payload.decode("utf-8", "replace")
+
+
+def parse_headers(raw: bytes) -> Message:
+    """Kopfzeilen aus dem Rohblock lesen.
+
+    Der Block wird zuvor zeichensatzgerecht gewandelt: unkodierte Umlaute in
+    Rohbytes kaemen sonst nur als Ersatzzeichen an (Betreff, Absendername).
+    """
+    return email.parser.HeaderParser(policy=POLICY).parsestr(decode_text(raw), headersonly=True)
+
 
 def _addresses(header) -> list:
     result = []
@@ -864,10 +918,13 @@ def _importance(msg: Message) -> str:
 
 def _text(part: Message) -> str:
     try:
-        return part.get_content()
-    except (LookupError, KeyError, ValueError, AssertionError):
-        payload = part.get_payload(decode=True) or b""
-        return payload.decode("utf-8", "replace")
+        payload = part.get_payload(decode=True)
+        charset = part.get_content_charset()
+    except Exception:  # noqa: BLE001 - defekte Teile
+        return ""
+    if isinstance(payload, bytes):
+        return decode_text(payload, charset)
+    return payload if isinstance(payload, str) else ""
 
 
 def _leaves(part: Message) -> list:
@@ -919,7 +976,7 @@ def _content_id(part: Message) -> str:
 
 
 def summary(meta: bytes, header_bytes: bytes) -> dict:
-    headers = email.parser.BytesHeaderParser(policy=POLICY).parsebytes(header_bytes or b"")
+    headers = parse_headers(header_bytes or b"")
     from_list = _addresses(headers.get("From"))
     content_type = str(headers.get("Content-Type", "")).lower()
     flags = meta_flags(meta)
@@ -1065,18 +1122,20 @@ def op_message(account: Account, payload: dict) -> dict:
     def work(session: ImapSession) -> dict:
         msg, record, raw = _load_message(session, payload)
         header_end = raw.find(b"\r\n\r\n")
-        result = summary(record["meta"], raw[: header_end + 4] if header_end >= 0 else raw[:65536])
+        header_bytes = raw[: header_end + 4] if header_end >= 0 else raw[:65536]
+        headers = parse_headers(header_bytes)
+        result = summary(record["meta"], header_bytes)
         html_part, text_part, attachments = message_parts(msg)
         result["html"] = _text(html_part) if html_part is not None else ""
         result["text"] = _text(text_part) if text_part is not None else ""
         plain = result["text"] or re.sub(r"<[^>]+>", " ", result["html"])
         result["preview"] = re.sub(r"\s+", " ", html.unescape(plain)).strip()[:255]
-        result["cc"] = _addresses(msg.get("Cc"))
-        result["bcc"] = _addresses(msg.get("Bcc"))
-        result["reply_to"] = _addresses(msg.get("Reply-To"))
-        sender = _addresses(msg.get("Sender"))
+        result["cc"] = _addresses(headers.get("Cc"))
+        result["bcc"] = _addresses(headers.get("Bcc"))
+        result["reply_to"] = _addresses(headers.get("Reply-To"))
+        sender = _addresses(headers.get("Sender"))
         result["sender"] = sender[0] if sender else result["from"]
-        result["message_id"] = str(msg.get("Message-ID", "") or "").strip()
+        result["message_id"] = str(headers.get("Message-ID", "") or "").strip()
         listing = []
         for index, part in enumerate(attachments):
             content_id = _content_id(part)
@@ -1097,8 +1156,8 @@ def op_headers(account: Account, payload: dict) -> dict:
         uid = int(payload.get("uid", 0))
         session.select_checked(str(payload.get("folder", "")), int(payload.get("uidvalidity", 0)), True)
         raw, _ = session.fetch_raw(uid, "BODY.PEEK[HEADER]")
-        headers = email.parser.BytesHeaderParser(policy=POLICY).parsebytes(raw)
-        return {"headers": raw.decode("utf-8", "replace"), "subject": str(headers.get("Subject", "") or "")}
+        headers = parse_headers(raw)
+        return {"headers": decode_text(raw), "subject": str(headers.get("Subject", "") or "")}
     return with_imap(account, work)
 
 
@@ -1705,9 +1764,61 @@ def healthcheck() -> int:
         return 1
 
 
+def selftest() -> int:
+    """Zeichensatzbehandlung pruefen (``--selftest``, ohne Netzwerk)."""
+    umlaut = "für"
+    utf8 = umlaut.encode("utf-8")
+    cp1252 = umlaut.encode("cp1252")
+
+    def part(headers: str, body: bytes) -> Message:
+        raw = ("From: absender@example.de\r\nMIME-Version: 1.0\r\n" + headers + "\r\n").encode("ascii") + body
+        return email.message_from_bytes(raw, policy=POLICY)
+
+    header_block = b"Subject: Gr\xfc\xdfe aus M\xfcnchen\r\nTo: J\xf6rg <j@example.de>\r\n\r\n"
+    checks = [
+        ("utf-8 ohne Zeichensatz", decode_text(utf8), umlaut),
+        ("utf-8 als US-ASCII", decode_text(utf8, "us-ascii"), umlaut),
+        ("utf-8 als windows-1252", decode_text(utf8, "windows-1252"), umlaut),
+        ("utf-8 als iso-8859-1", decode_text(utf8, "iso-8859-1"), umlaut),
+        ("windows-1252 wie deklariert", decode_text(cp1252, "windows-1252"), umlaut),
+        ("windows-1252 ohne Zeichensatz", decode_text(cp1252), umlaut),
+        ("windows-1252 als utf-8", decode_text(cp1252, "utf-8"), umlaut),
+        ("iso-8859-7 wie deklariert", decode_text("α".encode("iso-8859-7"), "iso-8859-7"), "α"),
+        ("leerer Teil", decode_text(b""), ""),
+        (
+            "html: US-ASCII deklariert, 8-Bit-UTF-8",
+            _text(part("Content-Type: text/html; charset=us-ascii\r\nContent-Transfer-Encoding: 8bit\r\n", b"<p>" + utf8 + b"</p>")),
+            "<p>" + umlaut + "</p>",
+        ),
+        (
+            "html: iso-8859-1 deklariert, quoted-printable UTF-8",
+            _text(part("Content-Type: text/html; charset=iso-8859-1\r\nContent-Transfer-Encoding: quoted-printable\r\n", b"<p>f=C3=BCr</p>")),
+            "<p>" + umlaut + "</p>",
+        ),
+        (
+            "text: utf-8 deklariert, base64",
+            _text(part("Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: base64\r\n", base64.encodebytes(utf8))),
+            umlaut,
+        ),
+        ("Betreff mit Rohbytes", str(parse_headers(header_block).get("Subject")), "Grüße aus München"),
+        ("Empfaenger mit Rohbytes", _addresses(parse_headers(header_block).get("To")), [{"name": "Jörg", "email": "j@example.de"}]),
+        ("Listenzusammenfassung", summary(b"", header_block)["subject"], "Grüße aus München"),
+        ("Kopfblock als Text", decode_text(header_block).splitlines()[1], "To: Jörg <j@example.de>"),
+    ]
+    failed = 0
+    for name, got, want in checks:
+        if got != want:
+            failed += 1
+            log("warning", "selftest failed", check=name, got=got, want=want)
+    log("info", "selftest", checks=len(checks), failed=failed)
+    return 1 if failed else 0
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--healthcheck":
         return healthcheck()
+    if len(sys.argv) > 1 and sys.argv[1] == "--selftest":
+        return selftest()
     server = Server((LISTEN_HOST, LISTEN_PORT), Handler)
     stop = threading.Event()
     threading.Thread(target=_janitor, args=(stop,), daemon=True).start()

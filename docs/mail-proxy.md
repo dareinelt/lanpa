@@ -139,6 +139,16 @@ Systemordner werden über SPECIAL-USE (RFC 6154) erkannt, sonst über übliche
 deutsche und englische Namen (`Sent`, `Gesendete Elemente`, `Trash`,
 `Papierkorb`, `Drafts`, `Entwürfe`, `Junk`, `Spam` …).
 
+Umlaute und andere Nicht-ASCII-Zeichen eingehender Mails bleiben erhalten, auch
+wenn der Absender den Zeichensatz falsch oder gar nicht angibt (häufig bei
+Outlook/iOS: UTF-8-Bytes mit `charset=iso-8859-1`, `us-ascii` oder ohne
+Angabe). Der Proxy richtet sich nach den Bytes: eine eindeutige Deklaration
+(UTF-8, UTF-16, Shift_JIS …) gilt, sonst wird UTF-8 bevorzugt und nur als
+letzter Ausweg der deklarierte Einzelbyte-Zeichensatz bzw. ISO-8859-1
+verwendet. Das betrifft Textkörper und Kopfzeilen (Betreff, Absendername);
+Ausnahme sind unkodierte Umlaute in Dateinamen von Anhängen – Details in
+[mail-proxy-referenz.md](mail-proxy-referenz.md), Abschnitt 6.5.
+
 ![Orvanta über den Proxy: Status „Verbunden (IMAP/SMTP)“, nur das Modul Mail](screenshots/100-orvanta-proxy-postfach.png)
 
 ## 5. Sicherheit

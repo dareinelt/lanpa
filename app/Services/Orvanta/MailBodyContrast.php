@@ -15,21 +15,21 @@ use DOMNode;
  *
  * Absender schreiben Farben fest in das HTML (z. B. ein dunkles Grau aus
  * Outlook). Auf der dunklen Design-Oberflaeche haben solche Farben zu wenig
- * Kontrast. Wie bei den Navigationskacheln wird deshalb je Modus eine
- * kontrastsichere Ersatzfarbe berechnet (siehe App\Support\TileColors und
- * App\Support\Color) und dem Element als eigene CSS-Variable mitgegeben;
- * orvanta.css faerbt den Text im jeweiligen Modus damit ein.
+ * Kontrast. Wie bei den Navigationskacheln wird deshalb eine kontrastsichere
+ * Ersatzfarbe berechnet (siehe App\Support\TileColors und App\Support\Color)
+ * und dem Element als eigene CSS-Variable mitgegeben; orvanta.css faerbt den
+ * Text damit ein, aber nur im dunklen Modus.
  *
- * Die Originalfarbe bleibt im style-Attribut stehen: Sie gilt weiterhin im
- * anderen Modus, beim Zitieren einer Nachricht und fuer den Empfaenger.
+ * Im hellen Modus wird die Schriftfarbe nie angepasst: Dort gilt immer die
+ * Farbe des Absenders. Sie bleibt deshalb im style-Attribut stehen – sie gilt
+ * weiterhin im hellen Modus, beim Zitieren einer Nachricht und fuer den
+ * Empfaenger.
  */
 final class MailBodyContrast
 {
     public const ATTR_DARK = 'data-ov-dark-color';
-    public const ATTR_LIGHT = 'data-ov-light-color';
 
     private const PROPERTY_DARK = '--ov-dark-color';
-    private const PROPERTY_LIGHT = '--ov-light-color';
 
     /** Grundfarben (HTML/CSS), die in Nachrichten als Farbname vorkommen. */
     private const NAMED_COLORS = [
@@ -43,12 +43,11 @@ final class MailBodyContrast
     ];
 
     /**
-     * Ergänzt im Nachrichtentext die modusabhaengigen Ersatzfarben.
+     * Ergänzt im Nachrichtentext die Ersatzfarbe fuer den dunklen Modus.
      *
-     * @param array{background:string,text:string,muted:string,accent:string,surface:string,surfaceHover:string} $light Designfarben des hellen Modus
      * @param array{background:string,text:string,muted:string,accent:string,surface:string,surfaceHover:string} $dark Designfarben des dunklen Modus
      */
-    public static function apply(string $html, array $light, array $dark): string
+    public static function apply(string $html, array $dark): string
     {
         if ($html === '' || stripos($html, 'color') === false) {
             return $html;
@@ -68,7 +67,7 @@ final class MailBodyContrast
             return $html;
         }
         foreach ($root->childNodes as $child) {
-            self::walk($child, null, $light, $dark);
+            self::walk($child, null, $dark);
         }
 
         $out = '';
@@ -81,10 +80,9 @@ final class MailBodyContrast
 
     /**
      * @param array{color:string,alpha:float}|null $background sichtbarer Hintergrund aus der Umgebung
-     * @param array<string,string> $light
      * @param array<string,string> $dark
      */
-    private static function walk(DOMNode $node, ?array $background, array $light, array $dark): void
+    private static function walk(DOMNode $node, ?array $background, array $dark): void
     {
         if (!$node instanceof DOMElement) {
             return;
@@ -93,40 +91,37 @@ final class MailBodyContrast
         // Werte erben weiter, damit die Textfarbe nicht gegen die falsche
         // Flaeche geprueft wird.
         $background = self::declaredBackground($node) ?? $background;
-        self::applyTextColor($node, $background, $light, $dark);
+        self::applyTextColor($node, $background, $dark);
 
         foreach ($node->childNodes as $child) {
-            self::walk($child, $background, $light, $dark);
+            self::walk($child, $background, $dark);
         }
     }
 
     /**
      * @param array{color:string,alpha:float}|null $background
-     * @param array<string,string> $light
      * @param array<string,string> $dark
      */
-    private static function applyTextColor(DOMElement $node, ?array $background, array $light, array $dark): void
+    private static function applyTextColor(DOMElement $node, ?array $background, array $dark): void
     {
         $declared = self::declaredTextColor($node);
         if ($declared === null) {
             return;
         }
-        $style = (string) $node->getAttribute('style');
-
-        foreach ([[self::ATTR_LIGHT, self::PROPERTY_LIGHT, $light], [self::ATTR_DARK, self::PROPERTY_DARK, $dark]] as [$attribute, $property, $base]) {
-            $effective = $background === null
-                ? $base['background']
-                : Color::blend($base['background'], $background['color'], $background['alpha']);
-            $color = Color::ensureContrast($effective, $declared);
-            if ($color === $declared) {
-                continue;
-            }
-            // Anhaengen statt umbauen: Die uebrigen Deklarationen bleiben
-            // unveraendert, und bei mehrfachem Lauf gewinnt der letzte Wert.
-            $style = ($style === '' ? '' : rtrim($style, "; \t") . ';') . $property . ':' . $color;
-            $node->setAttribute('style', $style);
-            $node->setAttribute($attribute, '');
+        $effective = $background === null
+            ? $dark['background']
+            : Color::blend($dark['background'], $background['color'], $background['alpha']);
+        $color = Color::ensureContrast($effective, $declared);
+        if ($color === $declared) {
+            return;
         }
+
+        // Anhaengen statt umbauen: Die uebrigen Deklarationen bleiben
+        // unveraendert, und bei mehrfachem Lauf gewinnt der letzte Wert.
+        $style = (string) $node->getAttribute('style');
+        $style = ($style === '' ? '' : rtrim($style, "; \t") . ';') . self::PROPERTY_DARK . ':' . $color;
+        $node->setAttribute('style', $style);
+        $node->setAttribute(self::ATTR_DARK, '');
     }
 
     /**

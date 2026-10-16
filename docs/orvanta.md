@@ -161,11 +161,12 @@ Hintergrund kaum zu lesen. Deshalb prüft der Server jeden Nachrichten- und
 Termintext vor der Ausgabe auf den Mindestkontrast von 4,5:1 – dieselbe
 Rechnung wie bei den Kacheln der Startseite (`App\Support\Color`). Reicht der
 Kontrast gegen den tatsächlich wirksamen Hintergrund (eigene Zelle, geerbter
-Container oder Seitenfläche) nicht aus, liefert der Server je Modus eine
-lesbare Ersatzfarbe mit; das Design entscheidet, welche gilt. Die
-ursprüngliche Absenderfarbe bleibt erhalten – sie wirkt weiterhin im jeweils
-anderen Modus, in zitierten Texten und beim Empfänger, weil ausgehende
-Nachrichten ohne die Hilfsangaben verschickt werden.
+Container oder dunkle Seitenfläche) nicht aus, liefert der Server eine lesbare
+Ersatzfarbe mit, die nur im dunklen Design gilt. Im hellen Anzeigemodus wird
+die Schriftfarbe einer Nachricht nie verändert. Die ursprüngliche
+Absenderfarbe bleibt erhalten – sie wirkt weiterhin im hellen Modus, in
+zitierten Texten und beim Empfänger, weil ausgehende Nachrichten ohne die
+Hilfsangaben verschickt werden.
 
 ---
 
@@ -203,7 +204,7 @@ flowchart LR
 | `CurlExchangeTransport` / `DemoExchangeTransport` | `app/Services/Orvanta/` | EWS-SOAP per cURL (`ExchangeTransportInterface`) bzw. Beispieldaten ohne Server |
 | `EwsXml` | `app/Services/Orvanta/` | Aufbau/Auswertung der SOAP-Nachrichten (`DOMDocument`) |
 | `MailHtmlSanitizer` | `app/Services/Orvanta/` | HTML-Mails bereinigen (Skripte, externe Inhalte, Event-Handler entfernen); entfernt beim Senden auch die Hilfsangaben der Kontrastanpassung |
-| `MailBodyContrast` | `app/Services/Orvanta/` | Nachrichten- und Termintexte lesbar machen (Abschnitt 2, „Lesbarkeit im dunklen Modus“): ermittelt die wirksame Textfarbe je Element und hängt bei zu geringem Kontrast eine kontrastsichere Ersatzfarbe je Designmodus an |
+| `MailBodyContrast` | `app/Services/Orvanta/` | Nachrichten- und Termintexte im dunklen Design lesbar machen (Abschnitt 2, „Lesbarkeit im dunklen Modus“): ermittelt die wirksame Textfarbe je Element und hängt bei zu geringem Kontrast eine kontrastsichere Ersatzfarbe an; im hellen Modus bleibt die Schriftfarbe immer unverändert |
 | `OrvantaAttachmentService` | `app/Services/Orvanta/` | Anhänge: signierte Kurzzeit-Links, Öffnungsmodus (`office`/`browser`/`download`), Zwischenspeicher und Ablage in Nextcloud (WebDAV), Quota, Virenprüfung über `Malware\MalwareScanService` ([malware-protection.md](malware-protection.md)) |
 | `OrvantaRecipientService` | `app/Services/Orvanta/` | Empfänger-Vorschläge für An/Cc/Bcc: Telefonliste + Verlauf gesendeter Adressen (versteckte Datei `.empfaenger.json` in der Nextcloud des Benutzers, kurz in der Sitzung gehalten) |
 | `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile |

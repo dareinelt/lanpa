@@ -47,7 +47,7 @@ function orvantaMailContrastApply(string $html, array $settings = []): string
 {
     $modes = orvantaMailContrastModes($settings);
 
-    return MailBodyContrast::apply($html, $modes['light'], $modes['dark']);
+    return MailBodyContrast::apply($html, $modes['dark']);
 }
 
 /**
@@ -62,12 +62,13 @@ Runner::test('Nachrichtentext: dunkle Absenderfarbe wird im dunklen Modus ersetz
     $modes = orvantaMailContrastModes();
     $html = orvantaMailContrastApply('<p style="font-size:14px">Guten Tag</p><p><span style="color:#5a6475;font-weight:bold">D. Andre</span></p>');
 
-    // In der Anzeige des dunklen Modus gilt die Ersatzfarbe, im hellen Modus
-    // bleibt die Originalfarbe des Absenders stehen.
+    // Nur der dunkle Modus erhaelt eine Ersatzfarbe; die Originalfarbe des
+    // Absenders bleibt fuer den hellen Modus stehen.
     Assert::contains('data-ov-dark-color=""', $html);
     Assert::contains('color:#5a6475', $html);
     Assert::contains('font-weight:bold', $html);
-    Assert::false(str_contains($html, 'data-ov-light-color'), 'Im hellen Modus ist die Farbe lesbar');
+    Assert::false(str_contains($html, 'data-ov-light-color'), 'Im hellen Modus wird nie eine Ersatzfarbe gesetzt');
+    Assert::false(str_contains($html, '--ov-light-color'), 'Im hellen Modus wird nie eine Ersatzfarbe gesetzt');
 
     $dark = orvantaMailContrastValue($html, '--ov-dark-color');
     Assert::true($dark !== null, 'Ersatzfarbe fehlt');
@@ -78,18 +79,14 @@ Runner::test('Nachrichtentext: dunkle Absenderfarbe wird im dunklen Modus ersetz
     );
 });
 
-Runner::test('Nachrichtentext: helle Absenderfarbe wird im hellen Modus ersetzt', static function (): void {
-    $modes = orvantaMailContrastModes();
+Runner::test('Nachrichtentext: im hellen Modus wird die Schriftfarbe nie angepasst', static function (): void {
+    // Weisse Schrift waere auf der hellen Seitenflaeche nicht lesbar; sie
+    // bleibt trotzdem unveraendert, weil nur der dunkle Modus angepasst wird.
     $html = orvantaMailContrastApply('<p style="color:#ffffff">Weisse Schrift</p>');
 
-    Assert::contains('data-ov-light-color=""', $html);
-    Assert::false(str_contains($html, 'data-ov-dark-color'), 'Im dunklen Modus ist die Farbe lesbar');
-    $light = orvantaMailContrastValue($html, '--ov-light-color');
-    Assert::true($light !== null, 'Ersatzfarbe fehlt');
-    Assert::true(
-        Color::contrastRatio($modes['light']['background'], (string) $light) >= Color::MIN_CONTRAST,
-        'Ersatzfarbe erreicht den Mindestkontrast nicht'
-    );
+    Assert::contains('color:#ffffff', $html);
+    Assert::false(str_contains($html, '--ov-'), 'Im hellen Modus darf die Schriftfarbe nie ersetzt werden');
+    Assert::false(str_contains($html, 'data-ov-'), 'Im hellen Modus darf die Schriftfarbe nie ersetzt werden');
 });
 
 Runner::test('Nachrichtentext: eigener Hintergrund bestimmt die Ersatzfarbe', static function (): void {
@@ -99,20 +96,20 @@ Runner::test('Nachrichtentext: eigener Hintergrund bestimmt die Ersatzfarbe', st
     $darkOnWhite = orvantaMailContrastValue($white, '--ov-dark-color') ?? '#1b1f23';
     Assert::true(Color::contrastRatio('#ffffff', $darkOnWhite) >= Color::MIN_CONTRAST, 'Text auf der weissen Zelle');
     Assert::true(Color::relativeLuminance($darkOnWhite) < 0.2, 'Der Text auf der weissen Zelle bleibt dunkel');
-    Assert::false(str_contains($white, 'data-ov-light-color'), 'Auf weissem Grund ist die Farbe im hellen Modus lesbar');
+    Assert::false(str_contains($white, 'data-ov-'), 'Auf weissem Grund ist kein Ersatz noetig');
 
-    // Umgekehrt: dunkle Flaeche mit dunkler Schrift braucht in beiden Modi eine
-    // Ersatzfarbe, weil die Flaeche unabhaengig vom Design dunkel bleibt.
+    // Umgekehrt: dunkle Flaeche mit dunkler Schrift braucht im dunklen Modus
+    // eine Ersatzfarbe; im hellen Modus bleibt die Absenderfarbe stehen.
     $dark = orvantaMailContrastApply('<div style="background-color:#12161c;color:#5a6475">Hinweis</div>');
     Assert::true(Color::contrastRatio('#12161c', '#5a6475') < Color::MIN_CONTRAST, 'Testfall ist bereits lesbar');
-    foreach (['--ov-light-color', '--ov-dark-color'] as $property) {
-        $effective = orvantaMailContrastValue($dark, $property);
-        Assert::true($effective !== null, 'Ersatzfarbe fehlt (' . $property . ')');
-        Assert::true(
-            Color::contrastRatio('#12161c', (string) $effective) >= Color::MIN_CONTRAST,
-            'Text auf der dunklen Flaeche (' . $property . ')'
-        );
-    }
+    $effective = orvantaMailContrastValue($dark, '--ov-dark-color');
+    Assert::true($effective !== null, 'Ersatzfarbe fehlt (--ov-dark-color)');
+    Assert::true(
+        Color::contrastRatio('#12161c', (string) $effective) >= Color::MIN_CONTRAST,
+        'Text auf der dunklen Flaeche'
+    );
+    Assert::contains('color:#5a6475', $dark, 'Im hellen Modus bleibt die Absenderfarbe stehen');
+    Assert::false(str_contains($dark, '--ov-light-color'), 'Im hellen Modus wird nie eine Ersatzfarbe gesetzt');
 });
 
 Runner::test('Nachrichtentext: Hintergrund des Elternelements gilt fuer Kinder', static function (): void {
@@ -172,17 +169,17 @@ Runner::test('Versand entfernt style-Attribute, die nur Hilfsangaben enthalten',
     Assert::false(str_contains($sent, '--ov-'), 'Hilfsangaben gehoeren nicht in die versendete Nachricht');
 });
 
-Runner::test('Nachrichtenansicht: Stylesheet faerbt die Ersatzfarben je Modus ein', static function (): void {
+Runner::test('Nachrichtenansicht: Stylesheet faerbt die Ersatzfarbe nur im dunklen Modus ein', static function (): void {
     $css = (string) file_get_contents(BASE_PATH . '/public/assets/css/orvanta.css');
 
     foreach ([
-        '.ov-mail__body [data-ov-dark-color]',
-        '.ov-mail__body [data-ov-light-color]',
-        '.ov-quote [data-ov-dark-color]',
-        '.ov-quote [data-ov-light-color]',
+        '[data-theme="dark"] .ov-mail__body [data-ov-dark-color]',
+        '[data-theme="dark"] .ov-quote [data-ov-dark-color]',
+        ':root:not([data-theme="light"]) .ov-mail__body [data-ov-dark-color]',
+        ':root:not([data-theme="light"]) .ov-quote [data-ov-dark-color]',
     ] as $selector) {
         Assert::contains($selector, $css);
     }
     Assert::contains('color: var(--ov-dark-color, inherit) !important;', $css);
-    Assert::contains('color: var(--ov-light-color, inherit) !important;', $css);
+    Assert::false(str_contains($css, 'ov-light-color'), 'Im hellen Modus darf keine Ersatzfarbe gelten');
 });

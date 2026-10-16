@@ -176,17 +176,21 @@
 .ov-mail__body table { max-width: 100%; }
 .ov-mail__body pre { white-space: pre-wrap; }
 /* Textfarben aus der Nachricht koennen auf der dunklen Oberflaeche zu wenig
-   Kontrast haben. Der Server legt je Modus eine gepruefte Ersatzfarbe als
-   CSS-Variable am Element ab (siehe Orvanta\MailBodyContrast); die
-   eingebettete Originalfarbe bleibt erhalten und gilt im anderen Modus.
+   Kontrast haben. Der Server legt fuer den dunklen Modus eine gepruefte
+   Ersatzfarbe als CSS-Variable am Element ab (siehe Orvanta\MailBodyContrast);
+   die eingebettete Originalfarbe bleibt erhalten und gilt im hellen Modus.
+   Die Regeln greifen deshalb nur im dunklen Modus: im hellen Modus wird die
+   Schriftfarbe einer Nachricht nie angepasst.
    !important ist noetig, weil die Farben als Inline-Style am Element stehen
    (siehe inlineStylesToCssom() in orvanta.js). Die Ersatzfarbe fehlt bewusst
    dort, wo die Originalfarbe schon lesbar ist. Der Editor ist ausgenommen:
    dort bestimmt der Benutzer die Farbe (--ov-editor-text). */
-.ov-mail__body [data-ov-dark-color],
-.ov-quote [data-ov-dark-color] { color: var(--ov-dark-color, inherit) !important; }
-.ov-mail__body [data-ov-light-color],
-.ov-quote [data-ov-light-color] { color: var(--ov-light-color, inherit) !important; }
+[data-theme="dark"] .ov-mail__body [data-ov-dark-color],
+[data-theme="dark"] .ov-quote [data-ov-dark-color] { color: var(--ov-dark-color, inherit) !important; }
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .ov-mail__body [data-ov-dark-color],
+    :root:not([data-theme="light"]) .ov-quote [data-ov-dark-color] { color: var(--ov-dark-color, inherit) !important; }
+}
 .ov-attachments { display: flex; flex-wrap: wrap; gap: .5rem; padding: .6rem 1.4rem; border-top: 1px solid var(--ov-line); background: var(--ov-bar); }
 .ov-attachment { display: flex; align-items: center; gap: .5rem; padding: .35rem .5rem .35rem .6rem; border: 1px solid var(--ov-line); border-radius: .5rem; background: var(--color-background); font-size: .82rem; max-width: 100%; }
 .ov-attachment__type { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .35rem; color: #fff; font-size: .62rem; font-weight: 800; text-transform: uppercase; background: #52667c; }

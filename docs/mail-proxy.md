@@ -149,6 +149,16 @@ verwendet. Das betrifft Textkörper und Kopfzeilen (Betreff, Absendername);
 Ausnahme sind unkodierte Umlaute in Dateinamen von Anhängen – Details in
 [mail-proxy-referenz.md](mail-proxy-referenz.md), Abschnitt 6.5.
 
+Formatierter Text bleibt erhalten. Der Proxy findet den HTML-Teil einer Mail
+auch dann, wenn er – wie bei manchen Programmen üblich – nicht an der
+gewohnten Stelle im Aufbau der Mail steht, etwa hinter einem eingebetteten
+Bild. Schriftgrößen, Tabellen und eingebettete Bilder (`cid:`) werden dadurch
+so angezeigt wie bei Exchange. Ist der HTML-Teil ausdrücklich als Anhang
+ausgezeichnet, zeigt Orvanta den Text und führt das HTML als Anhang; enthält
+eine Mail überhaupt kein HTML (z. B. nur `winmail.dat`), bleibt es bei der
+Textdarstellung. Details in [mail-proxy-referenz.md](mail-proxy-referenz.md),
+Abschnitt 6.5.
+
 ![Orvanta über den Proxy: Status „Verbunden (IMAP/SMTP)“, nur das Modul Mail](screenshots/100-orvanta-proxy-postfach.png)
 
 ## 5. Sicherheit

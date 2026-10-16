@@ -654,16 +654,29 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
   auf `?modul=<name>`; Startmodul: `?modul=` vor `data-module` (in
   `views/orvanta/index.php` über `$moduleFor` aus `default_folder` abgeleitet,
   `inbox` → `mail`); `?modul=calendar&termin=<id>` öffnet einen Termin (`init()`).
-- Mail-Aktualisierung: `startMailPolling()` ruft `refreshMail()` im Takt
-  `poll_interval` (≥ 15 s) und bei `visibilitychange` (sichtbar, letzter
-  Abgleich > 15 s). Still (ohne Ladeanzeige/Toasts, `noPasswordPrompt`):
-  `mail/ordner` (`applyFolders()`) und erste Seite des aktuellen Ordners
-  (`limit` = geladene Anzahl, 50–100; weitere nachgeladene Seiten bleiben
-  angehängt). Übersprungen bei verborgenem Tab, anderem Modul, Suche,
-  Archivordner, Ziehen oder offenem Kontextmenü; verworfen, wenn sich
-  Ordner oder `state.messages` inzwischen geändert haben. Neu gezeichnet wird
-  nur bei Änderungen (`renderMessagesKeepingView()` hält Scrollposition,
-  Fokus, Auswahl und Detailansicht). Der eigene Verfassen-Tab pollt nicht.
+- Mail-Aktualisierung: `startMailPolling()` plant `refreshMail()` im Takt
+  `poll_interval` (≥ 15 s) selbst neu (`scheduleMailPoll()`/`mailPoll()` über
+  `setTimeout`) und gleicht bei `visibilitychange` ab, sobald der letzte
+  Abgleich > 15 s zurückliegt; im verborgenen Tab pausiert der Takt. Still
+  (ohne Ladeanzeige/Toasts, `noPasswordPrompt`): `mail/ordner`
+  (`applyFolders()`) und **danach** – nicht parallel, um den Mailserver zu
+  schonen – die erste Seite des aktuellen Ordners (`limit` = geladene Anzahl,
+  50–100; weitere nachgeladene Seiten bleiben angehängt). Übersprungen bei
+  verborgenem Tab, anderem Modul, Suche, Archivordner, Ziehen oder offenem
+  Kontextmenü; verworfen, wenn sich Ordner oder `state.messages` inzwischen
+  geändert haben. Neu gezeichnet wird nur bei Änderungen
+  (`renderMessagesKeepingView()` hält Scrollposition, Fokus, Auswahl und
+  Detailansicht). Der eigene Verfassen-Tab pollt nicht.
+- Fehler im Hintergrundabgleich werden nicht verschluckt: `refreshMail()`
+  liefert `'ok'`, `'skipped'` oder `'failed'`, gibt die Sperre
+  (`mailRefreshBusy`) immer wieder frei und verlangsamt den Takt bei Fehlern
+  (Verdopplung bis 60 s). Eine hängende Abfrage sperrt den Takt höchstens
+  `MAIL_REFRESH_TIMEOUT` (120 s), ein beim Tabwechsel abgebrochenes Ziehen
+  (`state.dragIds`) wird beim Zurückkehren zurückgesetzt. Kommt der stille
+  Abgleich beim Zurückkehren in den Tab nicht durch (abgelaufene Sitzung,
+  geändertes Proxy-Kennwort), lädt `reloadMailAfterFailedRefresh()`
+  Ordnerbaum und Liste sichtbar neu – das entspricht dem Neuladen der Seite
+  und stellt auch die Kennwortabfrage wieder her.
 - `api(path, {query, body})`: `credentials: same-origin`, `Accept: application/json`,
   `X-CSRF-Token`; mit `body` automatisch POST + JSON. Nicht-JSON → „Ungültige
   Antwort des Servers.“; HTTP-Fehler → `Error(data.error)`. Netzwerkfehler und
@@ -983,6 +996,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), Freigabe per AD-Gruppe (`archive_group`, Standard: niemand; Mitglieder weiterer Quellen; Pflichtgruppe bei Aktivierung), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
 | `tests/Unit/OrvantaMailContrastTest.php` | Kontrastanpassung der Nachrichtentexte (Abschnitt 9.2): dunkle Absenderfarbe wird nur im dunklen Modus ersetzt, helle nur im hellen, eigener Hintergrund (weisse Tabellenzelle) und geerbter Hintergrund des Elternelements bestimmen die Ersatzfarbe, `rgb()` und benannte Farben, ungültige Farben bleiben unverändert, Umlaute/Entities überstehen den Durchlauf, Text ohne Farbe bleibt unverändert, `MailHtmlSanitizer` entfernt die Hilfsangaben beim Senden (und das leere `style`-Attribut), Stylesheet enthält die Modusregeln mit `!important` |
 
+| `tests/Unit/OrvantaMailRefreshTest.php` | Hintergrundabgleich der Mail-Liste (Abschnitt 9.1, Quelltextprüfung von `orvanta.js`): Fehler werden nicht still verschluckt, beide Abfragen melden ihren Fehler und die Sperre `mailRefreshBusy` wird in jedem Fall freigegeben (nicht über ein abgelehntes `Promise.all`), eine hängende Abfrage sperrt höchstens `MAIL_REFRESH_TIMEOUT`, der Takt plant sich selbst neu (`scheduleMailPoll()`/`mailPoll()`, kein `setInterval(refreshMail`), pausiert im verborgenen Tab und lädt beim Zurückkehren nach fehlgeschlagenem Abgleich sichtbar neu (`reloadMailAfterFailedRefresh()`) |
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage, Zustand bleibt erhalten, `template_changed`), Abschalten ohne zugewiesene Vorlage (Text und Vorlage bleiben, Aktivieren abgelehnt), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |

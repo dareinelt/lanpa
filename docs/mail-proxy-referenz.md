@@ -103,18 +103,18 @@ Die Berührungspunkte mit Orvanta stehen zusätzlich in
 
 | Datei | Aufgabe |
 | --- | --- |
-| `docker/mail-proxy/mail_proxy.py` | Gesamter Dienst (eine Datei, nur Standardbibliothek): HTTP-Server, Authentifizierung, SSRF-Prüfung, IMAP-Sitzungen + Pool, Nachrichten lesen/bauen, SMTP-Versand, Verbindungstest |
+| `docker/mail-proxy/mail_proxy.py` | Gesamter Dienst (eine Datei, nur Standardbibliothek): HTTP-Server, Authentifizierung, SSRF-Prüfung, IMAP-Sitzungen + Pool, Zeichensatz-Behandlung, Nachrichten lesen/bauen, SMTP-Versand, Verbindungstest |
 | `docker/mail-proxy/Dockerfile` | `python:3.13-slim`, `USER 33:33`, Port 8025, `HEALTHCHECK --healthcheck` |
 | `docker-compose.yml` (Dienst `mail-proxy`, Netze `mail_proxy`, `mail_egress`) | Schlüssel read-only aus Volume `app_storage` (subpath `keys`) nach `/run/mail-proxy/keys`; `read_only`, `cap_drop: ALL`, `no-new-privileges` |
 
 Wichtige Bereiche in `mail_proxy.py` (in Dateireihenfolge): Konfiguration/Konstanten →
 `log()` → `KeyStore`, `NonceCache`, `signature()` → `ip_allowed()`/`resolve_target()` +
 `Pinned*`-Klassen, `tls_context()` → `Account` → `ProxyError`/`classify()` →
-mUTF-7, LIST-/FETCH-Parser → `ImapSession` → `Pool`/`with_imap()` → Lesen
-(`summary()`, `op_message`, Anhänge) → `op_folders` … `op_quota` →
-`build_message()`, `_prepare()`, `op_save_draft`, `smtp_send()`, `op_send`,
-`op_test` → `OPERATIONS` → `Handler` (`do_GET`, `do_POST`, `_authenticate`) →
-`_janitor`, `healthcheck()`, `main()`.
+mUTF-7, LIST-/FETCH-Parser → `ImapSession` → `Pool`/`with_imap()` → Zeichensatz
+(`decode_text()`, `parse_headers()`) → Lesen (`summary()`, `op_message`, Anhänge) →
+`op_folders` … `op_quota` → `build_message()`, `_prepare()`, `op_save_draft`,
+`smtp_send()`, `op_send`, `op_test` → `OPERATIONS` → `Handler` (`do_GET`, `do_POST`,
+`_authenticate`) → `_janitor`, `healthcheck()`, `selftest()`, `main()`.
 
 ---
 
@@ -282,6 +282,32 @@ Admin-Test via `accountForTest()`). Entschlüsselung fehlgeschlagen → 503.
   `MAX_MESSAGE`); PHP säubert HTML mit `MailHtmlSanitizer::clean()`.
 - Anhang: `imap.attachment` (Base64), PHP dekodiert und liefert
   `name`/`content_type`/`content`/`size`.
+
+**Zeichensatz.** Der Proxy dekodiert Text selbst, statt der Deklaration des
+Absenders zu vertrauen: `_text()` holt die CTE-dekodierten Bytes
+(`get_payload(decode=True)`) und übergibt sie mit `get_content_charset()` an
+`decode_text()`; `parse_headers()` dekodiert den Rohkopfzeilenblock vor dem
+Parsen, weil `BytesFeedParser` 8-Bit-Rohbytes sonst durch Ersatzzeichen
+ersetzt. `decode_text()` versucht in dieser Reihenfolge:
+
+1. den deklarierten Zeichensatz, **wenn er nicht** in
+   `LEGACY_SINGLE_BYTE_CHARSETS` steht (UTF-8, UTF-16, Shift_JIS … sind damit
+   eindeutig und haben Vorrang, auch außerhalb Westeuropas),
+2. UTF-8 (fehlende, `us-ascii`- oder westeuropäische Einzelbyte-Deklaration
+   bei zugleich gültigem UTF-8 – das Verhalten von Browsern bei HTML),
+3. den deklarierten Zeichensatz,
+4. ISO-8859-1 (fängt Einzelbyte-Bytes in als UTF-8 deklarierten Mails ab),
+
+danach `utf-8` mit `replace`. Grund: Outlook/Exchange senden regelmäßig
+UTF-8-Bytes ohne passende Deklaration (`charset=iso-8859-1`, `us-ascii` oder
+gar keiner); das Standardverhalten der `email`-Bibliothek
+(`get_content()`) liest die Bytes dann als Latin-1 und macht aus `für` ein
+`fÃ¼r` bzw. – bei ASCII als Vorgabe – `f��r`.
+
+Grenze: unkodierte 8-Bit-Umlaute in `name=`/`filename=` von Anhängen sind
+bereits im Parser der Standardbibliothek verloren (RFC 2047 verlangt
+kodierte Wörter) und werden nicht repariert; korrekt kodierte Anhangsnamen
+sind unverändert.
 
 ### 6.6 Senden, Antworten, Weiterleiten, Entwurf
 
@@ -553,6 +579,10 @@ Serverwerte (Admin): `timeout_seconds` 5…60, `quota_mb` 0…`QUOTA_MAX_MB`
 9. Nach erfolgreichem SMTP-Versand keine Ausnahme mehr (kein Doppelversand).
 10. `From` wird ausschließlich vom Proxy aus dem Account gesetzt.
 11. SSRF-Prüfung doppelt: beim Speichern (PHP) und beim Verbinden (Python).
+12. Alle Textausgaben aus Mails laufen über `decode_text()` (Körper) bzw.
+    `parse_headers()` (Kopfzeilen); nie `part.get_content()` oder ein direktes
+    `bytes.decode("utf-8")` verwenden – sonst gehen Umlaute nach der
+    Heuristik in 6.5 wieder verloren.
 
 ---
 
@@ -588,7 +618,15 @@ Diagnosekarte in `views/admin/office.php`.
 ```bash
 php tests/run.php                                         # gesamte Suite, enthält MailProxyTest
 python3 -m py_compile docker/mail-proxy/mail_proxy.py     # Syntaxprüfung des Proxy-Dienstes
+python3 docker/mail-proxy/mail_proxy.py --selftest        # Selbsttest (Zeichensatz, Nachrichtenaufbau)
 ```
+
+Der Selbsttest im Dienst (`selftest()`, Aufruf über `--selftest`, Exit-Code 1
+bei Fehlern) prüft ohne Netzzugriff und ohne Abhängigkeiten: `decode_text()`
+gegen die Matrix aus deklariertem Zeichensatz und tatsächlicher Kodierung,
+Text-/HTML-Teile (Quoted-Printable, Base64, 8bit), rohe 8-Bit-Kopfzeilen,
+`summary()` und den Kopfzeilenblock. Er läuft im Container wie lokal und
+braucht weder Datenbank noch Mailserver.
 
 `tests/Unit/MailProxyTest.php`: SQLite-Schema (`mailProxyPdo()`, manuell an
 039/040 angeglichen), `FakeMailProxyTransport` (zeichnet `requests` auf,
@@ -660,6 +698,7 @@ direkt Cache/Generation manipulieren).
 | Kennwort-Overlay erscheint | `auth_failed` vom Mailserver → Benutzer gibt neues Kennwort ein oder Admin pflegt es |
 | 404 „neu aufgebaut“ | `uidvalidity` geändert → Liste neu laden |
 | 503 `busy` | `MAX_CONNECTIONS` erschöpft oder lange Operation auf demselben Postfach |
+| Umlaute in eingehenden Mails verstümmelt (`fÃ¼r`, `f��r`) | Zeichensatz-Heuristik in 6.5 prüfen: `decode_text()`/`parse_headers()`; Test mit `python3 docker/mail-proxy/mail_proxy.py --selftest`. Bleibt nur der Anhangsname betroffen, ist es die bekannte Grenze des Parsers (16.) |
 
 Logs: `docker compose logs mail-proxy` (JSON-Zeilen `request`, `request failed`,
 `cache invalidated`, `sent copy failed` …), PHP-Log (`mail-proxy …`).
@@ -674,6 +713,13 @@ Diagnose-Karte unter Admin → Office.
 - Ordnerliste wird in einer Pool-Sitzung 60 s zwischengespeichert;
   `imap.folders`/`create_folder`/`folder_status` lesen frisch.
 - Suche: zuerst `CHARSET UTF-8`, bei Ablehnung und ASCII-Text ohne Charset.
+- Zeichensatz eingehender Mails (6.5): der Proxy misstraut der Deklaration des
+  Absenders, weil Outlook/Exchange UTF-8-Bytes häufig ohne passende Angabe
+  senden. Eine falsche Deklaration kann daher in seltenen Fällen auch eine
+  korrekte Einzelbyte-Mail als UTF-8 lesen – bewusster Tausch zugunsten der
+  Praxis. Unkodierte 8-Bit-Umlaute in Anhangsnamen (`name=`, `filename=`)
+  bleiben verloren, weil die Standardbibliothek sie schon beim Parsen ersetzt
+  (RFC 2047 verlangt kodierte Wörter); kodierte Namen sind unberührt.
 - Ohne UIDPLUS wird die neue UID über die `Message-ID` gesucht; kann 0 sein
   (dann liefert `saveDraft()` einen Fehler, `send()` eine leere ID).
 - `with_imap()` wiederholt einen abgebrochenen Pool-Aufruf genau einmal (nicht

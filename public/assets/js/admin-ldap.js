@@ -263,3 +263,164 @@
         window.location.assign(target);
     });
 }());
+
+/*
+ * Active Directory: Protokoll einer Anmelde-Instanz im Overlay. Die Anwendung
+ * hat keinen Docker-Socket; der Dienst sso-agent legt die letzten 100
+ * Eintraege und die letzten 48 Stunden im Austauschverzeichnis ab. Hier wird
+ * zuerst der Auftrag abgegeben (json=1) und danach im Sekundentakt nachgefragt.
+ * Inhalte werden nur per textContent gesetzt. Ohne fetch bleibt das normale
+ * Formular: der Server wartet dann selbst und liefert das Overlay fertig.
+ */
+(function () {
+    'use strict';
+
+    var dialog = document.getElementById('ad-logs-dialog');
+    if (!dialog || typeof dialog.showModal !== 'function' || !window.fetch || !window.URLSearchParams) {
+        return;
+    }
+
+    var forms = document.querySelectorAll('[data-ad-logs]');
+    if (forms.length === 0) {
+        return;
+    }
+
+    var title = document.getElementById('ad-logs-service');
+    var status = document.getElementById('ad-logs-status');
+    var output = document.getElementById('ad-logs-output');
+    var download = document.getElementById('ad-logs-download');
+    var close = document.getElementById('ad-logs-close');
+    var contentPath = '/admin/ad/anmeldeinstanzen/protokoll/inhalt';
+    var maxAttempts = 45;
+    var timer = null;
+    var run = 0;
+
+    if (dialog.open) {
+        dialog.close();
+        dialog.showModal();
+    }
+
+    function setStatus(text, modifier) {
+        status.textContent = text;
+        status.className = 'ad-logs__status' + (modifier ? ' ad-logs__status--' + modifier : '');
+    }
+
+    function setDownload(url) {
+        download.href = url || '#';
+        download.hidden = !url;
+    }
+
+    function setContent(data) {
+        if (data.state === 'ready') {
+            var lines = Number(data.lines || 0).toLocaleString('de-DE');
+            setStatus((data.lines === 1 ? '1 Eintrag' : lines + ' Einträge')
+                + (data.generated_at ? ', erstellt am ' + data.generated_at : ''), 'ok');
+            output.textContent = data.tail || '(keine Einträge)';
+            setDownload(data.download_url || '');
+            return true;
+        }
+        if (data.state === 'error') {
+            setStatus(data.message || 'Das Protokoll konnte nicht geladen werden.', 'error');
+            output.textContent = '';
+            setDownload('');
+            return true;
+        }
+        setStatus('Das Protokoll wird erstellt …', '');
+        return false;
+    }
+
+    function failure(response) {
+        return response.json().catch(function () {
+            return {};
+        }).then(function (data) {
+            throw new Error(data && data.error ? data.error : (response.status === 419
+                ? 'Die Sitzung ist abgelaufen. Bitte die Seite neu laden.'
+                : 'Das Protokoll konnte nicht geladen werden (HTTP ' + response.status + ').'));
+        });
+    }
+
+    function poll(current, name, attempt) {
+        if (current !== run) {
+            return;
+        }
+        window.fetch(contentPath + '?service=' + encodeURIComponent(name), {
+            credentials: 'same-origin',
+            headers: {'Accept': 'application/json'}
+        }).then(function (response) {
+            if (!response.ok) {
+                return failure(response);
+            }
+            return response.json();
+        }).then(function (data) {
+            if (current !== run || setContent(data || {})) {
+                return;
+            }
+            if (attempt >= maxAttempts) {
+                setStatus('Das Protokoll ist nicht innerhalb von ' + maxAttempts
+                    + ' Sekunden bereitgestellt worden. Läuft der Dienst sso-agent?', 'error');
+                return;
+            }
+            timer = window.setTimeout(function () {
+                poll(current, name, attempt + 1);
+            }, 1000);
+        }).catch(function (error) {
+            if (current === run) {
+                setStatus(error && error.message ? error.message : 'Das Protokoll konnte nicht geladen werden.', 'error');
+            }
+        });
+    }
+
+    function start(form) {
+        var name = form.querySelector('input[name="service"]');
+        name = name ? name.value : '';
+        if (!name) {
+            return;
+        }
+        run += 1;
+        var current = run;
+        window.clearTimeout(timer);
+        timer = null;
+        title.textContent = name;
+        setStatus('Protokoll wird angefordert …', '');
+        output.textContent = '';
+        setDownload('');
+        dialog.showModal();
+
+        var body = new window.URLSearchParams(new window.FormData(form));
+        body.set('json', '1');
+        window.fetch(form.action, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Accept': 'application/json'},
+            body: body
+        }).then(function (response) {
+            if (!response.ok) {
+                return failure(response);
+            }
+            return response.json();
+        }).then(function () {
+            poll(current, name, 1);
+        }).catch(function (error) {
+            if (current === run) {
+                setStatus(error && error.message ? error.message : 'Das Protokoll konnte nicht angefordert werden.', 'error');
+            }
+        });
+    }
+
+    for (var index = 0; index < forms.length; index++) {
+        forms[index].addEventListener('submit', function (event) {
+            event.preventDefault();
+            start(event.currentTarget || event.target);
+        });
+    }
+
+    if (close) {
+        close.addEventListener('click', function (event) {
+            event.preventDefault();
+            run += 1;
+            window.clearTimeout(timer);
+            timer = null;
+            dialog.close();
+        });
+    }
+}());

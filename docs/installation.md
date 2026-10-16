@@ -415,6 +415,9 @@ Zugangsdaten – die Instanzen holen ihre Konfiguration wie bisher beim Start ü
 | `SSO_AGENT_POLL_SECONDS` | `5` | Abstand der Auftragsabfrage in Sekunden. |
 | `SSO_AGENT_STATUS_SECONDS` | `60` | Abstand der Zustandsmeldung in Sekunden. |
 | `SSO_AGENT_APPLY_TIMEOUT` | `1800` | Höchstdauer für Bauen und Starten der Instanzen in Sekunden. |
+| `SSO_AGENT_LOG_TIMEOUT` | `30` | Höchstdauer je `docker logs` beim Abholen eines Protokolls in Sekunden. |
+| `SSO_AGENT_LOG_TAIL_LINES` | `100` | Einträge der Anmelde-Instanz im Protokoll-Overlay. |
+| `SSO_AGENT_LOG_DOWNLOAD_HOURS` | `48` | Zeitraum des Protokoll-Downloads in Stunden. |
 | `SSO_AGENT_APP_UID` | `33` | Benutzerkennung der Anwendung im gemeinsamen Speicher (Auftragsdatei). |
 
 ```bash
@@ -422,7 +425,15 @@ docker compose ps sso-agent                     # läuft und ist gesund
 docker compose logs sso-agent                   # Auftrag, Bauen, Start, Fehler
 docker compose exec sso-agent sso-agent status  # Zustand als JSON
 docker compose exec sso-agent sso-agent apply   # anwenden ohne Adminbereich
+docker compose exec sso-agent sso-agent logs auth  # Protokoll einer Instanz holen
 ```
+
+Das Protokoll jeder Anmelde-Instanz ist auch ohne Shell erreichbar: in der
+Instanzliste auf **„Protokoll anzeigen“** (letzte 100 Einträge als Overlay) oder
+**„Letzte 48 Stunden herunterladen“**. Der Dienst liest beides über den
+Docker-Socket und legt es unter `storage/sso-agent/logs/` ab; die Anwendung
+liest nur diese Dateien. Während eines laufenden „anwenden“ steht das Protokoll
+ebenfalls bereit – es ist gerade dann hilfreich.
 
 Ohne den Dienst (nicht gestartet, kein Docker-Socket, Datei fehlt) meldet der
 Adminbereich den Ausfall und nennt den manuellen Weg:

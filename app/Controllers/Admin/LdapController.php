@@ -12,6 +12,7 @@ use App\Security\Session;
 use App\Services\IdentitySourceService;
 use App\Services\LdapClient;
 use App\Services\SettingsService;
+use App\Services\Sso\SsoAgentService;
 use App\Support\Validator;
 
 /**
@@ -22,6 +23,12 @@ use App\Support\Validator;
 final class LdapController extends AdminController
 {
     private const SYNC_PATH = '/admin/ad/synchronisation';
+
+    /** Basis der Protokoll-Aktionen der Anmelde-Instanzen. */
+    private const LOG_PATH = '/admin/ad/anmeldeinstanzen/protokoll';
+
+    /** Wartezeit auf ein erzeugtes Protokoll (je Versuch eine Sekunde). */
+    private const LOG_WAIT_MAX_ATTEMPTS = 45;
 
     private const SSO_RESTART_HINT = ' Die Windows-Anmeldung übernimmt geänderte Domänen-Einstellungen erst, wenn die Anmelde-Instanzen angewendet wurden (Schaltfläche „Windows-Anmeldung anwenden“ auf dieser Seite).';
 
@@ -61,6 +68,216 @@ final class LdapController extends AdminController
         Session::flash('success', 'Die Windows-Anmeldung wird angewendet (Instanzen werden erzeugt, gebaut und neu gestartet). Der Fortschritt steht unten auf dieser Seite.');
 
         return $this->redirect('/admin/ad');
+    }
+
+    /**
+     * Fordert das Protokoll einer Anmelde-Instanz an (Overlay). Der Dienst
+     * sso-agent liest die letzten Eintraege und die letzten 48 Stunden und legt
+     * beides im gemeinsamen Speicher ab; die Anwendung hat keinen Docker-Socket.
+     *
+     * Mit JavaScript (json=1) wird nur der Auftrag bestaetigt, das Overlay holt
+     * den Inhalt danach ueber logContent(). Ohne JavaScript wird gewartet und
+     * die Uebersicht mit geoeffnetem Overlay geliefert.
+     */
+    public function logRequest(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        $json = $request->input('json', '') === '1';
+        $service = trim((string) $request->input('service', ''));
+        $source = $this->ssoSource($service);
+        if ($source === null) {
+            return $this->logFailure($json, 'Zu dieser Anmelde-Instanz gibt es keine Identitätsquelle mit aktiver Windows-Anmeldung.');
+        }
+
+        $agent = Container::ssoAgent();
+        try {
+            $id = $agent->requestLogs($service);
+        } catch (\RuntimeException $exception) {
+            return $this->logFailure($json, $exception->getMessage());
+        }
+
+        app_logger()->info('Protokoll einer Anmelde-Instanz angefordert.', [
+            'admin' => Container::auth()->username(),
+            'service' => $service,
+            'request_id' => $id,
+        ]);
+
+        if ($json) {
+            return Response::json(['service' => $service, 'request_id' => $id]);
+        }
+
+        $result = $this->awaitLogs($agent, $service);
+
+        return $this->render(null, 200, $this->logView($service, $source, $result));
+    }
+
+    /**
+     * Ergebnis eines Protokollauftrags; das Overlay fragt im Sekundentakt nach.
+     */
+    public function logContent(Request $request): Response
+    {
+        $service = trim((string) $request->query('service', ''));
+        if ($this->ssoSource($service) === null) {
+            return Response::json(['error' => 'Unbekannte Anmelde-Instanz.'], 404);
+        }
+
+        $result = Container::ssoAgent()->logsResult($service);
+
+        return Response::json($this->logView($service, null, $result));
+    }
+
+    /**
+     * Protokoll der letzten 48 Stunden als Datei. Ist noch kein frisches
+     * Protokoll vorhanden, wird eines angefordert und kurz gewartet: die
+     * Anwendung kann die Datei erst lesen, wenn der Dienst sso-agent sie
+     * abgelegt hat.
+     */
+    public function logDownload(Request $request): Response
+    {
+        $service = trim((string) $request->query('service', ''));
+        if ($this->ssoSource($service) === null) {
+            Session::flash('error', 'Unbekannte Anmelde-Instanz.');
+
+            return $this->redirect('/admin/ad');
+        }
+
+        $agent = Container::ssoAgent();
+        $result = $agent->logsResult($service);
+        if ($result['state'] === 'pending') {
+            try {
+                if (!$agent->hasPendingLogsRequest()) {
+                    $agent->requestLogs($service);
+                }
+            } catch (\RuntimeException $exception) {
+                Session::flash('error', $exception->getMessage());
+
+                return $this->redirect('/admin/ad');
+            }
+            $result = $this->awaitLogs($agent, $service);
+        }
+
+        if ($result['state'] === 'ready') {
+            $contents = $agent->logDownload($service);
+            if ($contents !== null) {
+                app_logger()->info('Protokoll einer Anmelde-Instanz heruntergeladen.', [
+                    'admin' => Container::auth()->username(),
+                    'service' => $service,
+                    'bytes' => strlen($contents),
+                ]);
+
+                return Response::download($contents, $result['download_name'], 'text/plain; charset=utf-8');
+            }
+            $result['message'] = 'Das Protokoll ist abgelegt, aber nicht lesbar.';
+        }
+
+        Session::flash('error', $result['message'] !== ''
+            ? $result['message']
+            : 'Das Protokoll ist nicht innerhalb von ' . self::LOG_WAIT_MAX_ATTEMPTS
+                . ' Sekunden bereitgestellt worden. Läuft der Dienst sso-agent?');
+
+        return $this->redirect('/admin/ad#windows-anmeldung');
+    }
+
+    /**
+     * Antwort auf einen Protokollauftrag, der nicht angenommen werden konnte.
+     */
+    private function logFailure(bool $json, string $message): Response
+    {
+        if ($json) {
+            return Response::json(['error' => $message], 409);
+        }
+        Session::flash('error', $message);
+
+        return $this->redirect('/admin/ad#windows-anmeldung');
+    }
+
+    /**
+     * Wartet, bis der Dienst sso-agent das angeforderte Protokoll abgelegt hat.
+     * Die Wartezeit faellt nicht unter max_execution_time: sleep() ist ein
+     * Systemaufruf. Die Warteschleife endet vorher, wenn der Dienst schweigt.
+     *
+     * @return array{state:string,message:string,generated_at:string,lines:int,tail:string,download_ready:bool,download_name:string,download_bytes:int}
+     */
+    private function awaitLogs(SsoAgentService $agent, string $service): array
+    {
+        $result = $agent->logsResult($service);
+        for ($attempt = 1; $attempt <= self::LOG_WAIT_MAX_ATTEMPTS && $result['state'] === 'pending'; $attempt++) {
+            sleep(1);
+            $result = $agent->logsResult($service);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Daten des Protokoll-Overlays.
+     *
+     * @param array{service:string,label:string,domain:string}|null $source
+     * @param array{state:string,message:string,generated_at:string,lines:int,tail:string,download_ready:bool,download_name:string,download_bytes:int} $result
+     * @return array<string,mixed>
+     */
+    private function logView(string $service, ?array $source, array $result): array
+    {
+        return [
+            'service' => $service,
+            'label' => (string) ($source['label'] ?? ''),
+            'domain' => (string) ($source['domain'] ?? ''),
+            'state' => $result['state'],
+            'message' => $result['message'],
+            'lines' => $result['lines'],
+            'generated_at' => $result['generated_at'],
+            'tail' => $result['tail'],
+            'download_url' => $result['download_ready']
+                ? self::LOG_PATH . '/download?service=' . rawurlencode($service)
+                : '',
+        ];
+    }
+
+    /**
+     * Anmelde-Instanz zu einem Dienstnamen: nur Instanzen von
+     * Identitaetsquellen mit aktiver Windows-Anmeldung. Damit landen keine
+     * fremden Namen in Auftrag, Dateiname oder Docker-Abfrage.
+     *
+     * @return array{service:string,label:string,domain:string}|null
+     */
+    private function ssoSource(string $service): ?array
+    {
+        if ($service === '') {
+            return null;
+        }
+
+        $settings = Container::settings();
+        $domain = (string) $settings->get('sso_domain');
+        if ($service === 'auth' && $domain !== '') {
+            return ['service' => 'auth', 'label' => (string) $settings->ldapConfig()['label'], 'domain' => $domain];
+        }
+
+        $rows = [];
+        foreach (Container::identitySources()->additionalRows(false) as $row) {
+            $rows[(int) $row['id']] = $row;
+        }
+        foreach (Container::identitySources()->configs(false) as $config) {
+            if ((int) $config['id'] === 0) {
+                continue;
+            }
+            $name = IdentitySourceService::serviceName((string) $config['key']);
+            if ($name !== $service) {
+                continue;
+            }
+            $row = $rows[(int) $config['id']] ?? [];
+            if (empty($row['sso_enabled'])) {
+                return null;
+            }
+
+            return [
+                'service' => $name,
+                'label' => (string) $config['label'],
+                'domain' => (string) ($row['sso_domain'] ?? ''),
+            ];
+        }
+
+        return null;
     }
 
     /**
@@ -579,11 +796,13 @@ final class LdapController extends AdminController
 
     /**
      * Uebersicht der Identitaetsquellen, optional mit geoeffnetem
-     * Bearbeitungs-Overlay (siehe primaryDialog()/renderSource()).
+     * Bearbeitungs-Overlay (siehe primaryDialog()/renderSource()) oder
+     * geoeffnetem Protokoll-Overlay einer Anmelde-Instanz.
      *
      * @param array<string,mixed>|null $dialog
+     * @param array<string,mixed>|null $logs
      */
-    private function render(?array $dialog = null, int $status = 200): Response
+    private function render(?array $dialog = null, int $status = 200, ?array $logs = null): Response
     {
         $settings = Container::settings();
         $service = Container::identitySources();
@@ -643,6 +862,7 @@ final class LdapController extends AdminController
             'ldapExtensionAvailable' => LdapClient::isSupported(),
             'sources' => $sources,
             'dialog' => $dialog,
+            'logs' => $logs,
             'attributeKeys' => IdentitySourceService::ATTRIBUTE_KEYS,
             'ssoEnabled' => (bool) Config::get('sso.enabled', false),
             'ssoAgent' => $agentStatus,

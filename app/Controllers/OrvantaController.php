@@ -67,7 +67,7 @@ final class OrvantaController extends Controller
                 // Mail-Backend (exchange|proxy) und verfuegbare Module; ohne
                 // Server- oder Zugangsdaten.
                 'backend' => $access['backend']->backendName(),
-                'capabilities' => $access['backend']->capabilities(),
+                'capabilities' => self::capabilities($access),
                 'defaultModule' => $config->get('default_folder'),
                 'pollInterval' => $config->pollInterval(),
                 'reminderLead' => $config->reminderLeadMinutes(),
@@ -226,6 +226,30 @@ final class OrvantaController extends Controller
             'backend' => $router->backendForRoute($route),
             'route' => $route,
         ];
+    }
+
+    /**
+     * Faehigkeiten der Sitzung fuer Anzeige und Modulwahl.
+     *
+     * Der lokale Kalender ist kein Merkmal des Mail-Backends, sondern ein
+     * Zusatz fuer Proxy-Postfaecher (IMAP/SMTP): Er liegt in der eigenen
+     * Datenbank, Einladungen laufen ueber denselben SMTP-Weg wie normale Mail.
+     * Deshalb werden Kalender und Erinnerungen hier ergaenzt, ohne die
+     * Capabilities des Backends zu veraendern – der Exchange-Weg bleibt
+     * unberuehrt und es gibt keinen stillen Ausweichweg.
+     *
+     * @param array<string,mixed> $access
+     * @return array<string,bool>
+     */
+    public static function capabilities(array $access): array
+    {
+        $capabilities = $access['backend']->capabilities();
+        if ($access['route']->isProxy()) {
+            $capabilities[OrvantaMailBackendInterface::CAPABILITY_CALENDAR] = true;
+            $capabilities[OrvantaMailBackendInterface::CAPABILITY_REMINDERS] = true;
+        }
+
+        return $capabilities;
     }
 
     /**

@@ -74,8 +74,9 @@ $modules = [
     'tasks' => ['Aufgaben', 'tasks'],
     'notes' => ['Notizen', 'notes'],
 ];
-// Module, die das Mail-Backend nicht unterstuetzt (z. B. Kalender beim
-// SMTP-/IMAP-Proxy), werden nicht angeboten.
+// Module, die das Mail-Backend nicht unterstuetzt (z. B. Kontakte, Aufgaben und
+// Notizen beim SMTP-/IMAP-Proxy), werden nicht angeboten. Den Kalender fuehrt
+// der Proxy als lokalen Kalender in der eigenen Datenbank.
 $capabilities = is_array($orvanta['capabilities'] ?? null) ? $orvanta['capabilities'] : [];
 $modules = array_filter($modules, static fn (string $key): bool => ($capabilities[$key] ?? true) === true, ARRAY_FILTER_USE_KEY);
 $moduleFor = ['inbox' => 'mail', 'calendar' => 'calendar', 'contacts' => 'contacts', 'tasks' => 'tasks', 'notes' => 'notes'];

@@ -19,6 +19,7 @@ use App\Services\MailProxy\MailProxyRoute;
 use App\Services\MailProxy\MailProxyService;
 use App\Services\MailProxy\OrvantaMailRouter;
 use App\Services\MailProxy\ProxyMailBackend;
+use App\Services\Orvanta\ICalendar;
 use App\Services\Orvanta\OrvantaException;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
@@ -645,6 +646,77 @@ Runner::test('Mail-Proxy: Backend bindet Kennungen und Absender an das zugeordne
     $send = end($transport->requests);
     Assert::false(str_contains($send['payload']['message']['body'], '<script'), 'HTML wird wie bei EWS bereinigt.');
     Assert::false(isset($send['payload']['message']['from']), 'Absender bestimmt ausschließlich der Proxy.');
+});
+
+Runner::test('Mail-Proxy: Termineinladungen werden als Kalenderteil übertragen und erkannt', static function (): void {
+    $transport = new FakeMailProxyTransport();
+    $backend = mailProxyBackend($transport);
+    $start = time() + 86400;
+    $ics = ICalendar::build([
+        'uid' => 'termin-9@orvanta.local',
+        'summary' => 'Projektrunde',
+        'organizer_email' => 'jan@hh.example',
+        'organizer_name' => 'Jan',
+        'starts_at' => date('Y-m-d H:i:s', $start),
+        'ends_at' => date('Y-m-d H:i:s', $start + 3600),
+        'attendees' => [['email' => 'eva@hh.example', 'name' => 'Eva']],
+    ], 'REQUEST');
+    Assert::same('Projektrunde', ICalendar::parseInvitation($ics)['summary'], 'Testeinladung ist gültig.');
+
+    // Ausgehend: Der Kalenderteil geht base64-kodiert mit, unbrauchbare Teile
+    // fallen weg, mehr als drei Teile werden nie übertragen.
+    $transport->responses['smtp.send'] = ['folder' => 'sentitems', 'uidvalidity' => 5, 'uid' => 77];
+    $backend->send('jan@hh.example', [
+        'to' => ['eva@hh.example'],
+        'subject' => 'Einladung',
+        'body' => '<p>Bitte teilnehmen</p>',
+        'html' => true,
+        'calendar' => [
+            ['method' => 'request', 'content' => $ics],
+            ['method' => 'Unfug', 'content' => $ics],
+            ['method' => 'CANCEL', 'content' => ''],
+            ['method' => 'CANCEL', 'content' => $ics],
+            ['method' => 'REPLY', 'content' => $ics],
+            ['method' => 'REQUEST', 'content' => $ics],
+        ],
+    ]);
+    $send = end($transport->requests);
+    $calendar = $send['payload']['message']['calendar'];
+    Assert::same(3, count($calendar), 'Höchstens drei Kalenderteile je Nachricht.');
+    Assert::same(['REQUEST', 'CANCEL', 'REPLY'], array_column($calendar, 'method'));
+    Assert::same($ics, (string) base64_decode((string) $calendar[0]['content'], true), 'Der Kalenderteil bleibt unverändert erhalten.');
+
+    // Eingehend: Nur gültige Methoden werden übernommen, die Terminerkennung
+    // stammt aus dem ausgewerteten Kalenderteil.
+    $id = 'mpx.7.' . rtrim(strtr(base64_encode('inbox'), '+/', '-_'), '=') . '.42.9';
+    $transport->responses['imap.message'] = [
+        'uid' => 9,
+        'subject' => 'Einladung',
+        'text' => 'Bitte teilnehmen',
+        'calendar' => [['method' => 'request', 'content' => $ics], ['method' => 'Unfug', 'content' => $ics]],
+    ];
+    $message = $backend->message('jan@hh.example', $id);
+    Assert::same(1, count($message['calendar']), 'Unbekannte Methoden werden verworfen.');
+    Assert::same('REQUEST', $message['calendar'][0]['method']);
+    Assert::same('Projektrunde', ICalendar::parseInvitation($message['calendar'][0]['content'])['summary']);
+    Assert::true($message['is_meeting_request'], 'Eine gültige Einladung gilt als Besprechungsanfrage.');
+
+    $transport->responses['imap.message'] = ['uid' => 9, 'subject' => 'Antwort', 'calendar' => [['method' => 'REPLY', 'content' => $ics]]];
+    Assert::false($backend->message('jan@hh.example', $id)['is_meeting_request'], 'Antworten und Absagen sind keine Besprechungsanfrage.');
+
+    // Listenansicht: Die Kennzeichnung kommt aus der Nachrichtenstruktur, ohne
+    // dass die Nachricht selbst geladen werden muss.
+    $transport->responses['imap.messages'] = [
+        'uidvalidity' => 42,
+        'total' => 2,
+        'items' => [
+            ['uid' => 9, 'subject' => 'Einladung', 'meeting_request' => true],
+            ['uid' => 10, 'subject' => 'Nur Text'],
+        ],
+    ];
+    $list = $backend->messages('jan@hh.example', 'inbox');
+    Assert::true($list['items'][0]['is_meeting_request']);
+    Assert::false($list['items'][1]['is_meeting_request']);
 });
 
 Runner::test('Mail-Proxy: Ordnerkennungen sind umkehrbar und Systemordner bleiben erhalten', static function (): void {

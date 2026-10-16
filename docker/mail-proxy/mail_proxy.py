@@ -69,6 +69,7 @@ KEY_FILE = os.environ.get("MAIL_PROXY_KEY_FILE", "/run/mail-proxy/keys/secrets.k
 MAX_CONNECTIONS = _env_int("MAIL_PROXY_MAX_CONNECTIONS", 32, 1, 512)
 MAX_BODY = _env_int("MAIL_PROXY_MAX_BODY_MB", 48, 1, 256) * 1024 * 1024
 MAX_MESSAGE = _env_int("MAIL_PROXY_MAX_MESSAGE_MB", 35, 1, 200) * 1024 * 1024
+MAX_CALENDAR = _env_int("MAIL_PROXY_MAX_CALENDAR_KB", 256, 1, 2048) * 1024
 POOL_SIZE = _env_int("MAIL_PROXY_POOL_SIZE", 32, 0, 1024)
 POOL_IDLE = _env_int("MAIL_PROXY_POOL_IDLE_SECONDS", 90, 5, 3600)
 MAX_SKEW = 60
@@ -93,6 +94,10 @@ KEY_PURPOSE = b"mail-proxy"
 SMTP_PORTS = {25, 465, 587, 2525}
 IMAP_PORTS = {143, 993}
 KINDS = ("inbox", "drafts", "sentitems", "deleteditems", "junkemail")
+# Kalendermethoden, die der Proxy als text/calendar-Teil uebertraegt (RFC 5546).
+CALENDAR_METHODS = ("REQUEST", "CANCEL", "REPLY")
+# text/calendar-Teil in einer BODYSTRUCTURE (ohne Nachrichtenrumpf zu laden).
+CALENDAR_PART_RE = re.compile(rb'"(?:TEXT"\s+)?CALENDAR"', re.IGNORECASE)
 ALLOWED_FLAGS = {"\\Seen", "\\Flagged", "\\Answered", "\\Deleted", "\\Draft", "$Forwarded"}
 HOST_RE = re.compile(r"^(?=.{1,253}$)([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$")
 NONCE_RE = re.compile(r"^[a-f0-9]{32}$")
@@ -689,7 +694,7 @@ class ImapSession:
             for record in fetch_records(data or []):
                 if meta_int(record["meta"], b"UID") == uid and meta_int(record["meta"], b"RFC822.SIZE") > MAX_MESSAGE:
                     raise ProxyError("too_large", "Nachricht zu groß.", 413)
-        typ, data = self.conn.uid("FETCH", str(uid), f"(UID FLAGS INTERNALDATE RFC822.SIZE {section})")
+        typ, data = self.conn.uid("FETCH", str(uid), f"(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE {section})")
         _ok(typ, "FETCH")
         for record in fetch_records(data or []):
             if meta_int(record["meta"], b"UID") == uid and record["literals"]:
@@ -1026,12 +1031,50 @@ def _attachment_name(part: Message, index: int) -> str:
         inner = payload[0] if isinstance(payload, list) and payload else None
         subject = str(inner.get("Subject", "")) if isinstance(inner, Message) else ""
         name = (subject or "nachricht") + ".eml"
+    if not name and part.get_content_type() == "text/calendar":
+        name = "termin.ics"
     name = re.sub(r"[\x00-\x1f\x7f/\\]+", "_", name or f"anhang-{index + 1}").strip() or f"anhang-{index + 1}"
     return name[:200]
 
 
 def _content_id(part: Message) -> str:
     return str(part.get("Content-ID", "") or "").strip().strip("<>")
+
+
+def _calendar_parts(parts: list) -> list:
+    """``text/calendar``-Teile als Methoden-/Inhaltspaare fuer die Terminpruefung.
+
+    Ueberlange Teile werden ausgelassen: ein abgeschnittener Kalendertext waere
+    unbrauchbar. Der Inhalt wird nur uebertragen, die Pruefung erfolgt in der
+    Anwendung.
+    """
+    result = []
+    for part in parts:
+        if part.get_content_type() != "text/calendar":
+            continue
+        content = _attachment_bytes(part)
+        if not content or len(content) > MAX_CALENDAR:
+            continue
+        method = str(part.get_param("method", header="content-type") or "").strip().upper()
+        result.append({
+            "method": method if method in CALENDAR_METHODS else "",
+            "content": decode_text(content, part.get_content_charset()),
+        })
+    return result
+
+
+def _has_calendar_part(meta: bytes) -> bool:
+    """Terminteil in der Nachrichtenstruktur (BODYSTRUCTURE)?
+
+    Erkennungsmerkmal ist der Methodenparameter des ``text/calendar``-Teils:
+    Ein reiner ICS-Anhang ohne METHOD ist keine Einladung. Die Pruefung liest
+    nur die ohnehin abgerufene Struktur, kein Nachrichtenrumpf wird geladen.
+    """
+    for match in CALENDAR_PART_RE.finditer(meta or b""):
+        window = meta[match.end():match.end() + 200].upper()
+        if b"METHOD" in window:
+            return True
+    return False
 
 
 def summary(meta: bytes, header_bytes: bytes) -> dict:
@@ -1053,6 +1096,8 @@ def summary(meta: bytes, header_bytes: bytes) -> dict:
         "forwarded": "$Forwarded" in flags,
         # Heuristik ohne BODYSTRUCTURE-Analyse; die Detailansicht ist exakt.
         "has_attachments": content_type.startswith("multipart/mixed"),
+        # Terminteil mit Methodenparameter in der Struktur der Nachricht.
+        "meeting_request": _has_calendar_part(meta),
         "size": meta_int(meta, b"RFC822.SIZE"),
         "importance": _importance(headers),
     }
@@ -1156,7 +1201,7 @@ def op_messages(account: Account, payload: dict) -> dict:
         page = uids[offset:offset + limit]
         items = []
         if page:
-            typ, data = session.conn.uid("FETCH", ",".join(str(u) for u in page), f"(UID FLAGS INTERNALDATE RFC822.SIZE {HEADER_FIELDS})")
+            typ, data = session.conn.uid("FETCH", ",".join(str(u) for u in page), f"(UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE {HEADER_FIELDS})")
             _ok(typ, "FETCH")
             by_uid = {}
             for record in fetch_records(data or []):
@@ -1206,6 +1251,7 @@ def op_message(account: Account, payload: dict) -> dict:
             })
         result["attachments"] = listing
         result["has_attachments"] = any(not a["inline"] for a in listing)
+        result["calendar"] = _calendar_parts(attachments)
         return result
     return with_imap(account, work)
 
@@ -1395,6 +1441,32 @@ def _add_attachment(msg: EmailMessage, name: str, content_type: str, content: by
     msg.add_attachment(content, maintype=maintype, subtype=subtype, **kwargs)
 
 
+def _add_calendar(msg: EmailMessage, content: bytes, method: str) -> None:
+    """Termineinladung als ``text/calendar``-Alternativteil (RFC 5546).
+
+    Der Methodenparameter ordnet die Nachricht beim Empfaenger zu (neuer
+    Termin, Absage, Antwort). Der Teil wird base64 uebertragen, damit die von
+    RFC 5545 geforderten CRLF-Zeilenenden unveraendert bleiben und Umlaute
+    gueltig kodiert sind.
+    """
+    method = str(method or "").strip().upper()
+    if method not in CALENDAR_METHODS:
+        raise ProxyError("invalid", "Unbekannte Kalendermethode.", 422)
+    if not content:
+        raise ProxyError("invalid", "Kalenderdaten fehlen.", 422)
+    if len(content) > MAX_CALENDAR:
+        raise ProxyError("too_large", "Kalenderdaten zu groß.", 413)
+    text = decode_text(content)
+    if "BEGIN:VCALENDAR" not in text or "END:VCALENDAR" not in text:
+        raise ProxyError("invalid", "Kalenderdaten ungültig.", 422)
+    if msg.get_content_maintype() != "multipart":
+        msg.make_alternative()
+    part = EmailMessage(policy=POLICY)
+    part.set_content(content, maintype="text", subtype="calendar",
+                     params={"charset": "utf-8", "method": method}, cte="base64")
+    msg.attach(part)
+
+
 def build_message(account: Account, data: object, extra: list | None = None,
                   reference: Message | None = None, mode: str = "") -> EmailMessage:
     if not isinstance(data, dict):
@@ -1434,6 +1506,23 @@ def build_message(account: Account, data: object, extra: list | None = None,
         msg.add_alternative(body, subtype="html")
     else:
         msg.set_content(body)
+    # Termineinladungen gehoeren in dieselbe Alternative wie der Text; deshalb
+    # vor den Anhaengen aufbauen (danach waere die Nachricht multipart/mixed).
+    calendar = data.get("calendar") or []
+    if not isinstance(calendar, list) or len(calendar) > 3:
+        raise ProxyError("invalid", "Zu viele Kalenderteile.", 422)
+    calendar_bytes = 0
+    for item in calendar:
+        if not isinstance(item, dict):
+            continue
+        try:
+            content = base64.b64decode(str(item.get("content", "")), validate=True)
+        except ValueError as exc:
+            raise ProxyError("invalid", "Kalenderdaten ungültig.", 422) from exc
+        calendar_bytes += len(content)
+        if calendar_bytes > MAX_CALENDAR:
+            raise ProxyError("too_large", "Kalenderdaten zu groß.", 413)
+        _add_calendar(msg, content, str(item.get("method", "")))
     attachments = data.get("attachments") or []
     if not isinstance(attachments, list) or len(attachments) > 100:
         raise ProxyError("invalid", "Zu viele Anhänge.", 422)
@@ -1918,6 +2007,67 @@ def selftest() -> int:
         ("nur html-Anhang liefert trotzdem HTML", chosen(only_html_attachment), "html:" + html_body),
         ("eingebettetes Bild bleibt Anhang mit Content-ID",
          listed(alternative_image_first), [("image/png", "img1@x")]),
+    ]
+
+    # Termineinladungen: der text/calendar-Teil muss mit Methode und
+    # unveraenderten CRLF-Zeilenenden ankommen (Grundlage der Terminpruefung)
+    # und beim Versand wieder genau so erzeugt werden.
+    ics = ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:termin-1\r\n"
+           "DTSTART:20260102T100000Z\r\nSUMMARY:Grüße\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+    ics_bytes = ics.encode("utf-8")
+    calendar_mail = mime(
+        "multipart/mixed; boundary=B",
+        "--B\r\n" + t + "--B\r\nContent-Type: text/calendar; charset=utf-8; method=REQUEST\r\n"
+        "Content-Transfer-Encoding: base64\r\n\r\n"
+        + base64.encodebytes(ics_bytes).decode("ascii") + "\r\n--B--\r\n")
+
+    class StubAccount:
+        email = "absender@example.de"
+        display_name = "Absender"
+
+    def sent(spec: object) -> list:
+        msg = build_message(StubAccount(), {
+            "to": ["empfaenger@example.de"], "subject": "Termin", "body": "Hallo",
+            "html": True, "calendar": spec,
+        })
+        return _calendar_parts(message_parts(msg)[2])
+
+    def refused(spec: object) -> str:
+        try:
+            sent(spec)
+        except ProxyError as exc:
+            return exc.code
+        return "kein Fehler"
+
+    encoded = base64.b64encode(ics_bytes).decode("ascii")
+    checks += [
+        ("Termineinladung erkannt", _calendar_parts(message_parts(calendar_mail)[2]),
+         [{"method": "REQUEST", "content": ics}]),
+        ("Terminanhang benannt", _attachment_name(message_parts(calendar_mail)[2][0], 0), "termin.ics"),
+        ("Kalenderteil beim Versand", sent([{"method": "REQUEST", "content": encoded}]),
+         [{"method": "REQUEST", "content": ics}]),
+        ("Kalenderteil ohne Methode", refused([{"method": "FREEBUSY", "content": encoded}]), "invalid"),
+        ("Kalenderteil ohne Inhalt", refused([{"method": "REQUEST", "content": ""}]), "invalid"),
+        ("Kalenderteil mit Unsinn", refused([{"method": "REQUEST", "content": base64.b64encode(b"x").decode("ascii")}]), "invalid"),
+        ("zu viele Kalenderteile",
+         refused([{"method": "REQUEST", "content": encoded}] * 4), "invalid"),
+    ]
+
+    # Terminerkennung in der Nachrichtenliste: nur die Struktur wird gelesen,
+    # ein reiner ICS-Anhang ohne METHOD gilt nicht als Einladung.
+    calendar_structure = (b'("MIXED" ("ALTERNATIVE" ("PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 5 1)'
+                         b'("CALENDAR" ("CHARSET" "UTF-8" "METHOD" "REQUEST") NIL NIL "BASE64" 200 5)'
+                         b' "ALTERNATIVE" ("BOUNDARY" "B")) "MIXED" ("BOUNDARY" "B"))')
+    plain_structure = (b'("MIXED" ("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 5 1)'
+                       b'("APPLICATION" "ICS" ("NAME" "termin.ics") NIL NIL "BASE64" 200 5)'
+                       b' "MIXED" ("BOUNDARY" "B"))')
+    checks += [
+        ("Terminteil in der Struktur erkannt", _has_calendar_part(calendar_structure), True),
+        ("Terminteil mit Haupttyp erkannt",
+         _has_calendar_part(b'("TEXT" "CALENDAR" ("CHARSET" "UTF-8" "METHOD" "REPLY") NIL NIL "BASE64" 200 5)'), True),
+        ("ICS-Anhang ohne Methode ist keine Einladung", _has_calendar_part(plain_structure), False),
+        ("Struktur ohne Kalenderteil", _has_calendar_part(b'("TEXT" "PLAIN" ("CHARSET" "UTF-8") NIL NIL "7BIT" 5 1)'), False),
+        ("leere Struktur", _has_calendar_part(b""), False),
     ]
     failed = 0
     for name, got, want in checks:

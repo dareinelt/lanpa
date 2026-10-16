@@ -795,6 +795,32 @@ final class Container
     }
 
     /**
+     * Lokaler Kalender fuer Proxy-Postfaecher: Termine, Teilnehmer, Versand-
+     * auftraege und die Idempotenz der uebernommenen Einladungen.
+     */
+    public static function orvantaCalendarRepository(): \App\Repositories\OrvantaCalendarRepository
+    {
+        return self::make(\App\Repositories\OrvantaCalendarRepository::class, static fn (): \App\Repositories\OrvantaCalendarRepository => new \App\Repositories\OrvantaCalendarRepository());
+    }
+
+    /**
+     * Geschaeftslogik des lokalen Kalenders. Das Mail-Backend wird erst beim
+     * Versand einer Einladung ueber die Zuordnung des Benutzers bestimmt; ohne
+     * Proxy gibt es keinen stillen Ausweichweg auf Exchange.
+     */
+    public static function orvantaCalendar(): \App\Services\Orvanta\OrvantaCalendarService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaCalendarService::class,
+            static fn (): \App\Services\Orvanta\OrvantaCalendarService => new \App\Services\Orvanta\OrvantaCalendarService(
+                self::orvantaCalendarRepository(),
+                static fn (string $uid, string $email): \App\Contracts\OrvantaMailBackendInterface => self::orvantaMail()->backendForUid($uid, $email),
+                app_logger()
+            )
+        );
+    }
+
+    /**
      * Gibt es mindestens eine aktive Proxy-Konfiguration? (Orvanta ist dann
      * auch ohne Exchange-Anbindung fuer zugeordnete Benutzer nutzbar.)
      */

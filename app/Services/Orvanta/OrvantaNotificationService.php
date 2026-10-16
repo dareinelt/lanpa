@@ -7,8 +7,9 @@ namespace App\Services\Orvanta;
 use App\Repositories\OrvantaRepository;
 
 /**
- * Terminerinnerungen: gleicht anstehende Exchange-Termine mit der lokalen
- * Tabelle orvanta_reminders ab, ermittelt faellige Erinnerungen fuer die
+ * Terminerinnerungen: gleicht anstehende Termine mit der lokalen Tabelle
+ * orvanta_reminders ab – aus Exchange (EWS) oder aus dem lokalen Kalender der
+ * Proxy-Postfaecher –, ermittelt faellige Erinnerungen fuer die
  * Browser-Benachrichtigung (HTML5 Notifications API) und liefert die aktiven
  * Erinnerungen fuer das Mitteilungssystem im Kopfbereich des Intranets.
  */
@@ -35,6 +36,41 @@ final class OrvantaNotificationService
         } catch (OrvantaException $exception) {
             return $exception->getMessage();
         }
+        $this->apply($uid, $events, $now);
+
+        return null;
+    }
+
+    /**
+     * Synchronisiert die Erinnerungen aus dem lokalen Kalender
+     * (Proxy-Postfaecher). Die Termine kommen aus der eigenen Datenbank, es
+     * wird also nie Exchange befragt; die Ablage bleibt dieselbe wie bei
+     * Exchange, damit Anzeige, Verschieben (Schlummern) und Ausblenden
+     * unveraendert funktionieren.
+     *
+     * @param list<array<string,mixed>> $events Termine in der Form von
+     *        OrvantaCalendarService::upcomingReminders()
+     */
+    public function syncLocal(string $uid, array $events, ?int $now = null): void
+    {
+        $this->apply($uid, $events, $now ?? time());
+        // Der lokale Kalender ist die einzige Quelle fuer seine Termine: geloeschte
+        // Termine duerfen nicht weiter erinnern. Die Liste ist dabei massgeblich.
+        $this->repository->pruneLocalReminders($uid, array_map(
+            static fn (array $event): string => (string) $event['id'],
+            $events
+        ));
+    }
+
+    /**
+     * Uebernimmt anstehende Termine in die Erinnerungstabelle. Abgesagte und
+     * abgelehnte Termine werden entfernt, eigene Erinnerungen haben Vorrang vor
+     * der allgemeinen Vorlaufzeit (0 = keine Benachrichtigung).
+     *
+     * @param list<array<string,mixed>> $events
+     */
+    private function apply(string $uid, array $events, int $now): void
+    {
         $lead = $this->config->reminderLeadMinutes();
         $items = [];
         $cancelled = [];
@@ -69,8 +105,6 @@ final class OrvantaNotificationService
             $this->repository->removeReminders($uid, $cancelled);
         }
         $this->repository->purgeReminders(self::sql($now - 7 * 86400));
-
-        return null;
     }
 
     /**

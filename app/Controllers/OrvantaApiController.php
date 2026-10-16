@@ -1295,12 +1295,12 @@ final class OrvantaApiController extends Controller
     }
 
     /**
-     * Ergaenzt den Nachrichtentext um kontrastsichere Ersatzfarben fuer den
+     * Ergaenzt den Nachrichtentext um eine kontrastsichere Ersatzfarbe fuer den
      * dunklen Modus: Farben aus der Nachricht, die auf der dunklen
      * Design-Oberflaeche nicht lesbar waeren, werden dort ersetzt (siehe
-     * Orvanta\MailBodyContrast). Gilt fuer die Anzeige; beim Versand und beim
-     * Speichern eines Entwurfs entfernt MailHtmlSanitizer die Hilfsangaben
-     * wieder.
+     * Orvanta\MailBodyContrast). Im hellen Modus bleibt die Schriftfarbe immer
+     * unveraendert. Gilt fuer die Anzeige; beim Versand und beim Speichern
+     * eines Entwurfs entfernt MailHtmlSanitizer die Hilfsangaben wieder.
      *
      * @param array<string,mixed> $message
      * @return array<string,mixed>
@@ -1312,7 +1312,7 @@ final class OrvantaApiController extends Controller
             return $message;
         }
         $modes = Container::theme()->contrastModes();
-        $message['body_html'] = MailBodyContrast::apply($body, $modes['light'], $modes['dark']);
+        $message['body_html'] = MailBodyContrast::apply($body, $modes['dark']);
 
         return $message;
     }

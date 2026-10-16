@@ -97,7 +97,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/CurlExchangeTransport.php` | cURL-POST, Auth `negotiate` (mit Dienstkonto `CURLAUTH_NTLM`, da GSSAPI Benutzer/Kennwort ignoriert und `app` kein Kerberos-Ticket hat; ohne Konto `CURLAUTH_NEGOTIATE` mit `:`), `ntlm`, `basic`; keine Redirects, nur HTTP(S); liefert `auth_offered` (WWW-Authenticate der letzten Antwort) |
 | `app/Services/Orvanta/DemoExchangeTransport.php` | Beispieldaten; erkennt die Operation per `str_contains()` am SOAP-Text; schreibende Aufrufe werden bestätigt, nicht gespeichert |
 | `app/Services/Orvanta/MailHtmlSanitizer.php` | `clean(html): {html, blocked_images}` – Whitelist für Tags/Attribute (Abschnitt 10); `stripHelperProperties()` entfernt beim Senden die Hilfsangaben der Kontrastanpassung |
-| `app/Services/Orvanta/MailBodyContrast.php` | `apply(html, light, dark): html` – Kontrastanpassung für Nachrichten- und Termintexte (Abschnitt 9.2): läuft den DOM-Baum ab, ermittelt die wirksame Textfarbe und den wirksamen Hintergrund (eigenes `background-color`/`bgcolor`, sonst geerbt) und hängt je Modus eine kontrastsichere Ersatzfarbe als CSS-Variable `--ov-dark-color`/`--ov-light-color` samt Markierungsattribut `data-ov-dark-color`/`data-ov-light-color` an (Rechnung über `App\Support\Color::ensureContrast()`); `ATTR_DARK`/`ATTR_LIGHT` |
+| `app/Services/Orvanta/MailBodyContrast.php` | `apply(html, dark): html` – Kontrastanpassung für Nachrichten- und Termintexte im dunklen Modus (Abschnitt 9.2): läuft den DOM-Baum ab, ermittelt die wirksame Textfarbe und den wirksamen Hintergrund (eigenes `background-color`/`bgcolor`, sonst geerbt) und hängt bei zu geringem Kontrast eine kontrastsichere Ersatzfarbe als CSS-Variable `--ov-dark-color` samt Markierungsattribut `data-ov-dark-color` an (Rechnung über `App\Support\Color::ensureContrast()`); `ATTR_DARK`. Im hellen Modus bleibt die Schriftfarbe immer unverändert |
 | `app/Services/Orvanta/OrvantaAttachmentService.php` | `openMode()`, `browserCapable()`, `documentType()`, `token()/verify()`, `load()`, `cache()`, `evict()`, `clear()`, `usage()`, `saveToNextcloud()`, `viewerConfig()`, `inspect()` (Virenprüfung über `App\Services\Malware\MalwareScanService`, siehe Abschnitt 7.1) |
 | `app/Services/Orvanta/OrvantaNotificationService.php` | `sync()`, `poll()`, `dismiss()`, `snooze()`, `relative()` |
 | `app/Services/Orvanta/OrvantaRecipientService.php` | `suggest()` (Verlauf + Telefonliste), `remember()` (nach Versand, schreibt `.empfaenger.json`), `recent()` (Nextcloud-Lesen mit Sitzungs-Cache); `FILE_NAME`, `MAX_ENTRIES`, `CACHE_TTL` |
@@ -728,8 +728,9 @@ Link zu einem Termin: `/office/orvanta?modul=calendar&termin=<item_id>`.
 - Mail-Anzeige: `body.innerHTML = inlineStylesToCssom(message.body_html)`,
   danach `data-ov-style` → `node.style.cssText`; Links erhalten
   `target=_blank` und `rel="noopener noreferrer nofollow"`. Der Server hat
-  `body_html` vorher kontrastsicher gemacht (Abschnitt 9.2); das CSS wählt
-  die zum Modus passende Ersatzfarbe.
+  `body_html` vorher für den dunklen Modus kontrastsicher gemacht
+  (Abschnitt 9.2); das CSS wählt die Ersatzfarbe nur dort, im hellen Modus
+  gilt unverändert die Absenderfarbe.
 - Aufgabe aus E-Mail: Menüband-Schaltfläche `data-ov-action="mail-to-task"`
   (Reiter Start, `data-ov-needs="message"`) → `mailToTask()` lädt die
   vollständige Nachricht (`withFullMessage()`), wandelt das bereinigte
@@ -831,28 +832,34 @@ Schriftfarben sind auf dem dunklen Hintergrund oft kaum lesbar. Der Server
 prüft deshalb jeden Nachrichten- und Termintext vor der Ausgabe
 (`OrvantaApiController::withReadableBody()` in `message()`, `event()` und
 `archiveMessage()`) und stützt sich dabei auf dieselbe Rechnung wie die
-Kacheln der Startseite (`App\Support\Color`, Mindestkontrast 4,5:1):
+Kacheln der Startseite (`App\Support\Color`, Mindestkontrast 4,5:1). Die
+Anpassung greift **ausschließlich im dunklen Modus**; im hellen Modus wird die
+Schriftfarbe einer Nachricht nie verändert:
 
 - `ThemeService::contrastModes()` liefert die Kontrastgrundlagen beider Modi
   (`light`/`dark` – Hintergrund, Text, gedämpfter Text, Akzent, Flächen). Die
   Methode ist aus `tileContrastBase()` herausgezogen, damit Kacheln und
-  Nachrichten dieselben Werte benutzen.
+  Nachrichten dieselben Werte benutzen; die Nachrichtenansicht verwendet nur
+  den `dark`-Satz.
 - `MailBodyContrast::apply()` läuft den DOM-Baum eltern-zuerst ab, liest je
   Element die angegebene Textfarbe (`style="color"`, `color`-Attribut,
   `rgb()`/benannte Farben) und den wirksamen Hintergrund (eigene
   `background-color`/`bgcolor`, sonst der des Elternelements, sonst die
-  Seitenfläche). Reicht der Kontrast nicht, wird die Ersatzfarbe aus
-  `Color::ensureContrast()` **je Modus** als CSS-Variable an das vorhandene
-  `style`-Attribut angehängt (`--ov-dark-color`, `--ov-light-color`) und ein
-  leeres Markierungsattribut (`data-ov-dark-color`, `data-ov-light-color`)
-  gesetzt. Ist die Farbe bereits lesbar, bleibt das Element unverändert.
-- `orvanta.css` wählt je Modus die passende Variable mit `!important`:
-  `.ov-mail__body [data-ov-dark-color], .ov-quote [data-ov-dark-color]` bzw.
-  die `light`-Variante. `!important` ist nötig, weil `inlineStylesToCssom()`
-  die Absenderfarbe über `style.cssText` (CSSOM) setzt und Inline-Styles jede
-  Autorenregel schlagen. Die ursprüngliche Absenderfarbe bleibt im
-  `style`-Attribut stehen – sie gilt weiter im anderen Modus, beim Zitieren
-  und beim Empfänger.
+  Seitenfläche). Reicht der Kontrast gegen die dunkle Design-Oberfläche nicht,
+  wird die Ersatzfarbe aus `Color::ensureContrast()` als CSS-Variable an das
+  vorhandene `style`-Attribut angehängt (`--ov-dark-color`) und ein leeres
+  Markierungsattribut (`data-ov-dark-color`) gesetzt. Ist die Farbe bereits
+  lesbar, bleibt das Element unverändert; ebenso unverändert bleiben alle
+  Elemente im hellen Modus.
+- `orvanta.css` wählt die Variable mit `!important`, aber nur im dunklen
+  Modus: `[data-theme="dark"] .ov-mail__body [data-ov-dark-color],
+  [data-theme="dark"] .ov-quote [data-ov-dark-color]` und dieselbe Regel für
+  `@media (prefers-color-scheme: dark)` mit
+  `:root:not([data-theme="light"])`. `!important` ist nötig, weil
+  `inlineStylesToCssom()` die Absenderfarbe über `style.cssText` (CSSOM) setzt
+  und Inline-Styles jede Autorenregel schlagen. Die ursprüngliche
+  Absenderfarbe bleibt im `style`-Attribut stehen – sie gilt weiter im hellen
+  Modus, beim Zitieren und beim Empfänger.
 - Der `.ov-editor` bleibt bewusst außen vor: dort gilt weiter die
   Schriftfarbe des Editors (`--ov-editor-text`, Abschnitt 16).
 - `MailHtmlSanitizer::stripHelperProperties()` entfernt die Hilfsvariablen
@@ -876,8 +883,8 @@ Kacheln der Startseite (`App\Support\Color`, Mindestkontrast 4,5:1):
   - `img[src]` nur `data:image/…` – alles andere (auch `cid:`) wird entfernt,
     gezählt (`blocked_images`) und das Bild durch `span.orv-img-blocked` ersetzt;
   - `style` verliert beim Senden die Hilfsvariablen der Kontrastanpassung
-    (`--ov-dark-color`, `--ov-light-color`, Abschnitt 9.2); ein danach leeres
-    `style`-Attribut wird entfernt.
+    (`--ov-dark-color`, `--ov-light-color` als Altbestand, Abschnitt 9.2); ein
+    danach leeres `style`-Attribut wird entfernt.
 - Angewendet auf: empfangene Mails (`message()`), Terminbeschreibungen
   (`event()`), ausgehende HTML-Bodys (`messageXml()`, `createEvent()`,
   `updateEvent()`). `respond()` sendet `NewBodyContent` **unbereinigt**
@@ -994,7 +1001,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaSignatureTest.php` | Validierung (Pflichtfelder, Modus, Reihenfolge, Gruppen-Dedupe, Präfix-Leerzeichen), Speichern/Laden/Löschen, Zuordnung (Reihenfolge, inaktiv, Schreibweise), Darstellung (AD-Daten, Präfix + Durchwahl vs. komplette Rufnummer, Farben, Logo als `data:`-URI, Sanitizer-Durchlauf), Logo in Zeilenhöhe und gewählte Designfarben (`logoSize()`, `imageDimensions()` inkl. SVG), Logo-Pixelgröße = Anzeigegröße (`scaleImage()`), Fallbacks (ohne Logo/Telefonbuch/inaktiver Eintrag), `extension()`, `append()` (Dedupe, vor Zitat), `strip()` |
 | `tests/Unit/OrvantaServiceTest.php` | Konfiguration (Defaults, EWS-URL, Validierung, verschlüsseltes Kennwort), EWS-Umschlag (Impersonation, Version), Nachrichten lesen/senden, KI-Marker werden beim Senden/Entwurf/Termin entfernt, Transportfehler → `OrvantaException`, 503 ohne Server, Kalender/Kontakte/Aufgaben/Notizen (inkl. `moveEvent()`: nur `calendar:Start`/`calendar:End` im `UpdateItem`, ungültiger Zeitraum → 422), Postfachbelegung (`mailboxUsage()`, Summe aller Ordner ohne Suchordner/Wiederherstellbare Elemente, Quota in KB, ohne Grenzen, AD-Grenzen, Ersatzgrenze `mailbox_quota_mb`, `LdapClient::mailboxQuotaFromEntries()`), `EwsXml`, Sanitizer, Erinnerungen (Sync, fällig, erledigt, Snooze, verschobene Termine, Sync-Fehler), `relative()`, `openMode()`, Token-Ablauf und Zweckbindung, Quota/FIFO, Quota 0, Laden mit Zwischenspeicher, Nextcloud-Ablage, Viewer-Konfiguration, Empfänger-Vorschläge (Verlauf zuerst, Dubletten, Nextcloud-Lesen/Fehler, versteckte Dateinamen), Exchange-DAG (Verteilung nach Fair-use/Sitzungszahl/Latenz, Affinität, Wartung, Umleitung, Failover, `parseHostList()`, `overview()`, `syncPrimary()`, Tooltipp der Verbindungsanzeige; Abschnitt 20) |
 | `tests/Unit/OrvantaArchiveTest.php` | Langzeitarchiv: Konfiguration (Defaults, Schwellenberechnung, Validierung), `maybeRun()` (Aktivierung/Registrierung/Schwelle), Freigabe per AD-Gruppe (`archive_group`, Standard: niemand; Mitglieder weiterer Quellen; Pflichtgruppe bei Aktivierung), vollständiger Demolauf (Copy-Verify-Commit-Delete, HardDelete-SOAP, Journal, Manifest), Stichtag in der EWS-Restriction, Idempotenz/Dedupe, Upload-Fehler und Verifikationsfehler (nichts wird gelöscht, Wiederaufnahme ohne Duplikate), Nachlöschen committeter Einträge, Identitätsabweichung verhindert Löschung, Sperren (laufender Job, Übernahme abgelaufener Sperren), Lesepfad (Nachricht, Suche, fremde Kennung → 404), Korruptionserkennung (Byte-Flip bei `message()` und `verify()`), Batches/mehrere Container, Massentest mit 1000 Nachrichten (eigener `BulkArchiveTransport` mit echter Paginierung und Löschung), fehlender MIME-Quelltext (nichts abgelegt, nichts gelöscht), Ordnerhierarchie (`parent_id`/`path`), Demo-Anhänge byteidentisch aus dem Container (`TamperingArchiveTransport` als dekorierender Transport) |
-| `tests/Unit/OrvantaMailContrastTest.php` | Kontrastanpassung der Nachrichtentexte (Abschnitt 9.2): dunkle Absenderfarbe wird nur im dunklen Modus ersetzt, helle nur im hellen, eigener Hintergrund (weisse Tabellenzelle) und geerbter Hintergrund des Elternelements bestimmen die Ersatzfarbe, `rgb()` und benannte Farben, ungültige Farben bleiben unverändert, Umlaute/Entities überstehen den Durchlauf, Text ohne Farbe bleibt unverändert, `MailHtmlSanitizer` entfernt die Hilfsangaben beim Senden (und das leere `style`-Attribut), Stylesheet enthält die Modusregeln mit `!important` |
+| `tests/Unit/OrvantaMailContrastTest.php` | Kontrastanpassung der Nachrichtentexte (Abschnitt 9.2): dunkle Absenderfarbe wird nur im dunklen Modus ersetzt, im hellen Modus wird die Schriftfarbe nie angepasst, eigener Hintergrund (weisse Tabellenzelle) und geerbter Hintergrund des Elternelements bestimmen die Ersatzfarbe, `rgb()` und benannte Farben, ungültige Farben bleiben unverändert, Umlaute/Entities überstehen den Durchlauf, Text ohne Farbe bleibt unverändert, `MailHtmlSanitizer` entfernt die Hilfsangaben beim Senden (und das leere `style`-Attribut), Stylesheet enthält die Modusregeln für den dunklen Modus mit `!important` |
 
 | `tests/Unit/OrvantaMailRefreshTest.php` | Hintergrundabgleich der Mail-Liste (Abschnitt 9.1, Quelltextprüfung von `orvanta.js`): Fehler werden nicht still verschluckt, beide Abfragen melden ihren Fehler und die Sperre `mailRefreshBusy` wird in jedem Fall freigegeben (nicht über ein abgelehntes `Promise.all`), eine hängende Abfrage sperrt höchstens `MAIL_REFRESH_TIMEOUT`, der Takt plant sich selbst neu (`scheduleMailPoll()`/`mailPoll()`, kein `setInterval(refreshMail`), pausiert im verborgenen Tab und lädt beim Zurückkehren nach fehlgeschlagenem Abgleich sichtbar neu (`reloadMailAfterFailedRefresh()`) |
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose (`FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
@@ -1044,7 +1051,7 @@ nach dem Neuladen wieder die alte.
 
 | **Abwesenheitsnotiz erweitern** (weiteres Feld, weiterer Empfängerkreis) | Spalte per Migration **und** im SQLite-Schema von `tests/Unit/OrvantaOofTest.php` (`oofPdo()`); `OrvantaOofRepository` (`hydrate`/`hydrateSettings`, `save`/`saveSettings`), `OrvantaOofService` (`blank()`/`validate()`/`validateSettings()`/`apply()`/`state()`/`status()`), Formular `views/admin/orvanta-oof-template.php` bzw. Dialog `views/orvanta/index.php`, `admin-oof.js` (Query) und `OrvantaOofController::preview()`; neuer Empfängerkreis zusätzlich in `AUDIENCES` und in `EwsXml::oofSettings()`; Doku in Abschnitt 21. |
 | **Nachrichtenfluss-Dashboard erweitern** (weiterer Knoten, weitere Kennzahl) | Zuerst `docs/orvanta-nachrichtenfluss.md` (Elementliste und Ausgrauregeln) ergänzen, dann `OrvantaFlowService::collect*()` für die Daten und `evaluate()` für den Knoten samt `flowNode()`-Aufruf; Knoten in `views/admin/orvanta-flow.php` rendern (Spur, `data-flow-node`, `data-flow-node-muted` **immer** ausgeben, nur `hidden` schalten) und in `admin-orvanta-flow.js` in die Aktualisierung aufnehmen; Test in `OrvantaFlowTest.php` (`flowInput()` um das Feld erweitern – **`array_merge()`**, nie `+`, sonst gewinnt der Standard). Neue Tabellen/Spalten zusätzlich im SQLite-Schema von `flowPdo()` und in `database/migrations/AGENTS.md` nachziehen. Abschnitt 23. |
-| **Kontrastanpassung der Nachrichtentexte ändern** (anderer Mindestkontrast, weitere Farbquellen, weitere Ansicht) | Nur `MailBodyContrast` (Farbquellen: `declaredTextColor()`/`declaredBackground()`, Rechnung: `App\Support\Color::ensureContrast()`) und die Modusregeln in `orvanta.css` anfassen; Grundlagen kommen aus `ThemeService::contrastModes()`, die Ausgabe-Hooks sitzen in `OrvantaApiController::withReadableBody()` (`message()`, `event()`, `archiveMessage()`). Wird eine neue Ansicht ausgegeben, dort ebenfalls durch `withReadableBody()` schicken. Der Sanitizer muss die Hilfsangaben weiterhin entfernen (`HELPER_PROPERTIES`), sonst landen sie in ausgehenden Mails. Tests in `OrvantaMailContrastTest.php`. Abschnitt 9.2. |
+| **Kontrastanpassung der Nachrichtentexte ändern** (anderer Mindestkontrast, weitere Farbquellen, weitere Ansicht) | Nur `MailBodyContrast` (Farbquellen: `declaredTextColor()`/`declaredBackground()`, Rechnung: `App\Support\Color::ensureContrast()`) und die Dark-Mode-Regeln in `orvanta.css` anfassen; Grundlagen kommen aus `ThemeService::contrastModes()` (die Nachrichtenansicht nutzt nur den `dark`-Satz, im hellen Modus darf die Schriftfarbe nie angepasst werden), die Ausgabe-Hooks sitzen in `OrvantaApiController::withReadableBody()` (`message()`, `event()`, `archiveMessage()`). Wird eine neue Ansicht ausgegeben, dort ebenfalls durch `withReadableBody()` schicken. Der Sanitizer muss die Hilfsangaben weiterhin entfernen (`HELPER_PROPERTIES`), sonst landen sie in ausgehenden Mails. Tests in `OrvantaMailContrastTest.php`. Abschnitt 9.2. |
 
 Nach Änderungen: `php tests/run.php`; diese Referenz sowie bei Benutzersicht
 `docs/orvanta.md` und `agentsindex.md` aktualisieren.

@@ -104,6 +104,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/ICalendar.php` | iCalendar nach RFC 5545 (Abschnitt 24): `build()`, `parse()`, `parseInvitation()`, `newUid()`, `toText()`, `escape()/unescape()`, `fold()`, `normalize()`, `partstat()`, `freeBusy()`, `clip()`; `METHODS` = `REQUEST\|CANCEL\|REPLY`, Grenzen `MAX_BYTES` (524288), `MAX_LINES` (20000), `MAX_EVENTS` (50), `MAX_ATTENDEES` (200), `MAX_TEXT` (20000) |
 | `app/Services/Orvanta/OrvantaCalendarService.php` | Lokaler Kalender der Proxy-Benutzer (Abschnitt 24): `save()`, `move()`, `remove()`, `respond()`, `respondToMessage()`, `upcomingReminders()`, `ingest()`, `dispatch()`, `applyRequest()`, `applyReply()`, `attendeeRows()`, `deliver()`, `enqueueEvent()`, `cleanAddresses()`, `times()`; Grenzen `MAX_RANGE_DAYS` (100), `MAX_ATTENDEES` (100), `MAX_DESCRIPTION` (60000), `REMINDER_MAX` (10080), `MAX_ATTEMPTS` (5), `MAX_DISPATCH` (3), `CLAIM_TIMEOUT` (900) |
 | `app/Repositories/OrvantaCalendarRepository.php` | Tabellen `orvanta_calendar_*` (Abschnitt 24): `range()`, `reminderWindow()`, `find()`, `findByUid()`, `attendeesFor()`, `create()`, `update()`, `delete()`, `replaceAttendees()`, `setAttendeeResponse()`, `setMyResponse()`, `markProcessed()`, `enqueue()`, `dueOutbox()`, `claimOutbox()`, `finishOutbox()`, `recoverOutbox()`, `outboxState()` |
+| `app/Services/Orvanta/OrvantaCalendarMail.php` | Betreff und Begleittext der Kalendermails (Abschnitt 24.6): `METHODS` (`REQUEST`/`CANCEL`/`REPLY`), `PLACEHOLDERS`, `SUBJECT_PLACEHOLDERS`, `DEFAULTS` (Standardwortlaute), `MAX_SUBJECT` (255), `MAX_BODY` (20000); `settingKey()`, `subjectPlaceholders()`, `subject(template, row, partstat)`, `body(template, row, partstat, attendees)`; Textwerte werden maskiert, `{Beschreibung}` bleibt geprüftes HTML, ein leerer Wert entfernt den Umbruch davor |
 | `app/Services/Orvanta/OrvantaSignatureService.php` | Signaturvorlagen (Abschnitt 16): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)` → `{id,name,html}`, `person()`, `render()`, `preview()`, statisch `extension()`, `append(body, html)`, `strip(body)`, statisch `resolveColor(value, fallbackKey, theme)`, `wrapTextColor(body, color)`, `stripTextColor(body)`; Konstanten `MARKER_CLASS`, `QUOTE_CLASS`, `TEXT_COLOR_CLASS`, `PHONE_MODES`, `EXTENSION_LENGTH`, `LINE_HEIGHT`, `LOGO_MAX_WIDTH`, `DEFAULT_TEXT_COLOR`, `DEFAULT_SEPARATOR_COLOR`, `SAMPLE_PERSON`; statisch `logoSize()`, `imageDimensions()`, `scaleImage()` (verkleinert das Logo selbst auf die Anzeigegröße: Raster per GD als PNG, SVG über width/height) |
 | `app/Repositories/OrvantaSignatureRepository.php` | `all(activeOnly)`, `find()`, `save()`, `delete()`; `ad_groups` als JSON-Liste → `groups` |
 | `app/Services/Orvanta/OrvantaOofService.php` | Abwesenheitsnotizen (Abschnitt 21): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)`, `settings(uid, template)`, `validateSettings()`, `apply(uid, mailbox, template, input, exchange, ssoUser)`, `state(mailbox, exchange, settings)`, `status(uid, mailbox, exchange, ssoUser)`, `text()`, `message()`, `html()`, statisch `dateStart()/dateEnd()`; Konstanten `AUDIENCES`, `SCHEDULE_MODES`, `MAX_FIXED_TEXT` (4000), `MAX_DYNAMIC_TEXT` (2000) |
@@ -353,6 +354,7 @@ Validierung in `OrvantaConfigService::save()`:
 | `poll_interval` | 15–900 |
 | `default_folder` | Schlüssel aus `DEFAULT_FOLDERS`, sonst `inbox` |
 | `editor_text_color` | leer oder `Validator::isHexColor()`; gespeichert wird `Validator::normalizeHexColor()` (`#abc` → `#aabbcc`, klein geschrieben), leer = Textfarbe des Designs. Nur wenn der Schlüssel im Formular enthalten ist – `saveTestMailbox()` lässt ihn unberührt |
+| `calendar_mail_*_subject` / `calendar_mail_*_body` | `Validator::cleanText()` mit 255 Zeichen (Betreff) bzw. `OrvantaCalendarMail::MAX_BODY` (Text); leer oder fehlend = Standardtext aus `OrvantaCalendarMail::DEFAULTS` (Abschnitt 24.6) |
 
 `OrvantaConfigService` cacht `all()` je Instanz; `save()` setzt den Cache
 zurück und zieht den primären Host in der DAG-Hostliste nach
@@ -1040,7 +1042,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 
 | `tests/Unit/OrvantaMailRefreshTest.php` | Hintergrundabgleich der Mail-Liste (Abschnitt 9.1, Quelltextprüfung von `orvanta.js`): Fehler werden nicht still verschluckt, beide Abfragen melden ihren Fehler und die Sperre `mailRefreshBusy` wird in jedem Fall freigegeben (nicht über ein abgelehntes `Promise.all`), eine hängende Abfrage sperrt höchstens `MAIL_REFRESH_TIMEOUT`, der Takt plant sich selbst neu (`scheduleMailPoll()`/`mailPoll()`, kein `setInterval(refreshMail`), pausiert im verborgenen Tab und lädt beim Zurückkehren nach fehlgeschlagenem Abgleich sichtbar neu (`reloadMailAfterFailedRefresh()`) |
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose, Übertragung von Termineinladungen (ausgehende base64-Kalenderteile mit Methodenprüfung, eingehende `calendar[]`-Teile und `meeting_request`; `FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
-| `tests/Unit/OrvantaLocalCalendarTest.php` | Lokaler Kalender der Proxy-Benutzer (Abschnitt 24): iCalendar-Aufbau und -Auswertung (Zeitzonen, ganztägig, Teilnehmerstatus, Grenzen) und Verwerfen unbrauchbarer Inhalte, Anlegen/Lesen/Verschieben/Löschen, Eingabeprüfung, Trennung der Benutzer (fremder Termin → 404), Annehmen/Vorbehalt/Ablehnen und Antwort über die Terminkennung, Absage und Rückzug, Idempotenz der Versandaufträge (höchstens drei Zustellungen, Wiederholung nach Fehlern, Aufräumen hängender Aufträge), Verhalten ohne Mail-Proxy, Erinnerungen samt Aufräumen veralteter Einträge, abgelehnte Einladungen und bereinigte Beschreibungen |
+| `tests/Unit/OrvantaLocalCalendarTest.php` | Lokaler Kalender der Proxy-Benutzer (Abschnitt 24): iCalendar-Aufbau und -Auswertung (Zeitzonen, ganztägig, Teilnehmerstatus, Grenzen) und Verwerfen unbrauchbarer Inhalte, Anlegen/Lesen/Verschieben/Löschen, Eingabeprüfung, Trennung der Benutzer (fremder Termin → 404), Annehmen/Vorbehalt/Ablehnen und Antwort über die Terminkennung, Absage und Rückzug, Idempotenz der Versandaufträge (höchstens drei Zustellungen, Wiederholung nach Fehlern, Aufräumen hängender Aufträge), Verhalten ohne Mail-Proxy, Erinnerungen samt Aufräumen veralteter Einträge, abgelehnte Einladungen und bereinigte Beschreibungen; Kalendermails (Abschnitt 24.6): Platzhalter, Maskierung und Standardtexte, Speichern der Vorlagen über `OrvantaConfigService::save()` und Versand mit eigenen Vorlagen |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage, Zustand bleibt erhalten, `template_changed`), Abschalten ohne zugewiesene Vorlage (Text und Vorlage bleiben, Aktivieren abgelehnt), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
@@ -1089,6 +1091,7 @@ nach dem Neuladen wieder die alte.
 | **Rechtschreibprüfung erweitern** (weiterer Editor, andere Sprache) | Editor mit `contenteditable` und `data-ov-…-body`-Hook anlegen und in `orvanta.js` zu `spellEditors()` hinzufügen (nur dort wird geprüft; Signatur-/Zitatblöcke tragen `contenteditable="false"` und werden automatisch übersprungen). Andere Sprache/Wörterbuch: `ORVANTA_SPELLCHECK_URL`/`ORVANTA_SPELLCHECK_DIR` umstellen – der Übersetzer liest `SET`/`FLAG`/`AF`/`AM` aus der `.aff`, das Dateiformat bleibt gleich. **Nur** die Engine selbst ändern, wenn das Wörterbuch eine Hunspell-Funktion nutzt, die noch fehlt (`COMPOUNDRULE`, `CHECKCOMPOUNDPATTERN`, `SIMPLIFIEDTRIPLE`, `COMPLEXPREFIXES`, `FORCEUCASE`, `PHONE`); Referenz ist die Python-Umsetzung `spylls` (`algo/lookup.py`), gegen die die Prüfung unterschiedfrei validiert wurde (Abschnitt 19). Danach `php tests/run.php` **und** ein Differenzlauf gegen `spylls` über eine echte Wortliste. |
 
 | **Abwesenheitsnotiz erweitern** (weiteres Feld, weiterer Empfängerkreis) | Spalte per Migration **und** im SQLite-Schema von `tests/Unit/OrvantaOofTest.php` (`oofPdo()`); `OrvantaOofRepository` (`hydrate`/`hydrateSettings`, `save`/`saveSettings`), `OrvantaOofService` (`blank()`/`validate()`/`validateSettings()`/`apply()`/`state()`/`status()`), Formular `views/admin/orvanta-oof-template.php` bzw. Dialog `views/orvanta/index.php`, `admin-oof.js` (Query) und `OrvantaOofController::preview()`; neuer Empfängerkreis zusätzlich in `AUDIENCES` und in `EwsXml::oofSettings()`; Doku in Abschnitt 21. |
+| **Kalendermail ändern** (Wortlaut, neuer Platzhalter, weitere Methode) | Nur `OrvantaCalendarMail` anfassen: Standardtext in `DEFAULTS`, Platzhalter in `PLACEHOLDERS` (Betreff zusätzlich in `SUBJECT_PLACEHOLDERS`) und den Wert in `values()` ergänzen; das Formular liest die Liste über `subjectPlaceholders()`, die Schlüssel bildet `settingKey()`. Neue Methode: Wert in `METHODS` und `DEFAULTS`, Zweig in `OrvantaCalendarService::mailTemplate()`/`enqueueEvent()` und die iCalendar-Methode in `ICalendar::METHODS`. Beim Betreff beachten, dass `deliver()` ihn unverändert aus dem Payload übernimmt – Bereinigung gehört in `header()`. Test in `OrvantaLocalCalendarTest.php`, Doku in Abschnitt 24.6. |
 | **Nachrichtenfluss-Dashboard erweitern** (weiterer Knoten, weitere Kennzahl) | Zuerst `docs/orvanta-nachrichtenfluss.md` (Elementliste und Ausgrauregeln) ergänzen, dann `OrvantaFlowService::collect*()` für die Daten und `evaluate()` für den Knoten samt `flowNode()`-Aufruf; Knoten in `views/admin/orvanta-flow.php` rendern (Spur, `data-flow-node`, `data-flow-node-muted` **immer** ausgeben, nur `hidden` schalten) und in `admin-orvanta-flow.js` in die Aktualisierung aufnehmen; Test in `OrvantaFlowTest.php` (`flowInput()` um das Feld erweitern – **`array_merge()`**, nie `+`, sonst gewinnt der Standard). Neue Tabellen/Spalten zusätzlich im SQLite-Schema von `flowPdo()` und in `database/migrations/AGENTS.md` nachziehen. Abschnitt 23. |
 | **Kontrastanpassung der Nachrichtentexte ändern** (anderer Mindestkontrast, weitere Farbquellen, weitere Ansicht) | Nur `MailBodyContrast` (Farbquellen: `declaredTextColor()`/`declaredBackground()`, Rechnung: `App\Support\Color::ensureContrast()`) und die Dark-Mode-Regeln in `orvanta.css` anfassen; Grundlagen kommen aus `ThemeService::contrastModes()` (die Nachrichtenansicht nutzt nur den `dark`-Satz, im hellen Modus darf die Schriftfarbe nie angepasst werden), die Ausgabe-Hooks sitzen in `OrvantaApiController::withReadableBody()` (`message()`, `event()`, `archiveMessage()`). Wird eine neue Ansicht ausgegeben, dort ebenfalls durch `withReadableBody()` schicken. Der Sanitizer muss die Hilfsangaben weiterhin entfernen (`HELPER_PROPERTIES`), sonst landen sie in ausgehenden Mails. Tests in `OrvantaMailContrastTest.php`. Abschnitt 9.2. |
 
@@ -2844,11 +2847,76 @@ Kette (`poll()`, `dismiss()`, `snooze()`) unverändert weiter.
   auf ein Exchange-Postfach, ist sein lokaler Kalender dort nicht sichtbar
   (und umgekehrt).
 
-### 24.6 Tests
+### 24.6 Kalendermails: Vorlagen mit Platzhaltern
+
+Betreff und Begleittext der drei Nachrichtenarten sind im Adminbereich unter
+**Office → Orvanta** (Abschnitt „Kalendermails des lokalen Kalenders“)
+pflegbar; die Umsetzung liegt in `OrvantaCalendarMail`. Der iCalendar-Teil
+bleibt unverändert – konfigurierbar sind nur Betreff und Text.
+
+| Methode | Schlüssel | Standardbetreff |
+| --- | --- | --- |
+| `REQUEST` (Einladung/Aktualisierung) | `calendar_mail_request_subject`, `calendar_mail_request_body` | `Einladung: {Betreff}` |
+| `CANCEL` (Absage) | `calendar_mail_cancel_subject`, `calendar_mail_cancel_body` | `Absage: {Betreff}` |
+| `REPLY` (Antwort an den Organisator) | `calendar_mail_reply_subject`, `calendar_mail_reply_body` | `Antwort: {Betreff}` |
+
+Schlüsselbildung: `OrvantaCalendarMail::settingKey($method, $part)` →
+`calendar_mail_<methode klein>_<subject|body>`. Die Standardwortlaute stehen in
+`OrvantaCalendarMail::DEFAULTS` und sind gleichzeitig die Vorgabe von
+`OrvantaConfigService::DEFAULTS` (Array-Spread). Ein **leeres Feld stellt den
+Standardtext wieder her** – eine Nachricht geht nie ohne Inhalt heraus;
+fehlende Felder (etwa bei einem API-Aufruf ohne vollständiges Formular) fallen
+ebenfalls darauf zurück. Längen: `MAX_SUBJECT` (255), `MAX_BODY` (20000), beide
+über `Validator::cleanText()` (entfernt Steuerzeichen, kein HTML-Escaping).
+
+Platzhalter (Konvention `{Name}`, Labels in `PLACEHOLDERS`, Ersetzung per
+`str_replace()`):
+
+| Platzhalter | Wert |
+| --- | --- |
+| `{Organisator}` | `organizer_name`, ersatzweise `organizer_email` |
+| `{Organisator-Mail}` | `organizer_email` |
+| `{Betreff}` | `subject` des Termins |
+| `{Beginn}`, `{Ende}` | `starts_at`/`ends_at` als `d.m.Y H:i` |
+| `{Ort}` | `location` |
+| `{Teilnehmer}` | `display_name` der Teilnehmer, ersatzweise die Adresse, entdoppelt und mit Komma getrennt |
+| `{Beschreibung}` | `description` |
+| `{Antwort}` | Antwort des Teilnehmers in Worten (zugesagt / mit Vorbehalt geantwortet / abgesagt / geantwortet) |
+
+`SUBJECT_PLACEHOLDERS` und damit `subjectPlaceholders()` (Grundlage der Liste im
+Formular) enthalten `{Teilnehmer}` und `{Beschreibung}` **nicht**: Im Betreff
+gibt es keine Formatierung, `{Beschreibung}` würde dort nur als Klartext ohne
+Auszeichnung stehen. Beim Rendern des Betreffs gilt dieselbe Einschränkung
+nicht technisch erzwungen – geprüft wird nur, was das Formular anbietet.
+
+Regeln beim Rendern:
+
+- **Maskierung:** In `body()` werden alle Werte außer `{Beschreibung}` über
+  `Html::e()` maskiert; `{Beschreibung}` läuft durch
+  `MailHtmlSanitizer::clean()` und bleibt damit geprüftes HTML. In `subject()`
+  wird nicht maskiert (Betreffzeile, kein HTML).
+- **Leerer Wert:** Steht ein Platzhalter für einen leeren Wert (etwa kein Ort),
+  entfernt `render()` zusätzlich ein unmittelbar davorstehendes `<br>` – so
+  entsteht keine leere Zeile.
+- **Betreffzeile:** `header()` ersetzt Zeilenumbrüche und Tabulatoren durch
+  Leerzeichen, entfernt Steuerzeichen, normalisiert Folgen von Leerraum und
+  begrenzt auf `MAX_SUBJECT`. Ist die gerenderte Vorlage leer, gilt der
+  Terminbetreff, sonst `Termin`. Nötig, weil `deliver()` den Betreff aus dem
+  Payload **unverändert** übernimmt.
+- **Zeitpunkt des Einfrierens:** `enqueueEvent()` legt den gerenderten Text in
+  den Payload (`{method, ics, subject, body}`). Eine Vorlagenänderung wirkt
+  deshalb nur für danach erzeugte Versandaufträge; bereits eingereihte Aufträge
+  behalten ihren Text.
+
+### 24.7 Tests
 
 `tests/Unit/OrvantaLocalCalendarTest.php` (SQLite-Schema von Migration 057,
 `FakeLocalCalendarBackend`) prüft iCalendar-Aufbau und -Auswertung, die
 Endpunktlogik, die Benutzertrennung, Antworten und Absagen, die Idempotenz der
-Outbox und die Erinnerungen samt Aufräumen. `tests/Unit/MailProxyTest.php`
-prüft die Übertragung der Kalenderteile über den Proxy (ausgehend Base64 mit
-Methodenprüfung, eingehend `calendar[]` und `meeting_request`).
+Outbox und die Erinnerungen samt Aufräumen. Dieselbe Datei prüft die
+Kalendermails: Platzhalter, Maskierung und Standardtexte (eigene Tests ohne
+Datenbank), das Speichern der Vorlagen über `OrvantaConfigService::save()` und
+den Versand mit eigenen Vorlagen über `localCalendarEnv($settings)`.
+`tests/Unit/MailProxyTest.php` prüft die Übertragung der Kalenderteile über den
+Proxy (ausgehend Base64 mit Methodenprüfung, eingehend `calendar[]` und
+`meeting_request`).

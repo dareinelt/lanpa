@@ -7,6 +7,7 @@ use App\Repositories\OrvantaCalendarRepository;
 use App\Repositories\OrvantaRepository;
 use App\Services\Orvanta\DemoExchangeTransport;
 use App\Services\Orvanta\ICalendar;
+use App\Services\Orvanta\OrvantaCalendarMail;
 use App\Services\Orvanta\OrvantaCalendarService;
 use App\Services\Orvanta\OrvantaConfigService;
 use App\Services\Orvanta\OrvantaException;
@@ -245,6 +246,7 @@ function localCalendarEnv(string $backendName = 'proxy', array $settings = []): 
     $backend = new FakeLocalCalendarBackend($backendName);
     $service = new OrvantaCalendarService(
         $calendarRepository,
+        $config,
         static fn (string $uid, string $email): OrvantaMailBackendInterface => $backend
     );
     $notifications = new OrvantaNotificationService(
@@ -866,6 +868,121 @@ Runner::test('Lokaler Kalender: höchstens drei Zustellungen je Aufruf', static 
     Assert::same(2, $service->dispatch('jan'), 'Der nächste Aufruf holt den Rest.');
     Assert::same(5, count($env['backend']->sent));
     Assert::same(0, $service->dispatch('jan'));
+});
+
+Runner::test('Kalendermails: Platzhalter, Maskierung und Standardtexte', static function (): void {
+    $row = [
+        'subject' => 'Projektrunde <Test>',
+        'organizer_email' => 'jan@hh.example',
+        'organizer_name' => 'Jan Müller',
+        'starts_at' => '2026-06-01 10:00:00',
+        'ends_at' => '2026-06-01 11:00:00',
+        'location' => 'Raum 3 & Co',
+        'description' => '<p>Bitte <strong>vorbereiten</strong>.</p>',
+    ];
+    $attendees = [
+        ['email' => 'eva@hh.example', 'display_name' => 'Eva Beispiel'],
+        ['email' => 'max@hh.example', 'display_name' => 'Eva Beispiel'],
+        ['email' => 'tom@hh.example', 'display_name' => ''],
+    ];
+
+    // Textwerte werden maskiert, die Beschreibung bleibt geprueftes HTML.
+    Assert::same(
+        'Jan Müller|jan@hh.example|Projektrunde &lt;Test&gt;|01.06.2026 10:00|01.06.2026 11:00|'
+        . 'Raum 3 &amp; Co|Eva Beispiel, tom@hh.example|zugesagt|<p>Bitte <strong>vorbereiten</strong>.</p>',
+        OrvantaCalendarMail::body(
+            '{Organisator}|{Organisator-Mail}|{Betreff}|{Beginn}|{Ende}|{Ort}|{Teilnehmer}|{Antwort}|{Beschreibung}',
+            $row,
+            'ACCEPTED',
+            $attendees
+        ),
+        'Alle Platzhalter werden ersetzt, Teilnehmer ohne Doppelte.'
+    );
+
+    // Ohne Namen steht die Adresse des Teilnehmers, ohne Organisator seine E-Mail.
+    Assert::same(
+        'eva@hh.example',
+        OrvantaCalendarMail::body('{Teilnehmer}', $row, '', [['email' => 'eva@hh.example', 'display_name' => '  ']])
+    );
+    Assert::same('jan@hh.example', OrvantaCalendarMail::body('{Organisator}', ['organizer_email' => 'jan@hh.example'], ''));
+
+    // Ein leerer Wert entfernt den Umbruch davor statt einer leeren Zeile.
+    Assert::same(
+        '<p>01.06.2026 10:00</p>',
+        OrvantaCalendarMail::body("<p>{Beginn}<br>\n{Ort}</p>", ['starts_at' => '2026-06-01 10:00:00'], '')
+    );
+
+    // Die Antwort des Teilnehmers in Worten.
+    Assert::same('zugesagt', OrvantaCalendarMail::body('{Antwort}', $row, 'ACCEPTED'));
+    Assert::same('mit Vorbehalt geantwortet', OrvantaCalendarMail::body('{Antwort}', $row, 'TENTATIVE'));
+    Assert::same('abgesagt', OrvantaCalendarMail::body('{Antwort}', $row, 'DECLINED'));
+
+    // Betreff: einzeilig, ohne Auszeichnung und in der Laenge begrenzt.
+    Assert::same(
+        'Einladung: 01.06.2026 10:00 Projektrunde <Test>',
+        OrvantaCalendarMail::subject("Einladung:\n{Beginn} {Betreff}", $row, ''),
+        'Der Betreff wird nicht maskiert und ohne Zeilenumbruch ausgegeben.'
+    );
+    Assert::same('Projektrunde <Test>', OrvantaCalendarMail::subject('', $row, ''), 'Ohne Vorlage bleibt der Terminbetreff.');
+    Assert::same('Termin', OrvantaCalendarMail::subject('   ', ['subject' => '  '], ''), 'Ohne Betreff steht ein Ersatztext.');
+    Assert::same(255, mb_strlen(OrvantaCalendarMail::subject('{Betreff}', ['subject' => str_repeat('x', 400)], '')));
+    Assert::same(255, mb_strlen(OrvantaCalendarMail::subject(str_repeat('ä', 300), $row, '')));
+
+    Assert::same('calendar_mail_cancel_body', OrvantaCalendarMail::settingKey('CANCEL', 'body'));
+    $subjectPlaceholders = OrvantaCalendarMail::subjectPlaceholders();
+    Assert::true(isset($subjectPlaceholders['{Betreff}']));
+    Assert::false(isset($subjectPlaceholders['{Teilnehmer}']), 'Teilnehmer und Beschreibung gibt es nur im Text.');
+    Assert::false(isset($subjectPlaceholders['{Beschreibung}']));
+});
+
+Runner::test('Orvanta-Einstellungen: Kalendermail-Vorlagen werden geprüft und gespeichert', static function (): void {
+    $env = localCalendarEnv();
+    $config = $env['config'];
+
+    // Ohne Datenbankeintrag gelten die Standardvorlagen.
+    Assert::same('Einladung: {Betreff}', $config->get('calendar_mail_request_subject'));
+    Assert::contains('lädt zu einem Termin ein', $config->get('calendar_mail_request_body'));
+
+    $input = $config->formValues();
+    $input['calendar_mail_request_subject'] = 'Termin: {Betreff}';
+    $input['calendar_mail_request_body'] = '<p>Hallo {Teilnehmer}</p>';
+    $input['calendar_mail_reply_subject'] = '   ';
+    $config->save($input);
+
+    Assert::same('Termin: {Betreff}', $config->get('calendar_mail_request_subject'));
+    Assert::same('<p>Hallo {Teilnehmer}</p>', $config->get('calendar_mail_request_body'));
+    Assert::same('Antwort: {Betreff}', $config->get('calendar_mail_reply_subject'), 'Ein leeres Feld stellt den Standardtext wieder her.');
+    Assert::same('Absage: {Betreff}', $config->get('calendar_mail_cancel_subject'), 'Nicht gesendete Vorlagen behalten ihren Standardwert.');
+
+    $values = $config->formValues();
+    Assert::same('<p>Hallo {Teilnehmer}</p>', $values['calendar_mail_request_body'], 'Das Formular zeigt die gespeicherte Vorlage.');
+    Assert::same('Absage: {Betreff}', $values['calendar_mail_cancel_subject']);
+});
+
+Runner::test('Lokaler Kalender: eigene Mailvorlagen gelten für neue Nachrichten', static function (): void {
+    $env = localCalendarEnv('proxy', [
+        'calendar_mail_request_subject' => 'Termin am {Beginn}: {Betreff}',
+        'calendar_mail_request_body' => '<p>{Organisator} lädt ein: {Betreff} in {Ort} mit {Teilnehmer}</p>',
+        'calendar_mail_cancel_subject' => 'Abgesagt: {Betreff}',
+    ]);
+    $service = $env['service'];
+    localCalendarInvitation($env, 'eva@hh.example');
+
+    $mail = $env['backend']->sent[0]['mail'];
+    Assert::same('Termin am ' . date('d.m.Y H:i', localCalendarStart()) . ': Projektrunde', (string) $mail['subject']);
+    Assert::same(
+        '<p>Jan Müller lädt ein: Projektrunde in Besprechungsraum 2 mit eva@hh.example</p>',
+        (string) $mail['body']
+    );
+    Assert::true(isset($mail['calendar'][0]['content']), 'Der iCalendar-Teil bleibt unverändert dabei.');
+
+    // Die Absage nutzt den eigenen Betreff und den Standardtext.
+    $sent = count($env['backend']->sent);
+    $eventId = (int) $env['pdo']->query('SELECT id FROM orvanta_calendar_events WHERE user_uid = \'jan\'')->fetchColumn();
+    $service->remove('jan', 'jan@hh.example', (string) $eventId);
+    Assert::same($sent + 1, count($env['backend']->sent));
+    Assert::same('Abgesagt: Projektrunde', (string) $env['backend']->sent[$sent]['mail']['subject']);
+    Assert::contains('wurde abgesagt', (string) $env['backend']->sent[$sent]['mail']['body'], 'Ohne eigene Vorlage gilt der Standardtext.');
 });
 
 Runner::test('Lokaler Kalender: ohne Mail-Proxy wird nichts stillschweigend versendet', static function (): void {

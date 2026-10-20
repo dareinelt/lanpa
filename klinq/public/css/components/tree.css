@@ -1,0 +1,10 @@
+/* Hierarchische Standorte */
+.tree { list-style: none; margin: 0; padding: 0; }
+.tree ul { list-style: none; margin: 0; padding-left: var(--space-5); border-left: 1px dashed var(--color-border); margin-left: var(--space-3); }
+.tree-node { display: flex; align-items: center; gap: var(--space-2); min-height: var(--touch-target); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); }
+.tree-node:hover { background: var(--color-surface-alt); }
+.tree-node .icon { width: 18px; height: 18px; color: var(--color-text-muted); flex-shrink: 0; }
+.tree-node .tree-type { font-size: var(--font-size-xs); color: var(--color-text-muted); }
+.tree-node .tree-actions { margin-left: auto; display: flex; gap: var(--space-1); opacity: 0.6; }
+.tree-node:hover .tree-actions { opacity: 1; }
+.tree-node.is-inactive { opacity: 0.55; }

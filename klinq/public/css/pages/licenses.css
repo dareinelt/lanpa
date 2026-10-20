@@ -1,0 +1,23 @@
+/* Lizenzen */
+.license-key {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    background: var(--color-surface-alt);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    word-break: break-all;
+    user-select: all;
+}
+.license-product { min-width: 12rem; }
+.license-usage { display: flex; flex-direction: column; gap: 0.15rem; min-width: 6rem; }
+.license-usage progress { width: 100%; height: 6px; appearance: none; -webkit-appearance: none; border: 0; border-radius: var(--radius-full); overflow: hidden; background: var(--color-neutral-soft); }
+.license-usage progress::-webkit-progress-bar { background: var(--color-neutral-soft); border-radius: var(--radius-full); }
+.license-usage progress::-webkit-progress-value { background: var(--color-primary); border-radius: var(--radius-full); }
+.license-usage progress::-moz-progress-bar { background: var(--color-primary); border-radius: var(--radius-full); }
+.stat-sub { font-size: 0.55em; font-weight: 500; color: var(--color-text-muted); }
+.assign-form .form-row { grid-template-columns: 2fr 1fr; }
+.license-list .license-item { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); }
+.license-list .license-item:last-child { border-bottom: 0; }
+.license-list .license-item-main { flex: 1; min-width: 0; }
+@media (max-width: 720px) { .assign-form .form-row { grid-template-columns: 1fr; } }

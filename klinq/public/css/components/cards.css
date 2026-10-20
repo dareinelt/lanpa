@@ -1,0 +1,63 @@
+.card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-5);
+    min-width: 0;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+    flex-wrap: wrap;
+}
+
+.card-header h2, .card-header h3 { margin: 0; }
+.card-compact { padding: var(--space-4); }
+.card-flush { padding: 0; overflow: hidden; }
+.card-flush .card-header { padding: var(--space-4) var(--space-5) 0; }
+
+.stat-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    text-decoration: none;
+    color: inherit;
+}
+
+a.stat-card:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
+.stat-card .stat-value { font-size: var(--font-size-3xl); font-weight: var(--font-weight-semibold); line-height: 1.1; }
+.stat-card .stat-label { color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.stat-card.is-danger .stat-value { color: var(--color-danger); }
+.stat-card.is-warning .stat-value { color: var(--color-warning); }
+.stat-card.is-success .stat-value { color: var(--color-success); }
+.stat-card.is-info .stat-value { color: var(--color-info); }
+
+.empty-state {
+    padding: var(--space-6);
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+.empty-state .icon { width: 40px; height: 40px; margin: 0 auto var(--space-3); color: var(--color-border-strong); }
+
+/* Detailansicht: Schlüssel/Wert-Liste */
+.detail-list { display: grid; grid-template-columns: minmax(120px, 180px) 1fr; gap: var(--space-2) var(--space-4); margin: 0; }
+.detail-list dt { color: var(--color-text-muted); font-size: var(--font-size-sm); padding-top: 2px; }
+.detail-list dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .detail-list { grid-template-columns: 1fr; gap: 0; } .detail-list dd { margin-bottom: var(--space-3); } }
+.detail-phone { font-weight: 600; font-size: var(--font-size-lg); }
+
+/* Formular-Karten mit begrenzter Breite */
+.card-form { max-width: 760px; }
+.card-form-narrow { max-width: 680px; }
+.card-form-wide { max-width: 860px; }
+.detail-list-compact dt, .detail-list-compact dd { padding-top: 2px; padding-bottom: 2px; }

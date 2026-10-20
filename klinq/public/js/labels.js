@@ -82,7 +82,7 @@
             const params = new URLSearchParams(data);
             // Stylesheet neu laden (Maße/Schriften), dann HTML der Vorschau aktualisieren
             const fresh = styleLink.cloneNode();
-            fresh.href = "/labels/style.css?" + params.toString();
+            fresh.href = AppUI.url("/labels/style.css?" + params.toString());
             fresh.addEventListener("load", function () { styleLink.remove(); fresh.id = "style-labels-style-css"; fitLabelText(preview); });
             styleLink.after(fresh);
             if (dims) { dims.textContent = (data.width_mm || "?") + " × " + (data.height_mm || "?") + " mm"; }
@@ -90,7 +90,7 @@
                 if (!res || !res.label) { return; }
                 const l = res.label;
                 const layout = res.layout;
-                const logo = l.logo_url ? '<img class="label-logo" src="' + AppUI.escapeHtml(l.logo_url) + '" alt="">' : "";
+                const logo = l.logo_url ? '<img class="label-logo" src="' + AppUI.escapeHtml(AppUI.url(l.logo_url)) + '" alt="">' : "";
                 const extra = l.extra !== null ? '<div class="label-extra">' + AppUI.escapeHtml(l.extra) + "</div>" : "";
                 preview.innerHTML = '<div class="label label-pos-' + AppUI.escapeHtml(layout.qr_position) + '">'
                     + '<div class="label-qr">' + l.qr_svg + "</div>"

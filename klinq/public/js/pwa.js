@@ -3,7 +3,7 @@
     "use strict";
     if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
-            navigator.serviceWorker.register("/sw.js").catch(function () { /* SW optional */ });
+            navigator.serviceWorker.register(window.AppUI ? window.AppUI.url("/sw.js") : "/sw.js").catch(function () { /* SW optional */ });
         });
     }
     const indicator = document.getElementById("offline-indicator");

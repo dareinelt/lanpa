@@ -13,7 +13,7 @@
     const context = Array.prototype.slice.call(document.querySelectorAll("[data-duplicate-context]"));
 
     function link(d) {
-        const href = entity === "articles" ? "/articles/" + d.id + "/edit" : "/" + entity + "/" + d.id;
+        const href = AppUI.url(entity === "articles" ? "/articles/" + d.id + "/edit" : "/" + entity + "/" + d.id);
         const prefix = d.manufacturer_name ? AppUI.escapeHtml(d.manufacturer_name) + " " : "";
         const number = d.article_number ? ' <span class="mono">(' + AppUI.escapeHtml(d.article_number) + ")</span>" : "";
         return '<a href="' + href + '">' + prefix + AppUI.escapeHtml(d.name) + "</a>" + number;

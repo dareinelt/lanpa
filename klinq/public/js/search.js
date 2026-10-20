@@ -21,7 +21,7 @@
                 const li = document.createElement("li");
                 const a = document.createElement("a");
                 a.className = "search-result";
-                a.href = item.url;
+                a.href = AppUI.url(item.url);
                 a.innerHTML = '<span class="result-title">' + AppUI.escapeHtml(item.title) + '</span>' +
                     '<span class="result-meta">' + AppUI.escapeHtml(item.meta || "") + '</span>';
                 li.appendChild(a);
@@ -51,7 +51,7 @@
         controller = new AbortController();
         try {
             const data = await AppUI.api("/api/search?q=" + encodeURIComponent(term), { signal: controller.signal });
-            if (data.redirect) { window.location.href = data.redirect; return; }
+            if (data.redirect) { window.location.href = AppUI.url(data.redirect); return; }
             render(data.groups || []);
         } catch (e) {
             if (e.name !== "AbortError") { hide(); }
@@ -73,7 +73,7 @@
                 window.location.href = items[activeIndex].href;
             } else if (input.value.trim()) {
                 event.preventDefault();
-                window.location.href = "/search?q=" + encodeURIComponent(input.value.trim());
+                window.location.href = AppUI.url("/search?q=" + encodeURIComponent(input.value.trim()));
             }
         } else if (event.key === "Escape") {
             hide();

@@ -81,7 +81,7 @@
                 const data = await AppUI.api(checkUrl + "?" + params.toString());
                 list.innerHTML = data.hits.map(function (h) {
                     return '<li class="' + (h.level === "error" ? "is-error" : "is-warning") + '">' +
-                        AppUI.escapeHtml(h.message) + ': <a href="/assets/' + h.asset.id + '" target="_blank" rel="noopener">' +
+                        AppUI.escapeHtml(h.message) + ': <a href="' + AppUI.url("/assets/" + h.asset.id) + '" target="_blank" rel="noopener">' +
                         AppUI.escapeHtml(h.asset.inventory_number) + "</a></li>";
                 }).join("");
                 list.hidden = data.hits.length === 0;

@@ -939,13 +939,13 @@ Stand der letzten vollständigen Prüfung: Intranet 821 von 843 Tests erfolgreic
 Die Ergänzung des Unterpfads in den Antworten leistet `mod_substitute` im Block
 `<Location />`:
 
-- `AddOutputFilterByType SUBSTITUTE …` filtert HTML, CSS, JavaScript und das
-  Manifest.
+- `AddOutputFilterByType SUBSTITUTE …` filtert HTML, CSS und das Manifest.
+  JavaScript bleibt bewusst ungefiltert (siehe unten).
 - `Substitute 's|(["'(])/(?!/)(?!>)|$1${KLINQ_BASE_PATH}/|i'` ergänzt
   wurzelrelative Adressen. Der Rückverweis muss `$1` sein (`\1` würde ein
   literales `1` einsetzen), `(?!>)` schützt selbstschließende Tags wie
   `<path d="…"/>`, und `(?!/)` lässt protokollrelative Adressen (`//host/…`)
-  unverändert.
+  unverändert. Die Zeichenklasse enthält `(`, damit `url(/…)` in CSS greift.
 - `Header edit Location "^/(?!/)" "${KLINQ_BASE_PATH}/"` ergänzt den Unterpfad
   in Weiterleitungen.
 
@@ -953,6 +953,25 @@ Ohne diese Ergänzung fordert der Browser `/css/app.css` am Wurzelpfad des
 Intranets an, erhält dort die Landingpage statt des Stylesheets und KLINQ
 erscheint ohne Design. Das Flag `n` darf dabei nicht gesetzt werden: es
 behandelt das Muster als feste Zeichenkette, sodass der Ausdruck nie greift.
+
+JavaScript wird nicht ersetzt, weil die Ersetzung nicht zwischen Adressen und
+Regex-Literalen unterscheiden kann: `.replace(/&/g, …)` würde zu
+`.replace(/klinq/&/g, …)` und `/\.(css|js)$/` zu `/klinq/\.(css|js)$/`. Der
+Browser meldet dann `Invalid regular expression flags`; in `ui.js` bricht das
+Skript vor `window.AppUI` ab, sodass alle Folgemodule mit `AppUI is not
+defined` scheitern. Stattdessen ermittelt JavaScript den Unterpfad selbst:
+
+- `ui.js` leitet ihn aus der eigenen Skript-Adresse ab und stellt
+  `AppUI.basePath` sowie `AppUI.url(pfad)` bereit; `AppUI.api()` ergänzt ihn
+  automatisch.
+- `sw.js` bildet `BASE` aus `self.location.pathname` und setzt damit
+  App-Shell, API-Ausnahmen und Seitenabgleich zusammen.
+- Adressen aus JSON-Antworten (Suchtreffer, Dubletten, Etiketten-Logo) laufen
+  ebenfalls über `AppUI.url()`.
+
+Das Manifest wird mit `crossorigin="use-credentials"` eingebunden: der Browser
+lädt es sonst ohne Anmeldedaten und erhält hinter der Anmeldepflicht des
+Intranets `401 Unauthorized`.
 
 ---
 

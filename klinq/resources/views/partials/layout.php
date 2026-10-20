@@ -21,7 +21,7 @@ $documentTitle = $appName . (($moduleTitle ?? '') !== '' ? ' - ' . $moduleTitle 
     <meta name="apple-mobile-web-app-title" content="<?= e($appName) ?>">
     <meta name="csrf-token" content="<?= e($csrf ?? '') ?>">
     <title><?= e($documentTitle) ?></title>
-    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials">
     <link rel="icon" href="/img/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/img/icon-192.png">
     <link rel="stylesheet" href="<?= e(asset_url('/css/app.css')) ?>">

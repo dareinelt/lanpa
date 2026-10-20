@@ -41,6 +41,32 @@
         return meta ? meta.getAttribute("content") : "";
     }
 
+    /**
+     * Basis-Pfad der Installation (leer bei Auslieferung unter "/").
+     * Läuft KLINQ hinter dem Intranet-Proxy unter einem Unterpfad, kennt PHP
+     * diesen nicht; er wird deshalb aus der eigenen Skript-Adresse abgeleitet.
+     */
+    const BASE_PATH = (function () {
+        const script = document.currentScript;
+        if (!script || !script.src) { return ""; }
+        try {
+            const path = new URL(script.src, window.location.href).pathname;
+            const marker = "/js/ui.js";
+            const index = path.lastIndexOf(marker);
+            return index >= 0 ? path.slice(0, index) : "";
+        } catch (e) {
+            return "";
+        }
+    })();
+
+    /** Wurzelbezogene Adresse um den Basis-Pfad ergänzen; absolute und bereits ergänzte bleiben unverändert. */
+    function withBase(path) {
+        const value = path == null ? "" : String(path);
+        if (value.charAt(0) !== "/" || value.charAt(1) === "/") { return value; }
+        if (BASE_PATH !== "" && (value === BASE_PATH || value.indexOf(BASE_PATH + "/") === 0)) { return value; }
+        return BASE_PATH + value;
+    }
+
     /** fetch()-Wrapper für JSON-APIs inkl. CSRF-Header. */
     async function api(url, options) {
         options = options || {};
@@ -52,7 +78,7 @@
             options.body = JSON.stringify(options.body);
             headers["Content-Type"] = "application/json";
         }
-        const response = await fetch(url, Object.assign({}, options, { headers: headers, credentials: "same-origin" }));
+        const response = await fetch(withBase(url), Object.assign({}, options, { headers: headers, credentials: "same-origin" }));
         let data = null;
         try { data = await response.json(); } catch (e) { data = null; }
         if (!response.ok) {
@@ -180,6 +206,8 @@
         openDialog: openDialog,
         closeDialog: closeDialog,
         api: api,
+        basePath: BASE_PATH,
+        url: withBase,
         csrfToken: csrfToken,
         debounce: debounce,
         escapeHtml: escapeHtml

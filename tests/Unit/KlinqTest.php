@@ -280,15 +280,20 @@ Runner::test('KLINQ: Berechtigungsseite rendert das Ergebnis ohne Gruppenzuordnu
     Assert::contains('data-group-suggest', $html);
 });
 
-Runner::test('KLINQ: Unterpfad wird in HTML, CSS und JavaScript ergaenzt', static function (): void {
+Runner::test('KLINQ: Unterpfad wird in HTML, CSS und Manifest ergaenzt', static function (): void {
     $conf = file_get_contents(dirname(__DIR__, 2) . '/klinq/docker/php/apache-vhost.conf');
     Assert::true(is_string($conf), 'apache-vhost.conf fehlt.');
     $conf = str_replace("\r\n", "\n", (string) $conf);
 
-    Assert::contains(
-        'AddOutputFilterByType SUBSTITUTE text/html text/css text/javascript application/javascript application/manifest+json',
-        $conf
-    );
+    $filter = '';
+    foreach (explode("\n", $conf) as $line) {
+        if (str_contains($line, 'AddOutputFilterByType')) { $filter = trim($line); break; }
+    }
+    Assert::contains('SUBSTITUTE text/html text/css application/manifest+json', $filter);
+    // JavaScript darf nicht ersetzt werden: die Ersetzung greift auch in
+    // Regex-Literalen (.replace(/&/g, ...), /\.(css|js)$/) und macht daraus
+    // "Invalid regular expression flags"; AppUI fehlt danach komplett.
+    Assert::false(stripos($filter, 'javascript') !== false, 'JavaScript darf nicht gefiltert werden.');
     // Das "n"-Flag behandelt das Muster als feste Zeichenkette. Der Unterpfad
     // wuerde dann nie ergaenzt und KLINQ ohne CSS/JS ausgeliefert.
     Assert::false(str_contains($conf, "|ni'"), 'Substitute darf kein "n"-Flag verwenden.');
@@ -297,4 +302,22 @@ Runner::test('KLINQ: Unterpfad wird in HTML, CSS und JavaScript ergaenzt', stati
     Assert::contains('|$1${KLINQ_BASE_PATH}/|i\'', $conf);
     // Ohne (?!>) wuerde das schliessende "/>" selbstschliessender Tags (SVG-Sprites) ersetzt.
     Assert::contains('(?!/)(?!>)', $conf);
+});
+
+Runner::test('KLINQ: JavaScript und Service Worker ermitteln den Unterpfad selbst', static function (): void {
+    $root = dirname(__DIR__, 2);
+
+    $ui = (string) file_get_contents($root . '/klinq/public/js/ui.js');
+    Assert::contains('basePath: BASE_PATH', $ui);
+    Assert::contains('url: withBase', $ui);
+
+    $sw = (string) file_get_contents($root . '/klinq/public/sw.js');
+    Assert::contains('const BASE = self.location.pathname', $sw);
+    Assert::contains('BASE + "/m"', $sw);
+
+    // Der Browser laedt das Manifest ohne Anmeldedaten; hinter der Anmeldepflicht
+    // des Intranets antwortet der Proxy sonst mit 401.
+    $layout = (string) file_get_contents($root . '/klinq/resources/views/partials/layout.php');
+    Assert::contains('rel="manifest"', $layout);
+    Assert::contains('crossorigin="use-credentials"', $layout);
 });

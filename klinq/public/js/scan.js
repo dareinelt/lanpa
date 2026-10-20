@@ -9,7 +9,7 @@
     const startBtn = document.getElementById("scan-start");
     const hint = document.getElementById("scan-hint");
     const codeInput = document.getElementById("scan-code");
-    const lookupUrl = root.getAttribute("data-lookup-url") || "/m/lookup";
+    const lookupUrl = root.getAttribute("data-lookup-url") || (window.AppUI ? window.AppUI.url("/m/lookup") : "/m/lookup");
 
     let stream = null;
     let running = false;

@@ -75,7 +75,7 @@
         readPhotos(photoInput).then(function (photos) {
             return window.Offline.enqueue({ type: type, inventory_number: payload.inventory_number || "", label: label, payload: payload, photos: photos, client_transaction_id: payload.client_transaction_id });
         }).then(function () {
-            window.location.href = "/m?queued=1";
+            window.location.href = window.AppUI ? window.AppUI.url("/m?queued=1") : "/m?queued=1";
         }).catch(function () {
             if (btn) { btn.disabled = false; }
             (window.AppUI && window.AppUI.toast ? window.AppUI.toast : window.alert)("Lokales Speichern fehlgeschlagen.", "error");

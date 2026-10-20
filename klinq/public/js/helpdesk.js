@@ -5,8 +5,9 @@
     "use strict";
 
     const UI = window.AppUI || {};
+    const withBase = UI.url || function (path) { return path; };
     const api = UI.api || async function (url) {
-        const response = await fetch(url, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+        const response = await fetch(withBase(url), { headers: { Accept: "application/json" }, credentials: "same-origin" });
         if (!response.ok) { throw new Error("HTTP " + response.status); }
         return response.json();
     };
@@ -171,7 +172,7 @@
                 const items = data.items || [];
                 if (items.length === 0) { target.hidden = true; return; }
                 target.innerHTML = "<p class=\"kb-suggest-title\">Passende Wissensartikel</p><ul>" + items.map(function (a) {
-                    return "<li><a href=\"" + escapeHtml(a.url || ("/helpdesk/knowledge/" + a.id)) + "\" target=\"_blank\" rel=\"noopener\">" + escapeHtml(a.label || a.name) + "</a>" + (a.meta ? " <span class=\"text-muted text-xs\">" + escapeHtml(a.meta) + "</span>" : "") + "</li>";
+                    return "<li><a href=\"" + escapeHtml(withBase(a.url || ("/helpdesk/knowledge/" + a.id))) + "\" target=\"_blank\" rel=\"noopener\">" + escapeHtml(a.label || a.name) + "</a>" + (a.meta ? " <span class=\"text-muted text-xs\">" + escapeHtml(a.meta) + "</span>" : "") + "</li>";
                 }).join("") + "</ul>";
                 target.hidden = false;
             } catch (e) { target.hidden = true; }

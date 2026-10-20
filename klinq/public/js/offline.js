@@ -7,8 +7,10 @@
 
     const DB_NAME = "assets-offline";
     const DB_VERSION = 1;
-    const BOOTSTRAP_URL = "/api/offline/bootstrap";
-    const SYNC_URL = "/api/offline/sync";
+    // Basis-Pfad der Installation, damit die API-Adressen auch unter einem Unterpfad (/klinq) stimmen
+    const BASE = (window.AppUI && window.AppUI.basePath) || "";
+    const BOOTSTRAP_URL = BASE + "/api/offline/bootstrap";
+    const SYNC_URL = BASE + "/api/offline/sync";
     const BOOTSTRAP_MAX_AGE_MS = 10 * 60 * 1000;
     const STORES = ["meta", "assets", "employees", "locations", "cost_centers", "queue"];
 

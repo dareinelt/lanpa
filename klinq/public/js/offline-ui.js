@@ -4,6 +4,8 @@
     "use strict";
     const O = window.Offline;
     if (!O) { return; }
+    // Basis-Pfad der Installation (leer bei Auslieferung unter "/")
+    const BASE = (window.AppUI && window.AppUI.basePath) || "";
     const queueRoot = document.getElementById("offline-queue");
     const assetRoot = document.getElementById("offline-asset");
     const scanner = document.getElementById("scanner");
@@ -313,7 +315,7 @@
 
     // Wurde /m/lookup?code=… ohne Serververbindung aufgerufen, liefert der Service Worker die Scan-Seite
     // als Ersatz. Erkennbar am Pfad: Die Scan-Seite wird sonst nie unter /m/lookup ausgeliefert.
-    if (scanner && window.location.pathname === "/m/lookup") {
+    if (scanner && window.location.pathname === BASE + "/m/lookup") {
         const params = new URLSearchParams(window.location.search);
         const code = params.get("code");
         if (code) { lookupOffline(code); }

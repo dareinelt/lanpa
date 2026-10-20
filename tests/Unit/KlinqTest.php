@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\KlinqController;
+use App\Core\Request;
 use App\Core\View;
 use App\Repositories\SettingsRepository;
 use App\Services\Klinq\KlinqAiService;
@@ -219,6 +220,33 @@ Runner::test('KLINQ: Designfarben werden als CSS-Variablen ausgegeben', static f
     Assert::true(str_contains($css, '--klinq-lanpa-on-accent:'));
     Assert::true(str_contains($css, 'prefers-color-scheme: dark'));
     Assert::true(str_contains($css, ':root[data-theme="light"]'));
+});
+
+Runner::test('KLINQ: Designfarben folgen der Designwahl des Intranets', static function (): void {
+    $service = new KlinqThemeService(new ThemeService(klinqSettings()));
+
+    $light = $service->css('light');
+    Assert::true(str_contains($light, '--klinq-lanpa-background:#f4f6f8;'));
+    Assert::false(str_contains($light, '#12161c'), 'heller Modus ohne dunkle Farben');
+    Assert::false(str_contains($light, 'prefers-color-scheme'), 'heller Modus ohne Systemabfrage');
+
+    $dark = $service->css('dark');
+    Assert::true(str_contains($dark, '--klinq-lanpa-background:#12161c;'));
+    Assert::false(str_contains($dark, 'prefers-color-scheme'), 'dunkler Modus ohne Systemabfrage');
+
+    // Unbekannte oder fehlende Angaben gelten als helles Standarddesign.
+    Assert::true(str_contains($service->css('auto'), 'prefers-color-scheme: dark'));
+    Assert::true(str_contains($service->css('unbekannt'), '--klinq-lanpa-background:#f4f6f8;'));
+    Assert::false(str_contains($service->css('unbekannt'), 'prefers-color-scheme'));
+});
+
+Runner::test('KLINQ: Designwahl wird aus dem Cookie gelesen', static function (): void {
+    $request = new Request('GET', '/klinq-design.css', [], [], [], [], [
+        KlinqController::THEME_COOKIE => 'dark',
+    ]);
+
+    Assert::same('dark', $request->cookie(KlinqController::THEME_COOKIE));
+    Assert::same(null, $request->cookie('fehlt'));
 });
 
 Runner::test('KLINQ: KI-Einstellungen werden geprüft', static function (): void {

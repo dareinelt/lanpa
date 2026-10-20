@@ -228,8 +228,13 @@ gedämpfte Texte des Intranets. Das Intranet liefert die Werte unter
 `/klinq-design.css`; KLINQ bindet sie zusammen mit `css/themes/lanpa.css` ein.
 Ohne Anbindung gelten unverändert die eigenen Farben von KLINQ.
 
-Die Farben folgen dem Design des Intranets – inklusive Dunkelmodus. Wird dort
-die Akzentfarbe geändert, ist in KLINQ nichts nachzuziehen (Cache: 5 Minuten).
+Die Farben folgen dem Design des Intranets – inklusive Dunkelmodus. Maßgeblich
+ist die Einstellung des angemeldeten Benutzers (hell, dunkel oder automatisch),
+nicht die Systemeinstellung des Rechners: Das Intranet legt sie als Cookie
+`intranet_theme` ab, das KLINQ beim Laden von `/klinq-design.css` mitbekommt.
+Ohne Cookie gilt das helle Standarddesign. Wird im Intranet die Akzentfarbe
+geändert, ist in KLINQ nichts nachzuziehen; die Antwort wird nicht
+zwischengespeichert, damit ein Wechsel sofort greift.
 
 ---
 
@@ -294,6 +299,7 @@ der `auth`-Container leitet `/klinq/` nicht mehr weiter.
 | Alle landen in „Nur Lesen“ | SSO-Sitzung enthält keine Gruppen | SSO-Diagnose im Intranet prüfen; Gruppenname exakt wie im AD eintragen. |
 | KI-Funktionen in KLINQ nicht verfügbar | Endpunkt nicht konfiguriert oder nicht erreichbar | **KLINQ → KI** → „Verbindung testen“; Server-Logs von `klinq-app`. |
 | Farben weichen ab | `/klinq-design.css` nicht erreichbar | Direkt im Browser aufrufen; der Wert muss CSS sein, kein HTML. |
+| KLINQ wirkt immer dunkel | Designwahl fehlt im Cookie `intranet_theme` (z. B. blockierte Cookies) | Intranet-Seite neu laden; Cookies für die Domain zulassen. Ohne Cookie gilt hell. |
 | Kein Rechnername im Ticket | `X-Remote-User` fehlt oder Vertrauenswert aus | `HELPDESK_QUICK_REPORT_TRUST_USER_HEADER=true` in `docker-compose.yml` prüfen (ist gesetzt). |
 
 Weitere Meldungen und ihre Bedeutung stehen in der

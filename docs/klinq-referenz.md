@@ -569,6 +569,7 @@ sich eine Änderung vor dem Speichern prüfen.
 ```mermaid
 flowchart LR
     T[ThemeService<br/>Akzent, Flächen, Text] --> S[KlinqThemeService]
+    B[Designwahl des Intranets<br/>Cookie intranet_theme] --> S
     S -->|GET /klinq-design.css| C["--klinq-lanpa-*"]
     C --> L["klinq/public/css/themes/lanpa.css"]
     L --> K["--color-primary, --color-bg, …"]
@@ -577,10 +578,16 @@ flowchart LR
 
 ### 11.2 Ausgelieferte Variablen
 
-`GET /klinq-design.css` (öffentlich, `Cache-Control: public, max-age=300`,
-`Access-Control-Allow-Origin: *`) enthält vier Blöcke: `:root`,
-`@media (prefers-color-scheme: dark)`, `:root[data-theme="dark"]`,
-`:root[data-theme="light"]`.
+`GET /klinq-design.css` (öffentlich, `Cache-Control: no-store`, `Vary: Cookie`,
+`Access-Control-Allow-Origin: *`) enthält je nach Designwahl des Intranets
+einen Block (`light` bzw. `dark`) oder bei `auto` vier Blöcke: `:root`,
+`@media (prefers-color-scheme: dark)` (mit `:not([data-theme="light"])`),
+`:root[data-theme="dark"]`, `:root[data-theme="light"]`.
+
+Die Designwahl kommt als Cookie `intranet_theme` mit (Werte `light`, `dark`,
+`auto`), das `public/assets/js/app.js` beim Anwenden des Designs setzt. Ohne
+Cookie liefert der Endpunkt das helle Standarddesign. Dadurch folgt KLINQ der
+Einstellung des Intranets und nicht der Systemeinstellung des Rechners.
 
 | Variable | Ableitung |
 | --- | --- |
@@ -905,6 +912,7 @@ Stand der letzten vollständigen Prüfung: Intranet 821 von 843 Tests erfolgreic
 | KI-Funktionen fehlen in KLINQ | `curl -H "X-Intranet-Sso-Token: …" http://app/internal/klinq/ki` | Endpunkt/Modell nicht gesetzt, Token-Datei nicht lesbar, Adressprüfung schlägt fehl. |
 | KI-Verwaltung in KLINQ ist nur lesend | gewollt | Sobald das Intranet antwortet, gilt dessen Konfiguration. |
 | Farben unverändert | `curl -i https://<host>/klinq-design.css` | Antwort muss `text/css` sein; sonst zeigt der Proxy auf die falsche Anwendung. |
+| KLINQ immer dunkel | `curl -i -b "intranet_theme=light" https://<host>/klinq-design.css` | Mit Cookie muss nur der helle `:root`-Block kommen. Fehlt das Cookie, setzt `public/assets/js/app.js` es beim nächsten Intranet-Aufruf. |
 | Melderdaten unvollständig | Telefonbucheintrag der Person | Telefon, Mobilnummer, Abteilung und Funktion stammen aus dem Telefonbuch. |
 | Kein Rechnername im Ticket | `X-Remote-User` im `auth`-Log | Proxy-Regel greift nicht oder Vertrauenswert deaktiviert. |
 | Zwei Anmeldungen nötig | Cookie-Namen | `INTRANETSESSID` und `ASSETSESSID` müssen unterschiedlich bleiben. |

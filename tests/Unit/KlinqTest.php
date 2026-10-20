@@ -12,6 +12,7 @@ use App\Services\Klinq\KlinqThemeService;
 use App\Services\Klinq\KlinqTokenService;
 use App\Services\SettingsService;
 use App\Services\ThemeService;
+use App\Support\Color;
 use Tests\Support\Assert;
 use Tests\Support\Runner;
 
@@ -238,6 +239,46 @@ Runner::test('KLINQ: Designfarben folgen der Designwahl des Intranets', static f
     Assert::true(str_contains($service->css('auto'), 'prefers-color-scheme: dark'));
     Assert::true(str_contains($service->css('unbekannt'), '--klinq-lanpa-background:#f4f6f8;'));
     Assert::false(str_contains($service->css('unbekannt'), 'prefers-color-scheme'));
+});
+
+Runner::test('KLINQ: Statusfarben bleiben im dunklen Modus lesbar', static function (): void {
+    $service = new KlinqThemeService(new ThemeService(klinqSettings()));
+
+    // Im hellen Modus bleiben die KLINQ-Standardfarben unverändert.
+    $light = $service->css('light');
+    Assert::true(str_contains($light, '--klinq-lanpa-warning:#9a6a00;'));
+    Assert::true(str_contains($light, '--klinq-lanpa-warning-soft:#fdf3d7;'));
+    Assert::true(str_contains($light, '--klinq-lanpa-color-scheme:light;'));
+
+    $dark = $service->css('dark');
+    Assert::true(str_contains($dark, '--klinq-lanpa-color-scheme:dark;'));
+
+    $value = static function (string $css, string $name): string {
+        Assert::same(1, preg_match('/--' . preg_quote($name, '/') . ':([^;}]+);/', $css, $match), $name . ' fehlt');
+
+        return $match[1];
+    };
+
+    // Text auf der gedaempften Flaeche (interne Notiz, Hinweise, Badges).
+    Assert::true(
+        Color::contrastRatio($value($dark, 'klinq-lanpa-warning-soft'), $value($dark, 'klinq-lanpa-text')) >= Color::MIN_CONTRAST,
+        'Notiztext auf gedaempfter Flaeche ist zu kontrastarm'
+    );
+
+    foreach (['success', 'warning', 'danger', 'neutral'] as $name) {
+        $soft = $value($dark, 'klinq-lanpa-' . $name . '-soft');
+        $status = $value($dark, 'klinq-lanpa-' . $name);
+
+        Assert::false($soft === $value($light, 'klinq-lanpa-' . $name . '-soft'), $name . ': Flaeche bleibt hell');
+        Assert::true(
+            Color::contrastRatio($soft, $status) >= Color::MIN_CONTRAST,
+            $name . ': Statusfarbe hebt sich nicht von der Flaeche ab'
+        );
+        Assert::true(
+            Color::contrastRatio($status, $value($dark, 'klinq-lanpa-on-' . $name)) >= Color::MIN_CONTRAST,
+            $name . ': Schriftfarbe auf der Vollflaeche ist zu kontrastarm'
+        );
+    }
 });
 
 Runner::test('KLINQ: Designwahl wird aus dem Cookie gelesen', static function (): void {

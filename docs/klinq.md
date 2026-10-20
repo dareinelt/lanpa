@@ -191,6 +191,13 @@ Die Auswahl erscheint nur, wenn `KLINQ_ENABLED=true` gesetzt ist.
 * Abschalten: **KLINQ → Berechtigungen → „Störmeldung für alle angemeldeten
   Personen freigeben“** deaktivieren (`klinq_quick_report_open=0`). Danach
   antwortet `/stoerung` mit „nicht gefunden“.
+* Angelegt wird das Ticket unter dem Systemkonto
+  `HELPDESK_QUICK_REPORT_SYSTEM_USER` (Vorgabe `admin`). Fehlt es – im Intranet
+  der Normalfall, weil es kein lokales Konto `admin` gibt –, legt
+  `bin/migrate.php` es beim Containerstart ohne Passwort mit der Rolle
+  `helpdesk_agent` an. Ein Konto mit demselben Namen kann sich nicht anmelden;
+  meldet sich später ein gleichnamiger AD-Benutzer über SSO an, übernimmt die
+  Anmeldung den Datensatz.
 
 ---
 

@@ -63,6 +63,27 @@ final class QuickReportTest extends TestCase
         $this->assertSame([], $_SESSION, 'Die Sitzung des Besuchers darf nicht verändert werden');
     }
 
+    public function testSystemAccountRoleMayCreateTickets(): void
+    {
+        $permissions = new Permissions(new Config(dirname(__DIR__, 2) . '/config'));
+
+        // bin/migrate.php legt das Systemkonto des Formulars mit dieser Rolle an; fehlt das
+        // Recht, endet jede Meldung im Fehlerfall.
+        $this->assertTrue($permissions->hasEffective('helpdesk_agent', [], 'helpdesk.create'));
+        $this->assertTrue($permissions->hasEffective('admin', [], 'helpdesk.create'));
+        $this->assertFalse($permissions->hasEffective('readonly', [], 'helpdesk.create'));
+    }
+
+    public function testSystemAccountCheckCountsPermissionGroups(): void
+    {
+        $permissions = new Permissions(new Config(dirname(__DIR__, 2) . '/config'));
+
+        // Das Formular prueft wie CurrentUser::can() die wirksamen Rechte (Rolle + Gruppen),
+        // nicht nur die Rolle.
+        $this->assertFalse($permissions->roleHas('readonly', 'helpdesk.reports'));
+        $this->assertTrue($permissions->hasEffective('readonly', ['statistik'], 'helpdesk.reports'));
+    }
+
     public function testRunAsRestoresContextEvenOnFailure(): void
     {
         $_SESSION = [];

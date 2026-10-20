@@ -697,6 +697,17 @@ Schein.
 den AD-Gruppen – wer Help-Desk-Agent ist, behält seine Rechte auch beim Aufruf
 über `/stoerung`.
 
+Angelegt wird das Ticket unter dem Systemkonto
+`HELPDESK_QUICK_REPORT_SYSTEM_USER` (`helpdesk.quick_report.system_user`,
+Vorgabe `admin`) über `CurrentUser::runAs()`; geprüft werden die wirksamen
+Rechte aus Rolle **und** Berechtigungsgruppen (`Permissions::hasEffective()`),
+wie in `CurrentUser::can()`. Fehlt das Konto, legt `bin/migrate.php` es beim
+Containerstart ohne Passwort mit der Rolle `helpdesk_agent` an – im Intranet
+gibt es kein lokales Konto `admin`, weil `KLINQ_ADMIN_PASSWORD` leer bleibt.
+Schlägt das Anlegen trotzdem fehl, antwortet `POST /stoerung` mit Status `500`
+und der Meldung „Die Meldung konnte nicht gespeichert werden …“; die Ursache
+steht als `ERROR` mit Typ, Text und Fundstelle in `storage/logs/app-*.log`.
+
 ---
 
 ## 13. Kachel und Navigation
@@ -948,6 +959,12 @@ Die Ergänzung des Unterpfads in den Antworten leistet `mod_substitute` im Block
   unverändert. Die Zeichenklasse enthält `(`, damit `url(/…)` in CSS greift.
 - `Header edit Location "^/(?!/)" "${KLINQ_BASE_PATH}/"` ergänzt den Unterpfad
   in Weiterleitungen.
+- `SetEnv filter-errordocs 1` schaltet die Filterung auch für Antworten mit
+  einem anderen Status als 200 frei. `mod_filter` überspringt Filter sonst bei
+  Fehlerantworten (Apache-Dokumentation, *Filtering and Response Status*), eine
+  404- oder 500-Seite käme also **ohne** Unterpfad an – der Browser lädt
+  `/css/app.css` aus der Intranet-Wurzel und zeigt die Fehlerseite ungestylt
+  (dazu 404 für `/js/ui.js` und `/manifest.webmanifest`).
 
 Ohne diese Ergänzung fordert der Browser `/css/app.css` am Wurzelpfad des
 Intranets an, erhält dort die Landingpage statt des Stylesheets und KLINQ

@@ -936,6 +936,24 @@ Stand der letzten vollständigen Prüfung: Intranet 821 von 843 Tests erfolgreic
 | `klinq/resources/views/partials/layout.php` | Einbindung der Stylesheets. |
 | `klinq/docker/php/apache-vhost.conf` | Unterpfad über `KLINQ_BASE_PATH`. |
 
+Die Ergänzung des Unterpfads in den Antworten leistet `mod_substitute` im Block
+`<Location />`:
+
+- `AddOutputFilterByType SUBSTITUTE …` filtert HTML, CSS, JavaScript und das
+  Manifest.
+- `Substitute 's|(["'(])/(?!/)(?!>)|$1${KLINQ_BASE_PATH}/|i'` ergänzt
+  wurzelrelative Adressen. Der Rückverweis muss `$1` sein (`\1` würde ein
+  literales `1` einsetzen), `(?!>)` schützt selbstschließende Tags wie
+  `<path d="…"/>`, und `(?!/)` lässt protokollrelative Adressen (`//host/…`)
+  unverändert.
+- `Header edit Location "^/(?!/)" "${KLINQ_BASE_PATH}/"` ergänzt den Unterpfad
+  in Weiterleitungen.
+
+Ohne diese Ergänzung fordert der Browser `/css/app.css` am Wurzelpfad des
+Intranets an, erhält dort die Landingpage statt des Stylesheets und KLINQ
+erscheint ohne Design. Das Flag `n` darf dabei nicht gesetzt werden: es
+behandelt das Muster als feste Zeichenkette, sodass der Ausdruck nie greift.
+
 ---
 
 ## 19. Erweiterung

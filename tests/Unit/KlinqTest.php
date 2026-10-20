@@ -279,3 +279,22 @@ Runner::test('KLINQ: Berechtigungsseite rendert das Ergebnis ohne Gruppenzuordnu
     Assert::contains('Nur Lesen', $html);
     Assert::contains('data-group-suggest', $html);
 });
+
+Runner::test('KLINQ: Unterpfad wird in HTML, CSS und JavaScript ergaenzt', static function (): void {
+    $conf = file_get_contents(dirname(__DIR__, 2) . '/klinq/docker/php/apache-vhost.conf');
+    Assert::true(is_string($conf), 'apache-vhost.conf fehlt.');
+    $conf = str_replace("\r\n", "\n", (string) $conf);
+
+    Assert::contains(
+        'AddOutputFilterByType SUBSTITUTE text/html text/css text/javascript application/javascript application/manifest+json',
+        $conf
+    );
+    // Das "n"-Flag behandelt das Muster als feste Zeichenkette. Der Unterpfad
+    // wuerde dann nie ergaenzt und KLINQ ohne CSS/JS ausgeliefert.
+    Assert::false(str_contains($conf, "|ni'"), 'Substitute darf kein "n"-Flag verwenden.');
+    // \1 wird von mod_substitute nicht als Rueckverweis ausgewertet (literales "1").
+    Assert::false(str_contains($conf, '|\1${KLINQ_BASE_PATH}/|'), 'Rueckverweis muss $1 sein.');
+    Assert::contains('|$1${KLINQ_BASE_PATH}/|i\'', $conf);
+    // Ohne (?!>) wuerde das schliessende "/>" selbstschliessender Tags (SVG-Sprites) ersetzt.
+    Assert::contains('(?!/)(?!>)', $conf);
+});

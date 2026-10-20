@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\KlinqController;
+use App\Core\View;
 use App\Repositories\SettingsRepository;
 use App\Services\Klinq\KlinqAiService;
 use App\Services\Klinq\KlinqConfigService;
@@ -252,4 +253,29 @@ Runner::test('KLINQ: KI-Einstellungen werden geprüft', static function (): void
         'klinq_ai_api_key_clear' => '1',
     ]);
     Assert::same('', $cleared['values']['klinq_ai_api_key']);
+});
+
+Runner::test('KLINQ: Berechtigungsseite rendert das Ergebnis ohne Gruppenzuordnung', static function (): void {
+    $config = klinqConfig();
+
+    $html = View::render('admin.klinq', [
+        'section' => 'access',
+        'groupKeys' => KlinqConfigService::GROUP_KEYS,
+        'roleLabels' => KlinqConfigService::ROLE_LABELS,
+        'areas' => KlinqConfigService::AREA_LABELS,
+        'groups' => $config->allGroups(),
+        'values' => [],
+        'errors' => [],
+        'defaultRole' => $config->defaultRole(),
+        'quickReportOpen' => $config->quickReportOpen(),
+        'exampleAccess' => $config->resolve([]),
+        'reportPath' => KlinqConfigService::REPORT_PATH,
+        'pages' => ['access' => ['/admin/klinq/berechtigungen', 'klinq_access', 'KLINQ – Berechtigungen']],
+        'assetVersion' => '1',
+        'tile' => null,
+    ]);
+
+    Assert::contains('Ergebnis ohne Gruppenzuordnung', $html);
+    Assert::contains('Nur Lesen', $html);
+    Assert::contains('data-group-suggest', $html);
 });

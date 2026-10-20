@@ -76,7 +76,7 @@ $tileValue = static fn (string $key): string => (string) ($tileValues[$key] ?? '
     <?php if (!$enabled) { ?>
         <p class="card__hint">
             KLINQ ist nicht aktiviert. Starten Sie die Container mit
-            <code>docker compose -f docker-compose.klinq.yml up -d</code> und setzen Sie
+            <code>docker compose --profile klinq up -d --build</code> und setzen Sie
             <code>KLINQ_ENABLED=true</code> in der <code>.env</code>. Der Einstieg erfolgt danach
             über den auth-Container, der die Windows-Anmeldung und SSO übernimmt.
         </p>

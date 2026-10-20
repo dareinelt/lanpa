@@ -1,0 +1,57 @@
+/* Etiketten: Druckansicht, Vorschau, Administration.
+   Maße (mm), Schriftgrößen und Ausrichtung kommen aus /labels/style.css (Layout aus den Einstellungen). */
+
+.label-sheet { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-start; }
+
+.label {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 1.5mm;
+    background: #fff;
+    color: #000;
+    overflow: hidden;
+    border: 1px dashed var(--color-border-strong);
+    border-radius: 1mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    font-family: var(--font-family);
+    line-height: 1.15;
+}
+.label-pos-top { justify-content: center; }
+.label-qr { flex: 0 0 auto; display: flex; }
+.label-qr-svg { width: 100%; height: 100%; display: block; }
+.label-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.6mm; overflow: hidden; }
+/* Firmenname: nur an Wortgrenzen umbrechen, höchstens zwei Zeilen – labels.js verkleinert die Schrift, falls ein Wort nicht in die Zeile passt */
+.label-company { font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; line-height: 1.15; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: normal; word-break: normal; }
+/* Inventarnummer: nie abschneiden – labels.js verkleinert die Schrift bei Bedarf, bis sie passt */
+.label-inventory { font-family: var(--font-mono); font-weight: 700; letter-spacing: 0.02em; line-height: 1.1; white-space: nowrap; max-width: 100%; }
+.label-extra { color: #222; line-height: 1.15; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: break-word; }
+.label-logo { display: block; max-width: 100%; width: auto; object-fit: contain; }
+
+/* Administration */
+.label-settings-grid { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); align-items: start; }
+@media (max-width: 1000px) { .label-settings-grid { grid-template-columns: 1fr; } }
+.label-preview-card { position: sticky; top: calc(var(--topbar-height) + var(--space-4)); }
+.label-preview { display: flex; justify-content: center; padding: var(--space-4); background: var(--color-surface-alt); border-radius: var(--radius-md); overflow: auto; }
+.label-preview .label { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15); }
+.label-logo-current { margin: var(--space-2) 0; padding: var(--space-2); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: #fff; display: inline-flex; }
+.label-logo-current img { max-height: 48px; max-width: 200px; }
+.input-narrow { width: 5rem; }
+
+.admin-tile { display: flex; flex-direction: column; gap: var(--space-2); text-decoration: none; color: inherit; transition: border-color 0.15s, box-shadow 0.15s; }
+.admin-tile:hover { border-color: var(--color-primary); box-shadow: var(--shadow-sm); }
+.admin-tile h2 { margin: 0; font-size: var(--font-size-lg); }
+.admin-tile-icon { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: var(--radius-md); background: var(--color-primary-soft); color: var(--color-primary); }
+.admin-tile-icon .icon { width: 22px; height: 22px; }
+
+/* Druck: nur die Etiketten, ein Etikett je Seite (Seitengröße aus @page in /labels/style.css) */
+@media print {
+    body.is-label-print { margin: 0; background: #fff; }
+    body.is-label-print .sidebar, body.is-label-print .topbar, body.is-label-print .alert, body.is-label-print .no-print, body.is-label-print .skip-link { display: none !important; }
+    body.is-label-print .app-shell { display: block; }
+    body.is-label-print .main-content { padding: 0; margin: 0; max-width: none; }
+    body.is-label-print .label-sheet { display: block; gap: 0; }
+    body.is-label-print .label { border: none; border-radius: 0; break-after: page; page-break-after: always; margin: 0; }
+    body.is-label-print .label:last-child { break-after: auto; page-break-after: auto; }
+}

@@ -54,6 +54,13 @@ use App\Services\Office\OfficeAiService;
 use App\Services\Office\OfficeAppService;
 use App\Services\Office\OfficeBackupService;
 use App\Services\Office\OfficeConfigService;
+use App\Services\Klinq\KlinqAccessService;
+use App\Services\Klinq\KlinqAiService;
+use App\Services\Klinq\KlinqConfigService;
+use App\Services\Klinq\KlinqHealthService;
+use App\Services\Klinq\KlinqIdentityService;
+use App\Services\Klinq\KlinqThemeService;
+use App\Services\Klinq\KlinqTokenService;
 use App\Services\Office\OfficeHealthService;
 use App\Services\Office\NextcloudAdminService;
 use App\Services\Office\NextcloudAppStoreService;
@@ -1206,6 +1213,69 @@ final class Container
         return self::make(
             OfficeConfigService::class,
             static fn (): OfficeConfigService => new OfficeConfigService(self::settings(), (array) Config::get('office', []))
+        );
+    }
+
+    public static function klinqConfig(): KlinqConfigService
+    {
+        return self::make(
+            KlinqConfigService::class,
+            static fn (): KlinqConfigService => new KlinqConfigService(self::settings(), (array) Config::get('klinq', []))
+        );
+    }
+
+    public static function klinqTokens(): KlinqTokenService
+    {
+        return self::make(
+            KlinqTokenService::class,
+            static fn (): KlinqTokenService => new KlinqTokenService(self::klinqConfig())
+        );
+    }
+
+    public static function klinqAccess(): KlinqAccessService
+    {
+        return self::make(
+            KlinqAccessService::class,
+            static fn (): KlinqAccessService => new KlinqAccessService(self::klinqConfig())
+        );
+    }
+
+    public static function klinqIdentity(): KlinqIdentityService
+    {
+        return self::make(
+            KlinqIdentityService::class,
+            static fn (): KlinqIdentityService => new KlinqIdentityService(self::phonebookRepository())
+        );
+    }
+
+    public static function klinqHealth(): KlinqHealthService
+    {
+        return self::make(
+            KlinqHealthService::class,
+            static fn (): KlinqHealthService => new KlinqHealthService(self::klinqConfig())
+        );
+    }
+
+    public static function klinqTheme(): KlinqThemeService
+    {
+        return self::make(
+            KlinqThemeService::class,
+            static fn (): KlinqThemeService => new KlinqThemeService(self::theme())
+        );
+    }
+
+    /**
+     * Eigener KI-Endpunkt der KLINQ-Integration (Adminbereich "KLINQ – KI").
+     */
+    public static function klinqAi(): KlinqAiService
+    {
+        return self::make(
+            KlinqAiService::class,
+            static fn (): KlinqAiService => new KlinqAiService(
+                self::settings(),
+                new StreamOfficeProbe(),
+                (array) Config::get('klinq', [])
+            )
         );
     }
 

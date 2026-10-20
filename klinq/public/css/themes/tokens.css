@@ -1,0 +1,83 @@
+/* Design-Token: alle zentralen Gestaltungswerte als CSS-Variablen */
+:root {
+    --color-primary: #0f6cbd;
+    --color-primary-hover: #0c5aa0;
+    --color-primary-active: #0a4d89;
+    --color-primary-soft: #e8f1fa;
+    --color-accent: #0e8276;
+    --color-accent-soft: #e6f4f2;
+
+    --color-bg: #f4f6f8;
+    --color-surface: #ffffff;
+    --color-surface-alt: #f9fafb;
+    --color-border: #d8dde3;
+    --color-border-strong: #b6bec7;
+
+    --color-text: #1a2733;
+    --color-text-muted: #5b6b7b;
+    --color-text-inverse: #ffffff;
+
+    --color-success: #107c41;
+    --color-success-soft: #e5f3ec;
+    --color-warning: #9a6a00;
+    --color-warning-soft: #fdf3d7;
+    --color-danger: #b3261e;
+    --color-danger-soft: #fbeae9;
+    --color-info: #0f6cbd;
+    --color-info-soft: #e8f1fa;
+    --color-neutral: #5b6b7b;
+    --color-neutral-soft: #eceff2;
+
+    --color-focus: #7a3fd1;
+
+    --font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "SF Mono", Menlo, Consolas, monospace;
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.875rem;
+    --font-size-md: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.375rem;
+    --font-size-2xl: 1.75rem;
+    --font-size-3xl: 2.25rem;
+    --font-weight-regular: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --line-height-tight: 1.25;
+    --line-height-normal: 1.5;
+
+    --space-1: 0.25rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.5rem;
+    --space-6: 2rem;
+    --space-7: 3rem;
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --radius-full: 999px;
+
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+    --shadow-md: 0 2px 8px rgba(16, 24, 40, 0.1);
+    --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.18);
+
+    --duration-fast: 120ms;
+    --duration-normal: 200ms;
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+    --touch-target: 44px;
+    --touch-target-lg: 56px;
+    --control-height: 44px;
+
+    --sidebar-width: 264px;
+    --topbar-height: 64px;
+    --content-max-width: 1500px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --duration-fast: 0ms;
+        --duration-normal: 0ms;
+    }
+}

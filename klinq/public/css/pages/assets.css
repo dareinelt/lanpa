@@ -1,0 +1,33 @@
+/* Assets: Status-Reiter, Kontextfilter, Detailseite */
+.status-tabs { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-4); border-bottom: 1px solid var(--color-border); }
+.status-tab {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-2) var(--space-3); min-height: var(--touch-target);
+    color: var(--color-text-muted); text-decoration: none; font-size: var(--font-size-sm);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.status-tab:hover { color: var(--color-text); }
+.status-tab.is-active { color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: var(--font-weight-medium); }
+.status-tab-count { background: var(--color-neutral-soft); color: var(--color-text-muted); border-radius: var(--radius-full); padding: 0 var(--space-2); font-size: var(--font-size-xs); min-width: 1.6em; text-align: center; }
+.status-tab.is-active .status-tab-count { background: var(--color-primary-soft); color: var(--color-primary); }
+
+.filter-context { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-4); }
+.filter-context .badge { text-decoration: none; }
+
+.icon-muted { width: 18px; height: 18px; color: var(--color-text-muted); vertical-align: -4px; }
+
+.asset-title { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.asset-title h1 { margin: 0; }
+.asset-title .mono { letter-spacing: 0.04em; }
+
+.field-hint-list { list-style: none; margin: var(--space-1) 0 0; padding: 0; font-size: var(--font-size-sm); }
+.field-hint-list li { padding: 2px 0; }
+.field-hint-list .is-error { color: var(--color-danger); }
+.field-hint-list .is-warning { color: var(--color-warning); }
+
+.history-note { background: var(--color-surface-alt); border-radius: var(--radius-md); padding: var(--space-2) var(--space-3); margin-top: var(--space-1); white-space: pre-wrap; }
+.history-form textarea { min-height: 72px; }
+.history-filter { display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+
+.value-old { text-decoration: line-through; color: var(--color-text-muted); }
+.value-arrow { color: var(--color-text-muted); margin: 0 var(--space-1); }

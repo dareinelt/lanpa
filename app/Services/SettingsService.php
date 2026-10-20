@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Core\Config;
 use App\Repositories\SettingsRepository;
+use App\Services\Klinq\KlinqConfigService;
 use App\Services\Office\OfficeConfigService;
 use App\Services\Tls\TlsCertificateService;
 use App\Support\Validator;
@@ -39,7 +40,7 @@ final class SettingsService
      */
     public function defaults(): array
     {
-        return OfficeConfigService::defaults() + [
+        return OfficeConfigService::defaults() + KlinqConfigService::defaults() + [
             'site_title' => (string) Config::get('app.name', 'Intranet'),
             'site_subtitle' => 'Zentraler Einstieg zu internen Anwendungen',
             'site_subtitle_visible' => '1',

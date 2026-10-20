@@ -1,0 +1,9 @@
+/* Audit-Log */
+.audit-table td { vertical-align: top; }
+.audit-diff { display: grid; grid-template-columns: minmax(90px, max-content) 1fr; gap: 1px var(--space-3); margin: 0; font-size: var(--font-size-sm); }
+.audit-diff dt { color: var(--color-text-muted); font-family: var(--font-mono); font-size: var(--font-size-xs); padding-top: 2px; }
+.audit-diff dd { margin: 0; overflow-wrap: anywhere; }
+.audit-diff .icon-xs { width: 12px; height: 12px; color: var(--color-text-muted); vertical-align: middle; }
+.audit-old { color: var(--color-danger); text-decoration: line-through; text-decoration-color: rgba(0, 0, 0, .25); }
+.audit-new { color: var(--color-success); font-weight: 500; }
+.audit-diff code { font-size: var(--font-size-xs); }

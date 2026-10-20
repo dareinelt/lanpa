@@ -1,0 +1,4 @@
+/* Administration → Benutzer */
+.users-form-grid { align-items: start; }
+.users-form-grid .card-form { max-width: none; }
+@media (max-width: 900px) { .users-form-grid { grid-template-columns: 1fr; } }

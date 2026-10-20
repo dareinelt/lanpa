@@ -37,6 +37,12 @@
 #                        Stack) unter LLMINT_PATH (Standard /ki) nach
 #                        LLMINT_UPSTREAM (z. B. http://llmint-web), -D LLMINT,
 #                        bindet /etc/apache2/intranet/llmint.conf ein.
+# - KLINQ_ENABLED=true:  Reverse-Proxy fuer KLINQ (Help-Desk, Asset-Management)
+#                        unter /klinq/ nach dem Container klinq-app, -D KLINQ,
+#                        bindet /etc/apache2/intranet/klinq.conf ein. Alle
+#                        KLINQ-Pfade verlangen die Windows-Anmeldung; Rollen
+#                        und Berechtigungsgruppen kommen aus dem signierten
+#                        Einstiegsschein des Intranets (/klinq-starten).
 # - TLS_ENABLED=true:    HTTPS auf Port 443 mit dem Zertifikat aus der
 #                        Zertifikatsverwaltung (tls-sync.sh, alle 60 s
 #                        abgeglichen). Ohne gueltiges Zertifikat gilt ein
@@ -66,6 +72,7 @@ set -e
 : "${LLMINT_ENABLED:=false}"
 : "${LLMINT_UPSTREAM:=}"
 : "${LLMINT_PATH:=/ki}"
+: "${KLINQ_ENABLED:=false}"
 : "${APP_URL:=http://localhost:8080}"
 : "${TLS_ENABLED:=true}"
 : "${HTTPS_PUBLIC_PORT:=443}"
@@ -533,6 +540,11 @@ if is_true "$OFFICE_ENABLED"; then
     echo "[auth] Euro-Office-Proxy aktiv (/office/, /eurooffice/)."
 fi
 
+if is_true "$KLINQ_ENABLED"; then
+    APACHE_DEFINES="${APACHE_DEFINES} -D KLINQ"
+    echo "[auth] KLINQ-Proxy aktiv (/klinq/ -> klinq-app/, Anmeldung ueber die Windows-Anmeldung)."
+fi
+
 # LLMInt (KI-Oberflaeche, eigener Stack) unter LLMINT_PATH. Fehlerhafte
 # Angaben schalten nur diesen Proxy ab, nicht den Einstieg ins Intranet.
 LLMINT_HOST=""
@@ -585,6 +597,7 @@ fi
 # behaelt die alte bis zum Neuladen (siehe backend-watch.sh).
 backend_hosts="app"
 is_true "$OFFICE_ENABLED" && backend_hosts="${backend_hosts} nextcloud eurooffice"
+is_true "$KLINQ_ENABLED" && backend_hosts="${backend_hosts} klinq-app"
 # LLMInt-Upstream nur, wenn er per Hostname (z. B. Container llmint-web)
 # angegeben ist; feste IP-Adressen aendern sich nicht.
 if [ -n "$LLMINT_HOST" ] && ! printf '%s' "$LLMINT_HOST" | grep -Eq '^[0-9.]+$'; then

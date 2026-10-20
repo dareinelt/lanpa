@@ -1,0 +1,12 @@
+/.env
+/.env.local
+/.idea/
+/.vscode/
+/node_modules/
+/storage/uploads/*
+/storage/labels/*
+/storage/logs/*
+/storage/tmp/*
+!/storage/**/.gitkeep
+.DS_Store
+.playwright-mcp/

@@ -51,6 +51,11 @@ fi
 if enabled "${OFFICE_ENABLED:-false}"; then
     login_paths="${login_paths} /office/index.php/apps/user_saml/saml/login /office/apps/user_saml/saml/login"
 fi
+if enabled "${KLINQ_ENABLED:-false}"; then
+    # KLINQ kennt keine eigene Anmeldung: alle Pfade verlangen die
+    # Windows-Anmeldung des auth-Containers.
+    login_paths="${login_paths} /klinq"
+fi
 
 tls=false
 case "$(printf '%s' "${TLS_ENABLED:-false}" | tr '[:upper:]' '[:lower:]')" in

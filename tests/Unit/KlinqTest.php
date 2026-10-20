@@ -1,0 +1,255 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Controllers\KlinqController;
+use App\Repositories\SettingsRepository;
+use App\Services\Klinq\KlinqAiService;
+use App\Services\Klinq\KlinqConfigService;
+use App\Services\Klinq\KlinqThemeService;
+use App\Services\Klinq\KlinqTokenService;
+use App\Services\SettingsService;
+use App\Services\ThemeService;
+use Tests\Support\Assert;
+use Tests\Support\Runner;
+
+/**
+ * KLINQ-Integration: Einstiegsschein, Rechteauflösung, Designfarben, KI-Prüfung.
+ *
+ * Der Einstiegsschein ist die Vertrauensgrenze zwischen Intranet und KLINQ;
+ * diese Tests halten Signatur, Aussteller, Ablauf und Zielpfade fest.
+ */
+function klinqPdo(array $settings = []): PDO
+{
+    $pdo = new PDO('sqlite::memory:');
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->exec('CREATE TABLE settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        setting_key VARCHAR(64) NOT NULL UNIQUE,
+        setting_value TEXT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )');
+    $insert = $pdo->prepare('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)');
+    foreach ($settings as $key => $value) {
+        $insert->execute([$key, $value]);
+    }
+
+    return $pdo;
+}
+
+function klinqSettings(array $settings = []): SettingsService
+{
+    return new SettingsService(new SettingsRepository(klinqPdo($settings)));
+}
+
+function klinqConfig(array $settings = [], array $config = []): KlinqConfigService
+{
+    return new KlinqConfigService(klinqSettings($settings), $config + [
+        'enabled' => true,
+        'sso_secret' => str_repeat('s', 40),
+        'public_path' => '/klinq',
+        'public_url' => '',
+        'entry_lifetime' => 300,
+    ]);
+}
+
+function klinqToken(string $secret = ''): KlinqTokenService
+{
+    return new KlinqTokenService(klinqConfig([], ['sso_secret' => $secret !== '' ? $secret : str_repeat('s', 40)]));
+}
+
+Runner::test('KLINQ: Einstiegsschein wird ausgestellt und wieder geprüft', static function (): void {
+    $tokens = klinqToken();
+    $token = $tokens->issue(['sub' => 'erika.muster', 'role' => 'helpdesk_agent', 'areas' => ['helpdesk']]);
+
+    $claims = $tokens->verify($token);
+
+    Assert::true($claims !== null);
+    Assert::same('erika.muster', $claims['sub'] ?? null);
+    Assert::same('helpdesk_agent', $claims['role'] ?? null);
+    Assert::same('lanpa', $claims['iss'] ?? null);
+    Assert::same('klinq', $claims['aud'] ?? null);
+    Assert::true(($claims['exp'] ?? 0) > time());
+    Assert::true(strlen((string) ($claims['jti'] ?? '')) === 32);
+});
+
+Runner::test('KLINQ: manipulierter Schein wird abgelehnt', static function (): void {
+    $tokens = klinqToken();
+    $token = $tokens->issue(['sub' => 'erika.muster']);
+    [$body, $signature] = explode('.', $token);
+
+    $claims = json_decode((string) base64_decode(strtr($body, '-_', '+/')), true);
+    $claims['role'] = 'admin';
+    $forged = KlinqTokenService::base64Url((string) json_encode($claims));
+
+    Assert::same(null, $tokens->verify($forged . '.' . $signature));
+    Assert::same(null, $tokens->verify($token . 'x'));
+    Assert::same(null, $tokens->verify(''));
+});
+
+Runner::test('KLINQ: fremdes Geheimnis und abgelaufener Schein werden abgelehnt', static function (): void {
+    $foreign = klinqToken(str_repeat('f', 40))->issue(['sub' => 'erika.muster']);
+    Assert::same(null, klinqToken()->verify($foreign));
+
+    $secret = str_repeat('s', 40);
+    $body = KlinqTokenService::base64Url((string) json_encode([
+        'sub' => 'erika.muster',
+        'iss' => 'lanpa',
+        'aud' => 'klinq',
+        'exp' => time() - 10,
+    ]));
+    $signature = KlinqTokenService::base64Url(hash_hmac('sha256', $body, $secret, true));
+
+    Assert::same(null, klinqToken()->verify($body . '.' . $signature));
+});
+
+Runner::test('KLINQ: ohne ausreichend langes Geheimnis wird kein Schein geprüft', static function (): void {
+    $short = new KlinqConfigService(klinqSettings(), ['enabled' => true, 'sso_secret' => 'zu-kurz']);
+    $tokens = new KlinqTokenService($short);
+
+    Assert::false($tokens->isConfigured());
+    Assert::same(null, $tokens->verify($tokens->issue(['sub' => 'erika.muster'])));
+});
+
+Runner::test('KLINQ: höchste AD-Gruppe bestimmt die Rolle', static function (): void {
+    $config = klinqConfig([
+        'klinq_helpdesk_agent_groups' => 'GG-Helpdesk',
+        'klinq_helpdesk_lead_groups' => 'GG-Helpdesk-Leitung',
+        'klinq_asset_groups' => 'GG-Assets',
+    ]);
+
+    $access = $config->resolve(['gg-assets', 'GG-HELPDESK']);
+
+    Assert::same('helpdesk_agent', $access['role']);
+    Assert::same(['helpdesk', 'assets'], $access['areas']);
+    Assert::true($access['elevated']);
+    Assert::same(['klinq_helpdesk_agent_groups', 'klinq_asset_groups'], $access['matched']);
+});
+
+Runner::test('KLINQ: ohne Treffer gilt die Vorgaberolle', static function (): void {
+    $config = klinqConfig(['klinq_helpdesk_agent_groups' => 'GG-Helpdesk']);
+
+    $access = $config->resolve(['gg-irgendwas']);
+
+    Assert::same('readonly', $access['role']);
+    Assert::same([], $access['areas']);
+    Assert::false($access['elevated']);
+});
+
+Runner::test('KLINQ: Statistiken und Ticketaufruf sind unabhängig von der Rolle', static function (): void {
+    $config = klinqConfig([
+        'klinq_statistics_groups' => 'GG-Statistik',
+        'klinq_ticket_history_groups' => 'GG-Ticketverlauf',
+    ]);
+
+    $access = $config->resolve(['gg-statistik', 'gg-ticketverlauf']);
+
+    Assert::same('readonly', $access['role']);
+    Assert::same(['statistik', 'ticketaufruf'], $access['permission_groups']);
+    Assert::same(['statistics', 'tickets'], $access['areas']);
+    Assert::true($access['elevated']);
+});
+
+Runner::test('KLINQ: Administration umfasst alle Bereiche', static function (): void {
+    $access = klinqConfig(['klinq_admin_groups' => 'GG-Intranet-Admin'])->resolve(['gg-intranet-admin']);
+
+    Assert::same('admin', $access['role']);
+    Assert::same(['admin', 'helpdesk', 'assets', 'statistics', 'tickets'], $access['areas']);
+});
+
+Runner::test('KLINQ: Gruppen werden aus Textfeldern gelesen', static function (): void {
+    Assert::same(['GG-A', 'GG-B', 'GG-C'], KlinqConfigService::parseGroups("GG-A, GG-B;\nGG-C"));
+    Assert::same(['GG-A'], KlinqConfigService::parseGroups('  GG-A  '));
+    Assert::same([], KlinqConfigService::parseGroups(''));
+    Assert::same(['GG-A', 'GG-B'], KlinqConfigService::parseGroups(['GG-A', 'GG-B', 42]));
+});
+
+Runner::test('KLINQ: Freigabeformular wird geprüft', static function (): void {
+    $config = klinqConfig();
+    $result = $config->validate([
+        'klinq_helpdesk_agent_groups' => 'GG-A, GG-B',
+        'klinq_default_role' => 'unbekannt',
+        'klinq_quick_report_open' => '',
+    ]);
+
+    Assert::same('GG-A, GG-B', $result['values']['klinq_helpdesk_agent_groups']);
+    Assert::same('readonly', $result['values']['klinq_default_role']);
+    Assert::same('0', $result['values']['klinq_quick_report_open']);
+    Assert::true(isset($result['errors']['klinq_default_role']));
+
+    $control = $config->validate(['klinq_default_role' => 'readonly', 'klinq_quick_report_open' => '1']);
+    Assert::same('1', $control['values']['klinq_quick_report_open']);
+    Assert::same([], $control['errors']);
+});
+
+Runner::test('KLINQ: öffentlicher Pfad wird normalisiert', static function (): void {
+    Assert::same('/klinq', KlinqConfigService::normalizePath(''));
+    Assert::same('/klinq', KlinqConfigService::normalizePath('/'));
+    Assert::same('/klinq', KlinqConfigService::normalizePath('/klinq/'));
+    Assert::same('/helpdesk', KlinqConfigService::normalizePath('helpdesk'));
+    Assert::same('/klinq', KlinqConfigService::normalizePath('/a/../b'));
+    Assert::same('/klinq', KlinqConfigService::normalizePath('/a b'));
+});
+
+Runner::test('KLINQ: Meldeseite erscheint nur bei aktiver Integration als Navigationsziel', static function (): void {
+    Assert::same(['/stoerung' => 'KLINQ-Meldeseite (Störmeldung IT)'], klinqConfig()->internalTargets());
+
+    $inactive = new KlinqConfigService(klinqSettings(), ['enabled' => false]);
+    Assert::same([], $inactive->internalTargets());
+});
+
+Runner::test('KLINQ: Rücksprungziel bleibt in der Anwendung', static function (): void {
+    Assert::same('/dashboard', KlinqController::safeTarget(''));
+    Assert::same('/tickets/42', KlinqController::safeTarget('/tickets/42'));
+    Assert::same('/dashboard', KlinqController::safeTarget('//example.invalid'));
+    Assert::same('/dashboard', KlinqController::safeTarget('https://example.invalid'));
+    Assert::same('/dashboard', KlinqController::safeTarget('/tickets/../../admin'));
+    Assert::same('/dashboard', KlinqController::safeTarget('/sso/lanpa'));
+    Assert::same('/dashboard', KlinqController::safeTarget('/login'));
+    Assert::same('/dashboard', KlinqController::safeTarget('/' . str_repeat('a', 600)));
+});
+
+Runner::test('KLINQ: Designfarben werden als CSS-Variablen ausgegeben', static function (): void {
+    $css = (new KlinqThemeService(new ThemeService(klinqSettings())))->css();
+
+    Assert::true(str_contains($css, ':root{'));
+    Assert::true(str_contains($css, '--klinq-lanpa-accent-strong:'));
+    Assert::true(str_contains($css, '--klinq-lanpa-accent-dark:'));
+    Assert::true(str_contains($css, '--klinq-lanpa-on-accent:'));
+    Assert::true(str_contains($css, 'prefers-color-scheme: dark'));
+    Assert::true(str_contains($css, ':root[data-theme="light"]'));
+});
+
+Runner::test('KLINQ: KI-Einstellungen werden geprüft', static function (): void {
+    $missing = KlinqAiService::validate(['klinq_ai_enabled' => '1']);
+    Assert::true(isset($missing['errors']['klinq_ai_url']));
+    Assert::true(isset($missing['errors']['klinq_ai_model']));
+
+    $invalid = KlinqAiService::validate([
+        'klinq_ai_enabled' => '1',
+        'klinq_ai_url' => 'http://user:secret@ki.invalid/v1?x=1',
+        'klinq_ai_model' => 'modell mit leerzeichen',
+        'klinq_ai_timeout' => '2',
+    ]);
+    Assert::true(isset($invalid['errors']['klinq_ai_url']));
+    Assert::true(isset($invalid['errors']['klinq_ai_model']));
+    Assert::true(isset($invalid['errors']['klinq_ai_timeout']));
+
+    $valid = KlinqAiService::validate([
+        'klinq_ai_enabled' => '1',
+        'klinq_ai_url' => 'http://ki-server:11434/v1/',
+        'klinq_ai_model' => 'llama3.1:8b',
+        'klinq_ai_timeout' => '60',
+        'klinq_ai_api_key' => 'geheim-123',
+    ]);
+    Assert::same([], $valid['errors']);
+    Assert::same('http://ki-server:11434/v1', $valid['values']['klinq_ai_url']);
+    Assert::same('geheim-123', $valid['values']['klinq_ai_api_key']);
+
+    $cleared = KlinqAiService::validate([
+        'klinq_ai_enabled' => '0',
+        'klinq_ai_api_key' => 'geheim-123',
+        'klinq_ai_api_key_clear' => '1',
+    ]);
+    Assert::same('', $cleared['values']['klinq_ai_api_key']);
+});

@@ -1,0 +1,10 @@
+.timeline { list-style: none; margin: 0; padding: 0; position: relative; }
+.timeline::before { content: ""; position: absolute; left: 9px; top: 6px; bottom: 6px; width: 2px; background: var(--color-border); }
+.timeline li { position: relative; padding: var(--space-2) 0 var(--space-2) var(--space-6); min-height: var(--touch-target); }
+.timeline .timeline-dot { position: absolute; left: 2px; top: 14px; width: 16px; height: 16px; border-radius: var(--radius-full); background: var(--color-primary); border: 3px solid var(--color-surface); box-shadow: 0 0 0 2px var(--color-border); }
+.timeline .is-danger .timeline-dot { background: var(--color-danger); }
+.timeline .is-success .timeline-dot { background: var(--color-success); }
+.timeline .is-warning .timeline-dot { background: var(--color-warning); }
+.timeline .timeline-time { font-size: var(--font-size-xs); color: var(--color-text-muted); }
+.timeline .timeline-title { font-weight: var(--font-weight-medium); }
+.timeline .timeline-detail { font-size: var(--font-size-sm); color: var(--color-text-muted); overflow-wrap: anywhere; }

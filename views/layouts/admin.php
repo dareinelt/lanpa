@@ -52,6 +52,12 @@ $navItems = $isAdmin ? [
         'office_tile' => ['/admin/office/kachel', 'Kachel im Intranet'],
         'office_backup' => ['/admin/office/sicherung', 'Sicherung'],
     ]],
+    'klinq' => ['/admin/klinq', 'KLINQ', [
+        'klinq' => ['/admin/klinq', 'Status & Verbindung'],
+        'klinq_access' => ['/admin/klinq/berechtigungen', 'Berechtigungen (AD-Gruppen)'],
+        'klinq_ai' => ['/admin/klinq/ki', 'KI-Endpunkt'],
+        'klinq_tile' => ['/admin/klinq/kachel', 'Kachel im Intranet'],
+    ]],
     'storage_group' => ['/admin/speicherplatz', 'Storage', [
         'quota' => ['/admin/speicherplatz', 'Speicherplatz (Quota)'],
         'drives' => ['/admin/netzlaufwerke', 'Netzlaufwerke'],

@@ -14,6 +14,8 @@
     var proxyFields = form.querySelectorAll('[data-editor-proxy]');
     var proxyToggle = form.querySelector('[data-proxy-toggle]');
     var proxyNetworkField = form.querySelector('[data-proxy-networks]');
+    var targetField = form.querySelector('[data-editor-url-target]');
+    var targetSelect = form.querySelector('[data-url-target]');
 
     function syncProxyNetworks() {
         if (proxyNetworkField) {
@@ -30,6 +32,10 @@
             if (urlInput) {
                 urlInput.required = type === 'external' || type === 'internal';
             }
+        }
+
+        if (targetField) {
+            targetField.hidden = type !== 'internal';
         }
 
         if (parentField) {
@@ -56,6 +62,19 @@
     }
     if (proxyToggle) {
         proxyToggle.addEventListener('change', syncProxyNetworks);
+    }
+    if (targetSelect) {
+        targetSelect.addEventListener('change', function () {
+            var urlInput = urlField ? urlField.querySelector('input') : null;
+            if (!targetSelect.value || !urlInput) {
+                return;
+            }
+            urlInput.value = targetSelect.value;
+            if (typeSelect && typeSelect.value !== 'internal') {
+                typeSelect.value = 'internal';
+            }
+            syncFields();
+        });
     }
     syncFields();
 

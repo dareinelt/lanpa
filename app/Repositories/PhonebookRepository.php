@@ -202,6 +202,33 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     }
 
     /**
+     * Kontaktdaten fuer die Uebergabe an KLINQ (Help-Desk-Schnellbericht).
+     * Enthaelt zusaetzlich die Mobilnummer.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function contactBySamAccountName(string $name, int $sourceId = 0): ?array
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return null;
+        }
+
+        $statement = $this->pdo->prepare(
+            'SELECT id, identity_source_id, samaccount_name, display_name, first_name, last_name,
+                    title, phone, mobile, email, department
+               FROM phonebook
+              WHERE active = 1 AND identity_source_id = :source AND samaccount_name IS NOT NULL
+                AND LOWER(samaccount_name) = LOWER(:name)
+              LIMIT 1'
+        );
+        $statement->execute(['name' => $name, 'source' => $sourceId]);
+        $row = $statement->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
      * Alle aktiven Eintraege mit hinterlegtem SamAccountName – die Grundlage
      * fuer die benutzerbasierte Kachel-Berechtigung im Adminbereich.
      *

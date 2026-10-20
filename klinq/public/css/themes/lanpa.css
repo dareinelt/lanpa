@@ -1,0 +1,30 @@
+/*
+ * Dezente Angleichung an die Designfarben des Intranets (LANPA).
+ *
+ * Wird nur eingebunden, wenn die Anbindung an das Intranet aktiv ist. Die
+ * Farbwerte liefert /klinq-design.css des Intranets als --klinq-lanpa-*;
+ * KLINQ bleibt eigenstaendig und uebernimmt nur Akzent, Linien und gedaempfte
+ * Texte. Ohne diese Datei gelten unveraendert die Werte aus tokens.css
+ * (Rueckfallwerte in var()).
+ *
+ * Bewusst nur :root: ein eigenes Farbschema von KLINQ (z. B. [data-theme])
+ * behaelt damit Vorrang.
+ */
+:root {
+    --color-primary: var(--klinq-lanpa-accent-strong, #0f6cbd);
+    --color-primary-hover: var(--klinq-lanpa-accent, #0c5aa0);
+    --color-primary-active: var(--klinq-lanpa-accent-dark, #0a4d89);
+    --color-primary-soft: var(--klinq-lanpa-accent-soft, #e8f1fa);
+
+    --color-info: var(--klinq-lanpa-accent-strong, #0f6cbd);
+    --color-info-soft: var(--klinq-lanpa-accent-soft, #e8f1fa);
+
+    --color-bg: var(--klinq-lanpa-background, #f4f6f8);
+    --color-surface: var(--klinq-lanpa-surface, #ffffff);
+    --color-surface-alt: var(--klinq-lanpa-surface-hover, #f9fafb);
+    --color-border: var(--klinq-lanpa-border, #d8dde3);
+
+    --color-text: var(--klinq-lanpa-text, #1a2733);
+    --color-text-muted: var(--klinq-lanpa-muted, #5b6b7b);
+    --color-text-inverse: var(--klinq-lanpa-on-accent, #ffffff);
+}

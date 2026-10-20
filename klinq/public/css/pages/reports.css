@@ -1,0 +1,55 @@
+/* Berichte */
+.report-cards { display: grid; gap: var(--space-4); grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.report-card {
+    display: flex; flex-direction: column; gap: var(--space-2);
+    padding: var(--space-5); text-decoration: none; color: inherit;
+    border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface);
+    transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.report-card:hover { border-color: var(--color-primary); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.report-card:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.report-card-icon {
+    width: 2.5rem; height: 2.5rem; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-md); background: var(--color-primary-soft); color: var(--color-primary);
+}
+.report-card-icon .icon { width: 1.35rem; height: 1.35rem; }
+.report-card-title { font-weight: var(--font-weight-semibold); font-size: var(--font-size-md); }
+.report-card-text { color: var(--color-text-muted); font-size: var(--font-size-sm); line-height: 1.45; }
+.report-card-link { margin-top: auto; color: var(--color-primary); font-size: var(--font-size-sm); display: inline-flex; align-items: center; gap: var(--space-1); }
+
+/* Tabellen in randlosen Karten */
+.card-flush > .table-wrapper { border: 0; border-top: 1px solid var(--color-border); border-radius: 0; margin-top: var(--space-3); }
+.card-flush .table-empty { border-top: 1px solid var(--color-border); margin-top: var(--space-3); }
+
+/* Balkenliste */
+.bar-list { list-style: none; margin: 0; padding: var(--space-2) var(--space-5) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); }
+.bar-list li { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr 3rem; align-items: center; gap: var(--space-3); }
+.bar-label { font-size: var(--font-size-sm); text-decoration: none; color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.bar-label:hover { color: var(--color-primary); }
+.bar-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--font-weight-medium); font-size: var(--font-size-sm); }
+progress.bar {
+    appearance: none; -webkit-appearance: none;
+    width: 100%; height: 0.75rem; border: 0; border-radius: var(--radius-full); overflow: hidden;
+    background: var(--color-neutral-soft); color: var(--color-primary);
+}
+progress.bar::-webkit-progress-bar { background: var(--color-neutral-soft); border-radius: var(--radius-full); }
+progress.bar::-webkit-progress-value { background: currentColor; border-radius: var(--radius-full); transition: width .3s ease; }
+progress.bar::-moz-progress-bar { background: currentColor; border-radius: var(--radius-full); }
+progress.bar.is-success { color: var(--color-success); }
+progress.bar.is-info, progress.bar.is-primary { color: var(--color-info, var(--color-primary)); }
+progress.bar.is-warning { color: var(--color-warning); }
+progress.bar.is-danger { color: var(--color-danger); }
+progress.bar.is-neutral { color: var(--color-text-muted); }
+
+/* Kennzahlenreihe */
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--space-4); padding: var(--space-4) var(--space-5); }
+.kpi-value { display: block; font-size: var(--font-size-xl); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; }
+.kpi-label { display: block; color: var(--color-text-muted); font-size: var(--font-size-xs); text-transform: uppercase; letter-spacing: .04em; margin-top: var(--space-1); }
+
+.table tfoot th { border-top: 2px solid var(--color-border); background: var(--color-surface-alt, var(--color-surface)); font-weight: var(--font-weight-semibold); }
+
+@media (max-width: 1200px) { .report-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+    .report-cards { grid-template-columns: 1fr; }
+    .bar-list li { grid-template-columns: minmax(5rem, 7rem) 1fr 2.5rem; }
+}

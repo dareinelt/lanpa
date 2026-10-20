@@ -1,0 +1,16 @@
+/* Öffentliches Störungsformular (/stoerung) – eigenständige Seite ohne Navigation */
+.quick-page { min-height: 100vh; display: grid; place-items: center; padding: var(--space-4); background: linear-gradient(160deg, var(--color-primary-soft), var(--color-bg) 55%); }
+.quick-card { width: 100%; max-width: 560px; background: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: var(--space-6); }
+.quick-brand { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.quick-brand .brand-logo { display: grid; place-items: center; width: 48px; height: 48px; border-radius: var(--radius-md); background: var(--color-primary-soft); color: var(--color-primary); }
+.quick-brand .brand-logo .icon { width: 28px; height: 28px; }
+.quick-detected { margin: var(--space-4) 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg); }
+.quick-detected dl { margin: 0; display: grid; gap: var(--space-1); }
+.quick-detected dl > div { display: flex; gap: var(--space-2); justify-content: space-between; font-size: var(--font-size-sm); }
+.quick-detected dt { color: var(--color-text-muted); }
+.quick-detected dd { margin: 0; text-align: right; font-weight: 500; overflow-wrap: anywhere; }
+.quick-card-done { text-align: center; }
+.quick-check { display: inline-grid; place-items: center; width: 56px; height: 56px; margin-bottom: var(--space-3); border-radius: 50%; background: var(--color-success-soft, var(--color-primary-soft)); color: var(--color-success, var(--color-primary)); }
+.quick-check .icon { width: 32px; height: 32px; }
+.quick-number { display: grid; gap: var(--space-1); margin: var(--space-4) 0; font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.quick-number strong { font-size: var(--font-size-lg); font-family: var(--font-mono, monospace); color: var(--color-text); }

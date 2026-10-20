@@ -81,6 +81,17 @@ final class QuickReportController extends HelpdeskBaseController
             $this->withOldInput($request, $e->errors());
 
             return $this->renderForm($request, null, 422, $reporter);
+        } catch (\Throwable $e) {
+            // Fehlkonfiguration oder Datenbankfehler (z. B. fehlendes Systemkonto): Der Besucher
+            // bekommt eine verstaendliche Meldung statt einer unbehandelten Ausnahme; die
+            // Ursache landet mit Kontext im Log (storage/logs/app-*.log).
+            $this->logger->error('Störungsformular: Meldung konnte nicht angelegt werden', [
+                'type' => $e::class,
+                'message' => $e->getMessage(),
+                'ort' => $e->getFile() . ':' . $e->getLine(),
+            ]);
+
+            return $this->renderForm($request, 'Die Meldung konnte nicht gespeichert werden. Bitte wenden Sie sich telefonisch an den Help Desk.', 500, $reporter);
         }
 
         $this->rememberSubmission();
@@ -109,8 +120,11 @@ final class QuickReportController extends HelpdeskBaseController
     {
         $username = (string) $this->config->get('helpdesk.quick_report.system_user', 'admin');
         $user = $this->users->findByUsername($username);
-        if ($user === null || empty($user['is_active']) || !$this->permissions->roleHas((string) $user['role'], 'helpdesk.create')) {
-            $this->logger->error('Störungsformular: Systemkonto fehlt oder darf keine Tickets anlegen', ['username' => $username]);
+        // hasEffective() statt roleHas(): Berechtigungsgruppen zaehlen mit, genau wie in
+        // CurrentUser::can() – sonst wuerde ein Konto abgelehnt, das das Recht ueber eine
+        // Gruppe besitzt, und das Ticket-Anlegen spaeter doch erlaubt waere.
+        if ($user === null || empty($user['is_active']) || !$this->permissions->hasEffective((string) $user['role'], (array) ($user['groups'] ?? []), 'helpdesk.create')) {
+            $this->logger->error('Störungsformular: Systemkonto fehlt, ist inaktiv oder darf keine Tickets anlegen', ['username' => $username, 'rolle' => $user['role'] ?? null]);
 
             throw new \RuntimeException('Das Störungsformular ist nicht vollständig eingerichtet.');
         }

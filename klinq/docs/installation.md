@@ -35,7 +35,7 @@ docker compose up --build -d
 docker compose logs -f app     # Migrationen und Seeder laufen beim ersten Start automatisch
 ```
 
-Der Entrypoint (`docker/php/entrypoint.sh`) wartet auf die Datenbank, führt `php bin/migrate.php` aus (Schema, Stammdaten-Seeder, Erst-Admin) und startet danach Apache. Die Anwendung ist unter `APP_URL` erreichbar; die Anmeldung erfolgt mit `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Das Passwort sollte danach unter *Profil → Passwort ändern* geändert und der Wert in der `.env` entfernt werden – er wird nach der Erstanlage nicht mehr benötigt.
+Der Entrypoint (`docker/php/entrypoint.sh`) wartet auf die Datenbank, führt `php bin/migrate.php` aus (Schema, Stammdaten-Seeder, Erst-Admin, Systemkonto des Störungsformulars) und startet danach Apache. Die Anwendung ist unter `APP_URL` erreichbar; die Anmeldung erfolgt mit `ADMIN_USERNAME` / `ADMIN_PASSWORD`. Das Passwort sollte danach unter *Profil → Passwort ändern* geändert und der Wert in der `.env` entfernt werden – er wird nach der Erstanlage nicht mehr benötigt.
 
 ![Anmeldung](screenshots/login.png)
 

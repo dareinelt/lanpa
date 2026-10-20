@@ -5,7 +5,8 @@ declare(strict_types=1);
 /**
  * Führt ausstehende SQL-Migrationen (database/migrations) und alle Seeder
  * (database/seeders, idempotent) aus. Legt bei leerer Benutzertabelle den
- * initialen Administrator aus ADMIN_USERNAME / ADMIN_PASSWORD an.
+ * initialen Administrator aus ADMIN_USERNAME / ADMIN_PASSWORD an und stellt
+ * das Systemkonto des Störungsformulars sicher.
  *
  * Aufruf: php bin/migrate.php [--database=<name>] [--no-seed] [--no-admin]
  */
@@ -91,6 +92,28 @@ if (!isset($options['no-admin'])) {
         echo "Initialer Administrator '{$adminUser}' angelegt.\n";
     } elseif ($count === 0) {
         echo "Hinweis: Kein Benutzer vorhanden und ADMIN_PASSWORD nicht gesetzt – bitte .env prüfen.\n";
+    }
+}
+
+// Systemkonto des oeffentlichen Stoerungsformulars (/stoerung) sicherstellen. Das Formular
+// legt Tickets unter einem Benutzer mit helpdesk.create an. In Umgebungen mit Anmeldung
+// ueber das Intranet (LANPA-SSO) gibt es kein lokales Konto "admin", weil ADMIN_PASSWORD
+// leer bleibt – ohne dieses Konto endet jede Meldung in einem Serverfehler. Das Konto
+// bekommt kein Passwort (Anmeldung damit nicht moeglich); meldet sich spaeter ein
+// gleichnamiger AD-Benutzer an, uebernimmt die SSO-Anmeldung den Datensatz.
+if (!isset($options['no-admin']) && (bool) $config->get('helpdesk.quick_report.enabled', true)) {
+    $systemUser = (string) $config->get('helpdesk.quick_report.system_user', 'admin');
+    $lookup = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = ?');
+    $lookup->execute([$systemUser]);
+    if ((int) $lookup->fetchColumn() === 0) {
+        $roleId = (int) $pdo->query("SELECT id FROM roles WHERE name = 'helpdesk_agent'")->fetchColumn();
+        if ($roleId > 0) {
+            $stmt = $pdo->prepare('INSERT INTO users (username, display_name, password_hash, role_id, auth_source) VALUES (?, ?, NULL, ?, ?)');
+            $stmt->execute([$systemUser, 'Störungsformular (Systemkonto)', $roleId, 'local']);
+            echo "Systemkonto '{$systemUser}' für das Störungsformular angelegt.\n";
+        } else {
+            echo "Hinweis: Rolle 'helpdesk_agent' fehlt – Systemkonto '{$systemUser}' wurde nicht angelegt.\n";
+        }
     }
 }
 

@@ -12,7 +12,6 @@ use App\Exceptions\ValidationException;
 use App\Security\Session;
 use App\Services\Klinq\KlinqAiService;
 use App\Services\Klinq\KlinqConfigService;
-use App\Services\Klinq\KlinqAccessService;
 
 /**
  * Adminbereich "KLINQ": Status/Diagnose, AD-Gruppen-Freigaben und Kachel.
@@ -283,7 +282,7 @@ final class KlinqController extends AdminController
             'aiHasKey' => $ai->hasApiKey(),
             'tile' => $tile,
             'tileIcons' => OfficeController::TILE_ICONS,
-            'exampleAccess' => KlinqAccessService::describe($config->resolve([])),
+            'exampleAccess' => $config->resolve([]),
             'entryPath' => PublicKlinqController::ENTRY_PATH,
             'reportPath' => PublicKlinqController::REPORT_PATH,
             'pages' => self::PAGES,

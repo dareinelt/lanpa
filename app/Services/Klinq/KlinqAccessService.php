@@ -34,20 +34,4 @@ final class KlinqAccessService
 
         return $this->config->resolve($groups);
     }
-
-    /**
-     * Kurzfassung fuer die Anzeige im Adminbereich.
-     *
-     * @param array<string,mixed> $access
-     */
-    public static function describe(array $access): string
-    {
-        $parts = [(string) ($access['role_label'] ?? '')];
-        $labels = is_array($access['area_labels'] ?? null) ? $access['area_labels'] : [];
-        if ($labels !== []) {
-            $parts[] = implode(', ', array_map(static fn (mixed $label): string => (string) $label, $labels));
-        }
-
-        return implode(' – ', array_filter($parts));
-    }
 }

@@ -46,7 +46,14 @@ final class View
 
         extract($data, EXTR_SKIP);
         ob_start();
-        require $file;
+        try {
+            require $file;
+        } catch (\Throwable $exception) {
+            // Kein halb gerendertes Template ausgeben, wenn ein Fehler auftritt.
+            ob_end_clean();
+
+            throw $exception;
+        }
 
         return (string) ob_get_clean();
     }

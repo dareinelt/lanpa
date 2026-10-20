@@ -11,6 +11,7 @@ final class Request
      * @param array<string,mixed> $post
      * @param array<string,mixed> $server
      * @param array<string,mixed> $files
+     * @param array<string,mixed> $cookies
      */
     public function __construct(
         public readonly string $method,
@@ -18,7 +19,8 @@ final class Request
         public readonly array $query = [],
         public readonly array $post = [],
         public readonly array $server = [],
-        public readonly array $files = []
+        public readonly array $files = [],
+        public readonly array $cookies = []
     ) {
     }
 
@@ -30,7 +32,14 @@ final class Request
         $path = is_string($path) ? rawurldecode($path) : '/';
         $path = '/' . trim($path, '/');
 
-        return new self($method, $path, $_GET, $_POST, $_SERVER, $_FILES);
+        return new self($method, $path, $_GET, $_POST, $_SERVER, $_FILES, $_COOKIE);
+    }
+
+    public function cookie(string $key, ?string $default = null): ?string
+    {
+        $value = $this->cookies[$key] ?? null;
+
+        return is_scalar($value) ? trim((string) $value) : $default;
     }
 
     public function query(string $key, ?string $default = null): ?string

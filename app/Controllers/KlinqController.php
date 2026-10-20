@@ -32,6 +32,9 @@ final class KlinqController extends Controller
     public const REPORT_PATH = KlinqConfigService::REPORT_PATH;
     public const SESSION_KEY = 'klinq_entered_at';
 
+    /** Gewaehltes Design des Intranets (siehe public/assets/js/app.js). */
+    public const THEME_COOKIE = 'intranet_theme';
+
     private const DEFAULT_TARGET = '/dashboard';
     private const REPORT_TARGET = '/stoerung';
 
@@ -55,15 +58,21 @@ final class KlinqController extends Controller
      * Designfarben des Intranets fuer KLINQ (CSS-Variablen).
      *
      * Oeffentlich und ohne Anmeldung, da nur Farbwerte enthalten sind; wird
-     * von KLINQ als zusaetzliches Stylesheet eingebunden.
+     * von KLINQ als zusaetzliches Stylesheet eingebunden. Das gewaehlte
+     * Design (hell, dunkel, automatisch) kommt als Cookie mit, weil KLINQ ein
+     * eigenes Dokument ohne data-theme ist. Ohne Cookie gilt das Standarddesign
+     * des Intranets (hell). Die Antwort wird nicht zwischengespeichert, damit
+     * ein Wechsel sofort greift.
      */
     public function design(Request $request): Response
     {
-        $css = Container::klinqTheme()->css();
+        $mode = (string) ($request->cookie(self::THEME_COOKIE) ?? 'light');
+        $css = Container::klinqTheme()->css($mode);
 
         return Response::html($css, 200)
             ->withHeader('Content-Type', 'text/css; charset=utf-8')
-            ->withHeader('Cache-Control', 'public, max-age=300')
+            ->withHeader('Cache-Control', 'no-store')
+            ->withHeader('Vary', 'Cookie')
             ->withHeader('Access-Control-Allow-Origin', '*');
     }
 

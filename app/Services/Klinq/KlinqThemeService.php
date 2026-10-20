@@ -22,18 +22,33 @@ final class KlinqThemeService
 
     /**
      * Stylesheet mit den abgeleiteten Farbvariablen.
+     *
+     * Bei bekannter Designwahl (light, dark) wird nur dieser Block geliefert,
+     * damit KLINQ der Einstellung des Intranets folgt und nicht der
+     * Systemeinstellung des Rechners. Unbekannte Angaben gelten wie das
+     * fehlende Cookie als helles Standarddesign.
+     *
+     * @param string $mode Design des Intranets: light, dark oder auto
      */
-    public function css(): string
+    public function css(string $mode = 'auto'): string
     {
         $modes = $this->theme->contrastModes();
 
-        $light = $this->variables($modes['light'] ?? []);
-        $dark = $this->variables($modes['dark'] ?? []);
+        $light = $this->declarations($this->variables($modes['light'] ?? []));
+        $dark = $this->declarations($this->variables($modes['dark'] ?? []));
 
-        return ':root{' . $this->declarations($light) . '}'
-            . '@media (prefers-color-scheme: dark){:root{' . $this->declarations($dark) . '}}'
-            . ':root[data-theme="dark"]{' . $this->declarations($dark) . '}'
-            . ':root[data-theme="light"]{' . $this->declarations($light) . '}';
+        if ($mode === 'dark') {
+            return ':root{' . $dark . '}';
+        }
+
+        if ($mode === 'auto') {
+            return ':root{' . $light . '}'
+                . '@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){' . $dark . '}}'
+                . ':root[data-theme="dark"]{' . $dark . '}'
+                . ':root[data-theme="light"]{' . $light . '}';
+        }
+
+        return ':root{' . $light . '}';
     }
 
     /**

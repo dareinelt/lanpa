@@ -3,6 +3,7 @@
     'use strict';
 
     var STORAGE_KEY = 'intranet.theme';
+    var COOKIE_NAME = 'intranet_theme';
     var MODES = ['auto', 'light', 'dark'];
     var LABELS = {
         auto: 'Design: automatisch',
@@ -22,6 +23,7 @@
 
     function applyMode(mode) {
         document.documentElement.setAttribute('data-theme', mode);
+        storeCookie(mode);
 
         var toggles = document.querySelectorAll('[data-theme-toggle]');
         for (var i = 0; i < toggles.length; i++) {
@@ -30,6 +32,18 @@
                 label.textContent = LABELS[mode];
             }
             toggles[i].setAttribute('title', LABELS[mode]);
+        }
+    }
+
+    // KLINQ ist ein eigenes Dokument ohne data-theme und liest das Design
+    // deshalb als Cookie (siehe /klinq-design.css).
+    function storeCookie(mode) {
+        try {
+            var secure = window.location.protocol === 'https:' ? '; Secure' : '';
+            document.cookie = COOKIE_NAME + '=' + encodeURIComponent(mode)
+                + '; path=/; max-age=31536000; SameSite=Lax' + secure;
+        } catch (error) {
+            /* Ohne Cookie gilt in KLINQ das helle Standarddesign. */
         }
     }
 

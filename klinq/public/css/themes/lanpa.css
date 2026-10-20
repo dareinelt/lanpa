@@ -11,6 +11,9 @@
  * behaelt damit Vorrang.
  */
 :root {
+    /* Bedienelemente des Browsers folgen dem Design des Intranets. */
+    color-scheme: var(--klinq-lanpa-color-scheme, light);
+
     --color-primary: var(--klinq-lanpa-accent-strong, #0f6cbd);
     --color-primary-hover: var(--klinq-lanpa-accent, #0c5aa0);
     --color-primary-active: var(--klinq-lanpa-accent-dark, #0a4d89);
@@ -23,8 +26,23 @@
     --color-surface: var(--klinq-lanpa-surface, #ffffff);
     --color-surface-alt: var(--klinq-lanpa-surface-hover, #f9fafb);
     --color-border: var(--klinq-lanpa-border, #d8dde3);
+    --color-border-strong: var(--klinq-lanpa-border-strong, #b6bec7);
 
     --color-text: var(--klinq-lanpa-text, #1a2733);
     --color-text-muted: var(--klinq-lanpa-muted, #5b6b7b);
     --color-text-inverse: var(--klinq-lanpa-on-accent, #ffffff);
+
+    --color-success: var(--klinq-lanpa-success, #107c41);
+    --color-success-soft: var(--klinq-lanpa-success-soft, #e5f3ec);
+    --color-warning: var(--klinq-lanpa-warning, #9a6a00);
+    --color-warning-soft: var(--klinq-lanpa-warning-soft, #fdf3d7);
+    --color-danger: var(--klinq-lanpa-danger, #b3261e);
+    --color-danger-soft: var(--klinq-lanpa-danger-soft, #fbeae9);
+    --color-neutral: var(--klinq-lanpa-neutral, #5b6b7b);
+    --color-neutral-soft: var(--klinq-lanpa-neutral-soft, #eceff2);
+
+    --color-on-success: var(--klinq-lanpa-on-success, #ffffff);
+    --color-on-warning: var(--klinq-lanpa-on-warning, #ffffff);
+    --color-on-danger: var(--klinq-lanpa-on-danger, #ffffff);
+    --color-on-text: var(--klinq-lanpa-on-text, #ffffff);
 }

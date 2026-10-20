@@ -600,14 +600,34 @@ Einstellung des Intranets und nicht der Systemeinstellung des Rechners.
 | `--klinq-lanpa-surface` | Fläche |
 | `--klinq-lanpa-surface-hover` | Fläche bei Hover |
 | `--klinq-lanpa-border` | Text 82 % in Richtung Hintergrund |
+| `--klinq-lanpa-border-strong` | Text 68 % in Richtung Hintergrund (Rahmen von Eingabefeldern) |
 | `--klinq-lanpa-text` | Textfarbe |
 | `--klinq-lanpa-muted` | gedämpfte Textfarbe |
+| `--klinq-lanpa-color-scheme` | `dark` im dunklen, sonst `light` (steuert Dateiauswahl, Auswahllisten und Bildlaufleisten des Browsers) |
+
+Die Statusfarben werden je Design getrennt abgeleitet, weil sie in KLINQ zwei
+Rollen haben: Schriftfarbe auf einer gedämpften Fläche (Badges, Hinweise,
+interne Notizen) und Hintergrund von Schaltflächen und Meldungen.
+
+| Variable | Heller Modus | Dunkler Modus |
+| --- | --- | --- |
+| `--klinq-lanpa-<name>` | `#107c41`, `#9a6a00`, `#b3261e`, `#5b6b7b` (Erfolg, Warnung, Fehler, Neutral) | Ausgangsfarbe, so weit aufgehellt, bis sie auf der eigenen gedämpften Fläche den Mindestkontrast 4,5:1 erreicht (`App\Support\Color::ensureContrast`) |
+| `--klinq-lanpa-<name>-soft` | `#e5f3ec`, `#fdf3d7`, `#fbeae9`, `#eceff2` | Ausgangsfarbe 82 % in Richtung Hintergrund abgedunkelt |
+| `--klinq-lanpa-on-<name>` | lesbare Textfarbe auf der Vollfläche | lesbare Textfarbe auf der Vollfläche (Schwarz oder Weiß nach tatsächlichem Kontrast) |
+| `--klinq-lanpa-on-text` | Textfarbe auf `--klinq-lanpa-text` (Standard-Toast) | ebenso |
+
+`<name>` steht für `success`, `warning`, `danger` und `neutral`. Ohne diese
+Trennung blieb die gedämpfte Fläche im dunklen Modus hell (`#fdf3d7`), während
+der Text bereits hell war – eingegebene interne Notizen waren dadurch nicht
+lesbar.
 
 ### 11.3 Übernahme in KLINQ
 
 `klinq/public/css/themes/lanpa.css` bildet die Intranetvariablen auf die
 eigenen Farbvariablen ab – jeweils mit Rückfallwert, damit KLINQ ohne Anbindung
-unverändert aussieht:
+unverändert aussieht. Zusätzlich setzt sie `color-scheme`, damit die
+Bedienelemente des Browsers (Dateiauswahl, Auswahllisten, Bildlaufleisten) dem
+Design des Intranets folgen:
 
 | KLINQ-Variable | Intranetvariable | Rückfall |
 | --- | --- | --- |
@@ -621,12 +641,24 @@ unverändert aussieht:
 | `--color-surface` | `--klinq-lanpa-surface` | `#ffffff` |
 | `--color-surface-alt` | `--klinq-lanpa-surface-hover` | `#f9fafb` |
 | `--color-border` | `--klinq-lanpa-border` | `#d8dde3` |
+| `--color-border-strong` | `--klinq-lanpa-border-strong` | `#b6bec7` |
 | `--color-text` | `--klinq-lanpa-text` | `#1a2733` |
 | `--color-text-muted` | `--klinq-lanpa-muted` | `#5b6b7b` |
 | `--color-text-inverse` | `--klinq-lanpa-on-accent` | `#ffffff` |
+| `--color-success`, `-soft`, `-on-success` | `--klinq-lanpa-success…` | `#107c41`, `#e5f3ec`, `#ffffff` |
+| `--color-warning`, `-soft`, `-on-warning` | `--klinq-lanpa-warning…` | `#9a6a00`, `#fdf3d7`, `#ffffff` |
+| `--color-danger`, `-soft`, `-on-danger` | `--klinq-lanpa-danger…` | `#b3261e`, `#fbeae9`, `#ffffff` |
+| `--color-neutral`, `-soft` | `--klinq-lanpa-neutral…` | `#5b6b7b`, `#eceff2` |
+| `--color-on-text` | `--klinq-lanpa-on-text` | `#ffffff` |
 
 Die Datei wirkt bewusst nur auf `:root`. Ein eigenes Farbschema von KLINQ
 (z. B. `[data-theme]`) behält damit Vorrang.
+
+Verbraucher der Vollflächen-Schriftfarben sind `components/buttons.css`
+(`.btn-success`, `.btn-danger`), `components/toasts.css` (`.toast`) und
+`layout/shell.css` (`.nav-badge`, `.notification-badge`). Eingabefelder in
+`components/forms.css` setzen zusätzlich `color: var(--color-text)`, damit
+eingetippter Text unabhängig vom geerbten Farbkontext lesbar bleibt.
 
 ### 11.4 Einbindung
 

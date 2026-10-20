@@ -70,7 +70,7 @@
 .nav-badge {
     margin-left: auto;
     background: var(--color-warning);
-    color: var(--color-text-inverse);
+    color: var(--color-on-warning);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     padding: 1px var(--space-2);
@@ -236,7 +236,7 @@
     padding: 0 5px;
     border-radius: var(--radius-full);
     background: var(--color-danger);
-    color: #fff;
+    color: var(--color-on-danger);
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-semibold);
     line-height: 1;

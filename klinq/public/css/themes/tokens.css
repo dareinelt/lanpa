@@ -28,6 +28,12 @@
     --color-neutral: #5b6b7b;
     --color-neutral-soft: #eceff2;
 
+    /* Lesbare Textfarbe auf den Vollflaechen der Statusfarben. */
+    --color-on-success: #ffffff;
+    --color-on-warning: #ffffff;
+    --color-on-danger: #ffffff;
+    --color-on-text: #ffffff;
+
     --color-focus: #7a3fd1;
 
     --font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;

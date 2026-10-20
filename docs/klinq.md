@@ -236,6 +236,14 @@ Ohne Cookie gilt das helle Standarddesign. Wird im Intranet die Akzentfarbe
 geändert, ist in KLINQ nichts nachzuziehen; die Antwort wird nicht
 zwischengespeichert, damit ein Wechsel sofort greift.
 
+Statusfarben (Erfolg, Warnung, Fehler, Neutral) liefert das Intranet ebenfalls
+je Design: Im Dunkelmodus werden ihre Flächen abgedunkelt und ihre Schriftfarbe
+so weit aufgehellt, bis der Mindestkontrast erreicht ist. Dadurch bleiben
+interne Notizen, Hinweise und Badges lesbar – im hellen Modus sehen sie
+unverändert aus. Zusätzlich übernimmt KLINQ die Designwahl für die
+Bedienelemente des Browsers (`color-scheme`), damit Dateiauswahl,
+Auswahllisten und Bildlaufleisten nicht hell aus dem dunklen Design fallen.
+
 ---
 
 ## 8. Betrieb

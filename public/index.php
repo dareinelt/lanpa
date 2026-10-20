@@ -22,6 +22,7 @@ use App\Controllers\Admin\EmergencyNumberController;
 use App\Controllers\Admin\ImportExportController;
 use App\Controllers\Admin\ImportantLinkController;
 use App\Controllers\Admin\IncidentController;
+use App\Controllers\Admin\KlinqController as KlinqAdminController;
 use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\MailProxyController;
 use App\Controllers\Admin\MalwareController;
@@ -48,6 +49,7 @@ use App\Controllers\HealthController;
 use App\Controllers\ImportantLinkIconController;
 use App\Controllers\InternalController;
 use App\Controllers\KiController;
+use App\Controllers\KlinqController;
 use App\Controllers\LandingController;
 use App\Controllers\LogoController;
 use App\Controllers\NetworkDriveController;
@@ -99,7 +101,7 @@ $requireUnlocked = static function (Request $request): ?Response {
 // Domaenen-Clients kommen angemeldet zurueck, alle anderen ohne Anmeldung –
 // es gibt keine Anmeldepflicht.
 $ssoAttempt = static function (Request $request): ?Response {
-    if (!in_array($request->path, ['/', '/unterseite', '/seite', '/office-starten', '/office-app', '/office/orvanta'], true)) {
+    if (!in_array($request->path, ['/', '/unterseite', '/seite', '/office-starten', '/office-app', '/office/orvanta', '/klinq-starten', '/stoerung'], true)) {
         return null;
     }
 
@@ -135,6 +137,10 @@ $router->group([$requireUnlocked, $ssoAttempt], static function (Router $router)
     $router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
     $router->get('/health', [HealthController::class, 'index']);
     $router->get('/office-starten', [OfficeController::class, 'start']);
+    // KLINQ: Einstieg in die Anwendung und Störmeldung IT (Help-Desk-Ticket).
+    // Die Störmeldung ist bewusst für jede über SSO angemeldete Person offen.
+    $router->get('/klinq-starten', [KlinqController::class, 'start']);
+    $router->get('/stoerung', [KlinqController::class, 'report']);
 });
 
 // Interne Schnittstelle fuer die auth-Container und den Sammel-Container
@@ -144,6 +150,10 @@ $router->get('/internal/tls-config', [InternalController::class, 'tlsConfig']);
 $router->get('/internal/nav-proxy-config', [InternalController::class, 'navProxyConfig']);
 $router->post('/internal/auth-metrics', [InternalController::class, 'authMetrics']);
 $router->post('/internal/container-metrics', [InternalController::class, 'containerMetrics']);
+// KLINQ fragt hier die Melderdaten (Kontaktdaten, Rechner) fuer das Help-Desk-Ticket ab.
+$router->post('/internal/klinq/melder', [InternalController::class, 'klinqReporter']);
+// KLINQ holt hier den im Intranet gepflegten KI-Endpunkt samt API-Key ab.
+$router->get('/internal/klinq/ki', [InternalController::class, 'klinqAi']);
 
 // Office-Integration: Hinweisseite (auch Fehlerseite des auth-Proxys) und
 // Endpunkte fuer die Fusszeile in Nextcloud bzw. den Kachelstatus.
@@ -152,6 +162,10 @@ $router->get('/api/office/footer', [OfficeController::class, 'footer']);
 $router->get('/api/office/status', [OfficeController::class, 'status']);
 // LLMInt unter /ki/: Fehlerseite des auth-Proxys, wenn LLMInt nicht erreichbar ist.
 $router->get('/ki-nicht-verfuegbar', [KiController::class, 'unavailable']);
+// KLINQ: Hinweisseite (auch Fehlerseite des auth-Proxys) und die Designfarben
+// des Intranets als zusaetzliches Stylesheet fuer KLINQ.
+$router->get('/klinq-nicht-verfuegbar', [KlinqController::class, 'unavailable']);
+$router->get('/klinq-design.css', [KlinqController::class, 'design']);
 // Weiterleitung unter /weiterleitung/<id>/: Fehlerseite des auth-Proxys, wenn das
 // Ziel nicht erreichbar ist oder die Weiterleitung noch nicht eingerichtet wurde.
 $router->get('/weiterleitung-nicht-verfuegbar', [WeiterleitungController::class, 'unavailable']);
@@ -366,6 +380,17 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/ad/anmeldeinstanzen/protokoll/inhalt', [LdapController::class, 'logContent']);
         $router->get('/admin/ad/anmeldeinstanzen/protokoll/download', [LdapController::class, 'logDownload']);
         $router->get('/admin/ad/gruppen', [LdapController::class, 'groups']);
+
+        $router->get('/admin/klinq', [KlinqAdminController::class, 'index']);
+        $router->post('/admin/klinq/pruefen', [KlinqAdminController::class, 'refreshHealth']);
+        $router->get('/admin/klinq/berechtigungen', [KlinqAdminController::class, 'showAccess']);
+        $router->post('/admin/klinq/berechtigungen', [KlinqAdminController::class, 'updateAccess']);
+        $router->get('/admin/klinq/kachel', [KlinqAdminController::class, 'showTile']);
+        $router->post('/admin/klinq/kachel', [KlinqAdminController::class, 'createTile']);
+        $router->post('/admin/klinq/kachel/gestaltung', [KlinqAdminController::class, 'updateTile']);
+        $router->get('/admin/klinq/ki', [KlinqAdminController::class, 'showAi']);
+        $router->post('/admin/klinq/ki', [KlinqAdminController::class, 'updateAi']);
+        $router->post('/admin/klinq/ki/testen', [KlinqAdminController::class, 'testAi']);
 
         $router->get('/admin/office', [OfficeAdminController::class, 'index']);
         $router->get('/admin/office/fusszeile', [OfficeAdminController::class, 'showFooter']);

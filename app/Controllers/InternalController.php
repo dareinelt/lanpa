@@ -11,6 +11,7 @@ use App\Core\Response;
 use App\Exceptions\ValidationException;
 use App\Security\SsoAuth;
 use App\Services\IdentitySourceService;
+use App\Support\ClientAddress;
 
 /**
  * Interne Schnittstelle fuer die auth-Container: Beim Start ruft jede
@@ -181,6 +182,61 @@ final class InternalController
         }
 
         return Response::noContent();
+    }
+
+    /**
+     * Melderdaten fuer die KLINQ-Meldeseite.
+     *
+     * Die Anwendung uebergibt beim Einstieg in KLINQ bereits die Kontaktdaten
+     * (siehe KlinqController). Liegt dort nichts mehr vor, fragt KLINQ die
+     * Angaben hier erneut ab. Der Rechnername wird aus der uebergebenen
+     * Client-Adresse ermittelt, weil die Anfrage selbst vom KLINQ-Container
+     * kommt.
+     */
+    public function klinqReporter(Request $request): Response
+    {
+        if (!$this->authorized($request, '', (string) Env::get('KLINQ_SERVICE', 'klinq-app'))) {
+            app_logger()->warning('Abruf der KLINQ-Melderdaten abgelehnt.', [
+                'remote' => (string) ($request->server['REMOTE_ADDR'] ?? ''),
+            ]);
+
+            return $this->deny(403);
+        }
+
+        $username = SsoAuth::normalizeUsername($request->input('username'));
+        if ($username === null || $username === '') {
+            return $this->deny(422);
+        }
+
+        $contact = Container::klinqIdentity()->contact(['username' => $username]);
+
+        $ip = (string) ($request->input('ip') ?? '');
+        $contact['ip'] = filter_var($ip, FILTER_VALIDATE_IP) !== false ? $ip : '';
+        $contact['host'] = $contact['ip'] !== '' ? ClientAddress::hostname($contact['ip']) : '';
+
+        return Response::json($contact)->withHeader('Cache-Control', 'no-store');
+    }
+
+    /**
+     * KI-Endpunkt fuer KLINQ.
+     *
+     * Der Endpunkt wird ausschliesslich im Intranet gepflegt (Adminbereich
+     * "KLINQ – KI-Endpunkt"). KLINQ holt den Stand hier ab und verwendet ihn
+     * fuer die KI-Unterstuetzung im Help Desk; der API-Schluessel bleibt damit
+     * zentral verwaltet. Abgerufen wird nur bei Bedarf (kurzer Zwischenspeicher
+     * im KLINQ-Container).
+     */
+    public function klinqAi(Request $request): Response
+    {
+        if (!$this->authorized($request, '', (string) Env::get('KLINQ_SERVICE', 'klinq-app'))) {
+            app_logger()->warning('Abruf der KLINQ-KI-Konfiguration abgelehnt.', [
+                'remote' => (string) ($request->server['REMOTE_ADDR'] ?? ''),
+            ]);
+
+            return $this->deny(403);
+        }
+
+        return Response::json(Container::klinqAi()->payload())->withHeader('Cache-Control', 'no-store');
     }
 
     /**

@@ -305,6 +305,10 @@ services:
       LLMINT_ENABLED: ${LLMINT_ENABLED:-false}
       LLMINT_UPSTREAM: ${LLMINT_UPSTREAM:-}
       LLMINT_PATH: ${LLMINT_PATH:-/ki}
+      # Reverse-Proxy fuer KLINQ (Help-Desk, Asset-Management) unter /klinq/.
+      # Alle KLINQ-Pfade verlangen die Windows-Anmeldung; KLINQ selbst kennt
+      # keine eigene Anmeldung mehr (siehe docs/klinq.md).
+      KLINQ_ENABLED: ${KLINQ_ENABLED:-false}
       # APP_URL liefert auch den Hostnamen fuer den Kerberos-SPN (HTTP/<host>).
 
       APP_URL: ${APP_URL:-http://localhost:8080}
@@ -330,6 +334,8 @@ services:
     networks:
       - intranet
       - office
+      # KLINQ hinter dem Proxy (Anmeldung und SSO fuer /klinq/).
+      - klinq
 
   # Wendet Aenderungen an den Identitaetsquellen an (Windows-Anmeldung) und
   # meldet den Zustand der Instanzen zurueck. Beauftragt wird der Dienst
@@ -811,6 +817,144 @@ services:
       - office_backend
       - storage_catalog
 
+  # ---------------------------------------------------------------------------
+  # KLINQ (Help-Desk, Asset-Management, Statistiken), Profil "klinq".
+  #
+  # KLINQ bleibt eine eigenstaendige Anwendung und wird ueber das Intranet
+  # aufgerufen: Der auth-Container stellt sie unter /klinq/ bereit und
+  # uebernimmt die Windows-Anmeldung. KLINQ bringt deshalb keine eigene
+  # Kerberos-/AD-Anmeldung mehr mit; es prueft den signierten Einstiegsschein
+  # des Intranets (/klinq-starten -> /klinq/sso/lanpa) und holt KI-Einstellungen
+  # und Melderdaten ueber die internen Schnittstellen der Anwendung
+  # (/internal/klinq/ki, /internal/klinq/melder). Rollen und Berechtigungs-
+  # gruppen werden im Adminbereich des Intranets ueber AD-Gruppen vergeben.
+  # Einzelheiten: docs/klinq.md
+  # ---------------------------------------------------------------------------
+  klinq-db:
+    image: mysql:${DB_IMAGE_TAG:-9.7.2}
+    profiles: ["klinq"]
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${KLINQ_DB_NAME:-klinq}
+      MYSQL_USER: ${KLINQ_DB_USER:-klinq}
+      MYSQL_PASSWORD: ${KLINQ_DB_PASSWORD:-${DB_PASSWORD}}
+      MYSQL_ROOT_PASSWORD: ${KLINQ_DB_ROOT_PASSWORD:-${DB_ROOT_PASSWORD}}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=${KLINQ_DB_BUFFER_POOL:-256M}
+    volumes:
+      - klinq_db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - klinq_backend
+
+  # HTML -> PDF (WeasyPrint) fuer Uebergabeprotokolle; nur im internen Netz.
+  klinq-pdf:
+    build:
+      context: ./klinq
+      dockerfile: docker/pdf/Dockerfile
+    profiles: ["klinq"]
+    restart: unless-stopped
+    networks:
+      - klinq_backend
+
+  # SMTP-Relay fuer Entnahme-/Retourennachweise und Uebergabeprotokolle
+  # (Zugangsdaten ueber KLINQ_SMTP_*). Ausgehender Weg im Netz klinq_egress,
+  # damit der interne Bereich unberuehrt bleibt.
+  klinq-mail:
+    build:
+      context: ./klinq
+      dockerfile: docker/mail/Dockerfile
+    profiles: ["klinq"]
+    restart: unless-stopped
+    environment:
+      SMTP_HOST: ${KLINQ_SMTP_HOST:-}
+      SMTP_PORT: ${KLINQ_SMTP_PORT:-587}
+      SMTP_ENCRYPTION: ${KLINQ_SMTP_ENCRYPTION:-starttls}
+      SMTP_USERNAME: ${KLINQ_SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${KLINQ_SMTP_PASSWORD:-}
+      SMTP_TIMEOUT: ${KLINQ_SMTP_TIMEOUT:-10}
+      SMTP_FROM_ADDRESS: ${KLINQ_MAIL_FROM_ADDRESS:-}
+      SMTP_FROM_NAME: ${KLINQ_MAIL_FROM_NAME:-KLINQ}
+    networks:
+      - klinq_backend
+      - klinq_egress
+
+  klinq-app:
+    build:
+      context: ./klinq
+      dockerfile: docker/php/Dockerfile
+    profiles: ["klinq"]
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+      klinq-db:
+        condition: service_healthy
+      klinq-pdf:
+        condition: service_started
+      klinq-mail:
+        condition: service_started
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_NAME: KLINQ
+      # Oeffentliche Adresse: Unterpfad des Intranets (der Proxy entfernt ihn,
+      # KLINQ_BASE_PATH ergaenzt ihn in den Antworten).
+      APP_URL: ${APP_URL:-http://localhost:8080}/klinq
+      APP_TIMEZONE: ${KLINQ_TIMEZONE:-Europe/Berlin}
+      # Schluessel fuer gespeicherte Zugangsdaten (z. B. Help-Desk-Postfach);
+      # leer = Ableitung aus Datenbankpasswort und APP_URL.
+      APP_KEY: ${KLINQ_APP_KEY:-}
+      APP_COMPANY_NAME: ${KLINQ_COMPANY_NAME:-}
+      # Lokales Notfallkonto (wird nur ohne vorhandene Benutzer angelegt);
+      # die Anmeldung erfolgt ueber das Intranet.
+      ADMIN_USERNAME: ${KLINQ_ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${KLINQ_ADMIN_PASSWORD:-}
+      DB_HOST: klinq-db
+      DB_PORT: "3306"
+      DB_DATABASE: ${KLINQ_DB_NAME:-klinq}
+      DB_USERNAME: ${KLINQ_DB_USER:-klinq}
+      DB_PASSWORD: ${KLINQ_DB_PASSWORD:-${DB_PASSWORD}}
+      KLINQ_BASE_PATH: /klinq
+      PDF_SERVICE_URL: http://klinq-pdf:8000
+      MAIL_SERVICE_URL: http://klinq-mail:8025
+      MAIL_FROM_ADDRESS: ${KLINQ_MAIL_FROM_ADDRESS:-}
+      MAIL_FROM_NAME: ${KLINQ_MAIL_FROM_NAME:-KLINQ}
+      # Anbindung an das Intranet: Anmeldung, Rollen und Berechtigungen.
+      LANPA_ENABLED: "true"
+      LANPA_BASE_URL: ${APP_URL:-http://localhost:8080}
+      LANPA_INTERNAL_URL: http://app
+      KLINQ_SSO_SECRET: ${KLINQ_SSO_SECRET:-}
+      # Dienst-Token der internen Schnittstellen (Volume sso_token der
+      # Anwendung, schreibgeschuetzt).
+      KLINQ_SERVICE_TOKEN_FILE: /run/intranet-sso/token
+      # Rechnername und Anmeldename des Melders: der auth-Container setzt
+      # X-Remote-User auf allen KLINQ-Pfaden und entfernt eingehende Werte.
+      HELPDESK_QUICK_REPORT_TRUST_USER_HEADER: "true"
+    volumes:
+      - klinq_uploads:/var/www/html/storage/uploads
+      - klinq_logs:/var/www/html/storage/logs
+      - klinq_labels:/var/www/html/storage/labels
+      - sso_token:/run/intranet-sso:ro
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1/health') !== false ? 0 : 1);"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+    networks:
+      - klinq
+      - klinq_backend
+      # Interne Schnittstellen der Anwendung (/internal/klinq/...).
+      - intranet
+
 volumes:
   db_data:
   clamav_data:
@@ -828,6 +972,11 @@ volumes:
   storage_tiering:
   storage_sync_state:
   storage_sync_catalog_data:
+  # KLINQ (Profil "klinq")
+  klinq_db:
+  klinq_uploads:
+  klinq_logs:
+  klinq_labels:
 
 networks:
   intranet:
@@ -861,6 +1010,16 @@ networks:
   storage_catalog:
     driver: bridge
     internal: true
+  # auth <-> KLINQ: der Proxy erreicht den KLINQ-Container (kein Zugang von aussen).
+  klinq:
+    driver: bridge
+  # Datenbank, PDF-Dienst und SMTP-Relay von KLINQ: nur KLINQ-App hat Zugang.
+  klinq_backend:
+    driver: bridge
+    internal: true
+  # Ausgehender Weg des SMTP-Relays von KLINQ (ohne Datenbank).
+  klinq_egress:
+    driver: bridge
 
 # Secrets liegen nach ./scripts/office-setup.sh in ./secrets/ (nicht
 # versioniert). Ohne Einrichtung verweisen sie auf leere Platzhalter, damit

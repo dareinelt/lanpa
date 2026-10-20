@@ -9,6 +9,7 @@ use App\Support\Html;
 /** @var array<string,string> $errors */
 /** @var list<array<string,mixed>> $subpages */
 /** @var list<array<string,mixed>> $alarmGroups */
+/** @var array<string,string> $knownTargets Bekannte interne Ziele (Pfad => Bezeichnung) */
 $isNew = ($item['id'] ?? null) === null;
 $action = $isNew ? '/admin/navigation/neu' : '/admin/navigation/bearbeiten';
 $type = (string) ($item['type'] ?? 'external');
@@ -45,6 +46,22 @@ $icons = [
             <p class="field__error" id="url-error"><?= Html::e($errors['url']) ?></p>
         <?php } ?>
     </div>
+
+    <?php if ($knownTargets !== []) { ?>
+        <div class="field" data-editor-url-target>
+            <label for="url_target">Bekanntes internes Ziel</label>
+            <select id="url_target" data-url-target aria-describedby="url_target-hint">
+                <option value="">— Ziel selbst im Feld „URL“ angeben —</option>
+                <?php foreach ($knownTargets as $targetPath => $targetLabel) { ?>
+                    <option value="<?= Html::e($targetPath) ?>" <?= (string) $item['url'] === $targetPath ? 'selected' : '' ?>><?= Html::e($targetLabel) ?></option>
+                <?php } ?>
+            </select>
+            <p class="field__hint" id="url_target-hint">
+                Setzt die URL auf ein bekanntes internes Ziel. „KLINQ-Meldeseite“ öffnet die
+                Störmeldung IT – ohne Gruppenzuordnung für alle angemeldeten Personen.
+            </p>
+        </div>
+    <?php } ?>
 
     <div class="field field--check" data-editor-proxy>
         <input type="checkbox" id="proxy_enabled" name="proxy_enabled" value="1"

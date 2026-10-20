@@ -45,6 +45,7 @@ final class NavigationController extends AdminController
             'pageScript' => 'editor.js',
             'subpages' => Container::navigation()->subpages(),
             'alarmGroups' => Container::alarmGroups()->activeItems(),
+            'knownTargets' => Container::klinqConfig()->internalTargets(),
             'item' => [
                 'id' => null,
                 'title' => '',
@@ -100,6 +101,7 @@ final class NavigationController extends AdminController
             'pageScript' => 'editor.js',
             'subpages' => Container::navigation()->subpages(),
             'alarmGroups' => Container::alarmGroups()->activeItems(),
+            'knownTargets' => Container::klinqConfig()->internalTargets(),
             'item' => $item,
             'errors' => [],
         ]);
@@ -336,6 +338,7 @@ final class NavigationController extends AdminController
             'pageScript' => 'editor.js',
             'subpages' => Container::navigation()->subpages(),
             'alarmGroups' => Container::alarmGroups()->activeItems(),
+            'knownTargets' => Container::klinqConfig()->internalTargets(),
             'item' => $payload,
             'errors' => $exception->errors(),
         ], 422);

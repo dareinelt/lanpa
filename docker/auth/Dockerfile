@@ -96,6 +96,7 @@ COPY docker/auth/ntlm.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/auth/common.conf /etc/apache2/intranet/common.conf
 COPY docker/auth/office.conf /etc/apache2/intranet/office.conf
 COPY docker/auth/llmint.conf /etc/apache2/intranet/llmint.conf
+COPY docker/auth/klinq.conf /etc/apache2/intranet/klinq.conf
 COPY docker/auth/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/auth/sso-routes.sh /usr/local/bin/sso-routes.sh
 COPY docker/auth/tls-sync.sh /usr/local/bin/tls-sync.sh

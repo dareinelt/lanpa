@@ -129,6 +129,8 @@
  * Lokale KI: Verbindungstest im Overlay. Sendet die aktuellen (auch
  * ungespeicherten) Formularwerte, prueft /models und zeigt die Antwort des
  * Modells auf die Testnachricht. Inhalte werden nur per textContent gesetzt.
+ * Das Ziel der Pruefung steht in data-ai-test-endpoint am Formular
+ * (Standard: Office, abweichend: KLINQ).
  */
 (function () {
     'use strict';
@@ -149,6 +151,7 @@
     var closer = document.getElementById('ai-test-close');
     var controller = null;
     var timer = null;
+    var endpoint = form.getAttribute('data-ai-test-endpoint') || '/admin/office/ki/testen';
 
     button.hidden = false;
 
@@ -187,7 +190,7 @@
         }, 1000);
 
         controller = window.AbortController ? new AbortController() : null;
-        fetch('/admin/office/ki/testen', {
+        fetch(endpoint, {
             method: 'POST',
             credentials: 'same-origin',
             headers: {'Accept': 'application/json'},

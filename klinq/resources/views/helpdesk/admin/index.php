@@ -72,7 +72,7 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
             <?php foreach ($rows as $r): ?>
                 <tr>
                 <?php if (in_array($kind, ['types', 'statuses', 'priorities'], true)): ?>
-                    <td class="mono"><?= e($r['code'] ?? '–') ?><?php if ($kind === 'statuses'): ?><div class="text-xs text-muted"><?= e($statusCategories[$r['category']] ?? $r['category'] ?? '–') ?><?= !empty($r['pauses_sla']) ? ' · SLA pausiert' : '' ?></div><?php elseif ($kind === 'priorities'): ?><div class="text-xs text-muted">Stufe <?= (int) ($r['level'] ?? 0) ?><?= !empty($r['is_default']) ? ' · Standard' : '' ?></div><?php endif; ?></td>
+                    <td class="mono"><?= e($r['code'] ?? '–') ?><?php if ($kind === 'statuses'): ?><div class="text-xs text-muted"><?= e($statusCategories[$r['category']] ?? $r['category'] ?? '–') ?><?= !empty($r['pauses_sla']) ? ' · SLA pausiert' : '' ?><?= ($r['category'] ?? '') === 'pending' ? ' · Pausengrund' : '' ?></div><?php elseif ($kind === 'priorities'): ?><div class="text-xs text-muted">Stufe <?= (int) ($r['level'] ?? 0) ?><?= !empty($r['is_default']) ? ' · Standard' : '' ?></div><?php endif; ?></td>
                     <td><strong><?= e($r['name'] ?? '–') ?></strong><div class="text-xs text-muted"><?= e($r['description'] ?? '') ?></div></td>
                     <td><span class="color-swatch is-<?= e($r['color'] ?? 'neutral') ?>"></span><?= e($colorName($r['color'] ?? 'neutral')) ?></td>
                     <td class="mono"><?= (int) ($r['sort_order'] ?? 0) ?></td>

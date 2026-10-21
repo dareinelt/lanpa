@@ -57,19 +57,23 @@ final class TicketNotificationService
     public function statusChanged(array $ticket, string $fromCode, string $toCode): void
     {
         $key = 'status_' . $toCode . '_' . (int) ($ticket['version'] ?? 0);
+        $isPause = ($ticket['status_category'] ?? '') === 'pending';
         $message = match (true) {
             $toCode === TicketWorkflowService::RESOLVED => 'Ihr Ticket wurde gelöst. Sollte das Problem weiterhin bestehen, können Sie das Ticket innerhalb der Frist wieder öffnen.',
             $toCode === TicketWorkflowService::CLOSED => 'Ihr Ticket wurde geschlossen.',
             $toCode === TicketWorkflowService::CANCELLED => 'Ihr Ticket wurde storniert.',
             $toCode === TicketWorkflowService::WAITING_FEEDBACK => 'Zur weiteren Bearbeitung Ihres Tickets wird eine Rückmeldung von Ihnen benötigt.',
-            in_array($toCode, TicketWorkflowService::PAUSES, true) => 'Ihr Ticket wurde vorübergehend pausiert. Die Bearbeitung läuft automatisch weiter, sobald der angegebene Zeitpunkt erreicht ist.',
+            $isPause => 'Ihr Ticket wurde vorübergehend pausiert. Die Bearbeitung läuft automatisch weiter, sobald der angegebene Zeitpunkt erreicht ist.',
             default => 'Der Status Ihres Tickets hat sich geändert.',
         };
         $extra = '';
         if ($toCode === TicketWorkflowService::RESOLVED && !empty($ticket['resolution'])) {
             $extra = '<p><strong>Lösung:</strong><br>' . nl2br(self::e(RichText::toPlain((string) $ticket['resolution']))) . '</p>';
         }
-        $this->sendTo($ticket, $key, $this->requesterRecipients($ticket), 'Ticket ' . self::statusLabel($toCode), $this->intro($ticket, $message) . $extra);
+        $label = $isPause && !in_array($toCode, TicketWorkflowService::PAUSES, true)
+            ? 'pausiert: ' . (string) ($ticket['status_name'] ?? '')
+            : self::statusLabel($toCode);
+        $this->sendTo($ticket, $key, $this->requesterRecipients($ticket), 'Ticket ' . $label, $this->intro($ticket, $message) . $extra);
         if (in_array($fromCode, [TicketWorkflowService::RESOLVED, TicketWorkflowService::CLOSED], true) && $toCode === TicketWorkflowService::IN_PROGRESS) {
             $this->sendTo($ticket, 'reopened_team_' . (int) ($ticket['reopen_count'] ?? 0), $this->teamRecipients($ticket, false), 'Ticket wieder geöffnet', $this->intro($ticket, 'Das Ticket wurde wieder geöffnet.'));
         }

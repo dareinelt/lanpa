@@ -116,6 +116,24 @@ final class HelpdeskLogicTest extends TestCase
         $this->assertSame(false, in_array('waiting_feedback', $w->allowedTransitions('resolved'), true), 'Aus „Gelöst“ führt kein Weg in die Pausierung');
     }
 
+    public function testCustomPauseReasonFromCatalog(): void
+    {
+        $w = new TicketWorkflowService();
+        $pauseCodes = [...TicketWorkflowService::PAUSES, 'waiting_approval'];
+
+        $this->assertTrue($w->isPause('waiting_approval', $pauseCodes));
+        $this->assertTrue($w->requiresPauseUntil('waiting_approval', $pauseCodes));
+        $this->assertTrue($w->canTransition('open', 'waiting_approval', $pauseCodes));
+        $this->assertTrue($w->canTransition('in_progress', 'waiting_approval', $pauseCodes));
+        $this->assertTrue($w->canTransition('waiting_approval', 'in_progress', $pauseCodes));
+        $this->assertTrue($w->canTransition('waiting_approval', 'cancelled', $pauseCodes));
+        $this->assertContains(TicketWorkflowService::WAITING_FEEDBACK, $w->allowedTransitions('waiting_approval', $pauseCodes), 'Wechsel zwischen Kataloggründen');
+        $this->assertSame('paused', $w->eventFor('in_progress', 'waiting_approval', $pauseCodes));
+        $this->assertSame('resumed', $w->eventFor('waiting_approval', 'in_progress', $pauseCodes));
+        $this->assertFalse($w->isPause('waiting_approval'), 'Ohne Katalogliste bleibt der Code unbekannt');
+        $this->assertFalse(in_array('waiting_delivery', $w->allowedTransitions('in_progress', ['waiting_feedback']), true), 'Deaktivierte Gründe werden nicht angeboten');
+    }
+
     // ------------------------------------------------------------------ SLA
 
     private function sla(): TicketSlaService

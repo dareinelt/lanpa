@@ -440,7 +440,8 @@ final class TicketService
         $ticket = $this->get($id);
         $this->assertNotMerged($ticket);
         $fromCode = (string) $ticket['status_code'];
-        if (!$this->workflow->canTransition($fromCode, $toCode)) {
+        $pauseCodes = $this->pauseCodes();
+        if (!$this->workflow->canTransition($fromCode, $toCode, $pauseCodes)) {
             throw ValidationException::single('status', "Statuswechsel von „{$ticket['status_name']}“ nach „{$toCode}“ ist nicht erlaubt.");
         }
         if (!$system) {
@@ -463,7 +464,7 @@ final class TicketService
 
         // Pausierung: Grund ist der Zielstatus, das Ende (Datum und Uhrzeit) ist Pflicht.
         $pauseUntilUtc = null;
-        if ($this->workflow->requiresPauseUntil($toCode)) {
+        if ($this->workflow->requiresPauseUntil($toCode, $pauseCodes)) {
             $pauseUntilUtc = $this->pauseUntilUtc($pauseUntil);
             if ($pauseUntilUtc === null) {
                 throw ValidationException::single('pause_until', 'Bitte ein Ende der Pausierung mit Datum und Uhrzeit angeben.');
@@ -487,9 +488,9 @@ final class TicketService
         if (!empty($toStatus['pauses_sla'])) {
             $update['sla_paused_at'] = $now;
         }
-        if ($this->workflow->isPause($toCode)) {
+        if ($this->workflow->isPause($toCode, $pauseCodes)) {
             $update['paused_until'] = $pauseUntilUtc;
-        } elseif ($this->workflow->isPause($fromCode)) {
+        } elseif ($this->workflow->isPause($fromCode, $pauseCodes)) {
             // Pausierung beendet oder in einen anderen Status gewechselt
             $update['paused_until'] = null;
         }
@@ -534,12 +535,12 @@ final class TicketService
                 }
         }
 
-        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $fromCode, $toCode, $toStatus, $note, $isReopen): void {
+        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $fromCode, $toCode, $toStatus, $note, $isReopen, $pauseCodes): void {
             $id = (int) $ticket['id'];
             if (!$this->tickets->update($id, $update, $expectedVersion)) {
                 throw new ConflictException('Das Ticket wurde zwischenzeitlich geändert. Bitte neu laden.');
             }
-            $this->event($id, $this->workflow->eventFor($fromCode, $toCode), 'status', (string) $ticket['status_name'], (string) $toStatus['name'], $note !== null && trim($note) !== '' ? ['note' => trim($note)] : null);
+            $this->event($id, $this->workflow->eventFor($fromCode, $toCode, $pauseCodes), 'status', (string) $ticket['status_name'], (string) $toStatus['name'], $note !== null && trim($note) !== '' ? ['note' => trim($note)] : null);
             if ($note !== null && trim($note) !== '') {
                 $this->insertComment($ticket, trim($note), $isReopen || !$this->isAgent() ? 'public' : 'internal');
             }
@@ -1071,25 +1072,48 @@ final class TicketService
         return array_values(array_filter($events, static fn (array $e): bool => ($e['type'] ?? null) !== 'viewed'));
     }
 
+    /**
+     * Pausengründe aus dem Statuskatalog (Kategorie „Wartend“).
+     * Auch deaktivierte Status werden geliefert, damit bestehende Pausierungen korrekt fortgesetzt werden.
+     * @return array<int,string>
+     */
+    private function pauseCodes(): array
+    {
+        $codes = [];
+        foreach ($this->masterData->statuses(false) as $status) {
+            if (($status['category'] ?? '') === 'pending') {
+                $codes[] = (string) $status['code'];
+            }
+        }
+
+        return $codes;
+    }
+
     /** Zulässige Folgestatus für die Aktionsleiste (inkl. Berechtigungsprüfung). @return array<int,array<string,mixed>> */
     public function availableTransitions(array $ticket): array
     {
         $out = [];
         $from = (string) $ticket['status_code'];
-        foreach ($this->workflow->allowedTransitions($from) as $code) {
+        $pauseCodes = $this->pauseCodes();
+        foreach ($this->workflow->allowedTransitions($from, $pauseCodes) as $code) {
             if (!$this->currentUser->can($this->workflow->requiredPermission($from, $code))) {
                 continue;
             }
             $status = $this->masterData->statusByCode($code);
-            if ($status !== null) {
-                $out[] = $status + [
-                    'is_reopen' => $this->workflow->isReopen($from, $code),
-                    'is_pause' => $this->workflow->isPause($code),
-                    'requires_resolution' => $this->workflow->requiresResolution($code),
-                    'requires_reason' => $this->workflow->requiresReason($code),
-                    'requires_pause_until' => $this->workflow->requiresPauseUntil($code),
-                ];
+            if ($status === null) {
+                continue;
             }
+            // Deaktivierte Pausengründe werden nicht mehr angeboten.
+            if (empty($status['is_active']) && $this->workflow->isPause($code, $pauseCodes)) {
+                continue;
+            }
+            $out[] = $status + [
+                'is_reopen' => $this->workflow->isReopen($from, $code),
+                'is_pause' => $this->workflow->isPause($code, $pauseCodes),
+                'requires_resolution' => $this->workflow->requiresResolution($code),
+                'requires_reason' => $this->workflow->requiresReason($code),
+                'requires_pause_until' => $this->workflow->requiresPauseUntil($code, $pauseCodes),
+            ];
         }
 
         return $out;

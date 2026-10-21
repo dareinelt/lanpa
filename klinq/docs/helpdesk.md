@@ -40,7 +40,7 @@ Status sind Stammdaten (`ticket_statuses`) mit einer **Kategorie**, die das Verh
 |---|---|---|
 | `new` | Neu | eingegangen, noch nicht angenommen |
 | `open` | In Bearbeitung | Agent arbeitet; erste Reaktion zählt für die Reaktions-SLA |
-| `pending` | Pausiert (Warten auf Rückmeldung / Dritte / Lieferung / interne Rücksprache) | SLA-Uhr pausiert (`sla_paused_at`, `sla_paused_minutes`), Ende in `paused_until` |
+| `pending` | Pausiert (Gründe aus dem Statuskatalog, Kategorie „Wartend“) | SLA-Uhr pausiert (`sla_paused_at`, `sla_paused_minutes`), Ende in `paused_until` |
 | `resolved` | Gelöst | Lösung eingetragen; Melder kann bestätigen oder wieder öffnen |
 | `closed` | Geschlossen | endgültig (manuell oder automatisch nach `HELPDESK_AUTO_CLOSE_DAYS`) |
 | `cancelled` | Abgebrochen | mit Begründung |
@@ -54,9 +54,11 @@ Erlaubte Übergänge stehen je Status als Liste (`allowed_transitions`). Regeln:
 
 ### Pausieren
 
-Statt vieler gleichlautender Wartestände gibt es **einen** Statuswechsel „Pausieren“ mit vier Gründen (Kategorie `pending`,
-SLA pausiert). Der Grund ist der Zielstatus, das **Ende der Pausierung** (Datum **und** Uhrzeit) ist Pflicht und wird im
-Dialog über ein Kalender-Overlay (`<input type="datetime-local">`) erfasst:
+Statt vieler gleichlautender Wartestände gibt es **einen** Statuswechsel „Pausieren“. Die auswählbaren Gründe sind die
+aktiven Status des Statuskatalogs mit der Kategorie **Wartend** (`pending`, SLA pausiert) und werden in der
+Help-Desk-Administration unter **Status** gepflegt. Der Grund ist der Zielstatus, das **Ende der Pausierung**
+(Datum **und** Uhrzeit) ist Pflicht und wird im Dialog über ein Kalender-Overlay (`<input type="datetime-local">`) erfasst.
+Der Seeder legt diese Standardgründe an:
 
 | Code | Name |
 |---|---|
@@ -65,12 +67,16 @@ Dialog über ein Kalender-Overlay (`<input type="datetime-local">`) erfasst:
 | `waiting_delivery` | Warten auf Lieferung |
 | `waiting_internal` | Warten auf interne Rücksprache |
 
+- Neue Gründe werden als Status mit Kategorie „Wartend“ angelegt; deaktivierte Gründe verschwinden aus der Auswahl,
+  bestehende Pausierungen lassen sich weiterhin fortsetzen. Für die SLA-Gutschrift muss beim Status zusätzlich
+  „SLA pausieren“ gesetzt sein.
 - Das Ende liegt in `tickets.paused_until` (UTC) und muss in der Zukunft liegen.
 - Erreicht der Scheduler (`php bin/helpdesk.php process`) das Pausenende, setzt er das Ticket automatisch auf **In Bearbeitung**,
   schreibt das Ereignis `resumed` und schickt die Statusbenachrichtigung. Pausierte Minuten werden dabei der SLA gutgeschrieben.
-- Eine Antwort des Melders (Kommentar oder E-Mail) beendet die Pausierung ebenfalls sofort (Ereignis `resumed`).
+- Bei „Warten auf Rückmeldung“ (`waiting_feedback`) beendet eine Antwort des Melders (Kommentar oder E-Mail) die Pausierung
+  ebenfalls sofort (Ereignis `resumed`).
 - Zwischen Pausierungen kann direkt gewechselt werden; dabei wird das neue Pausenende gesetzt.
-- Die Ansicht „Pausiert“ (`/helpdesk/tickets?view=paused`) und die Dashboard-Kachel fassen alle vier Gründe zusammen.
+- Die Ansicht „Pausiert“ (`/helpdesk/tickets?view=paused`) und die Dashboard-Kachel fassen alle Gründe zusammen.
 
 ### Priorität, Auswirkung, Dringlichkeit
 

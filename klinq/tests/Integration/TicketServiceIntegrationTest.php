@@ -164,6 +164,47 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertNull($ticket['resolved_at']);
     }
 
+    public function testCustomPauseReasonFromStatusCatalog(): void
+    {
+        $masterData = $this->c->get(TicketMasterDataRepository::class);
+        $statusId = $masterData->createIn('ticket_statuses', [
+            'code' => 'waiting_approval',
+            'name' => 'Warten auf Freigabe',
+            'category' => 'pending',
+            'color' => 'neutral',
+            'pauses_sla' => 1,
+            'is_active' => 1,
+            'sort_order' => 75,
+        ]);
+
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        $this->service()->changeStatus($id, 'in_progress');
+
+        $transitions = $this->service()->availableTransitions($this->service()->get($id));
+        $pause = null;
+        foreach ($transitions as $transition) {
+            if ($transition['code'] === 'waiting_approval') {
+                $pause = $transition;
+            }
+        }
+        $this->assertNotNull($pause, 'Katalogstatus erscheint als Pausengrund');
+        $this->assertSame(1, (int) $pause['is_pause']);
+        $this->assertSame(1, (int) $pause['requires_pause_until']);
+
+        $ticket = $this->service()->changeStatus($id, 'waiting_approval', null, null, null, null, false, date('Y-m-d H:i', strtotime('+2 days')));
+        $this->assertSame('waiting_approval', $ticket['status_code']);
+        $this->assertNotNull($ticket['paused_until']);
+
+        $ticket = $this->service()->changeStatus($id, 'in_progress');
+        $this->assertSame('in_progress', $ticket['status_code']);
+        $this->assertNull($ticket['paused_until']);
+
+        $masterData->updateIn('ticket_statuses', $statusId, ['is_active' => 0]);
+        $codes = array_column($this->service()->availableTransitions($this->service()->get($id)), 'code');
+        $this->assertFalse(in_array('waiting_approval', $codes, true), 'Deaktivierte Pausengründe verschwinden aus der Auswahl');
+    }
+
     public function testCancelRequiresReason(): void
     {
         $ticket = $this->createTicket();

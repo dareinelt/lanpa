@@ -271,7 +271,16 @@ final class OrvantaApiController extends Controller
         return $this->handle($request, function (array $access): array {
             // Gesendet wird immer als der Benutzer, auch aus einem weiteren
             // Postfach: So prueft Exchange "Senden als" fuer den Absender.
-            $result = $this->mail($access)->send($access['primary'], $this->withSignature($this->mailPayload($access), $access), $this->str('draft_id'), $this->str('change_key'));
+            // Ist Exchange kurz nicht erreichbar, wandert der Auftrag in die
+            // Warteschlange und der Dienst scripts/mail_worker.php holt ihn nach.
+            $result = Container::orvantaMailQueue()->send(
+                $this->mail($access),
+                $access['uid'],
+                $access['primary'],
+                $this->withSignature($this->mailPayload($access), $access),
+                $this->str('draft_id'),
+                $this->str('change_key')
+            );
             $this->rememberRecipients($access);
 
             return $result + ['message' => 'Die Nachricht wurde gesendet.'];
@@ -313,15 +322,18 @@ final class OrvantaApiController extends Controller
     public function respond(Request $request): Response
     {
         return $this->handle($request, function (array $access): array {
-            $result = $this->mail($access)->respond(
+            $mode = $this->str('mode', 'reply');
+            $result = Container::orvantaMailQueue()->respond(
+                $this->mail($access),
+                $access['uid'],
                 $access['primary'],
                 $this->requireId($this->str('id')),
-                $this->str('mode', 'reply'),
+                $mode,
                 $this->withSignature($this->mailPayload($access), $access)
             );
             $this->rememberRecipients($access);
 
-            return $result + ['message' => $this->str('mode') === 'forward' ? 'Die Nachricht wurde weitergeleitet.' : 'Die Antwort wurde gesendet.'];
+            return $result + ['message' => $mode === 'forward' ? 'Die Nachricht wurde weitergeleitet.' : 'Die Antwort wurde gesendet.'];
         }, true);
     }
 

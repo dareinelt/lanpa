@@ -209,6 +209,7 @@ flowchart LR
 | `OrvantaRecipientService` | `app/Services/Orvanta/` | Empfänger-Vorschläge für An/Cc/Bcc: Telefonliste + Verlauf gesendeter Adressen (versteckte Datei `.empfaenger.json` in der Nextcloud des Benutzers, kurz in der Sitzung gehalten) |
 | `OrvantaNotificationService` | `app/Services/Orvanta/` | Fällige Erinnerungen ermitteln, zustellen, verschieben, schließen; Einträge für die Kopfzeile; für Proxy-Benutzer aus dem lokalen Kalender (`syncLocal()`, entfernt auch Erinnerungen zu gelöschten Terminen) |
 | `OrvantaCalendarService` | `app/Services/Orvanta/` | Lokaler Kalender für Proxy-Benutzer (Abschnitt 4b-1): Termine anlegen/ändern/verschieben/löschen, Einladungen (`REQUEST`), Absagen (`CANCEL`) und Antworten (`REPLY`) verarbeiten, idempotenter Versand über die Auftragstabelle, Erinnerungsquelle |
+| `OrvantaMailQueueService` / `OrvantaMailOutboxRepository` | `app/Services/Orvanta/`, `app/Repositories/` | Warteschlange für Mails, die während eines kurzfristigen Exchange-Ausfalls nicht zugestellt werden konnten (Abschnitt 4c-1, Tabelle `orvanta_mail_outbox`): direkter Versand mit Einreihen als Rückfallweg, Nachholen durch den Dienst `mail` |
 | `OrvantaCalendarMail` | `app/Services/Orvanta/` | Betreff und Text der Kalendermails (Einladung, Absage, Antwort) aus den Vorlagen `calendar_mail_*` samt Platzhaltern; Textwerte werden maskiert, die Beschreibung bleibt geprüftes HTML |
 | `ICalendar` | `app/Services/Orvanta/` | iCalendar nach RFC 5545 schreiben und lesen (Einladung, Absage, Antwort, Teilnehmerstatus); Grenzen gegen übergroße und verschachtelte Inhalte |
 | `OrvantaSignatureService` | `app/Services/Orvanta/` | Signaturvorlagen (Abschnitt 4a): Validierung, Zuordnung per AD-Gruppe, E-Mail-taugliches HTML aus Vorlage + Telefonliste + Design, `append()`/`strip()` beim Senden, `wrapTextColor()`/`stripTextColor()` für die Standardschriftfarbe des Editors |
@@ -251,6 +252,7 @@ flowchart LR
 | `orvanta_calendar_attendees` | Teilnehmer eines lokalen Termins (FK auf den Termin, Löschen kaskadiert) | `event_id` + `email` (unique), `display_name`, `role` (REQ-PARTICIPANT/OPT-PARTICIPANT), `response` (NEEDS-ACTION/ACCEPTED/TENTATIVE/DECLINED), `responded_at` |
 | `orvanta_calendar_outbox` | Idempotente Versandaufträge für Einladungen, Aktualisierungen, Absagen und Antworten; entstehen in derselben Transaktion wie der Termin | `idempotency_key` (unique), `user_uid`, `event_id`, `kind` (invite/…), `from_email` (Absender, damit ein späterer Versuch ohne Sitzung auskommt), `recipients`, `payload` (JSON), `status` (pending/sending/sent/failed), `attempts`, `last_error`, `next_attempt_at`, `sent_at` |
 | `orvanta_calendar_processed` | Bereits verarbeitete eingehende iCalendar-Objekte je Benutzer (gegen doppelte Termine und mehrfach versendete Antworten) | `user_uid` + `item_hash` (unique), `event_uid`, `method` (REQUEST/CANCEL/REPLY), `sequence`, `event_id` |
+| `orvanta_mail_outbox` | Mails, die wegen eines kurzfristigen Exchange-Ausfalls nicht zugestellt werden konnten (Migration 060, Abschnitt 4c-1); enthält den vollständigen Auftrag, damit der Dienst `mail` ohne Benutzersitzung nachsendet | `user_uid`, `backend` (exchange), `mailbox`, `from_email`, `kind` (new/reply/replyall/forward), `subject`, `recipients`, `payload` (JSON mit base64-Anhängen), `draft_id`, `change_key`, `status` (pending/sending/sent/failed), `attempts`, `last_error`, `next_attempt_at`, `sent_at` |
 | `orvanta_archives` | Langzeitarchiv je Benutzer (Migration 038) | `user_uid` (unique), `mailbox`, `storage_folder`, `format_version`, `status` (active/error), Zähler, `last_successful_run`, `last_notice` |
 | `orvanta_archive_folders` | Abbild der Exchange-Ordner im Archiv | `archive_id` + `folder_hash` (unique), `exchange_folder_id`, `name`, `path` |
 | `orvanta_archive_items` | Journal und Suchindex je archivierter Nachricht – die Inhalte selbst liegen nur in den Containern | `archive_id` + `item_hash` (unique), `internet_message_id`, `subject`, `from_*`, `recipients`, `item_date`, `kind` (immer `mime`; `json` ist reserviert und wird nicht mehr geschrieben), `content_hash`, `chunk_name`/`chunk_offset`/`chunk_length`, `search_text`, `status` (pending/committed/deleted/failed) |
@@ -632,6 +634,47 @@ durch Orvanta. Ohne Migration 043 arbeitet Orvanta unverändert mit dem
 konfigurierten Server weiter (die Verteilung fällt still auf ihn zurück).
 Beendete Sitzungszeilen räumt der Archiv-Worker auf
 (`OrvantaExchangePool::purge()`, älter als 24 Stunden).
+
+---
+
+## 4c-1. Senden trotz kurzem Exchange-Ausfall (Warteschlange)
+
+Fällt ein Exchange-Server – oder die ganze DAG – für kurze Zeit aus, soll das
+Senden einer Mail nicht scheitern. Orvanta versucht den Versand weiterhin
+zuerst direkt; scheitert er an einem Ausfall, legt es die Nachricht in die
+Warteschlange `orvanta_mail_outbox` und schickt sie ab, sobald Exchange wieder
+antwortet. Der Benutzer sieht statt einer Fehlermeldung den Hinweis
+„Exchange ist derzeit nicht erreichbar. Die Nachricht wurde in die
+Warteschlange gestellt und wird automatisch gesendet, sobald Exchange wieder
+verfügbar ist.“
+
+**Was in die Warteschlange kommt:** nur Nachrichten, die den Server
+nachweislich **nicht** erreicht haben – Verbindungs-, Namens- und TLS-Fehler,
+HTTP-Fehler ohne auswertbare Antwort und die Fehlercodes, mit denen Exchange
+selbst einen vorübergehenden Ausfall meldet. Fachliche Fehler (unbekannter
+Empfänger, verweigerte Impersonation, „Senden als“ nicht erlaubt) und eine
+abgelehnte Anmeldung bleiben Fehler: Sie würden bei jedem Versuch erneut
+scheitern, und der Benutzer muss davon erfahren. Diese enge Auswahl schützt
+davor, dass eine bereits zugestellte Mail ein zweites Mal ankommt.
+
+**Was nachgeholt wird:** Der Dienst `mail` (`scripts/mail_worker.php`) prüft
+alle 5 Sekunden die Warteschlange und stellt fällige Aufträge zu – ohne dass
+der Benutzer angemeldet sein muss, denn der Auftrag enthält Empfänger, Text,
+Anhänge und Absenderpostfach vollständig. Nach einem Ausfall wächst die Wartezeit
+zwischen zwei Versuchen (30 s, 60 s, 120 s … höchstens 15 Minuten); nach zehn
+erfolglosen Versuchen gilt der Auftrag als gescheitert und wird nicht mehr
+versucht. Zugestellte Aufträge entfernt Orvanta nach 7 Tagen, gescheiterte nach
+30 Tagen.
+
+**Wichtig für den Betrieb:** Der Container `mail` muss Exchange genauso
+erreichen können wie der Container `app`. Fehlt diese Netzanbindung, bleiben
+die Aufträge liegen, bis sie als gescheitert gelten.
+
+**Grenzen:** Die Warteschlange gilt nur für Exchange-Postfächer. Postfächer am
+SMTP-/IMAP-Proxy (Abschnitt 4b) haben ihre eigene Warteschlange. Wird ein
+Postfach während der Wartezeit auf den Proxy umgestellt, sendet Orvanta den
+Auftrag nicht über einen anderen Weg – er wird als gescheitert vermerkt.
+Technische Einzelheiten: `orvanta-referenz.md`, Abschnitt 25.
 
 ---
 

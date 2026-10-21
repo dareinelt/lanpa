@@ -15,6 +15,9 @@ use RuntimeException;
  * ist (beides wertet der Nachrichtenfluss je Identitaetsquelle aus).
  * MALWARE kennzeichnet einen Anhang, den die Malware-Protection gesperrt hat;
  * das Frontend zeigt dazu nur eine allgemeine Meldung ohne Details.
+ * EXCHANGE_UNAVAILABLE kennzeichnet eine kurzfristig fehlende Antwort eines
+ * Exchange-Servers; eine Mail darf dann in die Warteschlange (orvanta_mail_outbox)
+ * und wird spaeter erneut versucht.
  */
 final class OrvantaException extends RuntimeException
 {
@@ -29,6 +32,9 @@ final class OrvantaException extends RuntimeException
 
     /** Pruefung durch die Malware-Protection nicht moeglich (Scanner nicht erreichbar). */
     public const MALWARE_UNAVAILABLE = 'malware_unavailable';
+
+    /** Exchange antwortet nicht oder meldet einen gestoerten Server (kurzfristig). */
+    public const EXCHANGE_UNAVAILABLE = 'exchange_unavailable';
 
     public function __construct(string $message, private readonly int $status = 502, ?\Throwable $previous = null, private readonly string $reason = '')
     {

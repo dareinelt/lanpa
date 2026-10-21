@@ -2722,6 +2722,9 @@
             request = api('/mail/senden', { body: payload });
         }
         request.then(function (result) {
+            // Exchange war kurz nicht erreichbar: Die Nachricht liegt in der
+            // Warteschlange und wird vom Dienst automatisch nachgeholt.
+            var queued = !asDraft && !!(result && result.queued);
             if (asDraft) {
                 // Entwurf bleibt geoeffnet; weitere Speicherungen aktualisieren ihn.
                 state.compose.draftId = result && result.id ? result.id : state.compose.draftId;
@@ -2734,7 +2737,9 @@
             } else {
                 closeDialog('compose');
             }
-            toast(asDraft ? 'Entwurf gespeichert.' : 'Nachricht gesendet.', 'success');
+            toast(queued
+                ? (result.message || 'Die Nachricht wurde in die Warteschlange gestellt.')
+                : (asDraft ? 'Entwurf gespeichert.' : 'Nachricht gesendet.'), queued ? 'info' : 'success');
             setStatus('');
             loadFolders().then(loadMessages);
         }).catch(function (error) {

@@ -654,6 +654,13 @@ Design des Intranets folgen:
 Die Datei wirkt bewusst nur auf `:root`. Ein eigenes Farbschema von KLINQ
 (z. B. `[data-theme]`) behält damit Vorrang.
 
+Farbpunkte bleiben fest: `--color-palette-*` in
+`klinq/public/css/themes/tokens.css` liefert die Farben der wählbaren
+Farbpunkte (Typen, Status, Prioritäten). Diese Werte werden weder von
+`lanpa.css` noch vom dunklen Modus überschrieben, damit „Blau“ immer blau und
+„Gelb“ immer gelb bleibt. `--color-info` folgt dagegen weiterhin dem Akzent
+des Intranets und ist deshalb für Farbpunkte ungeeignet.
+
 Verbraucher der Vollflächen-Schriftfarben sind `components/buttons.css`
 (`.btn-success`, `.btn-danger`), `components/toasts.css` (`.toast`) und
 `layout/shell.css` (`.nav-badge`, `.notification-badge`). Eingabefelder in

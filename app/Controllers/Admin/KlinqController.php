@@ -152,6 +152,7 @@ final class KlinqController extends AdminController
         }
         $merged['active'] = !empty($tile['active']) ? '1' : '';
         $merged['protected_access'] = !empty($tile['protected_access']) ? '1' : '';
+        $merged['open_in_new_tab'] = !empty($request->post['open_in_new_tab']) ? '1' : '';
 
         try {
             $validated = Container::navigation()->validate($merged, false, (int) $tile['id']);

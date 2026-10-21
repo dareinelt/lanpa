@@ -89,6 +89,7 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
             $type = (string) $item['type'];
             $isExternal = $type === 'external';
             $isAlarm = $type === 'alarm';
+            $opensNewTab = $isExternal || (!$isAlarm && !empty($item['open_in_new_tab']));
             $isProtected = !empty($item['protected_access']);
             $description = trim((string) ($item['description'] ?? ''));
             $shortDescription = trim((string) ($item['short_description'] ?? ''));
@@ -138,7 +139,7 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
                         class="tile__link tile__link--button"
                         data-protected-id="<?= $id ?>"
                         data-nav-href="<?= Html::e($href) ?>"
-                        data-nav-external="<?= $isExternal ? '1' : '0' ?>"
+                        data-nav-new-tab="<?= $opensNewTab ? '1' : '0' ?>"
                         data-nav-title="<?= Html::e((string) $item['title']) ?>"
                         <?= $description !== '' ? 'aria-describedby="' . Html::e($detailsId) . '"' : '' ?>>
                     <span class="tile__icon-wrap" aria-hidden="true">
@@ -156,7 +157,7 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
                 <a class="tile__link"
                    href="<?= Html::e($href) ?>"
                    data-nav-id="<?= $id ?>"
-                   <?= $isExternal ? 'target="_blank" rel="noopener noreferrer"' : '' ?>
+                   <?= $opensNewTab ? 'target="_blank" rel="' . ($isExternal ? 'noopener noreferrer' : 'noopener') . '"' : '' ?>
                    <?= $description !== '' ? 'aria-describedby="' . Html::e($detailsId) . '"' : '' ?>>
                     <span class="tile__icon-wrap" aria-hidden="true">
                         <?php require __DIR__ . '/icon.php'; ?>
@@ -167,7 +168,7 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
                             <span class="tile__short"><?= Html::e($shortDescription) ?></span>
                         <?php } ?>
                     </span>
-                    <?php if ($isExternal) { ?>
+                    <?php if ($opensNewTab) { ?>
                         <span class="visually-hidden">(öffnet in einem neuen Tab)</span>
                     <?php } ?>
                 </a>

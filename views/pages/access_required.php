@@ -25,7 +25,7 @@ use App\Support\Html;
             class="button button--primary"
             data-protected-id="<?= (int) $item['id'] ?>"
             data-nav-href="<?= Html::e($href) ?>"
-            data-nav-external="0"
+            data-nav-new-tab="<?= !empty($item['open_in_new_tab']) || (string) ($item['type'] ?? '') === 'external' ? '1' : '0' ?>"
             data-nav-title="<?= Html::e((string) $item['title']) ?>">
         Zugangscode anfordern
     </button>

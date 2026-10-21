@@ -16,6 +16,7 @@
     var proxyNetworkField = form.querySelector('[data-proxy-networks]');
     var targetField = form.querySelector('[data-editor-url-target]');
     var targetSelect = form.querySelector('[data-url-target]');
+    var newTabField = form.querySelector('[data-editor-new-tab]');
 
     function syncProxyNetworks() {
         if (proxyNetworkField) {
@@ -36,6 +37,10 @@
 
         if (targetField) {
             targetField.hidden = type !== 'internal';
+        }
+
+        if (newTabField) {
+            newTabField.hidden = type !== 'internal';
         }
 
         if (parentField) {

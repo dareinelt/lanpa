@@ -380,6 +380,11 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
                 <?= $tileError('icon') ?>
             </div>
             <div class="field field--check">
+                <input type="checkbox" id="tile_open_in_new_tab" name="open_in_new_tab" value="1" <?= !empty($tileValues['open_in_new_tab']) ? 'checked' : '' ?>>
+                <label for="tile_open_in_new_tab">KLINQ in einem neuen Tab öffnen</label>
+                <p class="field__hint">Ohne Haken öffnet die Kachel KLINQ im selben Tab.</p>
+            </div>
+            <div class="field field--check">
                 <input type="checkbox" id="tile_override_background" name="override_background" value="1" <?= !empty($tileValues['override_background']) ? 'checked' : '' ?>>
                 <label for="tile_override_background">Eigene Hintergrundfarbe/Deckkraft verwenden</label>
                 <p class="field__hint">Ohne Haken gelten die zentralen Standardwerte unter „Navigation“.</p>

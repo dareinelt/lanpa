@@ -61,6 +61,7 @@ final class NavigationController extends AdminController
                 'alarm_text' => '',
                 'alarm_group_id' => null,
                 'protected_access' => 0,
+                'open_in_new_tab' => 0,
                 'proxy_enabled' => 0,
                 'proxy_bypass_networks' => '',
                 'sort_order' => Container::navigationRepository()->nextSortOrder($parentId > 0 ? $parentId : null),
@@ -317,6 +318,7 @@ final class NavigationController extends AdminController
             'alarm_text' => (string) $request->input('alarm_text', ''),
             'alarm_group_id' => $request->inputInt('alarm_group_id', 0),
             'protected_access' => $request->has('protected_access'),
+            'open_in_new_tab' => $request->has('open_in_new_tab'),
             'proxy_enabled' => $request->has('proxy_enabled'),
             'proxy_bypass_networks' => (string) $request->input('proxy_bypass_networks', ''),
             'sort_order' => $request->inputInt('sort_order', 0),
@@ -330,6 +332,7 @@ final class NavigationController extends AdminController
         $payload['id'] = $id;
         $payload['active'] = $payload['active'] ? 1 : 0;
         $payload['protected_access'] = $payload['protected_access'] ? 1 : 0;
+        $payload['open_in_new_tab'] = $payload['open_in_new_tab'] ? 1 : 0;
         $payload['proxy_enabled'] = $payload['proxy_enabled'] ? 1 : 0;
 
         return $this->adminView('admin.navigation.form', [

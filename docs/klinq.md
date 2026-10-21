@@ -168,6 +168,11 @@ Sichtbarkeit und Reihenfolge werden anschließend wie bei jeder anderen Kachel
 kann KLINQ über sie betreten; der Direktaufruf von `/klinq-starten` prüft
 dieselbe Freigabe.
 
+In **KLINQ → Kachel → Kacheleinstellungen** legt die Option **„KLINQ in einem
+neuen Tab öffnen“** fest, ob die Kachel ein neues Browser-Tab öffnet. Ohne
+Haken (Vorgabe) öffnet KLINQ im selben Tab. Dieselbe Option steht für alle
+internen Ziele im Formular unter **Navigation → Eintrag bearbeiten** bereit.
+
 ### 4.2 Navigationselement „Störmeldung IT“
 
 Ein vorhandener Navigationspunkt (z. B. „Störmeldung IT“) lässt sich auf die

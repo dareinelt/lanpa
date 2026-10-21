@@ -441,7 +441,7 @@ try {
     $tsNew = $ts('new');
     $tsOpen = $ts('open');
     $tsProgress = $ts('in_progress');
-    $tsWaitUser = $ts('waiting_user');
+    $tsWaitUser = $ts('waiting_feedback');
     $tsResolved = $ts('resolved');
     $tsClosed = $ts('closed');
 

@@ -103,6 +103,7 @@ final class TicketMergeService
                 'cancelled_at' => $now,
                 'close_reason' => 'Duplikat von ' . $target['number'],
                 'sla_paused_at' => null,
+                'paused_until' => null,
                 'updated_by' => $userId,
             ]);
             $this->tickets->update($targetId, ['updated_by' => $userId]);

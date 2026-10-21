@@ -5,6 +5,7 @@
  *
  * Aufruf: php bin/helpdesk.php <befehl> [--quiet] [--limit=N] [--due]
  *   process  SLA-Zustände neu bewerten (Warnung/Verletzung), Eskalationen ausführen,
+ *            abgelaufene Pausierungen automatisch fortsetzen,
  *            gelöste Tickets nach HELPDESK_AUTO_CLOSE_DAYS automatisch schließen,
  *            Zuständigkeiten beenden und 2nd-Level-Tagesabschluss (23:59) verarbeiten.
  *   mail     E-Mail-Eingang abholen (IMAP oder .eml-Verzeichnis) und Nachrichten als neues Ticket
@@ -111,11 +112,12 @@ try {
 
 if (!$quiet) {
     printf(
-        "OK: %d Tickets geprüft, %d Warnungen, %d SLA-Verletzungen, %d Eskalationen, %d automatisch geschlossen, %d Zuständigkeiten beendet, %d Erinnerungskommentare.\n",
+        "OK: %d Tickets geprüft, %d Warnungen, %d SLA-Verletzungen, %d Eskalationen, %d Pausierungen beendet, %d automatisch geschlossen, %d Zuständigkeiten beendet, %d Erinnerungskommentare.\n",
         $summary['checked'] ?? 0,
         $summary['warnings'] ?? 0,
         $summary['breaches'] ?? 0,
         $summary['escalated'] ?? 0,
+        $summary['pauses_resumed'] ?? 0,
         $summary['auto_closed'] ?? 0,
         $summary['shifts_ended'] ?? 0,
         $summary['reminders_created'] ?? 0

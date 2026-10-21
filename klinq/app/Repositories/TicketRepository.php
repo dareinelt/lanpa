@@ -170,7 +170,7 @@ final class TicketRepository extends BaseRepository
      */
     public function viewCounts(int $userId, ?int $visibleUserId = null): array
     {
-        $views = ['mine', 'mine_open', 'unassigned', 'open', 'overdue', 'waiting_user', 'recently_resolved', 'recently_closed', 'all'];
+        $views = ['mine', 'mine_open', 'unassigned', 'open', 'overdue', 'paused', 'recently_resolved', 'recently_closed', 'all'];
         $counts = [];
         foreach ($views as $view) {
             $counts[$view] = $this->countSearch(['view' => $view, 'user_id' => $userId, 'visible_user_id' => $visibleUserId]);
@@ -223,8 +223,8 @@ final class TicketRepository extends BaseRepository
                 $where[] = "st.category IN ('new','open','pending')";
                 $where[] = "((t.resolution_due_at IS NOT NULL AND t.resolution_due_at < UTC_TIMESTAMP() AND t.sla_paused_at IS NULL) OR (t.first_response_at IS NULL AND t.response_due_at IS NOT NULL AND t.response_due_at < UTC_TIMESTAMP() AND t.sla_paused_at IS NULL) OR t.sla_resolution_state = 'breached')";
                 break;
-            case 'waiting_user':
-                $where[] = "st.code = 'waiting_user'";
+            case 'paused':
+                $where[] = "st.category = 'pending'";
                 break;
             case 'recently_resolved':
                 $where[] = "st.category = 'resolved'";
@@ -494,6 +494,12 @@ final class TicketRepository extends BaseRepository
         return $this->fetchAll(self::SELECT . " WHERE st.category = 'resolved' AND t.merged_into_ticket_id IS NULL AND t.resolved_at IS NOT NULL AND t.resolved_at < DATE_SUB(:now, INTERVAL {$days} DAY) ORDER BY t.resolved_at LIMIT {$limit}", ['now' => $reference]);
     }
 
+    /** Pausierte Tickets, deren Pausenende erreicht ist (automatische Fortsetzung). @return array<int,array<string,mixed>> */
+    public function pausedUntilReached(string $now, int $limit = 200): array
+    {
+        return $this->fetchAll(self::SELECT . " WHERE t.merged_into_ticket_id IS NULL AND t.paused_until IS NOT NULL AND t.paused_until <= :now AND st.pauses_sla = 1 ORDER BY t.paused_until LIMIT {$limit}", ['now' => $now]);
+    }
+
     // ------------------------------------------------------------------ Dashboard
 
     /** Kennzahlen für das Help-Desk-Dashboard. @return array<string,int> */
@@ -504,7 +510,7 @@ final class TicketRepository extends BaseRepository
                 SUM(st.category = 'new') AS new_count,
                 SUM(st.category IN ('new','open','pending')) AS open_count,
                 SUM(st.code = 'in_progress') AS in_progress,
-                SUM(st.code = 'waiting_user') AS waiting_user,
+                SUM(st.category = 'pending') AS paused,
                 SUM(p.code = 'critical' AND st.category IN ('new','open','pending')) AS critical,
                 SUM(st.category IN ('new','open','pending') AND t.sla_paused_at IS NULL AND ((t.resolution_due_at IS NOT NULL AND t.resolution_due_at < UTC_TIMESTAMP()) OR t.sla_resolution_state = 'breached')) AS overdue,
                 SUM(t.assignee_user_id = :uid AND st.category IN ('new','open','pending')) AS mine,

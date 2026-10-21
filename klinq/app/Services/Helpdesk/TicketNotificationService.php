@@ -57,11 +57,12 @@ final class TicketNotificationService
     public function statusChanged(array $ticket, string $fromCode, string $toCode): void
     {
         $key = 'status_' . $toCode . '_' . (int) ($ticket['version'] ?? 0);
-        $message = match ($toCode) {
-            TicketWorkflowService::RESOLVED => 'Ihr Ticket wurde gelöst. Sollte das Problem weiterhin bestehen, können Sie das Ticket innerhalb der Frist wieder öffnen.',
-            TicketWorkflowService::CLOSED => 'Ihr Ticket wurde geschlossen.',
-            TicketWorkflowService::CANCELLED => 'Ihr Ticket wurde storniert.',
-            TicketWorkflowService::WAITING_USER => 'Zur weiteren Bearbeitung Ihres Tickets wird eine Rückmeldung von Ihnen benötigt.',
+        $message = match (true) {
+            $toCode === TicketWorkflowService::RESOLVED => 'Ihr Ticket wurde gelöst. Sollte das Problem weiterhin bestehen, können Sie das Ticket innerhalb der Frist wieder öffnen.',
+            $toCode === TicketWorkflowService::CLOSED => 'Ihr Ticket wurde geschlossen.',
+            $toCode === TicketWorkflowService::CANCELLED => 'Ihr Ticket wurde storniert.',
+            $toCode === TicketWorkflowService::WAITING_FEEDBACK => 'Zur weiteren Bearbeitung Ihres Tickets wird eine Rückmeldung von Ihnen benötigt.',
+            in_array($toCode, TicketWorkflowService::PAUSES, true) => 'Ihr Ticket wurde vorübergehend pausiert. Die Bearbeitung läuft automatisch weiter, sobald der angegebene Zeitpunkt erreicht ist.',
             default => 'Der Status Ihres Tickets hat sich geändert.',
         };
         $extra = '';
@@ -291,7 +292,10 @@ final class TicketNotificationService
             TicketWorkflowService::RESOLVED => 'gelöst',
             TicketWorkflowService::CLOSED => 'geschlossen',
             TicketWorkflowService::CANCELLED => 'storniert',
-            TicketWorkflowService::WAITING_USER => 'wartet auf Ihre Rückmeldung',
+            TicketWorkflowService::WAITING_FEEDBACK => 'wartet auf Ihre Rückmeldung',
+            TicketWorkflowService::WAITING_THIRD_PARTY => 'wartet auf Dritte',
+            TicketWorkflowService::WAITING_DELIVERY => 'wartet auf Lieferung',
+            TicketWorkflowService::WAITING_INTERNAL => 'wartet auf interne Rücksprache',
             TicketWorkflowService::IN_PROGRESS => 'in Bearbeitung',
             default => 'aktualisiert',
         };

@@ -320,7 +320,7 @@ final class TicketController extends HelpdeskBaseController
         $id = $request->paramInt('id');
         $to = $request->string('status');
         $response = $this->attempt($request, function () use ($request, $id, $to): void {
-            $this->service->changeStatus($id, $to, $request->stringOrNull('note'), $request->stringOrNull('resolution'), $request->stringOrNull('reason'), $request->int('version'));
+            $this->service->changeStatus($id, $to, $request->stringOrNull('note'), $request->stringOrNull('resolution'), $request->stringOrNull('reason'), $request->int('version'), false, $request->stringOrNull('pause_until'));
         }, '/helpdesk/tickets/' . $id . '#status', false);
 
         return $response ?? $this->respond($request, 'Status geändert.', '/helpdesk/tickets/' . $id);

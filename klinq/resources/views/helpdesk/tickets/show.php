@@ -61,12 +61,20 @@ $percentBar = static function (?int $percent, string $state): string {
     <div class="alert alert-info"><?= icon('info') ?> Dieses Ticket wurde in <a href="/helpdesk/tickets/<?= (int) $ticket['merged_into_ticket_id'] ?>"><?= e($ticket['merged_into_number']) ?></a> zusammengeführt und ist schreibgeschützt.</div>
 <?php endif; ?>
 
+<?php
+$pauseTransitions = array_values(array_filter($transitions, static fn (array $t): bool => !empty($t['is_pause'])));
+$statusTransitions = array_values(array_filter($transitions, static fn (array $t): bool => empty($t['is_pause'])));
+$pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
+?>
 <?php if ($transitions !== [] && !$readOnly): ?>
 <section class="ticket-actions" id="status">
     <span class="text-muted text-sm">Status ändern:</span>
-    <?php foreach ($transitions as $t): ?>
+    <?php foreach ($statusTransitions as $t): ?>
         <button type="button" class="btn btn-sm <?= $t['category'] === 'resolved' || $t['category'] === 'closed' ? 'btn-primary' : ($t['category'] === 'cancelled' ? 'btn-danger' : 'btn-secondary') ?>" data-hd-status="<?= e($t['code']) ?>" data-hd-label="<?= e($t['name']) ?>" data-requires-resolution="<?= !empty($t['requires_resolution']) ? '1' : '0' ?>" data-requires-reason="<?= !empty($t['requires_reason']) ? '1' : '0' ?>"><?= e($t['name']) ?></button>
     <?php endforeach; ?>
+    <?php if ($pauseTransitions !== []): ?>
+        <button type="button" class="btn btn-sm btn-secondary" data-hd-status="<?= e($pauseTransitions[0]['code']) ?>" data-hd-label="<?= e($pauseTransitions[0]['name']) ?>" data-requires-resolution="0" data-requires-reason="0" data-hd-pause="1"><?= icon('clock') ?> <?= ($ticket['status_category'] ?? '') === 'pending' ? 'Pausierung ändern' : 'Pausieren' ?></button>
+    <?php endif; ?>
 </section>
 <?php endif; ?>
 
@@ -257,7 +265,10 @@ $percentBar = static function (?int $percent, string $state): string {
         <?php if ($sla === null): ?>
             <p class="text-muted text-sm">Kein SLA zugeordnet.</p>
         <?php else: ?>
-            <?php if ($slaInfo['paused']): ?><div class="sla-paused"><?= icon('clock', 'icon icon-xs') ?> SLA pausiert seit <?= fmt_datetime($ticket['sla_paused_at']) ?></div><?php endif; ?>
+            <?php if ($slaInfo['paused']): ?>
+                <div class="sla-paused"><?= icon('clock', 'icon icon-xs') ?> SLA pausiert seit <?= fmt_datetime($ticket['sla_paused_at']) ?></div>
+                <?php if (!empty($ticket['paused_until'])): ?><div class="text-xs text-muted">Pausiert bis <?= fmt_datetime($ticket['paused_until']) ?> – danach automatisch „In Bearbeitung“.</div><?php endif; ?>
+            <?php endif; ?>
             <?php foreach (['response' => 'Reaktion', 'resolution' => 'Lösung'] as $k => $label): $info = $slaInfo[$k]; ?>
             <div class="sla-target<?= $stateClass($info['state']) ?>">
                 <div class="sla-target-label"><?= $label ?> <span class="badge is-<?= $info['state'] === 'breached' ? 'danger' : ($info['state'] === 'warning' ? 'warning' : ($info['state'] === 'met' ? 'success' : 'neutral')) ?>"><?= e($stateLabel[$info['state']] ?? $info['state']) ?></span></div>
@@ -483,13 +494,28 @@ $percentBar = static function (?int $percent, string $state): string {
 </div>
 
 <?php if ($transitions !== [] && !$readOnly): ?>
-<dialog id="status-dialog" class="dialog">
+<dialog id="status-dialog" class="dialog" data-paused-until="<?= e($ticket['paused_until'] ?? '') ?>">
     <form method="post" action="/helpdesk/tickets/<?= $id ?>/status">
         <?= csrf_field() ?>
         <input type="hidden" name="version" value="<?= (int) $ticket['version'] ?>">
         <input type="hidden" name="status" value="">
         <div class="dialog-header"><h2>Status → <span data-status-label></span></h2><button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button></div>
         <div class="dialog-body">
+            <?php if ($pauseTransitions !== []): ?>
+            <div class="form-group" data-show-for="<?= e($pauseCodes) ?>">
+                <label for="st-pause-reason">Pausieren wegen</label>
+                <select id="st-pause-reason" name="pause_reason" data-hd-pause-reason>
+                    <?php foreach ($pauseTransitions as $p): ?>
+                        <option value="<?= e($p['code']) ?>"><?= e($p['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="form-group" data-show-for="<?= e($pauseCodes) ?>">
+                <label for="st-pause-until">Pausiert bis <span class="text-muted">(Datum und Uhrzeit)</span></label>
+                <input type="datetime-local" id="st-pause-until" name="pause_until" data-required-when-visible>
+                <p class="form-hint">Nach Ablauf läuft das Ticket automatisch weiter (Status „In Bearbeitung“).</p>
+            </div>
+            <?php endif; ?>
             <div class="form-group" data-show-for="resolved,closed">
                 <label for="st-resolution">Lösung <span class="text-muted">(Pflicht bei Gelöst/Geschlossen)</span></label>
                 <textarea id="st-resolution" name="resolution" rows="4" data-required-when-visible data-hd-field="ticket_resolution"><?= e($ticket['resolution'] ?? '') ?></textarea>

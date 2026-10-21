@@ -66,7 +66,7 @@ $barList = static function (array $rows): void {
 <div class="grid grid-4 mb-4">
     <a class="card stat-card is-info" href="/helpdesk/tickets?view=mine_open"><span class="stat-value"><?= (int) ($counts['new_count'] ?? 0) ?></span><span class="stat-label">Neu</span></a>
     <a class="card stat-card" href="/helpdesk/tickets?view=open"><span class="stat-value"><?= (int) ($counts['open_count'] ?? 0) ?> <span class="text-sm text-muted">/ <?= (int) ($counts['in_progress'] ?? 0) ?></span></span><span class="stat-label">Offen / in Bearbeitung</span></a>
-    <a class="card stat-card is-warning" href="/helpdesk/tickets?view=waiting_user"><span class="stat-value"><?= (int) ($counts['waiting_user'] ?? 0) ?></span><span class="stat-label">Wartet</span></a>
+    <a class="card stat-card is-warning" href="/helpdesk/tickets?view=paused"><span class="stat-value"><?= (int) ($counts['paused'] ?? 0) ?></span><span class="stat-label">Pausiert</span></a>
     <a class="card stat-card is-danger" href="/helpdesk/tickets?view=overdue"><span class="stat-value"><?= (int) ($counts['overdue'] ?? 0) ?></span><span class="stat-label">Überfällig</span></a>
     <a class="card stat-card is-danger" href="/helpdesk/tickets?view=critical"><span class="stat-value"><?= (int) ($counts['critical'] ?? 0) ?></span><span class="stat-label">Kritisch</span></a>
     <a class="card stat-card is-success" href="/helpdesk/tickets?view=mine_open"><span class="stat-value"><?= (int) ($counts['mine'] ?? 0) ?></span><span class="stat-label">Meine offenen</span></a>

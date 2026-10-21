@@ -14,6 +14,7 @@ use App\Repositories\TicketSlaRepository;
  * Zeitgesteuerte Verarbeitung (bin/helpdesk.php process):
  *  - SLA-Zustände bewerten (ok → warning → breached) und Warn-/Verletzungsmails senden
  *  - Eskalation an Eskalationsgruppe bzw. Gruppenleitung bei Schwellenüberschreitung
+ *  - Pausierte Tickets am angegebenen Pausenende automatisch fortsetzen
  *  - Gelöste Tickets nach Frist automatisch schließen
  *  - Tagesweise 1st-/2nd-Level-Zuständigkeit automatisch beenden (täglich 19:00 Uhr, APP_TIMEZONE)
  *  - 2nd-Level-Tagesabschluss (23:59 Uhr): „kein Kommentar erfolgt“-Kommentare für offene Tickets
@@ -40,8 +41,9 @@ final class HelpdeskSchedulerService
     public function run(?\DateTimeImmutable $now = null): array
     {
         $now ??= new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
-        $summary = ['checked' => 0, 'warnings' => 0, 'breaches' => 0, 'escalated' => 0, 'auto_closed' => 0, 'shifts_ended' => 0, 'reminders_created' => 0];
+        $summary = ['checked' => 0, 'warnings' => 0, 'breaches' => 0, 'escalated' => 0, 'pauses_resumed' => 0, 'auto_closed' => 0, 'shifts_ended' => 0, 'reminders_created' => 0];
         $summary = $this->evaluateSla($now, $summary);
+        $summary['pauses_resumed'] = $this->resumeExpiredPauses($now);
         $summary['auto_closed'] = $this->autoClose($now);
         $summary['shifts_ended'] = $this->supportShifts->endExpiredShifts($now);
         $summary['reminders_created'] = $this->reminders->createMissedComments($now);
@@ -149,6 +151,38 @@ final class HelpdeskSchedulerService
         $this->notifications->escalated($fresh, $level, $recipients);
 
         return true;
+    }
+
+    /**
+     * Pausierte Tickets, deren Pausenende erreicht ist, zurück auf „In Bearbeitung“ setzen.
+     * Die SLA-Uhr läuft dabei weiter (pausierte Minuten werden gutgeschrieben).
+     */
+    private function resumeExpiredPauses(\DateTimeImmutable $now): int
+    {
+        $inProgress = $this->masterData->statusByCode(TicketWorkflowService::IN_PROGRESS);
+        if ($inProgress === null) {
+            return 0;
+        }
+        $count = 0;
+        foreach ($this->tickets->pausedUntilReached($now->format('Y-m-d H:i:s')) as $ticket) {
+            $paused = $ticket['sla_paused_at'] !== null
+                ? (int) floor(($now->getTimestamp() - $this->sla->parse((string) $ticket['sla_paused_at'])->getTimestamp()) / 60)
+                : 0;
+            $this->tickets->update((int) $ticket['id'], [
+                'status_id' => (int) $inProgress['id'],
+                'sla_paused_at' => null,
+                'paused_until' => null,
+                'sla_paused_minutes' => (int) $ticket['sla_paused_minutes'] + max(0, $paused),
+                'response_due_at' => $ticket['first_response_at'] !== null ? $ticket['response_due_at'] : $this->sla->shiftDue($ticket['response_due_at'], $paused),
+                'resolution_due_at' => $this->sla->shiftDue($ticket['resolution_due_at'], $paused),
+            ]);
+            $this->tickets->addEvent((int) $ticket['id'], 'resumed', null, self::SYSTEM_USER, 'status', (string) $ticket['status_name'], (string) $inProgress['name'], ['auto' => true]);
+            $fresh = $this->tickets->find((int) $ticket['id']) ?? $ticket;
+            $this->notifications->statusChanged($fresh, (string) $ticket['status_code'], TicketWorkflowService::IN_PROGRESS);
+            $count++;
+        }
+
+        return $count;
     }
 
     /** Gelöste Tickets nach auto_close_days automatisch schließen. */

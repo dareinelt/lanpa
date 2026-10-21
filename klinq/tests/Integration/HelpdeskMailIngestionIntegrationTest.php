@@ -197,14 +197,15 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         $ticket = $this->createTicket();
         $service = $this->c->get(TicketService::class);
         $service->changeStatus((int) $ticket['id'], 'in_progress');
-        $service->changeStatus((int) $ticket['id'], 'waiting_user', 'Bitte Kabel prüfen.');
-        $this->assertSame('waiting_user', $service->get((int) $ticket['id'])['status_code']);
+        $service->changeStatus((int) $ticket['id'], 'waiting_feedback', 'Bitte Kabel prüfen.', null, null, null, false, date('Y-m-d H:i', strtotime('+2 days')));
+        $this->assertSame('waiting_feedback', $service->get((int) $ticket['id'])['status_code']);
 
         $result = $this->ingestion->ingestRaw($this->raw('rita@example.test', 'Re: [' . $ticket['number'] . '] Monitor', 'Kabel geprüft, Problem bleibt.'));
         $this->assertSame(TicketMailIngestionService::ACTION_COMMENT, $result['action']);
         $fresh = $service->get((int) $ticket['id']);
         $this->assertSame('in_progress', $fresh['status_code']);
         $this->assertNull($fresh['sla_paused_at']);
+        $this->assertNull($fresh['paused_until']);
     }
 
     public function testRequesterReplyReopensResolvedTicket(): void

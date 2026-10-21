@@ -1,5 +1,6 @@
 <?php require_once __DIR__ . '/../../partials/helpers.php'; ob_start();
 /** Öffentliches Störungsformular: nur Betreff und Beschreibung, alles Weitere wird erkannt. */
+$scripts = ['/js/helpdesk-media.js'];
 $detected = [];
 if (!empty($reporter['display_name'])) {
     $detected[] = ['Gemeldet von', $reporter['display_name'] . (!empty($reporter['username']) ? ' (' . $reporter['username'] . ')' : '')];
@@ -37,7 +38,9 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
             </div>
             <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">
                 <label for="q-description">Was ist passiert? <span class="required">*</span></label>
-                <textarea id="q-description" name="description" rows="7" required placeholder="Beschreiben Sie die Störung: Was funktioniert nicht? Seit wann? Welche Meldung erscheint?"><?= e(old('description')) ?></textarea>
+                <textarea id="q-description" name="description" rows="7" required placeholder="Beschreiben Sie die Störung: Was funktioniert nicht? Seit wann? Welche Meldung erscheint?" data-hd-media-images data-hd-media-preview="#q-description-preview"><?= e(old('description')) ?></textarea>
+                <div class="hd-media-preview" id="q-description-preview" hidden></div>
+                <p class="form-hint">Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
                 <?= field_error('description') ?>
             </div>
             <div class="quick-detected">

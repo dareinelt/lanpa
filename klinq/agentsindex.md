@@ -161,7 +161,8 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   ihn über `UserRepository::ticketFormMode()`, `rememberFormMode()`/`rememberTicketFormMode()` schreiben ihn nur
   bei Änderung.
 - **Bilder in Beschreibung und Kommentaren** liegen als base64-Data-URI im Text (Markdown `![Bild](data:…)`,
-  eingefügt per `STRG+V` durch `public/js/helpdesk-media.js`), gerendert über `App\Support\RichText`;
+  eingefügt per `STRG+V` durch `public/js/helpdesk-media.js`; im Feld als Marke `[Bild n]` mit Vorschau,
+  beim Absenden aufgelöst), gerendert über `App\Support\RichText`;
   Dateianhänge laufen weiter über `DocumentService` (`documents`, `entity_type = ticket`).
 - **Ticketnummern** folgen `HELPDESK_TICKET_PREFIX-JJJJ-NNNNNN`, vergeben über `ticket_sequences` analog zu
   den Inventarnummern (`TicketNumberService`).

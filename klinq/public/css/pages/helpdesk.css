@@ -437,6 +437,7 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
     gap: var(--space-2);
     margin-top: var(--space-2);
 }
+.hd-media-preview[hidden] { display: none; }
 .hd-media-thumb {
     margin: 0;
     max-width: 180px;
@@ -446,7 +447,17 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
     background: var(--color-surface);
 }
 .hd-media-thumb img { display: block; width: 100%; height: auto; }
-.hd-media-thumb figcaption { padding: 2px var(--space-1); font-size: var(--font-size-xs); color: var(--color-text-muted); }
+.hd-media-thumb figcaption { display: flex; align-items: center; justify-content: space-between; gap: var(--space-1); padding: 2px var(--space-1); font-size: var(--font-size-xs); color: var(--color-text-muted); }
+.hd-media-remove {
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--color-danger, #b3261e);
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+}
+.hd-media-remove:hover { text-decoration: none; }
 .hd-file-list {
     list-style: none;
     margin: var(--space-1) 0 0;

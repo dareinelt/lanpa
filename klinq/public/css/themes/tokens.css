@@ -28,6 +28,17 @@
     --color-neutral: #5b6b7b;
     --color-neutral-soft: #eceff2;
 
+    /*
+     * Feste Farben der waehlbaren Farbpunkte (Typen, Status, Prioritaeten).
+     * Sie werden weder vom Design des Intranets noch vom hellen/dunklen Modus
+     * ueberschrieben, damit "Blau" immer blau und "Gelb" immer gelb bleibt.
+     */
+    --color-palette-neutral: #5b6b7b;
+    --color-palette-info: #0f6cbd;
+    --color-palette-success: #107c41;
+    --color-palette-warning: #d9a300;
+    --color-palette-danger: #b3261e;
+
     /* Lesbare Textfarbe auf den Vollflaechen der Statusfarben. */
     --color-on-success: #ffffff;
     --color-on-warning: #ffffff;

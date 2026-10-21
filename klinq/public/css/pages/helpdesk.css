@@ -12,11 +12,11 @@
 .filter-bar .filter-toggle { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); align-self: end; padding-bottom: var(--space-2); }
 
 /* Prioritäts-Punkt */
-.prio-dot { display: inline-block; width: 10px; height: 10px; border-radius: var(--radius-full); margin-right: var(--space-1); vertical-align: middle; background: var(--color-neutral); }
-.prio-dot.is-info { background: var(--color-info); }
-.prio-dot.is-success { background: var(--color-success); }
-.prio-dot.is-warning { background: var(--color-warning); }
-.prio-dot.is-danger { background: var(--color-danger); }
+.prio-dot { display: inline-block; width: 10px; height: 10px; border-radius: var(--radius-full); margin-right: var(--space-1); vertical-align: middle; background: var(--color-palette-neutral); }
+.prio-dot.is-info { background: var(--color-palette-info); }
+.prio-dot.is-success { background: var(--color-palette-success); }
+.prio-dot.is-warning { background: var(--color-palette-warning); }
+.prio-dot.is-danger { background: var(--color-palette-danger); }
 
 /* SLA */
 .sla-cell { white-space: nowrap; font-size: var(--font-size-sm); }
@@ -169,11 +169,12 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 
 /* Administration */
 .admin-tabs { margin-bottom: var(--space-4); }
-.color-swatch { display: inline-block; width: 12px; height: 12px; border-radius: var(--radius-full); vertical-align: middle; margin-right: var(--space-1); background: var(--color-neutral); }
-.color-swatch.is-info { background: var(--color-info); }
-.color-swatch.is-success { background: var(--color-success); }
-.color-swatch.is-warning { background: var(--color-warning); }
-.color-swatch.is-danger { background: var(--color-danger); }
+/* Feste Palette: Farbpunkte bleiben in jedem Design gleich (siehe tokens.css). */
+.color-swatch { display: inline-block; width: 12px; height: 12px; border-radius: var(--radius-full); vertical-align: middle; margin-right: var(--space-1); background: var(--color-palette-neutral); }
+.color-swatch.is-info { background: var(--color-palette-info); }
+.color-swatch.is-success { background: var(--color-palette-success); }
+.color-swatch.is-warning { background: var(--color-palette-warning); }
+.color-swatch.is-danger { background: var(--color-palette-danger); }
 .rule-json { font-family: var(--font-mono); font-size: var(--font-size-sm); min-height: 140px; }
 .rule-hints { font-size: var(--font-size-xs); color: var(--color-text-muted); }
 .rule-hints code { background: var(--color-surface-alt); padding: 0 4px; border-radius: 3px; }

@@ -16,7 +16,6 @@
     var proxyNetworkField = form.querySelector('[data-proxy-networks]');
     var targetField = form.querySelector('[data-editor-url-target]');
     var targetSelect = form.querySelector('[data-url-target]');
-    var newTabField = form.querySelector('[data-editor-new-tab]');
 
     function syncProxyNetworks() {
         if (proxyNetworkField) {
@@ -26,21 +25,19 @@
 
     function syncFields() {
         var type = typeSelect ? typeSelect.value : 'external';
+        // "intern (neuer Tab)" ist eine Variante des internen Typs.
+        var isInternal = type === 'internal' || type === 'internal_new_tab';
 
         if (urlField) {
-            urlField.hidden = type !== 'external' && type !== 'internal';
+            urlField.hidden = type !== 'external' && !isInternal;
             var urlInput = urlField.querySelector('input');
             if (urlInput) {
-                urlInput.required = type === 'external' || type === 'internal';
+                urlInput.required = type === 'external' || isInternal;
             }
         }
 
         if (targetField) {
-            targetField.hidden = type !== 'internal';
-        }
-
-        if (newTabField) {
-            newTabField.hidden = type !== 'internal';
+            targetField.hidden = !isInternal;
         }
 
         if (parentField) {
@@ -75,7 +72,7 @@
                 return;
             }
             urlInput.value = targetSelect.value;
-            if (typeSelect && typeSelect.value !== 'internal') {
+            if (typeSelect && typeSelect.value !== 'internal' && typeSelect.value !== 'internal_new_tab') {
                 typeSelect.value = 'internal';
             }
             syncFields();

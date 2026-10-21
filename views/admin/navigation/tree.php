@@ -24,6 +24,9 @@ $renderNode = static function (array $item) use (&$renderNode, $childrenMap, $ty
     $id = (int) $item['id'];
     $type = (string) $item['type'];
     $typeLabel = $typeLabels[$type] ?? $type;
+    if ($type === 'internal' && !empty($item['open_in_new_tab'])) {
+        $typeLabel = 'intern (neuer Tab)';
+    }
     $children = $childrenMap[$id] ?? [];
     $active = (int) ($item['active'] ?? 1) === 1;
     ?>

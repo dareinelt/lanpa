@@ -218,3 +218,29 @@ Runner::test('Neuer Tab gilt nur fuer interne Ziele', static function (): void {
     Assert::same(1, (int) $service->find($internal)['open_in_new_tab']);
     Assert::same(0, (int) $service->find($external)['open_in_new_tab']);
 });
+
+Runner::test('Typ "intern (neuer Tab)" speichert internes Ziel mit neuem Tab', static function (): void {
+    $service = navigationTestService(navigationTestPdo());
+
+    $id = $service->create([
+        'title' => 'KLINQ',
+        'type' => 'internal_new_tab',
+        'url' => '/klinq',
+        'active' => true,
+    ]);
+
+    $created = $service->find($id);
+    Assert::same('internal', (string) $created['type']);
+    Assert::same(1, (int) $created['open_in_new_tab']);
+
+    $service->update($id, [
+        'title' => 'KLINQ',
+        'type' => 'internal',
+        'url' => '/klinq',
+        'active' => true,
+    ]);
+
+    $updated = $service->find($id);
+    Assert::same('internal', (string) $updated['type']);
+    Assert::same(0, (int) $updated['open_in_new_tab']);
+});

@@ -93,6 +93,9 @@ use App\Support\Html;
                     'page' => 'Textseite',
                 ];
                 $typeLabel = $typeLabels[$itemType] ?? $itemType;
+                if ($itemType === 'internal' && !empty($item['open_in_new_tab'])) {
+                    $typeLabel = 'intern (neuer Tab)';
+                }
                 $target = match ($itemType) {
                     'subpage' => '/unterseite?id=' . $id,
                     'page' => '/seite?id=' . $id,

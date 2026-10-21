@@ -30,7 +30,7 @@ final class NavigationController extends AdminController
     public function create(Request $request): Response
     {
         $type = (string) $request->query('type', 'external');
-        if (!Validator::isNavigationType($type)) {
+        if (!Validator::isNavigationType($type) && $type !== 'internal_new_tab') {
             $type = 'external';
         }
 

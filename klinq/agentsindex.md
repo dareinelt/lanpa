@@ -31,6 +31,8 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 - Ticket-Lebenszyklus inkl. Status-Workflow, SLA-Fristen/Eskalation, Zusammenführen, Verknüpfungen,
   Watcher, Arbeitszeiterfassung und Asset-Verknüpfung je Ticket
 - Ticketregeln (automatische Zuweisung/Kategorisierung), Vorlagen, Tags, Kategorien/Gruppen
+- Zwei Eingabemodi für neue Agenten-Tickets: klassisches Formular und achtstufiger Assistent
+  (`/helpdesk/tickets/new?modus=assistent`, gemeinsame Felder in `_fields.php`)
 - Benutzerportal (`/portal`) für eigene Tickets sowie ein anonymes Störungsmeldeformular (`/stoerung`)
   ohne Anmeldung (Melder/Rechner/AD-Daten werden serverseitig ermittelt)
 - E-Mail-Eingang per IMAP (neues Ticket oder Kommentar per Threading) und E-Mail-Benachrichtigungen
@@ -154,6 +156,13 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Suche, JSON-Endpunkte und der Systembereich ändern die Auswahl nicht.
 - **Help Desk ist per `HELPDESK_ENABLED` abschaltbar**, ohne Routen zu entfernen – die Berechtigungsprüfung
   bleibt aktiv, nur Navigation/Dashboard/Scheduler werden ausgeblendet.
+- **Eingabemodus für neue Tickets je Benutzer**: `users.ticket_form_mode` (`klassisch`/`assistent`) merkt den
+  zuletzt verwendeten Modus serverseitig (unabhängig vom Client). `TicketController::resolveFormMode()` liest
+  ihn über `UserRepository::ticketFormMode()`, `rememberFormMode()`/`rememberTicketFormMode()` schreiben ihn nur
+  bei Änderung.
+- **Bilder in Beschreibung und Kommentaren** liegen als base64-Data-URI im Text (Markdown `![Bild](data:…)`,
+  eingefügt per `STRG+V` durch `public/js/helpdesk-media.js`), gerendert über `App\Support\RichText`;
+  Dateianhänge laufen weiter über `DocumentService` (`documents`, `entity_type = ticket`).
 - **Ticketnummern** folgen `HELPDESK_TICKET_PREFIX-JJJJ-NNNNNN`, vergeben über `ticket_sequences` analog zu
   den Inventarnummern (`TicketNumberService`).
 - **SLA/Eskalation**: Fristen aus `ticket_slas` (je Kategorie/Priorität), Warn-/Eskalationsschwellen aus

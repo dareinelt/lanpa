@@ -194,4 +194,20 @@ final class UserServiceIntegrationTest extends DatabaseTestCase
         $svc = $this->c->get(UserService::class);
         $this->assertThrows(ValidationException::class, fn () => $svc->resetPassword($id, $users->find($id), self::PW, self::PW), 'Active Directory');
     }
+
+    public function testTicketFormModePreferenceIsRememberedPerUser(): void
+    {
+        $users = $this->c->get(UserRepository::class);
+        $adminId = $this->seedAdmin();
+        $otherId = $this->seedAdmin('zweiter-admin');
+
+        $this->assertSame('', $users->ticketFormMode($adminId), 'ohne Wahl kein bevorzugter Modus');
+
+        $users->rememberTicketFormMode($adminId, 'assistent');
+        $this->assertSame('assistent', $users->ticketFormMode($adminId));
+        $this->assertSame('', $users->ticketFormMode($otherId), 'Präferenz gilt je Benutzer');
+
+        $users->rememberTicketFormMode($adminId, 'klassisch');
+        $this->assertSame('klassisch', $users->ticketFormMode($adminId));
+    }
 }

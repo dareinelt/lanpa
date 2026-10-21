@@ -1472,6 +1472,7 @@ function orvantaRecipients(bool $nextcloudOk = true): array
     $pdo->exec('CREATE TABLE phonebook (
         id INTEGER PRIMARY KEY AUTOINCREMENT, identity_source_id INTEGER NOT NULL DEFAULT 0, external_id TEXT NOT NULL DEFAULT \'\',
         samaccount_name TEXT NULL, display_name TEXT NOT NULL, first_name TEXT NULL, last_name TEXT NULL, title TEXT NULL,
+        personnel_number TEXT NULL,
         phone TEXT NULL, phone_digits TEXT NULL, mobile TEXT NULL, email TEXT NULL, department TEXT NULL, ad_modified TEXT NULL,
         synced_at TEXT NULL, active INTEGER NOT NULL DEFAULT 1, visible INTEGER NOT NULL DEFAULT 1
     )');

@@ -95,6 +95,7 @@ final class PersonDirectoryServiceTest extends TestCase
                 'first_name' => 'Max',
                 'last_name' => 'Mustermann',
                 'title' => '',
+                'personnel_number' => '4711',
                 'phone' => '',
                 'mobile' => '',
                 'email' => '',
@@ -109,6 +110,7 @@ final class PersonDirectoryServiceTest extends TestCase
                 'first_name' => 'Nina',
                 'last_name' => 'Neu',
                 'title' => '',
+                'personnel_number' => '',
                 'phone' => '',
                 'mobile' => '',
                 'email' => '',
@@ -153,6 +155,7 @@ final class PersonDirectoryServiceTest extends TestCase
             'first_name' => 'Nina',
             'last_name' => 'Neu',
             'title' => 'Reinigungskraft',
+            'personnel_number' => '4712',
             'phone' => '0456 99',
             'mobile' => '0170 1234567',
             'email' => 'nina.neu@example.local',
@@ -170,6 +173,7 @@ final class PersonDirectoryServiceTest extends TestCase
         $this->assertSame('4d1f2c3b-5e2a-3d4c-8f9a-0b1c2d3e4f5a', $row['ad_object_guid']);
         $this->assertSame('Neu, Nina', $row['display_name']);
         $this->assertSame('Reinigungskraft', $row['position']);
+        $this->assertSame('4712', $row['personnel_number'], 'Die Personalnummer kommt aus dem Intranet.');
         $this->assertSame('0456 99', $row['phone'], 'Die Telefonnummer hat Vorrang vor der Mobilnummer.');
         $this->assertSame('nina.neu@example.local', $row['email']);
 

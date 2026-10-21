@@ -24,7 +24,8 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
      *
      * Ein Suchbegriff muss am Anfang eines Namensbestandteils stehen: direkt am
      * Anfang des Feldwerts (Praefix `term%`, damit die Indizes greifen) oder
-     * nach einem Leerzeichen. Die Telefonnummer wird als Teilstring gesucht.
+     * nach einem Leerzeichen. Telefonnummer und Personalnummer werden als
+     * Praefix gesucht.
      *
      * @return array{items:list<array<string,mixed>>,total:int}
      */
@@ -40,7 +41,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
         $total = (int) $countStatement->fetchColumn();
 
         $sql = 'SELECT id, identity_source_id, external_id, samaccount_name, display_name, first_name, last_name, title,
-                       phone, mobile, email, department, ad_modified, synced_at
+                       personnel_number, phone, mobile, email, department, ad_modified, synced_at
                   FROM phonebook
                  WHERE ' . $where . '
                  ORDER BY last_name ASC, first_name ASC, display_name ASC
@@ -119,6 +120,10 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
                 $params['d' . $index] = '%' . $this->escapeLike($digits) . '%';
             }
 
+            // Personalnummer: Praefix genuegt und haelt den Index nutzbar.
+            $parts[] = 'personnel_number LIKE :p' . $index;
+            $params['p' . $index] = $prefix;
+
             $conditions[] = '(' . implode(' OR ', $parts) . ')';
         }
 
@@ -188,7 +193,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
         }
         $statement = $this->pdo->prepare(
             'SELECT id, identity_source_id, external_id, samaccount_name, display_name, first_name, last_name,
-                    title, phone, mobile, email, department
+                    title, personnel_number, phone, mobile, email, department
                FROM phonebook
               WHERE active = 1 AND visible = 1 AND id = :id
               LIMIT 1'
@@ -349,10 +354,10 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
      * Spaltenliste des Upserts - an einer Stelle, damit Einzel- und
      * Sammelschreibweise nicht auseinanderlaufen.
      */
-    private const UPSERT_COLUMNS = 'external_id, identity_source_id, samaccount_name, display_name, first_name, last_name, title, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active';
+    private const UPSERT_COLUMNS = 'external_id, identity_source_id, samaccount_name, display_name, first_name, last_name, title, personnel_number, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active';
 
     /**
-     * Zeilen je Anweisung: 200 x 15 Platzhalter liegen weit unter dem Limit
+     * Zeilen je Anweisung: 200 x 16 Platzhalter liegen weit unter dem Limit
      * von MySQL (65535) und SQLite, halten den Speicherbedarf klein und
      * begrenzen die Zahl der Rundlaeufe auf einstellige Werte.
      */
@@ -364,7 +369,8 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
         for ($index = 0; $index < $rows; $index++) {
             $values[] = '(:external_id' . $index . ', :identity_source_id' . $index . ', :samaccount_name' . $index
                 . ', :display_name' . $index . ', :first_name' . $index . ', :last_name' . $index
-                . ', :title' . $index . ', :phone' . $index . ', :phone_digits' . $index . ', :mobile' . $index
+                . ', :title' . $index . ', :personnel_number' . $index
+                . ', :phone' . $index . ', :phone_digits' . $index . ', :mobile' . $index
                 . ', :email' . $index . ', :department' . $index . ', :ad_modified' . $index
                 . ', :synced_at' . $index . ', 1)';
         }
@@ -377,6 +383,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
                 first_name = VALUES(first_name),
                 last_name = VALUES(last_name),
                 title = VALUES(title),
+                personnel_number = VALUES(personnel_number),
                 phone = VALUES(phone),
                 phone_digits = VALUES(phone_digits),
                 mobile = VALUES(mobile),
@@ -403,6 +410,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
             $bindings['first_name' . $index] = $this->value($user['first_name'] ?? null);
             $bindings['last_name' . $index] = $this->value($user['last_name'] ?? null);
             $bindings['title' . $index] = $this->value($user['title'] ?? null);
+            $bindings['personnel_number' . $index] = $this->value($user['personnel_number'] ?? null);
             $bindings['phone' . $index] = $this->value($user['phone'] ?? null);
             $bindings['phone_digits' . $index] = Validator::normalizePhone($user['phone'] ?? null);
             $bindings['mobile' . $index] = $this->value($user['mobile'] ?? null);
@@ -434,7 +442,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     public function all(): array
     {
         $statement = $this->pdo->query(
-            'SELECT id, external_id, identity_source_id, samaccount_name, display_name, first_name, last_name, title, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible FROM phonebook ORDER BY id ASC'
+            'SELECT id, external_id, identity_source_id, samaccount_name, display_name, first_name, last_name, title, personnel_number, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible FROM phonebook ORDER BY id ASC'
         );
 
         /** @var list<array<string,mixed>> $rows */
@@ -540,9 +548,9 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     {
         $statement = $this->pdo->prepare(
             'INSERT INTO phonebook
-                (external_id, identity_source_id, samaccount_name, display_name, first_name, last_name, title, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible)
+                (external_id, identity_source_id, samaccount_name, display_name, first_name, last_name, title, personnel_number, phone, phone_digits, mobile, email, department, ad_modified, synced_at, active, visible)
              VALUES
-                (:external_id, :identity_source_id, :samaccount_name, :display_name, :first_name, :last_name, :title, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, :active, :visible)'
+                (:external_id, :identity_source_id, :samaccount_name, :display_name, :first_name, :last_name, :title, :personnel_number, :phone, :phone_digits, :mobile, :email, :department, :ad_modified, :synced_at, :active, :visible)'
         );
         $statement->execute($this->bindings($data));
 
@@ -569,6 +577,7 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
             'first_name' => $this->value($data['first_name'] ?? null),
             'last_name' => $this->value($data['last_name'] ?? null),
             'title' => $this->value($data['title'] ?? null),
+            'personnel_number' => $this->value($data['personnel_number'] ?? null),
             'phone' => $this->value($data['phone'] ?? null),
             'phone_digits' => $this->value($data['phone_digits'] ?? null),
             'mobile' => $this->value($data['mobile'] ?? null),

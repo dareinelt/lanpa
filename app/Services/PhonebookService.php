@@ -131,6 +131,7 @@ final class PhonebookService
             'first_name' => (string) ($row['first_name'] ?? ''),
             'last_name' => (string) ($row['last_name'] ?? ''),
             'title' => (string) ($row['title'] ?? ''),
+            'personnel_number' => (string) ($row['personnel_number'] ?? ''),
             'phone' => (string) ($row['phone'] ?? ''),
             'mobile' => (string) ($row['mobile'] ?? ''),
             'email' => (string) ($row['email'] ?? ''),

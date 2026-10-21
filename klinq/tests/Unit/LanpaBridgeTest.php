@@ -78,6 +78,7 @@ final class LanpaBridgeTest extends TestCase
                 'first_name' => 'Max',
                 'last_name' => 'Mustermann',
                 'title' => 'Systembetreuer',
+                'personnel_number' => '4711',
                 'phone' => '0815 4711',
                 'mobile' => '',
                 'email' => 'max@example.local',
@@ -98,6 +99,7 @@ final class LanpaBridgeTest extends TestCase
         $this->assertSame('mmustermann', $items[0]['username']);
         $this->assertSame('4d1f2c3b5e2a3d4c8f9a0b1c2d3e4f5a', $items[0]['external_id']);
         $this->assertSame('Systembetreuer', $items[0]['title']);
+        $this->assertSame('4711', $items[0]['personnel_number']);
         $this->assertSame('Niederlassung Nord', $items[0]['source']);
     }
 

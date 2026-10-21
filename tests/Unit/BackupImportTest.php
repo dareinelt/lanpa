@@ -142,6 +142,7 @@ function backupImportPdo(): PDO
             first_name VARCHAR(64) NULL,
             last_name VARCHAR(64) NULL,
             title VARCHAR(120) NULL,
+            personnel_number VARCHAR(64) NULL,
             phone VARCHAR(40) NULL,
             phone_digits VARCHAR(40) NULL,
             mobile VARCHAR(40) NULL,

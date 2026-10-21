@@ -60,6 +60,7 @@ return static function (Container $c): void {
         $c->get(SessionManager::class),
         $c->get(CsrfTokenManager::class),
         $c->get(AuditLogService::class),
-        $c->get(Logger::class)
+        $c->get(Logger::class),
+        $c->get(Config::class)
     ));
 };

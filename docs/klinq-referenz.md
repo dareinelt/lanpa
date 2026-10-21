@@ -135,7 +135,7 @@ sequenceDiagram
     K->>K: Signatur, iss, aud, exp, jti prüfen
     K->>K: Benutzer anlegen/abgleichen, Rolle + Gruppen setzen
     K->>K: Sitzung erneuern, Identität merken, Audit
-    K-->>B: 302 /dashboard
+    K-->>B: 302 /dashboard (bzw. zuletzt geöffnetes Modul)
 ```
 
 ### 4.1 Einzelheiten
@@ -186,7 +186,9 @@ Pfade:
 * `/sso`, `/login`, `/logout` (auch mit Unterpfad) sind gesperrt.
 
 Alles andere fällt auf `/dashboard` zurück. In KLINQ prüft zusätzlich
-`Url::safeLocalPath($next, '/dashboard')`.
+`Url::safeLocalPath($next)`. Fehlt `next` oder entspricht es dem Standardziel
+`/dashboard`, leitet KLINQ auf das zuletzt geöffnete Modul der Person um
+(`ModuleNavigation::startUrl()`, siehe `klinq/docs/helpdesk.md`).
 
 ---
 

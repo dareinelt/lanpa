@@ -30,6 +30,10 @@ Browser ──▶ LANPA /klinq/ (auth-Container, NTLM/Kerberos)
 Das Ticket enthält Anmeldename, Anzeigename, E-Mail, Telefon, Abteilung, Standort,
 Rechnername, IP-Adresse sowie die vom Intranet vergebenen Berechtigungen.
 
+Das Ziel nach dem Einstieg steht im Parameter `next` (z. B. `/stoerung` aus dem Störungsmeldeformular).
+Fehlt er oder ist er das Standardziel `/dashboard`, öffnet KLINQ das zuletzt verwendete Modul des
+Benutzers (siehe [helpdesk.md](helpdesk.md#bereichswechsel-in-der-oberfläche)).
+
 ## Konfiguration (`.env`)
 
 | Variable | Bedeutung |

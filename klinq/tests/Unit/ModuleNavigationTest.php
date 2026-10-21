@@ -118,6 +118,41 @@ final class ModuleNavigationTest extends TestCase
         $this->assertSame(7, $tickets[0]['badge']);
     }
 
+    public function testResolvesModuleFromRequestPath(): void
+    {
+        $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleForPath('/dashboard'));
+        $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleForPath('/assets'));
+        $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleForPath('/assets/42/edit'));
+        $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleForPath('/m'));
+        $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleForPath('/movements/open'));
+        $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleForPath('/cost-centers/3'));
+        $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleForPath('/labels'));
+        $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleForPath('/documents/12'));
+        $this->assertSame(ModuleNavigation::HELPDESK, ModuleNavigation::moduleForPath('/helpdesk'));
+        $this->assertSame(ModuleNavigation::HELPDESK, ModuleNavigation::moduleForPath('/helpdesk/tickets/7'));
+        $this->assertSame(ModuleNavigation::HELPDESK, ModuleNavigation::moduleForPath('/portal/knowledge'));
+
+        // Der Systembereich und neutrale Pfade (Profil, globale Suche, JSON-Endpunkte) ändern
+        // die gemerkte Auswahl nicht.
+        foreach (['/', '/profile', '/search', '/api/helpdesk/tickets/search', '/login', '/stoerung', '/reports', '/admin/users'] as $path) {
+            $this->assertNull(ModuleNavigation::moduleForPath($path), 'Pfad sollte neutral sein: ' . $path);
+        }
+    }
+
+    public function testStartUrlUsesLastModuleWhenAvailable(): void
+    {
+        $agent = $this->can(['helpdesk.view']);
+        $portal = $this->can(['portal.view']);
+
+        $this->assertSame('/helpdesk', ModuleNavigation::startUrl(ModuleNavigation::HELPDESK, $agent, true));
+        $this->assertSame('/portal', ModuleNavigation::startUrl(ModuleNavigation::HELPDESK, $portal, true));
+        $this->assertSame('/dashboard', ModuleNavigation::startUrl(ModuleNavigation::HELPDESK, $agent, false));
+        $this->assertSame('/dashboard', ModuleNavigation::startUrl(ModuleNavigation::HELPDESK, $this->can([]), true));
+        $this->assertSame('/dashboard', ModuleNavigation::startUrl(ModuleNavigation::ASSETS, $agent, true));
+        $this->assertSame('/dashboard', ModuleNavigation::startUrl(ModuleNavigation::SYSTEM, $agent, true));
+        $this->assertSame('/dashboard', ModuleNavigation::startUrl('', $agent, true));
+    }
+
     public function testDisabledHelpdeskHasNoItems(): void
     {
         $this->assertSame([], ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['helpdesk.view']), [], false));

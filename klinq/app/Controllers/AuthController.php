@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Config;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\SessionManager;
 use App\Core\View;
+use App\Repositories\UserRepository;
 use App\Security\CsrfTokenManager;
 use App\Security\CurrentUser;
 use App\Services\AuditLogService;
 use App\Services\AuthService;
+use App\Support\ModuleNavigation;
 use App\Support\Url;
 
 final class AuthController extends BaseController
@@ -22,7 +25,9 @@ final class AuthController extends BaseController
         private readonly AuthService $auth,
         private readonly SessionManager $session,
         private readonly CsrfTokenManager $csrf,
-        private readonly AuditLogService $audit
+        private readonly AuditLogService $audit,
+        private readonly UserRepository $users,
+        private readonly Config $config
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -30,7 +35,7 @@ final class AuthController extends BaseController
     public function showLogin(Request $request): Response
     {
         if ($this->currentUser->isAuthenticated()) {
-            return $this->redirect('/dashboard');
+            return $this->redirect($this->startUrl());
         }
 
         return $this->render('auth.login', [
@@ -59,7 +64,15 @@ final class AuthController extends BaseController
         $this->csrf->token();
         $this->audit->log('login', 'user', (int) $user['id'], (string) $user['username']);
 
-        return $this->redirect($redirect ?: '/dashboard');
+        return $this->redirect($redirect ?: $this->startUrl((string) ($user['last_module'] ?? '')));
+    }
+
+    /**
+     * Einstieg über die Anwendungsbasis: öffnet das zuletzt verwendete Modul.
+     */
+    public function start(Request $request): Response
+    {
+        return $this->redirect($this->startUrl());
     }
 
     public function logout(Request $request): Response
@@ -72,6 +85,25 @@ final class AuthController extends BaseController
         $this->session->destroy();
 
         return $this->redirect('/login');
+    }
+
+    /**
+     * Startseite für den angemeldeten Benutzer: zuletzt geöffnetes Modul, sonst Assetverwaltung.
+     *
+     * @param string|null $lastModule Bekannter Wert (z. B. aus der Anmeldung); null lädt ihn aus der Datenbank.
+     */
+    private function startUrl(?string $lastModule = null): string
+    {
+        if ($lastModule === null) {
+            $account = $this->users->find((int) $this->currentUser->id());
+            $lastModule = (string) ($account['last_module'] ?? '');
+        }
+
+        return ModuleNavigation::startUrl(
+            $lastModule,
+            fn (string $permission): bool => $this->currentUser->can($permission),
+            (bool) $this->config->get('helpdesk.enabled', true)
+        );
     }
 
     private function safeRedirect(string $target): string

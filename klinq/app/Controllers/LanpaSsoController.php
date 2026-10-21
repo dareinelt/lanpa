@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Config;
 use App\Core\Logger;
 use App\Core\Request;
 use App\Core\Response;
@@ -15,6 +16,7 @@ use App\Security\LanpaSsoToken;
 use App\Services\AuditLogService;
 use App\Services\Lanpa\LanpaIdentityService;
 use App\Services\Lanpa\LanpaUserService;
+use App\Support\ModuleNavigation;
 use App\Support\Url;
 
 /**
@@ -28,6 +30,9 @@ use App\Support\Url;
  */
 final class LanpaSsoController extends BaseController
 {
+    /** Ziel, das das Intranet ohne ausdruecklichen Wunsch uebergibt. */
+    private const DEFAULT_TARGET = '/dashboard';
+
     public function __construct(
         View $view,
         CurrentUser $currentUser,
@@ -37,7 +42,8 @@ final class LanpaSsoController extends BaseController
         private readonly SessionManager $session,
         private readonly CsrfTokenManager $csrf,
         private readonly AuditLogService $audit,
-        private readonly Logger $logger
+        private readonly Logger $logger,
+        private readonly Config $config
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -66,9 +72,24 @@ final class LanpaSsoController extends BaseController
             'rolle' => (string) $user['role'],
         ]);
 
-        $target = Url::safeLocalPath($request->queryString('next'), '/dashboard');
+        // Ohne ausdrueckliches Ziel (bzw. mit dem Standardziel /dashboard) entscheidet das
+        // zuletzt geoeffnete Modul des Benutzers.
+        $requested = Url::safeLocalPath($request->queryString('next'));
+        $target = $requested === '' || $requested === self::DEFAULT_TARGET
+            ? $this->startUrl($user)
+            : $requested;
 
         return $this->redirect($target)->withHeader('Cache-Control', 'no-store');
+    }
+
+    /** @param array<string,mixed> $user */
+    private function startUrl(array $user): string
+    {
+        return ModuleNavigation::startUrl(
+            (string) ($user['last_module'] ?? ''),
+            fn (string $permission): bool => $this->currentUser->can($permission),
+            (bool) $this->config->get('helpdesk.enabled', true)
+        );
     }
 
     private function rejected(string $message, int $status): Response

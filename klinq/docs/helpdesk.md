@@ -24,6 +24,8 @@ Help Desk und Assetverwaltung sind zwei eigenständige Module mit je eigenem Das
 
 Modulzuordnung und Navigationseinträge stehen zentral in `app/Support/ModuleNavigation.php`; das Layout (`resources/views/partials/app_layout.php`) rendert sie nur noch. Das aktive Modul ergibt sich aus dem `activeNav`-Schlüssel der Seite (`helpdesk*`/`portal*` → Help Desk, sonst Assetverwaltung). Der Fenstertitel folgt dem Muster `KLINQ - <Modul>`.
 
+KLINQ merkt sich je Benutzer das zuletzt geöffnete Modul: `users.last_module` wird in der `AuthorizationMiddleware` über `ModuleNavigation::moduleForPath()` gepflegt (nur bei einem Modulwechsel, nicht bei jedem Aufruf). Beim nächsten Start – Aufruf von `/`, Anmeldung oder Intranet-Einstieg ohne ausdrückliches Ziel – öffnet `ModuleNavigation::startUrl()` dieses Modul wieder. Ist der Help Desk abgeschaltet oder fehlt die Berechtigung (`helpdesk.view`/`portal.view`), bleibt `/dashboard` der Startpunkt. Neutrale Seiten (Profil, globale Suche, JSON-Endpunkte) und der Systembereich (Berichte, Import, Audit, Administration) ändern die Auswahl nicht.
+
 ## Ticket-Lebenszyklus
 
 ### Nummer

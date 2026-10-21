@@ -6,6 +6,7 @@ namespace App\Core;
 
 use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
+use App\Core\Config;
 use App\Middleware\AuthorizationMiddleware;
 use App\Middleware\CsrfMiddleware;
 use App\Middleware\RequestLogMiddleware;
@@ -157,7 +158,9 @@ final class ApplicationFactory
             $c->get(AuthService::class),
             $c->get(SessionManager::class),
             $c->get(CsrfTokenManager::class),
-            $c->get(AuditLogService::class)
+            $c->get(AuditLogService::class),
+            $c->get(UserRepository::class),
+            $c->get(Config::class)
         ));
         $c->singleton(DashboardController::class, static fn (Container $c): DashboardController => new DashboardController(
             $c->get(View::class),

@@ -147,6 +147,11 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 - **Elektronische Signatur bei Bewegungen**: Am Desktop (nicht mobil/Scan) kann ein Benutzer eine Entnahme/
   Retoure durch erneute Eingabe des eigenen Passworts signieren (`movements.signed_electronically/signed_at`).
   Nutzbar nur, wenn `users.can_sign_electronically` für den Benutzer gesetzt ist.
+- **Zuletzt geöffnetes Modul je Benutzer**: `users.last_module` (`assets`/`helpdesk`) pflegt die
+  `AuthorizationMiddleware` über `ModuleNavigation::moduleForPath()` (nur bei einem Wechsel); `/`, die lokale
+  Anmeldung und der Intranet-Einstieg ohne ausdrückliches Ziel nutzen `ModuleNavigation::startUrl()` und fallen
+  auf `/dashboard` zurück, wenn der Help Desk abgeschaltet ist oder die Berechtigung fehlt. Profil, globale
+  Suche, JSON-Endpunkte und der Systembereich ändern die Auswahl nicht.
 - **Help Desk ist per `HELPDESK_ENABLED` abschaltbar**, ohne Routen zu entfernen – die Berechtigungsprüfung
   bleibt aktiv, nur Navigation/Dashboard/Scheduler werden ausgeblendet.
 - **Ticketnummern** folgen `HELPDESK_TICKET_PREFIX-JJJJ-NNNNNN`, vergeben über `ticket_sequences` analog zu

@@ -25,7 +25,7 @@ return static function (Router $router, Container $c): void {
     $router->get('/health', static fn (): Response => Response::json(['status' => 'ok']), null, true);
 
     // Angemeldet
-    $router->get('/', static fn (): Response => Response::redirect('/dashboard'));
+    $router->get('/', static fn (Request $r): Response => $c->get(AuthController::class)->start($r));
     $router->get('/dashboard', static fn (Request $r): Response => $c->get(DashboardController::class)->index($r));
 
     foreach (glob($basePath . '/routes/modules/*.php') ?: [] as $module) {

@@ -10,6 +10,7 @@ use App\Core\Router;
 use App\Exceptions\ForbiddenException;
 use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
+use App\Support\ModuleNavigation;
 
 /**
  * Serverseitige Zugriffskontrolle je Route:
@@ -56,6 +57,12 @@ final class AuthorizationMiddleware
 
         if ($route->permission !== null && !$this->currentUser->can($route->permission)) {
             throw new ForbiddenException();
+        }
+
+        // Zuletzt geöffnetes Modul je Benutzer merken (siehe ModuleNavigation::startUrl()).
+        $module = ModuleNavigation::moduleForPath($request->path());
+        if ($module !== null && ($account['last_module'] ?? null) !== $module) {
+            $this->users->rememberLastModule((int) $account['id'], $module);
         }
 
         return $next($request);

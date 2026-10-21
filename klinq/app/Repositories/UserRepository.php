@@ -166,6 +166,20 @@ final class UserRepository extends BaseRepository
         $this->execute('UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = NOW() WHERE id = ?', [$id]);
     }
 
+    /**
+     * Merkt sich das zuletzt geöffnete Modul (Assetverwaltung oder Help Desk).
+     *
+     * Schreibt nur bei einer Änderung, damit normale Seitenaufrufe keine überflüssigen
+     * UPDATE-Statements erzeugen.
+     */
+    public function rememberLastModule(int $id, string $module): void
+    {
+        $this->execute(
+            'UPDATE users SET last_module = ? WHERE id = ? AND (last_module IS NULL OR last_module <> ?)',
+            [$module, $id, $module]
+        );
+    }
+
     public function recordLoginFailure(int $id, int $maxAttempts, int $lockMinutes): void
     {
         $this->execute(

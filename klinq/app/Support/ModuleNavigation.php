@@ -15,6 +15,10 @@ use ArrayAccess;
  * (Berichte, Import, Audit-Log, Administration) ist dort nur für Admins sichtbar (siehe
  * modules()). Diese Klasse ist die einzige Quelle für Modulzuordnung und
  * Navigationseinträge (siehe partials/app_layout.php).
+ *
+ * Zusätzlich wird je Benutzer das zuletzt geöffnete Modul gemerkt: moduleForPath()
+ * ordnet einen Anfragepfad zu, startUrl() liefert daraus die Startseite beim nächsten
+ * Öffnen der Anwendung.
  */
 final class ModuleNavigation
 {
@@ -27,6 +31,33 @@ final class ModuleNavigation
 
     /** Navigationsschlüssel, die zum Modul "Auswertung & System" gehören (nur für Admins). */
     private const SYSTEM_KEYS = ['reports', 'imports', 'audit', 'admin'];
+
+    /**
+     * Pfadpräfixe der beiden merkbaren Module (Assetverwaltung, Help Desk).
+     *
+     * Nur eindeutig zuzuordnende Seiten stehen hier; neutrale Pfade (Profil, globale Suche,
+     * JSON-Endpunkte) und der Systembereich (Berichte, Import, Audit, Administration) ändern
+     * die Auswahl bewusst nicht.
+     */
+    private const MODULE_PATHS = [
+        '/helpdesk' => self::HELPDESK,
+        '/portal' => self::HELPDESK,
+        '/dashboard' => self::ASSETS,
+        '/m' => self::ASSETS,
+        '/assets' => self::ASSETS,
+        '/movements' => self::ASSETS,
+        '/handover' => self::ASSETS,
+        '/documents' => self::ASSETS,
+        '/labels' => self::ASSETS,
+        '/licenses' => self::ASSETS,
+        '/orders' => self::ASSETS,
+        '/suppliers' => self::ASSETS,
+        '/employees' => self::ASSETS,
+        '/locations' => self::ASSETS,
+        '/cost-centers' => self::ASSETS,
+        '/manufacturers' => self::ASSETS,
+        '/articles' => self::ASSETS,
+    ];
 
     /** Ermittelt das Modul zu einem Navigationsschlüssel ($activeNav). */
     public static function moduleFor(string $activeNav): string
@@ -42,6 +73,42 @@ final class ModuleNavigation
         }
 
         return self::ASSETS;
+    }
+
+    /**
+     * Modul zu einem Anfragepfad; null, wenn der Pfad zu keinem Modul gehört.
+     *
+     * Grundlage für das Merken des zuletzt geöffneten Moduls je Benutzer.
+     */
+    public static function moduleForPath(string $path): ?string
+    {
+        $path = '/' . trim($path, '/');
+        if ($path === '/') {
+            return null;
+        }
+
+        foreach (self::MODULE_PATHS as $prefix => $module) {
+            if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
+                return $module;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Startseite beim nächsten Öffnen der Anwendung.
+     *
+     * Das zuletzt geöffnete Modul gewinnt, sofern es für den Benutzer verfügbar ist
+     * (Modulschalter und Berechtigung); sonst bleibt Assetverwaltung der Standard.
+     */
+    public static function startUrl(string $lastModule, callable $can, bool $helpdeskEnabled): string
+    {
+        if ($lastModule === self::HELPDESK && $helpdeskEnabled && ($can('helpdesk.view') || $can('portal.view'))) {
+            return self::home(self::HELPDESK, $can);
+        }
+
+        return self::home(self::ASSETS, $can);
     }
 
     public static function label(string $module): string

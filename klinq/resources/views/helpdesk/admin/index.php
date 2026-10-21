@@ -7,14 +7,15 @@ $cellActive = static fn (array $r): string => array_key_exists('is_active', $r) 
 $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_array($r['members'] ?? null) ? count($r['members']) : 0));
 ?>
 <div class="page-header">
-    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted">Stammdaten, SLAs, Vorlagen und Automatisierungen.</p></div>
-    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new"><?= icon('plus') ?> Neu</a></div>
+    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : 'Stammdaten, SLAs, Vorlagen und Automatisierungen.' ?></p></div>
+    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isQuickReport): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new"><?= icon('plus') ?> Neu</a><?php endif; ?></div>
 </div>
 <div class="status-tabs admin-tabs" role="tablist" aria-label="Administrationsbereiche">
     <?php foreach ($kinds as $key => $label): ?>
         <a class="status-tab<?= $kind === $key ? ' is-active' : '' ?>" href="/helpdesk/admin?tab=<?= e($key) ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
 </div>
+<?php if (!$isQuickReport): ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Konfiguration</h2><span class="text-muted text-sm">aus Umgebung</span></div>
     <div class="grid grid-4">
@@ -23,6 +24,7 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
         <?php endforeach; ?>
     </div>
 </div>
+<?php else: ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Störungsformular für Anwender</h2><span class="text-muted text-sm"><?= $quickReport['enabled'] ? 'aktiv' : 'deaktiviert' ?></span></div>
     <p class="text-muted text-sm">Öffentlicher Link ohne Anmeldung – nur Betreff und Beschreibung. Melder (inkl. AD-Abgleich), Rechnername und IP-Adresse werden automatisch erfasst. Diesen Link im Intranet, als Desktopverknüpfung oder per Gruppenrichtlinie verteilen.</p>
@@ -36,8 +38,12 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
             <a class="btn btn-secondary" href="/stoerung" target="_blank" rel="noopener"><?= icon('ticket') ?> Formular öffnen</a>
         </div>
     </div>
-    <p class="text-muted text-xs mb-0">Tickets werden unter dem Konto <strong><?= e($quickReport['system_user']) ?></strong> angelegt (benötigt das Recht helpdesk.create).<?= $quickReport['networks'] !== [] ? ' Zugriff beschränkt auf: ' . e(implode(', ', $quickReport['networks'])) . '.' : '' ?><?= $quickReport['enabled'] ? '' : ' Aktivierung über HELPDESK_QUICK_REPORT_ENABLED=true.' ?></p>
+    <?php if ($quickReport['networks'] !== [] || !$quickReport['enabled']): ?>
+    <p class="text-muted text-xs mb-0"><?= $quickReport['networks'] !== [] ? 'Zugriff beschränkt auf: ' . e(implode(', ', $quickReport['networks'])) . '.' : '' ?><?= $quickReport['enabled'] ? '' : ' Aktivierung über HELPDESK_QUICK_REPORT_ENABLED=true.' ?></p>
+    <?php endif; ?>
 </div>
+<?php endif; ?>
+<?php if (!$isQuickReport): ?>
 <div class="card card-flush">
     <div class="card-header"><h2><?= e($kinds[$kind] ?? 'Bereich') ?></h2><span class="text-muted text-sm"><?= count($rows) ?> Einträge</span></div>
     <?php if ($rows === []): ?>
@@ -124,4 +130,5 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
     </div>
     <?php endif; ?>
 </div>
+<?php endif; ?>
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

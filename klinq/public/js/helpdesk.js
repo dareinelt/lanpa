@@ -44,6 +44,7 @@
             select.appendChild(opt);
         });
         select.disabled = !multiple && items.length === 0;
+        select.dispatchEvent(new CustomEvent("hd:options", { bubbles: true }));
     }
 
     // ---------------------------------------------------------------- Kategorie → Unterkategorie
@@ -51,6 +52,12 @@
         const target = document.querySelector(categorySelect.getAttribute("data-hd-category"));
         if (!target) { return; }
         const initial = target.getAttribute("data-selected") || target.value;
+        // Im Assistenten wird die Unterkategorie erst nach Auswahl einer Kategorie eingeblendet.
+        const subGroupSelector = categorySelect.getAttribute("data-hd-subcategory-group");
+        const subGroup = subGroupSelector ? document.querySelector(subGroupSelector) : null;
+        function syncSubGroup() {
+            if (subGroup) { subGroup.hidden = !categorySelect.value; }
+        }
         async function load(keepValue) {
             const id = categorySelect.value;
             if (!id) { fillSelect(target, [], undefined, "– keine Unterkategorie –"); return; }
@@ -59,7 +66,8 @@
                 fillSelect(target, data.items || [], keepValue ? initial : undefined, "– keine Unterkategorie –");
             } catch (e) { fillSelect(target, [], undefined, "– nicht verfügbar –"); }
         }
-        categorySelect.addEventListener("change", function () { load(false); });
+        categorySelect.addEventListener("change", function () { syncSubGroup(); load(false); });
+        syncSubGroup();
         if (categorySelect.value && target.options.length <= 1) { load(true); }
     });
 
@@ -111,7 +119,8 @@
     document.querySelectorAll("select[data-hd-template]").forEach(function (select) {
         select.addEventListener("change", function () {
             const base = select.getAttribute("data-hd-template") || window.location.pathname;
-            window.location.href = select.value ? base + "?template=" + encodeURIComponent(select.value) : base;
+            const separator = base.indexOf("?") === -1 ? "?" : "&";
+            window.location.href = select.value ? base + separator + "template=" + encodeURIComponent(select.value) : base;
         });
     });
 

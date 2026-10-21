@@ -11,6 +11,7 @@ use App\Repositories\TicketRepository;
 use App\Repositories\TicketRuleRepository;
 use App\Repositories\UserRepository;
 use App\Services\MailClient;
+use App\Support\RichText;
 
 /**
  * E-Mail-Benachrichtigungen des Ticketsystems (nur Versand über den Mail-Container).
@@ -65,7 +66,7 @@ final class TicketNotificationService
         };
         $extra = '';
         if ($toCode === TicketWorkflowService::RESOLVED && !empty($ticket['resolution'])) {
-            $extra = '<p><strong>Lösung:</strong><br>' . nl2br(self::e((string) $ticket['resolution'])) . '</p>';
+            $extra = '<p><strong>Lösung:</strong><br>' . nl2br(self::e(RichText::toPlain((string) $ticket['resolution']))) . '</p>';
         }
         $this->sendTo($ticket, $key, $this->requesterRecipients($ticket), 'Ticket ' . self::statusLabel($toCode), $this->intro($ticket, $message) . $extra);
         if (in_array($fromCode, [TicketWorkflowService::RESOLVED, TicketWorkflowService::CLOSED], true) && $toCode === TicketWorkflowService::IN_PROGRESS) {
@@ -79,7 +80,7 @@ final class TicketNotificationService
         if (($comment['type'] ?? 'public') !== 'public') {
             return;
         }
-        $body = $this->intro($ticket, 'Es gibt eine neue Antwort zu Ihrem Ticket.') . '<blockquote>' . nl2br(self::e((string) $comment['body'])) . '</blockquote>';
+        $body = $this->intro($ticket, 'Es gibt eine neue Antwort zu Ihrem Ticket.') . '<blockquote>' . nl2br(self::e(RichText::toPlain((string) $comment['body']))) . '</blockquote>';
         $key = 'comment_' . (int) $comment['id'];
         if (!empty($comment['is_requester'])) {
             $this->sendTo($ticket, $key, $this->teamRecipients($ticket, false), 'Neue Rückmeldung des Melders', $body);

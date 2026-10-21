@@ -14,6 +14,7 @@ use App\Repositories\TicketRepository;
 use App\Security\CurrentUser;
 use App\Services\AuditLogService;
 use App\Services\DocumentService;
+use App\Services\Helpdesk\TicketAttachmentService;
 use App\Services\Helpdesk\TicketService;
 
 /**
@@ -30,7 +31,8 @@ final class TicketAttachmentController extends HelpdeskBaseController
         private readonly TicketAttachmentRepository $attachments,
         private readonly TicketRepository $tickets,
         private readonly DocumentService $documents,
-        private readonly AuditLogService $audit
+        private readonly AuditLogService $audit,
+        private readonly TicketAttachmentService $attachmentService
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -52,7 +54,7 @@ final class TicketAttachmentController extends HelpdeskBaseController
             }
             $comment = $this->service->addComment($id, $body, $type, $portal ? 'portal' : 'web');
             if ($file !== null) {
-                $this->storeFile($id, (int) $comment['id'], $type === 'internal', $file, $request->stringOrNull('note'));
+                $this->attachmentService->store($id, (int) $comment['id'], $type === 'internal', $file, $request->stringOrNull('note'));
             }
         }, $redirect, false);
 
@@ -77,7 +79,7 @@ final class TicketAttachmentController extends HelpdeskBaseController
         $internal = !$portal && $request->bool('internal');
 
         $response = $this->attempt($request, function () use ($id, $internal, $file, $request): void {
-            $this->storeFile($id, null, $internal, $file, $request->stringOrNull('note'));
+            $this->attachmentService->store($id, null, $internal, $file, $request->stringOrNull('note'));
         }, $redirect, false);
 
         return $response ?? $this->respond($request, 'Anhang „' . $file['name'] . '“ hochgeladen.', $redirect);
@@ -119,19 +121,5 @@ final class TicketAttachmentController extends HelpdeskBaseController
         $portal = str_starts_with($request->path(), '/portal/');
 
         return $this->respond($request, 'Anhang gelöscht.', ($portal ? '/portal/tickets/' : '/helpdesk/tickets/') . $id . '#attachments');
-    }
-
-    /** @param array<string,mixed> $file */
-    private function storeFile(int $ticketId, ?int $commentId, bool $internal, array $file, ?string $note): void
-    {
-        $ticket = $this->service->getVisible($ticketId);
-        if (!$this->service->isAgent() && !$this->service->isOwnTicket($ticket)) {
-            throw new ForbiddenException('Keine Berechtigung für dieses Ticket.');
-        }
-        $documentId = $this->documents->store('ticket', $ticketId, 'attachment', $file, $note);
-        $this->attachments->link($documentId, $ticketId, $commentId, $internal);
-        $this->tickets->addEvent($ticketId, 'attachment_added', $this->currentUser->id(), $this->currentUser->displayName(), 'attachment', null, (string) $file['name'], ['document_id' => $documentId, 'internal' => $internal]);
-        $this->tickets->update($ticketId, ['updated_by' => $this->currentUser->id()]);
-        $this->audit->log('upload', 'attachment', $documentId, $ticket['number'] . ' ' . $file['name'], null, ['file' => $file['name'], 'internal' => $internal]);
     }
 }

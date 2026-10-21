@@ -1,7 +1,7 @@
 <?php require_once __DIR__ . '/../../partials/helpers.php'; ob_start();
 $activeNav = 'portal';
 $areaLabel = 'Portal';
-$scripts = ['/js/helpdesk.js'];
+$scripts = ['/js/helpdesk.js', '/js/helpdesk-media.js'];
 $userId = (int) ($user['id'] ?? 0);
 ?>
 <div class="page-header">
@@ -17,17 +17,17 @@ $userId = (int) ($user['id'] ?? 0);
 </div>
 <div class="ticket-layout">
     <div>
-        <div class="card mb-4"><div class="card-header"><h2>Beschreibung</h2></div><div class="ticket-description"><?= nl2br_e($ticket['description'] ?? '') ?></div></div>
-        <?php if (!empty($ticket['resolution'])): ?><div class="card mb-4"><div class="card-header"><h2>Lösung</h2></div><div class="ticket-resolution"><?= nl2br_e($ticket['resolution']) ?></div></div><?php endif; ?>
+        <div class="card mb-4"><div class="card-header"><h2>Beschreibung</h2></div>        <div class="ticket-description"><?= rich_text($ticket['description'] ?? '') ?></div></div>
+                <?php if (!empty($ticket['resolution'])): ?><div class="card mb-4"><div class="card-header"><h2>Lösung</h2></div><div class="ticket-resolution"><?= rich_text($ticket['resolution']) ?></div></div><?php endif; ?>
         <div class="card" id="comments">
             <div class="card-header"><h2>Kommentare</h2><span class="text-muted text-sm"><?= count($comments) ?></span></div>
             <?php if ($comments === []): ?><p class="text-muted">Noch keine Kommentare.</p><?php else: ?>
-            <ul class="comment-list"><?php foreach ($comments as $c): $own = (int) ($c['author_user_id'] ?? 0) === $userId || !empty($c['is_requester']); ?><li class="comment<?= $own ? ' is-requester' : '' ?>" data-comment-type="<?= e($c['type'] ?? 'public') ?>"><div class="comment-head"><span class="comment-author"><?= e($c['author_name'] ?? 'system') ?></span><span class="text-muted"><?= fmt_datetime($c['created_at'] ?? null) ?></span><?php if (($c['source'] ?? '') === 'portal'): ?><?= badge('Portal', 'info') ?><?php elseif (($c['source'] ?? '') === 'email'): ?><?= badge('Per E-Mail', 'info') ?><?php endif; ?></div><div class="comment-body"><?= nl2br_e($c['body'] ?? '') ?></div></li><?php endforeach; ?></ul>
+            <ul class="comment-list"><?php foreach ($comments as $c): $own = (int) ($c['author_user_id'] ?? 0) === $userId || !empty($c['is_requester']); ?><li class="comment<?= $own ? ' is-requester' : '' ?>" data-comment-type="<?= e($c['type'] ?? 'public') ?>"><div class="comment-head"><span class="comment-author"><?= e($c['author_name'] ?? 'system') ?></span><span class="text-muted"><?= fmt_datetime($c['created_at'] ?? null) ?></span><?php if (($c['source'] ?? '') === 'portal'): ?><?= badge('Portal', 'info') ?><?php elseif (($c['source'] ?? '') === 'email'): ?><?= badge('Per E-Mail', 'info') ?><?php endif; ?></div><div class="comment-body"><?= rich_text($c['body'] ?? '') ?></div></li><?php endforeach; ?></ul>
             <?php endif; ?>
             <?php if ($canComment): ?>
             <form method="post" action="/portal/tickets/<?= (int) $ticket['id'] ?>/comments" enctype="multipart/form-data" class="comment-form mt-4" data-hd-comment-form>
                 <?= csrf_field() ?>
-                <div class="form-group<?= has_error('body') ? ' has-error' : '' ?>"><label for="f-body">Antwort</label><textarea id="f-body" name="body" rows="4" placeholder="Nachricht an den Help Desk …"></textarea><?= field_error('body') ?></div>
+                <div class="form-group<?= has_error('body') ? ' has-error' : '' ?>"><label for="f-body">Antwort</label><textarea id="f-body" name="body" rows="4" placeholder="Nachricht an den Help Desk …" data-hd-media-images data-hd-media-preview="#f-body-preview"></textarea><div class="hd-media-preview" id="f-body-preview" hidden></div><p class="form-hint">Bilder aus der Zwischenablage mit STRG+V einfügen.</p><?= field_error('body') ?></div>
                 <div class="comment-form-footer"><div class="form-group"><label for="f-file">Anhang</label><input id="f-file" type="file" name="file"></div><button type="submit" class="btn btn-primary"><?= icon('check') ?> Kommentar senden</button></div>
             </form>
             <?php endif; ?>

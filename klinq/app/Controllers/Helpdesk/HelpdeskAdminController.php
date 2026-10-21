@@ -42,6 +42,11 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         'rules' => ['Regeln', 'helpdesk.admin'],
     ];
 
+    /** Zusätzliche Navigationspunkte ohne Stammdaten-Tabelle. */
+    public const EXTRA_KINDS = [
+        'quick-report' => ['Störungsformular', 'helpdesk.admin'],
+    ];
+
     public function __construct(
         View $view,
         CurrentUser $currentUser,
@@ -79,10 +84,11 @@ final class HelpdeskAdminController extends HelpdeskBaseController
     {
         $segments = explode('/', trim($request->path(), '/'));
         $kind = $segments[2] ?? $request->queryString('tab');
-        if ($kind === '' || !isset(self::KINDS[$kind])) {
+        $kinds = self::KINDS + self::EXTRA_KINDS;
+        if ($kind === '' || !isset($kinds[$kind])) {
             $kind = $this->defaultKind();
         }
-        $this->currentUser->require(self::KINDS[$kind][1]);
+        $this->currentUser->require($kinds[$kind][1]);
 
         return $kind;
     }
@@ -90,6 +96,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
     public function index(Request $request): Response
     {
         $kind = $this->kindFrom($request);
+        $isQuickReport = $kind === 'quick-report';
 
         return $this->render('helpdesk.admin.index', [
             'title' => 'Help-Desk-Administration',
@@ -97,8 +104,9 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'areaLabel' => 'Help Desk',
             'kind' => $kind,
             'kinds' => $this->visibleKinds(),
-            'rows' => $this->rowsFor($kind),
-            'usage' => $this->usageFor($kind),
+            'isQuickReport' => $isQuickReport,
+            'rows' => $isQuickReport ? [] : $this->rowsFor($kind),
+            'usage' => $isQuickReport ? [] : $this->usageFor($kind),
             'config' => [
                 'enabled' => (bool) $this->config->get('helpdesk.enabled', true),
                 'ticket_prefix' => (string) $this->config->get('helpdesk.ticket_prefix', 'HD'),
@@ -240,7 +248,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
     private function visibleKinds(): array
     {
         $out = [];
-        foreach (self::KINDS as $kind => [$label, $permission]) {
+        foreach (self::KINDS + self::EXTRA_KINDS as $kind => [$label, $permission]) {
             if ($this->currentUser->can($permission)) {
                 $out[$kind] = $label;
             }

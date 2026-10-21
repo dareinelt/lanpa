@@ -224,6 +224,12 @@ final class NavigationService
         }
 
         $type = (string) ($input['type'] ?? 'external');
+        // Formularvariante "intern (neuer Tab)": gespeichert wird weiterhin
+        // type = internal, der neue Tab ist ein eigenes Merkmal.
+        $internalNewTab = $type === 'internal_new_tab';
+        if ($internalNewTab) {
+            $type = 'internal';
+        }
         if (!Validator::isNavigationType($type)) {
             $errors['type'] = 'Ungültiger Typ.';
         }
@@ -298,8 +304,9 @@ final class NavigationService
         }
 
         // Internes Ziel in einem neuen Tab oeffnen (externe Ziele tun das
-        // ohnehin, Alarmierungen haben kein Ziel).
-        $openInNewTab = $type === 'internal' && !empty($input['open_in_new_tab']);
+        // ohnehin, Alarmierungen haben kein Ziel). Die Formularvariante
+        // "intern (neuer Tab)" setzt das Merkmal ohne separate Checkbox.
+        $openInNewTab = $type === 'internal' && ($internalNewTab || !empty($input['open_in_new_tab']));
 
         // Weiterleitung ueber den Reverse-Proxy: nur externe Ziele. Die
         // Quellnetze werden normalisiert gespeichert (Adresse auf Netzgrenze).

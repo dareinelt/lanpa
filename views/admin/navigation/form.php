@@ -13,6 +13,11 @@ use App\Support\Html;
 $isNew = ($item['id'] ?? null) === null;
 $action = $isNew ? '/admin/navigation/neu' : '/admin/navigation/bearbeiten';
 $type = (string) ($item['type'] ?? 'external');
+// "intern (neuer Tab)" ist eine Formularvariante von "internal" mit gesetztem
+// open_in_new_tab; gespeichert wird weiterhin type = internal.
+if ($type === 'internal' && (int) ($item['open_in_new_tab'] ?? 0) === 1) {
+    $type = 'internal_new_tab';
+}
 $tileColor = (string) ($item['background_color'] ?? '');
 $icons = [
     '', 'document', 'app', 'phone', 'alert', 'tools', 'robot', 'link',
@@ -173,6 +178,7 @@ $icons = [
             <select id="type" name="type" data-editor-type>
                 <option value="external" <?= $type === 'external' ? 'selected' : '' ?>>extern (neuer Tab)</option>
                 <option value="internal" <?= $type === 'internal' ? 'selected' : '' ?>>intern (in der Anwendung)</option>
+                <option value="internal_new_tab" <?= $type === 'internal_new_tab' ? 'selected' : '' ?>>intern (neuer Tab)</option>
                 <option value="subpage" <?= $type === 'subpage' ? 'selected' : '' ?>>Unterseite (weitere Kacheln)</option>
                 <option value="page" <?= $type === 'page' ? 'selected' : '' ?>>Textseite (formatierter Inhalt)</option>
                 <option value="alarm" <?= $type === 'alarm' ? 'selected' : '' ?>>Alarmierung</option>
@@ -241,13 +247,6 @@ $icons = [
         <input type="checkbox" id="protected_access" name="protected_access" value="1"
                <?= (int) ($item['protected_access'] ?? 0) === 1 ? 'checked' : '' ?>>
         <label for="protected_access">Geschützten Zugriffsmodus aktivieren (SMS-Code erforderlich)</label>
-    </div>
-
-    <div class="field field--check" data-editor-new-tab>
-        <input type="checkbox" id="open_in_new_tab" name="open_in_new_tab" value="1"
-               <?= (int) ($item['open_in_new_tab'] ?? 0) === 1 ? 'checked' : '' ?>>
-        <label for="open_in_new_tab">Internes Ziel in einem neuen Tab öffnen</label>
-        <p class="field__hint">Gilt nur für interne Ziele (z. B. die KLINQ-Kachel). Externe Ziele öffnen ohnehin in einem neuen Tab.</p>
     </div>
 
     <div class="field field--check">

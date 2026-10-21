@@ -408,6 +408,11 @@
             stopCountdown();
             overlay.hidden = true;
             document.body.classList.remove('has-announcement-overlay');
+            // Vorab geoeffneten Tab verwerfen, wenn die Pruefung abgebrochen
+            // wurde oder fehlgeschlagen ist.
+            if (current && current.pendingWindow && !current.navigated && !current.pendingWindow.closed) {
+                current.pendingWindow.close();
+            }
             current = null;
             if (lastTrigger) {
                 lastTrigger.focus();
@@ -422,8 +427,21 @@
                 newTab: trigger.getAttribute('data-nav-new-tab') === '1',
                 alarm: trigger.hasAttribute('data-alarm-id'),
                 title: trigger.getAttribute('data-nav-title') || '',
-                trigger: trigger
+                trigger: trigger,
+                navigated: false,
+                pendingWindow: null
             };
+
+            // Popup-Blocker erlauben window.open nur innerhalb der Nutzer-Geste.
+            // Da die Code-Pruefung asynchron laeuft, wird der Tab fuer interne
+            // Ziele mit "neuer Tab" schon jetzt geoeffnet und erst nach
+            // erfolgreicher Pruefung zum Ziel gefuehrt.
+            if (current.newTab && !current.alarm) {
+                current.pendingWindow = window.open('about:blank', '_blank');
+                if (current.pendingWindow) {
+                    current.pendingWindow.opener = null;
+                }
+            }
 
             reset();
             if (titleText) {
@@ -451,7 +469,19 @@
                 return;
             }
             if (current.newTab) {
-                window.open(current.href, '_blank', 'noopener,noreferrer');
+                current.navigated = true;
+                var navigatedInPending = false;
+                if (current.pendingWindow && !current.pendingWindow.closed) {
+                    try {
+                        current.pendingWindow.location.replace(current.href);
+                        navigatedInPending = true;
+                    } catch (error) {
+                        navigatedInPending = false;
+                    }
+                }
+                if (!navigatedInPending) {
+                    window.open(current.href, '_blank', 'noopener,noreferrer');
+                }
             } else {
                 window.location.href = current.href;
             }

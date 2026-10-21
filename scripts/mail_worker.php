@@ -18,6 +18,13 @@ do {
             exit(1);
         }
     }
+    // Nachzuholende Orvanta-Mails an Exchange-Postfaecher. Ein Fehler hier
+    // darf den SMTP-Versand nicht anhalten.
+    try {
+        Container::orvantaMailQueue()->dispatch();
+    } catch (Throwable $exception) {
+        app_logger()->warning('Orvanta-Warteschlange fehlgeschlagen.', ['error' => $exception->getMessage()]);
+    }
     if (!$once) {
         sleep(5);
     }

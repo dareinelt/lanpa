@@ -1583,14 +1583,28 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             ? $this->request($xml, $impersonate, $configured, self::isReadOnly($body))
             : $this->transport->post($url, $xml, $this->config->transportOptions());
         if (($response['error'] ?? '') !== '') {
-            throw new OrvantaException('Exchange ist nicht erreichbar: ' . $response['error'], 502);
+            throw new OrvantaException(
+                'Exchange ist nicht erreichbar: ' . $response['error'],
+                502,
+                null,
+                // Nur wenn die Anfrage den Server nachweislich nie erreicht hat,
+                // ist eine spaetere Wiederholung gefahrlos (keine Doppelzustellung).
+                self::requestSent($response) ? '' : OrvantaException::EXCHANGE_UNAVAILABLE
+            );
         }
         if ($response['status'] === 401 || $response['status'] === 403) {
             throw new OrvantaException($this->authFailure($response['status'], $response['auth_offered'] ?? []), 502);
         }
         $xpath = EwsXml::parse($response['body']);
         if ($xpath === null) {
-            throw new OrvantaException('Exchange hat eine ungültige Antwort geliefert (HTTP ' . $response['status'] . ').', 502);
+            throw new OrvantaException(
+                'Exchange hat eine ungültige Antwort geliefert (HTTP ' . $response['status'] . ').',
+                502,
+                null,
+                (int) $response['status'] >= 500 || !self::requestSent($response)
+                    ? OrvantaException::EXCHANGE_UNAVAILABLE
+                    : ''
+            );
         }
         $error = EwsXml::error($xpath);
         // Die AD-Adresse ist nur ein Alias des Postfachs: Exchange nennt die
@@ -1607,7 +1621,14 @@ final class OrvantaExchangeService implements OrvantaMailBackendInterface
             $all = EwsXml::elements($xpath, '//m:ResponseMessages/*');
             $failed = EwsXml::elements($xpath, '//m:ResponseMessages/*[@ResponseClass="Error"]');
             if ($strict || $all === [] || count($failed) === count($all)) {
-                throw new OrvantaException(self::translate($error), 502);
+                throw new OrvantaException(
+                    self::translate($error),
+                    502,
+                    null,
+                    // Ein gestoerter Server (ueberlastet, Postfachdatenbank nicht
+                    // bereit) ist kurzfristig; fachliche Fehler sind es nicht.
+                    self::hostFailed($response) ? OrvantaException::EXCHANGE_UNAVAILABLE : ''
+                );
             }
         }
 

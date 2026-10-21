@@ -61,6 +61,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 22. Zusätzliche Postfächer (Vollzugriff / „Senden als“)
 23. Nachrichtenfluss-Dashboard
 24. Lokaler Kalender (Proxy-Benutzer)
+25. Warteschlange bei Exchange-Ausfall
 
 ---
 
@@ -104,6 +105,8 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/ICalendar.php` | iCalendar nach RFC 5545 (Abschnitt 24): `build()`, `parse()`, `parseInvitation()`, `newUid()`, `toText()`, `escape()/unescape()`, `fold()`, `normalize()`, `partstat()`, `freeBusy()`, `clip()`; `METHODS` = `REQUEST\|CANCEL\|REPLY`, Grenzen `MAX_BYTES` (524288), `MAX_LINES` (20000), `MAX_EVENTS` (50), `MAX_ATTENDEES` (200), `MAX_TEXT` (20000) |
 | `app/Services/Orvanta/OrvantaCalendarService.php` | Lokaler Kalender der Proxy-Benutzer (Abschnitt 24): `save()`, `move()`, `remove()`, `respond()`, `respondToMessage()`, `upcomingReminders()`, `ingest()`, `dispatch()`, `applyRequest()`, `applyReply()`, `attendeeRows()`, `deliver()`, `enqueueEvent()`, `cleanAddresses()`, `times()`; Grenzen `MAX_RANGE_DAYS` (100), `MAX_ATTENDEES` (100), `MAX_DESCRIPTION` (60000), `REMINDER_MAX` (10080), `MAX_ATTEMPTS` (5), `MAX_DISPATCH` (3), `CLAIM_TIMEOUT` (900) |
 | `app/Repositories/OrvantaCalendarRepository.php` | Tabellen `orvanta_calendar_*` (Abschnitt 24): `range()`, `reminderWindow()`, `find()`, `findByUid()`, `attendeesFor()`, `create()`, `update()`, `delete()`, `replaceAttendees()`, `setAttendeeResponse()`, `setMyResponse()`, `markProcessed()`, `enqueue()`, `dueOutbox()`, `claimOutbox()`, `finishOutbox()`, `recoverOutbox()`, `outboxState()` |
+| `app/Services/Orvanta/OrvantaMailQueueService.php` | Warteschlange bei Exchange-Ausfall (Abschnitt 25): `send(backend, uid, mailbox, mail, draftId, changeKey)`, `respond(backend, uid, mailbox, mail, id, mode)`, `dispatch()`; `enqueue()`, `deliver()`, `transient()`, `backoff()`, `encode()`/`decode()` (Anhänge base64); Konstanten `MAX_ATTEMPTS` (10), `QUEUED_MESSAGE`, `MAX_DISPATCH` (5), `CLAIM_TIMEOUT` (900), `SENT_RETENTION` (604800), `FAILED_RETENTION` (2592000); Konstruktor mit `Closure $backendFor(uid, mailbox)` und optionalem Logger |
+| `app/Repositories/OrvantaMailOutboxRepository.php` | Tabelle `orvanta_mail_outbox` (Abschnitt 25): `enqueue(…, error, now)`, `due(now, maxAttempts, limit)`, `claim(id, attempts, now)`, `finish(id, status, error, nextAttemptAt, sentAt, now)`, `recover(staleBefore, now)`, `prune(sentBefore, failedBefore)`; `DUE_LIMIT` (20) |
 | `app/Services/Orvanta/OrvantaCalendarMail.php` | Betreff und Begleittext der Kalendermails (Abschnitt 24.6): `METHODS` (`REQUEST`/`CANCEL`/`REPLY`), `PLACEHOLDERS`, `SUBJECT_PLACEHOLDERS`, `DEFAULTS` (Standardwortlaute), `MAX_SUBJECT` (255), `MAX_BODY` (20000); `settingKey()`, `subjectPlaceholders()`, `subject(template, row, partstat)`, `body(template, row, partstat, attendees)`; Textwerte werden maskiert, `{Beschreibung}` bleibt geprüftes HTML, ein leerer Wert entfernt den Umbruch davor |
 | `app/Services/Orvanta/OrvantaSignatureService.php` | Signaturvorlagen (Abschnitt 16): `all()/find()/blank()/validate()/save()/delete()`, `match(groups)`, `forUser(ssoUser)` → `{id,name,html}`, `person()`, `render()`, `preview()`, statisch `extension()`, `append(body, html)`, `strip(body)`, statisch `resolveColor(value, fallbackKey, theme)`, `wrapTextColor(body, color)`, `stripTextColor(body)`; Konstanten `MARKER_CLASS`, `QUOTE_CLASS`, `TEXT_COLOR_CLASS`, `PHONE_MODES`, `EXTENSION_LENGTH`, `LINE_HEIGHT`, `LOGO_MAX_WIDTH`, `DEFAULT_TEXT_COLOR`, `DEFAULT_SEPARATOR_COLOR`, `SAMPLE_PERSON`; statisch `logoSize()`, `imageDimensions()`, `scaleImage()` (verkleinert das Logo selbst auf die Anzeigegröße: Raster per GD als PNG, SVG über width/height) |
 | `app/Repositories/OrvantaSignatureRepository.php` | `all(activeOnly)`, `find()`, `save()`, `delete()`; `ad_groups` als JSON-Liste → `groups` |
@@ -127,7 +130,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Controllers/Admin/OrvantaSignatureController.php` | `index()`, `edit()`, `save()`, `delete()`, `preview()` (eigenständiges HTML mit eigener CSP für das iframe) |
 | `views/admin/orvanta-signatures.php`, `views/admin/orvanta-signature.php`, `public/assets/js/admin-signature.js` | Liste mit Vorschau-iframes, Formular mit Live-Vorschau (Query an `/admin/office/signaturen/vorschau`); Schriftfarbe als Hex-Feld mit Color-Picker (`data-color-sync`, `data-signature-field`), Trennzeichenfarbe als Auswahl der Designfarben |
 | `views/admin/orvanta-hosts.php`, `public/assets/js/admin-orvanta-hosts.js` | DAG-Dashboard (Abschnitt 20): Host-Kacheln mit Status, Latenz, Sitzungen und Aktionen; Live-Aktualisierung über `GET …/hosts/daten` |
-| `app/Services/Orvanta/OrvantaException.php` | Fehler mit anzeigbarer Meldung und HTTP-Status (`status()`, Standard 502) |
+| `app/Services/Orvanta/OrvantaException.php` | Fehler mit anzeigbarer Meldung und HTTP-Status (`status()`, Standard 502) und optionalem Grund (`reason()`, z. B. `mail_auth`, `malware`, `malware_unavailable`, `exchange_unavailable`); `EXCHANGE_UNAVAILABLE` markiert einen Ausfall, bei dem die Nachricht den Server nachweislich nicht erreicht hat (Abschnitt 25.1) |
 | `app/Services/Orvanta/OrvantaAiService.php` | KI-Unterstützung (Abschnitt 15): `isAvailable()` (globale KI aktiv + `GET /models`, Datei-Cache 60 s), `resetAvailability()`, `improve()` (`POST /chat/completions`, Systemprompt je `MODES`, Verfeinern per Assistenten-Turn), `recordUsage()`, statisch `stripMarkers()`; Konstanten `MODES`, `MAX_TEXT`, `MAX_PROMPT`, `MAX_CONTEXT`, `MAX_OUTPUT_TOKENS`, `MARKER_CLASS`, `MARKER_ATTR_PREFIX` |
 | `app/Services/Orvanta/OrvantaAiCharts.php` | Anonymisierter Nutzungsbericht für den Adminbereich: `period()`, `report(days)`, SVG-Erzeuger `usersChart()`, `daysChart()`, `tokensChart()` (Präsentationsattribute, kein `style`) |
 | `app/Contracts/AiTransportInterface.php` | `request(method, url, headers, body, timeout): {status, body, error}` |
@@ -138,7 +141,7 @@ Invarianten, Tests und typische Änderungsaufgaben. Fundstellen sind als
 | `app/Services/Orvanta/OrvantaSpellcheckDictionary.php` | Verzögertes Lesen des übersetzten Wörterbuchs: `isAvailable()` (nur `meta.json`), `isUsable()` (Index + Regelwerk), `meta()`, `flagsOf(word)`, `caseEntries(key)`, `wordsWithPrefix(prefix, limit)`, `suffixRules()/suffixLengths()`, `prefixRules()/prefixLengths()`, `breaks()/replacements()/maps()/tryLetters()`, `flag(name)`, `compoundMin()/compoundMax()/checkSharps()`; `words.dat` wird über `read()` (`fseek`/`fread`) gelesen; `INDEX_ENTRY_SIZE` |
 | `app/Services/Orvanta/OrvantaSpellcheckCasing.php` | Gemeinsame Groß-/Kleinschreibungslogik (`NO`/`INIT`/`ALL`/`HUHINIT`/`HUH`): `guess()`, `variants()`, `lower()` (mit scharfem S), `lowerFirst()`, `capitalize()`, `sharpSVariants()`; `MAX_SHARP_S_VARIANTS` |
 | `scripts/spellcheck_dictionary.php` | Einmaliger Download + Übersetzung (Abschnitt 19), vom Entrypoint aufgerufen; `--force`, `--quiet`; atomarer Austausch über `meta.json` als Vollständigkeitsmarke |
-| `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchangeHostRepository()`, `orvantaExchangePool()`, `orvantaExchange()`, `orvantaAttachments()`, `orvantaRecipients()`, `orvantaNotifications()`, `orvantaSpellcheckDictionary()`, `orvantaSpellcheck()` (übergibt `office.spellcheck_enabled`), `orvantaAiCharts()`, `aiTransport()`, `orvantaAi()` (nutzt `officeAi()`); `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
+| `app/Core/Container.php` | `orvantaRepository()`, `orvantaConfig()`, `exchangeTransport()` (Demo oder cURL), `orvantaExchangeHostRepository()`, `orvantaExchangePool()`, `orvantaExchange()`, `orvantaAttachments()`, `orvantaRecipients()`, `orvantaNotifications()`, `orvantaSpellcheckDictionary()`, `orvantaSpellcheck()` (übergibt `office.spellcheck_enabled`), `orvantaAiCharts()`, `aiTransport()`, `orvantaAi()` (nutzt `officeAi()`), `orvantaMailOutboxRepository()`, `orvantaMailQueue()` (übergibt `orvantaMail()->backendForUid()` als Closure, Abschnitt 25); `officeApps()` erhält `orvantaConfig()->isEnabled()` als Closure |
 | `app/Controllers/Controller.php` | `orvantaRemindersVisible()` → View-Variable `$orvantaReminders` (Kopfzeilen-Erinnerungen auf allen Seiten) |
 | `app/Services/Office/OfficeAppCatalog.php` | App `orvanta` (`kind = intranet`), `ORVANTA_PATH = '/office/orvanta'` |
 | `app/Services/Office/NextcloudFilesService.php` | `upload()`, `fetch()`, `delete()` über die Nextcloud-App `intranet_integration` (JWT `OfficeJwt::filesToken()`), `segment()`/`isSafeSegment()`/`isSafeFileName()` (führender Punkt nur bei Dateinamen), `MAX_BYTES` (16 MiB) |
@@ -302,7 +305,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 
 ## 4. Datenhaltung
 
-### 4.1 Tabellen (Migrationen 033–057)
+### 4.1 Tabellen (Migrationen 033–060)
 
 | Tabelle | Spalten (Auszug) | Hinweise |
 | --- | --- | --- |
@@ -321,6 +324,7 @@ authorize() ─▶ (POST) readBody() + CSRF ─▶ $action($access) ─▶ Respo
 | `orvanta_calendar_attendees` (Migration 057) | `event_id` (FK → `orvanta_calendar_events`, `ON DELETE CASCADE`), `email` (≤ 190), `display_name` (≤ 190), `role` ∈ `REQ-PARTICIPANT\|OPT-PARTICIPANT`, `response` ∈ `NEEDS-ACTION\|ACCEPTED\|TENTATIVE\|DECLINED`, `responded_at` (NULL) | Unique (`event_id`, `email`); Index (`email`) für die Antwortzuordnung. Adressen werden klein geschrieben gespeichert und verglichen. Abschnitt 24 |
 | `orvanta_calendar_outbox` (Migration 057) | `user_uid`, `event_id` (FK, `ON DELETE SET NULL`), `kind` (Standard `invite`), `idempotency_key` (≤ 191, unique), `from_email` (≤ 190), `recipients` (TEXT), `payload` (MEDIUMTEXT, JSON), `status` ∈ `pending\|sending\|sent\|failed`, `attempts`, `last_error` (≤ 500), `next_attempt_at`, `sent_at` (NULL) | Unique (`idempotency_key`); Index (`status`, `next_attempt_at`) für die Fälligkeit, (`user_uid`, `status`), (`event_id`). Versandaufträge für Einladungen, Aktualisierungen, Absagen und Antworten; entstehen in derselben Transaktion wie der Termin. Abschnitt 24.3 |
 | `orvanta_calendar_processed` (Migration 057) | `user_uid`, `item_hash` (CHAR(40)), `event_uid` (≤ 191), `method` ∈ `REQUEST\|CANCEL\|REPLY`, `sequence`, `event_id` (FK, `ON DELETE SET NULL`) | Unique (`user_uid`, `item_hash`); Index (`user_uid`, `event_uid`). Verhindert doppelte Termine und mehrfach versendete Antworten beim wiederholten Öffnen derselben Einladung. Abschnitt 24 |
+| `orvanta_mail_outbox` (Migration 060) | `user_uid` (≤ 100), `backend` (≤ 20, derzeit nur `exchange`), `mailbox` (≤ 190, Absenderpostfach der Impersonation), `from_email` (≤ 190), `kind` (≤ 20), `subject` (≤ 255), `recipients` (TEXT, JSON-Liste für die Diagnose), `payload` (LONGTEXT, JSON mit base64-Anhängen), `draft_id` (≤ 512), `change_key` (≤ 512), `status` ∈ `pending\|sending\|sent\|failed`, `attempts`, `last_error` (≤ 500), `next_attempt_at`, `sent_at` (NULL) | Index (`status`, `next_attempt_at`) für die Fälligkeit, (`user_uid`, `status`), (`status`, `sent_at`) und (`status`, `updated_at`) für Aufräumen und Wiederaufnahme. Warteschlange für Mails, die während eines kurzfristigen Exchange-Ausfalls nicht zugestellt werden konnten; enthält den **vollständigen** Auftrag, damit der Worker ohne Benutzersitzung erneut senden kann. Abschnitt 25 |
 | `orvanta_activity` (Migration 048) | `user_uid` (≤ 190, Primary Key), `backend` ∈ `exchange\|proxy`, `first_seen_at`, `last_seen_at`, `requests` | Aktive Nutzer der letzten Minuten, **ohne Inhalte**; `last_seen_at` entscheidet über `ACTIVE_WINDOW` (300 s), `purge()` räumt älter als `ACTIVITY_TTL` (86400 s). Abschnitt 23.2 |
 | `orvanta_user_samples` (Migration 048) | `sampled_at` (DATETIME, unique), `active_users`, `exchange_users`, `proxy_users`, `ai_users` | Genau eine Zeile je Zeitraster (`SAMPLE_INTERVAL` 300 s); Grundlage der Kennzahlen und des Verlaufs, `purge()` räumt älter als `HISTORY_DAYS` (400 Tage). Abschnitt 23.2 |
 | `mail_proxy_source_state` (Migration 048) | `identity_source_id` (INT, Primary Key, 0 = Hauptquelle), `last_success_at` (DATETIME, NULL), `last_error_at` (DATETIME, NULL), `last_error` (≤ 500), `failures`, `checked_at` (DATETIME, NULL) | Zustand je Identitätsquelle im Mailpfad; **ohne Fremdschlüssel**, weil Quelle 0 die Hauptquelle aus `orvanta_settings` ist. Geschrieben von `ProxyMailBackend` und `MailProxyService::testSources()`, gelesen vom Nachrichtenfluss-Dashboard. Abschnitt 23.1 |
@@ -467,10 +471,10 @@ die (etwas längere) Antwortzeit (Abschnitt 20).
 | `mail` | Query `ordner`, `offset`, `limit` (1–100), `q` | `{items[], total, offset, has_more}`; Element: `id, change_key, subject, preview, from{name,email}, to[], received, sent, is_read, has_attachments, size, importance, flagged, replied, forwarded, categories[], item_class, is_meeting_request` |
 | `mail/nachricht` | Query `id` | wie Listenelement + `body_html, blocked_images, signed, cc, bcc, reply_to, sender, internet_message_id, attachments[{id,name,content_type,content_id,size,inline,is_item}]`; `cid:`-Bilder zeigen per `src` auf `anhang/oeffnen?token=…`; `signed = true` → Hinweis „digital signiert“ im Kopf |
 | `mail/kopfzeilen` | Query `id` | `{id, subject, headers, source}`; `headers` = unveränderter RFC-5322-Kopfblock aus `item:MimeContent` (`source` = `mime`), ersatzweise aus `InternetMessageHeaders` zusammengesetzt (`source` = `exchange`) |
-| `mail/senden` | `to, cc, bcc` (Strings oder `{name,email}`), `subject, body, html, importance, attachments[{name, content_type, content(Base64)}]`, optional `draft_id, change_key` (gespeicherten Entwurf senden) | `{id, message}` |
+| `mail/senden` | `to, cc, bcc` (Strings oder `{name,email}`), `subject, body, html, importance, attachments[{name, content_type, content(Base64)}]`, optional `draft_id, change_key` (gespeicherten Entwurf senden) | `{id, message}`; bei einem kurzfristigen Exchange-Ausfall zusätzlich `queued: true`, `outbox_id` und `message` mit dem Hinweis auf die Warteschlange (`id` bleibt leer, Abschnitt 25) |
 | `empfaenger` | Query `q` (Pflicht, sonst leer), `limit` (1–25, Standard 8) | `{items[{display_name,email,department,source,recent}]}`; Verlaufstreffer zuerst (`source` = „Zuletzt verwendet“), dann Telefonliste ohne Dubletten; bekannte Adressen erhalten Name/Bereich aus der Telefonliste |
 | `mail/entwurf` | wie `mail/senden`; `draft_id, change_key` aktualisieren einen bestehenden Entwurf; `reply_id, mode` legen einen Antwort-Entwurf an | `{id, change_key, message}` |
-| `mail/antworten` | `id, mode` + Felder wie `mail/senden` (inkl. `cc`, `bcc`, Anhänge) | `{id, message}` |
+| `mail/antworten` | `id, mode` + Felder wie `mail/senden` (inkl. `cc`, `bcc`, Anhänge) | `{id, message}`; bei einem kurzfristigen Exchange-Ausfall wie `mail/senden` mit `queued`/`outbox_id` (Abschnitt 25) |
 | `mail/aktion` | `action, ids[]` (oder `id`), bei `move` zusätzlich `folder` | `{ok, count}` |
 | `anhang/link` | `attachment_id, name` | `{url, mode, expires_in}` |
 | `anhang/nextcloud` | `attachment_id, folder` (optionaler Unterordner) | `{ok, message, path, target}` (Fehler → 502) |
@@ -1026,6 +1030,16 @@ Schriftfarbe einer Nachricht nie verändert:
     Server nur über die Antworten der Kalender-Endpunkte und über
     iCalendar-Teile ausgehender Mails. Einladungen werden nie automatisch
     angenommen, Antworten nie ohne Benutzeraktion gesendet (Abschnitt 24).
+28. **Eingereiht wird nur, was den Server nachweislich nicht erreicht hat.**
+    `OrvantaExchangeService` setzt `reason()` = `EXCHANGE_UNAVAILABLE`
+    ausschließlich bei Transportfehlern ohne gesendete Anfrage
+    (`request_sent === false`), bei unbrauchbaren Antworten mit HTTP ≥ 500 oder
+    ohne gesendete Anfrage und bei SOAP-Fehlern aus `HOST_ERROR_CODES`.
+    **401/403 und fachliche Fehler** (`ErrorSendAsDenied`,
+    `ErrorInvalidRecipients`) erreichen weiterhin den Benutzer. Die
+    Warteschlange (`orvanta_mail_outbox`) übernimmt nur diesen Grund **und**
+    nur das Backend `exchange`; ein Auftrag wird erst nach `claim()`
+    zugestellt, damit zwei Worker nie doppelt senden (Abschnitt 25).
 
 ## 12. Tests
 
@@ -1043,6 +1057,7 @@ Dependency-freier Runner: `php tests/run.php` (Syntaxprüfung zusätzlich
 | `tests/Unit/OrvantaMailRefreshTest.php` | Hintergrundabgleich der Mail-Liste (Abschnitt 9.1, Quelltextprüfung von `orvanta.js`): Fehler werden nicht still verschluckt, beide Abfragen melden ihren Fehler und die Sperre `mailRefreshBusy` wird in jedem Fall freigegeben (nicht über ein abgelehntes `Promise.all`), eine hängende Abfrage sperrt höchstens `MAIL_REFRESH_TIMEOUT`, der Takt plant sich selbst neu (`scheduleMailPoll()`/`mailPoll()`, kein `setInterval(refreshMail`), pausiert im verborgenen Tab und lädt beim Zurückkehren nach fehlgeschlagenem Abgleich sichtbar neu (`reloadMailAfterFailedRefresh()`) |
 | `tests/Unit/MailProxyTest.php` | SMTP-/IMAP-Proxy: Hostprüfung/SSRF, Servervalidierung, verschlüsselte Postfach-Passwörter, Zuordnungsregeln, Vorschläge, Entscheidung Exchange/Proxy/gesperrt, Cache/Generation, frische Zugangsdaten, Router ohne Rückfall, Postfach-Bindung der `mpx.`-IDs, HMAC-Referenzwert (PHP = Python), Verbindungstest/Diagnose, Übertragung von Termineinladungen (ausgehende base64-Kalenderteile mit Methodenprüfung, eingehende `calendar[]`-Teile und `meeting_request`; `FakeMailProxyTransport`, Details `docs/mail-proxy.md`) |
 | `tests/Unit/OrvantaLocalCalendarTest.php` | Lokaler Kalender der Proxy-Benutzer (Abschnitt 24): iCalendar-Aufbau und -Auswertung (Zeitzonen, ganztägig, Teilnehmerstatus, Grenzen) und Verwerfen unbrauchbarer Inhalte, Anlegen/Lesen/Verschieben/Löschen, Eingabeprüfung, Trennung der Benutzer (fremder Termin → 404), Annehmen/Vorbehalt/Ablehnen und Antwort über die Terminkennung, Absage und Rückzug, Idempotenz der Versandaufträge (höchstens drei Zustellungen, Wiederholung nach Fehlern, Aufräumen hängender Aufträge), Verhalten ohne Mail-Proxy, Erinnerungen samt Aufräumen veralteter Einträge, abgelehnte Einladungen und bereinigte Beschreibungen; Kalendermails (Abschnitt 24.6): Platzhalter, Maskierung und Standardtexte, Speichern der Vorlagen über `OrvantaConfigService::save()` und Versand mit eigenen Vorlagen |
+| `tests/Unit/OrvantaMailQueueTest.php` | Warteschlange bei Exchange-Ausfall (Abschnitt 25): `FakeOrvantaMailQueueBackend` und `orvantaMailQueuePdo()` (SQLite-Abbild von Migration 060); Ausfall beim Senden reiht ein (`queued`, `outbox_id`, `last_error`), Erfolg nach Wiederkehr (`dispatch()` sendet und markiert `sent`), Anhänge überstehen den Umweg über die Datenbank byteidentisch, fachliche Fehler (`ErrorSendAsDenied`) werden **nicht** eingereiht, `mail_auth` ebenfalls nicht, endgültig gescheiterte Aufträge nach `MAX_ATTEMPTS` (`failed`, kein weiterer Versuch), Wiederaufnahme hängender Aufträge (`recover()`), Aufräumen (`prune()`), Ablehnung bei abweichendem Backend, Antworten (`respond()`) |
 | `tests/Unit/OrvantaSpellcheckTest.php` | Rechtschreibprüfung gegen ein eigenes Mini-Wörterbuch (wird im Test einmal übersetzt, `spellcheckFixture()`): Aufbereitung des Wörterbuchs (Zähler in `meta.json`, `isAvailable()`), Stammwörter/Affixe/Groß-Kleinschreibung (`Teste`, `Tester`, `unTest`, `eBay`, `ACLs`), Umlaute/scharfes S/verbotene Schreibweisen, Zusammensetzungen über Fortsetzungsflags, Zerlegung an Bindestrichen, Zahlen mit Trennzeichen, abschließender Punkt/Abkürzungen (`usw.`, Vorschläge mit Punkt), Vorschläge, Abschalten über `spellcheck_enabled`, Anfragegrenzen, Verfuegbarkeit ohne Wortliste (`spellcheckMetaOnlyFixture()`), Beherrschbarkeit vieler Trennzeichen |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage, Zustand bleibt erhalten, `template_changed`), Abschalten ohne zugewiesene Vorlage (Text und Vorlage bleiben, Aktivieren abgelehnt), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
 | `tests/Unit/OrvantaOofTest.php` | Abwesenheitsnotizen (Abschnitt 21): Validierung und Speichern der Vorlage (Pflichtfelder, Längen, Reihenfolge, Gruppen-Dedupe), Zuordnung über AD-Gruppen (Reihenfolge, inaktiv, Schreibweise, ohne Gruppe), Benutzereinstellungen (Übernahme des Beispieltexts bei neu zugewiesener Vorlage), Validierung der Einstellungen (Empfängerkreis, Zeitraum), Setzen auf dem Exchange-Server (`SetUserOofSettings`: `Enabled`/`Scheduled`/`Disabled`, `ExternalAudience`, `Duration`, kein Text bei `Disabled`, kein Schreiben ohne `uid`), Signatur als Abschluss der Notiz, Zustand/Status des Postfachs (Demo-Modus folgt den gespeicherten Einstellungen und dem Datumsfenster), Text und HTML (`html()` escapt jede Zeile und hängt die Signatur an) |
@@ -2030,6 +2045,13 @@ session($key) ─▶ Host + URL ─▶ transport->post()
 - Bei lesenden Aufrufen sieht der Benutzer weder Fehler noch Umleitung; im
   Fußbereich der App nennt der Tooltipp nach dem nächsten
   `GET /api/orvanta/sitzung` den neuen Host (Abschnitt 20.6).
+- **Zweite Stufe für ausgehende Mails:** Scheitert das Senden auf allen
+  erreichbaren Hosts, prüft `OrvantaMailQueueService` den Grund. Ist er
+  `EXCHANGE_UNAVAILABLE` – die Nachricht hat also nachweislich keinen Server
+  erreicht –, wird der vollständige Auftrag in `orvanta_mail_outbox` gelegt
+  und `scripts/mail_worker.php` stellt ihn nach der Wiederkehr zu. Der
+  Benutzer erhält „in die Warteschlange gestellt“ statt eines Fehlers
+  (Abschnitt 25). Alle anderen Fehler bleiben Fehler.
 
 ### 20.5 Dashboard (Admin → Office → Orvanta – DAG-Hosts)
 
@@ -2920,3 +2942,151 @@ den Versand mit eigenen Vorlagen über `localCalendarEnv($settings)`.
 `tests/Unit/MailProxyTest.php` prüft die Übertragung der Kalenderteile über den
 Proxy (ausgehend Base64 mit Methodenprüfung, eingehend `calendar[]` und
 `meeting_request`).
+
+---
+
+## 25. Warteschlange bei Exchange-Ausfall
+
+Eine kurze Nicht-Verfügbarkeit einzelner Exchange-Server (oder der ganzen DAG)
+darf das Senden nicht verhindern. Der Versand läuft deshalb **zuerst direkt**
+über das Backend aus `OrvantaMailRouter`; scheitert er an einem Ausfall, wird
+der vollständige Auftrag in `orvanta_mail_outbox` gelegt und vom Dienst
+`scripts/mail_worker.php` nachgeholt, sobald Exchange wieder antwortet.
+
+### 25.1 Was eingereiht wird – und was nicht
+
+Eingereiht wird nur, wenn **beides** zutrifft:
+
+1. `OrvantaException::reason()` ist `EXCHANGE_UNAVAILABLE` – der Fehler stammt
+   also aus einer Stelle, an der die Nachricht den Server nachweislich nicht
+   erreicht hat:
+   - Transportfehler (DNS, Verbindung, TLS) mit `request_sent === false`,
+   - unbrauchbare Antworten mit HTTP ≥ 500 oder ohne gesendete Anfrage,
+   - SOAP-Fehler aus `HOST_ERROR_CODES` (Abschnitt 20.4) – Exchange hat die
+     Anfrage also empfangen, konnte sie aber nicht bearbeiten, und
+     `request()` hat sie wegen `request_sent` nicht auf einem anderen Host
+     wiederholt.
+2. `backendName()` ist `exchange`. Proxy-Postfächer laufen über den
+   SMTP-/IMAP-Proxy mit eigener Warteschlange (`mail_outbox`, Abschnitt 18).
+
+**Nicht** eingereiht werden 401/403 (`mail_auth`) und fachliche SOAP-Fehler
+(`ErrorSendAsDenied`, `ErrorInvalidRecipients`, `ErrorNonExistentMailbox`): Sie
+scheitern bei jedem Versuch erneut, der Benutzer muss sie sehen. Ebenso bleibt
+es bei einem Fehler, wenn der Auftrag nicht serialisiert oder nicht gespeichert
+werden kann – dann ist die Nachricht nicht gesendet und der Benutzer erfährt
+es.
+
+Der Grund für diese enge Auswahl ist der **doppelte Versand**: Eine Anfrage,
+die den Server erreicht hat und dort nur langsam beantwortet wurde, darf nicht
+ein zweites Mal gesendet werden. Dieselbe Regel gilt schon beim Failover
+innerhalb der DAG (Abschnitt 20.4) – die Warteschlange ist die zweite Stufe
+dahinter.
+
+### 25.2 Ablauf
+
+```
+Controller ─▶ OrvantaMailQueueService::send()/respond()
+                        │
+              backend->send() ── ok ──▶ {id, queued: false}
+                        │ Ausfall (EXCHANGE_UNAVAILABLE)
+                        ▼
+              enqueue() ─▶ orvanta_mail_outbox (status = pending)
+                        │
+              Antwort {queued: true, outbox_id, message}
+                        │
+mail_worker.php ─▶ dispatch() ─▶ due() ─▶ claim() ─▶ deliver() ─▶ sent
+                                             │ Fehler
+                                             ▼
+                              pending (mit next_attempt_at) | failed
+```
+
+- **`send()`** und **`respond()`** liefern bei Erfolg die Antwort des Backends
+  plus `queued: false`; nach dem Einreihen `{id: '', queued: true,
+  outbox_id, message}` mit `QUEUED_MESSAGE`.
+- **`respond()`** speichert den Auftrag als `send()` mit
+  `reference = {id, mode}` – beide Backends bilden eine Antwort so ab, der
+  Auftrag bleibt damit vollständig und ohne Benutzersitzung zustellbar.
+- **`dispatch()`** läuft in `scripts/mail_worker.php` nach dem SMTP-Teil, in
+  einem **eigenen** `try`/`catch`: Ein Fehler der SMTP-Warteschlange hält die
+  Orvanta-Warteschlange nicht an (und umgekehrt).
+
+### 25.3 Ein Lauf von `dispatch()`
+
+1. `recover()`: Aufträge mit Status `sending` und `updated_at` älter als
+   `CLAIM_TIMEOUT` (900 s) gelten als abgebrochen (Worker beendet) und gehen
+   zurück auf `pending` – ohne Zähler, weil der Versuch nicht bewertet werden
+   kann.
+2. `prune()`: zugestellte Aufträge (`sent`) nach `SENT_RETENTION` (7 Tage),
+   endgültig gescheiterte (`failed`) nach `FAILED_RETENTION` (30 Tage)
+   entfernen.
+3. `due()`: bis zu `DUE_LIMIT` (20) Aufträge mit Status `pending`,
+   `next_attempt_at <= now` und `attempts < MAX_ATTEMPTS`, älteste zuerst;
+   je Lauf werden höchstens `MAX_DISPATCH` (5) zugestellt.
+4. `claim()`: setzt den Status auf `sending`, **nur** wenn `attempts` noch dem
+   gelesenen Wert entspricht (optimistisch). Zwei Worker, die denselben
+   Auftrag sehen, senden ihn deshalb nicht doppelt; der zweite überspringt ihn.
+5. `deliver()`: Das Backend wird **neu** über
+   `backendForUid(uid, mailbox)` aufgelöst. Ist es inzwischen nicht mehr
+   `exchange` (Postfach wurde auf den Proxy umgestellt), wird der Auftrag mit
+   409 und Status `failed` abgeschlossen – ein stiller Ausweichweg über einen
+   anderen Transport wäre falsch (Abschnitt 18).
+6. Erfolg → `finish('sent', sent_at = now)`.
+
+### 25.4 Fehler und Wartezeiten
+
+| Fall | Status | Nächster Versuch |
+| --- | --- | --- |
+| Ausfall (`EXCHANGE_UNAVAILABLE`), `attempts < MAX_ATTEMPTS` | `pending` | `backoff()`: 30 s, 60 s, 120 s … höchstens 900 s |
+| Ausfall, `attempts >= MAX_ATTEMPTS` (10) | `failed` | keiner |
+| anderer Fehler (fachlich, 409, unbrauchbarer Auftrag) | `failed` | keiner |
+
+Nach einem Ausfall **bricht der Lauf ab** (`break`): Exchange antwortet
+offensichtlich nicht, weitere Aufträge würden nur warten. Der nächste Lauf des
+Workers (Takt 5 s) versucht es erneut. `last_error` (≤ 500 Zeichen) hält die
+Meldung des letzten Versuchs für die Diagnose fest – auch die des ersten, denn
+`enqueue()` schreibt sie sofort mit.
+
+### 25.5 Inhalt des Auftrags
+
+Der Auftrag enthält den **vollständigen** Versandauftrag, damit der Worker
+ohne Benutzersitzung senden kann:
+
+- `user_uid`, `mailbox` (Absenderpostfach der Impersonation), `from_email`,
+- `kind` (`new`, `reply`, `replyall`, `forward` – aus `reference.mode`),
+  `subject`, `recipients` (TO+CC+BCC als JSON, nur für die Diagnose),
+- `payload`: der Mail-Array aus `mailPayload()` als JSON,
+- `draft_id`, `change_key`, falls ein gespeicherter Entwurf gesendet wurde.
+
+**Anhänge** sind binär und damit kein gültiges UTF-8; `encode()` legt sie
+deshalb base64-kodiert mit `encoding: 'base64'` ab, `decode()` wandelt sie vor
+dem Senden zurück. Ist ein Anhang nicht dekodierbar, gilt der Auftrag als
+unbrauchbar (`failed`, 500).
+
+### 25.6 Oberfläche
+
+`public/assets/js/orvanta.js` (`sendCompose()`) liest `result.queued` und zeigt
+statt „Nachricht gesendet.“ den Hinweis aus `result.message` als
+`info`-Meldung. Entwürfe (`asDraft`) sind nicht betroffen – sie werden
+gespeichert, nicht gesendet.
+
+### 25.7 Betrieb
+
+- Der Dienst `mail` (`php scripts/mail_worker.php`) muss Exchange **erreichen
+  können** – dieselbe Netzanbindung wie `app`. Fehlt sie, bleiben Aufträge
+  liegen, bis `MAX_ATTEMPTS` erreicht ist (`failed`); die Oberfläche meldet
+  den Versand in diesem Fall trotzdem als „in die Warteschlange gestellt“,
+  weil zum Zeitpunkt des Einreihens nur der Ausfall bekannt ist.
+- `app_logger()` protokolliert das Einreihen (`warning`, mit `outbox`, `uid`,
+  `kind`), jeden fehlgeschlagenen Zustellversuch (mit `attempts`, `final`)
+  und einen nicht speicherbaren Auftrag (`error`).
+- Fehlt Migration 060, scheitert der Versand wie bisher am Ausfall; der
+  Einreihversuch selbst wirft dann die ursprüngliche Fehlermeldung.
+
+### 25.8 Tests
+
+`tests/Unit/OrvantaMailQueueTest.php` bildet Migration 060 als SQLite-Schema
+nach (`orvantaMailQueuePdo()`), nutzt `FakeOrvantaMailQueueBackend` und prüft
+Einreihen bei Ausfall (inkl. `last_error`), Zustellung nach Wiederkehr,
+byteidentische Anhänge über den Datenbankumweg, kein Einreihen bei fachlichen
+Fehlern und `mail_auth`, `failed` nach `MAX_ATTEMPTS`, `recover()` für
+hängende Aufträge, `prune()` und die Ablehnung bei abweichendem Backend.

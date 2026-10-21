@@ -802,6 +802,31 @@ final class Container
     }
 
     /**
+     * Warteschlange fuer Orvanta-Mails, die Exchange kurzfristig nicht
+     * angenommen hat. Der Versandauftrag wird ohne Benutzersitzung vom Dienst
+     * scripts/mail_worker.php nachgeholt.
+     */
+    public static function orvantaMailOutboxRepository(): \App\Repositories\OrvantaMailOutboxRepository
+    {
+        return self::make(
+            \App\Repositories\OrvantaMailOutboxRepository::class,
+            static fn (): \App\Repositories\OrvantaMailOutboxRepository => new \App\Repositories\OrvantaMailOutboxRepository()
+        );
+    }
+
+    public static function orvantaMailQueue(): \App\Services\Orvanta\OrvantaMailQueueService
+    {
+        return self::make(
+            \App\Services\Orvanta\OrvantaMailQueueService::class,
+            static fn (): \App\Services\Orvanta\OrvantaMailQueueService => new \App\Services\Orvanta\OrvantaMailQueueService(
+                self::orvantaMailOutboxRepository(),
+                static fn (string $uid, string $email): \App\Contracts\OrvantaMailBackendInterface => self::orvantaMail()->backendForUid($uid, $email),
+                app_logger()
+            )
+        );
+    }
+
+    /**
      * Lokaler Kalender fuer Proxy-Postfaecher: Termine, Teilnehmer, Versand-
      * auftraege und die Idempotenz der uebernommenen Einladungen.
      */

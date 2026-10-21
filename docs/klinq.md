@@ -95,7 +95,7 @@ flowchart LR
     K --> DB[(klinq-db<br/>MySQL)]
     K --> PDF[klinq-pdf<br/>WeasyPrint]
     K --> MAIL[klinq-mail<br/>SMTP-Relay]
-    K -->|/internal/klinq/ki<br/>/internal/klinq/melder| APP
+    K -->|/internal/klinq/ki<br/>/internal/klinq/melder<br/>/internal/klinq/telefonbuch| APP
     APP -->|Einstiegsschein<br/>/klinq/sso/lanpa| K
 ```
 
@@ -198,6 +198,19 @@ Die Auswahl erscheint nur, wenn `KLINQ_ENABLED=true` gesetzt ist.
   `helpdesk_agent` an. Ein Konto mit demselben Namen kann sich nicht anmelden;
   meldet sich später ein gleichnamiger AD-Benutzer über SSO an, übernimmt die
   Anmeldung den Datensatz.
+
+### 5.1 Personenauswahl aus dem Telefonbuch
+
+Die Felder **Melder** und **Betroffener Mitarbeiter** im KLINQ-Ticketformular
+suchen live im Telefonbuch des Intranets (alle Identitätsquellen), nicht nur im
+nach KLINQ synchronisierten AD-Bestand. Dafür ruft KLINQ
+`GET /internal/klinq/telefonbuch` auf (Token wie `sso-config`, Dienst
+`KLINQ_SERVICE`): `?q=…` liefert Treffer – auch Personen ohne E-Mail-Adresse –,
+`?id=…` einen Einzeleintrag. Unbekannte Personen werden erst beim Auswählen als
+lokaler Mitarbeiter übernommen, damit Tickets weiterhin auf einen lokalen
+Datensatz verweisen; die Stammdaten kommen dabei aus dem Intranet. Fällt das
+Intranet aus, bleiben die lokal bekannten Mitarbeiter wählbar. Details:
+[`klinq/docs/helpdesk.md`](../klinq/docs/helpdesk.md).
 
 ---
 

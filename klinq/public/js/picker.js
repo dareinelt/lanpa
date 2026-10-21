@@ -48,8 +48,8 @@
                 .catch(function () { /* abgebrochen oder offline */ });
         }
 
-        function choose(item) {
-            value.value = item.id;
+        function apply(item, id) {
+            value.value = id;
             label.textContent = item.label || item.name;
             if (meta) { meta.textContent = item.meta || item.path || ""; }
             selected.hidden = false;
@@ -57,7 +57,38 @@
             results.hidden = true;
             input.value = "";
             items = [];
-            root.dispatchEvent(new CustomEvent("picker:change", { bubbles: true, detail: item }));
+            root.dispatchEvent(new CustomEvent("picker:change", { bubbles: true, detail: Object.assign({}, item, { id: id }) }));
+        }
+
+        function csrfToken() {
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            return meta ? meta.getAttribute("content") || "" : "";
+        }
+
+        /** Treffer ohne lokale ID (z. B. Personen aus dem Telefonbuch) beim Auswaehlen uebernehmen. */
+        function adopt(item) {
+            const url = root.getAttribute("data-resolve-url");
+            results.hidden = true;
+            const payload = { ref: item.ref };
+            const request = window.AppUI && window.AppUI.api
+                ? window.AppUI.api(url, { method: "POST", body: payload })
+                : fetch(url, {
+                    method: "POST",
+                    headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+                    credentials: "same-origin",
+                    body: JSON.stringify(payload)
+                }).then(function (r) { return r.ok ? r.json() : null; });
+            Promise.resolve(request)
+                .then(function (data) {
+                    if (data && data.id) { apply(item, data.id); return; }
+                    window.alert("Person konnte nicht übernommen werden.");
+                })
+                .catch(function () { window.alert("Person konnte nicht übernommen werden."); });
+        }
+
+        function choose(item) {
+            if (item.ref && root.hasAttribute("data-resolve-url")) { adopt(item); return; }
+            apply(item, item.id);
         }
 
         function reset() {

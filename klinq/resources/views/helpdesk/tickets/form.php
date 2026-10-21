@@ -17,13 +17,19 @@ if (is_array($oldAssets)) {
 }
 $tagValue = form_value($row, 'tags', $isEdit ? implode(', ', array_map(static fn (array $t): string => (string) $t['name'], $tags)) : '');
 $requesterId = (int) form_value($row, 'requester_employee_id');
-$selectedRequester = null;
-foreach ($employees as $emp) {
-    if ((int) $emp['id'] === $requesterId) {
-        $selectedRequester = ['id' => $emp['id'], 'name' => $emp['display_name'], 'meta' => $emp['department'] ?? ''];
-        break;
+$affectedId = (int) form_value($row, 'affected_employee_id');
+// Beschriftung fuer bereits gewaehlte Personen (Picker zeigt nur die Auswahl an)
+$selectedEmployee = static function (int $id) use ($employees): ?array {
+    foreach ($employees as $emp) {
+        if ((int) $emp['id'] === $id) {
+            return ['id' => (int) $emp['id'], 'name' => $emp['display_name'], 'meta' => $emp['department'] ?? ''];
+        }
     }
-}
+
+    return null;
+};
+$selectedRequester = $selectedEmployee($requesterId);
+$selectedAffected = $selectedEmployee($affectedId);
 ?>
 <span hidden data-hd-ai-config data-enabled="<?= !empty($aiEnabled) ? '1' : '0' ?>"></span>
 <div class="page-header">
@@ -138,7 +144,7 @@ foreach ($employees as $emp) {
     <fieldset>
         <legend>Personen &amp; Zuordnung</legend>
         <div class="form-row">
-            <div class="form-group picker<?= has_error('requester_employee_id') ? ' has-error' : '' ?>" data-picker data-search-url="/api/employees/search" data-hd-employee-assets="#f-assets">
+            <div class="form-group picker<?= has_error('requester_employee_id') ? ' has-error' : '' ?>" data-picker data-search-url="/api/helpdesk/people/search" data-resolve-url="/api/helpdesk/people/adopt" data-hd-employee-assets="#f-assets">
                 <label for="f-requester">Melder</label>
                 <input type="hidden" name="requester_employee_id" value="<?= e((string) ($selectedRequester['id'] ?? '')) ?>" data-picker-value>
                 <div class="picker-selected" data-picker-selected<?= $selectedRequester ? '' : ' hidden' ?>>
@@ -148,17 +154,24 @@ foreach ($employees as $emp) {
                     </span>
                     <button type="button" class="btn btn-ghost btn-sm picker-clear" data-picker-clear aria-label="Auswahl entfernen"><?= icon('x') ?></button>
                 </div>
-                <input id="f-requester" type="search" class="picker-input" placeholder="Name, Benutzername oder Personalnr. …" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" data-picker-input<?= $selectedRequester ? ' hidden' : '' ?>>
+                <input id="f-requester" type="search" class="picker-input" placeholder="Name, Benutzername, Personalnr. oder Telefon …" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" data-picker-input<?= $selectedRequester ? ' hidden' : '' ?>>
                 <ul class="picker-results" role="listbox" hidden data-picker-results></ul>
-                <p class="form-hint">Phonetische Suche – auch bei abweichender Schreibweise (z. B. „Meier“ statt „Maier“). Leer lassen für unbekannt/extern.</p>
+                <p class="form-hint">Suche im Telefonbuch des Intranets (alle Identitätsquellen) – auch phonetisch, also bei abweichender Schreibweise (z. B. „Meier“ statt „Maier“). Personen ohne KLINQ-Konto werden beim Auswählen übernommen. Leer lassen für unbekannt/extern.</p>
                 <?= field_error('requester_employee_id') ?>
             </div>
-            <div class="form-group<?= has_error('affected_employee_id') ? ' has-error' : '' ?>">
+            <div class="form-group picker<?= has_error('affected_employee_id') ? ' has-error' : '' ?>" data-picker data-search-url="/api/helpdesk/people/search" data-resolve-url="/api/helpdesk/people/adopt">
                 <label for="f-affected">Betroffener Mitarbeiter <span class="text-muted">(falls abweichend)</span></label>
-                <select id="f-affected" name="affected_employee_id" data-hd-employee-assets="#f-assets">
-                    <option value="">– wie Melder –</option>
-                    <?php foreach ($employees as $emp): ?><option value="<?= (int) $emp['id'] ?>"<?= selected(form_value($row, 'affected_employee_id'), $emp['id']) ?>><?= e($emp['display_name']) ?></option><?php endforeach; ?>
-                </select>
+                <input type="hidden" name="affected_employee_id" value="<?= e((string) ($selectedAffected['id'] ?? '')) ?>" data-picker-value>
+                <div class="picker-selected" data-picker-selected<?= $selectedAffected ? '' : ' hidden' ?>>
+                    <span class="picker-selected-text">
+                        <span class="picker-selected-label" data-picker-label><?= e($selectedAffected['name'] ?? '') ?></span>
+                        <span class="text-muted text-sm" data-picker-meta><?= e($selectedAffected['meta'] ?? '') ?></span>
+                    </span>
+                    <button type="button" class="btn btn-ghost btn-sm picker-clear" data-picker-clear aria-label="Auswahl entfernen"><?= icon('x') ?></button>
+                </div>
+                <input id="f-affected" type="search" class="picker-input" placeholder="Name, Benutzername, Personalnr. oder Telefon …" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" data-picker-input<?= $selectedAffected ? ' hidden' : '' ?>>
+                <ul class="picker-results" role="listbox" hidden data-picker-results></ul>
+                <p class="form-hint">Leer = wie Melder.</p>
                 <?= field_error('affected_employee_id') ?>
             </div>
         </div>

@@ -11,6 +11,7 @@ use App\Core\Response;
 use App\Exceptions\ValidationException;
 use App\Security\SsoAuth;
 use App\Services\IdentitySourceService;
+use App\Services\PhonebookService;
 use App\Support\ClientAddress;
 
 /**
@@ -237,6 +238,47 @@ final class InternalController
         }
 
         return Response::json(Container::klinqAi()->payload())->withHeader('Cache-Control', 'no-store');
+    }
+
+    /**
+     * Telefonbuch fuer die Personenauswahl in KLINQ (Melder/Betroffener im
+     * Help-Desk-Ticket).
+     *
+     * Ohne Parameter liefert der Endpunkt die Treffer zu ?q= (Name,
+     * Benutzername, Personalnummer, Telefonnummer) aus allen
+     * Identitaetsquellen – auch Personen ohne E-Mail-Adresse. Mit ?id= liefert
+     * er genau einen Eintrag; KLINQ nutzt das, um eine ausgewaehlte Person als
+     * lokalen Mitarbeiter zu uebernehmen, ohne den Datensatz vom Client zu
+     * uebernehmen.
+     */
+    public function klinqPhonebook(Request $request): Response
+    {
+        if (!$this->authorized($request, '', (string) Env::get('KLINQ_SERVICE', 'klinq-app'))) {
+            app_logger()->warning('Abruf der KLINQ-Telefonbuchsuche abgelehnt.', [
+                'remote' => (string) ($request->server['REMOTE_ADDR'] ?? ''),
+            ]);
+
+            return $this->deny(403);
+        }
+
+        $service = Container::phonebook();
+        $id = $request->queryInt('id', 0);
+        if ($id > 0) {
+            $entry = $service->directoryEntry($id);
+
+            return $entry === null
+                ? $this->deny(404)
+                : Response::json($entry)->withHeader('Cache-Control', 'no-store');
+        }
+
+        $term = trim((string) $request->query('q', ''));
+        if ($term === '') {
+            return Response::json(['items' => []])->withHeader('Cache-Control', 'no-store');
+        }
+
+        $items = $service->directory($term, $request->queryInt('limit', PhonebookService::DEFAULT_LIMIT));
+
+        return Response::json(['items' => $items])->withHeader('Cache-Control', 'no-store');
     }
 
     /**

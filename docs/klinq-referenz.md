@@ -495,7 +495,8 @@ Legt über `NavigationRepository` einen Navigationseintrag an:
 
 `createTile` ist idempotent: existiert bereits ein aktiver Eintrag mit diesem
 Ziel, wird kein zweiter angelegt. `updateTile` ändert Bezeichnung, Symbol,
-Reihenfolge und Sichtbarkeit.
+Hintergrund und den Schalter `open_in_new_tab`, der die Kachel in einem neuen
+Browser-Tab öffnen lässt (Vorgabe: aus).
 
 ### 9.4 KI
 
@@ -761,6 +762,9 @@ steht als `ERROR` mit Typ, Text und Fundstelle in `storage/logs/app-*.log`.
 ### 13.1 Kachel
 
 * Ziel `/klinq-starten`, Typ `internal`, Symbol `wrench`.
+* Die Kachel öffnet standardmäßig im selben Tab; `open_in_new_tab` (Spalte in
+  `navigation_items`, Migration 059) lässt sie ein neues Browser-Tab öffnen.
+  Setzbar in **KLINQ → Kachel** und in **Navigation → Eintrag bearbeiten**.
 * Sichtbarkeit über die normalen Kachelrechte (Benutzer, AD-Gruppen).
 * Direktaufruf prüft dieselbe Freigabe (`assertTileAccess`) – die Kachel ist
   damit keine reine Anzeigefrage.

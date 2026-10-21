@@ -297,6 +297,10 @@ final class NavigationService
             $errors['sort_order'] = 'Sortierung muss zwischen 1 und 9999 liegen.';
         }
 
+        // Internes Ziel in einem neuen Tab oeffnen (externe Ziele tun das
+        // ohnehin, Alarmierungen haben kein Ziel).
+        $openInNewTab = $type === 'internal' && !empty($input['open_in_new_tab']);
+
         // Weiterleitung ueber den Reverse-Proxy: nur externe Ziele. Die
         // Quellnetze werden normalisiert gespeichert (Adresse auf Netzgrenze).
         $proxyEnabled = $type === 'external' && !empty($input['proxy_enabled']);
@@ -329,6 +333,7 @@ final class NavigationService
             'sort_order' => $sortOrder,
             'active' => !empty($input['active']),
             'protected_access' => !empty($input['protected_access']),
+            'open_in_new_tab' => $openInNewTab,
             'proxy_enabled' => $proxyEnabled,
             'proxy_bypass_networks' => $proxyEnabled ? implode(' ', IpNetwork::parseList($proxyBypassRaw)) : '',
         ];

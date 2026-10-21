@@ -419,7 +419,7 @@
             current = {
                 id: trigger.getAttribute('data-protected-id'),
                 href: trigger.getAttribute('data-nav-href') || '',
-                external: trigger.getAttribute('data-nav-external') === '1',
+                newTab: trigger.getAttribute('data-nav-new-tab') === '1',
                 alarm: trigger.hasAttribute('data-alarm-id'),
                 title: trigger.getAttribute('data-nav-title') || '',
                 trigger: trigger
@@ -450,7 +450,7 @@
                 }
                 return;
             }
-            if (current.external) {
+            if (current.newTab) {
                 window.open(current.href, '_blank', 'noopener,noreferrer');
             } else {
                 window.location.href = current.href;

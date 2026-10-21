@@ -29,6 +29,7 @@ function navigationTestPdo(): PDO
             alarm_text VARCHAR(255) NULL,
             alarm_group_id INTEGER NULL,
             protected_access INTEGER NOT NULL DEFAULT 0,
+            open_in_new_tab INTEGER NOT NULL DEFAULT 0,
             proxy_enabled INTEGER NOT NULL DEFAULT 0,
             proxy_bypass_networks TEXT NOT NULL DEFAULT \'\',
             sort_order INTEGER NOT NULL DEFAULT 1,
@@ -194,4 +195,26 @@ Runner::test('Mit Opt-Out werden abweichende Kachelfarben übernommen', static f
     Assert::same(1, (int) $item['override_background']);
     Assert::same('#123456', (string) $item['background_color']);
     Assert::same(50, (int) $item['background_opacity']);
+});
+
+Runner::test('Neuer Tab gilt nur fuer interne Ziele', static function (): void {
+    $service = navigationTestService(navigationTestPdo());
+
+    $internal = $service->create([
+        'title' => 'KLINQ',
+        'type' => 'internal',
+        'url' => '/klinq',
+        'open_in_new_tab' => true,
+        'active' => true,
+    ]);
+    $external = $service->create([
+        'title' => 'Extern',
+        'type' => 'external',
+        'url' => 'https://example.com',
+        'open_in_new_tab' => true,
+        'active' => true,
+    ]);
+
+    Assert::same(1, (int) $service->find($internal)['open_in_new_tab']);
+    Assert::same(0, (int) $service->find($external)['open_in_new_tab']);
 });

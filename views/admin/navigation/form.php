@@ -243,6 +243,13 @@ $icons = [
         <label for="protected_access">Geschützten Zugriffsmodus aktivieren (SMS-Code erforderlich)</label>
     </div>
 
+    <div class="field field--check" data-editor-new-tab>
+        <input type="checkbox" id="open_in_new_tab" name="open_in_new_tab" value="1"
+               <?= (int) ($item['open_in_new_tab'] ?? 0) === 1 ? 'checked' : '' ?>>
+        <label for="open_in_new_tab">Internes Ziel in einem neuen Tab öffnen</label>
+        <p class="field__hint">Gilt nur für interne Ziele (z. B. die KLINQ-Kachel). Externe Ziele öffnen ohnehin in einem neuen Tab.</p>
+    </div>
+
     <div class="field field--check">
         <input type="checkbox" id="active" name="active" value="1" <?= (int) $item['active'] === 1 ? 'checked' : '' ?>>
         <label for="active">Element ist aktiv</label>

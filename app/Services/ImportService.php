@@ -378,6 +378,7 @@ final class ImportService
                 'alarm_text' => $row['alarm_text'] ?? null,
                 'alarm_group_id' => $this->remapAlarmGroupId($row['alarm_group_id'] ?? null),
                 'protected_access' => !empty($row['protected_access']),
+                'open_in_new_tab' => !empty($row['open_in_new_tab']),
                 'proxy_enabled' => !empty($row['proxy_enabled']),
                 'proxy_bypass_networks' => (string) ($row['proxy_bypass_networks'] ?? ''),
                 'sort_order' => (int) ($row['sort_order'] ?? 1),

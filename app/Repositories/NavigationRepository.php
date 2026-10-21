@@ -6,7 +6,7 @@ namespace App\Repositories;
 
 final class NavigationRepository extends Repository
 {
-    private const COLUMNS = 'n.id, n.title, n.url, n.type, n.parent_id, n.icon, n.background_color, n.background_opacity, n.override_background, n.short_description, n.description, n.content, n.alarm_text, n.alarm_group_id, n.protected_access, n.proxy_enabled, n.proxy_bypass_networks, n.sort_order, n.active, n.created_at, n.updated_at, g.group_number AS alarm_group_number, g.description AS alarm_group_description, g.type AS alarm_group_type';
+    private const COLUMNS = 'n.id, n.title, n.url, n.type, n.parent_id, n.icon, n.background_color, n.background_opacity, n.override_background, n.short_description, n.description, n.content, n.alarm_text, n.alarm_group_id, n.protected_access, n.open_in_new_tab, n.proxy_enabled, n.proxy_bypass_networks, n.sort_order, n.active, n.created_at, n.updated_at, g.group_number AS alarm_group_number, g.description AS alarm_group_description, g.type AS alarm_group_type';
 
     private const FROM = ' FROM navigation_items n LEFT JOIN alarm_groups g ON g.id = n.alarm_group_id';
 
@@ -397,8 +397,8 @@ final class NavigationRepository extends Repository
     public function create(array $data): int
     {
         $statement = $this->pdo->prepare(
-            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, override_background, short_description, description, content, alarm_text, alarm_group_id, protected_access, proxy_enabled, proxy_bypass_networks, sort_order, active)
-             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :override_background, :short_description, :description, :content, :alarm_text, :alarm_group_id, :protected_access, :proxy_enabled, :proxy_bypass_networks, :sort_order, :active)'
+            'INSERT INTO navigation_items (title, url, type, parent_id, icon, background_color, background_opacity, override_background, short_description, description, content, alarm_text, alarm_group_id, protected_access, open_in_new_tab, proxy_enabled, proxy_bypass_networks, sort_order, active)
+             VALUES (:title, :url, :type, :parent_id, :icon, :background_color, :background_opacity, :override_background, :short_description, :description, :content, :alarm_text, :alarm_group_id, :protected_access, :open_in_new_tab, :proxy_enabled, :proxy_bypass_networks, :sort_order, :active)'
         );
         $statement->execute($this->bindings($data));
 
@@ -426,6 +426,7 @@ final class NavigationRepository extends Repository
                     alarm_text = :alarm_text,
                     alarm_group_id = :alarm_group_id,
                     protected_access = :protected_access,
+                    open_in_new_tab = :open_in_new_tab,
                     proxy_enabled = :proxy_enabled,
                     proxy_bypass_networks = :proxy_bypass_networks,
                     sort_order = :sort_order,
@@ -591,6 +592,7 @@ final class NavigationRepository extends Repository
             'alarm_text' => $alarmText === null ? null : (string) $alarmText,
             'alarm_group_id' => $alarmGroupId === null ? null : (int) $alarmGroupId,
             'protected_access' => !empty($data['protected_access']) ? 1 : 0,
+            'open_in_new_tab' => !empty($data['open_in_new_tab']) ? 1 : 0,
             'proxy_enabled' => !empty($data['proxy_enabled']) ? 1 : 0,
             'proxy_bypass_networks' => (string) ($data['proxy_bypass_networks'] ?? ''),
             'sort_order' => (int) ($data['sort_order'] ?? 1),

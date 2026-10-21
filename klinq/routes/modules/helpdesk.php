@@ -122,6 +122,8 @@ return static function (Router $router, Container $c): void {
     $router->get('/api/helpdesk/templates', static fn (Request $r): Response => $api()->templates($r), 'portal.view');
     $router->get('/api/helpdesk/templates/{id}', static fn (Request $r): Response => $api()->template($r), 'portal.view');
     $router->get('/api/helpdesk/employees/{id}/assets', static fn (Request $r): Response => $api()->employeeAssets($r), 'helpdesk.view');
+    $router->get('/api/helpdesk/people/search', static fn (Request $r): Response => $api()->searchPeople($r), 'helpdesk.view');
+    $router->post('/api/helpdesk/people/adopt', static fn (Request $r): Response => $api()->adoptPerson($r), 'helpdesk.view');
     $router->get('/api/helpdesk/knowledge/suggest', static fn (Request $r): Response => $api()->suggestArticles($r), 'knowledgebase.view');
     $router->post('/api/helpdesk/ai/verbessern', static fn (Request $r): Response => $api()->improve($r), 'portal.view');
 };

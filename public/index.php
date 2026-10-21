@@ -154,6 +154,8 @@ $router->post('/internal/container-metrics', [InternalController::class, 'contai
 $router->post('/internal/klinq/melder', [InternalController::class, 'klinqReporter']);
 // KLINQ holt hier den im Intranet gepflegten KI-Endpunkt samt API-Key ab.
 $router->get('/internal/klinq/ki', [InternalController::class, 'klinqAi']);
+// KLINQ sucht hier im Telefonbuch (alle Identitaetsquellen) fuer die Personenauswahl.
+$router->get('/internal/klinq/telefonbuch', [InternalController::class, 'klinqPhonebook']);
 
 // Office-Integration: Hinweisseite (auch Fehlerseite des auth-Proxys) und
 // Endpunkte fuer die Fusszeile in Nextcloud bzw. den Kachelstatus.

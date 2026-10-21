@@ -143,10 +143,13 @@ function searchTestPdo(): PDO
     $pdo->exec(
         'CREATE TABLE phonebook (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            external_id VARCHAR(128) NULL,
             identity_source_id INTEGER NOT NULL DEFAULT 0,
+            samaccount_name VARCHAR(64) NULL,
             display_name VARCHAR(120) NOT NULL DEFAULT \'\',
             first_name VARCHAR(64) NULL,
             last_name VARCHAR(64) NULL,
+            title VARCHAR(120) NULL,
             phone VARCHAR(40) NULL,
             phone_digits VARCHAR(40) NULL,
             mobile VARCHAR(40) NULL,

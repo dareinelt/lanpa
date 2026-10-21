@@ -8,15 +8,18 @@ use App\Core\Container;
 use App\Core\Logger;
 use App\Core\SessionManager;
 use App\Core\View;
+use App\Repositories\EmployeeRepository;
 use App\Repositories\UserRepository;
 use App\Security\CsrfTokenManager;
 use App\Security\CurrentUser;
 use App\Security\LanpaSsoToken;
 use App\Services\AuditLogService;
+use App\Services\EmployeeService;
 use App\Services\Helpdesk\Ai\AiTransportInterface;
 use App\Services\Lanpa\LanpaBridge;
 use App\Services\Lanpa\LanpaIdentityService;
 use App\Services\Lanpa\LanpaUserService;
+use App\Services\PersonDirectoryService;
 
 /**
  * Anmeldung ueber das Intranet (LANPA).
@@ -30,6 +33,14 @@ return static function (Container $c): void {
     $c->singleton(LanpaBridge::class, static fn (Container $c): LanpaBridge => new LanpaBridge(
         $c->get(Config::class),
         $c->get(AiTransportInterface::class)
+    ));
+    // Personenauswahl im Help Desk: Telefonbuch des Intranets (alle Identitaetsquellen)
+    // plus lokaler Mitarbeiterbestand; unbekannte Personen werden beim Auswaehlen uebernommen.
+    $c->singleton(PersonDirectoryService::class, static fn (Container $c): PersonDirectoryService => new PersonDirectoryService(
+        $c->get(LanpaBridge::class),
+        $c->get(EmployeeRepository::class),
+        $c->get(EmployeeService::class),
+        $c->get(AuditLogService::class)
     ));
     $c->singleton(LanpaSsoToken::class, static fn (Container $c): LanpaSsoToken => new LanpaSsoToken(
         $c->get(Config::class),

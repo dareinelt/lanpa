@@ -67,6 +67,70 @@ final class LanpaBridgeTest extends TestCase
         $this->assertSame('', $bridge->designCssUrl());
     }
 
+    public function testPhonebookSearchQueriesTheIntranet(): void
+    {
+        $transport = new RecordingTransport(['status' => 200, 'body' => (string) json_encode(['items' => [
+            [
+                'id' => 7,
+                'external_id' => '4d1f2c3b5e2a3d4c8f9a0b1c2d3e4f5a',
+                'username' => 'mmustermann',
+                'display_name' => 'Mustermann, Max',
+                'first_name' => 'Max',
+                'last_name' => 'Mustermann',
+                'title' => 'Systembetreuer',
+                'phone' => '0815 4711',
+                'mobile' => '',
+                'email' => 'max@example.local',
+                'department' => 'IT',
+                'source' => 'Niederlassung Nord',
+            ],
+            ['id' => 0, 'display_name' => ''],
+        ]]), 'error' => null]);
+        $bridge = $this->bridge($transport);
+
+        $items = $bridge->phonebook('Muster', 10);
+
+        $this->assertNotNull($items);
+        $this->assertCount(1, $items, 'Einträge ohne ID oder Namen werden verworfen.');
+        $this->assertSame('GET', $transport->method);
+        $this->assertSame('http://intranet-app/internal/klinq/telefonbuch?q=Muster&limit=10', $transport->url);
+        $this->assertSame('dienst-token', $transport->headers['X-Intranet-Sso-Token'] ?? '');
+        $this->assertSame('mmustermann', $items[0]['username']);
+        $this->assertSame('4d1f2c3b5e2a3d4c8f9a0b1c2d3e4f5a', $items[0]['external_id']);
+        $this->assertSame('Systembetreuer', $items[0]['title']);
+        $this->assertSame('Niederlassung Nord', $items[0]['source']);
+    }
+
+    public function testPhonebookEntryIsRequestedById(): void
+    {
+        $transport = new RecordingTransport(['status' => 200, 'body' => (string) json_encode([
+            'id' => 7,
+            'display_name' => 'Mustermann, Max',
+            'username' => 'mmustermann',
+        ]), 'error' => null]);
+        $bridge = $this->bridge($transport);
+
+        $entry = $bridge->phonebookEntry(7);
+
+        $this->assertNotNull($entry);
+        $this->assertSame('http://intranet-app/internal/klinq/telefonbuch?id=7', $transport->url);
+        $this->assertSame('mmustermann', $entry['username']);
+        $this->assertNull($bridge->phonebookEntry(0));
+        $this->assertSame(1, $transport->calls, 'Ungültige IDs lösen keine Anfrage aus.');
+    }
+
+    public function testPhonebookStaysSilentWithoutTermOrIntranetConnection(): void
+    {
+        $transport = new RecordingTransport(['status' => 200, 'body' => '{"items":[]}', 'error' => null]);
+        $this->assertNull($this->bridge($transport)->phonebook('   '));
+        $this->assertSame(0, $transport->calls, 'Ohne Suchbegriff darf keine Anfrage rausgehen');
+
+        $inactive = new LanpaBridge(Config::fromArray(['lanpa' => ['enabled' => false]]), $transport);
+        $this->assertNull($inactive->phonebook('Muster'));
+        $this->assertNull($inactive->phonebookEntry(7));
+        $this->assertSame(0, $transport->calls);
+    }
+
     private function bridge(RecordingTransport $transport): LanpaBridge
     {
         return new LanpaBridge(Config::fromArray(['lanpa' => [

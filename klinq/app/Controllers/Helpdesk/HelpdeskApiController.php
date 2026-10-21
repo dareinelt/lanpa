@@ -18,6 +18,7 @@ use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskAiService;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\TicketService;
+use App\Services\PersonDirectoryService;
 
 /** JSON-Endpunkte für Autocomplete, Kaskaden und Ticket-Daten (nur für angemeldete Benutzer). */
 final class HelpdeskApiController extends HelpdeskBaseController
@@ -34,6 +35,7 @@ final class HelpdeskApiController extends HelpdeskBaseController
         private readonly KnowledgeBaseService $knowledge,
         private readonly KnowledgeBaseRepository $articles,
         private readonly HelpdeskAiService $ai,
+        private readonly PersonDirectoryService $people,
         private readonly Config $config
     ) {
         parent::__construct($view, $currentUser);
@@ -143,6 +145,33 @@ final class HelpdeskApiController extends HelpdeskBaseController
             'label' => $a['inventory_number'],
             'meta' => trim(($a['article_name'] ?? '') . ' ' . ($a['serial_number'] ?? '')),
         ], $rows)]);
+    }
+
+    /**
+     * Personenauswahl fuer Melder/Betroffener: Telefonbuch des Intranets
+     * (alle Identitaetsquellen) plus lokaler Mitarbeiterbestand.
+     *
+     * Treffer ohne lokalen Mitarbeiter tragen id=0 und ref=<Telefonbuch-ID>;
+     * der Picker ruft damit adoptPerson auf.
+     */
+    public function searchPeople(Request $request): Response
+    {
+        return $this->json(['items' => $this->people->search($request->queryString('q'), PersonDirectoryService::LIMIT)]);
+    }
+
+    /**
+     * Uebernimmt eine im Telefonbuch gefundene Person als lokalen Mitarbeiter,
+     * damit Ticket-Verweise auf einen gueltigen Datensatz zeigen. Die Stammdaten
+     * werden serverseitig aus dem Intranet geladen.
+     */
+    public function adoptPerson(Request $request): Response
+    {
+        $id = $this->people->adopt($request->int('ref') ?? 0);
+        if ($id === null) {
+            return $this->json(['error' => 'Person nicht gefunden.'], 404);
+        }
+
+        return $this->json(['id' => $id]);
     }
 
     /** Wissensartikel-Vorschläge zum eingegebenen Betreff (Portal + Agent). */

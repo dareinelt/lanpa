@@ -170,6 +170,117 @@ final class LanpaBridge
     }
 
     /**
+     * Telefonbuchsuche im Intranet (GET /internal/klinq/telefonbuch?q=…).
+     *
+     * Liefert Personen aus allen Identitaetsquellen des Intranets – auch ohne
+     * E-Mail-Adresse –, damit die Auswahlfelder im Help Desk den gesamten
+     * Bestand abbilden. null, wenn die Anbindung inaktiv ist oder das Intranet
+     * nicht antwortet; der Aufrufer faellt dann auf den lokalen Bestand zurueck.
+     *
+     * @return list<array{id:int,external_id:string,username:string,display_name:string,first_name:string,
+     *                    last_name:string,title:string,phone:string,mobile:string,email:string,
+     *                    department:string,source:string}>|null
+     */
+    public function phonebook(string $term, int $limit = 20): ?array
+    {
+        $term = trim($term);
+        if ($term === '') {
+            return null;
+        }
+
+        $data = $this->phonebookRequest(['q' => $term, 'limit' => max(1, $limit)]);
+        if ($data === null || !isset($data['items']) || !is_array($data['items'])) {
+            return null;
+        }
+
+        $items = [];
+        foreach ($data['items'] as $row) {
+            $person = self::person($row);
+            if ($person !== null) {
+                $items[] = $person;
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * Einzelner Telefonbucheintrag (GET /internal/klinq/telefonbuch?id=…).
+     * Grundlage fuer die Uebernahme einer Person als lokalen Mitarbeiter; die
+     * Daten kommen damit aus dem Intranet und nicht aus der Anfrage.
+     *
+     * @return array{id:int,external_id:string,username:string,display_name:string,first_name:string,
+     *               last_name:string,title:string,phone:string,mobile:string,email:string,
+     *               department:string,source:string}|null
+     */
+    public function phonebookEntry(int $id): ?array
+    {
+        if ($id <= 0) {
+            return null;
+        }
+
+        return self::person($this->phonebookRequest(['id' => $id]));
+    }
+
+    /** @param array<string,mixed> $query */
+    private function phonebookRequest(array $query): ?array
+    {
+        if (!$this->enabled() || $this->transport === null) {
+            return null;
+        }
+        $url = $this->internalUrl('/internal/klinq/telefonbuch');
+        if ($url === '') {
+            return null;
+        }
+
+        $headers = ['Accept' => 'application/json'];
+        $token = $this->serviceToken();
+        if ($token !== '') {
+            $headers['X-Intranet-Sso-Token'] = $token;
+        }
+
+        $response = $this->transport->request('GET', $url . '?' . http_build_query($query), $headers, null, 5);
+        if ($response['error'] !== null || $response['status'] !== 200) {
+            return null;
+        }
+        $data = json_decode($response['body'], true);
+
+        return is_array($data) ? $data : null;
+    }
+
+    /**
+     * @return array{id:int,external_id:string,username:string,display_name:string,first_name:string,
+     *               last_name:string,title:string,phone:string,mobile:string,email:string,
+     *               department:string,source:string}|null
+     */
+    private static function person(mixed $row): ?array
+    {
+        if (!is_array($row)) {
+            return null;
+        }
+        $id = (int) ($row['id'] ?? 0);
+        $displayName = trim((string) ($row['display_name'] ?? ''));
+        if ($id <= 0 || $displayName === '') {
+            return null;
+        }
+
+        return [
+            'id' => $id,
+            'external_id' => trim((string) ($row['external_id'] ?? '')),
+            'username' => trim((string) ($row['username'] ?? '')),
+            'display_name' => $displayName,
+            'first_name' => trim((string) ($row['first_name'] ?? '')),
+            'last_name' => trim((string) ($row['last_name'] ?? '')),
+            'title' => trim((string) ($row['title'] ?? '')),
+            'phone' => trim((string) ($row['phone'] ?? '')),
+            'mobile' => trim((string) ($row['mobile'] ?? '')),
+            'email' => trim((string) ($row['email'] ?? '')),
+            'department' => trim((string) ($row['department'] ?? '')),
+            'source' => trim((string) ($row['source'] ?? '')),
+        ];
+    }
+
+    /**
      * Melderdaten aus dem Intranet nachfragen (POST /internal/klinq/melder).
      *
      * Regulaer uebergibt das Intranet die Kontaktdaten bereits mit dem

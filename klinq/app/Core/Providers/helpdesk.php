@@ -70,6 +70,7 @@ use App\Services\Helpdesk\TicketService;
 use App\Services\Helpdesk\TicketSlaService;
 use App\Services\Helpdesk\TicketWorkflowService;
 use App\Services\MailClient;
+use App\Services\PersonDirectoryService;
 use App\Services\SettingsService;
 use App\Support\Secret;
 
@@ -396,6 +397,7 @@ return static function (Container $c): void {
         $c->get(KnowledgeBaseService::class),
         $c->get(KnowledgeBaseRepository::class),
         $c->get(HelpdeskAiService::class),
+        $c->get(PersonDirectoryService::class),
         $c->get(Config::class)
     ));
     $c->singleton(HelpdeskSupportShiftController::class, static fn (Container $c): HelpdeskSupportShiftController => new HelpdeskSupportShiftController(

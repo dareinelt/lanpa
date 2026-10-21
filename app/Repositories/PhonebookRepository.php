@@ -39,7 +39,8 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
         $countStatement->execute($params);
         $total = (int) $countStatement->fetchColumn();
 
-        $sql = 'SELECT id, identity_source_id, display_name, first_name, last_name, phone, mobile, email, department, ad_modified, synced_at
+        $sql = 'SELECT id, identity_source_id, external_id, samaccount_name, display_name, first_name, last_name, title,
+                       phone, mobile, email, department, ad_modified, synced_at
                   FROM phonebook
                  WHERE ' . $where . '
                  ORDER BY last_name ASC, first_name ASC, display_name ASC
@@ -166,6 +167,30 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
             'SELECT id, identity_source_id, samaccount_name, display_name, first_name, last_name, title, phone, mobile, email, department
                FROM phonebook
               WHERE active = 1 AND id = :id
+              LIMIT 1'
+        );
+        $statement->execute(['id' => $id]);
+        $row = $statement->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
+     * Aktiver und sichtbarer Eintrag mit den Kennungen fuer die Uebernahme in
+     * eine andere Anwendung (z. B. KLINQ): external_id und samaccount_name.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findVisibleById(int $id): ?array
+    {
+        if ($id <= 0) {
+            return null;
+        }
+        $statement = $this->pdo->prepare(
+            'SELECT id, identity_source_id, external_id, samaccount_name, display_name, first_name, last_name,
+                    title, phone, mobile, email, department
+               FROM phonebook
+              WHERE active = 1 AND visible = 1 AND id = :id
               LIMIT 1'
         );
         $statement->execute(['id' => $id]);

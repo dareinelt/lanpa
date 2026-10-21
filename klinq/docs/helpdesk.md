@@ -142,6 +142,29 @@ Ansichten *Meine*, *Meine Gruppe*, *Nicht zugewiesen*, *Alle offenen*, *SLA-krit
 
 ![Neues Ticket anlegen](screenshots/helpdesk-ticket-new.png)
 
+### Neues Ticket: klassisches Formular oder Assistent
+
+`/helpdesk/tickets/new` bietet zwei Eingabemodi, umschaltbar über den Schalter im Seitenkopf:
+
+- **Klassisch**: alle Felder in vier Feldgruppen auf einer Seite.
+- **Assistent** (`?modus=assistent`): führt in acht Schritten durch das Formular – Vorlage/Betreff, Melder & Betroffener, Beschreibung, Typ/Kategorie/Unterkategorie, Auswirkung/Dringlichkeit/Priorität, Standort/Kostenstelle, Gruppe/Bearbeiter/Vertretung, Assets & Tags. Die Unterkategorie erscheint erst nach gewählter Kategorie.
+
+![Assistent für neue Tickets: abgeschlossene Schritte als Zusammenfassung oberhalb des aktuellen Schritts](screenshots/helpdesk-ticket-wizard.png)
+
+Beide Modi nutzen dieselben Felder (`views/helpdesk/tickets/_fields.php`) und denselben POST-Endpunkt; die serverseitige Validierung bleibt unverändert. Im Assistenten werden abgeschlossene Schritte oberhalb des aktuellen Schritts mit einer Zusammenfassung angezeigt und lassen sich aufklappen. Über „Zurück“ oder Klick auf einen Schritt lässt sich jederzeit wechseln, ohne Eingaben zu verlieren. Der Bearbeiter ist mit dem heutigen 2nd-Level-Support vorbelegt (`SupportShiftService::secondLevelUserIdToday()`), sonst „– nicht zugewiesen –“. Beim Verlassen über „Schließen“, den Moduswechsel oder die Navigation fragt der Assistent nach, bevor der Bearbeitungsfortschritt verloren geht (`public/js/helpdesk-wizard.js`).
+
+#### Bevorzugter Eingabemodus je Benutzer
+
+Der zuletzt verwendete Modus wird als **Benutzerpräferenz** in `users.ticket_form_mode` (`klassisch`/`assistent`) gespeichert – serverseitig, also unabhängig von PC oder Browser. `/helpdesk/tickets/new` ohne `modus`-Parameter öffnet den gemerkten Modus (Vorgabe: klassisch). Eine explizite Wahl über den Umschalter (`?modus=…`) und das erfolgreiche Absenden eines Tickets schreiben die Präferenz fort (`TicketController::resolveFormMode()`/`rememberFormMode()`, `UserRepository::ticketFormMode()`/`rememberTicketFormMode()`).
+
+### Anhänge und Bilder in Beschreibung und Kommentaren
+
+Beschreibung und Kommentare (intern wie extern, Agenten- und Portalansicht) sind **Rich-Text-Felder** mit Bildunterstützung:
+
+- **Dateianhänge** laufen wie bisher über `DocumentService` (Tabelle `documents`, `entity_type = ticket`); im Assistenten und im klassischen Formular steht dafür ein Mehrfach-Upload im Schritt „Beschreibung“ bereit (`attachments[]`, maximal fünf Dateien je Vorgang, Whitelist/MIME-Prüfung wie in `config/uploads.php`). Beim Anlegen des Tickets werden die Dateien nach erfolgreicher Validierung mitgespeichert.
+- **Bilder aus der Zwischenablage** werden per `STRG+V` direkt im Textfeld eingefügt (`public/js/helpdesk-media.js`). Das Skript skaliert auf maximal 1400 px Kantenlänge, komprimiert als JPEG auf höchstens ca. 900 KB und fügt ein Markdown-Bild mit **base64-Data-URI** an der Cursorposition ein – das Bild bleibt damit Teil des Textes und wird zusammen mit ihm in der Datenbank gespeichert. Vorschaubilder erscheinen unter dem Feld.
+- Die Ausgabe rendert `App\Support\RichText::toHtml()` (Helfer `rich_text()`), Textkontexte wie Benachrichtigungen, Wissensdatenbank und Merge-Protokoll nutzen `RichText::toPlain()`. Textgrenzen: `TicketService::MAX_TEXT_CHARS` (2 000 000 Zeichen) für Beschreibung und Kommentare.
+
 ### Ticket-Berichte & Administration
 
 ![Ticket-Berichte](screenshots/helpdesk-reports.png)

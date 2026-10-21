@@ -60,6 +60,7 @@ use App\Services\Helpdesk\Mail\MailboxClientInterface;
 use App\Services\Helpdesk\Mail\MimeMessageParser;
 use App\Services\Helpdesk\MailboxSettingsService;
 use App\Services\Helpdesk\TicketMailIngestionService;
+use App\Services\Helpdesk\TicketAttachmentService;
 use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketNotificationService;
 use App\Services\Helpdesk\TicketNumberService;
@@ -272,6 +273,14 @@ return static function (Container $c): void {
         $c->get(TicketRepository::class),
         $c->get(SupportShiftService::class)
     ));
+    $c->singleton(TicketAttachmentService::class, static fn (Container $c): TicketAttachmentService => new TicketAttachmentService(
+        $c->get(TicketService::class),
+        $c->get(DocumentService::class),
+        $c->get(TicketAttachmentRepository::class),
+        $c->get(TicketRepository::class),
+        $c->get(AuditLogService::class),
+        $c->get(CurrentUser::class)
+    ));
     $c->singleton(TicketController::class, static fn (Container $c): TicketController => new TicketController(
         $c->get(View::class),
         $c->get(CurrentUser::class),
@@ -295,7 +304,9 @@ return static function (Container $c): void {
         $c->get(CostCenterRepository::class),
         $c->get(Config::class),
         $c->get(SupportShiftService::class),
-        $c->get(HelpdeskAiService::class)
+        $c->get(HelpdeskAiService::class),
+        $c->get(TicketAttachmentService::class),
+        $c->get(UserRepository::class)
     ));
     $c->singleton(TicketAttachmentController::class, static fn (Container $c): TicketAttachmentController => new TicketAttachmentController(
         $c->get(View::class),
@@ -304,7 +315,8 @@ return static function (Container $c): void {
         $c->get(TicketAttachmentRepository::class),
         $c->get(TicketRepository::class),
         $c->get(DocumentService::class),
-        $c->get(AuditLogService::class)
+        $c->get(AuditLogService::class),
+        $c->get(TicketAttachmentService::class)
     ));
     $c->singleton(PortalController::class, static fn (Container $c): PortalController => new PortalController(
         $c->get(View::class),

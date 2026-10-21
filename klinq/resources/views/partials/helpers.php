@@ -151,6 +151,14 @@ if (!function_exists('nl2br_e')) {
     }
 }
 
+if (!function_exists('rich_text')) {
+    /** Freitext maskiert mit Zeilenumbrüchen und eingebetteten Base64-Bildern. */
+    function rich_text(?string $value): string
+    {
+        return \App\Support\RichText::toHtml($value);
+    }
+}
+
 if (!function_exists('missing_labels')) {
     /** @param array<int,string>|string|null $missing */
     function missing_labels(array|string|null $missing): array

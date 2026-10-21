@@ -180,6 +180,31 @@ final class UserRepository extends BaseRepository
         );
     }
 
+    /**
+     * Bevorzugter Eingabemodus für neue Help-Desk-Tickets ('klassisch' oder 'assistent').
+     *
+     * Bewusst als eigene Abfrage: der Modus gehört nicht zur Sitzung, damit er
+     * geräteunabhängig gilt.
+     */
+    public function ticketFormMode(int $id): string
+    {
+        $row = $this->fetchOne('SELECT ticket_form_mode FROM users WHERE id = ? LIMIT 1', [$id]);
+
+        return (string) ($row['ticket_form_mode'] ?? '');
+    }
+
+    /**
+     * Merkt sich den zuletzt verwendeten Eingabemodus für neue Help-Desk-Tickets
+     * ('klassisch' oder 'assistent'). Wird nur bei einer Änderung geschrieben.
+     */
+    public function rememberTicketFormMode(int $id, string $mode): void
+    {
+        $this->execute(
+            'UPDATE users SET ticket_form_mode = ? WHERE id = ? AND (ticket_form_mode IS NULL OR ticket_form_mode <> ?)',
+            [$mode, $id, $mode]
+        );
+    }
+
     public function recordLoginFailure(int $id, int $maxAttempts, int $lockMinutes): void
     {
         $this->execute(

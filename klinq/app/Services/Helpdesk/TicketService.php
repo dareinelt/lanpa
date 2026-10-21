@@ -38,6 +38,12 @@ final class TicketService
     public const RELATION_LABELS = ['duplicate_of' => 'Duplikat von', 'parent_of' => 'Übergeordnet zu', 'related' => 'Verwandt mit', 'problem_of' => 'Problem zu', 'change_for' => 'Change für'];
     public const AGENT_ROLES = ['admin', 'helpdesk_admin', 'helpdesk_lead', 'helpdesk_agent'];
 
+    /**
+     * Höchstlänge für Beschreibung und Kommentar. Bilder aus der Zwischenablage liegen
+     * als Base64-Daten-URI direkt im Text und brauchen entsprechend Platz.
+     */
+    public const MAX_TEXT_CHARS = 2000000;
+
     public function __construct(
         private readonly TicketRepository $tickets,
         private readonly TicketMasterDataRepository $masterData,
@@ -640,8 +646,8 @@ final class TicketService
         if ($body === '') {
             throw ValidationException::single('body', 'Bitte einen Kommentartext eingeben.');
         }
-        if (mb_strlen($body) > 20000) {
-            throw ValidationException::single('body', 'Der Kommentar ist zu lang (max. 20.000 Zeichen).');
+        if (mb_strlen($body) > self::MAX_TEXT_CHARS) {
+            throw ValidationException::single('body', 'Der Kommentar ist zu lang (max. ' . number_format(self::MAX_TEXT_CHARS, 0, ',', '.') . ' Zeichen).');
         }
         $type = $type === 'internal' ? 'internal' : 'public';
         if ($this->isAgent()) {
@@ -1076,7 +1082,7 @@ final class TicketService
     {
         $v = (new Validator($input))
             ->string('subject', 'Betreff', true, 255, 3)
-            ->text('description', 'Beschreibung', true, 20000)
+            ->text('description', 'Beschreibung', true, self::MAX_TEXT_CHARS)
             ->id('ticket_type_id', 'Tickettyp', !$portal)
             ->id('category_id', 'Kategorie')
             ->id('subcategory_id', 'Unterkategorie')

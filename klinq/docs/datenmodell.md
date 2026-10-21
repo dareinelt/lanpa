@@ -99,7 +99,7 @@ Alle Stammdaten werden **deaktiviert statt gelöscht** (`is_active`), damit Hist
 ### Benutzer, Rechte, Audit
 
 - `roles` (`name`, `label`) – die Rechte je Rolle liegen bewusst im Code (`config/permissions.php`), nicht in der Datenbank.
-- `users`: `username` (eindeutig), `display_name`, `email`, `password_hash` (Argon2id, `NULL` bei AD-Konten), `role_id`, `auth_source` (`local|ldap`), optional `employee_id`, `is_active`, `failed_logins`, `locked_until`, `last_login_at`, `last_module` (zuletzt geöffnetes Modul `assets|helpdesk`, `NULL` = noch keine Wahl).
+- `users`: `username` (eindeutig), `display_name`, `email`, `password_hash` (Argon2id, `NULL` bei AD-Konten), `role_id`, `auth_source` (`local|ldap`), optional `employee_id`, `is_active`, `failed_logins`, `locked_until`, `last_login_at`, `last_module` (zuletzt geöffnetes Modul `assets|helpdesk`, `NULL` = noch keine Wahl), `ticket_form_mode` (bevorzugter Eingabemodus für neue Help-Desk-Tickets `klassisch|assistent`, `NULL` = noch keine Wahl).
 - `audit_logs`: `user_id`, `username`, `action`, `object_type`, `object_id`, `object_label`, `old_data`/`new_data` (JSON, nur geänderte Felder), `ip_address`, `created_at`. Indizes auf Objekt, Benutzer, Aktion und Zeit. Details: [Audit-Log & Benutzer](audit.md).
 - `system_settings`: Schlüssel/Wert (Etikettenlayout `label.*`, Help-Desk-Postfach `helpdesk.mail.*` inkl. verschlüsseltem Passwort), `updated_by`.
 - `inventory_sequences`: `prefix`, `year_code`, `last_number` – Vergabe unter `SELECT … FOR UPDATE`.

@@ -14,6 +14,7 @@ use App\Repositories\TicketTagRepository;
 use App\Repositories\TicketWorklogRepository;
 use App\Security\CurrentUser;
 use App\Services\AuditLogService;
+use App\Support\RichText;
 
 /**
  * Zusammenführen von Duplikaten: Das Quellticket wird storniert („Duplikat“), alle Inhalte
@@ -89,7 +90,7 @@ final class TicketMergeService
             $this->comments->create([
                 'ticket_id' => $targetId,
                 'type' => 'internal',
-                'body' => "Zusammengeführt aus {$source['number']} „{$source['subject']}“ (Melder: " . ($source['requester_name'] ?? $source['requester_user_name'] ?? '–') . ")\n\n" . $source['description'],
+                'body' => "Zusammengeführt aus {$source['number']} „{$source['subject']}“ (Melder: " . ($source['requester_name'] ?? $source['requester_user_name'] ?? '–') . ")\n\n" . RichText::toPlain((string) $source['description']),
                 'author_user_id' => $userId,
                 'author_name' => $userName,
                 'is_requester' => 0,

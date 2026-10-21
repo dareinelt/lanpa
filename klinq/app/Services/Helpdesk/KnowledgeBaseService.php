@@ -13,6 +13,7 @@ use App\Repositories\TicketRepository;
 use App\Repositories\TicketTagRepository;
 use App\Security\CurrentUser;
 use App\Services\AuditLogService;
+use App\Support\RichText;
 use App\Support\Validator;
 
 /** Wissensdatenbank: Artikel anlegen/pflegen, aus Tickets erzeugen, Sichtbarkeit und Suche. */
@@ -155,11 +156,11 @@ final class KnowledgeBaseService
     /** Vorbelegung eines Artikels aus einem gelösten Ticket. @param array<string,mixed> $ticket @return array<string,mixed> */
     public function prefillFromTicket(array $ticket): array
     {
-        $body = "## Problem\n\n" . trim((string) $ticket['description']) . "\n\n## Lösung\n\n" . trim((string) ($ticket['resolution'] ?? ''));
+        $body = "## Problem\n\n" . trim(RichText::toPlain((string) $ticket['description'])) . "\n\n## Lösung\n\n" . trim(RichText::toPlain((string) ($ticket['resolution'] ?? '')));
 
         return [
             'title' => $ticket['subject'],
-            'summary' => mb_substr(trim((string) ($ticket['resolution'] ?? $ticket['description'])), 0, 300),
+            'summary' => mb_substr(trim(RichText::toPlain((string) ($ticket['resolution'] ?? $ticket['description']))), 0, 300),
             'body' => $body,
             'category_id' => $ticket['subcategory_id'] ?? $ticket['category_id'],
             'tags' => $ticket['tag_names'] ?? '',

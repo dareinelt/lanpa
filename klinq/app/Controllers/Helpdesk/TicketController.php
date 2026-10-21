@@ -22,10 +22,12 @@ use App\Repositories\TicketSlaRepository;
 use App\Repositories\TicketTagRepository;
 use App\Repositories\TicketTemplateRepository;
 use App\Repositories\TicketWorklogRepository;
+use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskAiService;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\SupportShiftService;
+use App\Services\Helpdesk\TicketAttachmentService;
 use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketPriorityMatrix;
 use App\Services\Helpdesk\TicketReportService;
@@ -61,7 +63,9 @@ final class TicketController extends HelpdeskBaseController
         private readonly CostCenterRepository $costCenters,
         private readonly Config $config,
         private readonly SupportShiftService $supportShifts,
-        private readonly HelpdeskAiService $ai
+        private readonly HelpdeskAiService $ai,
+        private readonly TicketAttachmentService $attachmentService,
+        private readonly UserRepository $users
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -172,12 +176,25 @@ final class TicketController extends HelpdeskBaseController
         if (empty($prefill['requester_employee_id']) && $this->service->currentEmployeeId() !== null) {
             $prefill['requester_employee_id'] = $this->service->currentEmployeeId();
         }
+        $wizardMode = $this->resolveFormMode($request->queryString('modus'));
+        if ($request->queryString('modus') !== '') {
+            // Explizite Wahl über den Umschalter: sofort als Benutzerpräferenz merken.
+            $this->rememberFormMode($wizardMode);
+        }
+        if ($wizardMode && empty($prefill['assignee_user_id'])) {
+            // Im Assistenten ist der Bearbeiter mit dem heutigen 2nd Level vorbelegt.
+            $secondLevel = $this->supportShifts->secondLevelUserIdToday();
+            if ($secondLevel !== null) {
+                $prefill['assignee_user_id'] = $secondLevel;
+            }
+        }
 
-        return $this->renderForm(null, $prefill, $templateId);
+        return $this->renderForm(null, $prefill, $templateId, $wizardMode, $request->query());
     }
 
     public function store(Request $request): Response
     {
+        $wizardMode = $request->string('modus') === 'assistent';
         try {
             $ticket = $this->service->create($request->all(), 'web');
         } catch (ValidationException $e) {
@@ -185,11 +202,21 @@ final class TicketController extends HelpdeskBaseController
                 throw $e;
             }
             $this->withOldInput($request, $e->errors());
+            $params = array_filter([
+                'template' => $request->int('template'),
+                'modus' => $wizardMode ? 'assistent' : 'klassisch',
+            ], static fn ($v): bool => $v !== null && $v !== '');
 
-            return $this->redirect('/helpdesk/tickets/new');
+            return $this->redirect('/helpdesk/tickets/new' . ($params === [] ? '' : '?' . http_build_query($params)));
         }
         if ($request->wantsJson()) {
             return $this->json(['ok' => true, 'id' => $ticket['id'], 'number' => $ticket['number']], 201);
+        }
+        // Zuletzt verwendeter Modus wird zum Standard dieses Benutzers (geräteunabhängig).
+        $this->rememberFormMode($wizardMode);
+        $upload = $this->attachmentService->storeAll((int) $ticket['id'], $request->files()['attachments'] ?? null);
+        if ($upload['errors'] !== []) {
+            $this->flash('warning', 'Nicht übernommene Anhänge: ' . implode(' | ', $upload['errors']));
         }
         $this->flash('success', 'Ticket ' . $ticket['number'] . ' angelegt.');
 
@@ -261,7 +288,7 @@ final class TicketController extends HelpdeskBaseController
             'isFirstLevelSupport' => $shift['first'] !== null && (int) $shift['first']['user_id'] === (int) $this->currentUser->id(),
             'secondLevelSupport' => $shift['second'],
             'aiEnabled' => $this->ai->isEnabled(),
-            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-ai.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js'],
         ]);
     }
 
@@ -432,12 +459,51 @@ final class TicketController extends HelpdeskBaseController
 
     // ------------------------------------------------------------------ intern
 
-    /** @param array<string,mixed>|null $ticket @param array<string,mixed> $prefill */
-    private function renderForm(?array $ticket, array $prefill, ?int $templateId): Response
+    /** Eingabemodus für neue Tickets: 'assistent' (Assistent) oder 'klassisch' (Formular). */
+    public const FORM_MODES = ['klassisch', 'assistent'];
+
+    /**
+     * Ermittelt den Eingabemodus: explizite Wahl im Request gewinnt, sonst die zuletzt
+     * gespeicherte Benutzerpräferenz, sonst das klassische Formular.
+     *
+     * @param string $requested Wert des Query-Parameters `modus` ('' wenn nicht gesetzt)
+     * @return bool true = Assistent
+     */
+    private function resolveFormMode(string $requested): bool
+    {
+        if (in_array($requested, self::FORM_MODES, true)) {
+            return $requested === 'assistent';
+        }
+
+        $userId = $this->currentUser->id();
+        if ($userId === null) {
+            return false;
+        }
+
+        return $this->users->ticketFormMode($userId) === 'assistent';
+    }
+
+    /** Merkt sich den verwendeten Modus als Benutzerpräferenz (nur bei Änderung ein UPDATE). */
+    private function rememberFormMode(bool $wizardMode): void
+    {
+        $userId = $this->currentUser->id();
+        if ($userId === null) {
+            return;
+        }
+        $this->users->rememberTicketFormMode($userId, $wizardMode ? 'assistent' : 'klassisch');
+    }
+
+    /**
+     * @param array<string,mixed>|null $ticket
+     * @param array<string,mixed> $prefill
+     * @param array<string,mixed> $query Aktuelle Query-Parameter für Modus-Wechsel
+     */
+    private function renderForm(?array $ticket, array $prefill, ?int $templateId, bool $wizardMode = false, array $query = []): Response
     {
         $requesterId = (int) ($prefill['requester_employee_id'] ?? $ticket['requester_employee_id'] ?? 0);
         $affectedId = (int) ($prefill['affected_employee_id'] ?? $ticket['affected_employee_id'] ?? 0);
         $categoryId = (int) $this->oldInput('category_id', $prefill['category_id'] ?? $ticket['category_id'] ?? 0);
+        $wizard = $wizardMode && $ticket === null;
 
         return $this->render('helpdesk.tickets.form', [
             'title' => $ticket === null ? 'Neues Ticket' : 'Ticket ' . $ticket['number'] . ' bearbeiten',
@@ -446,6 +512,10 @@ final class TicketController extends HelpdeskBaseController
             'ticket' => $ticket,
             'prefill' => $prefill,
             'templateId' => $templateId,
+            'wizardMode' => $wizard,
+            'wizardStart' => (int) $this->oldInput('wizard_step', 1),
+            'modeQuery' => $query,
+            'secondLevelAssigneeId' => $wizard ? $this->supportShifts->secondLevelUserIdToday() : null,
             'templates' => $this->templates->all(true),
             'types' => $this->masterData->types(),
             'priorities' => $this->masterData->priorities(),
@@ -463,7 +533,11 @@ final class TicketController extends HelpdeskBaseController
             'impactLabels' => TicketPriorityMatrix::IMPACT_LABELS,
             'urgencyLabels' => TicketPriorityMatrix::URGENCY_LABELS,
             'aiEnabled' => $this->ai->isEnabled(),
-            'scripts' => ['/js/picker.js', '/js/helpdesk.js', '/js/helpdesk-ai.js'],
+            'maxUploadBytes' => (int) $this->config->get('uploads.max_bytes', 20 * 1024 * 1024),
+            'scripts' => array_merge(
+                ['/js/picker.js', '/js/helpdesk.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js'],
+                $wizard ? ['/js/helpdesk-wizard.js'] : []
+            ),
         ]);
     }
 }

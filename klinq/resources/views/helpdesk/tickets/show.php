@@ -75,11 +75,11 @@ $percentBar = static function (?int $percent, string $state): string {
 
     <section class="card">
         <h2 class="card-title">Beschreibung</h2>
-        <div class="ticket-description"><?= nl2br_e($ticket['description']) ?></div>
+        <div class="ticket-description"><?= rich_text($ticket['description']) ?></div>
         <?php if (!empty($ticket['resolution'])): ?>
             <div class="ticket-resolution">
                 <h3><?= icon('check', 'icon icon-xs') ?> Lösung</h3>
-                <div><?= nl2br_e($ticket['resolution']) ?></div>
+                <div><?= rich_text($ticket['resolution']) ?></div>
                 <?php if (!empty($ticket['resolved_at'])): ?><div class="text-xs text-muted">Gelöst am <?= fmt_datetime($ticket['resolved_at']) ?><?= $ticket['resolved_by_name'] ?? null ? ' von ' . e($ticket['resolved_by_name']) : '' ?></div><?php endif; ?>
             </div>
         <?php endif; ?>
@@ -110,7 +110,7 @@ $percentBar = static function (?int $percent, string $state): string {
                     <?php if ($c['source'] === 'email'): ?><span class="badge badge-info" title="<?= e(!empty($c['mail_from_address']) ? 'Absender: ' . $c['mail_from_address'] : 'Per E-Mail eingegangen') ?>"><?= icon('mail', 'icon icon-xs') ?> Per E-Mail<?= !empty($c['mail_from_address']) ? ' von ' . e($c['mail_from_address']) : '' ?></span><?php endif; ?>
                     <span class="text-muted text-xs"><?= fmt_datetime($c['created_at']) ?> · <?= e($sources[$c['source']] ?? $c['source']) ?></span>
                 </div>
-                <div class="comment-body"><?= nl2br_e($c['body']) ?></div>
+                <div class="comment-body"><?= rich_text($c['body']) ?></div>
                 <?php $cAtt = array_filter($attachments, static fn (array $a): bool => (int) ($a['comment_id'] ?? 0) === (int) $c['id']); ?>
                 <?php if ($cAtt !== []): ?>
                 <ul class="comment-attachments">
@@ -131,7 +131,9 @@ $percentBar = static function (?int $percent, string $state): string {
             </div>
             <div class="form-group">
                 <label for="comment-body" class="sr-only">Kommentar</label>
-                <textarea id="comment-body" name="body" rows="4" placeholder="Antwort oder Notiz eingeben …" maxlength="20000" data-hd-field="ticket_comment"></textarea>
+                <textarea id="comment-body" name="body" rows="4" placeholder="Antwort oder Notiz eingeben …" maxlength="2000000" data-hd-field="ticket_comment" data-hd-media-images data-hd-media-preview="#comment-media-preview"></textarea>
+                <div class="hd-media-preview" id="comment-media-preview" hidden></div>
+                <p class="form-hint">Bilder aus der Zwischenablage mit STRG+V einfügen – sie bleiben im Text erhalten.</p>
             </div>
             <div class="comment-form-footer">
                 <label class="file-label"><?= icon('paperclip', 'icon icon-xs') ?> Anhang <input type="file" name="file"></label>

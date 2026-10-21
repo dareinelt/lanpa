@@ -52,8 +52,6 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
                 </dl>
                 <?php if (empty($reporter['username'])): ?>
                     <p class="text-muted text-xs mb-0">Ihr Benutzerkonto konnte nicht ermittelt werden. Bitte nennen Sie Ihren Namen in der Beschreibung, damit wir Sie erreichen.</p>
-                <?php elseif (empty($reporter['directory_match'])): ?>
-                    <p class="text-muted text-xs mb-0">Kontaktdaten aus dem Verzeichnisdienst konnten nicht geladen werden; wir melden uns über Ihr Benutzerkonto.</p>
                 <?php endif; ?>
             </div>
             <button type="submit" class="btn btn-primary btn-lg btn-block"><?= icon('check') ?> Meldung absenden</button>

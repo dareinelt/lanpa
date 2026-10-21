@@ -150,6 +150,7 @@ function searchTestPdo(): PDO
             first_name VARCHAR(64) NULL,
             last_name VARCHAR(64) NULL,
             title VARCHAR(120) NULL,
+            personnel_number VARCHAR(64) NULL,
             phone VARCHAR(40) NULL,
             phone_digits VARCHAR(40) NULL,
             mobile VARCHAR(40) NULL,
@@ -167,9 +168,9 @@ function searchTestPdo(): PDO
 
 Runner::test('Vorname wird auch gefunden, wenn er nur im Anzeigenamen steht', static function (): void {
     $pdo = searchTestPdo();
-    $pdo->exec("INSERT INTO phonebook (display_name, first_name, last_name, department, phone, phone_digits, email, active, visible) VALUES
-        ('Harding, Ulf', NULL, 'Harding', 'Zentrum fuer Notfallmedizin', '3809', '3809', 'ulf@example.de', 1, 1),
-        ('Muster, Erika', 'Erika', 'Muster', 'Verwaltung', '1234', '1234', 'erika@example.de', 1, 1)");
+    $pdo->exec("INSERT INTO phonebook (display_name, first_name, last_name, department, personnel_number, phone, phone_digits, email, active, visible) VALUES
+        ('Harding, Ulf', NULL, 'Harding', 'Zentrum fuer Notfallmedizin', '1001', '3809', '3809', 'ulf@example.de', 1, 1),
+        ('Muster, Erika', 'Erika', 'Muster', 'Verwaltung', '1002', '1234', '1234', 'erika@example.de', 1, 1)");
 
     $service = new PhonebookService(new PhonebookRepository($pdo));
 
@@ -178,4 +179,5 @@ Runner::test('Vorname wird auch gefunden, wenn er nur im Anzeigenamen steht', st
     Assert::same(1, $service->search('Notfallmedizin')['total'], 'Auch mehrteilige Bereiche werden am Wortanfang gefunden.');
     Assert::same(1, $service->search('Erika')['total'], 'Ein gefuelltes Feld first_name wird weiterhin per Praefix gefunden.');
     Assert::same(0, $service->search('ding')['total'], 'Teilwoerter innerhalb eines Namensbestandteils treffen nicht.');
+    Assert::same(1, $service->search('1002')['total'], 'Die Personalnummer wird per Praefix gefunden.');
 });

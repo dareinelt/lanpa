@@ -115,6 +115,10 @@ Die Felder **Melder** und **Betroffener Mitarbeiter** sind Auswahlfelder mit Suc
 gelangen. Die Suche läuft live über die interne Schnittstelle `GET /internal/klinq/telefonbuch`
 (`PersonDirectoryService` → `LanpaBridge::phonebook()`), damit der Personenbestand nicht doppelt gepflegt wird.
 
+- **Suchfelder**: Name (auch phonetisch), E-Mail, Benutzername, Abteilung und **Personalnummer** (Präfixsuche). Die
+  Personalnummer stammt aus dem AD-Attribut `employeeNumber` (`LDAP_ATTR_PERSONNEL_NUMBER` im Intranet) und wird beim
+  Übernehmen in den lokalen Mitarbeiter geschrieben (`employees.personnel_number`, höchstens 50 Zeichen, nur wenn
+  gefüllt); die lokale Mitarbeitersuche findet sie danach ebenfalls.
 - **Bekannte Personen** werden auf den lokalen Mitarbeiter abgebildet (Reihenfolge: objectGUID, E-Mail,
   Benutzername); die Auswahl liefert dessen ID, Tickets behalten ihren Fremdschlüssel.
 - **Unbekannte Personen** erscheinen mit dem Hinweis „wird beim Auswählen übernommen“. Erst beim Auswählen legt

@@ -19,6 +19,7 @@ function testMapping(): array
         'mobile' => 'mobile',
         'email' => 'mail',
         'department' => 'department',
+        'personnel_number' => 'employeeNumber',
         'modified' => 'whenChanged',
         'unique_id' => 'objectGUID',
     ];
@@ -43,6 +44,7 @@ Runner::test('AD-Datensatz wird auf interne Felder abgebildet', static function 
         'telephonenumber' => ['count' => 1, 0 => '+49 30 123-456'],
         'mail' => ['count' => 1, 0 => 'erika.muster@example.internal'],
         'department' => ['count' => 1, 0 => 'Verwaltung'],
+        'employeenumber' => ['count' => 1, 0 => '4711'],
         'whenchanged' => ['count' => 1, 0 => '20260310120000.0Z'],
         'objectguid' => ['count' => 1, 0 => 'abc-123'],
     ];
@@ -52,6 +54,7 @@ Runner::test('AD-Datensatz wird auf interne Felder abgebildet', static function 
     Assert::same('abc-123', $result['external_id']);
     Assert::same('Erika Muster', $result['display_name']);
     Assert::same('Verwaltung', $result['department']);
+    Assert::same('4711', $result['personnel_number']);
     Assert::same('2026-03-10 12:00:00', $result['ad_modified']);
     Assert::same('erika.muster@example.internal', $result['email']);
     Assert::null($result['mobile']);

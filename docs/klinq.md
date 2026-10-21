@@ -206,9 +206,13 @@ suchen live im Telefonbuch des Intranets (alle Identitätsquellen), nicht nur im
 nach KLINQ synchronisierten AD-Bestand. Dafür ruft KLINQ
 `GET /internal/klinq/telefonbuch` auf (Token wie `sso-config`, Dienst
 `KLINQ_SERVICE`): `?q=…` liefert Treffer – auch Personen ohne E-Mail-Adresse –,
-`?id=…` einen Einzeleintrag. Unbekannte Personen werden erst beim Auswählen als
-lokaler Mitarbeiter übernommen, damit Tickets weiterhin auf einen lokalen
-Datensatz verweisen; die Stammdaten kommen dabei aus dem Intranet. Fällt das
+`?id=…` einen Einzeleintrag. Gesucht wird über Name, E-Mail-Adresse,
+Benutzername, Abteilung und **Personalnummer** (aus dem AD-Attribut
+`employeeNumber`, im Intranet pflegbar über `LDAP_ATTR_PERSONNEL_NUMBER`);
+die Personalnummer wird beim Übernehmen in den lokalen Mitarbeiter übertragen
+und ist dort ebenfalls durchsuchbar. Unbekannte Personen werden erst beim
+Auswählen als lokaler Mitarbeiter übernommen, damit Tickets weiterhin auf einen
+lokalen Datensatz verweisen; die Stammdaten kommen dabei aus dem Intranet. Fällt das
 Intranet aus, bleiben die lokal bekannten Mitarbeiter wählbar. Details:
 [`klinq/docs/helpdesk.md`](../klinq/docs/helpdesk.md).
 

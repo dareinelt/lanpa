@@ -178,8 +178,8 @@ final class LanpaBridge
      * nicht antwortet; der Aufrufer faellt dann auf den lokalen Bestand zurueck.
      *
      * @return list<array{id:int,external_id:string,username:string,display_name:string,first_name:string,
-     *                    last_name:string,title:string,phone:string,mobile:string,email:string,
-     *                    department:string,source:string}>|null
+     *                    last_name:string,title:string,personnel_number:string,phone:string,mobile:string,
+     *                    email:string,department:string,source:string}>|null
      */
     public function phonebook(string $term, int $limit = 20): ?array
     {
@@ -210,8 +210,8 @@ final class LanpaBridge
      * Daten kommen damit aus dem Intranet und nicht aus der Anfrage.
      *
      * @return array{id:int,external_id:string,username:string,display_name:string,first_name:string,
-     *               last_name:string,title:string,phone:string,mobile:string,email:string,
-     *               department:string,source:string}|null
+     *               last_name:string,title:string,personnel_number:string,phone:string,mobile:string,
+     *               email:string,department:string,source:string}|null
      */
     public function phonebookEntry(int $id): ?array
     {
@@ -250,8 +250,8 @@ final class LanpaBridge
 
     /**
      * @return array{id:int,external_id:string,username:string,display_name:string,first_name:string,
-     *               last_name:string,title:string,phone:string,mobile:string,email:string,
-     *               department:string,source:string}|null
+     *               last_name:string,title:string,personnel_number:string,phone:string,mobile:string,
+     *               email:string,department:string,source:string}|null
      */
     private static function person(mixed $row): ?array
     {
@@ -272,6 +272,7 @@ final class LanpaBridge
             'first_name' => trim((string) ($row['first_name'] ?? '')),
             'last_name' => trim((string) ($row['last_name'] ?? '')),
             'title' => trim((string) ($row['title'] ?? '')),
+            'personnel_number' => trim((string) ($row['personnel_number'] ?? '')),
             'phone' => trim((string) ($row['phone'] ?? '')),
             'mobile' => trim((string) ($row['mobile'] ?? '')),
             'email' => trim((string) ($row['email'] ?? '')),

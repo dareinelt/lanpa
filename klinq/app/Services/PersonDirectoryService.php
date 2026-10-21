@@ -115,6 +115,13 @@ final class PersonDirectoryService
             'is_active' => 1,
         ];
 
+        // Die Personalnummer kommt aus dem Intranet und wird nur uebernommen,
+        // wenn sie dort gepflegt ist; sie ist in KLINQ auf 50 Zeichen begrenzt.
+        $personnelNumber = self::cut($entry['personnel_number'] ?? '', 50);
+        if ($personnelNumber !== '') {
+            $data['personnel_number'] = $personnelNumber;
+        }
+
         try {
             $id = $this->employees->create($data);
         } catch (PDOException) {

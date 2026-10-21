@@ -21,6 +21,7 @@ function phonebookDirectoryPdo(): PDO
             first_name VARCHAR(64) NULL,
             last_name VARCHAR(64) NULL,
             title VARCHAR(120) NULL,
+            personnel_number VARCHAR(64) NULL,
             phone VARCHAR(40) NULL,
             phone_digits VARCHAR(40) NULL,
             mobile VARCHAR(40) NULL,
@@ -40,9 +41,9 @@ function phonebookDirectoryPdo(): PDO
 
 Runner::test('Telefonbuch-Personenauswahl liefert Kennungen für die Übernahme in KLINQ', static function (): void {
     $pdo = phonebookDirectoryPdo();
-    $pdo->exec("INSERT INTO phonebook (external_id, samaccount_name, display_name, first_name, last_name, title, department, phone, email, active, visible) VALUES
-        ('4d1f2c3b', 'mmustermann', 'Mustermann, Max', 'Max', 'Mustermann', 'IT-Support', 'Technik', '0123', 'max@example.de', 1, 1),
-        ('5e2a3d4c', 'keinmail', 'Ohne Mail, Erika', 'Erika', 'Ohne Mail', 'Reinigung', 'Service', '0456', NULL, 1, 1)");
+    $pdo->exec("INSERT INTO phonebook (external_id, samaccount_name, display_name, first_name, last_name, title, personnel_number, department, phone, email, active, visible) VALUES
+        ('4d1f2c3b', 'mmustermann', 'Mustermann, Max', 'Max', 'Mustermann', 'IT-Support', '4711', 'Technik', '0123', 'max@example.de', 1, 1),
+        ('5e2a3d4c', 'keinmail', 'Ohne Mail, Erika', 'Erika', 'Ohne Mail', 'Reinigung', '0815', 'Service', '0456', NULL, 1, 1)");
 
     $service = new PhonebookService(new PhonebookRepository($pdo));
     $items = $service->directory('Muster');
@@ -51,8 +52,15 @@ Runner::test('Telefonbuch-Personenauswahl liefert Kennungen für die Übernahme 
     Assert::same('mmustermann', $items[0]['username'], 'Der SamAccountName wird für die Zuordnung mitgeliefert.');
     Assert::same('4d1f2c3b', $items[0]['external_id'], 'Die objectGUID wird für die Zuordnung mitgeliefert.');
     Assert::same('IT-Support', $items[0]['title'], 'Die Position wird mitgeliefert.');
+    Assert::same('4711', $items[0]['personnel_number'], 'Die Personalnummer wird mitgeliefert.');
     Assert::same('max@example.de', $items[0]['email'], 'Die E-Mail-Adresse wird mitgeliefert.');
     Assert::same('', $items[0]['source'], 'Bei nur einer Identitätsquelle bleibt die Quellenangabe leer.');
+
+    // KLINQ sucht die Felder "Melder" und "Betroffener Mitarbeiter" auch nach Personalnummer.
+    $byNumber = $service->directory('4711');
+    Assert::same(1, count($byNumber), 'Die Personalnummer ist durchsuchbar.');
+    Assert::same('mmustermann', $byNumber[0]['username']);
+    Assert::same([], $service->directory('9999'), 'Unbekannte Personalnummern liefern keine Treffer.');
 
     // Personen ohne Postfach sind ebenfalls wählbar (z. B. Reinigung, Externe).
     $withoutMail = $service->directory('Erika');

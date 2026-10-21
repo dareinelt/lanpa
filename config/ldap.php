@@ -42,6 +42,7 @@ return [
         'email' => Env::get('LDAP_ATTR_EMAIL', 'mail'),
         'department' => Env::get('LDAP_ATTR_DEPARTMENT', 'department'),
         'title' => Env::get('LDAP_ATTR_TITLE', 'title'),
+        'personnel_number' => Env::get('LDAP_ATTR_PERSONNEL_NUMBER', 'employeeNumber'),
         'modified' => Env::get('LDAP_ATTR_MODIFIED', 'whenChanged'),
         'unique_id' => Env::get('LDAP_ATTR_UNIQUE_ID', 'objectGUID'),
         'samaccount_name' => Env::get('LDAP_ATTR_SAMACCOUNT_NAME', 'sAMAccountName'),

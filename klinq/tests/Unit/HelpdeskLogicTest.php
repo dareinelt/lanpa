@@ -59,11 +59,12 @@ final class HelpdeskLogicTest extends TestCase
     {
         $w = new TicketWorkflowService();
         $this->assertTrue($w->canTransition('new', 'in_progress'));
-        $this->assertTrue($w->canTransition('in_progress', 'waiting_user'));
+        $this->assertTrue($w->canTransition('in_progress', 'waiting_feedback'));
+        $this->assertTrue($w->canTransition('in_progress', 'waiting_delivery'));
         $this->assertTrue($w->canTransition('resolved', 'closed'));
         $this->assertTrue($w->canTransition('closed', 'in_progress'));
         $this->assertFalse($w->canTransition('new', 'resolved'), 'Lösung erst aus der Bearbeitung');
-        $this->assertFalse($w->canTransition('closed', 'waiting_user'));
+        $this->assertFalse($w->canTransition('closed', 'waiting_feedback'));
         $this->assertFalse($w->canTransition('cancelled', 'in_progress'));
         $this->assertSame([], $w->allowedTransitions('cancelled'));
         $this->assertSame([], $w->allowedTransitions('unbekannt'));
@@ -80,7 +81,7 @@ final class HelpdeskLogicTest extends TestCase
         $this->assertSame('helpdesk.reopen', $w->requiredPermission('resolved', 'in_progress'));
 
         $this->assertTrue($w->isReopen('resolved', 'in_progress'));
-        $this->assertFalse($w->isReopen('waiting_user', 'in_progress'));
+        $this->assertFalse($w->isReopen('waiting_feedback', 'in_progress'));
         $this->assertTrue($w->isFinal('closed'));
         $this->assertTrue($w->isFinal('cancelled'));
         $this->assertFalse($w->isFinal('resolved'));
@@ -91,6 +92,28 @@ final class HelpdeskLogicTest extends TestCase
         $this->assertSame('reopened', $w->eventFor('closed', 'in_progress'));
         $this->assertSame('resolved', $w->eventFor('in_progress', 'resolved'));
         $this->assertSame('closed', $w->eventFor('resolved', 'closed'));
+    }
+
+    public function testPauseStatuses(): void
+    {
+        $w = new TicketWorkflowService();
+        foreach (TicketWorkflowService::PAUSES as $code) {
+            $this->assertTrue($w->isPause($code), $code . ' ist ein Pausierstatus');
+            $this->assertTrue($w->requiresPauseUntil($code), $code . ' verlangt ein Pausenende');
+            $this->assertTrue($w->canTransition('in_progress', $code));
+            $this->assertTrue($w->canTransition('open', $code));
+            $this->assertTrue($w->canTransition($code, 'in_progress'));
+            $this->assertTrue($w->canTransition($code, 'cancelled'));
+            $this->assertSame('paused', $w->eventFor('in_progress', $code));
+            $this->assertSame('resumed', $w->eventFor($code, 'in_progress'));
+            $this->assertSame($code === TicketWorkflowService::WAITING_FEEDBACK, $w->resumesOnReporterReply($code), 'Nur „Warten auf Rückmeldung“ endet durch eine Meldermitteilung');
+            $other = $code === TicketWorkflowService::WAITING_INTERNAL ? TicketWorkflowService::WAITING_FEEDBACK : TicketWorkflowService::WAITING_INTERNAL;
+            $this->assertContains($other, $w->allowedTransitions($code), 'Wechsel zwischen Pausierungen');
+        }
+        $this->assertFalse($w->isPause('in_progress'));
+        $this->assertFalse($w->requiresPauseUntil('in_progress'));
+        $this->assertFalse($w->resumesOnReporterReply('in_progress'));
+        $this->assertSame(false, in_array('waiting_feedback', $w->allowedTransitions('resolved'), true), 'Aus „Gelöst“ führt kein Weg in die Pausierung');
     }
 
     // ------------------------------------------------------------------ SLA

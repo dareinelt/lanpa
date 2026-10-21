@@ -132,12 +132,15 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $ticket = $this->service()->changeStatus($id, 'in_progress');
         $this->assertSame('in_progress', $ticket['status_code']);
 
-        $ticket = $this->service()->changeStatus($id, 'waiting_user', 'Bitte Screenshot senden');
-        $this->assertSame('waiting_user', $ticket['status_code']);
+        $pauseUntil = date('Y-m-d H:i', strtotime('+2 days'));
+        $ticket = $this->service()->changeStatus($id, 'waiting_feedback', 'Bitte Screenshot senden', null, null, null, false, $pauseUntil);
+        $this->assertSame('waiting_feedback', $ticket['status_code']);
         $this->assertNotNull($ticket['sla_paused_at'], 'SLA pausiert im Wartestatus');
+        $this->assertNotNull($ticket['paused_until'], 'Pausenende ist gespeichert');
 
         $ticket = $this->service()->changeStatus($id, 'in_progress');
         $this->assertNull($ticket['sla_paused_at'], 'SLA läuft wieder');
+        $this->assertNull($ticket['paused_until'], 'Pausenende wird beim Fortsetzen geleert');
 
         // resolved ohne Lösung → Fehler
         $this->assertThrows(ValidationException::class, fn () => $this->service()->changeStatus($id, 'resolved'));
@@ -151,8 +154,8 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame('closed', $ticket['status_code']);
         $this->assertNotNull($ticket['closed_at']);
 
-        // Ungültiger Übergang closed → waiting_user
-        $this->assertThrows(ValidationException::class, fn () => $this->service()->changeStatus($id, 'waiting_user'), 'nicht erlaubt');
+        // Ungültiger Übergang closed → waiting_feedback
+        $this->assertThrows(ValidationException::class, fn () => $this->service()->changeStatus($id, 'waiting_feedback'), 'nicht erlaubt');
 
         // Wiedereröffnung zählt hoch
         $ticket = $this->service()->changeStatus($id, 'in_progress', 'Problem tritt erneut auf');
@@ -212,7 +215,7 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertNotNull($ticket['first_response_at'], 'Erste öffentliche Agentenantwort setzt first_response_at');
         $this->assertSame('met', $ticket['sla_response_state']);
 
-        $this->service()->changeStatus($id, 'waiting_user');
+        $this->service()->changeStatus($id, 'waiting_feedback', null, null, null, null, false, date('Y-m-d H:i', strtotime('+1 day')));
 
         // Portalnutzer sieht nur öffentliche Kommentare, Antwort setzt Status zurück
         $this->loginAs($this->portalUserId, 'lager');

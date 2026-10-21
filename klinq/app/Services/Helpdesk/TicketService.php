@@ -173,7 +173,7 @@ final class TicketService
             'unassigned' => 'Nicht zugewiesen',
             'open' => 'Alle offenen',
             'overdue' => 'Überfällig',
-            'waiting_user' => 'Wartet auf Melder',
+            'paused' => 'Pausiert',
             'critical' => 'Kritisch',
             'recently_resolved' => 'Kürzlich gelöst',
             'recently_closed' => 'Kürzlich geschlossen',
@@ -435,7 +435,7 @@ final class TicketService
      * Statuswechsel gemäß Workflow inkl. SLA-Pause/-Fortsetzung, Lösung, Wiedereröffnung.
      * @return array<string,mixed>
      */
-    public function changeStatus(int $id, string $toCode, ?string $note = null, ?string $resolution = null, ?string $reason = null, ?int $expectedVersion = null, bool $system = false): array
+    public function changeStatus(int $id, string $toCode, ?string $note = null, ?string $resolution = null, ?string $reason = null, ?int $expectedVersion = null, bool $system = false, ?string $pauseUntil = null): array
     {
         $ticket = $this->get($id);
         $this->assertNotMerged($ticket);
@@ -460,6 +460,19 @@ final class TicketService
 
         $now = gmdate('Y-m-d H:i:s');
         $nowDt = new \DateTimeImmutable($now, new \DateTimeZone('UTC'));
+
+        // Pausierung: Grund ist der Zielstatus, das Ende (Datum und Uhrzeit) ist Pflicht.
+        $pauseUntilUtc = null;
+        if ($this->workflow->requiresPauseUntil($toCode)) {
+            $pauseUntilUtc = $this->pauseUntilUtc($pauseUntil);
+            if ($pauseUntilUtc === null) {
+                throw ValidationException::single('pause_until', 'Bitte ein Ende der Pausierung mit Datum und Uhrzeit angeben.');
+            }
+            if ($pauseUntilUtc <= $now) {
+                throw ValidationException::single('pause_until', 'Das Ende der Pausierung muss in der Zukunft liegen.');
+            }
+        }
+
         $update = ['status_id' => (int) $toStatus['id'], 'updated_by' => $this->currentUser->id()];
 
         // SLA pausieren/fortsetzen
@@ -473,6 +486,12 @@ final class TicketService
         }
         if (!empty($toStatus['pauses_sla'])) {
             $update['sla_paused_at'] = $now;
+        }
+        if ($this->workflow->isPause($toCode)) {
+            $update['paused_until'] = $pauseUntilUtc;
+        } elseif ($this->workflow->isPause($fromCode)) {
+            // Pausierung beendet oder in einen anderen Status gewechselt
+            $update['paused_until'] = null;
         }
 
         $isReopen = $this->workflow->isReopen($fromCode, $toCode);
@@ -532,6 +551,28 @@ final class TicketService
         $this->notifications->statusChanged($fresh, $fromCode, $toCode);
 
         return $this->get($id);
+    }
+
+    /**
+     * Wandelt das Pausenende aus dem Formular (Datum und Uhrzeit in APP_TIMEZONE) in UTC um.
+     * @return string|null UTC-Zeitstempel oder null, wenn kein Wert übergeben wurde
+     */
+    private function pauseUntilUtc(?string $value): ?string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+        $timezone = new \DateTimeZone((string) $this->config->get('app.timezone', 'Europe/Berlin'));
+        $utc = new \DateTimeZone('UTC');
+        foreach (['Y-m-d\TH:i', 'Y-m-d\TH:i:s', 'Y-m-d H:i', 'Y-m-d H:i:s'] as $format) {
+            $parsed = \DateTimeImmutable::createFromFormat('!' . $format, $value, $timezone);
+            if ($parsed instanceof \DateTimeImmutable && $parsed->format($format) === $value) {
+                return $parsed->setTimezone($utc)->format('Y-m-d H:i:s');
+            }
+        }
+
+        throw ValidationException::single('pause_until', 'Bitte ein gültiges Datum mit Uhrzeit angeben.');
     }
 
     /** Wiedereröffnung durch den Melder über das Portal (innerhalb der Frist). @return array<string,mixed> */
@@ -672,16 +713,17 @@ final class TicketService
                     $update['first_response_at'] = $now;
                     $update['sla_response_state'] = $this->sla->evaluate($ticket['response_due_at'], $now, new \DateTimeImmutable($now, new \DateTimeZone('UTC')), $ticket['created_at'], 100);
                 }
-            } elseif ((string) $ticket['status_code'] === TicketWorkflowService::WAITING_USER) {
-                // Rückmeldung des Melders beendet die Wartezeit automatisch
+            } elseif ($this->workflow->resumesOnReporterReply((string) $ticket['status_code'])) {
+                // Rückmeldung des Melders beendet die Pausierung automatisch
                 $inProgress = $this->masterData->statusByCode(TicketWorkflowService::IN_PROGRESS);
                 if ($inProgress !== null) {
                     $paused = $ticket['sla_paused_at'] !== null ? (int) floor((time() - $this->sla->parse((string) $ticket['sla_paused_at'])->getTimestamp()) / 60) : 0;
                     $update['status_id'] = (int) $inProgress['id'];
                     $update['sla_paused_at'] = null;
+                    $update['paused_until'] = null;
                     $update['sla_paused_minutes'] = (int) $ticket['sla_paused_minutes'] + max(0, $paused);
                     $update['resolution_due_at'] = $this->sla->shiftDue($ticket['resolution_due_at'], $paused);
-                    $this->event((int) $ticket['id'], 'status_changed', 'status', (string) $ticket['status_name'], (string) $inProgress['name'], ['auto' => true]);
+                    $this->event((int) $ticket['id'], 'resumed', 'status', (string) $ticket['status_name'], (string) $inProgress['name'], ['auto' => true]);
                 }
             }
             $this->tickets->update((int) $ticket['id'], $update);
@@ -715,7 +757,7 @@ final class TicketService
 
     /**
      * Kommentar aus einer eingehenden E-Mail. Läuft unter dem Systembenutzer des Mail-Eingangs,
-     * wird aber dem tatsächlichen Absender zugeschrieben: Antworten des Melders beenden „Wartet auf Melder“
+     * wird aber dem tatsächlichen Absender zugeschrieben: Antworten des Melders beenden „Warten auf Rückmeldung“
      * automatisch, Antworten von Agenten zählen als Agentenreaktion (Erstreaktion/SLA).
      *
      * @param array{user_id:?int,name:string,email:string,is_requester:bool,is_agent:bool} $author
@@ -757,15 +799,16 @@ final class TicketService
                     $update['first_response_at'] = $now;
                     $update['sla_response_state'] = $this->sla->evaluate($ticket['response_due_at'], $now, new \DateTimeImmutable($now, new \DateTimeZone('UTC')), $ticket['created_at'], 100);
                 }
-            } elseif ((string) $ticket['status_code'] === TicketWorkflowService::WAITING_USER) {
+            } elseif ($this->workflow->resumesOnReporterReply((string) $ticket['status_code'])) {
                 $inProgress = $this->masterData->statusByCode(TicketWorkflowService::IN_PROGRESS);
                 if ($inProgress !== null) {
                     $paused = $ticket['sla_paused_at'] !== null ? (int) floor((time() - $this->sla->parse((string) $ticket['sla_paused_at'])->getTimestamp()) / 60) : 0;
                     $update['status_id'] = (int) $inProgress['id'];
                     $update['sla_paused_at'] = null;
+                    $update['paused_until'] = null;
                     $update['sla_paused_minutes'] = (int) $ticket['sla_paused_minutes'] + max(0, $paused);
                     $update['resolution_due_at'] = $this->sla->shiftDue($ticket['resolution_due_at'], $paused);
-                    $this->event((int) $ticket['id'], 'status_changed', 'status', (string) $ticket['status_name'], (string) $inProgress['name'], ['auto' => true, 'via' => 'email']);
+                    $this->event((int) $ticket['id'], 'resumed', 'status', (string) $ticket['status_name'], (string) $inProgress['name'], ['auto' => true, 'via' => 'email']);
                 }
             } elseif ((string) $ticket['status_code'] === TicketWorkflowService::RESOLVED && !$author['is_agent']) {
                 // Melder antwortet auf ein gelöstes Ticket: wieder öffnen statt Antwort zu verlieren
@@ -1039,7 +1082,13 @@ final class TicketService
             }
             $status = $this->masterData->statusByCode($code);
             if ($status !== null) {
-                $out[] = $status + ['is_reopen' => $this->workflow->isReopen($from, $code), 'requires_resolution' => $this->workflow->requiresResolution($code), 'requires_reason' => $this->workflow->requiresReason($code)];
+                $out[] = $status + [
+                    'is_reopen' => $this->workflow->isReopen($from, $code),
+                    'is_pause' => $this->workflow->isPause($code),
+                    'requires_resolution' => $this->workflow->requiresResolution($code),
+                    'requires_reason' => $this->workflow->requiresReason($code),
+                    'requires_pause_until' => $this->workflow->requiresPauseUntil($code),
+                ];
             }
         }
 

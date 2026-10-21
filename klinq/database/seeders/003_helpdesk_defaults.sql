@@ -17,11 +17,13 @@ INSERT INTO ticket_statuses (code, name, category, color, pauses_sla, sort_order
     ('new', 'Neu', 'new', 'info', 0, 10),
     ('open', 'Offen', 'open', 'info', 0, 20),
     ('in_progress', 'In Bearbeitung', 'open', 'warning', 0, 30),
-    ('waiting_user', 'Wartet auf Benutzer', 'pending', 'neutral', 1, 40),
-    ('waiting_vendor', 'Wartet auf Drittanbieter', 'pending', 'neutral', 1, 50),
-    ('resolved', 'Gelöst', 'resolved', 'success', 0, 60),
-    ('closed', 'Geschlossen', 'closed', 'neutral', 0, 70),
-    ('cancelled', 'Storniert', 'cancelled', 'neutral', 0, 80)
+    ('waiting_feedback', 'Warten auf Rückmeldung', 'pending', 'neutral', 1, 40),
+    ('waiting_third_party', 'Warten auf Dritte', 'pending', 'neutral', 1, 50),
+    ('waiting_delivery', 'Warten auf Lieferung', 'pending', 'neutral', 1, 60),
+    ('waiting_internal', 'Warten auf interne Rücksprache', 'pending', 'neutral', 1, 70),
+    ('resolved', 'Gelöst', 'resolved', 'success', 0, 80),
+    ('closed', 'Geschlossen', 'closed', 'neutral', 0, 90),
+    ('cancelled', 'Storniert', 'cancelled', 'neutral', 0, 100)
 ON DUPLICATE KEY UPDATE name = VALUES(name), category = VALUES(category), color = VALUES(color), pauses_sla = VALUES(pauses_sla), sort_order = VALUES(sort_order);
 
 INSERT INTO ticket_priorities (code, name, level, color, is_default, sort_order) VALUES

@@ -232,6 +232,22 @@
     });
 
     // ---------------------------------------------------------------- Statusdialog: Zielstatus in verstecktes Feld übernehmen
+    function hdPad2(value) { return (value < 10 ? "0" : "") + value; }
+    function hdLocalInput(date) {
+        return date.getFullYear() + "-" + hdPad2(date.getMonth() + 1) + "-" + hdPad2(date.getDate()) + "T" + hdPad2(date.getHours()) + ":" + hdPad2(date.getMinutes());
+    }
+    function hdUtcToLocal(value) {
+        const date = new Date(value.replace(" ", "T") + "Z");
+        return isNaN(date.getTime()) ? "" : hdLocalInput(date);
+    }
+    // Grundauswahl der Pausierung bestimmt den tatsächlichen Zielstatus
+    function hdSyncPause(dialog) {
+        const select = dialog.querySelector("[data-hd-pause-reason]");
+        if (!select) { return; }
+        const option = select.options[select.selectedIndex];
+        dialog.querySelector("input[name='status']").value = select.value;
+        dialog.querySelector("[data-status-label]").textContent = option ? option.textContent.trim() : select.value;
+    }
     document.addEventListener("click", function (event) {
         const trigger = event.target.closest("[data-hd-status]");
         if (!trigger) { return; }
@@ -245,7 +261,19 @@
             block.hidden = !show;
             block.querySelectorAll("[data-required-when-visible]").forEach(function (f) { f.required = show; });
         });
+        const pauseUntil = dialog.querySelector("input[name='pause_until']");
+        if (pauseUntil) {
+            const preset = dialog.getAttribute("data-paused-until") || "";
+            pauseUntil.min = hdLocalInput(new Date());
+            pauseUntil.value = preset !== "" ? hdUtcToLocal(preset) : hdLocalInput(new Date(Date.now() + 3600000));
+        }
+        if (trigger.hasAttribute("data-hd-pause")) { hdSyncPause(dialog); }
         if (typeof dialog.showModal === "function") { dialog.showModal(); }
+    });
+    document.addEventListener("change", function (event) {
+        const select = event.target.closest("[data-hd-pause-reason]");
+        const dialog = select ? select.closest("dialog") : null;
+        if (dialog) { hdSyncPause(dialog); }
     });
 
     // ---------------------------------------------------------------- Ticketliste: Zeitanzeige relativ aktualisieren (SLA-Restzeit)

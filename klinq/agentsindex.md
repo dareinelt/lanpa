@@ -38,7 +38,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 - E-Mail-Eingang per IMAP (neues Ticket oder Kommentar per Threading) und E-Mail-Benachrichtigungen
 - Wissensdatenbank mit Verknüpfung zu Tickets
 - Ticket-Berichte/CSV-Export (Recht nur über die Berechtigungsgruppe „Statistik“ oder Admin-Rolle)
-- Eigene Scheduler-Jobs für Eskalation/Auto-Close und Mailabholung (`bin/helpdesk.php`)
+- Eigene Scheduler-Jobs für Eskalation/Auto-Close, Pausierungs-Ende und Mailabholung (`bin/helpdesk.php`)
 
 ## 2. Technologie und Rahmenbedingungen
 
@@ -73,9 +73,9 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–014), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–019), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
-| `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
+| `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
 | `tests/` | Eigener Runner `tests/run.php`, `Unit/`, `Integration/`, `Support/` |
 | `docker/` | `php/` (Dockerfile, vHost, php.ini, Entrypoint, Scheduler), `pdf/`, `mail/`, `mysql/init/` |

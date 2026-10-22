@@ -28,6 +28,9 @@ final class SettingsService
         'color_text_dark' => 'Textfarbe (dunkel)',
     ];
 
+    /** Darstellung des Kopfbereichs: Logo mit Seitentitel oder komplettes SVG. */
+    public const HEADER_LOGO_MODES = ['logo_text', 'complete_svg'];
+
     /** @var array<string,string>|null */
     private ?array $cache = null;
 
@@ -65,6 +68,9 @@ final class SettingsService
             'tile_background_opacity' => '97',
             'logo_file' => '',
             'logo_mime' => '',
+            'header_logo_mode' => 'logo_text',
+            'logo_complete_file' => '',
+            'logo_complete_mime' => '',
             'background_file' => '',
             'background_mime' => '',
             'ldap_label' => (string) Config::get('ldap.label', 'Zentrale'),
@@ -201,6 +207,16 @@ final class SettingsService
     public function navTreeMode(): bool
     {
         return $this->bool('nav_tree_mode');
+    }
+
+    /**
+     * Darstellung oben links: Logo mit Seitentitel oder komplettes SVG.
+     */
+    public function headerLogoMode(): string
+    {
+        $mode = $this->get('header_logo_mode', 'logo_text');
+
+        return in_array($mode, self::HEADER_LOGO_MODES, true) ? $mode : 'logo_text';
     }
 
     /**

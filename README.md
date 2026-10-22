@@ -29,7 +29,7 @@ Administrationsbereich – ohne Frameworks, ohne CDNs, ohne externe Abhängigkei
 | Geschützter Zugriffsmodus | Interne Elemente, Unterseiten und Textseiten optional mit einem per SMS zugestellten, täglich wechselnden Zugangscode schützen |
 | Administration | Navigation (CRUD, Sortierung, Aktivierung, Hierarchie aus Unterseiten/Textseiten), Beschreibungen, Design/Logo, AD-Konfiguration, Statistik |
 | Statistik | Klicks je Element und Tag, Zeiträume 3/7/14/30/90/365 Tage, selbst gerendertes SVG-Liniendiagramm |
-| Darstellung | Hell-/Dunkelmodus (System oder manuell), frei konfigurierbare Farben, eigenes Logo |
+| Darstellung | Hell-/Dunkelmodus (System oder manuell), frei konfigurierbare Farben, eigenes Logo oder komplettes SVG (Logo mit Text) im Kopfbereich |
 | Barrierefreiheit | Semantisches HTML, Tastaturbedienung, sichtbarer Fokus, ARIA-Beschriftungen, Kontrastwahl nach WCAG-Leuchtdichte; Kacheltexte werden auf eigener Kachelfarbe automatisch auf mindestens 4,5:1 nachjustiert, ebenso mitgeschickte Schriftfarben in Orvanta-Nachrichten und -Terminen |
 
 ---
@@ -234,7 +234,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Telefonliste | Alle Einträge auflisten und je Eintrag ein-/ausblenden (Standard für neu synchronisierte Einträge: eingeblendet); Filter nach „Hat E-Mail-Adresse“, „Ist aktiv“, „Hat Telefonnummer“ und „Nur eingeblendete“ |
 | Mitteilungen | Mitteilungs-Overlay der Startseite anlegen, bearbeiten, ein-/ausblenden |
 | Beschreibungen | Seitentitel, Untertitel (ein-/ausblendbar), Footer-Text, Beschreibungstexte, Anzeigemodus (`hover`, `expand`, `both`), Handbuch-Links ein-/ausblenden |
-| Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen; Designfarben werden serverseitig geprüft, Kacheltexte bei zu geringem Kontrast automatisch angepasst |
+| Design | Farbschema (Hell/Dunkel), Logo hochladen oder entfernen, optionales komplettes SVG für den Kopfbereich (Logo mit Text) samt Auswahl der Darstellung; Designfarben werden serverseitig geprüft, Kacheltexte bei zu geringem Kontrast automatisch angepasst |
 | Active Directory | Identitätsquellen (Hauptquelle und weitere AD von Zweigstellen/Tochtergesellschaften, je mit Beschriftung und mehreren Servern als Ausfallreserve): Server, Verschlüsselung, Base DN, Bind DN und Passwort (verschlüsselt gespeichert), Filter, Attributzuordnung, Gruppen-Pfade, Windows-Anmeldung je Domäne (Domänencontroller, Zeitserver, Beitrittskonto, Client-Netze/Hostnamen), Verbindungstest je Server, Intervall, manueller Testlauf |
 | Navigation → Berechtigungen | Kacheln auf Benutzer und AD-Gruppen beschränken; Gruppennamen werden beim Tippen aus dem synchronisierten Bestand vorgeschlagen (Inline-Ergänzung und Liste, keine Live-Abfrage des AD) |
 | Office | Status und Diagnose von Nextcloud/Euro-Office, Fußzeile mit Live-Vorschau, Gestaltung der Office-Kachel inkl. Verfügbarkeitsstatus, Berechtigungen, Office-Apps/App-Pakete und OWA-Link, Orvanta (Exchange-Server, Anmeldung, Zwischenspeicher-Quota, Erinnerungen, Verbindungstest; [docs/orvanta.md](docs/orvanta.md)), SMTP-/IMAP-Proxy für Orvanta-Benutzer ohne Exchange ([docs/mail-proxy.md](docs/mail-proxy.md)), lokale KI (Endpunkt, Modell, Audio-/Bildfunktionen in Nextcloud), Nextcloud-App-Store ein-/ausblenden, Sicherung ([docs/office.md](docs/office.md)) |
@@ -824,7 +824,7 @@ find . -name "*.php" -print0 | xargs -0 -n1 php -l
   `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`
 - Session-Cookies: `HttpOnly`, `SameSite=Lax`, `Secure` bei HTTPS (bzw. erzwungen über `APP_FORCE_SECURE_COOKIES`)
 - HTTPS über den `auth`-Container; private Schlüssel der Zertifikate werden in der Anwendung erzeugt und verschlüsselt gespeichert, der Import prüft Zuordnung zum Request, Gültigkeit und Kette vor der Übernahme
-- Uploads landen außerhalb des DocumentRoots und werden über `/logo` mit geprüftem MIME-Typ ausgeliefert
+- Uploads landen außerhalb des DocumentRoots und werden über `/logo` bzw. `/logo-komplett` mit geprüftem MIME-Typ ausgeliefert
 - URL-Prüfung erlaubt ausschließlich `http`, `https` und interne Pfade (kein `javascript:`, `data:` oder `//host`)
 - AD-Zugangsdaten verschlüsselt gespeichert (Schlüssel außerhalb der Datenbank), nie an den Browser ausgegeben
 - Zugangscode-Schutz: geschützte Elemente verlangen einen täglich wechselnden, per SMS zugestellten Code (Hash-Vergleich, fünf Fehlversuche)

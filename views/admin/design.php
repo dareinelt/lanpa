@@ -10,6 +10,8 @@ use App\Support\Html;
 /** @var int|string $navOpacity */
 /** @var array<string,string> $errors */
 /** @var bool $hasLogo */
+/** @var string $headerLogoMode */
+/** @var bool $hasCompleteLogo */
 /** @var int $maxLogoKb */
 /** @var bool $hasBackground */
 /** @var int $maxBackgroundKb */
@@ -60,6 +62,27 @@ use App\Support\Html;
         </div>
     </fieldset>
 
+    <fieldset class="fieldset">
+        <legend>Kopfbereich</legend>
+        <div class="field field--check">
+            <input type="radio" id="header_logo_mode-logo_text" name="header_logo_mode" value="logo_text"
+                <?= $headerLogoMode !== 'complete_svg' ? 'checked' : '' ?>>
+            <label for="header_logo_mode-logo_text">Logo und Seitentitel (bisherige Darstellung)</label>
+        </div>
+        <div class="field field--check">
+            <input type="radio" id="header_logo_mode-complete_svg" name="header_logo_mode" value="complete_svg"
+                <?= $headerLogoMode === 'complete_svg' ? 'checked' : '' ?>>
+            <label for="header_logo_mode-complete_svg">Komplettes SVG (Logo mit Text, ohne zusätzlichen Seitentitel)</label>
+            <p class="field__hint">
+                Das komplette SVG wird unter „Komplettes Logo“ hochgeladen. Ist dort keine Datei hinterlegt,
+                erscheint wie gewohnt Logo und Seitentitel. Das Logo für die E-Mail-Signaturen bleibt unberührt.
+            </p>
+        </div>
+        <?php if (isset($errors['header_logo_mode'])) { ?>
+            <p class="field__error"><?= Html::e($errors['header_logo_mode']) ?></p>
+        <?php } ?>
+    </fieldset>
+
     <div class="form__actions">
         <button type="submit" class="button button--primary">Einstellungen speichern</button>
     </div>
@@ -94,6 +117,45 @@ use App\Support\Html;
               data-confirm="Soll das Logo entfernt werden?">
             <?= Csrf::field() ?>
             <button type="submit" class="button button--danger">Logo entfernen</button>
+        </form>
+    <?php } ?>
+</section>
+
+<section class="card">
+    <h2 class="card__title">Komplettes Logo für den Kopfbereich (SVG)</h2>
+    <p class="card__hint">
+        Das komplette Logo enthält Bildmarke und Text in einer Datei. Es erscheint nur im Kopfbereich, wenn
+        oben die Darstellung „Komplettes SVG“ gewählt ist. Die Grafik für die E-Mail-Signaturen entspricht
+        weiterhin dem oben hochgeladenen Logo.
+    </p>
+
+    <?php if ($hasCompleteLogo) { ?>
+        <p><img src="/logo-komplett" alt="Aktuelles komplettes Logo" class="logo-preview logo-preview--complete"></p>
+    <?php } else { ?>
+        <p class="card__hint">Es ist kein komplettes Logo hinterlegt.</p>
+    <?php } ?>
+
+    <form method="post" action="/admin/design/logo-komplett" enctype="multipart/form-data" class="form">
+        <?= Csrf::field() ?>
+        <div class="field">
+            <label for="logo_complete">Komplettes Logo hochladen (nur SVG, max. <?= (int) $maxLogoKb ?> KB)</label>
+            <input type="file" id="logo_complete" name="logo_complete" accept="image/svg+xml" required>
+            <p class="field__hint">
+                Empfohlen ist ein breites Seitenverhältnis (Beispiel im Repository: 1379 × 169). Die Höhe im
+                Kopfbereich ist fest, die Breite folgt dem Seitenverhältnis. SVG-Dateien werden auf aktive
+                Inhalte geprüft.
+            </p>
+        </div>
+        <div class="form__actions">
+            <button type="submit" class="button button--primary">Hochladen</button>
+        </div>
+    </form>
+
+    <?php if ($hasCompleteLogo) { ?>
+        <form method="post" action="/admin/design/logo-komplett-entfernen" class="inline-form"
+              data-confirm="Soll das komplette Logo entfernt werden?">
+            <?= Csrf::field() ?>
+            <button type="submit" class="button button--danger">Komplettes Logo entfernen</button>
         </form>
     <?php } ?>
 </section>

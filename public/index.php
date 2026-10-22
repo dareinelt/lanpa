@@ -136,6 +136,7 @@ $router->group([$requireUnlocked, $ssoAttempt], static function (Router $router)
     $router->post('/api/sms-code/send', [SmsCodeController::class, 'send']);
     $router->post('/api/sms-code/verify', [SmsCodeController::class, 'verify']);
     $router->get('/logo', [LogoController::class, 'show']);
+    $router->get('/logo-komplett', [LogoController::class, 'showComplete']);
     $router->get('/hintergrundbild', [BackgroundImageController::class, 'show']);
     $router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
     $router->get('/kachel-icon', [NavigationIconController::class, 'show']);
@@ -371,6 +372,8 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/design', [DesignController::class, 'update']);
         $router->post('/admin/design/logo', [DesignController::class, 'uploadLogo']);
         $router->post('/admin/design/logo-entfernen', [DesignController::class, 'removeLogo']);
+        $router->post('/admin/design/logo-komplett', [DesignController::class, 'uploadCompleteLogo']);
+        $router->post('/admin/design/logo-komplett-entfernen', [DesignController::class, 'removeCompleteLogo']);
         $router->post('/admin/design/hintergrundbild', [DesignController::class, 'uploadBackground']);
         $router->post('/admin/design/hintergrundbild-entfernen', [DesignController::class, 'removeBackground']);
 

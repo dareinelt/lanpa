@@ -1173,6 +1173,26 @@ final class Container
         );
     }
 
+    /**
+     * Komplettes Logo der Kopfzeile (nur SVG, getrennt vom Logo fuer Signaturen).
+     */
+    public static function completeLogo(): LogoService
+    {
+        return self::make(
+            LogoService::class . ':complete',
+            static fn (): LogoService => new LogoService(
+                self::settings(),
+                (string) Config::get('app.upload_path', BASE_PATH . '/storage/uploads'),
+                (int) Config::get('app.max_logo_bytes', 512 * 1024),
+                (bool) Config::get('app.allow_svg_logo', true),
+                'logo_complete_file',
+                'logo_complete_mime',
+                'logo-komplett',
+                LogoService::SVG_ONLY
+            )
+        );
+    }
+
     public static function backgroundImage(): BackgroundImageService
     {
         return self::make(
@@ -1233,7 +1253,8 @@ final class Container
                 self::logo(),
                 self::backgroundImage(),
                 self::favicons(),
-                self::identitySourceRepository()
+                self::identitySourceRepository(),
+                self::completeLogo()
             )
         );
     }
@@ -1256,7 +1277,8 @@ final class Container
                 self::logo(),
                 self::backgroundImage(),
                 self::favicons(),
-                self::identitySourceRepository()
+                self::identitySourceRepository(),
+                self::completeLogo()
             )
         );
     }

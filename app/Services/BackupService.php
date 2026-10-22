@@ -44,7 +44,8 @@ final class BackupService
         private readonly LogoService $logo,
         private readonly BackgroundImageService $backgroundImage,
         private readonly FaviconService $favicons,
-        private readonly ?IdentitySourceRepository $identitySources = null
+        private readonly ?IdentitySourceRepository $identitySources = null,
+        private readonly ?LogoService $completeLogo = null
     ) {
     }
 
@@ -124,6 +125,16 @@ final class BackupService
             if (is_string($contents)) {
                 $name = basename($logo['path']);
                 $manifest['files']['logo'] = ['filename' => $name, 'mime' => $logo['mime']];
+                $files[$name] = $contents;
+            }
+        }
+
+        $completeLogo = $this->completeLogo?->current();
+        if ($completeLogo !== null) {
+            $contents = @file_get_contents($completeLogo['path']);
+            if (is_string($contents)) {
+                $name = basename($completeLogo['path']);
+                $manifest['files']['complete_logo'] = ['filename' => $name, 'mime' => $completeLogo['mime']];
                 $files[$name] = $contents;
             }
         }

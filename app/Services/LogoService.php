@@ -11,6 +11,8 @@ use App\Support\SvgSanitizer;
 /**
  * Verarbeitet den Logo-Upload.
  *
+ * Die Klasse verwaltet zwei getrennte Dateien: das Logo (auch fuer die
+ * E-Mail-Signaturen) und das optionale komplette Logo der Kopfzeile (SVG).
  * Die Dateien werden ausserhalb des DocumentRoot gespeichert und ueber einen
  * Controller ausgeliefert; damit kann nichts direkt ausgefuehrt werden.
  */
@@ -23,18 +25,32 @@ final class LogoService
         'image/webp' => 'webp',
     ];
 
+    /** Nur SVG – fuer das komplette Logo der Kopfzeile. */
+    public const SVG_ONLY = ['image/svg+xml' => 'svg'];
+
+    /** @var array<string,string> */
+    private readonly array $allowedMimes;
+
+    /**
+     * @param array<string,string>|null $allowedMimes MIME-Typ => Dateiendung; null = alle Logo-Typen
+     */
     public function __construct(
         private readonly SettingsService $settings,
         private readonly string $uploadPath,
         private readonly int $maxBytes,
-        private readonly bool $allowSvg = true
+        private readonly bool $allowSvg = true,
+        private readonly string $fileSetting = 'logo_file',
+        private readonly string $mimeSetting = 'logo_mime',
+        private readonly string $filenamePrefix = 'logo',
+        ?array $allowedMimes = null
     ) {
+        $this->allowedMimes = $allowedMimes ?? self::ALLOWED;
     }
 
     /**
      * @param array<string,mixed> $file Eintrag aus $_FILES
      *
-     * @return array{logo_file:string,logo_mime:string}
+     * @return array<string,string>
      */
     public function store(array $file): array
     {
@@ -60,11 +76,11 @@ final class LogoService
         }
 
         $mime = $this->detectMime($tmpName, (string) ($file['name'] ?? ''));
-        if (!isset(self::ALLOWED[$mime])) {
-            throw new ValidationException(['logo' => 'Erlaubt sind ausschließlich PNG, JPEG, WebP und SVG.']);
+        if (!isset($this->allowedMimes[$mime])) {
+            throw new ValidationException(['logo' => sprintf('Erlaubt sind ausschließlich %s.', $this->allowedDescription())]);
         }
 
-        $extension = self::ALLOWED[$mime];
+        $extension = $this->allowedMimes[$mime];
 
         // Dateiendung muss zum erkannten Typ passen.
         $originalExtension = strtolower((string) pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
@@ -91,7 +107,7 @@ final class LogoService
         }
 
         // Der Originalname wird nie uebernommen.
-        $filename = 'logo-' . bin2hex(random_bytes(8)) . '.' . $extension;
+        $filename = $this->filenamePrefix . '-' . bin2hex(random_bytes(8)) . '.' . $extension;
         $target = rtrim($this->uploadPath, '/\\') . DIRECTORY_SEPARATOR . $filename;
 
         $moved = is_uploaded_file($tmpName)
@@ -104,17 +120,17 @@ final class LogoService
 
         @chmod($target, 0o644);
 
-        $previous = $this->settings->get('logo_file');
-        $this->settings->update(['logo_file' => $filename, 'logo_mime' => $mime]);
+        $previous = $this->settings->get($this->fileSetting);
+        $this->settings->update([$this->fileSetting => $filename, $this->mimeSetting => $mime]);
         $this->deleteFile($previous);
 
-        return ['logo_file' => $filename, 'logo_mime' => $mime];
+        return [$this->fileSetting => $filename, $this->mimeSetting => $mime];
     }
 
     public function remove(): void
     {
-        $this->deleteFile($this->settings->get('logo_file'));
-        $this->settings->update(['logo_file' => '', 'logo_mime' => '']);
+        $this->deleteFile($this->settings->get($this->fileSetting));
+        $this->settings->update([$this->fileSetting => '', $this->mimeSetting => '']);
     }
 
     /**
@@ -122,10 +138,10 @@ final class LogoService
      */
     public function current(): ?array
     {
-        $file = $this->settings->get('logo_file');
-        $mime = $this->settings->get('logo_mime');
+        $file = $this->settings->get($this->fileSetting);
+        $mime = $this->settings->get($this->mimeSetting);
 
-        if ($file === '' || !$this->isValidFilename($file) || !array_key_exists($mime, self::ALLOWED)) {
+        if ($file === '' || !$this->isValidFilename($file) || !array_key_exists($mime, $this->allowedMimes)) {
             return null;
         }
 
@@ -144,9 +160,9 @@ final class LogoService
             throw new ValidationException(['logo' => 'Ungültiger Logo-Dateiname in der Sicherung.']);
         }
 
-        $extension = self::ALLOWED[$mime] ?? null;
+        $extension = $this->allowedMimes[$mime] ?? null;
         if ($extension === null) {
-            throw new ValidationException(['logo' => 'Erlaubt sind ausschließlich PNG, JPEG, WebP und SVG.']);
+            throw new ValidationException(['logo' => sprintf('Erlaubt sind ausschließlich %s.', $this->allowedDescription())]);
         }
 
         $validExtensions = $extension === 'jpg' ? ['jpg', 'jpeg'] : [$extension];
@@ -179,7 +195,35 @@ final class LogoService
 
     private function isValidFilename(string $filename): bool
     {
-        return preg_match('/^logo-[a-f0-9]{16}\.(png|jpg|svg|webp)$/', $filename) === 1;
+        $extensions = array_map(
+            static fn (string $extension): string => preg_quote($extension, '/'),
+            array_values($this->allowedMimes)
+        );
+
+        $pattern = '/^' . preg_quote($this->filenamePrefix, '/') . '-[a-f0-9]{16}\.(' . implode('|', $extensions) . ')$/';
+
+        return preg_match($pattern, $filename) === 1;
+    }
+
+    /**
+     * Aufzaehlung der erlaubten Dateitypen fuer Fehlermeldungen.
+     */
+    private function allowedDescription(): string
+    {
+        $labels = ['png' => 'PNG', 'jpg' => 'JPEG', 'webp' => 'WebP', 'svg' => 'SVG'];
+
+        $names = [];
+        foreach (array_values($this->allowedMimes) as $extension) {
+            $names[] = $labels[$extension] ?? strtoupper($extension);
+        }
+
+        if ($names === []) {
+            return '';
+        }
+
+        $last = array_pop($names);
+
+        return $names === [] ? $last : implode(', ', $names) . ' und ' . $last;
     }
 
     private function deleteFile(string $filename): void

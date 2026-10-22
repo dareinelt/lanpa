@@ -16,6 +16,7 @@ use App\Repositories\ClickRepository;
 use App\Repositories\EmergencyNumberRepository;
 use App\Repositories\IdentitySourceRepository;
 use App\Repositories\ImportantLinkRepository;
+use App\Repositories\NavigationIconRepository;
 use App\Repositories\NavigationRepository;
 use App\Repositories\OfficeAppRepository;
 use App\Repositories\PhonebookRepository;
@@ -49,6 +50,7 @@ use App\Services\LogoService;
 use App\Services\Malware\ClamdScanner;
 use App\Services\Malware\MalwareScanService;
 use App\Services\Malware\MalwareVerdictCache;
+use App\Services\NavigationIconService;
 use App\Services\NavigationService;
 use App\Services\Office\OfficeAiService;
 use App\Services\Office\OfficeAppService;
@@ -123,6 +125,11 @@ final class Container
     public static function navigationRepository(): NavigationRepository
     {
         return self::make(NavigationRepository::class, static fn (): NavigationRepository => new NavigationRepository());
+    }
+
+    public static function navigationIconRepository(): NavigationIconRepository
+    {
+        return self::make(NavigationIconRepository::class, static fn (): NavigationIconRepository => new NavigationIconRepository());
     }
 
     public static function phonebookRepository(): PhonebookRepository
@@ -358,7 +365,19 @@ final class Container
     {
         return self::make(
             NavigationService::class,
-            static fn (): NavigationService => new NavigationService(self::navigationRepository(), self::alarmGroupRepository())
+            static fn (): NavigationService => new NavigationService(
+                self::navigationRepository(),
+                self::alarmGroupRepository(),
+                self::navigationIconRepository()
+            )
+        );
+    }
+
+    public static function navigationIcons(): NavigationIconService
+    {
+        return self::make(
+            NavigationIconService::class,
+            static fn (): NavigationIconService => NavigationIconService::fromConfig()
         );
     }
 

@@ -228,6 +228,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | --- | --- |
 | Übersicht | Kennzahlen zu Navigation, Telefonliste, Klicks und letztem AD-Lauf |
 | Navigation | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Sortieren, Löschen; bei externen Kacheln optional „Ziel über den Reverse-Proxy dieser Anwendung aufrufen“ mit Quellnetz-Ausnahmen in CIDR ([docs/weiterleitung.md](docs/weiterleitung.md)) |
+| Navigation → Icon-Katalog | Eigene SVG-Icons für Kacheln pflegen: Alias vergeben, SVG-Datei hochladen, Vorschau; die Einträge stehen anschließend im Feld „Icon“ der Kachel-Einstellung zur Auswahl, Umbenennen ändert die betroffenen Kacheln mit, Löschen ist nur für nicht verwendete Icons möglich |
 | Wichtige Links | Anlegen, Bearbeiten, Aktivieren/Deaktivieren, Löschen; Favicon wird automatisch geladen, Reihenfolge stets alphabetisch (keine manuelle Sortierung) |
 | Notfallnummern | Notfallnummern-Kacheln anlegen, bearbeiten, sortieren, ein-/ausblenden |
 | Telefonliste | Alle Einträge auflisten und je Eintrag ein-/ausblenden (Standard für neu synchronisierte Einträge: eingeblendet); Filter nach „Hat E-Mail-Adresse“, „Ist aktiv“, „Hat Telefonnummer“ und „Nur eingeblendete“ |

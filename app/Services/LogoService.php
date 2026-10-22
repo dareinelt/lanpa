@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Core\Config;
 use App\Exceptions\ValidationException;
+use App\Support\SvgSanitizer;
 
 /**
  * Verarbeitet den Logo-Upload.
@@ -173,26 +174,7 @@ final class LogoService
 
     public function isSafeSvg(string $contents): bool
     {
-        $normalized = strtolower($contents);
-
-        $forbidden = ['<script', '<foreignobject', 'javascript:', '<iframe', '<embed', '<object', '<use ', '<handler', '<set ', '<audio', '<video'];
-        foreach ($forbidden as $needle) {
-            if (str_contains($normalized, $needle)) {
-                return false;
-            }
-        }
-
-        // Event-Handler-Attribute (onload, onclick, ...)
-        if (preg_match('/\son[a-z]+\s*=/i', $contents) === 1) {
-            return false;
-        }
-
-        // Externe Referenzen und Entities
-        if (preg_match('/<!entity/i', $contents) === 1 || preg_match('/<!doctype[^>]*\[/i', $contents) === 1) {
-            return false;
-        }
-
-        return str_contains($normalized, '<svg');
+        return SvgSanitizer::isSafe($contents);
     }
 
     private function isValidFilename(string $filename): bool

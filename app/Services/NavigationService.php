@@ -6,8 +6,10 @@ namespace App\Services;
 
 use App\Exceptions\ValidationException;
 use App\Repositories\AlarmGroupRepository;
+use App\Repositories\NavigationIconRepository;
 use App\Repositories\NavigationRepository;
 use App\Support\IpNetwork;
+use App\Support\NavigationIcons;
 use App\Support\Sanitizer;
 use App\Support\TileProxy;
 use App\Support\Validator;
@@ -16,7 +18,8 @@ final class NavigationService
 {
     public function __construct(
         private readonly NavigationRepository $repository,
-        private readonly ?AlarmGroupRepository $alarmGroups = null
+        private readonly ?AlarmGroupRepository $alarmGroups = null,
+        private readonly ?NavigationIconRepository $iconCatalog = null
     ) {
     }
 
@@ -274,6 +277,9 @@ final class NavigationService
         $icon = Validator::cleanText((string) ($input['icon'] ?? ''), 32);
         if ($icon !== '' && preg_match('/^[a-z0-9-]{1,32}$/', $icon) !== 1) {
             $errors['icon'] = 'Icon-Schlüssel dürfen nur Kleinbuchstaben, Ziffern und Bindestriche enthalten.';
+        } elseif ($icon !== '' && !NavigationIcons::isBuiltin($icon)
+            && $this->iconCatalog !== null && $this->iconCatalog->findByAlias($icon) === null) {
+            $errors['icon'] = 'Das gewählte Icon ist nicht im Icon-Katalog vorhanden.';
         }
 
         $overrideBackground = !empty($input['override_background']);

@@ -46,6 +46,7 @@ final class NavigationController extends AdminController
             'subpages' => Container::navigation()->subpages(),
             'alarmGroups' => Container::alarmGroups()->activeItems(),
             'knownTargets' => Container::klinqConfig()->internalTargets(),
+            'customIcons' => Container::navigationIcons()->aliases(),
             'item' => [
                 'id' => null,
                 'title' => '',
@@ -103,6 +104,7 @@ final class NavigationController extends AdminController
             'subpages' => Container::navigation()->subpages(),
             'alarmGroups' => Container::alarmGroups()->activeItems(),
             'knownTargets' => Container::klinqConfig()->internalTargets(),
+            'customIcons' => Container::navigationIcons()->aliases(),
             'item' => $item,
             'errors' => [],
         ]);
@@ -342,6 +344,7 @@ final class NavigationController extends AdminController
             'subpages' => Container::navigation()->subpages(),
             'alarmGroups' => Container::alarmGroups()->activeItems(),
             'knownTargets' => Container::klinqConfig()->internalTargets(),
+            'customIcons' => Container::navigationIcons()->aliases(),
             'item' => $payload,
             'errors' => $exception->errors(),
         ], 422);

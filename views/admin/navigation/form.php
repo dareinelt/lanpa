@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 use App\Security\Csrf;
 use App\Support\Html;
+use App\Support\NavigationIcons;
 
 /** @var array<string,mixed> $item */
 /** @var array<string,string> $errors */
 /** @var list<array<string,mixed>> $subpages */
 /** @var list<array<string,mixed>> $alarmGroups */
 /** @var array<string,string> $knownTargets Bekannte interne Ziele (Pfad => Bezeichnung) */
+/** @var list<string> $customIcons Aliasse aus dem Icon-Katalog */
 $isNew = ($item['id'] ?? null) === null;
 $action = $isNew ? '/admin/navigation/neu' : '/admin/navigation/bearbeiten';
 $type = (string) ($item['type'] ?? 'external');
@@ -19,11 +21,14 @@ if ($type === 'internal' && (int) ($item['open_in_new_tab'] ?? 0) === 1) {
     $type = 'internal_new_tab';
 }
 $tileColor = (string) ($item['background_color'] ?? '');
-$icons = [
-    '', 'document', 'app', 'phone', 'alert', 'tools', 'robot', 'link',
-    'clock', 'helmet', 'wrench', 'snail', 'beacon', 'ekg', 'warning', 'siren',
-    'spreadsheet', 'presentation', 'pdf', 'folder', 'mail',
-];
+$customIcons = $customIcons ?? [];
+$currentIcon = (string) ($item['icon'] ?? '');
+$icons = NavigationIcons::BUILTIN;
+// Ein bereits gesetzter Alias bleibt waehlbar, auch wenn das Katalog-Icon
+// zwischenzeitlich entfernt wurde.
+if ($currentIcon !== '' && !in_array($currentIcon, $icons, true) && !in_array($currentIcon, $customIcons, true)) {
+    $customIcons[] = $currentIcon;
+}
 ?>
 <form method="post" action="<?= Html::e($action) ?>" class="form form--wide" data-editor-form>
     <?= Csrf::field() ?>
@@ -188,12 +193,25 @@ $icons = [
         <div class="field">
             <label for="icon">Icon</label>
             <select id="icon" name="icon">
-                <?php foreach ($icons as $iconKey) { ?>
-                    <option value="<?= Html::e($iconKey) ?>" <?= (string) ($item['icon'] ?? '') === $iconKey ? 'selected' : '' ?>>
-                        <?= $iconKey === '' ? 'Standard' : Html::e($iconKey) ?>
-                    </option>
+                <option value="">Standard</option>
+                <optgroup label="Standard-Icons">
+                    <?php foreach ($icons as $iconKey) { ?>
+                        <option value="<?= Html::e($iconKey) ?>" <?= $currentIcon === $iconKey ? 'selected' : '' ?>>
+                            <?= Html::e($iconKey) ?>
+                        </option>
+                    <?php } ?>
+                </optgroup>
+                <?php if ($customIcons !== []) { ?>
+                    <optgroup label="Eigene Icons (Icon-Katalog)">
+                        <?php foreach ($customIcons as $iconKey) { ?>
+                            <option value="<?= Html::e($iconKey) ?>" <?= $currentIcon === $iconKey ? 'selected' : '' ?>>
+                                <?= Html::e($iconKey) ?>
+                            </option>
+                        <?php } ?>
+                    </optgroup>
                 <?php } ?>
             </select>
+            <p class="field__hint">Eigene Icons werden im <a href="/admin/navigation/icons">Icon-Katalog</a> gepflegt.</p>
         </div>
 
         <div class="field" data-tile-override>

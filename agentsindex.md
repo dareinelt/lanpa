@@ -301,7 +301,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 - `Validator` – Eingabe-/URL-/Farb-/Typ-Prüfung.
 - `Sanitizer` – HTML-Reinigung (Rich-Text).
 - `SvgSanitizer::isSafe()` – Prüfung hochgeladener SVG-Dateien (verbotene Elemente/Attribute, keine Entities/DOCTYPE, `<svg` erforderlich); genutzt von `LogoService` und `NavigationIconService`.
-- `NavigationIcons::BUILTIN` – die fest eingebauten Kachel-Icons als einzige Quelle (Formular-Auswahl und Prüfung in `NavigationService`); `isBuiltin()` unterscheidet sie von den Aliasen des Icon-Katalogs.
+- `NavigationIcons::BUILTIN` – die fest eingebauten Kachel-Icons als einzige Quelle (Formular-Auswahl und Prüfung in `NavigationService`); `isBuiltin()` unterscheidet sie von den Aliasen des Icon-Katalogs, `isCatalogAlias()` erkennt Katalog-Grafiken, die in der Kachel ohne Rahmen in Designfarbe dargestellt werden.
 - `Color` – WCAG-Farbrechnung (`blend`, `relativeLuminance`, `contrastRatio`, `bestTextColor`, `ensureContrast`, `MIN_CONTRAST = 4.5`).
 - `Dates` – Datums-/Zeitraum-Helfer (u. a. für die Statistik).
 - `IpNetwork` – CIDR-Rechnung ohne externe Bibliothek: `normalize()`, `parseList()`/`parseListDetailed()`, `contains()`, `matchesAny()`, `bounds()` (erste/letzte Adresse, Adresszahl und Host-Bits eines Netzes aus dem Präfix). Genutzt u. a. für `tls_http_networks`, `proxy_bypass_networks` und die bekannten Quellnetze.

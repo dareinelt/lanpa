@@ -41,4 +41,15 @@ final class NavigationIcons
     {
         return in_array($alias, self::BUILTIN, true);
     }
+
+    /**
+     * Prueft, ob der Wert ein Alias aus dem Icon-Katalog sein kann.
+     *
+     * Katalog-Grafiken werden unveraendert dargestellt; sie erhalten keinen
+     * Rahmen in Designfarbe.
+     */
+    public static function isCatalogAlias(string $alias): bool
+    {
+        return preg_match('/^[a-z0-9-]{1,32}$/', $alias) === 1 && !self::isBuiltin($alias);
+    }
 }

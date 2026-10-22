@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Support\Html;
+use App\Support\NavigationIcons;
 use App\Support\TileColors;
 use App\Support\Validator;
 
@@ -95,6 +96,10 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
             $shortDescription = trim((string) ($item['short_description'] ?? ''));
             $detailsId = 'tile-details-' . $id;
             $icon = (string) ($item['icon'] ?? '');
+            // Katalog-Grafiken werden ohne Rahmen in Designfarbe dargestellt.
+            $iconWrapClass = NavigationIcons::isCatalogAlias($icon)
+                ? 'tile__icon-wrap tile__icon-wrap--catalog'
+                : 'tile__icon-wrap';
 
             if ($type === 'subpage') {
                 $href = '/unterseite?id=' . $id;
@@ -123,7 +128,7 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
                         data-alarm-mode="<?= Html::e((string) $item['alarm_group_type']) ?>"
                         <?php if ($isProtected) { ?>data-protected-id="<?= $id ?>" data-nav-title="<?= Html::e((string) $item['title']) ?>"<?php } ?>
                         <?= $description !== '' ? 'aria-describedby="' . Html::e($detailsId) . '"' : '' ?>>
-                    <span class="tile__icon-wrap" aria-hidden="true">
+                    <span class="<?= $iconWrapClass ?>" aria-hidden="true">
                         <?php require __DIR__ . '/icon.php'; ?>
                     </span>
                     <span class="tile__body">
@@ -142,7 +147,7 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
                         data-nav-new-tab="<?= $opensNewTab ? '1' : '0' ?>"
                         data-nav-title="<?= Html::e((string) $item['title']) ?>"
                         <?= $description !== '' ? 'aria-describedby="' . Html::e($detailsId) . '"' : '' ?>>
-                    <span class="tile__icon-wrap" aria-hidden="true">
+                    <span class="<?= $iconWrapClass ?>" aria-hidden="true">
                         <?php require __DIR__ . '/icon.php'; ?>
                     </span>
                     <span class="tile__body">
@@ -159,7 +164,7 @@ $officeStateClasses = ['ok' => 'ok', 'degraded' => 'warn', 'down' => 'down'];
                    data-nav-id="<?= $id ?>"
                    <?= $opensNewTab ? 'target="_blank" rel="' . ($isExternal ? 'noopener noreferrer' : 'noopener') . '"' : '' ?>
                    <?= $description !== '' ? 'aria-describedby="' . Html::e($detailsId) . '"' : '' ?>>
-                    <span class="tile__icon-wrap" aria-hidden="true">
+                    <span class="<?= $iconWrapClass ?>" aria-hidden="true">
                         <?php require __DIR__ . '/icon.php'; ?>
                     </span>
                     <span class="tile__body">

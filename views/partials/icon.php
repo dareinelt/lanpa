@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Support\Html;
+use App\Support\NavigationIcons;
 
 /**
  * Lokale Inline-SVG-Icons (keine externen Ressourcen) und Icons aus dem
@@ -36,7 +37,7 @@ $icons = [
 
 $key = isset($icon) && is_string($icon) && isset($icons[$icon]) ? $icon : 'link';
 $customAlias = isset($icon) && is_string($icon) && !isset($icons[$icon])
-    && preg_match('/^[a-z0-9-]{1,32}$/', $icon) === 1 ? $icon : null;
+    && NavigationIcons::isCatalogAlias($icon) ? $icon : null;
 ?>
 <?php if ($customAlias !== null) { ?>
     <img class="tile__icon" src="<?= Html::e(Html::url('/kachel-icon?alias=' . rawurlencode($customAlias))) ?>"

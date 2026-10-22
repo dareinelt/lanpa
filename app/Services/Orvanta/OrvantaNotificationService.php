@@ -17,6 +17,12 @@ final class OrvantaNotificationService
 {
     public const SYNC_WINDOW_HOURS = 48;
 
+    /**
+     * Praefixe, mit denen Postfaecher abgesagte Termine im Betreff
+     * kennzeichnen (Outlook/Exchange in der Sprache des Postfachs).
+     */
+    private const CANCELLED_SUBJECT = '/^\s*(?:abgesagt|canceled|cancelled|annulliert)\s*:/iu';
+
     public function __construct(
         private readonly OrvantaRepository $repository,
         private readonly OrvantaExchangeService $exchange,
@@ -76,8 +82,8 @@ final class OrvantaNotificationService
         $cancelled = [];
         foreach ($events as $event) {
             // Abgesagte Termine und abgelehnte Besprechungen erinnern nicht mehr.
-            if (!empty($event['is_cancelled']) || $event['my_response'] === 'Decline') {
-                $cancelled[] = $event['id'];
+            if (self::isCancelled($event)) {
+                $cancelled[] = (string) $event['id'];
                 continue;
             }
             if ($event['end'] > 0 && $event['end'] < $now) {
@@ -105,6 +111,27 @@ final class OrvantaNotificationService
             $this->repository->removeReminders($uid, $cancelled);
         }
         $this->repository->purgeReminders(self::sql($now - 7 * 86400));
+    }
+
+    /**
+     * Ein Termin erinnert nicht, wenn er abgesagt oder vom Benutzer abgelehnt
+     * wurde. Exchange setzt `calendar:IsCancelled` nicht bei jedem abgesagten
+     * Vorkommen einer Serie; der Betreff traegt dann die Absagekennzeichnung des
+     * Postfaechers ("Abgesagt: ...") und ist die einzige verlaessliche Spur.
+     *
+     * @param array<string,mixed> $event
+     */
+    private static function isCancelled(array $event): bool
+    {
+        if (!empty($event['is_cancelled'])) {
+            return true;
+        }
+        $response = strtolower(trim((string) ($event['my_response'] ?? '')));
+        if ($response === 'decline' || $response === 'declined') {
+            return true;
+        }
+
+        return preg_match(self::CANCELLED_SUBJECT, (string) ($event['subject'] ?? '')) === 1;
     }
 
     /**

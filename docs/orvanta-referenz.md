@@ -601,7 +601,9 @@ GET /api/orvanta/erinnerungen
   ├─ ?sync=1 oder letzter Abgleich (Session orvanta_sync_<uid>) ≥ 300 s:
   │     OrvantaNotificationService::sync(uid, impersonate)
   │       upcomingReminders(now, 48 h) → je Termin:
-  │         abgesagt (calendar:IsCancelled) oder abgelehnt (MyResponseType = Decline)
+  │         abgesagt (calendar:IsCancelled oder Betreff „Abgesagt:“/„Canceled:“/
+  │                   „Cancelled:“/„annulliert:“) oder abgelehnt
+  │                   (MyResponseType = Decline)
   │           → übersprungen, vorhandene Erinnerung wird entfernt (removeReminders)
   │         eigene Erinnerung → remind_at = start − ReminderMinutesBeforeStart
   │         keine Erinnerung, reminder_lead_minutes > 0 → remind_at = start − lead
@@ -647,6 +649,13 @@ der Kalenderansicht und beim Erinnerungs-Polling neu berechnet (Abschnitt 24.4).
 - `removeReminders()` löscht die Erinnerung abgesagter Termine und abgelehnter
   Besprechungen **unabhängig vom Zustand**, damit auch eine bereits
   ausgelieferte Erinnerung (Overlay, OS-Meldung, Mitteilungen) verschwindet.
+- Ob ein Termin als abgesagt gilt, entscheidet `isCancelled()`:
+  `is_cancelled` (Exchange: `calendar:IsCancelled`, lokal:
+  `status = CANCELLED`), `my_response` = `decline`/`declined` oder ein Betreff,
+  der mit `Abgesagt:`, `Canceled:`, `Cancelled:` oder `annulliert:` beginnt
+  (`CANCELLED_SUBJECT`, Groß-/Kleinschreibung egal). Der Betreff ist nötig, weil
+  Exchange `calendar:IsCancelled` nicht bei jedem abgesagten Vorkommen einer
+  Serie setzt und `EwsXml::bool()` bei fehlendem Element `false` liefert.
 - Für lokale Termine (Proxy-Benutzer) übernimmt `pruneLocalReminders()` das
   Aufräumen verschwundener Termine: `syncReminders()` allein löscht nichts,
   weil es die Terminliste des Backends nur ergänzt/aktualisiert.
@@ -1096,7 +1105,7 @@ nach dem Neuladen wieder die alte.
 | **Neuer Anhangs-Öffnungsmodus / Dateityp** | `OFFICE_TYPES` bzw. `BROWSER_TYPES`, bei Inline zusätzlich `OrvantaController::inlineType()`; Test „Oeffnungsart je Dateityp“. |
 | **Zwischenspeicher für Nachrichten** (`kind = message`) | Spalte existiert; `OrvantaAttachmentService::cache(..., 'message')` mit eigenem Hash-Schema verwenden, damit keine Kollision mit `sha1(attachment_id)` entsteht. |
 | **Lokalen Kalender erweitern** (weiteres Feld, weiterer iCalendar-Wert) | Spalte per Migration **und** im SQLite-Schema von `tests/Unit/OrvantaLocalCalendarTest.php` (`localCalendarPdo()`); `OrvantaCalendarRepository` (Hydration, `create()`/`update()`), `OrvantaCalendarService::save()`/`times()`/`attendeeRows()` und die iCalendar-Abbildung in `ICalendar::build()`/`parseInvitation()`/`normalize()`; Formular und Anzeige in `orvanta.js` (Kalenderdialog), Doku in Abschnitt 24. Neue Werte zusätzlich in `FREE_BUSY`/`RESPONSE_PARTSTAT`/`PARTSTAT_RESPONSE` führen. |
-| **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()`/`removeReminders()` (Zustandsübergänge Abschnitt 8.2); für den lokalen Kalender zusätzlich `syncLocal()`/`apply()` und `pruneLocalReminders()`; beide Clients prüfen; Tests „Erinnerungen …“, „Abgesagte und abgelehnte Termine …“, „Repository-Sync …“. |
+| **Erinnerungslogik ändern** | `OrvantaNotificationService::sync()/poll()` und `OrvantaRepository::syncReminders()`/`removeReminders()` (Zustandsübergänge Abschnitt 8.2); für den lokalen Kalender zusätzlich `syncLocal()`/`apply()` und `pruneLocalReminders()`; beide Clients prüfen; Tests „Erinnerungen …“, „Abgesagte und abgelehnte Termine …“, „Abgesagte Termine ohne IsCancelled-Merkmal …“, „Repository-Sync …“. |
 | **Neues Modul** | `DEFAULT_FOLDERS`, Modulliste/Menüband/Dialog in `views/orvanta/index.php`, `switchModule()`/`loadModule()`/Tastenkürzel in `orvanta.js`, Service-Methoden + API, Demo-Daten, Doku. |
 | **KI-Unterstützung in weiterem Editor** | Editor mit `contenteditable` und eigenem `data-ov-…-body`-Hook; in `orvanta.js` `aiEditors()`, `aiMode()` und `aiContext()` erweitern; neuer Wert in `OrvantaAiService::MODES` + ENUM in `orvanta_ai_usage.kind` (Migration) + Systemprompt in `messages()`; serverseitig `stripMarkers()` vor dem Sanitizer aufrufen; Test. |
 | **Signaturaufbau ändern** (Zeilen, Trennzeichen, Logo-Größe) | Nur `OrvantaSignatureService::render()`/`phoneLine()` (E-Mail-tauglich: Tabelle, Inline-Styles ohne `url(`, Bilder nur als `data:`-URI – sonst entfernt sie `MailHtmlSanitizer`); Schriftfarbe aus `text_color` (`resolveColor()`: Hex-Wert der Vorlage, sonst Designfarbe), Trennzeichenfarbe über den Farbschlüssel aus `SettingsService::theme()`; Logo-Höhe = `LINE_HEIGHT` × Zeilenzahl, das Bild wird per `scaleImage()` selbst auf diese Größe gebracht (Outlook/Exchange ignorieren width/height); Test „Darstellung …“ anpassen; Screenshot 88/90 erneuern. |
@@ -2834,7 +2843,8 @@ Auslösung.
 `upcomingReminders(uid, now, 48)` liefert die Termine im 48-h-Fenster mit
 `reminder_set`/`remind_at` – dieselben Regeln wie bei Exchange (eigene
 Erinnerung, sonst globaler Vorlauf; abgesagte und abgelehnte Termine fallen
-heraus). `OrvantaNotificationService::syncLocal()` schreibt sie über
+heraus, erkannt an `status = CANCELLED`, `my_response` oder dem Betreff, siehe
+`OrvantaNotificationService::isCancelled()`). `OrvantaNotificationService::syncLocal()` schreibt sie über
 `OrvantaRepository::syncReminders()` in `orvanta_reminders` (die Terminkennung
 bleibt die numerische Termin-ID, damit „Öffnen“ lädt) und ruft danach
 `pruneLocalReminders()` auf. Dieser Aufruf ist nötig, weil `syncReminders()`

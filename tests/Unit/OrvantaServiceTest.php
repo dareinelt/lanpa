@@ -1248,6 +1248,49 @@ Runner::test('Orvanta: Abgesagte und abgelehnte Termine erinnern nicht', functio
     Assert::same([], $parts['repository']->activeReminders('u1'), 'Abgesagter Termin verschwindet aus den Mitteilungen.');
 });
 
+Runner::test('Orvanta: Abgesagte Termine ohne IsCancelled-Merkmal erinnern nicht', function (): void {
+    // Exchange setzt calendar:IsCancelled nicht bei jedem abgesagten Vorkommen
+    // einer Serie; der Betreff traegt dann die Absagekennzeichnung des
+    // Postfaechers ("Abgesagt: ..."). Beide Wege laufen ueber apply().
+    $parts = orvantaExchange(['reminder_lead_minutes' => '60']);
+    $repository = $parts['repository'];
+    $service = new OrvantaNotificationService($repository, $parts['exchange'], $parts['config']);
+    $now = time();
+    $start = $now + 1800;
+    $remindAt = $start - 900;
+    $sql = static fn (int $timestamp): string => date('Y-m-d H:i:s', $timestamp);
+    $events = [
+        ['id' => 'AAMk-cancelled', 'subject' => 'Abgesagt: Jour fixe IT-Sicherheit', 'location' => 'Raum 2.14', 'start' => $start, 'end' => $start + 3600, 'reminder_set' => true, 'remind_at' => $remindAt, 'is_cancelled' => false, 'my_response' => 'Organizer'],
+        ['id' => 'AAMk-delivered', 'subject' => 'Abgesagt: Planungsrunde Bauhof', 'location' => '', 'start' => $start, 'end' => $start + 3600, 'reminder_set' => true, 'remind_at' => $remindAt, 'is_cancelled' => false, 'my_response' => 'Organizer'],
+        ['id' => 'AAMk-declined', 'subject' => 'Abstimmung Personaleinsatz', 'location' => '', 'start' => $start, 'end' => $start + 3600, 'reminder_set' => false, 'remind_at' => 0, 'is_cancelled' => false, 'my_response' => 'declined'],
+        ['id' => 'AAMk-normal', 'subject' => 'Dienstbesprechung', 'location' => '', 'start' => $start, 'end' => $start + 3600, 'reminder_set' => false, 'remind_at' => 0, 'is_cancelled' => false, 'my_response' => 'Accept'],
+    ];
+
+    // Erinnerungen aus dem Abgleich, als die Termine noch galten: eine noch
+    // offene (Dialog) und eine bereits ausgelieferte (Mitteilungen).
+    $repository->syncReminders('u1', [
+        ['item_id' => 'AAMk-cancelled', 'subject' => 'Jour fixe IT-Sicherheit', 'location' => '', 'starts_at' => $sql($start), 'remind_at' => $sql($remindAt)],
+        ['item_id' => 'AAMk-delivered', 'subject' => 'Planungsrunde Bauhof', 'location' => '', 'starts_at' => $sql($start), 'remind_at' => $sql($now - 60)],
+    ]);
+    $delivered = $repository->dueReminders('u1', $sql($now));
+    $deliveredId = 0;
+    foreach ($delivered as $row) {
+        if ($row['item_id'] === 'AAMk-delivered') {
+            $deliveredId = (int) $row['id'];
+        }
+    }
+    Assert::true($deliveredId > 0, 'Erinnerung des abgesagten Termins war vor dem Abgleich faellig.');
+    $repository->markDelivered('u1', [$deliveredId], $sql($now));
+
+    $service->syncLocal('u1', $events, $now);
+
+    $ids = array_column($repository->dueReminders('u1', $sql($remindAt)), 'item_id');
+    Assert::false(in_array('AAMk-cancelled', $ids, true), 'Betreff "Abgesagt:" erzeugt keine Erinnerung.');
+    Assert::false(in_array('AAMk-declined', $ids, true), 'Abgelehnte Antwort erzeugt keine Erinnerung.');
+    Assert::true(in_array('AAMk-normal', $ids, true), 'Normale Termine erinnern weiterhin.');
+    Assert::same([], $repository->activeReminders('u1'), 'Ausgelieferte Erinnerung des abgesagten Termins verschwindet.');
+});
+
 Runner::test('Orvanta: Repository-Sync aktualisiert verschobene Termine und entfernt alte', function (): void {
     $repository = new OrvantaRepository(orvantaPdo());
     $repository->syncReminders('u1', [

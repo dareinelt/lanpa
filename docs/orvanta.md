@@ -999,6 +999,11 @@ sequenceDiagram
   bereits angezeigte Erinnerung wird beim nächsten Abgleich entfernt. Bei
   lokalen Terminen stehen dafür `status = CANCELLED` bzw.
   `my_response = Decline`.
+  Exchange setzt `calendar:IsCancelled` nicht bei jedem abgesagten Vorkommen
+  einer Serie; dort trägt nur der Betreff die Absagekennzeichnung des
+  Postfachs. Deshalb gilt ein Termin zusätzlich als abgesagt, wenn der Betreff
+  mit `Abgesagt:`, `Canceled:`, `Cancelled:` oder `annulliert:` beginnt
+  (Groß-/Kleinschreibung egal).
 - `public/assets/js/orvanta-reminders.js` wird auf allen Intranet-Seiten
   geladen, wenn `reminder_header` aktiv ist und der Benutzer die App nutzen
   darf. Fällige Erinnerungen erscheinen unter **Mitteilungen** in der Kopfzeile

@@ -96,7 +96,7 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
                 <a class="site-nav__link site-nav__link--sso" href="<?= Html::e($ssoLoginUrl) ?>" title="Mit dem Windows-Konto anmelden, um persönliche Inhalte zu sehen">Mit Windows anmelden</a>
             <?php } ?>
 <?php $ssoBlock = trim((string) ob_get_clean()); ?>
-<header class="site-header">
+<header class="site-header<?= $showCompleteLogo ? ' site-header--complete' : '' ?>">
     <div class="site-header__inner<?= !empty($emergencyPlanVisible) ? ' site-header__inner--emergency' : '' ?>">
         <a class="brand" href="/">
             <?php if ($showCompleteLogo) { ?>

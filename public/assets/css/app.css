@@ -16,6 +16,19 @@
     --shadow-hover: 0 2px 4px rgba(0, 0, 0, .1), 0 16px 40px rgba(0, 0, 0, .12);
     --transition: 160ms ease;
     --max-width: 1180px;
+    /*
+     * Leichtes Grau hinter dem kompletten Logo im dunklen Farbschema (RGB-Werte).
+     * Der deckende Teil reicht bis zum Ende der Grafik, danach laeuft die Farbe
+     * ueber --header-complete-fade-length in die Designfarbe des Kopfbereichs aus.
+     */
+    --header-complete-light: 236, 238, 241;
+    --header-complete-fade-length: 4rem;
+    --header-complete-gradient: linear-gradient(
+        90deg,
+        rgba(var(--header-complete-light), .96) 0,
+        rgba(var(--header-complete-light), .96) calc(min(60vw, 420px) + 2.5rem),
+        rgba(var(--header-complete-light), 0) calc(min(60vw, 420px) + 2.5rem + var(--header-complete-fade-length))
+    );
 }
 
 html {
@@ -264,6 +277,48 @@ code {
 @media (max-width: 600px) {
     .brand__logo--complete {
         height: 32px;
+    }
+}
+
+/*
+ * Komplettes Logo im dunklen Farbschema: Die Grafik bringt eine eigene, meist
+ * dunkle Schrift mit. Damit sie lesbar bleibt, liegt hinter ihr ein heller,
+ * leicht grauer Untergrund, der weich in die Designfarbe des Kopfbereichs
+ * ausläuft. Im hellen Schema bleibt der Kopfbereich unveraendert. Weil die
+ * Grafik ueber 60vw begrenzt ist, endet der helle Bereich auf schmalen
+ * Bildschirmen automatisch vor der Navigation.
+ */
+.site-header--complete::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+    width: min(100%, calc(min(60vw, 420px) + 2.5rem + var(--header-complete-fade-length)));
+    background: var(--header-complete-fade, transparent);
+    pointer-events: none;
+}
+
+/* Inhalt (Grafik, Navigation) liegt ueber dem aufgehellten Untergrund. */
+.site-header--complete .site-header__inner {
+    position: relative;
+    z-index: 1;
+}
+
+:root[data-theme="dark"] {
+    --header-complete-fade: var(--header-complete-gradient);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --header-complete-fade: var(--header-complete-gradient);
+    }
+}
+
+/* Schmale Ansicht: kuerzerer Verlauf, damit die Bedienelemente rechts auf der
+   Designfarbe bleiben. */
+@media (max-width: 600px) {
+    :root {
+        --header-complete-fade-length: 2.5rem;
     }
 }
 

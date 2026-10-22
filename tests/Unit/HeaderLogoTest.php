@@ -223,6 +223,7 @@ Runner::test('Kopfbereich zeigt bei Auswahl das komplette SVG ohne Seitentitel',
     Assert::contains('brand__logo--complete', $html);
     Assert::contains('src="/logo-komplett"', $html);
     Assert::contains('alt="lanpa"', $html);
+    Assert::contains('site-header--complete', $html);
     Assert::false(str_contains($html, 'brand__title'), 'Der zusätzliche Seitentitel darf nicht erscheinen.');
     Assert::false(str_contains($html, 'src="/logo"'), 'Das einfache Logo darf nicht erscheinen.');
 });
@@ -238,6 +239,7 @@ Runner::test('Kopfbereich bleibt ohne komplettes SVG bei Logo und Text', static 
     Assert::contains('brand__title', $html);
     Assert::contains('brand__subtitle', $html);
     Assert::false(str_contains($html, 'logo-komplett'), 'Ohne Datei darf nicht auf das komplette Logo verwiesen werden.');
+    Assert::false(str_contains($html, 'site-header--complete'), 'Ohne Grafik bleibt der Kopfbereich unverändert.');
 });
 
 Runner::test('Kopfbereich zeigt in der Standarddarstellung Logo und Seitentitel', static function (): void {
@@ -249,4 +251,22 @@ Runner::test('Kopfbereich zeigt in der Standarddarstellung Logo und Seitentitel'
     Assert::contains('src="/logo"', $html);
     Assert::contains('brand__title', $html);
     Assert::false(str_contains($html, 'brand__logo--complete'), 'Das komplette Logo darf nur bei Auswahl erscheinen.');
+    Assert::false(str_contains($html, 'site-header--complete'), 'Der helle Untergrund darf nur mit Grafik erscheinen.');
+});
+
+Runner::test('Kopfbereich erhaelt im dunklen Farbschema einen hellen Untergrund unter dem kompletten Logo', static function (): void {
+    $css = (string) file_get_contents(BASE_PATH . '/public/assets/css/app.css');
+
+    Assert::contains('.site-header--complete::before', $css);
+    Assert::contains('--header-complete-light', $css);
+    Assert::contains('background: var(--header-complete-fade, transparent);', $css);
+
+    // Der Verlauf wird ausschliesslich fuer das dunkle Schema aktiviert (Attribut und Systemvorgabe).
+    Assert::same(
+        2,
+        substr_count($css, '--header-complete-fade: var(--header-complete-gradient);'),
+        'Der helle Untergrund muss genau fuer beide Dunkelmodus-Varianten gesetzt sein.'
+    );
+    Assert::contains(':root[data-theme="dark"]', $css);
+    Assert::contains(':root:not([data-theme="light"])', $css);
 });

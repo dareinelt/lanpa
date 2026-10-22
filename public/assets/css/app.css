@@ -663,6 +663,11 @@ code {
     color: var(--color-on-primary);
 }
 
+/* Katalog-Grafiken werden ohne Rahmen in Designfarbe dargestellt. */
+.tile__icon-wrap--catalog {
+    background: transparent;
+}
+
 .tile__icon {
     width: 28px;
     height: 28px;

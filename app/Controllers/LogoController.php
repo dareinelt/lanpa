@@ -11,12 +11,27 @@ use App\Exceptions\HttpException;
 
 /**
  * Liefert das administrativ hinterlegte Logo aus dem nicht-oeffentlichen Upload-Verzeichnis aus.
+ *
+ * Neben dem Logo (auch fuer E-Mail-Signaturen) wird das komplette Logo der
+ * Kopfzeile ausgeliefert.
  */
 final class LogoController extends Controller
 {
     public function show(Request $request): Response
     {
-        $logo = Container::logo()->current();
+        return $this->serve($request, Container::logo()->current());
+    }
+
+    public function showComplete(Request $request): Response
+    {
+        return $this->serve($request, Container::completeLogo()->current());
+    }
+
+    /**
+     * @param array{path:string,mime:string}|null $logo
+     */
+    private function serve(Request $request, ?array $logo): Response
+    {
         if ($logo === null) {
             throw new HttpException(404, 'Kein Logo hinterlegt.');
         }

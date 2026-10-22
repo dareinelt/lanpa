@@ -830,6 +830,13 @@
     border-radius: var(--radius-sm);
 }
 
+/* Breite SVGs (z. B. komplettes Logo) duerfen die Karte nicht sprengen. */
+.logo-preview--complete {
+    max-width: 100%;
+    height: auto;
+    width: auto;
+}
+
 /* Tabellen */
 .table-wrapper {
     overflow-x: auto;

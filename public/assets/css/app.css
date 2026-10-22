@@ -247,6 +247,26 @@ code {
     object-fit: contain;
 }
 
+/*
+ * Komplettes Logo (Bildmarke und Text in einer SVG-Datei). Die Vorlage im
+ * Repository hat das Seitenverhaeltnis 1379:169, ist also deutlich breiter als
+ * ein reines Logo. Die Hoehe bleibt fest, die Breite folgt dem
+ * Seitenverhaeltnis; max-width verhindert einen Ueberlauf auf schmalen
+ * Bildschirmen (dort wird die Grafik proportional verkleinert).
+ */
+.brand__logo--complete {
+    height: 42px;
+    width: auto;
+    max-width: min(60vw, 420px);
+    object-fit: contain;
+}
+
+@media (max-width: 600px) {
+    .brand__logo--complete {
+        height: 32px;
+    }
+}
+
 .brand__text {
     display: flex;
     flex-direction: column;

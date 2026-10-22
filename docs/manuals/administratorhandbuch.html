@@ -366,7 +366,14 @@ docker compose down        # Dienste stoppen (Daten bleiben erhalten)</pre>
 
   <h2>10.2&ensp;Logo und Hintergrundbild</h2>
   <ul>
-    <li><strong>Logo:</strong> wird in der Titelleiste angezeigt (SVG optional, Größenlimit konfigurierbar).</li>
+    <li><strong>Logo:</strong> wird in der Titelleiste angezeigt (SVG optional, Größenlimit konfigurierbar).
+    Das Logo ist weiterhin Pflicht und wird unverändert für die Grafik in E-Mail-Signaturen verwendet.</li>
+    <li><strong>Komplettes Logo für den Kopfbereich:</strong> optionales SVG, das Logo und Schriftzug in einer
+    Grafik vereint. Es ersetzt dann Logo, Seitentitel und Untertitel oben links; die Breite richtet sich nach
+    dem Seitenverhältnis der Datei (Beispiel: <code>Pferd_mit_Text_fuer_oben_links.svg</code>, 1379&nbsp;:&nbsp;169).
+    Zulässig sind ausschließlich SVG-Dateien.</li>
+    <li><strong>Darstellung im Kopfbereich:</strong> Auswahl, ob oben links „Logo und Text“ oder das
+    „komplette Logo“ erscheint. Fehlt eine komplette Grafik, bleibt es automatisch bei Logo und Text.</li>
     <li><strong>Hintergrundbild:</strong> optionales Hintergrundbild der Startseite (Größenlimit konfigurierbar).</li>
   </ul>
 

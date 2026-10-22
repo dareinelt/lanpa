@@ -11,6 +11,9 @@ use App\Support\Html;
 $pageTitle = $pageTitle ?? ($siteTitle ?? $appName);
 $activeNav = $activeNav ?? '';
 $hasLogo = $hasLogo ?? false;
+$headerLogoMode = $headerLogoMode ?? 'logo_text';
+$hasCompleteLogo = $hasCompleteLogo ?? false;
+$showCompleteLogo = $headerLogoMode === 'complete_svg' && $hasCompleteLogo;
 $hasBackground = $hasBackground ?? false;
 $siteSubtitleVisible = $siteSubtitleVisible ?? true;
 $flashes = $flashes ?? [];
@@ -96,17 +99,21 @@ $ssoLoginUrl = isset($ssoLoginUrl) && is_string($ssoLoginUrl) ? $ssoLoginUrl : '
 <header class="site-header">
     <div class="site-header__inner<?= !empty($emergencyPlanVisible) ? ' site-header__inner--emergency' : '' ?>">
         <a class="brand" href="/">
-            <?php if ($hasLogo) { ?>
-                <img class="brand__logo" src="/logo" alt="<?= Html::e($siteTitle ?? $appName) ?>">
+            <?php if ($showCompleteLogo) { ?>
+                <img class="brand__logo brand__logo--complete" src="/logo-komplett" alt="<?= Html::e($siteTitle ?? $appName) ?>">
             <?php } else { ?>
-                <span class="brand__mark" aria-hidden="true"><?= Html::e(mb_substr((string) ($siteTitle ?? $appName), 0, 2)) ?></span>
-            <?php } ?>
-            <span class="brand__text">
-                <span class="brand__title"><?= Html::e($siteTitle ?? $appName) ?></span>
-                <?php if (($siteSubtitleVisible ?? true) && ($siteSubtitle ?? '') !== '') { ?>
-                    <span class="brand__subtitle"><?= Html::e($siteSubtitle) ?></span>
+                <?php if ($hasLogo) { ?>
+                    <img class="brand__logo" src="/logo" alt="<?= Html::e($siteTitle ?? $appName) ?>">
+                <?php } else { ?>
+                    <span class="brand__mark" aria-hidden="true"><?= Html::e(mb_substr((string) ($siteTitle ?? $appName), 0, 2)) ?></span>
                 <?php } ?>
-            </span>
+                <span class="brand__text">
+                    <span class="brand__title"><?= Html::e($siteTitle ?? $appName) ?></span>
+                    <?php if (($siteSubtitleVisible ?? true) && ($siteSubtitle ?? '') !== '') { ?>
+                        <span class="brand__subtitle"><?= Html::e($siteSubtitle) ?></span>
+                    <?php } ?>
+                </span>
+            <?php } ?>
         </a>
 
         <?php if (!empty($emergencyPlanVisible)) { ?>

@@ -63,7 +63,8 @@ final class ImportService
         private readonly LogoService $logo,
         private readonly BackgroundImageService $backgroundImage,
         private readonly FaviconService $favicons,
-        private readonly ?IdentitySourceRepository $identitySources = null
+        private readonly ?IdentitySourceRepository $identitySources = null,
+        private readonly ?LogoService $completeLogo = null
     ) {
     }
 
@@ -214,6 +215,10 @@ final class ImportService
 
         if (isset($filesMeta['logo'])) {
             $this->assertFilePresent($files, $filesMeta['logo'], '/^logo-[a-f0-9]{16}\.(png|jpg|svg|webp)$/');
+        }
+
+        if (isset($filesMeta['complete_logo'])) {
+            $this->assertFilePresent($files, $filesMeta['complete_logo'], '/^logo-komplett-[a-f0-9]{16}\.svg$/');
         }
 
         if (isset($filesMeta['background'])) {
@@ -553,6 +558,12 @@ final class ImportService
             $filename = (string) ($filesMeta['logo']['filename'] ?? '');
             $mime = (string) ($filesMeta['logo']['mime'] ?? '');
             $this->logo->writeFromImport($filename, $files[$filename], $mime);
+        }
+
+        if (isset($filesMeta['complete_logo']) && $this->completeLogo !== null) {
+            $filename = (string) ($filesMeta['complete_logo']['filename'] ?? '');
+            $mime = (string) ($filesMeta['complete_logo']['mime'] ?? '');
+            $this->completeLogo->writeFromImport($filename, $files[$filename], $mime);
         }
 
         if (isset($filesMeta['background'])) {

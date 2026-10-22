@@ -178,6 +178,16 @@ function backupImportServices(PDO $pdo, string $uploadDir): array
     $activationRepo = new ActivationNumberRepository($pdo);
 
     $logo = new LogoService($settings, $uploadDir, 512 * 1024, true);
+    $completeLogo = new LogoService(
+        $settings,
+        $uploadDir,
+        512 * 1024,
+        true,
+        'logo_complete_file',
+        'logo_complete_mime',
+        'logo-komplett',
+        LogoService::SVG_ONLY
+    );
     $background = new BackgroundImageService($settings, $uploadDir, 2 * 1024 * 1024);
     $favicons = new FaviconService($uploadDir);
 
@@ -193,7 +203,9 @@ function backupImportServices(PDO $pdo, string $uploadDir): array
         $activationRepo,
         $logo,
         $background,
-        $favicons
+        $favicons,
+        null,
+        $completeLogo
     );
 
     $import = new ImportService(
@@ -209,7 +221,9 @@ function backupImportServices(PDO $pdo, string $uploadDir): array
         $activationRepo,
         $logo,
         $background,
-        $favicons
+        $favicons,
+        null,
+        $completeLogo
     );
 
     return [$backup, $import, $settings, $uploadDir];
@@ -319,6 +333,37 @@ Runner::test('Sicherung enthält alle Daten und kann vollständig eingespielt we
         Assert::true(is_file($targetDir . '/favicon-0123456789abcdef.png'));
 
         Assert::true($targetBackup instanceof BackupService);
+    } finally {
+        cleanupBackupImportDir($sourceDir);
+        cleanupBackupImportDir($targetDir);
+    }
+});
+
+Runner::test('Sicherung überträgt das komplette Logo der Kopfzeile', static function (): void {
+    $sourceDir = backupImportTempDir();
+    $targetDir = backupImportTempDir();
+
+    try {
+        $sourcePdo = backupImportPdo();
+        [$backup] = backupImportServices($sourcePdo, $sourceDir);
+        $sourceRepo = new SettingsRepository($sourcePdo);
+        (new AdminUserRepository($sourcePdo))->create('admin', 'hash', AdminUserRepository::ROLE_ADMIN);
+
+        $file = 'logo-komplett-0123456789abcdef.svg';
+        $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1379 169"><rect width="1379" height="169"/></svg>';
+        file_put_contents($sourceDir . '/' . $file, $svg);
+        $sourceRepo->insert('logo_complete_file', $file);
+        $sourceRepo->insert('logo_complete_mime', 'image/svg+xml');
+        $sourceRepo->insert('header_logo_mode', 'complete_svg');
+
+        $zip = $backup->create();
+
+        $targetPdo = backupImportPdo();
+        [, $targetImport, $targetSettings] = backupImportServices($targetPdo, $targetDir);
+        $targetImport->import($zip);
+
+        Assert::same($svg, (string) file_get_contents($targetDir . '/' . $file));
+        Assert::same('complete_svg', $targetSettings->headerLogoMode());
     } finally {
         cleanupBackupImportDir($sourceDir);
         cleanupBackupImportDir($targetDir);

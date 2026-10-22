@@ -34,6 +34,8 @@ abstract class Controller
             'themeCss' => Container::theme()->css(),
             'tileContrastBase' => Container::theme()->tileContrastBase(),
             'hasLogo' => Container::logo()->current() !== null,
+            'headerLogoMode' => $settings->headerLogoMode(),
+            'hasCompleteLogo' => Container::completeLogo()->current() !== null,
             'hasBackground' => Container::backgroundImage()->current() !== null,
             'announcements' => Container::announcements()->activeItems(),
             'flashes' => Session::takeFlash(),

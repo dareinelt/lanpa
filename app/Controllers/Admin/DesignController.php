@@ -26,6 +26,8 @@ final class DesignController extends AdminController
             'theme' => Container::settings()->theme(),
             'navOpacity' => Container::settings()->navOpacity(),
             'hasLogo' => Container::logo()->current() !== null,
+            'headerLogoMode' => Container::settings()->headerLogoMode(),
+            'hasCompleteLogo' => Container::completeLogo()->current() !== null,
             'maxLogoKb' => (int) ((int) Config::get('app.max_logo_bytes', 512 * 1024) / 1024),
             'hasBackground' => Container::backgroundImage()->current() !== null,
             'maxBackgroundKb' => (int) ((int) Config::get('app.max_background_bytes', 2 * 1024 * 1024) / 1024),
@@ -59,6 +61,13 @@ final class DesignController extends AdminController
             $values['nav_opacity'] = (string) (int) $navOpacityRaw;
         }
 
+        $headerLogoMode = (string) $request->input('header_logo_mode', 'logo_text');
+        if (!in_array($headerLogoMode, SettingsService::HEADER_LOGO_MODES, true)) {
+            $errors['header_logo_mode'] = 'Bitte eine gültige Darstellung für den Kopfbereich wählen.';
+        } else {
+            $values['header_logo_mode'] = $headerLogoMode;
+        }
+
         if ($errors !== []) {
             Session::flash('error', 'Bitte prüfen Sie die Eingaben.');
 
@@ -69,6 +78,8 @@ final class DesignController extends AdminController
                 'theme' => array_merge(Container::settings()->theme(), $values),
                 'navOpacity' => $values['nav_opacity'] ?? Container::settings()->navOpacity(),
                 'hasLogo' => Container::logo()->current() !== null,
+                'headerLogoMode' => $values['header_logo_mode'] ?? Container::settings()->headerLogoMode(),
+                'hasCompleteLogo' => Container::completeLogo()->current() !== null,
                 'maxLogoKb' => (int) ((int) Config::get('app.max_logo_bytes', 512 * 1024) / 1024),
                 'hasBackground' => Container::backgroundImage()->current() !== null,
                 'maxBackgroundKb' => (int) ((int) Config::get('app.max_background_bytes', 2 * 1024 * 1024) / 1024),
@@ -110,6 +121,37 @@ final class DesignController extends AdminController
         Container::logo()->remove();
         app_logger()->info('Logo entfernt.', ['admin' => Container::auth()->username()]);
         Session::flash('success', 'Das Logo wurde entfernt.');
+
+        return $this->redirect('/admin/design');
+    }
+
+    public function uploadCompleteLogo(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+
+        /** @var array<string,mixed> $file */
+        $file = $request->files['logo_complete'] ?? ['error' => UPLOAD_ERR_NO_FILE];
+
+        try {
+            Container::completeLogo()->store($file);
+        } catch (ValidationException $exception) {
+            Session::flash('error', implode(' ', $exception->errors()));
+
+            return $this->redirect('/admin/design');
+        }
+
+        app_logger()->info('Komplettes Logo für die Kopfzeile aktualisiert.', ['admin' => Container::auth()->username()]);
+        Session::flash('success', 'Das komplette Logo wurde gespeichert.');
+
+        return $this->redirect('/admin/design');
+    }
+
+    public function removeCompleteLogo(Request $request): Response
+    {
+        $this->requireValidCsrf($request);
+        Container::completeLogo()->remove();
+        app_logger()->info('Komplettes Logo entfernt.', ['admin' => Container::auth()->username()]);
+        Session::flash('success', 'Das komplette Logo wurde entfernt.');
 
         return $this->redirect('/admin/design');
     }

@@ -6,7 +6,8 @@ namespace App\Services\Helpdesk;
 
 /**
  * Statusworkflow des Ticketsystems (rein fachlich, ohne Datenbankzugriff).
- * Statuscodes sind fest; Übergänge und benötigte Berechtigungen sind hier zentral definiert.
+ * Systemstatuscodes sind fest; Pausengründe kommen aus dem Statuskatalog (Kategorie „Wartend“)
+ * und werden als Codeliste übergeben. Übergänge und Berechtigungen sind hier zentral definiert.
  */
 final class TicketWorkflowService
 {
@@ -21,22 +22,24 @@ final class TicketWorkflowService
     public const CLOSED = 'closed';
     public const CANCELLED = 'cancelled';
 
-    /** Statuscodes der Pausierung („Pausieren“ mit Pausenende). */
+    /** Standard-Pausengründe (entsprechen dem Seeder; der Katalog kann sie ergänzen oder deaktivieren). */
     public const PAUSES = [self::WAITING_FEEDBACK, self::WAITING_THIRD_PARTY, self::WAITING_DELIVERY, self::WAITING_INTERNAL];
 
     /** @var array<string,array<int,string>> */
     private const TRANSITIONS = [
         self::NEW => [self::OPEN, self::IN_PROGRESS, self::CANCELLED],
-        self::OPEN => [self::IN_PROGRESS, self::WAITING_FEEDBACK, self::WAITING_THIRD_PARTY, self::WAITING_DELIVERY, self::WAITING_INTERNAL, self::CANCELLED],
-        self::IN_PROGRESS => [self::WAITING_FEEDBACK, self::WAITING_THIRD_PARTY, self::WAITING_DELIVERY, self::WAITING_INTERNAL, self::RESOLVED, self::CANCELLED],
-        self::WAITING_FEEDBACK => [self::IN_PROGRESS, self::CANCELLED],
-        self::WAITING_THIRD_PARTY => [self::IN_PROGRESS, self::CANCELLED],
-        self::WAITING_DELIVERY => [self::IN_PROGRESS, self::CANCELLED],
-        self::WAITING_INTERNAL => [self::IN_PROGRESS, self::CANCELLED],
+        self::OPEN => [self::IN_PROGRESS, self::CANCELLED],
+        self::IN_PROGRESS => [self::RESOLVED, self::CANCELLED],
         self::RESOLVED => [self::CLOSED, self::IN_PROGRESS],
         self::CLOSED => [self::IN_PROGRESS],
         self::CANCELLED => [],
     ];
+
+    /** Ausgangsstatus, aus denen pausiert werden darf. */
+    private const PAUSE_SOURCES = [self::OPEN, self::IN_PROGRESS];
+
+    /** Übergänge aus einer Pausierung heraus (neben dem Wechsel des Pausengrunds). */
+    private const PAUSE_TRANSITIONS = [self::IN_PROGRESS, self::CANCELLED];
 
     /** Zusätzliche Berechtigung je Zielstatus (neben helpdesk.update). @var array<string,string> */
     private const PERMISSIONS = [
@@ -48,31 +51,34 @@ final class TicketWorkflowService
     /** Statuscodes, in denen ein Ticket fachlich abgeschlossen ist. */
     public const FINAL = [self::CLOSED, self::CANCELLED];
 
-    /** @return array<int,string> */
-    public function allowedTransitions(string $fromCode): array
+    /**
+     * @param array<int,string>|null $pauseCodes Pausengründe aus dem Statuskatalog; null = Standardgründe
+     * @return array<int,string>
+     */
+    public function allowedTransitions(string $fromCode, ?array $pauseCodes = null): array
     {
-        $allowed = self::TRANSITIONS[$fromCode] ?? [];
-        // Aus einer Pausierung lässt sich direkt in einen anderen Pausengrund wechseln.
-        if ($this->isPause($fromCode)) {
-            foreach (self::PAUSES as $pause) {
-                if ($pause !== $fromCode) {
-                    $allowed[] = $pause;
-                }
-            }
+        $pauseCodes ??= self::PAUSES;
+        if (in_array($fromCode, self::PAUSE_SOURCES, true)) {
+            return array_values(array_unique(array_merge(self::TRANSITIONS[$fromCode] ?? [], $pauseCodes)));
+        }
+        if ($this->isPause($fromCode, $pauseCodes)) {
+            // Aus einer Pausierung lässt sich direkt in einen anderen Pausengrund wechseln.
+            return array_values(array_unique(array_merge(self::PAUSE_TRANSITIONS, array_values(array_diff($pauseCodes, [$fromCode])))));
         }
 
-        return $allowed;
+        return self::TRANSITIONS[$fromCode] ?? [];
     }
 
-    public function isPause(string $code): bool
+    /** @param array<int,string>|null $pauseCodes */
+    public function isPause(string $code, ?array $pauseCodes = null): bool
     {
-        return in_array($code, self::PAUSES, true);
+        return in_array($code, $pauseCodes ?? self::PAUSES, true);
     }
 
-    /** Pausierungen benötigen ein Pausenende (Datum und Uhrzeit). */
-    public function requiresPauseUntil(string $toCode): bool
+    /** Pausierungen benötigen ein Pausenende (Datum und Uhrzeit). @param array<int,string>|null $pauseCodes */
+    public function requiresPauseUntil(string $toCode, ?array $pauseCodes = null): bool
     {
-        return $this->isPause($toCode);
+        return $this->isPause($toCode, $pauseCodes);
     }
 
     /** Nur bei „Warten auf Rückmeldung“ beendet eine Meldermitteilung die Pausierung automatisch. */
@@ -81,9 +87,10 @@ final class TicketWorkflowService
         return $code === self::WAITING_FEEDBACK;
     }
 
-    public function canTransition(string $fromCode, string $toCode): bool
+    /** @param array<int,string>|null $pauseCodes */
+    public function canTransition(string $fromCode, string $toCode, ?array $pauseCodes = null): bool
     {
-        return in_array($toCode, $this->allowedTransitions($fromCode), true);
+        return in_array($toCode, $this->allowedTransitions($fromCode, $pauseCodes), true);
     }
 
     public function isReopen(string $fromCode, string $toCode): bool
@@ -122,16 +129,16 @@ final class TicketWorkflowService
         return $toCode === self::CANCELLED;
     }
 
-    /** Aus einem Zielstatus die passende Ereignisbezeichnung ableiten. */
-    public function eventFor(string $fromCode, string $toCode): string
+    /** Aus einem Zielstatus die passende Ereignisbezeichnung ableiten. @param array<int,string>|null $pauseCodes */
+    public function eventFor(string $fromCode, string $toCode, ?array $pauseCodes = null): string
     {
         if ($this->isReopen($fromCode, $toCode)) {
             return 'reopened';
         }
-        if ($this->isPause($toCode)) {
+        if ($this->isPause($toCode, $pauseCodes)) {
             return 'paused';
         }
-        if ($this->isPause($fromCode) && $toCode === self::IN_PROGRESS) {
+        if ($this->isPause($fromCode, $pauseCodes) && $toCode === self::IN_PROGRESS) {
             return 'resumed';
         }
 

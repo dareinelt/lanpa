@@ -39,6 +39,8 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 - Wissensdatenbank mit Verknüpfung zu Tickets
 - Ticket-Berichte/CSV-Export (Recht nur über die Berechtigungsgruppe „Statistik“ oder Admin-Rolle)
 - Eigene Scheduler-Jobs für Eskalation/Auto-Close, Pausierungs-Ende und Mailabholung (`bin/helpdesk.php`)
+- Pausengründe sind Status des Statuskatalogs mit Kategorie „Wartend“ und werden in der Help-Desk-Administration
+  unter **Status** gepflegt (kein eigener Katalog)
 
 ## 2. Technologie und Rahmenbedingungen
 

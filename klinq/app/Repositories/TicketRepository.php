@@ -497,7 +497,7 @@ final class TicketRepository extends BaseRepository
     /** Pausierte Tickets, deren Pausenende erreicht ist (automatische Fortsetzung). @return array<int,array<string,mixed>> */
     public function pausedUntilReached(string $now, int $limit = 200): array
     {
-        return $this->fetchAll(self::SELECT . " WHERE t.merged_into_ticket_id IS NULL AND t.paused_until IS NOT NULL AND t.paused_until <= :now AND st.pauses_sla = 1 ORDER BY t.paused_until LIMIT {$limit}", ['now' => $now]);
+        return $this->fetchAll(self::SELECT . " WHERE t.merged_into_ticket_id IS NULL AND t.paused_until IS NOT NULL AND t.paused_until <= :now AND st.category = 'pending' ORDER BY t.paused_until LIMIT {$limit}", ['now' => $now]);
     }
 
     // ------------------------------------------------------------------ Dashboard

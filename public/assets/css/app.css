@@ -663,9 +663,16 @@ code {
     color: var(--color-on-primary);
 }
 
-/* Katalog-Grafiken werden ohne Rahmen in Designfarbe dargestellt. */
+/* Katalog-Grafiken werden ohne Rahmen in Designfarbe dargestellt und
+   fuellen die Icon-Flaeche wie eine Standard-Grafik. */
 .tile__icon-wrap--catalog {
     background: transparent;
+}
+
+.tile__icon-wrap--catalog .tile__icon {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
 .tile__icon {

@@ -911,6 +911,22 @@ Runner::test('Orvanta: Mail-HTML wird bereinigt und externe Bilder blockiert', f
     Assert::true($result['blocked_images'] >= 1, 'Blockierte Bilder werden gezaehlt.');
 });
 
+Runner::test('Orvanta: Outlook-Listenmarken erscheinen nicht als Text', function (): void {
+    $html = '<p class="MsoListParagraph" style="mso-list:l0 level1 lfo1"><![if !supportLists]>'
+        . '<span style="mso-list:Ignore">1.&nbsp;</span><![endif]>Begruessung</p>'
+        . '<p class="MsoListParagraph" style="mso-list:l0 level1 lfo1"><![if !supportLists]>'
+        . '<span style="mso-list:Ignore">2.&nbsp;</span><![endif]>Aktuelles</p>'
+        . '<p><![if !supportEmptyParas]>&nbsp;<![endif]></p>';
+    $clean = MailHtmlSanitizer::clean($html)['html'];
+    Assert::false(str_contains($clean, 'supportLists'), 'Bedingungskommentare werden nicht als Text ausgegeben.');
+    Assert::false(str_contains($clean, 'supportEmptyParas'), 'Auch leere Absaetze verlieren die Marken.');
+    Assert::false(str_contains($clean, '&lt;!'), 'Marken werden nicht maskiert ausgegeben.');
+    Assert::contains('1.', $clean, 'Die Nummerierung bleibt erhalten.');
+    Assert::contains('Begruessung', $clean);
+    Assert::contains('2.', $clean);
+    Assert::contains('Aktuelles', $clean);
+});
+
 Runner::test('Orvanta: Ausgehendes HTML behaelt externe Bilder und stellt cid:-Quellen wieder her', function (): void {
     $display = MailHtmlSanitizer::clean('<p><img src="https://bilder.example/a.png"><img src="cid:logo@x"></p>')['html'];
     $outgoing = MailHtmlSanitizer::clean($display, false);

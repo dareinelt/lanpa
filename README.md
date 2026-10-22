@@ -247,6 +247,7 @@ Aufruf: `/admin` (Anmeldung mit dem angelegten Konto).
 | Aktivierungs-Rufnummern | Für den geschützten Zugriffsmodus erlaubte Rufnummern pflegen |
 | Zertifikate (HTTPS) | Request (CSR) für den `auth`-Container erstellen und herunterladen, von der CA ausgestelltes Zertifikat (PEM/CRT) mit Vorschau importieren, aktives Zertifikat wählen, Verlauf aller Requests und Zertifikate, Quellnetze für HTTP ohne gültiges Zertifikat |
 | SNMP | Community-String, Standort (`sysLocation`) und Kontakt (`sysContact`) des SNMP-Agenten |
+| Information | System → Information: PHP-Version und -Konfiguration, MySQL-Version, Datenbankgröße, Migrationsstand mit ausstehenden Migrationen, Laufzeit des Servers, Auslastung und Speicherplatz (nur lesend) |
 | Malware-Protection | Zustand der Virenprüfung (Schalter, Scanner und Signaturstand des `clamav`-Containers), Liste der blockierten Anhänge mit Freigabe oder Entfernen aus dem Postfach, Verlauf der bearbeiteten Befunde, Einstellungen ([docs/malware-protection.md](docs/malware-protection.md)) |
 | Bekannte Quellnetze | Größere Netze des eigenen Hauses in CIDR-Schreibweise eintragen (z. B. `192.168.200.0/21`); der Adressbereich wird aus dem Präfix errechnet und angezeigt. Die vom `auth`-Container je /24 bzw. /64 gemeldeten Quellen der Kachel „Reverse-Proxy“ werden darin zusammengefasst – auch rückwirkend für bereits gemessene Proben |
 | Statistik | Klickverlauf als SVG-Diagramm, Zeitraumauswahl, Summen je Element |
@@ -260,7 +261,7 @@ Die Punkte Speicherplatz (Quota), Netzlaufwerke, Speicher (HA) und Vorfälle sin
 unter dem aufklappbaren Punkt **Storage** zusammengefasst (der Zähler offener Vorfälle erscheint auch am
 Punkt Storage); ihre Pfade bleiben unverändert.
 
-Die Punkte Zertifikate (HTTPS), SNMP, Benutzer, Sicherung und E-Mail (SMTP) sind in der Admin-Navigation
+Die Punkte Zertifikate (HTTPS), SNMP, Information, Benutzer, Sicherung und E-Mail (SMTP) sind in der Admin-Navigation
 unter dem aufklappbaren Punkt **System** zusammengefasst (dort auch Malware-Protection); ihre Pfade bleiben unverändert.
 
 Rollen: **Administrator** darf den gesamten Adminbereich verwalten, inkl. Benutzerverwaltung. Die Gruppe
@@ -890,6 +891,7 @@ aus der Anwendung heraus verlinkt (`public/manuals/`); die Anzeige lässt sich i
 | Bekannte Quellnetze | <img src="docs/screenshots/128-admin-quellnetze.png" alt="Bekannte Quellnetze" width="520"> |
 | Malware-Protection: Status und Einstellungen | <img src="docs/screenshots/135-admin-malware-protection.png" alt="Malware-Protection" width="520"> |
 | Malware-Protection: blockierte Anhänge | <img src="docs/screenshots/136-admin-malware-protection-befunde.png" alt="Blockierte Anhänge" width="520"> |
+| System → Information | <img src="docs/screenshots/141-admin-systeminformation.png" alt="Systeminformationen" width="520"> |
 
 </details>
 

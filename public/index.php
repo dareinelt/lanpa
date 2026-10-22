@@ -40,6 +40,7 @@ use App\Controllers\Admin\PhonebookAdminController;
 use App\Controllers\Admin\SnmpController;
 use App\Controllers\Admin\SourceNetworksController;
 use App\Controllers\Admin\StatisticsController;
+use App\Controllers\Admin\SystemInfoController;
 use App\Controllers\Admin\TopologyController;
 use App\Controllers\Admin\StorageQuotaController;
 use App\Controllers\Admin\StorageController as StorageAdminController;
@@ -499,6 +500,8 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->get('/admin/vorfaelle', [IncidentController::class, 'index']);
         $router->post('/admin/vorfaelle/erledigt', [IncidentController::class, 'resolve']);
         $router->post('/admin/vorfaelle/einstellungen', [IncidentController::class, 'updateSettings']);
+
+        $router->get('/admin/systeminfo', [SystemInfoController::class, 'index']);
 
         $router->get('/admin/zertifikate', [CertificateController::class, 'index']);
         $router->post('/admin/zertifikate/csr', [CertificateController::class, 'createRequest']);

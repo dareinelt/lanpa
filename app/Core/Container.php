@@ -78,6 +78,7 @@ use App\Services\StatisticsService;
 use App\Services\Storage\IncidentService;
 use App\Services\Storage\SnapshotService;
 use App\Services\Storage\StorageService;
+use App\Services\SystemInfoService;
 use App\Services\ThemeService;
 use App\Services\Tls\TlsCertificateService;
 use App\Services\Topology\LanpaTopologyService;
@@ -415,6 +416,14 @@ final class Container
         return self::make(
             StatisticsService::class,
             static fn (): StatisticsService => new StatisticsService(self::clickRepository(), self::navigationRepository())
+        );
+    }
+
+    public static function systemInfo(): SystemInfoService
+    {
+        return self::make(
+            SystemInfoService::class,
+            static fn (): SystemInfoService => new SystemInfoService(Database::connection(), BASE_PATH)
         );
     }
 

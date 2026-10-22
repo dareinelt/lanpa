@@ -27,6 +27,7 @@ use App\Controllers\Admin\LdapController;
 use App\Controllers\Admin\MailProxyController;
 use App\Controllers\Admin\MalwareController;
 use App\Controllers\Admin\NavigationController;
+use App\Controllers\Admin\NavigationIconController as NavigationIconAdminController;
 use App\Controllers\Admin\NetworkDriveController as NetworkDriveAdminController;
 use App\Controllers\Admin\OfficeController as OfficeAdminController;
 use App\Controllers\Admin\OfficeAppsController as OfficeAppsAdminController;
@@ -52,6 +53,7 @@ use App\Controllers\KiController;
 use App\Controllers\KlinqController;
 use App\Controllers\LandingController;
 use App\Controllers\LogoController;
+use App\Controllers\NavigationIconController;
 use App\Controllers\NetworkDriveController;
 use App\Controllers\OfficeController;
 use App\Controllers\OrvantaApiController;
@@ -135,6 +137,7 @@ $router->group([$requireUnlocked, $ssoAttempt], static function (Router $router)
     $router->get('/logo', [LogoController::class, 'show']);
     $router->get('/hintergrundbild', [BackgroundImageController::class, 'show']);
     $router->get('/wichtige-links/icon', [ImportantLinkIconController::class, 'show']);
+    $router->get('/kachel-icon', [NavigationIconController::class, 'show']);
     $router->get('/health', [HealthController::class, 'index']);
     $router->get('/office-starten', [OfficeController::class, 'start']);
     // KLINQ: Einstieg in die Anwendung und Störmeldung IT (Help-Desk-Ticket).
@@ -333,6 +336,11 @@ $router->group([$requireAuth], static function (Router $router) use ($requireAdm
         $router->post('/admin/navigation/einstellungen', [NavigationController::class, 'updateSettings']);
         $router->get('/admin/navigation/berechtigungen', [NavigationController::class, 'permissions']);
         $router->post('/admin/navigation/berechtigungen', [NavigationController::class, 'storePermissions']);
+        $router->get('/admin/navigation/icons', [NavigationIconAdminController::class, 'index']);
+        $router->post('/admin/navigation/icons', [NavigationIconAdminController::class, 'store']);
+        $router->post('/admin/navigation/icons/ersetzen', [NavigationIconAdminController::class, 'replace']);
+        $router->post('/admin/navigation/icons/umbenennen', [NavigationIconAdminController::class, 'rename']);
+        $router->post('/admin/navigation/icons/loeschen', [NavigationIconAdminController::class, 'delete']);
 
         $router->get('/admin/notfallnummern', [EmergencyNumberController::class, 'index']);
         $router->get('/admin/notfallnummern/neu', [EmergencyNumberController::class, 'create']);

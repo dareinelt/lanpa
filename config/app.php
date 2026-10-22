@@ -22,4 +22,5 @@ return [
     'max_logo_bytes' => Env::int('APP_MAX_LOGO_BYTES', 512 * 1024),
     'allow_svg_logo' => Env::bool('APP_ALLOW_SVG_LOGO', true),
     'max_background_bytes' => Env::int('APP_MAX_BACKGROUND_BYTES', 2 * 1024 * 1024),
+    'max_nav_icon_bytes' => Env::int('APP_MAX_NAV_ICON_BYTES', 256 * 1024),
 ];

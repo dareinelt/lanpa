@@ -2,8 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Support\Html;
+
 /**
- * Lokale Inline-SVG-Icons (keine externen Ressourcen).
+ * Lokale Inline-SVG-Icons (keine externen Ressourcen) und Icons aus dem
+ * Icon-Katalog. Katalog-Icons werden ueber einen Controller ausgeliefert.
  *
  * @var string $icon
  */
@@ -32,8 +35,15 @@ $icons = [
 ];
 
 $key = isset($icon) && is_string($icon) && isset($icons[$icon]) ? $icon : 'link';
+$customAlias = isset($icon) && is_string($icon) && !isset($icons[$icon])
+    && preg_match('/^[a-z0-9-]{1,32}$/', $icon) === 1 ? $icon : null;
 ?>
-<svg class="tile__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
-     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-    <?= $icons[$key] ?>
-</svg>
+<?php if ($customAlias !== null) { ?>
+    <img class="tile__icon" src="<?= Html::e(Html::url('/kachel-icon?alias=' . rawurlencode($customAlias))) ?>"
+         alt="" width="28" height="28" decoding="async">
+<?php } else { ?>
+    <svg class="tile__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <?= $icons[$key] ?>
+    </svg>
+<?php } ?>

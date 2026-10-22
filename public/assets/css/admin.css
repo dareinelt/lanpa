@@ -880,6 +880,39 @@
     object-fit: contain;
 }
 
+/* Icon-Katalog: Vorschau und kompakte Zeilenaktionen. */
+.nav-icon-preview {
+    display: block;
+    width: 32px;
+    height: 32px;
+    padding: 4px;
+    object-fit: contain;
+    border-radius: 6px;
+    background: var(--color-surface-alt, rgba(0, 0, 0, .04));
+}
+
+.nav-icon-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+}
+
+.nav-icon-actions form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    align-items: center;
+}
+
+.nav-icon-actions input[type="file"] {
+    max-width: 13rem;
+}
+
+.nav-icon-actions input[type="text"] {
+    width: 9rem;
+}
+
 .group-suggest--cell {
     min-width: 18rem;
 }

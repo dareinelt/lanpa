@@ -22,6 +22,7 @@ $navItems = $isAdmin ? [
     'dashboard' => ['/admin', 'Dashboard'],
     'content' => ['/admin/navigation', 'Inhalt', [
         'navigation' => ['/admin/navigation', 'Navigation'],
+        'navigation_icons' => ['/admin/navigation/icons', 'Icon-Katalog'],
         'important_links' => ['/admin/wichtige-links', 'Wichtige Links'],
         'emergency' => ['/admin/notfallnummern', 'Notfallnummern'],
         'phonebook' => ['/admin/telefonliste', 'Telefonliste'],

@@ -908,7 +908,11 @@ Schriftfarbe einer Nachricht nie verändert:
 
 ## 10. HTML-Bereinigung und CSP
 
-- `MailHtmlSanitizer::clean()` parst mit `DOMDocument` (`LIBXML_NONET`) und
+- `MailHtmlSanitizer::clean()` entfernt vor dem Parsen die Marken der
+  Microsoft-Bedingungskommentare (`<![if !supportLists]>…<![endif]>`, z. B.
+  Outlook-Listenmarken). Für libxml sind sie Text und würden maskiert im
+  Nachrichtentext erscheinen; der umschlossene Inhalt bleibt wie im Browser
+  erhalten. Danach parst `clean()` mit `DOMDocument` (`LIBXML_NONET`) und
   arbeitet mit Whitelists:
   - `DROP_TAGS` (inkl. Inhalt entfernt): `script`, `style`, `iframe`,
     `object`, `embed`, `svg`, `math`, `form`-Elemente, `link`, `meta`, `base`,

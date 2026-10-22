@@ -27,6 +27,13 @@ final class MailHtmlSanitizer
 
     /** Hilfsangabe fuer den Kontrast im dunklen Modus (Orvanta\MailBodyContrast). */
     private const HELPER_PROPERTIES = '/;?\s*--ov-(?:dark|light)-color\s*:[^;]*/i';
+    /**
+     * Microsoft-Bedingungskommentare wie <![if !supportLists]>…<![endif]> sind
+     * fuer libxml kein Kommentar, sondern Text; er gibt sie maskiert aus, sodass
+     * sie im Browser sichtbar wuerden. Die Marken werden vor dem Einlesen
+     * entfernt, der umschlossene Inhalt bleibt wie im Browser erhalten.
+     */
+    private const CONDITIONAL_MARKER = '/<!\[(?:if|endif)\b[^\]]*\]\s*>/i';
     /** @var list<string> */
     private const ALLOWED_TAGS = [
         'p', 'div', 'span', 'br', 'hr', 'strong', 'b', 'em', 'i', 'u', 's', 'strike', 'del', 'ins',
@@ -57,6 +64,7 @@ final class MailHtmlSanitizer
         if ($html === '') {
             return ['html' => '', 'blocked_images' => 0];
         }
+        $html = (string) preg_replace(self::CONDITIONAL_MARKER, '', $html);
 
         $dom = new DOMDocument('1.0', 'UTF-8');
         $previous = libxml_use_internal_errors(true);

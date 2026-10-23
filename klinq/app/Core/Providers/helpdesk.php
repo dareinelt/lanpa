@@ -163,7 +163,9 @@ return static function (Container $c): void {
         $c->get(TicketTagRepository::class),
         $c->get(TicketWorkflowService::class),
         $c->get(AuditLogService::class),
-        $c->get(CurrentUser::class)
+        $c->get(CurrentUser::class),
+        $c->get(TicketMailService::class),
+        $c->get(Logger::class)
     ));
     $c->singleton(KnowledgeBaseService::class, static fn (Container $c): KnowledgeBaseService => new KnowledgeBaseService(
         $c->get(KnowledgeBaseRepository::class),

@@ -50,7 +50,7 @@ Erlaubte Übergänge stehen je Status als Liste (`allowed_transitions`). Regeln:
 - **Gelöst** erfordert einen Lösungstext, **Abgebrochen** eine Begründung.
 - **Wieder öffnen** (`helpdesk.reopen`; im Portal innerhalb `HELPDESK_REOPEN_DAYS`) erhöht `reopen_count` und setzt die SLA-Uhr fort.
 - Jede Änderung prüft die **Version** (optimistische Sperre, 409 bei Konflikt) und schreibt ein Ereignis in `ticket_events` sowie einen Audit-Eintrag.
-- Zusammengeführte Tickets (`merged_into_ticket_id`) sind schreibgeschützt; Kommentare, Anhänge, Watcher und Asset-Verknüpfungen wandern ins Zielticket.
+- Zusammengeführte Tickets (`merged_into_ticket_id`) sind schreibgeschützt; Kommentare, Anhänge, Watcher und Asset-Verknüpfungen wandern ins Zielticket. Der Zusammenführungsgrund steht in `close_reason` (z. B. „Duplikat (HD-2024-000123)“).
 
 ### Pausieren
 
@@ -125,7 +125,7 @@ Routen: `POST /helpdesk/support-shift/claim` (Berechtigung `helpdesk.view`), `PO
 ## Ticketdetail (`/helpdesk/tickets/{id}`)
 
 - **Kopf**: Nummer, Betreff, Status/Priorität/Typ, Melder (Mitarbeiter mit Abteilung, Standort, Telefon), betroffener Mitarbeiter, Zuständigkeit, Fälligkeiten, SLA-Balken.
-- **Aktionen**: Status ändern (Dialog mit Lösung/Begründung), **Pausieren** (Grund + Pausenende über Kalender-Overlay), Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), Zusammenführen, Beobachten, Löschen (`helpdesk.delete`).
+- **Aktionen**: Status ändern (Dialog mit Lösung/Begründung), **Pausieren** (Grund + Pausenende über Kalender-Overlay), Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), **Zusammenführen** (Overlay mit Suche, Grund und optionaler Info-E-Mail, siehe „Ticket zusammenführen“), Beobachten, Löschen (`helpdesk.delete`).
 - **Kommunikation**: öffentliche Kommentare (Melder sieht sie im Portal, E-Mail-Benachrichtigung) und **interne Notizen** (`helpdesk.internal_note`, nur Agenten). Für Agenten ist die **interne Notiz** vorausgewählt; öffentliche Antworten müssen bewusst gewählt werden. Anhänge je Kommentar oder direkt am Ticket, optional intern. Zusätzlich **„E-Mail senden“** – eine echte Nachricht an den Melder (siehe „E-Mail aus dem Ticket senden“).
 - **Arbeitszeiten** (`helpdesk.worklog`): Minuten (in 15-Minuten-Schritten), Tätigkeit, Datum; Summe im Kopf. Der Bereich ist – wie **Anhänge** – aufklappbar und standardmäßig geschlossen.
 - **Verknüpfungen**: Assets (mit Vorschlag der dem Melder zugeordneten Geräte), Beziehungen zu anderen Tickets (`related`, `duplicate_of`, `parent_of`, `problem_of`, `change_for` – jeweils mit Gegenrichtung), Wissensartikel (Vorschläge nach Betreff/Kategorie, „Artikel aus Lösung erstellen“).
@@ -244,6 +244,41 @@ ein Overlay mit dem Mail-Editor aus Orvanta – samt **Kontextmenü** und **KI-U
 - **Technik**: `TicketMailService` (Validierung, Bereinigung, Versand, Kommentar, Pausierung), Routen
   `POST /helpdesk/tickets/{id}/mail` und `GET /helpdesk/tickets/{id}/mail/signature` (beide `helpdesk.comment`),
   Oberfläche `public/js/helpdesk-mail.js`. Anhänge werden noch nicht mitgesendet.
+
+### Ticket zusammenführen
+
+Ein Ticket lässt sich auf ein **bereits vorhandenes** Ticket zusammenführen (Berechtigung `helpdesk.merge`). Die
+Schaltfläche **„Zusammenführen“** im Seitenkopf des Tickets öffnet ein Overlay – wie beim Senden einer E-Mail.
+
+![Zusammenführen-Overlay: Suche mit Vorschlägen aus den offenen Tickets](screenshots/helpdesk-merge-search.png)
+
+- **Suche**: Das Feld schlägt **offene Tickets** vor (Status der Kategorien *Neu*, *In Bearbeitung*, *Wartend*),
+  bereits zusammengeführte und abgeschlossene Tickets sind ausgeschlossen, das Quellticket selbst ebenso. Ohne
+  Suchbegriff erscheinen nur die offenen Tickets **derselben meldenden Person**; mit Suchbegriff kommen Treffer aus
+  allen Tickets dazu (Ticketnummer, Betreff, Meldername, Melder-E-Mail). Tickets der meldenden Person stehen oben und
+  sind mit **„gleiche Person“** gekennzeichnet (`GET /api/helpdesk/tickets/search?merge_for={id}&q=…` →
+  `TicketRepository::suggestForMerge()`).
+- **Ziel**: Auswahl per Klick oder Eingabe der Ticketnummer (z. B. `HD-2024-000123`); das Feld prüft beim Absenden,
+  ob das Ziel existiert, nicht selbst zusammengeführt und nicht abgeschlossen ist.
+- **Grund**: Pflichtauswahl aus `TicketMergeService::REASONS` – *Duplikat*, *Thema identisch*, *Gehört zum selben
+  Vorgang*, *Versehentlich getrennt erfasst*, *Sonstiger Grund*. Optional ergänzt eine **Anmerkung** (höchstens 160
+  Zeichen) den Grund. Der Grund landet im Abschlussgrund des Quelltickets (`close_reason`, z. B.
+  „Duplikat (HD-2024-000123)“), in der internen Notiz am Zielticket, im Ereignis `merged` und im Audit-Log.
+- **Info-E-Mail an den Melder** (Kästchen im Overlay, vorausgewählt): Betreff und Text sind **bearbeitbar** und mit
+  Platzhaltern vorbelegt – `{{nummer}}` (Quellticket), `{{ziel}}` (Zielticket), `{{grund}}` (gewählter Grund mit
+  Anmerkung). Die Platzhalter werden beim Senden serverseitig ersetzt, auch in einem bearbeiteten Text. Die
+  Nachricht geht **ohne Agentensignatur** an die meldende Person (ein mitgeschickter Signaturblock wird verworfen) und
+  trägt `Message-ID`, `In-Reply-To`/`References` auf den Thread des **Zieltickets** sowie `X-Ticket-Number`, damit
+  Antworten im richtigen Ticket landen. Ist der Mailversand abgeschaltet oder fehlt die Melderadresse, ist das
+  Kästchen deaktiviert und nennt den Grund im Tooltip; die Zusammenführung selbst funktioniert weiterhin.
+- **Protokollierung**: Die Info-Mail wird als öffentlicher Kommentar am Zielticket geführt (`source = email`), ein
+  Fehler beim Versand bricht die Zusammenführung nicht ab – er erscheint als Hinweis in der Rückmeldung
+  (`merge_mail_error`).
+- **Technik**: `TicketMergeService` (`REASONS`, `composeData()`, `merge()` mit `reason_code`, `reason_note`, `notify`,
+  `mail_subject`, `mail_body_html`), `TicketMailService::mergeComposeData()`/`sendMergeNotice()`, Route
+  `POST /helpdesk/tickets/{id}/merge`, Oberfläche `public/js/helpdesk-merge.js` (`<dialog id="merge-dialog">`).
+
+![Zusammenführen-Overlay mit gewähltem Ziel, Grund und bearbeitbarer Info-E-Mail](screenshots/helpdesk-merge-dialog.png)
 
 ### Ticket-Berichte & Administration
 
@@ -453,8 +488,8 @@ Details, Konfiguration und ein Testaufbau mit Ollama: [KI-Unterstützung im Help
 ## Technik
 
 - **Migration** `database/migrations/008_helpdesk.sql`, `009_helpdesk_mail.sql` (Threading-Spalten, `ticket_inbound_mails`), `010_helpdesk_quick_report.sql` (Quelle `form`, Melderspalten `reporter_username`/`reporter_host`/`reporter_ip`/`reporter_phone`/`reporter_department`), `012_helpdesk_mail_settings.sql` (`tickets.mail_from_address`/`mail_from_name`, `ticket_comments.mail_from_address`) und `015_helpdesk_support_shifts.sql` (`helpdesk_support_shifts`: tagesweise 1st-/2nd-Level-Zuständigkeit), `019_helpdesk_pause_until.sql` (Pausierstatus `waiting_feedback`/`waiting_third_party`/`waiting_delivery`/`waiting_internal`, `tickets.paused_until`), **Seeder** `database/seeders/003_helpdesk_defaults.sql` (Typen, Status, Prioritäten, SLA-Standardregeln, Beispielkategorien, Vorlagen).
-- **Code**: `app/Repositories/Ticket*Repository.php`, `KnowledgeBaseRepository.php`, `HelpdeskSupportShiftRepository.php`; `app/Services/Helpdesk/` (`TicketService`, `TicketWorkflowService`, `TicketSlaService`, `TicketPriorityMatrix`, `TicketNumberService`, `TicketMergeService`, `TicketNotificationService`, `TicketRuleService`/`TicketRuleEvaluator`, `TicketReportService`, `TicketMailIngestionService`, `TicketMailService`, `KnowledgeBaseService`, `HelpdeskAdminService`, `HelpdeskSchedulerService`, `ReporterIdentityService`, `SupportShiftService`); `app/Services/Helpdesk/Mail/` (`MimeMessageParser`, `InboundMail`, `MailboxClientInterface`, `ImapMailboxClient`, `FileMailboxClient`); `app/Services/Ad/AdUserLookupService.php` (Einzelabfrage fürs Störungsformular), `app/Support/IpRange.php`, `app/Support/HtmlSanitizer.php` (Bereinigung des Mail-Editors); `app/Controllers/Helpdesk/` (inkl. `HelpdeskSupportShiftController`); Provider `app/Core/Providers/helpdesk.php`; Routen `routes/modules/helpdesk.php`; Views `resources/views/helpdesk/`; `public/js/helpdesk.js`, `public/js/helpdesk-mail.js`, `public/css/pages/helpdesk.css`, `public/css/pages/quick-report.css`.
-- **Tests**: `tests/Unit/HelpdeskLogicTest.php` (Prioritätsmatrix, SLA-Berechnung mit Servicezeiten, Workflow-Übergänge, Regel-Auswertung, Rechte), `tests/Unit/HelpdeskMailParserTest.php` (MIME-Parser, RFC 2047/2231, Zitat-Erkennung, Auto-Reply-Erkennung, Ticketnummer/Message-ID), `tests/Integration/TicketServiceIntegrationTest.php` (Anlage, Nummernvergabe, Status, Zuweisung, Kommentare, Sichtbarkeit im Portal, Merge, Konflikte), `tests/Integration/HelpdeskAutomationIntegrationTest.php` (Regeln, Scheduler: Warnung/Verletzung/Eskalation/Auto-Close, Benachrichtigungen, Wissensdatenbank), `tests/Integration/HelpdeskMailIngestionIntegrationTest.php` (Ticket aus E-Mail, Threading über Betreff/`In-Reply-To`/`References`, Statuslogik, Merge-Weiterleitung, Duplikate, Auto-Replies, Anhänge), `tests/Unit/QuickReportTest.php` (Normalisierung des Windows-Kontos, Netzfreigaben, Systemkontext `runAs`), `tests/Unit/HtmlSanitizerTest.php` (Allowlist, Skripte, `javascript:`-Ziele, Bilder, `plain()`), `tests/Integration/TicketMailServiceIntegrationTest.php` (Agenten-Mail: Empfänger, Threading ohne `Auto-Submitted`, öffentlicher Kommentar, Signatur serverseitig – eine mitgesendete Signatur aus dem Editor wird verworfen, Pausierung, Validierung). Ausführen: `php tests/run.php --filter=Ticket` bzw. `--filter=Helpdesk`.
+- **Code**: `app/Repositories/Ticket*Repository.php`, `KnowledgeBaseRepository.php`, `HelpdeskSupportShiftRepository.php`; `app/Services/Helpdesk/` (`TicketService`, `TicketWorkflowService`, `TicketSlaService`, `TicketPriorityMatrix`, `TicketNumberService`, `TicketMergeService`, `TicketNotificationService`, `TicketRuleService`/`TicketRuleEvaluator`, `TicketReportService`, `TicketMailIngestionService`, `TicketMailService`, `KnowledgeBaseService`, `HelpdeskAdminService`, `HelpdeskSchedulerService`, `ReporterIdentityService`, `SupportShiftService`); `app/Services/Helpdesk/Mail/` (`MimeMessageParser`, `InboundMail`, `MailboxClientInterface`, `ImapMailboxClient`, `FileMailboxClient`); `app/Services/Ad/AdUserLookupService.php` (Einzelabfrage fürs Störungsformular), `app/Support/IpRange.php`, `app/Support/HtmlSanitizer.php` (Bereinigung des Mail-Editors); `app/Controllers/Helpdesk/` (inkl. `HelpdeskSupportShiftController`); Provider `app/Core/Providers/helpdesk.php`; Routen `routes/modules/helpdesk.php`; Views `resources/views/helpdesk/`; `public/js/helpdesk.js`, `public/js/helpdesk-mail.js`, `public/js/helpdesk-merge.js`, `public/css/pages/helpdesk.css`, `public/css/pages/quick-report.css`.
+- **Tests**: `tests/Unit/HelpdeskLogicTest.php` (Prioritätsmatrix, SLA-Berechnung mit Servicezeiten, Workflow-Übergänge, Regel-Auswertung, Rechte), `tests/Unit/HelpdeskMailParserTest.php` (MIME-Parser, RFC 2047/2231, Zitat-Erkennung, Auto-Reply-Erkennung, Ticketnummer/Message-ID), `tests/Integration/TicketServiceIntegrationTest.php` (Anlage, Nummernvergabe, Status, Zuweisung, Kommentare, Sichtbarkeit im Portal, Merge mit Grund/Anmerkung, Zusammenführungsvorschläge, Konflikte), `tests/Integration/HelpdeskAutomationIntegrationTest.php` (Regeln, Scheduler: Warnung/Verletzung/Eskalation/Auto-Close, Benachrichtigungen, Wissensdatenbank), `tests/Integration/HelpdeskMailIngestionIntegrationTest.php` (Ticket aus E-Mail, Threading über Betreff/`In-Reply-To`/`References`, Statuslogik, Merge-Weiterleitung, Duplikate, Auto-Replies, Anhänge), `tests/Unit/QuickReportTest.php` (Normalisierung des Windows-Kontos, Netzfreigaben, Systemkontext `runAs`), `tests/Unit/HtmlSanitizerTest.php` (Allowlist, Skripte, `javascript:`-Ziele, Bilder, `plain()`), `tests/Integration/TicketMailServiceIntegrationTest.php` (Agenten-Mail: Empfänger, Threading ohne `Auto-Submitted`, öffentlicher Kommentar, Signatur serverseitig – eine mitgesendete Signatur aus dem Editor wird verworfen, Pausierung, Validierung; Info-E-Mail zur Zusammenführung: Vorlage mit Platzhaltern, Versand an den Melder ohne Signatur, Threading auf das Zielticket, Protokollierung). Ausführen: `php tests/run.php --filter=Ticket` bzw. `--filter=Helpdesk`.
 
 ## Bekannte Einschränkungen
 

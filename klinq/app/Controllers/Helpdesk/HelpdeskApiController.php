@@ -47,6 +47,30 @@ final class HelpdeskApiController extends HelpdeskBaseController
         $term = $request->queryString('q');
         $limit = max(1, min(25, $request->int('limit', 10) ?? 10));
         $exclude = $request->int('exclude');
+        $mergeFor = $request->int('merge_for');
+        if ($this->service->isAgent() && $mergeFor !== null) {
+            $source = $this->service->getVisible($mergeFor);
+            $rows = $this->tickets->suggestForMerge(
+                $term,
+                $limit,
+                $mergeFor,
+                !empty($source['requester_employee_id']) ? (int) $source['requester_employee_id'] : null,
+                !empty($source['requester_user_id']) ? (int) $source['requester_user_id'] : null,
+                (string) ($source['requester_email'] ?? $source['requester_user_email'] ?? '')
+            );
+
+            return $this->json(['items' => array_map(static fn (array $r): array => [
+                'id' => (int) $r['id'],
+                'number' => $r['number'],
+                'subject' => $r['subject'],
+                'name' => $r['number'] . ' · ' . $r['subject'],
+                'label' => $r['number'] . ' · ' . $r['subject'],
+                'meta' => trim(($r['status_name'] ?? '') . ' · ' . ($r['requester_name'] ?? ''), ' ·'),
+                'same_requester' => (int) ($r['same_requester'] ?? 0) === 1,
+                'url' => '/helpdesk/tickets/' . (int) $r['id'],
+            ], $rows)]);
+        }
+
         $rows = $this->service->isAgent()
             ? $this->tickets->suggest($term, $limit, $exclude)
             : $this->tickets->quickSearch($term, $limit, $this->currentUser->id());
@@ -54,6 +78,7 @@ final class HelpdeskApiController extends HelpdeskBaseController
         return $this->json(['items' => array_map(static fn (array $r): array => [
             'id' => (int) $r['id'],
             'number' => $r['number'],
+            'subject' => $r['subject'],
             'name' => $r['number'] . ' · ' . $r['subject'],
             'label' => $r['number'] . ' · ' . $r['subject'],
             'meta' => trim(($r['status_name'] ?? '') . ' · ' . ($r['priority_name'] ?? ''), ' ·'),

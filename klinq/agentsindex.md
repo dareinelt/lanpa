@@ -28,7 +28,8 @@ Netzwerkkomponenten, Zubehör) mit:
 
 Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit:
 
-- Ticket-Lebenszyklus inkl. Status-Workflow, SLA-Fristen/Eskalation, Zusammenführen, Verknüpfungen,
+- Ticket-Lebenszyklus inkl. Status-Workflow, SLA-Fristen/Eskalation, Zusammenführen auf ein bestehendes Ticket
+  (Overlay mit Ticket-Suche, Zusammenführungsgrund und optionaler Info-E-Mail an den Melder), Verknüpfungen,
   Watcher, Arbeitszeiterfassung und Asset-Verknüpfung je Ticket
 - Ticketregeln (automatische Zuweisung/Kategorisierung), Vorlagen, Tags, Kategorien/Gruppen
 - Zwei Eingabemodi für neue Agenten-Tickets: klassisches Formular und achtstufiger Assistent
@@ -242,7 +243,7 @@ ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
   Etikettenvorschau (`labels.js`), Unterschrift (`signature-pad.js`), Offline-Warteschlange
   (`offline.js`, `offline-ui.js`, IndexedDB + `sw.js`), Kontextmenü und KI-Dialog im Help Desk
   (`helpdesk-ai.js` für Textfelder, `helpdesk-mail.js` für den Mail-Editor im Ticket – gleiche Styles
-  `.hd-ctx-menu`/`.hd-ai-dialog`, gemeinsame `window.AppUI`).
+  `.hd-ctx-menu`/`.hd-ai-dialog`, gemeinsame `window.AppUI`), Zusammenführen-Dialog (`helpdesk-merge.js`).
 - CSS ist nach `base/`, `layout/`, `components/`, `pages/`, `utilities/` gegliedert und wird über
   `public/css/app.css` importiert; Design-Tokens als CSS-Variablen.
 - **Keine Inline-Styles und keine Inline-Skripte** – die CSP verbietet `unsafe-inline`.

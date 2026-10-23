@@ -214,6 +214,164 @@ final class TicketMailService
     }
 
     /**
+     * Angaben für den Zusammenführen-Dialog: Empfänger, Betreff und bearbeitbare
+     * Textvorlage mit Platzhaltern. Die Vorlage enthält bewusst keine Signatur
+     * des Agenten.
+     *
+     * @param array<string,mixed> $source
+     * @return array{available:bool,reason:string,requester:array{name:string,email:string},
+     *               subject:string,body_html:string,max_chars:int}
+     */
+    public function mergeComposeData(array $source): array
+    {
+        $requester = [
+            'name' => trim((string) ($source['requester_name'] ?? '')) !== ''
+                ? trim((string) $source['requester_name'])
+                : trim((string) ($source['requester_user_name'] ?? '')),
+            'email' => self::firstEmail((string) ($source['requester_email'] ?? ''), (string) ($source['requester_user_email'] ?? '')),
+        ];
+        $data = [
+            'available' => false,
+            'reason' => '',
+            'requester' => $requester,
+            'subject' => $this->mergeSubjectTemplate(),
+            'body_html' => $this->mergeBodyTemplate($source),
+            'max_chars' => self::MAX_BODY_CHARS,
+        ];
+        if (!$this->tickets->isAgent()) {
+            $data['reason'] = 'Nur Agenten können Tickets zusammenführen.';
+
+            return $data;
+        }
+        if (!$this->mail->enabled()) {
+            $data['reason'] = 'Der E-Mail-Versand ist nicht eingerichtet.';
+
+            return $data;
+        }
+        if ($requester['email'] === '') {
+            $data['reason'] = 'Für die meldende Person ist keine E-Mail-Adresse hinterlegt.';
+
+            return $data;
+        }
+        $data['available'] = true;
+
+        return $data;
+    }
+
+    /**
+     * Info-E-Mail zur Zusammenführung an die meldende Person. Bewusst ohne
+     * Agentensignatur; die Platzhalter der Vorlage werden serverseitig ersetzt.
+     *
+     * @param array<string,mixed> $source
+     * @param array<string,mixed> $target
+     * @param array<string,mixed> $input Formulardaten: subject, body_html
+     * @return array{sent:list<string>,subject:string}
+     */
+    public function sendMergeNotice(array $source, array $target, string $reasonLabel, array $input): array
+    {
+        $this->currentUser->require('helpdesk.merge');
+        $compose = $this->mergeComposeData($source);
+        if (!$compose['available']) {
+            throw ValidationException::single('body_html', $compose['reason']);
+        }
+
+        $subject = trim((string) ($input['subject'] ?? ''));
+        if ($subject === '') {
+            $subject = $compose['subject'];
+        }
+        $subject = $this->cleanSubject($this->replaceMergePlaceholders($subject, $source, $target, $reasonLabel, false));
+
+        $html = HtmlSanitizer::clean((string) ($input['body_html'] ?? ''), self::MAX_BODY_CHARS);
+        // Sicherheitsnetz: selbst eine mitgeschickte Signatur wird nicht versendet.
+        $html = self::stripSignatureBlocks($html);
+        $text = HtmlSanitizer::plain($html);
+        if ($text === '' && !str_contains($html, '<img')) {
+            throw ValidationException::single('body_html', 'Bitte einen Nachrichtentext eingeben.');
+        }
+        $body = $this->renderMergeBody($this->replaceMergePlaceholders($html, $source, $target, $reasonLabel));
+
+        $recipient = $compose['requester']['email'];
+        $messageId = $this->notifications->messageId((int) $target['id'], 'merge-notice');
+        $root = $this->notifications->threadRootId((int) $target['id']);
+        if (!$this->mail->send($recipient, $subject, $body, [], [
+            'Message-ID' => $messageId,
+            'In-Reply-To' => $root,
+            'References' => $root,
+            'X-Ticket-Number' => (string) $target['number'],
+        ])) {
+            throw ValidationException::single('body_html', 'Der E-Mail-Versand ist fehlgeschlagen. Bitte später erneut versuchen.');
+        }
+
+        if ($this->currentUser->can('helpdesk.comment')) {
+            try {
+                $this->tickets->addOutboundMailComment(
+                    (int) $target['id'],
+                    $this->commentText($subject, [$recipient], $text),
+                    $subject,
+                    [$recipient],
+                    $messageId
+                );
+            } catch (\Throwable $e) {
+                $this->logger->warning('Info-E-Mail zur Zusammenführung nicht protokolliert', ['ticket' => $target['number'], 'error' => $e->getMessage()]);
+            }
+        }
+
+        return ['sent' => [$recipient], 'subject' => $subject];
+    }
+
+    /** Betreffvorlage; {{nummer}} und {{ziel}} werden erst beim Senden ersetzt. */
+    private function mergeSubjectTemplate(): string
+    {
+        return '[{{nummer}}] Ticket zusammengeführt in {{ziel}}';
+    }
+
+    /**
+     * Textvorlage der Info-E-Mail mit Platzhaltern für Nummer, Ziel und Grund.
+     *
+     * @param array<string,mixed> $source
+     */
+    private function mergeBodyTemplate(array $source): string
+    {
+        $requester = trim((string) ($source['requester_name'] ?? '')) !== ''
+            ? trim((string) $source['requester_name'])
+            : trim((string) ($source['requester_user_name'] ?? ''));
+        $greeting = $requester !== '' ? 'Guten Tag ' . self::e($requester) . ',' : 'Guten Tag,';
+
+        return '<p>' . $greeting . '</p>'
+            . '<p>Ihr Ticket <strong>{{nummer}}</strong> „' . self::e((string) ($source['subject'] ?? '')) . '“ wurde mit dem Ticket <strong>{{ziel}}</strong> zusammengeführt.</p>'
+            . '<p>Grund: {{grund}}</p>'
+            . '<p>Die weitere Bearbeitung erfolgt im Ticket {{ziel}}. Bitte antworten Sie künftig auf die Nachrichten zu diesem Ticket.</p>'
+            . '<p>Freundliche Grüße<br>Ihr Help-Desk-Team</p>';
+    }
+
+    /**
+     * Platzhalter der Zusammenführungs-Vorlage ersetzen. Für HTML werden die
+     * Werte maskiert, für den Betreff (Klartext) nicht.
+     *
+     * @param array<string,mixed> $source
+     * @param array<string,mixed> $target
+     */
+    private function replaceMergePlaceholders(string $value, array $source, array $target, string $reasonLabel, bool $escape = true): string
+    {
+        $values = [
+            (string) ($source['number'] ?? ''),
+            (string) ($target['number'] ?? ''),
+            $reasonLabel,
+        ];
+        if ($escape) {
+            $values = array_map(static fn (string $v): string => self::e($v), $values);
+        }
+
+        return str_replace(['{{nummer}}', '{{ziel}}', '{{grund}}'], $values, $value);
+    }
+
+    /** Nachrichtentext der Info-E-Mail – ohne Signatur des Agenten. */
+    private function renderMergeBody(string $html): string
+    {
+        return '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222">' . $html . '</div>';
+    }
+
+    /**
      * Pausengrund und -ende aus dem Formular prüfen.
      *
      * @param array<string,mixed> $compose

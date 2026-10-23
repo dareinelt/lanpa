@@ -291,7 +291,8 @@ final class TicketController extends HelpdeskBaseController
             'secondLevelSupport' => $shift['second'],
             'aiEnabled' => $this->ai->isEnabled(),
             'mailCompose' => $this->mailService->composeData($ticket),
-            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/helpdesk-mail.js'],
+            'mergeCompose' => $this->mergeService->composeData($ticket),
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js'],
         ]);
     }
 
@@ -405,13 +406,27 @@ final class TicketController extends HelpdeskBaseController
         $id = $request->paramInt('id');
         $target = null;
         $response = $this->attempt($request, function () use ($request, $id, &$target): void {
-            $target = $this->mergeService->merge($id, $request->string('target'));
+            $target = $this->mergeService->merge($id, $request->string('target'), [
+                'reason_code' => $request->string('reason_code'),
+                'reason_note' => $request->string('reason_note'),
+                'notify' => $request->string('notify'),
+                'mail_subject' => $request->string('subject'),
+                'mail_body_html' => $request->string('body_html'),
+            ]);
         }, '/helpdesk/tickets/' . $id . '#merge', false);
         if ($response !== null) {
             return $response;
         }
 
-        return $this->respond($request, 'Ticket wurde in ' . $target['number'] . ' zusammengeführt.', '/helpdesk/tickets/' . $target['id'], ['target' => $target]);
+        $message = 'Ticket wurde in ' . $target['number'] . ' zusammengeführt.';
+        if (!empty($target['merge_mail']['sent'])) {
+            $message .= ' Info-E-Mail an ' . implode(', ', $target['merge_mail']['sent']) . ' gesendet.';
+        }
+        if (($target['merge_mail_error'] ?? '') !== '') {
+            $message .= ' Die Info-E-Mail konnte nicht gesendet werden: ' . $target['merge_mail_error'];
+        }
+
+        return $this->respond($request, $message, '/helpdesk/tickets/' . $target['id'], ['target' => $target]);
     }
 
     public function tags(Request $request): Response

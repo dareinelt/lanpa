@@ -442,14 +442,10 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
         </details>
         <?php endif; ?>
         <?php if ($can('helpdesk.merge') && !$readOnly && !$closed): ?>
-        <details id="merge" class="side-edit">
-            <summary class="side-edit-summary"><?= icon('merge', 'icon icon-xs') ?> Ticket zusammenführen</summary>
-            <form method="post" action="/helpdesk/tickets/<?= $id ?>/merge" class="stack-form" data-confirm="Dieses Ticket in das Zielticket zusammenführen? Kommentare, Anhänge und Beobachter werden übertragen; dieses Ticket wird storniert.">
-                <?= csrf_field() ?>
-                <div class="form-group"><label for="merge-target">Zielticket</label><input id="merge-target" name="target" list="merge-tickets" data-hd-ticket-search="<?= $id ?>" placeholder="Nummer oder Betreff" required autocomplete="off"><datalist id="merge-tickets"></datalist></div>
-                <button type="submit" class="btn btn-danger btn-sm"><?= icon('merge') ?> Zusammenführen</button>
-            </form>
-        </details>
+        <div id="merge" class="side-edit">
+            <button type="button" class="btn btn-danger btn-sm" data-dialog-open="merge-dialog"><?= icon('merge') ?> Ticket zusammenführen …</button>
+            <p class="form-hint">Führt dieses Ticket in ein bestehendes Ticket über und informiert die meldende Person optional per E-Mail.</p>
+        </div>
         <?php endif; ?>
     </section>
 
@@ -624,6 +620,89 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
         <div class="dialog-footer">
             <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
             <button type="submit" class="btn btn-primary" data-hd-mail-submit><?= icon('mail') ?> Senden</button>
+        </div>
+    </form>
+</dialog>
+<?php endif; ?>
+
+<?php if ($can('helpdesk.merge') && !$readOnly && !$closed && !empty($mergeCompose)): ?>
+<dialog id="merge-dialog" class="dialog hd-merge-dialog" data-hd-merge
+        data-source="<?= $id ?>"
+        data-number="<?= e($ticket['number']) ?>">
+    <form method="post" action="/helpdesk/tickets/<?= $id ?>/merge" data-hd-merge-form>
+        <?= csrf_field() ?>
+        <input type="hidden" name="body_html" value="" data-hd-merge-body>
+        <div class="dialog-header">
+            <h2><?= icon('merge') ?> Ticket zusammenführen</h2>
+            <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+        </div>
+        <div class="dialog-body">
+            <p class="text-muted text-sm">Dieses Ticket <strong><?= e($ticket['number']) ?></strong> wird in das Zielticket überführt und anschließend storniert. Kommentare, Anhänge, Arbeitszeiten, Assets, Tags und Beobachter wandern mit.</p>
+
+            <div class="form-group">
+                <label for="merge-target">Zielticket</label>
+                <div class="hd-merge-search">
+                    <input id="merge-target" type="text" placeholder="Ticketnummer oder Betreff" autocomplete="off"
+                           role="combobox" aria-expanded="false" aria-controls="merge-suggestions" aria-autocomplete="list"
+                           data-hd-merge-search>
+                    <input type="hidden" name="target" value="" data-hd-merge-target>
+                    <ul id="merge-suggestions" class="hd-merge-suggestions" role="listbox" aria-label="Ticketvorschläge"
+                        data-hd-merge-suggestions hidden></ul>
+                </div>
+                <p class="hd-merge-selected" data-hd-merge-selected hidden></p>
+                <p class="form-hint">Vorschläge stammen aus den offenen Tickets derselben meldenden Person; zusätzlich Suche über Nummer oder Betreff.</p>
+                <p class="alert alert-danger" data-hd-merge-target-error hidden></p>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="merge-reason">Grund</label>
+                    <select id="merge-reason" name="reason_code" data-hd-merge-reason>
+                        <?php foreach ($mergeCompose['reasons'] as $reasonOption): ?>
+                        <option value="<?= e($reasonOption['code']) ?>"<?= selected($mergeCompose['default_reason'], $reasonOption['code']) ?>><?= e($reasonOption['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="merge-reason-note">Ergänzung <span class="text-muted">(optional)</span></label>
+                    <input id="merge-reason-note" name="reason_note" maxlength="160" data-hd-merge-note>
+                </div>
+            </div>
+
+            <fieldset class="hd-merge-notify">
+                <legend>Meldende Person informieren</legend>
+                <?php if (!empty($mergeCompose['mail_available'])): ?>
+                <label class="checkbox-row"><input type="checkbox" name="notify" value="1" data-hd-merge-notify checked> Info-E-Mail senden</label>
+                <div class="hd-merge-mail" data-hd-merge-mail>
+                    <div class="hd-mail-recipients">
+                        <div class="hd-mail-recipient">
+                            <span class="hd-mail-recipient-role">An</span>
+                            <span class="hd-mail-recipient-name"><?= e($mergeCompose['requester']['name'] !== '' ? $mergeCompose['requester']['name'] : $mergeCompose['requester']['email']) ?></span>
+                            <span class="text-muted text-xs">&lt;<?= e($mergeCompose['requester']['email']) ?>&gt;</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="merge-subject">Betreff</label>
+                        <input id="merge-subject" name="subject" maxlength="180" value="<?= e($mergeCompose['subject']) ?>" data-hd-merge-subject>
+                    </div>
+                    <div class="form-group">
+                        <label for="merge-body">Nachricht</label>
+                        <div id="merge-body" class="hd-mail-editor" contenteditable="true" role="textbox" aria-multiline="true"
+                             spellcheck="true" data-placeholder="Nachricht zur Zusammenführung …" data-hd-merge-editor><?= $mergeCompose['body_html'] ?></div>
+                        <p class="form-hint">Platzhalter <code>{{nummer}}</code>, <code>{{ziel}}</code> und <code>{{grund}}</code> werden beim Senden ersetzt. Es wird bewusst keine Signatur des Agenten angehängt.</p>
+                    </div>
+                </div>
+                <?php else: ?>
+                <input type="hidden" name="notify" value="0">
+                <p class="form-hint"><?= e($mergeCompose['mail_reason']) ?></p>
+                <?php endif; ?>
+            </fieldset>
+
+            <p class="alert alert-danger" data-hd-merge-error hidden></p>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+            <button type="submit" class="btn btn-danger" data-hd-merge-submit><?= icon('merge') ?> Zusammenführen</button>
         </div>
     </form>
 </dialog>

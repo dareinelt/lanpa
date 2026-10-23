@@ -355,6 +355,47 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ValidationException::class, fn () => $this->service()->addComment((int) $source['id'], 'geht nicht mehr', 'public'), 'schreibgeschützt');
     }
 
+    public function testMergeStoresReasonAndNote(): void
+    {
+        $source = $this->createTicket(['subject' => 'Duplikat']);
+        $target = $this->createTicket(['subject' => 'Original']);
+
+        $result = $this->c->get(TicketMergeService::class)->merge((int) $source['id'], (string) $target['number'], [
+            'reason_code' => 'same_topic',
+            'reason_note' => '  gleiche   Störung  ',
+        ]);
+
+        $sourceAfter = $this->service()->get((int) $source['id']);
+        $this->assertSame('Thema identisch – gleiche Störung (' . $target['number'] . ')', $sourceAfter['close_reason']);
+
+        $comment = $this->pdo->query('SELECT body FROM ticket_comments WHERE ticket_id = ' . (int) $target['id'] . " AND type = 'internal' ORDER BY id DESC LIMIT 1")->fetch(\PDO::FETCH_ASSOC);
+        $this->assertStringContains('Grund: Thema identisch – gleiche Störung', (string) ($comment['body'] ?? ''));
+        $this->assertNull($result['merge_mail'], 'Ohne Auftrag zur Information geht keine E-Mail raus.');
+    }
+
+    public function testMergeRejectsUnknownReason(): void
+    {
+        $source = $this->createTicket(['subject' => 'Duplikat']);
+        $target = $this->createTicket(['subject' => 'Original']);
+
+        $this->assertThrows(ValidationException::class, fn () => $this->c->get(TicketMergeService::class)->merge((int) $source['id'], (string) $target['number'], ['reason_code' => 'unbekannt']));
+
+        $this->assertSame('new', $this->service()->get((int) $source['id'])['status_code'], 'Das Quellticket bleibt unverändert.');
+    }
+
+    public function testMergeComposeDataListsReasons(): void
+    {
+        $source = $this->createTicket();
+
+        $compose = $this->c->get(TicketMergeService::class)->composeData($this->service()->get((int) $source['id']));
+
+        $this->assertSame('duplicate', $compose['default_reason']);
+        $this->assertCount(count(TicketMergeService::REASONS), $compose['reasons']);
+        $this->assertSame('Duplikat', $compose['reasons'][0]['name']);
+        $this->assertSame('max@example.test', $compose['requester']['email']);
+        $this->assertStringContains('{{ziel}}', $compose['body_html']);
+    }
+
     // ------------------------------------------------------------------ Suche / Ansichten
 
     public function testViewCountsAndSearch(): void
@@ -370,6 +411,34 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertCount(1, $found);
         $this->assertSame($t['number'], $found[0]['number']);
         $this->assertCount(1, $this->tickets()->quickSearch((string) $t['number'], 5));
+    }
+
+    public function testSuggestForMergePrefersOpenTicketsOfSameRequester(): void
+    {
+        $same = $this->createTicket(['subject' => 'Drucker streikt']);
+        $other = $this->createTicket(['subject' => 'Drucker streikt (fremd)', 'requester_employee_id' => $this->otherEmployeeId]);
+        $done = $this->createTicket(['subject' => 'Drucker erledigt']);
+        $this->service()->changeStatus((int) $done['id'], 'cancelled', null, null, 'Testfall');
+
+        // Ohne Suchbegriff nur offene Tickets derselben meldenden Person
+        $rows = $this->tickets()->suggestForMerge('', 10, 0, $this->requesterEmployeeId, null, 'max@example.test');
+        $ids = array_map(static fn (array $r): int => (int) $r['id'], $rows);
+        $this->assertContains((int) $same['id'], $ids);
+        $this->assertFalse(in_array((int) $other['id'], $ids, true), 'Fremde Melder erscheinen nicht ohne Suchbegriff.');
+        $this->assertFalse(in_array((int) $done['id'], $ids, true), 'Abgeschlossene Tickets werden nicht vorgeschlagen.');
+
+        // Mit Suchbegriff kommen fremde Treffer hinzu, gleiche Melder stehen vorn
+        $rows = $this->tickets()->suggestForMerge('Drucker', 10, 0, $this->requesterEmployeeId, null, 'max@example.test');
+        $ids = array_map(static fn (array $r): int => (int) $r['id'], $rows);
+        $this->assertContains((int) $other['id'], $ids);
+        $this->assertSame((int) $same['id'], $ids[0], 'Tickets derselben Person stehen oben.');
+        $flags = array_column($rows, 'same_requester', 'id');
+        $this->assertSame(1, (int) $flags[$same['id']]);
+        $this->assertSame(0, (int) $flags[$other['id']]);
+
+        // Das Quellticket selbst wird ausgeschlossen
+        $rows = $this->tickets()->suggestForMerge('Drucker', 10, (int) $same['id'], $this->requesterEmployeeId, null, 'max@example.test');
+        $this->assertFalse(in_array((int) $same['id'], array_map(static fn (array $r): int => (int) $r['id'], $rows), true));
     }
 
     // ------------------------------------------------------------------ Ticketaufruf (viewed)

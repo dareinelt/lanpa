@@ -355,6 +355,57 @@ final class TicketRepository extends BaseRepository
         return $this->fetchAll($sql . " ORDER BY t.updated_at DESC LIMIT {$limit}", $params);
     }
 
+    /**
+     * Vorschläge für das Zusammenführen: offene Tickets derselben meldenden
+     * Person zuerst, danach Treffer über Nummer oder Betreff.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public function suggestForMerge(string $term, int $limit, int $excludeId, ?int $employeeId, ?int $userId, string $email): array
+    {
+        $params = ['ex' => $excludeId];
+        $where = ['t.id <> :ex', 't.merged_into_ticket_id IS NULL', "st.category IN ('new','open','pending')"];
+        $requester = [];
+        if ($employeeId !== null) {
+            $requester[] = 't.requester_employee_id = :emp';
+            $params['emp'] = $employeeId;
+        }
+        if ($userId !== null) {
+            $requester[] = 't.requester_user_id = :usr';
+            $params['usr'] = $userId;
+        }
+        $email = mb_strtolower(trim($email));
+        if ($email !== '') {
+            $requester[] = '(t.requester_email = :mail OR req.email = :mail OR ru.email = :mail)';
+            $params['mail'] = $email;
+        }
+        $sameRequester = $requester === [] ? '0' : '(' . implode(' OR ', $requester) . ')';
+        $term = trim($term);
+        if ($term === '') {
+            if ($requester === []) {
+                return [];
+            }
+            $where[] = $sameRequester;
+        } else {
+            $where[] = '(t.number LIKE :q OR t.subject LIKE :q)';
+            $params['q'] = $this->like($term);
+        }
+
+        return $this->fetchAll(
+            "SELECT t.id, t.number, t.subject,
+                    COALESCE(NULLIF(req.display_name, ''), NULLIF(ru.display_name, ''), t.requester_email) AS requester_name,
+                    st.name AS status_name, st.color AS status_color, {$sameRequester} AS same_requester
+             FROM tickets t
+             JOIN ticket_statuses st ON st.id = t.status_id
+             LEFT JOIN employees req ON req.id = t.requester_employee_id
+             LEFT JOIN users ru ON ru.id = t.requester_user_id
+             WHERE " . implode(' AND ', $where) . "
+             ORDER BY same_requester DESC, t.updated_at DESC
+             LIMIT {$limit}",
+            $params
+        );
+    }
+
     // ------------------------------------------------------------------ Assets
 
     /** @return array<int,array<string,mixed>> */

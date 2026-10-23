@@ -268,6 +268,100 @@ final class TicketMailServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame([], self::stubRequests());
     }
 
+    // ------------------------------------------------------------------ Zusammenführen
+
+    public function testMergeComposeDataOffersTemplateAndRequester(): void
+    {
+        $ticket = $this->createTicket();
+
+        $compose = $this->service()->mergeComposeData($this->tickets()->getVisible((int) $ticket['id']));
+
+        $this->assertTrue($compose['available']);
+        $this->assertSame('max@example.test', $compose['requester']['email']);
+        $this->assertSame('Max Melder', $compose['requester']['name']);
+        $this->assertSame('[{{nummer}}] Ticket zusammengeführt in {{ziel}}', $compose['subject']);
+        $this->assertStringContains('{{nummer}}', $compose['body_html']);
+        $this->assertStringContains('{{ziel}}', $compose['body_html']);
+        $this->assertStringContains('{{grund}}', $compose['body_html']);
+    }
+
+    public function testMergeComposeDataExplainsMissingRequesterMail(): void
+    {
+        $ticket = $this->createTicket(['requester_employee_id' => $this->withoutMailId]);
+
+        $compose = $this->service()->mergeComposeData($this->tickets()->getVisible((int) $ticket['id']));
+
+        $this->assertFalse($compose['available']);
+        $this->assertStringContains('keine E-Mail-Adresse', $compose['reason']);
+    }
+
+    public function testMergeNoticeGoesToRequesterWithoutSignature(): void
+    {
+        $source = $this->createTicket(['subject' => 'Doppelt erfasst']);
+        $target = $this->createTicket(['subject' => 'Sammelvorgang']);
+
+        $result = $this->service(static fn (string $username): string => '<div class="ov-signature-block">Max Muster</div>')
+            ->sendMergeNotice(
+                $this->tickets()->getVisible((int) $source['id']),
+                $this->tickets()->getVisible((int) $target['id']),
+                'Duplikat',
+                [
+                    'subject' => '',
+                    'body_html' => '<p>Ihr Ticket {{nummer}} gehört zu {{ziel}} ({{grund}}).</p><div class="ov-signature-block">Fremde Signatur</div>',
+                ]
+            );
+
+        $requests = self::stubRequests();
+        $this->assertCount(1, $requests, 'Die Info geht nur an die meldende Person.');
+        $this->assertSame(['max@example.test'], $result['sent']);
+        $this->assertSame('max@example.test', $requests[0]['to']);
+        $this->assertSame('[' . $source['number'] . '] Ticket zusammengeführt in ' . $target['number'], $result['subject']);
+        $this->assertStringContains('Ihr Ticket ' . $source['number'] . ' gehört zu ' . $target['number'] . ' (Duplikat).', $requests[0]['html']);
+        $this->assertFalse(str_contains((string) $requests[0]['html'], 'ov-signature-block'), 'Bei Zusammenführungen wird keine Signatur versendet.');
+        $this->assertFalse(str_contains((string) $requests[0]['html'], 'Fremde Signatur'), 'Eine mitgeschickte Signatur wird verworfen.');
+
+        $headers = $requests[0]['headers'];
+        $this->assertMatches('/^<ticket-' . (int) $target['id'] . '\.merge-notice\.[0-9a-f]+@[^>]+>$/', $headers['Message-ID'] ?? '');
+        $this->assertMatches('/^<ticket-' . (int) $target['id'] . '@[^>]+>$/', $headers['In-Reply-To'] ?? '');
+        $this->assertSame($headers['In-Reply-To'] ?? '', $headers['References'] ?? '');
+        $this->assertSame($target['number'], $headers['X-Ticket-Number'] ?? '');
+
+        $comment = $this->pdo->query('SELECT ticket_id, type, source FROM ticket_comments WHERE ticket_id = ' . (int) $target['id'] . ' ORDER BY id DESC LIMIT 1')->fetch(\PDO::FETCH_ASSOC);
+        $this->assertSame((int) $target['id'], (int) ($comment['ticket_id'] ?? 0), 'Die Info wird am Zielticket protokolliert.');
+        $this->assertSame('public', $comment['type'] ?? '');
+        $this->assertSame('email', $comment['source'] ?? '');
+    }
+
+    public function testMergeNoticeRequiresRequesterMail(): void
+    {
+        $source = $this->createTicket(['requester_employee_id' => $this->withoutMailId]);
+        $target = $this->createTicket();
+
+        $this->assertThrows(ValidationException::class, fn () => $this->service()->sendMergeNotice(
+            $this->tickets()->getVisible((int) $source['id']),
+            $this->tickets()->getVisible((int) $target['id']),
+            'Duplikat',
+            ['subject' => 'Zusammenführung', 'body_html' => '<p>Text</p>']
+        ));
+
+        $this->assertSame([], self::stubRequests());
+    }
+
+    public function testMergeNoticeRejectsEmptyMessage(): void
+    {
+        $source = $this->createTicket();
+        $target = $this->createTicket();
+
+        $this->assertThrows(ValidationException::class, fn () => $this->service()->sendMergeNotice(
+            $this->tickets()->getVisible((int) $source['id']),
+            $this->tickets()->getVisible((int) $target['id']),
+            'Duplikat',
+            ['subject' => 'Zusammenführung', 'body_html' => '<p> </p>']
+        ));
+
+        $this->assertSame([], self::stubRequests());
+    }
+
     // ------------------------------------------------------------------ Hilfen
 
     private function service(?callable $signature = null): TicketMailService

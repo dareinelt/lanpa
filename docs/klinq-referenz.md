@@ -41,7 +41,7 @@ Auswertungen). Die Anwendung bleibt in ihrem Verhalten unverändert.
 | **Dienst-Token** | Gemeinsames Geheimnis für die internen Schnittstellen (`/internal/klinq/*`), liegt als Datei im Volume `sso_token`. |
 | **Melder** | Person, die über `/stoerung` eine Störmeldung abgibt. |
 | **Bereich (area)** | Grobe Sichtbarkeit in KLINQ: `helpdesk`, `assets`, `statistics`, `tickets`, `admin`. |
-| **Berechtigungsgruppe** | Feine Zusatzfreigabe in KLINQ: `statistik`, `ticketaufruf`. |
+| **Berechtigungsgruppe** | Feine Zusatzfreigabe in KLINQ: `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`. |
 
 ---
 
@@ -260,7 +260,7 @@ beider Anwendungen. Base64url ohne Auffüllzeichen (`-`, `_`, kein `=`).
 | `ip` | string | Client-Adresse (`ClientAddress::from`) |
 | `host` | string | Rechnername zur Client-Adresse |
 | `role` | string | `admin`, `helpdesk_admin`, `helpdesk_lead`, `helpdesk_agent`, `assetmanagement`, `readonly` |
-| `permission_groups` | string[] | `statistik`, `ticketaufruf` |
+| `permission_groups` | string[] | `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren` |
 | `areas` | string[] | `helpdesk`, `assets`, `statistics`, `tickets`, `admin` |
 | `report_only` | bool | `true` nur bei `/stoerung` |
 | `iss` | string | immer `lanpa` |
@@ -362,7 +362,7 @@ KLINQ) bleibt unverändert; sie ist keine Anmeldefunktion.
 
 ### 8.1 Zuordnung im Intranet
 
-`KlinqConfigService::GROUP_KEYS` verbindet sieben Einstellungen mit Rolle,
+`KlinqConfigService::GROUP_KEYS` verbindet neun Einstellungen mit Rolle,
 Berechtigungsgruppe und Bereich:
 
 | Einstellung | Bezeichnung im Formular | Rolle | Berechtigung | Bereich |
@@ -374,6 +374,13 @@ Berechtigungsgruppe und Bereich:
 | `klinq_asset_groups` | Asset-Management | `assetmanagement` | – | `assets` |
 | `klinq_statistics_groups` | Statistiken (Auswertungen) | – | `statistik` | `statistics` |
 | `klinq_ticket_history_groups` | Ticketaufruf (Verlauf) | – | `ticketaufruf` | `tickets` |
+| `klinq_ticket_delete_groups` | Ticket löschen | – | `ticket_loeschen` | `helpdesk` |
+| `klinq_ticket_cancel_groups` | Ticket stornieren | – | `ticket_stornieren` | `helpdesk` |
+
+Die beiden letzten Einträge vergeben gezielt das Löschen (`helpdesk.delete`) und
+das Stornieren (`helpdesk.cancel`) von Tickets. Ohne diese Gruppen – und ohne
+Admin-Rolle – stehen beide Aktionen auch Help-Desk-Agenten, Leitungen und
+Administration nicht zur Verfügung.
 
 Weitere Einstellungen:
 
@@ -400,7 +407,7 @@ Weitere Einstellungen:
 1. AD-Gruppen normalisieren (Leerraum entfernen, Kleinschreibung) und in einer
    Menge ablegen. Groß-/Kleinschreibung spielt damit keine Rolle.
 2. Start mit `klinq_default_role`.
-3. Für jede der sieben Zuordnungen in der Reihenfolge aus 8.1: Ist mindestens
+3. Für jede der neun Zuordnungen in der Reihenfolge aus 8.1: Ist mindestens
    eine konfigurierte Gruppe in der Menge enthalten, gilt der Eintrag als
    Treffer (`matched`) – **die erste genannte Gruppe je Feld genügt**.
    * Rolle: übernehmen, wenn ihr Gewicht höher ist als das der aktuellen Rolle.
@@ -483,7 +490,7 @@ Zeigt:
 
 ### 9.2 Berechtigungen
 
-Formular mit sieben Gruppenfeldern, Rollenauswahl und Schalter für
+Formular mit neun Gruppenfeldern, Rollenauswahl und Schalter für
 `/stoerung`. Nach dem Speichern zeigt die Seite je Feld die aufgelösten
 Bereiche und Rollen, damit Fehlkonfigurationen sichtbar werden.
 
@@ -1077,7 +1084,11 @@ Intranets `401 Unauthorized`.
    (`label`, `role` oder `permission`, `area`).
 2. Bereich in `AREA_LABELS` aufnehmen, falls neu.
 3. Die Rolle bzw. Berechtigungsgruppe in KLINQ anlegen
-   (`LanpaUserService::groupIds()` gleicht über den Namen ab).
+   (`LanpaUserService::groupIds()` gleicht über den Namen ab; unbekannte Namen
+   werden ignoriert) und den Datensatz in
+   `database/seeders/004_permission_groups.sql` ergänzen – der Seeder läuft bei
+   jedem `php bin/migrate.php` erneut und ist idempotent, eine eigene Migration
+   ist daher nicht nötig.
 4. Test in `KlinqConfigServiceTest` ergänzen.
 
 Keine Änderung nötig an: Schein-Aufbau, Proxy, Adminformular (baut sich aus

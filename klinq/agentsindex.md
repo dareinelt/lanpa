@@ -39,6 +39,8 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 - E-Mail-Eingang per IMAP (neues Ticket oder Kommentar per Threading) und E-Mail-Benachrichtigungen
 - Wissensdatenbank mit Verknüpfung zu Tickets
 - Ticket-Berichte/CSV-Export (Recht nur über die Berechtigungsgruppe „Statistik“ oder Admin-Rolle)
+- Ticket löschen und stornieren als getrennte Rechte (nur über die Berechtigungsgruppen „Darf Tickets löschen“
+  bzw. „Darf Tickets stornieren“ oder Admin-Rolle)
 - Eigene Scheduler-Jobs für Eskalation/Auto-Close, Pausierungs-Ende und Mailabholung (`bin/helpdesk.php`)
 - Pausengründe sind Status des Statuskatalogs mit Kategorie „Wartend“ und werden in der Help-Desk-Administration
   unter **Status** gepflegt (kein eigener Katalog)
@@ -196,9 +198,12 @@ Rechte folgen der Konvention `<bereich>.<aktion>` und stehen samt Rollenzuordnun
 
 Zusätzlich zur Rolle können einem Benutzer **Berechtigungsgruppen** zugewiesen werden (`permission_groups`,
 `user_permission_groups`), die einzelne Rechte unabhängig von der Rolle freischalten: die Gruppe
-„Statistik“ für `helpdesk.reports` (Ticket-Berichte) und die Gruppe „Darf Ticketaufruf auswerten“ für
+„Statistik“ für `helpdesk.reports` (Ticket-Berichte), die Gruppe „Darf Ticketaufruf auswerten“ für
 `helpdesk.view_history` (macht die Ereignisse `viewed` in der Ticket-Historie sichtbar, die beim Aufruf
-eines Tickets durch einen Agenten geschrieben werden).
+eines Tickets durch einen Agenten geschrieben werden), die Gruppe „Darf Tickets löschen“ für
+`helpdesk.delete` und die Gruppe „Darf Tickets stornieren“ für `helpdesk.cancel`. Löschen und Stornieren
+sind getrennte Rechte und standardmäßig keiner Help-Desk-Rolle zugeordnet; `helpdesk.close` deckt nur
+Lösen und Schließen ab.
 
 Prüfebenen:
 

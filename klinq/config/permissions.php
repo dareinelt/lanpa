@@ -33,7 +33,7 @@ $all = [
     'helpdesk.view', 'helpdesk.create', 'helpdesk.update', 'helpdesk.assign',
     'helpdesk.comment', 'helpdesk.internal_note', 'helpdesk.close', 'helpdesk.reopen',
     'helpdesk.merge', 'helpdesk.escalate', 'helpdesk.sla', 'helpdesk.worklog', 'helpdesk.delete',
-    'helpdesk.reports', 'helpdesk.export', 'helpdesk.view_history',
+    'helpdesk.cancel', 'helpdesk.reports', 'helpdesk.export', 'helpdesk.view_history',
     'helpdesk.categories', 'helpdesk.templates', 'helpdesk.admin',
     'knowledgebase.view', 'knowledgebase.manage',
 ];
@@ -43,13 +43,15 @@ $all = [
 $readOnly = array_values(array_filter($all, static fn (string $p): bool => str_ends_with($p, '.view') && $p !== 'audit.view' && $p !== 'helpdesk.view'));
 
 // Rechte des Help-Desk-Agenten (Tickets bearbeiten, ohne Stammdaten/SLA-Pflege)
-// helpdesk.reports (Ticket-Berichte) ist bewusst nicht enthalten: das Recht wird nur über
-// die Berechtigungsgruppe "Statistik" vergeben (siehe $groups unten), ausgenommen Admins.
+// helpdesk.reports (Ticket-Berichte), helpdesk.delete (Ticket löschen) und helpdesk.cancel
+// (Ticket stornieren) sind bewusst nicht enthalten: diese Rechte werden nur über die
+// Berechtigungsgruppen "Statistik", "ticket_loeschen" und "ticket_stornieren" vergeben
+// (siehe $groups unten), ausgenommen Admins.
 $helpdeskAgent = [
     'portal.view', 'portal.create',
     'helpdesk.view', 'helpdesk.create', 'helpdesk.update', 'helpdesk.assign',
     'helpdesk.comment', 'helpdesk.internal_note', 'helpdesk.close', 'helpdesk.reopen',
-    'helpdesk.merge', 'helpdesk.worklog', 'helpdesk.delete',
+    'helpdesk.merge', 'helpdesk.worklog',
     'knowledgebase.view', 'knowledgebase.manage',
 ];
 $helpdeskLead = array_merge($helpdeskAgent, [
@@ -102,13 +104,19 @@ return [
     // Berechtigungsgruppen: zusätzlich zur Rolle zuweisbare Rechte, einem Benutzer können
     // mehrere Gruppen zugeordnet werden. "Statistik" gewährt Zugriff auf die
     // Help-Desk-Ticket-Berichte (helpdesk.reports); "ticketaufruf" erlaubt das Auswerten der
-    // Ticketaufrufe (helpdesk.view_history). Admins haben diese Rechte ohnehin über ihre Rolle.
+    // Ticketaufrufe (helpdesk.view_history). "ticket_loeschen" und "ticket_stornieren" geben
+    // das Löschen bzw. Stornieren von Tickets frei. Admins haben diese Rechte ohnehin über
+    // ihre Rolle; alle anderen Rollen benötigen die jeweilige Gruppe.
     'groups' => [
         'statistik' => ['helpdesk.reports'],
         'ticketaufruf' => ['helpdesk.view_history'],
+        'ticket_loeschen' => ['helpdesk.delete'],
+        'ticket_stornieren' => ['helpdesk.cancel'],
     ],
     'group_labels' => [
         'statistik' => 'Statistik',
         'ticketaufruf' => 'Darf Ticketaufruf auswerten',
+        'ticket_loeschen' => 'Darf Tickets löschen',
+        'ticket_stornieren' => 'Darf Tickets stornieren',
     ],
 ];

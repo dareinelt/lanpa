@@ -45,6 +45,13 @@ $percentBar = static function (?int $percent, string $state): string {
         </div>
     </div>
     <div class="page-actions">
+        <?php if ($isAgent && $can('helpdesk.comment') && !$readOnly): ?>
+            <?php if (!empty($mailCompose['available'])): ?>
+                <button type="button" class="btn btn-primary btn-sm" data-dialog-open="mail-dialog"><?= icon('mail') ?> E-Mail senden</button>
+            <?php else: ?>
+                <button type="button" class="btn btn-secondary btn-sm" disabled title="<?= e($mailCompose['reason']) ?>"><?= icon('mail') ?> E-Mail senden</button>
+            <?php endif; ?>
+        <?php endif; ?>
         <form method="post" action="/helpdesk/tickets/<?= $id ?>/watch" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('eye') ?> <?= $isWatching ? 'Nicht mehr beobachten' : 'Beobachten' ?></button></form>
         <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed && (int) ($ticket['assignee_user_id'] ?? 0) !== (int) $user['id']): ?>
             <form method="post" action="/helpdesk/tickets/<?= $id ?>/take" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('user') ?> Übernehmen</button></form>
@@ -550,4 +557,76 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
     </form>
 </dialog>
 <?php endif; ?>
+<?php if (!empty($mailCompose['available'])): ?>
+<dialog id="mail-dialog" class="dialog hd-mail-dialog" data-hd-mail
+        data-signature-url="/helpdesk/tickets/<?= $id ?>/mail/signature"
+        data-ai-enabled="<?= !empty($aiEnabled) ? '1' : '0' ?>"
+        data-ticket="<?= e($ticket['number']) ?>"
+        data-subject="<?= e($mailCompose['subject']) ?>"
+        data-max-chars="<?= (int) $mailCompose['max_chars'] ?>">
+    <form method="post" action="/helpdesk/tickets/<?= $id ?>/mail" data-hd-mail-form>
+        <?= csrf_field() ?>
+        <input type="hidden" name="body_html" value="" data-hd-mail-body>
+        <div class="dialog-header">
+            <h2><?= icon('mail') ?> E-Mail senden</h2>
+            <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+        </div>
+        <div class="dialog-body">
+            <div class="hd-mail-recipients">
+                <div class="hd-mail-recipient">
+                    <span class="hd-mail-recipient-role">An</span>
+                    <span class="hd-mail-recipient-name"><?= e($mailCompose['requester']['name'] !== '' ? $mailCompose['requester']['name'] : $mailCompose['requester']['email']) ?></span>
+                    <span class="text-muted text-xs">&lt;<?= e($mailCompose['requester']['email']) ?>&gt;</span>
+                </div>
+                <?php if ($mailCompose['affected']['email'] !== ''): ?>
+                <label class="checkbox-row hd-mail-recipient-option">
+                    <input type="checkbox" name="to_affected" value="1" data-hd-mail-affected>
+                    Auch an die betroffene Person: <?= e($mailCompose['affected']['name'] !== '' ? $mailCompose['affected']['name'] : $mailCompose['affected']['email']) ?>
+                    <span class="text-muted text-xs">&lt;<?= e($mailCompose['affected']['email']) ?>&gt;</span>
+                </label>
+                <?php endif; ?>
+            </div>
+
+            <div class="form-group">
+                <label for="mail-subject">Betreff</label>
+                <input id="mail-subject" name="subject" maxlength="180" required value="<?= e($mailCompose['subject']) ?>" data-hd-mail-subject>
+            </div>
+
+            <div class="form-group">
+                <label for="mail-body">Nachricht</label>
+                <div id="mail-body" class="hd-mail-editor" contenteditable="true" role="textbox" aria-multiline="true"
+                     spellcheck="true" data-placeholder="Nachricht an die meldende Person …" data-hd-mail-editor></div>
+                <p class="form-hint">Rechtsklick öffnet das Kontextmenü mit Ausschneiden, Kopieren, Einfügen und „Mit KI verbessern“. Formatierungen und Bilder aus der Zwischenablage bleiben erhalten.</p>
+            </div>
+
+            <?php if ($mailCompose['pauses'] !== []): ?>
+            <fieldset class="hd-mail-pause">
+                <legend>Ticket pausieren <span class="text-muted">(optional)</span></legend>
+                <div class="form-group">
+                    <label for="mail-pause-code">Grund</label>
+                    <select id="mail-pause-code" name="pause_code" data-hd-mail-pause-code>
+                        <option value="">Nicht pausieren</option>
+                        <?php foreach ($mailCompose['pauses'] as $p): ?>
+                            <option value="<?= e($p['code']) ?>"><?= e($p['name']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group" data-hd-mail-pause-until hidden>
+                    <label for="mail-pause-until">Pausiert bis <span class="text-muted">(Datum und Uhrzeit)</span></label>
+                    <input type="datetime-local" id="mail-pause-until" name="pause_until" value="<?= e($mailCompose['pause_default_until']) ?>" disabled>
+                    <p class="form-hint">Bis dahin gilt das Ticket als pausiert; die Antwort der meldenden Person startet die Bearbeitung wieder.</p>
+                </div>
+            </fieldset>
+            <?php endif; ?>
+
+            <p class="alert alert-danger" data-hd-mail-error hidden></p>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+            <button type="submit" class="btn btn-primary" data-hd-mail-submit><?= icon('mail') ?> Senden</button>
+        </div>
+    </form>
+</dialog>
+<?php endif; ?>
+
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

@@ -25,6 +25,9 @@ final class LanpaBridge
 
     private bool $aiConfigLoaded = false;
 
+    /** Agentensignaturen je Benutzername, je Anfrage einmal abgefragt. */
+    private array $signatures = [];
+
     public function __construct(
         private readonly Config $config,
         private readonly ?AiTransportInterface $transport = null
@@ -279,6 +282,63 @@ final class LanpaBridge
             'department' => trim((string) ($row['department'] ?? '')),
             'source' => trim((string) ($row['source'] ?? '')),
         ];
+    }
+
+    /**
+     * Feste Agentensignatur aus dem Intranet (GET /internal/klinq/signatur).
+     *
+     * Die Signatur entspricht der Orvanta-Signatur des angemeldeten Agenten
+     * (Vorlage nach AD-Gruppen, Personendaten aus der Telefonliste). Sie wird
+     * im E-Mail-Editor nur angezeigt und beim Senden erneut serverseitig
+     * angehaengt. null, wenn die Anbindung inaktiv ist, das Intranet nicht
+     * antwortet oder dem Benutzer keine Vorlage zugeordnet ist.
+     *
+     * @return array{name:string,html:string}|null
+     */
+    public function signature(string $username): ?array
+    {
+        $username = trim($username);
+        if ($username === '') {
+            return null;
+        }
+        if (!array_key_exists($username, $this->signatures)) {
+            $this->signatures[$username] = $this->signatureRequest($username);
+        }
+
+        return $this->signatures[$username];
+    }
+
+    /** @return array{name:string,html:string}|null */
+    private function signatureRequest(string $username): ?array
+    {
+        if (!$this->enabled() || $this->transport === null) {
+            return null;
+        }
+        $url = $this->internalUrl('/internal/klinq/signatur');
+        if ($url === '') {
+            return null;
+        }
+
+        $headers = ['Accept' => 'application/json'];
+        $token = $this->serviceToken();
+        if ($token !== '') {
+            $headers['X-Intranet-Sso-Token'] = $token;
+        }
+
+        $response = $this->transport->request('GET', $url . '?' . http_build_query(['username' => $username]), $headers, null, 5);
+        if ($response['error'] !== null || $response['status'] !== 200) {
+            return null;
+        }
+        $data = json_decode($response['body'], true);
+        if (!is_array($data) || ($data['available'] ?? false) !== true) {
+            return null;
+        }
+        $html = trim((string) ($data['html'] ?? ''));
+        if ($html === '') {
+            return null;
+        }
+
+        return ['name' => trim((string) ($data['name'] ?? '')), 'html' => $html];
     }
 
     /**

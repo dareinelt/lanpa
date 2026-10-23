@@ -53,6 +53,8 @@ return static function (Router $router, Container $c): void {
     $router->get('/helpdesk/tickets/{id}/edit', static fn (Request $r): Response => $tickets()->edit($r), 'helpdesk.update');
     $router->post('/helpdesk/tickets/{id}', static fn (Request $r): Response => $tickets()->update($r), 'helpdesk.update');
     $router->post('/helpdesk/tickets/{id}/status', static fn (Request $r): Response => $tickets()->status($r), 'helpdesk.update');
+    $router->post('/helpdesk/tickets/{id}/mail', static fn (Request $r): Response => $tickets()->sendMail($r), 'helpdesk.comment');
+    $router->get('/helpdesk/tickets/{id}/mail/signature', static fn (Request $r): Response => $tickets()->mailSignature($r), 'helpdesk.comment');
     $router->post('/helpdesk/tickets/{id}/assign', static fn (Request $r): Response => $tickets()->assign($r), 'helpdesk.assign');
     $router->post('/helpdesk/tickets/{id}/assign-second-level', static fn (Request $r): Response => $tickets()->assignSecondLevel($r), 'helpdesk.assign');
     $router->post('/helpdesk/tickets/{id}/take', static fn (Request $r): Response => $tickets()->takeOver($r), 'helpdesk.assign');

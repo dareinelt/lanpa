@@ -133,6 +133,62 @@ final class LanpaBridgeTest extends TestCase
         $this->assertSame(0, $transport->calls);
     }
 
+    public function testSignatureIsRequestedFromTheIntranet(): void
+    {
+        $transport = new RecordingTransport(['status' => 200, 'body' => (string) json_encode([
+            'available' => true,
+            'name' => 'Max Muster',
+            'html' => '<div class="ov-signature-block">Max Muster</div>',
+        ]), 'error' => null]);
+        $bridge = $this->bridge($transport);
+
+        $signature = $bridge->signature('mmuster');
+
+        $this->assertNotNull($signature);
+        $this->assertSame('GET', $transport->method);
+        $this->assertSame('http://intranet-app/internal/klinq/signatur?username=mmuster', $transport->url);
+        $this->assertSame('dienst-token', $transport->headers['X-Intranet-Sso-Token'] ?? '');
+        $this->assertSame('Max Muster', $signature['name']);
+        $this->assertSame('<div class="ov-signature-block">Max Muster</div>', $signature['html']);
+    }
+
+    public function testSignatureIsRequestedOnlyOncePerUsername(): void
+    {
+        $transport = new RecordingTransport(['status' => 200, 'body' => (string) json_encode([
+            'available' => true,
+            'name' => 'Max Muster',
+            'html' => '<div class="ov-signature-block">Max Muster</div>',
+        ]), 'error' => null]);
+        $bridge = $this->bridge($transport);
+
+        $bridge->signature('mmuster');
+        $bridge->signature('mmuster');
+
+        $this->assertSame(1, $transport->calls, 'Die Signatur wird je Anfrage einmal geladen.');
+    }
+
+    public function testSignatureStaysEmptyWithoutAnswer(): void
+    {
+        $unavailable = new RecordingTransport(['status' => 200, 'body' => '{"available":false,"html":""}', 'error' => null]);
+        $this->assertNull($this->bridge($unavailable)->signature('mmuster'));
+
+        $broken = new RecordingTransport(['status' => 500, 'body' => '', 'error' => null]);
+        $this->assertNull($this->bridge($broken)->signature('mmuster'));
+
+        $empty = new RecordingTransport(['status' => 200, 'body' => '{"available":true,"name":"Max","html":"   "}', 'error' => null]);
+        $this->assertNull($this->bridge($empty)->signature('mmuster'));
+    }
+
+    public function testSignatureIsNotRequestedWithoutUsernameOrIntranetConnection(): void
+    {
+        $transport = new RecordingTransport(['status' => 200, 'body' => '{}', 'error' => null]);
+        $this->assertNull($this->bridge($transport)->signature('   '));
+
+        $inactive = new LanpaBridge(Config::fromArray(['lanpa' => ['enabled' => false]]), $transport);
+        $this->assertNull($inactive->signature('mmuster'));
+        $this->assertSame(0, $transport->calls);
+    }
+
     private function bridge(RecordingTransport $transport): LanpaBridge
     {
         return new LanpaBridge(Config::fromArray(['lanpa' => [

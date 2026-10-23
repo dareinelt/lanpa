@@ -126,7 +126,7 @@ Routen: `POST /helpdesk/support-shift/claim` (Berechtigung `helpdesk.view`), `PO
 
 - **Kopf**: Nummer, Betreff, Status/Priorität/Typ, Melder (Mitarbeiter mit Abteilung, Standort, Telefon), betroffener Mitarbeiter, Zuständigkeit, Fälligkeiten, SLA-Balken.
 - **Aktionen**: Status ändern (Dialog mit Lösung/Begründung), **Pausieren** (Grund + Pausenende über Kalender-Overlay), Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), Zusammenführen, Beobachten, Löschen (`helpdesk.delete`).
-- **Kommunikation**: öffentliche Kommentare (Melder sieht sie im Portal, E-Mail-Benachrichtigung) und **interne Notizen** (`helpdesk.internal_note`, nur Agenten). Für Agenten ist die **interne Notiz** vorausgewählt; öffentliche Antworten müssen bewusst gewählt werden. Anhänge je Kommentar oder direkt am Ticket, optional intern.
+- **Kommunikation**: öffentliche Kommentare (Melder sieht sie im Portal, E-Mail-Benachrichtigung) und **interne Notizen** (`helpdesk.internal_note`, nur Agenten). Für Agenten ist die **interne Notiz** vorausgewählt; öffentliche Antworten müssen bewusst gewählt werden. Anhänge je Kommentar oder direkt am Ticket, optional intern. Zusätzlich **„E-Mail senden“** – eine echte Nachricht an den Melder (siehe „E-Mail aus dem Ticket senden“).
 - **Arbeitszeiten** (`helpdesk.worklog`): Minuten (in 15-Minuten-Schritten), Tätigkeit, Datum; Summe im Kopf. Der Bereich ist – wie **Anhänge** – aufklappbar und standardmäßig geschlossen.
 - **Verknüpfungen**: Assets (mit Vorschlag der dem Melder zugeordneten Geräte), Beziehungen zu anderen Tickets (`related`, `duplicate_of`, `parent_of`, `problem_of`, `change_for` – jeweils mit Gegenrichtung), Wissensartikel (Vorschläge nach Betreff/Kategorie, „Artikel aus Lösung erstellen“).
 - **Tags** mit Autovervollständigung, **Watcher** (zusätzliche Empfänger).
@@ -190,6 +190,60 @@ Beschreibung und Kommentare (intern wie extern, Agenten- und Portalansicht) sind
 - **Dateianhänge** laufen wie bisher über `DocumentService` (Tabelle `documents`, `entity_type = ticket`); im Assistenten und im klassischen Formular steht dafür ein Mehrfach-Upload im Schritt „Beschreibung“ bereit (`attachments[]`, maximal fünf Dateien je Vorgang, Whitelist/MIME-Prüfung wie in `config/uploads.php`). Beim Anlegen des Tickets werden die Dateien nach erfolgreicher Validierung mitgespeichert.
 - **Bilder aus der Zwischenablage** werden per `STRG+V` direkt im Textfeld eingefügt (`public/js/helpdesk-media.js`), auch im öffentlichen Störungsformular. Das Skript skaliert auf maximal 1400 px Kantenlänge, komprimiert als JPEG auf höchstens ca. 900 KB und legt die Bilddaten als **base64-Data-URI** ab. Im Textfeld steht nur eine kurze Marke (`[Bild 1]`), das Bild erscheint als Vorschau unter dem Feld; beim Absenden ersetzt das Skript die Marke durch `![Bild](data:image/…)`. So bleibt das Bild Teil des Textes und wird zusammen mit ihm in der Datenbank gespeichert. Screenshots, die nur als Base64-Text in der Zwischenablage liegen, werden ebenfalls erkannt.
 - Die Ausgabe rendert `App\Support\RichText::toHtml()` (Helfer `rich_text()`), Textkontexte wie Benachrichtigungen, Wissensdatenbank und Merge-Protokoll nutzen `RichText::toPlain()`. Textgrenzen: `TicketService::MAX_TEXT_CHARS` (2 000 000 Zeichen) für Beschreibung und Kommentare.
+
+### E-Mail aus dem Ticket senden
+
+Agenten können aus einem Ticket heraus eine echte E-Mail an die **meldende Person** und optional an die **betroffene
+Person** schicken. Die Schaltfläche **„E-Mail senden“** steht im Seitenkopf des Tickets (`helpdesk.comment`) und öffnet
+ein Overlay mit dem Mail-Editor aus Orvanta – samt **Kontextmenü** und **KI-Unterstützung**.
+
+![E-Mail-Dialog aus dem Ticket mit Empfängern, Betreff, Editor, Signatur und Pausierung](screenshots/helpdesk-mail-dialog.png)
+
+- **Empfänger**: Die meldende Person ist fest eingetragen. Die betroffene Person lässt sich über ein Kästchen
+  hinzunehmen, sofern sie hinterlegt ist und eine **andere** Adresse hat. Fehlt eine Melderadresse oder ist der
+  Mailversand abgeschaltet (`HELPDESK_NOTIFICATION_ENABLED=false`), ist die Schaltfläche deaktiviert und nennt den
+  Grund im Tooltip. Zusammengeführte Tickets können keine Mail senden.
+- **Betreff**: vorbelegt mit `[HD-JJJJ-NNNNNN] Betreff`, änderbar (höchstens 180 Zeichen).
+- **Editor**: Rich-Text-Feld (`contenteditable`) mit den Tastenkürzeln des Browsers; eingefügte Formatierungen und Bilder
+  aus der Zwischenablage bleiben erhalten. Der Text wird **serverseitig** durch `App\Support\HtmlSanitizer` gefiltert
+  (Allowlist für Tags und Attribute, keine Skripte, keine `javascript:`-Ziele, `style` ohne `url()`/`position:fixed`);
+  Bilder sind nur als `http(s)`- oder `data:image`-Quelle erlaubt.
+- **Kontextmenü** (Rechtsklick in den Text): Rückgängig, Wiederherstellen, Ausschneiden, Kopieren, Einfügen, Alles
+  auswählen sowie **„Mit KI verbessern …“** für den markierten Text und – nach einem Vorschlag – **„KI-Vorschlag weiter
+  verfeinern …“**.
+
+![Kontextmenü im Mail-Editor mit KI-Einträgen](screenshots/helpdesk-mail-context-menu.png)
+
+- **KI-Funktion**: Der Dialog entspricht dem Editor im Ticket (`/api/helpdesk/ai/verbessern`), verwendet aber den
+  Modus `ticket_mail`, damit die KI den Ton einer Agentenantwort an die meldende Person trifft. Der **API-Schlüssel
+  stammt aus den KLINQ-Einstellungen** (Intranet: KLINQ → KI, abgerufen über `GET /internal/klinq/ki`); ohne
+  hinterlegten Schlüssel bleibt der KI-Eintrag ausgeblendet.
+
+![KI-Dialog im Mail-Editor](screenshots/helpdesk-mail-ai.png)
+
+- **Signatur**: steht **schreibgeschützt im Editor** (Block mit `contenteditable="false"`, wie im Orvanta-Mail-Editor),
+  fest, unveränderlich und **dieselbe wie in Orvanta** – sie wird nicht im Browser erzeugt, sondern beim Senden
+  serverseitig angehängt (`GET /helpdesk/tickets/{id}/mail/signature` liefert nur die Anzeige im Editor; ein mitgesendeter
+  Signaturblock wird verworfen). Quelle ist
+  `GET /internal/klinq/signatur` im Intranet: Dort wird der Benutzername des angemeldeten Agenten auf den
+  Telefonbucheintrag abgebildet (quellenunabhängig, Hauptquelle zuerst), die AD-Gruppen werden geladen und
+  `OrvantaSignatureService::forUser()` rendert die Signatur. Ist im Intranet keine Signatur hinterlegt oder ist es
+  nicht erreichbar, wird ohne Signatur gesendet.
+- **Pausierung**: Im Dialog lässt sich zusätzlich wählen, ob und **wie lange** das Ticket pausiert wird, mit **Grund**
+  (Pausierungsstatus aus dem Workflow) und **Pausierende** (Datum/Uhrzeit, Vorgabe: morgen 12:00). Die Pausierung wird
+  nach dem Versand über `TicketService::changeStatus()` gesetzt; ein Fehler dabei wird als Warnung gemeldet, die Mail
+  gilt trotzdem als gesendet.
+- **Protokollierung**: Die Mail wird als **öffentlicher Kommentar** mit `source = email` am Ticket geführt (sichtbar im
+  Portal und in der Historie, Ereignis `comment` mit `via = email`, `direction = out`), inklusive Empfängern und
+  Betreff; zusätzlich Eintrag im Audit-Log. Eine eigene Benachrichtigung wird nicht ausgelöst – die Mail selbst ist die
+  Information an den Melder.
+- **Threading**: Jede Mail trägt `Message-ID`, `In-Reply-To`/`References` auf die Thread-Wurzel des Tickets und
+  `X-Ticket-Number`; Antworten des Melders landen dadurch wieder im richtigen Ticket. Bewusst **ohne**
+  `Auto-Submitted: auto-generated`, damit die Nachricht als persönliche Agentenmail gilt. Bei zwei Empfängern erhält
+  jede Person eine eigene Nachricht (der Mailversand ist einzeilig), beide mit derselben `Message-ID`.
+- **Technik**: `TicketMailService` (Validierung, Bereinigung, Versand, Kommentar, Pausierung), Routen
+  `POST /helpdesk/tickets/{id}/mail` und `GET /helpdesk/tickets/{id}/mail/signature` (beide `helpdesk.comment`),
+  Oberfläche `public/js/helpdesk-mail.js`. Anhänge werden noch nicht mitgesendet.
 
 ### Ticket-Berichte & Administration
 
@@ -283,6 +337,10 @@ Jede Benachrichtigung trägt Threading-Kopfzeilen, damit Antworten der Empfänge
 | `Auto-Submitted: auto-generated` | verhindert Antwortschleifen mit Abwesenheitsassistenten |
 
 Der Betreff enthält weiterhin `[HD-JJJJ-NNNNNN]` als für Menschen lesbaren Fallback.
+
+Die von Agenten aus dem Ticket gesendete E-Mail („E-Mail aus dem Ticket senden“) nutzt dieselben Thread-Kopfzeilen,
+lässt aber `Auto-Submitted` bewusst weg: Sie ist eine persönliche Nachricht des Agenten und soll nicht als automatisch
+erzeugt gelten.
 
 ### Zuordnung eingehender Nachrichten
 
@@ -395,8 +453,8 @@ Details, Konfiguration und ein Testaufbau mit Ollama: [KI-Unterstützung im Help
 ## Technik
 
 - **Migration** `database/migrations/008_helpdesk.sql`, `009_helpdesk_mail.sql` (Threading-Spalten, `ticket_inbound_mails`), `010_helpdesk_quick_report.sql` (Quelle `form`, Melderspalten `reporter_username`/`reporter_host`/`reporter_ip`/`reporter_phone`/`reporter_department`), `012_helpdesk_mail_settings.sql` (`tickets.mail_from_address`/`mail_from_name`, `ticket_comments.mail_from_address`) und `015_helpdesk_support_shifts.sql` (`helpdesk_support_shifts`: tagesweise 1st-/2nd-Level-Zuständigkeit), `019_helpdesk_pause_until.sql` (Pausierstatus `waiting_feedback`/`waiting_third_party`/`waiting_delivery`/`waiting_internal`, `tickets.paused_until`), **Seeder** `database/seeders/003_helpdesk_defaults.sql` (Typen, Status, Prioritäten, SLA-Standardregeln, Beispielkategorien, Vorlagen).
-- **Code**: `app/Repositories/Ticket*Repository.php`, `KnowledgeBaseRepository.php`, `HelpdeskSupportShiftRepository.php`; `app/Services/Helpdesk/` (`TicketService`, `TicketWorkflowService`, `TicketSlaService`, `TicketPriorityMatrix`, `TicketNumberService`, `TicketMergeService`, `TicketNotificationService`, `TicketRuleService`/`TicketRuleEvaluator`, `TicketReportService`, `TicketMailIngestionService`, `KnowledgeBaseService`, `HelpdeskAdminService`, `HelpdeskSchedulerService`, `ReporterIdentityService`, `SupportShiftService`); `app/Services/Helpdesk/Mail/` (`MimeMessageParser`, `InboundMail`, `MailboxClientInterface`, `ImapMailboxClient`, `FileMailboxClient`); `app/Services/Ad/AdUserLookupService.php` (Einzelabfrage fürs Störungsformular), `app/Support/IpRange.php`; `app/Controllers/Helpdesk/` (inkl. `HelpdeskSupportShiftController`); Provider `app/Core/Providers/helpdesk.php`; Routen `routes/modules/helpdesk.php`; Views `resources/views/helpdesk/`; `public/js/helpdesk.js`, `public/css/pages/helpdesk.css`, `public/css/pages/quick-report.css`.
-- **Tests**: `tests/Unit/HelpdeskLogicTest.php` (Prioritätsmatrix, SLA-Berechnung mit Servicezeiten, Workflow-Übergänge, Regel-Auswertung, Rechte), `tests/Unit/HelpdeskMailParserTest.php` (MIME-Parser, RFC 2047/2231, Zitat-Erkennung, Auto-Reply-Erkennung, Ticketnummer/Message-ID), `tests/Integration/TicketServiceIntegrationTest.php` (Anlage, Nummernvergabe, Status, Zuweisung, Kommentare, Sichtbarkeit im Portal, Merge, Konflikte), `tests/Integration/HelpdeskAutomationIntegrationTest.php` (Regeln, Scheduler: Warnung/Verletzung/Eskalation/Auto-Close, Benachrichtigungen, Wissensdatenbank), `tests/Integration/HelpdeskMailIngestionIntegrationTest.php` (Ticket aus E-Mail, Threading über Betreff/`In-Reply-To`/`References`, Statuslogik, Merge-Weiterleitung, Duplikate, Auto-Replies, Anhänge), `tests/Unit/QuickReportTest.php` (Normalisierung des Windows-Kontos, Netzfreigaben, Systemkontext `runAs`). Ausführen: `php tests/run.php --filter=Ticket` bzw. `--filter=Helpdesk`.
+- **Code**: `app/Repositories/Ticket*Repository.php`, `KnowledgeBaseRepository.php`, `HelpdeskSupportShiftRepository.php`; `app/Services/Helpdesk/` (`TicketService`, `TicketWorkflowService`, `TicketSlaService`, `TicketPriorityMatrix`, `TicketNumberService`, `TicketMergeService`, `TicketNotificationService`, `TicketRuleService`/`TicketRuleEvaluator`, `TicketReportService`, `TicketMailIngestionService`, `TicketMailService`, `KnowledgeBaseService`, `HelpdeskAdminService`, `HelpdeskSchedulerService`, `ReporterIdentityService`, `SupportShiftService`); `app/Services/Helpdesk/Mail/` (`MimeMessageParser`, `InboundMail`, `MailboxClientInterface`, `ImapMailboxClient`, `FileMailboxClient`); `app/Services/Ad/AdUserLookupService.php` (Einzelabfrage fürs Störungsformular), `app/Support/IpRange.php`, `app/Support/HtmlSanitizer.php` (Bereinigung des Mail-Editors); `app/Controllers/Helpdesk/` (inkl. `HelpdeskSupportShiftController`); Provider `app/Core/Providers/helpdesk.php`; Routen `routes/modules/helpdesk.php`; Views `resources/views/helpdesk/`; `public/js/helpdesk.js`, `public/js/helpdesk-mail.js`, `public/css/pages/helpdesk.css`, `public/css/pages/quick-report.css`.
+- **Tests**: `tests/Unit/HelpdeskLogicTest.php` (Prioritätsmatrix, SLA-Berechnung mit Servicezeiten, Workflow-Übergänge, Regel-Auswertung, Rechte), `tests/Unit/HelpdeskMailParserTest.php` (MIME-Parser, RFC 2047/2231, Zitat-Erkennung, Auto-Reply-Erkennung, Ticketnummer/Message-ID), `tests/Integration/TicketServiceIntegrationTest.php` (Anlage, Nummernvergabe, Status, Zuweisung, Kommentare, Sichtbarkeit im Portal, Merge, Konflikte), `tests/Integration/HelpdeskAutomationIntegrationTest.php` (Regeln, Scheduler: Warnung/Verletzung/Eskalation/Auto-Close, Benachrichtigungen, Wissensdatenbank), `tests/Integration/HelpdeskMailIngestionIntegrationTest.php` (Ticket aus E-Mail, Threading über Betreff/`In-Reply-To`/`References`, Statuslogik, Merge-Weiterleitung, Duplikate, Auto-Replies, Anhänge), `tests/Unit/QuickReportTest.php` (Normalisierung des Windows-Kontos, Netzfreigaben, Systemkontext `runAs`), `tests/Unit/HtmlSanitizerTest.php` (Allowlist, Skripte, `javascript:`-Ziele, Bilder, `plain()`), `tests/Integration/TicketMailServiceIntegrationTest.php` (Agenten-Mail: Empfänger, Threading ohne `Auto-Submitted`, öffentlicher Kommentar, Signatur serverseitig – eine mitgesendete Signatur aus dem Editor wird verworfen, Pausierung, Validierung). Ausführen: `php tests/run.php --filter=Ticket` bzw. `--filter=Helpdesk`.
 
 ## Bekannte Einschränkungen
 
@@ -404,6 +462,7 @@ Details, Konfiguration und ein Testaufbau mit Ollama: [KI-Unterstützung im Help
 - Assets werden beim Anlegen mehrfach ausgewählt; nachträglich werden sie im Ticketdetail einzeln verknüpft/gelöst.
 - `readonly` kann im Portal keine Tickets anlegen (Rolle bleibt bewusst reine Leserolle); Mitarbeitende brauchen eine Fachrolle oder eine Help-Desk-Rolle.
 - Berichte basieren auf Live-Abfragen ohne Materialisierung; bei sehr großen Beständen empfiehlt sich ein Zeitraumfilter.
+- Agenten-E-Mails werden ohne Anhänge versendet (nur Text und eingebettete Bilder); die Signatur kommt aus dem Intranet und steht schreibgeschützt im Editor.
 
 ## Sinnvolle Erweiterungen
 

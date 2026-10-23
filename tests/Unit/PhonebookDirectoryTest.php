@@ -94,3 +94,21 @@ Runner::test('Einzelabruf für die Übernahme liefert nur aktive und sichtbare E
     Assert::same(null, $service->directoryEntry(3), 'Inaktive Einträge werden nicht geliefert.');
     Assert::same(null, $service->directoryEntry(0), 'Ungültige IDs werden abgewiesen.');
 });
+
+
+Runner::test('SamAccountName-Suche ohne Quellenbindung bevorzugt die Hauptquelle', static function (): void {
+    $pdo = phonebookDirectoryPdo();
+    $pdo->exec("INSERT INTO phonebook (id, identity_source_id, external_id, samaccount_name, display_name, first_name, last_name, email, active) VALUES
+        (1, 3, 'n1', 'mmuster', 'Muster, Max (Niederlassung)', 'Max', 'Muster', 'nord@example.de', 1),
+        (2, 0, 'n2', 'mmuster', 'Muster, Max', 'Max', 'Muster', 'max@example.de', 1),
+        (3, 0, 'n3', 'inaktiv', 'Inaktiv, Ingo', 'Ingo', 'Inaktiv', 'ingo@example.de', 0)");
+    $repository = new PhonebookRepository($pdo);
+
+    $row = $repository->findActiveBySamAccountNameAnySource('MMuster');
+    Assert::same(2, (int) ($row['id'] ?? 0), 'Die Hauptquelle hat Vorrang, die Schreibweise ist egal.');
+    Assert::same('max@example.de', $row['email'] ?? null);
+
+    Assert::same(null, $repository->findActiveBySamAccountNameAnySource('inaktiv'), 'Inaktive Einträge zählen nicht.');
+    Assert::same(null, $repository->findActiveBySamAccountNameAnySource('   '), 'Ohne Namen wird nicht gesucht.');
+    Assert::same(null, $repository->findActiveBySamAccountNameAnySource('unbekannt'));
+});

@@ -28,6 +28,7 @@ use App\Services\Helpdesk\HelpdeskAiService;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\SupportShiftService;
 use App\Services\Helpdesk\TicketAttachmentService;
+use App\Services\Helpdesk\TicketMailService;
 use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketPriorityMatrix;
 use App\Services\Helpdesk\TicketReportService;
@@ -65,6 +66,7 @@ final class TicketController extends HelpdeskBaseController
         private readonly SupportShiftService $supportShifts,
         private readonly HelpdeskAiService $ai,
         private readonly TicketAttachmentService $attachmentService,
+        private readonly TicketMailService $mailService,
         private readonly UserRepository $users
     ) {
         parent::__construct($view, $currentUser);
@@ -288,7 +290,8 @@ final class TicketController extends HelpdeskBaseController
             'isFirstLevelSupport' => $shift['first'] !== null && (int) $shift['first']['user_id'] === (int) $this->currentUser->id(),
             'secondLevelSupport' => $shift['second'],
             'aiEnabled' => $this->ai->isEnabled(),
-            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js'],
+            'mailCompose' => $this->mailService->composeData($ticket),
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/helpdesk-mail.js'],
         ]);
     }
 
@@ -324,6 +327,48 @@ final class TicketController extends HelpdeskBaseController
         }, '/helpdesk/tickets/' . $id . '#status', false);
 
         return $response ?? $this->respond($request, 'Status geändert.', '/helpdesk/tickets/' . $id);
+    }
+
+    /**
+     * E-Mail an die meldende und optional an die betroffene Person senden.
+     * Die Signatur wird serverseitig angehängt; auf Wunsch wird das Ticket im
+     * selben Schritt pausiert.
+     */
+    public function sendMail(Request $request): Response
+    {
+        $id = $request->paramInt('id');
+        $result = [];
+        $response = $this->attempt($request, function () use ($request, $id, &$result): void {
+            $result = $this->mailService->send($id, [
+                'subject' => $request->string('subject'),
+                'body_html' => $request->string('body_html'),
+                'to_affected' => $request->string('to_affected'),
+                'pause_code' => $request->string('pause_code'),
+                'pause_until' => $request->string('pause_until'),
+            ]);
+        }, '/helpdesk/tickets/' . $id, false);
+        if ($response !== null) {
+            return $response;
+        }
+
+        $message = 'E-Mail an ' . implode(', ', $result['sent'] ?? []) . ' gesendet.';
+        if (!empty($result['paused'])) {
+            $message .= ' Ticket pausiert (' . $result['pause_name'] . ').';
+        }
+        if (!empty($result['pause_warning'])) {
+            $message .= ' ' . $result['pause_warning'];
+        }
+
+        return $this->respond($request, $message, '/helpdesk/tickets/' . $id, ['mail' => $result]);
+    }
+
+    /** Feste Signatur des angemeldeten Agenten für den E-Mail-Dialog (JSON). */
+    public function mailSignature(Request $request): Response
+    {
+        $this->service->getVisible($request->paramInt('id'));
+        $signature = $this->mailService->signature();
+
+        return $this->json(['html' => $signature['html'], 'name' => $signature['name']]);
     }
 
     public function assign(Request $request): Response

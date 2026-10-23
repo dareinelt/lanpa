@@ -130,13 +130,19 @@ selbst liegt in der `settings`-Tabelle des Intranets.
 | Asset-Management | Rolle `assetmanagement` |
 | Statistiken (Auswertungen) | Berechtigungsgruppe `statistik` |
 | Ticketaufruf (Verlauf) | Berechtigungsgruppe `ticketaufruf` |
+| Ticket löschen | Berechtigungsgruppe `ticket_loeschen` |
+| Ticket stornieren | Berechtigungsgruppe `ticket_stornieren` |
 
 Regeln:
 
 * **Die höchste zutreffende Rolle gewinnt** (Admin vor Help-Desk-Administration
   vor Leitung vor Agent vor Asset-Management vor Nur-Lesen).
-* Berechtigungsgruppen (Statistiken, Ticketaufruf) sind unabhängig von der Rolle
-  und werden zusätzlich vergeben.
+* Berechtigungsgruppen (Statistiken, Ticketaufruf, Ticket löschen, Ticket
+  stornieren) sind unabhängig von der Rolle und werden zusätzlich vergeben.
+* **Löschen und Stornieren sind getrennte Rechte.** Ohne die jeweilige Gruppe –
+  und ohne Admin-Rolle – dürfen auch Help-Desk-Agenten, Leitungen und die
+  Help-Desk-Administration keine Tickets löschen oder stornieren. Schließen und
+  Wiederöffnen bleiben davon unberührt.
 * Wer in keiner der Gruppen ist, erhält `klinq_default_role`
   (Vorgabe: `readonly` – Anmeldung und eigene Tickets, keine Verwaltung).
 * Mehrere Gruppen pro Feld sind zulässig, getrennt durch Komma oder Semikolon.

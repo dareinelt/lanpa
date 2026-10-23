@@ -205,12 +205,30 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertFalse(in_array('waiting_approval', $codes, true), 'Deaktivierte Pausengründe verschwinden aus der Auswahl');
     }
 
-    public function testCancelRequiresReason(): void
+    public function testCancelRequiresPermissionAndReason(): void
     {
         $ticket = $this->createTicket();
-        $this->assertThrows(ValidationException::class, fn () => $this->service()->changeStatus((int) $ticket['id'], 'cancelled'));
-        $ticket = $this->service()->changeStatus((int) $ticket['id'], 'cancelled', null, null, 'Doppelt gemeldet');
+        $id = (int) $ticket['id'];
+
+        // Agenten stornieren standardmäßig nicht – erst die Berechtigungsgruppe gibt frei.
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->changeStatus($id, 'cancelled', null, null, 'Doppelt gemeldet'));
+
+        $this->loginAs($this->agentId, 'helpdesk_agent', ['ticket_stornieren']);
+        $this->assertThrows(ValidationException::class, fn () => $this->service()->changeStatus($id, 'cancelled'));
+        $ticket = $this->service()->changeStatus($id, 'cancelled', null, null, 'Doppelt gemeldet');
         $this->assertSame('cancelled', $ticket['status_code']);
+    }
+
+    public function testDeleteRequiresPermission(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->delete($id));
+
+        $this->loginAs($this->agentId, 'helpdesk_agent', ['ticket_loeschen']);
+        $this->service()->delete($id);
+        $this->assertNull($this->tickets()->find($id));
     }
 
     public function testOptimisticLockingDetectsConcurrentUpdate(): void
@@ -418,6 +436,7 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $same = $this->createTicket(['subject' => 'Drucker streikt']);
         $other = $this->createTicket(['subject' => 'Drucker streikt (fremd)', 'requester_employee_id' => $this->otherEmployeeId]);
         $done = $this->createTicket(['subject' => 'Drucker erledigt']);
+        $this->loginAs($this->agentId, 'helpdesk_agent', ['ticket_stornieren']);
         $this->service()->changeStatus((int) $done['id'], 'cancelled', null, null, 'Testfall');
 
         // Ohne Suchbegriff nur offene Tickets derselben meldenden Person

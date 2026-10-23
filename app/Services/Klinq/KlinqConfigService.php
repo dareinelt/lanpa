@@ -101,6 +101,18 @@ final class KlinqConfigService
             'permission' => 'ticketaufruf',
             'area' => 'tickets',
         ],
+        'klinq_ticket_delete_groups' => [
+            'label' => 'Ticket löschen',
+            'role' => '',
+            'permission' => 'ticket_loeschen',
+            'area' => 'helpdesk',
+        ],
+        'klinq_ticket_cancel_groups' => [
+            'label' => 'Ticket stornieren',
+            'role' => '',
+            'permission' => 'ticket_stornieren',
+            'area' => 'helpdesk',
+        ],
     ];
 
     public function __construct(

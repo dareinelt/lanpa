@@ -45,7 +45,7 @@ final class TicketWorkflowService
     private const PERMISSIONS = [
         self::RESOLVED => 'helpdesk.close',
         self::CLOSED => 'helpdesk.close',
-        self::CANCELLED => 'helpdesk.close',
+        self::CANCELLED => 'helpdesk.cancel',
     ];
 
     /** Statuscodes, in denen ein Ticket fachlich abgeschlossen ist. */

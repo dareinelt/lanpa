@@ -153,6 +153,26 @@ Runner::test('KLINQ: Statistiken und Ticketaufruf sind unabhängig von der Rolle
     Assert::true($access['elevated']);
 });
 
+Runner::test('KLINQ: Löschen und Stornieren sind eigene Berechtigungsgruppen', static function (): void {
+    $config = klinqConfig([
+        'klinq_helpdesk_agent_groups' => 'GG-Helpdesk',
+        'klinq_ticket_delete_groups' => 'GG-Ticket-Loeschen',
+        'klinq_ticket_cancel_groups' => 'GG-Ticket-Stornieren',
+    ]);
+
+    $delete = $config->resolve(['gg-helpdesk', 'GG-Ticket-Loeschen']);
+    Assert::same('helpdesk_agent', $delete['role']);
+    Assert::same(['ticket_loeschen'], $delete['permission_groups']);
+    Assert::same(['helpdesk'], $delete['areas']);
+
+    $both = $config->resolve(['gg-ticket-loeschen', 'gg-ticket-stornieren']);
+    Assert::same('readonly', $both['role']);
+    Assert::same(['ticket_loeschen', 'ticket_stornieren'], $both['permission_groups']);
+
+    $agent = $config->resolve(['gg-helpdesk']);
+    Assert::same([], $agent['permission_groups'], 'Der Agent erhält keine der beiden Freigaben automatisch');
+});
+
 Runner::test('KLINQ: Administration umfasst alle Bereiche', static function (): void {
     $access = klinqConfig(['klinq_admin_groups' => 'GG-Intranet-Admin'])->resolve(['gg-intranet-admin']);
 

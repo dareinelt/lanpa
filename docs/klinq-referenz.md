@@ -202,6 +202,7 @@ Alles andere fällt auf `/dashboard` zurück. In KLINQ prüft zusätzlich
 | `GET` | `/klinq-nicht-verfuegbar` | `KlinqController::unavailable` | öffentlich | Hinweisseite (auch `ErrorDocument` des Proxys), HTTP 503. |
 | `POST` | `/internal/klinq/melder` | `InternalController::klinqReporter` | Dienst-Token | Melderdaten nachliefern. |
 | `GET` | `/internal/klinq/ki` | `InternalController::klinqAi` | Dienst-Token | KI-Konfiguration abrufen. |
+| `GET` | `/internal/klinq/signatur` | `InternalController::klinqSignature` | Dienst-Token | Orvanta-Signatur eines Benutzers abrufen (Agenten-E-Mail im Help Desk). |
 | `GET` | `/admin/klinq` | `Admin\KlinqController::index` | Admin | Status. |
 | `POST` | `/admin/klinq/pruefen` | `Admin\KlinqController::refreshHealth` | Admin + CSRF | Erreichbarkeit neu prüfen. |
 | `GET` | `/admin/klinq/berechtigungen` | `Admin\KlinqController::showAccess` | Admin | AD-Gruppen. |
@@ -336,6 +337,7 @@ verlängert nur das Zeitfenster für einen abgefangenen Link.
 | `aiConfig()` | ?array | `GET /internal/klinq/ki`, je Anfrage einmal, Zeitlimit 5 s. |
 | `managesAi()` | bool | `true`, sobald `aiConfig()` etwas liefert. |
 | `reporter($username, $ip)` | ?array | `POST /internal/klinq/melder`, Zeitlimit 5 s. |
+| `signature($username)` | ?array | `GET /internal/klinq/signatur`, je Benutzer einmal, Zeitlimit 5 s; `null` ohne Signatur. |
 
 Der Hostname wird aus `X-Forwarded-Host` bzw. `HTTP_HOST` gebildet und gegen
 `^[A-Za-z0-9.\-:\[\]]{1,190}$` geprüft – ein manipulierter Host kann damit
@@ -756,6 +758,29 @@ gibt es kein lokales Konto `admin`, weil `KLINQ_ADMIN_PASSWORD` leer bleibt.
 Schlägt das Anlegen trotzdem fehl, antwortet `POST /stoerung` mit Status `500`
 und der Meldung „Die Meldung konnte nicht gespeichert werden …“; die Ursache
 steht als `ERROR` mit Typ, Text und Fundstelle in `storage/logs/app-*.log`.
+
+### 12.5 `GET /internal/klinq/signatur`
+
+Damit ein Help-Desk-Agent aus einem Ticket eine E-Mail senden kann, hängt KLINQ
+beim Versand die **Signatur aus Orvanta** an. Sie ist fest und nicht änderbar;
+der Agent soll dieselbe Signatur verwenden wie in Orvanta. KLINQ kennt nur den
+Anmeldenamen, deshalb liefert das Intranet die fertige Signatur.
+
+| Aspekt | Wert |
+| --- | --- |
+| Anfrage | `username` (Abfrageparameter, `SsoAuth::normalizeUsername()`) |
+| Antwort | `available` (bool), `name`, `html` |
+| Auflösung | Telefonbucheintrag über `PhonebookRepository::findActiveBySamAccountNameAnySource()` – quellenunabhängig, Hauptquelle (`identity_source_id = 0`) zuerst |
+| Gruppen | `AdGroupRepository::namesForUser()`; daraus `OrvantaSignatureService::forUser()` |
+| Fehler | `403` bei fehlender Berechtigung, `422` ohne Anmeldename |
+| Zwischenspeicher | `Cache-Control: no-store` |
+
+`available = false` bedeutet: kein Telefonbucheintrag, keine passende
+Signaturregel oder leerer Text. KLINQ sendet dann ohne Signatur und weist im
+Dialog darauf hin. Die Ausgabe ist dieselbe wie in Orvanta
+(`<div class="ov-signature-block">` mit inline gestalteter Tabelle und Logo als
+Data-URI) und wird **unverändert** übernommen – sie stammt aus dem vertrauten
+Intranet, nicht aus dem Browser.
 
 ---
 

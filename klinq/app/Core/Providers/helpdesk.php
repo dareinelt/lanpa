@@ -60,6 +60,7 @@ use App\Services\Helpdesk\Mail\MailboxClientInterface;
 use App\Services\Helpdesk\Mail\MimeMessageParser;
 use App\Services\Helpdesk\MailboxSettingsService;
 use App\Services\Helpdesk\TicketMailIngestionService;
+use App\Services\Helpdesk\TicketMailService;
 use App\Services\Helpdesk\TicketAttachmentService;
 use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketNotificationService;
@@ -106,6 +107,15 @@ return static function (Container $c): void {
         $c->get(TicketRepository::class),
         $c->get(TicketMasterDataRepository::class),
         $c->get(UserRepository::class),
+        $c->get(Config::class),
+        $c->get(Logger::class)
+    ));
+    $c->singleton(TicketMailService::class, static fn (Container $c): TicketMailService => new TicketMailService(
+        $c->get(TicketService::class),
+        $c->get(TicketNotificationService::class),
+        $c->get(MailClient::class),
+        $c->get(\App\Services\Lanpa\LanpaBridge::class),
+        $c->get(CurrentUser::class),
         $c->get(Config::class),
         $c->get(Logger::class)
     ));
@@ -306,6 +316,7 @@ return static function (Container $c): void {
         $c->get(SupportShiftService::class),
         $c->get(HelpdeskAiService::class),
         $c->get(TicketAttachmentService::class),
+        $c->get(TicketMailService::class),
         $c->get(UserRepository::class)
     ));
     $c->singleton(TicketAttachmentController::class, static fn (Container $c): TicketAttachmentController => new TicketAttachmentController(

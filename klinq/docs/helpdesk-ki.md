@@ -14,6 +14,7 @@ selbst enthält kein Modell.
 |---|---|
 | `/helpdesk/tickets/{id}` (Ticketdetail) | Kommentar/Antwort (Tonalität folgt dem gewählten Kommentartyp „Interne Notiz“/„Öffentliche Antwort“), Kommentar beim Statuswechsel, Lösungsbeschreibung beim Schließen, Notiz zur Übergabe an die 2. Ebene |
 | `/helpdesk/tickets/new` und `/helpdesk/tickets/{id}/edit` | Betreff, Beschreibung |
+| `/helpdesk/tickets/{id}` → „E-Mail senden“ | Nachricht im Mail-Editor (Modus `ticket_mail`, Tonalität einer Agentenantwort an die meldende Person) |
 
 Das Menü wird per Rechtsklick oder per <kbd>Menü</kbd>-Taste (Kontextmenütaste) auf dem Feld geöffnet und
 lässt sich mit den Pfeiltasten, <kbd>Enter</kbd>/<kbd>Leertaste</kbd> und <kbd>Esc</kbd> bedienen.
@@ -29,6 +30,22 @@ Es ersetzt das Browser-Menü nur in diesen Feldern; gesperrte (`readonly`) Felde
 | Mit KI verbessern … | – | öffnet den Dialog (nur wenn die KI aktiv und erreichbar ist **und** Text markiert wurde) |
 
 Auf macOS zeigt das Menü `⌘` statt `Strg`.
+
+### Mail-Editor im Ticket („E-Mail senden“)
+
+Das Overlay zum Senden einer E-Mail an den Melder nutzt dasselbe Kontextmenü und denselben KI-Dialog wie die übrigen
+Felder (`public/js/helpdesk-mail.js`, gemeinsame Styles `.hd-ctx-menu` / `.hd-ai-dialog`). Zwei Unterschiede:
+
+- Das Feld ist ein `contenteditable`-Bereich; die KI arbeitet deshalb auf DOM-Bereichen statt auf Zeichenpositionen.
+  Als Grundlage an das Modell geht der markierte Text, eingefügt wird der Vorschlag an genau dieser Stelle.
+- Der Modus ist `ticket_mail` (`HelpdeskAiService::MODES`): Die Anweisung an das Modell beschreibt eine E-Mail eines
+  Help-Desk-Agenten an die meldende Person. Zusätzlich werden Ticketnummer und Betreff mitgeschickt, damit der
+  Vorschlag zum Vorgang passt.
+
+Verwendet wird derselbe Endpunkt `POST /api/helpdesk/ai/verbessern` und damit **derselbe API-Schlüssel aus den
+KLINQ-Einstellungen** wie im Kommentarfeld; ist die KI nicht aktiv, fehlen die KI-Einträge im Kontextmenü.
+
+![KI-Dialog im Mail-Editor des Tickets](screenshots/helpdesk-mail-ai.png)
 
 ## „Mit KI verbessern“ im Ablauf
 
@@ -149,8 +166,8 @@ die nur aus Denktext besteht, als Fehler behandelt statt als leerer Vorschlag ü
   `AiChatResponse.php`, Fachlogik `app/Services/Helpdesk/HelpdeskAiService.php` (Prompt-Aufbau je Feld,
   `cleanOutput()`, Erreichbarkeits-Cache in `storage/tmp/helpdesk-ai-availability.json`).
 - **Oberfläche**: `resources/views/admin/helpdesk_ai.php`, `public/js/helpdesk-ai-admin.js` (Modell ermitteln,
-  Verbindungstest), `public/js/helpdesk-ai.js` (Kontextmenü, Dialog, Textbereiche), Styles in
-  `public/css/pages/helpdesk.css`.
+  Verbindungstest), `public/js/helpdesk-ai.js` (Kontextmenü, Dialog, Textbereiche), `public/js/helpdesk-mail.js`
+  (dasselbe Menü und derselbe Dialog im Mail-Editor des Tickets), Styles in `public/css/pages/helpdesk.css`.
 - **Routen**: `GET|POST /admin/helpdesk-ai`, `POST /admin/helpdesk-ai/models`, `POST /admin/helpdesk-ai/test`
   (Recht `settings.manage`) sowie `POST /api/helpdesk/ai/verbessern` (`routes/modules/helpdesk.php`).
 - **Tests**: `tests/Unit/HelpdeskAiChatTest.php` prüft die Antwortauswertung (Inhalt, Denktext, Fehlerfälle,

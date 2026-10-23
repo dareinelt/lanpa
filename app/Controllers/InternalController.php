@@ -282,6 +282,45 @@ final class InternalController
     }
 
     /**
+     * Signatur des angemeldeten Agenten fuer E-Mails aus einem KLINQ-Ticket.
+     *
+     * Die Signatur wird wie in Orvanta aus der Vorlage der AD-Gruppen und den
+     * Personendaten der Telefonliste erzeugt. KLINQ zeigt sie im Editor
+     * unveraenderlich an und haengt sie beim Senden erneut serverseitig an;
+     * der Client kann sie damit weder aendern noch weglassen.
+     */
+    public function klinqSignature(Request $request): Response
+    {
+        if (!$this->authorized($request, '', (string) Env::get('KLINQ_SERVICE', 'klinq-app'))) {
+            app_logger()->warning('Abruf der KLINQ-Agentensignatur abgelehnt.', [
+                'remote' => (string) ($request->server['REMOTE_ADDR'] ?? ''),
+            ]);
+
+            return $this->deny(403);
+        }
+
+        $username = SsoAuth::normalizeUsername($request->query('username'));
+        if ($username === null || $username === '') {
+            return $this->deny(422);
+        }
+
+        $entry = Container::phonebookRepository()->findActiveBySamAccountNameAnySource($username);
+        $ssoUser = [
+            'id' => (int) ($entry['id'] ?? 0),
+            'username' => $username,
+            'display_name' => (string) ($entry['display_name'] ?? $username),
+            'groups' => $entry === null ? [] : Container::adGroupRepository()->namesForUser((int) $entry['id']),
+        ];
+        $signature = Container::orvantaSignatures()->forUser($ssoUser);
+
+        return Response::json([
+            'available' => $signature !== null,
+            'name' => $signature['name'] ?? '',
+            'html' => $signature['html'] ?? '',
+        ])->withHeader('Cache-Control', 'no-store');
+    }
+
+    /**
      * Je Zeile NAME=base64(wert): keine Shell-Interpretation beim Einlesen.
      *
      * @param array<string,string> $values

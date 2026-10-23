@@ -241,6 +241,14 @@ dann nur lesend.
 API-Schlüssel kann zusätzlich als Umgebungswert `KLINQ_AI_API_KEY` hinterlegt
 werden; dieser hat Vorrang und wird im Formular nicht angezeigt.
 
+### 6.1 Signatur für Agenten-E-Mails
+
+Help-Desk-Agenten können aus einem Ticket eine E-Mail an die meldende Person
+senden. Die Signatur stammt aus **Orvanta** und ist im Sendedialog fest –
+gepflegt wird sie wie bisher unter **Orvanta → Signaturen**; das Intranet
+liefert sie über `GET /internal/klinq/signatur` an KLINQ. Wer keine
+Orvanta-Signatur hat, sendet ohne Signatur. Nichts weiter einzurichten.
+
 ---
 
 ## 7. Designfarben

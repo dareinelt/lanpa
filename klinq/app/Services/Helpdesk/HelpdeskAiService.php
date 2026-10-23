@@ -27,6 +27,7 @@ final class HelpdeskAiService
         'second_level_note',
         'ticket_description',
         'ticket_subject',
+        'ticket_mail',
         'generic',
     ];
 
@@ -47,6 +48,7 @@ final class HelpdeskAiService
         'second_level_note' => 'eine Notiz zur Übergabe an die zweite Ebene',
         'ticket_description' => 'die Beschreibung eines Tickets',
         'ticket_subject' => 'den Betreff eines Tickets',
+        'ticket_mail' => 'eine E-Mail eines Help-Desk-Agenten an die meldende Person',
         'generic' => 'einen Text in einem Ticketsystem',
     ];
 

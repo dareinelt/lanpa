@@ -433,9 +433,11 @@ final class TicketService
 
     /**
      * Statuswechsel gemäß Workflow inkl. SLA-Pause/-Fortsetzung, Lösung, Wiedereröffnung.
+     * Mit $notify = false entfällt die automatische Benachrichtigung des Melders; genutzt,
+     * wenn der Melder im selben Vorgang bereits eine E-Mail des Agenten erhält.
      * @return array<string,mixed>
      */
-    public function changeStatus(int $id, string $toCode, ?string $note = null, ?string $resolution = null, ?string $reason = null, ?int $expectedVersion = null, bool $system = false, ?string $pauseUntil = null): array
+    public function changeStatus(int $id, string $toCode, ?string $note = null, ?string $resolution = null, ?string $reason = null, ?int $expectedVersion = null, bool $system = false, ?string $pauseUntil = null, bool $notify = true): array
     {
         $ticket = $this->get($id);
         $this->assertNotMerged($ticket);
@@ -549,7 +551,9 @@ final class TicketService
         $fresh = $this->get($id);
         $this->audit->log('status', 'ticket', $id, $fresh['number'] . ' → ' . $toStatus['name'], ['status' => $ticket['status_name']], ['status' => $toStatus['name']]);
         $this->rules->apply('status_changed', $fresh, $this->currentUser->id(), $this->currentUser->displayName());
-        $this->notifications->statusChanged($fresh, $fromCode, $toCode);
+        if ($notify) {
+            $this->notifications->statusChanged($fresh, $fromCode, $toCode);
+        }
 
         return $this->get($id);
     }
@@ -574,6 +578,26 @@ final class TicketService
         }
 
         throw ValidationException::single('pause_until', 'Bitte ein gültiges Datum mit Uhrzeit angeben.');
+    }
+
+    /**
+     * Prüft ein Pausenende aus dem Formular, ohne den Status zu wechseln – etwa
+     * vor dem Versand einer Agenten-E-Mail, damit die Pausierung nicht erst
+     * nach dem Versand scheitert.
+     *
+     * @return string Pausenende in UTC
+     */
+    public function validatePauseUntil(?string $value): string
+    {
+        $utc = $this->pauseUntilUtc($value);
+        if ($utc === null) {
+            throw ValidationException::single('pause_until', 'Bitte ein Ende der Pausierung mit Datum und Uhrzeit angeben.');
+        }
+        if ($utc <= gmdate('Y-m-d H:i:s')) {
+            throw ValidationException::single('pause_until', 'Das Ende der Pausierung muss in der Zukunft liegen.');
+        }
+
+        return $utc;
     }
 
     /** Wiedereröffnung durch den Melder über das Portal (innerhalb der Frist). @return array<string,mixed> */
@@ -831,6 +855,69 @@ final class TicketService
         $this->audit->log('comment', 'ticket', $id, $fresh['number'], null, ['type' => 'public', 'comment_id' => $commentId, 'via' => 'email', 'from' => $author['email']]);
         $this->rules->apply('comment_added', $fresh, $author['user_id'] ?? $this->currentUser->id(), $author['name']);
         $this->notifications->commentAdded($fresh, $comment);
+
+        return $comment;
+    }
+
+    /**
+     * Vom Agenten verfasste E-Mail als öffentlichen Kommentar protokollieren.
+     * Der Versand erfolgt durch den Aufrufer; eine automatische Benachrichtigung
+     * entfällt, weil der Melder die E-Mail selbst erhält.
+     *
+     * @param list<string> $recipients Empfängeradressen der versendeten E-Mail
+     * @return array<string,mixed> Kommentar
+     */
+    public function addOutboundMailComment(int $id, string $body, string $subject, array $recipients, string $messageId): array
+    {
+        $this->currentUser->require('helpdesk.comment');
+        $ticket = $this->get($id);
+        $this->assertNotMerged($ticket);
+        $body = trim($body);
+        if ($body === '') {
+            $body = '(Leere Nachricht)';
+        }
+        $body = mb_substr($body, 0, self::MAX_TEXT_CHARS);
+        $subject = trim($subject);
+
+        $commentId = $this->tickets->transaction(function () use ($ticket, $body, $subject, $recipients, $messageId): int {
+            $commentId = $this->comments->create([
+                'ticket_id' => (int) $ticket['id'],
+                'type' => 'public',
+                'body' => $body,
+                'author_user_id' => $this->currentUser->id(),
+                'author_name' => mb_substr($this->currentUser->displayName(), 0, 150),
+                'is_requester' => 0,
+                'source' => 'email',
+                'mail_message_id' => mb_substr($messageId, 0, 255),
+            ]);
+            $now = gmdate('Y-m-d H:i:s');
+            $update = ['updated_by' => $this->currentUser->id(), 'last_public_comment_at' => $now];
+            if (!$this->isOwnTicket($ticket)) {
+                $update['last_agent_comment_at'] = $now;
+                if ($ticket['first_response_at'] === null) {
+                    $update['first_response_at'] = $now;
+                    $update['sla_response_state'] = $this->sla->evaluate($ticket['response_due_at'], $now, new \DateTimeImmutable($now, new \DateTimeZone('UTC')), $ticket['created_at'], 100);
+                }
+            }
+            $this->tickets->update((int) $ticket['id'], $update);
+            $this->tickets->addEvent(
+                (int) $ticket['id'],
+                'comment',
+                $this->currentUser->id(),
+                $this->currentUser->displayName(),
+                null,
+                null,
+                mb_substr($body, 0, 120),
+                ['comment_id' => $commentId, 'via' => 'email', 'direction' => 'out', 'mail_to' => array_values($recipients), 'mail_subject' => $subject]
+            );
+
+            return $commentId;
+        });
+
+        $comment = $this->comments->find($commentId) ?? [];
+        $fresh = $this->get($id);
+        $this->audit->log('comment', 'ticket', $id, $fresh['number'], null, ['type' => 'public', 'comment_id' => $commentId, 'via' => 'email', 'direction' => 'out', 'to' => array_values($recipients)]);
+        $this->rules->apply('comment_added', $fresh, $this->currentUser->id(), $this->currentUser->displayName());
 
         return $comment;
     }

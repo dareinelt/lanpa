@@ -232,6 +232,34 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     }
 
     /**
+     * Wie {@see findBySamAccountName()}, aber ohne Bindung an eine
+     * Identitaetsquelle. Die Hauptquelle hat Vorrang, danach gilt die
+     * kleinste ID. Wird verwendet, wenn eine Anwendung nur den
+     * SamAccountName kennt (z. B. KLINQ fuer die Agentensignatur).
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findActiveBySamAccountNameAnySource(string $name): ?array
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return null;
+        }
+
+        $statement = $this->pdo->prepare(
+            'SELECT id, identity_source_id, external_id, samaccount_name, display_name, first_name, last_name, title, phone, email, department
+               FROM phonebook
+              WHERE active = 1 AND samaccount_name IS NOT NULL AND LOWER(samaccount_name) = LOWER(:name)
+              ORDER BY CASE WHEN identity_source_id = 0 THEN 0 ELSE 1 END, id ASC
+              LIMIT 1'
+        );
+        $statement->execute(['name' => $name]);
+        $row = $statement->fetch();
+
+        return is_array($row) ? $row : null;
+    }
+
+    /**
      * Kontaktdaten fuer die Uebergabe an KLINQ (Help-Desk-Schnellbericht).
      * Enthaelt zusaetzlich die Mobilnummer.
      *

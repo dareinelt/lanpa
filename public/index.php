@@ -161,6 +161,8 @@ $router->post('/internal/klinq/melder', [InternalController::class, 'klinqReport
 $router->get('/internal/klinq/ki', [InternalController::class, 'klinqAi']);
 // KLINQ sucht hier im Telefonbuch (alle Identitaetsquellen) fuer die Personenauswahl.
 $router->get('/internal/klinq/telefonbuch', [InternalController::class, 'klinqPhonebook']);
+// KLINQ holt hier die feste Agentensignatur fuer E-Mails aus einem Ticket.
+$router->get('/internal/klinq/signatur', [InternalController::class, 'klinqSignature']);
 
 // Office-Integration: Hinweisseite (auch Fehlerseite des auth-Proxys) und
 // Endpunkte fuer die Fusszeile in Nextcloud bzw. den Kachelstatus.

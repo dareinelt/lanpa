@@ -130,7 +130,7 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 | Import | `routes/modules/imports.php` | `ImportController` | `ImportService`, `Support\CsvReader` | `imports/` | [import](docs/import.md) |
 | Benutzer/Profil | `routes/modules/users.php` | `UserController`, `ProfileController`, `AuthController` | `UserService`, `AuthService` | `users/`, `profile/`, `auth/` | [audit](docs/audit.md) |
 | Audit & Admin | `routes/modules/audit.php`, `admin.php` | `AuditController`, `AdminController`, `HelpdeskMailboxController` | `AuditLogService`, `SettingsService`, `Helpdesk\MailboxSettingsService`, `Support\Secret` | `audit/`, `admin/` | [audit](docs/audit.md), [helpdesk](docs/helpdesk.md) |
-| Help Desk (Agent/Portal/API) | `routes/modules/helpdesk.php` | `Helpdesk\{HelpdeskDashboardController, TicketController, TicketAttachmentController, KnowledgeBaseController, HelpdeskReportController, HelpdeskAdminController, HelpdeskApiController, PortalController, QuickReportController, HelpdeskSupportShiftController}` | `Helpdesk\{TicketService, TicketWorkflowService, TicketSlaService, TicketRuleService, TicketRuleEvaluator, TicketMergeService, TicketNumberService, TicketNotificationService, TicketPriorityMatrix, TicketReportService, TicketMailIngestionService, HelpdeskAdminService, HelpdeskSchedulerService, KnowledgeBaseService, MailboxSettingsService, ReporterIdentityService, SupportShiftService}`, `Helpdesk\Mail\{ImapMailboxClient, FileMailboxClient, MailboxClientFactory, MimeMessageParser}`, `PersonDirectoryService` (Personenauswahl für Melder/Betroffene aus dem Intranet-Telefonbuch, `/api/helpdesk/people/search` und `…/adopt`) | `helpdesk/` | [helpdesk](docs/helpdesk.md) |
+| Help Desk (Agent/Portal/API) | `routes/modules/helpdesk.php` | `Helpdesk\{HelpdeskDashboardController, TicketController, TicketAttachmentController, KnowledgeBaseController, HelpdeskReportController, HelpdeskAdminController, HelpdeskApiController, PortalController, QuickReportController, HelpdeskSupportShiftController}` | `Helpdesk\{TicketService, TicketWorkflowService, TicketSlaService, TicketRuleService, TicketRuleEvaluator, TicketMergeService, TicketNumberService, TicketNotificationService, TicketMailService, TicketPriorityMatrix, TicketReportService, TicketMailIngestionService, HelpdeskAdminService, HelpdeskSchedulerService, KnowledgeBaseService, MailboxSettingsService, ReporterIdentityService, SupportShiftService}`, `Helpdesk\Mail\{ImapMailboxClient, FileMailboxClient, MailboxClientFactory, MimeMessageParser}`, `PersonDirectoryService` (Personenauswahl für Melder/Betroffene aus dem Intranet-Telefonbuch, `/api/helpdesk/people/search` und `…/adopt`), `Support\HtmlSanitizer` (Bereinigung des Mail-Editors) | `helpdesk/` | [helpdesk](docs/helpdesk.md) |
 
 ### Fachliche Kernregeln (häufige Fehlerquellen)
 
@@ -173,6 +173,13 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Eskalation, Auto-Close (`HELPDESK_AUTO_CLOSE_DAYS`) und ruft die Mailabholung.
 - **Mail-Ingestion ist idempotent**: eingehende Nachrichten werden über `ticket_inbound_mails` (Message-ID)
   verfolgt; Antworten werden per Ticketnummer/`In-Reply-To` dem richtigen Ticket als Kommentar zugeordnet.
+- **Agenten-E-Mail aus dem Ticket** (`TicketMailService`): Melder immer, betroffene Person optional; jede Person
+  bekommt eine eigene Nachricht (`MailClient::send()` kann nur einen Empfänger) mit gemeinsamer `Message-ID`.
+  Threading-Kopfzeilen wie bei Benachrichtigungen, aber **kein** `Auto-Submitted` und **kein**
+  `TicketNotificationService::wrap()`. Die Orvanta-Signatur kommt über `LanpaBridge::signature()` aus dem Intranet
+  und wird **serverseitig** angehängt (nie aus dem Browser übernommen); der HTML-Text läuft vorher durch
+  `Support\HtmlSanitizer`. Ergebnis ist ein öffentlicher Kommentar (`source = email`) plus optional eine
+  Pausierung über `TicketService::changeStatus(..., notify: false)`.
 - **Störungsmeldeformular** (`/stoerung`) ist ohne Anmeldung erreichbar; Melder/Rechnername/AD-Daten werden
   serverseitig ermittelt, CSRF-Schutz und optionale Netz-/Ratenbegrenzung (`HELPDESK_QUICK_REPORT_*`) greifen
   im Controller, nie im Client.
@@ -233,7 +240,9 @@ ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
 - Progressive Enhancement: Jedes Formular funktioniert ohne JavaScript; JS ergänzt Autocomplete
   (`search.js`, `picker.js`), Duplikatprüfung (`duplicate-check.js`), Scan (`scan.js`, `vendor/jsqr.js` lokal),
   Etikettenvorschau (`labels.js`), Unterschrift (`signature-pad.js`), Offline-Warteschlange
-  (`offline.js`, `offline-ui.js`, IndexedDB + `sw.js`).
+  (`offline.js`, `offline-ui.js`, IndexedDB + `sw.js`), Kontextmenü und KI-Dialog im Help Desk
+  (`helpdesk-ai.js` für Textfelder, `helpdesk-mail.js` für den Mail-Editor im Ticket – gleiche Styles
+  `.hd-ctx-menu`/`.hd-ai-dialog`, gemeinsame `window.AppUI`).
 - CSS ist nach `base/`, `layout/`, `components/`, `pages/`, `utilities/` gegliedert und wird über
   `public/css/app.css` importiert; Design-Tokens als CSS-Variablen.
 - **Keine Inline-Styles und keine Inline-Skripte** – die CSP verbietet `unsafe-inline`.

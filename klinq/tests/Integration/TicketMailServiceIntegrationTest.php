@@ -168,6 +168,22 @@ final class TicketMailServiceIntegrationTest extends DatabaseTestCase
         $this->assertFalse(str_contains($html, 'alert(1)'), 'Skripte aus dem Editor werden entfernt.');
     }
 
+    public function testSignatureFromEditorIsReplacedByTheServerSideCopy(): void
+    {
+        $ticket = $this->createTicket();
+
+        $this->service(static fn (string $username): string => '<div class="ov-signature-block">Max Muster</div>')
+            ->send((int) $ticket['id'], [
+                'subject' => 'Antwort',
+                'body_html' => '<p>Text</p><div class="ov-signature-block" contenteditable="false">Gefaelscht</div>',
+            ]);
+
+        $html = self::stubRequests()[0]['html'];
+        $this->assertSame(1, substr_count($html, 'ov-signature-block'), 'Die Signatur steht genau einmal in der Mail.');
+        $this->assertStringContains('<div class="ov-signature-block">Max Muster</div>', $html);
+        $this->assertFalse(str_contains($html, 'Gefaelscht'), 'Die Signatur aus dem Editor wird verworfen.');
+    }
+
     public function testPauseIsSetTogetherWithTheMail(): void
     {
         $ticket = $this->createTicket();

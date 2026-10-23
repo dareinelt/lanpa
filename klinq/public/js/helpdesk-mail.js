@@ -17,7 +17,6 @@
     const form = root.querySelector("[data-hd-mail-form]");
     const editor = root.querySelector("[data-hd-mail-editor]");
     const bodyField = root.querySelector("[data-hd-mail-body]");
-    const signatureBody = root.querySelector("[data-hd-mail-signature-body]");
     const subjectField = root.querySelector("[data-hd-mail-subject]");
     const pauseCode = root.querySelector("[data-hd-mail-pause-code]");
     const pauseUntil = root.querySelector("[data-hd-mail-pause-until]");
@@ -78,6 +77,7 @@
 
     // ---------------------------------------------------------------- Signatur
 
+    let signatureHtml = "";
     let signaturePromise = null;
 
     /** Feste Signatur des angemeldeten Agenten einmalig nachladen. */
@@ -86,25 +86,144 @@
             return signaturePromise;
         }
         signaturePromise = api(root.getAttribute("data-signature-url")).then(function (data) {
-            if (!signatureBody) {
-                return data;
-            }
-            if (data && data.html) {
-                signatureBody.innerHTML = inlineStylesToCssom(data.html);
-                applyInlineStyles(signatureBody);
-            } else {
-                signatureBody.textContent = "Für Ihr Konto ist keine Signatur hinterlegt.";
-                signatureBody.className += " text-muted text-sm";
-            }
+            signatureHtml = data && data.html ? String(data.html) : "";
+            renderSignature();
             return data;
         }).catch(function () {
             signaturePromise = null;
-            if (signatureBody) {
-                signatureBody.textContent = "Die Signatur konnte nicht geladen werden. Sie wird beim Versand dennoch angehängt.";
-            }
         });
         return signaturePromise;
     }
+
+    /**
+     * Signatur schreibgeschützt in den Editor setzen – wie im Orvanta-Mail-Editor:
+     * ein Block mit contenteditable="false" am Ende des Textes. Gesendet wird
+     * trotzdem die serverseitige Fassung; der Block hier ist die Anzeige.
+     */
+    function renderSignature() {
+        if (!editor) {
+            return;
+        }
+        editor.querySelectorAll(".ov-signature-block").forEach(function (node) { node.remove(); });
+        if (signatureHtml === "") {
+            return;
+        }
+        const holder = document.createElement("div");
+        holder.innerHTML = inlineStylesToCssom(signatureHtml);
+        applyInlineStyles(holder);
+        const block = holder.querySelector(".ov-signature-block") || holder.firstElementChild;
+        if (!block) {
+            return;
+        }
+        block.setAttribute("contenteditable", "false");
+        const quote = editor.querySelector(":scope > blockquote");
+        if (quote) {
+            editor.insertBefore(block, quote);
+        } else {
+            editor.appendChild(block);
+        }
+        if (!block.previousElementSibling) {
+            const spacer = document.createElement("p");
+            spacer.appendChild(document.createElement("br"));
+            editor.insertBefore(spacer, block);
+        }
+        editor.setAttribute("data-hd-signature-html", block.outerHTML);
+    }
+
+    /**
+     * Schreibschutz der Signatur im Editor: Eingaben, die den Block berühren,
+     * werden verworfen; wurde er dennoch entfernt, wird er wieder eingesetzt.
+     */
+    function guardSignature() {
+        if (!editor) {
+            return;
+        }
+        editor.addEventListener("beforeinput", function (event) {
+            const block = editor.querySelector(".ov-signature-block");
+            const selection = window.getSelection();
+            if (!block || !selection || !selection.rangeCount) {
+                return;
+            }
+            const range = selection.getRangeAt(0);
+            const inside = block.contains(range.startContainer) || block.contains(range.endContainer);
+            if (!inside && (range.collapsed || !range.intersectsNode(block))) {
+                return;
+            }
+            event.preventDefault();
+            if (range.collapsed && inside) {
+                return;
+            }
+            // Nur die Teile der Auswahl vor und hinter der Signatur bearbeiten
+            // (z. B. "Alles auswählen" + Entf).
+            const blockRange = document.createRange();
+            blockRange.selectNode(block);
+            let before = null;
+            let after = null;
+            if (range.compareBoundaryPoints(Range.START_TO_START, blockRange) < 0) {
+                before = range.cloneRange();
+                before.setEndBefore(block);
+            }
+            if (range.compareBoundaryPoints(Range.END_TO_END, blockRange) > 0) {
+                after = range.cloneRange();
+                after.setStartAfter(block);
+            }
+            if (after) {
+                after.deleteContents();
+            }
+            if (before) {
+                before.deleteContents();
+            }
+            editor.querySelectorAll(":scope > p:empty").forEach(function (p) {
+                p.appendChild(document.createElement("br"));
+            });
+            if (!block.previousElementSibling) {
+                const spacer = document.createElement("p");
+                spacer.appendChild(document.createElement("br"));
+                editor.insertBefore(spacer, block);
+            }
+            const caret = document.createRange();
+            if (before) {
+                caret.setStart(before.startContainer, before.startOffset);
+            } else {
+                caret.setStart(block.previousElementSibling, 0);
+            }
+            caret.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(caret);
+            if (event.inputType === "insertText" && typeof event.data === "string") {
+                document.execCommand("insertText", false, event.data);
+            } else if (event.inputType === "insertParagraph") {
+                document.execCommand("insertParagraph");
+            } else {
+                editor.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+        });
+        editor.addEventListener("input", function () {
+            if (signatureHtml === "") {
+                return;
+            }
+            const block = editor.querySelector(".ov-signature-block");
+            // Entfernt oder (z. B. per Formatierungsbefehl) verändert: Original wiederherstellen.
+            if (!block || block.outerHTML !== editor.getAttribute("data-hd-signature-html")) {
+                renderSignature();
+            }
+        });
+    }
+
+    /** Editorinhalt ohne die feste Signatur (für Prüfung und Leerstand). */
+    function editorContent() {
+        if (!editor) {
+            return { text: "", hasImage: false };
+        }
+        const clone = editor.cloneNode(true);
+        clone.querySelectorAll(".ov-signature-block").forEach(function (node) { node.remove(); });
+        return {
+            text: (clone.textContent || "").trim(),
+            hasImage: clone.querySelector("img") !== null
+        };
+    }
+
+    guardSignature();
 
     root.addEventListener("toggle", function () {
         if (!root.open) {
@@ -521,8 +640,8 @@
                 errorEl.hidden = true;
             }
             const html = editor ? editor.innerHTML.trim() : "";
-            const text = editor ? (editor.textContent || "").trim() : "";
-            if (text === "" && html.indexOf("<img") < 0) {
+            const content = editorContent();
+            if (content.text === "" && !content.hasImage) {
                 event.preventDefault();
                 showError("Bitte einen Nachrichtentext eingeben.");
                 if (editor) {

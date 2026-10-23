@@ -508,25 +508,8 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
     border-left: 3px solid var(--color-border);
     color: var(--color-text-muted);
 }
-.hd-mail-signature {
-    display: grid;
-    gap: var(--space-1);
-    padding: var(--space-2) var(--space-3);
-    border: 1px dashed var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-muted, #f5f5f5);
-}
-.hd-mail-signature-label {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    font-size: var(--font-size-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--color-text-muted);
-}
-.hd-mail-signature-body { overflow-x: auto; }
-.hd-mail-signature-body img { max-width: 100%; height: auto; }
+.hd-mail-editor .ov-signature-block { cursor: default; }
+.hd-mail-editor .ov-signature-block img { max-width: 240px; height: auto; }
 .hd-mail-pause {
     display: grid;
     gap: var(--space-2);

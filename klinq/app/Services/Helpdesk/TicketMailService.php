@@ -16,9 +16,9 @@ use App\Support\HtmlSanitizer;
  * E-Mail eines Agenten aus einem Ticket an die meldende und optional an die
  * betroffene Person.
  *
- * Der Text kommt aus dem Editor im Ticket, die Signatur stammt unveränderlich
- * aus dem Intranet (Orvanta-Signatur des angemeldeten Agenten) und wird erst
- * beim Versand serverseitig angehängt. Jede gesendete E-Mail steht danach als
+ * Der Text kommt aus dem Editor im Ticket. Die Signatur stammt unveränderlich
+ * aus dem Intranet (Orvanta-Signatur des angemeldeten Agenten); sie steht
+ * schreibgeschützt im Editor und wird beim Versand serverseitig angehängt. Jede gesendete E-Mail steht danach als
  * öffentlicher Kommentar im Ticketverlauf; auf Wunsch wird das Ticket im
  * selben Schritt mit Grund und Ende pausiert.
  */
@@ -143,6 +143,9 @@ final class TicketMailService
 
         $subject = $this->cleanSubject((string) ($input['subject'] ?? ''));
         $html = HtmlSanitizer::clean((string) ($input['body_html'] ?? ''), self::MAX_BODY_CHARS);
+        // Die Signatur steht schreibgeschützt im Editor; gesendet wird immer die
+        // serverseitige Fassung, damit sie nicht doppelt oder verändert ankommt.
+        $html = self::stripSignatureBlocks($html);
         $text = HtmlSanitizer::plain($html);
         if ($text === '' && !str_contains($html, '<img')) {
             throw ValidationException::single('body_html', 'Bitte einen Nachrichtentext eingeben.');
@@ -238,6 +241,65 @@ final class TicketMailService
         $untilUtc = $this->tickets->validatePauseUntil($until);
 
         return ['code' => $code, 'name' => $name, 'until' => $until, 'until_utc' => $untilUtc];
+    }
+
+    /**
+     * Signaturblöcke aus dem Editor-HTML entfernen. Der Editor zeigt die Signatur
+     * schreibgeschützt an; verbindlich ist die Fassung aus {@see renderBody()}.
+     */
+    private static function stripSignatureBlocks(string $html): string
+    {
+        if ($html === '' || !str_contains($html, 'ov-signature-block')) {
+            return $html;
+        }
+        if (!class_exists(\DOMDocument::class)) {
+            return trim((string) preg_replace(
+                '#<div[^>]*class="[^"]*ov-signature-block[^"]*"[^>]*>.*?</div>#is',
+                '',
+                $html
+            ));
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $doc = new \DOMDocument('1.0', 'UTF-8');
+        $loaded = $doc->loadHTML(
+            '<?xml encoding="utf-8" ?><div data-strip-root="1">' . $html . '</div>',
+            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NONET
+        );
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+        if ($loaded === false) {
+            return $html;
+        }
+
+        $root = null;
+        foreach ($doc->getElementsByTagName('div') as $candidate) {
+            if ($candidate->getAttribute('data-strip-root') === '1') {
+                $root = $candidate;
+                break;
+            }
+        }
+        if ($root === null) {
+            return $html;
+        }
+
+        $hits = [];
+        foreach ($root->getElementsByTagName('*') as $element) {
+            $classes = preg_split('/\s+/', strtolower($element->getAttribute('class'))) ?: [];
+            if (in_array('ov-signature-block', $classes, true)) {
+                $hits[] = $element;
+            }
+        }
+        foreach ($hits as $element) {
+            $element->parentNode?->removeChild($element);
+        }
+
+        $out = '';
+        foreach ($root->childNodes as $child) {
+            $out .= (string) $doc->saveHTML($child);
+        }
+
+        return trim($out);
     }
 
     /**

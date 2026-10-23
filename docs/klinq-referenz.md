@@ -776,8 +776,7 @@ Anmeldenamen, deshalb liefert das Intranet die fertige Signatur.
 | Zwischenspeicher | `Cache-Control: no-store` |
 
 `available = false` bedeutet: kein Telefonbucheintrag, keine passende
-Signaturregel oder leerer Text. KLINQ sendet dann ohne Signatur und weist im
-Dialog darauf hin. Die Ausgabe ist dieselbe wie in Orvanta
+Signaturregel oder leerer Text. KLINQ sendet dann ohne Signatur. Die Ausgabe ist dieselbe wie in Orvanta
 (`<div class="ov-signature-block">` mit inline gestalteter Tabelle und Logo als
 Data-URI) und wird **unverändert** übernommen – sie stammt aus dem vertrauten
 Intranet, nicht aus dem Browser.

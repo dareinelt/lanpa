@@ -599,13 +599,6 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
                 <p class="form-hint">Rechtsklick öffnet das Kontextmenü mit Ausschneiden, Kopieren, Einfügen und „Mit KI verbessern“. Formatierungen und Bilder aus der Zwischenablage bleiben erhalten.</p>
             </div>
 
-            <div class="hd-mail-signature" data-hd-mail-signature>
-                <span class="hd-mail-signature-label"><?= icon('signature', 'icon icon-xs') ?> Signatur <span class="text-muted">(fest, aus dem Intranet)</span></span>
-                <div class="hd-mail-signature-body" data-hd-mail-signature-body>
-                    <span class="text-muted text-sm">Wird geladen …</span>
-                </div>
-            </div>
-
             <?php if ($mailCompose['pauses'] !== []): ?>
             <fieldset class="hd-mail-pause">
                 <legend>Ticket pausieren <span class="text-muted">(optional)</span></legend>

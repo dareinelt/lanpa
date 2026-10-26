@@ -90,4 +90,34 @@ final class PermissionsTest extends TestCase
         $this->assertTrue($user->can('helpdesk.reports'));
         $this->assertSame(['statistik'], $user->groups());
     }
+
+    public function testDeleteAndCancelRequireDedicatedGroups(): void
+    {
+        $this->assertTrue($this->permissions->groupExists('ticket_loeschen'));
+        $this->assertTrue($this->permissions->groupExists('ticket_stornieren'));
+        $this->assertTrue($this->permissions->groupHas('ticket_loeschen', 'helpdesk.delete'));
+        $this->assertTrue($this->permissions->groupHas('ticket_stornieren', 'helpdesk.cancel'));
+        $this->assertFalse($this->permissions->groupHas('ticket_loeschen', 'helpdesk.cancel'));
+        $this->assertFalse($this->permissions->groupHas('ticket_stornieren', 'helpdesk.delete'));
+
+        foreach (['helpdesk_agent', 'helpdesk_lead', 'helpdesk_admin'] as $role) {
+            $this->assertFalse($this->permissions->roleHas($role, 'helpdesk.delete'), $role . ' löscht standardmäßig keine Tickets');
+            $this->assertFalse($this->permissions->roleHas($role, 'helpdesk.cancel'), $role . ' storniert standardmäßig keine Tickets');
+        }
+        $this->assertTrue($this->permissions->roleHas('admin', 'helpdesk.delete'));
+        $this->assertTrue($this->permissions->roleHas('admin', 'helpdesk.cancel'));
+
+        $user = new CurrentUser($this->permissions);
+        $user->login(['id' => 3, 'username' => 'agent', 'display_name' => 'Agent', 'role' => 'helpdesk_agent']);
+        $this->assertFalse($user->can('helpdesk.delete'));
+        $this->assertFalse($user->can('helpdesk.cancel'));
+
+        $user->login(['id' => 3, 'username' => 'agent', 'display_name' => 'Agent', 'role' => 'helpdesk_agent', 'groups' => ['ticket_loeschen']]);
+        $this->assertTrue($user->can('helpdesk.delete'));
+        $this->assertFalse($user->can('helpdesk.cancel'), 'Die Gruppen sind getrennt');
+
+        $user->login(['id' => 3, 'username' => 'agent', 'display_name' => 'Agent', 'role' => 'helpdesk_agent', 'groups' => ['ticket_stornieren']]);
+        $this->assertTrue($user->can('helpdesk.cancel'));
+        $this->assertFalse($user->can('helpdesk.delete'));
+    }
 }

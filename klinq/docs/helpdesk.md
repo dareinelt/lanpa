@@ -125,7 +125,7 @@ Routen: `POST /helpdesk/support-shift/claim` (Berechtigung `helpdesk.view`), `PO
 ## Ticketdetail (`/helpdesk/tickets/{id}`)
 
 - **Kopf**: Nummer, Betreff, Status/Priorität/Typ, Melder (Mitarbeiter mit Abteilung, Standort, Telefon), betroffener Mitarbeiter, Zuständigkeit, Fälligkeiten, SLA-Balken.
-- **Aktionen**: Status ändern (Dialog mit Lösung/Begründung), **Pausieren** (Grund + Pausenende über Kalender-Overlay), Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), **Zusammenführen** (Overlay mit Suche, Grund und optionaler Info-E-Mail, siehe „Ticket zusammenführen“), Beobachten, Löschen (`helpdesk.delete`).
+- **Aktionen**: Status ändern (Dialog mit Lösung/Begründung), **Pausieren** (Grund + Pausenende über Kalender-Overlay), Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), **Zusammenführen** (Overlay mit Suche, Grund und optionaler Info-E-Mail, siehe „Ticket zusammenführen“), Beobachten, Stornieren (`helpdesk.cancel`) und Löschen (`helpdesk.delete`). Stornieren und Löschen erscheinen nur mit der jeweiligen Berechtigungsgruppe.
 - **Kommunikation**: öffentliche Kommentare (Melder sieht sie im Portal, E-Mail-Benachrichtigung) und **interne Notizen** (`helpdesk.internal_note`, nur Agenten). Für Agenten ist die **interne Notiz** vorausgewählt; öffentliche Antworten müssen bewusst gewählt werden. Anhänge je Kommentar oder direkt am Ticket, optional intern. Zusätzlich **„E-Mail senden“** – eine echte Nachricht an den Melder (siehe „E-Mail aus dem Ticket senden“).
 - **Arbeitszeiten** (`helpdesk.worklog`): Minuten (in 15-Minuten-Schritten), Tätigkeit, Datum; Summe im Kopf. Der Bereich ist – wie **Anhänge** – aufklappbar und standardmäßig geschlossen.
 - **Verknüpfungen**: Assets (mit Vorschlag der dem Melder zugeordneten Geräte), Beziehungen zu anderen Tickets (`related`, `duplicate_of`, `parent_of`, `problem_of`, `change_for` – jeweils mit Gegenrichtung), Wissensartikel (Vorschläge nach Betreff/Kategorie, „Artikel aus Lösung erstellen“).
@@ -419,9 +419,11 @@ Voraussetzungen: Der in der Administration gewählte Systembenutzer (Standard `a
 | **readonly** | bewusst nur `*.view` – sieht das Portal und öffentliche Artikel, kann aber keine Tickets anlegen |
 | **admin** | alles |
 
-Rechte: `helpdesk.view|create|update|assign|comment|internal_note|close|reopen|merge|worklog|delete|escalate|sla|export|categories|templates|reports|admin`, `portal.view|create`, `knowledgebase.view|manage`. Jede Route in `routes/modules/helpdesk.php` trägt genau eine davon; `RouteInventoryTest` prüft das.
+Rechte: `helpdesk.view|create|update|assign|comment|internal_note|close|reopen|merge|worklog|delete|cancel|escalate|sla|export|categories|templates|reports|admin`, `portal.view|create`, `knowledgebase.view|manage`. Jede Route in `routes/modules/helpdesk.php` trägt genau eine davon; `RouteInventoryTest` prüft das.
 
-Zusätzlich zur Rolle werden zwei Rechte nur über **Berechtigungsgruppen** je Benutzer vergeben (Admins haben sie über ihre Rolle): `helpdesk.reports` (Gruppe „Statistik“) und `helpdesk.view_history` (Gruppe „Darf Ticketaufruf auswerten“). Letzteres macht die Ereignisse `viewed` in der Ticket-Historie sichtbar, die beim Aufruf eines Tickets durch einen Agenten geschrieben werden.
+Zusätzlich zur Rolle werden vier Rechte nur über **Berechtigungsgruppen** je Benutzer vergeben (Admins haben sie über ihre Rolle): `helpdesk.reports` (Gruppe „Statistik“), `helpdesk.view_history` (Gruppe „Darf Ticketaufruf auswerten“), `helpdesk.delete` (Gruppe „Darf Tickets löschen“) und `helpdesk.cancel` (Gruppe „Darf Tickets stornieren“). Die Verlauf-Gruppe macht die Ereignisse `viewed` in der Ticket-Historie sichtbar, die beim Aufruf eines Tickets durch einen Agenten geschrieben werden.
+
+**Stornieren und Löschen sind getrennte Rechte.** `helpdesk.close` erlaubt weiterhin Lösen und Schließen, aber nicht mehr das Stornieren; `helpdesk.cancel` gilt für jeden Übergang in den Status „Storniert“. Ohne die jeweilige Gruppe – und ohne Admin-Rolle – dürfen auch Help-Desk-Agenten, Leitungen und die Help-Desk-Administration keine Tickets löschen oder stornieren. Das Zusammenführen von Tickets storniert die Quelle intern (Systemvorgang) und benötigt deshalb kein `helpdesk.cancel`.
 
 ## Konfiguration (`.env`)
 

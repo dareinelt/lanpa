@@ -76,7 +76,8 @@ final class HelpdeskLogicTest extends TestCase
         $this->assertSame('helpdesk.update', $w->requiredPermission('new', 'in_progress'));
         $this->assertSame('helpdesk.close', $w->requiredPermission('in_progress', 'resolved'));
         $this->assertSame('helpdesk.close', $w->requiredPermission('resolved', 'closed'));
-        $this->assertSame('helpdesk.close', $w->requiredPermission('open', 'cancelled'));
+        $this->assertSame('helpdesk.cancel', $w->requiredPermission('open', 'cancelled'));
+        $this->assertSame('helpdesk.cancel', $w->requiredPermission('waiting_feedback', 'cancelled'), 'Stornieren verlangt das eigene Recht');
         $this->assertSame('helpdesk.reopen', $w->requiredPermission('closed', 'in_progress'));
         $this->assertSame('helpdesk.reopen', $w->requiredPermission('resolved', 'in_progress'));
 
@@ -270,6 +271,10 @@ final class HelpdeskLogicTest extends TestCase
         $this->assertFalse($p->roleHas('helpdesk_agent', 'helpdesk.admin'));
         $this->assertFalse($p->roleHas('helpdesk_agent', 'helpdesk.sla'));
         $this->assertFalse($p->roleHas('helpdesk_agent', 'helpdesk.export'));
+        $this->assertFalse($p->roleHas('helpdesk_agent', 'helpdesk.delete'), 'Löschen nur über die Berechtigungsgruppe');
+        $this->assertFalse($p->roleHas('helpdesk_agent', 'helpdesk.cancel'), 'Stornieren nur über die Berechtigungsgruppe');
+        $this->assertTrue($p->roleHas('admin', 'helpdesk.delete'));
+        $this->assertTrue($p->roleHas('admin', 'helpdesk.cancel'));
         $this->assertFalse($p->roleHas('helpdesk_agent', 'assets.manage'), 'Agent verwaltet keine Assets');
 
         $this->assertTrue($p->roleHas('helpdesk_lead', 'helpdesk.sla'));

@@ -188,6 +188,9 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   im Controller, nie im Client. Das optionale Feld „Betroffener Mitarbeiter“ nutzt eigene öffentliche
   Endpunkte (`/stoerung/benutzer`, `/stoerung/benutzer/uebernehmen`), weil die Help-Desk-API `helpdesk.view`
   verlangt; die Übernahme aus dem Telefonbuch ist dort zusätzlich auf 20 Vorgänge je Sitzung und Stunde begrenzt.
+  Für **Sammelkonten** (Katalog in den Help-Desk-Einstellungen, `QuickReportSettingsService`) ist die Angabe
+  eines zusätzlichen Benutzers Pflicht; der Erklärungstext ist dort anpassbar, das Feld wird automatisch
+  aufgeklappt, und `QuickReportController::store()` prüft die Pflicht serverseitig.
 - **Gespeicherte Zugangsdaten** (z. B. Help-Desk-Postfachpasswort) werden über `Support\Secret` mit `APP_KEY`
   verschlüsselt abgelegt, nie im Klartext.
 

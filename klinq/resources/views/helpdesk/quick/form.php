@@ -2,6 +2,8 @@
 /** Öffentliches Störungsformular: Betreff, Beschreibung und optional betroffene Benutzer; alles Weitere wird erkannt. */
 $scripts = ['/js/helpdesk-media.js', '/js/picker.js'];
 $affected = $affected ?? null;
+$requiresAffected = $requiresAffected ?? false;
+$sharedAccountHint = $sharedAccountHint ?? '';
 $detected = [];
 if (!empty($reporter['display_name'])) {
     $detected[] = ['Gemeldet von', $reporter['display_name'] . (!empty($reporter['username']) ? ' (' . $reporter['username'] . ')' : '')];
@@ -29,7 +31,7 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
         <?php if (!empty($error)): ?>
             <div class="alert alert-error" role="alert"><?= e($error) ?></div>
         <?php endif; ?>
-        <p class="text-muted">Zwei Angaben genügen. Wer meldet und von welchem Rechner, erkennen wir automatisch.</p>
+        <p class="text-muted"><?= $requiresAffected ? 'Bitte ergänzen Sie die betroffene Person – für dieses Konto ist ein zusätzlicher Benutzer erforderlich. Wer meldet und von welchem Rechner, erkennen wir automatisch.' : 'Zwei Angaben genügen. Wer meldet und von welchem Rechner, erkennen wir automatisch.' ?></p>
         <form method="post" action="/stoerung" novalidate>
             <?= csrf_field() ?>
             <div class="form-group<?= has_error('subject') ? ' has-error' : '' ?>">
@@ -44,9 +46,12 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
                 <p class="form-hint">Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
                 <?= field_error('description') ?>
             </div>
-            <details class="quick-more"<?= ($affected !== null || has_error('affected_employee_id')) ? ' open' : '' ?>>
-                <summary>Zusätzlicher Benutzer <span class="text-muted text-xs">(optional)</span></summary>
+            <details class="quick-more"<?= ($affected !== null || has_error('affected_employee_id') || $requiresAffected) ? ' open' : '' ?>>
+                <summary>Zusätzlicher Benutzer <span class="text-muted text-xs"><?= $requiresAffected ? '(Pflicht)' : '(optional)' ?></span></summary>
                 <div class="quick-more-body">
+                    <?php if ($requiresAffected && $sharedAccountHint !== ''): ?>
+                        <p class="form-hint"><?= e($sharedAccountHint) ?></p>
+                    <?php endif; ?>
                     <?php
                     $name = 'affected_employee_id';
                     $label = 'Betroffener Mitarbeiter';
@@ -54,8 +59,9 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
                     $resolveUrl = '/stoerung/benutzer/uebernehmen';
                     $selected = $affected;
                     $id = 'q-affected';
+                    $required = $requiresAffected;
                     $placeholder = 'Name, Benutzername oder Telefon';
-                    $hint = 'Falls jemand anderes als Sie betroffen ist. Die Auswahl wird im Ticket als „Betroffener Mitarbeiter“ hinterlegt.';
+                    $hint = $requiresAffected ? '' : 'Falls jemand anderes als Sie betroffen ist. Die Auswahl wird im Ticket als „Betroffener Mitarbeiter“ hinterlegt.';
                     include __DIR__ . '/../../mobile/_picker.php';
                     ?>
                 </div>

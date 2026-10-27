@@ -59,6 +59,7 @@ use App\Services\Helpdesk\Mail\MailboxClientFactory;
 use App\Services\Helpdesk\Mail\MailboxClientInterface;
 use App\Services\Helpdesk\Mail\MimeMessageParser;
 use App\Services\Helpdesk\MailboxSettingsService;
+use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Services\Helpdesk\TicketMailIngestionService;
 use App\Services\Helpdesk\TicketMailService;
 use App\Services\Helpdesk\TicketAttachmentService;
@@ -350,7 +351,14 @@ return static function (Container $c): void {
         $c->get(UserRepository::class),
         $c->get(EmployeeRepository::class),
         $c->get(AdUserLookupService::class),
-        $c->get(LanpaIdentityService::class)
+        $c->get(LanpaIdentityService::class),
+        $c->get(\App\Services\Lanpa\LanpaBridge::class)
+    ));
+    $c->singleton(QuickReportSettingsService::class, static fn (Container $c): QuickReportSettingsService => new QuickReportSettingsService(
+        $c->get(SettingsService::class),
+        $c->get(Config::class),
+        $c->get(AuditLogService::class),
+        $c->get(CurrentUser::class)
     ));
     $c->singleton(QuickReportController::class, static fn (Container $c): QuickReportController => new QuickReportController(
         $c->get(View::class),
@@ -363,7 +371,8 @@ return static function (Container $c): void {
         $c->get(UserRepository::class),
         $c->get(Permissions::class),
         $c->get(Config::class),
-        $c->get(Logger::class)
+        $c->get(Logger::class),
+        $c->get(QuickReportSettingsService::class)
     ));
     $c->singleton(KnowledgeBaseController::class, static fn (Container $c): KnowledgeBaseController => new KnowledgeBaseController(
         $c->get(View::class),
@@ -394,6 +403,7 @@ return static function (Container $c): void {
         $c->get(TicketNotificationService::class),
         $c->get(TicketMailIngestionService::class),
         $c->get(MailboxSettingsService::class),
+        $c->get(QuickReportSettingsService::class),
         $c->get(Config::class)
     ));
     $c->singleton(HelpdeskMailboxController::class, static fn (Container $c): HelpdeskMailboxController => new HelpdeskMailboxController(

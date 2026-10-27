@@ -42,6 +42,29 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
     <p class="text-muted text-xs mb-0"><?= $quickReport['networks'] !== [] ? 'Zugriff beschränkt auf: ' . e(implode(', ', $quickReport['networks'])) . '.' : '' ?><?= $quickReport['enabled'] ? '' : ' Aktivierung über HELPDESK_QUICK_REPORT_ENABLED=true.' ?></p>
     <?php endif; ?>
 </div>
+<div class="card mb-4">
+    <div class="card-header"><h2>Sammelkonten</h2><span class="text-muted text-sm">Pflicht für zusätzlichen Benutzer</span></div>
+    <p class="text-muted text-sm">Anmeldenamen von AD-/SSO-Konten („Sammelkonten“ bzw. anonyme Konten), bei denen im Formular zwingend ein zusätzlicher Benutzer angegeben werden muss. Ein Name pro Zeile; Schreibweisen wie <span class="mono">DOMAIN\konto</span> oder <span class="mono">konto@domain</span> werden auf den Anmeldenamen reduziert.</p>
+    <form method="post" action="/helpdesk/admin/quick-report" novalidate>
+        <?= csrf_field() ?>
+        <div class="form-row">
+            <div class="form-group<?= has_error('shared_accounts') ? ' has-error' : '' ?>">
+                <label for="quick-report-shared-accounts">Konten</label>
+                <textarea id="quick-report-shared-accounts" name="shared_accounts" rows="6" class="mono" placeholder="empfang&#10;besprechungsraum1"><?= e(old('shared_accounts', $quickReport['shared_accounts'])) ?></textarea>
+                <span class="form-hint">Leer = kein Konto ist verpflichtet.</span>
+                <?= field_error('shared_accounts') ?>
+            </div>
+            <div class="form-group<?= has_error('shared_accounts_hint') ? ' has-error' : '' ?>">
+                <label for="quick-report-shared-hint">Erklärungstext</label>
+                <textarea id="quick-report-shared-hint" name="shared_accounts_hint" rows="6" maxlength="1000"><?= e(old('shared_accounts_hint', $quickReport['shared_accounts_hint'])) ?></textarea>
+                <span class="form-hint">Erscheint über dem automatisch aufgeklappten Feld „Zusätzlicher Benutzer“; leer = Standardtext.</span>
+                <?= field_error('shared_accounts_hint') ?>
+            </div>
+        </div>
+        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button></div>
+    </form>
+</div>
+<?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php endif; ?>
 <?php if (!$isQuickReport): ?>
 <div class="card card-flush">

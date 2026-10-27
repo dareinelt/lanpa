@@ -1036,13 +1036,27 @@ Die Ergänzung des Unterpfads in den Antworten leistet `mod_substitute` im Block
 
 - `AddOutputFilterByType SUBSTITUTE …` filtert HTML, CSS und das Manifest.
   JavaScript bleibt bewusst ungefiltert (siehe unten).
-- `Substitute 's|(["'(])/(?!/)(?!>)|$1${KLINQ_BASE_PATH}/|i'` ergänzt
-  wurzelrelative Adressen. Der Rückverweis muss `$1` sein (`\1` würde ein
+- `Substitute 's#(["'(])(?!${KLINQ_BASE_PATH}(?:/|$))/(?!/)(?!>)#$1${KLINQ_BASE_PATH}/#i'`
+  ergänzt wurzelrelative Adressen. Der Rückverweis muss `$1` sein (`\1` würde ein
   literales `1` einsetzen), `(?!>)` schützt selbstschließende Tags wie
   `<path d="…"/>`, und `(?!/)` lässt protokollrelative Adressen (`//host/…`)
   unverändert. Die Zeichenklasse enthält `(`, damit `url(/…)` in CSS greift.
-- `Header edit Location "^/(?!/)" "${KLINQ_BASE_PATH}/"` ergänzt den Unterpfad
-  in Weiterleitungen.
+  Trennzeichen ist `#`, weil das Muster selbst `|` enthält – mit `s|…|…|`
+  bricht der Ausdruck dort ab und Apache meldet „Bad Substitute flag“.
+- `Header edit Location "^(?!${KLINQ_BASE_PATH}(?:/|$))/(?!/)" "${KLINQ_BASE_PATH}/"`
+  ergänzt den Unterpfad in Weiterleitungen.
+- Beide Regeln überspringen Adressen, die den Unterpfad bereits enthalten
+  (`(?!${KLINQ_BASE_PATH}(?:/|$))`). Die Prüfung steht **vor** dem `/` des
+  Musters: das Muster verbraucht den Schrägstrich selbst, der Text zeigt danach
+  also auf `klinq/…` ohne führenden Schrägstrich. Nötig ist die Ausnahme, weil
+  die Anwendung Adressen teils aus dem Referer des Browsers übernimmt
+  (`BaseController::backUrl()`): Hinter dem Intranet-Proxy enthält der Referer
+  den Unterpfad bereits, KLINQ antwortet also mit `Location: /klinq/…`. Ohne
+  die Ausnahme ergänzte Apache daraus `/klinq/klinq/…` und der Browser liefe in
+  einen 404 – das war die Ursache dafür, dass „Beobachten“ bei einem
+  Helpdesk-Ticket mit 404 endete. Ebenso betroffen war der Zurück-Link der
+  Etiketten-Druckansicht (`views/labels/print.php` gibt `backUrl` als `href`
+  aus).
 - `SetEnv filter-errordocs 1` schaltet die Filterung auch für Antworten mit
   einem anderen Status als 200 frei. `mod_filter` überspringt Filter sonst bei
   Fehlerantworten (Apache-Dokumentation, *Filtering and Response Status*), eine

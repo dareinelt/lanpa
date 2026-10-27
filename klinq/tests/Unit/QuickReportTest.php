@@ -8,6 +8,7 @@ use App\Security\CurrentUser;
 use App\Security\Permissions;
 use App\Core\Config;
 use App\Services\Helpdesk\ReporterIdentityService;
+use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Support\IpRange;
 use Tests\Support\TestCase;
 
@@ -32,6 +33,24 @@ final class QuickReportTest extends TestCase
         $this->assertNull(ReporterIdentityService::normalize('FIRMA\\'));
         $this->assertNull(ReporterIdentityService::normalize('mmuster)(objectClass=*'));
         $this->assertNull(ReporterIdentityService::normalize('mit leerzeichen'));
+    }
+
+    public function testSharedAccountCatalogIsNormalizedAndDeduplicated(): void
+    {
+        $accounts = QuickReportSettingsService::normalizeAccounts("FIRMA\\Empfang\nbesprechung1@firma.local, EMPFANG; kein gueltiger name");
+
+        $this->assertSame(['empfang', 'besprechung1'], $accounts);
+    }
+
+    public function testSharedAccountDetectionIgnoresDomainAndCase(): void
+    {
+        $accounts = ['empfang'];
+
+        $this->assertTrue(QuickReportSettingsService::isSharedAccount('FIRMA\\Empfang', $accounts));
+        $this->assertTrue(QuickReportSettingsService::isSharedAccount('empfang@firma.local', $accounts));
+        $this->assertFalse(QuickReportSettingsService::isSharedAccount('mmuster', $accounts));
+        $this->assertFalse(QuickReportSettingsService::isSharedAccount(null, $accounts));
+        $this->assertFalse(QuickReportSettingsService::isSharedAccount('empfang', []));
     }
 
     public function testAllowedNetworksMatchIpv4AndIpv6(): void

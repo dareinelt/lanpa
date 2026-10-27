@@ -10,6 +10,7 @@ use App\Repositories\EmployeeRepository;
 use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
 use App\Services\Ad\AdUserLookupService;
+use App\Services\Lanpa\LanpaBridge;
 use App\Services\Lanpa\LanpaIdentityService;
 
 /**
@@ -35,7 +36,8 @@ final class ReporterIdentityService
         private readonly UserRepository $users,
         private readonly EmployeeRepository $employees,
         private readonly AdUserLookupService $directory,
-        private readonly LanpaIdentityService $lanpa
+        private readonly LanpaIdentityService $lanpa,
+        private readonly LanpaBridge $bridge
     ) {}
 
     /**
@@ -51,7 +53,7 @@ final class ReporterIdentityService
         $intranet = $this->lanpa->current();
         if ($intranet === null && $username !== null) {
             // Sitzung ohne Schein-Angaben (z. B. abgelaufen): Kontaktdaten beim Intranet nachfragen.
-            $intranet = $this->lanpa->reporter($username, $request->ip());
+            $intranet = $this->bridge->reporter($username, $request->ip());
         }
 
         $user = $username !== null ? $this->users->findByUsername($username) : null;

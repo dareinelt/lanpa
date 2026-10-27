@@ -71,6 +71,11 @@ return [
         'allowed_networks' => array_values(array_filter(array_map('trim', explode(',', (string) Env::get('HELPDESK_QUICK_REPORT_NETWORKS', ''))), static fn (string $n): bool => $n !== '')),
         // Meldungen je Browsersitzung und Stunde (0 = unbegrenzt)
         'rate_limit_per_hour' => max(0, Env::int('HELPDESK_QUICK_REPORT_RATE_LIMIT', 10)),
+        // Startwerte für den in der Administration gepflegten Katalog an Sammelkonten
+        // (AD-/SSO-Anmeldenamen, bei denen ein zusätzlicher Benutzer Pflicht ist).
+        'shared_accounts' => array_values(array_filter(array_map('trim', explode(',', (string) Env::get('HELPDESK_QUICK_REPORT_SHARED_ACCOUNTS', ''))), static fn (string $n): bool => $n !== '')),
+        // Startwert für den Erklärungstext über dem Pflichtfeld; leer = Standardtext
+        'shared_accounts_hint' => trim((string) Env::get('HELPDESK_QUICK_REPORT_SHARED_ACCOUNTS_HINT', '')),
     ],
     // KI-Unterstützung in den Ticket-Textfeldern („Mit KI verbessern“).
     // Angesprochen wird ein OpenAI-kompatibler Endpunkt; die Werte hier sind Startwerte,

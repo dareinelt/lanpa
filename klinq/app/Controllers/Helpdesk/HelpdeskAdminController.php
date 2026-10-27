@@ -9,6 +9,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
 use App\Exceptions\NotFoundException;
+use App\Exceptions\ValidationException;
 use App\Repositories\TicketCategoryRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\TicketRuleRepository;
@@ -18,6 +19,7 @@ use App\Repositories\TicketTemplateRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskAdminService;
 use App\Services\Helpdesk\MailboxSettingsService;
+use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Services\Helpdesk\TicketMailIngestionService;
 use App\Services\Helpdesk\TicketNotificationService;
 use App\Services\Helpdesk\TicketRuleEvaluator;
@@ -61,6 +63,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         private readonly TicketNotificationService $notifications,
         private readonly TicketMailIngestionService $mailIngestion,
         private readonly MailboxSettingsService $mailSettings,
+        private readonly QuickReportSettingsService $quickSettings,
         private readonly Config $config
     ) {
         parent::__construct($view, $currentUser);
@@ -97,6 +100,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
     {
         $kind = $this->kindFrom($request);
         $isQuickReport = $kind === 'quick-report';
+        $quickReportSettings = $this->quickSettings->all();
 
         return $this->render('helpdesk.admin.index', [
             'title' => 'Help-Desk-Administration',
@@ -125,10 +129,29 @@ final class HelpdeskAdminController extends HelpdeskBaseController
                 'url' => rtrim((string) $this->config->get('app.url', ''), '/') . '/stoerung',
                 'system_user' => (string) $this->config->get('helpdesk.quick_report.system_user', 'admin'),
                 'networks' => (array) $this->config->get('helpdesk.quick_report.allowed_networks', []),
+                'shared_accounts' => $quickReportSettings['shared_accounts'],
+                'shared_accounts_hint' => $quickReportSettings['shared_accounts_hint'],
             ],
             'statusCategories' => HelpdeskAdminService::STATUS_CATEGORIES,
             'triggers' => TicketRuleRepository::TRIGGERS,
         ]);
+    }
+
+    /** Sammelkonten und Erklärungstext des öffentlichen Störungsformulars speichern. */
+    public function saveQuickReport(Request $request): Response
+    {
+        $this->currentUser->require('helpdesk.admin');
+        try {
+            $this->quickSettings->save($request->all());
+        } catch (ValidationException $e) {
+            $this->withOldInput($request, $e->errors());
+            $this->flash('error', 'Bitte Eingaben prüfen.');
+
+            return $this->redirect('/helpdesk/admin?tab=quick-report');
+        }
+        $this->flash('success', 'Einstellungen des Störungsformulars gespeichert.');
+
+        return $this->redirect('/helpdesk/admin?tab=quick-report');
     }
 
     /** Protokoll des E-Mail-Eingangs (IMAP) mit Konfigurationsübersicht. */

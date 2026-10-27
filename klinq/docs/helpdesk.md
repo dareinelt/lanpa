@@ -288,6 +288,10 @@ Unter **Help-Desk-Einstellungen** (`/helpdesk/admin`) werden Typen, Status, Prio
 
 ![Help-Desk-Einstellungen](screenshots/helpdesk-admin.png)
 
+Im Reiter **Störungsformular** liegen der öffentliche Link und die **Sammelkonten** (AD-/SSO-Anmeldenamen, bei denen die Angabe eines zusätzlichen Benutzers Pflicht ist) samt anpassbarem Erklärungstext.
+
+![Sammelkonten im Reiter „Störungsformular“](screenshots/helpdesk-admin-sammelkonten.png)
+
 ## Serviceportal (`/portal`)
 
 Jeder angemeldete Benutzer mit `portal.view`/`portal.create` sieht ausschließlich **eigene** Tickets (als Melder oder betroffene Person, gematcht über `users.employee_id`). Neue Anfrage: Vorlage wählen (füllt Typ/Kategorie/Betreff/Beschreibung vor), Auswirkung/Dringlichkeit in Alltagssprache, eigene Geräte als Auswahl, Anhang. Im Detail: Kommentare schreiben, Anhänge hochladen, gelöste Tickets bestätigen oder innerhalb der Frist wieder öffnen. Interne Notizen und interne Anhänge sind für Portalnutzer unsichtbar (`TicketService::getVisible` filtert serverseitig).
@@ -304,8 +308,11 @@ Jeder angemeldete Benutzer mit `portal.view`/`portal.create` sieht ausschließli
 
 Bewusst minimales Formular für Personen, die sich **nicht** anmelden sollen oder wollen: **Betreff** und **Beschreibung**, dazu optional das aufklappbare Feld **Zusätzlicher Benutzer**. Alles Weitere ermittelt der Server selbst und zeigt es dem Melder transparent im Kasten „Automatisch erfasst“ an.
 
-**Zusätzlicher Benutzer** (optional, aufklappbar): Ist nicht der Melder selbst betroffen, lässt sich im Feld „Betroffener Mitarbeiter“ eine Person über die bekannte Autovervollständigung mit Vorschlagsliste auswählen (`/stoerung/benutzer`, Übernahme aus dem Telefonbuch über `/stoerung/benutzer/uebernehmen`). Die Auswahl landet als `tickets.affected_employee_id` im Ticket; ohne Auswahl wird wie bisher der Melder als betroffener Mitarbeiter eingetragen. Weil die Route ohne Anmeldung erreichbar ist, gelten dieselben Schutzmaßnahmen wie für das Formular (CSRF, Netzbeschränkung, Abschaltbarkeit) und zusätzlich eine eigene Obergrenze von 20 Telefonbuch-Übernahmen je Sitzung und Stunde.
+**Zusätzlicher Benutzer** (aufklappbar): Ist nicht der Melder selbst betroffen, lässt sich im Feld „Betroffener Mitarbeiter“ eine Person über die bekannte Autovervollständigung mit Vorschlagsliste auswählen (`/stoerung/benutzer`, Übernahme aus dem Telefonbuch über `/stoerung/benutzer/uebernehmen`). Die Auswahl landet als `tickets.affected_employee_id` im Ticket; ohne Auswahl wird wie bisher der Melder als betroffener Mitarbeiter eingetragen. Weil die Route ohne Anmeldung erreichbar ist, gelten dieselben Schutzmaßnahmen wie für das Formular (CSRF, Netzbeschränkung, Abschaltbarkeit) und zusätzlich eine eigene Obergrenze von 20 Telefonbuch-Übernahmen je Sitzung und Stunde.
 
+**Sammelkonten** (anonyme Konten): In den Help-Desk-Einstellungen im Reiter **Störungsformular** wird ein Katalog an AD-/SSO-Anmeldenamen gepflegt (`QuickReportSettingsService`, `system_settings` mit Präfix `helpdesk.quick_report.`). Meldet sich ein Konto aus diesem Katalog, klappt das Feld „Zusätzlicher Benutzer“ automatisch auf, ist dann **Pflicht** und zeigt darüber den ebenfalls dort anpassbaren Erklärungstext (leer = Standardtext). Die Pflicht prüft `QuickReportController::store()` serverseitig; `DOMAIN\konto` und `konto@domain` werden auf den Anmeldenamen reduziert und ohne Beachtung der Groß-/Kleinschreibung verglichen. Startwerte lassen sich über `HELPDESK_QUICK_REPORT_SHARED_ACCOUNTS` (kommagetrennt) und `HELPDESK_QUICK_REPORT_SHARED_ACCOUNTS_HINT` vorgeben; die Datenbank hat Vorrang.
+
+![Pflichtangabe „Zusätzlicher Benutzer“ bei erkanntem Sammelkonto](screenshots/stoerung-sammelkonto.png)
 **Erkennung des Anwenders** (`ReporterIdentityService`, in dieser Reihenfolge):
 
 1. **Intranet-Anmeldung (LANPA)**: Beim Aufruf über `/klinq/stoerung` stellt der `auth`-Container des Intranets die Windows-Anmeldung sicher und übergibt die Melderdaten signiert an KLINQ (`/sso/lanpa`, siehe [Windows-SSO](windows-sso.md)) – Anmeldename, Name, E-Mail, Telefon, Abteilung, Standort, Rechner und IP-Adresse stammen damit direkt aus dem Intranet (`detected_by = lanpa`).
@@ -473,6 +480,8 @@ Die folgenden Variablen sind nur noch **Startwerte** für den E-Mail-Eingang: So
 | `HELPDESK_QUICK_REPORT_RESOLVE_HOSTNAME` | `true` | Rechnername per Reverse-DNS aus der IP ermitteln |
 | `HELPDESK_QUICK_REPORT_NETWORKS` | leer | Zugriff auf Netze beschränken (CIDR/IPs, kommagetrennt); leer = keine Einschränkung |
 | `HELPDESK_QUICK_REPORT_RATE_LIMIT` | `10` | Meldungen je Browsersitzung und Stunde (0 = unbegrenzt) |
+| `HELPDESK_QUICK_REPORT_SHARED_ACCOUNTS` | leer | Startwerte für den Katalog der Sammelkonten (AD-/SSO-Anmeldenamen, kommagetrennt); Pflege in der Administration, DB hat Vorrang |
+| `HELPDESK_QUICK_REPORT_SHARED_ACCOUNTS_HINT` | leer | Startwert für den Erklärungstext über dem Pflichtfeld; leer = Standardtext |
 
 ## Integration in die Assetverwaltung
 

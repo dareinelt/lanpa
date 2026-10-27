@@ -18,6 +18,7 @@ use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
 use App\Security\Permissions;
 use App\Services\Helpdesk\ReporterIdentityService;
+use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Services\Helpdesk\TicketService;
 use App\Services\PersonDirectoryService;
 use App\Support\IpRange;
@@ -50,7 +51,8 @@ final class QuickReportController extends HelpdeskBaseController
         private readonly UserRepository $users,
         private readonly Permissions $permissions,
         private readonly Config $config,
-        private readonly Logger $logger
+        private readonly Logger $logger,
+        private readonly QuickReportSettingsService $quickSettings
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -79,6 +81,13 @@ final class QuickReportController extends HelpdeskBaseController
             'reporter' => $reporter,
         ];
         $affectedId = $request->int('affected_employee_id');
+        // Sammelkonten (anonyme Konten) dürfen nur mit zusätzlichem Benutzer melden – die
+        // Prüfung greift serverseitig, unabhängig davon, ob das Feld im Browser aufgeklappt war.
+        if ($this->quickSettings->requiresAffectedUser($reporter['username']) && ($affectedId === null || $affectedId <= 0)) {
+            $this->withOldInput($request, ['affected_employee_id' => 'Für dieses Konto ist die Angabe eines zusätzlichen Benutzers erforderlich.']);
+
+            return $this->renderForm($request, null, 422, $reporter);
+        }
         if ($affectedId !== null && $affectedId > 0) {
             $input['affected_employee_id'] = $affectedId;
         }
@@ -183,11 +192,16 @@ final class QuickReportController extends HelpdeskBaseController
     /** @param array<string,mixed>|null $reporter bereits ermittelte Melderdaten (spart einen zweiten AD-Zugriff) */
     private function renderForm(Request $request, ?string $error = null, int $status = 200, ?array $reporter = null): Response
     {
+        $reporter ??= $this->identity->detect($request);
+        $requiresAffected = $this->quickSettings->requiresAffectedUser($reporter['username'] ?? null);
+
         return $this->render('helpdesk.quick.form', [
             'title' => 'Störung melden',
-            'reporter' => $reporter ?? $this->identity->detect($request),
+            'reporter' => $reporter,
             'error' => $error,
             'affected' => $this->selectedAffected(),
+            'requiresAffected' => $requiresAffected,
+            'sharedAccountHint' => $requiresAffected ? $this->quickSettings->sharedAccountsHint() : '',
         ], $status);
     }
 

@@ -58,7 +58,9 @@ $helpdeskLead = array_merge($helpdeskAgent, [
     'helpdesk.escalate', 'helpdesk.sla', 'helpdesk.export', 'helpdesk.categories', 'helpdesk.templates',
 ]);
 $helpdeskAdmin = array_merge($helpdeskLead, ['helpdesk.admin', 'documents.manage']);
-// Alle Mitarbeiter dürfen im Portal eigene Tickets erstellen und Wissensartikel lesen
+// Alle Mitarbeiter dürfen im Portal eigene Tickets erstellen und Wissensartikel lesen.
+// Die Rolle "portal" enthält bewusst keine Rechte der Assetverwaltung: Mitarbeitende ohne
+// ausdrückliche KLINQ-Berechtigung sehen ausschließlich ihren eigenen Help-Desk-Bereich.
 $portal = ['portal.view', 'portal.create', 'knowledgebase.view'];
 
 return [
@@ -90,6 +92,7 @@ return [
         'helpdesk_lead' => array_values(array_unique(array_merge($readOnly, $helpdeskLead))),
         'helpdesk_agent' => array_values(array_unique(array_merge($readOnly, $helpdeskAgent))),
         'readonly' => $readOnly,
+        'portal' => $portal,
     ],
     'role_labels' => [
         'admin' => 'Administrator',
@@ -100,6 +103,7 @@ return [
         'helpdesk_lead' => 'Help Desk Leitung',
         'helpdesk_agent' => 'Help Desk Agent',
         'readonly' => 'Nur lesen',
+        'portal' => 'Serviceportal',
     ],
     // Berechtigungsgruppen: zusätzlich zur Rolle zuweisbare Rechte, einem Benutzer können
     // mehrere Gruppen zugeordnet werden. "Statistik" gewährt Zugriff auf die

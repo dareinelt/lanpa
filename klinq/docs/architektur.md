@@ -51,7 +51,7 @@ Browser ──HTTP──▶ Apache ──▶ public/index.php ──▶ Applicat
 
 ## Berechtigungen
 
-Rollen und Rechte stehen in `config/permissions.php` (`<bereich>.<aktion>`, z. B. `assets.manage`, `movements.checkout`, `orders.receive`). Acht Rollen:
+Rollen und Rechte stehen in `config/permissions.php` (`<bereich>.<aktion>`, z. B. `assets.manage`, `movements.checkout`, `orders.receive`). Neun Rollen:
 
 | Rolle | Umfang |
 |---|---|
@@ -60,14 +60,15 @@ Rollen und Rechte stehen in `config/permissions.php` (`<bereich>.<aktion>`, z. B
 | **lager** | Bestand und Assets, Entnahmen/Retouren, Wareneingang, Etiketten, Serviceportal |
 | **einkauf** | Lieferanten, Bestellungen, Wareneingang, Hersteller/Artikel, Lizenzen, Dokumente, Berichte inkl. Export, Serviceportal |
 | **helpdesk_agent / helpdesk_lead / helpdesk_admin** | Help-Desk-Agentenbereich in drei Stufen (Tickets bearbeiten → SLA/Kategorien/Vorlagen/Export → Administration); dazu alle Leserechte. Details: [Help Desk](helpdesk.md) |
-| **readonly** | Alle `*.view`-Rechte außer `audit.view` und `helpdesk.view` |
+| **readonly** | Alle `*.view`-Rechte außer `audit.view` und `helpdesk.view` (öffnet die Assetverwaltung lesend) |
+| **portal** | Nur `portal.view`, `portal.create` und `knowledgebase.view` – ausschließlich die eigenen Tickets. Kein Recht der Assetverwaltung, auch nicht lesend; Vorgabe für Personen ohne KLINQ-Berechtigung |
 
 Jede Route trägt ihre Berechtigung (Test `RouteInventoryTest` stellt sicher, dass keine Route ohne Recht existiert); zusätzlich prüfen Services sicherheitsrelevante Operationen erneut (`CurrentUser::require`), z. B. Ausmusterung, Storno oder Offline-Sync je Vorgang. Die Oberfläche blendet nur aus, was serverseitig ohnehin verweigert wird.
 
 ## Authentifizierung
 
 - Lokale Konten mit **Argon2id**-Hash (`PasswordHasher`), Sperre nach 10 Fehlversuchen für 15 Minuten (`is_locked` wird in SQL/UTC berechnet), Rehash bei geänderten Parametern.
-- Optional **LDAP/AD-Anmeldung** (`AD_AUTH_ENABLED`): Bind mit den Benutzerdaten über LDAPS, Anlage des Kontos beim ersten Login mit `AD_AUTH_DEFAULT_ROLE`; Passwörter von AD-Konten werden nie lokal gespeichert.
+- Optional **LDAP/AD-Anmeldung** (`AD_AUTH_ENABLED`): Bind mit den Benutzerdaten über LDAPS, Anlage des Kontos beim ersten Login mit `AD_AUTH_DEFAULT_ROLE` (Vorgabe `portal`); Passwörter von AD-Konten werden nie lokal gespeichert.
 - Sitzungen: eigener Cookie-Name, `HttpOnly`, `SameSite`, `Secure` (automatisch bei HTTPS), `session_regenerate_id` bei Anmeldung und Passwortänderung, serverseitiger Ablauf (`SESSION_LIFETIME`).
 
 ## Frontend

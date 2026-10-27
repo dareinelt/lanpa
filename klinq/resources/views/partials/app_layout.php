@@ -24,7 +24,9 @@ $notificationItems = $showNotifications ? $helpdeskNotifications->all() : [];
 $modules = \App\Support\ModuleNavigation::modules($can, $helpdeskEnabled);
 $activeModule = $activeModule ?? \App\Support\ModuleNavigation::moduleFor($activeNav);
 if (!in_array($activeModule, array_column($modules, 'key'), true)) {
-    $activeModule = \App\Support\ModuleNavigation::ASSETS;
+    // Ohne Zugriff auf das gewählte Modul (z. B. Serviceportal ohne Assetrechte) gilt das
+    // erste verfügbare Modul, damit die Navigation nicht ins Leere zeigt.
+    $activeModule = $modules !== [] ? (string) $modules[0]['key'] : \App\Support\ModuleNavigation::ASSETS;
 }
 $moduleLabel = \App\Support\ModuleNavigation::label($activeModule);
 $moduleIcon = match ($activeModule) {
@@ -83,12 +85,14 @@ ob_start();
         <?php if (!empty($showAreaLabel)): ?>
             <span class="topbar-area-label <?= $areaClass ?>"><?= e($areaLabel) ?></span>
         <?php endif; ?>
+        <?php if ($can('dashboard.view')): ?>
         <div class="search-box topbar-search" id="global-search">
             <?= icon('search') ?>
             <label for="global-search-input" class="visually-hidden">Globale Suche</label>
             <input id="global-search-input" type="search" placeholder="Inventarnr., Seriennr., Mitarbeiter, Standort …" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="global-search-results" enterkeyhint="search">
             <ul class="search-results" id="global-search-results" hidden></ul>
         </div>
+        <?php endif; ?>
         <div class="topbar-spacer"></div>
         <?php if (count($modules) > 1): ?>
             <details class="module-switcher" data-module-switcher>

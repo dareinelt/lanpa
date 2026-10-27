@@ -41,7 +41,10 @@ Anmeldename/E-Mail zurück.
 
 Das Ziel nach dem Einstieg steht im Parameter `next` (z. B. `/stoerung` aus dem Störungsmeldeformular).
 Fehlt er oder ist er das Standardziel `/dashboard`, öffnet KLINQ das zuletzt verwendete Modul des
-Benutzers (siehe [helpdesk.md](helpdesk.md#bereichswechsel-in-der-oberfläche)).
+Benutzers (siehe [helpdesk.md](helpdesk.md#bereichswechsel-in-der-oberfläche)). Das gilt nur, solange
+das Recht für dieses Modul vorliegt: `ModuleNavigation::entryUrl()` prüft die Berechtigungen und
+liefert sonst `null`, sodass `startUrl()` auf den Help-Desk-Einstieg ausweicht. Ein Benutzer ohne
+KLINQ-Berechtigung landet dadurch im Serviceportal statt in der Assetverwaltung.
 
 ## Konfiguration (`.env`)
 

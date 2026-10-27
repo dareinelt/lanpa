@@ -33,7 +33,7 @@ return [
     ],
     'auth' => [
         'enabled' => Env::bool('AD_AUTH_ENABLED', false),
-        'default_role' => Env::get('AD_AUTH_DEFAULT_ROLE', 'readonly'),
+        'default_role' => Env::get('AD_AUTH_DEFAULT_ROLE', 'portal'),
         // Login-Format: "{username}@domain" oder DN-Vorlage mit {username}
         'bind_template' => Env::get('AD_AUTH_BIND_TEMPLATE', '{username}@example.local'),
     ],

@@ -156,8 +156,9 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Nutzbar nur, wenn `users.can_sign_electronically` für den Benutzer gesetzt ist.
 - **Zuletzt geöffnetes Modul je Benutzer**: `users.last_module` (`assets`/`helpdesk`) pflegt die
   `AuthorizationMiddleware` über `ModuleNavigation::moduleForPath()` (nur bei einem Wechsel); `/`, die lokale
-  Anmeldung und der Intranet-Einstieg ohne ausdrückliches Ziel nutzen `ModuleNavigation::startUrl()` und fallen
-  auf `/dashboard` zurück, wenn der Help Desk abgeschaltet ist oder die Berechtigung fehlt. Profil, globale
+  Anmeldung und der Intranet-Einstieg ohne ausdrückliches Ziel nutzen `ModuleNavigation::startUrl()`; das ist
+  `entryUrl() ?? home(ASSETS)`, also das zuletzt verwendete Modul nur bei vorhandenem Recht, sonst der
+  Help-Desk-Einstieg (`/helpdesk/portal` für die Rolle `portal`) und erst danach `/dashboard`. Profil, globale
   Suche, JSON-Endpunkte und der Systembereich ändern die Auswahl nicht.
 - **Help Desk ist per `HELPDESK_ENABLED` abschaltbar**, ohne Routen zu entfernen – die Berechtigungsprüfung
   bleibt aktiv, nur Navigation/Dashboard/Scheduler werden ausgeblendet.
@@ -214,7 +215,9 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 Rechte folgen der Konvention `<bereich>.<aktion>` und stehen samt Rollenzuordnung in
 [`config/permissions.php`](config/permissions.php). Rollen: **admin**, **assetmanagement**, **lager**,
 **einkauf**, **helpdesk_admin**, **helpdesk_lead**, **helpdesk_agent**, **readonly** (alle `*.view` außer
-`audit.view` und `helpdesk.view`, fremde Tickets sehen nur Help-Desk-Rollen).
+`audit.view` und `helpdesk.view`, fremde Tickets sehen nur Help-Desk-Rollen) und **portal** (nur
+`portal.view`, `portal.create`, `knowledgebase.view` – kein Zugriff auf Assetverwaltung, Dashboard oder
+Suche). `portal` ist die Standard- und Ersatzrolle für Benutzer ohne KLINQ-Berechtigung.
 
 Zusätzlich zur Rolle können einem Benutzer **Berechtigungsgruppen** zugewiesen werden (`permission_groups`,
 `user_permission_groups`), die einzelne Rechte unabhängig von der Rolle freischalten: die Gruppe

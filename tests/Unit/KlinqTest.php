@@ -134,8 +134,8 @@ Runner::test('KLINQ: ohne Treffer gilt die Vorgaberolle', static function (): vo
 
     $access = $config->resolve(['gg-irgendwas']);
 
-    Assert::same('readonly', $access['role']);
-    Assert::same([], $access['areas']);
+    Assert::same('portal', $access['role']);
+    Assert::same(['portal'], $access['areas']);
     Assert::false($access['elevated']);
 });
 
@@ -147,9 +147,9 @@ Runner::test('KLINQ: Statistiken und Ticketaufruf sind unabhängig von der Rolle
 
     $access = $config->resolve(['gg-statistik', 'gg-ticketverlauf']);
 
-    Assert::same('readonly', $access['role']);
+    Assert::same('portal', $access['role']);
     Assert::same(['statistik', 'ticketaufruf'], $access['permission_groups']);
-    Assert::same(['statistics', 'tickets'], $access['areas']);
+    Assert::same(['statistics', 'tickets', 'portal'], $access['areas']);
     Assert::true($access['elevated']);
 });
 
@@ -166,7 +166,7 @@ Runner::test('KLINQ: Löschen und Stornieren sind eigene Berechtigungsgruppen', 
     Assert::same(['helpdesk'], $delete['areas']);
 
     $both = $config->resolve(['gg-ticket-loeschen', 'gg-ticket-stornieren']);
-    Assert::same('readonly', $both['role']);
+    Assert::same('portal', $both['role']);
     Assert::same(['ticket_loeschen', 'ticket_stornieren'], $both['permission_groups']);
 
     $agent = $config->resolve(['gg-helpdesk']);
@@ -196,7 +196,7 @@ Runner::test('KLINQ: Freigabeformular wird geprüft', static function (): void {
     ]);
 
     Assert::same('GG-A, GG-B', $result['values']['klinq_helpdesk_agent_groups']);
-    Assert::same('readonly', $result['values']['klinq_default_role']);
+    Assert::same('portal', $result['values']['klinq_default_role']);
     Assert::same('0', $result['values']['klinq_quick_report_open']);
     Assert::true(isset($result['errors']['klinq_default_role']));
 

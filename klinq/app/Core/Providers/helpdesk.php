@@ -14,6 +14,7 @@ use App\Controllers\Helpdesk\TicketAttachmentController;
 use App\Controllers\Helpdesk\TicketController;
 use App\Controllers\HelpdeskAiController;
 use App\Controllers\HelpdeskMailboxController;
+use App\Controllers\HelpdeskOutboundMailController;
 use App\Core\Config;
 use App\Core\Container;
 use App\Core\Logger;
@@ -59,7 +60,9 @@ use App\Services\Helpdesk\Mail\ImapMailboxClient;
 use App\Services\Helpdesk\Mail\MailboxClientFactory;
 use App\Services\Helpdesk\Mail\MailboxClientInterface;
 use App\Services\Helpdesk\Mail\MimeMessageParser;
+use App\Services\Helpdesk\Mail\SmtpTransport;
 use App\Services\Helpdesk\MailboxSettingsService;
+use App\Services\Helpdesk\OutboundMailSettingsService;
 use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Services\Helpdesk\TicketMailIngestionService;
 use App\Services\Helpdesk\TicketMailService;
@@ -239,6 +242,15 @@ return static function (Container $c): void {
         $c->get(UserRepository::class),
         $c->get(Permissions::class),
         $c->get(TicketMasterDataRepository::class)
+    ));
+    // Ausgehende E-Mails: Versandkonto samt Servereinstellungen aus der Administration
+    $c->singleton(SmtpTransport::class, static fn (Container $c): SmtpTransport => new SmtpTransport($c->get(Config::class)));
+    $c->singleton(OutboundMailSettingsService::class, static fn (Container $c): OutboundMailSettingsService => new OutboundMailSettingsService(
+        $c->get(SettingsService::class),
+        $c->get(Config::class),
+        $c->get(Secret::class),
+        $c->get(AuditLogService::class),
+        $c->get(CurrentUser::class)
     ));
     // KI-Unterstützung: OpenAI-kompatibler Endpunkt (Adresse, Modell und Schlüssel aus der Administration)
     $c->singleton(AiTransportInterface::class, static fn (): AiTransportInterface => new CurlAiTransport());
@@ -423,6 +435,14 @@ return static function (Container $c): void {
         $c->get(TicketMasterDataRepository::class),
         $c->get(Config::class),
         dirname(__DIR__, 3)
+    ));
+    $c->singleton(HelpdeskOutboundMailController::class, static fn (Container $c): HelpdeskOutboundMailController => new HelpdeskOutboundMailController(
+        $c->get(View::class),
+        $c->get(CurrentUser::class),
+        $c->get(OutboundMailSettingsService::class),
+        $c->get(SmtpTransport::class),
+        $c->get(MailClient::class),
+        $c->get(Config::class)
     ));
     $c->singleton(HelpdeskAiController::class, static fn (Container $c): HelpdeskAiController => new HelpdeskAiController(
         $c->get(View::class),

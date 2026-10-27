@@ -13,6 +13,8 @@ use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\TicketRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\Ai\AiTransportInterface;
+use App\Services\Helpdesk\Mail\SmtpTransport;
+use App\Services\Helpdesk\OutboundMailSettingsService;
 use App\Services\Helpdesk\TicketMailService;
 use App\Services\Helpdesk\TicketNotificationService;
 use App\Services\Helpdesk\TicketService;
@@ -374,7 +376,12 @@ final class TicketMailServiceIntegrationTest extends DatabaseTestCase
         return new TicketMailService(
             $this->c->get(TicketService::class),
             $this->c->get(TicketNotificationService::class),
-            new MailClient($config, $this->c->get(Logger::class)),
+            new MailClient(
+                $config,
+                $this->c->get(Logger::class),
+                $this->c->get(OutboundMailSettingsService::class),
+                $this->c->get(SmtpTransport::class)
+            ),
             $bridge,
             $this->c->get(CurrentUser::class),
             $config,

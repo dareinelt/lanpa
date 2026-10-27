@@ -22,6 +22,8 @@ use App\Services\AssetService;
 use App\Services\AuditLogService;
 use App\Services\AuthService;
 use App\Services\DocumentService;
+use App\Services\Helpdesk\Mail\SmtpTransport;
+use App\Services\Helpdesk\OutboundMailSettingsService;
 use App\Services\MailClient;
 use App\Services\MovementService;
 use App\Services\PdfClient;
@@ -39,7 +41,12 @@ return static function (Container $c): void {
         $c->get(AuditLogService::class)
     ));
     $c->singleton(PdfClient::class, static fn (Container $c): PdfClient => new PdfClient($c->get(Config::class), $c->get(Logger::class)));
-    $c->singleton(MailClient::class, static fn (Container $c): MailClient => new MailClient($c->get(Config::class), $c->get(Logger::class)));
+    $c->singleton(MailClient::class, static fn (Container $c): MailClient => new MailClient(
+        $c->get(Config::class),
+        $c->get(Logger::class),
+        $c->get(OutboundMailSettingsService::class),
+        $c->get(SmtpTransport::class)
+    ));
     $c->singleton(MovementService::class, static fn (Container $c): MovementService => new MovementService(
         $c->get(MovementRepository::class),
         $c->get(AssetRepository::class),

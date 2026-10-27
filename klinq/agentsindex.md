@@ -132,7 +132,7 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 | Berichte | `routes/modules/reports.php` | `ReportController` | `ReportService`, `Support\CsvWriter` | `reports/` | [berichte](docs/berichte.md) |
 | Import | `routes/modules/imports.php` | `ImportController` | `ImportService`, `Support\CsvReader` | `imports/` | [import](docs/import.md) |
 | Benutzer/Profil | `routes/modules/users.php` | `UserController`, `ProfileController`, `AuthController` | `UserService`, `AuthService` | `users/`, `profile/`, `auth/` | [audit](docs/audit.md) |
-| Audit & Admin | `routes/modules/audit.php`, `admin.php` | `AuditController`, `AdminController`, `HelpdeskMailboxController` | `AuditLogService`, `SettingsService`, `Helpdesk\MailboxSettingsService`, `Support\Secret` | `audit/`, `admin/` | [audit](docs/audit.md), [helpdesk](docs/helpdesk.md) |
+| Audit & Admin | `routes/modules/audit.php`, `admin.php` | `AuditController`, `AdminController`, `HelpdeskMailboxController`, `HelpdeskOutboundMailController` | `AuditLogService`, `SettingsService`, `Helpdesk\MailboxSettingsService`, `Helpdesk\OutboundMailSettingsService`, `Support\Secret` | `audit/`, `admin/` | [audit](docs/audit.md), [helpdesk](docs/helpdesk.md) |
 | Help Desk (Agent/Portal/API) | `routes/modules/helpdesk.php` | `Helpdesk\{HelpdeskDashboardController, TicketController, TicketAttachmentController, KnowledgeBaseController, HelpdeskReportController, HelpdeskAdminController, HelpdeskApiController, PortalController, QuickReportController, HelpdeskSupportShiftController}` | `Helpdesk\{TicketService, TicketWorkflowService, TicketSlaService, TicketRuleService, TicketRuleEvaluator, TicketMergeService, TicketNumberService, TicketNotificationService, TicketMailService, TicketPriorityMatrix, TicketReportService, TicketMailIngestionService, HelpdeskAdminService, HelpdeskSchedulerService, KnowledgeBaseService, MailboxSettingsService, ReporterIdentityService, SharedAccountSuggestionService, SupportShiftService}`, `Helpdesk\Mail\{ImapMailboxClient, FileMailboxClient,    MailboxClientFactory, MimeMessageParser}`, `PersonDirectoryService` (Personenauswahl für Melder/Betroffene aus dem Intranet-Telefonbuch, `/api/helpdesk/people/search` und `…/adopt`), `Support\HtmlSanitizer` (Bereinigung des Mail-Editors) | `helpdesk/` | [helpdesk](docs/helpdesk.md) |
 
 ### Fachliche Kernregeln (häufige Fehlerquellen)
@@ -326,12 +326,13 @@ docker compose exec app php tests/run.php # alle Tests inkl. Integration (Test-D
 | Bestellung/Wareneingang | `PurchaseOrderService`, `ProcurementController`, `resources/views/orders/`, `docs/einkauf.md` |
 | Etikettenlayout | `LabelService`, `Support/QrCode`, `resources/views/partials/label.php`, `docs/labels.md` |
 | Navigation/Modulwechsel | `Support/ModuleNavigation`, `resources/views/partials/app_layout.php`, `public/css/layout/shell.css` |
-| PDF/E-Mail | `PdfClient`, `MailClient`, `docker/pdf/server.py`, `docker/mail/server.py` |
+| PDF/E-Mail | `PdfClient`, `MailClient` (Versandkonto bzw. `mail`-Container), `docker/pdf/server.py`, `docker/mail/server.py` |
 | AD-Anbindung | `Ad/EmployeeSyncService`, `Ad/AdUserMapper`, `Ldap/*`, `AD_*`-Variablen, `docs/ad-sync.md` |
 | Windows-Benutzererkennung | `Security/LanpaSsoToken`, `Services/Lanpa/LanpaIdentityService`, `LANPA_*`-Variablen, `docs/windows-sso.md` |
 | Neues Ticketfeld/-verhalten | `database/migrations/0XX_*.sql` → `TicketService`/`TicketWorkflowService` → `routes/modules/helpdesk.php` (Recht!) → `resources/views/helpdesk/` → `docs/helpdesk.md` |
 | Help-Desk-Regeln/SLA/Eskalation | `Helpdesk/TicketRuleService`, `Helpdesk/TicketRuleEvaluator`, `Helpdesk/TicketSlaService`, `Helpdesk/HelpdeskSchedulerService`, `HELPDESK_*`-Variablen, `docs/helpdesk.md` |
 | Help-Desk-Mail-Eingang | `Helpdesk/TicketMailIngestionService`, `Helpdesk/Mail/*`, `Helpdesk/MailboxSettingsService`, `HelpdeskMailboxController`, `HELPDESK_MAIL_*`/`HELPDESK_IMAP_*`-Variablen |
+| Help-Desk-Mail-Versand | `MailClient` (Konto vor Container), `Helpdesk/OutboundMailSettingsService`, `Helpdesk/Mail/SmtpTransport`, `HelpdeskOutboundMailController`, `HELPDESK_SMTP_*`-Variablen (nur Startwerte) |
 | Neue Berechtigungsgruppe | `config/permissions.php` (`groups`/`group_labels`) → Recht an Route/Service prüfen → `UserService` (Zuordnung) |
 
 ---

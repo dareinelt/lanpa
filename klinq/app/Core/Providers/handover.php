@@ -14,6 +14,8 @@ use App\Security\CurrentUser;
 use App\Services\AuditLogService;
 use App\Services\DocumentService;
 use App\Services\HandoverService;
+use App\Services\Helpdesk\Mail\SmtpTransport;
+use App\Services\Helpdesk\OutboundMailSettingsService;
 use App\Services\MailClient;
 use App\Services\PdfClient;
 use App\Services\SettingsService;
@@ -21,7 +23,12 @@ use App\Services\SettingsService;
 return static function (Container $c): void {
     $c->singleton(HandoverRepository::class, static fn (Container $c): HandoverRepository => new HandoverRepository($c->get(PDO::class)));
     $c->singleton(PdfClient::class, static fn (Container $c): PdfClient => new PdfClient($c->get(Config::class), $c->get(Logger::class)));
-    $c->singleton(MailClient::class, static fn (Container $c): MailClient => new MailClient($c->get(Config::class), $c->get(Logger::class)));
+    $c->singleton(MailClient::class, static fn (Container $c): MailClient => new MailClient(
+        $c->get(Config::class),
+        $c->get(Logger::class),
+        $c->get(OutboundMailSettingsService::class),
+        $c->get(SmtpTransport::class)
+    ));
     $c->singleton(HandoverService::class, static fn (Container $c): HandoverService => new HandoverService(
         $c->get(HandoverRepository::class),
         $c->get(EmployeeRepository::class),

@@ -592,7 +592,7 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
                 <label for="mail-body">Nachricht</label>
                 <div id="mail-body" class="hd-mail-editor" contenteditable="true" role="textbox" aria-multiline="true"
                      spellcheck="true" data-placeholder="Nachricht an die meldende Person …" data-hd-mail-editor></div>
-                <p class="form-hint">Rechtsklick öffnet das Kontextmenü mit Ausschneiden, Kopieren, Einfügen und „Mit KI verbessern“. Formatierungen und Bilder aus der Zwischenablage bleiben erhalten.</p>
+                <p class="form-hint">Rechtsklick öffnet das Kontextmenü mit Ausschneiden, Kopieren, Einfügen und „Mit KI verbessern“.</p>
             </div>
 
             <?php if ($mailCompose['pauses'] !== []): ?>

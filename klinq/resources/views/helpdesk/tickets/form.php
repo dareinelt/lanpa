@@ -10,7 +10,7 @@ $wizardUrl = query_url('/helpdesk/tickets/new', $modeQuery, ['modus' => 'assiste
 $templateBaseUrl = '/helpdesk/tickets/new?modus=assistent';
 $maxUploadBytes = (int) ($maxUploadBytes ?? 20 * 1024 * 1024);
 $closeUrl = '/helpdesk/tickets';
-$wizardStart = $wizardMode ? max(1, min(8, (int) ($wizardStart ?? 1))) : 1;
+$wizardStart = $wizardMode ? max(1, min(9, (int) ($wizardStart ?? 1))) : 1;
 $wizardSteps = [
     1 => 'Vorlage oder Betreff',
     2 => 'Melder & Betroffener',
@@ -20,6 +20,7 @@ $wizardSteps = [
     6 => 'Standort & Kostenstelle',
     7 => 'Gruppe, Bearbeiter & Vertretung',
     8 => 'Assets & Tags',
+    9 => 'Bestätigung',
 ];
 $selectedAssets = [];
 if ($isEdit) {

@@ -116,6 +116,8 @@ return [
     'reply_template' => [
         // Startwert; gepflegt wird der Text in der Datenbank (Vorrang vor diesem Wert), leer = kein Präfix
         'prefix_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_PREFIX', '')),
+        // Eingangsbestätigung für Störungsformular und Störungspostfach (leer = kein Versand)
+        'confirmation_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_CONFIRMATION', '')),
     ],
     'list_per_page' => 25,
 ];

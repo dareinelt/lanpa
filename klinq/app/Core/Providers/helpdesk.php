@@ -64,6 +64,7 @@ use App\Services\Helpdesk\Mail\SmtpTransport;
 use App\Services\Helpdesk\MailboxSettingsService;
 use App\Services\Helpdesk\OutboundMailSettingsService;
 use App\Services\Helpdesk\QuickReportSettingsService;
+use App\Services\Helpdesk\TicketConfirmationService;
 use App\Services\Helpdesk\TicketMailIngestionService;
 use App\Services\Helpdesk\ReplyTemplateSettingsService;
 use App\Services\Helpdesk\TicketMailService;
@@ -126,6 +127,11 @@ return static function (Container $c): void {
         $c->get(Logger::class),
         $c->get(ReplyTemplateSettingsService::class)
     ));
+    $c->singleton(TicketConfirmationService::class, static fn (Container $c): TicketConfirmationService => new TicketConfirmationService(
+        $c->get(ReplyTemplateSettingsService::class),
+        $c->get(TicketNotificationService::class),
+        $c->get(Config::class)
+    ));
     $c->singleton(TicketRuleService::class, static fn (Container $c): TicketRuleService => new TicketRuleService(
         $c->get(TicketRuleRepository::class),
         $c->get(TicketRuleEvaluator::class),
@@ -156,6 +162,7 @@ return static function (Container $c): void {
         $c->get(TicketSlaService::class),
         $c->get(TicketRuleService::class),
         $c->get(TicketNotificationService::class),
+        $c->get(TicketConfirmationService::class),
         $c->get(AuditLogService::class),
         $c->get(CurrentUser::class),
         $c->get(Config::class)
@@ -335,7 +342,8 @@ return static function (Container $c): void {
         $c->get(HelpdeskAiService::class),
         $c->get(TicketAttachmentService::class),
         $c->get(TicketMailService::class),
-        $c->get(UserRepository::class)
+        $c->get(UserRepository::class),
+        $c->get(ReplyTemplateSettingsService::class)
     ));
     $c->singleton(TicketAttachmentController::class, static fn (Container $c): TicketAttachmentController => new TicketAttachmentController(
         $c->get(View::class),

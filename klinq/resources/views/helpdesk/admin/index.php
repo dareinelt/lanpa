@@ -85,7 +85,7 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
 <?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php elseif ($isReplyTemplates): ?>
 <div class="card mb-4">
-    <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails</span></div>
+    <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails, Eingangsbestätigung</span></div>
     <p class="text-muted text-sm">Der Präfix-Text wird beim Senden einer E-Mail aus einem Ticket automatisch <strong>vor</strong> den Text des Agenten gesetzt. Er ist im Sendedialog weder sichtbar noch änderbar. Leer = kein Präfix.</p>
     <form method="post" action="/helpdesk/admin/reply-templates" novalidate>
         <?= csrf_field() ?>
@@ -94,6 +94,20 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
             <textarea id="reply-template-prefix" name="prefix_text" rows="8" maxlength="<?= (int) $replyTemplate['max_length'] ?>" placeholder="Sehr geehrte Damen und Herren,&#10;&#10;vielen Dank für Ihre Nachricht."><?= e(old('prefix_text', $replyTemplate['prefix_text'])) ?></textarea>
             <span class="form-hint">Leerzeile = neuer Absatz, einfacher Zeilenumbruch bleibt erhalten. Höchstens <?= (int) $replyTemplate['max_length'] ?> Zeichen. Gilt nur für die Agenten-Mail aus dem Ticket, nicht für die Info-E-Mail beim Zusammenführen.</span>
             <?= field_error('prefix_text') ?>
+        </div>
+        <div class="form-group<?= has_error('confirmation_text') ? ' has-error' : '' ?>">
+            <label for="reply-template-confirmation">Bestätigungstext (Eingangsbestätigung)</label>
+            <textarea id="reply-template-confirmation" name="confirmation_text" rows="10" maxlength="<?= (int) $replyTemplate['max_confirmation_length'] ?>" placeholder="Guten Tag {name},&#10;&#10;vielen Dank für Ihre Meldung. Wir haben Ihr Ticket mit der Nummer {ticketnummer} aufgenommen und melden uns zeitnah bei Ihnen."><?= e(old('confirmation_text', $replyTemplate['confirmation_text'])) ?></textarea>
+            <span class="form-hint">Wird bei Meldungen aus dem Störungsformular und dem Störungspostfach automatisch versendet; bei Sammelkonten zusätzlich an den angegebenen Benutzer. Beim Anlegen durch einen Agenten nur, wenn im Assistenten „Bestätigung senden“ gewählt wird. Leer = keine Eingangsbestätigung (es greift die allgemeine Info-Mail).</span>
+            <?= field_error('confirmation_text') ?>
+        </div>
+        <div class="form-group">
+            <span class="form-hint">
+                Platzhalter:
+                <?php foreach ($replyTemplate['placeholders'] as $placeholder => $label): ?>
+                    <code><?= e($placeholder) ?></code> <?= e($label) ?><?= $placeholder === array_key_last($replyTemplate['placeholders']) ? '' : ' · ' ?>
+                <?php endforeach; ?>
+            </span>
         </div>
         <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button></div>
     </form>

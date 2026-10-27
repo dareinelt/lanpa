@@ -26,6 +26,7 @@ use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskAiService;
 use App\Services\Helpdesk\KnowledgeBaseService;
+use App\Services\Helpdesk\ReplyTemplateSettingsService;
 use App\Services\Helpdesk\SupportShiftService;
 use App\Services\Helpdesk\TicketAttachmentService;
 use App\Services\Helpdesk\TicketMailService;
@@ -67,7 +68,8 @@ final class TicketController extends HelpdeskBaseController
         private readonly HelpdeskAiService $ai,
         private readonly TicketAttachmentService $attachmentService,
         private readonly TicketMailService $mailService,
-        private readonly UserRepository $users
+        private readonly UserRepository $users,
+        private readonly ReplyTemplateSettingsService $replyTemplates
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -605,6 +607,7 @@ final class TicketController extends HelpdeskBaseController
             'templateId' => $templateId,
             'wizardMode' => $wizard,
             'wizardStart' => (int) $this->oldInput('wizard_step', 1),
+            'confirmationText' => $wizard ? $this->replyTemplates->confirmationText() : '',
             'modeQuery' => $query,
             'secondLevelAssigneeId' => $wizard ? $this->supportShifts->secondLevelUserIdToday() : null,
             'templates' => $this->templates->all(true),

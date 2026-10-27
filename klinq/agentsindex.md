@@ -195,6 +195,13 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Eingabezeile mit Vorschlägen aus `SharedAccountSuggestionService`) ist die Angabe
   eines zusätzlichen Benutzers Pflicht; der Erklärungstext ist dort anpassbar, das Feld wird automatisch
   aufgeklappt, und `QuickReportController::store()` prüft die Pflicht serverseitig.
+- **Eingangsbestätigung**: `TicketConfirmationService` versendet nach `TicketService::create()` den unter
+  `helpdesk.reply_template.confirmation_text` gepflegten Text (Startwert `HELPDESK_REPLY_TEMPLATE_CONFIRMATION`,
+  Platzhalter `{anrede}`/`{name}`/`{ticketnummer}`/`{betreff}`/`{datum}`/`{link}`/`{firma}`) an Melder **und**
+  zusätzlichen Benutzer – immer bei Quelle `form`/`email`, bei Agentenanlage nur mit Opt-in im neunten
+  Assistenten-Schritt. Versand je Empfänger über `TicketNotificationService::sendTo()` (Ereignis
+  `created_confirmation`), damit Protokollierung und Idempotenz greifen; die allgemeine Anlage-Info an den
+  Melder entfällt dann.
 - **Gespeicherte Zugangsdaten** (z. B. Help-Desk-Postfachpasswort) werden über `Support\Secret` mit `APP_KEY`
   verschlüsselt abgelegt, nie im Klartext.
 

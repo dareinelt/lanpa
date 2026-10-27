@@ -143,7 +143,10 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             ],
             'replyTemplate' => [
                 'prefix_text' => $replyTemplateSettings['prefix_text'],
+                'confirmation_text' => $replyTemplateSettings['confirmation_text'],
                 'max_length' => ReplyTemplateSettingsService::MAX_PREFIX_LENGTH,
+                'max_confirmation_length' => ReplyTemplateSettingsService::MAX_CONFIRMATION_LENGTH,
+                'placeholders' => ReplyTemplateSettingsService::PLACEHOLDERS,
             ],
             'statusCategories' => HelpdeskAdminService::STATUS_CATEGORIES,
             'triggers' => TicketRuleRepository::TRIGGERS,
@@ -167,7 +170,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         return $this->redirect('/helpdesk/admin?tab=quick-report');
     }
 
-    /** Präfix-Text der Vorlageneinstellungen speichern (wird erst beim Senden vorangestellt). */
+    /** Präfix- und Bestätigungstext der Vorlageneinstellungen speichern (Versand erst beim Senden). */
     public function saveReplyTemplates(Request $request): Response
     {
         $this->currentUser->require('helpdesk.admin');

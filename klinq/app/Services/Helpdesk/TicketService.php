@@ -63,6 +63,7 @@ final class TicketService
         private readonly TicketSlaService $sla,
         private readonly TicketRuleService $rules,
         private readonly TicketNotificationService $notifications,
+        private readonly TicketConfirmationService $confirmations,
         private readonly AuditLogService $audit,
         private readonly CurrentUser $currentUser,
         private readonly Config $config
@@ -325,12 +326,26 @@ final class TicketService
         $this->audit->log('create', 'ticket', $ticketId, $ticket['number'] . ' ' . $ticket['subject'], null, $this->auditSnapshot($ticket));
         $this->rules->apply('created', $ticket, $userId, $this->currentUser->displayName());
         $ticket = $this->get($ticketId);
-        $this->notifications->ticketCreated($ticket);
+        $confirmation = ($quickReport || $source === 'email' || $this->wantsConfirmation($input))
+            ? $this->confirmations->send($ticket) > 0
+            : false;
+        $this->notifications->ticketCreated($ticket, !$confirmation);
         if (!empty($ticket['assignee_user_id'])) {
             $this->notifications->assigned($ticket);
         }
 
         return $ticket;
+    }
+
+    /**
+     * Eingangsbestätigung versenden? Störungsformular und Störungspostfach immer, Tickets von
+     * Agenten nur, wenn die Checkbox im Assistenten gesetzt wurde.
+     *
+     * @param array<string,mixed> $input
+     */
+    private function wantsConfirmation(array $input): bool
+    {
+        return in_array(mb_strtolower(trim((string) ($input['confirm_send'] ?? ''))), ['1', 'on', 'true', 'yes'], true);
     }
 
     /** Ticket aus Vorlage vorbelegen (für das Formular). @return array<string,mixed> */

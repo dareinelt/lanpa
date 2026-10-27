@@ -131,6 +131,10 @@
                 count > 0 ? count + (count === 1 ? " Asset" : " Assets") : "",
                 tags ? "Tags: " + shorten(tags, 50) : ""
             ]);
+        },
+        9: function (root) {
+            const confirm = root.querySelector("input[name='confirm_send']");
+            return confirm && confirm.checked ? "Bestätigung wird gesendet" : "Keine Bestätigung";
         }
     };
 

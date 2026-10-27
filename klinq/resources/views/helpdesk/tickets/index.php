@@ -129,6 +129,7 @@ $canMerge = $can('helpdesk.merge');
                 <td class="ticket-select">
                     <input type="checkbox" data-hd-ticket-select value="<?= (int) $r['id'] ?>"
                            data-number="<?= e($r['number']) ?>" data-subject="<?= e($r['subject']) ?>"
+                           data-status="<?= e($r['status_name']) ?>" data-status-color="<?= e($r['status_color']) ?>"
                            aria-label="Ticket <?= e($r['number']) ?> auswählen"<?= $r['merged_into_ticket_id'] !== null ? ' disabled' : '' ?>>
                 </td>
                 <?php endif; ?>
@@ -180,7 +181,7 @@ $canMerge = $can('helpdesk.merge');
             <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
         </div>
         <div class="dialog-body">
-            <p class="text-muted">Wählen Sie das Ticket, in das die übrigen ausgewählten Tickets zusammengeführt werden.</p>
+            <p class="text-muted">Wählen Sie das Ticket, in das die übrigen ausgewählten Tickets zusammengeführt werden. Das Ziel darf auch gelöst oder geschlossen sein.</p>
             <fieldset class="hd-merge-targets" data-hd-bulk-merge-targets>
                 <legend class="visually-hidden">Zielticket</legend>
             </fieldset>

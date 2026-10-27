@@ -438,6 +438,39 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame('new', $this->service()->get((int) $source['id'])['status_code'], 'Das Quellticket bleibt unverändert.');
     }
 
+    public function testMergeIntoClosedTargetKeepsTargetClosed(): void
+    {
+        $source = $this->createTicket(['subject' => 'Duplikat']);
+        $target = $this->createTicket(['subject' => 'Original']);
+        $targetId = (int) $target['id'];
+        $this->service()->changeStatus($targetId, 'in_progress');
+        $this->service()->changeStatus($targetId, 'resolved', null, 'Gerät getauscht.');
+        $this->service()->changeStatus($targetId, 'closed');
+        $this->service()->addComment((int) $source['id'], 'Kommentar am Duplikat', 'public');
+
+        $result = $this->c->get(TicketMergeService::class)->merge((int) $source['id'], (string) $target['number']);
+
+        $this->assertSame($targetId, (int) $result['id']);
+        $this->assertSame('closed', $this->service()->get($targetId)['status_code'], 'Das geschlossene Zielticket bleibt geschlossen.');
+        $this->assertSame($targetId, (int) $this->service()->get((int) $source['id'])['merged_into_ticket_id']);
+        $this->assertSame(1, $this->c->get(TicketCommentRepository::class)->countForTicket($targetId, 'public'));
+    }
+
+    public function testMergeRejectsCancelledTarget(): void
+    {
+        $source = $this->createTicket(['subject' => 'Duplikat']);
+        $target = $this->createTicket(['subject' => 'Verworfen']);
+        $this->loginAs($this->agentId, 'helpdesk_agent', ['ticket_stornieren']);
+        $this->service()->changeStatus((int) $target['id'], 'cancelled', null, null, 'Nicht benötigt');
+
+        $this->assertThrows(
+            ValidationException::class,
+            fn () => $this->c->get(TicketMergeService::class)->merge((int) $source['id'], (string) $target['number']),
+        );
+
+        $this->assertSame('new', $this->service()->get((int) $source['id'])['status_code'], 'Das Quellticket bleibt unverändert.');
+    }
+
     public function testMergeComposeDataListsReasons(): void
     {
         $source = $this->createTicket();
@@ -536,26 +569,32 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertCount(1, $this->tickets()->quickSearch((string) $t['number'], 5));
     }
 
-    public function testSuggestForMergePrefersOpenTicketsOfSameRequester(): void
+    public function testSuggestForMergeListsClosedButNotCancelledTickets(): void
     {
         $same = $this->createTicket(['subject' => 'Drucker streikt']);
         $other = $this->createTicket(['subject' => 'Drucker streikt (fremd)', 'requester_employee_id' => $this->otherEmployeeId]);
-        $done = $this->createTicket(['subject' => 'Drucker erledigt']);
+        $closed = $this->createTicket(['subject' => 'Drucker erledigt']);
+        $cancelled = $this->createTicket(['subject' => 'Drucker verworfen']);
         $this->loginAs($this->agentId, 'helpdesk_agent', ['ticket_stornieren']);
-        $this->service()->changeStatus((int) $done['id'], 'cancelled', null, null, 'Testfall');
+        $this->service()->changeStatus((int) $cancelled['id'], 'cancelled', null, null, 'Testfall');
+        $this->service()->changeStatus((int) $closed['id'], 'in_progress');
+        $this->service()->changeStatus((int) $closed['id'], 'resolved', null, 'Drucker getauscht.');
+        $this->service()->changeStatus((int) $closed['id'], 'closed');
 
-        // Ohne Suchbegriff nur offene Tickets derselben meldenden Person
+        // Ohne Suchbegriff nur Tickets derselben meldenden Person
         $rows = $this->tickets()->suggestForMerge('', 10, 0, $this->requesterEmployeeId, null, 'max@example.test');
         $ids = array_map(static fn (array $r): int => (int) $r['id'], $rows);
         $this->assertContains((int) $same['id'], $ids);
+        $this->assertContains((int) $closed['id'], $ids, 'Geschlossene Tickets sind als Ziel wählbar.');
         $this->assertFalse(in_array((int) $other['id'], $ids, true), 'Fremde Melder erscheinen nicht ohne Suchbegriff.');
-        $this->assertFalse(in_array((int) $done['id'], $ids, true), 'Abgeschlossene Tickets werden nicht vorgeschlagen.');
+        $this->assertFalse(in_array((int) $cancelled['id'], $ids, true), 'Stornierte Tickets werden nicht vorgeschlagen.');
 
-        // Mit Suchbegriff kommen fremde Treffer hinzu, gleiche Melder stehen vorn
+        // Mit Suchbegriff kommen fremde Treffer hinzu, gleiche Melder und offene Tickets stehen vorn
         $rows = $this->tickets()->suggestForMerge('Drucker', 10, 0, $this->requesterEmployeeId, null, 'max@example.test');
         $ids = array_map(static fn (array $r): int => (int) $r['id'], $rows);
         $this->assertContains((int) $other['id'], $ids);
-        $this->assertSame((int) $same['id'], $ids[0], 'Tickets derselben Person stehen oben.');
+        $this->assertSame((int) $same['id'], $ids[0], 'Offene Tickets derselben Person stehen oben.');
+        $this->assertSame((int) $closed['id'], $ids[1], 'Geschlossene Tickets folgen nach den offenen.');
         $flags = array_column($rows, 'same_requester', 'id');
         $this->assertSame(1, (int) $flags[$same['id']]);
         $this->assertSame(0, (int) $flags[$other['id']]);

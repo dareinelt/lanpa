@@ -354,7 +354,7 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
 
         $this->assertSame('form', $ticket['source']);
         $this->assertSame($this->requesterEmployeeId, (int) $ticket['requester_employee_id'], 'Melder bleibt der erkannte Anwender');
-        $this->assertSame($this->otherEmployeeId, (int) $ticket['affected_employee_id'], 'Auswahl aus „Zusätzliche Benutzer“');
+        $this->assertSame($this->otherEmployeeId, (int) $ticket['affected_employee_id'], 'Auswahl aus „Zusätzlicher Benutzer“');
     }
 
     public function testQuickReportFallsBackToReporterWithoutAffectedEmployee(): void

@@ -128,7 +128,7 @@ final class QuickReportController extends HelpdeskBaseController
     }
 
     /**
-     * Personensuche für das Zusatzfeld „Zusätzliche Benutzer“ im öffentlichen Formular.
+     * Personensuche für das Zusatzfeld „Zusätzlicher Benutzer“ im öffentlichen Formular.
      * Liefert nur Treffer; ein Mitarbeiterdatensatz entsteht erst über adoptPerson().
      */
     public function searchPeople(Request $request): Response

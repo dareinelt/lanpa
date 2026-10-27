@@ -39,7 +39,7 @@ final class RouteInventoryTest extends TestCase
         $publicAllowed = [
             'GET /login', 'POST /login', 'GET /health',
             'GET /stoerung', 'POST /stoerung', 'GET /stoerung/gesendet',
-            // Personenauswahl im Zusatzfeld „Zusätzliche Benutzer“ des öffentlichen Formulars
+            // Personenauswahl im Zusatzfeld „Zusätzlicher Benutzer“ des öffentlichen Formulars
             'GET /stoerung/benutzer', 'POST /stoerung/benutzer/uebernehmen',
             'GET /sso/lanpa',
         ];

@@ -49,6 +49,7 @@ return static function (Container $c): void {
     $c->singleton(LanpaIdentityService::class, static fn (): LanpaIdentityService => new LanpaIdentityService());
     $c->singleton(LanpaUserService::class, static fn (Container $c): LanpaUserService => new LanpaUserService(
         $c->get(UserRepository::class),
+        $c->get(EmployeeRepository::class),
         $c->get(Logger::class)
     ));
     $c->singleton(LanpaSsoController::class, static fn (Container $c): LanpaSsoController => new LanpaSsoController(

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Lanpa;
 
 use App\Core\Logger;
+use App\Repositories\EmployeeRepository;
 use App\Repositories\UserRepository;
 
 /**
@@ -18,6 +19,7 @@ final class LanpaUserService
 {
     public function __construct(
         private readonly UserRepository $users,
+        private readonly EmployeeRepository $employees,
         private readonly Logger $logger
     ) {}
 
@@ -49,6 +51,7 @@ final class LanpaUserService
         $displayName = self::clean((string) ($claims['name'] ?? ''), 200) ?: $username;
         $email = self::clean((string) ($claims['email'] ?? ''), 255);
         $groupIds = $this->groupIds((array) ($claims['permission_groups'] ?? []));
+        $employeeId = $this->employeeId($username, $email);
 
         $user = $this->users->findByUsername($username);
         if ($user === null) {
@@ -59,13 +62,14 @@ final class LanpaUserService
                 'password_hash' => null,
                 'role_id' => $roleId,
                 'auth_source' => 'ldap',
+                'employee_id' => $employeeId,
                 'is_active' => 1,
             ]);
             $this->users->syncGroups($id, $groupIds);
             $user = $this->users->find($id);
             $this->logger->info('LANPA-SSO: Benutzer angelegt.', ['benutzer' => $username, 'rolle' => $role]);
         } else {
-            $this->users->update((int) $user['id'], [
+            $data = [
                 'display_name' => $displayName,
                 'email' => $email === '' ? null : $email,
                 'role_id' => $roleId,
@@ -73,7 +77,13 @@ final class LanpaUserService
                 'is_active' => 1,
                 'locked_until' => null,
                 'failed_logins' => 0,
-            ]);
+            ];
+            // Eine bereits gepflegte Verknüpfung nie mit NULL überschreiben, nur weil der
+            // Abgleich gerade keinen Mitarbeiter findet (z. B. AD-Abfrage nicht erreichbar).
+            if ($employeeId !== null) {
+                $data['employee_id'] = $employeeId;
+            }
+            $this->users->update((int) $user['id'], $data);
             $this->users->syncGroups((int) $user['id'], $groupIds);
             $user = $this->users->find((int) $user['id']);
         }
@@ -83,6 +93,24 @@ final class LanpaUserService
         }
 
         return $user;
+    }
+
+    /**
+     * Lokalen Mitarbeiterdatensatz zum Konto ermitteln.
+     *
+     * Der Einstiegsschein des Intranets enthaelt keine Mitarbeiter-ID; der Abgleich laeuft
+     * daher ueber den Anmeldenamen (AD-Konto) mit Rueckfall auf die E-Mail-Adresse. Ohne
+     * diese Verknuepfung erkennt der Help Desk nicht, welche Tickets die Person als Melder
+     * oder Betroffener betreffen (Portal-Sichtbarkeit ueber `users.employee_id`).
+     */
+    private function employeeId(string $username, string $email): ?int
+    {
+        $employee = $this->employees->findByUsername($username);
+        if ($employee === null && $email !== '') {
+            $employee = $this->employees->findByEmail($email);
+        }
+
+        return $employee !== null ? (int) $employee['id'] : null;
     }
 
     /**

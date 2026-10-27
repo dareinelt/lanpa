@@ -334,7 +334,7 @@ Unbekannte Platzhalter bleiben stehen; Platzhalter ohne Wert werden samt einem d
 
 ## Serviceportal (`/portal`)
 
-Jeder angemeldete Benutzer mit `portal.view`/`portal.create` sieht ausschließlich **eigene** Tickets (als Melder oder betroffene Person, gematcht über `users.employee_id`). Neue Anfrage: Vorlage wählen (füllt Typ/Kategorie/Betreff/Beschreibung vor), Auswirkung/Dringlichkeit in Alltagssprache, eigene Geräte als Auswahl, Anhang. Im Detail: Kommentare schreiben, Anhänge hochladen, gelöste Tickets bestätigen oder innerhalb der Frist wieder öffnen. Interne Notizen und interne Anhänge sind für Portalnutzer unsichtbar (`TicketService::getVisible` filtert serverseitig).
+Jeder angemeldete Benutzer mit `portal.view`/`portal.create` sieht ausschließlich **eigene** Tickets (als Melder oder betroffene Person, gematcht über `users.employee_id`; fehlt die Verknüpfung – etwa bei Konten aus der Intranet-Anmeldung – zusätzlich über den Anmeldenamen bzw. die E-Mail-Adresse des Mitarbeiterdatensatzes, siehe `TicketRepository::whereFor` und `TicketService::currentEmployeeId`). Neue Anfrage: Vorlage wählen (füllt Typ/Kategorie/Betreff/Beschreibung vor), Auswirkung/Dringlichkeit in Alltagssprache, eigene Geräte als Auswahl, Anhang. Im Detail: Kommentare schreiben, Anhänge hochladen, gelöste Tickets bestätigen oder innerhalb der Frist wieder öffnen. Interne Notizen und interne Anhänge sind für Portalnutzer unsichtbar (`TicketService::getVisible` filtert serverseitig).
 
 ![Serviceportal: eigene Tickets und Wissensartikel](screenshots/portal-dashboard.png)
 

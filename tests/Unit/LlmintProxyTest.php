@@ -31,7 +31,12 @@ Runner::test('LLMInt-Proxy: nur mit -D LLMINT eingebunden, vor dem Catch-all an 
 Runner::test('LLMInt-Proxy: Weiterleitung, Streaming, Cookies und Header nach Vertrag', function (): void {
     $conf = llmintFile('docker/auth/llmint.conf');
 
-    Assert::contains('RewriteRule ^${LLMINT_PATH}$ ${LLMINT_PATH}/ [R=301,L]', $conf);
+    // Das Schema muss vorangestellt werden: mod_rewrite nimmt bei [R] mit einer
+    // Pfad-Angabe sonst das Schema der eigenen Verbindung ("http" hinter dem
+    // TLS-Verteiler), der Browser landet dann ohne TLS auf dem TLS-Port.
+    Assert::contains('RewriteRule ^${LLMINT_PATH}$ https://%{HTTP_HOST}${LLMINT_PATH}/ [R=301,L]', $conf);
+    Assert::contains('RewriteRule ^${LLMINT_PATH}$ http://%{HTTP_HOST}${LLMINT_PATH}/ [R=301,L]', $conf);
+    Assert::contains('RewriteCond %{HTTP:X-Forwarded-Proto} ^https$ [NC,OR]', $conf);
     Assert::contains('ProxyPass ${LLMINT_UPSTREAM}/ timeout=3600 flushpackets=on retry=5', $conf);
     Assert::contains('ProxyPassReverse ${LLMINT_UPSTREAM}/', $conf);
     Assert::contains('ProxyPassReverseCookiePath / ${LLMINT_PATH}/', $conf);

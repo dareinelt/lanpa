@@ -232,6 +232,30 @@ Runner::test('KLINQ: Rücksprungziel bleibt in der Anwendung', static function (
     Assert::same('/dashboard', KlinqController::safeTarget('/' . str_repeat('a', 600)));
 });
 
+Runner::test('KLINQ: Einstiegsadresse behaelt Schema und Port des Aufrufs', static function (): void {
+    // KLINQ_PUBLIC_URL mit "http://" darf den Aufruf nicht auf den TLS-Port
+    // ohne TLS schicken: bei gleichem Host bleibt die Adresse relativ.
+    $sameOrigin = klinqConfig([], ['public_url' => 'http://intranet.example:8443/klinq']);
+    Assert::same('/klinq/sso/lanpa', $sameOrigin->entryUrlFor('intranet.example:8443'));
+    Assert::same('/klinq/sso/lanpa', $sameOrigin->entryUrlFor('INTRANET.example'));
+
+    // Anderer Host: die konfigurierte Adresse bleibt unveraendert.
+    $ownHost = klinqConfig([], ['public_url' => 'https://klinq.example/klinq']);
+    Assert::same('https://klinq.example/klinq/sso/lanpa', $ownHost->entryUrlFor('intranet.example:8443'));
+
+    // Ohne KLINQ_PUBLIC_URL gilt der Unterpfad.
+    Assert::same('/klinq/sso/lanpa', klinqConfig()->entryUrlFor('intranet.example'));
+});
+
+Runner::test('KLINQ: eigene Tickets sind Selbstbedienung, andere Ziele nicht', static function (): void {
+    Assert::true(KlinqController::isSelfServiceTarget('/portal'));
+    Assert::true(KlinqController::isSelfServiceTarget('/portal/tickets'));
+    Assert::true(KlinqController::isSelfServiceTarget('/portal/tickets/4'));
+    Assert::false(KlinqController::isSelfServiceTarget('/portalx'));
+    Assert::false(KlinqController::isSelfServiceTarget('/dashboard'));
+    Assert::false(KlinqController::isSelfServiceTarget('/helpdesk/tickets/4'));
+});
+
 Runner::test('KLINQ: Designfarben werden als CSS-Variablen ausgegeben', static function (): void {
     $css = (new KlinqThemeService(new ThemeService(klinqSettings())))->css();
 

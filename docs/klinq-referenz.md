@@ -150,6 +150,9 @@ sequenceDiagram
    geprüft, ob die KLINQ-Kachel für die Person sichtbar ist
    (`NavigationRepository::findActiveInternalByUrl('/klinq-starten')` +
    `NavigationService::isAccessible`). Fehlt die Freigabe: HTTP 403.
+   Ausgenommen sind Ziele unter `/portal…`
+   (`KlinqController::isSelfServiceTarget()`): eigene Tickets sind
+   Selbstbedienung und für jede angemeldete Person erreichbar (4.3).
    Bei `/stoerung` entfällt diese Prüfung.
 4. **Rechte.** `KlinqAccessService::resolve()` bildet Rolle,
    Berechtigungsgruppen und Bereiche (Abschnitt 8).
@@ -164,9 +167,13 @@ sequenceDiagram
    Endpunkt `/health` (Ergebnis 30 Sekunden zwischengespeichert). Ist KLINQ
    nicht erreichbar, geht es auf `/klinq-nicht-verfuegbar`.
 8. **Weiterleitung.** Die Antwort ist ein `302` auf
-   `KLINQ_PUBLIC_URL` + `/sso/lanpa?token=…&next=…` mit
+   `KlinqConfigService::entryUrlFor()` + `/sso/lanpa?token=…&next=…` mit
    `Cache-Control: no-store` und `Referrer-Policy: no-referrer` – der Schein
-   steht damit nicht im Referer und nicht im Cache.
+   steht damit nicht im Referer und nicht im Cache. `entryUrlFor()` gibt die
+   Adresse **relativ** aus, solange `KLINQ_PUBLIC_URL` auf denselben Host wie
+   der Aufruf zeigt; der Browser behält dann Schema und Port der Seite
+   (hinter dem TLS-Verteiler also `https`). Zeigt `KLINQ_PUBLIC_URL` auf einen
+   anderen Host, gilt sie unverändert.
 9. **Prüfung in KLINQ.** `LanpaSsoToken::verify()` prüft Signatur (zeitkonstant
    über `hash_equals`), `iss`, `aud`, `exp` und die Einmalverwendung der `jti`.
 10. **Sitzung in KLINQ.** `LanpaUserService::provision()` legt den Benutzer an
@@ -177,8 +184,11 @@ sequenceDiagram
 
 ### 4.2 Rücksprungziel
 
-`KlinqController::safeTarget()` akzeptiert ausschließlich einfache, lokale
-Pfade:
+`KlinqController::requestedTarget()` liest das Ziel aus `redirect`, `ziel` oder
+`next` (in dieser Reihenfolge), entfernt einen führenden Unterpfad
+(`/klinq/portal/4` → `/portal/4`) und übergibt es an `safeTarget()`.
+
+`safeTarget()` akzeptiert ausschließlich einfache, lokale Pfade:
 
 * muss mit `/` beginnen, höchstens 512 Zeichen,
 * kein `//` am Anfang, kein `\`, kein `..`,
@@ -190,13 +200,31 @@ Alles andere fällt auf `/dashboard` zurück. In KLINQ prüft zusätzlich
 `/dashboard`, leitet KLINQ auf das zuletzt geöffnete Modul der Person um
 (`ModuleNavigation::startUrl()`, siehe `klinq/docs/helpdesk.md`).
 
+### 4.3 Selbstbedienung und eigene Tickets
+
+`KlinqController::isSelfServiceTarget()` erkennt Ziele unter `/portal`
+(`/portal`, `/portal/…`). Für sie entfällt die Kachel-Freigabe; jedes andere
+Ziel bleibt an sie gebunden. Das Ziel wird unverändert als `next` übergeben,
+sodass der Aufruf nach der Anmeldung im Ticket landet.
+
+Wer ein Ticket sehen darf, entscheidet ausschließlich KLINQ:
+`TicketService::getVisible()` wirft für fremde Tickets eine
+`ForbiddenException`, `canView()` lässt Anfragende/r, Erfassende/r, betroffene
+Mitarbeitende und Beobachter/innen zu; `helpdesk.view` (Agenten) hebt die
+Beschränkung auf. `portal.view`/`portal.create` hat jede Rolle, damit ist der
+eigene Bereich ohne Gruppenzuordnung erreichbar.
+
+Ist die Person noch nicht angemeldet, merkt sich `loginTarget()` die vollständige
+Anfrage (`REQUEST_URI`, also inklusive `?redirect=…`), damit das Ziel die
+SSO-Anmeldung übersteht.
+
 ---
 
 ## 5. Routen des Intranets
 
 | Methode | Pfad | Controller | Anmeldung | Zweck |
 | --- | --- | --- | --- | --- |
-| `GET` | `/klinq-starten` | `KlinqController::start` | SSO + Kachel-Freigabe | Einstieg über die Kachel. |
+| `GET` | `/klinq-starten` | `KlinqController::start` | SSO + Kachel-Freigabe (nicht bei `/portal…`) | Einstieg über die Kachel oder einen Direktlink. |
 | `GET` | `/stoerung` | `KlinqController::report` | SSO | Störmeldung IT, ohne Gruppenzwang. |
 | `GET` | `/klinq-design.css` | `KlinqController::design` | öffentlich | Designfarben als CSS. |
 | `GET` | `/klinq-nicht-verfuegbar` | `KlinqController::unavailable` | öffentlich | Hinweisseite (auch `ErrorDocument` des Proxys), HTTP 503. |
@@ -350,7 +378,7 @@ keine beliebige Adresse in das Stylesheet schreiben.
 * Eigene SSO- und Trust-Header-Auswertung zur Anmeldung.
 * Die lokale Anmeldemaske bleibt als Notweg vorhanden, wird im Intranetbetrieb
   aber über den Proxy auf `/klinq-starten` umgeleitet
-  (`RewriteRule ^/klinq/login/?$ /klinq-starten [R=302,L]`).
+  (`RewriteRule ^/klinq/login/?$ …/klinq-starten [R=302,QSA,L]`, siehe 12.1).
 
 Ersetzt wurden diese Teile durch `LanpaSsoToken` + `LanpaUserService` +
 `LanpaBridge`. Die AD-Anbindung für **Fachdaten** (z. B. Telefonbuchabgleich in
@@ -826,14 +854,23 @@ Variable aus und ergänzt `klinq-app` in `backend_hosts`).
 
 | Regel | Wirkung |
 | --- | --- |
-| `RewriteRule ^/klinq$ /klinq/ [R=301,L]` | Unterpfad normalisieren. |
-| `RewriteRule ^/klinq/login/?$ /klinq-starten [R=302,L]` | Lokale Anmeldemaske überspringen. |
+| `RewriteRule ^/klinq$ https://%{HTTP_HOST}/klinq/ [R=301,L]` (mit `RewriteCond` auf `X-Forwarded-Proto`/`HTTPS`) | Unterpfad normalisieren, Schema des Clients beibehalten. |
+| `RewriteRule ^/klinq$ http://%{HTTP_HOST}/klinq/ [R=301,L]` | dasselbe für reine HTTP-Aufrufe. |
+| `RewriteRule ^/klinq/login/?$ https://%{HTTP_HOST}/klinq-starten [R=302,QSA,L]` | Lokale Anmeldemaske überspringen, `?redirect=…` mitnehmen. |
 | `<Location /klinq/>` mit `Require valid-user` | Windows-Anmeldung ist Pflicht. |
 | `RequestHeader set X-Remote-User "expr=%{REMOTE_USER}"` | Identität an KLINQ. |
 | `ProxyPass http://klinq-app/ timeout=300 retry=5` | Weiterleitung; der Unterpfad wird entfernt. |
 | `ErrorDocument 401 /sso/nicht-erkannt` | Ohne Domänenanmeldung zur Intranet-Hinweisseite. |
 | `ErrorDocument 500/502/503 /klinq-nicht-verfuegbar` | KLINQ gestoppt → verständliche Seite. |
 | `<LocationMatch "^/klinq-nicht-verfuegbar$">` mit `AuthType None` | Die Hinweisseite ist ohne Anmeldung erreichbar. |
+
+Das Schema steht in jeder Weiterleitung ausdrücklich davor. `mod_rewrite`
+setzt bei `[R]` mit einer Pfad-Angabe sonst das Schema der **eigenen**
+Verbindung davor; hinter dem TLS-Verteiler ist das `http`, der Browser liefe
+also ohne TLS auf den TLS-Port (`ERR_EMPTY_RESPONSE`). Die Bedingung prüft
+`X-Forwarded-Proto` (Verteiler setzt den Header) und `HTTPS` (eigener
+TLS-Betrieb, `TLS_APACHE`). Dieselbe Regelform gilt in `office.conf` und
+`llmint.conf`.
 
 `ProxyErrorOverride` bleibt aus: Fehlerseiten von KLINQ selbst werden
 unverändert durchgereicht.
@@ -956,7 +993,7 @@ Relevante Testdateien:
 
 | Datei | Inhalt |
 | --- | --- |
-| `tests/Unit/KlinqTest.php` | Einstiegsschein (Signatur, `iss`/`aud`, Ablauf, fremdes Geheimnis), Rollenauflösung, `parseGroups`, Formularprüfung, `normalizePath`, `internalTargets`, `safeTarget`, CSS-Variablen, Prüfregeln der KI-Konfiguration. |
+| `tests/Unit/KlinqTest.php` | Einstiegsschein (Signatur, `iss`/`aud`, Ablauf, fremdes Geheimnis), Rollenauflösung, `parseGroups`, Formularprüfung, `normalizePath`, `internalTargets`, `safeTarget`, `entryUrlFor` (Schema/Port), `isSelfServiceTarget`, CSS-Variablen, Prüfregeln der KI-Konfiguration. |
 | `klinq/tests/Unit/LanpaBridgeTest.php` | Designadresse, KI-Abruf und Melderdaten (`reporter`), auch ohne Intranetverbindung. |
 | `klinq/tests/Unit/RouteInventoryTest.php` | Liste der öffentlichen Routen; hält `/sso/lanpa` und `/stoerung` als öffentliche Einstiege fest. |
 | `klinq/tests/Unit/QuickReportTest.php` | Normalisierung der Melderkennung und Kurzmeldung. |
@@ -969,9 +1006,9 @@ Nicht durch Unit-Tests abgedeckt, deshalb bei Änderungen am Einstieg zusätzlic
 | `LanpaSsoToken` (KLINQ) | Einmalverwendung des Scheins, Ablaufgrenze, Ablehnung fremder Aussteller – nur im Betrieb über `/klinq-starten` sichtbar. |
 | `LanpaUserService` (KLINQ) | Anlegen und Abgleichen des Benutzers beim ersten Einstieg. |
 | Interne Endpunkte | `GET /internal/klinq/ki` und `POST /internal/klinq/melder` antworten ohne Diensttoken mit `403`. |
-| Reverse Proxy | `/klinq` leitet auf `/klinq/` um, `/klinq/login` auf `/klinq-starten`, ein Ausfall auf `/klinq-nicht-verfuegbar`. |
+| Reverse Proxy | `/klinq` leitet auf `/klinq/` um, `/klinq/login` auf `/klinq-starten` (mit `?redirect=…` und **mit `https`**, auch hinter dem TLS-Verteiler), ein Ausfall auf `/klinq-nicht-verfuegbar`. |
 
-Stand der letzten vollständigen Prüfung: Intranet 821 von 843 Tests erfolgreich – die 22 Fehlschläge stammen aus Windows-Eigenheiten (`ZipArchive`, `openssl_csr_export`, `chmod`/Symlinks, temporäre Verzeichnisse) und betreffen KLINQ nicht. KLINQ 156 von 156 Unit-Tests erfolgreich, `docker compose --profile klinq config --quiet` ohne Fehler, `php -l` auf allen PHP-Dateien ohne Befund.
+Stand der letzten vollständigen Prüfung: Intranet 875 von 898 Tests erfolgreich – die 23 Fehlschläge stammen aus Windows-Eigenheiten (`ZipArchive`, `openssl_csr_export`, `chmod`/Symlinks, temporäre Verzeichnisse) und betreffen KLINQ nicht. KLINQ 156 von 156 Unit-Tests erfolgreich, `docker compose --profile klinq config --quiet` ohne Fehler, `php -l` auf allen PHP-Dateien ohne Befund.
 ---
 
 ## 17. Fehlersuche

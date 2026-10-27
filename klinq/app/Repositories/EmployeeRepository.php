@@ -96,6 +96,28 @@ final class EmployeeRepository extends BaseRepository
         return $this->fetchAll('SELECT id, display_name, username, department, personnel_number FROM employees WHERE is_active = 1 ORDER BY last_name, first_name');
     }
 
+    /**
+     * Anmeldenamen für die Autovervollständigung der Sammelkonten.
+     * @return array<int,array{username:string,display_name:string,department:string}>
+     */
+    public function suggestAccounts(string $term, int $limit = 10): array
+    {
+        $term = trim($term);
+        if ($term === '') {
+            return [];
+        }
+        $limit = max(1, min(25, $limit));
+
+        return $this->fetchAll(
+            "SELECT username, display_name, department FROM employees
+             WHERE is_active = 1 AND username IS NOT NULL AND username <> ''
+               AND (username LIKE :q OR display_name LIKE :q)
+             ORDER BY username
+             LIMIT {$limit}",
+            ['q' => $this->like($term)]
+        );
+    }
+
     /** @return array<int,string> */
     public function departments(): array
     {

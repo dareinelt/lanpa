@@ -75,6 +75,28 @@ final class UserRepository extends BaseRepository
         return self::withGroupsAll($this->fetchAll(self::SELECT . $where . ' ORDER BY u.is_active DESC, u.username', $params));
     }
 
+    /**
+     * Anmeldenamen für die Autovervollständigung der Sammelkonten (lokale Konten).
+     * @return array<int,array{username:string,display_name:string,role_label:string}>
+     */
+    public function suggestAccounts(string $term, int $limit = 10): array
+    {
+        $term = trim($term);
+        if ($term === '') {
+            return [];
+        }
+        $limit = max(1, min(25, $limit));
+
+        return $this->fetchAll(
+            "SELECT u.username, u.display_name, r.label AS role_label
+             FROM users u JOIN roles r ON r.id = u.role_id
+             WHERE u.is_active = 1 AND (u.username LIKE ? OR u.display_name LIKE ?)
+             ORDER BY u.username
+             LIMIT {$limit}",
+            [$this->like($term), $this->like($term)]
+        );
+    }
+
     /** @param array<string,mixed> $filters @return array{0:string,1:array<int,mixed>} */
     private function whereClause(array $filters): array
     {

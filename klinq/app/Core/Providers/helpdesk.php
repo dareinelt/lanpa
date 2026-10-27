@@ -52,6 +52,7 @@ use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\ReporterIdentityService;
 use App\Services\Lanpa\LanpaIdentityService;
 use App\Services\Helpdesk\SecondLevelReminderService;
+use App\Services\Helpdesk\SharedAccountSuggestionService;
 use App\Services\Helpdesk\SupportShiftService;
 use App\Services\Helpdesk\Mail\FileMailboxClient;
 use App\Services\Helpdesk\Mail\ImapMailboxClient;
@@ -389,6 +390,12 @@ return static function (Container $c): void {
         $c->get(CurrentUser::class),
         $c->get(TicketReportService::class)
     ));
+    // Vorschlaege fuer das Feld „Sammelkonten“ (Telefonbuch, Mitarbeiter, lokale Konten)
+    $c->singleton(SharedAccountSuggestionService::class, static fn (Container $c): SharedAccountSuggestionService => new SharedAccountSuggestionService(
+        $c->get(\App\Services\Lanpa\LanpaBridge::class),
+        $c->get(EmployeeRepository::class),
+        $c->get(UserRepository::class)
+    ));
     $c->singleton(HelpdeskAdminController::class, static fn (Container $c): HelpdeskAdminController => new HelpdeskAdminController(
         $c->get(View::class),
         $c->get(CurrentUser::class),
@@ -404,6 +411,7 @@ return static function (Container $c): void {
         $c->get(TicketMailIngestionService::class),
         $c->get(MailboxSettingsService::class),
         $c->get(QuickReportSettingsService::class),
+        $c->get(SharedAccountSuggestionService::class),
         $c->get(Config::class)
     ));
     $c->singleton(HelpdeskMailboxController::class, static fn (Container $c): HelpdeskMailboxController => new HelpdeskMailboxController(

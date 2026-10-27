@@ -236,4 +236,19 @@ if (!empty($secondLevelAssigneeId)) {
             <?= field_error('tags') ?>
         </div>
     </div>
+<?php elseif ($step === 9): ?>
+    <?php $confirmText = $confirmationText ?? ''; ?>
+    <div class="form-group">
+        <label class="checkbox">
+            <input type="checkbox" name="confirm_send" value="1"<?= checked(old('confirm_send')) ?>>
+            <span>Eingangsbestätigung an den Melder senden</span>
+        </label>
+        <p class="form-hint">
+            <?php if ($confirmText === ''): ?>
+                Es ist noch kein Bestätigungstext hinterlegt – unter Help-Desk-Einstellungen &rsaquo; Vorlageneinstellungen ergänzen. Ohne Text wird keine Bestätigung versendet.
+            <?php else: ?>
+                Sendet den hinterlegten Bestätigungstext an den Melder und, falls abweichend, an den betroffenen Benutzer. Meldungen aus dem Störungsformular und dem Störungspostfach erhalten die Bestätigung automatisch.
+            <?php endif; ?>
+        </p>
+    </div>
 <?php endif; ?>

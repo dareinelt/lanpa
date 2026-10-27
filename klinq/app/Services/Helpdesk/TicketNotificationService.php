@@ -35,10 +35,17 @@ final class TicketNotificationService
         return (bool) $this->config->get('helpdesk.notifications_enabled', true) && $this->mail->enabled();
     }
 
-    /** Ticket erstellt: Melder (Bestätigung), Gruppe und ggf. Bearbeiter. @param array<string,mixed> $ticket */
-    public function ticketCreated(array $ticket): void
+    /**
+     * Ticket erstellt: Melder (Bestätigung), Gruppe und ggf. Bearbeiter.
+     *
+     * @param array<string,mixed> $ticket
+     * @param bool $notifyRequester false, wenn bereits eine Eingangsbestätigung an den Melder ging
+     */
+    public function ticketCreated(array $ticket, bool $notifyRequester = true): void
     {
-        $this->sendTo($ticket, 'created', $this->requesterRecipients($ticket), 'Ihr Ticket wurde angelegt', $this->intro($ticket, 'Ihr Ticket wurde erfolgreich angelegt und wird vom IT Help Desk bearbeitet.'));
+        if ($notifyRequester) {
+            $this->sendTo($ticket, 'created', $this->requesterRecipients($ticket), 'Ihr Ticket wurde angelegt', $this->intro($ticket, 'Ihr Ticket wurde erfolgreich angelegt und wird vom IT Help Desk bearbeitet.'));
+        }
         $this->sendTo($ticket, 'created_team', $this->teamRecipients($ticket, true), 'Neues Ticket', $this->intro($ticket, 'Ein neues Ticket wurde eingereicht.'));
     }
 

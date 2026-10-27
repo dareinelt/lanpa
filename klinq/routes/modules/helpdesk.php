@@ -52,6 +52,7 @@ return static function (Router $router, Container $c): void {
     $router->get('/helpdesk/tickets/export', static fn (Request $r): Response => $tickets()->export($r), 'helpdesk.export');
     $router->get('/helpdesk/tickets/new', static fn (Request $r): Response => $tickets()->create($r), 'helpdesk.create');
     $router->post('/helpdesk/tickets', static fn (Request $r): Response => $tickets()->store($r), 'helpdesk.create');
+    $router->post('/helpdesk/tickets/merge', static fn (Request $r): Response => $tickets()->mergeMany($r), 'helpdesk.merge');
     $router->get('/helpdesk/tickets/{id}', static fn (Request $r): Response => $tickets()->show($r), 'helpdesk.view');
     $router->get('/helpdesk/tickets/{id}/edit', static fn (Request $r): Response => $tickets()->edit($r), 'helpdesk.update');
     $router->post('/helpdesk/tickets/{id}', static fn (Request $r): Response => $tickets()->update($r), 'helpdesk.update');

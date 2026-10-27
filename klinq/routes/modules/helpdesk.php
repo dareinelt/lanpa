@@ -40,6 +40,9 @@ return static function (Router $router, Container $c): void {
     $router->get('/stoerung', static fn (Request $r): Response => $quick()->form($r), null, true);
     $router->post('/stoerung', static fn (Request $r): Response => $quick()->store($r), null, true);
     $router->get('/stoerung/gesendet', static fn (Request $r): Response => $quick()->done($r), null, true);
+    // Personenauswahl im Zusatzfeld „Zusätzliche Benutzer“: Suche und Übernahme aus dem Telefonbuch.
+    $router->get('/stoerung/benutzer', static fn (Request $r): Response => $quick()->searchPeople($r), null, true);
+    $router->post('/stoerung/benutzer/uebernehmen', static fn (Request $r): Response => $quick()->adoptPerson($r), null, true);
 
     // ------------------------------------------------------------------ Agentenbereich
     $router->get('/helpdesk', static fn (Request $r): Response => $dash()->index($r), 'helpdesk.view');

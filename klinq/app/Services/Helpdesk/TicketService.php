@@ -212,7 +212,10 @@ final class TicketService
             $reporter = is_array($input['reporter'] ?? null) ? $input['reporter'] : [];
             $data['requester_employee_id'] = $this->existingEmployeeId($reporter['employee_id'] ?? null);
             $data['requester_user_id'] = $this->activeUserId($reporter['user_id'] ?? null);
-            $data['affected_employee_id'] = $data['requester_employee_id'];
+            // Optional im Formular gewählte betroffene Person; ohne Auswahl ist es der Melder.
+            $data['affected_employee_id'] = !empty($data['affected_employee_id'])
+                ? (int) $data['affected_employee_id']
+                : $data['requester_employee_id'];
             $extraFields = $this->reporterFields($reporter);
             $createdByName = mb_substr(trim((string) ($reporter['display_name'] ?? '')) ?: 'Störungsmeldung', 0, 200);
         }

@@ -185,7 +185,9 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Pausierung über `TicketService::changeStatus(..., notify: false)`.
 - **Störungsmeldeformular** (`/stoerung`) ist ohne Anmeldung erreichbar; Melder/Rechnername/AD-Daten werden
   serverseitig ermittelt, CSRF-Schutz und optionale Netz-/Ratenbegrenzung (`HELPDESK_QUICK_REPORT_*`) greifen
-  im Controller, nie im Client.
+  im Controller, nie im Client. Das optionale Feld „Betroffener Mitarbeiter“ nutzt eigene öffentliche
+  Endpunkte (`/stoerung/benutzer`, `/stoerung/benutzer/uebernehmen`), weil die Help-Desk-API `helpdesk.view`
+  verlangt; die Übernahme aus dem Telefonbuch ist dort zusätzlich auf 20 Vorgänge je Sitzung und Stunde begrenzt.
 - **Gespeicherte Zugangsdaten** (z. B. Help-Desk-Postfachpasswort) werden über `Support\Secret` mit `APP_KEY`
   verschlüsselt abgelegt, nie im Klartext.
 

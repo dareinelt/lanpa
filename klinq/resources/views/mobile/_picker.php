@@ -1,11 +1,12 @@
 <?php
 /**
  * Autocomplete-Auswahl (Mitarbeiter/Standort). Erwartet: $name, $label, $searchUrl, $selected (['id','name','meta']|null);
- * optional $required (bool), $placeholder, $hint, $id
+ * optional $required (bool), $placeholder, $hint, $id, $resolveUrl (übernimmt Treffer ohne lokale ID, z. B. Telefonbuch)
  */
 $pid = $id ?? 'picker-' . $name;
+$resolveUrl = $resolveUrl ?? null;
 ?>
-<div class="form-group picker<?= has_error($name) ? ' has-error' : '' ?>" data-picker data-search-url="<?= e($searchUrl) ?>">
+<div class="form-group picker<?= has_error($name) ? ' has-error' : '' ?>" data-picker data-search-url="<?= e($searchUrl) ?>"<?= $resolveUrl !== null && $resolveUrl !== '' ? ' data-resolve-url="' . e($resolveUrl) . '"' : '' ?>>
     <label for="<?= e($pid) ?>"><?= e($label) ?><?= !empty($required) ? ' <span class="required">*</span>' : '' ?></label>
     <input type="hidden" name="<?= e($name) ?>" value="<?= e((string) ($selected['id'] ?? '')) ?>" data-picker-value>
     <div class="picker-selected" data-picker-selected<?= $selected ? '' : ' hidden' ?>>

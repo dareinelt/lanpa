@@ -12,17 +12,19 @@ use App\Core\View;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\EmployeeRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
 use App\Security\Permissions;
 use App\Services\Helpdesk\ReporterIdentityService;
 use App\Services\Helpdesk\TicketService;
+use App\Services\PersonDirectoryService;
 use App\Support\IpRange;
 
 /**
  * Öffentliches Störungsformular (/stoerung) für Anwender – ohne Anmeldung und bewusst
- * auf zwei Felder beschränkt: Betreff und Beschreibung.
+ * schlank: Betreff, Beschreibung und optional zusätzliche betroffene Benutzer.
  *
  * Melder (Windows-Konto inkl. AD-Abgleich), Rechnername und IP-Adresse werden serverseitig
  * erkannt (ReporterIdentityService) und dürfen nicht aus dem Formular übernommen werden.
@@ -33,6 +35,9 @@ final class QuickReportController extends HelpdeskBaseController
 {
     private const SESSION_RATE_KEY = '_quick_report_times';
     private const SESSION_LAST_KEY = '_quick_report_last';
+    private const SESSION_PEOPLE_KEY = '_quick_report_people_times';
+    /** Obergrenze für Telefonbuch-Übernahmen pro Sitzung und Stunde (Schutz vor Massenanlage). */
+    private const PEOPLE_LIMIT_PER_HOUR = 20;
 
     public function __construct(
         View $view,
@@ -40,6 +45,8 @@ final class QuickReportController extends HelpdeskBaseController
         private readonly TicketService $service,
         private readonly ReporterIdentityService $identity,
         private readonly TicketMasterDataRepository $masterData,
+        private readonly PersonDirectoryService $people,
+        private readonly EmployeeRepository $employees,
         private readonly UserRepository $users,
         private readonly Permissions $permissions,
         private readonly Config $config,
@@ -64,12 +71,17 @@ final class QuickReportController extends HelpdeskBaseController
             return $this->renderForm($request, 'Es wurden in kurzer Zeit sehr viele Meldungen gesendet. Bitte wenden Sie sich telefonisch an den Help Desk.', 429, $reporter);
         }
 
-        // Nur Betreff und Beschreibung stammen aus dem Formular – alle Melderangaben serverseitig.
+        // Betreff, Beschreibung und der optional gewählte betroffene Mitarbeiter stammen aus dem
+        // Formular – alle Melderangaben werden serverseitig ermittelt.
         $input = [
             'subject' => $request->string('subject'),
             'description' => $request->string('description'),
             'reporter' => $reporter,
         ];
+        $affectedId = $request->int('affected_employee_id');
+        if ($affectedId !== null && $affectedId > 0) {
+            $input['affected_employee_id'] = $affectedId;
+        }
         $type = $this->masterData->typeByCode((string) $this->config->get('helpdesk.quick_report.default_type', 'incident'));
         if ($type !== null) {
             $input['ticket_type_id'] = (int) $type['id'];
@@ -115,6 +127,39 @@ final class QuickReportController extends HelpdeskBaseController
         ]);
     }
 
+    /**
+     * Personensuche für das Zusatzfeld „Zusätzliche Benutzer“ im öffentlichen Formular.
+     * Liefert nur Treffer; ein Mitarbeiterdatensatz entsteht erst über adoptPerson().
+     */
+    public function searchPeople(Request $request): Response
+    {
+        $this->assertAvailable($request);
+
+        return $this->json(['items' => $this->people->search($request->queryString('q'), PersonDirectoryService::LIMIT)]);
+    }
+
+    /**
+     * Übernimmt eine im Telefonbuch gefundene Person als lokalen Mitarbeiter, damit das
+     * Ticket auf einen gültigen Datensatz verweist. Die Stammdaten kommen aus dem Intranet,
+     * nicht aus der Anfrage. Da der Aufruf ohne Anmeldung möglich ist, gilt eine eigene
+     * Obergrenze pro Sitzung.
+     */
+    public function adoptPerson(Request $request): Response
+    {
+        $this->assertAvailable($request);
+        if (!$this->withinPeopleLimit()) {
+            return $this->json(['error' => 'Zu viele Anfragen. Bitte versuchen Sie es später erneut.'], 429);
+        }
+        $this->rememberPeopleLookup();
+
+        $id = $this->people->adopt($request->int('ref') ?? 0);
+        if ($id === null) {
+            return $this->json(['error' => 'Person nicht gefunden.'], 404);
+        }
+
+        return $this->json(['id' => $id]);
+    }
+
     /** Ticket unter dem Systemkonto anlegen, ohne die Sitzung des Besuchers zu verändern. */
     private function createAsSystemUser(array $input): array
     {
@@ -142,7 +187,30 @@ final class QuickReportController extends HelpdeskBaseController
             'title' => 'Störung melden',
             'reporter' => $reporter ?? $this->identity->detect($request),
             'error' => $error,
+            'affected' => $this->selectedAffected(),
         ], $status);
+    }
+
+    /**
+     * Bereits gewählter betroffener Mitarbeiter (nach Validierungsfehler erneut anzeigen).
+     * @return array{id:int,name:string,meta:string}|null
+     */
+    private function selectedAffected(): ?array
+    {
+        $id = (int) $this->oldInput('affected_employee_id', 0);
+        if ($id <= 0) {
+            return null;
+        }
+        $row = $this->employees->find($id);
+        if ($row === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $row['id'],
+            'name' => (string) $row['display_name'],
+            'meta' => trim((string) ($row['department'] ?? '')),
+        ];
     }
 
     /** Formular abgeschaltet oder Zugriff aus einem nicht freigegebenen Netz. */
@@ -178,6 +246,27 @@ final class QuickReportController extends HelpdeskBaseController
     private function recentSubmissions(): array
     {
         $times = is_array($_SESSION[self::SESSION_RATE_KEY] ?? null) ? $_SESSION[self::SESSION_RATE_KEY] : [];
+        $threshold = time() - 3600;
+
+        return array_values(array_filter($times, static fn (mixed $t): bool => is_int($t) && $t > $threshold));
+    }
+
+    private function withinPeopleLimit(): bool
+    {
+        return count($this->recentPeopleLookups()) < self::PEOPLE_LIMIT_PER_HOUR;
+    }
+
+    private function rememberPeopleLookup(): void
+    {
+        $times = $this->recentPeopleLookups();
+        $times[] = time();
+        $_SESSION[self::SESSION_PEOPLE_KEY] = $times;
+    }
+
+    /** @return array<int,int> Zeitstempel der letzten Stunde */
+    private function recentPeopleLookups(): array
+    {
+        $times = is_array($_SESSION[self::SESSION_PEOPLE_KEY] ?? null) ? $_SESSION[self::SESSION_PEOPLE_KEY] : [];
         $threshold = time() - 3600;
 
         return array_values(array_filter($times, static fn (mixed $t): bool => is_int($t) && $t > $threshold));

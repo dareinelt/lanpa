@@ -328,6 +328,43 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame('low', $ticket['priority_code'], 'Priorität aus Matrix, nicht aus Eingabe');
     }
 
+    // ------------------------------------------------------------------ Störungsformular (öffentlich)
+
+    /** @param array<string,mixed> $overrides @return array<string,mixed> */
+    private function createQuickReport(array $overrides = []): array
+    {
+        $type = $this->c->get(TicketMasterDataRepository::class)->typeByCode('incident');
+
+        return $this->service()->create(array_merge([
+            'subject' => 'Drucker im 2. OG defekt',
+            'description' => 'Der Drucker meldet Papierstau, obwohl kein Papier eingeklemmt ist.',
+            'ticket_type_id' => $type['id'],
+            'reporter' => [
+                'employee_id' => $this->requesterEmployeeId,
+                'display_name' => 'Max Melder',
+                'username' => 'mmelder',
+                'host' => 'PC-01',
+            ],
+        ], $overrides), 'form');
+    }
+
+    public function testQuickReportUsesChosenAffectedEmployee(): void
+    {
+        $ticket = $this->createQuickReport(['affected_employee_id' => $this->otherEmployeeId]);
+
+        $this->assertSame('form', $ticket['source']);
+        $this->assertSame($this->requesterEmployeeId, (int) $ticket['requester_employee_id'], 'Melder bleibt der erkannte Anwender');
+        $this->assertSame($this->otherEmployeeId, (int) $ticket['affected_employee_id'], 'Auswahl aus „Zusätzliche Benutzer“');
+    }
+
+    public function testQuickReportFallsBackToReporterWithoutAffectedEmployee(): void
+    {
+        $ticket = $this->createQuickReport();
+
+        $this->assertSame($this->requesterEmployeeId, (int) $ticket['requester_employee_id']);
+        $this->assertSame($this->requesterEmployeeId, (int) $ticket['affected_employee_id'], 'ohne Auswahl ist der Melder betroffen');
+    }
+
     // ------------------------------------------------------------------ Tags / Worklog / Beziehungen
 
     public function testTagsWorklogAndRelations(): void

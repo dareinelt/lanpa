@@ -7,15 +7,15 @@ $cellActive = static fn (array $r): string => array_key_exists('is_active', $r) 
 $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_array($r['members'] ?? null) ? count($r['members']) : 0));
 ?>
 <div class="page-header">
-    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : 'Stammdaten, SLAs, Vorlagen und Automatisierungen.' ?></p></div>
-    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isQuickReport): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new"><?= icon('plus') ?> Neu</a><?php endif; ?></div>
+    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : ($isReplyTemplates ? 'Fester Präfix-Text für Agenten-E-Mails.' : 'Stammdaten, SLAs, Vorlagen und Automatisierungen.') ?></p></div>
+    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isQuickReport && !$isReplyTemplates): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new"><?= icon('plus') ?> Neu</a><?php endif; ?></div>
 </div>
 <div class="status-tabs admin-tabs" role="tablist" aria-label="Administrationsbereiche">
     <?php foreach ($kinds as $key => $label): ?>
         <a class="status-tab<?= $kind === $key ? ' is-active' : '' ?>" href="/helpdesk/admin?tab=<?= e($key) ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
 </div>
-<?php if (!$isQuickReport): ?>
+<?php if (!$isQuickReport && !$isReplyTemplates): ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Konfiguration</h2><span class="text-muted text-sm">aus Umgebung</span></div>
     <div class="grid grid-4">
@@ -24,7 +24,7 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
         <?php endforeach; ?>
     </div>
 </div>
-<?php else: ?>
+<?php elseif ($isQuickReport): ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Störungsformular für Anwender</h2><span class="text-muted text-sm"><?= $quickReport['enabled'] ? 'aktiv' : 'deaktiviert' ?></span></div>
     <p class="text-muted text-sm">Öffentlicher Link ohne Anmeldung – nur Betreff und Beschreibung. Melder (inkl. AD-Abgleich), Rechnername und IP-Adresse werden automatisch erfasst. Diesen Link im Intranet, als Desktopverknüpfung oder per Gruppenrichtlinie verteilen.</p>
@@ -83,8 +83,24 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
     </form>
 </div>
 <?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
+<?php elseif ($isReplyTemplates): ?>
+<div class="card mb-4">
+    <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails</span></div>
+    <p class="text-muted text-sm">Der Präfix-Text wird beim Senden einer E-Mail aus einem Ticket automatisch <strong>vor</strong> den Text des Agenten gesetzt. Er ist im Sendedialog weder sichtbar noch änderbar. Leer = kein Präfix.</p>
+    <form method="post" action="/helpdesk/admin/reply-templates" novalidate>
+        <?= csrf_field() ?>
+        <div class="form-group<?= has_error('prefix_text') ? ' has-error' : '' ?>">
+            <label for="reply-template-prefix">Präfix-Text</label>
+            <textarea id="reply-template-prefix" name="prefix_text" rows="8" maxlength="<?= (int) $replyTemplate['max_length'] ?>" placeholder="Sehr geehrte Damen und Herren,&#10;&#10;vielen Dank für Ihre Nachricht."><?= e(old('prefix_text', $replyTemplate['prefix_text'])) ?></textarea>
+            <span class="form-hint">Leerzeile = neuer Absatz, einfacher Zeilenumbruch bleibt erhalten. Höchstens <?= (int) $replyTemplate['max_length'] ?> Zeichen. Gilt nur für die Agenten-Mail aus dem Ticket, nicht für die Info-E-Mail beim Zusammenführen.</span>
+            <?= field_error('prefix_text') ?>
+        </div>
+        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button></div>
+    </form>
+</div>
+<?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php endif; ?>
-<?php if (!$isQuickReport): ?>
+<?php if (!$isQuickReport && !$isReplyTemplates): ?>
 <div class="card card-flush">
     <div class="card-header"><h2><?= e($kinds[$kind] ?? 'Bereich') ?></h2><span class="text-muted text-sm"><?= count($rows) ?> Einträge</span></div>
     <?php if ($rows === []): ?>

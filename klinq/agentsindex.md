@@ -182,7 +182,10 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   `TicketNotificationService::wrap()`. Die Orvanta-Signatur kommt über `LanpaBridge::signature()` aus dem Intranet
   und wird **serverseitig** angehängt (nie aus dem Browser übernommen); der HTML-Text läuft vorher durch
   `Support\HtmlSanitizer`. Ergebnis ist ein öffentlicher Kommentar (`source = email`) plus optional eine
-  Pausierung über `TicketService::changeStatus(..., notify: false)`.
+  Pausierung über `TicketService::changeStatus(..., notify: false)`. Ein in den Help-Desk-Einstellungen
+  gepflegter **Präfix-Text** (`ReplyTemplateSettingsService`, Einstellung `helpdesk.reply_template.prefix_text`,
+  Startwert `HELPDESK_REPLY_TEMPLATE_PREFIX`) wird erst beim Senden in `renderBody()` vorangestellt und steht
+  nicht im Mail-Dialog; für die Zusammenführungs-Info gilt er nicht.
 - **Störungsmeldeformular** (`/stoerung`) ist ohne Anmeldung erreichbar; Melder/Rechnername/AD-Daten werden
   serverseitig ermittelt, CSRF-Schutz und optionale Netz-/Ratenbegrenzung (`HELPDESK_QUICK_REPORT_*`) greifen
   im Controller, nie im Client. Das optionale Feld „Betroffener Mitarbeiter“ nutzt eigene öffentliche

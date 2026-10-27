@@ -65,6 +65,7 @@ use App\Services\Helpdesk\MailboxSettingsService;
 use App\Services\Helpdesk\OutboundMailSettingsService;
 use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Services\Helpdesk\TicketMailIngestionService;
+use App\Services\Helpdesk\ReplyTemplateSettingsService;
 use App\Services\Helpdesk\TicketMailService;
 use App\Services\Helpdesk\TicketAttachmentService;
 use App\Services\Helpdesk\TicketMergeService;
@@ -122,7 +123,8 @@ return static function (Container $c): void {
         $c->get(\App\Services\Lanpa\LanpaBridge::class),
         $c->get(CurrentUser::class),
         $c->get(Config::class),
-        $c->get(Logger::class)
+        $c->get(Logger::class),
+        $c->get(ReplyTemplateSettingsService::class)
     ));
     $c->singleton(TicketRuleService::class, static fn (Container $c): TicketRuleService => new TicketRuleService(
         $c->get(TicketRuleRepository::class),
@@ -373,6 +375,12 @@ return static function (Container $c): void {
         $c->get(AuditLogService::class),
         $c->get(CurrentUser::class)
     ));
+    $c->singleton(ReplyTemplateSettingsService::class, static fn (Container $c): ReplyTemplateSettingsService => new ReplyTemplateSettingsService(
+        $c->get(SettingsService::class),
+        $c->get(Config::class),
+        $c->get(AuditLogService::class),
+        $c->get(CurrentUser::class)
+    ));
     $c->singleton(QuickReportController::class, static fn (Container $c): QuickReportController => new QuickReportController(
         $c->get(View::class),
         $c->get(CurrentUser::class),
@@ -423,6 +431,7 @@ return static function (Container $c): void {
         $c->get(TicketMailIngestionService::class),
         $c->get(MailboxSettingsService::class),
         $c->get(QuickReportSettingsService::class),
+        $c->get(ReplyTemplateSettingsService::class),
         $c->get(SharedAccountSuggestionService::class),
         $c->get(Config::class)
     ));

@@ -341,7 +341,8 @@ final class HelpdeskOutboundMailIntegrationTest extends DatabaseTestCase
         self::$stubPort = self::freePort();
         $script = dirname(__DIR__) . '/Support/smtp_stub_server.php';
         $command = [PHP_BINARY, $script, self::$stubLog, (string) self::$stubPort];
-        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['file', '/dev/null', 'a'], 2 => ['file', '/dev/null', 'a']], $pipes);
+        $nullDevice = PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
+        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['file', $nullDevice, 'a'], 2 => ['file', $nullDevice, 'a']], $pipes);
         if (!is_resource($process)) {
             $this->markSkipped('Der lokale SMTP-Stub konnte nicht gestartet werden.');
         }

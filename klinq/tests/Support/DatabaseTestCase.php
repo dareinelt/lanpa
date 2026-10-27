@@ -26,6 +26,9 @@ abstract class DatabaseTestCase extends TestCase
     {
         $this->c = self::sharedContainer();
         $this->pdo = $this->c->get(PDO::class);
+        if ($this->pdo->inTransaction()) {
+            $this->pdo->rollBack(); // Rest einer in setUp abgebrochenen Vorbereitung
+        }
         $this->pdo->beginTransaction();
     }
 

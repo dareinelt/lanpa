@@ -1,6 +1,7 @@
 <?php require_once __DIR__ . '/../../partials/helpers.php'; ob_start();
-/** Öffentliches Störungsformular: nur Betreff und Beschreibung, alles Weitere wird erkannt. */
-$scripts = ['/js/helpdesk-media.js'];
+/** Öffentliches Störungsformular: Betreff, Beschreibung und optional betroffene Benutzer; alles Weitere wird erkannt. */
+$scripts = ['/js/helpdesk-media.js', '/js/picker.js'];
+$affected = $affected ?? null;
 $detected = [];
 if (!empty($reporter['display_name'])) {
     $detected[] = ['Gemeldet von', $reporter['display_name'] . (!empty($reporter['username']) ? ' (' . $reporter['username'] . ')' : '')];
@@ -43,11 +44,27 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
                 <p class="form-hint">Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
                 <?= field_error('description') ?>
             </div>
+            <details class="quick-more"<?= ($affected !== null || has_error('affected_employee_id')) ? ' open' : '' ?>>
+                <summary>Zusätzliche Benutzer <span class="text-muted text-xs">(optional)</span></summary>
+                <div class="quick-more-body">
+                    <?php
+                    $name = 'affected_employee_id';
+                    $label = 'Betroffener Mitarbeiter';
+                    $searchUrl = '/stoerung/benutzer';
+                    $resolveUrl = '/stoerung/benutzer/uebernehmen';
+                    $selected = $affected;
+                    $id = 'q-affected';
+                    $placeholder = 'Name, Benutzername oder Telefon';
+                    $hint = 'Falls jemand anderes als Sie betroffen ist. Die Auswahl wird im Ticket als „Betroffener Mitarbeiter“ hinterlegt.';
+                    include __DIR__ . '/../../mobile/_picker.php';
+                    ?>
+                </div>
+            </details>
             <div class="quick-detected">
                 <h2 class="text-sm mb-2">Automatisch erfasst</h2>
                 <dl>
-                    <?php foreach ($detected as [$label, $value]): ?>
-                        <div><dt><?= e($label) ?></dt><dd><?= e($value) ?></dd></div>
+                    <?php foreach ($detected as [$dt, $dd]): ?>
+                        <div><dt><?= e($dt) ?></dt><dd><?= e($dd) ?></dd></div>
                     <?php endforeach; ?>
                 </dl>
                 <?php if (empty($reporter['username'])): ?>

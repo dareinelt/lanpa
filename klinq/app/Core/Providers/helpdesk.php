@@ -358,6 +358,8 @@ return static function (Container $c): void {
         $c->get(TicketService::class),
         $c->get(ReporterIdentityService::class),
         $c->get(TicketMasterDataRepository::class),
+        $c->get(PersonDirectoryService::class),
+        $c->get(EmployeeRepository::class),
         $c->get(UserRepository::class),
         $c->get(Permissions::class),
         $c->get(Config::class),

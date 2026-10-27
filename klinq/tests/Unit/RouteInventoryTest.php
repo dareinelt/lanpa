@@ -36,7 +36,13 @@ final class RouteInventoryTest extends TestCase
         $known = $permissions->all();
         // Öffentlich sind nur die Anmeldung, der Health-Check, das Störungsformular für Anwender
         // und der Einstieg aus dem Intranet (LANPA) mit signiertem Schein.
-        $publicAllowed = ['GET /login', 'POST /login', 'GET /health', 'GET /stoerung', 'POST /stoerung', 'GET /stoerung/gesendet', 'GET /sso/lanpa'];
+        $publicAllowed = [
+            'GET /login', 'POST /login', 'GET /health',
+            'GET /stoerung', 'POST /stoerung', 'GET /stoerung/gesendet',
+            // Personenauswahl im Zusatzfeld „Zusätzliche Benutzer“ des öffentlichen Formulars
+            'GET /stoerung/benutzer', 'POST /stoerung/benutzer/uebernehmen',
+            'GET /sso/lanpa',
+        ];
         $routes = $this->routes();
 
         $this->assertTrue(count($routes) > 80, 'Routen nicht geladen');
@@ -56,9 +62,11 @@ final class RouteInventoryTest extends TestCase
     {
         // POST ohne Recht ist nur erlaubt, wenn die Aktion nur den eigenen Kontext betrifft.
         // POST /stoerung ist bewusst öffentlich: das Formular legt Tickets über ein Systemkonto an
-        // und ist durch CSRF-Token, Netzfreigabe und Ratenbegrenzung abgesichert.
-        $sessionScoped = ['POST /logout', 'POST /login', 'POST /profile/password', 'POST /stoerung'];
-        $publicWriteAllowed = ['POST /login', 'POST /stoerung'];
+        // und ist durch CSRF-Token, Netzfreigabe und Ratenbegrenzung abgesichert. Dasselbe gilt für
+        // POST /stoerung/benutzer/uebernehmen, das nur Telefonbucheinträge als Mitarbeiter übernimmt
+        // (Stammdaten aus dem Intranet, eigene Obergrenze je Sitzung und Stunde).
+        $sessionScoped = ['POST /logout', 'POST /login', 'POST /profile/password', 'POST /stoerung', 'POST /stoerung/benutzer/uebernehmen'];
+        $publicWriteAllowed = ['POST /login', 'POST /stoerung', 'POST /stoerung/benutzer/uebernehmen'];
         foreach ($this->routes() as $route) {
             if ($route->method !== 'POST') {
                 continue;

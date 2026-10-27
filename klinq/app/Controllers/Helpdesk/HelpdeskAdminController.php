@@ -20,6 +20,7 @@ use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskAdminService;
 use App\Services\Helpdesk\MailboxSettingsService;
 use App\Services\Helpdesk\QuickReportSettingsService;
+use App\Services\Helpdesk\SharedAccountSuggestionService;
 use App\Services\Helpdesk\TicketMailIngestionService;
 use App\Services\Helpdesk\TicketNotificationService;
 use App\Services\Helpdesk\TicketRuleEvaluator;
@@ -64,6 +65,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         private readonly TicketMailIngestionService $mailIngestion,
         private readonly MailboxSettingsService $mailSettings,
         private readonly QuickReportSettingsService $quickSettings,
+        private readonly SharedAccountSuggestionService $accountSuggestions,
         private readonly Config $config
     ) {
         parent::__construct($view, $currentUser);
@@ -152,6 +154,14 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         $this->flash('success', 'Einstellungen des Störungsformulars gespeichert.');
 
         return $this->redirect('/helpdesk/admin?tab=quick-report');
+    }
+
+    /** Vorschläge für das Feld „Sammelkonten“ (Anmeldenamen aus Telefonbuch, Mitarbeitern und lokalen Konten). */
+    public function suggestSharedAccounts(Request $request): Response
+    {
+        $this->currentUser->require('helpdesk.admin');
+
+        return $this->json(['items' => $this->accountSuggestions->suggest($request->queryString('q'))]);
     }
 
     /** Protokoll des E-Mail-Eingangs (IMAP) mit Konfigurationsübersicht. */

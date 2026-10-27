@@ -44,14 +44,32 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
 </div>
 <div class="card mb-4">
     <div class="card-header"><h2>Sammelkonten</h2><span class="text-muted text-sm">Pflicht für zusätzlichen Benutzer</span></div>
-    <p class="text-muted text-sm">Anmeldenamen von AD-/SSO-Konten („Sammelkonten“ bzw. anonyme Konten), bei denen im Formular zwingend ein zusätzlicher Benutzer angegeben werden muss. Ein Name pro Zeile; Schreibweisen wie <span class="mono">DOMAIN\konto</span> oder <span class="mono">konto@domain</span> werden auf den Anmeldenamen reduziert.</p>
+    <p class="text-muted text-sm">Anmeldenamen von AD-/SSO-Konten („Sammelkonten“ bzw. anonyme Konten), bei denen im Formular zwingend ein zusätzlicher Benutzer angegeben werden muss. Konto eintippen, Vorschlag auswählen und mit <kbd>Enter</kbd> übernehmen; die eingetragenen Konten stehen darunter und lassen sich dort wieder entfernen. Schreibweisen wie <span class="mono">DOMAIN\konto</span> oder <span class="mono">konto@domain</span> werden auf den Anmeldenamen reduziert.</p>
     <form method="post" action="/helpdesk/admin/quick-report" novalidate>
         <?= csrf_field() ?>
         <div class="form-row">
             <div class="form-group<?= has_error('shared_accounts') ? ' has-error' : '' ?>">
-                <label for="quick-report-shared-accounts">Konten</label>
-                <textarea id="quick-report-shared-accounts" name="shared_accounts" rows="6" class="mono" placeholder="empfang&#10;besprechungsraum1"><?= e(old('shared_accounts', $quickReport['shared_accounts'])) ?></textarea>
-                <span class="form-hint">Leer = kein Konto ist verpflichtet.</span>
+                <label for="quick-report-shared-account-input">Konten</label>
+                <?php $accountValue = (string) old('shared_accounts', $quickReport['shared_accounts']); ?>
+                <div class="account-picker" data-shared-accounts data-suggest-url="/api/helpdesk/quick-report/accounts/suggest">
+                    <div data-shared-account-ui hidden>
+                        <div class="account-picker-entry">
+                            <input id="quick-report-shared-account-input" type="text" class="mono" autocomplete="off" spellcheck="false" placeholder="empfang" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="quick-report-shared-account-suggestions" data-shared-account-input>
+                            <button type="button" class="btn btn-secondary" data-shared-account-add><?= icon('plus') ?> Hinzufügen</button>
+                        </div>
+                        <ul class="account-picker-suggestions" id="quick-report-shared-account-suggestions" role="listbox" aria-label="Kontovorschläge" hidden data-shared-account-suggestions></ul>
+                        <ul class="account-picker-list" aria-label="Eingetragene Sammelkonten" hidden data-shared-account-list>
+                            <?php foreach (preg_split('/[\r\n,;]+/', $accountValue) ?: [] as $account): ?>
+                                <?php if (trim($account) !== ''): ?>
+                                    <li class="account-picker-chip"><?= e(trim($account)) ?><button type="button" class="account-picker-remove" aria-label="Konto entfernen" data-shared-account-remove>&times;</button></li>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
+                        </ul>
+                        <span class="form-hint" data-shared-account-empty<?= trim($accountValue) === '' ? '' : ' hidden' ?>>Leer = kein Konto ist verpflichtet.</span>
+                        <span class="form-error" role="alert" hidden data-shared-account-feedback></span>
+                    </div>
+                    <textarea id="quick-report-shared-accounts" name="shared_accounts" rows="6" class="mono" placeholder="empfang&#10;besprechungsraum1" data-shared-account-value><?= e($accountValue) ?></textarea>
+                </div>
                 <?= field_error('shared_accounts') ?>
             </div>
             <div class="form-group<?= has_error('shared_accounts_hint') ? ' has-error' : '' ?>">
@@ -154,4 +172,4 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
     <?php endif; ?>
 </div>
 <?php endif; ?>
-<?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>
+<?php $scripts = $isQuickReport ? ['/js/helpdesk-quick-report.js'] : []; $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

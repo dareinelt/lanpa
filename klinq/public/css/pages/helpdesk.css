@@ -110,6 +110,21 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 .tag-chip.is-danger { background: var(--color-danger-soft); color: var(--color-danger); }
 .tag-list { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 
+/* Sammelkonten: Eingabezeile mit Vorschlägen und Liste der Konten */
+.account-picker { position: relative; }
+.account-picker-entry { display: flex; gap: var(--space-2); }
+.account-picker-entry input { flex: 1; min-width: 0; }
+.account-picker-suggestions { position: absolute; z-index: 20; left: 0; right: 0; margin: var(--space-1) 0 0; padding: var(--space-1); list-style: none; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); box-shadow: var(--shadow-md); max-height: 16rem; overflow-y: auto; }
+.account-picker-option { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); cursor: pointer; }
+.account-picker-option.is-active { background: var(--color-primary-soft); }
+.account-picker-name { font-family: var(--font-mono); font-size: var(--font-size-sm); color: var(--color-text); }
+.account-picker-meta { font-size: var(--font-size-xs); color: var(--color-text-muted); }
+.account-picker-list { display: flex; flex-wrap: wrap; gap: var(--space-1); list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+.account-picker-list:empty { margin: 0; }
+.account-picker-chip { display: inline-flex; align-items: center; gap: var(--space-1); padding: 1px var(--space-1) 1px var(--space-2); border-radius: var(--radius-full); font-family: var(--font-mono); font-size: var(--font-size-xs); background: var(--color-neutral-soft); color: var(--color-neutral); }
+.account-picker-remove { border: 0; background: transparent; color: inherit; cursor: pointer; line-height: 1; padding: 0 var(--space-1); font-size: var(--font-size-sm); border-radius: var(--radius-full); }
+.account-picker-remove:hover, .account-picker-remove:focus-visible { background: var(--color-danger-soft); color: var(--color-danger); }
+
 /* Kommentare */
 .comment-filter { display: inline-flex; gap: var(--space-1); }
 .comment-filter button { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-full); padding: 2px var(--space-3); font-size: var(--font-size-xs); cursor: pointer; }

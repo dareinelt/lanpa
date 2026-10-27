@@ -99,8 +99,8 @@ final class TicketMergeService
         if (!empty($target['merged_into_ticket_id'])) {
             throw ValidationException::single('target', 'Das Zielticket wurde selbst bereits zusammengeführt – bitte ' . $target['merged_into_number'] . ' verwenden.');
         }
-        if ($this->workflow->isFinal((string) $target['status_code'])) {
-            throw ValidationException::single('target', 'Das Zielticket ist bereits abgeschlossen.');
+        if ((string) $target['status_code'] === TicketWorkflowService::CANCELLED) {
+            throw ValidationException::single('target', 'Das Zielticket ist storniert und kann nicht als Ziel dienen.');
         }
         $cancelled = $this->masterData->statusByCode(TicketWorkflowService::CANCELLED);
         if ($cancelled === null) {

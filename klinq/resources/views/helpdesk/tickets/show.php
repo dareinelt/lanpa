@@ -650,7 +650,7 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
                         data-hd-merge-suggestions hidden></ul>
                 </div>
                 <p class="hd-merge-selected" data-hd-merge-selected hidden></p>
-                <p class="form-hint">Vorschläge stammen aus den offenen Tickets derselben meldenden Person; zusätzlich Suche über Nummer oder Betreff.</p>
+                <p class="form-hint">Vorschläge stammen aus den Tickets derselben meldenden Person, offene zuerst; auch gelöste und geschlossene Tickets sind möglich. Zusätzlich Suche über Nummer oder Betreff.</p>
                 <p class="alert alert-danger" data-hd-merge-target-error hidden></p>
             </div>
 

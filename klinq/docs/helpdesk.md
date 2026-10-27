@@ -162,7 +162,7 @@ gelangen. Die Suche läuft live über die interne Schnittstelle `GET /internal/k
 
 ### Liste (`/helpdesk/tickets`)
 
-Ansichten *Meine*, *Meine Gruppe*, *Nicht zugewiesen*, *Alle offenen*, *SLA-kritisch*, *Gelöst*, *Alle*, dazu Volltext (Nummer, Betreff, Beschreibung, Melder), Filter nach Status, Priorität, Typ, Kategorie, Gruppe, Agent, Tag, Asset, Zeitraum; Sortierung nach Fälligkeit, Priorität, Aktualisierung, Nummer. CSV-Export (`helpdesk.export`) respektiert die aktiven Filter. Mit `helpdesk.merge` hat jede Zeile ein Auswahlkästchen; ab drei gewählten Tickets erscheint neben **CSV** die Schaltfläche **„Zusammenführen“** (siehe „Mehrere Tickets zusammenführen“).
+Ansichten *Meine*, *Meine Gruppe*, *Nicht zugewiesen*, *Alle offenen*, *SLA-kritisch*, *Gelöst*, *Alle*, dazu Volltext (Nummer, Betreff, Beschreibung, Melder), Filter nach Status, Priorität, Typ, Kategorie, Gruppe, Agent, Tag, Asset, Zeitraum; Sortierung nach Fälligkeit, Priorität, Aktualisierung, Nummer. CSV-Export (`helpdesk.export`) respektiert die aktiven Filter. Mit `helpdesk.merge` hat jede Zeile ein Auswahlkästchen; ab zwei gewählten Tickets erscheint neben **CSV** die Schaltfläche **„Zusammenführen“** (siehe „Mehrere Tickets zusammenführen“).
 
 ![Ticketliste mit Ansichten, Filtern und Sortierung](screenshots/helpdesk-tickets.png)
 
@@ -247,15 +247,18 @@ ein Overlay mit dem Mail-Editor aus Orvanta – samt **Kontextmenü** und **KI-U
 
 ### Ticket zusammenführen
 
-Ein Ticket lässt sich auf ein **bereits vorhandenes** Ticket zusammenführen (Berechtigung `helpdesk.merge`). Die
-Schaltfläche **„Zusammenführen“** im Seitenkopf des Tickets öffnet ein Overlay – wie beim Senden einer E-Mail.
+Ein Ticket lässt sich auf ein **bereits vorhandenes** Ticket zusammenführen (Berechtigung `helpdesk.merge`). Das
+Zielticket darf sich noch in Bearbeitung befinden oder bereits gelöst bzw. geschlossen sein; es behält seinen Status
+bei. Stornierte Tickets können nicht Ziel sein. Die Schaltfläche **„Zusammenführen“** im Seitenkopf des Tickets öffnet
+ein Overlay – wie beim Senden einer E-Mail.
 
-![Zusammenführen-Overlay: Suche mit Vorschlägen aus den offenen Tickets](screenshots/helpdesk-merge-search.png)
+![Zusammenführen-Overlay: Suche mit Vorschlägen aus den Tickets der meldenden Person](screenshots/helpdesk-merge-search.png)
 
-- **Suche**: Das Feld schlägt **offene Tickets** vor (Status der Kategorien *Neu*, *In Bearbeitung*, *Wartend*),
-  bereits zusammengeführte und abgeschlossene Tickets sind ausgeschlossen, das Quellticket selbst ebenso. Ohne
-  Suchbegriff erscheinen nur die offenen Tickets **derselben meldenden Person**; mit Suchbegriff kommen Treffer aus
-  allen Tickets dazu (Ticketnummer, Betreff, Meldername, Melder-E-Mail). Tickets der meldenden Person stehen oben und
+- **Suche**: Das Feld schlägt Tickets derselben meldenden Person vor, offene zuerst. Bereits zusammengeführte und
+  stornierte Tickets sind ausgeschlossen, das Quellticket selbst ebenso; **gelöste und geschlossene Tickets sind
+  zulässige Ziele** und stehen in der Liste nach den offenen. Ohne Suchbegriff erscheinen nur die Tickets **derselben
+  meldenden Person**; mit Suchbegriff kommen Treffer aus allen Tickets dazu (Ticketnummer, Betreff, Meldername,
+  Melder-E-Mail). Tickets der meldenden Person stehen oben und
   sind mit **„gleiche Person“** gekennzeichnet (`GET /api/helpdesk/tickets/search?merge_for={id}&q=…` →
   `TicketRepository::suggestForMerge()`).
 - **Ziel**: Auswahl per Klick oder Eingabe der Ticketnummer (z. B. `HD-2024-000123`); das Feld prüft beim Absenden,
@@ -287,8 +290,10 @@ In der Ticketliste (`/helpdesk/tickets`) hat jede Zeile ein Auswahlkästchen (Sp
 Schaltfläche **„Zusammenführen“** mit der Anzahl der gewählten Tickets. Sie öffnet ein Overlay, in dem genau eines der
 ausgewählten Tickets als **Ziel** gewählt wird; die übrigen wandern per `TicketMergeService::mergeMany()` als Quellen
 in dieses Ticket. Der Grund ist fest **Duplikat**; die Info-E-Mail an den Melder wird nicht versendet. Bereits
-zusammengeführte Tickets sind nicht auswählbar, und einzelne Fehler (etwa ein inzwischen abgeschlossenes Ziel) brechen
-die übrigen Zusammenführungen nicht ab – sie erscheinen als Warnhinweis. Technik: Route `POST /helpdesk/tickets/merge`
+zusammengeführte Tickets sind nicht auswählbar, und einzelne Fehler (etwa ein inzwischen selbst zusammengeführtes
+Ticket) brechen die übrigen Zusammenführungen nicht ab – sie erscheinen als Warnhinweis. Das Ziel darf auch gelöst oder
+geschlossen sein und bleibt in diesem Status; nur stornierte Tickets sind als Ziel ausgeschlossen. Die Auswahlliste zeigt
+den Status jedes Tickets an. Technik: Route `POST /helpdesk/tickets/merge`
 (`helpdesk.merge`), Oberfläche `public/js/helpdesk-merge-bulk.js` (`<dialog id="bulk-merge-dialog">`).
 
 ### Ticket-Berichte & Administration

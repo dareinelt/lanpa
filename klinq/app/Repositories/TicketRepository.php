@@ -356,15 +356,17 @@ final class TicketRepository extends BaseRepository
     }
 
     /**
-     * Vorschläge für das Zusammenführen: offene Tickets derselben meldenden
-     * Person zuerst, danach Treffer über Nummer oder Betreff.
+     * Vorschläge für das Zusammenführen: Tickets derselben meldenden Person
+     * zuerst, danach Treffer über Nummer oder Betreff. Offene Tickets stehen
+     * vor gelösten und geschlossenen; stornierte und bereits zusammengeführte
+     * Tickets sind ausgeschlossen.
      *
      * @return array<int,array<string,mixed>>
      */
     public function suggestForMerge(string $term, int $limit, int $excludeId, ?int $employeeId, ?int $userId, string $email): array
     {
         $params = ['ex' => $excludeId];
-        $where = ['t.id <> :ex', 't.merged_into_ticket_id IS NULL', "st.category IN ('new','open','pending')"];
+        $where = ['t.id <> :ex', 't.merged_into_ticket_id IS NULL', "st.category <> 'cancelled'"];
         $requester = [];
         if ($employeeId !== null) {
             $requester[] = 't.requester_employee_id = :emp';
@@ -400,7 +402,7 @@ final class TicketRepository extends BaseRepository
              LEFT JOIN employees req ON req.id = t.requester_employee_id
              LEFT JOIN users ru ON ru.id = t.requester_user_id
              WHERE " . implode(' AND ', $where) . "
-             ORDER BY same_requester DESC, t.updated_at DESC
+             ORDER BY same_requester DESC, st.sort_order ASC, t.updated_at DESC
              LIMIT {$limit}",
             $params
         );

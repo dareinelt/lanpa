@@ -70,6 +70,17 @@
 
             main.appendChild(number);
             main.appendChild(subject);
+
+            const status = box.getAttribute("data-status") || "";
+            if (status !== "") {
+                const colors = ["success", "info", "warning", "danger", "neutral"];
+                const color = box.getAttribute("data-status-color") || "neutral";
+                const badgeEl = document.createElement("span");
+                badgeEl.className = "badge badge-" + (colors.indexOf(color) !== -1 ? color : "neutral");
+                badgeEl.textContent = status;
+                main.appendChild(badgeEl);
+            }
+
             label.appendChild(radio);
             label.appendChild(main);
             targetList.appendChild(label);

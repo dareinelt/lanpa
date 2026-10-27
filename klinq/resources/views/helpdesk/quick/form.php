@@ -45,7 +45,7 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
                 <?= field_error('description') ?>
             </div>
             <details class="quick-more"<?= ($affected !== null || has_error('affected_employee_id')) ? ' open' : '' ?>>
-                <summary>Zusätzliche Benutzer <span class="text-muted text-xs">(optional)</span></summary>
+                <summary>Zusätzlicher Benutzer <span class="text-muted text-xs">(optional)</span></summary>
                 <div class="quick-more-body">
                     <?php
                     $name = 'affected_employee_id';

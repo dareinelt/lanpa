@@ -74,7 +74,7 @@ final class AuthService
             }
 
             if ($user === null) {
-                $roleId = $this->users->roleId((string) $this->config->get('ldap.auth.default_role', 'readonly'));
+                $roleId = $this->users->roleId((string) $this->config->get('ldap.auth.default_role', 'portal'));
                 if ($roleId === null) {
                     return null;
                 }

@@ -33,6 +33,29 @@ final class ModuleNavigation
     private const SYSTEM_KEYS = ['reports', 'imports', 'audit', 'admin'];
 
     /**
+     * Rechte, die den Zugang zur Assetverwaltung freigeben.
+     *
+     * Die Rolle "Serviceportal" enthält bewusst keines dieser Rechte: Mitarbeitende ohne
+     * ausdrückliche KLINQ-Berechtigung sehen ausschließlich ihren eigenen Help-Desk-Bereich
+     * und dürfen die Assetverwaltung auch nicht lesend öffnen.
+     */
+    private const ASSET_PERMISSIONS = [
+        'dashboard.view',
+        'assets.view',
+        'movements.view',
+        'handover.view',
+        'licenses.view',
+        'orders.view',
+        'suppliers.view',
+        'employees.view',
+        'locations.view',
+        'costcenters.view',
+        'manufacturers.view',
+        'articles.view',
+        'documents.view',
+    ];
+
+    /**
      * Pfadpräfixe der beiden merkbaren Module (Assetverwaltung, Help Desk).
      *
      * Nur eindeutig zuzuordnende Seiten stehen hier; neutrale Pfade (Profil, globale Suche,
@@ -100,15 +123,61 @@ final class ModuleNavigation
      * Startseite beim nächsten Öffnen der Anwendung.
      *
      * Das zuletzt geöffnete Modul gewinnt, sofern es für den Benutzer verfügbar ist
-     * (Modulschalter und Berechtigung); sonst bleibt Assetverwaltung der Standard.
+     * (Modulschalter und Berechtigung); sonst greift das erste verfügbare Modul.
+     * Ohne jedes Modulrecht bleibt Assetverwaltung der Standard (Anmeldung ohne Rechte).
      */
     public static function startUrl(string $lastModule, callable $can, bool $helpdeskEnabled): string
     {
-        if ($lastModule === self::HELPDESK && $helpdeskEnabled && ($can('helpdesk.view') || $can('portal.view'))) {
-            return self::home(self::HELPDESK, $can);
+        return self::entryUrl($lastModule, $can, $helpdeskEnabled) ?? self::home(self::ASSETS, $can);
+    }
+
+    /**
+     * Erstes für den Benutzer erreichbares Ziel; null, wenn kein Modul verfügbar ist.
+     *
+     * Grundlage für Weiterleitungen nach der Anmeldung und für den Rückweg auf
+     * Fehlerseiten (z. B. "Zum Help-Desk-Portal" statt "Zum Dashboard").
+     */
+    public static function entryUrl(string $lastModule, callable $can, bool $helpdeskEnabled): ?string
+    {
+        if ($lastModule !== '' && self::canEnter($lastModule, $can, $helpdeskEnabled)) {
+            return self::home($lastModule, $can);
         }
 
-        return self::home(self::ASSETS, $can);
+        foreach ([self::ASSETS, self::HELPDESK, self::SYSTEM] as $module) {
+            if (self::canEnter($module, $can, $helpdeskEnabled)) {
+                return self::home($module, $can);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Darf der Benutzer das Modul betreten?
+     *
+     * Die Assetverwaltung ist an ausdrückliche Leserechte gebunden (siehe
+     * ASSET_PERMISSIONS); ein Portalbenutzer ohne KLINQ-Berechtigung erhält sie nicht.
+     */
+    public static function canEnter(string $module, callable $can, bool $helpdeskEnabled = true): bool
+    {
+        return match ($module) {
+            self::ASSETS => self::canEnterAssets($can),
+            self::HELPDESK => $helpdeskEnabled && ($can('helpdesk.view') || $can('portal.view')),
+            self::SYSTEM => $can('settings.manage'),
+            default => false,
+        };
+    }
+
+    /** Mindestens ein Leserecht der Assetverwaltung. */
+    public static function canEnterAssets(callable $can): bool
+    {
+        foreach (self::ASSET_PERMISSIONS as $permission) {
+            if ($can($permission)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public static function label(string $module): string
@@ -146,13 +215,18 @@ final class ModuleNavigation
      */
     public static function modules(callable $can, bool $helpdeskEnabled): array
     {
-        $modules = [[
-            'key' => self::ASSETS,
-            'label' => self::label(self::ASSETS),
-            'icon' => 'box',
-            'href' => self::home(self::ASSETS, $can),
-            'description' => 'Assets, Bewegungen und Stammdaten',
-        ]];
+        $modules = [];
+
+        // Nur mit ausdrücklichem Leserecht: das Serviceportal sieht keine Assetverwaltung.
+        if (self::canEnterAssets($can)) {
+            $modules[] = [
+                'key' => self::ASSETS,
+                'label' => self::label(self::ASSETS),
+                'icon' => 'box',
+                'href' => self::home(self::ASSETS, $can),
+                'description' => 'Assets, Bewegungen und Stammdaten',
+            ];
+        }
 
         if ($helpdeskEnabled && ($can('helpdesk.view') || $can('portal.view'))) {
             $modules[] = [
@@ -202,10 +276,14 @@ final class ModuleNavigation
     /** @return list<array<string,mixed>> */
     private static function assetItems(callable $can, callable $count): array
     {
-        $items = [
-            self::link('dashboard', '/dashboard', 'home', 'Dashboard'),
-            self::link('scan', '/m', 'qr', 'Scannen'),
-        ];
+        $items = [];
+
+        if ($can('dashboard.view')) {
+            $items[] = self::link('dashboard', '/dashboard', 'home', 'Dashboard');
+        }
+        if ($can('movements.view')) {
+            $items[] = self::link('scan', '/m', 'qr', 'Scannen');
+        }
 
         if ($can('assets.view')) {
             $items[] = self::section('Bestand');

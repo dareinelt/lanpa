@@ -1,4 +1,8 @@
 <?php require_once __DIR__ . '/../partials/helpers.php'; ob_start(); $isLdap = $account['auth_source'] === 'ldap'; ?>
+<?php
+$can = $can ?? static fn (string $permission): bool => false;
+$homeHref = \App\Support\ModuleNavigation::entryUrl('', $can, (bool) ($helpdeskEnabled ?? false)) ?? '/';
+?>
 <div class="page-header">
     <div><h1>Passwort ändern</h1><p class="page-subtitle text-muted mb-0">Konto <span class="mono"><?= e($account['username']) ?></span></p></div>
 </div>
@@ -26,7 +30,7 @@
         <p class="form-hint">Mindestens <?= (int) $passwordMin ?> Zeichen mit Buchstaben und mindestens einer Ziffer oder einem Sonderzeichen.</p>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary"><?= icon('check') ?> Passwort ändern</button>
-            <a class="btn btn-ghost" href="/dashboard">Abbrechen</a>
+            <a class="btn btn-ghost" href="<?= e($homeHref) ?>">Abbrechen</a>
         </div>
     </form>
     <?php endif; ?>

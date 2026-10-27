@@ -37,7 +37,7 @@
             <select id="f-role" name="role" required<?= $isSelf ? ' aria-describedby="role-hint"' : '' ?>>
                 <option value="">– bitte wählen –</option>
                 <?php foreach ($roleLabels as $name => $label): ?>
-                    <option value="<?= e($name) ?>"<?= selected(form_value($row, 'role', $isNew ? 'readonly' : ''), $name) ?>><?= e($label) ?></option>
+                    <option value="<?= e($name) ?>"<?= selected(form_value($row, 'role', $isNew ? 'portal' : ''), $name) ?>><?= e($label) ?></option>
                 <?php endforeach; ?>
             </select>
             <?= field_error('role') ?>

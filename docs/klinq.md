@@ -136,7 +136,7 @@ selbst liegt in der `settings`-Tabelle des Intranets.
 Regeln:
 
 * **Die höchste zutreffende Rolle gewinnt** (Admin vor Help-Desk-Administration
-  vor Leitung vor Agent vor Asset-Management vor Nur-Lesen).
+  vor Leitung vor Agent vor Asset-Management vor Nur-Lesen vor Serviceportal).
 * Berechtigungsgruppen (Statistiken, Ticketaufruf, Ticket löschen, Ticket
   stornieren) sind unabhängig von der Rolle und werden zusätzlich vergeben.
 * **Löschen und Stornieren sind getrennte Rechte.** Ohne die jeweilige Gruppe –
@@ -144,7 +144,12 @@ Regeln:
   Help-Desk-Administration keine Tickets löschen oder stornieren. Schließen und
   Wiederöffnen bleiben davon unberührt.
 * Wer in keiner der Gruppen ist, erhält `klinq_default_role`
-  (Vorgabe: `readonly` – Anmeldung und eigene Tickets, keine Verwaltung).
+  (Vorgabe: `portal` – ausschließlich das Serviceportal mit den eigenen Tickets,
+  Hilfe & Anleitungen und der Störmeldung). Die Rolle sieht **keinen** Teil der
+  Assetverwaltung, auch nicht lesend; Dashboard, Suche und Assetseiten antworten
+  mit „Zugriff verweigert“. `readonly` („Nur Lesen“) öffnet die Assetverwaltung
+  dagegen lesend und ist deshalb nur für Personen gedacht, die ausdrücklich
+  KLINQ-Zugriff erhalten sollen.
 * Mehrere Gruppen pro Feld sind zulässig, getrennt durch Komma oder Semikolon.
   Groß-/Kleinschreibung wird nicht unterschieden.
 * Die Werte werden beim **Einstieg** ausgewertet und mit dem Schein übergeben.
@@ -214,7 +219,9 @@ KLINQ weiter; KLINQ selbst entscheidet, ob die Person das Ticket sehen darf.
 Als Ziel akzeptiert `/klinq-starten` die Parameter `redirect`, `ziel` und `next`
 (in dieser Reihenfolge). Ein führender Unterpfad (`/klinq/portal/…`) wird
 entfernt, unsichere Ziele (fremde Hosts, `/sso…`, `/login`, `..`) fallen auf
-`/dashboard` zurück.
+`/dashboard` zurück. KLINQ wertet diesen Standardwert wie ein fehlendes Ziel und
+leitet auf die für die Person passende Startseite um (Serviceportal, Help Desk
+oder Assetverwaltung).
 
 Damit die Weiterleitung nicht am TLS-Verteiler scheitert, gibt das Intranet die
 Einstiegsadresse relativ aus, solange `KLINQ_PUBLIC_URL` auf denselben Host
@@ -376,7 +383,7 @@ der `auth`-Container leitet `/klinq/` nicht mehr weiter.
 | „Für KLINQ fehlt die Freigabe“ (403) | Kachel vorhanden, aber für die Person nicht freigegeben | **Navigation** → Kachel → Sichtbarkeit. Gilt nicht für Direktlinks auf `/portal…` (siehe 4.3). |
 | Leere Seite, `ERR_EMPTY_RESPONSE`, in der Adresszeile steht `http://…:8443` | Weiterleitung ohne Schema: `mod_rewrite` stellt bei `[R]` mit Pfad-Angabe das Schema der eigenen Verbindung voran (hier `http`, weil TLS am Verteiler endet) | `docker/auth/klinq.conf` verwenden (https/http-Regelpaar) und `auth` neu bauen; `X-Forwarded-Proto` bzw. `TLS_APACHE` prüfen. |
 | „Die Störmeldung ist derzeit nicht freigegeben“ (404) | `klinq_quick_report_open=0` | **KLINQ → Berechtigungen**. |
-| Alle landen in „Nur Lesen“ | SSO-Sitzung enthält keine Gruppen | SSO-Diagnose im Intranet prüfen; Gruppenname exakt wie im AD eintragen. |
+| Alle landen im „Serviceportal“ | SSO-Sitzung enthält keine Gruppen | SSO-Diagnose im Intranet prüfen; Gruppenname exakt wie im AD eintragen. |
 | KI-Funktionen in KLINQ nicht verfügbar | Endpunkt nicht konfiguriert oder nicht erreichbar | **KLINQ → KI** → „Verbindung testen“; Server-Logs von `klinq-app`. |
 | Farben weichen ab | `/klinq-design.css` nicht erreichbar | Direkt im Browser aufrufen; der Wert muss CSS sein, kein HTML. |
 | KLINQ wirkt immer dunkel | Designwahl fehlt im Cookie `intranet_theme` (z. B. blockierte Cookies) | Intranet-Seite neu laden; Cookies für die Domain zulassen. Ohne Cookie gilt hell. |

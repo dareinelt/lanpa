@@ -26,7 +26,9 @@ return static function (Router $router, Container $c): void {
 
     // Angemeldet
     $router->get('/', static fn (Request $r): Response => $c->get(AuthController::class)->start($r));
-    $router->get('/dashboard', static fn (Request $r): Response => $c->get(DashboardController::class)->index($r));
+    // Die Dashboard-Kennzahlen stammen aus der Assetverwaltung: ohne ausdrückliche
+    // KLINQ-Berechtigung (Rolle "Serviceportal") bleibt die Seite gesperrt.
+    $router->get('/dashboard', static fn (Request $r): Response => $c->get(DashboardController::class)->index($r), 'dashboard.view');
 
     foreach (glob($basePath . '/routes/modules/*.php') ?: [] as $module) {
         $register = require $module;

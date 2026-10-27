@@ -91,4 +91,17 @@ final class LanpaUserServiceIntegrationTest extends DatabaseTestCase
         $this->assertNotNull($user);
         $this->assertNull($user['employee_id']);
     }
+
+    public function testProvisionFallsBackToPortalRoleWithoutKlinqPermission(): void
+    {
+        // Unbekannte oder fehlende Rolle: kein Zugriff auf die Assetverwaltung, nur das
+        // eigene Help-Desk-Portal.
+        foreach (['unbekannt', ''] as $role) {
+            $user = $this->service()->provision($this->claims(['sub' => 'ohne-rolle-' . ($role === '' ? 'leer' : $role), 'role' => $role]));
+
+            $this->assertNotNull($user);
+            $this->assertSame(LanpaUserService::FALLBACK_ROLE, $user['role'], 'Rueckfallrolle ohne KLINQ-Berechtigung');
+            $this->assertSame('portal', $user['role']);
+        }
+    }
 }

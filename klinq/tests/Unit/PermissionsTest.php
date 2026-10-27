@@ -37,8 +37,20 @@ final class PermissionsTest extends TestCase
         $this->assertTrue($this->permissions->roleHas('assetmanagement', 'audit.view'));
     }
 
-    public function testLagerCanCheckoutButNotManageSettings(): void
+    public function testPortalRoleHasNoAssetPermissions(): void
     {
+        $this->assertTrue($this->permissions->roleExists('portal'));
+        $this->assertSame(
+            ['portal.view', 'portal.create', 'knowledgebase.view'],
+            $this->permissions->forRole('portal'),
+            'Die Rolle "portal" darf ausschließlich den eigenen Help-Desk-Bereich öffnen'
+        );
+        $this->assertFalse($this->permissions->roleHas('portal', 'dashboard.view'));
+        $this->assertFalse($this->permissions->roleHas('portal', 'assets.view'));
+        $this->assertFalse($this->permissions->roleHas('portal', 'helpdesk.view'));
+    }
+
+    public function testLagerCanCheckoutButNotManageSettings(): void    {
         $this->assertTrue($this->permissions->roleHas('lager', 'movements.checkout'));
         $this->assertFalse($this->permissions->roleHas('lager', 'settings.manage'));
     }

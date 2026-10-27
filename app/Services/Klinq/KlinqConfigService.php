@@ -32,6 +32,7 @@ final class KlinqConfigService
         'helpdesk_agent' => 40,
         'assetmanagement' => 30,
         'readonly' => 10,
+        'portal' => 5,
     ];
 
     /** @var array<string,string> */
@@ -42,10 +43,12 @@ final class KlinqConfigService
         'helpdesk_agent' => 'Help-Desk-Agent',
         'assetmanagement' => 'Asset-Management',
         'readonly' => 'Nur Lesen',
+        'portal' => 'Serviceportal',
     ];
 
     /** @var array<string,string> */
     public const AREA_LABELS = [
+        'portal' => 'Serviceportal',
         'helpdesk' => 'Help Desk',
         'assets' => 'Asset-Management',
         'statistics' => 'Statistiken',
@@ -130,7 +133,7 @@ final class KlinqConfigService
     public static function defaults(): array
     {
         $defaults = [
-            'klinq_default_role' => 'readonly',
+            'klinq_default_role' => 'portal',
             'klinq_quick_report_open' => '1',
         ];
 
@@ -302,9 +305,9 @@ final class KlinqConfigService
 
     public function defaultRole(): string
     {
-        $role = (string) $this->settings->get('klinq_default_role', 'readonly');
+        $role = (string) $this->settings->get('klinq_default_role', 'portal');
 
-        return isset(self::ROLES[$role]) ? $role : 'readonly';
+        return isset(self::ROLES[$role]) ? $role : 'portal';
     }
 
     /**
@@ -399,6 +402,7 @@ final class KlinqConfigService
             'admin' => ['admin', 'helpdesk', 'assets', 'statistics', 'tickets'],
             'helpdesk_admin', 'helpdesk_lead', 'helpdesk_agent' => ['helpdesk'],
             'assetmanagement' => ['assets'],
+            'portal' => ['portal'],
             default => [],
         };
 
@@ -422,7 +426,7 @@ final class KlinqConfigService
             'areas' => $areas,
             'area_labels' => $areaLabels,
             'matched' => array_values(array_unique($matched)),
-            'elevated' => $role !== 'readonly' || $permissions !== [],
+            'elevated' => !in_array($role, ['readonly', 'portal'], true) || $permissions !== [],
         ];
     }
 
@@ -457,10 +461,10 @@ final class KlinqConfigService
             $values[$key] = implode(', ', $groups);
         }
 
-        $role = trim((string) ($post['klinq_default_role'] ?? 'readonly'));
+        $role = trim((string) ($post['klinq_default_role'] ?? 'portal'));
         if (!isset(self::ROLES[$role])) {
             $errors['klinq_default_role'] = 'Bitte eine gueltige Rolle waehlen.';
-            $role = 'readonly';
+            $role = 'portal';
         }
         $values['klinq_default_role'] = $role;
 

@@ -2,7 +2,8 @@
 INSERT INTO roles (name, label) VALUES
     ('helpdesk_admin', 'Help Desk Administrator'),
     ('helpdesk_lead', 'Help Desk Leitung'),
-    ('helpdesk_agent', 'Help Desk Agent')
+    ('helpdesk_agent', 'Help Desk Agent'),
+    ('portal', 'Serviceportal')
 ON DUPLICATE KEY UPDATE label = VALUES(label);
 
 INSERT INTO ticket_types (code, name, description, icon, color, sort_order) VALUES

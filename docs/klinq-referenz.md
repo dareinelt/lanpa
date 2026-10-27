@@ -199,8 +199,10 @@ sequenceDiagram
 
 Alles andere fällt auf `/dashboard` zurück. In KLINQ prüft zusätzlich
 `Url::safeLocalPath($next)`. Fehlt `next` oder entspricht es dem Standardziel
-`/dashboard`, leitet KLINQ auf das zuletzt geöffnete Modul der Person um
-(`ModuleNavigation::startUrl()`, siehe `klinq/docs/helpdesk.md`).
+`/dashboard`, leitet KLINQ auf die für die Person erreichbare Startseite um
+(`ModuleNavigation::startUrl()`, siehe `klinq/docs/helpdesk.md`). Das gilt auch
+für Personen ohne KLINQ-Berechtigung: Sie landen im Serviceportal (`/portal`)
+statt auf dem Dashboard der Assetverwaltung.
 
 ### 4.3 Selbstbedienung und eigene Tickets
 
@@ -289,9 +291,9 @@ beider Anwendungen. Base64url ohne Auffüllzeichen (`-`, `_`, kein `=`).
 | `title` | string | Funktion |
 | `ip` | string | Client-Adresse (`ClientAddress::from`) |
 | `host` | string | Rechnername zur Client-Adresse |
-| `role` | string | `admin`, `helpdesk_admin`, `helpdesk_lead`, `helpdesk_agent`, `assetmanagement`, `readonly` |
+| `role` | string | `admin`, `helpdesk_admin`, `helpdesk_lead`, `helpdesk_agent`, `assetmanagement`, `readonly`, `portal` |
 | `permission_groups` | string[] | `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren` |
-| `areas` | string[] | `helpdesk`, `assets`, `statistics`, `tickets`, `admin` |
+| `areas` | string[] | `portal`, `helpdesk`, `assets`, `statistics`, `tickets`, `admin` |
 | `report_only` | bool | `true` nur bei `/stoerung` |
 | `iss` | string | immer `lanpa` |
 | `aud` | string | immer `klinq` |
@@ -310,7 +312,7 @@ beider Anwendungen. Base64url ohne Auffüllzeichen (`-`, `_`, kein `=`).
 | `aud` = `klinq` | `LanpaSsoToken::verify` | HTTP 401 |
 | `exp` ≥ jetzt | `LanpaSsoToken::verify` | HTTP 401 |
 | `jti` noch nicht verwendet | `LanpaSsoToken::verify` | HTTP 401 |
-| Rolle in KLINQ vorhanden | `LanpaUserService::provision` | Rückfall `readonly`, sonst HTTP 403 |
+| Rolle in KLINQ vorhanden | `LanpaUserService::provision` | Rückfall `portal`, sonst HTTP 403 |
 
 Die Einmalverwendung wird in `storage/tmp/lanpa-sso-used.json` vermerkt
 (`LANPA_SSO_REPLAY_STORE`); abgelaufene Einträge werden beim Schreiben
@@ -416,7 +418,7 @@ Weitere Einstellungen:
 
 | Einstellung | Vorgabe | Bedeutung |
 | --- | --- | --- |
-| `klinq_default_role` | `readonly` | Rolle ohne Treffer. |
+| `klinq_default_role` | `portal` | Rolle ohne Treffer (nur Serviceportal, keine Assetverwaltung). |
 | `klinq_quick_report_open` | `1` | `/stoerung` für alle angemeldeten Personen offen. |
 
 ### 8.2 Rollengewichte
@@ -429,6 +431,7 @@ Weitere Einstellungen:
 | `helpdesk_agent` | 40 |
 | `assetmanagement` | 30 |
 | `readonly` | 10 |
+| `portal` | 5 |
 
 ### 8.3 Auflösung
 
@@ -451,6 +454,7 @@ Weitere Einstellungen:
    | `helpdesk_admin`, `helpdesk_lead`, `helpdesk_agent` | `helpdesk` |
    | `assetmanagement` | `assets` |
    | `readonly` | – |
+   | `portal` | `portal` |
 
 5. Rückgabe:
 
@@ -466,16 +470,20 @@ Weitere Einstellungen:
    ]
    ```
 
-   `elevated` ist `false`, wenn Rolle `readonly` ist und keine
-   Berechtigungsgruppe vorliegt.
+   `elevated` ist `false`, wenn die Rolle `readonly` oder `portal` ist und keine
+   Berechtigungsgruppe vorliegt. Beide Rollen sind die Rollen ohne
+   KLINQ-Berechtigung; `portal` ist die Vorgabe und sieht ausschließlich die
+   eigenen Tickets.
 
 ### 8.4 Übergabe und Wirkung in KLINQ
 
 `role`, `permission_groups` und `areas` stehen im Schein.
 `LanpaUserService::provision()` setzt daraus `role_id` und die
-Berechtigungsgruppen des Benutzers. Eine unbekannte Rolle führt zum Rückfall auf
-`readonly`; fehlt auch diese Rolle in KLINQ, wird der Einstieg mit HTTP 403
-abgelehnt.
+Berechtigungsgruppen des Benutzers. Eine unbekannte oder fehlende Rolle führt
+zum Rückfall auf `portal` (eigene Tickets, keine Assetverwaltung); fehlt auch
+diese Rolle in KLINQ, wird der Einstieg mit HTTP 403 abgelehnt. Die Rolle wird
+mit `klinq/bin/migrate.php` angelegt (Seeder `003_helpdesk_defaults.sql`, läuft
+im Container bei jedem Start).
 
 **Wichtig:** Die Rechte werden beim Einstieg eingefroren. Änderungen an den
 AD-Gruppen wirken mit dem nächsten Aufruf der Kachel, nicht in einer laufenden
@@ -1020,9 +1028,10 @@ Stand der letzten vollständigen Prüfung: Intranet 875 von 898 Tests erfolgreic
 | `/klinq/` liefert die Intranet-Startseite | `docker compose --profile klinq ps`, `docker compose exec auth apachectl -S` | `klinq.conf` nicht geladen: `KLINQ_ENABLED` nicht `true` oder Container ohne `-D KLINQ` neu erstellt. |
 | 503 „KLINQ nicht verfügbar“ | `curl http://klinq-app/health` im Netz `intranet` | Container gestartet? Datenbank bereit? `start_period` von 180 s beachten. |
 | `Der Anmeldeschein ist ungültig oder abgelaufen.` | `KLINQ_SSO_SECRET` auf beiden Seiten vergleichen | Unterschiedliche Werte, abgelaufener Link (zurück zur Kachel) oder bereits verwendete `jti`. |
-| `Für Ihr Konto liegt keine gültige Rolle vor.` | Rollen in KLINQ (`readonly` vorhanden?) | Rollenstamm in KLINQ unvollständig. |
+| `Für Ihr Konto liegt keine gültige Rolle vor.` | Rollen in KLINQ (`portal` vorhanden?) | Rollenstamm in KLINQ unvollständig (`php bin/migrate.php` im Container). |
 | 403 „Für KLINQ fehlt die Freigabe“ | Kachelsichtbarkeit | Kachel für die Person freigeben oder Kachel löschen (dann gilt nur die Anmeldung). |
-| Alle sind „Nur Lesen“ | SSO-Sitzung: enthält sie AD-Gruppen? | Gruppen erreichen den `auth`-Container nicht; Gruppennamen exakt prüfen. |
+| Alle sind im „Serviceportal“ | SSO-Sitzung: enthält sie AD-Gruppen? | Gruppen erreichen den `auth`-Container nicht; Gruppennamen exakt prüfen. |
+| Person ohne KLINQ-Berechtigung sieht das Dashboard (403) | Rolle der Person in KLINQ | Rollen werden beim Einstieg gesetzt: Kachel erneut aufrufen, damit `portal` greift. |
 | Rechteänderung wirkt nicht | – | Rechte werden beim Einstieg übergeben: Kachel erneut aufrufen. |
 | KI-Funktionen fehlen in KLINQ | `curl -H "X-Intranet-Sso-Token: …" http://app/internal/klinq/ki` | Endpunkt/Modell nicht gesetzt, Token-Datei nicht lesbar, Adressprüfung schlägt fehl. |
 | KI-Verwaltung in KLINQ ist nur lesend | gewollt | Sobald das Intranet antwortet, gilt dessen Konfiguration. |

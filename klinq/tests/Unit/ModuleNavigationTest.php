@@ -40,11 +40,32 @@ final class ModuleNavigationTest extends TestCase
 
     public function testHelpdeskModuleOnlyWhenEnabledAndPermitted(): void
     {
-        $agent = $this->can(['helpdesk.view']);
-        $this->assertSame([ModuleNavigation::ASSETS, ModuleNavigation::HELPDESK], array_column(ModuleNavigation::modules($agent, true), 'key'));
-        $this->assertSame([ModuleNavigation::ASSETS], array_column(ModuleNavigation::modules($agent, false), 'key'));
+        $assetAgent = $this->can(['dashboard.view', 'helpdesk.view']);
+        $this->assertSame([ModuleNavigation::ASSETS, ModuleNavigation::HELPDESK], array_column(ModuleNavigation::modules($assetAgent, true), 'key'));
+        $this->assertSame([ModuleNavigation::ASSETS], array_column(ModuleNavigation::modules($assetAgent, false), 'key'));
         $this->assertSame([ModuleNavigation::ASSETS], array_column(ModuleNavigation::modules($this->can(['assets.view']), true), 'key'));
-        $this->assertSame([ModuleNavigation::ASSETS, ModuleNavigation::HELPDESK], array_column(ModuleNavigation::modules($this->can(['portal.view']), true), 'key'));
+
+        // Ohne KLINQ-Berechtigung (Rolle "portal") ausschließlich der eigene Help-Desk-Bereich.
+        $this->assertSame([ModuleNavigation::HELPDESK], array_column(ModuleNavigation::modules($this->can(['portal.view']), true), 'key'));
+        $this->assertSame([], array_column(ModuleNavigation::modules($this->can(['portal.view']), false), 'key'));
+        $this->assertSame([], array_column(ModuleNavigation::modules($this->can([]), true), 'key'));
+    }
+
+    public function testPortalOnlyUserCannotEnterAssetModule(): void
+    {
+        $portal = $this->can(['portal.view', 'portal.create', 'knowledgebase.view']);
+
+        $this->assertFalse(ModuleNavigation::canEnterAssets($portal));
+        $this->assertFalse(ModuleNavigation::canEnter(ModuleNavigation::ASSETS, $portal));
+        $this->assertTrue(ModuleNavigation::canEnter(ModuleNavigation::HELPDESK, $portal));
+        $this->assertSame('/portal', ModuleNavigation::entryUrl('', $portal, true));
+        $this->assertSame('/portal', ModuleNavigation::entryUrl(ModuleNavigation::ASSETS, $portal, true));
+        $this->assertSame('/portal', ModuleNavigation::startUrl(ModuleNavigation::ASSETS, $portal, true));
+
+        $assetUser = $this->can(['dashboard.view']);
+        $this->assertTrue(ModuleNavigation::canEnterAssets($assetUser));
+        $this->assertSame('/dashboard', ModuleNavigation::entryUrl('', $assetUser, true));
+        $this->assertNull(ModuleNavigation::entryUrl('', $this->can([]), true));
     }
 
     public function testSystemModuleOnlyVisibleForAdmins(): void
@@ -61,7 +82,7 @@ final class ModuleNavigationTest extends TestCase
 
     public function testEachModuleHasItsOwnDashboard(): void
     {
-        $agent = $this->can(['helpdesk.view']);
+        $agent = $this->can(['dashboard.view', 'helpdesk.view']);
         $this->assertSame('/dashboard', ModuleNavigation::home(ModuleNavigation::ASSETS, $agent));
         $this->assertSame('/helpdesk', ModuleNavigation::home(ModuleNavigation::HELPDESK, $agent));
         $this->assertSame('/portal', ModuleNavigation::home(ModuleNavigation::HELPDESK, $this->can(['portal.view'])));
@@ -73,6 +94,15 @@ final class ModuleNavigationTest extends TestCase
         $helpdeskItems = ModuleNavigation::items(ModuleNavigation::HELPDESK, $agent);
         $this->assertSame('helpdesk', $this->keys($helpdeskItems)[0]);
         $this->assertSame('Dashboard', $helpdeskItems[0]['label']);
+    }
+
+    public function testAssetNavigationHidesEntriesWithoutPermission(): void
+    {
+        $keys = $this->keys(ModuleNavigation::items(ModuleNavigation::ASSETS, $this->can(['assets.view'])));
+
+        $this->assertFalse(in_array('dashboard', $keys, true));
+        $this->assertFalse(in_array('scan', $keys, true));
+        $this->assertContains('assets', $keys);
     }
 
     public function testModulesShowOnlyTheirOwnNavigation(): void
@@ -141,7 +171,7 @@ final class ModuleNavigationTest extends TestCase
 
     public function testStartUrlUsesLastModuleWhenAvailable(): void
     {
-        $agent = $this->can(['helpdesk.view']);
+        $agent = $this->can(['dashboard.view', 'helpdesk.view']);
         $portal = $this->can(['portal.view']);
 
         $this->assertSame('/helpdesk', ModuleNavigation::startUrl(ModuleNavigation::HELPDESK, $agent, true));
@@ -151,6 +181,9 @@ final class ModuleNavigationTest extends TestCase
         $this->assertSame('/dashboard', ModuleNavigation::startUrl(ModuleNavigation::ASSETS, $agent, true));
         $this->assertSame('/dashboard', ModuleNavigation::startUrl(ModuleNavigation::SYSTEM, $agent, true));
         $this->assertSame('/dashboard', ModuleNavigation::startUrl('', $agent, true));
+        // Ohne Assetrechte bleibt das Portal das Ziel, auch wenn das zuletzt geöffnete Modul
+        // die Assetverwaltung war.
+        $this->assertSame('/portal', ModuleNavigation::startUrl(ModuleNavigation::ASSETS, $portal, true));
     }
 
     public function testDisabledHelpdeskHasNoItems(): void

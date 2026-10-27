@@ -176,8 +176,9 @@ $tileValue = static fn (string $key): string => (string) ($tileValues[$key] ?? '
                 <?php } ?>
             </select>
             <p class="field__hint">
-                Gilt für alle angemeldeten Personen ohne passende Gruppe. „Nur Lesen“ empfiehlt sich,
-                damit ausschließlich die Störmeldung nutzbar ist.
+                Gilt für alle angemeldeten Personen ohne passende Gruppe. „Serviceportal“ empfiehlt sich:
+                Die Person sieht ausschließlich ihre eigenen Tickets und die Störmeldung, keinen Teil
+                der Assetverwaltung. „Nur Lesen“ öffnet zusätzlich die Assetverwaltung lesend.
             </p>
             <?= $fieldError('klinq_default_role') ?>
         </div>

@@ -17,6 +17,9 @@ use App\Repositories\UserRepository;
  */
 final class LanpaUserService
 {
+    /** Rolle fuer Benutzer ohne ausdrueckliche KLINQ-Berechtigung (nur Serviceportal). */
+    public const FALLBACK_ROLE = 'portal';
+
     public function __construct(
         private readonly UserRepository $users,
         private readonly EmployeeRepository $employees,
@@ -39,7 +42,9 @@ final class LanpaUserService
         $role = (string) ($claims['role'] ?? '');
         $roleId = $role === '' ? null : $this->users->roleId($role);
         if ($roleId === null) {
-            $role = 'readonly';
+            // Ohne ausdrueckliche KLINQ-Berechtigung ausschliesslich das Serviceportal
+            // (eigene Tickets); keine Rechte der Assetverwaltung.
+            $role = self::FALLBACK_ROLE;
             $roleId = $this->users->roleId($role);
         }
         if ($roleId === null) {

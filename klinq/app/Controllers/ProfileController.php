@@ -57,6 +57,8 @@ final class ProfileController extends BaseController
         $this->session->regenerate();
         $this->flash('success', 'Ihr Passwort wurde geändert.');
 
-        return $this->redirect('/dashboard');
+        // "/" leitet auf das Startziel des Benutzers weiter (Assetverwaltung, Help Desk
+        // oder Serviceportal) – ein festes /dashboard wäre für Portalbenutzer gesperrt.
+        return $this->redirect('/');
     }
 }

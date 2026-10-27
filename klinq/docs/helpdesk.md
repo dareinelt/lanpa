@@ -22,9 +22,11 @@ Der Modulschalter `HELPDESK_ENABLED=false` blendet Navigation, Dashboard-Kacheln
 
 Help Desk und Assetverwaltung sind zwei eigenständige Module mit je eigenem Dashboard (`/dashboard` bzw. `/helpdesk`, für reine Portalnutzer `/portal`). In der Topbar steht mittig zwischen Suchfeld und Benutzeranzeige ein Dropdown, über das der Bereich gewechselt wird; die Seitenleiste zeigt immer nur die Navigationseinträge des gewählten Moduls. Das Dropdown erscheint nur, wenn der Benutzer beide Bereiche betreten darf (`helpdesk.view` oder `portal.view` bei aktivem Modulschalter).
 
-Modulzuordnung und Navigationseinträge stehen zentral in `app/Support/ModuleNavigation.php`; das Layout (`resources/views/partials/app_layout.php`) rendert sie nur noch. Das aktive Modul ergibt sich aus dem `activeNav`-Schlüssel der Seite (`helpdesk*`/`portal*` → Help Desk, sonst Assetverwaltung). Der Fenstertitel folgt dem Muster `KLINQ - <Modul>`.
+Modulzuordnung und Navigationseinträge stehen zentral in `app/Support/ModuleNavigation.php`; das Layout (`resources/views/partials/app_layout.php`) rendert sie nur noch. Das aktive Modul ergibt sich aus dem `activeNav`-Schlüssel der Seite (`helpdesk*`/`portal*` → Help Desk, sonst Assetverwaltung); fehlt das Modul für den Benutzer, gilt das erste verfügbare. Der Fenstertitel folgt dem Muster `KLINQ - <Modul>`.
 
-KLINQ merkt sich je Benutzer das zuletzt geöffnete Modul: `users.last_module` wird in der `AuthorizationMiddleware` über `ModuleNavigation::moduleForPath()` gepflegt (nur bei einem Modulwechsel, nicht bei jedem Aufruf). Beim nächsten Start – Aufruf von `/`, Anmeldung oder Intranet-Einstieg ohne ausdrückliches Ziel – öffnet `ModuleNavigation::startUrl()` dieses Modul wieder. Ist der Help Desk abgeschaltet oder fehlt die Berechtigung (`helpdesk.view`/`portal.view`), bleibt `/dashboard` der Startpunkt. Neutrale Seiten (Profil, globale Suche, JSON-Endpunkte) und der Systembereich (Berichte, Import, Audit, Administration) ändern die Auswahl nicht.
+Die Assetverwaltung ist an ausdrückliche Leserechte gebunden (`ModuleNavigation::ASSET_PERMISSIONS`: `dashboard.view`, `assets.view`, `movements.view`, `handover.view`, `licenses.view`, `orders.view`, `suppliers.view`, `employees.view`, `locations.view`, `costcenters.view`, `manufacturers.view`, `articles.view`, `documents.view`). Ohne eines dieser Rechte erscheint sie weder im Bereichswechsel noch in der Seitenleiste; Dashboard, globale Suche und alle Assetseiten antworten mit 403. Das betrifft insbesondere die Rolle **portal** (Personen ohne KLINQ-Berechtigung): Sie sieht ausschließlich ihren eigenen Help-Desk-Bereich.
+
+KLINQ merkt sich je Benutzer das zuletzt geöffnete Modul: `users.last_module` wird in der `AuthorizationMiddleware` über `ModuleNavigation::moduleForPath()` gepflegt (nur bei einem Modulwechsel, nicht bei jedem Aufruf). Beim nächsten Start – Aufruf von `/`, Anmeldung oder Intranet-Einstieg ohne ausdrückliches Ziel – öffnet `ModuleNavigation::entryUrl()` dieses Modul wieder, sofern es verfügbar ist; sonst das erste verfügbare (Assetverwaltung, Help Desk, Auswertung & System). Fehlt die Berechtigung für das gemerkte Modul, landet ein Portalbenutzer damit im Serviceportal statt auf `/dashboard`. Dieselbe Auflösung nutzen Fehlerseiten (`resources/views/errors/error.php`) für ihren Zurück-Knopf und das Profil nach dem Passwortwechsel. Neutrale Seiten (Profil, globale Suche, JSON-Endpunkte) und der Systembereich (Berichte, Import, Audit, Administration) ändern die Auswahl nicht.
 
 ## Ticket-Lebenszyklus
 
@@ -490,7 +492,8 @@ Der Versand erfolgt direkt aus PHP über einen eigenen SMTP-Client (`app/Service
 | **helpdesk_lead** | zusätzlich eskalieren, SLA-Regeln, Export, Kategorien, Vorlagen |
 | **helpdesk_admin** | zusätzlich `helpdesk.admin` (Typen, Status, Prioritäten, Gruppen, Regeln, Benachrichtigungsprotokoll) und `documents.manage` |
 | **assetmanagement / lager / einkauf** | Portal (eigene Tickets anlegen und verfolgen) und Wissensartikel lesen, kein Agentenbereich |
-| **readonly** | bewusst nur `*.view` – sieht das Portal und öffentliche Artikel, kann aber keine Tickets anlegen |
+| **readonly** | bewusst nur `*.view` – sieht das Portal und öffentliche Artikel, kann aber keine Tickets anlegen; öffnet zusätzlich die Assetverwaltung lesend |
+| **portal** | ausschließlich Serviceportal: eigene Tickets anlegen und verfolgen, Hilfe & Anleitungen lesen. Kein Recht der Assetverwaltung, auch nicht lesend; Vorgabe für Personen ohne KLINQ-Berechtigung |
 | **admin** | alles |
 
 Rechte: `helpdesk.view|create|update|assign|comment|internal_note|close|reopen|merge|worklog|delete|cancel|escalate|sla|export|categories|templates|reports|admin`, `portal.view|create`, `knowledgebase.view|manage`. Jede Route in `routes/modules/helpdesk.php` trägt genau eine davon; `RouteInventoryTest` prüft das.
@@ -589,7 +592,7 @@ Details, Konfiguration und ein Testaufbau mit Ollama: [KI-Unterstützung im Help
 
 - Der IMAP-Client unterstützt `LOGIN` (Benutzername/Passwort), kein OAuth2/XOAUTH2; für Microsoft 365 wird ein App-Passwort bzw. ein Postfach mit Basic-Auth benötigt. Dasselbe gilt für den SMTP-Versand (`AUTH LOGIN`, nur mit TLS).
 - Assets werden beim Anlegen mehrfach ausgewählt; nachträglich werden sie im Ticketdetail einzeln verknüpft/gelöst.
-- `readonly` kann im Portal keine Tickets anlegen (Rolle bleibt bewusst reine Leserolle); Mitarbeitende brauchen eine Fachrolle oder eine Help-Desk-Rolle.
+- `readonly` kann im Portal keine Tickets anlegen (Rolle bleibt bewusst reine Leserolle); Mitarbeitende ohne KLINQ-Berechtigung erhalten die Rolle `portal` und damit das Serviceportal zum Anlegen eigener Tickets.
 - Berichte basieren auf Live-Abfragen ohne Materialisierung; bei sehr großen Beständen empfiehlt sich ein Zeitraumfilter.
 - Agenten-E-Mails werden ohne Anhänge versendet (nur Text und eingebettete Bilder); die Signatur kommt aus dem Intranet und steht schreibgeschützt im Editor.
 

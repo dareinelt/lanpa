@@ -220,8 +220,11 @@ nach KLINQ synchronisierten AD-Bestand. Dafür ruft KLINQ
 `?id=…` einen Einzeleintrag. Gesucht wird über Name, E-Mail-Adresse,
 Benutzername, Abteilung und **Personalnummer** (aus dem AD-Attribut
 `employeeNumber`, im Intranet pflegbar über `LDAP_ATTR_PERSONNEL_NUMBER`);
-die Personalnummer wird beim Übernehmen in den lokalen Mitarbeiter übertragen
-und ist dort ebenfalls durchsuchbar. Unbekannte Personen werden erst beim
+Telefonnummern werden nur bei Begriffen ohne Buchstaben durchsucht, sonst
+würde aus einem Dienstkonto wie `Station1.1` die Ziffernfolge `11` und die
+Trefferliste füllte sich mit beliebigen Durchwahlen. Die Personalnummer wird
+beim Übernehmen in den lokalen Mitarbeiter übertragen und ist dort ebenfalls
+durchsuchbar. Unbekannte Personen werden erst beim
 Auswählen als lokaler Mitarbeiter übernommen, damit Tickets weiterhin auf einen
 lokalen Datensatz verweisen; die Stammdaten kommen dabei aus dem Intranet. Fällt das
 Intranet aus, bleiben die lokal bekannten Mitarbeiter wählbar. Details:

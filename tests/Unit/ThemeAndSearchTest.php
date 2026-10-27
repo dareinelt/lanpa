@@ -58,6 +58,33 @@ Runner::test('Suche nach Ziffern durchsucht die Telefonnummern', static function
     Assert::same('%123%', $params['d0']);
 });
 
+Runner::test('Suche durchsucht den Anmeldenamen', static function (): void {
+    /** @var PhonebookRepository $repository */
+    $repository = (new ReflectionClass(PhonebookRepository::class))->newInstanceWithoutConstructor();
+
+    [$sql, $params] = $repository->buildSearchCondition('Station1.1');
+
+    Assert::contains('samaccount_name LIKE :s0', $sql);
+    Assert::same('Station1.1%', $params['s0']);
+});
+
+Runner::test('Begriffe mit Buchstaben durchsuchen keine Telefonnummern', static function (): void {
+    /** @var PhonebookRepository $repository */
+    $repository = (new ReflectionClass(PhonebookRepository::class))->newInstanceWithoutConstructor();
+
+    // Aus "Station1.1" wuerde sonst die Ziffernfolge "11" und damit fast jeder
+    // Eintrag mit einer 11 in der Durchwahl.
+    [$sql, $params] = $repository->buildSearchCondition('Station1.1');
+
+    Assert::false(str_contains($sql, 'phone_digits'), 'Buchstaben schliessen die Telefonsuche aus.');
+    Assert::false(isset($params['d0']));
+
+    [$phoneSql, $phoneParams] = $repository->buildSearchCondition('+49 (30) 123-456');
+
+    Assert::contains('phone_digits LIKE :d2', $phoneSql, 'Reine Nummernbestandteile suchen weiterhin die Telefonnummer.');
+    Assert::same('%123456%', $phoneParams['d2']);
+});
+
 Runner::test('LIKE-Platzhalter in der Eingabe werden maskiert', static function (): void {
     /** @var PhonebookRepository $repository */
     $repository = (new ReflectionClass(PhonebookRepository::class))->newInstanceWithoutConstructor();

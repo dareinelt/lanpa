@@ -87,6 +87,13 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
      * "Nachname, Vorname") – ohne es waere "Ulf" in "Harding, Ulf" nicht
      * auffindbar, solange das Feld `first_name` leer ist.
      *
+     * Der Anmeldename wird nur als Praefix gesucht: Dienstkonten wie
+     * "Station1.1" stehen in keinem Namensfeld, der Anmeldename enthaelt keine
+     * Leerzeichen. Die Telefonnummer wird nur durchsucht, wenn der Begriff
+     * ueberhaupt wie eine Telefonnummer aussieht – sonst wuerde aus
+     * "Station1.1" die Ziffernfolge "11" und die Trefferliste fuellte sich mit
+     * beliebigen Nummern, die diese Ziffern enthalten.
+     *
      * @return array{0:string,1:array<string,string>}
      */
     private function buildTermCondition(string $term): array
@@ -101,7 +108,6 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
             $token = mb_substr($token, 0, 64);
             $escaped = $this->escapeLike($token);
             $prefix = $escaped . '%';
-            $digits = Validator::normalizePhone($token);
 
             $parts = [];
             // Jeder Platzhalter darf nur einmal vorkommen (native Prepared Statements).
@@ -115,6 +121,10 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
                 $params[$wordName] = '% ' . $escaped . '%';
             }
 
+            $parts[] = 'samaccount_name LIKE :s' . $index;
+            $params['s' . $index] = $prefix;
+
+            $digits = $this->phoneDigitsFor($token);
             if ($digits !== '') {
                 $parts[] = 'phone_digits LIKE :d' . $index;
                 $params['d' . $index] = '%' . $this->escapeLike($digits) . '%';
@@ -133,6 +143,22 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     private function escapeLike(string $value): string
     {
         return str_replace(['\\', '%', '_'], ['\\\\', '\%', '\_'], $value);
+    }
+
+    /**
+     * Ziffernfolge fuer die Telefonsuche – aber nur, wenn der Begriff
+     * ueberhaupt wie eine Telefonnummer aussieht. Buchstaben schliessen die
+     * Telefonsuche aus: sonst wuerde aus "Station1.1" die Ziffernfolge "11"
+     * und die Trefferliste fuellte sich mit allen Nummern, die diese Ziffern
+     * enthalten.
+     */
+    private function phoneDigitsFor(string $token): string
+    {
+        if (preg_match('/^[0-9+*#()\/.\-]+$/', $token) !== 1) {
+            return '';
+        }
+
+        return Validator::normalizePhone($token);
     }
 
     public function countActive(): int

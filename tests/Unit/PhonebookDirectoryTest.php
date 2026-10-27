@@ -68,6 +68,35 @@ Runner::test('Telefonbuch-Personenauswahl liefert Kennungen für die Übernahme 
     Assert::same('', $withoutMail[0]['email'], 'Einträge ohne Postfach haben keine E-Mail-Adresse.');
 });
 
+Runner::test('Telefonbuch-Personenauswahl findet Dienstkonten über den Anmeldenamen', static function (): void {
+    $pdo = phonebookDirectoryPdo();
+    // "Station1.1" steht in keinem Namensfeld im AD; die Ziffern "11" kommen in
+    // vielen Telefonnummern vor und duerfen die Trefferliste nicht fluten.
+    $pdo->exec("INSERT INTO phonebook (external_id, samaccount_name, display_name, first_name, last_name, department, phone, phone_digits, email, active, visible) VALUES
+        ('s1', 'Station1.1', 'Station 1.1', NULL, 'Station 1.1', 'Benutzer_WF_anonym', '2110', '2110', 'Station1.1@example.de', 1, 1),
+        ('s2', 'mmustermann', 'Mustermann, Max', 'Max', 'Mustermann', 'Technik', '1111', '1111', 'max@example.de', 1, 1),
+        ('s3', 'eohne', 'Ohne Mail, Erika', 'Erika', 'Ohne Mail', 'Service', '0111', '0111', NULL, 1, 1)");
+
+    $service = new PhonebookService(new PhonebookRepository($pdo));
+
+    foreach (['station1.1', 'Station1.1', 'STATION1.1'] as $term) {
+        $items = $service->directory($term);
+        Assert::same(1, count($items), 'Der Anmeldename "' . $term . '" trifft genau das Dienstkonto.');
+        Assert::same('Station1.1', $items[0]['username'], 'Der SamAccountName wird unveraendert geliefert.');
+        Assert::same('Station 1.1', $items[0]['display_name'], 'Der Anzeigename bleibt erhalten.');
+    }
+
+    // Der Anzeigename "Station 1.1" bleibt ueber den Wortanfang auffindbar.
+    $byDisplayName = $service->directory('Station 1.1');
+    Assert::same(1, count($byDisplayName), 'Der Anzeigename mit Leerzeichen findet das Dienstkonto.');
+    Assert::same('Station1.1', $byDisplayName[0]['username']);
+
+    // Reine Telefonnummern suchen weiterhin ueber die Ziffern.
+    $byPhone = $service->directory('1111');
+    Assert::same(1, count($byPhone), 'Telefonnummern bleiben durchsuchbar.');
+    Assert::same('mmustermann', $byPhone[0]['username']);
+});
+
 Runner::test('Telefonbuch-Personenauswahl liefert leere Trefferliste ohne Suchbegriff', static function (): void {
     $pdo = phonebookDirectoryPdo();
     $pdo->exec("INSERT INTO phonebook (external_id, display_name, last_name, email, active, visible) VALUES

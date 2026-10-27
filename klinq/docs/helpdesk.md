@@ -313,10 +313,10 @@ Im Reiter **Störungsformular** liegen der öffentliche Link und die **Sammelkon
 
 ![Sammelkonten im Reiter „Störungsformular“](screenshots/helpdesk-admin-sammelkonten.png)
 
-Im Reiter **Vorlageneinstellungen** stehen zwei Texte (höchstens 4 000 Zeichen, Berechtigung `helpdesk.admin`, verwaltet über `ReplyTemplateSettingsService`):
+Im Reiter **Vorlageneinstellungen** stehen drei Texte (Berechtigung `helpdesk.admin`, verwaltet über `ReplyTemplateSettingsService`):
 
-- **Präfix-Text** (`helpdesk.reply_template.prefix_text`) für Agentenmails. Er wird beim Versand einer Mail aus dem Ticket serverseitig vor den Agententext gesetzt und erscheint nicht im Mail-Dialog. Ist das Feld leer, wird nichts vorangestellt.
-- **Bestätigungstext** (`helpdesk.reply_template.confirmation_text`) für die **Eingangsbestätigung**, die beim Anlegen eines Tickets versendet wird (siehe „Störungsmeldung für Anwender“). Er wird als HTML gerendert (Absätze `<p>`, Zeilenumbrüche `<br>`, Inhalt maskiert) und unterstützt Platzhalter:
+- **Präfix-Text** (`helpdesk.reply_template.prefix_text`, höchstens 4 000 Zeichen) für Agentenmails. Er wird beim Versand einer Mail aus dem Ticket serverseitig vor den Agententext gesetzt und erscheint nicht im Mail-Dialog. Ist das Feld leer, wird nichts vorangestellt.
+- **Bestätigungstext** (`helpdesk.reply_template.confirmation_text`, höchstens 4 000 Zeichen) für die **Eingangsbestätigung**, die beim Anlegen eines Tickets versendet wird (siehe „Störungsmeldung für Anwender“). Er wird als HTML gerendert (Absätze `<p>`, Zeilenumbrüche `<br>`, Inhalt maskiert) und unterstützt Platzhalter:
 
 | Platzhalter | Ersetzt durch |
 | --- | --- |
@@ -328,7 +328,9 @@ Im Reiter **Vorlageneinstellungen** stehen zwei Texte (höchstens 4 000 Zeichen,
 | `{link}` | Link zum Ticket im Serviceportal |
 | `{firma}` | Firmenname aus der Konfiguration |
 
-Unbekannte Platzhalter bleiben stehen; Platzhalter ohne Wert werden samt einem direkt folgenden Leerzeichen entfernt. Ist der Bestätigungstext leer, wird keine Bestätigung versendet (der Assistenten-Schritt weist darauf hin). Startwert über `HELPDESK_REPLY_TEMPLATE_CONFIRMATION`, die Datenbank hat Vorrang.
+Unbekannte Platzhalter bleiben stehen; Platzhalter ohne Wert werden samt einem direkt folgenden Leerraum entfernt. Ist der Bestätigungstext leer, wird keine Bestätigung versendet (der Assistenten-Schritt weist darauf hin). Startwert über `HELPDESK_REPLY_TEMPLATE_CONFIRMATION`, die Datenbank hat Vorrang.
+
+- **Hinweis am Fuß der E-Mail** (`helpdesk.reply_template.footer_text`, höchstens 1 000 Zeichen) wird unter jede Benachrichtigungsmail des Help Desk gesetzt – auch unter die Eingangsbestätigung, nicht aber unter die von Agenten verfasste E-Mail (`TicketMailService` nutzt den Rahmen nicht). Der Text wird wie der Bestätigungstext maskiert und in Absätze umgesetzt; als Platzhalter steht `{firma}` (Firmenname aus der Konfiguration) bereit. Ein leeres Feld blendet den Hinweis aus. Ohne gespeicherten Wert gilt der Startwert aus `HELPDESK_REPLY_TEMPLATE_FOOTER`, sonst der eingebaute Standardtext („Diese E-Mail wurde automatisch vom IT Help Desk ({firma}) erzeugt …“), sodass bestehende Installationen unverändert weiterversenden.
 
 ## Serviceportal (`/portal`)
 
@@ -427,7 +429,7 @@ Jede Benachrichtigung trägt Threading-Kopfzeilen, damit Antworten der Empfänge
 | `X-Ticket-Number` | Ticketnummer |
 | `Auto-Submitted: auto-generated` | verhindert Antwortschleifen mit Abwesenheitsassistenten |
 
-Der Betreff enthält weiterhin `[HD-JJJJ-NNNNNN]` als für Menschen lesbaren Fallback. Der Rumpf besteht aus dem jeweiligen Ereignistext (Tabelle mit Ticket, Betreff, Status, Priorität, ggf. Bearbeiter) und dem automatischen Hinweis am Fuß. **Ticket-Links setzt die Mail nicht selbst** – für die Eingangsbestätigung steht dafür der Platzhalter `{link}` im Vorlagentext bereit.
+Der Betreff enthält weiterhin `[HD-JJJJ-NNNNNN]` als für Menschen lesbaren Fallback. Der Rumpf besteht aus dem jeweiligen Ereignistext (Tabelle mit Ticket, Betreff, Status, Priorität, ggf. Bearbeiter) und dem **Hinweis am Fuß**, der in den Help-Desk-Einstellungen → Vorlageneinstellungen gepflegt wird (`TicketNotificationService::wrap()`). **Ticket-Links setzt die Mail nicht selbst** – für die Eingangsbestätigung steht dafür der Platzhalter `{link}` im Vorlagentext bereit.
 
 Die von Agenten aus dem Ticket gesendete E-Mail („E-Mail aus dem Ticket senden“) nutzt dieselben Thread-Kopfzeilen,
 lässt aber `Auto-Submitted` bewusst weg: Sie ist eine persönliche Nachricht des Agenten und soll nicht als automatisch
@@ -560,6 +562,7 @@ Die folgenden Variablen sind nur **Startwerte** für das Versandkonto ausgehende
 | `HELPDESK_QUICK_REPORT_SHARED_ACCOUNTS_HINT` | leer | Startwert für den Erklärungstext über dem Pflichtfeld; leer = Standardtext |
 | `HELPDESK_REPLY_TEMPLATE_PREFIX` | leer | Startwert für den Präfix-Text der Agentenmails (Reiter „Vorlageneinstellungen“); die Datenbank hat Vorrang |
 | `HELPDESK_REPLY_TEMPLATE_CONFIRMATION` | leer | Startwert für den Bestätigungstext der Eingangsbestätigung (Reiter „Vorlageneinstellungen“, Platzhalter `{anrede}`, `{name}`, `{ticketnummer}`, `{betreff}`, `{datum}`, `{link}`, `{firma}`); die Datenbank hat Vorrang |
+| `HELPDESK_REPLY_TEMPLATE_FOOTER` | leer | Startwert für den Hinweis am Fuß jeder Benachrichtigungsmail (Reiter „Vorlageneinstellungen“, Platzhalter `{firma}`); ohne gespeicherten und ohne konfigurierten Wert gilt der eingebaute Standardtext, die Datenbank hat Vorrang |
 
 ## Integration in die Assetverwaltung
 

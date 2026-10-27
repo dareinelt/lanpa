@@ -202,6 +202,10 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Assistenten-Schritt. Versand je Empfänger über `TicketNotificationService::sendTo()` (Ereignis
   `created_confirmation`), damit Protokollierung und Idempotenz greifen; die allgemeine Anlage-Info an den
   Melder entfällt dann.
+- **Hinweis am Fuß** jeder Benachrichtigungsmail: `TicketNotificationService::wrap()` hängt den unter
+  `helpdesk.reply_template.footer_text` gepflegten Text an (Startwert `HELPDESK_REPLY_TEMPLATE_FOOTER`,
+  Platzhalter `{firma}`, Standardtext `ReplyTemplateSettingsService::DEFAULT_FOOTER_TEXT`, leer = kein
+  Hinweis). Die von Agenten verfasste E-Mail (`TicketMailService`) nutzt den Rahmen nicht.
 - **Gespeicherte Zugangsdaten** (z. B. Help-Desk-Postfachpasswort) werden über `Support\Secret` mit `APP_KEY`
   verschlüsselt abgelegt, nie im Klartext.
 

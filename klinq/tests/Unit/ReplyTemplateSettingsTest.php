@@ -68,4 +68,17 @@ final class ReplyTemplateSettingsTest extends TestCase
 
         $this->assertSame('<p>Hallo {unbekannt}</p>', $html);
     }
+
+    public function testFooterPlaceholderIsFilledWithCompanyName(): void
+    {
+        $html = ReplyTemplateSettingsService::render(
+            ReplyTemplateSettingsService::DEFAULT_FOOTER_TEXT,
+            ['{firma}' => 'Muster GmbH']
+        );
+
+        $this->assertSame(
+            '<p>Diese E-Mail wurde automatisch vom IT Help Desk (Muster GmbH) erzeugt. Antworten auf diese E-Mail werden nicht verarbeitet.</p>',
+            $html
+        );
+    }
 }

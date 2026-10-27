@@ -157,6 +157,39 @@ final class TicketConfirmationIntegrationTest extends DatabaseTestCase
         $this->assertSame($before, substr_count($this->stubMessage(), 'To: <max@example.test>'));
     }
 
+    // ------------------------------------------------------------------ Fuß-Hinweis
+
+    public function testFooterHintIsTakenFromTemplateSettings(): void
+    {
+        $this->templates()->save([
+            'confirmation_text' => self::TEMPLATE,
+            'footer_text' => 'Bitte antworten Sie nicht direkt auf diese E-Mail.',
+        ]);
+
+        $this->createTicket('form');
+
+        $message = $this->stubMessage();
+        $this->assertStringContains('Bitte antworten Sie nicht direkt auf diese E-Mail.', $message);
+        $this->assertFalse(str_contains($message, 'Diese E-Mail wurde automatisch'), 'Der Standardhinweis ist ersetzt.');
+    }
+
+    public function testEmptyFooterHintIsOmitted(): void
+    {
+        $this->templates()->save(['confirmation_text' => self::TEMPLATE, 'footer_text' => '']);
+
+        $this->createTicket('form');
+
+        $this->assertFalse(str_contains($this->stubMessage(), 'Diese E-Mail wurde automatisch'));
+    }
+
+    public function testDefaultFooterHintIsUsedWithoutSetting(): void
+    {
+        // Ohne gespeicherte Vorlagen gilt der eingebaute Standardhinweis (auch für die Info-Mail).
+        $this->createTicket('form');
+
+        $this->assertStringContains('Diese E-Mail wurde automatisch vom IT Help Desk', $this->stubMessage());
+    }
+
     // ------------------------------------------------------------------ Helfer
 
     private function templates(): ReplyTemplateSettingsService

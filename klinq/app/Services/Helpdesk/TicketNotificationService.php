@@ -26,6 +26,7 @@ final class TicketNotificationService
         private readonly TicketRepository $tickets,
         private readonly TicketMasterDataRepository $masterData,
         private readonly UserRepository $users,
+        private readonly ReplyTemplateSettingsService $replyTemplates,
         private readonly Config $config,
         private readonly Logger $logger
     ) {}
@@ -271,11 +272,17 @@ final class TicketNotificationService
             . '</table>';
     }
 
-    /** Rahmen der Benachrichtigungsmail: Inhalt plus automatischer Hinweis am Fuß. */
+    /**
+     * Rahmen der Benachrichtigungsmail: Inhalt plus der in den Vorlageneinstellungen
+     * gepflegte Hinweis am Fuß (leer = kein Hinweis).
+     */
     private function wrap(string $html): string
     {
+        $footer = $this->replyTemplates->footerHtml();
+
         return '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222">' . $html
-            . '<p style="color:#777;font-size:12px">Diese E-Mail wurde automatisch vom IT Help Desk (' . self::e((string) $this->config->get('app.company_name', '')) . ') erzeugt. Antworten auf diese E-Mail werden nicht verarbeitet.</p></div>';
+            . ($footer === '' ? '' : '<div style="color:#777;font-size:12px">' . $footer . '</div>')
+            . '</div>';
     }
 
     /** @param array<int,string> $emails @return array<int,string> */

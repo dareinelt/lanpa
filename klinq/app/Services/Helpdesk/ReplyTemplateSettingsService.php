@@ -20,6 +20,9 @@ use App\Support\Validator;
  * Der Bestätigungstext ist die Eingangsbestätigung für Meldungen aus dem Störungsformular und
  * dem Störungspostfach (sowie für Agenten-Tickets mit ausdrücklicher Bestätigung). Er darf
  * Platzhalter enthalten, die erst beim Versand je Empfänger gefüllt werden.
+ *
+ * Der Fuß-Hinweis ist der automatische Hinweis unter jeder Benachrichtigungsmail
+ * (`TicketNotificationService::wrap()`); ein leerer Wert blendet ihn aus.
  */
 final class ReplyTemplateSettingsService
 {
@@ -31,6 +34,12 @@ final class ReplyTemplateSettingsService
 
     /** Höchstlänge des Bestätigungstextes in Zeichen. */
     public const MAX_CONFIRMATION_LENGTH = 4000;
+
+    /** Höchstlänge des Fuß-Hinweises in Zeichen. */
+    public const MAX_FOOTER_LENGTH = 1000;
+
+    /** Fuß-Hinweis, solange weder in der Datenbank noch in der Konfiguration etwas hinterlegt ist. */
+    public const DEFAULT_FOOTER_TEXT = 'Diese E-Mail wurde automatisch vom IT Help Desk ({firma}) erzeugt. Antworten auf diese E-Mail werden nicht verarbeitet.';
 
     /**
      * Platzhalter der Eingangsbestätigung mit Beschreibung für die Administration.
@@ -46,6 +55,14 @@ final class ReplyTemplateSettingsService
         '{firma}' => 'Firmenname aus der Konfiguration',
     ];
 
+    /**
+     * Platzhalter des Fuß-Hinweises (er gilt für alle Mails, nicht nur für ein Ticket).
+     * @var array<string,string>
+     */
+    public const FOOTER_PLACEHOLDERS = [
+        '{firma}' => 'Firmenname aus der Konfiguration',
+    ];
+
     /** @param SettingsService $settings Zugriff auf die `settings`-Tabelle (mit Präfix) */
     public function __construct(
         private readonly SettingsService $settings,
@@ -58,7 +75,7 @@ final class ReplyTemplateSettingsService
     /**
      * Aktuelle Vorlageneinstellungen (Datenbank vor Konfiguration).
      *
-     * @return array{prefix_text:string,confirmation_text:string}
+     * @return array{prefix_text:string,confirmation_text:string,footer_text:string}
      */
     public function all(): array
     {
@@ -69,10 +86,16 @@ final class ReplyTemplateSettingsService
         $confirmation = array_key_exists('confirmation_text', $stored)
             ? (string) $stored['confirmation_text']
             : (string) $this->config->get('helpdesk.reply_template.confirmation_text', '');
+        // Ohne gespeicherten Wert gilt der Startwert aus der Konfiguration, sonst der Standardtext:
+        // bestehende Installationen behalten den gewohnten Hinweis am Fuß.
+        $footer = array_key_exists('footer_text', $stored)
+            ? (string) $stored['footer_text']
+            : $this->configuredFooter();
 
         return [
             'prefix_text' => trim($text),
             'confirmation_text' => trim($confirmation),
+            'footer_text' => trim($footer),
         ];
     }
 
@@ -88,6 +111,24 @@ final class ReplyTemplateSettingsService
     public function confirmationText(): string
     {
         return $this->all()['confirmation_text'];
+    }
+
+    /**
+     * Fertiges HTML des Fuß-Hinweises für den Mailrahmen (leer = kein Hinweis).
+     */
+    public function footerHtml(): string
+    {
+        $text = $this->all()['footer_text'];
+        if ($text === '') {
+            return '';
+        }
+        $company = trim((string) $this->config->get('app.company_name', ''));
+        if ($company === '') {
+            // Ohne Firmennamen bliebe sonst ein leeres Klammerpaar im Satz stehen.
+            $text = str_replace([' ({firma})', '({firma}) ', '({firma})'], '', $text);
+        }
+
+        return self::render($text, ['{firma}' => $company]);
     }
 
     /**
@@ -141,7 +182,7 @@ final class ReplyTemplateSettingsService
      * Speichert die Vorlageneinstellungen.
      *
      * @param array<string,mixed> $input Rohdaten aus dem Formular
-     * @return array{prefix_text:string,confirmation_text:string}
+     * @return array{prefix_text:string,confirmation_text:string,footer_text:string}
      */
     public function save(array $input): array
     {
@@ -152,6 +193,7 @@ final class ReplyTemplateSettingsService
         $this->settings->setMany([
             self::PREFIX . 'prefix_text' => $data['prefix_text'],
             self::PREFIX . 'confirmation_text' => $data['confirmation_text'],
+            self::PREFIX . 'footer_text' => $data['footer_text'],
         ], $this->currentUser->id());
         $after = $this->all();
 
@@ -164,19 +206,29 @@ final class ReplyTemplateSettingsService
      * Prüft und normalisiert die Eingaben.
      *
      * @param array<string,mixed> $input
-     * @return array{prefix_text:string,confirmation_text:string}
+     * @return array{prefix_text:string,confirmation_text:string,footer_text:string}
      */
     public function validate(array $input): array
     {
         $validator = new Validator($input);
         $validator->text('prefix_text', 'Präfix-Text', false, self::MAX_PREFIX_LENGTH);
         $validator->text('confirmation_text', 'Bestätigungstext', false, self::MAX_CONFIRMATION_LENGTH);
+        $validator->text('footer_text', 'Fuß-Hinweis', false, self::MAX_FOOTER_LENGTH);
         $clean = $validator->validated();
 
         return [
             'prefix_text' => trim((string) ($clean['prefix_text'] ?? '')),
             'confirmation_text' => trim((string) ($clean['confirmation_text'] ?? '')),
+            'footer_text' => trim((string) ($clean['footer_text'] ?? '')),
         ];
+    }
+
+    /** Startwert des Fuß-Hinweises aus der Konfiguration (leer = Standardtext). */
+    private function configuredFooter(): string
+    {
+        $value = trim((string) $this->config->get('helpdesk.reply_template.footer_text', ''));
+
+        return $value !== '' ? $value : self::DEFAULT_FOOTER_TEXT;
     }
 
     private static function escape(string $value): string

@@ -85,7 +85,7 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
 <?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php elseif ($isReplyTemplates): ?>
 <div class="card mb-4">
-    <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails, Eingangsbestätigung</span></div>
+    <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails, Eingangsbestätigung, Fuß-Hinweis</span></div>
     <p class="text-muted text-sm">Der Präfix-Text wird beim Senden einer E-Mail aus einem Ticket automatisch <strong>vor</strong> den Text des Agenten gesetzt. Er ist im Sendedialog weder sichtbar noch änderbar. Leer = kein Präfix.</p>
     <form method="post" action="/helpdesk/admin/reply-templates" novalidate>
         <?= csrf_field() ?>
@@ -106,6 +106,20 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
                 Platzhalter:
                 <?php foreach ($replyTemplate['placeholders'] as $placeholder => $label): ?>
                     <code><?= e($placeholder) ?></code> <?= e($label) ?><?= $placeholder === array_key_last($replyTemplate['placeholders']) ? '' : ' · ' ?>
+                <?php endforeach; ?>
+            </span>
+        </div>
+        <div class="form-group<?= has_error('footer_text') ? ' has-error' : '' ?>">
+            <label for="reply-template-footer">Hinweis am Fuß der E-Mail</label>
+            <textarea id="reply-template-footer" name="footer_text" rows="4" maxlength="<?= (int) $replyTemplate['max_footer_length'] ?>" placeholder="Diese E-Mail wurde automatisch vom IT Help Desk ({firma}) erzeugt."><?= e(old('footer_text', $replyTemplate['footer_text'])) ?></textarea>
+            <span class="form-hint">Wird unter jede Benachrichtigungsmail des Help Desk gesetzt (auch unter die Eingangsbestätigung), nicht unter die von Agenten verfasste E-Mail. Höchstens <?= (int) $replyTemplate['max_footer_length'] ?> Zeichen. Leer = kein Hinweis.</span>
+            <?= field_error('footer_text') ?>
+        </div>
+        <div class="form-group">
+            <span class="form-hint">
+                Platzhalter im Fuß-Hinweis:
+                <?php foreach ($replyTemplate['footer_placeholders'] as $placeholder => $label): ?>
+                    <code><?= e($placeholder) ?></code> <?= e($label) ?><?= $placeholder === array_key_last($replyTemplate['footer_placeholders']) ? '' : ' · ' ?>
                 <?php endforeach; ?>
             </span>
         </div>

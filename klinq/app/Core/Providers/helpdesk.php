@@ -114,6 +114,7 @@ return static function (Container $c): void {
         $c->get(TicketRepository::class),
         $c->get(TicketMasterDataRepository::class),
         $c->get(UserRepository::class),
+        $c->get(ReplyTemplateSettingsService::class),
         $c->get(Config::class),
         $c->get(Logger::class)
     ));

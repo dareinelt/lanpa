@@ -118,6 +118,9 @@ return [
         'prefix_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_PREFIX', '')),
         // Eingangsbestätigung für Störungsformular und Störungspostfach (leer = kein Versand)
         'confirmation_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_CONFIRMATION', '')),
+        // Hinweis am Fuß jeder Benachrichtigungsmail; leer = eingebauter Standardtext
+        // (Abschalten über die Oberfläche: dort das Feld leeren)
+        'footer_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_FOOTER', '')),
     ],
     'list_per_page' => 25,
 ];

@@ -15,11 +15,13 @@ use App\Security\CurrentUser;
 use App\Services\Helpdesk\Ai\AiTransportInterface;
 use App\Services\Helpdesk\Mail\SmtpTransport;
 use App\Services\Helpdesk\OutboundMailSettingsService;
+use App\Services\Helpdesk\ReplyTemplateSettingsService;
 use App\Services\Helpdesk\TicketMailService;
 use App\Services\Helpdesk\TicketNotificationService;
 use App\Services\Helpdesk\TicketService;
 use App\Services\Lanpa\LanpaBridge;
 use App\Services\MailClient;
+use App\Services\SettingsService;
 use Tests\Support\DatabaseTestCase;
 
 /**
@@ -364,6 +366,63 @@ final class TicketMailServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame([], self::stubRequests());
     }
 
+    public function testTemplatePrefixIsPrependedOnSendButKeptOutOfTheDialog(): void
+    {
+        $ticket = $this->createTicket();
+        $this->c->get(SettingsService::class)->set(
+            ReplyTemplateSettingsService::PREFIX . 'prefix_text',
+            "Sehr geehrte Damen und Herren,\n\nvielen Dank für Ihre Meldung."
+        );
+
+        $service = $this->service();
+        $compose = $service->composeData($this->tickets()->getVisible((int) $ticket['id']));
+        $service->send((int) $ticket['id'], [
+            'subject' => 'Antwort auf Ihr Ticket',
+            'body_html' => '<p>Wir prüfen Ihr Gerät.</p>',
+        ]);
+
+        $html = (string) (self::stubRequests()[0]['html'] ?? '');
+        $this->assertStringContains('<p>Sehr geehrte Damen und Herren,</p><p>vielen Dank für Ihre Meldung.</p>', $html);
+        $this->assertStringContains('Wir prüfen Ihr Gerät.', $html);
+        $this->assertTrue(
+            strpos($html, 'Sehr geehrte Damen und Herren,') < strpos($html, 'Wir prüfen Ihr Gerät.'),
+            'Der Präfix-Text steht vor dem Text des Agenten.'
+        );
+        $this->assertFalse(str_contains((string) json_encode($compose), 'Sehr geehrte'), 'Der Sendedialog enthält den Präfix nicht.');
+    }
+
+    public function testWithoutTemplatePrefixNoExtraBlockIsSent(): void
+    {
+        $ticket = $this->createTicket();
+
+        $this->service()->send((int) $ticket['id'], [
+            'subject' => 'Antwort auf Ihr Ticket',
+            'body_html' => '<p>Wir prüfen Ihr Gerät.</p>',
+        ]);
+
+        $html = (string) (self::stubRequests()[0]['html'] ?? '');
+        $this->assertStringContains('Wir prüfen Ihr Gerät.', $html);
+        $this->assertFalse(str_contains($html, 'margin:0 0 12px'), 'Ohne Präfix entsteht kein zusätzlicher Block.');
+    }
+
+    public function testTemplatePrefixIsEscaped(): void
+    {
+        $ticket = $this->createTicket();
+        $this->c->get(SettingsService::class)->set(
+            ReplyTemplateSettingsService::PREFIX . 'prefix_text',
+            '<script>alert(1)</script>Bitte beachten Sie die Öffnungszeiten.'
+        );
+
+        $this->service()->send((int) $ticket['id'], [
+            'subject' => 'Antwort auf Ihr Ticket',
+            'body_html' => '<p>Wir prüfen Ihr Gerät.</p>',
+        ]);
+
+        $html = (string) (self::stubRequests()[0]['html'] ?? '');
+        $this->assertStringContains('&lt;script&gt;alert(1)&lt;/script&gt;Bitte beachten Sie die Öffnungszeiten.', $html);
+        $this->assertFalse(str_contains($html, '<script>'), 'Der Präfix darf kein HTML einschleusen.');
+    }
+
     // ------------------------------------------------------------------ Hilfen
 
     private function service(?callable $signature = null): TicketMailService
@@ -385,7 +444,8 @@ final class TicketMailServiceIntegrationTest extends DatabaseTestCase
             $bridge,
             $this->c->get(CurrentUser::class),
             $config,
-            $this->c->get(Logger::class)
+            $this->c->get(Logger::class),
+            $this->c->get(ReplyTemplateSettingsService::class)
         );
     }
 
@@ -442,7 +502,8 @@ PHP);
 
         self::$stubPort = self::freePort();
         $command = [PHP_BINARY, '-S', '127.0.0.1:' . self::$stubPort, self::$stubDir . '/router.php'];
-        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['file', '/dev/null', 'a'], 2 => ['file', '/dev/null', 'a']], $pipes, self::$stubDir);
+        $nullDevice = PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null';
+        $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['file', $nullDevice, 'a'], 2 => ['file', $nullDevice, 'a']], $pipes, self::$stubDir);
         if (!is_resource($process)) {
             $this->markSkipped('Der lokale E-Mail-Stub konnte nicht gestartet werden.');
         }

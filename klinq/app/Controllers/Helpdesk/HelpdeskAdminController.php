@@ -20,6 +20,7 @@ use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskAdminService;
 use App\Services\Helpdesk\MailboxSettingsService;
 use App\Services\Helpdesk\QuickReportSettingsService;
+use App\Services\Helpdesk\ReplyTemplateSettingsService;
 use App\Services\Helpdesk\SharedAccountSuggestionService;
 use App\Services\Helpdesk\TicketMailIngestionService;
 use App\Services\Helpdesk\TicketNotificationService;
@@ -48,6 +49,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
     /** Zusätzliche Navigationspunkte ohne Stammdaten-Tabelle. */
     public const EXTRA_KINDS = [
         'quick-report' => ['Störungsformular', 'helpdesk.admin'],
+        'reply-templates' => ['Vorlageneinstellungen', 'helpdesk.admin'],
     ];
 
     public function __construct(
@@ -65,6 +67,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         private readonly TicketMailIngestionService $mailIngestion,
         private readonly MailboxSettingsService $mailSettings,
         private readonly QuickReportSettingsService $quickSettings,
+        private readonly ReplyTemplateSettingsService $replyTemplates,
         private readonly SharedAccountSuggestionService $accountSuggestions,
         private readonly Config $config
     ) {
@@ -102,7 +105,10 @@ final class HelpdeskAdminController extends HelpdeskBaseController
     {
         $kind = $this->kindFrom($request);
         $isQuickReport = $kind === 'quick-report';
+        $isReplyTemplates = $kind === 'reply-templates';
+        $isSettingsTab = $isQuickReport || $isReplyTemplates;
         $quickReportSettings = $this->quickSettings->all();
+        $replyTemplateSettings = $this->replyTemplates->all();
 
         return $this->render('helpdesk.admin.index', [
             'title' => 'Help-Desk-Administration',
@@ -111,8 +117,9 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'kind' => $kind,
             'kinds' => $this->visibleKinds(),
             'isQuickReport' => $isQuickReport,
-            'rows' => $isQuickReport ? [] : $this->rowsFor($kind),
-            'usage' => $isQuickReport ? [] : $this->usageFor($kind),
+            'isReplyTemplates' => $isReplyTemplates,
+            'rows' => $isSettingsTab ? [] : $this->rowsFor($kind),
+            'usage' => $isSettingsTab ? [] : $this->usageFor($kind),
             'config' => [
                 'enabled' => (bool) $this->config->get('helpdesk.enabled', true),
                 'ticket_prefix' => (string) $this->config->get('helpdesk.ticket_prefix', 'HD'),
@@ -134,6 +141,10 @@ final class HelpdeskAdminController extends HelpdeskBaseController
                 'shared_accounts' => $quickReportSettings['shared_accounts'],
                 'shared_accounts_hint' => $quickReportSettings['shared_accounts_hint'],
             ],
+            'replyTemplate' => [
+                'prefix_text' => $replyTemplateSettings['prefix_text'],
+                'max_length' => ReplyTemplateSettingsService::MAX_PREFIX_LENGTH,
+            ],
             'statusCategories' => HelpdeskAdminService::STATUS_CATEGORIES,
             'triggers' => TicketRuleRepository::TRIGGERS,
         ]);
@@ -154,6 +165,23 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         $this->flash('success', 'Einstellungen des Störungsformulars gespeichert.');
 
         return $this->redirect('/helpdesk/admin?tab=quick-report');
+    }
+
+    /** Präfix-Text der Vorlageneinstellungen speichern (wird erst beim Senden vorangestellt). */
+    public function saveReplyTemplates(Request $request): Response
+    {
+        $this->currentUser->require('helpdesk.admin');
+        try {
+            $this->replyTemplates->save($request->all());
+        } catch (ValidationException $e) {
+            $this->withOldInput($request, $e->errors());
+            $this->flash('error', 'Bitte Eingaben prüfen.');
+
+            return $this->redirect('/helpdesk/admin?tab=reply-templates');
+        }
+        $this->flash('success', 'Vorlageneinstellungen gespeichert.');
+
+        return $this->redirect('/helpdesk/admin?tab=reply-templates');
     }
 
     /** Vorschläge für das Feld „Sammelkonten“ (Anmeldenamen aus Telefonbuch, Mitarbeitern und lokalen Konten). */

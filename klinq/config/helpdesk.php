@@ -110,5 +110,12 @@ return [
         // Nur als Rückfall gedacht: der Schlüssel gehört verschlüsselt in die Datenbank.
         'api_key' => (string) Env::get('HELPDESK_AI_API_KEY', ''),
     ],
+    // Vorlageneinstellungen (Help-Desk-Einstellungen → „Vorlageneinstellungen“).
+    // Der Präfix-Text wird beim Senden einer Agenten-Mail serverseitig vor den Agententext
+    // gesetzt und erscheint nicht im Mail-Dialog.
+    'reply_template' => [
+        // Startwert; gepflegt wird der Text in der Datenbank (Vorrang vor diesem Wert), leer = kein Präfix
+        'prefix_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_PREFIX', '')),
+    ],
     'list_per_page' => 25,
 ];

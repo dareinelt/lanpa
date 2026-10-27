@@ -36,7 +36,8 @@ final class TicketMailService
         private readonly LanpaBridge $bridge,
         private readonly CurrentUser $currentUser,
         private readonly Config $config,
-        private readonly Logger $logger
+        private readonly Logger $logger,
+        private readonly ReplyTemplateSettingsService $replyTemplates
     ) {}
 
     /**
@@ -463,11 +464,15 @@ final class TicketMailService
     /**
      * Nachrichtentext mit Pausenhinweis und fester Signatur.
      *
+     * Der Präfix-Text aus den Vorlageneinstellungen wird hier – und nur hier – vor den
+     * Agententext gesetzt; im Sendedialog ist er nicht sichtbar.
+     *
      * @param array{code:string,name:string,until:string,until_utc:string}|null $pause
      */
     private function renderBody(string $html, ?array $pause): string
     {
-        $body = '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222">' . $html;
+        $body = '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222">'
+            . $this->replyPrefix() . $html;
         if ($pause !== null) {
             $until = $this->formatLocal($pause['until_utc']);
             $body .= '<p style="margin:18px 0 0;padding:10px 12px;border-left:3px solid #b0b0b0;background:#f4f4f4;font-size:13px;color:#444">'
@@ -480,6 +485,14 @@ final class TicketMailService
         }
 
         return $body . '</div>';
+    }
+
+    /** Präfix-Text aus den Vorlageneinstellungen als abgesetzter Block (leer, wenn nicht hinterlegt). */
+    private function replyPrefix(): string
+    {
+        $html = $this->replyTemplates->prefixHtml();
+
+        return $html === '' ? '' : '<div style="margin:0 0 12px">' . $html . '</div>';
     }
 
     /**

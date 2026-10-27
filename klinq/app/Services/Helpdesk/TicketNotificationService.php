@@ -192,7 +192,7 @@ final class TicketNotificationService
             }
             $messageId = $this->messageId($ticketId, $eventKey);
             try {
-                $ok = $this->mail->send($email, $fullSubject, $this->wrap($ticket, $html), [], $this->threadHeaders($ticket, $messageId));
+                $ok = $this->mail->send($email, $fullSubject, $this->wrap($html), [], $this->threadHeaders($ticket, $messageId));
                 $this->rules->logNotification($ticketId, $eventKey, $email, $fullSubject, $ok ? 'sent' : 'failed', $ok ? null : 'Mail-Dienst meldete Fehler', $messageId);
                 $sent += $ok ? 1 : 0;
             } catch (\Throwable $e) {
@@ -271,15 +271,10 @@ final class TicketNotificationService
             . '</table>';
     }
 
-    /** @param array<string,mixed> $ticket */
-    private function wrap(array $ticket, string $html): string
+    /** Rahmen der Benachrichtigungsmail: Inhalt plus automatischer Hinweis am Fuß. */
+    private function wrap(string $html): string
     {
-        $base = rtrim((string) $this->config->get('app.url', ''), '/');
-        $link = $base . '/helpdesk/tickets/' . (int) $ticket['id'];
-        $portal = $base . '/portal/tickets/' . (int) $ticket['id'];
-
         return '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222">' . $html
-            . '<p><a href="' . self::e($link) . '">Ticket im Help Desk öffnen</a> · <a href="' . self::e($portal) . '">Im Self-Service-Portal ansehen</a></p>'
             . '<p style="color:#777;font-size:12px">Diese E-Mail wurde automatisch vom IT Help Desk (' . self::e((string) $this->config->get('app.company_name', '')) . ') erzeugt. Antworten auf diese E-Mail werden nicht verarbeitet.</p></div>';
     }
 

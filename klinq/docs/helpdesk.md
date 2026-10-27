@@ -427,7 +427,7 @@ Jede Benachrichtigung trägt Threading-Kopfzeilen, damit Antworten der Empfänge
 | `X-Ticket-Number` | Ticketnummer |
 | `Auto-Submitted: auto-generated` | verhindert Antwortschleifen mit Abwesenheitsassistenten |
 
-Der Betreff enthält weiterhin `[HD-JJJJ-NNNNNN]` als für Menschen lesbaren Fallback.
+Der Betreff enthält weiterhin `[HD-JJJJ-NNNNNN]` als für Menschen lesbaren Fallback. Der Rumpf besteht aus dem jeweiligen Ereignistext (Tabelle mit Ticket, Betreff, Status, Priorität, ggf. Bearbeiter) und dem automatischen Hinweis am Fuß. **Ticket-Links setzt die Mail nicht selbst** – für die Eingangsbestätigung steht dafür der Platzhalter `{link}` im Vorlagentext bereit.
 
 Die von Agenten aus dem Ticket gesendete E-Mail („E-Mail aus dem Ticket senden“) nutzt dieselben Thread-Kopfzeilen,
 lässt aber `Auto-Submitted` bewusst weg: Sie ist eine persönliche Nachricht des Agenten und soll nicht als automatisch

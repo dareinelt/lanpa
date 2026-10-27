@@ -72,6 +72,9 @@ final class TicketConfirmationIntegrationTest extends DatabaseTestCase
         $this->assertStringContains('Notebook startet nicht', $message);
         // Die allgemeine Info-Mail an den Melder entfällt, die Team-Info bleibt.
         $this->assertFalse(str_contains($message, 'Ihr Ticket wurde erfolgreich angelegt'));
+        // Keine automatischen Ticket-Links im Fuß der Mail.
+        $this->assertFalse(str_contains($message, 'Ticket im Help Desk öffnen'));
+        $this->assertFalse(str_contains($message, 'Im Self-Service-Portal ansehen'));
     }
 
     public function testSharedAccountAlsoNotifiesAdditionalUser(): void

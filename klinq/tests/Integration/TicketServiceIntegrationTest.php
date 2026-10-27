@@ -479,16 +479,31 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame('new', $this->service()->get((int) $target['id'])['status_code'], 'Das Zielticket bleibt offen.');
     }
 
-    public function testMergeManyRequiresAtLeastTwoSources(): void
+    public function testMergeManyMergesSingleSourceIntoChosenTarget(): void
     {
-        $source = $this->createTicket();
+        $source = $this->createTicket(['subject' => 'Duplikat']);
+        $target = $this->createTicket(['subject' => 'Original']);
+
+        $result = $this->c->get(TicketMergeService::class)->mergeMany(
+            [(int) $source['id'], (int) $target['id']],
+            (string) $target['number'],
+        );
+
+        $this->assertSame([], $result['errors']);
+        $this->assertSame([$source['number']], array_column($result['merged'], 'number'));
+        $this->assertSame((int) $target['id'], (int) $this->service()->get((int) $source['id'])['merged_into_ticket_id']);
+        $this->assertSame('new', $this->service()->get((int) $target['id'])['status_code'], 'Das Zielticket bleibt offen.');
+    }
+
+    public function testMergeManyRequiresAnotherTicketBesidesTarget(): void
+    {
         $target = $this->createTicket();
 
         $this->assertThrows(
             ValidationException::class,
-            fn () => $this->c->get(TicketMergeService::class)->mergeMany([(int) $source['id'], (int) $target['id']], (string) $target['number']),
+            fn () => $this->c->get(TicketMergeService::class)->mergeMany([(int) $target['id']], (string) $target['number']),
         );
-        $this->assertSame('new', $this->service()->get((int) $source['id'])['status_code']);
+        $this->assertSame('new', $this->service()->get((int) $target['id'])['status_code']);
     }
 
     public function testMergeManyKeepsGoingWhenOneSourceFails(): void

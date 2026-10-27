@@ -177,7 +177,8 @@ final class TicketMergeService
     /**
      * Führt mehrere Quelltickets in ein gemeinsames Zielticket zusammen.
      *
-     * Das Zielticket selbst wird aus den Quellen entfernt; einzelne Fehler
+     * Das Zielticket selbst wird aus den Quellen entfernt; es muss daher
+     * mindestens ein weiteres Ticket ausgewählt sein. Einzelne Fehler
      * (z. B. bereits zusammengeführte Tickets) brechen die übrigen
      * Zusammenführungen nicht ab.
      *
@@ -198,7 +199,7 @@ final class TicketMergeService
                 $ids[$sourceId] = $sourceId;
             }
         }
-        if (count($ids) < 2) {
+        if ($ids === []) {
             throw ValidationException::single('sources', 'Bitte mindestens zwei Tickets auswählen, die zusammengeführt werden sollen.');
         }
 

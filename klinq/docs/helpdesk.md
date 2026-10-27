@@ -283,7 +283,7 @@ Schaltfläche **„Zusammenführen“** im Seitenkopf des Tickets öffnet ein Ov
 #### Mehrere Tickets zusammenführen (Sammelauswahl)
 
 In der Ticketliste (`/helpdesk/tickets`) hat jede Zeile ein Auswahlkästchen (Spalte vor der Nummer, mit
-„Alle auswählen“ im Kopf). Sobald **mehr als zwei** Tickets ausgewählt sind, erscheint oben links neben **CSV** die
+„Alle auswählen“ im Kopf). Sobald **mehr als ein** Ticket ausgewählt ist, erscheint oben links neben **CSV** die
 Schaltfläche **„Zusammenführen“** mit der Anzahl der gewählten Tickets. Sie öffnet ein Overlay, in dem genau eines der
 ausgewählten Tickets als **Ziel** gewählt wird; die übrigen wandern per `TicketMergeService::mergeMany()` als Quellen
 in dieses Ticket. Der Grund ist fest **Duplikat**; die Info-E-Mail an den Melder wird nicht versendet. Bereits

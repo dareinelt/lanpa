@@ -26,8 +26,8 @@
 
     function refresh() {
         const count = selectedBoxes().length;
-        button.hidden = count <= 2;
-        if (countEl) { countEl.textContent = count > 2 ? " (" + count + ")" : ""; }
+        button.hidden = count < 2;
+        if (countEl) { countEl.textContent = count >= 2 ? " (" + count + ")" : ""; }
         if (selectAll) {
             const active = activeBoxes();
             const checked = active.filter(function (box) { return box.checked; }).length;
@@ -78,7 +78,7 @@
 
     button.addEventListener("click", function () {
         const chosen = selectedBoxes();
-        if (!dialog || !form || !targetList || chosen.length <= 2) { return; }
+        if (!dialog || !form || !targetList || chosen.length < 2) { return; }
         buildTargets(chosen);
         if (errorEl) { errorEl.hidden = true; }
         if (typeof dialog.showModal === "function") { dialog.showModal(); }

@@ -40,10 +40,15 @@ final class KlinqController extends Controller
 
     /**
      * KLINQ-Kachel: Weiterleitung in die Anwendung.
+     *
+     * Ein mitgegebenes Ziel (z. B. ein Ticket-Link) wird uebernommen. Ziele im
+     * Benutzerportal sind Selbstbedienung und brauchen keine Kachel-Freigabe.
      */
     public function start(Request $request): Response
     {
-        return $this->enter($request, $this->requestedTarget($request), true);
+        $target = $this->requestedTarget($request);
+
+        return $this->enter($request, $target, !self::isSelfServiceTarget($target));
     }
 
     /**
@@ -118,9 +123,7 @@ final class KlinqController extends Controller
 
         $ssoUser = Container::sso()->resolve($request);
         if ($ssoUser === null) {
-            $login = $requireTile ? self::ENTRY_PATH : self::REPORT_PATH;
-
-            return $this->redirect(SsoAuth::loginUrl($login))
+            return $this->redirect(SsoAuth::loginUrl($this->loginTarget($request, $requireTile)))
                 ->withHeader('Cache-Control', 'no-store');
         }
 
@@ -168,7 +171,7 @@ final class KlinqController extends Controller
             'rolle' => $access['role'],
         ]);
 
-        $url = $config->entryUrl() . '?' . http_build_query([
+        $url = $config->entryUrlFor((string) ($request->server['HTTP_HOST'] ?? '')) . '?' . http_build_query([
             'token' => $token,
             'next' => $target,
         ]);
@@ -196,13 +199,57 @@ final class KlinqController extends Controller
     }
 
     /**
-     * Rücksprungziel aus ?ziel=… bzw. ?next=…; nur lokale KLINQ-Pfade.
+     * Ruecksprungziel der Anmeldung: die vollstaendige Anfrage, damit ein
+     * mitgegebenes Ziel (z. B. ein Ticket-Link) die Anmeldung uebersteht.
+     */
+    private function loginTarget(Request $request, bool $requireTile): string
+    {
+        $fallback = $requireTile ? self::ENTRY_PATH : self::REPORT_PATH;
+        $uri = (string) ($request->server['REQUEST_URI'] ?? '');
+        $path = parse_url($uri, PHP_URL_PATH);
+        if (!is_string($path) || ($path !== self::ENTRY_PATH && $path !== self::REPORT_PATH)) {
+            return $fallback;
+        }
+
+        return $uri;
+    }
+
+    /**
+     * Ruecksprungziel aus ?redirect=… (Anmeldung durch KLINQ), ?ziel=… bzw.
+     * ?next=…; nur lokale KLINQ-Pfade.
      */
     private function requestedTarget(Request $request): string
     {
-        $target = (string) ($request->query('ziel') ?? $request->query('next') ?? '');
+        $target = (string) ($request->query('redirect')
+            ?? $request->query('ziel')
+            ?? $request->query('next')
+            ?? '');
 
-        return self::safeTarget($target);
+        return self::safeTarget($this->stripPublicPath($target));
+    }
+
+    /**
+     * Entfernt einen bereits enthaltenen Unterpfad (/klinq/portal/… -> /portal/…).
+     */
+    private function stripPublicPath(string $target): string
+    {
+        $base = Container::klinqConfig()->publicPath();
+        if ($base !== '' && $base !== '/' && str_starts_with($target, $base . '/')) {
+            return substr($target, strlen($base));
+        }
+
+        return $target;
+    }
+
+    /**
+     * Ziele im Benutzerportal (eigene Tickets) sind Selbstbedienung: sie stehen
+     * jeder ueber SSO angemeldeten Person offen, unabhaengig von der
+     * KLINQ-Gruppe. Fremde Tickets bleiben gesperrt – KLINQ prueft das selbst
+     * (TicketService::getVisible()/canView()/isOwnTicket()).
+     */
+    public static function isSelfServiceTarget(string $target): bool
+    {
+        return $target === '/portal' || str_starts_with($target, '/portal/');
     }
 
     /**

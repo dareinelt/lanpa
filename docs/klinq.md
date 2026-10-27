@@ -172,7 +172,8 @@ Regeln:
 Sichtbarkeit und Reihenfolge werden anschließend wie bei jeder anderen Kachel
 über **Navigation** gepflegt (Benutzer, AD-Gruppen). Nur wer die Kachel sieht,
 kann KLINQ über sie betreten; der Direktaufruf von `/klinq-starten` prüft
-dieselbe Freigabe.
+dieselbe Freigabe. Ausgenommen sind Links auf die Selbstbedienung
+(`/portal…`, siehe 4.3).
 
 In **KLINQ → Kachel → Kacheleinstellungen** legt die Option **„KLINQ in einem
 neuen Tab öffnen“** fest, ob die Kachel ein neues Browser-Tab öffnet. Ohne
@@ -187,6 +188,37 @@ KLINQ-Meldeseite umstellen: **Navigation → Eintrag bearbeiten → Ziel** und d
 `/stoerung`.
 
 Die Auswahl erscheint nur, wenn `KLINQ_ENABLED=true` gesetzt ist.
+
+### 4.3 Direktlinks auf eigene Tickets
+
+Ein Link der Form
+
+```
+https://intranet.example:8443/klinq-starten?redirect=/portal/tickets/4
+```
+
+führt nach der Anmeldung direkt auf das Ticket. Das Intranet reicht das Ziel an
+KLINQ weiter; KLINQ selbst entscheidet, ob die Person das Ticket sehen darf.
+
+* **Jede über SSO angemeldete Person** darf so ihre **eigenen** Tickets öffnen –
+  unabhängig von der Kachel-Freigabe und unabhängig von einer
+  KLINQ-Gruppenzuordnung. Für Ziele unter `/portal…` entfällt die
+  Kachel-Prüfung.
+* **Fremde Tickets bleiben gesperrt.** KLINQ prüft beim Aufruf, ob die Person
+  Anfragende/r, Erfassende/r, betroffene/r Mitarbeitende/r oder Beobachter/in
+  ist, und antwortet sonst mit „kein Zugriff“. Wer zusätzlich die
+  Helpdesk-Rolle hat, sieht weiterhin alle Tickets.
+* Andere Ziele (z. B. `/helpdesk/…`, `/dashboard`) bleiben an die
+  Kachel-Freigabe gebunden.
+
+Als Ziel akzeptiert `/klinq-starten` die Parameter `redirect`, `ziel` und `next`
+(in dieser Reihenfolge). Ein führender Unterpfad (`/klinq/portal/…`) wird
+entfernt, unsichere Ziele (fremde Hosts, `/sso…`, `/login`, `..`) fallen auf
+`/dashboard` zurück.
+
+Damit die Weiterleitung nicht am TLS-Verteiler scheitert, gibt das Intranet die
+Einstiegsadresse relativ aus, solange `KLINQ_PUBLIC_URL` auf denselben Host
+zeigt; Schema und Port bleiben so die des Aufrufs.
 
 ---
 
@@ -341,7 +373,8 @@ der `auth`-Container leitet `/klinq/` nicht mehr weiter.
 | --- | --- | --- |
 | „KLINQ ist derzeit nicht verfügbar“ (503) | Container gestoppt oder nicht erreichbar | `docker compose --profile klinq ps`, dann `up -d`; Status im Adminbereich prüfen. |
 | Endlos-Weiterleitung zwischen `/klinq/login` und `/klinq-starten` | `KLINQ_SSO_SECRET` fehlt oder unterscheidet sich | Beide Seiten neu starten, gleiches Geheimnis prüfen. |
-| „Für KLINQ fehlt die Freigabe“ (403) | Kachel vorhanden, aber für die Person nicht freigegeben | **Navigation** → Kachel → Sichtbarkeit. |
+| „Für KLINQ fehlt die Freigabe“ (403) | Kachel vorhanden, aber für die Person nicht freigegeben | **Navigation** → Kachel → Sichtbarkeit. Gilt nicht für Direktlinks auf `/portal…` (siehe 4.3). |
+| Leere Seite, `ERR_EMPTY_RESPONSE`, in der Adresszeile steht `http://…:8443` | Weiterleitung ohne Schema: `mod_rewrite` stellt bei `[R]` mit Pfad-Angabe das Schema der eigenen Verbindung voran (hier `http`, weil TLS am Verteiler endet) | `docker/auth/klinq.conf` verwenden (https/http-Regelpaar) und `auth` neu bauen; `X-Forwarded-Proto` bzw. `TLS_APACHE` prüfen. |
 | „Die Störmeldung ist derzeit nicht freigegeben“ (404) | `klinq_quick_report_open=0` | **KLINQ → Berechtigungen**. |
 | Alle landen in „Nur Lesen“ | SSO-Sitzung enthält keine Gruppen | SSO-Diagnose im Intranet prüfen; Gruppenname exakt wie im AD eintragen. |
 | KI-Funktionen in KLINQ nicht verfügbar | Endpunkt nicht konfiguriert oder nicht erreichbar | **KLINQ → KI** → „Verbindung testen“; Server-Logs von `klinq-app`. |

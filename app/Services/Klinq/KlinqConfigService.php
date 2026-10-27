@@ -160,6 +160,59 @@ final class KlinqConfigService
     }
 
     /**
+     * Ziel des signierten Einstiegs fuer die aktuelle Anfrage.
+     *
+     * Zeigt KLINQ_PUBLIC_URL auf denselben Host wie der Aufruf, wird nur der
+     * Pfad weitergegeben. Der Browser bleibt damit auf Schema und Port der
+     * aufgerufenen Seite. Eine konfigurierte Adresse mit "http://" wuerde den
+     * Aufruf sonst auf den TLS-Port ohne TLS schicken (ERR_EMPTY_RESPONSE,
+     * "https" geht verloren).
+     *
+     * @param string $requestHost Host der aktuellen Anfrage (HTTP_HOST, mit Port)
+     */
+    public function entryUrlFor(string $requestHost = ''): string
+    {
+        $url = $this->publicUrl();
+        if (preg_match('#^[a-z][a-z0-9+.\-]*://#i', $url) !== 1) {
+            return $url . self::SSO_ROUTE;
+        }
+
+        $host = parse_url($url, PHP_URL_HOST);
+        if (!is_string($host) || $host === '' || strcasecmp($host, self::hostWithoutPort($requestHost)) !== 0) {
+            return $url . self::SSO_ROUTE;
+        }
+
+        $path = parse_url($url, PHP_URL_PATH);
+        $path = is_string($path) ? rtrim($path, '/') : '';
+        if ($path === '') {
+            return $url . self::SSO_ROUTE;
+        }
+
+        return $path . self::SSO_ROUTE;
+    }
+
+    /**
+     * Host ohne Portangabe ("intranet.example:8443" -> "intranet.example").
+     */
+    private static function hostWithoutPort(string $host): string
+    {
+        $host = strtolower(trim($host));
+        if (str_starts_with($host, '[')) {
+            $end = strpos($host, ']');
+            if ($end !== false) {
+                return substr($host, 0, $end + 1);
+            }
+        }
+
+        $pos = strrpos($host, ':');
+        if ($pos !== false) {
+            return substr($host, 0, $pos);
+        }
+
+        return $host;
+    }
+
+    /**
      * Oeffentliche Basisadresse von KLINQ.
      *
      * Bevorzugt KLINQ_PUBLIC_URL (eigener Hostname hinter dem auth-Container);

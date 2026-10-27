@@ -363,7 +363,7 @@ Tickets aus dem Formular tragen die Quelle `form` (Filter in der Ticketliste) un
 
 - **Vorlagen** (`ticket_templates`): vorbelegte Felder für Portal und Agenten, optional auf Rollen/Portal beschränkt.
 - **Regeln** (`ticket_rules`): bei Ereignis (`created`, `updated`, `status_changed`, `comment_added`, `sla_warning`, `sla_breached`) werden Bedingungen (Typ, Kategorie, Priorität, Betreff enthält, Melder-Abteilung, Quelle …) geprüft und Aktionen ausgeführt (Gruppe/Agent setzen, Priorität, Tags hinzufügen, SLA zuweisen, Benachrichtigen). Reihenfolge über `sort_order`, Stopp nach Treffer optional; jede Anwendung erscheint als Ereignis `rule_applied`.
-- **Benachrichtigungen** (`ticket_notifications`): Anlage, Zuweisung, Kommentar, Statuswechsel, SLA-Warnung/-Verletzung, Eskalation – per E-Mail über den `mail`-Container an Melder, Agent, Gruppe, Watcher und optional `HELPDESK_NOTIFICATION_INBOX`. Ausgang wird mit Status/Fehler protokolliert und ist in der Administration einsehbar. `HELPDESK_NOTIFICATION_ENABLED=false` schaltet den Versand ab.
+- **Benachrichtigungen** (`ticket_notifications`): Anlage, Zuweisung, Kommentar, Statuswechsel, SLA-Warnung/-Verletzung, Eskalation – per E-Mail (Versandkonto bzw. `mail`-Container, siehe „E-Mail-Versand (Versandkonto)“) an Melder, Agent, Gruppe, Watcher und optional `HELPDESK_NOTIFICATION_INBOX`. Ausgang wird mit Status/Fehler protokolliert und ist in der Administration einsehbar. `HELPDESK_NOTIFICATION_ENABLED=false` schaltet den Versand ab.
 - **E-Mail-Eingang** (`TicketMailIngestionService`): siehe Abschnitt „E-Mail-Eingang (IMAP) & Threading“.
 
 ## E-Mail-Eingang (IMAP) & Threading
@@ -386,6 +386,8 @@ Die Werte liegen in `system_settings` (Präfix `helpdesk.mail.`); das Passwort w
 > Wird `APP_KEY` nachträglich geändert, lässt sich ein gespeichertes Passwort nicht mehr entschlüsseln. Die Oberfläche weist darauf hin; das Passwort muss dann einmalig neu erfasst werden.
 
 ### Ausgehende Nachrichten
+
+Versendet wird über das in der Administration gepflegte **Versandkonto** (siehe Abschnitt „E-Mail-Versand (Versandkonto)“); ist dort kein Konto aktiv, geht der Versand wie bisher über den `mail`-Container. Eine gepflegte „Antwort-an“-Adresse wird als `Reply-To` gesetzt.
 
 Jede Benachrichtigung trägt Threading-Kopfzeilen, damit Antworten der Empfänger eindeutig zugeordnet werden können:
 
@@ -432,6 +434,22 @@ Verweise auf zusammengeführte Tickets werden zum Zielticket weitergeleitet. Ver
 Für Entwicklung und Tests existiert der Postfachtyp „Verzeichnis mit `.eml`-Dateien“: Dateien aus dem angegebenen Verzeichnis werden verarbeitet und nach `processed/` bzw. `failed/` verschoben.
 
 Voraussetzungen: Der in der Administration gewählte Systembenutzer (Standard `admin`) muss aktiv sein und `helpdesk.create` besitzen; unter ihm werden Anlage und Kommentare ausgeführt (Audit), der fachliche Autor bleibt der Absender.
+
+## E-Mail-Versand (Versandkonto)
+
+Für ausgehende Help-Desk-Nachrichten lässt sich ein eigenes Versandkonto samt Servereinstellungen pflegen: **Auswertung & System → Administration → E-Mail-Versand (Help Desk)** (`/admin/helpdesk-outgoing-mail`, Recht `settings.manage`). Gepflegt werden:
+
+- **Betrieb**: Versandkonto aktiv (ohne Haken bleibt der bisherige Weg über den `mail`-Container).
+- **Server**: SMTP-Server, Port, Verschlüsselung (`ssl` = 465, `starttls` = 587, `none` nur für interne Relays ohne Anmeldung), Benutzername, Passwort, Zertifikatsprüfung, Zeitüberschreitung. Ohne Portangabe gilt der Standardport der gewählten Verschlüsselung.
+- **Absender**: Absenderadresse (Pflicht bei aktivem Konto) und Absendername sowie **„Antwort-an“ (Reply-To)**. Ist die Antwortadresse leer, gehen Antworten an die Absenderadresse.
+
+Zwei Schaltflächen helfen bei der Einrichtung: **Verbindung testen** prüft Erreichbarkeit, TLS und Anmeldung ohne Nachricht; **Test-E-Mail senden** verschickt eine Nachricht über das Konto (Empfänger frei wählbar, sonst die Absenderadresse).
+
+Die Werte liegen in `system_settings` (Präfix `helpdesk.outbound_mail.`); das Passwort wird mit AES-256-GCM verschlüsselt abgelegt (`App\Support\Secret`, Schlüssel aus `APP_KEY`) und nie wieder angezeigt. Ein leeres Passwortfeld lässt das gespeicherte Passwort unverändert, „Gespeichertes Passwort löschen“ entfernt es. Änderungen werden im Audit-Log protokolliert (ohne Passwort).
+
+Der Versand erfolgt direkt aus PHP über einen eigenen SMTP-Client (`app/Services/Helpdesk/Mail/SmtpTransport.php`) – ohne zusätzliche Erweiterung oder Abhängigkeit. `MailClient` bevorzugt das Konto und fällt nur dann auf den `mail`-Container zurück, wenn kein Konto aktiv ist; das ist auch der Grund, warum Änderungen an den `SMTP_*`-Variablen des Containers einen Neustart benötigen, das Konto hier aber sofort greift.
+
+> Die Anmeldung ist nur zusammen mit TLS möglich (kein Klartext-Login); unterstützt wird `AUTH LOGIN`. Für Microsoft 365 ist ein App-Passwort bzw. SMTP AUTH am Postfach nötig.
 
 ## Rollen & Berechtigungen
 
@@ -486,6 +504,19 @@ Die folgenden Variablen sind nur noch **Startwerte** für den E-Mail-Eingang: So
 | `HELPDESK_MAIL_ALLOW_UNKNOWN_SENDERS` | `true` | Unbekannte Absender dürfen Tickets eröffnen |
 | `HELPDESK_MAIL_DEFAULT_TYPE` | `incident` | Tickettyp (Code) für Tickets aus E-Mails |
 
+Die folgenden Variablen sind nur **Startwerte** für das Versandkonto ausgehender Help-Desk-E-Mails: Sobald unter *Administration → E-Mail-Versand (Help Desk)* gespeichert wurde, gilt ausschließlich die in der Anwendung hinterlegte Konfiguration.
+
+| Variable (Startwert) | Standard | Bedeutung |
+|---|---|---|
+| `HELPDESK_SMTP_ENABLED` | `false` | Versand über das Konto statt über den `mail`-Container |
+| `HELPDESK_SMTP_HOST` / `HELPDESK_SMTP_PORT` | leer / `587` | SMTP-Server |
+| `HELPDESK_SMTP_ENCRYPTION` | `starttls` | `ssl` (465), `starttls` (587) oder `none` (nur internes Relay ohne Anmeldung) |
+| `HELPDESK_SMTP_USERNAME` / `HELPDESK_SMTP_PASSWORD` | leer | Zugangsdaten (Passwort in der Anwendung verschlüsselt gespeichert) |
+| `HELPDESK_SMTP_FROM_ADDRESS` / `HELPDESK_SMTP_FROM_NAME` | leer | Absender der Help-Desk-E-Mails |
+| `HELPDESK_SMTP_REPLY_TO` | leer | Antwortadresse (`Reply-To`); leer = Absenderadresse |
+| `HELPDESK_SMTP_TIMEOUT` | `15` | Socket-Timeout in Sekunden |
+| `HELPDESK_SMTP_VERIFY_PEER` | `true` | TLS-Zertifikat prüfen |
+
 | Weitere Variable | Standard | Bedeutung |
 |---|---|---|
 | `HELPDESK_QUICK_REPORT_ENABLED` | `true` | Störungsformular `/stoerung` erreichbar |
@@ -517,12 +548,12 @@ Details, Konfiguration und ein Testaufbau mit Ollama: [KI-Unterstützung im Help
 ## Technik
 
 - **Migration** `database/migrations/008_helpdesk.sql`, `009_helpdesk_mail.sql` (Threading-Spalten, `ticket_inbound_mails`), `010_helpdesk_quick_report.sql` (Quelle `form`, Melderspalten `reporter_username`/`reporter_host`/`reporter_ip`/`reporter_phone`/`reporter_department`), `012_helpdesk_mail_settings.sql` (`tickets.mail_from_address`/`mail_from_name`, `ticket_comments.mail_from_address`) und `015_helpdesk_support_shifts.sql` (`helpdesk_support_shifts`: tagesweise 1st-/2nd-Level-Zuständigkeit), `019_helpdesk_pause_until.sql` (Pausierstatus `waiting_feedback`/`waiting_third_party`/`waiting_delivery`/`waiting_internal`, `tickets.paused_until`), **Seeder** `database/seeders/003_helpdesk_defaults.sql` (Typen, Status, Prioritäten, SLA-Standardregeln, Beispielkategorien, Vorlagen).
-- **Code**: `app/Repositories/Ticket*Repository.php`, `KnowledgeBaseRepository.php`, `HelpdeskSupportShiftRepository.php`; `app/Services/Helpdesk/` (`TicketService`, `TicketWorkflowService`, `TicketSlaService`, `TicketPriorityMatrix`, `TicketNumberService`, `TicketMergeService`, `TicketNotificationService`, `TicketRuleService`/`TicketRuleEvaluator`, `TicketReportService`, `TicketMailIngestionService`, `TicketMailService`, `KnowledgeBaseService`, `HelpdeskAdminService`, `HelpdeskSchedulerService`, `ReporterIdentityService`, `SupportShiftService`); `app/Services/Helpdesk/Mail/` (`MimeMessageParser`, `InboundMail`, `MailboxClientInterface`, `ImapMailboxClient`, `FileMailboxClient`); `app/Services/Ad/AdUserLookupService.php` (Einzelabfrage fürs Störungsformular), `app/Support/IpRange.php`, `app/Support/HtmlSanitizer.php` (Bereinigung des Mail-Editors); `app/Controllers/Helpdesk/` (inkl. `HelpdeskSupportShiftController`); Provider `app/Core/Providers/helpdesk.php`; Routen `routes/modules/helpdesk.php`; Views `resources/views/helpdesk/`; `public/js/helpdesk.js`, `public/js/helpdesk-mail.js`, `public/js/helpdesk-merge.js`, `public/js/helpdesk-merge-bulk.js`, `public/css/pages/helpdesk.css`, `public/css/pages/quick-report.css`.
-- **Tests**: `tests/Unit/HelpdeskLogicTest.php` (Prioritätsmatrix, SLA-Berechnung mit Servicezeiten, Workflow-Übergänge, Regel-Auswertung, Rechte), `tests/Unit/HelpdeskMailParserTest.php` (MIME-Parser, RFC 2047/2231, Zitat-Erkennung, Auto-Reply-Erkennung, Ticketnummer/Message-ID), `tests/Integration/TicketServiceIntegrationTest.php` (Anlage, Nummernvergabe, Status, Zuweisung, Kommentare, Sichtbarkeit im Portal, Merge mit Grund/Anmerkung, Sammel-Zusammenführung mehrerer Quellen, Zusammenführungsvorschläge, Konflikte), `tests/Integration/HelpdeskAutomationIntegrationTest.php` (Regeln, Scheduler: Warnung/Verletzung/Eskalation/Auto-Close, Benachrichtigungen, Wissensdatenbank), `tests/Integration/HelpdeskMailIngestionIntegrationTest.php` (Ticket aus E-Mail, Threading über Betreff/`In-Reply-To`/`References`, Statuslogik, Merge-Weiterleitung, Duplikate, Auto-Replies, Anhänge), `tests/Unit/QuickReportTest.php` (Normalisierung des Windows-Kontos, Netzfreigaben, Systemkontext `runAs`), `tests/Unit/HtmlSanitizerTest.php` (Allowlist, Skripte, `javascript:`-Ziele, Bilder, `plain()`), `tests/Integration/TicketMailServiceIntegrationTest.php` (Agenten-Mail: Empfänger, Threading ohne `Auto-Submitted`, öffentlicher Kommentar, Signatur serverseitig – eine mitgesendete Signatur aus dem Editor wird verworfen, Pausierung, Validierung; Info-E-Mail zur Zusammenführung: Vorlage mit Platzhaltern, Versand an den Melder ohne Signatur, Threading auf das Zielticket, Protokollierung). Ausführen: `php tests/run.php --filter=Ticket` bzw. `--filter=Helpdesk`.
+- **Code**: `app/Repositories/Ticket*Repository.php`, `KnowledgeBaseRepository.php`, `HelpdeskSupportShiftRepository.php`; `app/Services/Helpdesk/` (`TicketService`, `TicketWorkflowService`, `TicketSlaService`, `TicketPriorityMatrix`, `TicketNumberService`, `TicketMergeService`, `TicketNotificationService`, `TicketRuleService`/`TicketRuleEvaluator`, `TicketReportService`, `TicketMailIngestionService`, `TicketMailService`, `KnowledgeBaseService`, `HelpdeskAdminService`, `HelpdeskSchedulerService`, `ReporterIdentityService`, `SupportShiftService`, `OutboundMailSettingsService`); `app/Services/Helpdesk/Mail/` (`MimeMessageParser`, `InboundMail`, `MailboxClientInterface`, `ImapMailboxClient`, `FileMailboxClient`, `SmtpTransport`); `app/Services/MailClient.php` (Konto vor Container); `app/Services/Ad/AdUserLookupService.php` (Einzelabfrage fürs Störungsformular), `app/Support/IpRange.php`, `app/Support/HtmlSanitizer.php` (Bereinigung des Mail-Editors); `app/Controllers/Helpdesk/` (inkl. `HelpdeskSupportShiftController`); Provider `app/Core/Providers/helpdesk.php`; Routen `routes/modules/helpdesk.php`; Views `resources/views/helpdesk/`; `public/js/helpdesk.js`, `public/js/helpdesk-mail.js`, `public/js/helpdesk-merge.js`, `public/js/helpdesk-merge-bulk.js`, `public/css/pages/helpdesk.css`, `public/css/pages/quick-report.css`.
+- **Tests**: `tests/Unit/HelpdeskLogicTest.php` (Prioritätsmatrix, SLA-Berechnung mit Servicezeiten, Workflow-Übergänge, Regel-Auswertung, Rechte), `tests/Unit/HelpdeskMailParserTest.php` (MIME-Parser, RFC 2047/2231, Zitat-Erkennung, Auto-Reply-Erkennung, Ticketnummer/Message-ID), `tests/Integration/TicketServiceIntegrationTest.php` (Anlage, Nummernvergabe, Status, Zuweisung, Kommentare, Sichtbarkeit im Portal, Merge mit Grund/Anmerkung, Sammel-Zusammenführung mehrerer Quellen, Zusammenführungsvorschläge, Konflikte), `tests/Integration/HelpdeskAutomationIntegrationTest.php` (Regeln, Scheduler: Warnung/Verletzung/Eskalation/Auto-Close, Benachrichtigungen, Wissensdatenbank), `tests/Integration/HelpdeskMailIngestionIntegrationTest.php` (Ticket aus E-Mail, Threading über Betreff/`In-Reply-To`/`References`, Statuslogik, Merge-Weiterleitung, Duplikate, Auto-Replies, Anhänge), `tests/Unit/QuickReportTest.php` (Normalisierung des Windows-Kontos, Netzfreigaben, Systemkontext `runAs`), `tests/Unit/HtmlSanitizerTest.php` (Allowlist, Skripte, `javascript:`-Ziele, Bilder, `plain()`), `tests/Integration/TicketMailServiceIntegrationTest.php` (Agenten-Mail: Empfänger, Threading ohne `Auto-Submitted`, öffentlicher Kommentar, Signatur serverseitig – eine mitgesendete Signatur aus dem Editor wird verworfen, Pausierung, Validierung; Info-E-Mail zur Zusammenführung: Vorlage mit Platzhaltern, Versand an den Melder ohne Signatur, Threading auf das Zielticket, Protokollierung), `tests/Integration/HelpdeskOutboundMailIntegrationTest.php` (Versandkonto: verschlüsselte Ablage, Prüfungen, „Antwort-an“, SMTP-Versand gegen einen lokalen Stub, Header-Allowlist). Ausführen: `php tests/run.php --filter=Ticket` bzw. `--filter=Helpdesk`.
 
 ## Bekannte Einschränkungen
 
-- Der IMAP-Client unterstützt `LOGIN` (Benutzername/Passwort), kein OAuth2/XOAUTH2; für Microsoft 365 wird ein App-Passwort bzw. ein Postfach mit Basic-Auth benötigt.
+- Der IMAP-Client unterstützt `LOGIN` (Benutzername/Passwort), kein OAuth2/XOAUTH2; für Microsoft 365 wird ein App-Passwort bzw. ein Postfach mit Basic-Auth benötigt. Dasselbe gilt für den SMTP-Versand (`AUTH LOGIN`, nur mit TLS).
 - Assets werden beim Anlegen mehrfach ausgewählt; nachträglich werden sie im Ticketdetail einzeln verknüpft/gelöst.
 - `readonly` kann im Portal keine Tickets anlegen (Rolle bleibt bewusst reine Leserolle); Mitarbeitende brauchen eine Fachrolle oder eine Help-Desk-Rolle.
 - Berichte basieren auf Live-Abfragen ohne Materialisierung; bei sehr großen Beständen empfiehlt sich ein Zeitraumfilter.

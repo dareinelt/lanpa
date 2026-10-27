@@ -25,6 +25,26 @@ return [
     'notification_inbox' => trim((string) Env::get('HELPDESK_NOTIFICATION_INBOX', '')),
     // Domain für Message-IDs ausgehender Ticket-Mails (Threading); leer = aus Absenderadresse/APP_URL ableiten
     'mail_domain' => trim((string) Env::get('HELPDESK_MAIL_DOMAIN', '')),
+    // Ausgehende Help-Desk-E-Mails: eigenes Versandkonto samt Servereinstellungen.
+    // Gepflegt wird das Konto unter „Administration → E-Mail-Versand (Help Desk)“; die Variablen
+    // sind Startwerte, solange in der Anwendung nichts gespeichert wurde. Ist kein Konto aktiv,
+    // nutzt der Help Desk weiterhin den Mail-Container (mail.service_url).
+    'outbound_mail' => [
+        'enabled' => Env::bool('HELPDESK_SMTP_ENABLED', false),
+        'host' => trim((string) Env::get('HELPDESK_SMTP_HOST', '')),
+        'port' => max(1, Env::int('HELPDESK_SMTP_PORT', 587)),
+        // ssl (Port 465), starttls (Port 587) oder none (nur internes Relay ohne Anmeldung)
+        'encryption' => strtolower(trim((string) Env::get('HELPDESK_SMTP_ENCRYPTION', 'starttls'))) ?: 'starttls',
+        'username' => (string) Env::get('HELPDESK_SMTP_USERNAME', ''),
+        // Nur als Rückfall gedacht: das Passwort gehört verschlüsselt in die Datenbank.
+        'password' => (string) Env::get('HELPDESK_SMTP_PASSWORD', ''),
+        'from_address' => trim((string) Env::get('HELPDESK_SMTP_FROM_ADDRESS', '')),
+        'from_name' => trim((string) Env::get('HELPDESK_SMTP_FROM_NAME', '')),
+        // Antwortadresse; leer = Antworten gehen an die Absenderadresse
+        'reply_to' => trim((string) Env::get('HELPDESK_SMTP_REPLY_TO', '')),
+        'timeout' => max(3, Env::int('HELPDESK_SMTP_TIMEOUT', 15)),
+        'verify_peer' => Env::bool('HELPDESK_SMTP_VERIFY_PEER', true),
+    ],
     // E-Mail-Eingang: Postfach per IMAP abholen und als Ticket bzw. Kommentar verarbeiten
     'mail' => [
         'enabled' => Env::bool('HELPDESK_MAIL_ENABLED', false),

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Controllers\AdminController;
 use App\Controllers\HelpdeskAiController;
 use App\Controllers\HelpdeskMailboxController;
+use App\Controllers\HelpdeskOutboundMailController;
 use App\Core\Container;
 use App\Core\Request;
 use App\Core\Response;
@@ -19,6 +20,13 @@ return static function (Router $router, Container $c): void {
     $router->post('/admin/helpdesk-mail', static fn (Request $r): Response => $mailbox()->save($r), 'settings.manage');
     $router->post('/admin/helpdesk-mail/test', static fn (Request $r): Response => $mailbox()->test($r), 'settings.manage');
     $router->post('/admin/helpdesk-mail/run', static fn (Request $r): Response => $mailbox()->run($r), 'settings.manage');
+
+    // Help-Desk-Versand: Konto samt Servereinstellungen für ausgehende E-Mails
+    $outgoing = static fn (): HelpdeskOutboundMailController => $c->get(HelpdeskOutboundMailController::class);
+    $router->get('/admin/helpdesk-outgoing-mail', static fn (Request $r): Response => $outgoing()->index($r), 'settings.manage');
+    $router->post('/admin/helpdesk-outgoing-mail', static fn (Request $r): Response => $outgoing()->save($r), 'settings.manage');
+    $router->post('/admin/helpdesk-outgoing-mail/test', static fn (Request $r): Response => $outgoing()->test($r), 'settings.manage');
+    $router->post('/admin/helpdesk-outgoing-mail/send-test', static fn (Request $r): Response => $outgoing()->sendTest($r), 'settings.manage');
 
     // Help-Desk-KI: Endpunkt, Schlüssel und Modell pflegen, Verbindung testen, Modelle ermitteln
     $ai = static fn (): HelpdeskAiController => $c->get(HelpdeskAiController::class);

@@ -17,13 +17,15 @@ $eventLabels = [
     'viewed' => 'Ticket angesehen',
 ];
 $eventClass = static fn (string $t): string => match ($t) { 'sla_breached', 'escalated', 'cancelled' => ' is-danger', 'resolved', 'closed' => ' is-success', 'sla_warning', 'reopened' => ' is-warning', default => '' };
-$percentBar = static function (?int $percent, string $state): string {
-    if ($percent === null) {
+$percentBar = static function (?int $percent, string $state, ?string $startedAt, ?string $dueAt, int $warningPercent): string {
+    if ($percent === null || $startedAt === null || $dueAt === null) {
         return '';
     }
     $p = max(0, min(100, $percent));
 
-    return '<progress class="sla-bar' . ($state === 'breached' ? ' is-breached' : ($state === 'warning' ? ' is-warning' : '')) . '" max="100" value="' . $p . '" aria-label="SLA-Verbrauch ' . $p . '%"></progress>';
+    return '<progress class="sla-bar' . ($state === 'breached' ? ' is-breached' : ($state === 'warning' ? ' is-warning' : '')) . '" max="100" value="' . $p . '"'
+        . ' data-hd-sla-start="' . e($startedAt) . '" data-hd-sla-due="' . e($dueAt) . '" data-hd-sla-warning="' . $warningPercent . '"'
+        . ' aria-label="SLA-Verbrauch ' . $p . '%"></progress>';
 };
 ?>
 <span hidden data-hd-ai-config data-enabled="<?= !empty($aiEnabled) ? '1' : '0' ?>"></span>
@@ -285,7 +287,7 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
                     <?php elseif ($slaInfo['paused']): ?>Fällig <?= fmt_datetime($info['due']) ?> (pausiert)
                     <?php else: ?><span class="sla-remaining<?= $info['remaining'] !== null && $info['remaining'] < 0 ? ' is-overdue' : '' ?>" data-hd-due="<?= e($info['due']) ?>"><?= e(\App\Services\Helpdesk\TicketSlaService::humanRemaining($info['remaining'])) ?></span> <span class="text-muted text-xs">(<?= fmt_datetime($info['due']) ?>)</span><?php endif; ?>
                 </div>
-                <?php if (!$closed && !in_array($info['state'], ['met', 'none'], true)): ?><?= $percentBar($info['percent'], $info['state']) ?><?php endif; ?>
+                <?php if (!$closed && !in_array($info['state'], ['met', 'none'], true)): ?><?= $percentBar($info['percent'], $info['state'], $ticket['created_at'], $info['due'], (int) ($slaInfo['warning_percent'] ?? 75)) ?><?php endif; ?>
             </div>
             <?php endforeach; ?>
             <?php if ($slaInfo['paused_minutes'] > 0): ?><div class="text-xs text-muted">Bisher <?= (int) $slaInfo['paused_minutes'] ?> min pausiert.</div><?php endif; ?>

@@ -293,4 +293,32 @@
         render();
         window.setInterval(render, 60000);
     });
+
+    // ---------------------------------------------------------------- SLA-Fortschrittsbalken ohne Neuladen weiterlaufen lassen
+    const slaBars = [];
+    document.querySelectorAll("progress[data-hd-sla-due]").forEach(function (el) {
+        const start = new Date(el.getAttribute("data-hd-sla-start").replace(" ", "T") + "Z");
+        const due = new Date(el.getAttribute("data-hd-sla-due").replace(" ", "T") + "Z");
+        if (isNaN(start.getTime()) || isNaN(due.getTime()) || due.getTime() <= start.getTime()) { return; }
+        slaBars.push({
+            el: el,
+            start: start.getTime(),
+            due: due.getTime(),
+            warning: parseFloat(el.getAttribute("data-hd-sla-warning")) || 75
+        });
+    });
+    if (slaBars.length > 0) {
+        const renderSlaBars = function () {
+            const now = Date.now();
+            slaBars.forEach(function (bar) {
+                const percent = (now - bar.start) * 100 / (bar.due - bar.start);
+                bar.el.value = Math.max(0, Math.min(100, percent));
+                bar.el.classList.toggle("is-warning", percent >= bar.warning && percent < 100);
+                bar.el.classList.toggle("is-breached", percent >= 100);
+                bar.el.setAttribute("aria-label", "SLA-Verbrauch " + Math.floor(Math.max(0, Math.min(100, percent))) + "%");
+            });
+        };
+        renderSlaBars();
+        window.setInterval(renderSlaBars, 1000);
+    }
 })();

@@ -251,6 +251,7 @@ final class TicketController extends HelpdeskBaseController
             ],
             'paused' => $ticket['sla_paused_at'] !== null,
             'paused_minutes' => (int) ($ticket['sla_paused_minutes'] ?? 0),
+            'warning_percent' => $warning,
         ];
 
         return $this->render('helpdesk.tickets.show', [

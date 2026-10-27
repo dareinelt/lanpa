@@ -19,10 +19,8 @@
     const bodyField = root.querySelector("[data-hd-mail-body]");
     const subjectField = root.querySelector("[data-hd-mail-subject]");
     const pauseCode = root.querySelector("[data-hd-mail-pause-code]");
-    const pauseUntil = root.querySelector("[data-hd-mail-pause-until]");
-    const pauseGroup = root.querySelector("[data-hd-mail-pause-until]")
-        ? root.querySelector("[data-hd-mail-pause-until]").closest(".form-group")
-        : null;
+    const pauseGroup = root.querySelector("[data-hd-mail-pause-until]");
+    const pauseUntil = pauseGroup ? pauseGroup.querySelector("input[name='pause_until']") : null;
     const errorEl = root.querySelector("[data-hd-mail-error]");
     const submitEl = root.querySelector("[data-hd-mail-submit]");
 

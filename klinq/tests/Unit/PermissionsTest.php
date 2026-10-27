@@ -26,13 +26,25 @@ final class PermissionsTest extends TestCase
         $this->assertTrue($this->permissions->roleHas('admin', 'assets.manage'));
     }
 
-    public function testReadonlyHasOnlyViewPermissions(): void
+    public function testReadonlyHasNoAssetPermissions(): void
     {
-        foreach ($this->permissions->forRole('readonly') as $permission) {
-            $this->assertTrue(str_ends_with($permission, '.view'), "readonly darf {$permission} nicht haben");
-        }
+        $this->assertSame(
+            ['portal.view', 'portal.create', 'knowledgebase.view'],
+            $this->permissions->forRole('readonly'),
+            'Die Rolle "readonly" („Nur lesen“) darf ausschließlich den eigenen Help-Desk-Bereich öffnen'
+        );
+        $this->assertFalse($this->permissions->roleHas('readonly', 'assets.view'));
+        $this->assertFalse($this->permissions->roleHas('readonly', 'dashboard.view'));
         $this->assertFalse($this->permissions->roleHas('readonly', 'assets.manage'));
         $this->assertFalse($this->permissions->roleHas('readonly', 'audit.view'), 'Audit-Log enthält Benutzer-/IP-Daten');
+    }
+
+    public function testRolesWithAssetAccessKeepReadOnlyAssetPermissions(): void
+    {
+        foreach (['assetmanagement', 'lager', 'einkauf', 'helpdesk_agent', 'helpdesk_lead', 'helpdesk_admin'] as $role) {
+            $this->assertTrue($this->permissions->roleHas($role, 'assets.view'), "{$role} braucht lesenden Assetzugriff");
+            $this->assertTrue($this->permissions->roleHas($role, 'dashboard.view'), "{$role} braucht das Dashboard");
+        }
         $this->assertFalse($this->permissions->roleHas('lager', 'audit.view'));
         $this->assertTrue($this->permissions->roleHas('assetmanagement', 'audit.view'));
     }
@@ -72,7 +84,9 @@ final class PermissionsTest extends TestCase
         $user = new CurrentUser($this->permissions);
         $this->assertFalse($user->isAuthenticated());
         $user->login(['id' => 1, 'username' => 'ro', 'display_name' => 'RO', 'role' => 'readonly']);
-        $this->assertTrue($user->can('assets.view'));
+        $this->assertTrue($user->can('portal.view'));
+        $this->assertFalse($user->can('assets.view'));
+        $this->assertThrows(ForbiddenException::class, static fn () => $user->require('assets.view'));
         $this->assertThrows(ForbiddenException::class, static fn () => $user->require('assets.manage'));
         $user->logout();
         $this->assertFalse($user->isAuthenticated());

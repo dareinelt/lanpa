@@ -39,8 +39,9 @@ $all = [
 ];
 
 // Alle Leserechte – außer dem Audit-Log (enthält Benutzer- und IP-Daten; nur Admin und Assetmanagement)
-// und dem Help-Desk-Agentenbereich (fremde Tickets sehen nur Help-Desk-Rollen)
-$readOnly = array_values(array_filter($all, static fn (string $p): bool => str_ends_with($p, '.view') && $p !== 'audit.view' && $p !== 'helpdesk.view'));
+// und dem Help-Desk-Agentenbereich (fremde Tickets sehen nur Help-Desk-Rollen).
+// Grundlage der Rollen mit Assetzugriff, nicht der Rolle "readonly" (siehe unten).
+$allViews = array_values(array_filter($all, static fn (string $p): bool => str_ends_with($p, '.view') && $p !== 'audit.view' && $p !== 'helpdesk.view'));
 
 // Rechte des Help-Desk-Agenten (Tickets bearbeiten, ohne Stammdaten/SLA-Pflege)
 // helpdesk.reports (Ticket-Berichte), helpdesk.delete (Ticket löschen) und helpdesk.cancel
@@ -67,7 +68,7 @@ return [
     'all' => $all,
     'roles' => [
         'admin' => $all,
-        'assetmanagement' => array_values(array_unique(array_merge($readOnly, $portal, [
+        'assetmanagement' => array_values(array_unique(array_merge($allViews, $portal, [
             'assets.manage', 'assets.retire', 'labels.print',
             'movements.checkout', 'movements.return', 'movements.complete',
             'handover.manage', 'handover.sign',
@@ -77,21 +78,25 @@ return [
             'documents.manage', 'licenses.manage',
             'reports.export', 'imports.manage', 'audit.view',
         ]))),
-        'lager' => array_values(array_unique(array_merge($readOnly, $portal, [
+        'lager' => array_values(array_unique(array_merge($allViews, $portal, [
             'labels.print',
             'movements.checkout', 'movements.return', 'movements.complete',
             'handover.manage', 'handover.sign',
             'orders.receive', 'assets.manage', 'documents.manage',
         ]))),
-        'einkauf' => array_values(array_unique(array_merge($readOnly, $portal, [
+        'einkauf' => array_values(array_unique(array_merge($allViews, $portal, [
             'suppliers.manage', 'orders.manage', 'orders.receive',
             'manufacturers.manage', 'articles.manage', 'documents.manage',
             'licenses.manage', 'reports.export',
         ]))),
-        'helpdesk_admin' => array_values(array_unique(array_merge($readOnly, $helpdeskAdmin))),
-        'helpdesk_lead' => array_values(array_unique(array_merge($readOnly, $helpdeskLead))),
-        'helpdesk_agent' => array_values(array_unique(array_merge($readOnly, $helpdeskAgent))),
-        'readonly' => $readOnly,
+        'helpdesk_admin' => array_values(array_unique(array_merge($allViews, $helpdeskAdmin))),
+        'helpdesk_lead' => array_values(array_unique(array_merge($allViews, $helpdeskLead))),
+        'helpdesk_agent' => array_values(array_unique(array_merge($allViews, $helpdeskAgent))),
+        // "Nur lesen" ist der Altbestand der frueheren Vorgaberolle und oeffnet bewusst keine
+        // Assetverwaltung: ohne ausdrueckliche KLINQ-Berechtigung bleibt nur das Serviceportal
+        // mit den eigenen Tickets. Lesenden Assetzugriff gibt es nur mit einer Rolle, die Assets
+        // einschliesst (Assetmanagement, Lager, Einkauf, Help Desk).
+        'readonly' => $portal,
         'portal' => $portal,
     ],
     'role_labels' => [

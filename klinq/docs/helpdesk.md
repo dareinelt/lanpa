@@ -492,7 +492,7 @@ Der Versand erfolgt direkt aus PHP über einen eigenen SMTP-Client (`app/Service
 | **helpdesk_lead** | zusätzlich eskalieren, SLA-Regeln, Export, Kategorien, Vorlagen |
 | **helpdesk_admin** | zusätzlich `helpdesk.admin` (Typen, Status, Prioritäten, Gruppen, Regeln, Benachrichtigungsprotokoll) und `documents.manage` |
 | **assetmanagement / lager / einkauf** | Portal (eigene Tickets anlegen und verfolgen) und Wissensartikel lesen, kein Agentenbereich |
-| **readonly** | bewusst nur `*.view` – sieht das Portal und öffentliche Artikel, kann aber keine Tickets anlegen; öffnet zusätzlich die Assetverwaltung lesend |
+| **readonly** | Altbestand der früheren Vorgaberolle: sieht das Portal und öffentliche Artikel wie `portal`; kein Dashboard, keine Suche, keine Assetseite – auch nicht lesend |
 | **portal** | ausschließlich Serviceportal: eigene Tickets anlegen und verfolgen, Hilfe & Anleitungen lesen. Kein Recht der Assetverwaltung, auch nicht lesend; Vorgabe für Personen ohne KLINQ-Berechtigung |
 | **admin** | alles |
 
@@ -592,7 +592,7 @@ Details, Konfiguration und ein Testaufbau mit Ollama: [KI-Unterstützung im Help
 
 - Der IMAP-Client unterstützt `LOGIN` (Benutzername/Passwort), kein OAuth2/XOAUTH2; für Microsoft 365 wird ein App-Passwort bzw. ein Postfach mit Basic-Auth benötigt. Dasselbe gilt für den SMTP-Versand (`AUTH LOGIN`, nur mit TLS).
 - Assets werden beim Anlegen mehrfach ausgewählt; nachträglich werden sie im Ticketdetail einzeln verknüpft/gelöst.
-- `readonly` kann im Portal keine Tickets anlegen (Rolle bleibt bewusst reine Leserolle); Mitarbeitende ohne KLINQ-Berechtigung erhalten die Rolle `portal` und damit das Serviceportal zum Anlegen eigener Tickets.
+- `readonly` ist nur noch der Altbestand der früheren Vorgaberolle und verhält sich wie `portal` (eigene Tickets, Hilfe & Anleitungen, kein Teil der Assetverwaltung – auch nicht lesend). Mitarbeitende ohne KLINQ-Berechtigung erhalten die Rolle `portal`.
 - Berichte basieren auf Live-Abfragen ohne Materialisierung; bei sehr großen Beständen empfiehlt sich ein Zeitraumfilter.
 - Agenten-E-Mails werden ohne Anhänge versendet (nur Text und eingebettete Bilder); die Signatur kommt aus dem Intranet und steht schreibgeschützt im Editor.
 

@@ -453,7 +453,7 @@ Weitere Einstellungen:
    | `admin` | `admin`, `helpdesk`, `assets`, `statistics`, `tickets` |
    | `helpdesk_admin`, `helpdesk_lead`, `helpdesk_agent` | `helpdesk` |
    | `assetmanagement` | `assets` |
-   | `readonly` | – |
+   | `readonly` | `portal` |
    | `portal` | `portal` |
 
 5. Rückgabe:
@@ -473,7 +473,8 @@ Weitere Einstellungen:
    `elevated` ist `false`, wenn die Rolle `readonly` oder `portal` ist und keine
    Berechtigungsgruppe vorliegt. Beide Rollen sind die Rollen ohne
    KLINQ-Berechtigung; `portal` ist die Vorgabe und sieht ausschließlich die
-   eigenen Tickets.
+   eigenen Tickets. `readonly` („Nur Lesen“) ist der Altbestand der früheren
+   Vorgaberolle und verhält sich seit der Trennung identisch.
 
 ### 8.4 Übergabe und Wirkung in KLINQ
 

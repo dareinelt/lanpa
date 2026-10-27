@@ -118,9 +118,9 @@ final class OfflineSyncServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame('99001 · Technik', $employee[0]['meta']);
     }
 
-    public function testBootstrapReflectsReadonlyPermissions(): void
+    public function testBootstrapReflectsRolePermissions(): void
     {
-        $this->loginAs('readonly');
+        $this->loginAs('einkauf');
         $data = $this->service()->bootstrap();
         $this->assertFalse($data['permissions']['checkout']);
         $this->assertFalse($data['permissions']['return']);
@@ -252,7 +252,11 @@ final class OfflineSyncServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame('forbidden', $result['status']);
         $this->assertNull($this->c->get(MovementRepository::class)->findByClientTransaction('offline-tx-ro-0001'));
 
-        // Lesen bleibt erlaubt, ohne Anmeldung ist der Bootstrap gesperrt
+        // Ohne KLINQ-Berechtigung entfällt auch der lesende Assetzugriff
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->bootstrap());
+
+        // Lesen bleibt für Rollen mit Assetzugriff erlaubt, ohne Anmeldung ist der Bootstrap gesperrt
+        $this->loginAs('einkauf');
         $this->assertTrue(count($this->service()->bootstrap()['assets']) > 0);
         $this->c->get(CurrentUser::class)->logout();
         $this->assertThrows(ForbiddenException::class, fn () => $this->service()->bootstrap());

@@ -115,10 +115,11 @@ final class ReportServiceIntegrationTest extends DatabaseTestCase
     {
         $this->loginAs('lager');
         $this->assertThrows(ForbiddenException::class, fn () => $this->service()->inventoryCsv([]));
+        $this->assertTrue(is_array($this->service()->inventory([])), 'Lesen bleibt erlaubt');
 
+        // Ohne KLINQ-Berechtigung ist auch der lesende Assetzugriff gesperrt (Route verlangt reports.view)
         $this->loginAs('readonly');
         $this->assertThrows(ForbiddenException::class, fn () => $this->service()->inventoryCsv([]));
-        $this->assertTrue(is_array($this->service()->inventory([])), 'Lesen bleibt erlaubt');
     }
 
     // ------------------------------------------------------------------ Bestandsbericht

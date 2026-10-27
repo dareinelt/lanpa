@@ -178,7 +178,9 @@ $tileValue = static fn (string $key): string => (string) ($tileValues[$key] ?? '
             <p class="field__hint">
                 Gilt für alle angemeldeten Personen ohne passende Gruppe. „Serviceportal“ empfiehlt sich:
                 Die Person sieht ausschließlich ihre eigenen Tickets und die Störmeldung, keinen Teil
-                der Assetverwaltung. „Nur Lesen“ öffnet zusätzlich die Assetverwaltung lesend.
+                der Assetverwaltung. Die frühere Vorgaberolle „Nur Lesen“ verhält sich inzwischen
+                genauso – lesenden Zugriff auf die Assetverwaltung gibt es nur noch über eine Rolle,
+                die Assets ausdrücklich einschließt.
             </p>
             <?= $fieldError('klinq_default_role') ?>
         </div>

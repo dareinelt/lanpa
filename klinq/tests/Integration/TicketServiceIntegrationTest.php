@@ -451,6 +451,59 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertStringContains('{{ziel}}', $compose['body_html']);
     }
 
+    public function testMergeManyMergesAllSourcesIntoChosenTarget(): void
+    {
+        $sourceA = $this->createTicket(['subject' => 'Duplikat A']);
+        $sourceB = $this->createTicket(['subject' => 'Duplikat B']);
+        $target = $this->createTicket(['subject' => 'Original']);
+        $this->service()->addComment((int) $sourceA['id'], 'Kommentar A', 'public');
+        $this->service()->addComment((int) $sourceB['id'], 'Kommentar B', 'public');
+
+        $result = $this->c->get(TicketMergeService::class)->mergeMany([
+            (int) $sourceA['id'],
+            (int) $sourceB['id'],
+            (int) $target['id'],
+            (int) $sourceA['id'],
+        ], (string) $target['number']);
+
+        $this->assertSame((int) $target['id'], (int) $result['target']['id']);
+        $this->assertSame([], $result['errors']);
+        $this->assertSame([$sourceA['number'], $sourceB['number']], array_column($result['merged'], 'number'));
+
+        foreach ([$sourceA, $sourceB] as $source) {
+            $after = $this->service()->get((int) $source['id']);
+            $this->assertSame((int) $target['id'], (int) $after['merged_into_ticket_id']);
+            $this->assertSame('cancelled', $after['status_code']);
+        }
+        $this->assertSame(2, $this->c->get(TicketCommentRepository::class)->countForTicket((int) $target['id'], 'public'));
+        $this->assertSame('new', $this->service()->get((int) $target['id'])['status_code'], 'Das Zielticket bleibt offen.');
+    }
+
+    public function testMergeManyRequiresAtLeastTwoSources(): void
+    {
+        $source = $this->createTicket();
+        $target = $this->createTicket();
+
+        $this->assertThrows(
+            ValidationException::class,
+            fn () => $this->c->get(TicketMergeService::class)->mergeMany([(int) $source['id'], (int) $target['id']], (string) $target['number']),
+        );
+        $this->assertSame('new', $this->service()->get((int) $source['id'])['status_code']);
+    }
+
+    public function testMergeManyKeepsGoingWhenOneSourceFails(): void
+    {
+        $source = $this->createTicket(['subject' => 'Duplikat']);
+        $target = $this->createTicket(['subject' => 'Original']);
+
+        $result = $this->c->get(TicketMergeService::class)->mergeMany([(int) $source['id'], 999999], (string) $target['number']);
+
+        $this->assertSame([$source['number']], array_column($result['merged'], 'number'));
+        $this->assertCount(1, $result['errors']);
+        $this->assertStringContains('#999999', $result['errors'][0]);
+        $this->assertSame((int) $target['id'], (int) $this->service()->get((int) $source['id'])['merged_into_ticket_id']);
+    }
+
     // ------------------------------------------------------------------ Suche / Ansichten
 
     public function testViewCountsAndSearch(): void

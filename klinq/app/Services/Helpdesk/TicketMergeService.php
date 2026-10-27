@@ -89,10 +89,7 @@ final class TicketMergeService
         if ($source === null) {
             throw ValidationException::single('target', 'Quellticket nicht gefunden.');
         }
-        $target = ctype_digit($targetNumberOrId) ? $this->tickets->find((int) $targetNumberOrId) : $this->tickets->findByNumber(TicketNumberService::normalize($targetNumberOrId) ?? $targetNumberOrId);
-        if ($target === null) {
-            throw ValidationException::single('target', 'Zielticket nicht gefunden.');
-        }
+        $target = $this->findTarget($targetNumberOrId);
         if ((int) $target['id'] === $sourceId) {
             throw ValidationException::single('target', 'Ein Ticket kann nicht mit sich selbst zusammengeführt werden.');
         }
@@ -175,6 +172,71 @@ final class TicketMergeService
         }
 
         return $result;
+    }
+
+    /**
+     * Führt mehrere Quelltickets in ein gemeinsames Zielticket zusammen.
+     *
+     * Das Zielticket selbst wird aus den Quellen entfernt; einzelne Fehler
+     * (z. B. bereits zusammengeführte Tickets) brechen die übrigen
+     * Zusammenführungen nicht ab.
+     *
+     * @param list<int|string> $sourceIds
+     * @param array<string,mixed> $options siehe merge()
+     * @return array{target:array<string,mixed>,merged:list<array{id:int,number:string}>,errors:list<string>}
+     */
+    public function mergeMany(array $sourceIds, string $targetNumberOrId, array $options = []): array
+    {
+        $this->currentUser->require('helpdesk.merge');
+        $target = $this->findTarget($targetNumberOrId);
+        $targetId = (int) $target['id'];
+
+        $ids = [];
+        foreach ($sourceIds as $sourceId) {
+            $sourceId = (int) $sourceId;
+            if ($sourceId > 0 && $sourceId !== $targetId) {
+                $ids[$sourceId] = $sourceId;
+            }
+        }
+        if (count($ids) < 2) {
+            throw ValidationException::single('sources', 'Bitte mindestens zwei Tickets auswählen, die zusammengeführt werden sollen.');
+        }
+
+        $merged = [];
+        $errors = [];
+        foreach ($ids as $sourceId) {
+            $source = $this->tickets->find($sourceId);
+            $label = $source !== null ? (string) $source['number'] : '#' . $sourceId;
+            try {
+                $this->merge($sourceId, (string) $targetId, $options);
+                $merged[] = ['id' => $sourceId, 'number' => $label];
+            } catch (ValidationException $e) {
+                $errors[] = $label . ': ' . implode(' ', $e->errors());
+            }
+        }
+
+        return [
+            'target' => $this->tickets->find($targetId) ?? $target,
+            'merged' => $merged,
+            'errors' => $errors,
+        ];
+    }
+
+    /**
+     * Zielticket anhand von Nummer oder ID laden.
+     *
+     * @return array<string,mixed>
+     */
+    private function findTarget(string $targetNumberOrId): array
+    {
+        $target = ctype_digit($targetNumberOrId)
+            ? $this->tickets->find((int) $targetNumberOrId)
+            : $this->tickets->findByNumber(TicketNumberService::normalize($targetNumberOrId) ?? $targetNumberOrId);
+        if ($target === null) {
+            throw ValidationException::single('target', 'Zielticket nicht gefunden.');
+        }
+
+        return $target;
     }
 
     /**

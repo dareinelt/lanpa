@@ -143,7 +143,7 @@ final class TicketController extends HelpdeskBaseController
             'dir' => $dir,
             'slaService' => $this->slaService,
             'now' => new \DateTimeImmutable('now', new \DateTimeZone('UTC')),
-            'scripts' => ['/js/helpdesk.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-merge-bulk.js'],
         ]);
     }
 
@@ -427,6 +427,36 @@ final class TicketController extends HelpdeskBaseController
         }
 
         return $this->respond($request, $message, '/helpdesk/tickets/' . $target['id'], ['target' => $target]);
+    }
+
+    /**
+     * Sammelaktion aus der Ticketliste: mehrere ausgewählte Tickets in ein Zielticket zusammenführen.
+     */
+    public function mergeMany(Request $request): Response
+    {
+        $rawSources = $request->input('sources', []);
+        $sources = is_array($rawSources) ? array_map(static fn (mixed $id): int => (int) $id, $rawSources) : [];
+        $result = null;
+        $response = $this->attempt($request, function () use ($sources, $request, &$result): void {
+            $result = $this->mergeService->mergeMany($sources, $request->string('target'), [
+                'reason_code' => $request->string('reason_code', 'duplicate'),
+            ]);
+        }, '/helpdesk/tickets', false);
+        if ($response !== null) {
+            return $response;
+        }
+
+        $count = count($result['merged']);
+        $message = $count . ' ' . ($count === 1 ? 'Ticket wurde' : 'Tickets wurden') . ' in ' . $result['target']['number'] . ' zusammengeführt.';
+        if ($result['errors'] !== []) {
+            $this->flash('warning', 'Nicht zusammengeführt: ' . implode(' | ', $result['errors']));
+        }
+
+        return $this->respond($request, $message, '/helpdesk/tickets/' . $result['target']['id'], [
+            'target' => $result['target'],
+            'merged' => $result['merged'],
+            'errors' => $result['errors'],
+        ]);
     }
 
     public function tags(Request $request): Response

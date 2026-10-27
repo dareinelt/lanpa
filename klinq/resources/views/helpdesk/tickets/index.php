@@ -8,6 +8,7 @@ foreach (['q', 'status_id', 'priority_id', 'type_id', 'group_id', 'assignee_user
 }
 $resetUrl = '/helpdesk/tickets?view=' . e($filters['view']);
 $hint = static fn (string $key): string => in_array($key, ['overdue', 'critical'], true) ? ' is-danger' : '';
+$canMerge = $can('helpdesk.merge');
 ?>
 <div class="page-header">
     <div>
@@ -15,6 +16,7 @@ $hint = static fn (string $key): string => in_array($key, ['overdue', 'critical'
         <p class="page-subtitle text-muted mb-0"><?= (int) $paginator->total ?> Tickets · <?= e($views[$filters['view']] ?? 'Alle') ?></p>
     </div>
     <div class="page-actions">
+        <?php if ($canMerge): ?><button type="button" class="btn btn-secondary" data-hd-bulk-merge hidden><?= icon('merge') ?> Zusammenführen<span data-hd-bulk-merge-count></span></button><?php endif; ?>
         <?php if ($can('helpdesk.export')): ?><a class="btn btn-secondary" href="<?= e(query_url('/helpdesk/tickets/export', $query, ['page' => null])) ?>"><?= icon('download') ?> CSV</a><?php endif; ?>
         <?php if ($can('helpdesk.create')): ?><a class="btn btn-primary" href="/helpdesk/tickets/new"><?= icon('plus') ?> Neues Ticket</a><?php endif; ?>
     </div>
@@ -105,6 +107,7 @@ $hint = static fn (string $key): string => in_array($key, ['overdue', 'critical'
     <div class="table-wrapper">
     <table class="table">
         <thead><tr>
+            <?php if ($canMerge): ?><th class="ticket-select"><input type="checkbox" data-hd-ticket-select-all aria-label="Alle Tickets auswählen"></th><?php endif; ?>
             <th><?= sort_link($basePath, $query, 'number', 'Nummer') ?></th>
             <th><?= sort_link($basePath, $query, 'subject', 'Betreff') ?></th>
             <th><?= sort_link($basePath, $query, 'status', 'Status') ?></th>
@@ -122,6 +125,13 @@ $hint = static fn (string $key): string => in_array($key, ['overdue', 'critical'
             $remaining = $slaService->remainingMinutes($r['resolution_due_at'], $now);
         ?>
             <tr data-href="/helpdesk/tickets/<?= (int) $r['id'] ?>" class="<?= $rowClass ?>">
+                <?php if ($canMerge): ?>
+                <td class="ticket-select">
+                    <input type="checkbox" data-hd-ticket-select value="<?= (int) $r['id'] ?>"
+                           data-number="<?= e($r['number']) ?>" data-subject="<?= e($r['subject']) ?>"
+                           aria-label="Ticket <?= e($r['number']) ?> auswählen"<?= $r['merged_into_ticket_id'] !== null ? ' disabled' : '' ?>>
+                </td>
+                <?php endif; ?>
                 <td class="ticket-number"><a href="/helpdesk/tickets/<?= (int) $r['id'] ?>"><?= e($r['number']) ?></a><?php if ($r['merged_into_ticket_id'] !== null): ?><div class="text-xs text-muted">→ <?= e($r['merged_into_number']) ?></div><?php endif; ?></td>
                 <td class="ticket-subject">
                     <a href="/helpdesk/tickets/<?= (int) $r['id'] ?>"><?= e($r['subject']) ?></a>
@@ -159,4 +169,29 @@ $hint = static fn (string $key): string => in_array($key, ['overdue', 'critical'
 <?php endif; ?>
 </div>
 <?php include __DIR__ . '/../../partials/pagination.php'; ?>
+
+<?php if ($canMerge): ?>
+<dialog id="bulk-merge-dialog" class="dialog hd-merge-dialog" data-hd-bulk-merge-dialog>
+    <form method="post" action="/helpdesk/tickets/merge" data-hd-bulk-merge-form>
+        <?= csrf_field() ?>
+        <input type="hidden" name="reason_code" value="duplicate">
+        <div class="dialog-header">
+            <h2><?= icon('merge') ?> Tickets zusammenführen</h2>
+            <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+        </div>
+        <div class="dialog-body">
+            <p class="text-muted">Wählen Sie das Ticket, in das die übrigen ausgewählten Tickets zusammengeführt werden.</p>
+            <fieldset class="hd-merge-targets" data-hd-bulk-merge-targets>
+                <legend class="visually-hidden">Zielticket</legend>
+            </fieldset>
+            <p class="alert alert-danger" data-hd-bulk-merge-error hidden></p>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+            <button type="submit" class="btn btn-danger"><?= icon('merge') ?> Zusammenführen</button>
+        </div>
+    </form>
+</dialog>
+<?php endif; ?>
+
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

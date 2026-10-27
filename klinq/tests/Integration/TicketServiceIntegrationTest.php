@@ -310,6 +310,40 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ForbiddenException::class, fn () => $this->service()->changeStatus((int) $own['id'], 'cancelled', null, null, 'x'));
     }
 
+    /**
+     * Ueber das Intranet angemeldete Konten haben ggf. keine Verknuepfung zu ihrem
+     * Mitarbeiterdatensatz (`users.employee_id` bleibt leer). Eigene Tickets – etwa aus der
+     * Stoerungsmeldung, die nur den Mitarbeiter kennt – muessen trotzdem sichtbar bleiben.
+     */
+    public function testPortalUserWithoutEmployeeLinkSeesOwnTicketsByUsername(): void
+    {
+        $this->c->get(EmployeeRepository::class)->update($this->requesterEmployeeId, ['username' => 'dreinelt']);
+        $own = $this->createQuickReport();
+        $foreign = $this->createTicket(['requester_employee_id' => $this->otherEmployeeId]);
+
+        $unlinked = $this->createUser('dreinelt', 'lager', null);
+        $this->loginAs($unlinked, 'lager');
+
+        $this->assertTrue($this->service()->canView($this->service()->get((int) $own['id'])), 'Ticket des eigenen Mitarbeiters');
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->getVisible((int) $foreign['id']));
+
+        $mine = $this->tickets()->search(['visible_user_id' => $unlinked, 'view' => 'portal_open'], 'created_at', 'desc', 50, 0);
+        $ids = array_map(static fn (array $r): int => (int) $r['id'], $mine);
+        $this->assertContains((int) $own['id'], $ids, 'Portalliste zeigt das eigene Ticket');
+        $this->assertFalse(in_array((int) $foreign['id'], $ids, true));
+    }
+
+    /** Rueckfall auf die E-Mail-Adresse, wenn der Anmeldename nicht im Mitarbeiterbestand steht. */
+    public function testPortalUserWithoutEmployeeLinkSeesOwnTicketsByEmail(): void
+    {
+        $own = $this->createQuickReport();
+        $unlinked = $this->createUser('unbekannt', 'lager', null);
+        $this->pdo->prepare("UPDATE users SET email = 'max@example.test' WHERE id = ?")->execute([$unlinked]);
+
+        $this->loginAs($unlinked, 'lager');
+        $this->assertTrue($this->service()->canView($this->service()->get((int) $own['id'])));
+    }
+
     public function testPortalCreateIgnoresAgentOnlyFields(): void
     {
         $this->loginAs($this->portalUserId, 'lager');

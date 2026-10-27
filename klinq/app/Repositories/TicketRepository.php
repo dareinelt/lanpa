@@ -25,6 +25,17 @@ final class TicketRepository extends BaseRepository
         'resolution_due_at' => 't.resolution_due_at',
     ];
 
+    /**
+     * Mitarbeiter-IDs, die zum angemeldeten Portalbenutzer gehören: die am Konto gepflegte
+     * Verknüpfung und – falls diese fehlt (Konto kam über das Intranet, Mitarbeiterdatensatz
+     * entstand später) – Treffer über Anmeldename bzw. E-Mail-Adresse.
+     * Erwartet den Parameter `:vis_uid`.
+     */
+    private const OWN_EMPLOYEE_IDS = 'SELECT u.employee_id FROM users u WHERE u.id = :vis_uid AND u.employee_id IS NOT NULL
+                UNION
+                SELECT e.id FROM employees e JOIN users u ON u.id = :vis_uid
+                WHERE e.username = u.username OR (u.email IS NOT NULL AND u.email <> \'\' AND e.email = u.email)';
+
     private const SELECT = 'SELECT t.*,
             ty.code AS type_code, ty.name AS type_name, ty.color AS type_color, ty.icon AS type_icon,
             st.code AS status_code, st.name AS status_name, st.color AS status_color, st.category AS status_category, st.pauses_sla,
@@ -196,8 +207,8 @@ final class TicketRepository extends BaseRepository
         // Portal: nur eigene Tickets (Melder, betroffener Mitarbeiter, Ersteller, Watcher)
         if (!empty($filters['visible_user_id'])) {
             $where[] = '(t.requester_user_id = :vis_uid OR t.created_by = :vis_uid
-                OR t.requester_employee_id IN (SELECT u.employee_id FROM users u WHERE u.id = :vis_uid AND u.employee_id IS NOT NULL)
-                OR t.affected_employee_id IN (SELECT u.employee_id FROM users u WHERE u.id = :vis_uid AND u.employee_id IS NOT NULL)
+                OR t.requester_employee_id IN (' . self::OWN_EMPLOYEE_IDS . ')
+                OR t.affected_employee_id IN (' . self::OWN_EMPLOYEE_IDS . ')
                 OR EXISTS (SELECT 1 FROM ticket_watchers w WHERE w.ticket_id = t.id AND w.user_id = :vis_uid))';
             $params['vis_uid'] = (int) $filters['visible_user_id'];
         }

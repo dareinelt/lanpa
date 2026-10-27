@@ -30,6 +30,15 @@ Browser ──▶ LANPA /klinq/ (auth-Container, NTLM/Kerberos)
 Das Ticket enthält Anmeldename, Anzeigename, E-Mail, Telefon, Abteilung, Standort,
 Rechnername, IP-Adresse sowie die vom Intranet vergebenen Berechtigungen.
 
+Beim Anlegen bzw. Abgleich des Benutzers verknüpft `App\Services\Lanpa\LanpaUserService`
+das Konto mit dem lokalen Mitarbeiterdatensatz (`users.employee_id`): zuerst über den
+Anmeldenamen (`employees.username`), sonst über die E-Mail-Adresse. Eine bereits gepflegte
+Verknüpfung wird nie überschrieben, nur weil der Abgleich gerade keinen Treffer liefert.
+Diese Verknüpfung entscheidet über die Portal-Sichtbarkeit eigener Tickets (siehe
+[helpdesk.md](helpdesk.md#serviceportal-portal)); fehlt sie ausnahmsweise (z. B. Mitarbeiter
+erst nach der Anmeldung angelegt), greifen Help Desk und Ticketliste ersatzweise auf
+Anmeldename/E-Mail zurück.
+
 Das Ziel nach dem Einstieg steht im Parameter `next` (z. B. `/stoerung` aus dem Störungsmeldeformular).
 Fehlt er oder ist er das Standardziel `/dashboard`, öffnet KLINQ das zuletzt verwendete Modul des
 Benutzers (siehe [helpdesk.md](helpdesk.md#bereichswechsel-in-der-oberfläche)).
@@ -78,3 +87,4 @@ kann (IP-Adresse, optional per Reverse-DNS aufgelöster Rechnername).
 | Ticket wird abgelehnt (Signatur) | `KLINQ_SSO_SECRET` unterscheidet sich zwischen LANPA und KLINQ |
 | Ticket wird abgelehnt (bereits verwendet) | `LANPA_SSO_REPLAY_STORE` nicht beschreibbar oder zwischen mehreren Instanzen nicht geteilt |
 | Störungsformular ohne Kontaktdaten | `HELPDESK_QUICK_REPORT_TRUST_USER_HEADER=false` oder AD-Abgleich nicht erreichbar |
+| Eigenes Ticket im Portal nicht sichtbar (`403`) | Konto ist mit keinem Mitarbeiterdatensatz verknüpft (`users.employee_id` leer) und Anmeldename/E-Mail passen zu keinem `employees`-Datensatz – Mitarbeiter anlegen bzw. Anmeldename/E-Mail dort pflegen, dann erneut anmelden |

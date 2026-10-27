@@ -154,6 +154,10 @@ final class TicketService
         $this->event($ticketId, 'viewed', null, null, null);
     }
 
+    /**
+     * Mitarbeiter-ID des angemeldeten Benutzers: die am Konto gepflegte Verknüpfung, sonst
+     * die Zuordnung über Anmeldename bzw. E-Mail-Adresse des Mitarbeiterdatensatzes.
+     */
     public function currentEmployeeId(): ?int
     {
         $userId = $this->currentUser->id();
@@ -161,8 +165,22 @@ final class TicketService
             return null;
         }
         $user = $this->users->find($userId);
+        if ($user === null) {
+            return null;
+        }
+        if (!empty($user['employee_id'])) {
+            return (int) $user['employee_id'];
+        }
 
-        return $user !== null && !empty($user['employee_id']) ? (int) $user['employee_id'] : null;
+        // Ueber das Intranet angemeldete Konten hatten bisher keine Verknuepfung zum
+        // Mitarbeiterdatensatz. Damit eigene Tickets trotzdem sichtbar sind, hier ueber
+        // Anmeldename bzw. E-Mail-Adresse zuordnen (ohne die Verknuepfung zu schreiben).
+        $employee = $this->employees->findByUsername((string) $user['username']);
+        if ($employee === null && !empty($user['email'])) {
+            $employee = $this->employees->findByEmail((string) $user['email']);
+        }
+
+        return $employee !== null ? (int) $employee['id'] : null;
     }
 
     /** Standardansichten der Ticketliste mit Bezeichnung. @return array<string,string> */

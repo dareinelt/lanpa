@@ -177,7 +177,9 @@ sequenceDiagram
 9. **Prüfung in KLINQ.** `LanpaSsoToken::verify()` prüft Signatur (zeitkonstant
    über `hash_equals`), `iss`, `aud`, `exp` und die Einmalverwendung der `jti`.
 10. **Sitzung in KLINQ.** `LanpaUserService::provision()` legt den Benutzer an
-    oder gleicht ihn ab, setzt `role_id` und die Berechtigungsgruppen.
+    oder gleicht ihn ab, setzt `role_id`, die Berechtigungsgruppen und die
+    Verknüpfung zum Mitarbeiterdatensatz (`users.employee_id`, über
+    Anmeldename bzw. E-Mail).
     Anschließend erneuert `SessionManager::regenerate()` die Sitzungskennung,
     `CurrentUser::login()` meldet an, `LanpaIdentityService::remember()` merkt
     die Kontaktdaten, `AuditLogService::log('login', …)` protokolliert.
@@ -330,7 +332,7 @@ verlängert nur das Zeitfenster für einen abgefangenen Link.
 | `klinq/config/lanpa.php` | Umgebungsvertrag der Anbindung. |
 | `klinq/app/Security/LanpaSsoToken.php` | Prüfung des Einstiegsscheins inkl. Einmalverwendung. |
 | `klinq/app/Controllers/LanpaSsoController.php` | Einstieg: prüfen, anlegen, anmelden, protokollieren. |
-| `klinq/app/Services/Lanpa/LanpaUserService.php` | Benutzer anlegen/abgleichen, Rolle und Berechtigungsgruppen setzen. |
+| `klinq/app/Services/Lanpa/LanpaUserService.php` | Benutzer anlegen/abgleichen, Rolle und Berechtigungsgruppen setzen, Mitarbeiterdatensatz verknüpfen. |
 | `klinq/app/Services/Lanpa/LanpaIdentityService.php` | Kontaktdaten der Sitzung merken und bereitstellen. |
 | `klinq/app/Services/Lanpa/LanpaBridge.php` | Designfarben, KI-Konfiguration, Melderdaten, Dienst-Token. |
 | `klinq/app/Services/Helpdesk/ReporterIdentityService.php` | Melderdaten ermitteln (Intranet → Header → Sitzung → AD → Personal). |

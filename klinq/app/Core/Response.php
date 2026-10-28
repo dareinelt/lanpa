@@ -16,7 +16,13 @@ final class Response
 
     public static function html(string $content, int $status = 200): self
     {
-        return new self($content, $status, ['Content-Type' => 'text/html; charset=utf-8']);
+        // Seiten enthalten Statusdaten und CSRF-Token und dürfen nach einem
+        // Statuswechsel nicht aus dem (Browser- oder Proxy-)Cache kommen.
+        return new self($content, $status, [
+            'Content-Type' => 'text/html; charset=utf-8',
+            'Cache-Control' => 'private, no-store, max-age=0',
+            'Pragma' => 'no-cache',
+        ]);
     }
 
     public static function text(string $content, int $status = 200): self

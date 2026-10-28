@@ -466,7 +466,8 @@ configure_apache() {
     AddType text/javascript .js .mjs
 
     <FilesMatch "\.(css|js|mjs|svg|png|webmanifest)$">
-        Header set Cache-Control "no-cache"
+        Header set Cache-Control "no-cache, must-revalidate, max-age=0"
+        Header set Expires "Thu, 01 Jan 1970 00:00:00 GMT"
     </FilesMatch>
 
     <Directory ${APP_DIR}/storage>

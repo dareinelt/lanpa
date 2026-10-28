@@ -1,5 +1,5 @@
 /* Service Worker: App-Shell-Cache für den mobilen Bereich; API-Aufrufe werden nicht gecacht. */
-const CACHE_NAME = "klinq-shell-v6";
+const CACHE_NAME = "klinq-shell-v7";
 // KLINQ kann hinter dem Intranet-Proxy unter einem Unterpfad laufen (z. B. /klinq).
 // Der Service Worker kennt die Wurzel dann nur über seine eigene Adresse.
 const BASE = self.location.pathname.endsWith("/sw.js")
@@ -49,10 +49,12 @@ self.addEventListener("fetch", function (event) {
 
     // Statische Dateien: Netz zuerst (Versions-Query ?v= bleibt wirksam), im Cache ohne Query
     // abgelegt, damit offline immer die zuletzt gesehene Version ausgeliefert wird.
+    // cache: "no-cache" erzwingt die Revalidierung beim Server, damit der HTTP-Cache
+    // des Browsers keine veraltete Datei an den Service Worker weiterreicht.
     if (/\.(css|js|svg|png|webmanifest|woff2?)$/.test(url.pathname)) {
         const cacheKey = url.origin + url.pathname;
         event.respondWith(
-            fetch(request).then(function (response) {
+            fetch(request, { cache: "no-cache" }).then(function (response) {
                 if (response.ok && response.type === "basic") {
                     const copy = response.clone();
                     caches.open(CACHE_NAME).then(function (cache) { cache.put(cacheKey, copy); });

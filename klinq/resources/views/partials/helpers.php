@@ -229,20 +229,38 @@ if (!function_exists('sort_link')) {
 }
 
 if (!function_exists('asset_url')) {
-    /** Statische Datei mit Cache-Busting-Parameter (mtime des Baums für CSS wegen @import). */
+    /**
+     * Statische Datei mit Cache-Busting-Parameter aus dem Dateiinhalt.
+     *
+     * Bewusst kein Zeitstempel: Deploys, die Dateizeiten bewahren (rsync -a,
+     * Docker-Layer, entpackte Archive), würden sonst dieselbe Adresse behalten und
+     * der Browser liefe mit einer veralteten Fassung weiter. CSS wird über den
+     * gesamten Baum gehasht, weil die Kinder nur per @import geladen werden.
+     */
     function asset_url(string $path): string
     {
-        static $cssVersion = null;
-        $file = dirname(__DIR__, 3) . '/public' . $path;
-        if (str_ends_with($path, '.css')) {
-            if ($cssVersion === null) {
-                $cssVersion = 0;
-                foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator(dirname($file), FilesystemIterator::SKIP_DOTS)) as $f) {
-                    $cssVersion = max($cssVersion, $f->getMTime());
-                }
-            }
-            return $path . '?v=' . $cssVersion;
+        static $versions = [];
+        if (isset($versions[$path])) {
+            return $path . '?v=' . $versions[$path];
         }
-        return $path . '?v=' . (is_file($file) ? filemtime($file) : 0);
+        $file = dirname(__DIR__, 3) . '/public' . $path;
+        $version = '0';
+        if (str_ends_with($path, '.css')) {
+            $context = hash_init('sha256');
+            $base = dirname($file);
+            $children = [];
+            foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($base, FilesystemIterator::SKIP_DOTS)) as $f) {
+                $children[] = $f->getPathname();
+            }
+            sort($children); // stabile Reihenfolge unabhängig von der Verzeichnisausgabe
+            foreach ($children as $child) {
+                hash_update($context, substr($child, strlen($base)) . ':' . hash_file('sha256', $child) . "\n");
+            }
+            $version = substr(hash_final($context), 0, 12);
+        } elseif (is_file($file)) {
+            $version = substr((string) hash_file('sha256', $file), 0, 12);
+        }
+
+        return $path . '?v=' . ($versions[$path] = $version);
     }
 }

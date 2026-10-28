@@ -193,6 +193,7 @@ final class TicketNotificationService
             '{datum}' => (string) (ReportService::datetime((string) ($ticket['created_at'] ?? '')) ?? ''),
             '{geschlossen_am}' => (string) (ReportService::datetime((string) ($ticket['closed_at'] ?? '')) ?? ''),
             '{schliessungsgrund}' => trim((string) ($ticket['close_reason'] ?? '')),
+            '{fehlerursprung}' => trim((string) ($ticket['error_origin'] ?? '')),
             '{loesung}' => trim(RichText::toPlain((string) ($ticket['resolution'] ?? ''))),
             '{link}' => $base . '/portal/tickets/' . (int) ($ticket['id'] ?? 0),
             '{firma}' => (string) $this->config->get('app.company_name', ''),

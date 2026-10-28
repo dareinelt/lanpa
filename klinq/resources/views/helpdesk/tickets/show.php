@@ -28,6 +28,33 @@ $percentBar = static function (?int $percent, string $state, ?string $startedAt,
         . ' aria-label="SLA-Verbrauch ' . $p . '%"></progress>';
 };
 ?>
+<?php
+// Aktionen der Kopfzeile (Annehmen, Schließen, Pausieren, Stornieren) und die verbleibenden
+// Statuswechsel der Statusleiste werden aus den verfügbaren Übergängen abgeleitet.
+$currentCode = (string) $ticket['status_code'];
+$pauseTransitions = array_values(array_filter($transitions, static fn (array $t): bool => !empty($t['is_pause'])));
+$pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
+$actionTransitions = [];
+foreach ($transitions as $t) {
+    if (empty($t['is_pause'])) {
+        $actionTransitions[(string) $t['code']] = $t;
+    }
+}
+$acceptTransition = $actionTransitions['in_progress'] ?? null;
+$closeTransition = $actionTransitions['closed'] ?? null;
+$cancelTransition = $actionTransitions['cancelled'] ?? null;
+// „Annehmen“ heißt je nach Ausgangslage anders (wieder öffnen, Pausierung beenden).
+$acceptLabel = match (true) {
+    in_array($currentCode, ['resolved', 'closed'], true) => 'Wieder öffnen',
+    ($ticket['status_category'] ?? '') === 'pending' => 'Weiter bearbeiten',
+    default => 'Annehmen',
+};
+// „In Bearbeitung“, „Gelöst“, „Geschlossen“ und „Storniert“ liegen in der Kopfzeile.
+$statusTransitions = array_values(array_filter(
+    $actionTransitions,
+    static fn (array $t): bool => !in_array((string) $t['code'], ['in_progress', 'resolved', 'closed', 'cancelled'], true)
+));
+?>
 <span hidden data-hd-ai-config data-enabled="<?= !empty($aiEnabled) ? '1' : '0' ?>"></span>
 <div class="page-header ticket-page-header">
     <div>
@@ -54,6 +81,20 @@ $percentBar = static function (?int $percent, string $state, ?string $startedAt,
                 <button type="button" class="btn btn-secondary btn-sm" disabled title="<?= e($mailCompose['reason']) ?>"><?= icon('mail') ?> E-Mail senden</button>
             <?php endif; ?>
         <?php endif; ?>
+        <?php if ($isAgent && $transitions !== [] && !$readOnly): ?>
+            <?php if ($acceptTransition !== null): ?>
+                <button type="button" class="btn btn-secondary btn-sm" data-hd-status="<?= e($acceptTransition['code']) ?>" data-hd-label="<?= e($acceptLabel) ?>" data-requires-resolution="0" data-requires-reason="0"><?= icon('user') ?> <?= e($acceptLabel) ?></button>
+            <?php endif; ?>
+            <?php if ($closeTransition !== null): ?>
+                <button type="button" class="btn btn-primary btn-sm" data-hd-status="<?= e($closeTransition['code']) ?>" data-hd-label="<?= e($closeTransition['name']) ?>" data-requires-resolution="<?= !empty($closeTransition['requires_resolution']) ? '1' : '0' ?>" data-requires-reason="0"><?= icon('check') ?> Schließen</button>
+            <?php endif; ?>
+            <?php if ($pauseTransitions !== []): ?>
+                <button type="button" class="btn btn-secondary btn-sm" data-hd-status="<?= e($pauseTransitions[0]['code']) ?>" data-hd-label="<?= e($pauseTransitions[0]['name']) ?>" data-requires-resolution="0" data-requires-reason="0" data-hd-pause="1"><?= icon('clock') ?> <?= ($ticket['status_category'] ?? '') === 'pending' ? 'Pausierung ändern' : 'Pausieren' ?></button>
+            <?php endif; ?>
+            <?php if ($cancelTransition !== null): ?>
+                <button type="button" class="btn btn-danger btn-sm" data-hd-status="<?= e($cancelTransition['code']) ?>" data-hd-label="<?= e($cancelTransition['name']) ?>" data-requires-resolution="0" data-requires-reason="<?= !empty($cancelTransition['requires_reason']) ? '1' : '0' ?>"><?= icon('x') ?> <?= e($cancelTransition['name']) ?></button>
+            <?php endif; ?>
+        <?php endif; ?>
         <form method="post" action="/helpdesk/tickets/<?= $id ?>/watch" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('eye') ?> <?= $isWatching ? 'Nicht mehr beobachten' : 'Beobachten' ?></button></form>
         <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed && (int) ($ticket['assignee_user_id'] ?? 0) !== (int) $user['id']): ?>
             <form method="post" action="/helpdesk/tickets/<?= $id ?>/take" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('user') ?> Übernehmen</button></form>
@@ -70,20 +111,12 @@ $percentBar = static function (?int $percent, string $state, ?string $startedAt,
     <div class="alert alert-info"><?= icon('info') ?> Dieses Ticket wurde in <a href="/helpdesk/tickets/<?= (int) $ticket['merged_into_ticket_id'] ?>"><?= e($ticket['merged_into_number']) ?></a> zusammengeführt und ist schreibgeschützt.</div>
 <?php endif; ?>
 
-<?php
-$pauseTransitions = array_values(array_filter($transitions, static fn (array $t): bool => !empty($t['is_pause'])));
-$statusTransitions = array_values(array_filter($transitions, static fn (array $t): bool => empty($t['is_pause'])));
-$pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
-?>
 <?php if ($transitions !== [] && !$readOnly): ?>
 <section class="ticket-actions" id="status">
     <span class="text-muted text-sm">Status ändern:</span>
     <?php foreach ($statusTransitions as $t): ?>
         <button type="button" class="btn btn-sm <?= $t['category'] === 'resolved' || $t['category'] === 'closed' ? 'btn-primary' : ($t['category'] === 'cancelled' ? 'btn-danger' : 'btn-secondary') ?>" data-hd-status="<?= e($t['code']) ?>" data-hd-label="<?= e($t['name']) ?>" data-requires-resolution="<?= !empty($t['requires_resolution']) ? '1' : '0' ?>" data-requires-reason="<?= !empty($t['requires_reason']) ? '1' : '0' ?>"><?= e($t['name']) ?></button>
     <?php endforeach; ?>
-    <?php if ($pauseTransitions !== []): ?>
-        <button type="button" class="btn btn-sm btn-secondary" data-hd-status="<?= e($pauseTransitions[0]['code']) ?>" data-hd-label="<?= e($pauseTransitions[0]['name']) ?>" data-requires-resolution="0" data-requires-reason="0" data-hd-pause="1"><?= icon('clock') ?> <?= ($ticket['status_category'] ?? '') === 'pending' ? 'Pausierung ändern' : 'Pausieren' ?></button>
-    <?php endif; ?>
 </section>
 <?php endif; ?>
 
@@ -101,6 +134,7 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
             </div>
         <?php endif; ?>
         <?php if (!empty($ticket['close_reason'])): ?><p class="text-sm text-muted">Abschlussgrund: <?= e($ticket['close_reason']) ?></p><?php endif; ?>
+        <?php if (!empty($ticket['error_origin'])): ?><p class="text-sm text-muted">Fehlerursprung: <?= e($ticket['error_origin']) ?></p><?php endif; ?>
     </section>
 
     <section class="card" id="comments">
@@ -522,13 +556,25 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
             </div>
             <?php endif; ?>
             <div class="form-group" data-show-for="resolved,closed">
-                <label for="st-resolution">Lösung <span class="text-muted">(Pflicht bei Gelöst/Geschlossen)</span></label>
+                <label for="st-resolution">Lösung <span class="text-muted">(Pflicht beim Schließen)</span></label>
                 <textarea id="st-resolution" name="resolution" rows="4" data-required-when-visible data-hd-field="ticket_resolution"><?= e($ticket['resolution'] ?? '') ?></textarea>
             </div>
             <div class="form-group" data-show-for="cancelled,closed">
                 <label for="st-reason">Grund <span class="text-muted">(beim Stornieren Pflicht, beim Schließen optional)</span></label>
                 <input id="st-reason" name="reason" maxlength="255" data-required-when-visible data-required-for="cancelled">
             </div>
+            <?php if ($errorOrigins !== []): ?>
+            <div class="form-group" data-show-for="closed">
+                <label for="st-error-origin">Fehlerursprung <span class="text-muted">(optional)</span></label>
+                <select id="st-error-origin" name="error_origin">
+                    <option value="">– keine Angabe –</option>
+                    <?php foreach ($errorOrigins as $origin): ?>
+                        <option value="<?= e($origin) ?>"><?= e($origin) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <p class="form-hint">Katalog aus den Help-Desk-Einstellungen (Reiter „Fehlerursprung“). Der Wert erscheint im Schließungstext als <code>{fehlerursprung}</code>.</p>
+            </div>
+            <?php endif; ?>
             <div class="form-group" data-show-for="closed">
                 <label class="checkbox-row"><input type="checkbox" name="notify_requester" value="1" checked data-hd-notify-requester> Melder über die Schließung informieren</label>
                 <p class="form-hint">Sendet die Schließungsbenachrichtigung aus den Help-Desk-Einstellungen (Reiter „Vorlageneinstellungen“) mit dem Grund an den Melder. Ohne Häkchen erhält der Melder keine E-Mail.</p>

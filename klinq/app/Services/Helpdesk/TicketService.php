@@ -66,7 +66,8 @@ final class TicketService
         private readonly TicketConfirmationService $confirmations,
         private readonly AuditLogService $audit,
         private readonly CurrentUser $currentUser,
-        private readonly Config $config
+        private readonly Config $config,
+        private readonly ErrorOriginSettingsService $errorOrigins
     ) {}
 
     // ------------------------------------------------------------------ Lesen / Sichtbarkeit
@@ -508,7 +509,7 @@ final class TicketService
      * Schließen, wenn der Agent im Statusdialog „Melder informieren“ abwählt.
      * @return array<string,mixed>
      */
-    public function changeStatus(int $id, string $toCode, ?string $note = null, ?string $resolution = null, ?string $reason = null, ?int $expectedVersion = null, bool $system = false, ?string $pauseUntil = null, bool $notify = true): array
+    public function changeStatus(int $id, string $toCode, ?string $note = null, ?string $resolution = null, ?string $reason = null, ?int $expectedVersion = null, bool $system = false, ?string $pauseUntil = null, bool $notify = true, ?string $errorOrigin = null): array
     {
         $ticket = $this->get($id);
         $this->assertNotMerged($ticket);
@@ -530,6 +531,13 @@ final class TicketService
         }
         if ($this->workflow->requiresReason($toCode) && trim((string) $reason) === '') {
             throw ValidationException::single('close_reason', 'Bitte einen Grund für die Stornierung angeben.');
+        }
+        $errorOrigin = $errorOrigin !== null ? trim($errorOrigin) : null;
+        if ($errorOrigin === '') {
+            $errorOrigin = null;
+        }
+        if ($toCode === TicketWorkflowService::CLOSED && $errorOrigin !== null && !in_array($errorOrigin, $this->errorOrigins->origins(), true)) {
+            throw ValidationException::single('error_origin', 'Bitte einen Fehlerursprung aus dem Katalog wählen.');
         }
 
         $now = gmdate('Y-m-d H:i:s');
@@ -595,6 +603,8 @@ final class TicketService
                 if ($reason !== null && trim($reason) !== '') {
                     $update['close_reason'] = trim($reason);
                 }
+                // Fehlerursprung aus dem Katalog; ohne Auswahl wird ein alter Wert nicht fortgeschrieben.
+                $update['error_origin'] = $errorOrigin;
                 break;
             case TicketWorkflowService::CANCELLED:
                 $update['cancelled_at'] = $now;

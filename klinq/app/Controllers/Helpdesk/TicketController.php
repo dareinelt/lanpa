@@ -24,6 +24,7 @@ use App\Repositories\TicketTemplateRepository;
 use App\Repositories\TicketWorklogRepository;
 use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
+use App\Services\Helpdesk\ErrorOriginSettingsService;
 use App\Services\Helpdesk\HelpdeskAiService;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\ReplyTemplateSettingsService;
@@ -70,7 +71,8 @@ final class TicketController extends HelpdeskBaseController
         private readonly TicketAttachmentService $attachmentService,
         private readonly TicketMailService $mailService,
         private readonly UserRepository $users,
-        private readonly ReplyTemplateSettingsService $replyTemplates
+        private readonly ReplyTemplateSettingsService $replyTemplates,
+        private readonly ErrorOriginSettingsService $errorOrigins
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -275,6 +277,7 @@ final class TicketController extends HelpdeskBaseController
             'merged' => $this->tickets->mergedInto($id),
             'timeline' => $this->service->timelineVisible($id),
             'transitions' => $this->service->availableTransitions($ticket),
+            'errorOrigins' => $this->errorOrigins->origins(),
             'articles' => $this->knowledge->suggestionsFor($ticket),
             'linkedArticles' => $this->currentUser->can('knowledgebase.view') ? $this->knowledge->articlesForTicket($id) : [],
             'notifications' => $this->currentUser->can('helpdesk.admin') ? $this->rules->notificationsForTicket($id) : [],
@@ -330,7 +333,7 @@ final class TicketController extends HelpdeskBaseController
         // alle anderen Übergänge benachrichtigen wie bisher.
         $notify = $to !== TicketWorkflowService::CLOSED || $request->bool('notify_requester');
         $response = $this->attempt($request, function () use ($request, $id, $to, $notify): void {
-            $this->service->changeStatus($id, $to, $request->stringOrNull('note'), $request->stringOrNull('resolution'), $request->stringOrNull('reason'), $request->int('version'), false, $request->stringOrNull('pause_until'), $notify);
+            $this->service->changeStatus($id, $to, $request->stringOrNull('note'), $request->stringOrNull('resolution'), $request->stringOrNull('reason'), $request->int('version'), false, $request->stringOrNull('pause_until'), $notify, $request->stringOrNull('error_origin'));
         }, '/helpdesk/tickets/' . $id . '#status', false);
 
         return $response ?? $this->respond($request, 'Status geändert.', '/helpdesk/tickets/' . $id);

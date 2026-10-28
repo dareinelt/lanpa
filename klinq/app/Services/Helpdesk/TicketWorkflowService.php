@@ -27,9 +27,9 @@ final class TicketWorkflowService
 
     /** @var array<string,array<int,string>> */
     private const TRANSITIONS = [
-        self::NEW => [self::OPEN, self::IN_PROGRESS, self::CANCELLED],
-        self::OPEN => [self::IN_PROGRESS, self::CANCELLED],
-        self::IN_PROGRESS => [self::RESOLVED, self::CANCELLED],
+        self::NEW => [self::OPEN, self::IN_PROGRESS, self::CLOSED, self::CANCELLED],
+        self::OPEN => [self::IN_PROGRESS, self::CLOSED, self::CANCELLED],
+        self::IN_PROGRESS => [self::RESOLVED, self::CLOSED, self::CANCELLED],
         self::RESOLVED => [self::CLOSED, self::IN_PROGRESS],
         self::CLOSED => [self::IN_PROGRESS],
         self::CANCELLED => [],
@@ -39,7 +39,7 @@ final class TicketWorkflowService
     private const PAUSE_SOURCES = [self::OPEN, self::IN_PROGRESS];
 
     /** Übergänge aus einer Pausierung heraus (neben dem Wechsel des Pausengrunds). */
-    private const PAUSE_TRANSITIONS = [self::IN_PROGRESS, self::CANCELLED];
+    private const PAUSE_TRANSITIONS = [self::IN_PROGRESS, self::CLOSED, self::CANCELLED];
 
     /** Zusätzliche Berechtigung je Zielstatus (neben helpdesk.update). @var array<string,string> */
     private const PERMISSIONS = [

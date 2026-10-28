@@ -99,6 +99,7 @@ return static function (Router $router, Container $c): void {
     $router->get('/helpdesk/admin', static fn (Request $r): Response => $admin()->index($r), 'helpdesk.categories');
     $router->get('/helpdesk/admin/mail', static fn (Request $r): Response => $admin()->mail($r), 'helpdesk.admin');
     $router->post('/helpdesk/admin/quick-report', static fn (Request $r): Response => $admin()->saveQuickReport($r), 'helpdesk.admin');
+    $router->post('/helpdesk/admin/error-origins', static fn (Request $r): Response => $admin()->saveErrorOrigins($r), 'helpdesk.admin');
     $router->post('/helpdesk/admin/reply-templates', static fn (Request $r): Response => $admin()->saveReplyTemplates($r), 'helpdesk.admin');
     // Autovervollständigung für das Feld „Sammelkonten“ (Anmeldenamen aus Telefonbuch, Mitarbeitern, lokalen Konten).
     $router->get('/api/helpdesk/quick-report/accounts/suggest', static fn (Request $r): Response => $admin()->suggestSharedAccounts($r), 'helpdesk.admin');

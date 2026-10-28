@@ -7,15 +7,15 @@ $cellActive = static fn (array $r): string => array_key_exists('is_active', $r) 
 $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_array($r['members'] ?? null) ? count($r['members']) : 0));
 ?>
 <div class="page-header">
-    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : ($isReplyTemplates ? 'Fester Präfix-Text für Agenten-E-Mails.' : 'Stammdaten, SLAs, Vorlagen und Automatisierungen.') ?></p></div>
-    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isQuickReport && !$isReplyTemplates): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new"><?= icon('plus') ?> Neu</a><?php endif; ?></div>
+    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : ($isErrorOrigins ? 'Katalog der Fehlerursprünge beim Schließen eines Tickets.' : ($isReplyTemplates ? 'Fester Präfix-Text für Agenten-E-Mails.' : 'Stammdaten, SLAs, Vorlagen und Automatisierungen.')) ?></p></div>
+    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isQuickReport && !$isErrorOrigins && !$isReplyTemplates): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new"><?= icon('plus') ?> Neu</a><?php endif; ?></div>
 </div>
 <div class="status-tabs admin-tabs" role="tablist" aria-label="Administrationsbereiche">
     <?php foreach ($kinds as $key => $label): ?>
         <a class="status-tab<?= $kind === $key ? ' is-active' : '' ?>" href="/helpdesk/admin?tab=<?= e($key) ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
 </div>
-<?php if (!$isQuickReport && !$isReplyTemplates): ?>
+<?php if (!$isQuickReport && !$isErrorOrigins && !$isReplyTemplates): ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Konfiguration</h2><span class="text-muted text-sm">aus Umgebung</span></div>
     <div class="grid grid-4">
@@ -83,6 +83,22 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
     </form>
 </div>
 <?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
+<?php elseif ($isErrorOrigins): ?>
+<div class="card mb-4">
+    <div class="card-header"><h2>Fehlerursprünge</h2><span class="text-muted text-sm">Auswahl im Schließen-Dialog</span></div>
+    <p class="text-muted text-sm">Beim Schließen eines Tickets wählt der Agent im Schließen-Dialog einen Fehlerursprung aus dieser Liste. Der gewählte Wert wird am Ticket gespeichert und steht im Schließungstext als <code>{fehlerursprung}</code> zur Verfügung. Ein Eintrag pro Zeile.</p>
+    <form method="post" action="/helpdesk/admin/error-origins" novalidate>
+        <?= csrf_field() ?>
+        <div class="form-group<?= has_error('origins_text') ? ' has-error' : '' ?>">
+            <label for="error-origin-catalog">Katalog</label>
+            <textarea id="error-origin-catalog" name="origins_text" rows="8" maxlength="<?= (int) $errorOrigin['max_length'] ?>" placeholder="<?= e(implode("\n", $errorOrigin['defaults'])) ?>"><?= e(old('origins_text', $errorOrigin['origins_text'])) ?></textarea>
+            <span class="form-hint">Höchstens <?= (int) $errorOrigin['max_origins'] ?> Einträge mit je <?= (int) $errorOrigin['max_origin_length'] ?> Zeichen. Leere Zeilen und doppelte Einträge werden ignoriert. Bleibt das Feld leer, gelten die Standardpunkte: <?= e(implode(', ', $errorOrigin['defaults'])) ?>.</span>
+            <?= field_error('origins_text') ?>
+        </div>
+        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button></div>
+    </form>
+</div>
+<?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php elseif ($isReplyTemplates): ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails, Eingangsbestätigung, Schließungstext, Fuß-Hinweis</span></div>
@@ -111,7 +127,7 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
         </div>
         <div class="form-group<?= has_error('close_text') ? ' has-error' : '' ?>">
             <label for="reply-template-close">Schließungstext (Benachrichtigung beim Schließen)</label>
-            <textarea id="reply-template-close" name="close_text" rows="10" maxlength="<?= (int) $replyTemplate['max_close_length'] ?>" placeholder="Guten Tag {name},&#10;&#10;Ihr Ticket {ticketnummer} „{betreff}“ wurde am {geschlossen_am} geschlossen.&#10;&#10;Grund: {schliessungsgrund}&#10;Lösung: {loesung}&#10;&#10;Bei Rückfragen antworten Sie einfach auf diese E-Mail."><?= e(old('close_text', $replyTemplate['close_text'])) ?></textarea>
+            <textarea id="reply-template-close" name="close_text" rows="10" maxlength="<?= (int) $replyTemplate['max_close_length'] ?>" placeholder="Guten Tag {name},&#10;&#10;Ihr Ticket {ticketnummer} „{betreff}“ wurde am {geschlossen_am} geschlossen.&#10;&#10;Grund: {schliessungsgrund}&#10;Fehlerursprung: {fehlerursprung}&#10;Lösung: {loesung}&#10;&#10;Bei Rückfragen antworten Sie einfach auf diese E-Mail."><?= e(old('close_text', $replyTemplate['close_text'])) ?></textarea>
             <span class="form-hint">Wird beim Schließen eines Tickets an den Melder gesendet, solange der Agent im Statusdialog „Melder über die Schließung informieren“ angehakt lässt. Höchstens <?= (int) $replyTemplate['max_close_length'] ?> Zeichen. Leer = es greift die allgemeine Statusmail des Help Desk.</span>
             <?= field_error('close_text') ?>
         </div>
@@ -142,7 +158,7 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
 </div>
 <?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php endif; ?>
-<?php if (!$isQuickReport && !$isReplyTemplates): ?>
+<?php if (!$isQuickReport && !$isErrorOrigins && !$isReplyTemplates): ?>
 <div class="card card-flush">
     <div class="card-header"><h2><?= e($kinds[$kind] ?? 'Bereich') ?></h2><span class="text-muted text-sm"><?= count($rows) ?> Einträge</span></div>
     <?php if ($rows === []): ?>

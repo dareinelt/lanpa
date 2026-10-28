@@ -74,6 +74,7 @@ final class ReplyTemplateSettingsService
         '{datum}' => 'Eingangsdatum und -uhrzeit',
         '{geschlossen_am}' => 'Zeitpunkt der Schließung',
         '{schliessungsgrund}' => 'Schließungsgrund aus dem Statusdialog',
+        '{fehlerursprung}' => 'Fehlerursprung aus dem Schließen-Dialog',
         '{loesung}' => 'Lösung aus dem Ticket',
         '{link}' => 'Link zum Ticket im Self-Service-Portal',
         '{firma}' => 'Firmenname aus der Konfiguration',

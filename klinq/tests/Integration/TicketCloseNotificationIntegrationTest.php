@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use App\Exceptions\ValidationException;
 use App\Repositories\EmployeeRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Security\CurrentUser;
@@ -96,6 +97,28 @@ final class TicketCloseNotificationIntegrationTest extends DatabaseTestCase
         $this->assertStringContains('Ihr Ticket wurde geschlossen.', $this->stubMessage());
     }
 
+    public function testClosingWithErrorOriginPersistsValueAndFillsPlaceholder(): void
+    {
+        $this->templates()->save(['close_text' => self::TEMPLATE . "\nFehlerursprung: {fehlerursprung}"]);
+        $ticket = $this->closedTicket(true, 'Festplatte defekt', 'Hardware-Fehler');
+
+        $this->assertSame('Hardware-Fehler', (string) $ticket['error_origin'], 'Der Fehlerursprung wird am Ticket gespeichert.');
+        $this->assertStringContains('Fehlerursprung: Hardware-Fehler', $this->stubMessage());
+    }
+
+    public function testClosingWithUnknownErrorOriginIsRejected(): void
+    {
+        $ticket = $this->createTicket();
+        $this->service()->changeStatus((int) $ticket['id'], 'in_progress');
+
+        $this->assertThrows(
+            ValidationException::class,
+            fn (): array => $this->service()->changeStatus((int) $ticket['id'], 'closed', null, null, 'Grund', null, false, null, true, 'Nicht im Katalog'),
+            'Fehlerursprung'
+        );
+        $this->assertSame('in_progress', (string) $this->service()->get((int) $ticket['id'])['status_code'], 'Das Ticket bleibt offen.');
+    }
+
     // ------------------------------------------------------------------ Helfer
 
     /**
@@ -103,14 +126,14 @@ final class TicketCloseNotificationIntegrationTest extends DatabaseTestCase
      *
      * @return array<string,mixed>
      */
-    private function closedTicket(bool $notifyRequester, string $reason): array
+    private function closedTicket(bool $notifyRequester, string $reason, ?string $errorOrigin = null): array
     {
         $ticket = $this->createTicket();
         $id = (int) $ticket['id'];
         $this->service()->changeStatus($id, 'in_progress');
         $this->service()->changeStatus($id, 'resolved', null, 'BIOS zurückgesetzt, Gerät startet wieder.');
 
-        return $this->service()->changeStatus($id, 'closed', null, null, $reason, null, false, null, $notifyRequester);
+        return $this->service()->changeStatus($id, 'closed', null, null, $reason, null, false, null, $notifyRequester, $errorOrigin);
     }
 
     private function templates(): ReplyTemplateSettingsService

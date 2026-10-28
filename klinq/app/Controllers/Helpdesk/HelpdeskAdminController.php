@@ -17,6 +17,7 @@ use App\Repositories\TicketSlaRepository;
 use App\Repositories\TicketTagRepository;
 use App\Repositories\TicketTemplateRepository;
 use App\Security\CurrentUser;
+use App\Services\Helpdesk\ErrorOriginSettingsService;
 use App\Services\Helpdesk\HelpdeskAdminService;
 use App\Services\Helpdesk\MailboxSettingsService;
 use App\Services\Helpdesk\QuickReportSettingsService;
@@ -49,6 +50,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
     /** Zusätzliche Navigationspunkte ohne Stammdaten-Tabelle. */
     public const EXTRA_KINDS = [
         'quick-report' => ['Störungsformular', 'helpdesk.admin'],
+        'error-origins' => ['Fehlerursprung', 'helpdesk.admin'],
         'reply-templates' => ['Vorlageneinstellungen', 'helpdesk.admin'],
     ];
 
@@ -67,6 +69,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         private readonly TicketMailIngestionService $mailIngestion,
         private readonly MailboxSettingsService $mailSettings,
         private readonly QuickReportSettingsService $quickSettings,
+        private readonly ErrorOriginSettingsService $errorOrigins,
         private readonly ReplyTemplateSettingsService $replyTemplates,
         private readonly SharedAccountSuggestionService $accountSuggestions,
         private readonly Config $config
@@ -105,9 +108,11 @@ final class HelpdeskAdminController extends HelpdeskBaseController
     {
         $kind = $this->kindFrom($request);
         $isQuickReport = $kind === 'quick-report';
+        $isErrorOrigins = $kind === 'error-origins';
         $isReplyTemplates = $kind === 'reply-templates';
-        $isSettingsTab = $isQuickReport || $isReplyTemplates;
+        $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates;
         $quickReportSettings = $this->quickSettings->all();
+        $errorOriginSettings = $this->errorOrigins->all();
         $replyTemplateSettings = $this->replyTemplates->all();
 
         return $this->render('helpdesk.admin.index', [
@@ -117,6 +122,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'kind' => $kind,
             'kinds' => $this->visibleKinds(),
             'isQuickReport' => $isQuickReport,
+            'isErrorOrigins' => $isErrorOrigins,
             'isReplyTemplates' => $isReplyTemplates,
             'rows' => $isSettingsTab ? [] : $this->rowsFor($kind),
             'usage' => $isSettingsTab ? [] : $this->usageFor($kind),
@@ -140,6 +146,13 @@ final class HelpdeskAdminController extends HelpdeskBaseController
                 'networks' => (array) $this->config->get('helpdesk.quick_report.allowed_networks', []),
                 'shared_accounts' => $quickReportSettings['shared_accounts'],
                 'shared_accounts_hint' => $quickReportSettings['shared_accounts_hint'],
+            ],
+            'errorOrigin' => [
+                'origins_text' => $errorOriginSettings['origins_text'],
+                'defaults' => ErrorOriginSettingsService::DEFAULT_ORIGINS,
+                'max_length' => ErrorOriginSettingsService::MAX_TEXT_LENGTH,
+                'max_origin_length' => ErrorOriginSettingsService::MAX_ORIGIN_LENGTH,
+                'max_origins' => ErrorOriginSettingsService::MAX_ORIGINS,
             ],
             'replyTemplate' => [
                 'prefix_text' => $replyTemplateSettings['prefix_text'],
@@ -174,6 +187,23 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         $this->flash('success', 'Einstellungen des Störungsformulars gespeichert.');
 
         return $this->redirect('/helpdesk/admin?tab=quick-report');
+    }
+
+    /** Katalog der Fehlerursprünge für den Schließen-Dialog speichern. */
+    public function saveErrorOrigins(Request $request): Response
+    {
+        $this->currentUser->require('helpdesk.admin');
+        try {
+            $this->errorOrigins->save($request->all());
+        } catch (ValidationException $e) {
+            $this->withOldInput($request, $e->errors());
+            $this->flash('error', 'Bitte Eingaben prüfen.');
+
+            return $this->redirect('/helpdesk/admin?tab=error-origins');
+        }
+        $this->flash('success', 'Fehlerursprünge gespeichert.');
+
+        return $this->redirect('/helpdesk/admin?tab=error-origins');
     }
 
     /** Präfix-, Bestätigungs- und Fuß-Text der Vorlageneinstellungen speichern (Versand erst beim Senden). */

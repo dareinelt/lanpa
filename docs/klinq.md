@@ -241,6 +241,10 @@ zeigt; Schema und Port bleiben so die des Aufrufs.
 
 * Jede über SSO angemeldete Person darf die Seite aufrufen – ohne
   Gruppenzuordnung, ohne Kachel-Freigabe.
+* Für angemeldete Portalnutzer ohne Agentenrechte ist dies zugleich der Weg
+  „Neue Anfrage“ im Serviceportal (`/portal`, `/portal/tickets`); Agenten
+  behalten dort das volle Formular. Gesperrte oder aus dem Netz nicht
+  freigegebene Störmeldung: Das Portalformular greift als Rückfall.
 * Beim Aufruf stellt das Intranet einen Schein mit `report_only` aus und
   übergibt die Melderdaten: Anmeldename, Anzeigename, E-Mail, Telefon,
   Mobilnummer, Abteilung, Funktion, IP-Adresse und Rechnername.

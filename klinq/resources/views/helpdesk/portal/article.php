@@ -9,7 +9,7 @@ $articleTags = array_values(array_filter(array_map('trim', explode(',', (string)
         <h1 class="page-title"><?= e($article['title']) ?></h1>
         <?php if (!empty($article['summary'])): ?><p class="kb-article-summary"><?= e($article['summary']) ?></p><?php endif; ?>
     </div>
-    <div class="page-actions"><a class="btn btn-primary" href="/portal/tickets/new"><?= icon('plus') ?> Anfrage erstellen</a></div>
+    <div class="page-actions"><a class="btn btn-primary" href="<?= e($createUrl) ?>"><?= icon('plus') ?> Anfrage erstellen</a></div>
 </div>
 <article class="card">
     <dl class="detail-list mb-4">
@@ -23,6 +23,6 @@ $articleTags = array_values(array_filter(array_map('trim', explode(',', (string)
 <div class="card mt-4">
     <div class="card-header"><h2>War das hilfreich?</h2></div>
     <p class="text-muted">Wenn Ihr Anliegen damit nicht gelöst ist, erstellen Sie eine neue Anfrage und verweisen Sie auf diesen Artikel.</p>
-    <a class="btn btn-primary" href="/portal/tickets/new"><?= icon('plus') ?> Anfrage erstellen</a>
+    <a class="btn btn-primary" href="<?= e($createUrl) ?>"><?= icon('plus') ?> Anfrage erstellen</a>
 </div>
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

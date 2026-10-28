@@ -8,6 +8,7 @@ use App\Core\Config;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
+use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
 use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\TicketCategoryRepository;
@@ -19,6 +20,7 @@ use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\TicketPriorityMatrix;
 use App\Services\Helpdesk\TicketService;
 use App\Services\Helpdesk\TicketSlaService;
+use App\Support\IpRange;
 use App\Support\Paginator;
 
 /**
@@ -49,9 +51,34 @@ final class PortalController extends HelpdeskBaseController
         return ['visible_user_id' => (int) $this->currentUser->id(), 'view' => $view, 'user_id' => (int) $this->currentUser->id()];
     }
 
+    /**
+     * Nicht-Agenten melden über das Störungsformular – sofern es aktiviert und aus dem
+     * aktuellen Netz erreichbar ist. Sonst bleibt das Portalformular als Rückfall.
+     */
+    private function useQuickReport(Request $request): bool
+    {
+        if ($this->service->isAgent()) {
+            return false;
+        }
+        if (!(bool) $this->config->get('helpdesk.enabled', true) || !(bool) $this->config->get('helpdesk.quick_report.enabled', true)) {
+            return false;
+        }
+        $networks = (array) $this->config->get('helpdesk.quick_report.allowed_networks', []);
+
+        return $networks === [] || IpRange::matchesAny($request->ip(), $networks);
+    }
+
+    /** Ziel für „Neue Anfrage“: Agenten nutzen das volle Formular, alle anderen das Störungsformular. */
+    private function createUrl(Request $request): string
+    {
+        return $this->useQuickReport($request) ? '/stoerung' : '/portal/tickets/new';
+    }
+
     public function index(Request $request): Response
     {
         $userId = (int) $this->currentUser->id();
+        $isAgent = $this->service->isAgent();
+        $useQuickReport = $this->useQuickReport($request);
 
         return $this->render('helpdesk.portal.index', [
             'title' => 'Mein Help Desk',
@@ -61,10 +88,11 @@ final class PortalController extends HelpdeskBaseController
             'resolved' => $this->tickets->search($this->baseFilters('portal_resolved'), 'updated_at', 'desc', 5, 0),
             'openCount' => $this->tickets->countSearch($this->baseFilters('portal_open')),
             'resolvedCount' => $this->tickets->countSearch($this->baseFilters('portal_resolved')),
-            'templates' => $this->templates->all(true, true),
+            'templates' => $useQuickReport ? [] : $this->templates->all(true, true),
             'articles' => $this->articles->search($this->knowledge->restrictFilters([]), 'view_count', 'desc', 6, 0),
             'canCreate' => $this->currentUser->can('portal.create'),
-            'isAgent' => $this->service->isAgent(),
+            'isAgent' => $isAgent,
+            'createUrl' => $useQuickReport ? '/stoerung' : '/portal/tickets/new',
             'userId' => $userId,
         ]);
     }
@@ -94,12 +122,18 @@ final class PortalController extends HelpdeskBaseController
             'basePath' => '/portal/tickets',
             'query' => $request->query(),
             'canCreate' => $this->currentUser->can('portal.create'),
+            'createUrl' => $this->createUrl($request),
         ]);
     }
 
     public function create(Request $request): Response
     {
         $this->currentUser->require('portal.create');
+        // Ohne Agentenrechte führt „Neue Anfrage“ zum Störungsformular: Dort gelten die
+        // Sammelkonto-Regeln, und das Ticket erscheint trotzdem in der eigenen Übersicht.
+        if ($this->useQuickReport($request)) {
+            return $this->redirect('/stoerung');
+        }
         $prefill = [];
         $templateId = $request->int('template');
         if ($templateId !== null) {
@@ -128,6 +162,14 @@ final class PortalController extends HelpdeskBaseController
 
     public function store(Request $request): Response
     {
+        // Das Portalformular ist Agenten vorbehalten, solange das Störungsformular verfügbar ist.
+        if ($this->useQuickReport($request)) {
+            if ($request->wantsJson()) {
+                throw new ForbiddenException('Das Portalformular ist Agenten vorbehalten.');
+            }
+
+            return $this->redirect('/stoerung');
+        }
         try {
             $ticket = $this->service->create($request->all(), 'portal');
         } catch (ValidationException $e) {
@@ -205,6 +247,7 @@ final class PortalController extends HelpdeskBaseController
             'activeNav' => 'portal-knowledge',
             'areaLabel' => 'Portal',
             'article' => $article,
+            'createUrl' => $this->createUrl($request),
         ]);
     }
 }

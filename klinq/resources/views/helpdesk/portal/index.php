@@ -6,7 +6,7 @@ $ticketUrl = static fn (array $t): string => '/portal/tickets/' . (int) ($t['id'
 <div class="portal-hero">
     <div><h1>Willkommen im IT-Service-Portal</h1><p class="page-subtitle text-muted">Hier können Sie neue Anfragen stellen, offene Tickets verfolgen und hilfreiche Anleitungen finden.</p></div>
     <div class="page-actions">
-        <?php if ($canCreate): ?><a class="btn btn-primary" href="/portal/tickets/new"><?= icon('plus') ?> Neue Anfrage</a><?php endif; ?>
+        <?php if ($canCreate): ?><a class="btn btn-primary" href="<?= e($createUrl) ?>"><?= icon('plus') ?> Neue Anfrage</a><?php endif; ?>
         <?php if ($isAgent): ?><a class="btn btn-secondary" href="/helpdesk"><?= icon('settings') ?> Zum Help Desk</a><?php endif; ?>
     </div>
 </div>

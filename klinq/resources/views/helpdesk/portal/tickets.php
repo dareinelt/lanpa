@@ -6,7 +6,7 @@ $hasFilter = ($q ?? '') !== '';
 ?>
 <div class="page-header">
     <div><h1 class="page-title">Meine Tickets</h1><p class="page-subtitle text-muted"><?= (int) $paginator->total ?> Anfragen</p></div>
-    <div class="page-actions"><?php if ($canCreate): ?><a class="btn btn-primary" href="/portal/tickets/new"><?= icon('plus') ?> Neue Anfrage</a><?php endif; ?></div>
+    <div class="page-actions"><?php if ($canCreate): ?><a class="btn btn-primary" href="<?= e($createUrl) ?>"><?= icon('plus') ?> Neue Anfrage</a><?php endif; ?></div>
 </div>
 <div class="status-tabs mb-4" role="tablist" aria-label="Ansichten">
     <?php foreach ($tabs as $key => $label): ?><a class="status-tab<?= $view === $key ? ' is-active' : '' ?>" href="<?= e(query_url('/portal/tickets', $query, ['view' => $key, 'page' => null])) ?>"><?= e($label) ?> <span class="status-tab-count"><?= (int) ($counts[$key] ?? 0) ?></span></a><?php endforeach; ?>

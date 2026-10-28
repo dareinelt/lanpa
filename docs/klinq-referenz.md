@@ -228,6 +228,17 @@ Tickets werden über die Kontoangaben selbst erkannt (Anmeldename gegen
 Liste, Zähler und Detailseite nutzen dieselbe Regel, sodass eine vorhandene
 Anfrage nicht als „0 Anfragen“ erscheint.
 
+**Neue Anfrage** führt für Personen ohne `helpdesk.view` auf `/stoerung`
+(`PortalController::useQuickReport()`, `createUrl()`); die Vorlagen-Kacheln
+entfallen dort, und `GET`/`POST /portal/tickets/new` leiten ebenfalls um. Das
+schlanke Formular erzwingt bei Sammelkonten die Angabe „Zusätzlicher Benutzer“
+(`QuickReportController` → 422) – dasselbe Verhalten wie im Portalformular.
+Agenten behalten das Portalformular mit Vorlagen, Typ/Kategorie und
+Auswirkung/Dringlichkeit. Ist `helpdesk.enabled` bzw.
+`helpdesk.quick_report.enabled` aus oder passt die Client-IP nicht zu
+`helpdesk.quick_report.allowed_networks`, bleibt das Portalformular als
+Rückfall aktiv.
+
 Ist die Person noch nicht angemeldet, merkt sich `loginTarget()` die vollständige
 Anfrage (`REQUEST_URI`, also inklusive `?redirect=…`), damit das Ziel die
 SSO-Anmeldung übersteht.

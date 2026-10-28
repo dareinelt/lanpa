@@ -11,6 +11,7 @@ use App\Repositories\TicketRepository;
 use App\Repositories\TicketRuleRepository;
 use App\Repositories\UserRepository;
 use App\Services\MailClient;
+use App\Services\ReportService;
 use App\Support\RichText;
 
 /**
@@ -65,6 +66,19 @@ final class TicketNotificationService
     public function statusChanged(array $ticket, string $fromCode, string $toCode): void
     {
         $key = 'status_' . $toCode . '_' . (int) ($ticket['version'] ?? 0);
+        // Schließung: Vorlage aus den Vorlageneinstellungen (mit Schließungsgrund und Lösung)
+        // ersetzt die allgemeine Statusmeldung. Ohne hinterlegten Text bleibt es bei dieser.
+        if ($toCode === TicketWorkflowService::CLOSED) {
+            $template = $this->replyTemplates->closeText();
+            if ($template !== '') {
+                foreach ($this->requesterNames($ticket) as $email => $name) {
+                    $html = ReplyTemplateSettingsService::render($template, $this->closeValues($ticket, $name));
+                    $this->sendTo($ticket, $key, [$email], 'Ticket geschlossen', $html);
+                }
+
+                return;
+            }
+        }
         $isPause = ($ticket['status_category'] ?? '') === 'pending';
         $message = match (true) {
             $toCode === TicketWorkflowService::RESOLVED => 'Ihr Ticket wurde gelöst. Sollte das Problem weiterhin bestehen, können Sie das Ticket innerhalb der Frist wieder öffnen.',
@@ -133,6 +147,56 @@ final class TicketNotificationService
     public function requesterRecipients(array $ticket): array
     {
         return $this->unique([(string) ($ticket['requester_email'] ?? ''), (string) ($ticket['requester_user_email'] ?? '')]);
+    }
+
+    /**
+     * Melder-Empfänger mit Anzeigename für die Anrede in Vorlagen.
+     *
+     * @param array<string,mixed> $ticket
+     * @return array<string,string> E-Mail (klein geschrieben) → Anzeigename
+     */
+    private function requesterNames(array $ticket): array
+    {
+        // Gleiche Adressen wie requesterRecipients(), damit der Schließungstext niemanden
+        // zusätzlich anschreibt.
+        $candidates = [
+            [(string) ($ticket['requester_email'] ?? ''), (string) ($ticket['requester_name'] ?? '')],
+            [(string) ($ticket['requester_user_email'] ?? ''), (string) ($ticket['requester_user_name'] ?? '')],
+        ];
+        $out = [];
+        foreach ($candidates as [$email, $name]) {
+            $email = mb_strtolower(trim($email));
+            if ($email === '' || isset($out[$email]) || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+                continue;
+            }
+            $out[$email] = trim($name);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Platzhalterwerte der Schließungsbenachrichtigung für einen Empfänger.
+     *
+     * @param array<string,mixed> $ticket
+     * @return array<string,string>
+     */
+    private function closeValues(array $ticket, string $name): array
+    {
+        $base = rtrim((string) $this->config->get('app.url', ''), '/');
+
+        return [
+            '{anrede}' => 'Guten Tag',
+            '{name}' => $name,
+            '{ticketnummer}' => (string) ($ticket['number'] ?? ''),
+            '{betreff}' => (string) ($ticket['subject'] ?? ''),
+            '{datum}' => (string) (ReportService::datetime((string) ($ticket['created_at'] ?? '')) ?? ''),
+            '{geschlossen_am}' => (string) (ReportService::datetime((string) ($ticket['closed_at'] ?? '')) ?? ''),
+            '{schliessungsgrund}' => trim((string) ($ticket['close_reason'] ?? '')),
+            '{loesung}' => trim(RichText::toPlain((string) ($ticket['resolution'] ?? ''))),
+            '{link}' => $base . '/portal/tickets/' . (int) ($ticket['id'] ?? 0),
+            '{firma}' => (string) $this->config->get('app.company_name', ''),
+        ];
     }
 
     /** Bearbeiter, sonst Gruppe; optional immer die Gruppe. @param array<string,mixed> $ticket @return array<int,string> */

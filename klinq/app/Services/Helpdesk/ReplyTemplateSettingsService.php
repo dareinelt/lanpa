@@ -21,6 +21,10 @@ use App\Support\Validator;
  * dem Störungspostfach (sowie für Agenten-Tickets mit ausdrücklicher Bestätigung). Er darf
  * Platzhalter enthalten, die erst beim Versand je Empfänger gefüllt werden.
  *
+ * Der Schließungstext ist die Benachrichtigung an den Melder, wenn ein Ticket geschlossen wird;
+ * er kennt zusätzlich den Schließungsgrund und die Lösung. Ein leerer Text lässt die allgemeine
+ * Statusmeldung („Ihr Ticket wurde geschlossen.“) stehen.
+ *
  * Der Fuß-Hinweis ist der automatische Hinweis unter jeder Benachrichtigungsmail
  * (`TicketNotificationService::wrap()`); ein leerer Wert blendet ihn aus.
  */
@@ -34,6 +38,9 @@ final class ReplyTemplateSettingsService
 
     /** Höchstlänge des Bestätigungstextes in Zeichen. */
     public const MAX_CONFIRMATION_LENGTH = 4000;
+
+    /** Höchstlänge des Schließungstextes in Zeichen. */
+    public const MAX_CLOSE_LENGTH = 4000;
 
     /** Höchstlänge des Fuß-Hinweises in Zeichen. */
     public const MAX_FOOTER_LENGTH = 1000;
@@ -51,6 +58,23 @@ final class ReplyTemplateSettingsService
         '{ticketnummer}' => 'Ticketnummer, z. B. HD-2026-000123',
         '{betreff}' => 'Betreff des Tickets',
         '{datum}' => 'Eingangsdatum und -uhrzeit',
+        '{link}' => 'Link zum Ticket im Self-Service-Portal',
+        '{firma}' => 'Firmenname aus der Konfiguration',
+    ];
+
+    /**
+     * Platzhalter der Schließungsbenachrichtigung mit Beschreibung für die Administration.
+     * @var array<string,string>
+     */
+    public const CLOSE_PLACEHOLDERS = [
+        '{anrede}' => 'Anrede, z. B. „Guten Tag“',
+        '{name}' => 'Name des Empfängers',
+        '{ticketnummer}' => 'Ticketnummer, z. B. HD-2026-000123',
+        '{betreff}' => 'Betreff des Tickets',
+        '{datum}' => 'Eingangsdatum und -uhrzeit',
+        '{geschlossen_am}' => 'Zeitpunkt der Schließung',
+        '{schliessungsgrund}' => 'Schließungsgrund aus dem Statusdialog',
+        '{loesung}' => 'Lösung aus dem Ticket',
         '{link}' => 'Link zum Ticket im Self-Service-Portal',
         '{firma}' => 'Firmenname aus der Konfiguration',
     ];
@@ -75,7 +99,7 @@ final class ReplyTemplateSettingsService
     /**
      * Aktuelle Vorlageneinstellungen (Datenbank vor Konfiguration).
      *
-     * @return array{prefix_text:string,confirmation_text:string,footer_text:string}
+     * @return array{prefix_text:string,confirmation_text:string,close_text:string,footer_text:string}
      */
     public function all(): array
     {
@@ -86,6 +110,9 @@ final class ReplyTemplateSettingsService
         $confirmation = array_key_exists('confirmation_text', $stored)
             ? (string) $stored['confirmation_text']
             : (string) $this->config->get('helpdesk.reply_template.confirmation_text', '');
+        $close = array_key_exists('close_text', $stored)
+            ? (string) $stored['close_text']
+            : (string) $this->config->get('helpdesk.reply_template.close_text', '');
         // Ohne gespeicherten Wert gilt der Startwert aus der Konfiguration, sonst der Standardtext:
         // bestehende Installationen behalten den gewohnten Hinweis am Fuß.
         $footer = array_key_exists('footer_text', $stored)
@@ -95,6 +122,7 @@ final class ReplyTemplateSettingsService
         return [
             'prefix_text' => trim($text),
             'confirmation_text' => trim($confirmation),
+            'close_text' => trim($close),
             'footer_text' => trim($footer),
         ];
     }
@@ -111,6 +139,14 @@ final class ReplyTemplateSettingsService
     public function confirmationText(): string
     {
         return $this->all()['confirmation_text'];
+    }
+
+    /**
+     * Roh-Text der Schließungsbenachrichtigung (leer = es gilt die allgemeine Statusmeldung).
+     */
+    public function closeText(): string
+    {
+        return $this->all()['close_text'];
     }
 
     /**
@@ -182,7 +218,7 @@ final class ReplyTemplateSettingsService
      * Speichert die Vorlageneinstellungen.
      *
      * @param array<string,mixed> $input Rohdaten aus dem Formular
-     * @return array{prefix_text:string,confirmation_text:string,footer_text:string}
+     * @return array{prefix_text:string,confirmation_text:string,close_text:string,footer_text:string}
      */
     public function save(array $input): array
     {
@@ -193,6 +229,7 @@ final class ReplyTemplateSettingsService
         $this->settings->setMany([
             self::PREFIX . 'prefix_text' => $data['prefix_text'],
             self::PREFIX . 'confirmation_text' => $data['confirmation_text'],
+            self::PREFIX . 'close_text' => $data['close_text'],
             self::PREFIX . 'footer_text' => $data['footer_text'],
         ], $this->currentUser->id());
         $after = $this->all();
@@ -206,19 +243,21 @@ final class ReplyTemplateSettingsService
      * Prüft und normalisiert die Eingaben.
      *
      * @param array<string,mixed> $input
-     * @return array{prefix_text:string,confirmation_text:string,footer_text:string}
+     * @return array{prefix_text:string,confirmation_text:string,close_text:string,footer_text:string}
      */
     public function validate(array $input): array
     {
         $validator = new Validator($input);
         $validator->text('prefix_text', 'Präfix-Text', false, self::MAX_PREFIX_LENGTH);
         $validator->text('confirmation_text', 'Bestätigungstext', false, self::MAX_CONFIRMATION_LENGTH);
+        $validator->text('close_text', 'Schließungstext', false, self::MAX_CLOSE_LENGTH);
         $validator->text('footer_text', 'Fuß-Hinweis', false, self::MAX_FOOTER_LENGTH);
         $clean = $validator->validated();
 
         return [
             'prefix_text' => trim((string) ($clean['prefix_text'] ?? '')),
             'confirmation_text' => trim((string) ($clean['confirmation_text'] ?? '')),
+            'close_text' => trim((string) ($clean['close_text'] ?? '')),
             'footer_text' => trim((string) ($clean['footer_text'] ?? '')),
         ];
     }

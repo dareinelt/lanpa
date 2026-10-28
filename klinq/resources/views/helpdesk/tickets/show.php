@@ -525,9 +525,13 @@ $pauseCodes = implode(',', array_column($pauseTransitions, 'code'));
                 <label for="st-resolution">Lösung <span class="text-muted">(Pflicht bei Gelöst/Geschlossen)</span></label>
                 <textarea id="st-resolution" name="resolution" rows="4" data-required-when-visible data-hd-field="ticket_resolution"><?= e($ticket['resolution'] ?? '') ?></textarea>
             </div>
-            <div class="form-group" data-show-for="cancelled">
-                <label for="st-reason">Grund</label>
-                <input id="st-reason" name="reason" maxlength="255" data-required-when-visible>
+            <div class="form-group" data-show-for="cancelled,closed">
+                <label for="st-reason">Grund <span class="text-muted">(beim Stornieren Pflicht, beim Schließen optional)</span></label>
+                <input id="st-reason" name="reason" maxlength="255" data-required-when-visible data-required-for="cancelled">
+            </div>
+            <div class="form-group" data-show-for="closed">
+                <label class="checkbox-row"><input type="checkbox" name="notify_requester" value="1" checked data-hd-notify-requester> Melder über die Schließung informieren</label>
+                <p class="form-hint">Sendet die Schließungsbenachrichtigung aus den Help-Desk-Einstellungen (Reiter „Vorlageneinstellungen“) mit dem Grund an den Melder. Ohne Häkchen erhält der Melder keine E-Mail.</p>
             </div>
             <div class="form-group">
                 <label for="st-note">Kommentar an den Melder <span class="text-muted">(optional)</span></label>

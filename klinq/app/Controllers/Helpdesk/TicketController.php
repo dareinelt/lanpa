@@ -35,6 +35,7 @@ use App\Services\Helpdesk\TicketPriorityMatrix;
 use App\Services\Helpdesk\TicketReportService;
 use App\Services\Helpdesk\TicketService;
 use App\Services\Helpdesk\TicketSlaService;
+use App\Services\Helpdesk\TicketWorkflowService;
 use App\Services\LocationService;
 use App\Support\CsvWriter;
 use App\Support\Paginator;
@@ -325,8 +326,11 @@ final class TicketController extends HelpdeskBaseController
     {
         $id = $request->paramInt('id');
         $to = $request->string('status');
-        $response = $this->attempt($request, function () use ($request, $id, $to): void {
-            $this->service->changeStatus($id, $to, $request->stringOrNull('note'), $request->stringOrNull('resolution'), $request->stringOrNull('reason'), $request->int('version'), false, $request->stringOrNull('pause_until'));
+        // Beim Schließen entscheidet der Agent, ob der Melder eine Benachrichtigung erhält;
+        // alle anderen Übergänge benachrichtigen wie bisher.
+        $notify = $to !== TicketWorkflowService::CLOSED || $request->bool('notify_requester');
+        $response = $this->attempt($request, function () use ($request, $id, $to, $notify): void {
+            $this->service->changeStatus($id, $to, $request->stringOrNull('note'), $request->stringOrNull('resolution'), $request->stringOrNull('reason'), $request->int('version'), false, $request->stringOrNull('pause_until'), $notify);
         }, '/helpdesk/tickets/' . $id . '#status', false);
 
         return $response ?? $this->respond($request, 'Status geändert.', '/helpdesk/tickets/' . $id);

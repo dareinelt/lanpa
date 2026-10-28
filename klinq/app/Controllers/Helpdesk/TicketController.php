@@ -177,9 +177,8 @@ final class TicketController extends HelpdeskBaseController
                 $prefill['requester_employee_id'] = (int) $asset['employee_id'];
             }
         }
-        if (empty($prefill['requester_employee_id']) && $this->service->currentEmployeeId() !== null) {
-            $prefill['requester_employee_id'] = $this->service->currentEmployeeId();
-        }
+        // Der Melder wird bewusst nicht mit dem angemeldeten Agenten vorbelegt: Agenten legen
+        // Tickets für die Person an, die das Problem hat, und wählen sie im Formular aus.
         $wizardMode = $this->resolveFormMode($request->queryString('modus'));
         if ($request->queryString('modus') !== '') {
             // Explizite Wahl über den Umschalter: sofort als Benutzerpräferenz merken.

@@ -207,6 +207,15 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   `helpdesk.reply_template.footer_text` gepflegten Text an (Startwert `HELPDESK_REPLY_TEMPLATE_FOOTER`,
   Platzhalter `{firma}`, Standardtext `ReplyTemplateSettingsService::DEFAULT_FOOTER_TEXT`, leer = kein
   Hinweis). Die von Agenten verfasste E-Mail (`TicketMailService`) nutzt den Rahmen nicht.
+- **Schließungs-E-Mail**: `TicketNotificationService::statusChanged()` ersetzt beim Zielstatus `closed` den
+  Ereignistext durch den unter `helpdesk.reply_template.close_text` gepflegten Text (Startwert
+  `HELPDESK_REPLY_TEMPLATE_CLOSE`, Platzhalter `{anrede}`/`{name}`/`{ticketnummer}`/`{betreff}`/`{datum}`/
+  `{geschlossen_am}`/`{schliessungsgrund}`/`{loesung}`/`{link}`/`{firma}`), sofern ein Text hinterlegt ist –
+  je Meldeadresse eine personalisierte Nachricht über `sendTo()` (Ereignis `status_closed_{version}`). Ob
+  überhaupt gesendet wird, entscheidet die Checkbox `notify_requester` im Statusdialog (Standard: an) über
+  `TicketService::changeStatus(..., notify: …)`; der Scheduler-Auto-Close versendet immer. Schließt ein Agent
+  direkt aus „In Bearbeitung“, wird der Lösungstext zusätzlich in `tickets.resolution` gespeichert, damit
+  `{loesung}` gefüllt ist.
 - **Gespeicherte Zugangsdaten** (z. B. Help-Desk-Postfachpasswort) werden über `Support\Secret` mit `APP_KEY`
   verschlüsselt abgelegt, nie im Klartext.
 

@@ -85,7 +85,7 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
 <?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php elseif ($isReplyTemplates): ?>
 <div class="card mb-4">
-    <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails, Eingangsbestätigung, Fuß-Hinweis</span></div>
+    <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails, Eingangsbestätigung, Schließungstext, Fuß-Hinweis</span></div>
     <p class="text-muted text-sm">Der Präfix-Text wird beim Senden einer E-Mail aus einem Ticket automatisch <strong>vor</strong> den Text des Agenten gesetzt. Er ist im Sendedialog weder sichtbar noch änderbar. Leer = kein Präfix.</p>
     <form method="post" action="/helpdesk/admin/reply-templates" novalidate>
         <?= csrf_field() ?>
@@ -106,6 +106,20 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
                 Platzhalter:
                 <?php foreach ($replyTemplate['placeholders'] as $placeholder => $label): ?>
                     <code><?= e($placeholder) ?></code> <?= e($label) ?><?= $placeholder === array_key_last($replyTemplate['placeholders']) ? '' : ' · ' ?>
+                <?php endforeach; ?>
+            </span>
+        </div>
+        <div class="form-group<?= has_error('close_text') ? ' has-error' : '' ?>">
+            <label for="reply-template-close">Schließungstext (Benachrichtigung beim Schließen)</label>
+            <textarea id="reply-template-close" name="close_text" rows="10" maxlength="<?= (int) $replyTemplate['max_close_length'] ?>" placeholder="Guten Tag {name},&#10;&#10;Ihr Ticket {ticketnummer} „{betreff}“ wurde am {geschlossen_am} geschlossen.&#10;&#10;Grund: {schliessungsgrund}&#10;Lösung: {loesung}&#10;&#10;Bei Rückfragen antworten Sie einfach auf diese E-Mail."><?= e(old('close_text', $replyTemplate['close_text'])) ?></textarea>
+            <span class="form-hint">Wird beim Schließen eines Tickets an den Melder gesendet, solange der Agent im Statusdialog „Melder über die Schließung informieren“ angehakt lässt. Höchstens <?= (int) $replyTemplate['max_close_length'] ?> Zeichen. Leer = es greift die allgemeine Statusmail des Help Desk.</span>
+            <?= field_error('close_text') ?>
+        </div>
+        <div class="form-group">
+            <span class="form-hint">
+                Platzhalter im Schließungstext:
+                <?php foreach ($replyTemplate['close_placeholders'] as $placeholder => $label): ?>
+                    <code><?= e($placeholder) ?></code> <?= e($label) ?><?= $placeholder === array_key_last($replyTemplate['close_placeholders']) ? '' : ' · ' ?>
                 <?php endforeach; ?>
             </span>
         </div>

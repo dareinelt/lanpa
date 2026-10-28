@@ -504,7 +504,8 @@ final class TicketService
     /**
      * Statuswechsel gemäß Workflow inkl. SLA-Pause/-Fortsetzung, Lösung, Wiedereröffnung.
      * Mit $notify = false entfällt die automatische Benachrichtigung des Melders; genutzt,
-     * wenn der Melder im selben Vorgang bereits eine E-Mail des Agenten erhält.
+     * wenn der Melder im selben Vorgang bereits eine E-Mail des Agenten erhält – oder beim
+     * Schließen, wenn der Agent im Statusdialog „Melder informieren“ abwählt.
      * @return array<string,mixed>
      */
     public function changeStatus(int $id, string $toCode, ?string $note = null, ?string $resolution = null, ?string $reason = null, ?int $expectedVersion = null, bool $system = false, ?string $pauseUntil = null, bool $notify = true): array
@@ -585,6 +586,11 @@ final class TicketService
                 if ($ticket['resolved_at'] === null) {
                     $update['resolved_at'] = $now;
                     $update['sla_resolution_state'] = $this->sla->evaluate($ticket['resolution_due_at'], $now, $nowDt, $ticket['created_at'], 100);
+                }
+                // Die im Statusdialog erfasste Lösung gilt auch beim direkten Schließen
+                // (sie steht im Schließungstext der Melder-Benachrichtigung).
+                if ($resolution !== null && $resolution !== '') {
+                    $update['resolution'] = $resolution;
                 }
                 if ($reason !== null && trim($reason) !== '') {
                     $update['close_reason'] = trim($reason);

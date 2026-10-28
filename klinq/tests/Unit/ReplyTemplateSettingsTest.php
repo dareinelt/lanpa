@@ -81,4 +81,29 @@ final class ReplyTemplateSettingsTest extends TestCase
             $html
         );
     }
+
+    public function testClosePlaceholdersIncludeReasonAndResolution(): void
+    {
+        foreach (['{anrede}', '{name}', '{ticketnummer}', '{betreff}', '{datum}', '{geschlossen_am}', '{schliessungsgrund}', '{loesung}', '{link}', '{firma}'] as $placeholder) {
+            $this->assertTrue(isset(ReplyTemplateSettingsService::CLOSE_PLACEHOLDERS[$placeholder]), 'Platzhalter fehlt: ' . $placeholder);
+        }
+
+        $html = ReplyTemplateSettingsService::render(
+            "Guten Tag {name},\n\nGrund: {schliessungsgrund}\nLösung: {loesung}",
+            ['{name}' => 'Max Melder', '{schliessungsgrund}' => 'Ersatzgerät geliefert', '{loesung}' => 'BIOS zurückgesetzt.']
+        );
+
+        $this->assertSame(
+            '<p>Guten Tag Max Melder,</p><p>Grund: Ersatzgerät geliefert<br>Lösung: BIOS zurückgesetzt.</p>',
+            $html
+        );
+    }
+
+    public function testEmptyCloseReasonRemovesPlaceholderAndSpace(): void
+    {
+        $this->assertSame(
+            '<p>Guten Tag Max Melder</p>',
+            ReplyTemplateSettingsService::render('Guten Tag {name} {schliessungsgrund}', ['{name}' => 'Max Melder', '{schliessungsgrund}' => ''])
+        );
+    }
 }

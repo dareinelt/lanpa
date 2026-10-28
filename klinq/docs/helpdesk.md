@@ -50,9 +50,31 @@ Status sind Stammdaten (`ticket_statuses`) mit einer **Kategorie**, die das Verh
 Erlaubte Übergänge stehen je Status als Liste (`allowed_transitions`). Regeln:
 
 - **Gelöst** erfordert einen Lösungstext, **Abgebrochen** eine Begründung.
+- **Geschlossen** kennt optional einen Schließungsgrund (landet in `close_reason`) und die Checkbox **„Melder über die
+  Schließung informieren“** (siehe „Schließungs-E-Mail an den Melder“).
 - **Wieder öffnen** (`helpdesk.reopen`; im Portal innerhalb `HELPDESK_REOPEN_DAYS`) erhöht `reopen_count` und setzt die SLA-Uhr fort.
 - Jede Änderung prüft die **Version** (optimistische Sperre, 409 bei Konflikt) und schreibt ein Ereignis in `ticket_events` sowie einen Audit-Eintrag.
 - Zusammengeführte Tickets (`merged_into_ticket_id`) sind schreibgeschützt; Kommentare, Anhänge, Watcher und Asset-Verknüpfungen wandern ins Zielticket. Der Zusammenführungsgrund steht in `close_reason` (z. B. „Duplikat (HD-2024-000123)“).
+
+### Schließungs-E-Mail an den Melder
+
+Beim Schließen eines Tickets fragt der Statusdialog zusätzlich **„Melder über die Schließung informieren“** ab
+(Checkbox, standardmäßig gesetzt). Ist sie gesetzt und ein **Schließungstext** hinterlegt, erhält der Melder eine
+E-Mail mit dem Schließungsgrund und der hinterlegten Lösung:
+
+- Der Controller liest die Checkbox (`notify_requester`) nur für den Zielstatus `closed` aus und übergibt sie an
+  `TicketService::changeStatus()`; der optionale Parameter steuert dort den gesamten Statusversand
+  (`notifications->statusChanged()`).
+- Schließt ein Agent direkt aus „In Bearbeitung“, wird der im Dialog erfasste Lösungstext zusätzlich in `resolution`
+  gespeichert, damit der Platzhalter `{loesung}` gefüllt ist.
+- Empfänger sind dieselben Meldeadressen wie bei der allgemeinen Statusmail (`requester_email`, `requester_user_email`);
+  Adressen werden kleingeschrieben, dedupliziert und nur gültige E-Mail-Adressen berücksichtigt. Je Empfänger geht eine
+  eigene Nachricht mit personalisierter Anrede über `TicketNotificationService::sendTo()` heraus (Ereignisschlüssel
+  `status_closed_{version}`), sodass Protokollierung und Idempotenz greifen.
+- Ist kein Schließungstext hinterlegt oder der Mailversand abgeschaltet, greift wie bisher die allgemeine
+  Statusbenachrichtigung.
+- Der **Scheduler** (`autoClose()`) ruft den Versand direkt auf und nutzt damit ebenfalls den Schließungstext – ohne
+  Checkbox, weil dort kein Agent entscheidet.
 
 ### Pausieren
 
@@ -321,7 +343,7 @@ Im Reiter **Störungsformular** liegen der öffentliche Link und die **Sammelkon
 
 ![Sammelkonten im Reiter „Störungsformular“](screenshots/helpdesk-admin-sammelkonten.png)
 
-Im Reiter **Vorlageneinstellungen** stehen drei Texte (Berechtigung `helpdesk.admin`, verwaltet über `ReplyTemplateSettingsService`):
+Im Reiter **Vorlageneinstellungen** stehen vier Texte (Berechtigung `helpdesk.admin`, verwaltet über `ReplyTemplateSettingsService`):
 
 - **Präfix-Text** (`helpdesk.reply_template.prefix_text`, höchstens 4 000 Zeichen) für Agentenmails. Er wird beim Versand einer Mail aus dem Ticket serverseitig vor den Agententext gesetzt und erscheint nicht im Mail-Dialog. Ist das Feld leer, wird nichts vorangestellt.
 - **Bestätigungstext** (`helpdesk.reply_template.confirmation_text`, höchstens 4 000 Zeichen) für die **Eingangsbestätigung**, die beim Anlegen eines Tickets versendet wird (siehe „Störungsmeldung für Anwender“). Er wird als HTML gerendert (Absätze `<p>`, Zeilenumbrüche `<br>`, Inhalt maskiert) und unterstützt Platzhalter:
@@ -337,6 +359,27 @@ Im Reiter **Vorlageneinstellungen** stehen drei Texte (Berechtigung `helpdesk.ad
 | `{firma}` | Firmenname aus der Konfiguration |
 
 Unbekannte Platzhalter bleiben stehen; Platzhalter ohne Wert werden samt einem direkt folgenden Leerraum entfernt. Ist der Bestätigungstext leer, wird keine Bestätigung versendet (der Assistenten-Schritt weist darauf hin). Startwert über `HELPDESK_REPLY_TEMPLATE_CONFIRMATION`, die Datenbank hat Vorrang.
+
+- **Schließungstext** (`helpdesk.reply_template.close_text`, höchstens 4 000 Zeichen) für die E-Mail, die der Melder beim
+  Schließen des Tickets erhält (siehe „Schließungs-E-Mail an den Melder“). Er wird wie der Bestätigungstext als HTML
+  gerendert (Absätze `<p>`, Zeilenumbrüche `<br>`, Inhalt maskiert) und unterstützt zusätzlich zum Bestätigungstext die
+  Angaben zum Abschluss:
+
+| Platzhalter | Ersetzt durch |
+| --- | --- |
+| `{anrede}` | feste Anrede „Guten Tag“ |
+| `{name}` | Name des Empfängers |
+| `{ticketnummer}` | Ticketnummer, z. B. `HD-2026-00042` |
+| `{betreff}` | Betreff des Tickets |
+| `{datum}` | Anlagedatum des Tickets (`d.m.Y H:i`) |
+| `{geschlossen_am}` | Zeitpunkt der Schließung (`d.m.Y H:i`) |
+| `{schliessungsgrund}` | im Dialog erfasster Schließungsgrund (`close_reason`) |
+| `{loesung}` | Lösungstext des Tickets als reiner Text (eingebettete Bilder werden zu `[Bild]`) |
+| `{link}` | Link zum Ticket im Serviceportal |
+| `{firma}` | Firmenname aus der Konfiguration |
+
+Ist das Feld leer, versendet KLINQ beim Schließen die allgemeine Statusbenachrichtigung. Startwert über
+`HELPDESK_REPLY_TEMPLATE_CLOSE`, die Datenbank hat Vorrang.
 
 - **Hinweis am Fuß der E-Mail** (`helpdesk.reply_template.footer_text`, höchstens 1 000 Zeichen) wird unter jede Benachrichtigungsmail des Help Desk gesetzt – auch unter die Eingangsbestätigung, nicht aber unter die von Agenten verfasste E-Mail (`TicketMailService` nutzt den Rahmen nicht). Der Text wird wie der Bestätigungstext maskiert und in Absätze umgesetzt; als Platzhalter steht `{firma}` (Firmenname aus der Konfiguration) bereit. Ein leeres Feld blendet den Hinweis aus. Ohne gespeicherten Wert gilt der Startwert aus `HELPDESK_REPLY_TEMPLATE_FOOTER`, sonst der eingebaute Standardtext („Diese E-Mail wurde automatisch vom IT Help Desk ({firma}) erzeugt …“), sodass bestehende Installationen unverändert weiterversenden.
 
@@ -439,7 +482,7 @@ Jede Benachrichtigung trägt Threading-Kopfzeilen, damit Antworten der Empfänge
 | `X-Ticket-Number` | Ticketnummer |
 | `Auto-Submitted: auto-generated` | verhindert Antwortschleifen mit Abwesenheitsassistenten |
 
-Der Betreff enthält weiterhin `[HD-JJJJ-NNNNNN]` als für Menschen lesbaren Fallback. Der Rumpf besteht aus dem jeweiligen Ereignistext (Tabelle mit Ticket, Betreff, Status, Priorität, ggf. Bearbeiter) und dem **Hinweis am Fuß**, der in den Help-Desk-Einstellungen → Vorlageneinstellungen gepflegt wird (`TicketNotificationService::wrap()`). **Ticket-Links setzt die Mail nicht selbst** – für die Eingangsbestätigung steht dafür der Platzhalter `{link}` im Vorlagentext bereit.
+Der Betreff enthält weiterhin `[HD-JJJJ-NNNNNN]` als für Menschen lesbaren Fallback. Der Rumpf besteht aus dem jeweiligen Ereignistext (Tabelle mit Ticket, Betreff, Status, Priorität, ggf. Bearbeiter) und dem **Hinweis am Fuß**, der in den Help-Desk-Einstellungen → Vorlageneinstellungen gepflegt wird (`TicketNotificationService::wrap()`). Ausnahmen vom Ereignistext sind die beiden Vorlagen-Mails: die **Eingangsbestätigung** (`created_confirmation`) und die **Schließungs-E-Mail** (`status_closed_*`), die den gepflegten Text samt Platzhaltern enthalten. **Ticket-Links setzt die Mail nicht selbst** – dafür stehen die Platzhalter `{link}` in den Vorlagentexten bereit.
 
 Die von Agenten aus dem Ticket gesendete E-Mail („E-Mail aus dem Ticket senden“) nutzt dieselben Thread-Kopfzeilen,
 lässt aber `Auto-Submitted` bewusst weg: Sie ist eine persönliche Nachricht des Agenten und soll nicht als automatisch
@@ -574,6 +617,7 @@ Die folgenden Variablen sind nur **Startwerte** für das Versandkonto ausgehende
 | `HELPDESK_REPLY_TEMPLATE_PREFIX` | leer | Startwert für den Präfix-Text der Agentenmails (Reiter „Vorlageneinstellungen“); die Datenbank hat Vorrang |
 | `HELPDESK_REPLY_TEMPLATE_CONFIRMATION` | leer | Startwert für den Bestätigungstext der Eingangsbestätigung (Reiter „Vorlageneinstellungen“, Platzhalter `{anrede}`, `{name}`, `{ticketnummer}`, `{betreff}`, `{datum}`, `{link}`, `{firma}`); die Datenbank hat Vorrang |
 | `HELPDESK_REPLY_TEMPLATE_FOOTER` | leer | Startwert für den Hinweis am Fuß jeder Benachrichtigungsmail (Reiter „Vorlageneinstellungen“, Platzhalter `{firma}`); ohne gespeicherten und ohne konfigurierten Wert gilt der eingebaute Standardtext, die Datenbank hat Vorrang |
+| `HELPDESK_REPLY_TEMPLATE_CLOSE` | leer | Startwert für den Schließungstext an den Melder (Reiter „Vorlageneinstellungen“, Platzhalter `{anrede}`, `{name}`, `{ticketnummer}`, `{betreff}`, `{datum}`, `{geschlossen_am}`, `{schliessungsgrund}`, `{loesung}`, `{link}`, `{firma}`); die Datenbank hat Vorrang |
 
 ## Integration in die Assetverwaltung
 
@@ -594,7 +638,7 @@ Details, Konfiguration und ein Testaufbau mit Ollama: [KI-Unterstützung im Help
 
 - **Migration** `database/migrations/008_helpdesk.sql`, `009_helpdesk_mail.sql` (Threading-Spalten, `ticket_inbound_mails`), `010_helpdesk_quick_report.sql` (Quelle `form`, Melderspalten `reporter_username`/`reporter_host`/`reporter_ip`/`reporter_phone`/`reporter_department`), `012_helpdesk_mail_settings.sql` (`tickets.mail_from_address`/`mail_from_name`, `ticket_comments.mail_from_address`) und `015_helpdesk_support_shifts.sql` (`helpdesk_support_shifts`: tagesweise 1st-/2nd-Level-Zuständigkeit), `019_helpdesk_pause_until.sql` (Pausierstatus `waiting_feedback`/`waiting_third_party`/`waiting_delivery`/`waiting_internal`, `tickets.paused_until`), **Seeder** `database/seeders/003_helpdesk_defaults.sql` (Typen, Status, Prioritäten, SLA-Standardregeln, Beispielkategorien, Vorlagen).
 - **Code**: `app/Repositories/Ticket*Repository.php`, `KnowledgeBaseRepository.php`, `HelpdeskSupportShiftRepository.php`; `app/Services/Helpdesk/` (`TicketService`, `TicketWorkflowService`, `TicketSlaService`, `TicketPriorityMatrix`, `TicketNumberService`, `TicketMergeService`, `TicketNotificationService`, `TicketRuleService`/`TicketRuleEvaluator`, `TicketReportService`, `TicketMailIngestionService`, `TicketMailService`, `TicketConfirmationService`, `KnowledgeBaseService`, `HelpdeskAdminService`, `HelpdeskSchedulerService`, `ReporterIdentityService`, `SupportShiftService`, `OutboundMailSettingsService`, `ReplyTemplateSettingsService`); `app/Services/Helpdesk/Mail/` (`MimeMessageParser`, `InboundMail`, `MailboxClientInterface`, `ImapMailboxClient`, `FileMailboxClient`, `SmtpTransport`); `app/Services/MailClient.php` (Konto vor Container); `app/Services/Ad/AdUserLookupService.php` (Einzelabfrage fürs Störungsformular), `app/Support/IpRange.php`, `app/Support/HtmlSanitizer.php` (Bereinigung des Mail-Editors); `app/Controllers/Helpdesk/` (inkl. `HelpdeskSupportShiftController`); Provider `app/Core/Providers/helpdesk.php`; Routen `routes/modules/helpdesk.php`; Views `resources/views/helpdesk/`; `public/js/helpdesk.js`, `public/js/helpdesk-mail.js`, `public/js/helpdesk-merge.js`, `public/js/helpdesk-merge-bulk.js`, `public/css/pages/helpdesk.css`, `public/css/pages/quick-report.css`.
-- **Tests**: `tests/Unit/HelpdeskLogicTest.php` (Prioritätsmatrix, SLA-Berechnung mit Servicezeiten, Workflow-Übergänge, Regel-Auswertung, Rechte), `tests/Unit/HelpdeskMailParserTest.php` (MIME-Parser, RFC 2047/2231, Zitat-Erkennung, Auto-Reply-Erkennung, Ticketnummer/Message-ID), `tests/Integration/TicketServiceIntegrationTest.php` (Anlage, Nummernvergabe, Status, Zuweisung, Kommentare, Sichtbarkeit im Portal, Merge mit Grund/Anmerkung, Sammel-Zusammenführung mehrerer Quellen, Zusammenführungsvorschläge, Konflikte), `tests/Integration/HelpdeskAutomationIntegrationTest.php` (Regeln, Scheduler: Warnung/Verletzung/Eskalation/Auto-Close, Benachrichtigungen, Wissensdatenbank), `tests/Integration/HelpdeskMailIngestionIntegrationTest.php` (Ticket aus E-Mail, Threading über Betreff/`In-Reply-To`/`References`, Statuslogik, Merge-Weiterleitung, Duplikate, Auto-Replies, Anhänge), `tests/Unit/QuickReportTest.php` (Normalisierung des Windows-Kontos, Netzfreigaben, Systemkontext `runAs`), `tests/Unit/HtmlSanitizerTest.php` (Allowlist, Skripte, `javascript:`-Ziele, Bilder, `plain()`), `tests/Integration/TicketMailServiceIntegrationTest.php` (Agenten-Mail: Empfänger, Threading ohne `Auto-Submitted`, öffentlicher Kommentar, Signatur serverseitig – eine mitgesendete Signatur aus dem Editor wird verworfen, Präfix-Text nur beim Senden und nicht im Dialog, Maskierung des Präfix-Textes, Pausierung, Validierung; Info-E-Mail zur Zusammenführung: Vorlage mit Platzhaltern, Versand an den Melder ohne Signatur, Threading auf das Zielticket, Protokollierung), `tests/Unit/ReplyTemplateSettingsTest.php` (Präfix- und Bestätigungstext: leer, Maskierung, Absätze/Zeilenumbrüche, CRLF, Platzhalter ersetzen/maskieren, Platzhalter ohne Wert, unbekannte Platzhalter), `tests/Integration/TicketConfirmationIntegrationTest.php` (Eingangsbestätigung: Formular an den Melder, Sammelkonto zusätzlich an den zusätzlichen Benutzer, E-Mail-Eingang an den externen Absender, Agent ohne/mit Opt-in, leerer Bestätigungstext fällt auf die allgemeine Info-Mail zurück, kein doppelter Versand), `tests/Integration/HelpdeskOutboundMailIntegrationTest.php` (Versandkonto: verschlüsselte Ablage, Prüfungen, „Antwort-an“, SMTP-Versand gegen einen lokalen Stub, Header-Allowlist). Ausführen: `php tests/run.php --filter=Ticket` bzw. `--filter=Helpdesk`.
+- **Tests**: `tests/Unit/HelpdeskLogicTest.php` (Prioritätsmatrix, SLA-Berechnung mit Servicezeiten, Workflow-Übergänge, Regel-Auswertung, Rechte), `tests/Unit/HelpdeskMailParserTest.php` (MIME-Parser, RFC 2047/2231, Zitat-Erkennung, Auto-Reply-Erkennung, Ticketnummer/Message-ID), `tests/Integration/TicketServiceIntegrationTest.php` (Anlage, Nummernvergabe, Status, Zuweisung, Kommentare, Sichtbarkeit im Portal, Merge mit Grund/Anmerkung, Sammel-Zusammenführung mehrerer Quellen, Zusammenführungsvorschläge, Konflikte), `tests/Integration/HelpdeskAutomationIntegrationTest.php` (Regeln, Scheduler: Warnung/Verletzung/Eskalation/Auto-Close, Benachrichtigungen, Wissensdatenbank), `tests/Integration/HelpdeskMailIngestionIntegrationTest.php` (Ticket aus E-Mail, Threading über Betreff/`In-Reply-To`/`References`, Statuslogik, Merge-Weiterleitung, Duplikate, Auto-Replies, Anhänge), `tests/Unit/QuickReportTest.php` (Normalisierung des Windows-Kontos, Netzfreigaben, Systemkontext `runAs`), `tests/Unit/HtmlSanitizerTest.php` (Allowlist, Skripte, `javascript:`-Ziele, Bilder, `plain()`), `tests/Integration/TicketMailServiceIntegrationTest.php` (Agenten-Mail: Empfänger, Threading ohne `Auto-Submitted`, öffentlicher Kommentar, Signatur serverseitig – eine mitgesendete Signatur aus dem Editor wird verworfen, Präfix-Text nur beim Senden und nicht im Dialog, Maskierung des Präfix-Textes, Pausierung, Validierung; Info-E-Mail zur Zusammenführung: Vorlage mit Platzhaltern, Versand an den Melder ohne Signatur, Threading auf das Zielticket, Protokollierung), `tests/Unit/ReplyTemplateSettingsTest.php` (Präfix-, Bestätigungs- und Schließungstext: leer, Maskierung, Absätze/Zeilenumbrüche, CRLF, Platzhalter ersetzen/maskieren, Platzhalter ohne Wert, unbekannte Platzhalter), `tests/Integration/TicketCloseNotificationIntegrationTest.php` (Schließungs-E-Mail: Vorlage mit Grund und Lösung, Opt-out ohne Versand, leerer Schließungstext fällt auf die allgemeine Statusmail zurück), `tests/Integration/TicketConfirmationIntegrationTest.php` (Eingangsbestätigung: Formular an den Melder, Sammelkonto zusätzlich an den zusätzlichen Benutzer, E-Mail-Eingang an den externen Absender, Agent ohne/mit Opt-in, leerer Bestätigungstext fällt auf die allgemeine Info-Mail zurück, kein doppelter Versand), `tests/Integration/HelpdeskOutboundMailIntegrationTest.php` (Versandkonto: verschlüsselte Ablage, Prüfungen, „Antwort-an“, SMTP-Versand gegen einen lokalen Stub, Header-Allowlist). Ausführen: `php tests/run.php --filter=Ticket` bzw. `--filter=Helpdesk`.
 
 ## Bekannte Einschränkungen
 

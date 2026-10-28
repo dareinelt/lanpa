@@ -259,8 +259,14 @@
         dialog.querySelectorAll("[data-show-for]").forEach(function (block) {
             const show = block.getAttribute("data-show-for").split(",").indexOf(status) !== -1;
             block.hidden = !show;
-            block.querySelectorAll("[data-required-when-visible]").forEach(function (f) { f.required = show; });
+            block.querySelectorAll("[data-required-when-visible]").forEach(function (f) {
+                // data-required-for schränkt die Pflicht auf einzelne Zielstatus ein (z. B. Grund nur beim Stornieren)
+                const only = f.getAttribute("data-required-for");
+                f.required = show && (only === null || only.split(",").indexOf(status) !== -1);
+            });
         });
+        const notify = dialog.querySelector("[data-hd-notify-requester]");
+        if (notify) { notify.checked = true; }
         const pauseUntil = dialog.querySelector("input[name='pause_until']");
         if (pauseUntil) {
             const preset = dialog.getAttribute("data-paused-until") || "";

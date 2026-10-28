@@ -112,6 +112,16 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertTrue(isset($errors['description']));
     }
 
+    /** Agenten legen Tickets für die meldende Person an – ohne Auswahl wird der Agent nicht als Melder eingetragen. */
+    public function testAgentTicketWithoutRequesterDoesNotUseAgentAsRequester(): void
+    {
+        $ticket = $this->createTicket(['requester_employee_id' => null]);
+
+        $this->assertNull($ticket['requester_employee_id']);
+        $this->assertNull($ticket['requester_user_id'], 'Der anlegende Agent ist nicht der Melder');
+        $this->assertSame($this->agentId, (int) $ticket['created_by'], 'Ersteller bleibt der Agent');
+    }
+
     public function testCriticalPriorityGetsCriticalSla(): void
     {
         $ticket = $this->createTicket(['impact' => 3, 'urgency' => 3]);

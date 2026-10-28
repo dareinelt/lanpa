@@ -145,6 +145,12 @@ Die Felder **Melder** und **Betroffener Mitarbeiter** sind Auswahlfelder mit Suc
 gelangen. Die Suche läuft live über die interne Schnittstelle `GET /internal/klinq/telefonbuch`
 (`PersonDirectoryService` → `LanpaBridge::phonebook()`), damit der Personenbestand nicht doppelt gepflegt wird.
 
+- **Keine Vorbelegung mit dem Agenten**: Beim Anlegen über `/helpdesk/tickets/new` bleibt das Feld **Melder** leer.
+  Der angemeldete Agent ist der *Ersteller* des Tickets (`created_by`), nicht der Melder – eingetragen wird die Person,
+  die das Problem hat. Eine Vorbelegung gibt es nur aus dem Kontext: Wird das Formular über ein Asset
+  (`?asset_id=…`) geöffnet, übernimmt der Melder die dem Asset zugeordnete Person. Bleibt das Feld leer, entsteht ein
+  Ticket ohne bekannte meldende Person (unbekannt/extern, etwa ein Telefonanruf ohne Personalnummer); in Liste und
+  Detail steht dann „–“. Im Portal ist der Melder dagegen immer das angemeldete Konto.
 - **Suchfelder**: Name (auch phonetisch), E-Mail, Benutzername, Abteilung und **Personalnummer** (Präfixsuche). Die
   Personalnummer stammt aus dem AD-Attribut `employeeNumber` (`LDAP_ATTR_PERSONNEL_NUMBER` im Intranet) und wird beim
   Übernehmen in den lokalen Mitarbeiter geschrieben (`employees.personnel_number`, höchstens 50 Zeichen, nur wenn
@@ -179,7 +185,7 @@ Ansichten *Meine*, *Meine Gruppe*, *Nicht zugewiesen*, *Alle offenen*, *SLA-krit
 
 ![Assistent für neue Tickets: abgeschlossene Schritte als Zusammenfassung oberhalb des aktuellen Schritts](screenshots/helpdesk-ticket-wizard.png)
 
-Beide Modi nutzen dieselben Felder (`views/helpdesk/tickets/_fields.php`) und denselben POST-Endpunkt; die serverseitige Validierung bleibt unverändert. Im Assistenten werden abgeschlossene Schritte oberhalb des aktuellen Schritts mit einer Zusammenfassung angezeigt und lassen sich aufklappen. Über „Zurück“ oder Klick auf einen Schritt lässt sich jederzeit wechseln, ohne Eingaben zu verlieren. Der Bearbeiter ist mit dem heutigen 2nd-Level-Support vorbelegt (`SupportShiftService::secondLevelUserIdToday()`), sonst „– nicht zugewiesen –“. Beim Verlassen über „Schließen“, den Moduswechsel oder die Navigation fragt der Assistent nach, bevor der Bearbeitungsfortschritt verloren geht (`public/js/helpdesk-wizard.js`).
+Beide Modi nutzen dieselben Felder (`views/helpdesk/tickets/_fields.php`) und denselben POST-Endpunkt; die serverseitige Validierung bleibt unverändert. Im Assistenten werden abgeschlossene Schritte oberhalb des aktuellen Schritts mit einer Zusammenfassung angezeigt und lassen sich aufklappen. Über „Zurück“ oder Klick auf einen Schritt lässt sich jederzeit wechseln, ohne Eingaben zu verlieren. Der Bearbeiter ist mit dem heutigen 2nd-Level-Support vorbelegt (`SupportShiftService::secondLevelUserIdToday()`), sonst „– nicht zugewiesen –“. Der Melder bleibt bewusst leer und wird vom Agenten eingetragen (siehe „Personenauswahl (Melder und Betroffene)“). Beim Verlassen über „Schließen“, den Moduswechsel oder die Navigation fragt der Assistent nach, bevor der Bearbeitungsfortschritt verloren geht (`public/js/helpdesk-wizard.js`).
 
 #### Bevorzugter Eingabemodus je Benutzer
 

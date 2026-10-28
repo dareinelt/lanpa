@@ -48,7 +48,7 @@ if (!empty($secondLevelAssigneeId)) {
             </div>
             <input id="f-requester" type="search" class="picker-input" placeholder="Name, Benutzername, Personalnr. oder Telefon …" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" data-picker-input<?= $selectedRequester ? ' hidden' : '' ?>>
             <ul class="picker-results" role="listbox" hidden data-picker-results></ul>
-            <p class="form-hint">Leer lassen für unbekannt/extern.</p>
+            <p class="form-hint">Bitte die Person eintragen, die das Problem hat – nicht den eigenen Benutzer. Leer lassen für unbekannt/extern.</p>
             <?= field_error('requester_employee_id') ?>
         </div>
         <div class="form-group picker<?= has_error('affected_employee_id') ? ' has-error' : '' ?>" data-picker data-search-url="/api/helpdesk/people/search" data-resolve-url="/api/helpdesk/people/adopt">

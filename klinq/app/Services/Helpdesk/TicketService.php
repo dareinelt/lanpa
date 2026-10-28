@@ -269,7 +269,10 @@ final class TicketService
             $extraFields = $this->reporterFields($reporter);
             $createdByName = mb_substr(trim((string) ($reporter['display_name'] ?? '')) ?: 'Störungsmeldung', 0, 200);
         }
-        if (!$quickReport && empty($data['requester_employee_id']) && empty($data['requester_user_id'])) {
+        // Nur beim E-Mail-Eingang wird der Systembenutzer als Melder hinterlegt; ist der Absender
+        // unbekannt/extern, wird er unten wieder entfernt. Agenten-Tickets (web, phone, api) bleiben
+        // ohne Melder, wenn keiner ausgewählt wurde – der anlegende Agent ist nicht der Melder.
+        if ($source === 'email' && empty($data['requester_employee_id']) && empty($data['requester_user_id'])) {
             $data['requester_user_id'] = $userId;
         }
         // E-Mail-Eingang: externe Absenderadresse und Message-ID für das Threading übernehmen

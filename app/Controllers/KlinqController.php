@@ -196,6 +196,11 @@ final class KlinqController extends Controller
         if (!Container::navigation()->isAccessible((int) $tile['id'], $ssoUser)) {
             throw new HttpException(403, 'Für KLINQ fehlt die Freigabe.');
         }
+
+        $groups = is_array($ssoUser['groups'] ?? null) ? array_values($ssoUser['groups']) : [];
+        if (!Container::klinqConfig()->isTileVisibleFor($groups)) {
+            throw new HttpException(403, 'Für KLINQ fehlt die Freigabe.');
+        }
     }
 
     /**

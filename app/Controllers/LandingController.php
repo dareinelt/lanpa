@@ -15,6 +15,7 @@ final class LandingController extends Controller
     {
         $ssoUser = Container::sso()->resolve($request);
         $items = Container::officeApps()->filterNavigation(Container::navigation()->activeTopLevelFor($ssoUser), $ssoUser);
+        $items = Container::klinqConfig()->filterNavigation($items, $ssoUser);
         $items = TileProxy::decorate($items, $request->clientIp());
 
         return $this->view('landing.index', [

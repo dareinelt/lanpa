@@ -195,6 +195,69 @@ Runner::test('KLINQ: Gruppen werden aus Textfeldern gelesen', static function ()
     Assert::same(['GG-A', 'GG-B'], KlinqConfigService::parseGroups(['GG-A', 'GG-B', 42]));
 });
 
+Runner::test('KLINQ: Kachel ist ohne Gruppenzuordnung für alle sichtbar', static function (): void {
+    $config = klinqConfig();
+
+    Assert::same([], $config->tileGroups());
+    Assert::true($config->isTileVisibleFor([]));
+    Assert::true($config->isTileVisibleFor(['GG-A']));
+});
+
+Runner::test('KLINQ: Kachel-Sichtbarkeit folgt den hinterlegten AD-Gruppen', static function (): void {
+    $config = klinqConfig(['klinq_tile_groups' => 'GG-KLINQ; GG-IT-Helpdesk']);
+
+    Assert::same(['GG-KLINQ', 'GG-IT-Helpdesk'], $config->tileGroups());
+    Assert::true($config->isTileVisibleFor(['GG-KLINQ']));
+    Assert::true($config->isTileVisibleFor(['gg-it-helpdesk', 'GG-ANDERE']));
+    Assert::true($config->isTileVisibleFor(['INTRA\GG-KLINQ']));
+    Assert::false($config->isTileVisibleFor(['GG-ANDERE']));
+    Assert::false($config->isTileVisibleFor([]));
+});
+
+Runner::test('KLINQ: Kachel wird bei fehlender Freigabe aus der Navigation entfernt', static function (): void {
+    $items = [
+        ['id' => 1, 'title' => 'Intranet', 'type' => 'internal', 'url' => '/dashboard'],
+        ['id' => 2, 'title' => 'KLINQ', 'type' => 'internal', 'url' => KlinqController::ENTRY_PATH],
+        ['id' => 3, 'title' => 'Office', 'type' => 'internal', 'url' => '/office'],
+        ['id' => 4, 'title' => 'Extern', 'type' => 'external', 'url' => KlinqController::ENTRY_PATH],
+    ];
+    $member = ['id' => 7, 'username' => 'a', 'display_name' => 'A', 'groups' => ['GG-KLINQ']];
+    $guest = ['id' => 8, 'username' => 'b', 'display_name' => 'B', 'groups' => ['GG-ANDERE']];
+
+    $open = klinqConfig();
+    Assert::same($items, $open->filterNavigation($items, $guest));
+    Assert::same($items, $open->filterNavigation($items, null));
+
+    $restricted = klinqConfig(['klinq_tile_groups' => 'GG-KLINQ']);
+    Assert::same($items, $restricted->filterNavigation($items, $member));
+    Assert::same(
+        [$items[0], $items[2], $items[3]],
+        $restricted->filterNavigation($items, $guest)
+    );
+    Assert::same(
+        [$items[0], $items[2], $items[3]],
+        $restricted->filterNavigation($items, null)
+    );
+});
+
+Runner::test('KLINQ: Sichtbarkeit der Kachel wird geprüft', static function (): void {
+    $config = klinqConfig();
+
+    Assert::same(['value' => '', 'error' => ''], $config->validateTileGroups(''));
+    Assert::same(['value' => '', 'error' => ''], $config->validateTileGroups('   '));
+    Assert::same(
+        ['value' => 'GG-A, GG-B', 'error' => ''],
+        $config->validateTileGroups(" GG-A ;\nGG-B ")
+    );
+    Assert::same(
+        ['value' => 'GG-A', 'error' => ''],
+        $config->validateTileGroups('INTRA\GG-A, GG-A')
+    );
+
+    $tooMany = implode(', ', array_map(static fn (int $i): string => 'GG-' . $i, range(1, 101)));
+    Assert::true($config->validateTileGroups($tooMany)['error'] !== '');
+});
+
 Runner::test('KLINQ: Freigabeformular wird geprüft', static function (): void {
     $config = klinqConfig();
     $result = $config->validate([

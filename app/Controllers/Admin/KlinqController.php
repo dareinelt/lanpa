@@ -90,7 +90,8 @@ final class KlinqController extends AdminController
 
     /**
      * Legt die KLINQ-Kachel auf der Startseite an. Die Sichtbarkeit wird
-     * anschliessend ueber die Kachel-Berechtigungen (AD-Gruppen) gesteuert.
+     * anschliessend ueber die AD-Gruppen im Feld „Sichtbarkeit der Kachel“
+     * sowie optional ueber die Kachel-Berechtigungen gesteuert.
      */
     public function createTile(Request $request): Response
     {
@@ -119,9 +120,9 @@ final class KlinqController extends AdminController
         }
 
         app_logger()->info('KLINQ-Kachel angelegt.', ['admin' => Container::auth()->username(), 'id' => $id]);
-        Session::flash('success', 'Die KLINQ-Kachel wurde angelegt. Legen Sie nun die AD-Gruppen unter „Berechtigungen“ fest.');
+        Session::flash('success', 'Die KLINQ-Kachel wurde angelegt. Legen Sie nun unter „Kachel“ die AD-Gruppen für die Sichtbarkeit fest.');
 
-        return $this->redirect(self::PAGES['access'][0]);
+        return $this->redirect(self::PAGES['tile'][0]);
     }
 
     /**
@@ -154,15 +155,32 @@ final class KlinqController extends AdminController
         $merged['protected_access'] = !empty($tile['protected_access']) ? '1' : '';
         $merged['open_in_new_tab'] = !empty($request->post['open_in_new_tab']) ? '1' : '';
 
+        $tileGroups = Container::klinqConfig()->validateTileGroups(
+            $request->post[KlinqConfigService::TILE_GROUPS_SETTING] ?? ''
+        );
+        $groupValues = [KlinqConfigService::TILE_GROUPS_SETTING => $tileGroups['value']];
+
+        if ($tileGroups['error'] !== '') {
+            Session::flash('error', 'Die Sichtbarkeit der Kachel wurde nicht gespeichert.');
+
+            return $this->render(
+                'tile',
+                [KlinqConfigService::TILE_GROUPS_SETTING => $tileGroups['error']],
+                $merged + $groupValues,
+                422
+            );
+        }
+
         try {
             $validated = Container::navigation()->validate($merged, false, (int) $tile['id']);
         } catch (ValidationException $exception) {
             Session::flash('error', 'Die Kachel konnte nicht gespeichert werden: ' . implode(' ', $exception->errors()));
 
-            return $this->render('tile', $exception->errors(), $merged, 422);
+            return $this->render('tile', $exception->errors(), $merged + $groupValues, 422);
         }
 
         Container::navigationRepository()->update((int) $tile['id'], $validated);
+        Container::settings()->update($groupValues);
         app_logger()->info('KLINQ-Kachel gestaltet.', ['admin' => Container::auth()->username(), 'id' => (int) $tile['id']]);
         Session::flash('success', 'Die KLINQ-Kachel wurde gespeichert.');
 
@@ -254,6 +272,8 @@ final class KlinqController extends AdminController
         $config = Container::klinqConfig();
         $tile = $this->klinqTile();
         $ai = Container::klinqAi();
+
+        $values += [KlinqConfigService::TILE_GROUPS_SETTING => implode(', ', $config->tileGroups())];
 
         [, $activeNav, $pageTitle] = self::PAGES[$section];
 

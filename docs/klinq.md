@@ -155,6 +155,9 @@ Regeln:
   (`assetmanagement`, `lager`, `einkauf`, `helpdesk_*`).
 * Mehrere Gruppen pro Feld sind zulässig, getrennt durch Komma oder Semikolon.
   Groß-/Kleinschreibung wird nicht unterschieden.
+* **Sichtbarkeit der Kachel:** Das Feld **„Sichtbarkeit der Kachel (AD-Gruppen)“**
+  unter **KLINQ → Kachel** (Einstellung `klinq_tile_groups`) steuert zusätzlich
+  zur Navigation, wer die Kachel sieht; Einzelheiten in Abschnitt 4.1.
 * Die Werte werden beim **Einstieg** ausgewertet und mit dem Schein übergeben.
   Änderungen greifen mit dem nächsten Aufruf der Kachel.
 
@@ -178,10 +181,16 @@ Regeln:
 | Symbol | Schraubenschlüssel |
 
 Sichtbarkeit und Reihenfolge werden anschließend wie bei jeder anderen Kachel
-über **Navigation** gepflegt (Benutzer, AD-Gruppen). Nur wer die Kachel sieht,
-kann KLINQ über sie betreten; der Direktaufruf von `/klinq-starten` prüft
-dieselbe Freigabe. Ausgenommen sind Links auf die Selbstbedienung
-(`/portal…`, siehe 4.3).
+über **Navigation** gepflegt (Benutzer, AD-Gruppen). Zusätzlich gilt die
+KLINQ-eigene Freigabe: Im Feld **„Sichtbarkeit der Kachel (AD-Gruppen)“** unter
+**KLINQ → Kachel** lassen sich AD-Gruppen eintragen. Dann sehen nur noch
+Mitglieder dieser Gruppen die Kachel – auch dann, wenn für die Kachel keine
+Kachelrechte gesetzt sind. Bleibt das Feld leer, ist die Kachel wie bisher für
+alle sichtbar.
+
+Nur wer die Kachel sieht, kann KLINQ über sie betreten; der Direktaufruf von
+`/klinq-starten` prüft dieselben Freigaben und antwortet ohne Mitgliedschaft mit
+403. Ausgenommen sind Links auf die Selbstbedienung (`/portal…`, siehe 4.3).
 
 In **KLINQ → Kachel → Kacheleinstellungen** legt die Option **„KLINQ in einem
 neuen Tab öffnen“** fest, ob die Kachel ein neues Browser-Tab öffnet. Ohne
@@ -392,7 +401,7 @@ der `auth`-Container leitet `/klinq/` nicht mehr weiter.
 | --- | --- | --- |
 | „KLINQ ist derzeit nicht verfügbar“ (503) | Container gestoppt oder nicht erreichbar | `docker compose --profile klinq ps`, dann `up -d`; Status im Adminbereich prüfen. |
 | Endlos-Weiterleitung zwischen `/klinq/login` und `/klinq-starten` | `KLINQ_SSO_SECRET` fehlt oder unterscheidet sich | Beide Seiten neu starten, gleiches Geheimnis prüfen. |
-| „Für KLINQ fehlt die Freigabe“ (403) | Kachel vorhanden, aber für die Person nicht freigegeben | **Navigation** → Kachel → Sichtbarkeit. Gilt nicht für Direktlinks auf `/portal…` (siehe 4.3). |
+| „Für KLINQ fehlt die Freigabe“ (403) | Kachel vorhanden, aber für die Person nicht freigegeben | **Navigation** → Kachel → Sichtbarkeit; zusätzlich **KLINQ → Kachel → Sichtbarkeit der Kachel (AD-Gruppen)** prüfen. Gilt nicht für Direktlinks auf `/portal…` (siehe 4.3). |
 | Leere Seite, `ERR_EMPTY_RESPONSE`, in der Adresszeile steht `http://…:8443` | Weiterleitung ohne Schema: `mod_rewrite` stellt bei `[R]` mit Pfad-Angabe das Schema der eigenen Verbindung voran (hier `http`, weil TLS am Verteiler endet) | `docker/auth/klinq.conf` verwenden (https/http-Regelpaar) und `auth` neu bauen; `X-Forwarded-Proto` bzw. `TLS_APACHE` prüfen. |
 | „Die Störmeldung ist derzeit nicht freigegeben“ (404) | `klinq_quick_report_open=0` | **KLINQ → Berechtigungen**. |
 | Alle landen im „Serviceportal“ | SSO-Sitzung enthält keine Gruppen | SSO-Diagnose im Intranet prüfen; Gruppenname exakt wie im AD eintragen. |

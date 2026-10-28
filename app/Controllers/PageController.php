@@ -29,6 +29,7 @@ final class PageController extends Controller
             Container::navigation()->activeChildrenFor((int) $item['id'], $ssoUser),
             $ssoUser
         );
+        $children = Container::klinqConfig()->filterNavigation($children, $ssoUser);
 
         return $this->view('pages.subpage', [
             'pageTitle' => (string) $item['title'],

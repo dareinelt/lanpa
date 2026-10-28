@@ -344,6 +344,60 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertTrue($this->service()->canView($this->service()->get((int) $own['id'])));
     }
 
+    /**
+     * Sammelkonto: kein Mitarbeiterdatensatz (keine Personalnummer), nur Anmeldename und
+     * E-Mail-Adresse. Die Störungsmeldung legt den Melder dann ohne Mitarbeiter-ID an und
+     * schreibt Anmeldename und E-Mail-Adresse direkt ins Ticket. Die Portalliste muss die
+     * Anfragen trotzdem finden – sonst steht dort „0 Anfragen“.
+     */
+    public function testSharedAccountWithoutEmployeeRecordSeesOwnReports(): void
+    {
+        $own = $this->createQuickReport([
+            'reporter' => [
+                'display_name' => 'Empfang',
+                'username' => 'empfang',
+                'email' => 'Empfang@Example.Test',
+                'host' => 'PC-EMP-01',
+            ],
+            'affected_employee_id' => $this->otherEmployeeId,
+        ]);
+        $this->assertNull($own['requester_employee_id'], 'Sammelkonto hat keine Personalnummer');
+        $this->assertSame('empfang@example.test', $own['requester_email']);
+
+        $shared = $this->createUser('empfang', 'lager', null);
+        $this->loginAs($shared, 'lager');
+
+        $this->assertTrue($this->service()->canView($this->service()->get((int) $own['id'])));
+        $this->assertSame((int) $own['id'], (int) $this->service()->getVisible((int) $own['id'])['id']);
+
+        $filters = ['visible_user_id' => $shared, 'view' => 'portal_open'];
+        $this->assertSame(1, $this->tickets()->countSearch($filters), 'Portalzähler zeigt die vorhandene Anfrage');
+        $ids = array_map(static fn (array $r): int => (int) $r['id'], $this->tickets()->search($filters, 'created_at', 'desc', 50, 0));
+        $this->assertContains((int) $own['id'], $ids);
+
+        // Fremde Konten sehen das Ticket weiterhin nicht.
+        $other = $this->createUser('kollege', 'lager', null);
+        $this->loginAs($other, 'lager');
+        $this->assertFalse($this->service()->canView($this->service()->get((int) $own['id'])));
+        $this->assertSame(0, $this->tickets()->countSearch(['visible_user_id' => $other, 'view' => 'portal_open']));
+    }
+
+    /** Zuordnung allein über den Anmeldenamen, wenn das Konto keine E-Mail-Adresse hat. */
+    public function testSharedAccountWithoutEmailMatchesByUsername(): void
+    {
+        $own = $this->createQuickReport([
+            'reporter' => ['display_name' => 'Empfang', 'username' => 'empfang', 'host' => 'PC-EMP-01'],
+        ]);
+        $this->assertNull($own['requester_email']);
+
+        $shared = $this->createUser('empfang', 'lager', null);
+        $this->pdo->prepare('UPDATE users SET email = NULL WHERE id = ?')->execute([$shared]);
+        $this->loginAs($shared, 'lager');
+
+        $this->assertTrue($this->service()->canView($this->service()->get((int) $own['id'])));
+        $this->assertSame(1, $this->tickets()->countSearch(['visible_user_id' => $shared, 'view' => 'portal_open']));
+    }
+
     public function testPortalCreateIgnoresAgentOnlyFields(): void
     {
         $this->loginAs($this->portalUserId, 'lager');

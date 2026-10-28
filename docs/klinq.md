@@ -216,6 +216,11 @@ KLINQ weiter; KLINQ selbst entscheidet, ob die Person das Ticket sehen darf.
   Anfragende/r, Erfassende/r, betroffene/r Mitarbeitende/r oder Beobachter/in
   ist, und antwortet sonst mit „kein Zugriff“. Wer zusätzlich die
   Helpdesk-Rolle hat, sieht weiterhin alle Tickets.
+* **Sammelkonten** (keine Personalnummer, kein Mitarbeiterdatensatz) werden über
+  die Kontoangaben selbst zugeordnet: Anmeldename gegen `tickets.reporter_username`,
+  E-Mail-Adresse gegen `tickets.requester_email`. Damit öffnen sie ihre eigenen
+  Anfragen aus dem Störungsformular und dem Help-Desk-Postfach, und die
+  Ticketübersicht zeigt sie statt „0 Anfragen“ an.
 * Andere Ziele (z. B. `/helpdesk/…`, `/dashboard`) bleiben an die
   Kachel-Freigabe gebunden.
 

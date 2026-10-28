@@ -139,6 +139,14 @@ Runner::test('KLINQ: ohne Treffer gilt die Vorgaberolle', static function (): vo
     Assert::false($access['elevated']);
 });
 
+Runner::test('KLINQ: gespeicherte Rolle „Nur Lesen“ öffnet nur das Serviceportal', static function (): void {
+    $access = klinqConfig(['klinq_default_role' => 'readonly'])->resolve(['gg-irgendwas']);
+
+    Assert::same('readonly', $access['role']);
+    Assert::same(['portal'], $access['areas'], '„Nur Lesen“ darf keinen Bereich der Assetverwaltung öffnen');
+    Assert::false($access['elevated']);
+});
+
 Runner::test('KLINQ: Statistiken und Ticketaufruf sind unabhängig von der Rolle', static function (): void {
     $config = klinqConfig([
         'klinq_statistics_groups' => 'GG-Statistik',

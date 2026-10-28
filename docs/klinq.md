@@ -147,9 +147,12 @@ Regeln:
   (Vorgabe: `portal` – ausschließlich das Serviceportal mit den eigenen Tickets,
   Hilfe & Anleitungen und der Störmeldung). Die Rolle sieht **keinen** Teil der
   Assetverwaltung, auch nicht lesend; Dashboard, Suche und Assetseiten antworten
-  mit „Zugriff verweigert“. `readonly` („Nur Lesen“) öffnet die Assetverwaltung
-  dagegen lesend und ist deshalb nur für Personen gedacht, die ausdrücklich
-  KLINQ-Zugriff erhalten sollen.
+  mit „Zugriff verweigert“.
+* `readonly` („Nur Lesen“) ist der Altbestand der früheren Vorgaberolle und
+  verhält sich seit der Trennung wie `portal`: kein Dashboard, keine Suche, keine
+  Assetseite – auch nicht lesend. Lesenden Zugriff auf die Assetverwaltung gibt
+  es nur noch über eine Rolle, die Assets ausdrücklich einschließt
+  (`assetmanagement`, `lager`, `einkauf`, `helpdesk_*`).
 * Mehrere Gruppen pro Feld sind zulässig, getrennt durch Komma oder Semikolon.
   Groß-/Kleinschreibung wird nicht unterschieden.
 * Die Werte werden beim **Einstieg** ausgewertet und mit dem Schein übergeben.

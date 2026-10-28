@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Unit;
 
+use App\Core\Config;
+use App\Security\Permissions;
 use App\Support\ModuleNavigation;
 use Tests\Support\TestCase;
 
@@ -66,6 +68,17 @@ final class ModuleNavigationTest extends TestCase
         $this->assertTrue(ModuleNavigation::canEnterAssets($assetUser));
         $this->assertSame('/dashboard', ModuleNavigation::entryUrl('', $assetUser, true));
         $this->assertNull(ModuleNavigation::entryUrl('', $this->can([]), true));
+    }
+
+    public function testReadonlyRoleCannotReachTheAssetModule(): void
+    {
+        $permissions = new Permissions(new Config(dirname(__DIR__, 2) . '/config'));
+        $can = static fn (string $permission): bool => $permissions->hasEffective('readonly', [], $permission);
+
+        $this->assertFalse(ModuleNavigation::canEnterAssets($can), '„Nur lesen“ darf die Bereichsauswahl nicht in die Assetverwaltung öffnen');
+        $this->assertSame([ModuleNavigation::HELPDESK], array_column(ModuleNavigation::modules($can, true), 'key'));
+        $this->assertSame('/portal', ModuleNavigation::startUrl(ModuleNavigation::ASSETS, $can, true));
+        $this->assertSame('/portal', ModuleNavigation::home(ModuleNavigation::HELPDESK, $can));
     }
 
     public function testSystemModuleOnlyVisibleForAdmins(): void

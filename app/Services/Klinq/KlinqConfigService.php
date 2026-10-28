@@ -402,7 +402,9 @@ final class KlinqConfigService
             'admin' => ['admin', 'helpdesk', 'assets', 'statistics', 'tickets'],
             'helpdesk_admin', 'helpdesk_lead', 'helpdesk_agent' => ['helpdesk'],
             'assetmanagement' => ['assets'],
-            'portal' => ['portal'],
+            // "readonly" ist der Altbestand der frueheren Vorgaberolle und oeffnet nur noch das
+            // Serviceportal (siehe klinq/config/permissions.php).
+            'readonly', 'portal' => ['portal'],
             default => [],
         };
 

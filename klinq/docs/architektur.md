@@ -60,7 +60,7 @@ Rollen und Rechte stehen in `config/permissions.php` (`<bereich>.<aktion>`, z. B
 | **lager** | Bestand und Assets, Entnahmen/Retouren, Wareneingang, Etiketten, Serviceportal |
 | **einkauf** | Lieferanten, Bestellungen, Wareneingang, Hersteller/Artikel, Lizenzen, Dokumente, Berichte inkl. Export, Serviceportal |
 | **helpdesk_agent / helpdesk_lead / helpdesk_admin** | Help-Desk-Agentenbereich in drei Stufen (Tickets bearbeiten → SLA/Kategorien/Vorlagen/Export → Administration); dazu alle Leserechte. Details: [Help Desk](helpdesk.md) |
-| **readonly** | Alle `*.view`-Rechte außer `audit.view` und `helpdesk.view` (öffnet die Assetverwaltung lesend) |
+| **readonly** | Altbestand der früheren Vorgaberolle: seit der Trennung identisch mit `portal` (kein Dashboard, keine Suche, keine Assetseite, auch nicht lesend) |
 | **portal** | Nur `portal.view`, `portal.create` und `knowledgebase.view` – ausschließlich die eigenen Tickets. Kein Recht der Assetverwaltung, auch nicht lesend; Vorgabe für Personen ohne KLINQ-Berechtigung |
 
 Jede Route trägt ihre Berechtigung (Test `RouteInventoryTest` stellt sicher, dass keine Route ohne Recht existiert); zusätzlich prüfen Services sicherheitsrelevante Operationen erneut (`CurrentUser::require`), z. B. Ausmusterung, Storno oder Offline-Sync je Vorgang. Die Oberfläche blendet nur aus, was serverseitig ohnehin verweigert wird.

@@ -214,10 +214,12 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 
 Rechte folgen der Konvention `<bereich>.<aktion>` und stehen samt Rollenzuordnung in
 [`config/permissions.php`](config/permissions.php). Rollen: **admin**, **assetmanagement**, **lager**,
-**einkauf**, **helpdesk_admin**, **helpdesk_lead**, **helpdesk_agent**, **readonly** (alle `*.view` außer
-`audit.view` und `helpdesk.view`, fremde Tickets sehen nur Help-Desk-Rollen) und **portal** (nur
+**einkauf**, **helpdesk_admin**, **helpdesk_lead**, **helpdesk_agent**, **readonly** (Altbestand der früheren
+Vorgaberolle, seit der Trennung identisch mit `portal`) und **portal** (nur
 `portal.view`, `portal.create`, `knowledgebase.view` – kein Zugriff auf Assetverwaltung, Dashboard oder
-Suche). `portal` ist die Standard- und Ersatzrolle für Benutzer ohne KLINQ-Berechtigung.
+Suche). `portal` ist die Standard- und Ersatzrolle für Benutzer ohne KLINQ-Berechtigung. Alle Rechte der
+Assetverwaltung hängen an den Rollen **admin**, **assetmanagement**, **lager**, **einkauf** und
+**helpdesk_***; ein reiner Lesezugriff ohne diese Rollen besteht nicht mehr.
 
 Zusätzlich zur Rolle können einem Benutzer **Berechtigungsgruppen** zugewiesen werden (`permission_groups`,
 `user_permission_groups`), die einzelne Rechte unabhängig von der Rolle freischalten: die Gruppe

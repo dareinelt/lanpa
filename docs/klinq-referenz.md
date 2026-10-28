@@ -218,6 +218,16 @@ Mitarbeitende und Beobachter/innen zu; `helpdesk.view` (Agenten) hebt die
 Beschränkung auf. `portal.view`/`portal.create` hat jede Rolle, damit ist der
 eigene Bereich ohne Gruppenzuordnung erreichbar.
 
+Die Zuordnung läuft über `users.employee_id`, bei fehlender Verknüpfung
+zusätzlich über Anmeldename bzw. E-Mail-Adresse des Mitarbeiterdatensatzes
+(`TicketService::currentEmployeeId`, `TicketRepository::OWN_EMPLOYEE_IDS`).
+**Sammelkonten** haben weder Personalnummer noch Mitarbeiterdatensatz; ihre
+Tickets werden über die Kontoangaben selbst erkannt (Anmeldename gegen
+`tickets.reporter_username`, E-Mail-Adresse gegen `tickets.requester_email`,
+`TicketRepository::OWN_IDENTITY` und `TicketService::matchesAccountIdentity`).
+Liste, Zähler und Detailseite nutzen dieselbe Regel, sodass eine vorhandene
+Anfrage nicht als „0 Anfragen“ erscheint.
+
 Ist die Person noch nicht angemeldet, merkt sich `loginTarget()` die vollständige
 Anfrage (`REQUEST_URI`, also inklusive `?redirect=…`), damit das Ziel die
 SSO-Anmeldung übersteht.

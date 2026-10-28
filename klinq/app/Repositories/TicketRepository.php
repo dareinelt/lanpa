@@ -36,6 +36,17 @@ final class TicketRepository extends BaseRepository
                 SELECT e.id FROM employees e JOIN users u ON u.id = :vis_uid
                 WHERE e.username = u.username OR (u.email IS NOT NULL AND u.email <> \'\' AND e.email = u.email)';
 
+    /**
+     * Treffer über die Konto-Kennungen selbst: Meldungen aus dem Störungsformular und dem
+     * Help-Desk-Postfach tragen den Anmeldenamen bzw. die E-Mail-Adresse des Melders im Ticket
+     * (`reporter_username`, `requester_email`). Sammelkonten haben keinen Mitarbeiterdatensatz
+     * (keine Personalnummer), ihre Tickets sind daher nur so zuzuordnen.
+     * Erwartet den Parameter `:vis_uid`.
+     */
+    private const OWN_IDENTITY = 'EXISTS (SELECT 1 FROM users u WHERE u.id = :vis_uid
+                    AND ((u.email IS NOT NULL AND u.email <> \'\' AND LOWER(u.email) = LOWER(t.requester_email))
+                        OR (u.username <> \'\' AND LOWER(u.username) = LOWER(t.reporter_username))))';
+
     private const SELECT = 'SELECT t.*,
             ty.code AS type_code, ty.name AS type_name, ty.color AS type_color, ty.icon AS type_icon,
             st.code AS status_code, st.name AS status_name, st.color AS status_color, st.category AS status_category, st.pauses_sla,
@@ -209,6 +220,7 @@ final class TicketRepository extends BaseRepository
             $where[] = '(t.requester_user_id = :vis_uid OR t.created_by = :vis_uid
                 OR t.requester_employee_id IN (' . self::OWN_EMPLOYEE_IDS . ')
                 OR t.affected_employee_id IN (' . self::OWN_EMPLOYEE_IDS . ')
+                OR ' . self::OWN_IDENTITY . '
                 OR EXISTS (SELECT 1 FROM ticket_watchers w WHERE w.ticket_id = t.id AND w.user_id = :vis_uid))';
             $params['vis_uid'] = (int) $filters['visible_user_id'];
         }

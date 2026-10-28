@@ -121,8 +121,43 @@ final class TicketService
         if ($employeeId !== null && ((int) ($ticket['requester_employee_id'] ?? 0) === $employeeId || (int) ($ticket['affected_employee_id'] ?? 0) === $employeeId)) {
             return true;
         }
+        $user = $this->currentUserRecord();
+        if ($user !== null && $this->matchesAccountIdentity($ticket, $user)) {
+            return true;
+        }
 
         return $this->tickets->isWatching((int) $ticket['id'], $userId);
+    }
+
+    /** @return array<string,mixed>|null */
+    private function currentUserRecord(): ?array
+    {
+        $userId = $this->currentUser->id();
+
+        return $userId !== null ? $this->users->find($userId) : null;
+    }
+
+    /**
+     * Ticket gehört zum angemeldeten Konto selbst, auch ohne Mitarbeiterdatensatz: Meldungen
+     * aus dem Störungsformular und dem Help-Desk-Postfach tragen den Anmeldenamen bzw. die
+     * E-Mail-Adresse des Melders im Ticket. Sammelkonten (keine Personalnummer) werden nur
+     * darüber zugeordnet. Muss zu `TicketRepository::OWN_IDENTITY` passen.
+     *
+     * @param array<string,mixed> $ticket
+     * @param array<string,mixed> $user
+     */
+    private function matchesAccountIdentity(array $ticket, array $user): bool
+    {
+        $username = mb_strtolower(trim((string) ($user['username'] ?? '')));
+        $reporter = mb_strtolower(trim((string) ($ticket['reporter_username'] ?? '')));
+        if ($username !== '' && $reporter !== '' && $username === $reporter) {
+            return true;
+        }
+
+        $email = mb_strtolower(trim((string) ($user['email'] ?? '')));
+        $requesterEmail = mb_strtolower(trim((string) ($ticket['requester_email'] ?? '')));
+
+        return $email !== '' && $requesterEmail !== '' && $email === $requesterEmail;
     }
 
     /** @return array<string,mixed> */
@@ -160,11 +195,7 @@ final class TicketService
      */
     public function currentEmployeeId(): ?int
     {
-        $userId = $this->currentUser->id();
-        if ($userId === null) {
-            return null;
-        }
-        $user = $this->users->find($userId);
+        $user = $this->currentUserRecord();
         if ($user === null) {
             return null;
         }

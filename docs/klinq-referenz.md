@@ -441,6 +441,7 @@ Weitere Einstellungen:
 | --- | --- | --- |
 | `klinq_default_role` | `portal` | Rolle ohne Treffer (nur Serviceportal, keine Assetverwaltung). |
 | `klinq_quick_report_open` | `1` | `/stoerung` für alle angemeldeten Personen offen. |
+| `klinq_tile_groups` | leer | AD-Gruppen, die die KLINQ-Kachel sehen; leer = für alle sichtbar. |
 
 ### 8.2 Rollengewichte
 
@@ -858,7 +859,17 @@ Intranet, nicht aus dem Browser.
 * Die Kachel öffnet standardmäßig im selben Tab; `open_in_new_tab` (Spalte in
   `navigation_items`, Migration 059) lässt sie ein neues Browser-Tab öffnen.
   Setzbar in **KLINQ → Kachel** und in **Navigation → Eintrag bearbeiten**.
-* Sichtbarkeit über die normalen Kachelrechte (Benutzer, AD-Gruppen).
+* Sichtbarkeit über die normalen Kachelrechte (Benutzer, AD-Gruppen) **und**
+  über die KLINQ-eigene Einstellung `klinq_tile_groups`
+  (`KlinqConfigService::TILE_GROUPS_SETTING`, Feld „Sichtbarkeit der Kachel
+  (AD-Gruppen)“ unter **KLINQ → Kachel**). Ist das Feld leer, bleibt die Kachel
+  wie bisher für alle sichtbar; sind Gruppen hinterlegt, sieht sie nur, wer
+  Mitglied einer dieser Gruppen ist (ohne Domänenpräfix, ohne Beachtung der
+  Groß-/Kleinschreibung).
+* Die Filterung passiert in `KlinqConfigService::filterNavigation()` und wird in
+  `LandingController` (Startseite) und `PageController::subpage()`
+  (Unterseiten) nach dem Office-Filter angewandt; erkannt wird die Kachel über
+  `KlinqConfigService::isTile()` (Typ `internal`, Ziel `/klinq-starten`).
 * Direktaufruf prüft dieselbe Freigabe (`assertTileAccess`) – die Kachel ist
   damit keine reine Anzeigefrage.
 * Fehlt die Kachel vollständig, gilt der Zugriff als erlaubt; dann entscheidet
@@ -1051,7 +1062,7 @@ Stand der letzten vollständigen Prüfung: Intranet 875 von 898 Tests erfolgreic
 | 503 „KLINQ nicht verfügbar“ | `curl http://klinq-app/health` im Netz `intranet` | Container gestartet? Datenbank bereit? `start_period` von 180 s beachten. |
 | `Der Anmeldeschein ist ungültig oder abgelaufen.` | `KLINQ_SSO_SECRET` auf beiden Seiten vergleichen | Unterschiedliche Werte, abgelaufener Link (zurück zur Kachel) oder bereits verwendete `jti`. |
 | `Für Ihr Konto liegt keine gültige Rolle vor.` | Rollen in KLINQ (`portal` vorhanden?) | Rollenstamm in KLINQ unvollständig (`php bin/migrate.php` im Container). |
-| 403 „Für KLINQ fehlt die Freigabe“ | Kachelsichtbarkeit | Kachel für die Person freigeben oder Kachel löschen (dann gilt nur die Anmeldung). |
+| 403 „Für KLINQ fehlt die Freigabe“ | Kachelsichtbarkeit: Kachelrechte und `klinq_tile_groups` | Kachel für die Person freigeben, die AD-Gruppe in **KLINQ → Kachel** eintragen oder das Feld leeren; Kachel löschen lässt nur die Anmeldung gelten. |
 | Alle sind im „Serviceportal“ | SSO-Sitzung: enthält sie AD-Gruppen? | Gruppen erreichen den `auth`-Container nicht; Gruppennamen exakt prüfen. |
 | Person ohne KLINQ-Berechtigung sieht das Dashboard (403) | Rolle der Person in KLINQ | Rollen werden beim Einstieg gesetzt: Kachel erneut aufrufen, damit `portal` greift. |
 | Rechteänderung wirkt nicht | – | Rechte werden beim Einstieg übergeben: Kachel erneut aufrufen. |

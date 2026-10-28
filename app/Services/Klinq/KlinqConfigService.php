@@ -15,7 +15,9 @@ use App\Support\Validator;
  * und beim Einstieg an KLINQ uebergeben.
  *
  * Der Help-Desk-Schnellbericht (/stoerung) ist bewusst fuer jede ueber SSO
- * angemeldete Person freigegeben – ohne Gruppenzuordnung.
+ * angemeldete Person freigegeben – ohne Gruppenzuordnung. Die Sichtbarkeit der
+ * Intranet-Kachel laesst sich zusaetzlich auf AD-Gruppen begrenzen
+ * (Einstellung `klinq_tile_groups`).
  */
 final class KlinqConfigService
 {
@@ -23,6 +25,9 @@ final class KlinqConfigService
     public const ENTRY_PATH = '/klinq-starten';
     public const REPORT_PATH = '/stoerung';
     public const SSO_ROUTE = '/sso/lanpa';
+
+    /** Einstellung: AD-Gruppen, die die Intranet-Kachel sehen duerfen. */
+    public const TILE_GROUPS_SETTING = 'klinq_tile_groups';
 
     /** Rolle => Gewicht; die hoechste zutreffende Rolle gewinnt. */
     public const ROLES = [
@@ -135,6 +140,7 @@ final class KlinqConfigService
         $defaults = [
             'klinq_default_role' => 'portal',
             'klinq_quick_report_open' => '1',
+            self::TILE_GROUPS_SETTING => '',
         ];
 
         foreach (array_keys(self::GROUP_KEYS) as $key) {
@@ -335,6 +341,114 @@ final class KlinqConfigService
         }
 
         return $groups;
+    }
+
+    /**
+     * AD-Gruppen, die die KLINQ-Kachel auf der Startseite sehen duerfen.
+     *
+     * @return list<string>
+     */
+    public function tileGroups(): array
+    {
+        return self::parseGroups((string) $this->settings->get(self::TILE_GROUPS_SETTING, ''));
+    }
+
+    /**
+     * Sichtbarkeit der Kachel fuer die AD-Gruppen einer Person.
+     *
+     * Ohne hinterlegte Gruppen bleibt die Kachel wie bisher fuer alle
+     * sichtbar. Sind Gruppen hinterlegt, sieht sie nur, wer Mitglied einer
+     * dieser Gruppen ist; anonyme Aufrufe sehen sie dann nie.
+     *
+     * @param list<mixed> $adGroups
+     */
+    public function isTileVisibleFor(array $adGroups): bool
+    {
+        $required = $this->tileGroups();
+        if ($required === []) {
+            return true;
+        }
+
+        $normalized = [];
+        foreach ($adGroups as $group) {
+            $name = self::normalizeGroup((string) $group);
+            if ($name !== '') {
+                $normalized[strtolower($name)] = true;
+            }
+        }
+
+        foreach ($required as $group) {
+            if (isset($normalized[strtolower($group)])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Entfernt die KLINQ-Kachel aus einer Kachelliste, wenn die AD-Gruppen der
+     * Person keine Sichtbarkeit erlauben.
+     *
+     * @param list<array<string,mixed>> $items
+     * @param array{id:int,username:string,display_name:string,groups:list<string>}|null $ssoUser
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function filterNavigation(array $items, ?array $ssoUser): array
+    {
+        $groups = is_array($ssoUser['groups'] ?? null) ? array_values($ssoUser['groups']) : [];
+        $visible = null;
+        $result = [];
+        foreach ($items as $item) {
+            if (self::isTile($item)) {
+                $visible ??= $this->isTileVisibleFor($groups);
+                if (!$visible) {
+                    continue;
+                }
+            }
+            $result[] = $item;
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<string,mixed> $item
+     */
+    public static function isTile(array $item): bool
+    {
+        return (string) ($item['type'] ?? '') === 'internal'
+            && rtrim((string) ($item['url'] ?? ''), '/') === self::ENTRY_PATH;
+    }
+
+    /**
+     * Prueft die AD-Gruppen der Kachel-Sichtbarkeit wie die Felder der
+     * Berechtigungsseite.
+     *
+     * @return array{value:string,error:string}
+     */
+    public function validateTileGroups(mixed $value): array
+    {
+        $groups = self::parseGroups($value);
+        $error = '';
+
+        if (count($groups) > 100) {
+            $error = 'Bitte hoechstens 100 Gruppen angeben.';
+        }
+
+        foreach ($groups as $group) {
+            if (mb_strlen($group) > 256) {
+                $error = 'Ein Gruppenname ist zu lang (hoechstens 256 Zeichen).';
+                break;
+            }
+            if (preg_match('/[\x00-\x1F\x7F]/', $group) === 1) {
+                $error = 'Der Gruppenname enthaelt unzulaessige Zeichen.';
+                break;
+            }
+        }
+
+        return ['value' => implode(', ', $groups), 'error' => $error];
     }
 
     /**

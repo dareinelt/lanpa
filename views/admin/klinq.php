@@ -382,6 +382,19 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
                 </select>
                 <?= $tileError('icon') ?>
             </div>
+            <div class="field group-suggest">
+                <label for="klinq_tile_groups">Sichtbarkeit der Kachel (AD-Gruppen)</label>
+                <input type="text" id="klinq_tile_groups" name="klinq_tile_groups" maxlength="2000"
+                       value="<?= Html::e($tileValue('klinq_tile_groups')) ?>" autocomplete="off" spellcheck="false"
+                       <?= isset($errors['klinq_tile_groups']) ? 'aria-invalid="true"' : '' ?>
+                       aria-describedby="klinq-tile-groups-hint<?= isset($errors['klinq_tile_groups']) ? ' tile-klinq_tile_groups-error' : '' ?>"
+                       data-group-suggest="/admin/ad/gruppen">
+                <p class="field__hint" id="klinq-tile-groups-hint">
+                    Nur Mitglieder dieser AD-Gruppen sehen die Kachel und gelangen über sie zu KLINQ.
+                    Ohne Eintrag ist die Kachel für alle sichtbar. Gruppennamen kommagetrennt, ohne Domänenpräfix.
+                </p>
+                <?= $tileError('klinq_tile_groups') ?>
+            </div>
             <div class="field field--check">
                 <input type="checkbox" id="tile_open_in_new_tab" name="open_in_new_tab" value="1" <?= !empty($tileValues['open_in_new_tab']) ? 'checked' : '' ?>>
                 <label for="tile_open_in_new_tab">KLINQ in einem neuen Tab öffnen</label>
@@ -417,7 +430,7 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
     <?php } else { ?>
         <p class="card__hint">
             Legt eine interne Kachel „KLINQ“ mit dem Ziel <code><?= Html::e($entryPath) ?></code> an.
-            Anschließend legen Sie unter „Berechtigungen“ fest, welche AD-Gruppen die Kachel sehen.
+            Anschließend legen Sie im Abschnitt „Kachel im Intranet“ fest, welche AD-Gruppen die Kachel sehen.
         </p>
         <form method="post" action="/admin/klinq/kachel" class="inline-form">
             <?= Csrf::field() ?>
@@ -439,4 +452,5 @@ $aiFieldError = static function (string $name) use ($aiErrors): string {
         <a class="button" href="<?= Html::e($pages['access'][0]) ?>">Berechtigungen</a>
     </div>
 </section>
+<script src="/assets/js/admin-group-autocomplete.js?v=<?= Html::e((string) ($assetVersion ?? '1')) ?>" defer></script>
 <?php } ?>

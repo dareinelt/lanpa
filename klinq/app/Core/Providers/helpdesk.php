@@ -57,6 +57,7 @@ use App\Services\Helpdesk\SharedAccountSuggestionService;
 use App\Services\Helpdesk\SupportShiftService;
 use App\Services\Helpdesk\Mail\FileMailboxClient;
 use App\Services\Helpdesk\Mail\ImapMailboxClient;
+use App\Services\Helpdesk\ErrorOriginSettingsService;
 use App\Services\Helpdesk\Mail\MailboxClientFactory;
 use App\Services\Helpdesk\Mail\MailboxClientInterface;
 use App\Services\Helpdesk\Mail\MimeMessageParser;
@@ -166,7 +167,8 @@ return static function (Container $c): void {
         $c->get(TicketConfirmationService::class),
         $c->get(AuditLogService::class),
         $c->get(CurrentUser::class),
-        $c->get(Config::class)
+        $c->get(Config::class),
+        $c->get(ErrorOriginSettingsService::class)
     ));
     $c->singleton(TicketMergeService::class, static fn (Container $c): TicketMergeService => new TicketMergeService(
         $c->get(TicketRepository::class),
@@ -344,7 +346,8 @@ return static function (Container $c): void {
         $c->get(TicketAttachmentService::class),
         $c->get(TicketMailService::class),
         $c->get(UserRepository::class),
-        $c->get(ReplyTemplateSettingsService::class)
+        $c->get(ReplyTemplateSettingsService::class),
+        $c->get(ErrorOriginSettingsService::class)
     ));
     $c->singleton(TicketAttachmentController::class, static fn (Container $c): TicketAttachmentController => new TicketAttachmentController(
         $c->get(View::class),
@@ -381,6 +384,11 @@ return static function (Container $c): void {
     $c->singleton(QuickReportSettingsService::class, static fn (Container $c): QuickReportSettingsService => new QuickReportSettingsService(
         $c->get(SettingsService::class),
         $c->get(Config::class),
+        $c->get(AuditLogService::class),
+        $c->get(CurrentUser::class)
+    ));
+    $c->singleton(ErrorOriginSettingsService::class, static fn (Container $c): ErrorOriginSettingsService => new ErrorOriginSettingsService(
+        $c->get(SettingsService::class),
         $c->get(AuditLogService::class),
         $c->get(CurrentUser::class)
     ));
@@ -440,6 +448,7 @@ return static function (Container $c): void {
         $c->get(TicketMailIngestionService::class),
         $c->get(MailboxSettingsService::class),
         $c->get(QuickReportSettingsService::class),
+        $c->get(ErrorOriginSettingsService::class),
         $c->get(ReplyTemplateSettingsService::class),
         $c->get(SharedAccountSuggestionService::class),
         $c->get(Config::class)

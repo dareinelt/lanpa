@@ -84,7 +84,7 @@ final class ReplyTemplateSettingsTest extends TestCase
 
     public function testClosePlaceholdersIncludeReasonAndResolution(): void
     {
-        foreach (['{anrede}', '{name}', '{ticketnummer}', '{betreff}', '{datum}', '{geschlossen_am}', '{schliessungsgrund}', '{loesung}', '{link}', '{firma}'] as $placeholder) {
+        foreach (['{anrede}', '{name}', '{ticketnummer}', '{betreff}', '{datum}', '{geschlossen_am}', '{schliessungsgrund}', '{fehlerursprung}', '{loesung}', '{link}', '{firma}'] as $placeholder) {
             $this->assertTrue(isset(ReplyTemplateSettingsService::CLOSE_PLACEHOLDERS[$placeholder]), 'Platzhalter fehlt: ' . $placeholder);
         }
 

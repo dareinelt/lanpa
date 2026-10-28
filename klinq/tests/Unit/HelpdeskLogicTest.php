@@ -62,6 +62,9 @@ final class HelpdeskLogicTest extends TestCase
         $this->assertTrue($w->canTransition('in_progress', 'waiting_feedback'));
         $this->assertTrue($w->canTransition('in_progress', 'waiting_delivery'));
         $this->assertTrue($w->canTransition('resolved', 'closed'));
+        $this->assertTrue($w->canTransition('new', 'closed'), 'Schließen ist aus jedem offenen Zustand möglich');
+        $this->assertTrue($w->canTransition('open', 'closed'));
+        $this->assertTrue($w->canTransition('in_progress', 'closed'));
         $this->assertTrue($w->canTransition('closed', 'in_progress'));
         $this->assertFalse($w->canTransition('new', 'resolved'), 'Lösung erst aus der Bearbeitung');
         $this->assertFalse($w->canTransition('closed', 'waiting_feedback'));
@@ -105,6 +108,7 @@ final class HelpdeskLogicTest extends TestCase
             $this->assertTrue($w->canTransition('open', $code));
             $this->assertTrue($w->canTransition($code, 'in_progress'));
             $this->assertTrue($w->canTransition($code, 'cancelled'));
+            $this->assertTrue($w->canTransition($code, 'closed'), $code . ' lässt sich direkt schließen');
             $this->assertSame('paused', $w->eventFor('in_progress', $code));
             $this->assertSame('resumed', $w->eventFor($code, 'in_progress'));
             $this->assertSame($code === TicketWorkflowService::WAITING_FEEDBACK, $w->resumesOnReporterReply($code), 'Nur „Warten auf Rückmeldung“ endet durch eine Meldermitteilung');

@@ -75,6 +75,8 @@ Jede Route trägt ihre Berechtigung (Test `RouteInventoryTest` stellt sicher, da
 
 Vanilla JavaScript ohne Build-Schritt. Progressive Enhancement: Alle Formulare funktionieren ohne JS; JS ergänzt Suche-Autocomplete, Duplikatprüfung, Picker, Barcode-/QR-Scan (`vendor/jsqr.js`, lokal eingebunden), Etikettenvorschau und die Offline-Warteschlange (`offline.js`, IndexedDB, Service Worker). CSS ist in `base/`, `layout/`, `components/`, `pages/`, `utilities/` gegliedert und wird über `app.css` importiert – Design-Tokens als CSS-Variablen, keine Inline-Styles (CSP).
 
+**Cache-Verhalten:** Statische Dateien werden über `asset_url()` mit einem **Inhalts-Hash** (`?v=<sha256, 12 Zeichen>`) eingebunden; beim CSS umfasst der Hash den gesamten CSS-Baum, weil die Teile nur per `@import` geladen werden. Ein Zeitstempel würde bei Deploys, die Dateizeiten bewahren, unverändert bleiben und alte Dateien im Browser belassen. HTML-Antworten (`Response::html()`) tragen `Cache-Control: private, no-store, max-age=0`, damit eine Seite nie mit veralteten Asset-Adressen aus dem Cache kommt; Apache sendet für CSS/JS zusätzlich `no-cache, must-revalidate, max-age=0`.
+
 ## Nebenläufigkeit und Konsistenz
 
 - **Inventarnummern** werden über `inventory_sequences` mit `SELECT … FOR UPDATE` in einer Transaktion vergeben (kein doppeltes Vergeben bei parallelen Anfragen); manuell vergebene höhere Nummern ziehen die Sequenz nach.

@@ -23,7 +23,7 @@ Es kommen keine externen Bibliotheken zum Einsatz; IndexedDB, Cache-API und Serv
 | Anfrage | Strategie |
 |---|---|
 | `/api/*`, `/login`, `/logout`, alle Nicht-GET-Anfragen | werden **nicht** angefasst (immer Netz) |
-| Statische Dateien (`.css .js .svg .png .webmanifest .woff2`) | **Netz zuerst**, Antwort wird ohne `?v=`-Query im Cache abgelegt; ohne Netz wird die zuletzt gesehene Version ausgeliefert. Der Versions-Parameter der Seiten (`?v=<mtime>`) bleibt damit wirksam, offline gibt es trotzdem immer einen Treffer. |
+| Statische Dateien (`.css .js .svg .png .webmanifest .woff2`) | **Netz zuerst** mit erzwungener Revalidierung (`cache: "no-cache"`), Antwort wird ohne `?v=`-Query im Cache abgelegt; ohne Netz wird die zuletzt gesehene Version ausgeliefert. Der Versions-Parameter der Seiten (`?v=<Inhalts-Hash>`) bleibt damit wirksam, offline gibt es trotzdem immer einen Treffer. |
 | Seiten unter `/m` und `/m/*` | **Netz zuerst**, erfolgreiche Antworten werden gecacht; ohne Netz: gecachte Seite → Scan-Seite `/m` → `offline.html` |
 
 Beim Aktivieren einer neuen Version (`CACHE_NAME`) werden alte Caches gelöscht. Die App-Shell wird beim Installieren vorab geladen (`Promise.allSettled`, damit eine fehlende Datei die Installation nicht blockiert).

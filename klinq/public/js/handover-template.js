@@ -17,6 +17,12 @@
     var blocks = JSON.parse(JSON.stringify(initial));
     var previewTimer = null;
 
+    /** Rückfrage als Overlay; ohne ui.js bleibt der Browser-Dialog als Rückfallebene. */
+    function askConfirm(message) {
+        if (window.AppUI && window.AppUI.confirm) { return window.AppUI.confirm(message); }
+        return Promise.resolve(window.confirm(message));
+    }
+
     var DEFAULTS = {
         heading: { text: "Neue Überschrift", level: 2 },
         text: { text: "", style: "normal" },
@@ -215,9 +221,11 @@
     });
 
     document.getElementById("hb-reset").addEventListener("click", function () {
-        if (!window.confirm("Alle nicht gespeicherten Änderungen verwerfen?")) { return; }
-        blocks = JSON.parse(JSON.stringify(initial));
-        render();
+        askConfirm("Alle nicht gespeicherten Änderungen verwerfen?").then(function (confirmed) {
+            if (!confirmed) { return; }
+            blocks = JSON.parse(JSON.stringify(initial));
+            render();
+        });
     });
 
     form.addEventListener("submit", function (event) {

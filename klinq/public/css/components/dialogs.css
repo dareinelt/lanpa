@@ -13,3 +13,4 @@
 .dialog-body { padding: var(--space-5); max-height: 70vh; overflow-y: auto; }
 .dialog-footer { display: flex; justify-content: flex-end; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); }
 .dialog-wide { max-width: 820px; }
+.dialog-message { margin: 0; white-space: pre-line; }

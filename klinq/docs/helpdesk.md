@@ -497,8 +497,9 @@ offenen Aufgaben als Zähler.
 ### Ticket in eine Aufgabe umwandeln
 
 Im Ticketdetail steht für Agenten mit `helpdesk.tasks` die Schaltfläche **In Aufgabe umwandeln**, solange das
-Ticket nicht geschlossen oder storniert ist und noch keine Aufgabe dazu existiert. Sie fragt einmal nach und legt
-dann eine Aufgabe mit Betreff und Beschreibung des Tickets, dessen Priorität und einem Verweis auf das Ticket an.
+Ticket nicht geschlossen oder storniert ist und noch keine Aufgabe dazu existiert. Sie fragt in einem Overlay
+einmal nach und legt dann eine Aufgabe mit Betreff und Beschreibung des Tickets, dessen Priorität und einem
+Verweis auf das Ticket an.
 **Das Ticket wird dabei geschlossen** (Systemvorgang mit Hinweis in der Historie) und bleibt mit der Aufgabe
 verknüpft: Im Ticketdetail erscheint ein Verweis auf die Aufgabennummer, in der Aufgabe ein Verweis auf das
 Ticket. Je Ticket ist höchstens eine Aufgabe möglich (`tasks.source_ticket_id` ist eindeutig).
@@ -507,6 +508,11 @@ Aufgabennummern folgen dem Muster `<Präfix>-<Jahr>-<Nummer>` mit dem Präfix au
 (Vorgabe `AUF`); die laufende Nummer teilt sich die Aufgabe mit den Tickets (`ticket_sequences`).
 
 ![Ticketdetail mit der Schaltfläche „In Aufgabe umwandeln“](screenshots/helpdesk-ticket-in-aufgabe.png)
+
+![Bestätigung vor der Umwandlung als Overlay im Fenster](screenshots/helpdesk-ticket-in-aufgabe-bestaetigung.png)
+
+Rückfragen dieser Art erscheinen als Overlay im Fenster und nicht mehr als Meldung des Browsers. Esc oder
+**Abbrechen** bricht ab, **Bestätigen** führt die Aktion aus.
 
 ### Annehmen und Zuweisen
 

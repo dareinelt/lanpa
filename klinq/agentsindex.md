@@ -294,6 +294,10 @@ ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
 - CSS ist nach `base/`, `layout/`, `components/`, `pages/`, `utilities/` gegliedert und wird über
   `public/css/app.css` importiert; Design-Tokens als CSS-Variablen.
 - **Keine Inline-Styles und keine Inline-Skripte** – die CSP verbietet `unsafe-inline`.
+- **Rückfragen laufen als Overlay**, nicht als Browser-Meldung: `data-confirm="…"` an einem Formular öffnet
+  den `<dialog>` aus `ui.js` und sendet erst nach **Bestätigen** ab; programmatisch liefert
+  `window.AppUI.confirm(frage)` die Antwort als Promise. `window.confirm` bleibt nur als Rückfallebene für
+  Seiten ohne `ui.js` (z. B. `offline-ui.js`).
 - Der Fenstertitel lautet immer `KLINQ - <Modul>` (z. B. `KLINQ - Help Desk`). Er wird zentral in
   `resources/views/partials/layout.php` aus `$appName` (`APP_NAME`) und `$moduleTitle` gebildet; die Layouts
   (`app_layout.php`, `mobile_layout.php`) setzen `$moduleTitle` aus `ModuleNavigation::label()`.

@@ -4,6 +4,8 @@
 .ticket-number { font-family: var(--font-mono); font-size: var(--font-size-sm); white-space: nowrap; }
 .ticket-subject { min-width: 16rem; }
 .ticket-subject a { font-weight: var(--font-weight-semibold); }
+/* Aufgaben-Kategorie als Pill vor dem Aufgabentitel */
+.task-category { margin-right: var(--space-2); font-weight: var(--font-weight-medium); }
 .ticket-meta { font-size: var(--font-size-xs); color: var(--color-text-muted); display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 2px; }
 .ticket-row.is-closed { opacity: 0.7; }
 .ticket-row.is-overdue td:first-child { box-shadow: inset 3px 0 0 var(--color-danger); }

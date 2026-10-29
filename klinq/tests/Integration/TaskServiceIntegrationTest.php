@@ -7,6 +7,7 @@ namespace Tests\Integration;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
 use App\Repositories\EmployeeRepository;
+use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TaskRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Security\CurrentUser;
@@ -64,6 +65,22 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
     private function tasks(): TaskRepository
     {
         return $this->c->get(TaskRepository::class);
+    }
+
+    private function categories(): TaskCategoryRepository
+    {
+        return $this->c->get(TaskCategoryRepository::class);
+    }
+
+    /** ID einer Kategorie aus dem Katalog; legt sie an, falls der Seeder (noch) nicht lief. */
+    private function categoryId(string $name): int
+    {
+        $category = $this->categories()->findByName($name);
+        if ($category === null) {
+            return $this->categories()->create(['name' => $name, 'sort_order' => 0, 'is_active' => 1]);
+        }
+
+        return (int) $category['id'];
     }
 
     /** @return array<string,mixed> */
@@ -197,6 +214,47 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ForbiddenException::class, function () use ($task): void {
             $this->service()->changeStatus((int) $task['id'], ['status' => 'done']);
         });
+    }
+
+    public function testConvertWithCategoryShowsCategoryOnTask(): void
+    {
+        $categoryId = $this->categoryId('Unifi');
+
+        $task = $this->service()->convert((int) $this->createTicket()['id'], ['category_id' => $categoryId]);
+
+        $this->assertSame($categoryId, (int) $task['category_id']);
+        $this->assertSame('Unifi', $task['category_name']);
+        $this->assertContains('created', array_column($this->service()->events((int) $task['id']), 'type'));
+    }
+
+    public function testConvertWithoutCategoryLeavesCategoryEmpty(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+
+        $this->assertNull($task['category_id']);
+        $this->assertNull($task['category_name']);
+    }
+
+    public function testConvertRejectsUnknownCategory(): void
+    {
+        $this->assertThrows(ValidationException::class, function (): void {
+            $this->service()->convert((int) $this->createTicket()['id'], ['category_id' => 999999]);
+        }, 'Kategorie aus dem Katalog');
+    }
+
+    public function testChangeCategoryRecordsEventAndCanBeRemoved(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->service()->claim((int) $task['id']);
+
+        $changed = $this->service()->changeCategory((int) $task['id'], ['category_id' => $this->categoryId('Arbeitsplatz')]);
+        $this->assertSame('Arbeitsplatz', $changed['category_name']);
+        $events = $this->service()->events((int) $task['id']);
+        $this->assertContains('category_changed', array_column($events, 'type'));
+        $this->assertSame('Arbeitsplatz', end($events)['new_value']);
+
+        $cleared = $this->service()->changeCategory((int) $task['id'], ['category_id' => '']);
+        $this->assertNull($cleared['category_id']);
     }
 
     public function testEventsDocumentTheLifecycle(): void

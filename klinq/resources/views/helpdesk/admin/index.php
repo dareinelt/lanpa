@@ -203,6 +203,8 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
                 <tr><th>Name</th><th>E-Mail</th><th>Mitglieder</th><th>Offen</th><th>Aktiv</th><th>Nutzung</th><th></th></tr>
             <?php elseif ($kind === 'categories'): ?>
                 <tr><th>Name</th><th>Übergeordnet</th><th>Standardgruppe</th><th>Standardpriorität</th><th>Aktiv</th><th>Tickets</th><th></th></tr>
+            <?php elseif ($kind === 'task-categories'): ?>
+                <tr><th>Name</th><th>Sortierung</th><th>Aktiv</th><th>Aufgaben</th><th></th></tr>
             <?php elseif ($kind === 'slas'): ?>
                 <tr><th>Name</th><th>Priorität</th><th>Kategorie</th><th>Reaktion</th><th>Lösung</th><th>Geschäftszeiten</th><th>Warn/Eskalation</th><th>Aktiv</th><th></th></tr>
             <?php elseif ($kind === 'tags'): ?>
@@ -237,6 +239,11 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
                     <td><?= e($r['default_priority_name'] ?? '–') ?></td>
                     <td><?= $cellActive($r) ?></td>
                     <td class="mono"><?= (int) ($r['ticket_count'] ?? 0) ?></td>
+                <?php elseif ($kind === 'task-categories'): ?>
+                    <td><span class="badge badge-neutral"><?= e($r['name'] ?? '–') ?></span></td>
+                    <td class="mono"><?= (int) ($r['sort_order'] ?? 0) ?></td>
+                    <td><?= $cellActive($r) ?></td>
+                    <td class="mono"><?= (int) ($usage[(int) $r['id']] ?? 0) ?></td>
                 <?php elseif ($kind === 'slas'): ?>
                     <td><strong><?= e($r['name'] ?? '–') ?></strong><?= !empty($r['is_default']) ? ' ' . badge('Standard', 'info') : '' ?><div class="text-xs text-muted"><?= e($r['description'] ?? '') ?></div></td>
                     <td><?= e($r['priority_name'] ?? '–') ?></td>

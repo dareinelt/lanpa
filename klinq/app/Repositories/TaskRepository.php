@@ -25,6 +25,7 @@ final class TaskRepository extends BaseRepository
     private const FROM = '
         FROM tasks a
         LEFT JOIN ticket_priorities p ON p.id = a.priority_id
+        LEFT JOIN task_categories tc ON tc.id = a.category_id
         LEFT JOIN users au ON au.id = a.assignee_user_id
         LEFT JOIN users ab ON ab.id = a.assigned_by_user_id
         LEFT JOIN users cu ON cu.id = a.completed_by
@@ -32,6 +33,7 @@ final class TaskRepository extends BaseRepository
 
     private const SELECT = 'SELECT a.*,
             p.name AS priority_name, p.color AS priority_color, p.level AS priority_level,
+            tc.name AS category_name,
             au.display_name AS assignee_name, au.email AS assignee_email,
             ab.display_name AS assigned_by_name,
             cu.display_name AS completed_by_name,

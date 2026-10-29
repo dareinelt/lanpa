@@ -92,6 +92,7 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/aufgaben/{id}/annehmen', static fn (Request $r): Response => $tasks()->claim($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/zuweisen', static fn (Request $r): Response => $tasks()->assign($r), 'helpdesk.tasks.assign');
     $router->post('/helpdesk/aufgaben/{id}/status', static fn (Request $r): Response => $tasks()->status($r), 'helpdesk.tasks');
+    $router->post('/helpdesk/aufgaben/{id}/kategorie', static fn (Request $r): Response => $tasks()->category($r), 'helpdesk.tasks');
 
     // Wissensdatenbank
     $router->get('/helpdesk/knowledge', static fn (Request $r): Response => $kb()->index($r), 'knowledgebase.view');

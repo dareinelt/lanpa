@@ -8,6 +8,7 @@ use App\Core\Config;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
+use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TaskRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Security\CurrentUser;
@@ -25,6 +26,7 @@ final class TaskController extends HelpdeskBaseController
         CurrentUser $currentUser,
         private readonly TaskService $service,
         private readonly TaskRepository $tasks,
+        private readonly TaskCategoryRepository $categories,
         private readonly TicketMasterDataRepository $masterData,
         private readonly Config $config
     ) {
@@ -115,6 +117,7 @@ final class TaskController extends HelpdeskBaseController
             'statuses' => TaskService::STATUSES,
             'statusColors' => TaskService::STATUS_COLORS,
             'agents' => $this->service->assignableAgents(),
+            'categories' => $this->categories->selectable($task['category_id'] !== null ? (int) $task['category_id'] : null),
             'isMine' => $this->currentUser->id() !== null && (int) ($task['assignee_user_id'] ?? 0) === (int) $this->currentUser->id(),
             'canAssign' => $this->currentUser->can('helpdesk.tasks.assign'),
         ]);
@@ -168,6 +171,21 @@ final class TaskController extends HelpdeskBaseController
             : 'Zuweisung aufgehoben.';
 
         return $this->respond($request, $message, $this->safeBack($request, '/helpdesk/aufgaben/' . $id), ['task' => $task]);
+    }
+
+    /** Kategorie der Aufgabe setzen oder entfernen. */
+    public function category(Request $request): Response
+    {
+        $id = $request->paramInt('id');
+        $task = null;
+        $response = $this->attempt($request, function () use ($request, $id, &$task): void {
+            $task = $this->service->changeCategory($id, $request->all());
+        }, '/helpdesk/aufgaben/' . $id);
+        if ($response !== null) {
+            return $response;
+        }
+
+        return $this->respond($request, 'Kategorie aktualisiert.', $this->safeBack($request, '/helpdesk/aufgaben/' . $id), ['task' => $task]);
     }
 
     public function status(Request $request): Response

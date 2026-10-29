@@ -8,6 +8,7 @@ use App\Exceptions\ConflictException;
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TaskRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Security\CurrentUser;
@@ -40,6 +41,7 @@ final class TaskService
 
     public function __construct(
         private readonly TaskRepository $tasks,
+        private readonly TaskCategoryRepository $categories,
         private readonly TaskNumberService $numbers,
         private readonly TicketService $tickets,
         private readonly TicketMasterDataRepository $masterData,
@@ -107,7 +109,7 @@ final class TaskService
      * Wandelt ein Ticket in eine Aufgabe um und schließt das Ticket anschließend (es ist mit der
      * Aufgabe verknüpft und wird dort weiterbearbeitet).
      *
-     * @param array<string,mixed> $input subject, description, priority_id, due_at
+     * @param array<string,mixed> $input subject, description, priority_id, due_at, category_id
      * @return array<string,mixed>
      */
     public function convert(int $ticketId, array $input): array
@@ -133,18 +135,20 @@ final class TaskService
             $description = (string) $ticket['description'];
         }
         $priorityId = $this->validPriorityId($input['priority_id'] ?? null) ?? (int) $ticket['priority_id'];
+        $category = $this->validCategory($input['category_id'] ?? null);
         $dueAt = $this->normalizeDueAt($input['due_at'] ?? null);
         $now = gmdate('Y-m-d H:i:s');
         $userId = $this->currentUser->id();
         $userName = $this->currentUser->displayName();
 
-        $taskId = $this->tasks->transaction(function () use ($ticketId, $ticket, $subject, $description, $priorityId, $dueAt, $now, $userId, $userName): int {
+        $taskId = $this->tasks->transaction(function () use ($ticketId, $ticket, $subject, $description, $priorityId, $category, $dueAt, $now, $userId, $userName): int {
             $number = $this->numbers->next();
             $id = $this->tasks->create([
                 'number' => $number,
                 'subject' => mb_substr($subject, 0, 255),
                 'description' => mb_substr($description, 0, TicketService::MAX_TEXT_CHARS),
                 'status' => 'open',
+                'category_id' => $category['id'] ?? null,
                 'priority_id' => $priorityId,
                 'source_ticket_id' => $ticketId,
                 'due_at' => $dueAt,
@@ -152,11 +156,12 @@ final class TaskService
                 'created_by_name' => mb_substr($userName, 0, 200),
                 'updated_by' => $userId,
             ]);
-            $this->tasks->addEvent($id, 'created', $userId, $userName, null, null, null, [
+            $this->tasks->addEvent($id, 'created', $userId, $userName, null, null, null, array_filter([
                 'number' => $number,
                 'ticket_id' => $ticketId,
                 'ticket_number' => (string) $ticket['number'],
-            ]);
+                'category' => $category['name'] ?? null,
+            ], static fn (mixed $value): bool => $value !== null));
             // Das Ticket wird als Systemschritt geschlossen: die Bearbeitung läuft in der Aufgabe weiter.
             $this->tickets->changeStatus(
                 $ticketId,
@@ -181,6 +186,7 @@ final class TaskService
         $this->audit->log('task.convert', 'task', $taskId, (string) $task['number'], null, [
             'subject' => (string) $task['subject'],
             'source_ticket_id' => $ticketId,
+            'category_id' => $task['category_id'],
         ]);
 
         return $task;
@@ -286,6 +292,51 @@ final class TaskService
         return $this->get($id);
     }
 
+    // ------------------------------------------------------------------ Kategorie
+
+    /**
+     * Setzt die Kategorie der Aufgabe (oder entfernt sie mit einer leeren Auswahl). Die Kategorie
+     * erscheint als Pill vor dem Aufgabentitel und wird im Verlauf dokumentiert.
+     * @param array<string,mixed> $input category_id, version
+     * @return array<string,mixed>
+     */
+    public function changeCategory(int $id, array $input): array
+    {
+        $this->currentUser->require('helpdesk.tasks');
+        $task = $this->get($id);
+        $category = $this->validCategory($input['category_id'] ?? null);
+        $oldId = (int) ($task['category_id'] ?? 0);
+        $newId = (int) ($category['id'] ?? 0);
+        if ($oldId === $newId) {
+            return $task;
+        }
+
+        $userId = $this->currentUser->id();
+        $version = isset($input['version']) ? (int) $input['version'] : (int) $task['version'];
+        $this->tasks->transaction(function () use ($id, $category, $task, $userId, $version): void {
+            $this->save($id, ['category_id' => $category['id'] ?? null, 'updated_by' => $userId], $version);
+            $this->tasks->addEvent(
+                $id,
+                'category_changed',
+                $userId,
+                $this->currentUser->displayName(),
+                'category_id',
+                $task['category_name'] !== null ? (string) $task['category_name'] : null,
+                $category['name'] ?? null
+            );
+        });
+        $this->audit->log(
+            'task.category',
+            'task',
+            $id,
+            (string) $task['number'],
+            ['category_id' => $task['category_id']],
+            ['category_id' => $category['id'] ?? null]
+        );
+
+        return $this->get($id);
+    }
+
     // ------------------------------------------------------------------ Statuswechsel
 
     /** @param array<string,mixed> $input status, note, version */
@@ -360,6 +411,21 @@ final class TaskService
         }
 
         return null;
+    }
+
+    /** Kategorie aus dem Katalog; null bei leerer Auswahl, unbekannte IDs werden abgewiesen. @return array<string,mixed>|null */
+    private function validCategory(mixed $value): ?array
+    {
+        $id = (int) $value;
+        if ($id <= 0) {
+            return null;
+        }
+        $category = $this->categories->find($id);
+        if ($category === null) {
+            throw ValidationException::single('category_id', 'Bitte eine Kategorie aus dem Katalog wählen.');
+        }
+
+        return $category;
     }
 
     /** Datumsangabe (JJJJ-MM-TT) als Fälligkeit am Tagesende; null bei leerer/ungültiger Eingabe. */

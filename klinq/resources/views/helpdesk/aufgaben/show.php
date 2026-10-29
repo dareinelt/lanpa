@@ -12,9 +12,10 @@ $eventLabels = [
     'assigned' => 'Zugewiesen',
     'unassigned' => 'Zuweisung entfernt',
     'status_changed' => 'Status geändert',
+    'category_changed' => 'Kategorie geändert',
 ];
 $eventClass = static fn (string $t): string => match ($t) {
-    'status_changed' => ' is-warning',
+    'status_changed', 'category_changed' => ' is-warning',
     'converted_from_ticket' => ' is-success',
     default => '',
 };
@@ -24,6 +25,9 @@ $eventClass = static fn (string $t): string => match ($t) {
         <div class="breadcrumb"><a href="/helpdesk/aufgaben">Aufgaben</a> › <span class="ticket-number"><?= e($task['number']) ?></span></div>
         <h1><?= e($task['subject']) ?></h1>
         <div class="ticket-header-badges">
+            <?php if ($task['category_name'] !== null): ?>
+                <span class="badge badge-neutral"><?= icon('tag', 'icon icon-xs') ?> <?= e($task['category_name']) ?></span>
+            <?php endif; ?>
             <?= badge($statuses[$task['status']] ?? $task['status'], $statusColors[$task['status']] ?? 'neutral') ?>
             <?php if ($task['priority_name'] !== null): ?>
                 <span class="badge is-<?= e($task['priority_color']) ?>"><span class="prio-dot"></span><?= e($task['priority_name']) ?></span>
@@ -105,6 +109,7 @@ $eventClass = static fn (string $t): string => match ($t) {
         <dl class="detail-list">
             <dt>Nummer</dt><dd class="mono"><?= e($task['number']) ?></dd>
             <dt>Status</dt><dd><?= badge($statuses[$task['status']] ?? $task['status'], $statusColors[$task['status']] ?? 'neutral') ?></dd>
+            <dt>Kategorie</dt><dd><?= $task['category_name'] !== null ? e($task['category_name']) : '–' ?></dd>
             <dt>Priorität</dt><dd><?= $task['priority_name'] !== null ? e($task['priority_name']) : '–' ?></dd>
             <dt>Zugewiesen an</dt><dd><?= $task['assignee_name'] !== null ? e($task['assignee_name']) : '–' ?></dd>
             <?php if ($task['assigned_by_name'] !== null): ?>
@@ -122,6 +127,27 @@ $eventClass = static fn (string $t): string => match ($t) {
             <?php endif; ?>
         </dl>
     </section>
+
+    <?php if ($can('helpdesk.tasks')): ?>
+    <section class="card">
+        <h2 class="card-title">Kategorie</h2>
+        <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/kategorie" class="stack-form">
+            <?= csrf_field() ?>
+            <input type="hidden" name="version" value="<?= (int) $task['version'] ?>">
+            <div class="form-group">
+                <label for="task-category">Kategorie</label>
+                <select id="task-category" name="category_id">
+                    <option value="">– keine Kategorie –</option>
+                    <?php foreach ($categories as $c): ?>
+                        <option value="<?= (int) $c['id'] ?>"<?= selected($task['category_id'], $c['id']) ?>><?= e($c['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <p class="form-hint">Die Kategorie erscheint als Pill vor dem Aufgabentitel. Der Katalog wird unter KLINQ → Help-Desk-Administration gepflegt.</p>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Speichern</button>
+        </form>
+    </section>
+    <?php endif; ?>
 
     <?php if ($canChangeStatus): ?>
     <section class="card">

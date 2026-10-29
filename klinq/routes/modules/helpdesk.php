@@ -101,6 +101,7 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/admin/quick-report', static fn (Request $r): Response => $admin()->saveQuickReport($r), 'helpdesk.admin');
     $router->post('/helpdesk/admin/error-origins', static fn (Request $r): Response => $admin()->saveErrorOrigins($r), 'helpdesk.admin');
     $router->post('/helpdesk/admin/reply-templates', static fn (Request $r): Response => $admin()->saveReplyTemplates($r), 'helpdesk.admin');
+    $router->post('/helpdesk/admin/notifications', static fn (Request $r): Response => $admin()->saveNotifications($r), 'helpdesk.admin');
     // Autovervollständigung für das Feld „Sammelkonten“ (Anmeldenamen aus Telefonbuch, Mitarbeitern, lokalen Konten).
     $router->get('/api/helpdesk/quick-report/accounts/suggest', static fn (Request $r): Response => $admin()->suggestSharedAccounts($r), 'helpdesk.admin');
     foreach (HelpdeskAdminController::KINDS as $kind => [, $permission]) {

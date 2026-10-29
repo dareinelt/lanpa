@@ -37,7 +37,7 @@ final class TicketConfirmationService
     public function send(array $ticket): int
     {
         $template = $this->templates->confirmationText();
-        if ($template === '') {
+        if ($template === '' || !$this->notifications->requesterNotificationEnabled('created')) {
             return 0;
         }
 

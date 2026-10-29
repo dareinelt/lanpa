@@ -74,7 +74,8 @@ E-Mail mit dem Schließungsgrund und der hinterlegten Lösung:
   eigene Nachricht mit personalisierter Anrede über `TicketNotificationService::sendTo()` heraus (Ereignisschlüssel
   `status_closed_{version}`), sodass Protokollierung und Idempotenz greifen.
 - Ist kein Schließungstext hinterlegt oder der Mailversand abgeschaltet, greift wie bisher die allgemeine
-  Statusbenachrichtigung.
+  Statusbenachrichtigung. Ist in den Help-Desk-Einstellungen im Reiter **Benachrichtigungen** der Schalter „Geschlossen“
+  aus, entfällt jede Mail an den Melder – unabhängig von Checkbox und Vorlage.
 - Der **Scheduler** (`autoClose()`) ruft den Versand direkt auf und nutzt damit ebenfalls den Schließungstext – ohne
   Checkbox, weil dort kein Agent entscheidet.
 
@@ -356,7 +357,7 @@ den Status jedes Tickets an. Technik: Route `POST /helpdesk/tickets/merge`
 
 ![Ticket-Berichte](screenshots/helpdesk-reports.png)
 
-Unter **Help-Desk-Einstellungen** (`/helpdesk/admin`) werden Typen, Status, Prioritäten, Kategorien, SLA-Regeln, Gruppen, Vorlagen, Regeln und das Benachrichtigungsprotokoll gepflegt. Das **Störungsformular für Anwender** hat dort einen eigenen Reiter mit dem öffentlichen Link.
+Unter **Help-Desk-Einstellungen** (`/helpdesk/admin`) werden Typen, Status, Prioritäten, Kategorien, SLA-Regeln, Gruppen, Vorlagen, Regeln und das Benachrichtigungsprotokoll gepflegt. Das **Störungsformular für Anwender** hat dort einen eigenen Reiter mit dem öffentlichen Link, ebenso die **Vorlageneinstellungen**, der **Fehlerursprung** und die **Benachrichtigungen** (welche Agenten-Aktionen eine Mail an den Melder auslösen).
 
 ![Help-Desk-Einstellungen](screenshots/helpdesk-admin.png)
 
@@ -410,6 +411,17 @@ Im Reiter **Fehlerursprung** wird der Katalog für das Dropdown im Schließen-Di
 Standardpunkte „Anwender“, „Hardware-Fehler“, „Software-Fehler“ und „Netzwerk“. Gespeichert wird über
 `POST /helpdesk/admin/error-origins`.
 
+Im Reiter **Benachrichtigungen** wird per Checkbox-Liste festgelegt, bei welcher Aktion im Ticket der **Melder** eine
+E-Mail erhält (Berechtigung `helpdesk.admin`, `NotificationSettingsService`, gespeichert unter dem Präfix
+`helpdesk.notification.`, gespeichert wird über `POST /helpdesk/admin/notifications`). Schaltbar sind die Anlage des
+Tickets (Info- bzw. Eingangsbestätigung, auch aus Störungsformular und Störungspostfach), die öffentliche **Antwort**
+eines Agenten und jeder **Statuswechsel** (`new`, `open`, `in_progress`, `waiting_feedback`, `waiting_third_party`,
+`waiting_delivery`, `waiting_internal`, `resolved`, `closed`, `cancelled`). Ohne gespeicherten Wert bleibt ein Schalter
+**aktiv**, damit bestehende Installationen unverändert weiterversenden; Statuscodes, die es beim Speichern noch nicht gab,
+gelten ebenfalls als aktiv. Nicht betroffen sind Mails an Bearbeiter, Gruppen, Watcher sowie SLA-, Eskalations- und
+Regelbenachrichtigungen. Die Prüfung sitzt in `TicketNotificationService` (Ereignis-Schalter vor jedem Melder-Versand)
+und in `TicketConfirmationService` (Eingangsbestätigung hängt am Schalter „Ticket angelegt“).
+
 ## Serviceportal (`/portal`)
 
 Jeder angemeldete Benutzer mit `portal.view`/`portal.create` sieht ausschließlich **eigene** Tickets (als Melder oder betroffene Person, gematcht über `users.employee_id`; fehlt die Verknüpfung – etwa bei Konten aus der Intranet-Anmeldung – zusätzlich über den Anmeldenamen bzw. die E-Mail-Adresse des Mitarbeiterdatensatzes, siehe `TicketRepository::whereFor` und `TicketService::currentEmployeeId`). **Sammelkonten** (keine Personalnummer, kein Mitarbeiterdatensatz) werden über die Kontoangaben selbst zugeordnet: Anmeldename gegen `tickets.reporter_username`, E-Mail-Adresse gegen `tickets.requester_email` (`TicketRepository::OWN_IDENTITY`, `TicketService::matchesAccountIdentity`). Damit erscheinen auch die über das Störungsformular oder das Help-Desk-Postfach gemeldeten Anfragen in der Übersicht, statt dort „0 Anfragen“ zu zeigen.
@@ -454,7 +466,7 @@ Tickets aus dem Formular tragen die Quelle `form` (Filter in der Ticketliste) un
 - bei Tickets aus dem öffentlichen Störungsformular (`/stoerung`) und aus dem **Störungspostfach** (E-Mail-Eingang, Quelle `email`) **immer**,
 - bei Tickets, die ein Agent anlegt, **nur** bei gesetzter Checkbox im letzten Assistenten-Schritt (Opt-in).
 
-Je Empfänger geht eine eigene Nachricht über `TicketNotificationService::sendTo()` heraus (Ereignisschlüssel `created_confirmation`), damit Versand und Fehler im Benachrichtigungsprotokoll stehen. Die Bestätigung ersetzt die allgemeine Info-Mail „Ihr Ticket wurde erfolgreich angelegt“ an den Melder; die Team-Information bleibt unverändert. Ist der Bestätigungstext leer oder der Mailversand abgeschaltet, greift wieder die allgemeine Info-Mail. Wegen der Protokollierung wird die Bestätigung je Empfänger höchstens einmal versendet.
+Je Empfänger geht eine eigene Nachricht über `TicketNotificationService::sendTo()` heraus (Ereignisschlüssel `created_confirmation`), damit Versand und Fehler im Benachrichtigungsprotokoll stehen. Die Bestätigung ersetzt die allgemeine Info-Mail „Ihr Ticket wurde erfolgreich angelegt“ an den Melder; die Team-Information bleibt unverändert. Ist der Bestätigungstext leer, der Mailversand abgeschaltet oder in den Help-Desk-Einstellungen im Reiter **Benachrichtigungen** der Schalter „Ticket angelegt“ aus, greift wieder die allgemeine Info-Mail – bei ausgeschaltetem Schalter entfällt sie ebenfalls. Wegen der Protokollierung wird die Bestätigung je Empfänger höchstens einmal versendet.
 
 ![Störungsformular für Anwender (/stoerung)](screenshots/stoerung.png)
 
@@ -509,7 +521,7 @@ Jede Benachrichtigung trägt Threading-Kopfzeilen, damit Antworten der Empfänge
 | `X-Ticket-Number` | Ticketnummer |
 | `Auto-Submitted: auto-generated` | verhindert Antwortschleifen mit Abwesenheitsassistenten |
 
-Der Betreff enthält weiterhin `[HD-JJJJ-NNNNNN]` als für Menschen lesbaren Fallback. Der Rumpf besteht aus dem jeweiligen Ereignistext (Tabelle mit Ticket, Betreff, Status, Priorität, ggf. Bearbeiter) und dem **Hinweis am Fuß**, der in den Help-Desk-Einstellungen → Vorlageneinstellungen gepflegt wird (`TicketNotificationService::wrap()`). Ausnahmen vom Ereignistext sind die beiden Vorlagen-Mails: die **Eingangsbestätigung** (`created_confirmation`) und die **Schließungs-E-Mail** (`status_closed_*`), die den gepflegten Text samt Platzhaltern enthalten. **Ticket-Links setzt die Mail nicht selbst** – dafür stehen die Platzhalter `{link}` in den Vorlagentexten bereit.
+Der Betreff enthält weiterhin `[HD-JJJJ-NNNNNN]` als für Menschen lesbaren Fallback. Der Rumpf besteht aus dem jeweiligen Ereignistext (Tabelle mit Ticket, Betreff, Status, Priorität, ggf. Bearbeiter) und dem **Hinweis am Fuß**, der in den Help-Desk-Einstellungen → Vorlageneinstellungen gepflegt wird (`TicketNotificationService::wrap()`). Ausnahmen vom Ereignistext sind die beiden Vorlagen-Mails: die **Eingangsbestätigung** (`created_confirmation`) und die **Schließungs-E-Mail** (`status_closed_*`), die den gepflegten Text samt Platzhaltern enthalten. **Ticket-Links setzt die Mail nicht selbst** – dafür stehen die Platzhalter `{link}` in den Vorlagentexten bereit. Ob der Melder zu einer Aktion überhaupt eine Mail erhält, steuern die Schalter in den Help-Desk-Einstellungen → **Benachrichtigungen** (siehe „Ticket-Berichte & Administration“); Team-, Watcher-, SLA-, Eskalations- und Regel-Mails bleiben davon unberührt.
 
 Die von Agenten aus dem Ticket gesendete E-Mail („E-Mail aus dem Ticket senden“) nutzt dieselben Thread-Kopfzeilen,
 lässt aber `Auto-Submitted` bewusst weg: Sie ist eine persönliche Nachricht des Agenten und soll nicht als automatisch

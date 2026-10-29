@@ -5,17 +5,19 @@ $colorName = static fn (?string $c): string => $colors[$c ?? 'neutral'] ?? ($c ?
 $yesNo = static fn (mixed $v): string => (int) $v === 1 ? 'Ja' : 'Nein';
 $cellActive = static fn (array $r): string => array_key_exists('is_active', $r) ? active_badge($r['is_active']) : '–';
 $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_array($r['members'] ?? null) ? count($r['members']) : 0));
+$isNotifications = $isNotifications ?? false;
+$isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNotifications;
 ?>
 <div class="page-header">
-    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : ($isErrorOrigins ? 'Katalog der Fehlerursprünge beim Schließen eines Tickets.' : ($isReplyTemplates ? 'Fester Präfix-Text für Agenten-E-Mails.' : 'Stammdaten, SLAs, Vorlagen und Automatisierungen.')) ?></p></div>
-    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isQuickReport && !$isErrorOrigins && !$isReplyTemplates): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new"><?= icon('plus') ?> Neu</a><?php endif; ?></div>
+    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : ($isErrorOrigins ? 'Katalog der Fehlerursprünge beim Schließen eines Tickets.' : ($isReplyTemplates ? 'Fester Präfix-Text für Agenten-E-Mails.' : ($isNotifications ? 'E-Mails an den Melder je Aktion im Ticket.' : 'Stammdaten, SLAs, Vorlagen und Automatisierungen.'))) ?></p></div>
+    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isSettingsTab): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new"><?= icon('plus') ?> Neu</a><?php endif; ?></div>
 </div>
 <div class="status-tabs admin-tabs" role="tablist" aria-label="Administrationsbereiche">
     <?php foreach ($kinds as $key => $label): ?>
         <a class="status-tab<?= $kind === $key ? ' is-active' : '' ?>" href="/helpdesk/admin?tab=<?= e($key) ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
 </div>
-<?php if (!$isQuickReport && !$isErrorOrigins && !$isReplyTemplates): ?>
+<?php if (!$isSettingsTab): ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Konfiguration</h2><span class="text-muted text-sm">aus Umgebung</span></div>
     <div class="grid grid-4">
@@ -157,8 +159,36 @@ $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_arr
     </form>
 </div>
 <?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
+<?php elseif ($isNotifications): ?>
+<div class="card mb-4">
+    <div class="card-header"><h2>Benachrichtigungen</h2><span class="text-muted text-sm">E-Mails an den Melder</span></div>
+    <p class="text-muted text-sm">Hier wird festgelegt, bei welcher Aktion im Ticket der <strong>Melder</strong> eine E-Mail erhält. Mails an Bearbeiter, Gruppen, Watcher und Eskalationsempfänger sind davon nicht betroffen. Voraussetzung bleibt der Mailversand im Help Desk (siehe Konfiguration) und ein erreichbarer Mail-Dienst.</p>
+    <form method="post" action="/helpdesk/admin/notifications" novalidate>
+        <?= csrf_field() ?>
+        <?php
+        $grouped = [];
+        foreach ($notificationEvents as $event => $meta) {
+            $grouped[$meta['group']][$event] = $meta;
+        }
+        ?>
+        <?php foreach ($grouped as $group => $events): ?>
+            <div class="form-group">
+                <h3 class="text-sm text-muted"><?= e($group) ?></h3>
+                <?php foreach ($events as $event => $meta): ?>
+                    <label class="checkbox-field"><input type="checkbox" name="events[]" value="<?= e($event) ?>"<?= checked($notificationSettings[$event] ?? true) ?>> <span><?= e($meta['label']) ?></span></label>
+                    <span class="form-hint"><?= e($meta['description']) ?></span>
+                <?php endforeach; ?>
+            </div>
+        <?php endforeach; ?>
+        <div class="form-group">
+            <span class="form-hint">Ohne Häkchen versendet KLINQ zu dieser Aktion keine Mail an den Melder; im Benachrichtigungsprotokoll des Tickets erscheint sie dann nicht. Änderungen greifen beim nächsten Ereignis, nicht rückwirkend.</span>
+        </div>
+        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button></div>
+    </form>
+</div>
+<?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php endif; ?>
-<?php if (!$isQuickReport && !$isErrorOrigins && !$isReplyTemplates): ?>
+<?php if (!$isSettingsTab): ?>
 <div class="card card-flush">
     <div class="card-header"><h2><?= e($kinds[$kind] ?? 'Bereich') ?></h2><span class="text-muted text-sm"><?= count($rows) ?> Einträge</span></div>
     <?php if ($rows === []): ?>

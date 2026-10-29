@@ -63,6 +63,7 @@ use App\Services\Helpdesk\Mail\MailboxClientInterface;
 use App\Services\Helpdesk\Mail\MimeMessageParser;
 use App\Services\Helpdesk\Mail\SmtpTransport;
 use App\Services\Helpdesk\MailboxSettingsService;
+use App\Services\Helpdesk\NotificationSettingsService;
 use App\Services\Helpdesk\OutboundMailSettingsService;
 use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Services\Helpdesk\TicketConfirmationService;
@@ -116,6 +117,7 @@ return static function (Container $c): void {
         $c->get(TicketMasterDataRepository::class),
         $c->get(UserRepository::class),
         $c->get(ReplyTemplateSettingsService::class),
+        $c->get(NotificationSettingsService::class),
         $c->get(Config::class),
         $c->get(Logger::class)
     ));
@@ -398,6 +400,11 @@ return static function (Container $c): void {
         $c->get(AuditLogService::class),
         $c->get(CurrentUser::class)
     ));
+    $c->singleton(NotificationSettingsService::class, static fn (Container $c): NotificationSettingsService => new NotificationSettingsService(
+        $c->get(SettingsService::class),
+        $c->get(AuditLogService::class),
+        $c->get(CurrentUser::class)
+    ));
     $c->singleton(QuickReportController::class, static fn (Container $c): QuickReportController => new QuickReportController(
         $c->get(View::class),
         $c->get(CurrentUser::class),
@@ -450,6 +457,7 @@ return static function (Container $c): void {
         $c->get(QuickReportSettingsService::class),
         $c->get(ErrorOriginSettingsService::class),
         $c->get(ReplyTemplateSettingsService::class),
+        $c->get(NotificationSettingsService::class),
         $c->get(SharedAccountSuggestionService::class),
         $c->get(Config::class)
     ));

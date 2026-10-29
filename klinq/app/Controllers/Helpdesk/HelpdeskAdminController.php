@@ -20,6 +20,7 @@ use App\Security\CurrentUser;
 use App\Services\Helpdesk\ErrorOriginSettingsService;
 use App\Services\Helpdesk\HelpdeskAdminService;
 use App\Services\Helpdesk\MailboxSettingsService;
+use App\Services\Helpdesk\NotificationSettingsService;
 use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Services\Helpdesk\ReplyTemplateSettingsService;
 use App\Services\Helpdesk\SharedAccountSuggestionService;
@@ -52,6 +53,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         'quick-report' => ['Störungsformular', 'helpdesk.admin'],
         'error-origins' => ['Fehlerursprung', 'helpdesk.admin'],
         'reply-templates' => ['Vorlageneinstellungen', 'helpdesk.admin'],
+        'notifications' => ['Benachrichtigungen', 'helpdesk.admin'],
     ];
 
     public function __construct(
@@ -71,6 +73,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         private readonly QuickReportSettingsService $quickSettings,
         private readonly ErrorOriginSettingsService $errorOrigins,
         private readonly ReplyTemplateSettingsService $replyTemplates,
+        private readonly NotificationSettingsService $notificationSettings,
         private readonly SharedAccountSuggestionService $accountSuggestions,
         private readonly Config $config
     ) {
@@ -110,7 +113,8 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         $isQuickReport = $kind === 'quick-report';
         $isErrorOrigins = $kind === 'error-origins';
         $isReplyTemplates = $kind === 'reply-templates';
-        $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates;
+        $isNotifications = $kind === 'notifications';
+        $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNotifications;
         $quickReportSettings = $this->quickSettings->all();
         $errorOriginSettings = $this->errorOrigins->all();
         $replyTemplateSettings = $this->replyTemplates->all();
@@ -124,6 +128,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'isQuickReport' => $isQuickReport,
             'isErrorOrigins' => $isErrorOrigins,
             'isReplyTemplates' => $isReplyTemplates,
+            'isNotifications' => $isNotifications,
             'rows' => $isSettingsTab ? [] : $this->rowsFor($kind),
             'usage' => $isSettingsTab ? [] : $this->usageFor($kind),
             'config' => [
@@ -167,6 +172,8 @@ final class HelpdeskAdminController extends HelpdeskBaseController
                 'close_placeholders' => ReplyTemplateSettingsService::CLOSE_PLACEHOLDERS,
                 'footer_placeholders' => ReplyTemplateSettingsService::FOOTER_PLACEHOLDERS,
             ],
+            'notificationEvents' => NotificationSettingsService::EVENTS,
+            'notificationSettings' => $this->notificationSettings->all(),
             'statusCategories' => HelpdeskAdminService::STATUS_CATEGORIES,
             'triggers' => TicketRuleRepository::TRIGGERS,
         ]);
@@ -221,6 +228,23 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         $this->flash('success', 'Vorlageneinstellungen gespeichert.');
 
         return $this->redirect('/helpdesk/admin?tab=reply-templates');
+    }
+
+    /** E-Mails an den Melder je Aktion im Ticket ein- oder ausschalten. */
+    public function saveNotifications(Request $request): Response
+    {
+        $this->currentUser->require('helpdesk.admin');
+        try {
+            $this->notificationSettings->save($request->all());
+        } catch (ValidationException $e) {
+            $this->withOldInput($request, $e->errors());
+            $this->flash('error', 'Bitte Eingaben prüfen.');
+
+            return $this->redirect('/helpdesk/admin?tab=notifications');
+        }
+        $this->flash('success', 'Benachrichtigungen gespeichert.');
+
+        return $this->redirect('/helpdesk/admin?tab=notifications');
     }
 
     /** Vorschläge für das Feld „Sammelkonten“ (Anmeldenamen aus Telefonbuch, Mitarbeitern und lokalen Konten). */

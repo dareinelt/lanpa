@@ -163,6 +163,7 @@ final class TaskService
                 'category' => $category['name'] ?? null,
             ], static fn (mixed $value): bool => $value !== null));
             // Das Ticket wird als Systemschritt geschlossen: die Bearbeitung läuft in der Aufgabe weiter.
+            // Der Kontext sorgt für den eigenen Umwandlungstext in der Melder-Mail.
             $this->tickets->changeStatus(
                 $ticketId,
                 TicketWorkflowService::CLOSED,
@@ -172,7 +173,9 @@ final class TaskService
                 null,
                 true,
                 null,
-                true
+                true,
+                null,
+                TicketNotificationService::CONTEXT_TASK_CONVERSION
             );
             $this->tasks->addEvent($id, 'converted_from_ticket', $userId, $userName, null, null, (string) $ticket['number'], [
                 'ticket_id' => $ticketId,

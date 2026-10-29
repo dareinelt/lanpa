@@ -122,6 +122,9 @@ return [
         'confirmation_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_CONFIRMATION', '')),
         // Benachrichtigung an den Melder beim Schließen (leer = allgemeine Statusmeldung)
         'close_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_CLOSE', '')),
+        // Benachrichtigung an den Melder, wenn das Ticket in eine Aufgabe umgewandelt wird
+        // (leer = eingebauter Standardtext)
+        'task_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_TASK', '')),
         // Hinweis am Fuß jeder Benachrichtigungsmail; leer = eingebauter Standardtext
         // (Abschalten über die Oberfläche: dort das Feld leeren)
         'footer_text' => trim((string) Env::get('HELPDESK_REPLY_TEMPLATE_FOOTER', '')),

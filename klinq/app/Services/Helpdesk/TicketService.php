@@ -507,9 +507,12 @@ final class TicketService
      * Mit $notify = false entfällt die automatische Benachrichtigung des Melders; genutzt,
      * wenn der Melder im selben Vorgang bereits eine E-Mail des Agenten erhält – oder beim
      * Schließen, wenn der Agent im Statusdialog „Melder informieren“ abwählt.
+     *
+     * @param string|null $notificationContext Grund des Wechsels für die Benachrichtigung
+     *        (etwa `TicketNotificationService::CONTEXT_TASK_CONVERSION`)
      * @return array<string,mixed>
      */
-    public function changeStatus(int $id, string $toCode, ?string $note = null, ?string $resolution = null, ?string $reason = null, ?int $expectedVersion = null, bool $system = false, ?string $pauseUntil = null, bool $notify = true, ?string $errorOrigin = null): array
+    public function changeStatus(int $id, string $toCode, ?string $note = null, ?string $resolution = null, ?string $reason = null, ?int $expectedVersion = null, bool $system = false, ?string $pauseUntil = null, bool $notify = true, ?string $errorOrigin = null, ?string $notificationContext = null): array
     {
         $ticket = $this->get($id);
         $this->assertNotMerged($ticket);
@@ -638,7 +641,7 @@ final class TicketService
         $this->audit->log('status', 'ticket', $id, $fresh['number'] . ' → ' . $toStatus['name'], ['status' => $ticket['status_name']], ['status' => $toStatus['name']]);
         $this->rules->apply('status_changed', $fresh, $this->currentUser->id(), $this->currentUser->displayName());
         if ($notify) {
-            $this->notifications->statusChanged($fresh, $fromCode, $toCode);
+            $this->notifications->statusChanged($fresh, $fromCode, $toCode, $notificationContext);
         }
 
         return $this->get($id);

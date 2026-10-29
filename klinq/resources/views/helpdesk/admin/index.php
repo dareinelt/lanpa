@@ -103,7 +103,7 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
 <?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php elseif ($isReplyTemplates): ?>
 <div class="card mb-4">
-    <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails, Eingangsbestätigung, Schließungstext, Fuß-Hinweis</span></div>
+    <div class="card-header"><h2>Vorlageneinstellungen</h2><span class="text-muted text-sm">Präfix für Agenten-E-Mails, Eingangsbestätigung, Schließungstext, Umwandlungstext, Fuß-Hinweis</span></div>
     <p class="text-muted text-sm">Der Präfix-Text wird beim Senden einer E-Mail aus einem Ticket automatisch <strong>vor</strong> den Text des Agenten gesetzt. Er ist im Sendedialog weder sichtbar noch änderbar. Leer = kein Präfix.</p>
     <form method="post" action="/helpdesk/admin/reply-templates" novalidate>
         <?= csrf_field() ?>
@@ -140,6 +140,12 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
                     <code><?= e($placeholder) ?></code> <?= e($label) ?><?= $placeholder === array_key_last($replyTemplate['close_placeholders']) ? '' : ' · ' ?>
                 <?php endforeach; ?>
             </span>
+        </div>
+        <div class="form-group<?= has_error('task_text') ? ' has-error' : '' ?>">
+            <label for="reply-template-task">Text bei Umwandlung in eine Aufgabe</label>
+            <textarea id="reply-template-task" name="task_text" rows="4" maxlength="<?= (int) $replyTemplate['max_task_length'] ?>" placeholder="Ihr Ticket wurde in eine Aufgabe umgewandelt, da es sich um keine Störung handelt."><?= e(old('task_text', $replyTemplate['task_text'])) ?></textarea>
+            <span class="form-hint">Wird an den Melder gesendet, wenn sein Ticket in eine Aufgabe umgewandelt und dabei geschlossen wird – anstelle des Schließungstextes. Unter dem Text stehen automatisch die Zeilen Ticket, Betreff, Status und Priorität. Platzhalter wie im Schließungstext, höchstens <?= (int) $replyTemplate['max_task_length'] ?> Zeichen. Leer = Standardtext „Ihr Ticket wurde in eine Aufgabe umgewandelt, da es sich um keine Störung handelt.“</span>
+            <?= field_error('task_text') ?>
         </div>
         <div class="form-group<?= has_error('footer_text') ? ' has-error' : '' ?>">
             <label for="reply-template-footer">Hinweis am Fuß der E-Mail</label>

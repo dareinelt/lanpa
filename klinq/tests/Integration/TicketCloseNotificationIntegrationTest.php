@@ -10,6 +10,7 @@ use App\Repositories\TicketMasterDataRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\OutboundMailSettingsService;
 use App\Services\Helpdesk\ReplyTemplateSettingsService;
+use App\Services\Helpdesk\TaskService;
 use App\Services\Helpdesk\TicketService;
 use Tests\Support\DatabaseTestCase;
 
@@ -117,6 +118,43 @@ final class TicketCloseNotificationIntegrationTest extends DatabaseTestCase
             'Fehlerursprung'
         );
         $this->assertSame('in_progress', (string) $this->service()->get((int) $ticket['id'])['status_code'], 'Das Ticket bleibt offen.');
+    }
+
+    public function testConvertingTicketToTaskUsesDefaultTaskTextWithDetails(): void
+    {
+        $ticket = $this->createTicket();
+        $this->c->get(TaskService::class)->convert((int) $ticket['id'], []);
+
+        $message = $this->stubMessage();
+        $this->assertStringContains('Ticket in eine Aufgabe umgewandelt', $message);
+        $this->assertStringContains('Ihr Ticket wurde in eine Aufgabe umgewandelt, da es sich um keine Störung handelt.', $message);
+        $this->assertStringContains('<strong>Ticket</strong></td><td>' . $ticket['number'], $message);
+        $this->assertStringContains('<strong>Betreff</strong></td><td>Notebook startet nicht', $message);
+        $this->assertStringContains('<strong>Status</strong></td><td>Geschlossen', $message);
+        $this->assertStringContains('<strong>Priorität</strong>', $message);
+        $this->assertFalse(str_contains($message, 'Ihr Ticket wurde geschlossen.'), 'Die allgemeine Schließungsmeldung entfällt.');
+    }
+
+    public function testTaskTextIsEditableAndSupportsPlaceholders(): void
+    {
+        $this->templates()->save(['task_text' => 'Guten Tag {name}, aus {ticketnummer} wird eine Aufgabe.']);
+        $ticket = $this->createTicket();
+        $this->c->get(TaskService::class)->convert((int) $ticket['id'], []);
+
+        $message = $this->stubMessage();
+        $this->assertStringContains('Guten Tag Max Melder, aus ' . $ticket['number'] . ' wird eine Aufgabe.', $message);
+        $this->assertFalse(str_contains($message, 'da es sich um keine Störung handelt'));
+    }
+
+    public function testCloseTemplateDoesNotApplyToConversion(): void
+    {
+        $this->templates()->save(['close_text' => self::TEMPLATE]);
+        $ticket = $this->createTicket();
+        $this->c->get(TaskService::class)->convert((int) $ticket['id'], []);
+
+        $message = $this->stubMessage();
+        $this->assertStringContains('da es sich um keine Störung handelt.', $message);
+        $this->assertFalse(str_contains($message, 'Grund: '), 'Der Schließungstext gilt nicht für die Umwandlung.');
     }
 
     // ------------------------------------------------------------------ Helfer

@@ -25,6 +25,11 @@ use App\Support\Validator;
  * er kennt zusätzlich den Schließungsgrund und die Lösung. Ein leerer Text lässt die allgemeine
  * Statusmeldung („Ihr Ticket wurde geschlossen.“) stehen.
  *
+ * Der Umwandlungstext gilt, wenn ein Ticket in eine Aufgabe umgewandelt und dabei geschlossen
+ * wird. Er ersetzt dort den Schließungstext und die allgemeine Statusmeldung; darunter stehen
+ * immer die Zeilen Ticket, Betreff, Status und Priorität. Ohne gespeicherten und ohne
+ * konfigurierten Wert gilt der Standardtext – ein leeres Feld kann ihn nicht abschalten.
+ *
  * Der Fuß-Hinweis ist der automatische Hinweis unter jeder Benachrichtigungsmail
  * (`TicketNotificationService::wrap()`); ein leerer Wert blendet ihn aus.
  */
@@ -45,8 +50,14 @@ final class ReplyTemplateSettingsService
     /** Höchstlänge des Fuß-Hinweises in Zeichen. */
     public const MAX_FOOTER_LENGTH = 1000;
 
+    /** Höchstlänge des Umwandlungstextes in Zeichen. */
+    public const MAX_TASK_LENGTH = 4000;
+
     /** Fuß-Hinweis, solange weder in der Datenbank noch in der Konfiguration etwas hinterlegt ist. */
     public const DEFAULT_FOOTER_TEXT = 'Diese E-Mail wurde automatisch vom IT Help Desk ({firma}) erzeugt. Antworten auf diese E-Mail werden nicht verarbeitet.';
+
+    /** Umwandlungstext, solange weder in der Datenbank noch in der Konfiguration etwas hinterlegt ist. */
+    public const DEFAULT_TASK_TEXT = 'Ihr Ticket wurde in eine Aufgabe umgewandelt, da es sich um keine Störung handelt.';
 
     /**
      * Platzhalter der Eingangsbestätigung mit Beschreibung für die Administration.
@@ -64,6 +75,7 @@ final class ReplyTemplateSettingsService
 
     /**
      * Platzhalter der Schließungsbenachrichtigung mit Beschreibung für die Administration.
+     * Sie gelten ebenso für den Umwandlungstext.
      * @var array<string,string>
      */
     public const CLOSE_PLACEHOLDERS = [
@@ -100,7 +112,7 @@ final class ReplyTemplateSettingsService
     /**
      * Aktuelle Vorlageneinstellungen (Datenbank vor Konfiguration).
      *
-     * @return array{prefix_text:string,confirmation_text:string,close_text:string,footer_text:string}
+     * @return array{prefix_text:string,confirmation_text:string,close_text:string,task_text:string,footer_text:string}
      */
     public function all(): array
     {
@@ -114,6 +126,14 @@ final class ReplyTemplateSettingsService
         $close = array_key_exists('close_text', $stored)
             ? (string) $stored['close_text']
             : (string) $this->config->get('helpdesk.reply_template.close_text', '');
+        $task = array_key_exists('task_text', $stored)
+            ? (string) $stored['task_text']
+            : (string) $this->config->get('helpdesk.reply_template.task_text', '');
+        // Die Umwandlung in eine Aufgabe soll nie mit „Ihr Ticket wurde geschlossen.“ enden:
+        // ohne gespeicherten und ohne konfigurierten Wert gilt der Standardtext.
+        if (trim($task) === '') {
+            $task = self::DEFAULT_TASK_TEXT;
+        }
         // Ohne gespeicherten Wert gilt der Startwert aus der Konfiguration, sonst der Standardtext:
         // bestehende Installationen behalten den gewohnten Hinweis am Fuß.
         $footer = array_key_exists('footer_text', $stored)
@@ -124,6 +144,7 @@ final class ReplyTemplateSettingsService
             'prefix_text' => trim($text),
             'confirmation_text' => trim($confirmation),
             'close_text' => trim($close),
+            'task_text' => trim($task),
             'footer_text' => trim($footer),
         ];
     }
@@ -148,6 +169,14 @@ final class ReplyTemplateSettingsService
     public function closeText(): string
     {
         return $this->all()['close_text'];
+    }
+
+    /**
+     * Roh-Text der Benachrichtigung bei der Umwandlung in eine Aufgabe (nie leer).
+     */
+    public function taskText(): string
+    {
+        return $this->all()['task_text'];
     }
 
     /**
@@ -219,7 +248,7 @@ final class ReplyTemplateSettingsService
      * Speichert die Vorlageneinstellungen.
      *
      * @param array<string,mixed> $input Rohdaten aus dem Formular
-     * @return array{prefix_text:string,confirmation_text:string,close_text:string,footer_text:string}
+     * @return array{prefix_text:string,confirmation_text:string,close_text:string,task_text:string,footer_text:string}
      */
     public function save(array $input): array
     {
@@ -231,6 +260,7 @@ final class ReplyTemplateSettingsService
             self::PREFIX . 'prefix_text' => $data['prefix_text'],
             self::PREFIX . 'confirmation_text' => $data['confirmation_text'],
             self::PREFIX . 'close_text' => $data['close_text'],
+            self::PREFIX . 'task_text' => $data['task_text'],
             self::PREFIX . 'footer_text' => $data['footer_text'],
         ], $this->currentUser->id());
         $after = $this->all();
@@ -244,7 +274,7 @@ final class ReplyTemplateSettingsService
      * Prüft und normalisiert die Eingaben.
      *
      * @param array<string,mixed> $input
-     * @return array{prefix_text:string,confirmation_text:string,close_text:string,footer_text:string}
+     * @return array{prefix_text:string,confirmation_text:string,close_text:string,task_text:string,footer_text:string}
      */
     public function validate(array $input): array
     {
@@ -252,6 +282,7 @@ final class ReplyTemplateSettingsService
         $validator->text('prefix_text', 'Präfix-Text', false, self::MAX_PREFIX_LENGTH);
         $validator->text('confirmation_text', 'Bestätigungstext', false, self::MAX_CONFIRMATION_LENGTH);
         $validator->text('close_text', 'Schließungstext', false, self::MAX_CLOSE_LENGTH);
+        $validator->text('task_text', 'Text bei Umwandlung in eine Aufgabe', false, self::MAX_TASK_LENGTH);
         $validator->text('footer_text', 'Fuß-Hinweis', false, self::MAX_FOOTER_LENGTH);
         $clean = $validator->validated();
 
@@ -259,6 +290,7 @@ final class ReplyTemplateSettingsService
             'prefix_text' => trim((string) ($clean['prefix_text'] ?? '')),
             'confirmation_text' => trim((string) ($clean['confirmation_text'] ?? '')),
             'close_text' => trim((string) ($clean['close_text'] ?? '')),
+            'task_text' => trim((string) ($clean['task_text'] ?? '')),
             'footer_text' => trim((string) ($clean['footer_text'] ?? '')),
         ];
     }

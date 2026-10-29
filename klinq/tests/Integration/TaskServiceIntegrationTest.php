@@ -101,6 +101,8 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
     {
         $ticket = $this->createTicket();
         $this->service()->convert((int) $ticket['id'], []);
+        // Die Umwandlung schließt das Ticket; nach dem Wiederöffnen greift die Dublettenprüfung.
+        $this->c->get(TicketService::class)->changeStatus((int) $ticket['id'], 'in_progress', null, null, null, null, true, null, false);
 
         $this->assertThrows(ValidationException::class, function () use ($ticket): void {
             $this->service()->convert((int) $ticket['id'], []);

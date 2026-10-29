@@ -723,10 +723,12 @@ final class TicketService
     }
 
     /**
-     * Zuweisung an Bearbeiter, Vertretung und/oder Gruppe.
+     * Zuweisung an Bearbeiter, Vertretung und/oder Gruppe. Mit $forward wird zusätzlich die
+     * Weiterleitung an den neuen Bearbeiter vermerkt (Hinweis auf dessen Dashboard und
+     * Hervorhebung in der Ticketliste, bis er das Ticket übernimmt).
      * @return array<string,mixed>
      */
-    public function assign(int $id, ?int $assigneeId, ?int $groupId, ?int $deputyId = null, bool $keepGroup = false, ?int $expectedVersion = null): array
+    public function assign(int $id, ?int $assigneeId, ?int $groupId, ?int $deputyId = null, bool $keepGroup = false, ?int $expectedVersion = null, bool $forward = false): array
     {
         $this->currentUser->require('helpdesk.assign');
         $ticket = $this->get($id);
@@ -735,6 +737,18 @@ final class TicketService
             throw ValidationException::single('assignee_user_id', 'Abgeschlossene Tickets können nicht neu zugewiesen werden.');
         }
         $update = ['assignee_user_id' => $this->validUser($assigneeId, 'assignee_user_id'), 'deputy_user_id' => $this->validUser($deputyId, 'deputy_user_id'), 'updated_by' => $this->currentUser->id()];
+        if ($forward) {
+            $update['forwarded_to_user_id'] = $update['assignee_user_id'];
+            $update['forwarded_by_user_id'] = $this->currentUser->id();
+            $update['forwarded_at'] = gmdate('Y-m-d H:i:s');
+            $update['forward_acknowledged_at'] = null;
+        } elseif ((int) ($ticket['forwarded_to_user_id'] ?? 0) !== (int) ($update['assignee_user_id'] ?? 0)) {
+            // Zuweisung an jemand anderen hebt eine offene Weiterleitung auf
+            $update['forwarded_to_user_id'] = null;
+            $update['forwarded_by_user_id'] = null;
+            $update['forwarded_at'] = null;
+            $update['forward_acknowledged_at'] = null;
+        }
         if (!$keepGroup) {
             if ($groupId !== null && $this->masterData->findGroup($groupId) === null) {
                 throw ValidationException::single('group_id', 'Gruppe nicht gefunden.');
@@ -749,13 +763,14 @@ final class TicketService
             }
         }
 
-        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion): void {
+        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $forward): void {
             $id = (int) $ticket['id'];
             if (!$this->tickets->update($id, $update, $expectedVersion)) {
                 throw new ConflictException('Das Ticket wurde zwischenzeitlich geändert. Bitte neu laden.');
             }
             if ((int) ($ticket['assignee_user_id'] ?? 0) !== (int) ($update['assignee_user_id'] ?? 0)) {
-                $this->event($id, $update['assignee_user_id'] === null ? 'unassigned' : 'assigned', 'assignee', $ticket['assignee_name'] ?? null, $update['assignee_user_id'] !== null ? $this->userName((int) $update['assignee_user_id']) : null);
+                $type = $forward ? 'forwarded' : ($update['assignee_user_id'] === null ? 'unassigned' : 'assigned');
+                $this->event($id, $type, 'assignee', $ticket['assignee_name'] ?? null, $update['assignee_user_id'] !== null ? $this->userName((int) $update['assignee_user_id']) : null);
             }
             if (array_key_exists('group_id', $update) && (int) ($ticket['group_id'] ?? 0) !== (int) ($update['group_id'] ?? 0)) {
                 $this->event($id, 'group_changed', 'group', $ticket['group_name'] ?? null, $update['group_id'] !== null ? (string) ($this->masterData->findGroup((int) $update['group_id'])['name'] ?? '') : null);
@@ -769,13 +784,50 @@ final class TicketService
         });
 
         $fresh = $this->get($id);
-        $this->audit->log('assign', 'ticket', $id, $fresh['number'], ['assignee' => $ticket['assignee_name'], 'group' => $ticket['group_name']], ['assignee' => $fresh['assignee_name'], 'group' => $fresh['group_name']]);
-        $this->notifications->assigned($fresh, $ticket['assignee_email'] ?? null);
+        $this->audit->log($forward ? 'forward' : 'assign', 'ticket', $id, $fresh['number'], ['assignee' => $ticket['assignee_name'], 'group' => $ticket['group_name']], ['assignee' => $fresh['assignee_name'], 'group' => $fresh['group_name']]);
+        if ($forward) {
+            $this->notifications->forwarded($fresh, (string) $this->currentUser->displayName());
+        } else {
+            $this->notifications->assigned($fresh, $ticket['assignee_email'] ?? null);
+        }
 
         return $fresh;
     }
 
-    /** Ticket dem angemeldeten Benutzer zuweisen. @return array<string,mixed> */
+    /**
+     * Ticket an einen anderen Bearbeiter weiterleiten. Die Zuweisung wechselt sofort; bis der neue
+     * Bearbeiter das Ticket übernimmt, bleibt es als weitergeleitet markiert.
+     * @return array<string,mixed>
+     */
+    public function forward(int $id, ?int $assigneeId, ?int $groupId = null, bool $keepGroup = true, ?int $expectedVersion = null): array
+    {
+        $this->currentUser->require('helpdesk.assign');
+        $ticket = $this->get($id);
+        $this->assertNotMerged($ticket);
+        if ($this->workflow->isFinal((string) $ticket['status_code'])) {
+            throw ValidationException::single('assignee_user_id', 'Abgeschlossene Tickets können nicht weitergeleitet werden.');
+        }
+        $assigneeId = $this->validUser($assigneeId, 'assignee_user_id');
+        if ($assigneeId === null) {
+            throw ValidationException::single('assignee_user_id', 'Bitte wählen Sie den Agenten, an den das Ticket weitergeleitet wird.');
+        }
+        if ($assigneeId === (int) $this->currentUser->id()) {
+            throw ValidationException::single('assignee_user_id', 'Sie können das Ticket nicht an sich selbst weiterleiten.');
+        }
+        if ($assigneeId === (int) ($ticket['assignee_user_id'] ?? 0)) {
+            throw ValidationException::single('assignee_user_id', 'Das Ticket ist diesem Agenten bereits zugewiesen.');
+        }
+
+        return $this->assign($id, $assigneeId, $groupId, $ticket['deputy_user_id'] !== null ? (int) $ticket['deputy_user_id'] : null, $keepGroup, $expectedVersion, true);
+    }
+
+    /** Ist das Ticket dem Benutzer weitergeleitet und von ihm noch nicht übernommen? @param array<string,mixed> $ticket */
+    public function isForwardedTo(array $ticket, int $userId): bool
+    {
+        return $userId > 0 && (int) ($ticket['forwarded_to_user_id'] ?? 0) === $userId && empty($ticket['forward_acknowledged_at']);
+    }
+
+    /** Ticket dem angemeldeten Benutzer zuweisen bzw. eine Weiterleitung annehmen. @return array<string,mixed> */
     public function takeOver(int $id): array
     {
         $userId = $this->currentUser->id();
@@ -783,8 +835,25 @@ final class TicketService
             throw new ForbiddenException('Nicht angemeldet.');
         }
         $ticket = $this->get($id);
+        $forwarded = $this->isForwardedTo($ticket, $userId);
+        $fresh = $this->assign($id, $userId, $ticket['group_id'] !== null ? (int) $ticket['group_id'] : null, $ticket['deputy_user_id'] !== null ? (int) $ticket['deputy_user_id'] : null, true);
 
-        return $this->assign($id, $userId, $ticket['group_id'] !== null ? (int) $ticket['group_id'] : null, $ticket['deputy_user_id'] !== null ? (int) $ticket['deputy_user_id'] : null, true);
+        return $forwarded ? $this->acceptForward($fresh) : $fresh;
+    }
+
+    /**
+     * Weiterleitung annehmen: Markierung abschließen und im Verlauf festhalten.
+     * @param array<string,mixed> $ticket
+     * @return array<string,mixed>
+     */
+    private function acceptForward(array $ticket): array
+    {
+        $id = (int) $ticket['id'];
+        $userId = (int) $this->currentUser->id();
+        $this->tickets->update($id, ['forward_acknowledged_at' => gmdate('Y-m-d H:i:s'), 'updated_by' => $userId]);
+        $this->event($id, 'forward_accepted', 'assignee', null, $this->userName($userId));
+
+        return $this->get($id);
     }
 
     // ------------------------------------------------------------------ Kommentare

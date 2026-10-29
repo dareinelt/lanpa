@@ -82,7 +82,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–023), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–025), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -176,6 +176,11 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Dateianhänge laufen weiter über `DocumentService` (`documents`, `entity_type = ticket`).
 - **Ticketnummern** folgen `HELPDESK_TICKET_PREFIX-JJJJ-NNNNNN`, vergeben über `ticket_sequences` analog zu
   den Inventarnummern (`TicketNumberService`).
+- **Weiterleiten von Tickets**: `POST /helpdesk/tickets/{id}/forward` (`helpdesk.assign`) setzt den Bearbeiter neu
+  und markiert das Ticket in `tickets.forwarded_to_user_id`/`forwarded_by_user_id`/`forwarded_at`; quittiert wird
+  über `forward_acknowledged_at`, sobald der neue Bearbeiter **Übernehmen** (`POST …/take`,
+  `TicketService::takeOver`) nutzt. Bis dahin erscheint das Ticket in der Dashboard-Karte **An Sie weitergeleitet**
+  (`TicketRepository::pendingForwards`) und in der Liste gelb hervorgehoben.
 - **SLA/Eskalation**: Fristen aus `ticket_slas` (je Kategorie/Priorität), Warn-/Eskalationsschwellen aus
   `HELPDESK_SLA_WARNING_PERCENT`/`HELPDESK_ESCALATION_PERCENT`; `HelpdeskSchedulerService` prüft periodisch
   Eskalation, Auto-Close (`HELPDESK_AUTO_CLOSE_DAYS`) und ruft die Mailabholung.

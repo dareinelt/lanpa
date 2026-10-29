@@ -63,6 +63,29 @@ $barList = static function (array $rows): void {
 <?php if ($isFirstLevel && ($supportShift['second'] ?? null) !== null): ?>
 <div class="alert alert-info mb-4"><?= icon('users', 'icon icon-xs') ?> Zuständiger 2nd Level für dich ist heute <strong><?= e($supportShift['second']['user_display_name']) ?></strong>.</div>
 <?php endif; ?>
+<?php if (($pendingForwards ?? []) !== []): ?>
+<section class="card hd-forward-card mb-4">
+    <h2 class="card-title"><?= icon('swap', 'icon icon-xs') ?> An Sie weitergeleitet <span class="badge is-warning"><?= count($pendingForwards) ?></span></h2>
+    <ul class="hd-forward-list">
+        <?php foreach ($pendingForwards as $f): ?>
+        <li class="hd-forward-item">
+            <div>
+                <a href="<?= e($ticketUrl($f)) ?>"><strong><?= e($f['number'] ?? '–') ?></strong> <?= e($f['subject'] ?? '–') ?></a>
+                <div class="text-xs text-muted">
+                    von <?= e($f['forwarded_by_name'] ?? 'Unbekannt') ?> · <?= fmt_datetime($f['forwarded_at'] ?? null) ?>
+                    <?php if (!empty($f['group_name'])): ?> · <?= e($f['group_name']) ?><?php endif; ?>
+                    · <?= e($f['priority_name'] ?? '–') ?>
+                </div>
+            </div>
+            <form method="post" action="<?= e($ticketUrl($f)) ?>/take" class="inline-form">
+                <?= csrf_field() ?>
+                <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Übernehmen</button>
+            </form>
+        </li>
+        <?php endforeach; ?>
+    </ul>
+</section>
+<?php endif; ?>
 <div class="grid grid-4 mb-4">
     <a class="card stat-card is-info" href="/helpdesk/tickets?view=mine_open"><span class="stat-value"><?= (int) ($counts['new_count'] ?? 0) ?></span><span class="stat-label">Neu</span></a>
     <a class="card stat-card" href="/helpdesk/tickets?view=open"><span class="stat-value"><?= (int) ($counts['open_count'] ?? 0) ?> <span class="text-sm text-muted">/ <?= (int) ($counts['in_progress'] ?? 0) ?></span></span><span class="stat-label">Offen / in Bearbeitung</span></a>

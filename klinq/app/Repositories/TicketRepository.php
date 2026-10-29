@@ -57,6 +57,7 @@ final class TicketRepository extends BaseRepository
             aff.display_name AS affected_name, aff.email AS affected_email,
             au.display_name AS assignee_name, au.email AS assignee_email,
             du.display_name AS deputy_name,
+            fbu.display_name AS forwarded_by_name,
             ru.display_name AS requester_user_name, ru.email AS requester_user_email,
             sla.name AS sla_name,
             loc.full_path AS location_path, loc.name AS location_name,
@@ -80,6 +81,7 @@ final class TicketRepository extends BaseRepository
         LEFT JOIN employees aff ON aff.id = t.affected_employee_id
         LEFT JOIN users au ON au.id = t.assignee_user_id
         LEFT JOIN users du ON du.id = t.deputy_user_id
+        LEFT JOIN users fbu ON fbu.id = t.forwarded_by_user_id
         LEFT JOIN users ru ON ru.id = t.requester_user_id
         LEFT JOIN ticket_slas sla ON sla.id = t.sla_id
         LEFT JOIN locations loc ON loc.id = t.location_id
@@ -602,6 +604,22 @@ final class TicketRepository extends BaseRepository
         ) ?? [];
 
         return array_map('intval', array_map(static fn ($v) => $v ?? 0, $row));
+    }
+
+    /**
+     * Tickets, die dem Benutzer weitergeleitet und von ihm noch nicht übernommen wurden
+     * (Hinweis auf dem Help-Desk-Dashboard).
+     * @return array<int,array<string,mixed>>
+     */
+    public function pendingForwards(int $userId, int $limit = 10): array
+    {
+        $limit = max(1, min(50, $limit));
+
+        return $this->fetchAll(
+            self::SELECT . " WHERE t.forwarded_to_user_id = :uid AND t.forward_acknowledged_at IS NULL AND t.merged_into_ticket_id IS NULL
+                ORDER BY t.forwarded_at DESC, t.id DESC LIMIT {$limit}",
+            ['uid' => $userId]
+        );
     }
 
     /** Anzahl offener Tickets (Navigations-Badge). */

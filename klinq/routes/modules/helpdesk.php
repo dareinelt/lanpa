@@ -62,6 +62,7 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/tickets/{id}/mail', static fn (Request $r): Response => $tickets()->sendMail($r), 'helpdesk.comment');
     $router->get('/helpdesk/tickets/{id}/mail/signature', static fn (Request $r): Response => $tickets()->mailSignature($r), 'helpdesk.comment');
     $router->post('/helpdesk/tickets/{id}/assign', static fn (Request $r): Response => $tickets()->assign($r), 'helpdesk.assign');
+    $router->post('/helpdesk/tickets/{id}/forward', static fn (Request $r): Response => $tickets()->forward($r), 'helpdesk.assign');
     $router->post('/helpdesk/tickets/{id}/assign-second-level', static fn (Request $r): Response => $tickets()->assignSecondLevel($r), 'helpdesk.assign');
     $router->post('/helpdesk/tickets/{id}/take', static fn (Request $r): Response => $tickets()->takeOver($r), 'helpdesk.assign');
     $router->post('/helpdesk/tickets/{id}/merge', static fn (Request $r): Response => $tickets()->merge($r), 'helpdesk.merge');

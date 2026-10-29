@@ -397,6 +397,16 @@ final class TicketController extends HelpdeskBaseController
         return $response ?? $this->respond($request, 'Zuweisung gespeichert.', '/helpdesk/tickets/' . $id);
     }
 
+    public function forward(Request $request): Response
+    {
+        $id = $request->paramInt('id');
+        $response = $this->attempt($request, function () use ($request, $id): void {
+            $this->service->forward($id, $request->int('assignee_user_id'), $request->int('group_id'), $request->bool('keep_group'), $request->int('version'));
+        }, '/helpdesk/tickets/' . $id . '#assign', false);
+
+        return $response ?? $this->respond($request, 'Ticket weitergeleitet.', '/helpdesk/tickets/' . $id);
+    }
+
     /** Weist das Ticket dem 2nd Level des Tages zu (nur der heutige 1st Level); Kommentar ist Pflicht. */
     public function assignSecondLevel(Request $request): Response
     {

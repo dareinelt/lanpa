@@ -10,6 +10,18 @@
 .ticket-row.is-closed { opacity: 0.7; }
 .ticket-row.is-overdue td:first-child { box-shadow: inset 3px 0 0 var(--color-danger); }
 .ticket-row.is-warning td:first-child { box-shadow: inset 3px 0 0 var(--color-warning); }
+/* An mich weitergeleitet, noch nicht übernommen */
+.ticket-row.is-forwarded td { background: var(--color-warning-soft); }
+.ticket-row.is-forwarded td:first-child { box-shadow: inset 3px 0 0 var(--color-warning); }
+.ticket-forwarded-badge { margin-left: var(--space-2); }
+
+/* Dashboard: Hinweis auf weitergeleitete Tickets */
+.hd-forward-card { border-color: var(--color-warning); }
+.hd-forward-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.hd-forward-item { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-alt); }
+.hd-forward-item a { font-weight: var(--font-weight-semibold); }
+.hd-forward-banner { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
+.hd-forward-banner span { flex: 1 1 18rem; }
 .filter-bar.filter-bar-dense .form-group { min-width: 9rem; }
 .filter-bar .filter-toggle { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); align-self: end; padding-bottom: var(--space-2); }
 

@@ -36,6 +36,7 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
             'activeNav' => 'helpdesk',
             'areaLabel' => 'Help Desk',
             'data' => $data,
+            'pendingForwards' => $this->tickets->pendingForwards((int) $this->currentUser->id()),
             'views' => TicketService::views(),
             'viewCounts' => $this->tickets->viewCounts((int) $this->currentUser->id()),
             'now' => new \DateTimeImmutable('now', new \DateTimeZone('UTC')),

@@ -3,6 +3,7 @@ $id = (int) $ticket['id'];
 $closed = in_array($ticket['status_category'], ['resolved', 'closed', 'cancelled'], true);
 $isMerged = $ticket['merged_into_ticket_id'] !== null;
 $readOnly = $isMerged;
+$isForwardedToMe = !empty($ticket['forwarded_to_user_id']) && (int) $ticket['forwarded_to_user_id'] === (int) $user['id'] && empty($ticket['forward_acknowledged_at']);
 $canUpdate = $can('helpdesk.update') && !$readOnly;
 $canConvert = $isAgent && $can('helpdesk.tasks') && !$readOnly
     && !in_array((string) $ticket['status_code'], ['closed', 'cancelled'], true) && $taskForTicket === null;
@@ -88,6 +89,9 @@ $statusTransitions = array_values(array_filter(
             <?php endif; ?>
         <?php endif; ?>
         <form method="post" action="/helpdesk/tickets/<?= $id ?>/watch" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('eye') ?> <?= $isWatching ? 'Nicht mehr beobachten' : 'Beobachten' ?></button></form>
+        <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed): ?>
+            <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="forward-dialog"><?= icon('swap') ?> Weiterleiten</button>
+        <?php endif; ?>
         <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed && (int) ($ticket['assignee_user_id'] ?? 0) !== (int) $user['id']): ?>
             <form method="post" action="/helpdesk/tickets/<?= $id ?>/take" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('user') ?> Übernehmen</button></form>
         <?php endif; ?>
@@ -104,6 +108,14 @@ $statusTransitions = array_values(array_filter(
 
 <?php if ($isMerged): ?>
     <div class="alert alert-info"><?= icon('info') ?> Dieses Ticket wurde in <a href="/helpdesk/tickets/<?= (int) $ticket['merged_into_ticket_id'] ?>"><?= e($ticket['merged_into_number']) ?></a> zusammengeführt und ist schreibgeschützt.</div>
+<?php endif; ?>
+
+<?php if ($isForwardedToMe): ?>
+    <div class="alert alert-warning hd-forward-banner">
+        <?= icon('swap') ?>
+        <span>Dieses Ticket wurde <?= !empty($ticket['forwarded_by_name']) ? 'von <strong>' . e($ticket['forwarded_by_name']) . '</strong> ' : '' ?>an Sie weitergeleitet (<?= fmt_datetime($ticket['forwarded_at'] ?? null) ?>). Übernehmen Sie es, damit es nicht mehr als weitergeleitet gilt.</span>
+        <form method="post" action="/helpdesk/tickets/<?= $id ?>/take" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Übernehmen</button></form>
+    </div>
 <?php endif; ?>
 
 <?php if ($transitions !== [] && !$readOnly): ?>
@@ -319,6 +331,9 @@ $statusTransitions = array_values(array_filter(
         <dl class="detail-list">
             <dt>Gruppe</dt><dd><?= e($ticket['group_name'] ?? '–') ?></dd>
             <dt>Bearbeiter</dt><dd><?= $ticket['assignee_name'] ? e($ticket['assignee_name']) : '<span class="text-muted">nicht zugewiesen</span>' ?></dd>
+            <?php if (!empty($ticket['forwarded_at']) && empty($ticket['forward_acknowledged_at'])): ?>
+                <dt>Weitergeleitet</dt><dd><?= fmt_datetime($ticket['forwarded_at']) ?><?= !empty($ticket['forwarded_by_name']) ? ' von ' . e($ticket['forwarded_by_name']) : '' ?> <span class="badge is-warning">noch nicht übernommen</span></dd>
+            <?php endif; ?>
             <?php if ($ticket['deputy_name']): ?><dt>Vertretung</dt><dd><?= e($ticket['deputy_name']) ?></dd><?php endif; ?>
         </dl>
         <?php if ($can('helpdesk.assign') && !$readOnly): ?>
@@ -574,6 +589,43 @@ $statusTransitions = array_values(array_filter(
 </dialog>
 <?php endif; ?>
 
+<?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed): ?>
+<dialog id="forward-dialog" class="dialog">
+    <form method="post" action="/helpdesk/tickets/<?= $id ?>/forward">
+        <?= csrf_field() ?>
+        <input type="hidden" name="version" value="<?= (int) $ticket['version'] ?>">
+        <div class="dialog-header">
+            <h2><?= icon('swap') ?> Ticket weiterleiten</h2>
+            <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+        </div>
+        <div class="dialog-body">
+            <p class="text-muted text-sm">Das Ticket wechselt sofort zum ausgewählten Bearbeiter. Er erhält einen Hinweis auf seinem Help-Desk-Dashboard; bis er das Ticket übernimmt, ist es in der Ticketliste farblich hervorgehoben.</p>
+            <div class="form-group">
+                <label for="fw-group">Gruppe</label>
+                <select id="fw-group" name="group_id" data-hd-group="#fw-user">
+                    <option value="">– keine –</option>
+                    <?php foreach ($groups as $g): ?><option value="<?= (int) $g['id'] ?>"<?= selected($ticket['group_id'], $g['id']) ?>><?= e($g['name']) ?></option><?php endforeach; ?>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="fw-user">Bearbeiter <span class="text-muted">(Pflicht)</span></label>
+                <select id="fw-user" name="assignee_user_id" required>
+                    <option value="">– Agent wählen –</option>
+                    <?php foreach ($agents as $a): ?>
+                        <?php if ((int) $a['id'] === (int) $user['id'] || (int) $a['id'] === (int) ($ticket['assignee_user_id'] ?? 0)) { continue; } ?>
+                        <option value="<?= (int) $a['id'] ?>"><?= e($a['display_name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <label class="checkbox-row"><input type="checkbox" name="keep_group" value="1" checked> Gruppe beibehalten, wenn Bearbeiter in anderer Gruppe</label>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+            <button type="submit" class="btn btn-primary"><?= icon('swap') ?> Weiterleiten</button>
+        </div>
+    </form>
+</dialog>
+<?php endif; ?>
 <?php if (($isFirstLevelSupport ?? false) && $secondLevelSupport !== null): ?>
 <dialog id="second-level-dialog" class="dialog">
     <form method="post" action="/helpdesk/tickets/<?= $id ?>/assign-second-level">

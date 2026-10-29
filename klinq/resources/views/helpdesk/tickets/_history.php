@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../partials/helpers.php';
 
 $eventLabels = [
     'created' => 'Ticket angelegt', 'status_changed' => 'Status geändert', 'reopened' => 'Wieder geöffnet', 'resolved' => 'Gelöst', 'closed' => 'Geschlossen', 'cancelled' => 'Storniert',
-    'assigned' => 'Zugewiesen', 'unassigned' => 'Zuweisung entfernt', 'group_changed' => 'Gruppe geändert', 'deputy_changed' => 'Vertretung geändert', 'field_changed' => 'Feld geändert',
+    'assigned' => 'Zugewiesen', 'unassigned' => 'Zuweisung entfernt', 'forwarded' => 'Weitergeleitet', 'forward_accepted' => 'Weiterleitung übernommen', 'group_changed' => 'Gruppe geändert', 'deputy_changed' => 'Vertretung geändert', 'field_changed' => 'Feld geändert',
     'comment' => 'Kommentar', 'internal_note' => 'Interne Notiz', 'attachment_added' => 'Anhang hinzugefügt', 'attachment_removed' => 'Anhang entfernt',
     'asset_linked' => 'Asset verknüpft', 'asset_unlinked' => 'Asset-Verknüpfung entfernt', 'tags_changed' => 'Tags geändert', 'watcher_added' => 'Beobachter hinzugefügt',
     'worklog_added' => 'Arbeitszeit erfasst', 'worklog_removed' => 'Arbeitszeit gelöscht', 'relation_added' => 'Beziehung angelegt', 'relation_removed' => 'Beziehung entfernt',
@@ -18,11 +18,11 @@ $eventLabels = [
     'knowledge_linked' => 'Wissensartikel verknüpft', 'knowledge_created' => 'Wissensartikel erstellt', 'rule_applied' => 'Regel angewendet', 'notification' => 'Benachrichtigung',
     'viewed' => 'Ticket angesehen',
 ];
-$eventClass = static fn (string $t): string => match ($t) { 'sla_breached', 'escalated', 'cancelled' => ' is-danger', 'resolved', 'closed' => ' is-success', 'sla_warning', 'reopened' => ' is-warning', default => '' };
+$eventClass = static fn (string $t): string => match ($t) { 'sla_breached', 'escalated', 'cancelled' => ' is-danger', 'resolved', 'closed' => ' is-success', 'sla_warning', 'reopened', 'forwarded' => ' is-warning', default => '' };
 $renderEvent = static function (array $ev) use ($eventLabels): string {
     $html = '<span class="timeline-time">' . fmt_datetime($ev['created_at']) . ' · ' . e($ev['user_name']) . '</span>';
     $html .= '<span class="timeline-title">' . e($eventLabels[$ev['type']] ?? ucfirst(str_replace('_', ' ', (string) $ev['type'])));
-    if (!empty($ev['field']) && !in_array($ev['type'], ['status_changed', 'assigned', 'unassigned', 'tags_changed'], true)) {
+    if (!empty($ev['field']) && !in_array($ev['type'], ['status_changed', 'assigned', 'unassigned', 'forwarded', 'forward_accepted', 'tags_changed'], true)) {
         $html .= ' <span class="text-muted">(' . e($ev['field']) . ')</span>';
     }
     $html .= '</span>';

@@ -142,7 +142,6 @@ $eventClass = static fn (string $t): string => match ($t) {
                         <option value="<?= (int) $c['id'] ?>"<?= selected($task['category_id'], $c['id']) ?>><?= e($c['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
-                <p class="form-hint">Die Kategorie erscheint als Pill vor dem Aufgabentitel. Der Katalog wird unter KLINQ → Help-Desk-Administration gepflegt.</p>
             </div>
             <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Speichern</button>
         </form>

@@ -76,9 +76,17 @@ final class TaskService
 
     // ------------------------------------------------------------------ Lesen
 
-    /** @return array<string,mixed> */
+    /**
+     * Aufgabe laden. Der Aufgabenbereich gehört den Help-Desk-Rollen (`helpdesk.tasks`); die
+     * Prüfung sitzt bewusst hier, damit auch Aktionen, die nur ein eigenes Recht tragen
+     * (z. B. `helpdesk.tasks.assign` über die Gruppe „Aufgabenverteilung“), den Bereich nicht
+     * für Nicht-Agenten öffnen.
+     *
+     * @return array<string,mixed>
+     */
     public function get(int $id): array
     {
+        $this->currentUser->require('helpdesk.tasks');
         $task = $this->tasks->find($id);
         if ($task === null) {
             throw new NotFoundException('Aufgabe nicht gefunden.');

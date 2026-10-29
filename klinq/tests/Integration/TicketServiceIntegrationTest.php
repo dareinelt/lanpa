@@ -418,6 +418,29 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
     }
 
     /**
+     * „Zusätzlicher Benutzer“ (`affected_employee_id`): Nicht-Agenten sehen Tickets, die sie
+     * selbst eröffnet haben, und solche, bei denen sie als zusätzlicher Benutzer eingetragen
+     * sind. Alle übrigen Tickets bleiben verborgen.
+     */
+    public function testPortalUserSeesTicketsWhereTheyAreTheAdditionalUser(): void
+    {
+        $additionalTicket = $this->createTicket(['affected_employee_id' => $this->otherEmployeeId]);
+        $foreign = $this->createTicket();
+
+        $additional = $this->createUser('olga', 'lager', $this->otherEmployeeId);
+        $this->loginAs($additional, 'lager');
+
+        $this->assertSame((int) $additionalTicket['id'], (int) $this->service()->getVisible((int) $additionalTicket['id'])['id'], 'Zusätzlicher Benutzer sieht das Ticket');
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->getVisible((int) $foreign['id']));
+
+        $filters = ['visible_user_id' => $additional, 'view' => 'portal_open'];
+        $ids = array_map(static fn (array $r): int => (int) $r['id'], $this->tickets()->search($filters, 'created_at', 'desc', 50, 0));
+        $this->assertContains((int) $additionalTicket['id'], $ids, 'Portalliste zeigt das Ticket mit zusätzlichem Benutzer');
+        $this->assertFalse(in_array((int) $foreign['id'], $ids, true), 'Fremde Tickets bleiben verborgen');
+        $this->assertSame(1, $this->tickets()->countSearch($filters));
+    }
+
+    /**
      * Ueber das Intranet angemeldete Konten haben ggf. keine Verknuepfung zu ihrem
      * Mitarbeiterdatensatz (`users.employee_id` bleibt leer). Eigene Tickets – etwa aus der
      * Stoerungsmeldung, die nur den Mitarbeiter kennt – muessen trotzdem sichtbar bleiben.

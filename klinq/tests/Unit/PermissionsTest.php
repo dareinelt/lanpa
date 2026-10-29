@@ -62,6 +62,32 @@ final class PermissionsTest extends TestCase
         $this->assertFalse($this->permissions->roleHas('portal', 'helpdesk.view'));
     }
 
+    /**
+     * Der Aufgabenbereich gehört den Help-Desk-Rollen. Nicht-Agenten sehen dort nichts – auch
+     * dann nicht, wenn sie die Berechtigungsgruppe „Aufgabenverteilung“ erhalten haben: die
+     * Gruppe ergänzt nur das Zuweisen innerhalb des Bereichs.
+     */
+    public function testTaskPermissionsStayWithHelpdeskRoles(): void
+    {
+        foreach (['portal', 'readonly', 'assetmanagement', 'lager', 'einkauf'] as $role) {
+            $this->assertFalse($this->permissions->roleHas($role, 'helpdesk.tasks'), $role . ' darf den Aufgabenbereich nicht öffnen');
+            $this->assertFalse($this->permissions->roleHas($role, 'helpdesk.tasks.assign'), $role . ' weist keine Aufgaben zu');
+            $this->assertFalse($this->permissions->roleHas($role, 'helpdesk.view'), $role . ' gehört nicht zum Agentenbereich');
+        }
+
+        foreach (['helpdesk_agent', 'helpdesk_lead', 'helpdesk_admin', 'admin'] as $role) {
+            $this->assertTrue($this->permissions->roleHas($role, 'helpdesk.tasks'), $role . ' bearbeitet Aufgaben');
+        }
+
+        foreach (['statistik', 'ticketaufruf', 'ticket_loeschen', 'ticket_stornieren'] as $group) {
+            $this->assertFalse($this->permissions->groupHas($group, 'helpdesk.tasks'), 'Gruppe ' . $group . ' öffnet den Aufgabenbereich nicht');
+        }
+        $this->assertTrue($this->permissions->groupHas('aufgabenverteilung', 'helpdesk.tasks.assign'));
+        $this->assertFalse($this->permissions->groupHas('aufgabenverteilung', 'helpdesk.tasks'), 'Die Gruppe weist zu, sie öffnet den Bereich nicht');
+        $this->assertFalse($this->permissions->hasEffective('portal', ['aufgabenverteilung'], 'helpdesk.tasks'));
+        $this->assertFalse($this->permissions->hasEffective('lager', ['aufgabenverteilung'], 'helpdesk.tasks'));
+    }
+
     public function testLagerCanCheckoutButNotManageSettings(): void    {
         $this->assertTrue($this->permissions->roleHas('lager', 'movements.checkout'));
         $this->assertFalse($this->permissions->roleHas('lager', 'settings.manage'));

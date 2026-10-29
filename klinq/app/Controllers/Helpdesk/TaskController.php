@@ -78,6 +78,8 @@ final class TaskController extends HelpdeskBaseController
 
     private function listTasks(Request $request, bool $mine): Response
     {
+        // Der Aufgabenbereich ist Help-Desk-Rollen vorbehalten (siehe TaskService::get()).
+        $this->currentUser->require('helpdesk.tasks');
         $filters = $this->filtersFrom($request, $mine);
         [$sort, $dir] = $this->sortFrom($request);
         $perPage = max(10, min(200, $request->int('per_page', (int) $this->config->get('helpdesk.list_per_page', 25)) ?? 25));

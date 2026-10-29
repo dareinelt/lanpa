@@ -6,6 +6,7 @@ namespace App\Services\Helpdesk;
 
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TicketCategoryRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\TicketRuleRepository;
@@ -34,6 +35,7 @@ final class HelpdeskAdminService
         private readonly TicketTemplateRepository $templates,
         private readonly TicketRuleRepository $rules,
         private readonly TicketRuleEvaluator $evaluator,
+        private readonly TaskCategoryRepository $taskCategories,
         private readonly AuditLogService $audit,
         private readonly CurrentUser $currentUser
     ) {}
@@ -123,6 +125,47 @@ final class HelpdeskAdminService
         $row = $this->masterData->findIn($table, $id) ?? throw new NotFoundException('Datensatz nicht gefunden.');
         $this->masterData->updateIn($table, $id, ['is_active' => empty($row['is_active']) ? 1 : 0]);
         $this->audit->log('update', $table, $id, (string) $row['name'], ['is_active' => $row['is_active']], ['is_active' => empty($row['is_active']) ? 1 : 0]);
+    }
+
+    // ------------------------------------------------------------------ Aufgaben-Kategorien
+
+    /**
+     * Kategorie des Aufgaben-Katalogs anlegen oder ändern. Kategorien werden nie gelöscht, sondern
+     * deaktiviert, damit bestehende Aufgaben ihre Zuordnung behalten.
+     * @param array<string,mixed> $input name, sort_order, is_active
+     */
+    public function saveTaskCategory(?int $id, array $input): int
+    {
+        $this->currentUser->require('helpdesk.admin');
+        $existing = $id !== null ? $this->taskCategories->find($id) : null;
+        if ($id !== null && $existing === null) {
+            throw new NotFoundException('Datensatz nicht gefunden.');
+        }
+
+        $v = (new Validator($input))
+            ->string('name', 'Bezeichnung', true, 100)
+            ->int('sort_order', 'Sortierung', false, 0, 9999)
+            ->bool('is_active');
+        if ($v->fails()) {
+            throw new ValidationException($v->errors());
+        }
+        $data = $v->validated();
+        $data['sort_order'] ??= 0;
+
+        $duplicate = $this->taskCategories->findByName((string) $data['name']);
+        if ($duplicate !== null && (int) $duplicate['id'] !== (int) $id) {
+            throw ValidationException::single('name', 'Diese Bezeichnung ist bereits vergeben.');
+        }
+
+        if ($id === null) {
+            $id = $this->taskCategories->create($data);
+            $this->audit->log('create', 'task_categories', $id, (string) $data['name'], null, $data);
+        } else {
+            $this->taskCategories->update($id, $data);
+            $this->audit->log('update', 'task_categories', $id, (string) $data['name'], $existing, $data);
+        }
+
+        return $id;
     }
 
     // ------------------------------------------------------------------ Kategorien

@@ -4,6 +4,8 @@ $closed = in_array($ticket['status_category'], ['resolved', 'closed', 'cancelled
 $isMerged = $ticket['merged_into_ticket_id'] !== null;
 $readOnly = $isMerged;
 $canUpdate = $can('helpdesk.update') && !$readOnly;
+$canConvert = $isAgent && $can('helpdesk.tasks') && !$readOnly
+    && !in_array((string) $ticket['status_code'], ['closed', 'cancelled'], true) && $taskForTicket === null;
 $stateLabel = ['ok' => 'Im Plan', 'warning' => 'Warnung', 'breached' => 'Verletzt', 'met' => 'Eingehalten', 'none' => '–', 'paused' => 'Pausiert'];
 $stateClass = static fn (string $s): string => match ($s) { 'warning' => ' is-warning', 'breached' => ' is-breached', 'met' => ' is-met', default => '' };
 $percentBar = static function (?int $percent, string $state, ?string $startedAt, ?string $dueAt, int $warningPercent): string {
@@ -89,11 +91,8 @@ $statusTransitions = array_values(array_filter(
         <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed && (int) ($ticket['assignee_user_id'] ?? 0) !== (int) $user['id']): ?>
             <form method="post" action="/helpdesk/tickets/<?= $id ?>/take" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('user') ?> Übernehmen</button></form>
         <?php endif; ?>
-        <?php if ($isAgent && $can('helpdesk.tasks') && !$readOnly && !in_array((string) $ticket['status_code'], ['closed', 'cancelled'], true) && $taskForTicket === null): ?>
-            <form method="post" action="/helpdesk/tickets/<?= $id ?>/in-aufgabe" class="inline-form" data-confirm="Ticket <?= e($ticket['number']) ?> in eine Aufgabe umwandeln? Das Ticket wird dabei geschlossen und mit der Aufgabe verknüpft.">
-                <?= csrf_field() ?>
-                <button type="submit" class="btn btn-secondary btn-sm"><?= icon('inbox') ?> In Aufgabe umwandeln</button>
-            </form>
+        <?php if ($canConvert): ?>
+            <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="convert-dialog"><?= icon('inbox') ?> In Aufgabe umwandeln</button>
         <?php endif; ?>
         <?php if (($isFirstLevelSupport ?? false) && $secondLevelSupport !== null && !$readOnly && !$closed): ?>
             <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="second-level-dialog"><?= icon('shield') ?> An 2nd Level zuweisen</button>
@@ -579,6 +578,38 @@ $statusTransitions = array_values(array_filter(
             </div>
         </div>
         <div class="dialog-footer"><button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button><button type="submit" class="btn btn-primary">Zuweisen</button></div>
+    </form>
+</dialog>
+<?php endif; ?>
+<?php if ($canConvert): ?>
+<dialog id="convert-dialog" class="dialog">
+    <form method="post" action="/helpdesk/tickets/<?= $id ?>/in-aufgabe">
+        <?= csrf_field() ?>
+        <div class="dialog-header">
+            <h2><?= icon('inbox') ?> In Aufgabe umwandeln</h2>
+            <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+        </div>
+        <div class="dialog-body">
+            <p class="text-muted text-sm">Ticket <strong><?= e($ticket['number']) ?></strong> wird in eine Aufgabe umgewandelt. Das Ticket wird dabei geschlossen und mit der Aufgabe verknüpft.</p>
+            <div class="form-group">
+                <label for="convert-category">Kategorie <span class="text-muted">(optional)</span></label>
+                <select id="convert-category" name="category_id">
+                    <option value="">– keine Kategorie –</option>
+                    <?php foreach ($taskCategories as $c): ?>
+                        <option value="<?= (int) $c['id'] ?>"><?= e($c['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <p class="form-hint">Die Kategorie erscheint als Pill vor dem Aufgabentitel und kann später in der Aufgabe geändert werden.</p>
+            </div>
+            <div class="form-group">
+                <label for="convert-due">Fällig <span class="text-muted">(optional)</span></label>
+                <input type="date" id="convert-due" name="due_at">
+            </div>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+            <button type="submit" class="btn btn-primary"><?= icon('inbox') ?> Umwandeln</button>
+        </div>
     </form>
 </dialog>
 <?php endif; ?>

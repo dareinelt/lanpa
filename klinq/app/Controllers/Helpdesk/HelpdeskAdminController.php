@@ -10,6 +10,7 @@ use App\Core\Response;
 use App\Core\View;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TicketCategoryRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\TicketRuleRepository;
@@ -42,6 +43,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         'priorities' => ['Prioritäten', 'helpdesk.admin'],
         'groups' => ['Gruppen', 'helpdesk.admin'],
         'categories' => ['Kategorien', 'helpdesk.categories'],
+        'task-categories' => ['Aufgaben-Kategorien', 'helpdesk.admin'],
         'slas' => ['SLAs', 'helpdesk.sla'],
         'tags' => ['Tags', 'helpdesk.admin'],
         'templates' => ['Vorlagen', 'helpdesk.templates'],
@@ -62,6 +64,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         private readonly HelpdeskAdminService $service,
         private readonly TicketMasterDataRepository $masterData,
         private readonly TicketCategoryRepository $categories,
+        private readonly TaskCategoryRepository $taskCategories,
         private readonly TicketSlaRepository $slas,
         private readonly TicketTagRepository $tags,
         private readonly TicketTemplateRepository $templates,
@@ -347,6 +350,10 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             case 'categories':
                 $this->service->saveCategory($id, ['is_active' => empty($row['is_active']) ? '1' : '0'] + $row);
                 break;
+            case 'task-categories':
+                $this->service->saveTaskCategory($id, ['is_active' => empty($row['is_active']) ? '1' : '0'] + $row);
+                $message = empty($row['is_active']) ? 'Kategorie aktiviert.' : 'Kategorie deaktiviert.';
+                break;
             case 'slas':
                 $this->service->saveSla($id, ['is_active' => empty($row['is_active']) ? '1' : '0'] + $this->slaInput($row));
                 break;
@@ -390,6 +397,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'priorities' => $this->masterData->priorities(false),
             'groups' => array_map(fn (array $g): array => $g + ['members' => $this->masterData->groupMembers((int) $g['id'])], $this->masterData->groups(false)),
             'categories' => $this->categories->all(false),
+            'task-categories' => $this->taskCategories->all(false),
             'slas' => $this->slas->all(false),
             'tags' => $this->tags->all(),
             'templates' => $this->templates->all(false),
@@ -401,6 +409,9 @@ final class HelpdeskAdminController extends HelpdeskBaseController
     /** Verwendungszähler für Stammdaten (Löschschutz-Hinweis). @return array<int,int> */
     private function usageFor(string $kind): array
     {
+        if ($kind === 'task-categories') {
+            return $this->taskCategories->usageCounts();
+        }
         $table = HelpdeskAdminService::SIMPLE_TABLES[$kind] ?? null;
         if ($table === null) {
             return [];
@@ -419,6 +430,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         return match ($kind) {
             'types', 'statuses', 'priorities', 'groups' => $this->masterData->findIn(HelpdeskAdminService::SIMPLE_TABLES[$kind], $id),
             'categories' => $this->categories->find($id),
+            'task-categories' => $this->taskCategories->find($id),
             'slas' => $this->slas->find($id),
             'tags' => $this->tags->find($id),
             'templates' => $this->templates->find($id),
@@ -433,6 +445,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         return match ($kind) {
             'types', 'statuses', 'priorities', 'groups' => $this->service->saveSimple($kind, $id, $input),
             'categories' => $this->service->saveCategory($id, $input),
+            'task-categories' => $this->service->saveTaskCategory($id, $input),
             'slas' => $this->service->saveSla($id, $input),
             'tags' => $this->service->saveTag($id, $input),
             'templates' => $this->service->saveTemplate($id, $input),

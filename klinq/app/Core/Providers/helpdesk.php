@@ -26,6 +26,7 @@ use App\Repositories\EmployeeRepository;
 use App\Repositories\HelpdeskSupportShiftRepository;
 use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\LocationRepository;
+use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TaskRepository;
 use App\Repositories\TicketAttachmentRepository;
 use App\Repositories\TicketCategoryRepository;
@@ -96,6 +97,7 @@ return static function (Container $c): void {
         TicketTagRepository::class, TicketCommentRepository::class, TicketAttachmentRepository::class, TicketWorklogRepository::class,
         TicketRelationRepository::class, TicketTemplateRepository::class, TicketRuleRepository::class, TicketReportRepository::class,
         KnowledgeBaseRepository::class, HelpdeskSupportShiftRepository::class, TaskRepository::class,
+        TaskCategoryRepository::class,
     ] as $repository) {
         $c->singleton($repository, static fn (Container $c): object => new $repository($c->get(PDO::class)));
     }
@@ -207,6 +209,7 @@ return static function (Container $c): void {
         $c->get(TicketTemplateRepository::class),
         $c->get(TicketRuleRepository::class),
         $c->get(TicketRuleEvaluator::class),
+        $c->get(TaskCategoryRepository::class),
         $c->get(AuditLogService::class),
         $c->get(CurrentUser::class)
     ));
@@ -355,10 +358,12 @@ return static function (Container $c): void {
         $c->get(UserRepository::class),
         $c->get(ReplyTemplateSettingsService::class),
         $c->get(ErrorOriginSettingsService::class),
-        $c->get(TaskRepository::class)
+        $c->get(TaskRepository::class),
+        $c->get(TaskCategoryRepository::class)
     ));
     $c->singleton(TaskService::class, static fn (Container $c): TaskService => new TaskService(
         $c->get(TaskRepository::class),
+        $c->get(TaskCategoryRepository::class),
         $c->get(TaskNumberService::class),
         $c->get(TicketService::class),
         $c->get(TicketMasterDataRepository::class),
@@ -370,6 +375,7 @@ return static function (Container $c): void {
         $c->get(CurrentUser::class),
         $c->get(TaskService::class),
         $c->get(TaskRepository::class),
+        $c->get(TaskCategoryRepository::class),
         $c->get(TicketMasterDataRepository::class),
         $c->get(Config::class)
     ));
@@ -468,6 +474,7 @@ return static function (Container $c): void {
         $c->get(HelpdeskAdminService::class),
         $c->get(TicketMasterDataRepository::class),
         $c->get(TicketCategoryRepository::class),
+        $c->get(TaskCategoryRepository::class),
         $c->get(TicketSlaRepository::class),
         $c->get(TicketTagRepository::class),
         $c->get(TicketTemplateRepository::class),

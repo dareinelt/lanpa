@@ -97,7 +97,7 @@ $canAssign = $can('helpdesk.tasks.assign');
             <tr data-href="<?= $detailUrl ?>" class="<?= $rowClass ?>">
                 <td class="ticket-number"><a href="<?= $detailUrl ?>"><?= e($r['number']) ?></a></td>
                 <td class="ticket-subject">
-                    <a href="<?= $detailUrl ?>"><?= e($r['subject']) ?></a>
+                    <?php if ($r['category_name'] !== null): ?><span class="badge badge-neutral task-category"><?= e($r['category_name']) ?></span> <?php endif; ?><a href="<?= $detailUrl ?>"><?= e($r['subject']) ?></a>
                     <?php if (trim((string) $r['note']) !== ''): ?><div class="ticket-meta"><span><?= e(mb_strimwidth(trim((string) $r['note']), 0, 90, ' …')) ?></span></div><?php endif; ?>
                 </td>
                 <td class="nowrap"><?= badge($statuses[$r['status']] ?? $r['status'], $statusColors[$r['status']] ?? 'neutral') ?></td>

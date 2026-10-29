@@ -178,6 +178,28 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame(1, $this->tasks()->openCountFor($this->agent2Id));
     }
 
+    /**
+     * Der Aufgabenbereich gehört den Help-Desk-Rollen. Die Berechtigungsgruppe
+     * „Aufgabenverteilung“ (`helpdesk.tasks.assign`) ergänzt nur das Zuweisen innerhalb des
+     * Bereichs – sie öffnet ihn nicht für Nicht-Agenten.
+     */
+    public function testNonAgentWithAssignmentGroupCannotUseTasks(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $portalUser = $this->createUser('portal-user', 'portal');
+
+        $this->loginAs($portalUser, 'portal', ['aufgabenverteilung']);
+
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->get((int) $task['id']), 'helpdesk.tasks');
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->assign((int) $task['id'], $this->agent2Id), 'helpdesk.tasks');
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->claim((int) $task['id']));
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->changeStatus((int) $task['id'], ['status' => 'done']));
+        $this->assertThrows(ForbiddenException::class, fn () => $this->service()->addComment((int) $task['id'], ['body' => 'Ich übernehme das', 'visibility' => 'internal']));
+
+        $this->loginAs($this->agentId, 'helpdesk_agent');
+        $this->assertSame('open', $this->service()->get((int) $task['id'])['status']);
+    }
+
     public function testUnassignPutsTaskBackIntoAllTasks(): void
     {
         $task = $this->service()->convert((int) $this->createTicket()['id'], []);

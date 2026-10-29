@@ -150,6 +150,34 @@ final class ModuleNavigationTest extends TestCase
         $this->assertSame(['portal', 'portal-tickets', 'portal-knowledge'], $keys);
     }
 
+    /**
+     * Der Bereich „Aufgaben“ hängt am Agentenbereich (`helpdesk.view`). Rollen mit Assetzugriff
+     * sehen im Help Desk nur das Portal, und selbst ein einzeln vergebenes `helpdesk.tasks`
+     * öffnet die Aufgabenliste nicht.
+     */
+    public function testNonAgentsNeverSeeTheTasksArea(): void
+    {
+        $permissions = new Permissions(new Config(dirname(__DIR__, 2) . '/config'));
+
+        foreach (['portal', 'readonly', 'assetmanagement', 'lager', 'einkauf'] as $role) {
+            $can = static fn (string $permission): bool => $permissions->hasEffective($role, ['aufgabenverteilung'], $permission);
+            $keys = $this->keys(ModuleNavigation::items(ModuleNavigation::HELPDESK, $can));
+
+            $this->assertSame(['portal', 'portal-tickets', 'portal-knowledge'], $keys, $role . ' sieht nur das Portal');
+            foreach ($keys as $key) {
+                $this->assertFalse(str_starts_with($key, 'helpdesk-aufgaben'), $role . ' sieht den Aufgabenbereich nicht: ' . $key);
+            }
+        }
+
+        $onlyTasks = $this->keys(ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['portal.view', 'helpdesk.tasks'])));
+        $this->assertFalse(in_array('helpdesk-aufgaben', $onlyTasks, true), 'Ohne Agentenrecht keine Aufgabenliste');
+        $this->assertFalse(in_array('helpdesk-aufgaben-meine', $onlyTasks, true));
+
+        $agentKeys = $this->keys(ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['helpdesk.view', 'helpdesk.tasks'])));
+        $this->assertContains('helpdesk-aufgaben', $agentKeys);
+        $this->assertContains('helpdesk-aufgaben-meine', $agentKeys);
+    }
+
     public function testBadgesComeFromOpenCounts(): void
     {
         $items = ModuleNavigation::items(ModuleNavigation::ASSETS, $this->can(['movements.view']), ['checkouts' => 2, 'returns' => 3]);

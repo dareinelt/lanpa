@@ -34,6 +34,7 @@ $all = [
     'helpdesk.comment', 'helpdesk.internal_note', 'helpdesk.close', 'helpdesk.reopen',
     'helpdesk.merge', 'helpdesk.escalate', 'helpdesk.sla', 'helpdesk.worklog', 'helpdesk.delete',
     'helpdesk.cancel', 'helpdesk.reports', 'helpdesk.export', 'helpdesk.view_history',
+    'helpdesk.tasks', 'helpdesk.tasks.assign',
     'helpdesk.categories', 'helpdesk.templates', 'helpdesk.admin',
     'knowledgebase.view', 'knowledgebase.manage',
 ];
@@ -52,7 +53,7 @@ $helpdeskAgent = [
     'portal.view', 'portal.create',
     'helpdesk.view', 'helpdesk.create', 'helpdesk.update', 'helpdesk.assign',
     'helpdesk.comment', 'helpdesk.internal_note', 'helpdesk.close', 'helpdesk.reopen',
-    'helpdesk.merge', 'helpdesk.worklog',
+    'helpdesk.merge', 'helpdesk.worklog', 'helpdesk.tasks',
     'knowledgebase.view', 'knowledgebase.manage',
 ];
 $helpdeskLead = array_merge($helpdeskAgent, [
@@ -114,18 +115,21 @@ return [
     // mehrere Gruppen zugeordnet werden. "Statistik" gewährt Zugriff auf die
     // Help-Desk-Ticket-Berichte (helpdesk.reports); "ticketaufruf" erlaubt das Auswerten der
     // Ticketaufrufe (helpdesk.view_history). "ticket_loeschen" und "ticket_stornieren" geben
-    // das Löschen bzw. Stornieren von Tickets frei. Admins haben diese Rechte ohnehin über
+    // das Löschen bzw. Stornieren von Tickets frei, "aufgabenverteilung" das Zuweisen von
+    // Aufgaben an einen bestimmten Agenten. Admins haben diese Rechte ohnehin über
     // ihre Rolle; alle anderen Rollen benötigen die jeweilige Gruppe.
     'groups' => [
         'statistik' => ['helpdesk.reports'],
         'ticketaufruf' => ['helpdesk.view_history'],
         'ticket_loeschen' => ['helpdesk.delete'],
         'ticket_stornieren' => ['helpdesk.cancel'],
+        'aufgabenverteilung' => ['helpdesk.tasks.assign'],
     ],
     'group_labels' => [
         'statistik' => 'Statistik',
         'ticketaufruf' => 'Darf Ticketaufruf auswerten',
         'ticket_loeschen' => 'Darf Tickets löschen',
         'ticket_stornieren' => 'Darf Tickets stornieren',
+        'aufgabenverteilung' => 'Darf Aufgaben zuweisen',
     ],
 ];

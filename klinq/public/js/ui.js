@@ -147,11 +147,138 @@
         });
     });
 
+    /**
+     * Bestätigungsfragen erscheinen als Overlay statt als Browser-Meldung.
+     * `data-confirm` an einem Formular fragt vor dem Absenden nach,
+     * `AppUI.confirm()` liefert die Antwort als Promise.
+     */
+    let confirmState = null;
+    let confirmResolve = null;
+    let confirmHandled = false;
+    let approvedSubmission = null;
+
+    /** Laufende Bestätigung abschließen; mehrfache Aufrufe (Klick + close-Event) sind unschädlich. */
+    function finishConfirm(accepted) {
+        if (confirmHandled) { return; }
+        confirmHandled = true;
+        const pending = confirmState;
+        const resolve = confirmResolve;
+        confirmState = null;
+        confirmResolve = null;
+        if (resolve) { resolve(accepted); }
+        if (accepted && pending && pending.form) { submitApproved(pending); }
+    }
+
+    function confirmDialog() {
+        let dialog = document.getElementById("ui-confirm-dialog");
+        if (dialog) { return dialog; }
+        dialog = document.createElement("dialog");
+        dialog.id = "ui-confirm-dialog";
+        dialog.className = "dialog";
+        dialog.setAttribute("aria-labelledby", "ui-confirm-dialog-title");
+        dialog.setAttribute("aria-describedby", "ui-confirm-dialog-message");
+
+        const header = document.createElement("div");
+        header.className = "dialog-header";
+        const title = document.createElement("h2");
+        title.id = "ui-confirm-dialog-title";
+        title.textContent = "Bestätigung";
+        header.appendChild(title);
+
+        const body = document.createElement("div");
+        body.className = "dialog-body";
+        const message = document.createElement("p");
+        message.id = "ui-confirm-dialog-message";
+        message.className = "dialog-message";
+        body.appendChild(message);
+
+        const footer = document.createElement("div");
+        footer.className = "dialog-footer";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.className = "btn btn-secondary";
+        cancel.textContent = "Abbrechen";
+        cancel.setAttribute("data-dialog-close", "");
+        const accept = document.createElement("button");
+        accept.type = "button";
+        accept.className = "btn btn-primary";
+        accept.textContent = "Bestätigen";
+        accept.setAttribute("data-confirm-accept", "");
+        accept.addEventListener("click", function () {
+            finishConfirm(true);
+            dialog.close();
+        });
+        footer.appendChild(cancel);
+        footer.appendChild(accept);
+
+        dialog.appendChild(header);
+        dialog.appendChild(body);
+        dialog.appendChild(footer);
+        dialog.addEventListener("close", function () { finishConfirm(false); });
+        document.body.appendChild(dialog);
+        return dialog;
+    }
+
+    /** Bestätigung als Overlay anzeigen und das Ergebnis als Promise liefern. */
+    function confirmOverlay(question) {
+        const dialog = confirmDialog();
+        if (typeof dialog.showModal !== "function") {
+            return Promise.resolve(window.confirm(question));
+        }
+        return new Promise(function (resolve) {
+            confirmHandled = false;
+            confirmState = null;
+            confirmResolve = resolve;
+            dialog.querySelector("#ui-confirm-dialog-message").textContent = question;
+            dialog.showModal();
+        });
+    }
+
+    /** Formular nach der Bestätigung abschicken, ohne die Frage erneut zu stellen. */
+    function submitApproved(pending) {
+        const form = pending.form;
+        if (!form || !form.isConnected) { return; }
+        approvedSubmission = pending;
+        try {
+            if (typeof form.requestSubmit === "function") {
+                if (pending.submitter && pending.submitter.form === form) {
+                    form.requestSubmit(pending.submitter);
+                } else {
+                    form.requestSubmit();
+                }
+            } else {
+                form.submit();
+            }
+        } finally {
+            approvedSubmission = null;
+        }
+    }
+
+    function askConfirm(form, submitter) {
+        const question = form.getAttribute("data-confirm") || "";
+        const pending = { form: form, submitter: submitter || null };
+        const dialog = confirmDialog();
+        if (question === "" || typeof dialog.showModal !== "function") {
+            submitApproved(pending);
+            return;
+        }
+        confirmHandled = false;
+        confirmResolve = null;
+        confirmState = pending;
+        dialog.querySelector("#ui-confirm-dialog-message").textContent = question;
+        dialog.showModal();
+    }
+
     document.addEventListener("submit", function (event) {
         const form = event.target;
-        if (form.matches("[data-confirm]") && !window.confirm(form.getAttribute("data-confirm"))) {
-            event.preventDefault();
-            return;
+        if (form.matches("[data-confirm]")) {
+            if (approvedSubmission && approvedSubmission.form === form) {
+                approvedSubmission = null;
+            } else {
+                event.preventDefault();
+                askConfirm(form, event.submitter);
+                return;
+            }
         }
         // Doppelte Absendung verhindern
         const submit = form.querySelector('button[type="submit"]:not([data-allow-multiple])');
@@ -203,6 +330,7 @@
 
     window.AppUI = {
         toast: showToast,
+        confirm: confirmOverlay,
         openDialog: openDialog,
         closeDialog: closeDialog,
         api: api,

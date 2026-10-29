@@ -16,6 +16,11 @@
     function toast(msg, type) {
         if (window.AppUI && window.AppUI.toast) { window.AppUI.toast(msg, type || "info"); }
     }
+    /** Rückfrage als Overlay; ohne ui.js bleibt der Browser-Dialog als Rückfallebene. */
+    function askConfirm(message) {
+        if (window.AppUI && window.AppUI.confirm) { return window.AppUI.confirm(message); }
+        return Promise.resolve(window.confirm(message));
+    }
     function icon(name) {
         return '<svg class="icon" aria-hidden="true"><use href="#icon-' + name + '"/></svg>';
     }
@@ -74,9 +79,13 @@
             if (btn.hasAttribute("data-queue-sync")) { btn.disabled = true; O.sync(); return; }
             const id = btn.getAttribute("data-queue-remove") || btn.getAttribute("data-queue-retry") || btn.getAttribute("data-queue-force");
             if (btn.hasAttribute("data-queue-remove")) {
-                if (window.confirm("Diesen Vorgang endgültig verwerfen? Er wird nicht übertragen.")) { O.removeFromQueue(id); }
+                askConfirm("Diesen Vorgang endgültig verwerfen? Er wird nicht übertragen.").then(function (confirmed) {
+                    if (confirmed) { O.removeFromQueue(id); }
+                });
             } else if (btn.hasAttribute("data-queue-force")) {
-                if (window.confirm("Das Asset wurde zwischenzeitlich auf dem Server geändert. Vorgang trotzdem mit dem aktuellen Serverstand übernehmen?")) { O.retry(id, true); }
+                askConfirm("Das Asset wurde zwischenzeitlich auf dem Server geändert. Vorgang trotzdem mit dem aktuellen Serverstand übernehmen?").then(function (confirmed) {
+                    if (confirmed) { O.retry(id, true); }
+                });
             } else if (btn.hasAttribute("data-queue-retry")) {
                 O.retry(id, false);
             }

@@ -13,6 +13,7 @@ use App\Repositories\AssetRepository;
 use App\Repositories\CostCenterRepository;
 use App\Repositories\EmployeeRepository;
 use App\Repositories\LocationRepository;
+use App\Repositories\TaskRepository;
 use App\Repositories\TicketCategoryRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\TicketRelationRepository;
@@ -72,7 +73,8 @@ final class TicketController extends HelpdeskBaseController
         private readonly TicketMailService $mailService,
         private readonly UserRepository $users,
         private readonly ReplyTemplateSettingsService $replyTemplates,
-        private readonly ErrorOriginSettingsService $errorOrigins
+        private readonly ErrorOriginSettingsService $errorOrigins,
+        private readonly TaskRepository $tasks
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -298,6 +300,7 @@ final class TicketController extends HelpdeskBaseController
             'aiEnabled' => $this->ai->isEnabled(),
             'mailCompose' => $this->mailService->composeData($ticket),
             'mergeCompose' => $this->mergeService->composeData($ticket),
+            'taskForTicket' => $this->currentUser->can('helpdesk.tasks') ? $this->tasks->findByTicket($id) : null,
             'scripts' => ['/js/helpdesk.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js'],
         ]);
     }

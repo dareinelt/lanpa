@@ -56,6 +56,7 @@ $statusTransitions = array_values(array_filter(
             <?php if ($isMerged): ?><span class="badge is-neutral"><?= icon('merge', 'icon icon-xs') ?> Zusammengeführt in <a href="/helpdesk/tickets/<?= (int) $ticket['merged_into_ticket_id'] ?>"><?= e($ticket['merged_into_number']) ?></a></span><?php endif; ?>
             <?php if ((int) $ticket['escalation_level'] > 0): ?><span class="badge is-danger">Eskalationsstufe <?= (int) $ticket['escalation_level'] ?></span><?php endif; ?>
             <?php if ((int) $ticket['reopen_count'] > 0): ?><span class="badge is-warning"><?= (int) $ticket['reopen_count'] ?>× wiedereröffnet</span><?php endif; ?>
+            <?php if ($taskForTicket !== null): ?><span class="badge badge-info"><?= icon('inbox', 'icon icon-xs') ?> Aufgabe <a href="/helpdesk/aufgaben/<?= (int) $taskForTicket['id'] ?>"><?= e($taskForTicket['number']) ?></a></span><?php endif; ?>
             <?php if ($ticket['source'] === 'email'): ?>
                 <span class="badge badge-info"><?= icon('mail', 'icon icon-xs') ?> Per E-Mail eröffnet<?= !empty($ticket['mail_from_address']) ? ' von ' . e(trim(($ticket['mail_from_name'] ?? '') . ' <' . $ticket['mail_from_address'] . '>')) : '' ?></span>
             <?php endif; ?>
@@ -87,6 +88,12 @@ $statusTransitions = array_values(array_filter(
         <form method="post" action="/helpdesk/tickets/<?= $id ?>/watch" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('eye') ?> <?= $isWatching ? 'Nicht mehr beobachten' : 'Beobachten' ?></button></form>
         <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed && (int) ($ticket['assignee_user_id'] ?? 0) !== (int) $user['id']): ?>
             <form method="post" action="/helpdesk/tickets/<?= $id ?>/take" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('user') ?> Übernehmen</button></form>
+        <?php endif; ?>
+        <?php if ($isAgent && $can('helpdesk.tasks') && !$readOnly && !in_array((string) $ticket['status_code'], ['closed', 'cancelled'], true) && $taskForTicket === null): ?>
+            <form method="post" action="/helpdesk/tickets/<?= $id ?>/in-aufgabe" class="inline-form" data-confirm="Ticket <?= e($ticket['number']) ?> in eine Aufgabe umwandeln? Das Ticket wird dabei geschlossen und mit der Aufgabe verknüpft.">
+                <?= csrf_field() ?>
+                <button type="submit" class="btn btn-secondary btn-sm"><?= icon('inbox') ?> In Aufgabe umwandeln</button>
+            </form>
         <?php endif; ?>
         <?php if (($isFirstLevelSupport ?? false) && $secondLevelSupport !== null && !$readOnly && !$closed): ?>
             <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="second-level-dialog"><?= icon('shield') ?> An 2nd Level zuweisen</button>

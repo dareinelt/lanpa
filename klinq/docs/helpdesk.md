@@ -10,6 +10,7 @@ Das Help-Desk-Modul ergänzt KLINQ um ein vollständiges IT-Ticketsystem: Störu
 | Ticketliste, Detail, Anlage | `/helpdesk/tickets` | Agenten |
 | Berichte & CSV-Export | `/helpdesk/reports` | Leitung |
 | Wissensdatenbank (Pflege) | `/helpdesk/knowledge` | Agenten |
+| Aufgaben („Alle Aufgaben“, „Meine Aufgaben“) | `/helpdesk/aufgaben` | Agenten |
 | Administration (Typen, Status, Prioritäten, Kategorien, SLA, Gruppen, Vorlagen, Regeln) | `/helpdesk/admin` | Help-Desk-Admin |
 | Serviceportal (eigene Tickets, neue Anfrage, Wissensartikel) | `/portal` | alle Mitarbeitenden |
 | JSON-Endpunkte (Suche, Vorschläge, Vorlagen, Assets des Melders) | `/api/helpdesk/…` | Oberfläche |
@@ -167,7 +168,7 @@ Routen: `POST /helpdesk/support-shift/claim` (Berechtigung `helpdesk.view`), `PO
 ## Ticketdetail (`/helpdesk/tickets/{id}`)
 
 - **Kopf**: Nummer, Betreff, Status/Priorität/Typ, Melder (Mitarbeiter mit Abteilung, Standort, Telefon), betroffener Mitarbeiter, Zuständigkeit, Fälligkeiten, SLA-Balken.
-- **Aktionen**: In der Kopfzeile stehen die Schaltflächen **Annehmen**, **Schließen**, **Pausieren** und **Stornieren** direkt neben **E-Mail senden** und **Beobachten**; darunter folgen Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), **Zusammenführen** (Overlay mit Suche, Grund und optionaler Info-E-Mail, siehe „Ticket zusammenführen“) und Löschen (`helpdesk.delete`).
+- **Aktionen**: In der Kopfzeile stehen die Schaltflächen **Annehmen**, **Schließen**, **Pausieren** und **Stornieren** direkt neben **E-Mail senden** und **Beobachten**; darunter folgen Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), **Zusammenführen** (Overlay mit Suche, Grund und optionaler Info-E-Mail, siehe „Ticket zusammenführen“), **In Aufgabe umwandeln** (siehe „Aufgaben“) und Löschen (`helpdesk.delete`).
   - **Annehmen** setzt den Status auf `in_progress` und ersetzt damit den bisherigen Eintrag „In Bearbeitung“ in **Status ändern**. Die Beschriftung folgt der Ausgangslage: „Annehmen“ aus `new`/`open`, „Weiter bearbeiten“ aus einer Pausierung, „Wieder öffnen“ aus „Gelöst“/„Geschlossen“.
   - **Schließen** öffnet den Schließen-Dialog (Lösung, Schließungsgrund, Fehlerursprung, Checkbox „Melder informieren“) und ersetzt den Eintrag „Gelöst“; `resolved` ist damit nur noch programmatisch erreichbar.
   - **Pausieren** und **Stornieren** (`helpdesk.cancel`) liegen ebenfalls in der Kopfzeile; **Status ändern** enthält nur noch die übrigen Zustände. Stornieren erscheint nur mit der jeweiligen Berechtigungsgruppe.
@@ -482,6 +483,62 @@ Je Empfänger geht eine eigene Nachricht über `TicketNotificationService::sendT
 
 ![Wissensartikel im Serviceportal](screenshots/portal-knowledge-detail.png)
 
+## Aufgaben
+
+Aufgaben sind Arbeitsaufträge, die aus einem Ticket entstehen und nicht mehr am Melder hängen. Sie liegen im
+Help Desk unter **Aufgaben** mit zwei Listen: **Alle Aufgaben** (`/helpdesk/aufgaben`) und **Meine Aufgaben**
+(`/helpdesk/aufgaben/meine`). Der Eintrag „Meine Aufgaben“ in der Seitenleiste zeigt die Anzahl der eigenen
+offenen Aufgaben als Zähler.
+
+![Alle Aufgaben mit Ansichten, Filtern und der Aktion „Annehmen“](screenshots/helpdesk-aufgaben-alle.png)
+
+![Meine Aufgaben mit angenommenen und zugewiesenen Aufgaben](screenshots/helpdesk-aufgaben-meine.png)
+
+### Ticket in eine Aufgabe umwandeln
+
+Im Ticketdetail steht für Agenten mit `helpdesk.tasks` die Schaltfläche **In Aufgabe umwandeln**, solange das
+Ticket nicht geschlossen oder storniert ist und noch keine Aufgabe dazu existiert. Sie fragt in einem Overlay
+einmal nach und legt dann eine Aufgabe mit Betreff und Beschreibung des Tickets, dessen Priorität und einem
+Verweis auf das Ticket an.
+**Das Ticket wird dabei geschlossen** (Systemvorgang mit Hinweis in der Historie) und bleibt mit der Aufgabe
+verknüpft: Im Ticketdetail erscheint ein Verweis auf die Aufgabennummer, in der Aufgabe ein Verweis auf das
+Ticket. Je Ticket ist höchstens eine Aufgabe möglich (`tasks.source_ticket_id` ist eindeutig).
+
+Aufgabennummern folgen dem Muster `<Präfix>-<Jahr>-<Nummer>` mit dem Präfix aus `HELPDESK_TASK_PREFIX`
+(Vorgabe `AUF`); die laufende Nummer teilt sich die Aufgabe mit den Tickets (`ticket_sequences`).
+
+![Ticketdetail mit der Schaltfläche „In Aufgabe umwandeln“](screenshots/helpdesk-ticket-in-aufgabe.png)
+
+![Bestätigung vor der Umwandlung als Overlay im Fenster](screenshots/helpdesk-ticket-in-aufgabe-bestaetigung.png)
+
+Rückfragen dieser Art erscheinen als Overlay im Fenster und nicht mehr als Meldung des Browsers. Esc oder
+**Abbrechen** bricht ab, **Bestätigen** führt die Aktion aus.
+
+### Annehmen und Zuweisen
+
+* **Annehmen** (`helpdesk.tasks`): Ein Agent übernimmt eine offene Aufgabe aus **Alle Aufgaben**. Die Aufgabe
+  erhält ihn als Bearbeiter, Status `in_progress` und erscheint danach unter **Meine Aufgaben**.
+* **Zuweisen** (`helpdesk.tasks.assign`): Mitglieder der Berechtigungsgruppe „Aufgabenverteilung“ (bzw. Admins)
+  weisen eine Aufgabe über den Dialog im Detail oder direkt aus der Liste einem bestimmten Agenten zu. Der Agent
+  muss die Aufgabe dann nicht annehmen; sie steht sofort unter **Meine Aufgaben**. Die Zuweisung wird mit
+  zuweisender Person und Zeitpunkt festgehalten.
+
+Die AD-Gruppe für die Aufgabenverteilung wird im Intranet unter **KLINQ → Berechtigungen** im Feld
+**Aufgabenverteilung** (`klinq_task_assignment_groups`) gepflegt; die Mitglieder erhalten in KLINQ die
+Berechtigungsgruppe `aufgabenverteilung`. Annehmen und Bearbeiten hängt dagegen an den Help-Desk-Rollen und
+braucht keine zusätzliche Gruppe.
+
+![Zuweisungsdialog: Agent wählen, ohne Auswahl wird die Zuweisung aufgehoben](screenshots/helpdesk-aufgabe-zuweisen.png)
+
+### Status und Verlauf
+
+Status: `open` (Offen), `in_progress` (In Bearbeitung), `done` (Erledigt), `cancelled` (Verworfen). Erledigen und
+Verwerfen erfassen die ausführende Person und den Zeitpunkt; ein optionales Fälligkeitsdatum (`due_at`) wird in
+der Liste hervorgehoben, wenn es überschritten ist. Jede Änderung – Anlage, Umwandlung, Annahme, Zuweisung,
+Statuswechsel, Notiz – landet als Ereignis in `task_events` und wird im Detail als Verlauf angezeigt.
+
+![Aufgabendetail mit Quelle (Ticket), Verlauf und Statuswechsel](screenshots/helpdesk-aufgabe-detail.png)
+
 ## Automatisierung
 
 - **Vorlagen** (`ticket_templates`): vorbelegte Felder für Portal und Agenten, optional auf Rollen/Portal beschränkt.
@@ -578,7 +635,7 @@ Der Versand erfolgt direkt aus PHP über einen eigenen SMTP-Client (`app/Service
 
 | Rolle | Umfang |
 |---|---|
-| **helpdesk_agent** | Tickets sehen/anlegen/bearbeiten/zuweisen/kommentieren, interne Notizen, schließen/wieder öffnen, zusammenführen, Arbeitszeiten, Berichte, Wissensdatenbank pflegen; plus alle Leserechte der Assetverwaltung |
+| **helpdesk_agent** | Tickets sehen/anlegen/bearbeiten/zuweisen/kommentieren, interne Notizen, schließen/wieder öffnen, zusammenführen, Arbeitszeiten, Berichte, Wissensdatenbank pflegen, Aufgaben annehmen und bearbeiten; plus alle Leserechte der Assetverwaltung |
 | **helpdesk_lead** | zusätzlich eskalieren, SLA-Regeln, Export, Kategorien, Vorlagen |
 | **helpdesk_admin** | zusätzlich `helpdesk.admin` (Typen, Status, Prioritäten, Gruppen, Regeln, Benachrichtigungsprotokoll) und `documents.manage` |
 | **assetmanagement / lager / einkauf** | Portal (eigene Tickets anlegen und verfolgen) und Wissensartikel lesen, kein Agentenbereich |
@@ -586,9 +643,9 @@ Der Versand erfolgt direkt aus PHP über einen eigenen SMTP-Client (`app/Service
 | **portal** | ausschließlich Serviceportal: eigene Tickets anlegen und verfolgen, Hilfe & Anleitungen lesen. Kein Recht der Assetverwaltung, auch nicht lesend; Vorgabe für Personen ohne KLINQ-Berechtigung |
 | **admin** | alles |
 
-Rechte: `helpdesk.view|create|update|assign|comment|internal_note|close|reopen|merge|worklog|delete|cancel|escalate|sla|export|categories|templates|reports|admin`, `portal.view|create`, `knowledgebase.view|manage`. Jede Route in `routes/modules/helpdesk.php` trägt genau eine davon; `RouteInventoryTest` prüft das.
+Rechte: `helpdesk.view|create|update|assign|comment|internal_note|close|reopen|merge|worklog|delete|cancel|escalate|sla|export|categories|templates|reports|admin|tasks|tasks.assign`, `portal.view|create`, `knowledgebase.view|manage`. Jede Route in `routes/modules/helpdesk.php` trägt genau eine davon; `RouteInventoryTest` prüft das.
 
-Zusätzlich zur Rolle werden vier Rechte nur über **Berechtigungsgruppen** je Benutzer vergeben (Admins haben sie über ihre Rolle): `helpdesk.reports` (Gruppe „Statistik“), `helpdesk.view_history` (Gruppe „Darf Ticketaufruf auswerten“), `helpdesk.delete` (Gruppe „Darf Tickets löschen“) und `helpdesk.cancel` (Gruppe „Darf Tickets stornieren“). Die Verlauf-Gruppe macht die Ereignisse `viewed` in der Ticket-Historie sichtbar, die beim Aufruf eines Tickets durch einen Agenten geschrieben werden.
+Zusätzlich zur Rolle werden fünf Rechte nur über **Berechtigungsgruppen** je Benutzer vergeben (Admins haben sie über ihre Rolle): `helpdesk.reports` (Gruppe „Statistik“), `helpdesk.view_history` (Gruppe „Darf Ticketaufruf auswerten“), `helpdesk.delete` (Gruppe „Darf Tickets löschen“), `helpdesk.cancel` (Gruppe „Darf Tickets stornieren“) und `helpdesk.tasks.assign` (Gruppe „Aufgabenverteilung“). Die Verlauf-Gruppe macht die Ereignisse `viewed` in der Ticket-Historie sichtbar, die beim Aufruf eines Tickets durch einen Agenten geschrieben werden.
 
 **Stornieren und Löschen sind getrennte Rechte.** `helpdesk.close` erlaubt weiterhin Lösen und Schließen, aber nicht mehr das Stornieren; `helpdesk.cancel` gilt für jeden Übergang in den Status „Storniert“. Ohne die jeweilige Gruppe – und ohne Admin-Rolle – dürfen auch Help-Desk-Agenten, Leitungen und die Help-Desk-Administration keine Tickets löschen oder stornieren. Das Zusammenführen von Tickets storniert die Quelle intern (Systemvorgang) und benötigt deshalb kein `helpdesk.cancel`.
 
@@ -598,6 +655,7 @@ Zusätzlich zur Rolle werden vier Rechte nur über **Berechtigungsgruppen** je B
 |---|---|---|
 | `HELPDESK_ENABLED` | `true` | Modul in Navigation, Dashboard, Suche und Scheduler aktiv |
 | `HELPDESK_TICKET_PREFIX` | `HD` | Präfix der Ticketnummer |
+| `HELPDESK_TASK_PREFIX` | `AUF` | Präfix der Aufgabennummer (Aufgaben aus Tickets) |
 | `HELPDESK_SLA_WARNING_PERCENT` | `75` | Warnschwelle in % der SLA-Zeit (Fallback je SLA-Regel) |
 | `HELPDESK_ESCALATION_PERCENT` | `90` | Eskalationsschwelle in % |
 | `HELPDESK_ESCALATION_ENABLED` | `true` | Scheduler-Job aktiv |

@@ -14,6 +14,7 @@ use App\Middleware\SecurityHeadersMiddleware;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\EmployeeRepository;
 use App\Repositories\SystemSettingRepository;
+use App\Repositories\TaskRepository;
 use App\Repositories\TicketRepository;
 use App\Repositories\UserRepository;
 use App\Security\CsrfTokenManager;
@@ -273,10 +274,14 @@ final class ApplicationFactory
                 return $this->counts;
             }
 
-            /** Ticket-Badges: Agenten sehen ihre zugewiesenen offenen Tickets, Portalnutzer ihre eigenen. @return array<string,int> */
+            /**
+             * Help-Desk-Badges: Agenten sehen ihre zugewiesenen offenen Tickets/Aufgaben,
+             * Portalnutzer ihre eigenen Tickets.
+             * @return array<string,int>
+             */
             private function ticketCounts(): array
             {
-                $counts = ['tickets' => 0, 'portal_tickets' => 0];
+                $counts = ['tickets' => 0, 'portal_tickets' => 0, 'tasks' => 0];
                 $userId = $this->currentUser->id();
                 if ($userId === null || !(bool) $this->container->get(Config::class)->get('helpdesk.enabled', true)) {
                     return $counts;
@@ -291,6 +296,13 @@ final class ApplicationFactory
                     }
                 } catch (\Throwable) {
                     // Help-Desk-Tabellen fehlen (Migration noch nicht eingespielt): Badge stillschweigend auslassen
+                }
+                try {
+                    if ($this->currentUser->can('helpdesk.tasks')) {
+                        $counts['tasks'] = $this->container->get(TaskRepository::class)->openCountFor((int) $userId);
+                    }
+                } catch (\Throwable) {
+                    // Aufgaben-Tabellen fehlen (Migration noch nicht eingespielt): Badge stillschweigend auslassen
                 }
 
                 return $counts;

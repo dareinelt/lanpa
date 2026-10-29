@@ -181,6 +181,22 @@ Runner::test('KLINQ: Löschen und Stornieren sind eigene Berechtigungsgruppen', 
     Assert::same([], $agent['permission_groups'], 'Der Agent erhält keine der beiden Freigaben automatisch');
 });
 
+Runner::test('KLINQ: Aufgabenverteilung ist eine eigene Berechtigungsgruppe', static function (): void {
+    $config = klinqConfig([
+        'klinq_helpdesk_agent_groups' => 'GG-Helpdesk',
+        'klinq_task_assignment_groups' => 'GG-Aufgabenverteilung',
+    ]);
+
+    $assigner = $config->resolve(['gg-helpdesk', 'GG-Aufgabenverteilung']);
+    Assert::same('helpdesk_agent', $assigner['role']);
+    Assert::same(['aufgabenverteilung'], $assigner['permission_groups']);
+    Assert::same(['helpdesk'], $assigner['areas']);
+    Assert::true($assigner['elevated']);
+
+    $agent = $config->resolve(['gg-helpdesk']);
+    Assert::same([], $agent['permission_groups'], 'Ohne Gruppe darf ein Agent nicht zuweisen');
+});
+
 Runner::test('KLINQ: Administration umfasst alle Bereiche', static function (): void {
     $access = klinqConfig(['klinq_admin_groups' => 'GG-Intranet-Admin'])->resolve(['gg-intranet-admin']);
 

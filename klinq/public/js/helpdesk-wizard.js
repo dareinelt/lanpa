@@ -347,19 +347,29 @@
         return snapshot() !== initialSnapshot;
     }
 
-    function confirmLeave() {
-        if (submitting || !isDirty()) { return true; }
-        return window.confirm("Der Assistent wird geschlossen. Der bisherige Bearbeitungsfortschritt geht verloren. Wirklich schließen?");
+    function needsLeaveConfirm() {
+        return !submitting && isDirty();
+    }
+
+    /** Rückfrage als Overlay; ohne ui.js bleibt der Browser-Dialog als Rückfallebene. */
+    function askConfirm(question) {
+        if (window.AppUI && window.AppUI.confirm) { return window.AppUI.confirm(question); }
+        return Promise.resolve(window.confirm(question));
     }
 
     document.querySelectorAll("[data-hd-confirm-leave], [data-hd-wizard-close]").forEach(function (link) {
         link.addEventListener("click", function (event) {
             if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) { return; }
-            if (!confirmLeave()) {
-                event.preventDefault();
+            if (!needsLeaveConfirm()) {
+                allowLeave = true;
                 return;
             }
-            allowLeave = true;
+            event.preventDefault();
+            askConfirm("Der Assistent wird geschlossen. Der bisherige Bearbeitungsfortschritt geht verloren. Wirklich schließen?").then(function (confirmed) {
+                if (!confirmed) { return; }
+                allowLeave = true;
+                window.location.href = link.href;
+            });
         });
     });
 

@@ -38,6 +38,9 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
   ohne Anmeldung (Melder/Rechner/AD-Daten werden serverseitig ermittelt)
 - E-Mail-Eingang per IMAP (neues Ticket oder Kommentar per Threading) und E-Mail-Benachrichtigungen
 - Wissensdatenbank mit Verknüpfung zu Tickets
+- Aufgaben („Alle Aufgaben“/„Meine Aufgaben“): Tickets werden über „In Aufgabe umwandeln“ zu Aufgaben
+  (das Ticket wird dabei geschlossen und bleibt verknüpft), Agenten nehmen Aufgaben an, Mitglieder der
+  Berechtigungsgruppe „Aufgabenverteilung“ weisen sie einem Agenten direkt zu
 - Ticket-Berichte/CSV-Export (Recht nur über die Berechtigungsgruppe „Statistik“ oder Admin-Rolle)
 - Ticket löschen und stornieren als getrennte Rechte (nur über die Berechtigungsgruppen „Darf Tickets löschen“
   bzw. „Darf Tickets stornieren“ oder Admin-Rolle)
@@ -70,15 +73,15 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `app/Core/` | `Application`, `ApplicationFactory`, `Container`, `Config`, `Env`, `Database`, `Router`/`Route`, `Request`/`Response`, `View`, `SessionManager`, `Logger`, `Providers/` |
 | `app/Middleware/` | `SecurityHeadersMiddleware`, `RequestLogMiddleware`, `CsrfMiddleware`, `AuthorizationMiddleware` (in dieser Reihenfolge) |
 | `app/Security/` | `CurrentUser`, `Permissions`, `PasswordHasher` (Argon2id), `CsrfTokenManager`, `HtmlEscaper` |
-| `app/Controllers/` | HTTP-Schicht; `CrudController`/`BaseController` als Basis, `Mobile/` (Scan-UI), `Api/` (JSON), `Helpdesk/` (Agent, Portal, API, Wissensdatenbank, Admin, Berichte, Störungsmeldung, Anhänge) |
-| `app/Services/` | Geschäftslogik und Validierung je Fachbereich; `Ad/` (Sync), `Ldap/` (Client, Fake-Client, Auth), `Lanpa/` (Brücke zum Intranet: Einstiegsticket, Dienst-Token, KI-Konfiguration), `Helpdesk/` (Ticket-, SLA-, Regel-, Mail-, Wissensdatenbank-Logik, `Helpdesk/Mail/` für IMAP/Datei-Postfachclients) |
+| `app/Controllers/` | HTTP-Schicht; `CrudController`/`BaseController` als Basis, `Mobile/` (Scan-UI), `Api/` (JSON), `Helpdesk/` (Agent, Portal, API, Wissensdatenbank, Aufgaben, Admin, Berichte, Störungsmeldung, Anhänge) |
+| `app/Services/` | Geschäftslogik und Validierung je Fachbereich; `Ad/` (Sync), `Ldap/` (Client, Fake-Client, Auth), `Lanpa/` (Brücke zum Intranet: Einstiegsticket, Dienst-Token, KI-Konfiguration), `Helpdesk/` (Ticket-, SLA-, Regel-, Mail-, Wissensdatenbank- und Aufgaben-Logik, `Helpdesk/Mail/` für IMAP/Datei-Postfachclients) |
 | `app/Repositories/` | Datenzugriff; `BaseRepository` kapselt `fetchOne/fetchAll/insertRow/updateRow` |
 | `app/Support/` | Fachlogikfreie Helfer: `Validator`, `Paginator`, `CsvReader`/`CsvWriter`, `QrCode`, `ColognePhonetic`, `Url`, `ModuleNavigation`, `IpRange`, `Secret` (Verschlüsselung gespeicherter Zugangsdaten), `TimelineGrouper` (fasst kurz aufeinanderfolgende Verlaufsereignisse desselben Benutzers zusammen) |
 | `app/Exceptions/` | `HttpException`, `NotFoundException`, `ForbiddenException`, `ValidationException`, `ConflictException` |
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–019), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–021), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -237,7 +240,10 @@ Zusätzlich zur Rolle können einem Benutzer **Berechtigungsgruppen** zugewiesen
 eines Tickets durch einen Agenten geschrieben werden), die Gruppe „Darf Tickets löschen“ für
 `helpdesk.delete` und die Gruppe „Darf Tickets stornieren“ für `helpdesk.cancel`. Löschen und Stornieren
 sind getrennte Rechte und standardmäßig keiner Help-Desk-Rolle zugeordnet; `helpdesk.close` deckt nur
-Lösen und Schließen ab.
+Lösen und Schließen ab. `helpdesk.tasks` (Aufgaben annehmen, Status ändern, Ticket umwandeln) gehört zu den
+Help-Desk-Rollen; das Zuweisen an einen bestimmten Agenten (`helpdesk.tasks.assign`) vergibt nur die Gruppe
+„Aufgabenverteilung“ oder die Admin-Rolle. Die zugehörige AD-Gruppe wird im Intranet (LANPA) unter
+KLINQ → Zugriff als `klinq_task_assignment_groups` gepflegt.
 
 Prüfebenen:
 
@@ -272,6 +278,8 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   `ticket_relations`, `ticket_watchers`, `ticket_worklogs`, `ticket_templates`, `ticket_rules`,
   `ticket_notifications`, `ticket_inbound_mails`, `knowledge_articles`, `knowledge_article_tags`,
   `knowledge_article_tickets`
+- **Aufgaben**: `tasks` (je Ticket höchstens eine Aufgabe, `source_ticket_id` ist eindeutig), `task_events`
+  (Verlauf: Anlage, Umwandlung, Annahme, Zuweisung, Statuswechsel)
 
 ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
 
@@ -286,6 +294,10 @@ ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
 - CSS ist nach `base/`, `layout/`, `components/`, `pages/`, `utilities/` gegliedert und wird über
   `public/css/app.css` importiert; Design-Tokens als CSS-Variablen.
 - **Keine Inline-Styles und keine Inline-Skripte** – die CSP verbietet `unsafe-inline`.
+- **Rückfragen laufen als Overlay**, nicht als Browser-Meldung: `data-confirm="…"` an einem Formular öffnet
+  den `<dialog>` aus `ui.js` und sendet erst nach **Bestätigen** ab; programmatisch liefert
+  `window.AppUI.confirm(frage)` die Antwort als Promise. `window.confirm` bleibt nur als Rückfallebene für
+  Seiten ohne `ui.js` (z. B. `offline-ui.js`).
 - Der Fenstertitel lautet immer `KLINQ - <Modul>` (z. B. `KLINQ - Help Desk`). Er wird zentral in
   `resources/views/partials/layout.php` aus `$appName` (`APP_NAME`) und `$moduleTitle` gebildet; die Layouts
   (`app_layout.php`, `mobile_layout.php`) setzen `$moduleTitle` aus `ModuleNavigation::label()`.

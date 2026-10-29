@@ -10,6 +10,7 @@ use App\Controllers\Helpdesk\HelpdeskSupportShiftController;
 use App\Controllers\Helpdesk\KnowledgeBaseController;
 use App\Controllers\Helpdesk\PortalController;
 use App\Controllers\Helpdesk\QuickReportController;
+use App\Controllers\Helpdesk\TaskController;
 use App\Controllers\Helpdesk\TicketAttachmentController;
 use App\Controllers\Helpdesk\TicketController;
 use App\Core\Container;
@@ -26,6 +27,7 @@ return static function (Router $router, Container $c): void {
     $dash = static fn (): HelpdeskDashboardController => $c->get(HelpdeskDashboardController::class);
     $shifts = static fn (): HelpdeskSupportShiftController => $c->get(HelpdeskSupportShiftController::class);
     $tickets = static fn (): TicketController => $c->get(TicketController::class);
+    $tasks = static fn (): TaskController => $c->get(TaskController::class);
     $files = static fn (): TicketAttachmentController => $c->get(TicketAttachmentController::class);
     $kb = static fn (): KnowledgeBaseController => $c->get(KnowledgeBaseController::class);
     $reports = static fn (): HelpdeskReportController => $c->get(HelpdeskReportController::class);
@@ -74,12 +76,22 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/tickets/{id}/relations', static fn (Request $r): Response => $tickets()->addRelation($r), 'helpdesk.update');
     $router->post('/helpdesk/tickets/{id}/relations/{relation}/delete', static fn (Request $r): Response => $tickets()->removeRelation($r), 'helpdesk.update');
     $router->post('/helpdesk/tickets/{id}/delete', static fn (Request $r): Response => $tickets()->delete($r), 'helpdesk.delete');
+    // Ticket in eine Aufgabe umwandeln (schließt das Ticket und verknüpft es mit der Aufgabe)
+    $router->post('/helpdesk/tickets/{id}/in-aufgabe', static fn (Request $r): Response => $tasks()->convert($r), 'helpdesk.tasks');
 
     // Kommentare und Anhänge (Agent)
     $router->post('/helpdesk/tickets/{id}/comments', static fn (Request $r): Response => $files()->comment($r), 'helpdesk.comment');
     $router->post('/helpdesk/tickets/{id}/attachments', static fn (Request $r): Response => $files()->upload($r), 'helpdesk.comment');
     $router->get('/helpdesk/tickets/{id}/attachments/{document}', static fn (Request $r): Response => $files()->download($r), 'portal.view');
     $router->post('/helpdesk/tickets/{id}/attachments/{document}/delete', static fn (Request $r): Response => $files()->delete($r), 'helpdesk.update');
+
+    // Aufgaben („Alle Aufgaben“ und „Meine Aufgaben“). „Meine“ ist vor der {id}-Route registriert.
+    $router->get('/helpdesk/aufgaben', static fn (Request $r): Response => $tasks()->index($r), 'helpdesk.tasks');
+    $router->get('/helpdesk/aufgaben/meine', static fn (Request $r): Response => $tasks()->mine($r), 'helpdesk.tasks');
+    $router->get('/helpdesk/aufgaben/{id}', static fn (Request $r): Response => $tasks()->show($r), 'helpdesk.tasks');
+    $router->post('/helpdesk/aufgaben/{id}/annehmen', static fn (Request $r): Response => $tasks()->claim($r), 'helpdesk.tasks');
+    $router->post('/helpdesk/aufgaben/{id}/zuweisen', static fn (Request $r): Response => $tasks()->assign($r), 'helpdesk.tasks.assign');
+    $router->post('/helpdesk/aufgaben/{id}/status', static fn (Request $r): Response => $tasks()->status($r), 'helpdesk.tasks');
 
     // Wissensdatenbank
     $router->get('/helpdesk/knowledge', static fn (Request $r): Response => $kb()->index($r), 'knowledgebase.view');

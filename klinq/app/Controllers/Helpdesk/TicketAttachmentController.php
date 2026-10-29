@@ -73,7 +73,10 @@ final class TicketAttachmentController extends HelpdeskBaseController
             $this->service->setCommentPinned($id, $commentId, $pinned);
         }, $redirect, false);
 
-        return $response ?? $this->respond($request, $pinned ? 'Kommentar angeheftet.' : 'Anheftung gelöst.', $redirect);
+        return $response ?? $this->respond($request, $pinned ? 'Kommentar angeheftet.' : 'Anheftung gelöst.', $redirect, [
+            'comment' => $commentId,
+            'pinned' => $pinned,
+        ]);
     }
 
     /** Anhang ohne Kommentar hochladen. */

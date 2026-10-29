@@ -304,7 +304,7 @@ final class TicketController extends HelpdeskBaseController
             'mergeCompose' => $this->mergeService->composeData($ticket),
             'taskForTicket' => $this->currentUser->can('helpdesk.tasks') ? $this->tasks->findByTicket($id) : null,
             'taskCategories' => $this->currentUser->can('helpdesk.tasks') ? $this->taskCategories->all() : [],
-            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-pins.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js'],
         ]);
     }
 

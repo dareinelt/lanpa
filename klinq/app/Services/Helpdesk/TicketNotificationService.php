@@ -28,6 +28,7 @@ final class TicketNotificationService
         private readonly TicketMasterDataRepository $masterData,
         private readonly UserRepository $users,
         private readonly ReplyTemplateSettingsService $replyTemplates,
+        private readonly NotificationSettingsService $notificationSettings,
         private readonly Config $config,
         private readonly Logger $logger
     ) {}
@@ -38,6 +39,15 @@ final class TicketNotificationService
     }
 
     /**
+     * Ist die E-Mail an den Melder für dieses Ereignis in den Help-Desk-Einstellungen aktiv?
+     * Betrifft nur Mails an den Melder – Team-, Bearbeiter- und Watcher-Mails bleiben unberührt.
+     */
+    public function requesterNotificationEnabled(string $event): bool
+    {
+        return $this->notificationSettings->enabled($event);
+    }
+
+    /**
      * Ticket erstellt: Melder (Bestätigung), Gruppe und ggf. Bearbeiter.
      *
      * @param array<string,mixed> $ticket
@@ -45,7 +55,7 @@ final class TicketNotificationService
      */
     public function ticketCreated(array $ticket, bool $notifyRequester = true): void
     {
-        if ($notifyRequester) {
+        if ($notifyRequester && $this->notificationSettings->enabled('created')) {
             $this->sendTo($ticket, 'created', $this->requesterRecipients($ticket), 'Ihr Ticket wurde angelegt', $this->intro($ticket, 'Ihr Ticket wurde erfolgreich angelegt und wird vom IT Help Desk bearbeitet.'));
         }
         $this->sendTo($ticket, 'created_team', $this->teamRecipients($ticket, true), 'Neues Ticket', $this->intro($ticket, 'Ein neues Ticket wurde eingereicht.'));
@@ -66,9 +76,10 @@ final class TicketNotificationService
     public function statusChanged(array $ticket, string $fromCode, string $toCode): void
     {
         $key = 'status_' . $toCode . '_' . (int) ($ticket['version'] ?? 0);
+        $notifyRequester = $this->notificationSettings->enabled($toCode);
         // Schließung: Vorlage aus den Vorlageneinstellungen (mit Schließungsgrund und Lösung)
         // ersetzt die allgemeine Statusmeldung. Ohne hinterlegten Text bleibt es bei dieser.
-        if ($toCode === TicketWorkflowService::CLOSED) {
+        if ($notifyRequester && $toCode === TicketWorkflowService::CLOSED) {
             $template = $this->replyTemplates->closeText();
             if ($template !== '') {
                 foreach ($this->requesterNames($ticket) as $email => $name) {
@@ -95,7 +106,9 @@ final class TicketNotificationService
         $label = $isPause && !in_array($toCode, TicketWorkflowService::PAUSES, true)
             ? 'pausiert: ' . (string) ($ticket['status_name'] ?? '')
             : self::statusLabel($toCode);
-        $this->sendTo($ticket, $key, $this->requesterRecipients($ticket), 'Ticket ' . $label, $this->intro($ticket, $message) . $extra);
+        if ($notifyRequester) {
+            $this->sendTo($ticket, $key, $this->requesterRecipients($ticket), 'Ticket ' . $label, $this->intro($ticket, $message) . $extra);
+        }
         if (in_array($fromCode, [TicketWorkflowService::RESOLVED, TicketWorkflowService::CLOSED], true) && $toCode === TicketWorkflowService::IN_PROGRESS) {
             $this->sendTo($ticket, 'reopened_team_' . (int) ($ticket['reopen_count'] ?? 0), $this->teamRecipients($ticket, false), 'Ticket wieder geöffnet', $this->intro($ticket, 'Das Ticket wurde wieder geöffnet.'));
         }
@@ -111,7 +124,7 @@ final class TicketNotificationService
         $key = 'comment_' . (int) $comment['id'];
         if (!empty($comment['is_requester'])) {
             $this->sendTo($ticket, $key, $this->teamRecipients($ticket, false), 'Neue Rückmeldung des Melders', $body);
-        } else {
+        } elseif ($this->notificationSettings->enabled('comment')) {
             $this->sendTo($ticket, $key, $this->requesterRecipients($ticket), 'Neue Antwort zu Ihrem Ticket', $body);
         }
         $this->sendTo($ticket, $key . '_watchers', $this->watcherRecipients($ticket, [(string) ($comment['author_user_id'] ?? '')]), 'Neuer Kommentar', $body);

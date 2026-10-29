@@ -81,7 +81,7 @@ final class NotificationSettingsService
         ],
         'closed' => [
             'label' => 'Geschlossen',
-            'description' => 'Schließung des Tickets – mit dem Schließungstext aus den Vorlageneinstellungen, sofern hinterlegt.',
+            'description' => 'Schließung des Tickets – mit dem Schließungstext aus den Vorlageneinstellungen, sofern hinterlegt. Wird das Ticket beim Umwandeln in eine Aufgabe geschlossen, gilt der Umwandlungstext.',
             'group' => 'Statuswechsel',
         ],
         'cancelled' => [

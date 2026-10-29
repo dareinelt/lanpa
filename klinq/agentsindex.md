@@ -219,6 +219,14 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   `TicketService::changeStatus(..., notify: …)`; der Scheduler-Auto-Close versendet immer. Schließt ein Agent
   direkt aus „In Bearbeitung“, wird der Lösungstext zusätzlich in `tickets.resolution` gespeichert, damit
   `{loesung}` gefüllt ist.
+- **Umwandlungs-E-Mail**: Wird ein Ticket über `TaskService::convert()` in eine Aufgabe umgewandelt, übergibt der
+  Aufgabendienst `TicketNotificationService::CONTEXT_TASK_CONVERSION` an `TicketService::changeStatus()` und damit an
+  `statusChanged()`. Statt des Schließungstexts rendert die Methode den unter `helpdesk.reply_template.task_text`
+  gepflegten Text (Startwert `HELPDESK_REPLY_TEMPLATE_TASK`, Standardtext
+  `ReplyTemplateSettingsService::DEFAULT_TASK_TEXT` – „Ihr Ticket wurde in eine Aufgabe umgewandelt, da es sich um
+  keine Störung handelt.“, gleiche Platzhalter wie der Schließungstext) und hängt die Zeilen Ticket, Betreff, Status
+  und Priorität an (`details()`); die allgemeine Schließungsmeldung entfällt. Das Feld kann nicht leer werden, weil
+  ein leerer Wert auf den Standardtext zurückfällt.
 - **Gespeicherte Zugangsdaten** (z. B. Help-Desk-Postfachpasswort) werden über `Support\Secret` mit `APP_KEY`
   verschlüsselt abgelegt, nie im Klartext.
 

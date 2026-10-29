@@ -21,6 +21,9 @@ use App\Support\RichText;
  */
 final class TicketNotificationService
 {
+    /** Kontext eines Statuswechsels: Das Ticket wurde geschlossen, weil es in eine Aufgabe umgewandelt wurde. */
+    public const CONTEXT_TASK_CONVERSION = 'task_conversion';
+
     public function __construct(
         private readonly MailClient $mail,
         private readonly TicketRuleRepository $rules,
@@ -72,11 +75,27 @@ final class TicketNotificationService
         $this->sendTo($ticket, $key, [$email], 'Ticket zugewiesen', $this->intro($ticket, 'Ihnen wurde ein Ticket zugewiesen.'));
     }
 
-    /** @param array<string,mixed> $ticket */
-    public function statusChanged(array $ticket, string $fromCode, string $toCode): void
+    /**
+     * Statuswechsel: Melder (sofern für den Zielstatus aktiviert) und Team bei Wiedereröffnung.
+     *
+     * @param array<string,mixed> $ticket
+     * @param string|null $context Grund des Wechsels, etwa die Umwandlung in eine Aufgabe
+     */
+    public function statusChanged(array $ticket, string $fromCode, string $toCode, ?string $context = null): void
     {
         $key = 'status_' . $toCode . '_' . (int) ($ticket['version'] ?? 0);
         $notifyRequester = $this->notificationSettings->enabled($toCode);
+        // Umwandlung in eine Aufgabe: eigener Text aus den Vorlageneinstellungen, darunter die
+        // Zeilen Ticket/Betreff/Status/Priorität. Er ersetzt Schließungstext und Statusmeldung.
+        if ($notifyRequester && $toCode === TicketWorkflowService::CLOSED && $context === self::CONTEXT_TASK_CONVERSION) {
+            $template = $this->replyTemplates->taskText();
+            foreach ($this->requesterNames($ticket) as $email => $name) {
+                $html = ReplyTemplateSettingsService::render($template, $this->closeValues($ticket, $name)) . $this->details($ticket);
+                $this->sendTo($ticket, $key, [$email], 'Ticket in eine Aufgabe umgewandelt', $html);
+            }
+
+            return;
+        }
         // Schließung: Vorlage aus den Vorlageneinstellungen (mit Schließungsgrund und Lösung)
         // ersetzt die allgemeine Statusmeldung. Ohne hinterlegten Text bleibt es bei dieser.
         if ($notifyRequester && $toCode === TicketWorkflowService::CLOSED) {
@@ -340,8 +359,17 @@ final class TicketNotificationService
     /** @param array<string,mixed> $ticket */
     private function intro(array $ticket, string $message): string
     {
-        return '<p>' . self::e($message) . '</p>'
-            . '<table cellpadding="4" style="border-collapse:collapse">'
+        return '<p>' . self::e($message) . '</p>' . $this->details($ticket);
+    }
+
+    /**
+     * Zeilen Ticket/Betreff/Status/Priorität (und ggf. Bearbeiter) unter dem Ereignistext.
+     *
+     * @param array<string,mixed> $ticket
+     */
+    private function details(array $ticket): string
+    {
+        return '<table cellpadding="4" style="border-collapse:collapse">'
             . '<tr><td><strong>Ticket</strong></td><td>' . self::e((string) $ticket['number']) . '</td></tr>'
             . '<tr><td><strong>Betreff</strong></td><td>' . self::e((string) $ticket['subject']) . '</td></tr>'
             . '<tr><td><strong>Status</strong></td><td>' . self::e((string) ($ticket['status_name'] ?? '')) . '</td></tr>'

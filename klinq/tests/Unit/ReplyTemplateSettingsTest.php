@@ -106,4 +106,21 @@ final class ReplyTemplateSettingsTest extends TestCase
             ReplyTemplateSettingsService::render('Guten Tag {name} {schliessungsgrund}', ['{name}' => 'Max Melder', '{schliessungsgrund}' => ''])
         );
     }
+
+    public function testTaskConversionDefaultTextIsMeaningful(): void
+    {
+        $this->assertSame('Ihr Ticket wurde in eine Aufgabe umgewandelt, da es sich um keine Störung handelt.', ReplyTemplateSettingsService::DEFAULT_TASK_TEXT);
+        $this->assertTrue(ReplyTemplateSettingsService::MAX_TASK_LENGTH > 0);
+    }
+
+    public function testTaskConversionTextUsesTheSamePlaceholders(): void
+    {
+        $this->assertSame(
+            '<p>Guten Tag Max Melder,</p><p>HD-2026-000123 wird als Aufgabe weitergeführt.</p>',
+            ReplyTemplateSettingsService::render(
+                "Guten Tag {name},\n\n{ticketnummer} wird als Aufgabe weitergeführt.",
+                ['{name}' => 'Max Melder', '{ticketnummer}' => 'HD-2026-000123']
+            )
+        );
+    }
 }

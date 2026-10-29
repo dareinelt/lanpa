@@ -114,6 +114,7 @@ final class TaskController extends HelpdeskBaseController
             'areaLabel' => 'Help Desk',
             'task' => $task,
             'events' => $this->service->events((int) $task['id']),
+            'comments' => $this->service->comments((int) $task['id']),
             'statuses' => TaskService::STATUSES,
             'statusColors' => TaskService::STATUS_COLORS,
             'agents' => $this->service->assignableAgents(),
@@ -200,5 +201,21 @@ final class TaskController extends HelpdeskBaseController
         }
 
         return $this->respond($request, 'Aufgabe aktualisiert.', $this->safeBack($request, '/helpdesk/aufgaben/' . $id), ['task' => $task]);
+    }
+
+    /** Kommentar an der Aufgabe speichern (chronologisch im Aufgabendetail). */
+    public function comment(Request $request): Response
+    {
+        $id = $request->paramInt('id');
+        $redirect = '/helpdesk/aufgaben/' . $id . '#kommentare';
+        $comment = null;
+        $response = $this->attempt($request, function () use ($request, $id, &$comment): void {
+            $comment = $this->service->addComment($id, $request->all());
+        }, $redirect);
+        if ($response !== null) {
+            return $response;
+        }
+
+        return $this->respond($request, 'Kommentar gespeichert.', $redirect, ['comment' => $comment]);
     }
 }

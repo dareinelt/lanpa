@@ -66,12 +66,40 @@ $eventClass = static fn (string $t): string => match ($t) {
         <div class="ticket-description"><?= nl2br_e($task['description']) ?></div>
     </section>
 
-    <?php if (trim((string) $task['note']) !== ''): ?>
-    <section class="card">
-        <h2 class="card-title">Notiz</h2>
-        <div class="ticket-description"><?= nl2br_e($task['note']) ?></div>
+    <section class="card" id="kommentare">
+        <h2 class="card-title">Kommentare <span class="text-muted">(<?= count($comments) ?>)</span></h2>
+        <?php if ($comments === []): ?>
+            <p class="empty-state">Noch keine Kommentare.</p>
+        <?php else: ?>
+        <ol class="comment-list">
+            <?php foreach ($comments as $c): ?>
+            <li class="comment" id="kommentar-<?= (int) $c['id'] ?>">
+                <div class="comment-head">
+                    <span class="comment-author"><?= e($c['author_name']) ?></span>
+                    <span class="text-muted text-xs"><?= fmt_datetime($c['created_at']) ?></span>
+                </div>
+                <div class="comment-body"><?= rich_text($c['body']) ?></div>
+            </li>
+            <?php endforeach; ?>
+        </ol>
+        <?php endif; ?>
+
+        <?php if ($can('helpdesk.tasks')): ?>
+        <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/kommentare" class="comment-form">
+            <?= csrf_field() ?>
+            <div class="form-group">
+                <label for="task-comment-body" class="sr-only">Kommentar</label>
+                <textarea id="task-comment-body" name="body" rows="3" maxlength="2000000" placeholder="Kommentar eingeben …" required><?= e(old('body')) ?></textarea>
+                <?= field_error('body') ?>
+                <p class="form-hint">Kommentare erscheinen chronologisch in der Reihenfolge des Eintragens.</p>
+            </div>
+            <div class="comment-form-footer">
+                <span></span>
+                <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Kommentar speichern</button>
+            </div>
+        </form>
+        <?php endif; ?>
     </section>
-    <?php endif; ?>
 
     <section class="card" id="history">
         <h2 class="card-title">Verlauf</h2>
@@ -161,10 +189,6 @@ $eventClass = static fn (string $t): string => match ($t) {
                         <option value="<?= e($key) ?>"<?= selected($task['status'], $key) ?>><?= e($label) ?></option>
                     <?php endforeach; ?>
                 </select>
-            </div>
-            <div class="form-group">
-                <label for="task-note">Notiz <span class="text-muted">(optional)</span></label>
-                <textarea id="task-note" name="note" rows="3" maxlength="500"></textarea>
             </div>
             <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Speichern</button>
         </form>

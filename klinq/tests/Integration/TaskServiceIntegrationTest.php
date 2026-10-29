@@ -196,7 +196,7 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         $task = $this->service()->convert((int) $this->createTicket()['id'], []);
         $this->service()->claim((int) $task['id']);
 
-        $done = $this->service()->changeStatus((int) $task['id'], ['status' => 'done', 'note' => 'Gerät getauscht']);
+        $done = $this->service()->changeStatus((int) $task['id'], ['status' => 'done']);
 
         $this->assertSame('done', $done['status']);
         $this->assertNotNull($done['completed_at']);
@@ -269,6 +269,44 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         $this->assertContains('converted_from_ticket', $types);
         $this->assertContains('claimed', $types);
         $this->assertContains('status_changed', $types);
+    }
+
+    public function testCommentsAreListedChronologically(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->service()->claim((int) $task['id']);
+
+        $this->service()->addComment((int) $task['id'], ['body' => 'Erster Eintrag']);
+        $this->service()->addComment((int) $task['id'], ['body' => 'Zweiter Eintrag']);
+        $this->loginAs($this->agent2Id, 'helpdesk_agent');
+        $this->service()->addComment((int) $task['id'], ['body' => 'Dritter Eintrag']);
+
+        $comments = $this->service()->comments((int) $task['id']);
+
+        $this->assertCount(3, $comments);
+        $this->assertSame(['Erster Eintrag', 'Zweiter Eintrag', 'Dritter Eintrag'], array_column($comments, 'body'));
+        $this->assertSame($this->agentId, (int) $comments[0]['author_user_id']);
+        $this->assertSame($this->agent2Id, (int) $comments[2]['author_user_id']);
+    }
+
+    public function testCommentRequiresText(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+
+        $this->assertThrows(ValidationException::class, function () use ($task): void {
+            $this->service()->addComment((int) $task['id'], ['body' => '   ']);
+        });
+        $this->assertSame([], $this->service()->comments((int) $task['id']));
+    }
+
+    public function testCommentRequiresTaskPermission(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->loginAs($this->createUser('portal-user', 'employee'), 'employee');
+
+        $this->assertThrows(ForbiddenException::class, function () use ($task): void {
+            $this->service()->addComment((int) $task['id'], ['body' => 'Unbefugt']);
+        });
     }
 
     public function testTaskNumbersUseTheirOwnSequence(): void

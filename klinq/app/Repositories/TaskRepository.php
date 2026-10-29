@@ -31,14 +31,20 @@ final class TaskRepository extends BaseRepository
         LEFT JOIN users cu ON cu.id = a.completed_by
         LEFT JOIN tickets t ON t.id = a.source_ticket_id';
 
-    private const SELECT = 'SELECT a.*,
+    private const COLUMNS = 'a.*,
             p.name AS priority_name, p.color AS priority_color, p.level AS priority_level,
             tc.name AS category_name,
             au.display_name AS assignee_name, au.email AS assignee_email,
             ab.display_name AS assigned_by_name,
             cu.display_name AS completed_by_name,
-            t.number AS source_ticket_number, t.subject AS source_ticket_subject'
-        . self::FROM;
+            t.number AS source_ticket_number, t.subject AS source_ticket_subject';
+
+    /** Zusatzspalten der Liste: Vorschau des jüngsten Kommentars und Anzahl der Kommentare. */
+    private const LIST_COLUMNS = ',
+            (SELECT c.body FROM task_comments c WHERE c.task_id = a.id ORDER BY c.created_at DESC, c.id DESC LIMIT 1) AS last_comment,
+            (SELECT COUNT(*) FROM task_comments c WHERE c.task_id = a.id) AS comment_count';
+
+    private const SELECT = 'SELECT ' . self::COLUMNS . self::FROM;
 
     /** @return array<string,mixed>|null */
     public function find(int $id): ?array
@@ -122,7 +128,9 @@ final class TaskRepository extends BaseRepository
         $column = self::SORTABLE[$sort] ?? 'a.updated_at';
         $direction = strtolower($dir) === 'asc' ? 'ASC' : 'DESC';
 
-        return $this->fetchAll(self::SELECT . " {$where} ORDER BY {$column} {$direction}, a.id DESC LIMIT {$limit} OFFSET {$offset}", $params);
+        $select = 'SELECT ' . self::COLUMNS . self::LIST_COLUMNS . self::FROM;
+
+        return $this->fetchAll($select . " {$where} ORDER BY {$column} {$direction}, a.id DESC LIMIT {$limit} OFFSET {$offset}", $params);
     }
 
     /** @param array<string,mixed> $filters */

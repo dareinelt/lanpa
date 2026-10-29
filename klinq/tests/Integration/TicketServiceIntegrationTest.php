@@ -269,6 +269,54 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ValidationException::class, fn () => $this->service()->assign($id, 999999, null));
     }
 
+    public function testForwardMarksTicketAndTakeOverAcknowledges(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        $group = $this->c->get(TicketMasterDataRepository::class)->groupByName('Client Support');
+
+        $forwarded = $this->service()->forward($id, $this->agent2Id, (int) $group['id'], false);
+        $this->assertSame($this->agent2Id, (int) $forwarded['assignee_user_id']);
+        $this->assertSame($this->agent2Id, (int) $forwarded['forwarded_to_user_id']);
+        $this->assertSame($this->agentId, (int) $forwarded['forwarded_by_user_id']);
+        $this->assertNotNull($forwarded['forwarded_at']);
+        $this->assertNull($forwarded['forward_acknowledged_at']);
+        $this->assertSame('Client Support', $forwarded['group_name'], 'Gruppenwechsel beim Weiterleiten');
+        $this->assertCount(1, $this->tickets()->pendingForwards($this->agent2Id));
+        $this->assertCount(0, $this->tickets()->pendingForwards($this->agentId));
+
+        $this->loginAs($this->agent2Id, 'helpdesk_agent');
+        $this->assertTrue($this->service()->isForwardedTo($this->tickets()->find($id), $this->agent2Id));
+
+        $taken = $this->service()->takeOver($id);
+        $this->assertSame($this->agent2Id, (int) $taken['assignee_user_id']);
+        $this->assertNotNull($taken['forward_acknowledged_at'], 'Übernehmen quittiert die Weiterleitung');
+        $this->assertFalse($this->service()->isForwardedTo($taken, $this->agent2Id));
+        $this->assertCount(0, $this->tickets()->pendingForwards($this->agent2Id));
+    }
+
+    public function testForwardRejectsSelfAndUnknownAssignee(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+
+        $this->assertThrows(ValidationException::class, fn () => $this->service()->forward($id, $this->agentId));
+        $this->assertThrows(ValidationException::class, fn () => $this->service()->forward($id, 999999));
+    }
+
+    public function testAssignToOtherClearsOpenForward(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+
+        $this->service()->forward($id, $this->agent2Id);
+        $reassigned = $this->service()->assign($id, $this->agentId, null);
+
+        $this->assertNull($reassigned['forwarded_to_user_id']);
+        $this->assertNull($reassigned['forwarded_at']);
+        $this->assertNull($reassigned['forward_acknowledged_at']);
+    }
+
     // ------------------------------------------------------------------ Kommentare
 
     public function testCommentsVisibilityAndAutoStatusChange(): void

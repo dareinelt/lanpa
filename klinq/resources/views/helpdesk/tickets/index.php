@@ -121,7 +121,9 @@ $canMerge = $can('helpdesk.merge');
         <?php foreach ($rows as $r):
             $closed = in_array($r['status_category'], ['resolved', 'closed', 'cancelled'], true);
             $slaState = $r['sla_resolution_state'] === 'breached' || $r['sla_response_state'] === 'breached' ? 'breached' : ($r['sla_resolution_state'] === 'warning' || $r['sla_response_state'] === 'warning' ? 'warning' : 'ok');
-            $rowClass = trim('ticket-row' . ($closed ? ' is-closed' : '') . (!$closed && $slaState === 'breached' ? ' is-overdue' : '') . (!$closed && $slaState === 'warning' ? ' is-warning' : ''));
+            // An mich weitergeleitet und noch nicht übernommen: Zeile hervorheben, bis ich übernehme.
+            $forwarded = !empty($r['forwarded_to_user_id']) && (int) $r['forwarded_to_user_id'] === (int) $user['id'] && empty($r['forward_acknowledged_at']);
+            $rowClass = trim('ticket-row' . ($closed ? ' is-closed' : '') . (!$closed && $slaState === 'breached' ? ' is-overdue' : '') . (!$closed && $slaState === 'warning' ? ' is-warning' : '') . ($forwarded ? ' is-forwarded' : ''));
             $remaining = $slaService->remainingMinutes($r['resolution_due_at'], $now);
         ?>
             <tr data-href="/helpdesk/tickets/<?= (int) $r['id'] ?>" class="<?= $rowClass ?>">
@@ -136,6 +138,7 @@ $canMerge = $can('helpdesk.merge');
                 <td class="ticket-number"><a href="/helpdesk/tickets/<?= (int) $r['id'] ?>"><?= e($r['number']) ?></a><?php if ($r['merged_into_ticket_id'] !== null): ?><div class="text-xs text-muted">→ <?= e($r['merged_into_number']) ?></div><?php endif; ?></td>
                 <td class="ticket-subject">
                     <a href="/helpdesk/tickets/<?= (int) $r['id'] ?>"><?= e($r['subject']) ?></a>
+                    <?php if ($forwarded): ?><span class="badge is-warning ticket-forwarded-badge"><?= icon('swap', 'icon icon-xs') ?> An Sie weitergeleitet</span><?php endif; ?>
                     <div class="ticket-meta">
                         <span><?= e($r['type_name']) ?></span>
                         <?php if ($r['category_name']): ?><span>· <?= e($r['category_name']) ?><?= $r['subcategory_name'] ? ' / ' . e($r['subcategory_name']) : '' ?></span><?php endif; ?>

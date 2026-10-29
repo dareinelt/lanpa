@@ -76,6 +76,23 @@ final class TicketNotificationService
     }
 
     /**
+     * Ticket weitergeleitet: Der neue Bearbeiter erhält eine eigene Nachricht, bis er das
+     * Ticket im Help Desk übernimmt.
+     *
+     * @param array<string,mixed> $ticket
+     */
+    public function forwarded(array $ticket, string $forwardedBy): void
+    {
+        $email = trim((string) ($ticket['assignee_email'] ?? ''));
+        if ($email === '') {
+            return;
+        }
+        $key = 'forwarded_' . (int) ($ticket['assignee_user_id'] ?? 0) . '_' . (int) ($ticket['version'] ?? 0);
+        $by = $forwardedBy !== '' ? $forwardedBy : 'Ein Kollege';
+        $this->sendTo($ticket, $key, [$email], 'Ticket weitergeleitet', $this->intro($ticket, $by . ' hat Ihnen ein Ticket weitergeleitet. Bitte übernehmen Sie es im Help Desk.'));
+    }
+
+    /**
      * Statuswechsel: Melder (sofern für den Zielstatus aktiviert) und Team bei Wiedereröffnung.
      *
      * @param array<string,mixed> $ticket

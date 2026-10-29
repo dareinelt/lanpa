@@ -168,10 +168,34 @@ aufgerufen aus `HelpdeskSchedulerService::run` bzw. `php bin/helpdesk.php proces
 Routen: `POST /helpdesk/support-shift/claim` (Berechtigung `helpdesk.view`), `POST /helpdesk/tickets/{id}/assign-second-level`
 (Berechtigung `helpdesk.assign`, zusätzlich serverseitig auf den heutigen 1st Level beschränkt).
 
+### Ticket weiterleiten
+
+Im Ticketdetail steht Agenten mit `helpdesk.assign` die Schaltfläche **Weiterleiten** zur Verfügung (nicht bei
+zusammengeführten oder geschlossenen Tickets). Sie öffnet ein Overlay mit Gruppenauswahl, Agentenauswahl (der aktuelle
+Bearbeiter und der angemeldete Nutzer sind ausgenommen) und der Option **Gruppe beibehalten** (`POST
+/helpdesk/tickets/{id}/forward`, `TicketService::forward`). Das Weiterleiten setzt den Bearbeiter neu und markiert das
+Ticket zusätzlich als *weitergeleitet*:
+
+- `tickets.forwarded_to_user_id`, `forwarded_by_user_id`, `forwarded_at` (UTC) und `forward_acknowledged_at`
+  (Migration `025_helpdesk_ticket_forwarding.sql`).
+- **Benachrichtigung**: Der neue Bearbeiter erhält eine E-Mail „Ticket weitergeleitet“ (inkl. Hinweis, wer weitergeleitet
+  hat, `TicketNotificationService::forwarded`) und auf dem Dashboard (`/helpdesk`) die Karte **An Sie weitergeleitet**
+  mit Nummer, Betreff, Absender, Zeitpunkt, Gruppe und Priorität sowie der Schaltfläche **Übernehmen**
+  (`TicketRepository::pendingForwards`, `POST /helpdesk/tickets/{id}/take`).
+- **Hervorhebung**: In der Liste (`/helpdesk/tickets`) erscheinen so markierte Tickets bis zur Übernahme gelb hinterlegt
+  und mit dem Badge **An Sie weitergeleitet**; im Ticketdetail erscheint zusätzlich ein Banner mit **Übernehmen** und in
+  der Seitenleiste die Zeile **Weitergeleitet**.
+- **Übernehmen** (`TicketService::takeOver`) setzt den Status wie bisher und quittiert die Weiterleitung
+  (`forward_acknowledged_at`); damit verschwinden Hervorhebung, Badge, Banner und Dashboard-Karte. Wird das Ticket
+  stattdessen anderweitig umgehängt (`TicketService::assign` ohne Weiterleitung), werden die Weiterleitungsmarker
+  verworfen.
+- **Historie**: Die Ereignisse `forwarded` („Weitergeleitet“) und `forward_accepted` („Weiterleitung übernommen“)
+  erscheinen im Verlauf; auditiert wird als `ticket.forward`.
+
 ## Ticketdetail (`/helpdesk/tickets/{id}`)
 
 - **Kopf**: Nummer, Betreff, Status/Priorität/Typ, Melder (Mitarbeiter mit Abteilung, Standort, Telefon), betroffener Mitarbeiter, Zuständigkeit, Fälligkeiten, SLA-Balken.
-- **Aktionen**: In der Kopfzeile stehen die Schaltflächen **Annehmen**, **Schließen**, **Pausieren** und **Stornieren** direkt neben **E-Mail senden** und **Beobachten**; darunter folgen Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), **Zusammenführen** (Overlay mit Suche, Grund und optionaler Info-E-Mail, siehe „Ticket zusammenführen“), **In Aufgabe umwandeln** (siehe „Aufgaben“) und Löschen (`helpdesk.delete`).
+- **Aktionen**: In der Kopfzeile stehen die Schaltflächen **Annehmen**, **Schließen**, **Pausieren** und **Stornieren** direkt neben **E-Mail senden** und **Beobachten**; darunter folgen Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), **Weiterleiten** (siehe „Ticket weiterleiten“), **Zusammenführen** (Overlay mit Suche, Grund und optionaler Info-E-Mail, siehe „Ticket zusammenführen“), **In Aufgabe umwandeln** (siehe „Aufgaben“) und Löschen (`helpdesk.delete`).
   - **Annehmen** setzt den Status auf `in_progress` und ersetzt damit den bisherigen Eintrag „In Bearbeitung“ in **Status ändern**. Die Beschriftung folgt der Ausgangslage: „Annehmen“ aus `new`/`open`, „Weiter bearbeiten“ aus einer Pausierung, „Wieder öffnen“ aus „Gelöst“/„Geschlossen“.
   - **Schließen** öffnet den Schließen-Dialog (Lösung, Schließungsgrund, Fehlerursprung, Checkbox „Melder informieren“) und ersetzt den Eintrag „Gelöst“; `resolved` ist damit nur noch programmatisch erreichbar.
   - **Pausieren** und **Stornieren** (`helpdesk.cancel`) liegen ebenfalls in der Kopfzeile; **Status ändern** enthält nur noch die übrigen Zustände. Stornieren erscheint nur mit der jeweiligen Berechtigungsgruppe.
@@ -219,7 +243,7 @@ gelangen. Die Suche läuft live über die interne Schnittstelle `GET /internal/k
 
 ### Liste (`/helpdesk/tickets`)
 
-Ansichten *Meine*, *Meine Gruppe*, *Nicht zugewiesen*, *Alle offenen*, *SLA-kritisch*, *Gelöst*, *Alle*, dazu Volltext (Nummer, Betreff, Beschreibung, Melder), Filter nach Status, Priorität, Typ, Kategorie, Gruppe, Agent, Tag, Asset, Zeitraum; Sortierung nach Fälligkeit, Priorität, Aktualisierung, Nummer. CSV-Export (`helpdesk.export`) respektiert die aktiven Filter. Mit `helpdesk.merge` hat jede Zeile ein Auswahlkästchen; ab zwei gewählten Tickets erscheint neben **CSV** die Schaltfläche **„Zusammenführen“** (siehe „Mehrere Tickets zusammenführen“).
+Ansichten *Meine*, *Meine Gruppe*, *Nicht zugewiesen*, *Alle offenen*, *SLA-kritisch*, *Gelöst*, *Alle*, dazu Volltext (Nummer, Betreff, Beschreibung, Melder), Filter nach Status, Priorität, Typ, Kategorie, Gruppe, Agent, Tag, Asset, Zeitraum; Sortierung nach Fälligkeit, Priorität, Aktualisierung, Nummer. CSV-Export (`helpdesk.export`) respektiert die aktiven Filter. An den angemeldeten Agenten weitergeleitete Tickets sind bis zur Übernahme gelb hinterlegt und mit dem Badge **An Sie weitergeleitet** markiert (siehe „Ticket weiterleiten“). Mit `helpdesk.merge` hat jede Zeile ein Auswahlkästchen; ab zwei gewählten Tickets erscheint neben **CSV** die Schaltfläche **„Zusammenführen“** (siehe „Mehrere Tickets zusammenführen“).
 
 ![Ticketliste mit Ansichten, Filtern und Sortierung](screenshots/helpdesk-tickets.png)
 

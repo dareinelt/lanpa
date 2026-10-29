@@ -177,6 +177,7 @@ Routen: `POST /helpdesk/support-shift/claim` (Berechtigung `helpdesk.view`), `PO
 - **Seitenleiste**: kompakte Infoboxen (SLA, Zuweisung, Details, Tags, Assets, Beziehungen, Beobachter, Wissensdatenbank); die Bearbeitungsformulare sind jeweils hinter einem aufklappbaren Abschnitt zusammengefasst.
 - **Beschreibungstext**: nach dem Anlegen nur noch mit `helpdesk.admin` änderbar. Für alle anderen Bearbeiter ist das Feld im Bearbeitungsformular schreibgeschützt; ein übermittelter Wert wird serverseitig verworfen (`TicketService::canEditDescription()`). Ergänzungen gehören in Kommentare bzw. interne Notizen.
 - **Historie**: alle Ereignisse chronologisch mit Feldänderungen (alt → neu). Öffnet ein Agent das Ticket, wird das Ereignis `viewed` („Ticket angesehen“) erfasst; sichtbar ist es nur mit der Berechtigung „Darf Ticketaufruf auswerten“ (`helpdesk.view_history`) bzw. für Admins.
+  - **Gruppierung**: Kurz aufeinanderfolgende Aktionen desselben Benutzers (Standard: 5 Minuten ab dem ersten Ereignis der Gruppe) erscheinen als **ein** Eintrag – angezeigt wird das jüngste Ereignis, die übrigen lassen sich über das **„+“** am rechten Rand aufklappen („−“ schließt wieder). Die Logik liegt in `App\Support\TimelineGrouper` (`group()`, Fenster als Parameter), die Darstellung im Partial `views/helpdesk/tickets/_history.php`; beim Drucken werden alle Gruppen automatisch aufgeklappt (`public/js/helpdesk.js`).
 
 ![Ticketdetail mit Kopf, Kommunikation, Arbeitszeiten und Verknüpfungen](screenshots/helpdesk-ticket-detail.png)
 

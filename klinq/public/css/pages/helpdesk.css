@@ -132,10 +132,16 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 .comment-filter button { border: 1px solid var(--color-border); background: var(--color-surface); border-radius: var(--radius-full); padding: 2px var(--space-3); font-size: var(--font-size-xs); cursor: pointer; }
 .comment-filter button.is-active { background: var(--color-primary-soft); color: var(--color-primary); border-color: var(--color-primary); }
 .comment-list { list-style: none; margin: 0; padding: 0; }
-.comment { padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-3); background: var(--color-surface); }
+.comment { position: relative; padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-3); background: var(--color-surface); }
 .comment.is-internal { background: var(--color-warning-soft); border-color: var(--color-warning); }
 .comment.is-requester { border-left: 4px solid var(--color-info); }
-.comment-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; font-size: var(--font-size-sm); margin-bottom: var(--space-2); }
+.comment.is-pinned { border-color: var(--color-info); box-shadow: inset 3px 0 0 var(--color-info); }
+.comment-pin-form { position: absolute; top: var(--space-2); right: var(--space-2); margin: 0; }
+.comment-pin { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 1px solid transparent; border-radius: var(--radius-full); background: transparent; color: var(--color-text-muted); cursor: pointer; }
+.comment-pin svg { width: 16px; height: 16px; }
+.comment-pin:hover, .comment-pin:focus-visible { background: var(--color-primary-soft); color: var(--color-primary); }
+.comment-pin.is-active { color: var(--color-primary); background: var(--color-primary-soft); border-color: var(--color-primary); }
+.comment-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; padding-right: 32px; font-size: var(--font-size-sm); margin-bottom: var(--space-2); }
 .comment-author { font-weight: var(--font-weight-semibold); }
 .comment-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
 .comment-attachments { margin-top: var(--space-2); display: flex; flex-wrap: wrap; gap: var(--space-2); font-size: var(--font-size-xs); }

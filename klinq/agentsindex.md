@@ -289,8 +289,8 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   `knowledge_article_tickets`
 - **Aufgaben**: `tasks` (je Ticket höchstens eine Aufgabe, `source_ticket_id` ist eindeutig, optionale
   `category_id`), `task_categories` (flacher Katalog für die Kategorie-Pill vor dem Aufgabentitel, gepflegt unter
-  Help-Desk-Administration → Aufgaben-Kategorien), `task_comments` (chronologischer Kommentarverlauf je Aufgabe;
-  ersetzt das frühere Einzelfeld `tasks.note`), `task_events`
+  Help-Desk-Administration → Aufgaben-Kategorien), `task_comments` (chronologischer Kommentarverlauf je Aufgabe,
+  angeheftete Einträge über `is_pinned`/`pinned_at` oben; ersetzt das frühere Einzelfeld `tasks.note`), `task_events`
   (Verlauf: Anlage, Umwandlung, Annahme, Zuweisung, Statuswechsel, Kategoriewechsel)
 
 ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)

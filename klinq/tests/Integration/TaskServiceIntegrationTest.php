@@ -309,6 +309,55 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         });
     }
 
+    public function testCommentsCanBePinnedAndUnpinned(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->service()->addComment((int) $task['id'], ['body' => 'Erster Eintrag']);
+        $this->service()->addComment((int) $task['id'], ['body' => 'Zweiter Eintrag']);
+        $comments = $this->service()->comments((int) $task['id']);
+        $secondId = (int) $comments[1]['id'];
+
+        $this->service()->setCommentPinned((int) $task['id'], $secondId, true);
+
+        $pinned = $this->service()->comments((int) $task['id']);
+        $this->assertSame(['Zweiter Eintrag', 'Erster Eintrag'], array_column($pinned, 'body'));
+        $this->assertSame(1, (int) $pinned[0]['is_pinned']);
+        $this->assertTrue($pinned[0]['pinned_at'] !== null, 'Anheftung muss einen Zeitstempel erhalten');
+        $this->assertSame(0, (int) $pinned[1]['is_pinned']);
+
+        $this->service()->setCommentPinned((int) $task['id'], $secondId, false);
+
+        $unpinned = $this->service()->comments((int) $task['id']);
+        $this->assertSame(['Erster Eintrag', 'Zweiter Eintrag'], array_column($unpinned, 'body'));
+        $this->assertSame(0, (int) $unpinned[1]['is_pinned']);
+        $this->assertTrue($unpinned[1]['pinned_at'] === null, 'Gelöste Anheftung darf keinen Zeitstempel behalten');
+    }
+
+    public function testPinningRequiresTaskPermission(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->service()->addComment((int) $task['id'], ['body' => 'Erster Eintrag']);
+        $commentId = (int) $this->service()->comments((int) $task['id'])[0]['id'];
+        $this->loginAs($this->createUser('portal-user', 'employee'), 'employee');
+
+        $this->assertThrows(ForbiddenException::class, function () use ($task, $commentId): void {
+            $this->service()->setCommentPinned((int) $task['id'], $commentId, true);
+        });
+    }
+
+    public function testPinningRejectsForeignComment(): void
+    {
+        $first = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $second = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->service()->addComment((int) $first['id'], ['body' => 'Gehört zur ersten Aufgabe']);
+        $foreignId = (int) $this->service()->comments((int) $first['id'])[0]['id'];
+
+        $this->assertThrows(ValidationException::class, function () use ($second, $foreignId): void {
+            $this->service()->setCommentPinned((int) $second['id'], $foreignId, true);
+        });
+        $this->assertSame(0, (int) $this->service()->comments((int) $first['id'])[0]['is_pinned']);
+    }
+
     public function testTaskNumbersUseTheirOwnSequence(): void
     {
         $first = $this->service()->convert((int) $this->createTicket()['id'], []);

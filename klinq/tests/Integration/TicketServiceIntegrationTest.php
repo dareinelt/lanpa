@@ -299,6 +299,55 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame(2, $this->c->get(TicketCommentRepository::class)->countForTicket($id, 'public'));
     }
 
+    public function testCommunicationEntriesCanBePinned(): void
+    {
+        $id = (int) $this->createTicket()['id'];
+        $this->service()->addComment($id, 'Erster Eintrag', 'public');
+        $second = $this->service()->addComment($id, 'Zweiter Eintrag', 'public');
+        $secondId = (int) $second['id'];
+
+        $this->service()->setCommentPinned($id, $secondId, true);
+
+        $pinned = $this->service()->comments($this->service()->get($id));
+        $this->assertSame(['Zweiter Eintrag', 'Erster Eintrag'], array_column($pinned, 'body'));
+        $this->assertSame(1, (int) $pinned[0]['is_pinned']);
+        $this->assertTrue($pinned[0]['pinned_at'] !== null, 'Anheftung muss einen Zeitstempel erhalten');
+
+        $this->service()->setCommentPinned($id, $secondId, false);
+
+        $unpinned = $this->service()->comments($this->service()->get($id));
+        $this->assertSame(['Erster Eintrag', 'Zweiter Eintrag'], array_column($unpinned, 'body'));
+        $this->assertSame(0, (int) $unpinned[1]['is_pinned']);
+        $this->assertTrue($unpinned[1]['pinned_at'] === null, 'Gelöste Anheftung darf keinen Zeitstempel behalten');
+    }
+
+    public function testPinningRequiresAgentRole(): void
+    {
+        $id = (int) $this->createTicket()['id'];
+        $comment = $this->service()->addComment($id, 'Erster Eintrag', 'public');
+        $commentId = (int) $comment['id'];
+        $this->loginAs($this->portalUserId, 'lager');
+
+        $this->assertThrows(ForbiddenException::class, function () use ($id, $commentId): void {
+            $this->service()->setCommentPinned($id, $commentId, true);
+        });
+        $this->loginAs($this->agentId, 'helpdesk_agent');
+        $this->assertSame(0, (int) $this->service()->comments($this->service()->get($id))[0]['is_pinned']);
+    }
+
+    public function testPinningRejectsCommentOfAnotherTicket(): void
+    {
+        $firstId = (int) $this->createTicket()['id'];
+        $secondId = (int) $this->createTicket()['id'];
+        $foreign = $this->service()->addComment($firstId, 'Gehört zum ersten Ticket', 'public');
+        $foreignId = (int) $foreign['id'];
+
+        $this->assertThrows(ValidationException::class, function () use ($secondId, $foreignId): void {
+            $this->service()->setCommentPinned($secondId, $foreignId, true);
+        });
+        $this->assertSame(0, (int) $this->service()->comments($this->service()->get($firstId))[0]['is_pinned']);
+    }
+
     // ------------------------------------------------------------------ Portal-Sichtbarkeit
 
     public function testPortalUserSeesOnlyOwnTickets(): void

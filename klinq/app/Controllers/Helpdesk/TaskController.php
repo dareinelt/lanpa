@@ -218,4 +218,19 @@ final class TaskController extends HelpdeskBaseController
 
         return $this->respond($request, 'Kommentar gespeichert.', $redirect, ['comment' => $comment]);
     }
+
+    /** Kommentar über die Pinnadel oben rechts anheften bzw. die Anheftung lösen. */
+    public function pinComment(Request $request): Response
+    {
+        $id = $request->paramInt('id');
+        $commentId = $request->paramInt('comment');
+        $pinned = $request->bool('pinned');
+        $redirect = '/helpdesk/aufgaben/' . $id . '#kommentar-' . $commentId;
+
+        $response = $this->attempt($request, function () use ($id, $commentId, $pinned): void {
+            $this->service->setCommentPinned($id, $commentId, $pinned);
+        }, $redirect, false);
+
+        return $response ?? $this->respond($request, $pinned ? 'Kommentar angeheftet.' : 'Anheftung gelöst.', $redirect);
+    }
 }

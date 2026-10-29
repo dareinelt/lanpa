@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
-/** Kommunikationsverlauf eines Tickets (öffentliche Antworten, interne Notizen). Einträge sind unveränderlich. */
+/**
+ * Kommunikationsverlauf eines Tickets (öffentliche Antworten, interne Notizen). Einträge sind inhaltlich
+ * unveränderlich; lediglich die Anheftung (`is_pinned`) lässt sich setzen und lösen. Angeheftete Einträge
+ * stehen oben, untereinander und zu den übrigen weiterhin chronologisch.
+ */
 final class TicketCommentRepository extends BaseRepository
 {
     /**
@@ -18,8 +22,17 @@ final class TicketCommentRepository extends BaseRepository
              FROM ticket_comments c
              LEFT JOIN users u ON u.id = c.author_user_id
              WHERE c.ticket_id = :t' . ($includeInternal ? '' : " AND c.type = 'public'") . '
-             ORDER BY c.created_at, c.id',
+             ORDER BY c.is_pinned DESC, c.created_at, c.id',
             ['t' => $ticketId]
+        );
+    }
+
+    /** Heftet einen Kommentar an bzw. löst die Anheftung. */
+    public function setPinned(int $id, bool $pinned): int
+    {
+        return $this->execute(
+            'UPDATE ticket_comments SET is_pinned = :p, pinned_at = :at WHERE id = :id',
+            ['p' => $pinned ? 1 : 0, 'at' => $pinned ? gmdate('Y-m-d H:i:s') : null, 'id' => $id]
         );
     }
 

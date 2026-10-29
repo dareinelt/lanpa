@@ -176,6 +176,7 @@ Routen: `POST /helpdesk/support-shift/claim` (Berechtigung `helpdesk.view`), `PO
   - **Schließen** öffnet den Schließen-Dialog (Lösung, Schließungsgrund, Fehlerursprung, Checkbox „Melder informieren“) und ersetzt den Eintrag „Gelöst“; `resolved` ist damit nur noch programmatisch erreichbar.
   - **Pausieren** und **Stornieren** (`helpdesk.cancel`) liegen ebenfalls in der Kopfzeile; **Status ändern** enthält nur noch die übrigen Zustände. Stornieren erscheint nur mit der jeweiligen Berechtigungsgruppe.
 - **Kommunikation**: öffentliche Kommentare (Melder sieht sie im Portal, E-Mail-Benachrichtigung) und **interne Notizen** (`helpdesk.internal_note`, nur Agenten). Für Agenten ist die **interne Notiz** vorausgewählt; öffentliche Antworten müssen bewusst gewählt werden. Anhänge je Kommentar oder direkt am Ticket, optional intern. Zusätzlich **„E-Mail senden“** – eine echte Nachricht an den Melder (siehe „E-Mail aus dem Ticket senden“).
+  - **Anheften**: Die **Pinnadel** oben rechts an einem Eintrag heftet ihn an den Anfang der Kommunikation (`POST /helpdesk/tickets/{id}/comments/{comment}/pin`, Feld `pinned=1|0`); ein zweiter Klick löst die Anheftung. Angeheftete Einträge stehen vor allen übrigen (`ORDER BY is_pinned DESC, created_at, id`), untereinander chronologisch, und tragen die Markierung **Angeheftet**. Gesetzt werden `ticket_comments.is_pinned` und `pinned_at` (UTC), auditiert als `ticket.comment.pin` bzw. `ticket.comment.unpin`. Nur Agenten mit `helpdesk.comment` (nicht im schreibgeschützten Zustand zusammengeführter Tickets); der Sprung zurück geht auf `#comment-{id}`.
 - **Arbeitszeiten** (`helpdesk.worklog`): Minuten (in 15-Minuten-Schritten), Tätigkeit, Datum; Summe im Kopf. Der Bereich ist – wie **Anhänge** – aufklappbar und standardmäßig geschlossen.
 - **Verknüpfungen**: Assets (mit Vorschlag der dem Melder zugeordneten Geräte), Beziehungen zu anderen Tickets (`related`, `duplicate_of`, `parent_of`, `problem_of`, `change_for` – jeweils mit Gegenrichtung), Wissensartikel (Vorschläge nach Betreff/Kategorie, „Artikel aus Lösung erstellen“).
 - **Tags** mit Autovervollständigung, **Watcher** (zusätzliche Empfänger).
@@ -571,12 +572,19 @@ Wird eine Kategorie in der Administration gelöscht, verlieren die betroffenen A
 
 Jede Aufgabe hat einen eigenen **Kommentarverlauf** (`task_comments`). Kommentare stehen im Aufgabendetail in
 der Karte **Kommentare** und erscheinen chronologisch in der Reihenfolge des Eintragens (`created_at`, bei
-gleichem Zeitstempel nach `id`); eine Umsortierung oder Filterung gibt es bewusst nicht. Schreiben dürfen alle
+gleichem Zeitstempel nach `id`); eine Filterung gibt es bewusst nicht. Schreiben dürfen alle
 Agenten mit `helpdesk.tasks` über das Feld unter der Liste (`POST /helpdesk/aufgaben/{id}/kommentare`); das
 Absenden springt zurück auf den Anker `#kommentare`. Ein Kommentar hält Autor (Name und optionaler
 Benutzerbezug) und Zeitpunkt fest, wird auditiert (`task.comment`) und aktualisiert `tasks.updated_at`, damit
-die Aufgabe in den Listen oben bleibt. Kommentare sind unveränderlich – die Anwendung bietet kein Bearbeiten
-oder Löschen.
+die Aufgabe in den Listen oben bleibt. Kommentare sind inhaltlich unveränderlich – die Anwendung bietet kein
+Bearbeiten oder Löschen.
+
+**Anheften**: Über die **Pinnadel** oben rechts am Kommentar (`POST /helpdesk/aufgaben/{id}/kommentare/{comment}/pin`,
+Feld `pinned=1|0`) lässt sich ein Kommentar oben an die Liste heften; ein zweiter Klick löst die Anheftung wieder.
+Angeheftete Kommentare stehen vor allen übrigen (`ORDER BY is_pinned DESC, created_at, id`), untereinander
+weiterhin chronologisch, und tragen die Markierung **Angeheftet**. Gesetzt wird `task_comments.is_pinned`
+plus `pinned_at` (UTC); auditiert wird als `task.comment.pin` bzw. `task.comment.unpin`. Erlaubt ist das für alle
+Agenten mit `helpdesk.tasks`; der Sprung zurück geht auf `#kommentar-{id}`.
 
 Das frühere Einzelfeld **„Notiz“** im Formular **Status ändern** ist entfallen; vorhandene Notizen hat
 `database/migrations/023_helpdesk_task_comments.sql` als Kommentar übernommen (Autor und Zeitpunkt der letzten

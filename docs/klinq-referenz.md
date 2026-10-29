@@ -415,7 +415,7 @@ KLINQ) bleibt unverändert; sie ist keine Anmeldefunktion.
 
 ### 8.1 Zuordnung im Intranet
 
-`KlinqConfigService::GROUP_KEYS` verbindet neun Einstellungen mit Rolle,
+`KlinqConfigService::GROUP_KEYS` verbindet zehn Einstellungen mit Rolle,
 Berechtigungsgruppe und Bereich:
 
 | Einstellung | Bezeichnung im Formular | Rolle | Berechtigung | Bereich |
@@ -429,11 +429,18 @@ Berechtigungsgruppe und Bereich:
 | `klinq_ticket_history_groups` | Ticketaufruf (Verlauf) | – | `ticketaufruf` | `tickets` |
 | `klinq_ticket_delete_groups` | Ticket löschen | – | `ticket_loeschen` | `helpdesk` |
 | `klinq_ticket_cancel_groups` | Ticket stornieren | – | `ticket_stornieren` | `helpdesk` |
+| `klinq_task_assignment_groups` | Aufgabenverteilung | – | `aufgabenverteilung` | `helpdesk` |
 
-Die beiden letzten Einträge vergeben gezielt das Löschen (`helpdesk.delete`) und
-das Stornieren (`helpdesk.cancel`) von Tickets. Ohne diese Gruppen – und ohne
-Admin-Rolle – stehen beide Aktionen auch Help-Desk-Agenten, Leitungen und
-Administration nicht zur Verfügung.
+Die Einträge für Löschen (`helpdesk.delete`) und Stornieren (`helpdesk.cancel`)
+vergeben gezielt diese beiden Rechte. Ohne diese Gruppen – und ohne Admin-Rolle –
+stehen beide Aktionen auch Help-Desk-Agenten, Leitungen und Administration nicht
+zur Verfügung.
+
+`klinq_task_assignment_groups` steuert die Aufgabenverteilung im Help Desk.
+Mitglieder dieser AD-Gruppen erhalten `helpdesk.tasks.assign` und dürfen damit
+Aufgaben aus „Alle Aufgaben“ einem bestimmten Agenten zuweisen. Das Annehmen und
+Bearbeiten von Aufgaben (`helpdesk.tasks`) hängt dagegen an den Help-Desk-Rollen
+und benötigt keine zusätzliche Gruppe.
 
 Weitere Einstellungen:
 
@@ -462,7 +469,7 @@ Weitere Einstellungen:
 1. AD-Gruppen normalisieren (Leerraum entfernen, Kleinschreibung) und in einer
    Menge ablegen. Groß-/Kleinschreibung spielt damit keine Rolle.
 2. Start mit `klinq_default_role`.
-3. Für jede der neun Zuordnungen in der Reihenfolge aus 8.1: Ist mindestens
+3. Für jede der zehn Zuordnungen in der Reihenfolge aus 8.1: Ist mindestens
    eine konfigurierte Gruppe in der Menge enthalten, gilt der Eintrag als
    Treffer (`matched`) – **die erste genannte Gruppe je Feld genügt**.
    * Rolle: übernehmen, wenn ihr Gewicht höher ist als das der aktuellen Rolle.

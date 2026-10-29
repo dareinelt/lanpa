@@ -132,17 +132,24 @@ selbst liegt in der `settings`-Tabelle des Intranets.
 | Ticketaufruf (Verlauf) | Berechtigungsgruppe `ticketaufruf` |
 | Ticket löschen | Berechtigungsgruppe `ticket_loeschen` |
 | Ticket stornieren | Berechtigungsgruppe `ticket_stornieren` |
+| Aufgabenverteilung | Berechtigungsgruppe `aufgabenverteilung` |
 
 Regeln:
 
 * **Die höchste zutreffende Rolle gewinnt** (Admin vor Help-Desk-Administration
   vor Leitung vor Agent vor Asset-Management vor Nur-Lesen vor Serviceportal).
 * Berechtigungsgruppen (Statistiken, Ticketaufruf, Ticket löschen, Ticket
-  stornieren) sind unabhängig von der Rolle und werden zusätzlich vergeben.
+  stornieren, Aufgabenverteilung) sind unabhängig von der Rolle und werden
+  zusätzlich vergeben.
 * **Löschen und Stornieren sind getrennte Rechte.** Ohne die jeweilige Gruppe –
   und ohne Admin-Rolle – dürfen auch Help-Desk-Agenten, Leitungen und die
   Help-Desk-Administration keine Tickets löschen oder stornieren. Schließen und
   Wiederöffnen bleiben davon unberührt.
+* **Aufgabenverteilung:** Mitglieder der Gruppe „Aufgabenverteilung“ dürfen
+  Aufgaben aus dem Help Desk einem bestimmten Agenten zuweisen. Aufgaben
+  annehmen und bearbeiten dürfen alle Help-Desk-Rollen; die Gruppe ist nur für
+  die Zuweisung an andere nötig (Einzelheiten in der KLINQ-Dokumentation,
+  Abschnitt „Aufgaben“).
 * Wer in keiner der Gruppen ist, erhält `klinq_default_role`
   (Vorgabe: `portal` – ausschließlich das Serviceportal mit den eigenen Tickets,
   Hilfe & Anleitungen und der Störmeldung). Die Rolle sieht **keinen** Teil der

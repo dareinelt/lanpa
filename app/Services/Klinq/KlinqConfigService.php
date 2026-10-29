@@ -121,6 +121,12 @@ final class KlinqConfigService
             'permission' => 'ticket_stornieren',
             'area' => 'helpdesk',
         ],
+        'klinq_task_assignment_groups' => [
+            'label' => 'Aufgabenverteilung',
+            'role' => '',
+            'permission' => 'aufgabenverteilung',
+            'area' => 'helpdesk',
+        ],
     ];
 
     public function __construct(

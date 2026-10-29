@@ -372,6 +372,11 @@ final class ModuleNavigation
             if ($can('knowledgebase.view')) {
                 $items[] = self::link('helpdesk-knowledge', '/helpdesk/knowledge', 'book', 'Wissensdatenbank');
             }
+            if ($can('helpdesk.tasks')) {
+                $items[] = self::section('Aufgaben');
+                $items[] = self::link('helpdesk-aufgaben', '/helpdesk/aufgaben', 'inbox', 'Alle Aufgaben');
+                $items[] = self::link('helpdesk-aufgaben-meine', '/helpdesk/aufgaben/meine', 'user', 'Meine Aufgaben', $count('tasks'));
+            }
             if ($can('helpdesk.reports') || $can('helpdesk.categories') || $can('helpdesk.admin')) {
                 $items[] = self::section('Auswertung & System');
                 if ($can('helpdesk.reports')) {

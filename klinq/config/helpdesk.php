@@ -9,6 +9,8 @@ return [
     'enabled' => Env::bool('HELPDESK_ENABLED', true),
     // Präfix der Ticketnummer: PREFIX-JJJJ-NNNNNN
     'ticket_prefix' => strtoupper(trim((string) Env::get('HELPDESK_TICKET_PREFIX', 'HD'))) ?: 'HD',
+    // Präfix der Aufgabennummer (Aufgaben aus Tickets): PREFIX-JJJJ-NNNNNN
+    'task_prefix' => strtoupper(trim((string) Env::get('HELPDESK_TASK_PREFIX', 'AUF'))) ?: 'AUF',
     // Standardschwellen in Prozent der SLA-Zeit, wenn eine SLA-Regel keine eigenen Werte definiert
     'sla_warning_percent' => max(1, min(99, Env::int('HELPDESK_SLA_WARNING_PERCENT', 75))),
     'sla_escalation_percent' => max(1, min(100, Env::int('HELPDESK_ESCALATION_PERCENT', 90))),

@@ -61,6 +61,21 @@ final class TicketAttachmentController extends HelpdeskBaseController
         return $response ?? $this->respond($request, $type === 'internal' ? 'Interne Notiz gespeichert.' : 'Kommentar gespeichert.', $redirect, ['comment' => $comment]);
     }
 
+    /** Kommunikationseintrag über die Pinnadel oben rechts anheften bzw. die Anheftung lösen. */
+    public function pinComment(Request $request): Response
+    {
+        $id = $request->paramInt('id');
+        $commentId = $request->paramInt('comment');
+        $pinned = $request->bool('pinned');
+        $redirect = '/helpdesk/tickets/' . $id . '#comment-' . $commentId;
+
+        $response = $this->attempt($request, function () use ($id, $commentId, $pinned): void {
+            $this->service->setCommentPinned($id, $commentId, $pinned);
+        }, $redirect, false);
+
+        return $response ?? $this->respond($request, $pinned ? 'Kommentar angeheftet.' : 'Anheftung gelöst.', $redirect);
+    }
+
     /** Anhang ohne Kommentar hochladen. */
     public function upload(Request $request): Response
     {

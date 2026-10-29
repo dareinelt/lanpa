@@ -389,6 +389,26 @@ final class TaskService
         return $comment;
     }
 
+    /** Heftet einen Kommentar oben an bzw. löst die Anheftung wieder. */
+    public function setCommentPinned(int $taskId, int $commentId, bool $pinned): void
+    {
+        $this->currentUser->require('helpdesk.tasks');
+        $task = $this->get($taskId);
+        $comment = $this->comments->find($commentId);
+        if ($comment === null || (int) $comment['task_id'] !== $taskId) {
+            throw ValidationException::single('comment', 'Kommentar nicht gefunden.');
+        }
+        $this->comments->setPinned($commentId, $pinned);
+        $this->audit->log(
+            $pinned ? 'task.comment.pin' : 'task.comment.unpin',
+            'task',
+            $taskId,
+            (string) $task['number'],
+            null,
+            ['comment_id' => $commentId]
+        );
+    }
+
     // ------------------------------------------------------------------ Statuswechsel
 
     /** @param array<string,mixed> $input status, version */

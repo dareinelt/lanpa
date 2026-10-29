@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Repositories;
 
 /**
- * Kommentarverlauf einer Aufgabe. Einträge sind unveränderlich und werden chronologisch in der
- * Reihenfolge des Eintragens geliefert.
+ * Kommentarverlauf einer Aufgabe. Einträge sind inhaltlich unveränderlich; lediglich die Anheftung
+ * (`is_pinned`) lässt sich setzen und lösen. Angeheftete Einträge stehen oben, untereinander und zu den
+ * übrigen weiterhin chronologisch in der Reihenfolge des Eintragens.
  */
 final class TaskCommentRepository extends BaseRepository
 {
@@ -16,8 +17,17 @@ final class TaskCommentRepository extends BaseRepository
         return $this->fetchAll(
             'SELECT * FROM task_comments
              WHERE task_id = :t
-             ORDER BY created_at ASC, id ASC',
+             ORDER BY is_pinned DESC, created_at ASC, id ASC',
             ['t' => $taskId]
+        );
+    }
+
+    /** Heftet einen Kommentar an bzw. löst die Anheftung. */
+    public function setPinned(int $id, bool $pinned): int
+    {
+        return $this->execute(
+            'UPDATE task_comments SET is_pinned = :p, pinned_at = :at WHERE id = :id',
+            ['p' => $pinned ? 1 : 0, 'at' => $pinned ? gmdate('Y-m-d H:i:s') : null, 'id' => $id]
         );
     }
 

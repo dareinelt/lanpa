@@ -855,6 +855,29 @@ final class TicketService
         return $comment;
     }
 
+    /** Heftet einen Kommunikationseintrag oben an bzw. löst die Anheftung wieder. */
+    public function setCommentPinned(int $ticketId, int $commentId, bool $pinned): void
+    {
+        if (!$this->isAgent()) {
+            throw new ForbiddenException('Nur Agenten können Kommentare anheften.');
+        }
+        $this->currentUser->require('helpdesk.comment');
+        $ticket = $this->getVisible($ticketId);
+        $comment = $this->comments->find($commentId);
+        if ($comment === null || (int) $comment['ticket_id'] !== $ticketId) {
+            throw ValidationException::single('comment', 'Kommentar nicht gefunden.');
+        }
+        $this->comments->setPinned($commentId, $pinned);
+        $this->audit->log(
+            $pinned ? 'ticket.comment.pin' : 'ticket.comment.unpin',
+            'ticket',
+            $ticketId,
+            (string) $ticket['number'],
+            null,
+            ['comment_id' => $commentId]
+        );
+    }
+
     /** @param array<string,mixed> $ticket */
     private function insertComment(array $ticket, string $body, string $type, string $source = 'web'): int
     {

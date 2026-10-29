@@ -81,6 +81,7 @@ return static function (Router $router, Container $c): void {
 
     // Kommentare und Anhänge (Agent)
     $router->post('/helpdesk/tickets/{id}/comments', static fn (Request $r): Response => $files()->comment($r), 'helpdesk.comment');
+    $router->post('/helpdesk/tickets/{id}/comments/{comment}/pin', static fn (Request $r): Response => $files()->pinComment($r), 'helpdesk.comment');
     $router->post('/helpdesk/tickets/{id}/attachments', static fn (Request $r): Response => $files()->upload($r), 'helpdesk.comment');
     $router->get('/helpdesk/tickets/{id}/attachments/{document}', static fn (Request $r): Response => $files()->download($r), 'portal.view');
     $router->post('/helpdesk/tickets/{id}/attachments/{document}/delete', static fn (Request $r): Response => $files()->delete($r), 'helpdesk.update');
@@ -94,6 +95,7 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/aufgaben/{id}/status', static fn (Request $r): Response => $tasks()->status($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/kategorie', static fn (Request $r): Response => $tasks()->category($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/kommentare', static fn (Request $r): Response => $tasks()->comment($r), 'helpdesk.tasks');
+    $router->post('/helpdesk/aufgaben/{id}/kommentare/{comment}/pin', static fn (Request $r): Response => $tasks()->pinComment($r), 'helpdesk.tasks');
 
     // Wissensdatenbank
     $router->get('/helpdesk/knowledge', static fn (Request $r): Response => $kb()->index($r), 'knowledgebase.view');

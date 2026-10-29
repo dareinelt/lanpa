@@ -73,9 +73,18 @@ $eventClass = static fn (string $t): string => match ($t) {
         <?php else: ?>
         <ol class="comment-list">
             <?php foreach ($comments as $c): ?>
-            <li class="comment" id="kommentar-<?= (int) $c['id'] ?>">
+            <?php $pinned = (int) ($c['is_pinned'] ?? 0) === 1; ?>
+            <li class="comment<?= $pinned ? ' is-pinned' : '' ?>" id="kommentar-<?= (int) $c['id'] ?>">
+                <?php if ($can('helpdesk.tasks')): ?>
+                <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/kommentare/<?= (int) $c['id'] ?>/pin" class="comment-pin-form">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="pinned" value="<?= $pinned ? '0' : '1' ?>">
+                    <button type="submit" class="comment-pin<?= $pinned ? ' is-active' : '' ?>" title="<?= $pinned ? 'Anheftung lösen' : 'Oben anheften' ?>" aria-label="<?= $pinned ? 'Anheftung lösen' : 'Oben anheften' ?>" aria-pressed="<?= $pinned ? 'true' : 'false' ?>"><?= icon('pin') ?></button>
+                </form>
+                <?php endif; ?>
                 <div class="comment-head">
                     <span class="comment-author"><?= e($c['author_name']) ?></span>
+                    <?php if ($pinned): ?><span class="badge badge-info"><?= icon('pin', 'icon icon-xs') ?> Angeheftet</span><?php endif; ?>
                     <span class="text-muted text-xs"><?= fmt_datetime($c['created_at']) ?></span>
                 </div>
                 <div class="comment-body"><?= rich_text($c['body']) ?></div>
@@ -91,7 +100,7 @@ $eventClass = static fn (string $t): string => match ($t) {
                 <label for="task-comment-body" class="sr-only">Kommentar</label>
                 <textarea id="task-comment-body" name="body" rows="3" maxlength="2000000" placeholder="Kommentar eingeben …" required><?= e(old('body')) ?></textarea>
                 <?= field_error('body') ?>
-                <p class="form-hint">Kommentare erscheinen chronologisch in der Reihenfolge des Eintragens.</p>
+                <p class="form-hint">Kommentare erscheinen chronologisch; angeheftete Einträge stehen oben.</p>
             </div>
             <div class="comment-form-footer">
                 <span></span>

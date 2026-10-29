@@ -73,7 +73,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `app/Controllers/` | HTTP-Schicht; `CrudController`/`BaseController` als Basis, `Mobile/` (Scan-UI), `Api/` (JSON), `Helpdesk/` (Agent, Portal, API, Wissensdatenbank, Admin, Berichte, Störungsmeldung, Anhänge) |
 | `app/Services/` | Geschäftslogik und Validierung je Fachbereich; `Ad/` (Sync), `Ldap/` (Client, Fake-Client, Auth), `Lanpa/` (Brücke zum Intranet: Einstiegsticket, Dienst-Token, KI-Konfiguration), `Helpdesk/` (Ticket-, SLA-, Regel-, Mail-, Wissensdatenbank-Logik, `Helpdesk/Mail/` für IMAP/Datei-Postfachclients) |
 | `app/Repositories/` | Datenzugriff; `BaseRepository` kapselt `fetchOne/fetchAll/insertRow/updateRow` |
-| `app/Support/` | Fachlogikfreie Helfer: `Validator`, `Paginator`, `CsvReader`/`CsvWriter`, `QrCode`, `ColognePhonetic`, `Url`, `ModuleNavigation`, `IpRange`, `Secret` (Verschlüsselung gespeicherter Zugangsdaten) |
+| `app/Support/` | Fachlogikfreie Helfer: `Validator`, `Paginator`, `CsvReader`/`CsvWriter`, `QrCode`, `ColognePhonetic`, `Url`, `ModuleNavigation`, `IpRange`, `Secret` (Verschlüsselung gespeicherter Zugangsdaten), `TimelineGrouper` (fasst kurz aufeinanderfolgende Verlaufsereignisse desselben Benutzers zusammen) |
 | `app/Exceptions/` | `HttpException`, `NotFoundException`, `ForbiddenException`, `ValidationException`, `ConflictException` |
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |

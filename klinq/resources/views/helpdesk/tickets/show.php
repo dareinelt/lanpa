@@ -6,17 +6,6 @@ $readOnly = $isMerged;
 $canUpdate = $can('helpdesk.update') && !$readOnly;
 $stateLabel = ['ok' => 'Im Plan', 'warning' => 'Warnung', 'breached' => 'Verletzt', 'met' => 'Eingehalten', 'none' => '–', 'paused' => 'Pausiert'];
 $stateClass = static fn (string $s): string => match ($s) { 'warning' => ' is-warning', 'breached' => ' is-breached', 'met' => ' is-met', default => '' };
-$eventLabels = [
-    'created' => 'Ticket angelegt', 'status_changed' => 'Status geändert', 'reopened' => 'Wieder geöffnet', 'resolved' => 'Gelöst', 'closed' => 'Geschlossen', 'cancelled' => 'Storniert',
-    'assigned' => 'Zugewiesen', 'unassigned' => 'Zuweisung entfernt', 'group_changed' => 'Gruppe geändert', 'deputy_changed' => 'Vertretung geändert', 'field_changed' => 'Feld geändert',
-    'comment' => 'Kommentar', 'internal_note' => 'Interne Notiz', 'attachment_added' => 'Anhang hinzugefügt', 'attachment_removed' => 'Anhang entfernt',
-    'asset_linked' => 'Asset verknüpft', 'asset_unlinked' => 'Asset-Verknüpfung entfernt', 'tags_changed' => 'Tags geändert', 'watcher_added' => 'Beobachter hinzugefügt',
-    'worklog_added' => 'Arbeitszeit erfasst', 'worklog_removed' => 'Arbeitszeit gelöscht', 'relation_added' => 'Beziehung angelegt', 'relation_removed' => 'Beziehung entfernt',
-    'merged' => 'Zusammengeführt', 'merge_received' => 'Ticket aufgenommen', 'escalated' => 'Eskaliert', 'sla_warning' => 'SLA-Warnung', 'sla_breached' => 'SLA verletzt',
-    'knowledge_linked' => 'Wissensartikel verknüpft', 'knowledge_created' => 'Wissensartikel erstellt', 'rule_applied' => 'Regel angewendet', 'notification' => 'Benachrichtigung',
-    'viewed' => 'Ticket angesehen',
-];
-$eventClass = static fn (string $t): string => match ($t) { 'sla_breached', 'escalated', 'cancelled' => ' is-danger', 'resolved', 'closed' => ' is-success', 'sla_warning', 'reopened' => ' is-warning', default => '' };
 $percentBar = static function (?int $percent, string $state, ?string $startedAt, ?string $dueAt, int $warningPercent): string {
     if ($percent === null || $startedAt === null || $dueAt === null) {
         return '';
@@ -269,26 +258,7 @@ $statusTransitions = array_values(array_filter(
 
     <section class="card" id="history">
         <h2 class="card-title">Verlauf</h2>
-        <?php if ($timeline === []): ?>
-            <p class="empty-state">Kein Verlauf.</p>
-        <?php else: ?>
-        <ul class="timeline">
-            <?php foreach (array_reverse($timeline) as $ev): ?>
-            <li class="<?= trim($eventClass((string) $ev['type'])) ?>">
-                <span class="timeline-dot"></span>
-                <div class="timeline-time"><?= fmt_datetime($ev['created_at']) ?> · <?= e($ev['user_name']) ?></div>
-                <div class="timeline-title"><?= e($eventLabels[$ev['type']] ?? ucfirst(str_replace('_', ' ', (string) $ev['type']))) ?><?php if (!empty($ev['field']) && !in_array($ev['type'], ['status_changed', 'assigned', 'unassigned', 'tags_changed'], true)): ?> <span class="text-muted">(<?= e($ev['field']) ?>)</span><?php endif; ?></div>
-                <?php if ($ev['old_value'] !== null || $ev['new_value'] !== null): ?>
-                <div class="timeline-detail">
-                    <?php if ($ev['old_value'] !== null && $ev['new_value'] !== null): ?><s class="text-muted"><?= e($ev['old_value']) ?></s> → <strong><?= e($ev['new_value']) ?></strong>
-                    <?php elseif ($ev['new_value'] !== null): ?><?= e($ev['new_value']) ?>
-                    <?php else: ?><s class="text-muted"><?= e($ev['old_value']) ?></s><?php endif; ?>
-                </div>
-                <?php endif; ?>
-            </li>
-            <?php endforeach; ?>
-        </ul>
-        <?php endif; ?>
+        <?php include __DIR__ . '/_history.php'; ?>
         <?php if ($notifications !== []): ?>
         <details class="mt-2">
             <summary class="text-sm">Benachrichtigungen (<?= count($notifications) ?>)</summary>

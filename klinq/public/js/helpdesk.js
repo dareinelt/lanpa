@@ -327,4 +327,18 @@
         renderSlaBars();
         window.setInterval(renderSlaBars, 1000);
     }
+
+    // ---------------------------------------------------------------- Verlauf: gruppierte Einträge für den Ausdruck aufklappen
+    const printOpenedGroups = [];
+    window.addEventListener("beforeprint", function () {
+        printOpenedGroups.length = 0;
+        document.querySelectorAll("details.timeline-group:not([open])").forEach(function (el) {
+            el.open = true;
+            printOpenedGroups.push(el);
+        });
+    });
+    window.addEventListener("afterprint", function () {
+        printOpenedGroups.forEach(function (el) { el.open = false; });
+        printOpenedGroups.length = 0;
+    });
 })();

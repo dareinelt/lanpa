@@ -9,6 +9,7 @@ use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
 use App\Repositories\TaskCategoryRepository;
+use App\Repositories\TaskCommentRepository;
 use App\Repositories\TaskRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Security\CurrentUser;
@@ -16,8 +17,8 @@ use App\Services\AuditLogService;
 
 /**
  * Fachlogik der Aufgaben: Umwandlung aus Tickets, Annahme durch Agenten, Zuweisung durch die
- * Berechtigungsgruppe „Aufgabenverteilung“ und Statuswechsel. Alle schreibenden Vorgänge sind
- * transaktional, schreiben den Aufgabenverlauf und das Audit-Log.
+ * Berechtigungsgruppe „Aufgabenverteilung“, Statuswechsel und Kommentare. Alle schreibenden Vorgänge
+ * sind transaktional, schreiben den Aufgabenverlauf und das Audit-Log.
  */
 final class TaskService
 {
@@ -42,6 +43,7 @@ final class TaskService
     public function __construct(
         private readonly TaskRepository $tasks,
         private readonly TaskCategoryRepository $categories,
+        private readonly TaskCommentRepository $comments,
         private readonly TaskNumberService $numbers,
         private readonly TicketService $tickets,
         private readonly TicketMasterDataRepository $masterData,
@@ -95,6 +97,12 @@ final class TaskService
     public function events(int $taskId): array
     {
         return $this->tasks->events($taskId);
+    }
+
+    /** Kommentare der Aufgabe, chronologisch in der Reihenfolge des Eintragens. @return array<int,array<string,mixed>> */
+    public function comments(int $taskId): array
+    {
+        return $this->comments->forTask($taskId);
     }
 
     /** Aktive Agenten, denen eine Aufgabe zugewiesen werden darf. @return array<int,array<string,mixed>> */
@@ -340,9 +348,50 @@ final class TaskService
         return $this->get($id);
     }
 
+    // ------------------------------------------------------------------ Kommentare
+
+    /**
+     * Legt einen Kommentar an der Aufgabe an. Kommentare sind unveränderlich und erscheinen im
+     * Aufgabendetail chronologisch in der Reihenfolge des Eintragens; sie gelten als Bearbeitung,
+     * damit die Aufgabe in der Liste nach „zuletzt geändert“ nach oben wandert.
+     * @param array<string,mixed> $input body
+     * @return array<string,mixed>
+     */
+    public function addComment(int $id, array $input): array
+    {
+        $this->currentUser->require('helpdesk.tasks');
+        $task = $this->get($id);
+        $body = trim((string) ($input['body'] ?? ''));
+        if ($body === '') {
+            throw ValidationException::single('body', 'Bitte einen Kommentartext eingeben.');
+        }
+        if (mb_strlen($body) > TicketService::MAX_TEXT_CHARS) {
+            throw ValidationException::single('body', 'Der Kommentar ist zu lang (max. ' . number_format(TicketService::MAX_TEXT_CHARS, 0, ',', '.') . ' Zeichen).');
+        }
+
+        $userId = $this->currentUser->id();
+        $userName = $this->currentUser->displayName();
+        $commentId = $this->tasks->transaction(function () use ($id, $body, $userId, $userName): int {
+            $commentId = $this->comments->create([
+                'task_id' => $id,
+                'body' => $body,
+                'author_user_id' => $userId,
+                'author_name' => mb_substr($userName, 0, 200),
+            ]);
+            $this->tasks->update($id, ['updated_by' => $userId]);
+
+            return $commentId;
+        });
+
+        $comment = $this->comments->find($commentId) ?? [];
+        $this->audit->log('task.comment', 'task', $id, (string) $task['number'], null, ['comment_id' => $commentId]);
+
+        return $comment;
+    }
+
     // ------------------------------------------------------------------ Statuswechsel
 
-    /** @param array<string,mixed> $input status, note, version */
+    /** @param array<string,mixed> $input status, version */
     public function changeStatus(int $id, array $input): array
     {
         $this->currentUser->require('helpdesk.tasks');
@@ -360,7 +409,6 @@ final class TaskService
             return $task;
         }
 
-        $note = trim((string) ($input['note'] ?? ''));
         $now = gmdate('Y-m-d H:i:s');
         $update = [
             'status' => $status,
@@ -368,9 +416,6 @@ final class TaskService
             'completed_at' => $status === 'done' ? $now : null,
             'completed_by' => $status === 'done' ? $userId : null,
         ];
-        if ($note !== '') {
-            $update['note'] = mb_substr($note, 0, 500);
-        }
         if ($status === 'in_progress' && $task['assignee_user_id'] === null) {
             // „In Bearbeitung“ ohne Zuweisung übernimmt der ausführende Agent.
             $update['assignee_user_id'] = $userId;

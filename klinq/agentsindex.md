@@ -40,7 +40,8 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 - Wissensdatenbank mit Verknüpfung zu Tickets
 - Aufgaben („Alle Aufgaben“/„Meine Aufgaben“): Tickets werden über „In Aufgabe umwandeln“ zu Aufgaben
   (das Ticket wird dabei geschlossen und bleibt verknüpft), Agenten nehmen Aufgaben an, Mitglieder der
-  Berechtigungsgruppe „Aufgabenverteilung“ weisen sie einem Agenten direkt zu
+  Berechtigungsgruppe „Aufgabenverteilung“ weisen sie einem Agenten direkt zu; jede Aufgabe führt einen
+  chronologischen Kommentarverlauf
 - Ticket-Berichte/CSV-Export (Recht nur über die Berechtigungsgruppe „Statistik“ oder Admin-Rolle)
 - Ticket löschen und stornieren als getrennte Rechte (nur über die Berechtigungsgruppen „Darf Tickets löschen“
   bzw. „Darf Tickets stornieren“ oder Admin-Rolle)
@@ -81,7 +82,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–022), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–023), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -248,7 +249,7 @@ Zusätzlich zur Rolle können einem Benutzer **Berechtigungsgruppen** zugewiesen
 eines Tickets durch einen Agenten geschrieben werden), die Gruppe „Darf Tickets löschen“ für
 `helpdesk.delete` und die Gruppe „Darf Tickets stornieren“ für `helpdesk.cancel`. Löschen und Stornieren
 sind getrennte Rechte und standardmäßig keiner Help-Desk-Rolle zugeordnet; `helpdesk.close` deckt nur
-Lösen und Schließen ab. `helpdesk.tasks` (Aufgaben annehmen, Status ändern, Ticket umwandeln) gehört zu den
+Lösen und Schließen ab. `helpdesk.tasks` (Aufgaben annehmen, Status ändern, kommentieren, Ticket umwandeln) gehört zu den
 Help-Desk-Rollen; das Zuweisen an einen bestimmten Agenten (`helpdesk.tasks.assign`) vergibt nur die Gruppe
 „Aufgabenverteilung“ oder die Admin-Rolle. Die zugehörige AD-Gruppe wird im Intranet (LANPA) unter
 KLINQ → Zugriff als `klinq_task_assignment_groups` gepflegt.
@@ -288,7 +289,8 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   `knowledge_article_tickets`
 - **Aufgaben**: `tasks` (je Ticket höchstens eine Aufgabe, `source_ticket_id` ist eindeutig, optionale
   `category_id`), `task_categories` (flacher Katalog für die Kategorie-Pill vor dem Aufgabentitel, gepflegt unter
-  Help-Desk-Administration → Aufgaben-Kategorien), `task_events`
+  Help-Desk-Administration → Aufgaben-Kategorien), `task_comments` (chronologischer Kommentarverlauf je Aufgabe;
+  ersetzt das frühere Einzelfeld `tasks.note`), `task_events`
   (Verlauf: Anlage, Umwandlung, Annahme, Zuweisung, Statuswechsel, Kategoriewechsel)
 
 ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)

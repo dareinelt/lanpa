@@ -567,12 +567,28 @@ Ereignis `category_changed` im Verlauf festgehalten und auditiert; „– keine 
 Wird eine Kategorie in der Administration gelöscht, verlieren die betroffenen Aufgaben die Zuordnung
 (`tasks.category_id` ist `ON DELETE SET NULL`).
 
+### Kommentare
+
+Jede Aufgabe hat einen eigenen **Kommentarverlauf** (`task_comments`). Kommentare stehen im Aufgabendetail in
+der Karte **Kommentare** und erscheinen chronologisch in der Reihenfolge des Eintragens (`created_at`, bei
+gleichem Zeitstempel nach `id`); eine Umsortierung oder Filterung gibt es bewusst nicht. Schreiben dürfen alle
+Agenten mit `helpdesk.tasks` über das Feld unter der Liste (`POST /helpdesk/aufgaben/{id}/kommentare`); das
+Absenden springt zurück auf den Anker `#kommentare`. Ein Kommentar hält Autor (Name und optionaler
+Benutzerbezug) und Zeitpunkt fest, wird auditiert (`task.comment`) und aktualisiert `tasks.updated_at`, damit
+die Aufgabe in den Listen oben bleibt. Kommentare sind unveränderlich – die Anwendung bietet kein Bearbeiten
+oder Löschen.
+
+Das frühere Einzelfeld **„Notiz“** im Formular **Status ändern** ist entfallen; vorhandene Notizen hat
+`database/migrations/023_helpdesk_task_comments.sql` als Kommentar übernommen (Autor und Zeitpunkt der letzten
+Änderung, ersatzweise der Anlegename) und die Spalte `tasks.note` anschließend entfernt.
+
 ### Status und Verlauf
 
 Status: `open` (Offen), `in_progress` (In Bearbeitung), `done` (Erledigt), `cancelled` (Verworfen). Erledigen und
 Verwerfen erfassen die ausführende Person und den Zeitpunkt; ein optionales Fälligkeitsdatum (`due_at`) wird in
 der Liste hervorgehoben, wenn es überschritten ist. Jede Änderung – Anlage, Umwandlung, Annahme, Zuweisung,
-Statuswechsel, Kategorie, Notiz – landet als Ereignis in `task_events` und wird im Detail als Verlauf angezeigt.
+Statuswechsel, Kategorie – landet als Ereignis in `task_events` und wird im Detail als Verlauf angezeigt.
+Ergänzende Bemerkungen gehören in die Kommentare.
 
 ![Aufgabendetail mit Quelle (Ticket), Verlauf und Statuswechsel](screenshots/helpdesk-aufgabe-detail.png)
 

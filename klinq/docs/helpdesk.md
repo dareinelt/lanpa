@@ -490,6 +490,10 @@ Help Desk unter **Aufgaben** mit zwei Listen: **Alle Aufgaben** (`/helpdesk/aufg
 (`/helpdesk/aufgaben/meine`). Der Eintrag „Meine Aufgaben“ in der Seitenleiste zeigt die Anzahl der eigenen
 offenen Aufgaben als Zähler.
 
+![Alle Aufgaben mit Ansichten, Filtern und der Aktion „Annehmen“](screenshots/helpdesk-aufgaben-alle.png)
+
+![Meine Aufgaben mit angenommenen und zugewiesenen Aufgaben](screenshots/helpdesk-aufgaben-meine.png)
+
 ### Ticket in eine Aufgabe umwandeln
 
 Im Ticketdetail steht für Agenten mit `helpdesk.tasks` die Schaltfläche **In Aufgabe umwandeln**, solange das
@@ -501,6 +505,8 @@ Ticket. Je Ticket ist höchstens eine Aufgabe möglich (`tasks.source_ticket_id`
 
 Aufgabennummern folgen dem Muster `<Präfix>-<Jahr>-<Nummer>` mit dem Präfix aus `HELPDESK_TASK_PREFIX`
 (Vorgabe `AUF`); die laufende Nummer teilt sich die Aufgabe mit den Tickets (`ticket_sequences`).
+
+![Ticketdetail mit der Schaltfläche „In Aufgabe umwandeln“](screenshots/helpdesk-ticket-in-aufgabe.png)
 
 ### Annehmen und Zuweisen
 
@@ -516,12 +522,16 @@ Die AD-Gruppe für die Aufgabenverteilung wird im Intranet unter **KLINQ → Ber
 Berechtigungsgruppe `aufgabenverteilung`. Annehmen und Bearbeiten hängt dagegen an den Help-Desk-Rollen und
 braucht keine zusätzliche Gruppe.
 
+![Zuweisungsdialog: Agent wählen, ohne Auswahl wird die Zuweisung aufgehoben](screenshots/helpdesk-aufgabe-zuweisen.png)
+
 ### Status und Verlauf
 
 Status: `open` (Offen), `in_progress` (In Bearbeitung), `done` (Erledigt), `cancelled` (Verworfen). Erledigen und
 Verwerfen erfassen die ausführende Person und den Zeitpunkt; ein optionales Fälligkeitsdatum (`due_at`) wird in
 der Liste hervorgehoben, wenn es überschritten ist. Jede Änderung – Anlage, Umwandlung, Annahme, Zuweisung,
 Statuswechsel, Notiz – landet als Ereignis in `task_events` und wird im Detail als Verlauf angezeigt.
+
+![Aufgabendetail mit Quelle (Ticket), Verlauf und Statuswechsel](screenshots/helpdesk-aufgabe-detail.png)
 
 ## Automatisierung
 

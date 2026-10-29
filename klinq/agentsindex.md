@@ -307,7 +307,8 @@ ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
   Etikettenvorschau (`labels.js`), Unterschrift (`signature-pad.js`), Offline-Warteschlange
   (`offline.js`, `offline-ui.js`, IndexedDB + `sw.js`), Kontextmenü und KI-Dialog im Help Desk
   (`helpdesk-ai.js` für Textfelder, `helpdesk-mail.js` für den Mail-Editor im Ticket – gleiche Styles
-  `.hd-ctx-menu`/`.hd-ai-dialog`, gemeinsame `window.AppUI`), Zusammenführen-Dialog (`helpdesk-merge.js`).
+  `.hd-ctx-menu`/`.hd-ai-dialog`, gemeinsame `window.AppUI`), Zusammenführen-Dialog (`helpdesk-merge.js`),
+  Anheften von Kommunikations- und Aufgaben-Einträgen ohne Neuladen (`helpdesk-pins.js`).
 - CSS ist nach `base/`, `layout/`, `components/`, `pages/`, `utilities/` gegliedert und wird über
   `public/css/app.css` importiert; Design-Tokens als CSS-Variablen.
 - **Keine Inline-Styles und keine Inline-Skripte** – die CSP verbietet `unsafe-inline`.

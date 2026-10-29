@@ -158,12 +158,12 @@ $statusTransitions = array_values(array_filter(
         <?php if ($comments === []): ?>
             <p class="empty-state">Noch keine Kommentare.</p>
         <?php else: ?>
-        <ol class="comment-list" id="comment-list">
+        <ol class="comment-list" id="comment-list" data-hd-pin-list>
             <?php foreach ($comments as $c): ?>
             <?php $pinned = (int) ($c['is_pinned'] ?? 0) === 1; ?>
-            <li class="comment<?= $c['type'] === 'internal' ? ' is-internal' : '' ?><?= (int) $c['is_requester'] === 1 ? ' is-requester' : '' ?><?= $pinned ? ' is-pinned' : '' ?>" data-comment-type="<?= e($c['type']) ?>" id="comment-<?= (int) $c['id'] ?>">
+            <li class="comment<?= $c['type'] === 'internal' ? ' is-internal' : '' ?><?= (int) $c['is_requester'] === 1 ? ' is-requester' : '' ?><?= $pinned ? ' is-pinned' : '' ?>" data-comment-type="<?= e($c['type']) ?>" data-hd-pin-item data-hd-id="<?= (int) $c['id'] ?>" data-hd-created="<?= e((string) $c['created_at']) ?>" id="comment-<?= (int) $c['id'] ?>">
                 <?php if ($isAgent && $can('helpdesk.comment') && !$readOnly): ?>
-                <form method="post" action="/helpdesk/tickets/<?= $id ?>/comments/<?= (int) $c['id'] ?>/pin" class="comment-pin-form">
+                <form method="post" action="/helpdesk/tickets/<?= $id ?>/comments/<?= (int) $c['id'] ?>/pin" class="comment-pin-form" data-hd-pin-form>
                     <?= csrf_field() ?>
                     <input type="hidden" name="pinned" value="<?= $pinned ? '0' : '1' ?>">
                     <button type="submit" class="comment-pin<?= $pinned ? ' is-active' : '' ?>" title="<?= $pinned ? 'Anheftung lösen' : 'Oben anheften' ?>" aria-label="<?= $pinned ? 'Anheftung lösen' : 'Oben anheften' ?>" aria-pressed="<?= $pinned ? 'true' : 'false' ?>"><?= icon('pin') ?></button>
@@ -171,7 +171,7 @@ $statusTransitions = array_values(array_filter(
                 <?php endif; ?>
                 <div class="comment-head">
                     <span class="comment-author"><?= e($c['author_name']) ?></span>
-                    <?php if ($pinned): ?><span class="badge badge-info"><?= icon('pin', 'icon icon-xs') ?> Angeheftet</span><?php endif; ?>
+                    <?php if ($pinned): ?><span class="badge badge-info" data-hd-pin-badge><?= icon('pin', 'icon icon-xs') ?> Angeheftet</span><?php endif; ?>
                     <?php if ((int) $c['is_requester'] === 1): ?><span class="badge is-neutral">Melder</span><?php endif; ?>
                     <?php if ($c['type'] === 'internal'): ?><span class="badge is-warning">Intern</span><?php endif; ?>
                     <?php if ($c['source'] === 'email'): ?><span class="badge badge-info" title="<?= e(!empty($c['mail_from_address']) ? 'Absender: ' . $c['mail_from_address'] : 'Per E-Mail eingegangen') ?>"><?= icon('mail', 'icon icon-xs') ?> Per E-Mail<?= !empty($c['mail_from_address']) ? ' von ' . e($c['mail_from_address']) : '' ?></span><?php endif; ?>

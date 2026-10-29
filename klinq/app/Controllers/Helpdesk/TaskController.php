@@ -121,6 +121,7 @@ final class TaskController extends HelpdeskBaseController
             'categories' => $this->categories->selectable($task['category_id'] !== null ? (int) $task['category_id'] : null),
             'isMine' => $this->currentUser->id() !== null && (int) ($task['assignee_user_id'] ?? 0) === (int) $this->currentUser->id(),
             'canAssign' => $this->currentUser->can('helpdesk.tasks.assign'),
+            'scripts' => ['/js/helpdesk-pins.js'],
         ]);
     }
 
@@ -231,6 +232,9 @@ final class TaskController extends HelpdeskBaseController
             $this->service->setCommentPinned($id, $commentId, $pinned);
         }, $redirect, false);
 
-        return $response ?? $this->respond($request, $pinned ? 'Kommentar angeheftet.' : 'Anheftung gelöst.', $redirect);
+        return $response ?? $this->respond($request, $pinned ? 'Kommentar angeheftet.' : 'Anheftung gelöst.', $redirect, [
+            'comment' => $commentId,
+            'pinned' => $pinned,
+        ]);
     }
 }

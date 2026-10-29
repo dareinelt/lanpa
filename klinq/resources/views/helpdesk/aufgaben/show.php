@@ -71,12 +71,12 @@ $eventClass = static fn (string $t): string => match ($t) {
         <?php if ($comments === []): ?>
             <p class="empty-state">Noch keine Kommentare.</p>
         <?php else: ?>
-        <ol class="comment-list">
+        <ol class="comment-list" data-hd-pin-list>
             <?php foreach ($comments as $c): ?>
             <?php $pinned = (int) ($c['is_pinned'] ?? 0) === 1; ?>
-            <li class="comment<?= $pinned ? ' is-pinned' : '' ?>" id="kommentar-<?= (int) $c['id'] ?>">
+            <li class="comment<?= $pinned ? ' is-pinned' : '' ?>" data-hd-pin-item data-hd-id="<?= (int) $c['id'] ?>" data-hd-created="<?= e((string) $c['created_at']) ?>" id="kommentar-<?= (int) $c['id'] ?>">
                 <?php if ($can('helpdesk.tasks')): ?>
-                <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/kommentare/<?= (int) $c['id'] ?>/pin" class="comment-pin-form">
+                <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/kommentare/<?= (int) $c['id'] ?>/pin" class="comment-pin-form" data-hd-pin-form>
                     <?= csrf_field() ?>
                     <input type="hidden" name="pinned" value="<?= $pinned ? '0' : '1' ?>">
                     <button type="submit" class="comment-pin<?= $pinned ? ' is-active' : '' ?>" title="<?= $pinned ? 'Anheftung lösen' : 'Oben anheften' ?>" aria-label="<?= $pinned ? 'Anheftung lösen' : 'Oben anheften' ?>" aria-pressed="<?= $pinned ? 'true' : 'false' ?>"><?= icon('pin') ?></button>
@@ -84,7 +84,7 @@ $eventClass = static fn (string $t): string => match ($t) {
                 <?php endif; ?>
                 <div class="comment-head">
                     <span class="comment-author"><?= e($c['author_name']) ?></span>
-                    <?php if ($pinned): ?><span class="badge badge-info"><?= icon('pin', 'icon icon-xs') ?> Angeheftet</span><?php endif; ?>
+                    <?php if ($pinned): ?><span class="badge badge-info" data-hd-pin-badge><?= icon('pin', 'icon icon-xs') ?> Angeheftet</span><?php endif; ?>
                     <span class="text-muted text-xs"><?= fmt_datetime($c['created_at']) ?></span>
                 </div>
                 <div class="comment-body"><?= rich_text($c['body']) ?></div>

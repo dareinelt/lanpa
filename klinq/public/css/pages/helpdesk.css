@@ -153,6 +153,8 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 .comment-pin svg { width: 16px; height: 16px; }
 .comment-pin:hover, .comment-pin:focus-visible { background: var(--color-primary-soft); color: var(--color-primary); }
 .comment-pin.is-active { color: var(--color-primary); background: var(--color-primary-soft); border-color: var(--color-primary); }
+.comment-pin-form.is-busy .comment-pin { opacity: 0.5; cursor: progress; }
+.comment-list .comment { transition: background-color 120ms ease-out, border-color 120ms ease-out; }
 .comment-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; padding-right: 32px; font-size: var(--font-size-sm); margin-bottom: var(--space-2); }
 .comment-author { font-weight: var(--font-weight-semibold); }
 .comment-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }

@@ -23,6 +23,7 @@ $eventClass = static fn (string $t): string => match ($t) {
 $journalLabels = [
     'assignment' => 'Zuweisung',
     'unassignment' => 'Zuweisung aufgehoben',
+    'conversion' => 'Umwandlung',
 ];
 ?>
 <div class="page-header">

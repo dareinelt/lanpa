@@ -666,6 +666,12 @@ $statusTransitions = array_values(array_filter(
                 <label for="convert-due">Fällig <span class="text-muted">(optional)</span></label>
                 <input type="date" id="convert-due" name="due_at">
             </div>
+            <div class="form-group">
+                <label for="convert-comment">Kommentar <span class="text-muted">(optional)</span></label>
+                <textarea id="convert-comment" name="comment" rows="3" maxlength="2000000" placeholder="Hinweis zur Umwandlung …"><?= e(old('comment')) ?></textarea>
+                <?= field_error('comment') ?>
+                <p class="form-hint">Der Kommentar erscheint als Eintrag im Journal der Aufgabe.</p>
+            </div>
         </div>
         <div class="dialog-footer">
             <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>

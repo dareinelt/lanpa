@@ -318,6 +318,24 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         }, 'Kategorie aus dem Katalog');
     }
 
+    public function testConvertStoresOptionalCommentInJournal(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], ['comment' => '  Aus dem Ticket übernommen.  ']);
+
+        $journal = $this->service()->journal((int) $task['id']);
+        $this->assertCount(1, $journal);
+        $this->assertSame('conversion', $journal[0]['type']);
+        $this->assertSame('Aus dem Ticket übernommen.', $journal[0]['body']);
+        $this->assertSame($this->agentId, (int) $journal[0]['author_user_id']);
+    }
+
+    public function testConvertWithoutCommentLeavesJournalEmpty(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+
+        $this->assertSame([], $this->service()->journal((int) $task['id']));
+    }
+
     // ------------------------------------------------------------------ Direkte Anlage (ohne Ticket)
 
     public function testCreateDirectTaskWithoutTicket(): void

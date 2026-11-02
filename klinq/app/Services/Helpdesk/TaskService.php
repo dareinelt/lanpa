@@ -196,9 +196,10 @@ final class TaskService
 
     /**
      * Wandelt ein Ticket in eine Aufgabe um und schließt das Ticket anschließend (es ist mit der
-     * Aufgabe verknüpft und wird dort weiterbearbeitet).
+     * Aufgabe verknüpft und wird dort weiterbearbeitet). Ein optionaler Kommentar landet als
+     * Eintrag im Journal der Aufgabe.
      *
-     * @param array<string,mixed> $input subject, description, priority_id, due_at, category_id
+     * @param array<string,mixed> $input subject, description, priority_id, due_at, category_id, comment
      * @return array<string,mixed>
      */
     public function convert(int $ticketId, array $input): array
@@ -226,11 +227,13 @@ final class TaskService
         $priorityId = $this->validPriorityId($input['priority_id'] ?? null) ?? (int) $ticket['priority_id'];
         $category = $this->validCategory($input['category_id'] ?? null);
         $dueAt = $this->normalizeDueAt($input['due_at'] ?? null);
+        $comment = $this->journalComment($input['comment'] ?? null);
         $now = gmdate('Y-m-d H:i:s');
         $userId = $this->currentUser->id();
         $userName = $this->currentUser->displayName();
 
-        $taskId = $this->tasks->transaction(function () use ($ticketId, $ticket, $subject, $description, $priorityId, $category, $dueAt, $now, $userId, $userName): int {
+        $journalId = null;
+        $taskId = $this->tasks->transaction(function () use ($ticketId, $ticket, $subject, $description, $priorityId, $category, $dueAt, $now, $userId, $userName, $comment, &$journalId): int {
             $number = $this->numbers->next();
             $id = $this->tasks->create([
                 'number' => $number,
@@ -270,6 +273,9 @@ final class TaskService
                 'ticket_id' => $ticketId,
                 'ticket_number' => (string) $ticket['number'],
             ]);
+            if ($comment !== null) {
+                $journalId = $this->createJournalEntry($id, 'conversion', $comment);
+            }
 
             return $id;
         });
@@ -280,6 +286,7 @@ final class TaskService
             'source_ticket_id' => $ticketId,
             'category_id' => $task['category_id'],
         ]);
+        $this->auditJournalEntry($taskId, (string) $task['number'], $journalId);
 
         return $task;
     }

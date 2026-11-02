@@ -42,7 +42,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
   „In Aufgabe umwandeln“ aus einem Ticket erzeugt (das Ticket wird dabei geschlossen und bleibt verknüpft),
   Agenten nehmen Aufgaben an, Mitglieder der
   Berechtigungsgruppe „Aufgabenverteilung“ weisen sie einem Agenten direkt zu; jede Aufgabe führt einen
-  chronologischen Kommentarverlauf und ein unveränderliches Journal für Zuweisungs-Kommentare
+  chronologischen Kommentarverlauf und ein unveränderliches Journal für Kommentare aus Zuweisung und Umwandlung
 - Ticket-Berichte/CSV-Export (Recht nur über die Berechtigungsgruppe „Statistik“ oder Admin-Rolle)
 - Ticket löschen und stornieren als getrennte Rechte (nur über die Berechtigungsgruppen „Darf Tickets löschen“
   bzw. „Darf Tickets stornieren“ oder Admin-Rolle)
@@ -310,7 +310,7 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   `category_id`), `task_categories` (flacher Katalog für die Kategorie-Pill vor dem Aufgabentitel, gepflegt unter
   Help-Desk-Administration → Aufgaben-Kategorien), `task_comments` (chronologischer Kommentarverlauf je Aufgabe,
   angeheftete Einträge über `is_pinned`/`pinned_at` oben; ersetzt das frühere Einzelfeld `tasks.note`),
-  `task_journal` (unveränderliche Journal-Einträge je Aufgabe, u. a. Kommentar aus der Zuweisung), `task_events`
+  `task_journal` (unveränderliche Journal-Einträge je Aufgabe, u. a. Kommentare aus Zuweisung und Umwandlung), `task_events`
   (Verlauf: Anlage, Umwandlung, Annahme, Zuweisung, Statuswechsel, Kategorie- und Fälligkeitswechsel)
 
 ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)

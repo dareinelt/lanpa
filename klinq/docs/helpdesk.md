@@ -181,7 +181,9 @@ Ticket zusätzlich als *weitergeleitet*:
 - **Benachrichtigung**: Der neue Bearbeiter erhält eine E-Mail „Ticket weitergeleitet“ (inkl. Hinweis, wer weitergeleitet
   hat, `TicketNotificationService::forwarded`) und auf dem Dashboard (`/helpdesk`) die Karte **An Sie weitergeleitet**
   mit Nummer, Betreff, Absender, Zeitpunkt, Gruppe und Priorität sowie der Schaltfläche **Übernehmen**
-  (`TicketRepository::pendingForwards`, `POST /helpdesk/tickets/{id}/take`).
+  (`TicketRepository::pendingForwards`, `POST /helpdesk/tickets/{id}/take`). Geschlossene und stornierte Tickets
+  erscheinen dort nicht, weil sie nicht mehr übernommen werden können (etwa nach dem automatischen Schließen durch
+  den Scheduler, das die Weiterleitungsmarker unverändert lässt).
 - **Hervorhebung**: In der Liste (`/helpdesk/tickets`) erscheinen so markierte Tickets bis zur Übernahme gelb hinterlegt
   und mit dem Badge **An Sie weitergeleitet**; im Ticketdetail erscheint zusätzlich ein Banner mit **Übernehmen** und in
   der Seitenleiste die Zeile **Weitergeleitet**.

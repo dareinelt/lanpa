@@ -295,6 +295,20 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertCount(0, $this->tickets()->pendingForwards($this->agent2Id));
     }
 
+    public function testPendingForwardsSkipsClosedTickets(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+
+        $this->service()->forward($id, $this->agent2Id);
+        $this->assertCount(1, $this->tickets()->pendingForwards($this->agent2Id));
+
+        // Systemseitiges Schließen (etwa HelpdeskSchedulerService::autoClose) lässt die Weiterleitungsmarker stehen.
+        $this->service()->changeStatus($id, 'closed', null, null, null, null, true);
+
+        $this->assertCount(0, $this->tickets()->pendingForwards($this->agent2Id), 'Geschlossene Tickets lassen sich nicht mehr übernehmen');
+    }
+
     public function testForwardRejectsSelfAndUnknownAssignee(): void
     {
         $ticket = $this->createTicket();

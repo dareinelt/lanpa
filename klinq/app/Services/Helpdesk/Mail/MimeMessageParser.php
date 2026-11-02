@@ -48,7 +48,7 @@ final class MimeMessageParser
             $fromAddress,
             $fromName,
             self::normalizeWhitespace(self::decodeHeader($headers['subject'] ?? '')),
-            self::stripQuotedReply(self::normalizeNewlines($text)),
+            self::stripQuotedReply(self::normalizeBody($text)),
             self::parseDate($headers['date'] ?? ''),
             self::normalizeId($headers['in-reply-to'] ?? '') ?: null,
             self::parseIdList($headers['references'] ?? ''),
@@ -398,6 +398,21 @@ final class MimeMessageParser
     private static function normalizeNewlines(string $text): string
     {
         return str_replace(["\r\n", "\r"], "\n", $text);
+    }
+
+    /**
+     * Textkörper vereinheitlichen: Zeilenenden normalisieren, Leerzeichen am Zeilenende
+     * entfernen und Leerzeilen-Blöcke auf eine Leerzeile begrenzen. Outlook/Exchange
+     * liefern im text/plain-Teil oft mehrere Leerzeilen zwischen Absätzen, die im
+     * Ticketsystem als massiver Zeilenabstand erscheinen.
+     */
+    private static function normalizeBody(string $text): string
+    {
+        $text = self::normalizeNewlines($text);
+        $text = preg_replace("/[ \t]+\n/", "\n", $text) ?? $text;
+        $text = preg_replace("/\n{3,}/", "\n\n", $text) ?? $text;
+
+        return trim($text);
     }
 
     private static function normalizeWhitespace(string $value): string

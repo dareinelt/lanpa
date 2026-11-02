@@ -22,7 +22,7 @@ final class RichText
     /** Freitext als HTML: maskiert, mit Zeilenumbrüchen und eingebetteten Bildern. */
     public static function toHtml(?string $text): string
     {
-        $html = nl2br(htmlspecialchars((string) ($text ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
+        $html = nl2br(htmlspecialchars(self::normalizeNewlines((string) ($text ?? '')), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
         if (!str_contains($html, 'data:image/')) {
             return $html;
         }
@@ -39,5 +39,18 @@ final class RichText
     public static function toPlain(?string $text, string $placeholder = '[Bild]'): string
     {
         return (string) preg_replace(self::IMAGE_PATTERN, $placeholder, (string) ($text ?? ''));
+    }
+
+    /**
+     * Vereinheitlicht Zeilenumbrüche und begrenzt Leerzeilen-Blöcke auf eine Leerzeile.
+     * E-Mail-Texte bringen oft mehrere Leerzeilen zwischen Absätzen mit, die im Browser
+     * als massiver Zeilenabstand erscheinen; mehr als eine Leerzeile ist nie gewollt.
+     */
+    private static function normalizeNewlines(string $text): string
+    {
+        $text = str_replace(["\r\n", "\r"], "\n", $text);
+        $text = preg_replace("/[ \t]+\n/", "\n", $text) ?? $text;
+
+        return preg_replace("/\n{3,}/", "\n\n", $text) ?? $text;
     }
 }

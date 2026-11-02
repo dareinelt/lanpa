@@ -16,7 +16,7 @@ final class TicketRepository extends BaseRepository
         'subject' => 't.subject',
         'status' => 'st.sort_order',
         'priority' => 'p.level',
-        'requester' => 'req.display_name',
+        'requester' => "COALESCE(NULLIF(req.display_name, ''), NULLIF(ru.display_name, ''), NULLIF(t.mail_from_name, ''))",
         'assignee' => 'au.display_name',
         'group' => 'g.name',
         'category' => 'c.name',
@@ -53,7 +53,8 @@ final class TicketRepository extends BaseRepository
             p.code AS priority_code, p.name AS priority_name, p.color AS priority_color, p.level AS priority_level,
             c.name AS category_name, sc.name AS subcategory_name,
             g.name AS group_name,
-            req.display_name AS requester_name, COALESCE(req.email, t.requester_email) AS requester_email, req.department AS requester_department, req.phone AS requester_phone,
+            COALESCE(NULLIF(req.display_name, \'\'), NULLIF(ru.display_name, \'\'), NULLIF(t.mail_from_name, \'\')) AS requester_name,
+            COALESCE(req.email, t.requester_email, t.mail_from_address) AS requester_email, req.department AS requester_department, req.phone AS requester_phone,
             aff.display_name AS affected_name, aff.email AS affected_email,
             au.display_name AS assignee_name, au.email AS assignee_email,
             du.display_name AS deputy_name,
@@ -276,7 +277,8 @@ final class TicketRepository extends BaseRepository
         $q = trim((string) ($filters['q'] ?? ''));
         if ($q !== '') {
             $where[] = '(t.number LIKE :q OR t.subject LIKE :q OR t.description LIKE :q OR t.external_reference LIKE :q
-                OR req.display_name LIKE :q OR aff.display_name LIKE :q OR au.display_name LIKE :q
+                OR req.display_name LIKE :q OR ru.display_name LIKE :q OR aff.display_name LIKE :q OR au.display_name LIKE :q
+                OR t.mail_from_name LIKE :q OR t.requester_email LIKE :q
                 OR EXISTS (SELECT 1 FROM ticket_assets qa JOIN assets qas ON qas.id = qa.asset_id WHERE qa.ticket_id = t.id AND (qas.inventory_number LIKE :q OR qas.serial_number LIKE :q))
                 OR EXISTS (SELECT 1 FROM ticket_tag_relations qr JOIN ticket_tags qt ON qt.id = qr.tag_id WHERE qr.ticket_id = t.id AND qt.name LIKE :q)
                 OR EXISTS (SELECT 1 FROM ticket_comments qc WHERE qc.ticket_id = t.id AND qc.body LIKE :q))';
@@ -420,7 +422,7 @@ final class TicketRepository extends BaseRepository
 
         return $this->fetchAll(
             "SELECT t.id, t.number, t.subject,
-                    COALESCE(NULLIF(req.display_name, ''), NULLIF(ru.display_name, ''), t.requester_email) AS requester_name,
+                    COALESCE(NULLIF(req.display_name, ''), NULLIF(ru.display_name, ''), NULLIF(t.mail_from_name, ''), t.requester_email) AS requester_name,
                     st.name AS status_name, st.color AS status_color, {$sameRequester} AS same_requester
              FROM tickets t
              JOIN ticket_statuses st ON st.id = t.status_id

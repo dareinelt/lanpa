@@ -133,7 +133,10 @@
         },
         9: function (root) {
             const confirm = root.querySelector("input[name='confirm_send']");
-            return confirm && confirm.checked ? "Bestätigung wird gesendet" : "Keine Bestätigung";
+            const notifyAffected = root.querySelector("input[name='notify_affected']");
+            const affected = notifyAffected && notifyAffected.checked ? "Betroffener wird benachrichtigt" : "";
+            if (!confirm || !confirm.checked) { return "Keine Bestätigung"; }
+            return join(["Bestätigung wird gesendet", affected]);
         }
     };
 

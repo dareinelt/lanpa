@@ -387,7 +387,7 @@ final class TicketService
         $this->rules->apply('created', $ticket, $userId, $this->currentUser->displayName());
         $ticket = $this->get($ticketId);
         $confirmation = ($quickReport || $source === 'email' || $this->wantsConfirmation($input))
-            ? $this->confirmations->send($ticket) > 0
+            ? $this->confirmations->send($ticket, $quickReport || $source === 'email' || $this->wantsAffectedNotification($input)) > 0
             : false;
         $this->notifications->ticketCreated($ticket, !$confirmation);
         if (!empty($ticket['assignee_user_id'])) {
@@ -405,7 +405,25 @@ final class TicketService
      */
     private function wantsConfirmation(array $input): bool
     {
-        return in_array(mb_strtolower(trim((string) ($input['confirm_send'] ?? ''))), ['1', 'on', 'true', 'yes'], true);
+        return $this->checkbox($input, 'confirm_send');
+    }
+
+    /**
+     * Auch den als „Betroffener Mitarbeiter“ eingetragenen Nutzer benachrichtigen? Wirkt nur
+     * zusammen mit der Eingangsbestätigung; Störungsformular und Störungspostfach schreiben ihn
+     * unabhängig davon an.
+     *
+     * @param array<string,mixed> $input
+     */
+    private function wantsAffectedNotification(array $input): bool
+    {
+        return $this->checkbox($input, 'notify_affected');
+    }
+
+    /** @param array<string,mixed> $input */
+    private function checkbox(array $input, string $name): bool
+    {
+        return in_array(mb_strtolower(trim((string) ($input[$name] ?? ''))), ['1', 'on', 'true', 'yes'], true);
     }
 
     /** Ticket aus Vorlage vorbelegen (für das Formular). @return array<string,mixed> */

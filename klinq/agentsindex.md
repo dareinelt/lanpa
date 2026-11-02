@@ -233,11 +233,12 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   `HELPDESK_QUICK_REPORT_CONTENT_VALIDATION`).
 - **Eingangsbestätigung**: `TicketConfirmationService` versendet nach `TicketService::create()` den unter
   `helpdesk.reply_template.confirmation_text` gepflegten Text (Startwert `HELPDESK_REPLY_TEMPLATE_CONFIRMATION`,
-  Platzhalter `{anrede}`/`{name}`/`{ticketnummer}`/`{betreff}`/`{datum}`/`{link}`/`{firma}`) an Melder **und**
-  zusätzlichen Benutzer – immer bei Quelle `form`/`email`, bei Agentenanlage nur mit Opt-in im neunten
-  Assistenten-Schritt. Versand je Empfänger über `TicketNotificationService::sendTo()` (Ereignis
-  `created_confirmation`), damit Protokollierung und Idempotenz greifen; die allgemeine Anlage-Info an den
-  Melder entfällt dann.
+  Platzhalter `{anrede}`/`{name}`/`{ticketnummer}`/`{betreff}`/`{datum}`/`{link}`/`{firma}`) an den Melder –
+  immer bei Quelle `form`/`email`, bei Agentenanlage nur mit Opt-in im neunten Assistenten-Schritt. Der als
+  „Betroffener Mitarbeiter“ eingetragene zusätzliche Benutzer erhält sie bei Quelle `form`/`email` immer, bei
+  Agentenanlage nur mit der zweiten Checkbox „Zusätzlich eingetragene Nutzer benachrichtigen“. Versand je
+  Empfänger über `TicketNotificationService::sendTo()` (Ereignis `created_confirmation`), damit Protokollierung
+  und Idempotenz greifen; die allgemeine Anlage-Info an den Melder entfällt dann.
 - **Hinweis am Fuß** jeder Benachrichtigungsmail: `TicketNotificationService::wrap()` hängt den unter
   `helpdesk.reply_template.footer_text` gepflegten Text an (Startwert `HELPDESK_REPLY_TEMPLATE_FOOTER`,
   Platzhalter `{firma}`, Standardtext `ReplyTemplateSettingsService::DEFAULT_FOOTER_TEXT`, leer = kein

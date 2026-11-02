@@ -16,7 +16,8 @@ use Tests\Support\DatabaseTestCase;
 /**
  * Eingangsbestätigung: Meldungen aus dem Störungsformular und dem Störungspostfach erhalten sie
  * immer (bei Sammelkonten inklusive des zusätzlichen Benutzers), Tickets von Agenten nur mit
- * gesetzter Checkbox im Assistenten. Der Text stammt aus den Vorlageneinstellungen und wird mit
+ * gesetzter Checkbox im Assistenten – den Betroffenen schreiben sie zusätzlich nur mit der
+ * zweiten Checkbox an. Der Text stammt aus den Vorlageneinstellungen und wird mit
  * Platzhaltern gefüllt.
  *
  * Der Versand läuft gegen den lokalen SMTP-Stub (tests/Support/smtp_stub_server.php).
@@ -132,6 +133,50 @@ final class TicketConfirmationIntegrationTest extends DatabaseTestCase
         $this->assertStringContains('Eingangsbestätigung', $message);
         $this->assertStringContains('Guten Tag Max Melder', $message);
         $this->assertFalse(str_contains($message, 'Ihr Ticket wurde erfolgreich angelegt'));
+    }
+
+    public function testAgentTicketDoesNotNotifyAffectedByDefault(): void
+    {
+        $this->templates()->save(['confirmation_text' => self::TEMPLATE]);
+
+        $this->createTicket('web', [
+            'confirm_send' => '1',
+            'affected_employee_id' => $this->affectedEmployeeId,
+        ]);
+
+        $message = $this->stubMessage();
+        $this->assertStringContains('Guten Tag Max Melder', $message);
+        $this->assertFalse(str_contains($message, 'olga@example.test'), 'Ohne eigene Checkbox wird der Betroffene nicht angeschrieben.');
+    }
+
+    public function testAgentTicketNotifiesAffectedWithOptIn(): void
+    {
+        $this->templates()->save(['confirmation_text' => self::TEMPLATE]);
+
+        $this->createTicket('web', [
+            'confirm_send' => '1',
+            'notify_affected' => '1',
+            'affected_employee_id' => $this->affectedEmployeeId,
+        ]);
+
+        $message = $this->stubMessage();
+        $this->assertStringContains('Guten Tag Max Melder', $message);
+        $this->assertStringContains('To: <olga@example.test>', $message);
+        $this->assertStringContains('Guten Tag Olga Other', $message);
+    }
+
+    public function testAffectedOptInWithoutConfirmationSendsNothing(): void
+    {
+        $this->templates()->save(['confirmation_text' => self::TEMPLATE]);
+
+        $this->createTicket('web', [
+            'notify_affected' => '1',
+            'affected_employee_id' => $this->affectedEmployeeId,
+        ]);
+
+        $message = $this->stubMessage();
+        $this->assertFalse(str_contains($message, 'olga@example.test'), 'Ohne Eingangsbestätigung keine Nachricht an den Betroffenen.');
+        $this->assertStringContains('Ihr Ticket wurde erfolgreich angelegt', $message);
     }
 
     public function testEmptyTemplateSendsNoConfirmation(): void

@@ -26,7 +26,6 @@
 
     const requestedStart = parseInt(wizard.getAttribute("data-hd-wizard-start"), 10) || 1;
     let current = Math.max(1, Math.min(total, requestedStart));
-    let maxVisited = current;
     const expanded = new Set();
     let allowLeave = false;
     let submitting = false;
@@ -148,6 +147,29 @@
         });
     }
 
+    /** Schritt ist vollständig, sobald kein Feld die nativen Pflichtregeln verletzt. */
+    function stepComplete(index) {
+        return invalidField(index) === null;
+    }
+
+    /** Bereits besuchte Schritte bleiben offen; der nächste Schritt erst, wenn der aktuelle vollständig ist. */
+    function canOpen(index) {
+        if (index < current) { return true; }
+        return index === current + 1 && stepComplete(current);
+    }
+
+    function refreshNavigation() {
+        sections.forEach(function (sectionEl) {
+            const index = parseInt(sectionEl.getAttribute("data-hd-step"), 10);
+            const open = canOpen(index);
+            const goto = sectionEl.querySelector("[data-hd-step-goto]");
+            if (goto) {
+                goto.disabled = !open;
+            }
+            sectionEl.classList.toggle("is-next", open && index === current + 1);
+        });
+    }
+
     function render() {
         sections.forEach(function (sectionEl) {
             const index = parseInt(sectionEl.getAttribute("data-hd-step"), 10);
@@ -164,11 +186,6 @@
                 sectionEl.setAttribute("aria-current", "step");
             } else {
                 sectionEl.removeAttribute("aria-current");
-            }
-
-            const goto = sectionEl.querySelector("[data-hd-step-goto]");
-            if (goto) {
-                goto.disabled = isFuture || isCurrent;
             }
 
             const toggle = sectionEl.querySelector("[data-hd-step-toggle]");
@@ -200,6 +217,7 @@
         if (nextButton) { nextButton.hidden = current === total; }
         if (submitButton) { submitButton.hidden = current !== total; }
         if (stepField) { stepField.value = String(current); }
+        refreshNavigation();
         refreshSummaries();
     }
 
@@ -246,7 +264,6 @@
 
     function showStep(index, focus) {
         current = Math.max(1, Math.min(total, index));
-        maxVisited = Math.max(maxVisited, current);
         expanded.clear();
         render();
         if (focus !== false) { focusCurrent(); }
@@ -265,7 +282,7 @@
 
     function goTo(index) {
         if (index === current || index < 1 || index > total) { return; }
-        if (index > maxVisited) { return; }
+        if (!canOpen(index)) { return; }
         if (index > current && !validate(current)) { return; }
         showStep(index, true);
     }
@@ -309,14 +326,22 @@
 
     form.addEventListener("input", function (event) {
         clearFieldError(event.target);
+        refreshNavigation();
         refreshSummaries();
     });
     form.addEventListener("change", function (event) {
         clearFieldError(event.target);
+        refreshNavigation();
         refreshSummaries();
     });
-    form.addEventListener("picker:change", refreshSummaries);
-    form.addEventListener("hd:options", refreshSummaries);
+    form.addEventListener("picker:change", function () {
+        refreshNavigation();
+        refreshSummaries();
+    });
+    form.addEventListener("hd:options", function () {
+        refreshNavigation();
+        refreshSummaries();
+    });
 
     form.addEventListener("submit", function (event) {
         for (let index = 1; index <= total; index += 1) {

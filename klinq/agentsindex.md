@@ -171,6 +171,11 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   zuletzt verwendeten Modus serverseitig (unabhängig vom Client). `TicketController::resolveFormMode()` liest
   ihn über `UserRepository::ticketFormMode()`, `rememberFormMode()`/`rememberTicketFormMode()` schreiben ihn nur
   bei Änderung.
+- **Sortierung der Ticketliste je Benutzer**: `users.ticket_sort`/`ticket_sort_dir` merken Spalte und Richtung
+  serverseitig. `TicketController::sortFrom()` liest sie über `UserRepository::ticketSort()`, eine explizite
+  Wahl im Sortierlink (`?sort=…&dir=…`) schreibt sie über `rememberTicketSort()` nur bei Änderung fort. Ohne
+  Wahl gilt `updated_at`/`desc`; die aufgelöste Sortierung wird in die Listenlinks übernommen, damit die
+  aktive Spalte markiert bleibt.
 - **Bilder in Beschreibung und Kommentaren** liegen als base64-Data-URI im Text (Markdown `![Bild](data:…)`,
   eingefügt per `STRG+V` durch `public/js/helpdesk-media.js`; im Feld als Marke `[Bild n]` mit Vorschau,
   beim Absenden aufgelöst), gerendert über `App\Support\RichText`;

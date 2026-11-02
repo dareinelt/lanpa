@@ -112,14 +112,39 @@ final class TicketController extends HelpdeskBaseController
         ];
     }
 
-    /** @return array{0:string,1:string} */
-    private function sortFrom(Request $request, string $defaultSort = 'updated_at', string $defaultDir = 'desc'): array
+    /**
+     * Sortierung der Ticketliste: eine explizite Wahl in der Adresse gewinnt und wird
+     * als Benutzerpräferenz gemerkt, sonst gilt die zuletzt gespeicherte Wahl. Fehlt
+     * beides, bleibt es bei der Standardsortierung (Aktualisiert, absteigend).
+     *
+     * @return array{0:string,1:string}
+     */
+    private function sortFrom(Request $request, bool $remember = false): array
     {
-        $sort = $request->queryString('sort', $defaultSort);
-        if (!isset(TicketRepository::SORTABLE[$sort])) {
-            $sort = $defaultSort;
+        $userId = (int) $this->currentUser->id();
+        $sort = $request->queryString('sort');
+        $dir = strtolower($request->queryString('dir'));
+        $explicit = $sort !== '' || $dir !== '';
+
+        if ($userId > 0 && !($sort !== '' && $dir !== '')) {
+            $saved = $this->users->ticketSort($userId);
+            if ($sort === '') {
+                $sort = $saved['sort'];
+            }
+            if ($dir === '') {
+                $dir = $saved['dir'];
+            }
         }
-        $dir = strtolower($request->queryString('dir', $defaultDir)) === 'asc' ? 'asc' : 'desc';
+        if (!isset(TicketRepository::SORTABLE[$sort])) {
+            $sort = 'updated_at';
+        }
+        if ($dir !== 'asc' && $dir !== 'desc') {
+            $dir = 'desc';
+        }
+
+        if ($explicit && $remember) {
+            $this->users->rememberTicketSort($userId, $sort, $dir);
+        }
 
         return [$sort, $dir];
     }
@@ -127,9 +152,14 @@ final class TicketController extends HelpdeskBaseController
     public function index(Request $request): Response
     {
         $filters = $this->filtersFrom($request);
-        [$sort, $dir] = $this->sortFrom($request);
+        [$sort, $dir] = $this->sortFrom($request, true);
         $perPage = max(10, min(200, $request->int('per_page', (int) $this->config->get('helpdesk.list_per_page', 25)) ?? 25));
         $paginator = new Paginator($this->tickets->countSearch($filters), $request->int('page', 1) ?? 1, $perPage);
+        // Aufgelöste Sortierung in die Links übernehmen, damit die aktive Spalte auch
+        // bei gespeicherter Präferenz markiert ist und Filter sie nicht zurücksetzen.
+        $query = $request->query();
+        $query['sort'] = $sort;
+        $query['dir'] = $dir;
 
         return $this->render('helpdesk.tickets.index', [
             'title' => 'Tickets',
@@ -147,7 +177,7 @@ final class TicketController extends HelpdeskBaseController
             'categories' => $this->categories->roots(),
             'paginator' => $paginator,
             'basePath' => '/helpdesk/tickets',
-            'query' => $request->query(),
+            'query' => $query,
             'sort' => $sort,
             'dir' => $dir,
             'slaService' => $this->slaService,

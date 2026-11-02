@@ -516,6 +516,9 @@ final class TicketService
      * wenn der Melder im selben Vorgang bereits eine E-Mail des Agenten erhält – oder beim
      * Schließen, wenn der Agent im Statusdialog „Melder informieren“ abwählt.
      *
+     * Schließt ein Agent ein Ticket, das noch niemandem zugewiesen ist, wird er selbst als
+     * Bearbeiter eingetragen; ein bereits eingetragener Bearbeiter bleibt unverändert.
+     *
      * @param string|null $notificationContext Grund des Wechsels für die Benachrichtigung
      *        (etwa `TicketNotificationService::CONTEXT_TASK_CONVERSION`)
      * @return array<string,mixed>
@@ -588,6 +591,7 @@ final class TicketService
         }
 
         $isReopen = $this->workflow->isReopen($fromCode, $toCode);
+        $assignedToCloser = false;
         switch ($toCode) {
             case TicketWorkflowService::RESOLVED:
                 $update['resolved_at'] = $now;
@@ -616,6 +620,13 @@ final class TicketService
                 }
                 // Fehlerursprung aus dem Katalog; ohne Auswahl wird ein alter Wert nicht fortgeschrieben.
                 $update['error_origin'] = $errorOrigin;
+                // Der schließende Agent bleibt als Bearbeiter im Ticket stehen, wenn bisher
+                // niemand zugewiesen war. Automatische Schließungen (Scheduler, Umwandlung in
+                // eine Aufgabe) tragen niemanden ein.
+                if (!$system && empty($ticket['assignee_user_id']) && $this->currentUser->id() !== null && $this->isAgent()) {
+                    $update['assignee_user_id'] = $this->currentUser->id();
+                    $assignedToCloser = true;
+                }
                 break;
             case TicketWorkflowService::CANCELLED:
                 $update['cancelled_at'] = $now;
@@ -634,19 +645,22 @@ final class TicketService
                 }
         }
 
-        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $fromCode, $toCode, $toStatus, $note, $isReopen, $pauseCodes): void {
+        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $fromCode, $toCode, $toStatus, $note, $isReopen, $pauseCodes, $assignedToCloser): void {
             $id = (int) $ticket['id'];
             if (!$this->tickets->update($id, $update, $expectedVersion)) {
                 throw new ConflictException('Das Ticket wurde zwischenzeitlich geändert. Bitte neu laden.');
             }
             $this->event($id, $this->workflow->eventFor($fromCode, $toCode, $pauseCodes), 'status', (string) $ticket['status_name'], (string) $toStatus['name'], $note !== null && trim($note) !== '' ? ['note' => trim($note)] : null);
+            if ($assignedToCloser) {
+                $this->event($id, 'assigned', 'assignee', null, $this->userName((int) $update['assignee_user_id']));
+            }
             if ($note !== null && trim($note) !== '') {
                 $this->insertComment($ticket, trim($note), $isReopen || !$this->isAgent() ? 'public' : 'internal');
             }
         });
 
         $fresh = $this->get($id);
-        $this->audit->log('status', 'ticket', $id, $fresh['number'] . ' → ' . $toStatus['name'], ['status' => $ticket['status_name']], ['status' => $toStatus['name']]);
+        $this->audit->log('status', 'ticket', $id, $fresh['number'] . ' → ' . $toStatus['name'], ['status' => $ticket['status_name']], ['status' => $toStatus['name']] + ($assignedToCloser ? ['assignee' => $fresh['assignee_name']] : []));
         $this->rules->apply('status_changed', $fresh, $this->currentUser->id(), $this->currentUser->displayName());
         if ($notify) {
             $this->notifications->statusChanged($fresh, $fromCode, $toCode, $notificationContext);

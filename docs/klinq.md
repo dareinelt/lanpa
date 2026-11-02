@@ -276,6 +276,13 @@ zeigt; Schema und Port bleiben so die des Aufrufs.
   `helpdesk_agent` an. Ein Konto mit demselben Namen kann sich nicht anmelden;
   meldet sich später ein gleichnamiger AD-Benutzer über SSO an, übernimmt die
   Anmeldung den Datensatz.
+* Vor dem Anlegen prüft `QuickReportContentValidator` Betreff und Beschreibung
+  auf Mindestinhalt. Abgewiesen werden zu lange Betreffs (über 120 Zeichen),
+  Floskeln wie „siehe unten“, „siehe Beschreibung“, „danke“ oder „Hilfe“,
+  reine Platzhalter, Betreffs oder Beschreibungen, die nur aus einer
+  Inventarnummer bestehen (`PC24001`, `DR19015`), eine Beschreibung ohne Text
+  (nur Screenshot) sowie eine Beschreibung, die lediglich den Betreff
+  wiederholt. Die Meldung erscheint am Formular, die Eingaben bleiben erhalten.
 
 ### 5.1 Personenauswahl aus dem Telefonbuch
 

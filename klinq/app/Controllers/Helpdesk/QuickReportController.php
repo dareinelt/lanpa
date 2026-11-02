@@ -18,6 +18,7 @@ use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
 use App\Security\Permissions;
 use App\Services\Helpdesk\ReporterIdentityService;
+use App\Services\Helpdesk\QuickReportContentValidator;
 use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Services\Helpdesk\TicketService;
 use App\Services\PersonDirectoryService;
@@ -80,6 +81,14 @@ final class QuickReportController extends HelpdeskBaseController
             'description' => $request->string('description'),
             'reporter' => $reporter,
         ];
+        // Betreff und Beschreibung müssen für sich aussagekräftig sein: kein Aufsatz im Betreff,
+        // keine Floskeln („siehe unten“), kein Screenshot ohne Text und keine bloße Wiederholung.
+        $contentErrors = QuickReportContentValidator::validate($input['subject'], $input['description']);
+        if ($contentErrors !== []) {
+            $this->withOldInput($request, $contentErrors);
+
+            return $this->renderForm($request, null, 422, $reporter);
+        }
         $affectedId = $request->int('affected_employee_id');
         // Sammelkonten (anonyme Konten) dürfen nur mit zusätzlichem Benutzer melden – die
         // Prüfung greift serverseitig, unabhängig davon, ob das Feld im Browser aufgeklappt war.
@@ -202,6 +211,7 @@ final class QuickReportController extends HelpdeskBaseController
             'affected' => $this->selectedAffected(),
             'requiresAffected' => $requiresAffected,
             'sharedAccountHint' => $requiresAffected ? $this->quickSettings->sharedAccountsHint() : '',
+            'maxSubjectChars' => QuickReportContentValidator::MAX_SUBJECT_CHARS,
         ], $status);
     }
 

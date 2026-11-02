@@ -36,14 +36,15 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
             <?= csrf_field() ?>
             <div class="form-group<?= has_error('subject') ? ' has-error' : '' ?>">
                 <label for="q-subject">Worum geht es? <span class="required">*</span></label>
-                <input id="q-subject" name="subject" value="<?= e(old('subject')) ?>" maxlength="255" required autofocus placeholder="z. B. Drucker druckt nicht">
+                <input id="q-subject" name="subject" value="<?= e(old('subject')) ?>" maxlength="<?= (int) ($maxSubjectChars ?? 120) ?>" required autofocus placeholder="z. B. Drucker druckt nicht">
+                <p class="form-hint">Kurz und konkret – Details gehören in die Beschreibung.</p>
                 <?= field_error('subject') ?>
             </div>
             <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">
                 <label for="q-description">Was ist passiert? <span class="required">*</span></label>
                 <textarea id="q-description" name="description" rows="7" required placeholder="Beschreiben Sie die Störung: Was funktioniert nicht? Seit wann? Welche Meldung erscheint?" data-hd-media-images data-hd-media-preview="#q-description-preview"><?= e(old('description')) ?></textarea>
                 <div class="hd-media-preview" id="q-description-preview" hidden></div>
-                <p class="form-hint">Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
+                <p class="form-hint">Bitte in Worten beschreiben – ein Screenshot allein reicht nicht. Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
                 <?= field_error('description') ?>
             </div>
             <details class="quick-more"<?= ($affected !== null || has_error('affected_employee_id') || $requiresAffected) ? ' open' : '' ?>>

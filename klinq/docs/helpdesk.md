@@ -581,6 +581,13 @@ Verweis auf das Ticket an. Im Overlay lassen sich zusätzlich optional eine **Ka
 „Kategorien“), ein **Fälligkeitsdatum** und ein **Kommentar** mitgeben; ohne Auswahl bleibt die Aufgabe ohne
 Kategorie. Der Kommentar landet als Eintrag `conversion` („Umwandlung“) im **Journal** der Aufgabe (siehe
 „Journal“).
+**Kommentare und Anhänge des Tickets gehen dabei nicht verloren:** Die Ticket-Kommentare übernimmt
+`TaskService::convert()` als unveränderliche Journal-Einträge (`ticket_comment` bzw. `ticket_comment_internal`
+für interne Notizen) samt Autor, Zeitpunkt und Sichtbarkeit – dadurch bleiben auch die im Kommentartext
+eingebetteten Bilder (Base64-Data-URI) erhalten. Die am Ticket hochgeladenen Dateien werden als eigene
+Aufgabenanhänge kopiert (neue Datei, eigener `documents`-Datensatz, Verknüpfung in `task_attachments`, siehe
+„Anhänge“); das Ticket behält seine Anhänge. Ein Journal-Eintrag `ticket_attachments` fasst die übernommenen
+Dateien zusammen, im Verlauf steht zusätzlich das Ereignis `attachments_copied`.
 **Das Ticket wird dabei geschlossen** (Systemvorgang mit Hinweis in der Historie) und bleibt mit der Aufgabe
 verknüpft: Im Ticketdetail erscheint ein Verweis auf die Aufgabennummer, in der Aufgabe ein Verweis auf das
 Ticket. Je Ticket ist höchstens eine Aufgabe möglich (`tasks.source_ticket_id` ist eindeutig).
@@ -679,15 +686,34 @@ Feld `comment`) und beim **In Aufgabe umwandeln** über das Kommentarfeld im Umw
 gespeichert und im Aufgabendetail in der Karte **Journal** angezeigt (neueste zuerst). Beim Aufheben der Zuweisung
 wird ein Kommentar als Eintrag `unassignment` („Zuweisung aufgehoben“) abgelegt, beim Zuweisen als `assignment`
 („Zuweisung“), bei der Umwandlung als `conversion` („Umwandlung“). Ohne Kommentar entsteht kein Eintrag.
+Bei der Umwandlung eines Tickets kommen die Ticket-Kommentare als `ticket_comment` („Kommentar aus dem Ticket“)
+bzw. `ticket_comment_internal` („Interne Notiz aus dem Ticket“) hinzu; übernommene Dateien fasst der Eintrag
+`ticket_attachments` („Ticketanhänge übernommen“) zusammen. Diese Einträge tragen Autor und Zeitpunkt des
+ursprünglichen Kommentars und sind wie alle Journal-Einträge unveränderlich.
 Journal-Einträge lassen sich weder bearbeiten noch löschen; jeder Eintrag wird zusätzlich als `task.journal`
 auditiert. Die Karte zeigt die Einträge chronologisch, die neuesten oben.
+
+### Anhänge
+
+Jede Aufgabe trägt eigene **Anhänge** (`task_attachments`, Datei in `documents` mit `entity_type = task`), die im
+Aufgabendetail in der aufklappbaren Karte **Anhänge** erscheinen (Anker `#anhaenge`). Agenten mit
+`helpdesk.tasks` laden über das Formular (`POST /helpdesk/aufgaben/{id}/anhaenge`, Feld `file` und optional
+`note`) Dateien hoch; Typ und Größe prüft `DocumentService` wie bei allen Uploads (Endungen aus
+`ALLOWED_UPLOAD_EXTENSIONS`, Grenze `MAX_UPLOAD_BYTES`). Heruntergeladen wird über
+`GET /helpdesk/aufgaben/{id}/anhaenge/{document}` – Bilder und PDFs werden im Browser angezeigt, alles andere
+als Download; die Zuordnung zur Aufgabe prüft der Controller. Gelöscht wird über
+`POST /helpdesk/aufgaben/{id}/anhaenge/{document}/loeschen`: eigene Uploads darf jeder Agent entfernen, fremde nur
+mit der Berechtigungsgruppe „Aufgabenverteilung“ (`helpdesk.tasks.assign`). Hochladen und Löschen erscheinen als
+Ereignisse `attachment_added`/`attachment_removed` im Verlauf und werden als `upload`/`delete` auditiert.
+Anders als bei Tickets gibt es keine Sichtbarkeitsstufe „intern“, weil der Aufgabenbereich Agenten vorbehalten
+ist.
 
 ### Status und Verlauf
 
 Status: `open` (Offen), `in_progress` (In Bearbeitung), `done` (Erledigt), `cancelled` (Verworfen). Erledigen und
 Verwerfen erfassen die ausführende Person und den Zeitpunkt; ein optionales Fälligkeitsdatum (`due_at`) wird in
 der Liste hervorgehoben, wenn es überschritten ist. Jede Änderung – Anlage, Umwandlung, Annahme, Zuweisung,
-Statuswechsel, Kategorie, Fälligkeit – landet als Ereignis in `task_events` und wird im Detail als Verlauf
+Statuswechsel, Kategorie, Fälligkeit, Anhänge – landet als Ereignis in `task_events` und wird im Detail als Verlauf
 angezeigt.
 Ergänzende Bemerkungen gehören in die Kommentare.
 

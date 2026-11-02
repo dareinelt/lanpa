@@ -12,6 +12,7 @@ use App\Controllers\Helpdesk\PortalController;
 use App\Controllers\Helpdesk\HelpdeskSupportShiftController;
 use App\Controllers\Helpdesk\QuickReportController;
 use App\Controllers\Helpdesk\TicketAttachmentController;
+use App\Controllers\Helpdesk\TaskAttachmentController;
 use App\Controllers\Helpdesk\TaskController;
 use App\Controllers\Helpdesk\TicketController;
 use App\Controllers\HelpdeskAiController;
@@ -28,6 +29,7 @@ use App\Repositories\EmployeeRepository;
 use App\Repositories\HelpdeskSupportShiftRepository;
 use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\LocationRepository;
+use App\Repositories\TaskAttachmentRepository;
 use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TaskCommentRepository;
 use App\Repositories\TaskJournalRepository;
@@ -63,6 +65,7 @@ use App\Services\Lanpa\LanpaIdentityService;
 use App\Services\Helpdesk\SecondLevelReminderService;
 use App\Services\Helpdesk\SharedAccountSuggestionService;
 use App\Services\Helpdesk\SupportShiftService;
+use App\Services\Helpdesk\TaskAttachmentService;
 use App\Services\Helpdesk\TaskNumberService;
 use App\Services\Helpdesk\TaskService;
 use App\Services\Helpdesk\Mail\FileMailboxClient;
@@ -103,6 +106,7 @@ return static function (Container $c): void {
         TicketRelationRepository::class, TicketTemplateRepository::class, TicketRuleRepository::class, TicketReportRepository::class,
         KnowledgeBaseRepository::class, HelpdeskSupportShiftRepository::class, TaskRepository::class,
         TaskCategoryRepository::class, TaskCommentRepository::class, TaskJournalRepository::class,
+        TaskAttachmentRepository::class,
     ] as $repository) {
         $c->singleton($repository, static fn (Container $c): object => new $repository($c->get(PDO::class)));
     }
@@ -373,13 +377,23 @@ return static function (Container $c): void {
         $c->get(TaskRepository::class),
         $c->get(TaskCategoryRepository::class)
     ));
+    $c->singleton(TaskAttachmentService::class, static fn (Container $c): TaskAttachmentService => new TaskAttachmentService(
+        $c->get(DocumentService::class),
+        $c->get(TaskAttachmentRepository::class),
+        $c->get(TaskRepository::class),
+        $c->get(AuditLogService::class),
+        $c->get(CurrentUser::class)
+    ));
     $c->singleton(TaskService::class, static fn (Container $c): TaskService => new TaskService(
         $c->get(TaskRepository::class),
         $c->get(TaskCategoryRepository::class),
         $c->get(TaskCommentRepository::class),
         $c->get(TaskJournalRepository::class),
+        $c->get(TaskAttachmentService::class),
         $c->get(TaskNumberService::class),
         $c->get(TicketService::class),
+        $c->get(TicketCommentRepository::class),
+        $c->get(TicketAttachmentRepository::class),
         $c->get(TicketMasterDataRepository::class),
         $c->get(AuditLogService::class),
         $c->get(CurrentUser::class)
@@ -392,6 +406,13 @@ return static function (Container $c): void {
         $c->get(TaskCategoryRepository::class),
         $c->get(TicketMasterDataRepository::class),
         $c->get(Config::class)
+    ));
+    $c->singleton(TaskAttachmentController::class, static fn (Container $c): TaskAttachmentController => new TaskAttachmentController(
+        $c->get(View::class),
+        $c->get(CurrentUser::class),
+        $c->get(TaskService::class),
+        $c->get(TaskAttachmentService::class),
+        $c->get(DocumentService::class)
     ));
     $c->singleton(TicketAttachmentController::class, static fn (Container $c): TicketAttachmentController => new TicketAttachmentController(
         $c->get(View::class),

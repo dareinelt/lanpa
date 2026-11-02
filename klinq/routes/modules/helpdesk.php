@@ -11,6 +11,7 @@ use App\Controllers\Helpdesk\KnowledgeArticleAttachmentController;
 use App\Controllers\Helpdesk\KnowledgeBaseController;
 use App\Controllers\Helpdesk\PortalController;
 use App\Controllers\Helpdesk\QuickReportController;
+use App\Controllers\Helpdesk\TaskAttachmentController;
 use App\Controllers\Helpdesk\TaskController;
 use App\Controllers\Helpdesk\TicketAttachmentController;
 use App\Controllers\Helpdesk\TicketController;
@@ -29,6 +30,7 @@ return static function (Router $router, Container $c): void {
     $shifts = static fn (): HelpdeskSupportShiftController => $c->get(HelpdeskSupportShiftController::class);
     $tickets = static fn (): TicketController => $c->get(TicketController::class);
     $tasks = static fn (): TaskController => $c->get(TaskController::class);
+    $taskFiles = static fn (): TaskAttachmentController => $c->get(TaskAttachmentController::class);
     $files = static fn (): TicketAttachmentController => $c->get(TicketAttachmentController::class);
     $kb = static fn (): KnowledgeBaseController => $c->get(KnowledgeBaseController::class);
     $kbFiles = static fn (): KnowledgeArticleAttachmentController => $c->get(KnowledgeArticleAttachmentController::class);
@@ -102,6 +104,9 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/aufgaben/{id}/faelligkeit', static fn (Request $r): Response => $tasks()->dueDate($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/kommentare', static fn (Request $r): Response => $tasks()->comment($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/kommentare/{comment}/pin', static fn (Request $r): Response => $tasks()->pinComment($r), 'helpdesk.tasks');
+    $router->post('/helpdesk/aufgaben/{id}/anhaenge', static fn (Request $r): Response => $taskFiles()->upload($r), 'helpdesk.tasks');
+    $router->get('/helpdesk/aufgaben/{id}/anhaenge/{document}', static fn (Request $r): Response => $taskFiles()->download($r), 'helpdesk.tasks');
+    $router->post('/helpdesk/aufgaben/{id}/anhaenge/{document}/loeschen', static fn (Request $r): Response => $taskFiles()->delete($r), 'helpdesk.tasks');
 
     // Wissensdatenbank
     $router->get('/helpdesk/knowledge', static fn (Request $r): Response => $kb()->index($r), 'knowledgebase.view');

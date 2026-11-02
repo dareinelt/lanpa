@@ -14,16 +14,22 @@ $eventLabels = [
     'status_changed' => 'Status geändert',
     'category_changed' => 'Kategorie geändert',
     'due_changed' => 'Fälligkeit geändert',
+    'attachment_added' => 'Anhang hinzugefügt',
+    'attachment_removed' => 'Anhang entfernt',
+    'attachments_copied' => 'Ticketanhänge übernommen',
 ];
 $eventClass = static fn (string $t): string => match ($t) {
     'status_changed', 'category_changed', 'due_changed' => ' is-warning',
-    'converted_from_ticket' => ' is-success',
+    'converted_from_ticket', 'attachments_copied' => ' is-success',
     default => '',
 };
 $journalLabels = [
     'assignment' => 'Zuweisung',
     'unassignment' => 'Zuweisung aufgehoben',
     'conversion' => 'Umwandlung',
+    'ticket_comment' => 'Kommentar aus dem Ticket',
+    'ticket_comment_internal' => 'Interne Notiz aus dem Ticket',
+    'ticket_attachments' => 'Ticketanhänge übernommen',
 ];
 ?>
 <div class="page-header">
@@ -69,8 +75,44 @@ $journalLabels = [
 
     <section class="card">
         <h2 class="card-title">Beschreibung</h2>
-        <div class="ticket-description"><?= nl2br_e($task['description']) ?></div>
+        <div class="ticket-description"><?= rich_text($task['description']) ?></div>
     </section>
+
+    <details class="card card-collapsible" id="anhaenge">
+        <summary class="card-summary">
+            <h2 class="card-title">Anhänge <span class="text-muted">(<?= count($attachments) ?>)</span></h2>
+        </summary>
+        <div class="card-collapsible-body">
+        <?php if ($attachments === []): ?>
+            <p class="empty-state">Keine Anhänge.</p>
+        <?php else: ?>
+        <table class="table table-compact">
+            <thead><tr><th>Datei</th><th>Größe</th><th>Hochgeladen</th><th></th></tr></thead>
+            <tbody>
+            <?php foreach ($attachments as $a): ?>
+                <?php $canDeleteAttachment = $canManageAttachments || (int) ($a['uploaded_by'] ?? 0) === (int) ($currentUserId ?? 0); ?>
+                <tr>
+                    <td><a href="/helpdesk/aufgaben/<?= $id ?>/anhaenge/<?= (int) $a['id'] ?>"><?= icon('paperclip', 'icon icon-xs') ?> <?= e($a['original_name']) ?></a><?php if (!empty($a['note'])): ?><div class="text-xs text-muted"><?= e($a['note']) ?></div><?php endif; ?></td>
+                    <td class="nowrap"><?= fmt_bytes((int) $a['size_bytes']) ?></td>
+                    <td class="nowrap text-sm"><?= fmt_datetime($a['created_at']) ?><div class="text-xs text-muted"><?= e($a['uploaded_by_name']) ?></div></td>
+                    <td class="text-right">
+                        <?php if ($canDeleteAttachment): ?><form method="post" action="/helpdesk/aufgaben/<?= $id ?>/anhaenge/<?= (int) $a['id'] ?>/loeschen" class="inline-form" data-confirm="Anhang „<?= e($a['original_name']) ?>“ löschen?"><?= csrf_field() ?><button type="submit" class="btn btn-ghost btn-sm" aria-label="Löschen"><?= icon('trash') ?></button></form><?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        <?php endif; ?>
+        <?php if ($can('helpdesk.tasks')): ?>
+        <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/anhaenge" enctype="multipart/form-data" class="inline-form form-row">
+            <?= csrf_field() ?>
+            <div class="form-group"><label for="task-att-file">Datei</label><input id="task-att-file" type="file" name="file" required></div>
+            <div class="form-group"><label for="task-att-note">Notiz</label><input id="task-att-note" name="note" maxlength="500"></div>
+            <div class="form-group is-narrow"><button type="submit" class="btn btn-secondary"><?= icon('upload') ?> Hochladen</button></div>
+        </form>
+        <?php endif; ?>
+        </div>
+    </details>
 
     <section class="card" id="kommentare">
         <h2 class="card-title">Kommentare <span class="text-muted">(<?= count($comments) ?>)</span></h2>

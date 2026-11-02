@@ -119,12 +119,15 @@ final class TaskController extends HelpdeskBaseController
             'events' => $this->service->events((int) $task['id']),
             'comments' => $this->service->comments((int) $task['id']),
             'journal' => $this->service->journal((int) $task['id']),
+            'attachments' => $this->service->attachments((int) $task['id']),
             'statuses' => TaskService::STATUSES,
             'statusColors' => TaskService::STATUS_COLORS,
             'agents' => $this->service->assignableAgents(),
             'categories' => $this->categories->selectable($task['category_id'] !== null ? (int) $task['category_id'] : null),
             'isMine' => $this->currentUser->id() !== null && (int) ($task['assignee_user_id'] ?? 0) === (int) $this->currentUser->id(),
             'canAssign' => $this->currentUser->can('helpdesk.tasks.assign'),
+            'canManageAttachments' => $this->currentUser->can('helpdesk.tasks.assign'),
+            'currentUserId' => $this->currentUser->id(),
             'scripts' => ['/js/helpdesk-pins.js'],
         ]);
     }

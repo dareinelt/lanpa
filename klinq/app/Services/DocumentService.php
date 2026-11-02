@@ -15,7 +15,7 @@ use App\Security\CurrentUser;
  */
 final class DocumentService
 {
-    public const ENTITY_TYPES = ['asset', 'purchase_order', 'license', 'movement', 'supplier', 'import', 'handover', 'ticket', 'knowledge_article'];
+    public const ENTITY_TYPES = ['asset', 'purchase_order', 'license', 'movement', 'supplier', 'import', 'handover', 'ticket', 'knowledge_article', 'task'];
     public const DOCUMENT_TYPES = [
         'order' => 'Bestellung', 'order_confirmation' => 'Auftragsbestätigung', 'delivery_note' => 'Lieferschein',
         'invoice' => 'Rechnung', 'license' => 'Lizenz', 'photo' => 'Foto', 'signature' => 'Unterschrift',
@@ -127,6 +127,67 @@ final class DocumentService
     public function path(array $document): string
     {
         return rtrim((string) $this->config->get('uploads.path'), '/') . '/' . $this->safeRelative((string) $document['stored_name']);
+    }
+
+    /**
+     * Kopiert ein bestehendes Dokument in einen neuen Datensatz (z. B. Ticket → Aufgabe).
+     * Die Originaldatei bleibt unverändert; es entsteht eine eigene Datei mit eigenem Datensatz,
+     * damit beide Seiten unabhängig voneinander bleiben.
+     *
+     * @param array<string,mixed> $document Quelldatensatz aus `documents`
+     */
+    public function copy(array $document, string $entityType, int $entityId): int
+    {
+        if (!in_array($entityType, self::ENTITY_TYPES, true)) {
+            throw new \InvalidArgumentException('Unbekannter Dokumenttyp.');
+        }
+        $source = $this->path($document);
+        if (!is_file($source)) {
+            throw new \RuntimeException('Die Quelldatei ist auf dem Server nicht mehr vorhanden.');
+        }
+        $extension = strtolower(pathinfo((string) $document['stored_name'], PATHINFO_EXTENSION));
+        if (preg_match('/^[a-z0-9]{1,8}$/', $extension) !== 1) {
+            throw new \RuntimeException('Ungültige Dateiendung.');
+        }
+        $documentType = (string) $document['document_type'];
+        if (!isset(self::DOCUMENT_TYPES[$documentType])) {
+            $documentType = 'attachment';
+        }
+
+        $base = rtrim((string) $this->config->get('uploads.path'), '/');
+        $relativeDir = date('Y') . '/' . date('m');
+        $dir = $base . '/' . $relativeDir;
+        if (!is_dir($dir) && !mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException('Upload-Verzeichnis konnte nicht angelegt werden.');
+        }
+        $storedName = $relativeDir . '/' . $this->uuid() . '.' . $extension;
+        $target = $base . '/' . $storedName;
+        if (!copy($source, $target)) {
+            throw new \RuntimeException('Datei konnte nicht kopiert werden.');
+        }
+        @chmod($target, 0640);
+        $note = $document['note'] !== null ? trim((string) $document['note']) : '';
+
+        $id = $this->documents->create([
+            'entity_type' => $entityType,
+            'entity_id' => $entityId,
+            'document_type' => $documentType,
+            'original_name' => mb_substr((string) $document['original_name'], 0, 255),
+            'stored_name' => $storedName,
+            'mime_type' => (string) $document['mime_type'],
+            'size_bytes' => (int) (filesize($target) ?: (int) $document['size_bytes']),
+            'sha256' => hash_file('sha256', $target) ?: null,
+            'note' => $note !== '' ? mb_substr($note, 0, 500) : null,
+            'uploaded_by' => $this->currentUser->id(),
+            'uploaded_by_name' => $this->currentUser->displayName(),
+        ]);
+        $this->audit->log('copy', 'document', $id, (string) $document['original_name'], null, [
+            'entity_type' => $entityType,
+            'entity_id' => $entityId,
+            'source_document_id' => (int) $document['id'],
+        ]);
+
+        return $id;
     }
 
     /** @param array<string,mixed> $document */

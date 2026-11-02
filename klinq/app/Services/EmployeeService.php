@@ -54,7 +54,7 @@ final class EmployeeService
 
     /**
      * Autovervollständigung für die Melder-Auswahl im Help Desk: findet Treffer per Teilstring
-     * (Name, Benutzername, Personalnummer, Abteilung) sowie phonetisch (Kölner Phonetik), damit
+     * (Name, Benutzername, Personalnummer, Abteilung, E-Mail, Telefonnummer) sowie phonetisch (Kölner Phonetik), damit
      * z. B. „Meier“ auch „Maier“ oder „Mayer“ findet. Teilstring-Treffer werden zuerst gelistet.
      * @return array<int,array<string,mixed>>
      */
@@ -75,6 +75,9 @@ final class EmployeeService
                 $row['username'] ?? '',
                 $row['personnel_number'] ?? '',
                 $row['department'] ?? '',
+                // Selbst erfasste Kontakte sind nur über Name, E-Mail oder Nummer auffindbar.
+                $row['email'] ?? '',
+                $row['phone'] ?? '',
             ])));
             if (str_contains($haystack, $termLower)) {
                 $direct[] = $row;

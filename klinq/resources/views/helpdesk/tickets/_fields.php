@@ -36,7 +36,7 @@ if (!empty($secondLevelAssigneeId)) {
     <?php if ($can('knowledgebase.view')): ?><div id="kb-suggest" class="kb-suggest" hidden></div><?php endif; ?>
 <?php elseif ($step === 2): ?>
     <div class="form-row">
-        <div class="form-group picker<?= has_error('requester_employee_id') ? ' has-error' : '' ?>" data-picker data-search-url="/api/helpdesk/people/search" data-resolve-url="/api/helpdesk/people/adopt" data-hd-employee-assets="#f-assets">
+        <div class="form-group picker<?= has_error('requester_employee_id') ? ' has-error' : '' ?>" data-picker data-search-url="/api/helpdesk/people/search" data-resolve-url="/api/helpdesk/people/adopt" data-picker-create-url="/api/helpdesk/people/create" data-hd-employee-assets="#f-assets">
             <label for="f-requester">Melder</label>
             <input type="hidden" name="requester_employee_id" value="<?= e((string) ($selectedRequester['id'] ?? '')) ?>" data-picker-value>
             <div class="picker-selected" data-picker-selected<?= $selectedRequester ? '' : ' hidden' ?>>
@@ -48,6 +48,30 @@ if (!empty($secondLevelAssigneeId)) {
             </div>
             <input id="f-requester" type="search" class="picker-input" placeholder="Name, Benutzername, Personalnr. oder Telefon …" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" data-picker-input<?= $selectedRequester ? ' hidden' : '' ?>>
             <ul class="picker-results" role="listbox" hidden data-picker-results></ul>
+            <dialog class="dialog" data-picker-create-dialog aria-labelledby="picker-create-title">
+                <div class="dialog-header">
+                    <h2 id="picker-create-title" data-picker-create-title>Person hinzufügen</h2>
+                    <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+                </div>
+                <div class="dialog-body">
+                    <p class="text-muted text-sm">Die Person steht nicht im Verzeichnis. Sie wird als Melder dieses Tickets erfasst; mit <strong>Zu Kontakten hinzufügen</strong> steht sie künftig in der Personenauswahl zur Verfügung.</p>
+                    <div class="form-group">
+                        <label for="picker-create-email">E-Mail-Adresse</label>
+                        <input id="picker-create-email" type="email" maxlength="255" autocomplete="off" data-picker-create-email>
+                    </div>
+                    <div class="form-group">
+                        <label for="picker-create-phone">Rückrufnummer</label>
+                        <input id="picker-create-phone" type="tel" maxlength="60" autocomplete="off" data-picker-create-phone>
+                    </div>
+                    <p class="form-hint">E-Mail-Adresse oder Rückrufnummer ist erforderlich.</p>
+                    <label class="checkbox-field"><input type="checkbox" value="1" checked data-picker-create-keep> <span>Zu Kontakten hinzufügen</span></label>
+                    <span class="form-error" hidden data-picker-create-error></span>
+                </div>
+                <div class="dialog-footer">
+                    <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+                    <button type="button" class="btn btn-primary" data-picker-create-submit><?= icon('plus') ?> Hinzufügen</button>
+                </div>
+            </dialog>
             <p class="form-hint">Bitte die Person eintragen, die das Problem hat – nicht den eigenen Benutzer. Leer lassen für unbekannt/extern.</p>
             <?= field_error('requester_employee_id') ?>
         </div>

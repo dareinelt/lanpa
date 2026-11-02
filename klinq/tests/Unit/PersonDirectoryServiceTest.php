@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Unit;
 
 use App\Core\Config;
+use App\Exceptions\ValidationException;
 use App\Repositories\AuditLogRepository;
 use App\Repositories\EmployeeRepository;
 use App\Security\CurrentUser;
@@ -189,6 +190,71 @@ final class PersonDirectoryServiceTest extends TestCase
 
         $this->assertNull($this->service()->adopt(12));
         $this->assertNull($this->service()->adopt(0));
+        $this->assertSame(2, (int) $this->pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn());
+    }
+
+    public function testCreateContactKeepsThePersonInTheSelection(): void
+    {
+        $contact = $this->service()->createContact('Anrufer, Anna', 'Anna.Anrufer@Example.Local', '0170 555', true);
+
+        $row = $this->employee($contact['id']);
+        $this->assertSame('Anrufer, Anna', $row['display_name']);
+        $this->assertSame('anna.anrufer@example.local', $row['email']);
+        $this->assertSame('0170 555', $row['phone'], 'Die Rueckrufnummer landet in der Telefonnummer.');
+        $this->assertSame('manual', $row['source']);
+        $this->assertSame(1, (int) $row['is_active']);
+        $this->assertNull($row['deactivated_at']);
+        $this->assertSame('anna.anrufer@example.local · 0170 555', $contact['meta']);
+
+        $items = $this->service()->search('anna.anrufer@example.local');
+        $this->assertCount(1, $items);
+        $this->assertSame($contact['id'], $items[0]['id'], 'Der Kontakt ist ohne Verzeichnistreffer waehlbar.');
+        $this->assertSame(0, $items[0]['ref']);
+        $this->assertSame('anna.anrufer@example.local · 0170 555', $items[0]['meta'], 'Ohne Verzeichnisdaten zeigt die Zeile E-Mail und Rueckrufnummer.');
+
+        $byPhone = $this->service()->search('0170 555');
+        $this->assertCount(1, $byPhone);
+        $this->assertSame($contact['id'], $byPhone[0]['id'], 'Kontakte sind auch ueber die Rueckrufnummer auffindbar.');
+
+        $audit = $this->pdo->query('SELECT action, object_type, object_id FROM audit_logs')->fetch(PDO::FETCH_ASSOC);
+        $this->assertSame(['action' => 'create', 'object_type' => 'employee', 'object_id' => $contact['id']], $audit);
+    }
+
+    public function testCreateContactWithoutKeepIsOnlyForTheCurrentTicket(): void
+    {
+        $contact = $this->service()->createContact('Externer Anrufer', '', '0451 1234', false);
+
+        $row = $this->employee($contact['id']);
+        $this->assertSame(0, (int) $row['is_active'], 'Ohne Kontakt-Option bleibt der Datensatz inaktiv.');
+        $this->assertNotNull($row['deactivated_at']);
+        $this->assertNull($row['email']);
+        $this->assertSame('0451 1234', $row['phone']);
+        $this->assertSame('0451 1234', $contact['meta']);
+        $this->assertSame([], $this->service()->search('Externer'), 'Inaktive Kontakte erscheinen nicht in der Auswahl.');
+    }
+
+    public function testCreateContactReusesAnExistingContactByEmail(): void
+    {
+        $service = $this->service();
+        $first = $service->createContact('Anrufer, Anna', 'anna@example.local', '0170 555', false);
+        $second = $service->createContact('Anrufer, Anna', 'anna@example.local', '0170 555', true);
+
+        $this->assertSame($first['id'], $second['id'], 'Gleiche E-Mail bedeutet gleiche Person.');
+        $this->assertSame(3, (int) $this->pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn());
+        $row = $this->employee($second['id']);
+        $this->assertSame(1, (int) $row['is_active'], 'Mit Kontakt-Option wird der Datensatz wieder aktiv.');
+        $this->assertNull($row['deactivated_at']);
+        $actions = $this->pdo->query('SELECT action FROM audit_logs ORDER BY id')->fetchAll(PDO::FETCH_COLUMN);
+        $this->assertSame(['create', 'activate'], $actions);
+    }
+
+    public function testCreateContactValidatesTheInput(): void
+    {
+        $service = $this->service();
+
+        $this->assertThrows(ValidationException::class, static fn () => $service->createContact('  ', 'a@example.local', '', true), 'Namen');
+        $this->assertThrows(ValidationException::class, static fn () => $service->createContact('Anrufer', 'keine-mail', '', true), 'E-Mail');
+        $this->assertThrows(ValidationException::class, static fn () => $service->createContact('Anrufer', '', '  ', true), 'Rückrufnummer');
         $this->assertSame(2, (int) $this->pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn());
     }
 

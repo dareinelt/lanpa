@@ -224,8 +224,9 @@ gelangen. Die Suche läuft live über die interne Schnittstelle `GET /internal/k
   (`?asset_id=…`) geöffnet, übernimmt der Melder die dem Asset zugeordnete Person. Bleibt das Feld leer, entsteht ein
   Ticket ohne bekannte meldende Person (unbekannt/extern, etwa ein Telefonanruf ohne Personalnummer); in Liste und
   Detail steht dann „–“. Im Portal ist der Melder dagegen immer das angemeldete Konto.
-- **Suchfelder**: Name (auch phonetisch), E-Mail, Benutzername, Abteilung und **Personalnummer** (Präfixsuche). Die
-  Personalnummer stammt aus dem AD-Attribut `employeeNumber` (`LDAP_ATTR_PERSONNEL_NUMBER` im Intranet) und wird beim
+- **Suchfelder**: Name (auch phonetisch), E-Mail, Benutzername, Abteilung, **Telefon-/Rückrufnummer** und
+  **Personalnummer** (Präfixsuche). Die Personalnummer stammt aus dem AD-Attribut `employeeNumber`
+  (`LDAP_ATTR_PERSONNEL_NUMBER` im Intranet) und wird beim
   Übernehmen in den lokalen Mitarbeiter geschrieben (`employees.personnel_number`, höchstens 50 Zeichen, nur wenn
   gefüllt); die lokale Mitarbeitersuche findet sie danach ebenfalls.
 - **Bekannte Personen** werden auf den lokalen Mitarbeiter abgebildet (Reihenfolge: objectGUID, E-Mail,
@@ -237,9 +238,23 @@ gelangen. Die Suche läuft live über die interne Schnittstelle `GET /internal/k
   `source = ad` um.
 - **Lokale Mitarbeiter** bleiben zusätzlich wählbar (phonetische Suche), damit die Felder auch ohne erreichbares
   Intranet funktionieren.
-- Endpunkte: `GET /api/helpdesk/people/search?q=…` (Berechtigung `helpdesk.view`) und
-  `POST /api/helpdesk/people/adopt` mit `ref` = Telefonbuch-ID; die Oberfläche (`public/js/picker.js`) übernimmt die
-  ID nach der Übernahme automatisch ins Feld.
+- **Unbekannte Personen anlegen**: Führt die Suche zu keinem Treffer, bietet die Auswahlliste unter „Keine Treffer“
+  die Aktion **„<eingegebener Name> hinzufügen“** an – die Beschriftung wird dynamisch aus der Eingabe gebildet
+  (z. B. „Gustav Gans hinzufügen“). Der Dialog erfasst E-Mail-Adresse und **Rückrufnummer**
+  (mindestens eine der beiden Angaben) sowie die Option **Zu Kontakten hinzufügen**. Der Name ist der eingegebene
+  Suchbegriff. Die Person wird als lokaler Mitarbeiter mit `source = manual` angelegt
+  (`PersonDirectoryService::createContact()`), unabhängig von einer Identitätsquelle:
+  - **Zu Kontakten hinzufügen** aktiv (`is_active = 1`): die Person erscheint künftig in der Personenauswahl und ist
+    über Name, E-Mail-Adresse und Rufnummer auffindbar.
+  - ohne die Option (`is_active = 0`, `deactivated_at` gesetzt): der Datensatz dient nur dem aktuellen Ticket; die
+    Ticketverweise bleiben gültig, die Person taucht aber nicht mehr in der Suche auf. Wird sie später erneut mit
+    gesetzter Option angelegt, aktiviert `reuseContact()` den vorhandenen Datensatz (Audit `activate`).
+  Eine bereits vorhandene E-Mail-Adresse wird wiederverwendet, damit keine Dubletten entstehen. E-Mail und
+  Rückrufnummer stehen danach am Ticket (Melder-E-Mail/-Telefon) und in der Zusatzzeile der Auswahl.
+- Endpunkte: `GET /api/helpdesk/people/search?q=…` (Berechtigung `helpdesk.view`),
+  `POST /api/helpdesk/people/adopt` mit `ref` = Telefonbuch-ID und `POST /api/helpdesk/people/create` mit
+  `name`, `email`, `phone`, `keep`; die Oberfläche (`public/js/picker.js`) übernimmt die ID nach der Übernahme
+  bzw. dem Anlegen automatisch ins Feld.
 
 ### Liste (`/helpdesk/tickets`)
 

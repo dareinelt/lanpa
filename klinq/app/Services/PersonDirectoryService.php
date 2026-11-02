@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Exceptions\ValidationException;
 use App\Repositories\EmployeeRepository;
 use App\Services\Ad\AdUserMapper;
 use App\Services\Lanpa\LanpaBridge;
@@ -68,14 +69,17 @@ final class PersonDirectoryService
             if (isset($items[(string) $id])) {
                 continue;
             }
+            $meta = self::meta(
+                (string) ($row['department'] ?? ''),
+                (string) ($row['personnel_number'] ?? ''),
+                (string) ($row['username'] ?? '')
+            );
             $items[(string) $id] = [
                 'id' => $id,
                 'name' => (string) $row['display_name'],
-                'meta' => self::meta(
-                    (string) ($row['department'] ?? ''),
-                    (string) ($row['personnel_number'] ?? ''),
-                    (string) ($row['username'] ?? '')
-                ),
+                // Selbst erfasste Kontakte haben keine Verzeichnisdaten; dort
+                // stehen E-Mail und Rueckrufnummer in der Zusatzzeile.
+                'meta' => $meta !== '' ? $meta : self::contactMeta($row),
                 'ref' => 0,
             ];
         }
@@ -140,6 +144,83 @@ final class PersonDirectoryService
     }
 
     /**
+     * Legt einen Melder an, der in keiner Identitaetsquelle steht (z. B. ein
+     * externer Anrufer), und liefert Name sowie Zusatzzeile fuer die Anzeige.
+     *
+     * Mit "Zu Kontakten hinzufuegen" bleibt die Person aktiv und erscheint
+     * spaeter wieder in der Personenauswahl; ohne diese Option wird der
+     * Datensatz inaktiv angelegt und dient nur dem aktuellen Ticket.
+     *
+     * @return array{id:int,name:string,meta:string}
+     */
+    public function createContact(string $name, string $email, string $phone, bool $keepContact): array
+    {
+        $name = self::cut(trim($name), 250);
+        $email = mb_strtolower(self::cut(trim($email), 255));
+        $phone = self::cut(trim($phone), 60);
+
+        if ($name === '') {
+            throw ValidationException::single('name', 'Bitte einen Namen angeben.');
+        }
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            throw ValidationException::single('email', 'Bitte eine gültige E-Mail-Adresse angeben.');
+        }
+        if ($email === '' && $phone === '') {
+            throw ValidationException::single('email', 'Bitte E-Mail-Adresse oder Rückrufnummer angeben.');
+        }
+
+        // Gleiche E-Mail = gleiche Person: vorhandene Datensaetze (auch aus dem
+        // Verzeichnis) werden verwendet, damit keine Dubletten entstehen.
+        $existing = $email !== '' ? $this->employees->findByEmail($email) : null;
+        if ($existing !== null) {
+            return $this->reuseContact($existing, $keepContact);
+        }
+
+        $data = [
+            'display_name' => $name,
+            'email' => $email !== '' ? $email : null,
+            'phone' => $phone !== '' ? $phone : null,
+            'source' => 'manual',
+            'is_active' => $keepContact ? 1 : 0,
+            'deactivated_at' => $keepContact ? null : gmdate('Y-m-d H:i:s'),
+        ];
+        $id = $this->employees->create($data);
+
+        $this->audit->log('create', 'employee', $id, $name, null, [
+            'display_name' => $name,
+            'email' => $email,
+            'phone' => $phone,
+            'source' => 'kontakt',
+        ]);
+
+        return ['id' => $id, 'name' => $name, 'meta' => self::contactMeta($data)];
+    }
+
+    /**
+     * Verwendet einen bereits vorhandenen Datensatz zur eingegebenen E-Mail.
+     * Ein frueher ohne Kontakt-Option erfasster Melder wird dabei wieder
+     * sichtbar; Datensaetze aus dem Verzeichnis bleiben unveraendert.
+     *
+     * @param array<string,mixed> $employee
+     * @return array{id:int,name:string,meta:string}
+     */
+    private function reuseContact(array $employee, bool $keepContact): array
+    {
+        $id = (int) $employee['id'];
+        $manual = (string) ($employee['source'] ?? '') === 'manual';
+        if ($keepContact && $manual && empty($employee['is_active'])) {
+            $this->employees->update($id, ['is_active' => 1, 'deactivated_at' => null]);
+            $this->audit->log('activate', 'employee', $id, (string) $employee['display_name'], ['is_active' => 0], ['is_active' => 1]);
+        }
+
+        return [
+            'id' => $id,
+            'name' => (string) $employee['display_name'],
+            'meta' => self::contactMeta($employee),
+        ];
+    }
+
+    /**
      * Lokale Mitarbeiter-ID zu einem Telefonbucheintrag.
      *
      * Reihenfolge: objectGUID (stabil), E-Mail, Benutzername. Der Benutzername
@@ -176,6 +257,20 @@ final class PersonDirectoryService
     private static function meta(string $department, string $source, string $username): string
     {
         return implode(' · ', array_filter([$department, $source, $username], static fn (string $v): bool => $v !== ''));
+    }
+
+    /**
+     * Zusatzzeile eines Kontakts ohne Verzeichnisdaten (E-Mail, Rueckrufnummer).
+     *
+     * @param array<string,mixed> $row
+     */
+    private static function contactMeta(array $row): string
+    {
+        return implode(' · ', array_filter([
+            (string) ($row['department'] ?? ''),
+            (string) ($row['email'] ?? ''),
+            (string) ($row['phone'] ?? ''),
+        ], static fn (string $v): bool => $v !== ''));
     }
 
     private static function cut(string $value, int $length): string

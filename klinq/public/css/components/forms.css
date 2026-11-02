@@ -144,6 +144,8 @@ input[aria-invalid="true"], .input-error, .has-error input, .has-error select { 
 .alert-stacked { flex-direction: column; align-items: stretch; }
 .alert-compact { padding: var(--space-2) var(--space-3); }
 .picker-results .picker-empty { padding: var(--space-2) var(--space-3); color: var(--color-text-muted); font-size: var(--font-size-sm); }
+.picker-add { border-top: 1px solid var(--color-border); margin-top: var(--space-1); padding-top: var(--space-1); }
+.picker-add button { font-weight: var(--font-weight-medium); }
 .picker-input[hidden], .picker-selected[hidden] { display: none; }
 .picker-selected-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .picker-selected-label { font-weight: var(--font-weight-medium); overflow-wrap: anywhere; }

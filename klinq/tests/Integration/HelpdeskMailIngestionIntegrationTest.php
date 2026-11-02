@@ -53,6 +53,49 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         return implode("\r\n", $lines) . "\r\n\r\n" . $body . "\r\n";
     }
 
+    /**
+     * Nachricht mit Text- und HTML-Teil sowie eingebettetem Bild (cid:), damit die 1:1-Anzeige
+     * des HTML-Inhalts geprüft werden kann.
+     */
+    private function htmlMail(string $from, string $subject, string $text, string $html): string
+    {
+        $boundary = 'rel' . bin2hex(random_bytes(4));
+        $alternative = 'alt' . bin2hex(random_bytes(4));
+        $lines = [
+            'From: ' . $from,
+            'To: helpdesk@example.test',
+            'Subject: ' . $subject,
+            'Date: ' . gmdate('D, d M Y H:i:s O'),
+            'Message-ID: <' . bin2hex(random_bytes(8)) . '@sender.example.test>',
+            'Content-Type: multipart/related; boundary="' . $boundary . '"',
+        ];
+        $body = [
+            '--' . $boundary,
+            'Content-Type: multipart/alternative; boundary="' . $alternative . '"',
+            '',
+            '--' . $alternative,
+            'Content-Type: text/plain; charset=utf-8',
+            '',
+            $text,
+            '--' . $alternative,
+            'Content-Type: text/html; charset=utf-8',
+            '',
+            $html,
+            '--' . $alternative . '--',
+            '--' . $boundary,
+            'Content-Type: image/png',
+            'Content-Transfer-Encoding: base64',
+            'Content-ID: <logo@example.test>',
+            'Content-Disposition: inline; filename="logo.png"',
+            '',
+            chunk_split(base64_encode('PNGDATA'), 76, "\r\n"),
+            '--' . $boundary . '--',
+            '',
+        ];
+
+        return implode("\r\n", $lines) . "\r\n\r\n" . implode("\r\n", $body);
+    }
+
     /** @param array<string,mixed> $overrides @return array<string,mixed> */
     private function createTicket(array $overrides = []): array
     {
@@ -135,6 +178,50 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         $this->assertSame(TicketMailIngestionService::ACTION_CREATED, $result['action']);
         $ticket = $this->c->get(TicketRepository::class)->find((int) $result['ticket_id']);
         $this->assertSame('E-Mail ohne Betreff', $ticket['subject']);
+    }
+
+    // ------------------------------------------------------------------ HTML-Inhalt
+
+    public function testHtmlMailIsAdoptedForTicketDescription(): void
+    {
+        $html = '<html><head><style>p{color:red}</style></head><body>'
+            . '<p>Bitte <b>prüfen</b>:</p><img src="cid:logo@example.test" alt="Logo">'
+            . '<script>alert(1)</script></body></html>';
+        $result = $this->ingestion->ingestRaw($this->htmlMail('Gast Nutzer <gast@extern.test>', 'Drucker streikt', 'Bitte prüfen:', $html), '31');
+
+        $this->assertSame(TicketMailIngestionService::ACTION_CREATED, $result['action']);
+        $ticket = $this->c->get(TicketRepository::class)->find((int) $result['ticket_id']);
+        $this->assertNotNull($ticket);
+        // Klartext bleibt maßgeblich für Suche, Benachrichtigungen, API und Export
+        $this->assertStringContains('Bitte prüfen:', (string) $ticket['description']);
+        $this->assertStringContains('Eingegangen per E-Mail von Gast Nutzer <gast@extern.test>', (string) $ticket['description']);
+        // Die HTML-Fassung wird unverändert übernommen, aber bereinigt gespeichert
+        $descriptionHtml = (string) $ticket['description_html'];
+        $this->assertStringContains('<p>Bitte <b>prüfen</b>:</p>', $descriptionHtml);
+        $this->assertStringContains('data:image/png;base64,', $descriptionHtml);
+        $this->assertStringContains('Eingegangen per E-Mail von Gast Nutzer &lt;gast@extern.test&gt;', $descriptionHtml);
+        $this->assertFalse(str_contains($descriptionHtml, 'alert(1)'));
+        $this->assertFalse(str_contains($descriptionHtml, 'color:red'));
+        $this->assertFalse(str_contains($descriptionHtml, 'cid:logo'));
+    }
+
+    public function testHtmlReplyIsAdoptedForCommentBody(): void
+    {
+        $ticket = $this->createTicket();
+        $result = $this->ingestion->ingestRaw($this->htmlMail('rita@example.test', 'Re: [' . $ticket['number'] . '] Monitor flackert', 'Danke, behoben.', '<p>Danke, <i>behoben</i>.</p>'), '32');
+
+        $this->assertSame(TicketMailIngestionService::ACTION_COMMENT, $result['action']);
+        $comments = $this->comments((int) $ticket['id']);
+        $this->assertCount(1, $comments);
+        $this->assertSame('Danke, behoben.', $comments[0]['body']);
+        $this->assertStringContains('<p>Danke, <i>behoben</i>.</p>', (string) $comments[0]['body_html']);
+    }
+
+    public function testPlainTextMailKeepsHtmlColumnEmpty(): void
+    {
+        $result = $this->ingestion->ingestRaw($this->raw('gast@extern.test', 'Nur Text', 'Reiner Text ohne Auszeichnung.'));
+        $ticket = $this->c->get(TicketRepository::class)->find((int) $result['ticket_id']);
+        $this->assertNull($ticket['description_html']);
     }
 
     // ------------------------------------------------------------------ Threading

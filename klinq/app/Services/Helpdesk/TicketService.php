@@ -24,6 +24,7 @@ use App\Repositories\TicketWorklogRepository;
 use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
 use App\Services\AuditLogService;
+use App\Support\HtmlSanitizer;
 use App\Support\Validator;
 
 /**
@@ -238,9 +239,10 @@ final class TicketService
      * Neues Ticket durch Agenten (source web/phone/api), Portal (source portal) oder das
      * öffentliche Störungsformular (source form, Melderdaten unter $input['reporter']).
      * @param array<string,mixed> $input
+     * @param string|null $html Rohes HTML der Beschreibung (nur E-Mail-Eingang), wird hier bereinigt
      * @return array<string,mixed> das angelegte Ticket
      */
-    public function create(array $input, string $source = 'web'): array
+    public function create(array $input, string $source = 'web', ?string $html = null): array
     {
         $portal = $source === 'portal';
         // Störungsformular: gleiche Feldbeschränkung wie im Portal, der Melder wird aber
@@ -324,13 +326,15 @@ final class TicketService
 
         $tagNames = $this->parseTags((string) ($input['tags'] ?? ''));
         $assetIds = $this->parseIds($input['asset_ids'] ?? ($input['asset_id'] ?? []));
+        $descriptionHtml = $this->mailHtml($html);
 
-        $ticketId = $this->tickets->transaction(function () use ($data, $priority, $status, $slaRule, $due, $now, $userId, $source, $tagNames, $assetIds, $extraFields, $createdByName): int {
+        $ticketId = $this->tickets->transaction(function () use ($data, $priority, $status, $slaRule, $due, $now, $userId, $source, $tagNames, $assetIds, $extraFields, $createdByName, $descriptionHtml): int {
             $number = $this->numbers->next($now);
             $id = $this->tickets->create([
                 'number' => $number,
                 'subject' => $data['subject'],
                 'description' => $data['description'],
+                'description_html' => $descriptionHtml,
                 'ticket_type_id' => (int) $data['ticket_type_id'],
                 'category_id' => $data['category_id'] ?? null,
                 'subcategory_id' => $data['subcategory_id'] ?? null,
@@ -471,6 +475,10 @@ final class TicketService
             'external_reference' => $data['external_reference'] ?? null,
             'updated_by' => $this->currentUser->id(),
         ];
+        // Eine von Hand geänderte Beschreibung ersetzt die HTML-Fassung der Ursprungsmail.
+        if ((string) $data['description'] !== (string) $ticket['description']) {
+            $update['description_html'] = null;
+        }
         // SLA nur neu berechnen, wenn sie sich (durch Priorität/Kategorie oder manuell) ändert
         $slaId = !empty($data['sla_id']) ? (int) $data['sla_id'] : ($this->slas->match((int) $priority['id'], $update['category_id'], $update['subcategory_id'])['id'] ?? null);
         if ($slaId !== null) {
@@ -962,14 +970,30 @@ final class TicketService
     }
 
     /**
+     * HTML-Fassung einer per E-Mail eingegangenen Nachricht bereinigen. Sie dient ausschließlich
+     * der Anzeige; maßgeblich bleiben die Klartextspalten `description`/`body` (Suche,
+     * Benachrichtigungen, API, Export).
+     */
+    private function mailHtml(?string $html): ?string
+    {
+        if ($html === null || trim($html) === '') {
+            return null;
+        }
+        $clean = HtmlSanitizer::clean($html, self::MAX_TEXT_CHARS);
+
+        return $clean !== '' ? $clean : null;
+    }
+
+    /**
      * Kommentar aus einer eingehenden E-Mail. Läuft unter dem Systembenutzer des Mail-Eingangs,
      * wird aber dem tatsächlichen Absender zugeschrieben: Antworten des Melders beenden „Warten auf Rückmeldung“
      * automatisch, Antworten von Agenten zählen als Agentenreaktion (Erstreaktion/SLA).
      *
      * @param array{user_id:?int,name:string,email:string,is_requester:bool,is_agent:bool} $author
+     * @param string|null $html Rohes HTML der Nachricht (Anzeige im Ticket), wird hier bereinigt
      * @return array<string,mixed> Kommentar
      */
-    public function addInboundMailComment(int $id, string $body, array $author, string $messageId, string $fromAddress = ''): array
+    public function addInboundMailComment(int $id, string $body, array $author, string $messageId, string $fromAddress = '', ?string $html = null): array
     {
         $this->currentUser->require('helpdesk.comment');
         $ticket = $this->get($id);
@@ -983,13 +1007,15 @@ final class TicketService
             $body = '(Leere Nachricht)';
         }
         $body = mb_substr($body, 0, 20000);
+        $bodyHtml = $this->mailHtml($html);
 
-        $commentId = $this->tickets->transaction(function () use ($ticket, $body, $author, $messageId, $fromAddress): int {
+        $commentId = $this->tickets->transaction(function () use ($ticket, $body, $bodyHtml, $author, $messageId, $fromAddress): int {
             $sender = trim($fromAddress) !== '' ? trim($fromAddress) : $author['email'];
             $commentId = $this->comments->create([
                 'ticket_id' => (int) $ticket['id'],
                 'type' => 'public',
                 'body' => $body,
+                'body_html' => $bodyHtml,
                 'author_user_id' => $author['user_id'],
                 'author_name' => mb_substr($author['name'] !== '' ? $author['name'] : $author['email'], 0, 150),
                 'is_requester' => $author['is_requester'] ? 1 : 0,

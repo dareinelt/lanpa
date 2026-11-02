@@ -17,12 +17,12 @@ $userId = (int) ($user['id'] ?? 0);
 </div>
 <div class="ticket-layout">
     <div>
-        <div class="card mb-4"><div class="card-header"><h2>Beschreibung</h2></div>        <div class="ticket-description"><?= rich_text($ticket['description'] ?? '') ?></div></div>
+        <div class="card mb-4"><div class="card-header"><h2>Beschreibung</h2></div>        <div class="ticket-description"><?= rich_body($ticket['description'] ?? '', $ticket['description_html'] ?? null) ?></div></div>
                 <?php if (!empty($ticket['resolution'])): ?><div class="card mb-4"><div class="card-header"><h2>Lösung</h2></div><div class="ticket-resolution"><?= rich_text($ticket['resolution']) ?></div></div><?php endif; ?>
         <div class="card" id="comments">
             <div class="card-header"><h2>Kommentare</h2><span class="text-muted text-sm"><?= count($comments) ?></span></div>
             <?php if ($comments === []): ?><p class="text-muted">Noch keine Kommentare.</p><?php else: ?>
-            <ul class="comment-list"><?php foreach ($comments as $c): $own = (int) ($c['author_user_id'] ?? 0) === $userId || !empty($c['is_requester']); ?><li class="comment<?= $own ? ' is-requester' : '' ?>" data-comment-type="<?= e($c['type'] ?? 'public') ?>"><div class="comment-head"><span class="comment-author"><?= e($c['author_name'] ?? 'system') ?></span><span class="text-muted"><?= fmt_datetime($c['created_at'] ?? null) ?></span><?php if (($c['source'] ?? '') === 'portal'): ?><?= badge('Portal', 'info') ?><?php elseif (($c['source'] ?? '') === 'email'): ?><?= badge('Per E-Mail', 'info') ?><?php endif; ?></div><div class="comment-body"><?= rich_text($c['body'] ?? '') ?></div></li><?php endforeach; ?></ul>
+            <ul class="comment-list"><?php foreach ($comments as $c): $own = (int) ($c['author_user_id'] ?? 0) === $userId || !empty($c['is_requester']); ?><li class="comment<?= $own ? ' is-requester' : '' ?>" data-comment-type="<?= e($c['type'] ?? 'public') ?>"><div class="comment-head"><span class="comment-author"><?= e($c['author_name'] ?? 'system') ?></span><span class="text-muted"><?= fmt_datetime($c['created_at'] ?? null) ?></span><?php if (($c['source'] ?? '') === 'portal'): ?><?= badge('Portal', 'info') ?><?php elseif (($c['source'] ?? '') === 'email'): ?><?= badge('Per E-Mail', 'info') ?><?php endif; ?></div><div class="comment-body"><?= rich_body($c['body'] ?? '', $c['body_html'] ?? null) ?></div></li><?php endforeach; ?></ul>
             <?php endif; ?>
             <?php if ($canComment): ?>
             <form method="post" action="/portal/tickets/<?= (int) $ticket['id'] ?>/comments" enctype="multipart/form-data" class="comment-form mt-4" data-hd-comment-form>

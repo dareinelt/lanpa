@@ -41,6 +41,12 @@ final class TicketMailIngestionService
     public const ACTION_IGNORED = 'ignored';
     public const ACTION_FAILED = 'failed';
 
+    /** Eingebettete Bilder (cid:) bis zu dieser Größe werden direkt als Data-URI ins HTML übernommen. */
+    private const MAX_INLINE_IMAGE_BYTES = 131072;
+
+    /** Bildtypen, die der HTML-Sanitizer als Data-URI zulässt. */
+    private const INLINE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
     public function __construct(
         private readonly Config $config,
         private readonly Logger $logger,
@@ -165,7 +171,7 @@ final class TicketMailIngestionService
             $author = $this->resolveAuthor($mail, $ticket);
 
             if ($ticket !== null) {
-                $comment = $this->ticketService->addInboundMailComment((int) $ticket['id'], $this->commentBody($mail), $author, $mail->messageId, $mail->fromAddress);
+                $comment = $this->ticketService->addInboundMailComment((int) $ticket['id'], $this->commentBody($mail), $author, $mail->messageId, $mail->fromAddress, $this->mailHtml($mail));
                 $targetId = (int) ($comment['ticket_id'] ?? $ticket['id']);
                 $this->storeAttachments($mail, $targetId, (int) ($comment['id'] ?? 0), $author);
                 $target = $this->tickets->find($targetId) ?? $ticket;
@@ -177,7 +183,7 @@ final class TicketMailIngestionService
                 return $this->finish($log, self::ACTION_IGNORED, null, null, 'Unbekannter Absender (allow_unknown_senders = false)');
             }
 
-            $created = $this->ticketService->create($this->ticketInput($mail, $author), 'email');
+            $created = $this->ticketService->create($this->ticketInput($mail, $author), 'email', $this->mailHtml($mail, $author));
             $this->storeAttachments($mail, (int) $created['id'], null, $author);
 
             return $this->finish($log, self::ACTION_CREATED, (int) $created['id'], null, sprintf('Neues Ticket von %s', $author['email']), true, (string) $created['number']);
@@ -299,7 +305,7 @@ final class TicketMailIngestionService
         if ($body === '') {
             $body = $mail->attachments !== [] ? '(Nur Anhänge, kein Text)' : $subject;
         }
-        $description = mb_substr($body, 0, 60000) . "\n\n— Eingegangen per E-Mail von " . ($author['name'] !== '' && $author['name'] !== $author['email'] ? $author['name'] . ' <' . $author['email'] . '>' : $author['email']);
+        $description = mb_substr($body, 0, 60000) . "\n\n— Eingegangen per E-Mail von " . self::authorLabel($author);
 
         $input = [
             'ticket_type_id' => (int) $type['id'],
@@ -331,6 +337,65 @@ final class TicketMailIngestionService
         }
 
         return $body;
+    }
+
+    /** Anzeigeform des Absenders für den Herkunftshinweis („Name <adresse>“ bzw. nur Adresse). */
+    private static function authorLabel(array $author): string
+    {
+        return $author['name'] !== '' && $author['name'] !== $author['email']
+            ? $author['name'] . ' <' . $author['email'] . '>'
+            : (string) $author['email'];
+    }
+
+    /**
+     * HTML-Fassung der Nachricht für die Anzeige im Ticket. Eingebettete Bilder (cid:) werden durch
+     * ihre Daten ersetzt, damit sie ohne Nachladen von Fremdservern erscheinen. Bei neuen Tickets
+     * ergänzt derselbe Herkunftshinweis wie in der Textfassung den Abschluss.
+     *
+     * @param array{name:string,email:string}|null $author
+     */
+    private function mailHtml(InboundMail $mail, ?array $author = null): ?string
+    {
+        $html = trim($mail->html);
+        if ($html === '') {
+            return null;
+        }
+        $html = $this->inlineCidImages($html, $mail->attachments);
+        if ($author !== null) {
+            $html .= "\n<p>— Eingegangen per E-Mail von " . htmlspecialchars(self::authorLabel($author), ENT_QUOTES, 'UTF-8') . '</p>';
+        }
+
+        return $html;
+    }
+
+    /**
+     * `cid:`-Verweise auf eingebettete Bilder durch Data-URIs ersetzen. Nur kleine Bilder
+     * (Signaturen, Symbole) werden direkt übernommen; größere bleiben als Anhang im Ticket.
+     *
+     * @param list<array{filename:string,mime_type:string,content:string,content_id:string}> $attachments
+     */
+    private function inlineCidImages(string $html, array $attachments): string
+    {
+        if (stripos($html, 'cid:') === false) {
+            return $html;
+        }
+        $images = [];
+        foreach ($attachments as $attachment) {
+            $contentId = mb_strtolower((string) ($attachment['content_id'] ?? ''));
+            if ($contentId === '' || !in_array($attachment['mime_type'], self::INLINE_IMAGE_TYPES, true) || strlen($attachment['content']) > self::MAX_INLINE_IMAGE_BYTES) {
+                continue;
+            }
+            $images[$contentId] = 'data:' . $attachment['mime_type'] . ';base64,' . base64_encode($attachment['content']);
+        }
+        if ($images === []) {
+            return $html;
+        }
+
+        return (string) preg_replace_callback('/cid:([^"\'\s>)]+)/i', static function (array $match) use ($images): string {
+            $key = mb_strtolower(trim(rawurldecode($match[1]), '<>'));
+
+            return $images[$key] ?? $match[0];
+        }, $html);
     }
 
     /** @param array{user_id:?int,name:string,email:string,is_agent:bool} $author */

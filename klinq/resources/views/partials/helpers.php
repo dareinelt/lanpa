@@ -159,6 +159,22 @@ if (!function_exists('rich_text')) {
     }
 }
 
+if (!function_exists('rich_body')) {
+    /**
+     * Nachrichtentext für die Anzeige: bevorzugt die beim Eingang bereinigte HTML-Fassung einer
+     * E-Mail, sonst den maskierten Klartext. Das HTML läuft beim Rendern erneut durch den
+     * Sanitizer, damit auch ältere Datensätze sicher bleiben.
+     */
+    function rich_body(?string $text, ?string $html = null): string
+    {
+        if ($html !== null && trim($html) !== '') {
+            return \App\Support\HtmlSanitizer::clean($html, 0);
+        }
+
+        return rich_text($text);
+    }
+}
+
 if (!function_exists('missing_labels')) {
     /** @param array<int,string>|string|null $missing */
     function missing_labels(array|string|null $missing): array

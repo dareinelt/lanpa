@@ -11,8 +11,9 @@ final class InboundMail
 {
     /**
      * @param array<int,string> $references Message-IDs aus „References“ (in Reihenfolge)
-     * @param list<array{filename:string,mime_type:string,content:string}> $attachments
+     * @param list<array{filename:string,mime_type:string,content:string,content_id:string}> $attachments
      * @param array<string,string> $headers Kleingeschriebene Kopfzeilen (letzter Wert je Name)
+     * @param string $html HTML-Teil der Nachricht, wie versendet (leer = nur Text vorhanden)
      */
     public function __construct(
         public readonly string $messageId,
@@ -25,7 +26,8 @@ final class InboundMail
         public readonly array $references,
         public readonly array $attachments,
         public readonly array $headers,
-        public readonly string $uid = ''
+        public readonly string $uid = '',
+        public readonly string $html = ''
     ) {}
 
     /** Alle referenzierten Message-IDs (In-Reply-To zuerst, dann References von neu nach alt). @return array<int,string> */
@@ -73,6 +75,6 @@ final class InboundMail
 
     public function withUid(string $uid): self
     {
-        return new self($this->messageId, $this->fromAddress, $this->fromName, $this->subject, $this->text, $this->date, $this->inReplyTo, $this->references, $this->attachments, $this->headers, $uid);
+        return new self($this->messageId, $this->fromAddress, $this->fromName, $this->subject, $this->text, $this->date, $this->inReplyTo, $this->references, $this->attachments, $this->headers, $uid, $this->html);
     }
 }

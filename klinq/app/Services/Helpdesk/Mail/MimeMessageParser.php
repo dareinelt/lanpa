@@ -8,7 +8,8 @@ namespace App\Services\Helpdesk\Mail;
  * Schlanker MIME-Parser für eingehende E-Mails (RFC 5322/2045–2047) ohne ext-imap/mailparse:
  * Kopfzeilen entfalten und dekodieren, Multipart rekursiv auflösen, Text bevorzugt aus text/plain
  * (sonst HTML zu Text), Transfer-Encodings und Zeichensätze nach UTF-8, Anhänge extrahieren,
- * zitierte Vorgängernachrichten abschneiden.
+ * zitierte Vorgängernachrichten abschneiden. Der HTML-Teil wird zusätzlich unverändert
+ * mitgeliefert, damit die Nachricht im Ticket so dargestellt werden kann, wie sie versendet wurde.
  */
 final class MimeMessageParser
 {
@@ -29,7 +30,7 @@ final class MimeMessageParser
             } elseif ($part['kind'] === 'html' && $html === '') {
                 $html = $part['content'];
             } elseif ($part['kind'] === 'attachment' && count($attachments) < self::MAX_ATTACHMENTS) {
-                $attachments[] = ['filename' => $part['filename'], 'mime_type' => $part['mime_type'], 'content' => $part['content']];
+                $attachments[] = ['filename' => $part['filename'], 'mime_type' => $part['mime_type'], 'content' => $part['content'], 'content_id' => $part['content_id']];
             }
         }
         if (trim($text) === '' && $html !== '') {
@@ -53,7 +54,9 @@ final class MimeMessageParser
             self::normalizeId($headers['in-reply-to'] ?? '') ?: null,
             self::parseIdList($headers['references'] ?? ''),
             $attachments,
-            $headers
+            $headers,
+            '',
+            trim($html)
         );
     }
 
@@ -199,7 +202,7 @@ final class MimeMessageParser
 
     /**
      * @param array<string,string> $headers
-     * @return list<array{kind:string,content:string,filename:string,mime_type:string}>
+     * @return list<array{kind:string,content:string,filename:string,mime_type:string,content_id:string}>
      */
     private function collectParts(array $headers, string $body, int $depth): array
     {
@@ -246,26 +249,37 @@ final class MimeMessageParser
             $inner = $this->parse($content);
             $summary = "Weitergeleitete Nachricht von {$inner->fromAddress}: {$inner->subject}\n\n{$inner->text}";
 
-            return [['kind' => 'text', 'content' => $summary, 'filename' => '', 'mime_type' => 'text/plain']];
+            return [['kind' => 'text', 'content' => $summary, 'filename' => '', 'mime_type' => 'text/plain', 'content_id' => '']];
         }
         if ($isAttachment || (!str_starts_with($mime, 'text/') && $mime !== '')) {
             if ($content === '') {
                 return [];
             }
 
-            return [['kind' => 'attachment', 'content' => $content, 'filename' => self::safeFilename($filename, $mime), 'mime_type' => $mime ?: 'application/octet-stream']];
+            return [['kind' => 'attachment', 'content' => $content, 'filename' => self::safeFilename($filename, $mime), 'mime_type' => $mime ?: 'application/octet-stream', 'content_id' => self::contentId($headers)]];
         }
 
         $charset = $params['charset'] ?? 'UTF-8';
         $text = self::toUtf8($content, $charset);
         if ($mime === 'text/html') {
-            return [['kind' => 'html', 'content' => $text, 'filename' => '', 'mime_type' => $mime]];
+            return [['kind' => 'html', 'content' => $text, 'filename' => '', 'mime_type' => $mime, 'content_id' => '']];
         }
         if ($mime === 'text/calendar' || $mime === 'text/x-vcard') {
-            return [['kind' => 'attachment', 'content' => $content, 'filename' => self::safeFilename($filename, $mime), 'mime_type' => $mime]];
+            return [['kind' => 'attachment', 'content' => $content, 'filename' => self::safeFilename($filename, $mime), 'mime_type' => $mime, 'content_id' => self::contentId($headers)]];
         }
 
-        return [['kind' => 'text', 'content' => $text, 'filename' => '', 'mime_type' => $mime]];
+        return [['kind' => 'text', 'content' => $text, 'filename' => '', 'mime_type' => $mime, 'content_id' => '']];
+    }
+
+    /**
+     * Content-ID eines Teils ohne spitze Klammern und in Kleinschreibung – so verweisen
+     * `cid:`-URLs im HTML-Teil auf eingebettete Bilder.
+     *
+     * @param array<string,string> $headers
+     */
+    private static function contentId(array $headers): string
+    {
+        return mb_strtolower(trim($headers['content-id'] ?? '', " \t<>"));
     }
 
     /** @return array<int,string> */

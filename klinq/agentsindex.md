@@ -82,7 +82,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–025), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–026), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -186,6 +186,11 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Eskalation, Auto-Close (`HELPDESK_AUTO_CLOSE_DAYS`) und ruft die Mailabholung.
 - **Mail-Ingestion ist idempotent**: eingehende Nachrichten werden über `ticket_inbound_mails` (Message-ID)
   verfolgt; Antworten werden per Ticketnummer/`In-Reply-To` dem richtigen Ticket als Kommentar zugeordnet.
+- **HTML-Inhalt eingehender Mails** wird 1:1 übernommen: `MimeMessageParser` liefert den HTML-Teil als
+  `InboundMail::$html`, `TicketService` speichert ihn bereinigt in `tickets.description_html` bzw.
+  `ticket_comments.body_html` (Migration 026). Klartext (`description`/`body`) bleibt maßgeblich für Suche,
+  Benachrichtigungen, API und Export; `rich_body()` in `resources/views/partials/helpers.php` rendert HTML,
+  wenn vorhanden, sonst wie bisher `rich_text()`. `cid:`-Bilder werden bis 128 KB als Data-URI eingebettet.
 - **Agenten-E-Mail aus dem Ticket** (`TicketMailService`): Melder immer, betroffene Person optional; jede Person
   bekommt eine eigene Nachricht (`MailClient::send()` kann nur einen Empfänger) mit gemeinsamer `Message-ID`.
   Threading-Kopfzeilen wie bei Benachrichtigungen, aber **kein** `Auto-Submitted` und **kein**

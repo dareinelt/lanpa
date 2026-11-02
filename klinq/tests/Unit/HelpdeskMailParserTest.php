@@ -134,6 +134,11 @@ final class HelpdeskMailParserTest extends TestCase
         $this->assertSame('screenshot.pdf', $mail->attachments[0]['filename']);
         $this->assertSame('application/pdf', $mail->attachments[0]['mime_type']);
         $this->assertSame($pdf, $mail->attachments[0]['content']);
+        $this->assertSame('', $mail->attachments[0]['content_id']);
+        // Der HTML-Teil bleibt unverändert erhalten, damit das Ticket ihn 1:1 anzeigen kann
+        $this->assertStringContains('<b>weiterhin</b>', $mail->html);
+        $this->assertStringContains('<p>Danke, das Problem besteht', $mail->html);
+        $this->assertFalse(str_contains($mail->html, 'Kabel prüfen'));
 
         // In-Reply-To zuerst, dann References von neu nach alt – ohne Duplikate
         $ids = $mail->referencedIds();
@@ -154,6 +159,34 @@ final class HelpdeskMailParserTest extends TestCase
         $this->assertStringContains('- Punkt 2', $mail->text);
         $this->assertFalse(str_contains($mail->text, 'alert'));
         $this->assertFalse(str_contains($mail->text, 'color'));
+        // Das HTML wird unverändert übernommen; bereinigt wird erst beim Speichern und Anzeigen
+        $this->assertStringContains('<p>Erste Zeile</p>', $mail->html);
+        $this->assertStringContains('<li>Punkt&nbsp;1</li>', $mail->html);
+        $this->assertStringContains('<script>alert(1)</script>', $mail->html);
+    }
+
+    public function testMultipartRelatedKeepsHtmlAndContentIdOfInlineImages(): void
+    {
+        $raw = "From: a@example.test\nSubject: Logo\nMessage-ID: <cid@example.test>\n"
+            . "Content-Type: multipart/related; boundary=rel\n\n"
+            . "--rel\nContent-Type: multipart/alternative; boundary=alt\n\n"
+            . "--alt\nContent-Type: text/plain; charset=utf-8\n\nBitte prüfen.\n"
+            . "--alt\nContent-Type: text/html; charset=utf-8\n\n"
+            . "<p>Bitte prüfen.</p><img src=\"cid:logo@example.test\" alt=\"Logo\">\n"
+            . "--alt--\n"
+            . "--rel\nContent-Type: image/png\nContent-Transfer-Encoding: base64\n"
+            . "Content-ID: <Logo@Example.test>\nContent-Disposition: inline; filename=\"logo.png\"\n\n"
+            . chunk_split(base64_encode('PNGDATA'))
+            . "--rel--\n";
+
+        $mail = $this->parser()->parse($raw);
+        $this->assertSame('Bitte prüfen.', $mail->text);
+        $this->assertStringContains('src="cid:logo@example.test"', $mail->html);
+        $this->assertCount(1, $mail->attachments);
+        $this->assertSame('logo.png', $mail->attachments[0]['filename']);
+        $this->assertSame('image/png', $mail->attachments[0]['mime_type']);
+        $this->assertSame('PNGDATA', $mail->attachments[0]['content']);
+        $this->assertSame('logo@example.test', $mail->attachments[0]['content_id']);
     }
 
     public function testRfc2231FilenameIsDecoded(): void

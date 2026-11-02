@@ -454,6 +454,10 @@ final class TicketService
             $input['description'] = $ticket['description'];
         }
         $data = $this->validate($input, $ticket, false);
+        // Browser-Textareas senden CRLF, gespeicherte E-Mail-Texte nutzen LF. Ohne
+        // Vereinheitlichung gälte jede Speicherung als Textänderung und würde die
+        // HTML-Fassung der Ursprungsmail verwerfen.
+        $ticket['description'] = self::normalizeNewlines((string) $ticket['description']);
         $priority = $this->resolvePriority($data, $ticket);
         if ($priority === null) {
             throw ValidationException::single('priority_id', 'Priorität ungültig.');
@@ -1454,6 +1458,12 @@ final class TicketService
         return $this->masterData->defaultPriority();
     }
 
+    /** Vereinheitlicht Zeilenenden: Browser-Textareas senden CRLF, E-Mail-Texte werden mit LF gespeichert. */
+    private static function normalizeNewlines(string $text): string
+    {
+        return str_replace(["\r\n", "\r"], "\n", $text);
+    }
+
     /**
      * @param array<string,mixed> $input
      * @param array<string,mixed>|null $existing
@@ -1485,6 +1495,7 @@ final class TicketService
             throw new ValidationException($v->errors());
         }
         $data = $v->validated();
+        $data['description'] = self::normalizeNewlines((string) $data['description']);
 
         if ($portal) {
             // Portal: gewählter Typ nur, wenn gültig – sonst Standard „incident“ bzw. „general“

@@ -196,6 +196,8 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   `ticket_comments.body_html` (Migration 026). Klartext (`description`/`body`) bleibt maßgeblich für Suche,
   Benachrichtigungen, API und Export; `rich_body()` in `resources/views/partials/helpers.php` rendert HTML,
   wenn vorhanden, sonst wie bisher `rich_text()`. `cid:`-Bilder werden bis 128 KB als Data-URI eingebettet.
+  Beim Bearbeiten normalisiert `TicketService` die Zeilenenden, damit ein unveränderter Text die
+  HTML-Fassung nicht verwirft.
 - **Agenten-E-Mail aus dem Ticket** (`TicketMailService`): Melder immer, betroffene Person optional; jede Person
   bekommt eine eigene Nachricht (`MailClient::send()` kann nur einen Empfänger) mit gemeinsamer `Message-ID`.
   Threading-Kopfzeilen wie bei Benachrichtigungen, aber **kein** `Auto-Submitted` und **kein**

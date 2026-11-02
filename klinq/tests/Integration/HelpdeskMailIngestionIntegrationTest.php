@@ -224,6 +224,56 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         $this->assertNull($ticket['description_html']);
     }
 
+    /**
+     * Ein Bearbeiten ohne echte Textänderung darf die HTML-Fassung nicht verwerfen:
+     * Browser-Textareas senden CRLF, der eingegangene Klartext enthält LF.
+     */
+    public function testSavingUnchangedDescriptionKeepsHtml(): void
+    {
+        $result = $this->ingestion->ingestRaw($this->htmlMail(
+            'Gast Nutzer <gast@extern.test>',
+            'Drucker streikt',
+            "Zeile eins\nZeile zwei",
+            '<p>Zeile eins<br>Zeile zwei</p>'
+        ), '33');
+        $ticket = $this->c->get(TicketRepository::class)->find((int) $result['ticket_id']);
+        $this->assertNotNull($ticket);
+
+        $submitted = str_replace("\n", "\r\n", (string) $ticket['description']);
+        $updated = $this->c->get(TicketService::class)->update((int) $ticket['id'], [
+            'subject' => 'Drucker streikt weiterhin',
+            'description' => $submitted,
+            'ticket_type_id' => (int) $ticket['ticket_type_id'],
+        ], (int) $ticket['version']);
+
+        $this->assertSame('Drucker streikt weiterhin', $updated['subject']);
+        $this->assertNotNull($updated['description_html']);
+        $this->assertStringContains('<p>Zeile eins<br>Zeile zwei</p>', (string) $updated['description_html']);
+        $this->assertFalse(str_contains((string) $updated['description'], "\r"));
+    }
+
+    /** Eine inhaltlich geänderte Beschreibung ersetzt weiterhin die HTML-Fassung. */
+    public function testChangingDescriptionDropsHtml(): void
+    {
+        $result = $this->ingestion->ingestRaw($this->htmlMail(
+            'Gast Nutzer <gast@extern.test>',
+            'Drucker streikt',
+            'Bitte prüfen.',
+            '<p>Bitte <b>prüfen</b>.</p>'
+        ), '34');
+        $ticket = $this->c->get(TicketRepository::class)->find((int) $result['ticket_id']);
+        $this->assertNotNull($ticket);
+
+        $updated = $this->c->get(TicketService::class)->update((int) $ticket['id'], [
+            'subject' => (string) $ticket['subject'],
+            'description' => 'Bitte dringend prüfen.',
+            'ticket_type_id' => (int) $ticket['ticket_type_id'],
+        ], (int) $ticket['version']);
+
+        $this->assertNull($updated['description_html']);
+        $this->assertSame('Bitte dringend prüfen.', $updated['description']);
+    }
+
     // ------------------------------------------------------------------ Threading
 
     public function testReplyIsThreadedBySubjectTicketNumber(): void

@@ -747,7 +747,7 @@ Der MIME-Parser liefert neben dem Klartext auch den HTML-Teil (`InboundMail::$ht
 - **Bereinigung**: Der HTML-Teil läuft beim Speichern und beim Rendern durch `App\Support\HtmlSanitizer` (Allowlist, Skripte und Ereignisattribute entfernt, `style` gefiltert, Links mit `rel="noopener noreferrer"`).
 - **Eingebettete Bilder** (`cid:`-Verweise) ersetzt der Eingang durch Data-URIs, sofern das Bild ein PNG/JPEG/GIF/WebP bis 128 KB ist (`TicketMailIngestionService::inlineCidImages()`); größere Bilder bleiben als Anhang am Ticket. Fremde Bild-URLs werden von der CSP (`img-src 'self' data: blob:`) blockiert – Bilder werden also nie von Fremdservern nachgeladen.
 - **Herkunftshinweis**: Bei neu eröffneten Tickets ergänzt derselbe Hinweis wie im Klartext („— Eingegangen per E-Mail von …“) den HTML-Abschluss.
-- Eine von Hand geänderte Beschreibung ersetzt die HTML-Fassung (`description_html` wird geleert), damit keine veraltete Darstellung stehen bleibt.
+- Eine von Hand geänderte Beschreibung ersetzt die HTML-Fassung (`description_html` wird geleert), damit keine veraltete Darstellung stehen bleibt. Reine Zeilenende-Unterschiede (Browser-Textareas senden CRLF, Mails werden mit LF gespeichert) gelten dabei nicht als Änderung; `TicketService` vereinheitlicht die Zeilenenden vor dem Vergleich.
 
 ### Abholung
 

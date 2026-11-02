@@ -9,19 +9,35 @@
  * mit dem Ticket bzw. Kommentar gespeichert werden.
  *
  * Manche Werkzeuge legen Screenshots nur als Text in die Zwischenablage (data:image/…
- * oder rohes Base64). Auch das wird erkannt und als Bild übernommen.
+ * oder rohes Base64). Auch das wird erkannt und als Bild übernommen. Damit nie ein
+ * langer Base64-String im Ticket landet, gilt zusätzlich: Bilddaten werden anhand ihres
+ * Bildkopfs geprüft, Zeilenumbrüche innerhalb der Daten toleriert und alle Bilddaten –
+ * auch nachträglich ins Feld gelangte (z. B. per Drag & Drop) – beim Bearbeiten und
+ * spätestens beim Absenden durch eine Marke ersetzt.
  */
 (function () {
     "use strict";
 
-    const IMAGE_MARKER = /!\[([^\]\r\n]{0,150})\]\(data:image\/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=]+)\)/g;
-    const DATA_URI = /data:image\/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=]+)/gi;
-    const RAW_BASE64 = /((?:iVBORw0KGgo|\/9j\/|R0lGOD|UklGR)[A-Za-z0-9+/=]{80,})/g;
     const TOKEN = /\[Bild (\d+)\]/g;
     const MAX_EDGE = 1400;
     const MAX_BYTES = 900 * 1024;
-    const ACCEPTED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
     const MAX_FILES = 5;
+    const RENDERABLE = ["png", "jpeg", "gif", "webp"];
+
+    /** Zusätzliche Media-Type-Parameter zwischen Typ und `;base64,` (z. B. `;charset=utf-8`). */
+    const IMAGE_PARAMS = "(?:;[a-z0-9!#$&^_.+-]+=[^,;()\\s]*)*";
+
+    /**
+     * Bilddaten im Text: Markdown-Marke, allein stehende Daten-URI oder rohes Base64 mit
+     * bekanntem Bildkopf. Zusätzliche Parameter, Groß-/Kleinschreibung und Zeilenumbrüche
+     * innerhalb der Base64-Daten sind erlaubt.
+     */
+    const IMAGE_DATA_SOURCE = "!\\[[^\\]\\r\\n]{0,150}\\]\\(\\s*data:image\\/([a-z0-9.+-]+)" + IMAGE_PARAMS + ";base64,([A-Za-z0-9+/=\\s]{16,})\\s*\\)"
+        + "|(?:!\\[[^\\]\\r\\n]{0,150}\\]\\(\\s*)?data:image\\/([a-z0-9.+-]+)" + IMAGE_PARAMS + ";base64,([A-Za-z0-9+/=]{64,})"
+        + "|((?:iVBORw0KGgo|\\/9j\\/|R0lGOD|UklGR)[A-Za-z0-9+/=\\s]{160,})";
+
+    /** Grobe Vorprüfung, ob ein Text überhaupt Bilddaten enthält. */
+    const IMAGE_HINT = /data:image\/|(?:iVBORw0KGgo|\/9j\/|R0lGOD|UklGR)[A-Za-z0-9+/=\s]{160,}/i;
 
     function byteLength(text) {
         return new Blob([text]).size;
@@ -39,7 +55,7 @@
     function storeFor(textarea) {
         let store = stores.get(textarea);
         if (!store) {
-            store = { counter: 0, images: new Map() };
+            store = { counter: 0, images: new Map(), note: "" };
             stores.set(textarea, store);
         }
         return store;
@@ -93,86 +109,162 @@
         img.src = url;
     }
 
-    function dataUriToBlob(uri) {
-        const comma = uri.indexOf(",");
-        const mime = uri.slice(5, comma).split(";")[0] || "image/png";
-        const binary = atob(uri.slice(comma + 1));
+    /** Base64-Daten einer Daten-URI in Bytes umwandeln; null bei ungültigen Daten. */
+    function base64Bytes(payload) {
+        const clean = String(payload || "").replace(/\s+/g, "");
+        if (clean === "" || /[^A-Za-z0-9+/=]/.test(clean)) {
+            return null;
+        }
+        const padded = clean + "=".repeat((4 - (clean.length % 4)) % 4);
+        let binary;
+        try {
+            binary = atob(padded);
+        } catch (e) {
+            return null;
+        }
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i += 1) {
             bytes[i] = binary.charCodeAt(i);
         }
-        return new Blob([bytes], { type: mime });
+        return bytes;
     }
 
-    function dataUriType(uri) {
-        const match = /^data:image\/(png|jpe?g|gif|webp);base64,/i.exec(uri);
-        return match ? match[1].toLowerCase() : "";
-    }
-
-    /** Base64-Text ohne data:-Präfix (z. B. aus einem Screenshot-Werkzeug) erkennen. */
-    function rawImageDataUri(raw) {
-        if (raw.indexOf("iVBORw0KGgo") === 0) { return "data:image/png;base64," + raw; }
-        if (raw.indexOf("/9j/") === 0) { return "data:image/jpeg;base64," + raw; }
-        if (raw.indexOf("R0lGOD") === 0) { return "data:image/gif;base64," + raw; }
-        if (raw.indexOf("UklGR") === 0) { return "data:image/webp;base64," + raw; }
+    /** Bildtyp anhand der ersten Bytes bestimmen (unabhängig vom angegebenen Media-Type). */
+    function sniffImageType(bytes) {
+        if (!bytes || bytes.length < 12) {
+            return "";
+        }
+        if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) { return "png"; }
+        if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) { return "jpeg"; }
+        if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) { return "gif"; }
+        if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+            && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) { return "webp"; }
         return "";
     }
 
-    /** Bilder aus Text/HTML der Zwischenablage einsammeln (ohne Duplikate). */
-    function clipboardImages(clipboard) {
+    /** Daten-URI aus einem Treffer des Bildmusters – nur wenn die Daten ein echtes Bild sind. */
+    function imageUriFromMatch(match) {
+        const payload = match[2] || match[4] || match[5] || "";
+        const type = sniffImageType(base64Bytes(payload));
+        if (RENDERABLE.indexOf(type) === -1) {
+            return "";
+        }
+        return "data:image/" + type + ";base64," + payload.replace(/\s+/g, "");
+    }
+
+    function dataUriToBlob(uri) {
+        const comma = uri.indexOf(",");
+        if (comma === -1) {
+            return null;
+        }
+        const mime = uri.slice(5, comma).split(";")[0] || "image/png";
+        const bytes = base64Bytes(uri.slice(comma + 1));
+        return bytes ? new Blob([bytes], { type: mime }) : null;
+    }
+
+    function imageDataRegex() {
+        return new RegExp(IMAGE_DATA_SOURCE, "gi");
+    }
+
+    /** Alle auswertbaren Bilddaten eines Textes einsammeln (ohne Duplikate). */
+    function collectImageUris(text) {
         const found = [];
-        const add = function (uri) {
-            if (uri && dataUriType(uri) && found.indexOf(uri) === -1) {
-                found.push(uri);
-            }
-        };
-        if (typeof clipboard.getData !== "function") {
+        if (!text) {
             return found;
         }
-        ["text/plain", "text/html"].forEach(function (type) {
-            const raw = clipboard.getData(type) || "";
-            DATA_URI.lastIndex = 0;
-            let match;
-            while ((match = DATA_URI.exec(raw)) !== null) {
-                add("data:image/" + match[1].toLowerCase() + ";base64," + match[2]);
+        const regex = imageDataRegex();
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            const uri = imageUriFromMatch(match);
+            if (uri !== "" && found.indexOf(uri) === -1) {
+                found.push(uri);
             }
-            if (type === "text/plain") {
-                RAW_BASE64.lastIndex = 0;
-                while ((match = RAW_BASE64.exec(raw)) !== null) {
-                    add(rawImageDataUri(match[1]));
-                }
-            }
-        });
+        }
         return found;
+    }
+
+    /** Inhalt der Zwischenablage zu einem Typ; leer, wenn der Browser ihn nicht liefert. */
+    function clipboardData(clipboard, type) {
+        if (!clipboard || typeof clipboard.getData !== "function") {
+            return "";
+        }
+        return clipboard.getData(type) || "";
+    }
+
+    /**
+     * Bilddaten, die als Text im Feld stehen, durch Marken ersetzen. Das greift auch für
+     * Daten, die ohne paste-Ereignis ins Feld gelangt sind (Drag & Drop, Autofill) und
+     * verhindert, dass ein langer Base64-String gespeichert wird.
+     */
+    function absorbStrayImages(textarea) {
+        const value = textarea.value;
+        if (!value || !IMAGE_HINT.test(value)) {
+            return;
+        }
+        const store = storeFor(textarea);
+        const regex = imageDataRegex();
+        let output = "";
+        let last = 0;
+        let changed = false;
+        let match;
+        while ((match = regex.exec(value)) !== null) {
+            const uri = imageUriFromMatch(match);
+            if (uri === "") {
+                continue;
+            }
+            const token = nextToken(textarea, store);
+            store.images.set(token, uri);
+            output += value.slice(last, match.index) + token;
+            last = match.index + match[0].length;
+            changed = true;
+        }
+        if (!changed) {
+            return;
+        }
+        textarea.value = output + value.slice(last);
+        store.note = "";
+    }
+
+    /** Nicht auswertbare Bilddaten aus dem Feld entfernen; true, wenn etwas entfernt wurde. */
+    function purgeImageData(textarea) {
+        const value = textarea.value;
+        if (!value || !IMAGE_HINT.test(value)) {
+            return false;
+        }
+        const regex = imageDataRegex();
+        let output = "";
+        let last = 0;
+        let removed = false;
+        let match;
+        while ((match = regex.exec(value)) !== null) {
+            output += value.slice(last, match.index);
+            last = match.index + match[0].length;
+            removed = true;
+        }
+        if (!removed) {
+            return false;
+        }
+        textarea.value = output + value.slice(last);
+        return true;
+    }
+
+    function setNote(textarea, message) {
+        storeFor(textarea).note = message;
+        renderPreview(textarea);
     }
 
     /** Bild als Marke einfügen; die Daten bleiben in der Map und damit unsichtbar. */
     function addImage(textarea, dataUri) {
         const store = storeFor(textarea);
+        store.note = "";
         const token = nextToken(textarea, store);
         store.images.set(token, dataUri);
         insertAtCaret(textarea, token);
     }
 
-    /** Bereits gespeicherte Markdown-Bilder beim Laden durch Marken ersetzen. */
-    function collapseImages(textarea) {
-        const store = storeFor(textarea);
-        IMAGE_MARKER.lastIndex = 0;
-        const hasImages = IMAGE_MARKER.test(textarea.value);
-        IMAGE_MARKER.lastIndex = 0;
-        if (!hasImages) {
-            return;
-        }
-        textarea.value = textarea.value.replace(IMAGE_MARKER, function (match, alt, type, data) {
-            const token = nextToken(textarea, store);
-            store.images.set(token, "data:image/" + type + ";base64," + data);
-            return token;
-        });
-        IMAGE_MARKER.lastIndex = 0;
-    }
-
     /** Text mit vollständigen Bilddaten (Marken ersetzt). */
     function expandedValue(textarea) {
+        absorbStrayImages(textarea);
         const store = stores.get(textarea);
         let value = textarea.value;
         if (!store) {
@@ -242,8 +334,14 @@
             }
         });
         target.textContent = "";
+        if (store.note) {
+            const note = document.createElement("p");
+            note.className = "hd-media-note";
+            note.textContent = store.note;
+            target.appendChild(note);
+        }
         if (tokens.length === 0) {
-            target.hidden = true;
+            target.hidden = store.note === "";
             return;
         }
         tokens.forEach(function (token, index) {
@@ -274,58 +372,117 @@
         target.hidden = false;
     }
 
+    function isImageFile(type) {
+        return typeof type === "string" && type.indexOf("image/") === 0 && type !== "image/svg+xml";
+    }
+
+    /** Bilddateien aus der Zwischenablage (auch Browser ohne items-Unterstützung). */
+    function clipboardFiles(clipboard) {
+        const files = [];
+        const add = function (file) {
+            if (file && isImageFile(file.type) && files.indexOf(file) === -1) {
+                files.push(file);
+            }
+        };
+        if (clipboard.items) {
+            for (let i = 0; i < clipboard.items.length; i += 1) {
+                const item = clipboard.items[i];
+                if (item.kind === "file" && isImageFile(item.type)) {
+                    add(item.getAsFile());
+                }
+            }
+        }
+        if (files.length === 0 && clipboard.files) {
+            for (let i = 0; i < clipboard.files.length; i += 1) {
+                add(clipboard.files[i]);
+            }
+        }
+        return files;
+    }
+
+    /** Bild verkleinern und als Marke übernehmen; scheitert das, bleibt ein Hinweis. */
+    function acceptBlob(textarea, blob) {
+        downscale(blob, function (dataUri) {
+            if (dataUri) {
+                addImage(textarea, dataUri);
+                return;
+            }
+            setNote(textarea, "Das eingefügte Bild konnte nicht übernommen werden. Bitte als Datei anhängen.");
+        });
+    }
+
+    /** Bereits geprüfte Daten-URI übernehmen (Verkleinerung, sonst unverändert speichern). */
+    function acceptUri(textarea, uri) {
+        let blob = null;
+        try {
+            blob = dataUriToBlob(uri);
+        } catch (e) {
+            blob = null;
+        }
+        if (!blob) {
+            addImage(textarea, uri);
+            return;
+        }
+        downscale(blob, function (dataUri) {
+            addImage(textarea, dataUri || uri);
+        });
+    }
+
     function handlePaste(event, textarea) {
         const clipboard = event.clipboardData;
         if (!clipboard) { return; }
 
-        const files = [];
-        if (clipboard.items) {
-            for (let i = 0; i < clipboard.items.length; i++) {
-                const item = clipboard.items[i];
-                if (item.kind === "file" && ACCEPTED.indexOf(item.type) !== -1) {
-                    const file = item.getAsFile();
-                    if (file) { files.push(file); }
-                }
-            }
-        }
-
+        const files = clipboardFiles(clipboard);
         if (files.length > 0) {
             event.preventDefault();
             files.forEach(function (file) {
-                downscale(file, function (dataUri) {
-                    if (dataUri) { addImage(textarea, dataUri); }
-                });
+                acceptBlob(textarea, file);
             });
             return;
         }
 
         // Fallback: Screenshot liegt nur als Text (data:image/… oder rohes Base64) vor.
-        const images = clipboardImages(clipboard);
-        if (images.length === 0) { return; }
-        event.preventDefault();
-        images.forEach(function (uri) {
-            let blob = null;
-            try {
-                blob = dataUriToBlob(uri);
-            } catch (e) {
-                blob = null;
-            }
-            if (!blob) {
-                addImage(textarea, uri);
+        const text = clipboardData(clipboard, "text/plain");
+        const html = clipboardData(clipboard, "text/html");
+        const images = collectImageUris(text);
+        // Manche Werkzeuge liefern die Daten nur in der HTML-Variante der Zwischenablage.
+        const fromHtml = images.length === 0 ? collectImageUris(html) : [];
+        if (images.length === 0 && fromHtml.length === 0) {
+            if (!IMAGE_HINT.test(text) && !IMAGE_HINT.test(html)) {
                 return;
             }
-            downscale(blob, function (dataUri) {
-                addImage(textarea, dataUri || uri);
-            });
+            event.preventDefault();
+            setNote(textarea, "Das Bild aus der Zwischenablage konnte nicht gelesen werden. Bitte als Datei anhängen.");
+            return;
+        }
+        event.preventDefault();
+
+        // Begleittext erhalten, die Bilddaten selbst aber nie als Text einfügen.
+        const rest = text.replace(imageDataRegex(), "\n").replace(/[ \t]+\n/g, "\n").trim();
+        if (rest !== "") {
+            insertAtCaret(textarea, rest);
+        }
+        images.concat(fromHtml).forEach(function (uri) {
+            acceptUri(textarea, uri);
         });
+        absorbStrayImages(textarea);
+        if (purgeImageData(textarea)) {
+            setNote(textarea, "Nicht lesbare Bilddaten wurden nicht übernommen. Bitte das Bild als Datei anhängen.");
+        }
     }
 
     function setupTextarea(textarea) {
-        collapseImages(textarea);
+        absorbStrayImages(textarea);
         textarea.addEventListener("paste", function (event) {
             handlePaste(event, textarea);
         });
         textarea.addEventListener("input", function () {
+            absorbStrayImages(textarea);
+            renderPreview(textarea);
+        });
+        // Drag & Drop und Autofill lösen kein paste-Ereignis aus.
+        textarea.addEventListener("blur", function () {
+            absorbStrayImages(textarea);
             renderPreview(textarea);
         });
         const form = textarea.form;

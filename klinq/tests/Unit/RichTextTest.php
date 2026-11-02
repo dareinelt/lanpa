@@ -46,4 +46,65 @@ final class RichTextTest extends TestCase
         $this->assertStringContains('<img class="text-image" src="data:image/png;base64,' . $data . '"', $html);
         $this->assertSame('Text [Beleg]', RichText::toPlain('Text ![Beleg](data:image/png;base64,' . $data . ')', '[Beleg]'));
     }
+
+    public function testToHtmlAcceptsLineBreaksInsideBase64Data(): void
+    {
+        $data = str_repeat('A', 20) . "\n" . str_repeat('B', 20);
+        $html = RichText::toHtml("Text ![Beleg](data:image/jpeg;base64,{$data})");
+
+        $this->assertSame(
+            'Text <img class="text-image" src="data:image/jpeg;base64,' . str_repeat('A', 20) . str_repeat('B', 20)
+            . '" alt="Beleg" loading="lazy">',
+            $html
+        );
+    }
+
+    public function testToHtmlAcceptsAdditionalMediaTypeParameters(): void
+    {
+        $data = str_repeat('C', 24);
+        $html = RichText::toHtml('Text ![Beleg](data:image/PNG;charset=utf-8;base64,' . $data . ')');
+
+        $this->assertStringContains('<img class="text-image" src="data:image/png;base64,' . $data . '"', $html);
+    }
+
+    public function testToHtmlRendersDataUriWithoutMarkdownMark(): void
+    {
+        $data = str_repeat('D', 80);
+        $html = RichText::toHtml('Vorher data:image/png;base64,' . $data . ' Nachher');
+
+        $this->assertSame(
+            'Vorher <img class="text-image" src="data:image/png;base64,' . $data . '" alt="Bild" loading="lazy"> Nachher',
+            $html
+        );
+    }
+
+    public function testToHtmlRendersRawBase64WithImageHeader(): void
+    {
+        $raw = 'iVBORw0KGgo' . str_repeat('E', 200);
+        $html = RichText::toHtml('Screenshot: ' . $raw);
+
+        $this->assertStringContains('<img class="text-image" src="data:image/png;base64,' . $raw . '" alt="Bild"', $html);
+    }
+
+    public function testToPlainReplacesImageDataWithoutMarkdownMark(): void
+    {
+        $data = str_repeat('F', 80);
+        $raw = '/9j/' . str_repeat('G', 200);
+
+        $this->assertSame('[Bild]', RichText::toPlain('data:image/png;base64,' . $data));
+        $this->assertSame('Foto [Bild]', RichText::toPlain('Foto ' . $raw));
+    }
+
+    public function testToHtmlEscapesAlternativeText(): void
+    {
+        $data = str_repeat('H', 24);
+        $html = RichText::toHtml('![<b>"x"</b>](data:image/png;base64,' . $data . ')');
+
+        $this->assertStringContains('alt="&lt;b&gt;&quot;x&quot;&lt;/b&gt;"', $html);
+    }
+
+    public function testToHtmlLeavesShortBase64LikeTextAlone(): void
+    {
+        $this->assertSame('Kein Bild: data:image/png;base64,AAAA', RichText::toHtml('Kein Bild: data:image/png;base64,AAAA'));
+    }
 }

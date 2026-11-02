@@ -24,6 +24,7 @@
         let active = -1;
         let controller = null;
         let createTerm = "";
+        let creating = false;
 
         // Der Dialog steht im Formular und damit ggf. in einem ausgeblendeten
         // Assistenten-Schritt; als Modal funktioniert er nur direkt im Body.
@@ -146,7 +147,7 @@
 
         /** Unbekannte Person anlegen und direkt als Auswahl uebernehmen. */
         function submitCreate() {
-            if (!createDialog || !createUrl) { return; }
+            if (!createDialog || !createUrl || creating) { return; }
             const email = createEmail ? createEmail.value.trim() : "";
             const phone = createPhone ? createPhone.value.trim() : "";
             if (email === "" && phone === "") {
@@ -158,6 +159,7 @@
                 return;
             }
             showCreateError("");
+            creating = true;
             if (createSubmit) { createSubmit.disabled = true; }
             const payload = { name: createTerm, email: email, phone: phone, keep: createKeep ? createKeep.checked : true };
             const request = window.AppUI && window.AppUI.api
@@ -182,7 +184,10 @@
                 .catch(function (error) {
                     showCreateError((error && error.message) || "Person konnte nicht angelegt werden.");
                 })
-                .then(function () { if (createSubmit) { createSubmit.disabled = false; } });
+                .then(function () {
+                    creating = false;
+                    if (createSubmit) { createSubmit.disabled = false; }
+                });
         }
 
         if (createDialog) {

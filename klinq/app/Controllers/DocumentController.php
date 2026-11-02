@@ -14,7 +14,10 @@ use App\Services\DocumentService;
 /** Auslieferung und Löschung von Dokumenten – immer mit Rechteprüfung je Objekttyp. */
 final class DocumentController extends BaseController
 {
-    /** Objekttyp → Recht, das zum Ansehen bzw. Löschen nötig ist. */
+    /**
+     * Objekttyp → Recht, das zum Ansehen bzw. Löschen nötig ist. Typen ohne Eintrag (Tickets, Aufgaben,
+     * Wissensartikel) haben eigene Routen mit Objektprüfung und sind hier gesperrt.
+     */
     private const PERMISSIONS = [
         'asset' => ['assets.view', 'assets.manage'],
         'movement' => ['movements.view', 'movements.complete'],
@@ -36,8 +39,8 @@ final class DocumentController extends BaseController
 
     public function show(Request $request): Response
     {
-        $doc = $this->findOrFail($this->documents->find($request->paramInt('id')), 'Dokument nicht gefunden');
-        $this->currentUser->require(self::PERMISSIONS[$doc['entity_type']][0] ?? 'documents.view');
+        $doc = $this->findDocument($request);
+        $this->currentUser->require(self::PERMISSIONS[$doc['entity_type']][0]);
         $path = $this->service->path($doc);
         if (!is_file($path)) {
             return $this->render('errors.error', ['status' => 404, 'message' => 'Die Datei ist auf dem Server nicht mehr vorhanden.'], 404);
@@ -49,8 +52,8 @@ final class DocumentController extends BaseController
 
     public function delete(Request $request): Response
     {
-        $doc = $this->findOrFail($this->documents->find($request->paramInt('id')), 'Dokument nicht gefunden');
-        $this->currentUser->require(self::PERMISSIONS[$doc['entity_type']][1] ?? 'documents.manage');
+        $doc = $this->findDocument($request);
+        $this->currentUser->require(self::PERMISSIONS[$doc['entity_type']][1]);
         $this->service->delete($doc);
         if ($request->wantsJson()) {
             return $this->json(['ok' => true]);
@@ -58,5 +61,20 @@ final class DocumentController extends BaseController
         $this->flash('success', 'Dokument „' . $doc['original_name'] . '“ wurde gelöscht.');
 
         return $this->redirect($this->backUrl($request, '/dashboard'));
+    }
+
+    /**
+     * Lädt das Dokument; Typen ohne Rechteeintrag werden wie nicht vorhanden behandelt.
+     *
+     * @return array<string,mixed>
+     */
+    private function findDocument(Request $request): array
+    {
+        $doc = $this->documents->find($request->paramInt('id'));
+        if ($doc !== null && !isset(self::PERMISSIONS[$doc['entity_type']])) {
+            $doc = null;
+        }
+
+        return $this->findOrFail($doc, 'Dokument nicht gefunden');
     }
 }

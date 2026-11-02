@@ -194,6 +194,19 @@ final class HelpdeskAutomationIntegrationTest extends DatabaseTestCase
         $this->assertFalse(in_array((int) $draft['id'], $ids, true));
     }
 
+    public function testKnowledgeSearchIgnoresEmbeddedImageData(): void
+    {
+        $kb = $this->c->get(KnowledgeBaseService::class);
+        $image = '![Screenshot](data:image/png;base64,' . str_repeat('QUJDWllY', 16) . ')';
+        $article = $kb->create(['title' => 'Bildartikel', 'body' => "Anleitung mit Bild\n\n" . $image, 'status' => 'published', 'visibility' => 'internal']);
+        $repository = $this->c->get(KnowledgeBaseRepository::class);
+
+        $ids = static fn (array $rows): array => array_map(static fn (array $r): int => (int) $r['id'], $rows);
+        $this->assertFalse(in_array((int) $article['id'], $ids($repository->search(['q' => 'DWllYQUJD'], 'updated_at', 'desc', 20, 0)), true), 'Bilddaten sind kein Suchtreffer');
+        $this->assertContains((int) $article['id'], $ids($repository->search(['q' => 'Anleitung mit Bild'], 'updated_at', 'desc', 20, 0)));
+        $this->assertStringContains('base64', (string) $article['body'], 'Der Artikeltext behält das Bild');
+    }
+
     // ------------------------------------------------------------------ Berichte
 
     public function testReportOverviewAndCsvExport(): void

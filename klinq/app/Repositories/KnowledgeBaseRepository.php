@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Repositories;
 
+use App\Support\RichText;
+
 /** Wissensdatenbank-Artikel inkl. Suche und Ticketverknüpfungen. */
 final class KnowledgeBaseRepository extends BaseRepository
 {
@@ -92,7 +94,7 @@ final class KnowledgeBaseRepository extends BaseRepository
         }
         $q = trim((string) ($filters['q'] ?? ''));
         if ($q !== '') {
-            $where[] = '(a.title LIKE :q OR a.summary LIKE :q OR a.body LIKE :q OR EXISTS (SELECT 1 FROM knowledge_article_tags kt JOIN ticket_tags tg ON tg.id = kt.tag_id WHERE kt.article_id = a.id AND tg.name LIKE :q))';
+            $where[] = '(a.title LIKE :q OR a.summary LIKE :q OR a.body_plain LIKE :q OR EXISTS (SELECT 1 FROM knowledge_article_tags kt JOIN ticket_tags tg ON tg.id = kt.tag_id WHERE kt.article_id = a.id AND tg.name LIKE :q))';
             $params['q'] = $this->like($q);
         }
 
@@ -133,13 +135,29 @@ final class KnowledgeBaseRepository extends BaseRepository
     /** @param array<string,mixed> $data */
     public function create(array $data): int
     {
-        return $this->insertRow('knowledge_articles', $data);
+        return $this->insertRow('knowledge_articles', $this->withSearchText($data));
     }
 
     /** @param array<string,mixed> $data */
     public function update(int $id, array $data): void
     {
-        $this->updateRow('knowledge_articles', $id, $data);
+        $this->updateRow('knowledge_articles', $id, $this->withSearchText($data));
+    }
+
+    /**
+     * Ergänzt die Suchfassung des Artikeltexts: ohne eingebettete Base64-Bilder, deren Daten
+     * sonst bei kurzen Suchbegriffen zufällig treffen.
+     *
+     * @param array<string,mixed> $data
+     * @return array<string,mixed>
+     */
+    private function withSearchText(array $data): array
+    {
+        if (array_key_exists('body', $data)) {
+            $data['body_plain'] = $data['body'] !== null ? RichText::toPlain((string) $data['body'], ' ') : null;
+        }
+
+        return $data;
     }
 
     public function incrementViews(int $id): void

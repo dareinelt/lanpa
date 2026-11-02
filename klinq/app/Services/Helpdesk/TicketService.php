@@ -623,10 +623,16 @@ final class TicketService
         // abschließt, wird eingetragen – auch wenn zuvor automatisch der 2nd Level des Tages
         // zugewiesen wurde. Automatische Wechsel (Scheduler, Melder-Wiedereröffnung,
         // Umwandlung in eine Aufgabe) laufen mit $system = true und ändern nichts.
+        // „In Bearbeitung“ gilt nur beim Annehmen (aus „neu“/„offen“) oder ohne Bearbeiter als
+        // Übernahme – das Fortsetzen nach einer Pausierung oder eine Wiedereröffnung lässt die
+        // bestehende Zuweisung unverändert.
         $actorId = !$system && $this->isAgent() ? $this->currentUser->id() : null;
         $assignedToActor = false;
+        $takesTicket = in_array($toCode, [TicketWorkflowService::RESOLVED, TicketWorkflowService::CLOSED], true)
+            || ($toCode === TicketWorkflowService::IN_PROGRESS
+                && (in_array($fromCode, [TicketWorkflowService::NEW, TicketWorkflowService::OPEN], true) || empty($ticket['assignee_user_id'])));
         if ($actorId !== null
-            && in_array($toCode, [TicketWorkflowService::IN_PROGRESS, TicketWorkflowService::RESOLVED, TicketWorkflowService::CLOSED], true)
+            && $takesTicket
             && (int) ($ticket['assignee_user_id'] ?? 0) !== $actorId
         ) {
             $update['assignee_user_id'] = $actorId;
@@ -635,6 +641,14 @@ final class TicketService
             $update['forwarded_at'] = null;
             $update['forward_acknowledged_at'] = null;
             $assignedToActor = true;
+        }
+        // Bearbeitet, löst oder schließt der Empfänger einer Weiterleitung das Ticket, hat er sie angenommen.
+        $acceptsForward = $actorId !== null
+            && !$assignedToActor
+            && in_array($toCode, [TicketWorkflowService::IN_PROGRESS, TicketWorkflowService::RESOLVED, TicketWorkflowService::CLOSED], true)
+            && $this->isForwardedTo($ticket, $actorId);
+        if ($acceptsForward) {
+            $update['forward_acknowledged_at'] = $now;
         }
 
         switch ($toCode) {
@@ -683,7 +697,7 @@ final class TicketService
                 }
         }
 
-        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $fromCode, $toCode, $toStatus, $note, $isReopen, $pauseCodes, $assignedToActor): void {
+        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $fromCode, $toCode, $toStatus,         $note, $isReopen, $pauseCodes, $assignedToActor, $acceptsForward, $actorId): void {
             $id = (int) $ticket['id'];
             if (!$this->tickets->update($id, $update, $expectedVersion)) {
                 throw new ConflictException('Das Ticket wurde zwischenzeitlich geändert. Bitte neu laden.');
@@ -692,6 +706,9 @@ final class TicketService
             if ($assignedToActor) {
                 $this->event($id, 'assigned', 'assignee', $ticket['assignee_name'] ?? null, $this->userName((int) $update['assignee_user_id']));
             }
+                    if ($acceptsForward) {
+                        $this->event($id, 'forward_accepted', 'assignee', null, $this->userName((int) $actorId));
+                    }
             if ($note !== null && trim($note) !== '') {
                 $this->insertComment($ticket, trim($note), $isReopen || !$this->isAgent() ? 'public' : 'internal');
             }
@@ -1031,7 +1048,7 @@ final class TicketService
         if ($html === null || trim($html) === '') {
             return null;
         }
-        $clean = HtmlSanitizer::clean($html, self::MAX_TEXT_CHARS);
+        $clean = HtmlSanitizer::clean($html, self::MAX_TEXT_CHARS, false);
 
         return $clean !== '' ? $clean : null;
     }

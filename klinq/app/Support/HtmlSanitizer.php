@@ -14,7 +14,7 @@ namespace App\Support;
 final class HtmlSanitizer
 {
     /** Elemente, die samt Inhalt entfernt werden. */
-    private const DROP = ['script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'form', 'input', 'textarea', 'select', 'option', 'button', 'link', 'meta', 'base', 'svg', 'math', 'template', 'noscript', 'video', 'audio', 'canvas'];
+    private const DROP = ['head', 'title', 'script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet', 'form', 'input', 'textarea', 'select', 'option', 'button', 'link', 'meta', 'base', 'svg', 'math', 'template', 'noscript', 'video', 'audio', 'canvas'];
 
     /** Elemente, die erhalten bleiben. */
     private const ALLOWED = ['p', 'br', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'small', 'ul', 'ol', 'li', 'blockquote', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'pre', 'code', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'img'];
@@ -28,10 +28,12 @@ final class HtmlSanitizer
     /**
      * Bereinigt HTML und liefert die erlaubten Fragmente zurück.
      *
-     * @param string $html Roh-HTML aus dem Editor
+     * @param string $html Roh-HTML aus dem Editor oder einer E-Mail
      * @param int $maxLength Obergrenze für die Eingabelänge in Zeichen
+     * @param bool $allowClasses class-Attribute behalten; für HTML fremder Absender (E-Mail) false,
+     *                           damit es keine Klassen der Oberfläche (feste Overlays) nutzen kann
      */
-    public static function clean(string $html, int $maxLength = 200000): string
+    public static function clean(string $html, int $maxLength = 200000, bool $allowClasses = true): string
     {
         $html = trim($html);
         if ($html === '') {
@@ -43,31 +45,29 @@ final class HtmlSanitizer
         if (!class_exists(\DOMDocument::class)) {
             return self::fallback($html);
         }
+        $html = self::bodyContent($html);
+        // Nicht-ASCII als Zeichenreferenzen: libxml liest so auch dann richtig, wenn die Mail einen
+        // anderen Zeichensatz (z. B. iso-8859-1) deklariert, ihr Inhalt aber bereits UTF-8 ist.
+        $html = mb_encode_numericentity($html, [0x80, 0x10FFFF, 0, 0x1FFFFF], 'UTF-8');
 
         $previous = libxml_use_internal_errors(true);
         $doc = new \DOMDocument('1.0', 'UTF-8');
+        // Ein eigenes <body> als Wurzel: ein überzähliges </div> im Fragment kann es nicht schließen.
         $loaded = $doc->loadHTML(
-            '<?xml encoding="utf-8" ?><div data-sanitize-root="1">' . $html . '</div>',
-            LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD | LIBXML_NONET
+            '<!DOCTYPE html><html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"></head><body>' . $html . '</body></html>',
+            LIBXML_NONET
         );
         libxml_clear_errors();
         libxml_use_internal_errors($previous);
         if ($loaded === false) {
             return self::fallback($html);
         }
-
-        $root = null;
-        foreach ($doc->getElementsByTagName('div') as $candidate) {
-            if ($candidate->getAttribute('data-sanitize-root') === '1') {
-                $root = $candidate;
-                break;
-            }
-        }
+        $root = $doc->getElementsByTagName('body')->item(0);
         if ($root === null) {
             return self::fallback($html);
         }
 
-        self::walk($root);
+        self::walk($root, $allowClasses);
 
         $out = '';
         foreach ($root->childNodes as $child) {
@@ -75,6 +75,21 @@ final class HtmlSanitizer
         }
 
         return trim($out);
+    }
+
+    /**
+     * Inhalt des <body> eines vollständigen HTML-Dokuments; Kopfbereich, Doctype und
+     * Zeichensatz-Angaben gehören nicht in den Ticketverlauf.
+     */
+    private static function bodyContent(string $html): string
+    {
+        // Kopfbereich samt Titel entfernen; Inhalt vor <body> (ohne Kopf) und nach </body>
+        // – etwa ein angehängter Herkunftshinweis – bleibt erhalten.
+        $html = (string) preg_replace('#<head\b[^>]*>.*?</head\s*>#is', '', $html);
+        $html = (string) preg_replace('#<title\b[^>]*>.*?</title\s*>#is', '', $html);
+        $html = (string) preg_replace('#<!DOCTYPE[^>]*>|</?html\b[^>]*>|</?body\b[^>]*>#i', '', $html);
+
+        return (string) preg_replace('#<meta\b[^>]*>#i', '', $html);
     }
 
     /** Klartextfassung eines (bereinigten) HTML-Fragments für den Ticketverlauf. */
@@ -96,7 +111,7 @@ final class HtmlSanitizer
     }
 
     /** Reduziert unbekannte Elemente auf ihren Inhalt und bereinigt Attribute. */
-    private static function walk(\DOMNode $node): void
+    private static function walk(\DOMNode $node, bool $allowClasses): void
     {
         $children = [];
         foreach ($node->childNodes as $child) {
@@ -115,12 +130,12 @@ final class HtmlSanitizer
                 $node->removeChild($child);
                 continue;
             }
-            self::walk($child);
+            self::walk($child, $allowClasses);
             if (!in_array($tag, self::ALLOWED, true)) {
                 self::unwrap($child);
                 continue;
             }
-            self::attributes($child, $tag);
+            self::attributes($child, $tag, $allowClasses);
         }
     }
 
@@ -137,9 +152,9 @@ final class HtmlSanitizer
         $parent->removeChild($element);
     }
 
-    private static function attributes(\DOMElement $element, string $tag): void
+    private static function attributes(\DOMElement $element, string $tag, bool $allowClasses): void
     {
-        $allowed = self::GLOBAL_ATTRIBUTES;
+        $allowed = $allowClasses ? self::GLOBAL_ATTRIBUTES : array_values(array_diff(self::GLOBAL_ATTRIBUTES, ['class']));
         $allowed = match ($tag) {
             'a' => [...$allowed, 'href', 'target', 'rel'],
             'img' => [...$allowed, 'src', 'alt', 'width', 'height'],

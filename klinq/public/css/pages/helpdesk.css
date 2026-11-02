@@ -161,6 +161,8 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 .comment-body { overflow-wrap: anywhere; line-height: 1.55; }
 /* Per E-Mail eingegangene HTML-Inhalte: Breite begrenzen, Abstände wie im Fließtext */
 .ticket-description img, .comment-body img { max-width: 100%; height: auto; }
+/* Fremdes Mail-HTML bleibt in seinem Kasten und kann keine Oberfläche überlagern. */
+.ticket-description, .comment-body { position: relative; overflow: auto; isolation: isolate; }
 .ticket-description table, .comment-body table { max-width: 100%; }
 .ticket-description p, .comment-body p { margin: 0 0 var(--space-2); }
 .ticket-description blockquote, .comment-body blockquote { margin: 0 0 var(--space-2) var(--space-3); padding-left: var(--space-3); border-left: 2px solid var(--color-border); color: var(--color-text-muted); }

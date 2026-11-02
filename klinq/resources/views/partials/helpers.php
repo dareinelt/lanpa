@@ -168,7 +168,7 @@ if (!function_exists('rich_body')) {
     function rich_body(?string $text, ?string $html = null): string
     {
         if ($html !== null && trim($html) !== '') {
-            return \App\Support\HtmlSanitizer::clean($html, 0);
+            return \App\Support\HtmlSanitizer::clean($html, 0, false);
         }
 
         return rich_text($text);

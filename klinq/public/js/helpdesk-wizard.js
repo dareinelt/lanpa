@@ -26,6 +26,7 @@
 
     const requestedStart = parseInt(wizard.getAttribute("data-hd-wizard-start"), 10) || 1;
     let current = Math.max(1, Math.min(total, requestedStart));
+    let maxVisited = current;
     const expanded = new Set();
     let allowLeave = false;
     let submitting = false;
@@ -155,10 +156,18 @@
         return invalidField(index) === null;
     }
 
-    /** Bereits besuchte Schritte bleiben offen; der nächste Schritt erst, wenn der aktuelle vollständig ist. */
+    /**
+     * Bereits besuchte Schritte bleiben offen – auch spätere, wenn alle Schritte bis dorthin
+     * vollständig sind; ein neuer Schritt erst, wenn der aktuelle vollständig ist.
+     */
     function canOpen(index) {
         if (index < current) { return true; }
-        return index === current + 1 && stepComplete(current);
+        if (index === current) { return false; }
+        if (index > Math.max(maxVisited, current + 1)) { return false; }
+        for (let step = current; step < index; step += 1) {
+            if (!stepComplete(step)) { return false; }
+        }
+        return true;
     }
 
     function refreshNavigation() {
@@ -267,6 +276,7 @@
 
     function showStep(index, focus) {
         current = Math.max(1, Math.min(total, index));
+        maxVisited = Math.max(maxVisited, current);
         expanded.clear();
         render();
         if (focus !== false) { focusCurrent(); }
@@ -286,7 +296,15 @@
     function goTo(index) {
         if (index === current || index < 1 || index > total) { return; }
         if (!canOpen(index)) { return; }
-        if (index > current && !validate(current)) { return; }
+        if (index > current) {
+            for (let step = current; step < index; step += 1) {
+                if (invalidField(step)) {
+                    if (step !== current) { showStep(step, false); }
+                    validate(step);
+                    return;
+                }
+            }
+        }
         showStep(index, true);
     }
 

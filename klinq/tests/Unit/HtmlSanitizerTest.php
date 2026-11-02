@@ -29,6 +29,35 @@ final class HtmlSanitizerTest extends TestCase
         $this->assertSame('<p>Text</p>', $html);
     }
 
+    public function testCharsetMetaTagsDoNotGarbleUmlauts(): void
+    {
+        $html = HtmlSanitizer::clean('<html><head><meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"><title>Betreff</title></head><body><p>Grüße aus Köln</p></body></html>');
+
+        $this->assertSame('<p>Grüße aus Köln</p>', $html, 'Kopfbereich und Titel fallen weg, Umlaute bleiben erhalten');
+    }
+
+    public function testContentAfterTheBodyIsKept(): void
+    {
+        $html = HtmlSanitizer::clean('<html><body><p>Text</p></body></html>' . "\n<p>— Eingegangen per E-Mail</p>");
+
+        $this->assertStringContains('<p>Text</p>', $html);
+        $this->assertStringContains('Eingegangen per E-Mail', $html);
+    }
+
+    public function testContentAfterAStrayClosingTagIsKept(): void
+    {
+        $html = HtmlSanitizer::clean('<p>Erster Teil</p></div><p>Zweiter Teil</p>');
+
+        $this->assertStringContains('Erster Teil', $html);
+        $this->assertStringContains('Zweiter Teil', $html);
+    }
+
+    public function testClassesCanBeDroppedForExternalMail(): void
+    {
+        $this->assertSame('<p class="hint">Text</p>', HtmlSanitizer::clean('<p class="hint">Text</p>'));
+        $this->assertSame('<p>Text</p>', HtmlSanitizer::clean('<p class="modal-overlay">Text</p>', 0, false));
+    }
+
     public function testEventAttributesAreRemoved(): void
     {
         $html = HtmlSanitizer::clean('<p onclick="alert(1)" onmouseover="x()">Text</p>');

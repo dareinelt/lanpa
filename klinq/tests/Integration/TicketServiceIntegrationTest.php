@@ -373,6 +373,38 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame($this->agentId, (int) $accepted['assignee_user_id'], 'Wer das Ticket annimmt, wird Bearbeiter');
     }
 
+    public function testResumingPausedTicketKeepsAssignee(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        $this->loginAs($this->agent2Id, 'helpdesk_agent');
+        $this->service()->changeStatus($id, 'in_progress');
+        $this->service()->changeStatus($id, 'waiting_feedback', null, null, null, null, false, date('Y-m-d H:i', strtotime('+1 day')));
+
+        // Ein Kollege setzt die Pausierung fort – der Bearbeiter bleibt.
+        $this->loginAs($this->agentId, 'helpdesk_agent');
+        $resumed = $this->service()->changeStatus($id, 'in_progress');
+
+        $this->assertSame('in_progress', $resumed['status_code']);
+        $this->assertSame($this->agent2Id, (int) $resumed['assignee_user_id'], 'Fortsetzen nach Pausierung ist keine Übernahme');
+    }
+
+    public function testForwardedAgentAcceptsForwardByStatusChange(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        $this->service()->forward($id, $this->agent2Id);
+
+        $this->loginAs($this->agent2Id, 'helpdesk_agent');
+        $accepted = $this->service()->changeStatus($id, 'in_progress');
+
+        $this->assertSame($this->agent2Id, (int) $accepted['assignee_user_id']);
+        $this->assertNotNull($accepted['forward_acknowledged_at'], 'Bearbeiten quittiert die Weiterleitung');
+        $this->assertFalse($this->service()->isForwardedTo($accepted, $this->agent2Id));
+        $this->assertCount(0, $this->tickets()->pendingForwards($this->agent2Id));
+        $this->assertContains('forward_accepted', array_column($this->service()->timeline($id), 'type'));
+    }
+
     public function testSystemStatusChangeKeepsAssignee(): void
     {
         $ticket = $this->createTicket();

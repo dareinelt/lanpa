@@ -38,8 +38,9 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
   ohne Anmeldung (Melder/Rechner/AD-Daten werden serverseitig ermittelt)
 - E-Mail-Eingang per IMAP (neues Ticket oder Kommentar per Threading) und E-Mail-Benachrichtigungen
 - Wissensdatenbank mit Verknüpfung zu Tickets
-- Aufgaben („Alle Aufgaben“/„Meine Aufgaben“): Tickets werden über „In Aufgabe umwandeln“ zu Aufgaben
-  (das Ticket wird dabei geschlossen und bleibt verknüpft), Agenten nehmen Aufgaben an, Mitglieder der
+- Aufgaben („Alle Aufgaben“/„Meine Aufgaben“): Aufgaben werden direkt über „Neue Aufgabe“ angelegt oder über
+  „In Aufgabe umwandeln“ aus einem Ticket erzeugt (das Ticket wird dabei geschlossen und bleibt verknüpft),
+  Agenten nehmen Aufgaben an, Mitglieder der
   Berechtigungsgruppe „Aufgabenverteilung“ weisen sie einem Agenten direkt zu; jede Aufgabe führt einen
   chronologischen Kommentarverlauf
 - Ticket-Berichte/CSV-Export (Recht nur über die Berechtigungsgruppe „Statistik“ oder Admin-Rolle)
@@ -263,7 +264,7 @@ Zusätzlich zur Rolle können einem Benutzer **Berechtigungsgruppen** zugewiesen
 eines Tickets durch einen Agenten geschrieben werden), die Gruppe „Darf Tickets löschen“ für
 `helpdesk.delete` und die Gruppe „Darf Tickets stornieren“ für `helpdesk.cancel`. Löschen und Stornieren
 sind getrennte Rechte und standardmäßig keiner Help-Desk-Rolle zugeordnet; `helpdesk.close` deckt nur
-Lösen und Schließen ab. `helpdesk.tasks` (Aufgaben annehmen, Status ändern, kommentieren, Ticket umwandeln) gehört zu den
+Lösen und Schließen ab. `helpdesk.tasks` (Aufgaben anlegen, annehmen, Status ändern, kommentieren, Ticket umwandeln) gehört zu den
 Help-Desk-Rollen; das Zuweisen an einen bestimmten Agenten (`helpdesk.tasks.assign`) vergibt nur die Gruppe
 „Aufgabenverteilung“ oder die Admin-Rolle. Die zugehörige AD-Gruppe wird im Intranet (LANPA) unter
 KLINQ → Zugriff als `klinq_task_assignment_groups` gepflegt.
@@ -302,7 +303,8 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   `ticket_notifications`, `ticket_inbound_mails`, `knowledge_articles`, `knowledge_article_tags`,
   `knowledge_article_tickets`; Anhänge von Tickets **und** Wissensartikeln liegen in `documents`
   (`entity_type = ticket` bzw. `knowledge_article`, Datei unter `storage/uploads/`)
-- **Aufgaben**: `tasks` (je Ticket höchstens eine Aufgabe, `source_ticket_id` ist eindeutig, optionale
+- **Aufgaben**: `tasks` (je Ticket höchstens eine Aufgabe, `source_ticket_id` ist eindeutig und bleibt bei
+  direkt angelegten Aufgaben leer, optionale
   `category_id`), `task_categories` (flacher Katalog für die Kategorie-Pill vor dem Aufgabentitel, gepflegt unter
   Help-Desk-Administration → Aufgaben-Kategorien), `task_comments` (chronologischer Kommentarverlauf je Aufgabe,
   angeheftete Einträge über `is_pinned`/`pinned_at` oben; ersetzt das frühere Einzelfeld `tasks.note`), `task_events`

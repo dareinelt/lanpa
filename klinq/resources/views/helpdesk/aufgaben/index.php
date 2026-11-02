@@ -17,6 +17,7 @@ $canAssign = $can('helpdesk.tasks.assign');
         <p class="page-subtitle text-muted mb-0"><?= (int) $paginator->total ?> Aufgaben · <?= e($views[$filters['view']] ?? 'Alle') ?></p>
     </div>
     <div class="page-actions">
+        <a class="btn btn-primary" href="/helpdesk/aufgaben/neu"><?= icon('plus') ?> Neue Aufgabe</a>
         <?php if ($isMine): ?>
             <a class="btn btn-secondary" href="/helpdesk/aufgaben"><?= icon('inbox') ?> Alle Aufgaben</a>
         <?php else: ?>

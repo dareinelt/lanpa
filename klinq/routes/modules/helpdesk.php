@@ -99,6 +99,7 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/aufgaben/{id}/zuweisen', static fn (Request $r): Response => $tasks()->assign($r), 'helpdesk.tasks.assign');
     $router->post('/helpdesk/aufgaben/{id}/status', static fn (Request $r): Response => $tasks()->status($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/kategorie', static fn (Request $r): Response => $tasks()->category($r), 'helpdesk.tasks');
+    $router->post('/helpdesk/aufgaben/{id}/faelligkeit', static fn (Request $r): Response => $tasks()->dueDate($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/kommentare', static fn (Request $r): Response => $tasks()->comment($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/kommentare/{comment}/pin', static fn (Request $r): Response => $tasks()->pinComment($r), 'helpdesk.tasks');
 

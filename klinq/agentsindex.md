@@ -308,7 +308,7 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   `category_id`), `task_categories` (flacher Katalog für die Kategorie-Pill vor dem Aufgabentitel, gepflegt unter
   Help-Desk-Administration → Aufgaben-Kategorien), `task_comments` (chronologischer Kommentarverlauf je Aufgabe,
   angeheftete Einträge über `is_pinned`/`pinned_at` oben; ersetzt das frühere Einzelfeld `tasks.note`), `task_events`
-  (Verlauf: Anlage, Umwandlung, Annahme, Zuweisung, Statuswechsel, Kategoriewechsel)
+  (Verlauf: Anlage, Umwandlung, Annahme, Zuweisung, Statuswechsel, Kategorie- und Fälligkeitswechsel)
 
 ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
 

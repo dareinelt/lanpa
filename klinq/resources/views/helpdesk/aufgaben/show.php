@@ -13,9 +13,10 @@ $eventLabels = [
     'unassigned' => 'Zuweisung entfernt',
     'status_changed' => 'Status geändert',
     'category_changed' => 'Kategorie geändert',
+    'due_changed' => 'Fälligkeit geändert',
 ];
 $eventClass = static fn (string $t): string => match ($t) {
-    'status_changed', 'category_changed' => ' is-warning',
+    'status_changed', 'category_changed', 'due_changed' => ' is-warning',
     'converted_from_ticket' => ' is-success',
     default => '',
 };
@@ -179,6 +180,23 @@ $eventClass = static fn (string $t): string => match ($t) {
                         <option value="<?= (int) $c['id'] ?>"<?= selected($task['category_id'], $c['id']) ?>><?= e($c['name']) ?></option>
                     <?php endforeach; ?>
                 </select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Speichern</button>
+        </form>
+    </section>
+    <?php endif; ?>
+
+    <?php if ($can('helpdesk.tasks')): ?>
+    <section class="card">
+        <h2 class="card-title">Fälligkeit</h2>
+        <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/faelligkeit" class="stack-form">
+            <?= csrf_field() ?>
+            <input type="hidden" name="version" value="<?= (int) $task['version'] ?>">
+            <div class="form-group<?= has_error('due_at') ? ' has-error' : '' ?>">
+                <label for="task-due">Fällig</label>
+                <input type="date" id="task-due" name="due_at" value="<?= e($task['due_at'] !== null ? substr((string) $task['due_at'], 0, 10) : '') ?>">
+                <?= field_error('due_at') ?>
+                <p class="form-hint">Ein beim Anlegen ausgelassenes Datum lässt sich hier nachtragen; leer lassen entfernt die Fälligkeit.</p>
             </div>
             <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Speichern</button>
         </form>

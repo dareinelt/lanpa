@@ -587,7 +587,8 @@ Rückfragen dieser Art erscheinen als Overlay im Fenster und nicht mehr als Meld
 * **Zuweisen** (`helpdesk.tasks.assign`): Mitglieder der Berechtigungsgruppe „Aufgabenverteilung“ (bzw. Admins)
   weisen eine Aufgabe über den Dialog im Detail oder direkt aus der Liste einem bestimmten Agenten zu. Der Agent
   muss die Aufgabe dann nicht annehmen; sie steht sofort unter **Meine Aufgaben**. Die Zuweisung wird mit
-  zuweisender Person und Zeitpunkt festgehalten.
+  zuweisender Person und Zeitpunkt festgehalten. Der Dialog bietet zusätzlich ein optionales **Kommentarfeld**;
+  der Kommentar erscheint als Eintrag im **Journal** der Aufgabe (siehe „Journal“).
 
 Die AD-Gruppe für die Aufgabenverteilung wird im Intranet unter **KLINQ → Berechtigungen** im Feld
 **Aufgabenverteilung** (`klinq_task_assignment_groups`) gepflegt; die Mitglieder erhalten in KLINQ die
@@ -638,6 +639,16 @@ Agenten mit `helpdesk.tasks`; der Sprung zurück geht auf `#kommentar-{id}`. Das
 Das frühere Einzelfeld **„Notiz“** im Formular **Status ändern** ist entfallen; vorhandene Notizen hat
 `database/migrations/023_helpdesk_task_comments.sql` als Kommentar übernommen (Autor und Zeitpunkt der letzten
 Änderung, ersatzweise der Anlegename) und die Spalte `tasks.note` anschließend entfernt.
+
+### Journal
+
+Jede Aufgabe führt ein eigenes **Journal** (`task_journal`) als unveränderliches Protokoll. Einträge entstehen
+beim **Zuweisen** über das optionale Kommentarfeld im Zuweisungsdialog (`POST /helpdesk/aufgaben/{id}/zuweisen`,
+Feld `comment`); der Text wird mit Autor und Zeitpunkt gespeichert und im Aufgabendetail in der Karte
+**Journal** angezeigt (neueste zuerst). Beim Aufheben der Zuweisung wird ein Kommentar als Eintrag
+`unassignment` („Zuweisung aufgehoben“) abgelegt, beim Zuweisen als `assignment` („Zuweisung“). Ohne Kommentar
+entsteht kein Eintrag. Journal-Einträge lassen sich weder bearbeiten noch löschen; jeder Eintrag wird zusätzlich
+als `task.journal` auditiert. Die Karte zeigt die Einträge chronologisch, die neuesten oben.
 
 ### Status und Verlauf
 

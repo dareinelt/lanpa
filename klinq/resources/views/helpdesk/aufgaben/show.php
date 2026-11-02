@@ -19,6 +19,10 @@ $eventClass = static fn (string $t): string => match ($t) {
     'converted_from_ticket' => ' is-success',
     default => '',
 };
+$journalLabels = [
+    'assignment' => 'Zuweisung',
+    'unassignment' => 'Zuweisung aufgehoben',
+];
 ?>
 <div class="page-header">
     <div>
@@ -107,6 +111,24 @@ $eventClass = static fn (string $t): string => match ($t) {
                 <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Kommentar speichern</button>
             </div>
         </form>
+        <?php endif; ?>
+    </section>
+
+    <section class="card" id="journal">
+        <h2 class="card-title">Journal <span class="text-muted">(<?= count($journal) ?>)</span></h2>
+        <?php if ($journal === []): ?>
+            <p class="empty-state">Noch keine Journal-Einträge.</p>
+        <?php else: ?>
+        <ul class="timeline">
+            <?php foreach (array_reverse($journal) as $entry): ?>
+            <li>
+                <span class="timeline-dot"></span>
+                <span class="timeline-time"><?= fmt_datetime($entry['created_at']) ?> · <?= e($entry['author_name']) ?></span>
+                <span class="timeline-title"><?= e($journalLabels[$entry['type']] ?? 'Notiz') ?></span>
+                <div class="comment-body"><?= rich_text($entry['body']) ?></div>
+            </li>
+            <?php endforeach; ?>
+        </ul>
         <?php endif; ?>
     </section>
 
@@ -224,6 +246,12 @@ $eventClass = static fn (string $t): string => match ($t) {
                     <?php endforeach; ?>
                 </select>
                 <p class="form-hint">Der Agent erhält die Aufgabe zugewiesen und sieht sie unter „Meine Aufgaben“, ohne sie annehmen zu müssen. Ohne Auswahl wird die Zuweisung aufgehoben.</p>
+            </div>
+            <div class="form-group">
+                <label for="assign-dialog-comment">Kommentar <span class="text-muted">(optional)</span></label>
+                <textarea id="assign-dialog-comment" name="comment" rows="3" maxlength="2000000" placeholder="Hinweis zur Zuweisung …"><?= e(old('comment')) ?></textarea>
+                <?= field_error('comment') ?>
+                <p class="form-hint">Der Kommentar erscheint als Eintrag im Journal der Aufgabe.</p>
             </div>
         </div>
         <div class="dialog-footer">

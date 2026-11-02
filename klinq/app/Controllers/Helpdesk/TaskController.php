@@ -118,6 +118,7 @@ final class TaskController extends HelpdeskBaseController
             'task' => $task,
             'events' => $this->service->events((int) $task['id']),
             'comments' => $this->service->comments((int) $task['id']),
+            'journal' => $this->service->journal((int) $task['id']),
             'statuses' => TaskService::STATUSES,
             'statusColors' => TaskService::STATUS_COLORS,
             'agents' => $this->service->assignableAgents(),
@@ -192,9 +193,10 @@ final class TaskController extends HelpdeskBaseController
     {
         $id = $request->paramInt('id');
         $assigneeId = $request->int('assignee_user_id');
+        $comment = $request->stringOrNull('comment');
         $task = null;
-        $response = $this->attempt($request, function () use ($id, $assigneeId, &$task): void {
-            $task = $this->service->assign($id, $assigneeId !== null && $assigneeId > 0 ? $assigneeId : null);
+        $response = $this->attempt($request, function () use ($id, $assigneeId, $comment, &$task): void {
+            $task = $this->service->assign($id, $assigneeId !== null && $assigneeId > 0 ? $assigneeId : null, $comment);
         }, '/helpdesk/aufgaben/' . $id);
         if ($response !== null) {
             return $response;

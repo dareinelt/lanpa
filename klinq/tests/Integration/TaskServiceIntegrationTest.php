@@ -214,6 +214,59 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame(0, $this->tasks()->openCountFor($this->agent2Id));
     }
 
+    public function testAssignStoresOptionalCommentInJournal(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->loginAs($this->agentId, 'helpdesk_agent', ['aufgabenverteilung']);
+
+        $this->service()->assign((int) $task['id'], $this->agent2Id, '  Bitte zuerst den Drucker prüfen.  ');
+
+        $journal = $this->service()->journal((int) $task['id']);
+        $this->assertCount(1, $journal);
+        $this->assertSame('assignment', $journal[0]['type']);
+        $this->assertSame('Bitte zuerst den Drucker prüfen.', $journal[0]['body']);
+        $this->assertSame($this->agentId, (int) $journal[0]['author_user_id']);
+        $this->assertSame('Agent ' . $this->agentId, $journal[0]['author_name']);
+        $this->assertNotNull($journal[0]['created_at']);
+    }
+
+    public function testAssignWithoutCommentLeavesJournalEmpty(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->loginAs($this->agentId, 'helpdesk_agent', ['aufgabenverteilung']);
+
+        $this->service()->assign((int) $task['id'], $this->agent2Id, '   ');
+
+        $this->assertSame([], $this->service()->journal((int) $task['id']));
+    }
+
+    public function testUnassignStoresCommentAsJournalEntry(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->loginAs($this->agentId, 'helpdesk_agent', ['aufgabenverteilung']);
+        $this->service()->assign((int) $task['id'], $this->agent2Id);
+
+        $this->service()->assign((int) $task['id'], null, 'Bitte an den Second Level geben.');
+
+        $journal = $this->service()->journal((int) $task['id']);
+        $this->assertCount(1, $journal);
+        $this->assertSame('unassignment', $journal[0]['type']);
+        $this->assertSame('Bitte an den Second Level geben.', $journal[0]['body']);
+    }
+
+    public function testAssignRejectsTooLongJournalComment(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $this->loginAs($this->agentId, 'helpdesk_agent', ['aufgabenverteilung']);
+
+        $this->assertThrows(
+            ValidationException::class,
+            fn () => $this->service()->assign((int) $task['id'], $this->agent2Id, str_repeat('x', TicketService::MAX_TEXT_CHARS + 1)),
+            'zu lang'
+        );
+        $this->assertSame([], $this->service()->journal((int) $task['id']));
+    }
+
     public function testStatusChangeRecordsCompletion(): void
     {
         $task = $this->service()->convert((int) $this->createTicket()['id'], []);

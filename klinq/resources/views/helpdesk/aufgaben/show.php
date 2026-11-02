@@ -75,7 +75,7 @@ $journalLabels = [
 
     <section class="card">
         <h2 class="card-title">Beschreibung</h2>
-        <div class="ticket-description"><?= rich_text($task['description']) ?></div>
+        <div class="ticket-description"><?= rich_body($task['description'], $task['description_html'] ?? null) ?></div>
     </section>
 
     <details class="card card-collapsible" id="anhaenge">
@@ -169,7 +169,7 @@ $journalLabels = [
                 <span class="timeline-dot"></span>
                 <span class="timeline-time"><?= fmt_datetime($entry['created_at']) ?> · <?= e($entry['author_name']) ?></span>
                 <span class="timeline-title"><?= e($journalLabels[$entry['type']] ?? 'Notiz') ?></span>
-                <div class="comment-body"><?= rich_text($entry['body']) ?></div>
+                <div class="comment-body"><?= rich_body($entry['body'], $entry['body_html'] ?? null) ?></div>
             </li>
             <?php endforeach; ?>
         </ul>

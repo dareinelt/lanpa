@@ -432,6 +432,49 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         @unlink($sourcePath);
     }
 
+    public function testConvertSkipsAttachmentsWhoseFileIsMissing(): void
+    {
+        $ticket = $this->createTicket();
+        $source = $this->attachPngToTicket((int) $ticket['id']);
+        @unlink($this->c->get(DocumentService::class)->path($source));
+
+        $task = $this->service()->convert((int) $ticket['id'], []);
+
+        $this->assertSame([], $this->service()->attachments((int) $task['id']), 'Fehlende Dateien werden nicht kopiert');
+        $this->assertSame('closed', $this->c->get(TicketService::class)->get((int) $ticket['id'])['status_code'], 'Die Umwandlung bricht nicht ab');
+        $this->assertFalse(in_array('attachments_copied', array_column($this->service()->events((int) $task['id']), 'type'), true));
+        $journal = $this->service()->journal((int) $task['id']);
+        $this->assertSame('ticket_attachments', $journal[0]['type']);
+        $this->assertStringContains('nicht mehr vorhanden', (string) $journal[0]['body']);
+        $this->assertStringContains('screenshot.png', (string) $journal[0]['body']);
+    }
+
+    public function testConvertCarriesMailHtmlOfDescriptionAndComments(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        $this->pdo->prepare('UPDATE tickets SET description_html = ? WHERE id = ?')->execute(['<p><strong>' . htmlspecialchars((string) $ticket['description']) . '</strong></p>', $id]);
+        $comment = $this->c->get(TicketService::class)->addComment($id, 'Antwort per Mail', 'public', 'web');
+        $this->pdo->prepare('UPDATE ticket_comments SET body_html = ? WHERE id = ?')->execute(['<p><em>Antwort per Mail</em></p>', (int) $comment['id']]);
+
+        $task = $this->service()->convert($id, []);
+
+        $this->assertStringContains('<strong>', (string) $task['description_html']);
+        $journal = $this->service()->journal((int) $task['id']);
+        $this->assertSame('<p><em>Antwort per Mail</em></p>', $journal[0]['body_html']);
+    }
+
+    public function testConvertDropsMailHtmlWhenDescriptionWasEdited(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        $this->pdo->prepare('UPDATE tickets SET description_html = ? WHERE id = ?')->execute(['<p>Alt</p>', $id]);
+
+        $task = $this->service()->convert($id, ['description' => 'Neu formulierte Beschreibung']);
+
+        $this->assertNull($task['description_html'], 'Geänderte Beschreibung verwirft das Mail-HTML');
+    }
+
     public function testTaskAttachmentsCanBeUploadedAndDeleted(): void
     {
         $task = $this->service()->convert((int) $this->createTicket()['id'], []);

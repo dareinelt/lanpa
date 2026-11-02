@@ -237,83 +237,115 @@ final class TaskService
         if ($description === '') {
             $description = (string) $ticket['description'];
         }
+        // Die HTML-Fassung der Ursprungsmail gilt nur, solange die Beschreibung unverändert übernommen wird.
+        $descriptionHtml = $ticket['description_html'] ?? null;
+        if ($descriptionHtml !== null && $this->normalizeText($description) !== $this->normalizeText((string) $ticket['description'])) {
+            $descriptionHtml = null;
+        }
         $priorityId = $this->validPriorityId($input['priority_id'] ?? null) ?? (int) $ticket['priority_id'];
         $category = $this->validCategory($input['category_id'] ?? null);
         $dueAt = $this->normalizeDueAt($input['due_at'] ?? null);
         $comment = $this->journalComment($input['comment'] ?? null);
-        $now = gmdate('Y-m-d H:i:s');
         $userId = $this->currentUser->id();
         $userName = $this->currentUser->displayName();
 
         $journalId = null;
-        $carried = ['comments' => 0, 'attachments' => 0];
+        $carried = ['comments' => 0, 'attachments' => 0, 'missing' => 0];
+        $copiedFiles = [];
         // Vor dem Schließen des Tickets lesen: der Systemhinweis „In Aufgabe … umgewandelt.“ entsteht
         // erst durch changeStatus() und gehört nicht in das Journal der Aufgabe.
         $ticketComments = $this->ticketComments->forTicket($ticketId, true);
         $ticketAttachments = $this->ticketAttachments->forTicket($ticketId, true);
-        $taskId = $this->tasks->transaction(function () use ($ticketId, $ticket, $subject, $description, $priorityId, $category, $dueAt, $now, $userId, $userName, $comment, $ticketComments, $ticketAttachments, &$journalId, &$carried): int {
-            $number = $this->numbers->next();
-            $id = $this->tasks->create([
-                'number' => $number,
-                'subject' => mb_substr($subject, 0, 255),
-                'description' => mb_substr($description, 0, TicketService::MAX_TEXT_CHARS),
-                'status' => 'open',
-                'category_id' => $category['id'] ?? null,
-                'priority_id' => $priorityId,
-                'source_ticket_id' => $ticketId,
-                'due_at' => $dueAt,
-                'created_by' => $userId,
-                'created_by_name' => mb_substr($userName, 0, 200),
-                'updated_by' => $userId,
-            ]);
-            $this->tasks->addEvent($id, 'created', $userId, $userName, null, null, null, array_filter([
-                'number' => $number,
-                'ticket_id' => $ticketId,
-                'ticket_number' => (string) $ticket['number'],
-                'category' => $category['name'] ?? null,
-            ], static fn (mixed $value): bool => $value !== null));
-            // Das Ticket wird als Systemschritt geschlossen: die Bearbeitung läuft in der Aufgabe weiter.
-            // Der Kontext sorgt für den eigenen Umwandlungstext in der Melder-Mail.
-            $this->tickets->changeStatus(
-                $ticketId,
-                TicketWorkflowService::CLOSED,
-                'In Aufgabe ' . $number . ' umgewandelt.',
-                null,
-                null,
-                null,
-                true,
-                null,
-                true,
-                null,
-                TicketNotificationService::CONTEXT_TASK_CONVERSION
-            );
-            $this->tasks->addEvent($id, 'converted_from_ticket', $userId, $userName, null, null, (string) $ticket['number'], [
-                'ticket_id' => $ticketId,
-                'ticket_number' => (string) $ticket['number'],
-            ]);
-            // Kommentare des Tickets übernimmt das Journal; es ist unveränderlich und bereits vorhanden.
-            foreach ($ticketComments as $ticketComment) {
-                $this->carryOverTicketComment($id, $ticketComment);
-                $carried['comments']++;
-            }
-            // Anhänge werden als eigene Dateien kopiert, damit die Aufgabe eigenständig bleibt.
-            foreach ($ticketAttachments as $ticketAttachment) {
-                $this->taskAttachments->copyFromTicket($id, $ticketAttachment);
-                $carried['attachments']++;
-            }
-            if ($ticketAttachments !== []) {
-                $this->tasks->addEvent($id, 'attachments_copied', $userId, $userName, null, null, (string) count($ticketAttachments), [
-                    'ticket_id' => $ticketId,
-                    'count' => count($ticketAttachments),
+        try {
+            $taskId = $this->tasks->transaction(function () use ($ticketId, $ticket, $subject, $description, $descriptionHtml, $priorityId, $category, $dueAt, $userId, $userName, $comment, $ticketComments, $ticketAttachments, &$journalId, &$carried, &$copiedFiles): int {
+                $number = $this->numbers->next();
+                $id = $this->tasks->create([
+                    'number' => $number,
+                    'subject' => mb_substr($subject, 0, 255),
+                    'description' => mb_substr($description, 0, TicketService::MAX_TEXT_CHARS),
+                    'description_html' => $descriptionHtml,
+                    'status' => 'open',
+                    'category_id' => $category['id'] ?? null,
+                    'priority_id' => $priorityId,
+                    'source_ticket_id' => $ticketId,
+                    'due_at' => $dueAt,
+                    'created_by' => $userId,
+                    'created_by_name' => mb_substr($userName, 0, 200),
+                    'updated_by' => $userId,
                 ]);
-                $this->createJournalEntry($id, 'ticket_attachments', $this->attachmentsSummary($ticketAttachments, (string) $ticket['number']));
-            }
-            if ($comment !== null) {
-                $journalId = $this->createJournalEntry($id, 'conversion', $comment);
-            }
+                $this->tasks->addEvent($id, 'created', $userId, $userName, null, null, null, array_filter([
+                    'number' => $number,
+                    'ticket_id' => $ticketId,
+                    'ticket_number' => (string) $ticket['number'],
+                    'category' => $category['name'] ?? null,
+                ], static fn (mixed $value): bool => $value !== null));
+                $this->tasks->addEvent($id, 'converted_from_ticket', $userId, $userName, null, null, (string) $ticket['number'], [
+                    'ticket_id' => $ticketId,
+                    'ticket_number' => (string) $ticket['number'],
+                ]);
+                // Kommentare des Tickets übernimmt das Journal; es ist unveränderlich und bereits vorhanden.
+                foreach ($ticketComments as $ticketComment) {
+                    $this->carryOverTicketComment($id, $ticketComment);
+                    $carried['comments']++;
+                }
+                // Anh?nge werden als eigene Dateien kopiert, damit die Aufgabe eigenst?ndig bleibt. Fehlt
+                // eine Datei bereits am Ticket, wird sie übersprungen und im Journal vermerkt.
+                $copied = [];
+                $missing = [];
+                foreach ($ticketAttachments as $ticketAttachment) {
+                    if (!$this->taskAttachments->sourceAvailable($ticketAttachment)) {
+                        $missing[] = $ticketAttachment;
+                        continue;
+                    }
+                    $documentId = $this->taskAttachments->copyFromTicket($id, $ticketAttachment);
+                    $path = $this->taskAttachments->filePath($documentId);
+                    if ($path !== null) {
+                        $copiedFiles[] = $path;
+                    }
+                    $copied[] = $ticketAttachment;
+                }
+                $carried['attachments'] = count($copied);
+                $carried['missing'] = count($missing);
+                if ($copied !== []) {
+                    $this->tasks->addEvent($id, 'attachments_copied', $userId, $userName, null, null, (string) count($copied), [
+                        'ticket_id' => $ticketId,
+                        'count' => count($copied),
+                    ]);
+                }
+                if ($ticketAttachments !== []) {
+                    $this->createJournalEntry($id, 'ticket_attachments', $this->attachmentsSummary($copied, $missing, (string) $ticket['number']));
+                }
+                if ($comment !== null) {
+                    $journalId = $this->createJournalEntry($id, 'conversion', $comment);
+                }
+                // Das Ticket wird zuletzt als Systemschritt geschlossen: changeStatus() versendet die
+                // Melder-Mail sofort, daher muss alles, was scheitern kann, vorher erledigt sein. Der
+                // Kontext sorgt für den eigenen Umwandlungstext in der Melder-Mail.
+                $this->tickets->changeStatus(
+                    $ticketId,
+                    TicketWorkflowService::CLOSED,
+                    'In Aufgabe ' . $number . ' umgewandelt.',
+                    null,
+                    null,
+                    null,
+                    true,
+                    null,
+                    true,
+                    null,
+                    TicketNotificationService::CONTEXT_TASK_CONVERSION
+                );
 
-            return $id;
-        });
+                return $id;
+            });
+        } catch (\Throwable $e) {
+            // Die Datensätze rollt die Transaktion zurück, bereits kopierte Dateien nicht.
+            foreach ($copiedFiles as $path) {
+                if (is_file($path)) {
+                    @unlink($path);
+                }
+            }
+            throw $e;
+        }
 
         $task = $this->get($taskId);
         $this->audit->log('task.convert', 'task', $taskId, (string) $task['number'], null, [
@@ -322,6 +354,7 @@ final class TaskService
             'category_id' => $task['category_id'],
             'ticket_comments' => $carried['comments'],
             'ticket_attachments' => $carried['attachments'],
+            'ticket_attachments_missing' => $carried['missing'],
         ]);
         $this->auditJournalEntry($taskId, (string) $task['number'], $journalId);
 
@@ -700,6 +733,7 @@ final class TaskService
             'task_id' => $taskId,
             'type' => $internal ? 'ticket_comment_internal' : 'ticket_comment',
             'body' => mb_substr((string) ($comment['body'] ?? ''), 0, TicketService::MAX_TEXT_CHARS),
+            'body_html' => isset($comment['body_html']) && $comment['body_html'] !== '' ? (string) $comment['body_html'] : null,
             'author_user_id' => isset($comment['author_user_id']) ? (int) $comment['author_user_id'] : null,
             'author_name' => mb_substr((string) ($comment['author_name'] ?? 'System'), 0, 200),
             'created_at' => (string) $comment['created_at'],
@@ -707,18 +741,33 @@ final class TaskService
     }
 
     /**
-     * Journal-Text, der die Übernahme der Ticketanhänge zusammenfasst.
+     * Journal-Text, der die Übernahme der Ticketanhänge zusammenfasst; fehlende Dateien werden genannt.
      *
-     * @param array<int,array<string,mixed>> $attachments
+     * @param array<int,array<string,mixed>> $copied
+     * @param array<int,array<string,mixed>> $missing
      */
-    private function attachmentsSummary(array $attachments, string $ticketNumber): string
+    private function attachmentsSummary(array $copied, array $missing, string $ticketNumber): string
     {
-        $names = array_map(static fn (array $attachment): string => (string) $attachment['original_name'], $attachments);
-        $prefix = count($names) === 1
-            ? 'Anhang aus Ticket ' . $ticketNumber . ' übernommen: '
-            : count($names) . ' Anhänge aus Ticket ' . $ticketNumber . ' übernommen: ';
+        $names = static fn (array $list): string => implode(', ', array_map(static fn (array $attachment): string => (string) $attachment['original_name'], $list));
+        $parts = [];
+        if ($copied !== []) {
+            $parts[] = (count($copied) === 1
+                ? 'Anhang aus Ticket ' . $ticketNumber . ' übernommen: '
+                : count($copied) . ' Anhänge aus Ticket ' . $ticketNumber . ' übernommen: ') . $names($copied);
+        }
+        if ($missing !== []) {
+            $parts[] = (count($missing) === 1
+                ? 'Nicht übernommen, Datei auf dem Server nicht mehr vorhanden: '
+                : count($missing) . ' Anhänge nicht übernommen, Dateien auf dem Server nicht mehr vorhanden: ') . $names($missing);
+        }
 
-        return mb_substr($prefix . implode(', ', $names), 0, TicketService::MAX_TEXT_CHARS);
+        return mb_substr(implode("\n", $parts), 0, TicketService::MAX_TEXT_CHARS);
+    }
+
+    /** Zeilenenden und Rand-Leerraum vereinheitlichen, um Texte inhaltlich zu vergleichen. */
+    private function normalizeText(string $text): string
+    {
+        return trim(str_replace(["\r\n", "\r"], "\n", $text));
     }
 
     private function validPriorityId(mixed $value): ?int

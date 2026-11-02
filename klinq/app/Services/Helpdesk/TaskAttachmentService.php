@@ -92,6 +92,20 @@ final class TaskAttachmentService
         return $documentId;
     }
 
+    /** Ob die Datei eines (Ticket-)Dokuments auf dem Server noch vorhanden ist. @param array<string,mixed> $document */
+    public function sourceAvailable(array $document): bool
+    {
+        return is_file($this->documents->path($document));
+    }
+
+    /** Dateipfad eines Aufgabenanhangs, z. B. um Kopien nach einem Rollback zu entfernen. */
+    public function filePath(int $documentId): ?string
+    {
+        $document = $this->attachments->find($documentId);
+
+        return $document !== null ? $this->documents->path($document) : null;
+    }
+
     /** Anhang löschen – der hochladende Agent oder die Aufgabenverteilung. */
     public function delete(int $taskId, int $documentId): void
     {

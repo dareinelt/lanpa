@@ -228,7 +228,9 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   aufgeklappt, und `QuickReportController::store()` prüft die Pflicht serverseitig. Vor dem Anlegen prüft
   `QuickReportContentValidator` außerdem Betreff und Beschreibung: kein Aufsatz im Betreff (max. 120 Zeichen),
   keine Floskeln („siehe unten“, „wie besprochen“), keine reine Inventarnummer („PC24001“), kein Screenshot
-  ohne Text, keine bloße Wiederholung des Betreffs.
+  ohne Text, keine bloße Wiederholung des Betreffs. Abschaltbar in den Help-Desk-Einstellungen unter
+  „Störungsformular“ (`helpdesk.quick_report.content_validation`, Startwert
+  `HELPDESK_QUICK_REPORT_CONTENT_VALIDATION`).
 - **Eingangsbestätigung**: `TicketConfirmationService` versendet nach `TicketService::create()` den unter
   `helpdesk.reply_template.confirmation_text` gepflegten Text (Startwert `HELPDESK_REPLY_TEMPLATE_CONFIRMATION`,
   Platzhalter `{anrede}`/`{name}`/`{ticketnummer}`/`{betreff}`/`{datum}`/`{link}`/`{firma}`) an Melder **und**

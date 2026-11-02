@@ -224,6 +224,21 @@ final class TaskController extends HelpdeskBaseController
         return $this->respond($request, 'Kategorie aktualisiert.', $this->safeBack($request, '/helpdesk/aufgaben/' . $id), ['task' => $task]);
     }
 
+    /** Fälligkeit der Aufgabe nachtragen, ändern oder entfernen. */
+    public function dueDate(Request $request): Response
+    {
+        $id = $request->paramInt('id');
+        $task = null;
+        $response = $this->attempt($request, function () use ($request, $id, &$task): void {
+            $task = $this->service->changeDueDate($id, $request->all());
+        }, '/helpdesk/aufgaben/' . $id);
+        if ($response !== null) {
+            return $response;
+        }
+
+        return $this->respond($request, 'Fälligkeit aktualisiert.', $this->safeBack($request, '/helpdesk/aufgaben/' . $id), ['task' => $task]);
+    }
+
     public function status(Request $request): Response
     {
         $id = $request->paramInt('id');

@@ -441,6 +441,54 @@ final class TaskService
         return $this->get($id);
     }
 
+    // ------------------------------------------------------------------ Fälligkeit
+
+    /**
+     * Setzt, ändert oder entfernt die Fälligkeit der Aufgabe. So lässt sich ein beim Anlegen
+     * ausgelassenes Datum später nachtragen; eine leere Eingabe entfernt die Fälligkeit.
+     * @param array<string,mixed> $input due_at, version
+     * @return array<string,mixed>
+     */
+    public function changeDueDate(int $id, array $input): array
+    {
+        $this->currentUser->require('helpdesk.tasks');
+        $task = $this->get($id);
+        $raw = trim((string) ($input['due_at'] ?? ''));
+        $dueAt = $this->normalizeDueAt($raw);
+        if ($raw !== '' && $dueAt === null) {
+            throw ValidationException::single('due_at', 'Bitte ein gültiges Datum (JJJJ-MM-TT) angeben.');
+        }
+        $oldDueAt = $task['due_at'] !== null ? (string) $task['due_at'] : null;
+        if ($oldDueAt === $dueAt) {
+            return $task;
+        }
+
+        $userId = $this->currentUser->id();
+        $version = isset($input['version']) ? (int) $input['version'] : (int) $task['version'];
+        $this->tasks->transaction(function () use ($id, $dueAt, $task, $userId, $version, $oldDueAt): void {
+            $this->save($id, ['due_at' => $dueAt, 'updated_by' => $userId], $version);
+            $this->tasks->addEvent(
+                $id,
+                'due_changed',
+                $userId,
+                $this->currentUser->displayName(),
+                'due_at',
+                $oldDueAt !== null ? substr($oldDueAt, 0, 10) : null,
+                $dueAt !== null ? substr($dueAt, 0, 10) : null
+            );
+        });
+        $this->audit->log(
+            'task.due_date',
+            'task',
+            $id,
+            (string) $task['number'],
+            ['due_at' => $oldDueAt],
+            ['due_at' => $dueAt]
+        );
+
+        return $this->get($id);
+    }
+
     // ------------------------------------------------------------------ Kommentare
 
     /**

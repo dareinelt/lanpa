@@ -16,8 +16,9 @@ use App\Services\Helpdesk\TicketService;
 use Tests\Support\DatabaseTestCase;
 
 /**
- * Aufgaben im Help Desk gegen die Test-Datenbank: Umwandlung aus einem Ticket (mit Schließung),
- * Annahme durch einen Agenten, Zuweisung über die Aufgabenverteilung und Statuswechsel.
+ * Aufgaben im Help Desk gegen die Test-Datenbank: direkte Anlage ohne Ticketbezug, Umwandlung aus
+ * einem Ticket (mit Schließung), Annahme durch einen Agenten, Zuweisung über die Aufgabenverteilung
+ * und Statuswechsel.
  */
 final class TaskServiceIntegrationTest extends DatabaseTestCase
 {
@@ -262,6 +263,81 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ValidationException::class, function (): void {
             $this->service()->convert((int) $this->createTicket()['id'], ['category_id' => 999999]);
         }, 'Kategorie aus dem Katalog');
+    }
+
+    // ------------------------------------------------------------------ Direkte Anlage (ohne Ticket)
+
+    public function testCreateDirectTaskWithoutTicket(): void
+    {
+        $task = $this->service()->create([
+            'subject' => 'Drucker im 2. OG prüfen',
+            'description' => 'Papierstau und laute Geräusche.',
+        ]);
+
+        $this->assertMatches('/^AUF-\d{4}-\d{6}$/', (string) $task['number']);
+        $this->assertSame('open', $task['status']);
+        $this->assertSame('Drucker im 2. OG prüfen', $task['subject']);
+        $this->assertSame('Papierstau und laute Geräusche.', $task['description']);
+        $this->assertNull($task['source_ticket_id']);
+        $this->assertSame($this->agentId, (int) $task['created_by']);
+
+        $types = array_column($this->service()->events((int) $task['id']), 'type');
+        $this->assertContains('created', $types);
+        $this->assertFalse(in_array('converted_from_ticket', $types, true), 'Direkt angelegte Aufgaben haben keine Umwandlung');
+    }
+
+    public function testCreateDirectTaskStoresCategoryPriorityAndDueDate(): void
+    {
+        $categoryId = $this->categoryId('Arbeitsplatz');
+        $priorityId = (int) $this->c->get(TicketMasterDataRepository::class)->priorities()[0]['id'];
+
+        $task = $this->service()->create([
+            'subject' => 'Neuer Monitor bestellen',
+            'category_id' => $categoryId,
+            'priority_id' => $priorityId,
+            'due_at' => '2031-03-15',
+        ]);
+
+        $this->assertSame($categoryId, (int) $task['category_id']);
+        $this->assertSame('Arbeitsplatz', $task['category_name']);
+        $this->assertSame($priorityId, (int) $task['priority_id']);
+        $this->assertStringContains('2031-03-15', (string) $task['due_at']);
+    }
+
+    public function testCreateDirectTaskUsesDefaultPriority(): void
+    {
+        $default = $this->c->get(TicketMasterDataRepository::class)->defaultPriority();
+
+        $task = $this->service()->create(['subject' => 'Ohne Prioritätsangabe']);
+
+        $this->assertSame($default !== null ? (int) $default['id'] : null, $task['priority_id'] !== null ? (int) $task['priority_id'] : null);
+    }
+
+    public function testCreateDirectTaskRequiresSubject(): void
+    {
+        $this->assertThrows(ValidationException::class, function (): void {
+            $this->service()->create(['subject' => '   ']);
+        }, 'Betreff');
+
+        $this->assertThrows(ValidationException::class, function (): void {
+            $this->service()->create(['subject' => 'ab']);
+        }, 'mindestens 3 Zeichen');
+    }
+
+    public function testCreateDirectTaskRejectsUnknownCategory(): void
+    {
+        $this->assertThrows(ValidationException::class, function (): void {
+            $this->service()->create(['subject' => 'Ungültige Kategorie', 'category_id' => 999999]);
+        }, 'Kategorie aus dem Katalog');
+    }
+
+    public function testCreateDirectTaskRequiresTaskPermission(): void
+    {
+        $this->loginAs($this->createUser('portal-user', 'portal'), 'portal');
+
+        $this->assertThrows(ForbiddenException::class, function (): void {
+            $this->service()->create(['subject' => 'Unbefugte Anlage']);
+        }, 'helpdesk.tasks');
     }
 
     public function testChangeCategoryRecordsEventAndCanBeRemoved(): void

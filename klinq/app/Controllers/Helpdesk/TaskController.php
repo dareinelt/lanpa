@@ -16,8 +16,9 @@ use App\Services\Helpdesk\TaskService;
 use App\Support\Paginator;
 
 /**
- * Aufgaben im Help Desk: „Alle Aufgaben“ (Annehmen, Zuweisen), „Meine Aufgaben“ und Detailansicht.
- * Aufgaben entstehen über „In Aufgabe umwandeln“ auf einem Ticket.
+ * Aufgaben im Help Desk: „Alle Aufgaben“ (Annehmen, Zuweisen), „Meine Aufgaben“, Detailansicht und
+ * die direkte Anlage ohne Ticketbezug. Aufgaben können zusätzlich über „In Aufgabe umwandeln“ auf
+ * einem Ticket entstehen.
  */
 final class TaskController extends HelpdeskBaseController
 {
@@ -128,6 +129,35 @@ final class TaskController extends HelpdeskBaseController
     }
 
     // ------------------------------------------------------------------ Aktionen
+
+    /** Formular für eine direkt angelegte Aufgabe (ohne Ticketbezug). */
+    public function create(Request $request): Response
+    {
+        $this->currentUser->require('helpdesk.tasks');
+        $default = $this->masterData->defaultPriority();
+
+        return $this->render('helpdesk.aufgaben.form', [
+            'title' => 'Neue Aufgabe',
+            'activeNav' => 'helpdesk-aufgaben',
+            'areaLabel' => 'Help Desk',
+            'categories' => $this->categories->all(),
+            'priorities' => $this->masterData->priorities(),
+            'defaultPriorityId' => $default !== null ? (int) $default['id'] : null,
+        ]);
+    }
+
+    public function store(Request $request): Response
+    {
+        $task = null;
+        $response = $this->attempt($request, function () use ($request, &$task): void {
+            $task = $this->service->create($request->all());
+        }, '/helpdesk/aufgaben/neu');
+        if ($response !== null) {
+            return $response;
+        }
+
+        return $this->respond($request, 'Aufgabe ' . (string) $task['number'] . ' angelegt.', '/helpdesk/aufgaben/' . (int) $task['id'], ['task' => $task]);
+    }
 
     /** Ticket in eine Aufgabe umwandeln (Schaltfläche auf der Ticketdetailseite). */
     public function convert(Request $request): Response

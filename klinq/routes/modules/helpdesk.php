@@ -89,9 +89,11 @@ return static function (Router $router, Container $c): void {
     $router->get('/helpdesk/tickets/{id}/attachments/{document}', static fn (Request $r): Response => $files()->download($r), 'portal.view');
     $router->post('/helpdesk/tickets/{id}/attachments/{document}/delete', static fn (Request $r): Response => $files()->delete($r), 'helpdesk.update');
 
-    // Aufgaben („Alle Aufgaben“ und „Meine Aufgaben“). „Meine“ ist vor der {id}-Route registriert.
+    // Aufgaben („Alle Aufgaben“ und „Meine Aufgaben“). „Meine“ und „neu“ sind vor der {id}-Route registriert.
     $router->get('/helpdesk/aufgaben', static fn (Request $r): Response => $tasks()->index($r), 'helpdesk.tasks');
     $router->get('/helpdesk/aufgaben/meine', static fn (Request $r): Response => $tasks()->mine($r), 'helpdesk.tasks');
+    $router->get('/helpdesk/aufgaben/neu', static fn (Request $r): Response => $tasks()->create($r), 'helpdesk.tasks');
+    $router->post('/helpdesk/aufgaben', static fn (Request $r): Response => $tasks()->store($r), 'helpdesk.tasks');
     $router->get('/helpdesk/aufgaben/{id}', static fn (Request $r): Response => $tasks()->show($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/annehmen', static fn (Request $r): Response => $tasks()->claim($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/zuweisen', static fn (Request $r): Response => $tasks()->assign($r), 'helpdesk.tasks.assign');

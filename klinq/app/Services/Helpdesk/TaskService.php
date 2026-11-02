@@ -16,9 +16,9 @@ use App\Security\CurrentUser;
 use App\Services\AuditLogService;
 
 /**
- * Fachlogik der Aufgaben: Umwandlung aus Tickets, Annahme durch Agenten, Zuweisung durch die
- * Berechtigungsgruppe „Aufgabenverteilung“, Statuswechsel und Kommentare. Alle schreibenden Vorgänge
- * sind transaktional, schreiben den Aufgabenverlauf und das Audit-Log.
+ * Fachlogik der Aufgaben: direkte Anlage, Umwandlung aus Tickets, Annahme durch Agenten, Zuweisung
+ * durch die Berechtigungsgruppe „Aufgabenverteilung“, Statuswechsel und Kommentare. Alle schreibenden
+ * Vorgänge sind transaktional, schreiben den Aufgabenverlauf und das Audit-Log.
  */
 final class TaskService
 {
@@ -117,6 +117,71 @@ final class TaskService
     public function assignableAgents(): array
     {
         return $this->masterData->agents(TicketService::AGENT_ROLES);
+    }
+
+    // ------------------------------------------------------------------ Direkte Anlage
+
+    /**
+     * Legt eine Aufgabe direkt im Aufgabenbereich an, ohne Bezug zu einem Ticket.
+     *
+     * @param array<string,mixed> $input subject, description, priority_id, category_id, due_at
+     * @return array<string,mixed>
+     */
+    public function create(array $input): array
+    {
+        $this->currentUser->require('helpdesk.tasks');
+        $subject = trim((string) ($input['subject'] ?? ''));
+        if ($subject === '') {
+            throw ValidationException::single('subject', 'Bitte einen Betreff eingeben.');
+        }
+        if (mb_strlen($subject) < 3) {
+            throw ValidationException::single('subject', 'Der Betreff muss mindestens 3 Zeichen lang sein.');
+        }
+        if (mb_strlen($subject) > 255) {
+            throw ValidationException::single('subject', 'Der Betreff ist zu lang (max. 255 Zeichen).');
+        }
+        $description = trim((string) ($input['description'] ?? ''));
+        if (mb_strlen($description) > TicketService::MAX_TEXT_CHARS) {
+            throw ValidationException::single('description', 'Die Beschreibung ist zu lang (max. ' . number_format(TicketService::MAX_TEXT_CHARS, 0, ',', '.') . ' Zeichen).');
+        }
+        $priorityId = $this->validPriorityId($input['priority_id'] ?? null);
+        if ($priorityId === null && ($default = $this->masterData->defaultPriority()) !== null) {
+            $priorityId = (int) $default['id'];
+        }
+        $category = $this->validCategory($input['category_id'] ?? null);
+        $dueAt = $this->normalizeDueAt($input['due_at'] ?? null);
+        $userId = $this->currentUser->id();
+        $userName = $this->currentUser->displayName();
+
+        $taskId = $this->tasks->transaction(function () use ($subject, $description, $priorityId, $category, $dueAt, $userId, $userName): int {
+            $number = $this->numbers->next();
+            $id = $this->tasks->create([
+                'number' => $number,
+                'subject' => mb_substr($subject, 0, 255),
+                'description' => mb_substr($description, 0, TicketService::MAX_TEXT_CHARS),
+                'status' => 'open',
+                'category_id' => $category['id'] ?? null,
+                'priority_id' => $priorityId,
+                'due_at' => $dueAt,
+                'created_by' => $userId,
+                'created_by_name' => mb_substr($userName, 0, 200),
+                'updated_by' => $userId,
+            ]);
+            $this->tasks->addEvent($id, 'created', $userId, $userName, null, null, null, array_filter([
+                'number' => $number,
+                'category' => $category['name'] ?? null,
+            ], static fn (mixed $value): bool => $value !== null));
+
+            return $id;
+        });
+
+        $task = $this->get($taskId);
+        $this->audit->log('task.create', 'task', $taskId, (string) $task['number'], null, [
+            'subject' => (string) $task['subject'],
+            'category_id' => $task['category_id'],
+        ]);
+
+        return $task;
     }
 
     // ------------------------------------------------------------------ Umwandlung aus einem Ticket

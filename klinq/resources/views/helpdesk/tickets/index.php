@@ -150,7 +150,15 @@ $canMerge = $can('helpdesk.merge');
                 </td>
                 <td class="nowrap"><?= badge($r['status_name'], $r['status_color']) ?></td>
                 <td class="nowrap"><span class="prio-dot is-<?= e($r['priority_color']) ?>"></span><?= e($r['priority_name']) ?></td>
-                <td><?= e($r['requester_name'] ?? $r['requester_user_name'] ?? '–') ?><?php if (!empty($r['requester_department'])): ?><div class="text-xs text-muted"><?= e($r['requester_department']) ?></div><?php endif; ?></td>
+                <?php
+                $requesterName = trim((string) ($r['requester_name'] ?? ''));
+                $requesterMeta = trim((string) ($r['requester_department'] ?? ''));
+                if ($requesterMeta === '' && empty($r['requester_employee_id']) && empty($r['requester_user_id'])) {
+                    // Externe E-Mail-Melder ohne Mitarbeiter-/Benutzerdatensatz: Absenderadresse anzeigen
+                    $requesterMeta = trim((string) ($r['requester_email'] ?? ''));
+                }
+                ?>
+                <td><?= e($requesterName !== '' ? $requesterName : '–') ?><?php if ($requesterMeta !== ''): ?><div class="text-xs text-muted"><?= e($requesterMeta) ?></div><?php endif; ?></td>
                 <td><?= $r['assignee_name'] ? e($r['assignee_name']) : '<span class="text-muted">–</span>' ?><?php if ($r['group_name']): ?><div class="text-xs text-muted"><?= e($r['group_name']) ?></div><?php endif; ?></td>
                 <td class="sla-cell">
                     <?php if ($closed): ?>

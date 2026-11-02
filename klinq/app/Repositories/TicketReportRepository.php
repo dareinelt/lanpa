@@ -150,7 +150,8 @@ final class TicketReportRepository extends BaseRepository
     {
         return $this->fetchAll(
             'SELECT t.number, t.subject, ty.name AS type_name, st.name AS status_name, p.name AS priority_name, c.name AS category_name,
-                    sc.name AS subcategory_name, g.name AS group_name, au.display_name AS assignee_name, req.display_name AS requester_name,
+                    sc.name AS subcategory_name, g.name AS group_name, au.display_name AS assignee_name,
+                    COALESCE(NULLIF(req.display_name, \'\'), NULLIF(ru.display_name, \'\'), NULLIF(t.mail_from_name, \'\')) AS requester_name,
                     t.created_at, t.first_response_at, t.resolved_at, t.closed_at, t.response_due_at, t.resolution_due_at,
                     t.sla_response_state, t.sla_resolution_state, t.escalation_level, t.reopen_count,
                     (SELECT COALESCE(SUM(w.minutes), 0) FROM ticket_worklogs w WHERE w.ticket_id = t.id) AS worklog_minutes
@@ -162,6 +163,7 @@ final class TicketReportRepository extends BaseRepository
              LEFT JOIN ticket_categories sc ON sc.id = t.subcategory_id
              LEFT JOIN ticket_groups g ON g.id = t.group_id
              LEFT JOIN users au ON au.id = t.assignee_user_id
+             LEFT JOIN users ru ON ru.id = t.requester_user_id
              LEFT JOIN employees req ON req.id = t.requester_employee_id
              WHERE t.merged_into_ticket_id IS NULL AND t.created_at >= :from AND t.created_at < :to
              ORDER BY t.created_at LIMIT ' . $limit,

@@ -103,6 +103,22 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         $this->assertSame((int) $ticket['id'], (int) $log['ticket_id']);
     }
 
+    public function testUnknownSenderAppearsAsRequesterInTicketList(): void
+    {
+        $result = $this->ingestion->ingestRaw($this->raw('Gast Nutzer <gast@extern.test>', 'Beamer defekt', 'Der Beamer startet nicht.'));
+
+        $this->assertSame(TicketMailIngestionService::ACTION_CREATED, $result['action']);
+        $ticket = $this->c->get(TicketRepository::class)->find((int) $result['ticket_id']);
+        $this->assertNotNull($ticket);
+        // Auch ohne Mitarbeiter-/Benutzerdatensatz steht der erkannte Absender als Melder in der Liste.
+        $this->assertSame('Gast Nutzer', $ticket['requester_name']);
+        $this->assertSame('gast@extern.test', $ticket['requester_email']);
+
+        $rows = $this->c->get(TicketRepository::class)->search(['view' => 'all', 'q' => 'Gast Nutzer'], 'updated_at', 'desc', 10, 0);
+        $this->assertCount(1, $rows);
+        $this->assertSame('Gast Nutzer', $rows[0]['requester_name']);
+    }
+
     public function testKnownEmployeeBecomesRequester(): void
     {
         $result = $this->ingestion->ingestRaw($this->raw('rita@example.test', 'Tastatur defekt', 'Mehrere Tasten reagieren nicht.'));

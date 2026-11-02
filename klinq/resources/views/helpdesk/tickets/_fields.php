@@ -271,8 +271,15 @@ if (!empty($secondLevelAssigneeId)) {
             <?php if ($confirmText === ''): ?>
                 Es ist noch kein Bestätigungstext hinterlegt – unter Help-Desk-Einstellungen &rsaquo; Vorlageneinstellungen ergänzen. Ohne Text wird keine Bestätigung versendet.
             <?php else: ?>
-                Sendet den hinterlegten Bestätigungstext an den Melder und, falls abweichend, an den betroffenen Benutzer. Meldungen aus dem Störungsformular und dem Störungspostfach erhalten die Bestätigung automatisch.
+                Sendet den hinterlegten Bestätigungstext an den Melder. Meldungen aus dem Störungsformular und dem Störungspostfach erhalten die Bestätigung automatisch.
             <?php endif; ?>
         </p>
+    </div>
+    <div class="form-group">
+        <label class="checkbox">
+            <input type="checkbox" name="notify_affected" value="1"<?= checked(old('notify_affected')) ?>>
+            <span>Zusätzlich eingetragene Nutzer benachrichtigen</span>
+        </label>
+        <p class="form-hint">Wird die Eingangsbestätigung versendet, erhält auch der als „Betroffener Mitarbeiter“ eingetragene Nutzer eine Nachricht.</p>
     </div>
 <?php endif; ?>

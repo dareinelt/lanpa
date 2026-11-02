@@ -13,7 +13,8 @@ use App\Core\Config;
  *
  * Der Text stammt aus Help-Desk-Einstellungen → Vorlageneinstellungen und wird je Empfänger
  * mit Anrede und Namen gefüllt. Bei Sammelkonten erhält zusätzlich der verpflichtend
- * angegebene Benutzer eine Bestätigung.
+ * angegebene Benutzer eine Bestätigung; bei Agenten-Tickets der Betroffene nur auf Wunsch
+ * (Checkbox im Assistenten).
  */
 final class TicketConfirmationService
 {
@@ -28,13 +29,14 @@ final class TicketConfirmationService
     }
 
     /**
-     * Versendet die Bestätigung an den Melder und – falls abweichend – an den zusätzlichen
-     * Benutzer (Betroffener bzw. bei Sammelkonten die verpflichtend angegebene Person).
+     * Versendet die Bestätigung an den Melder und – falls gewünscht und abweichend – an den
+     * zusätzlichen Benutzer (Betroffener bzw. bei Sammelkonten die verpflichtend angegebene Person).
      *
      * @param array<string,mixed> $ticket
+     * @param bool $includeAffected auch den als „Betroffener Mitarbeiter“ eingetragenen Nutzer anschreiben
      * @return int Anzahl erfolgreich versendeter Mails (0 = keine Vorlage hinterlegt)
      */
-    public function send(array $ticket): int
+    public function send(array $ticket, bool $includeAffected = true): int
     {
         $template = $this->templates->confirmationText();
         if ($template === '' || !$this->notifications->requesterNotificationEnabled('created')) {
@@ -42,7 +44,7 @@ final class TicketConfirmationService
         }
 
         $sent = 0;
-        foreach ($this->recipients($ticket) as $email => $name) {
+        foreach ($this->recipients($ticket, $includeAffected) as $email => $name) {
             $html = ReplyTemplateSettingsService::render($template, $this->values($ticket, $name));
             $sent += $this->notifications->sendTo($ticket, self::EVENT_KEY, [$email], 'Eingangsbestätigung', $html);
         }
@@ -54,15 +56,18 @@ final class TicketConfirmationService
      * Empfänger der Bestätigung mit Anzeigename für die Anrede.
      *
      * @param array<string,mixed> $ticket
+     * @param bool $includeAffected zusätzlichen Benutzer (Betroffener) mit anschreiben
      * @return array<string,string> E-Mail (klein geschrieben) → Anzeigename
      */
-    private function recipients(array $ticket): array
+    private function recipients(array $ticket, bool $includeAffected): array
     {
         $candidates = [
             [(string) ($ticket['requester_email'] ?? ''), (string) ($ticket['requester_name'] ?? '')],
             [(string) ($ticket['requester_user_email'] ?? ''), (string) ($ticket['requester_user_name'] ?? '')],
-            [(string) ($ticket['affected_email'] ?? ''), (string) ($ticket['affected_name'] ?? '')],
         ];
+        if ($includeAffected) {
+            $candidates[] = [(string) ($ticket['affected_email'] ?? ''), (string) ($ticket['affected_name'] ?? '')];
+        }
 
         $out = [];
         foreach ($candidates as [$email, $name]) {

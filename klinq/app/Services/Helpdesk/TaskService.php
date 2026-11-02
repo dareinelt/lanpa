@@ -10,6 +10,7 @@ use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
 use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TaskCommentRepository;
+use App\Repositories\TaskJournalRepository;
 use App\Repositories\TaskRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Security\CurrentUser;
@@ -44,6 +45,7 @@ final class TaskService
         private readonly TaskRepository $tasks,
         private readonly TaskCategoryRepository $categories,
         private readonly TaskCommentRepository $comments,
+        private readonly TaskJournalRepository $journal,
         private readonly TaskNumberService $numbers,
         private readonly TicketService $tickets,
         private readonly TicketMasterDataRepository $masterData,
@@ -111,6 +113,12 @@ final class TaskService
     public function comments(int $taskId): array
     {
         return $this->comments->forTask($taskId);
+    }
+
+    /** Journal der Aufgabe, chronologisch in der Reihenfolge des Eintragens. @return array<int,array<string,mixed>> */
+    public function journal(int $taskId): array
+    {
+        return $this->journal->forTask($taskId);
     }
 
     /** Aktive Agenten, denen eine Aufgabe zugewiesen werden darf. @return array<int,array<string,mixed>> */
@@ -318,8 +326,9 @@ final class TaskService
     /**
      * Weist eine Aufgabe einem Agenten zu (Berechtigungsgruppe „Aufgabenverteilung“).
      * Ohne Agent wird die Zuweisung aufgehoben; die Aufgabe liegt dann wieder in „Alle Aufgaben“.
+     * Ein optionaler Kommentar landet als Eintrag im Journal der Aufgabe.
      */
-    public function assign(int $id, ?int $assigneeId): array
+    public function assign(int $id, ?int $assigneeId, ?string $comment = null): array
     {
         $this->currentUser->require('helpdesk.tasks.assign');
         $userId = $this->currentUser->id();
@@ -327,6 +336,7 @@ final class TaskService
         if (in_array((string) $task['status'], self::FINAL, true)) {
             throw ValidationException::single('status', 'Abgeschlossene Aufgaben können nicht zugewiesen werden.');
         }
+        $comment = $this->journalComment($comment);
 
         $now = gmdate('Y-m-d H:i:s');
         if ($assigneeId === null) {
@@ -339,11 +349,16 @@ final class TaskService
                 'status' => $task['status'] === 'in_progress' ? 'open' : $task['status'],
                 'updated_by' => $userId,
             ];
-            $this->tasks->transaction(function () use ($id, $update, $task, $userId, $previous): void {
+            $journalId = null;
+            $this->tasks->transaction(function () use ($id, $update, $task, $userId, $previous, $comment, &$journalId): void {
                 $this->save($id, $update, (int) $task['version']);
                 $this->tasks->addEvent($id, 'unassigned', $userId, $this->currentUser->displayName(), 'assignee_user_id', $previous, null);
+                if ($comment !== null) {
+                    $journalId = $this->createJournalEntry($id, 'unassignment', $comment);
+                }
             });
             $this->audit->log('task.unassign', 'task', $id, (string) $task['number'], ['assignee_user_id' => $task['assignee_user_id']], ['assignee_user_id' => null]);
+            $this->auditJournalEntry($id, (string) $task['number'], $journalId);
 
             return $this->get($id);
         }
@@ -367,11 +382,16 @@ final class TaskService
             'status' => $task['status'] === 'open' ? 'in_progress' : $task['status'],
             'updated_by' => $userId,
         ];
-        $this->tasks->transaction(function () use ($id, $update, $task, $userId, $assignee): void {
+        $journalId = null;
+        $this->tasks->transaction(function () use ($id, $update, $task, $userId, $assignee, $comment, &$journalId): void {
             $this->save($id, $update, (int) $task['version']);
             $this->tasks->addEvent($id, 'assigned', $userId, $this->currentUser->displayName(), 'assignee_user_id', $task['assignee_name'] !== null ? (string) $task['assignee_name'] : null, (string) $assignee['display_name']);
+            if ($comment !== null) {
+                $journalId = $this->createJournalEntry($id, 'assignment', $comment);
+            }
         });
         $this->audit->log('task.assign', 'task', $id, (string) $task['number'], ['assignee_user_id' => $task['assignee_user_id']], ['assignee_user_id' => $assigneeId]);
+        $this->auditJournalEntry($id, (string) $task['number'], $journalId);
 
         return $this->get($id);
     }
@@ -585,6 +605,41 @@ final class TaskService
         if (!$this->tasks->update($id, $data, $expectedVersion)) {
             throw new ConflictException('Die Aufgabe wurde zwischenzeitlich geändert. Bitte neu laden.');
         }
+    }
+
+    /** Optionalen Journal-Kommentar prüfen und normalisieren; leer bedeutet kein Eintrag. */
+    private function journalComment(?string $comment): ?string
+    {
+        $comment = trim((string) $comment);
+        if ($comment === '') {
+            return null;
+        }
+        if (mb_strlen($comment) > TicketService::MAX_TEXT_CHARS) {
+            throw ValidationException::single('comment', 'Der Kommentar ist zu lang (max. ' . number_format(TicketService::MAX_TEXT_CHARS, 0, ',', '.') . ' Zeichen).');
+        }
+
+        return $comment;
+    }
+
+    /** Legt einen unveränderlichen Journal-Eintrag an. */
+    private function createJournalEntry(int $taskId, string $type, string $body): int
+    {
+        return $this->journal->create([
+            'task_id' => $taskId,
+            'type' => $type,
+            'body' => $body,
+            'author_user_id' => $this->currentUser->id(),
+            'author_name' => mb_substr($this->currentUser->displayName(), 0, 200),
+        ]);
+    }
+
+    /** Journal-Eintrag auditieren, sofern einer entstanden ist. */
+    private function auditJournalEntry(int $taskId, string $number, ?int $journalId): void
+    {
+        if ($journalId === null) {
+            return;
+        }
+        $this->audit->log('task.journal', 'task', $taskId, $number, null, ['journal_id' => $journalId]);
     }
 
     private function validPriorityId(mixed $value): ?int

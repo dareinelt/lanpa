@@ -42,7 +42,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
   „In Aufgabe umwandeln“ aus einem Ticket erzeugt (das Ticket wird dabei geschlossen und bleibt verknüpft),
   Agenten nehmen Aufgaben an, Mitglieder der
   Berechtigungsgruppe „Aufgabenverteilung“ weisen sie einem Agenten direkt zu; jede Aufgabe führt einen
-  chronologischen Kommentarverlauf
+  chronologischen Kommentarverlauf und ein unveränderliches Journal für Zuweisungs-Kommentare
 - Ticket-Berichte/CSV-Export (Recht nur über die Berechtigungsgruppe „Statistik“ oder Admin-Rolle)
 - Ticket löschen und stornieren als getrennte Rechte (nur über die Berechtigungsgruppen „Darf Tickets löschen“
   bzw. „Darf Tickets stornieren“ oder Admin-Rolle)
@@ -83,7 +83,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–026), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–027), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -307,7 +307,8 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   direkt angelegten Aufgaben leer, optionale
   `category_id`), `task_categories` (flacher Katalog für die Kategorie-Pill vor dem Aufgabentitel, gepflegt unter
   Help-Desk-Administration → Aufgaben-Kategorien), `task_comments` (chronologischer Kommentarverlauf je Aufgabe,
-  angeheftete Einträge über `is_pinned`/`pinned_at` oben; ersetzt das frühere Einzelfeld `tasks.note`), `task_events`
+  angeheftete Einträge über `is_pinned`/`pinned_at` oben; ersetzt das frühere Einzelfeld `tasks.note`),
+  `task_journal` (unveränderliche Journal-Einträge je Aufgabe, u. a. Kommentar aus der Zuweisung), `task_events`
   (Verlauf: Anlage, Umwandlung, Annahme, Zuweisung, Statuswechsel, Kategorie- und Fälligkeitswechsel)
 
 ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)

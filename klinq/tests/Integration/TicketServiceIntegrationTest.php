@@ -317,6 +317,43 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertNull($reassigned['forward_acknowledged_at']);
     }
 
+    // ------------------------------------------------------------------ Schließen
+
+    public function testClosingUnassignedTicketKeepsCloserAsAssignee(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        $this->assertNull($ticket['assignee_user_id'], 'Frisches Ticket ist nicht zugewiesen');
+
+        $closed = $this->service()->changeStatus($id, 'closed', null, 'Neustart hat geholfen.');
+
+        $this->assertSame('closed', $closed['status_code']);
+        $this->assertSame($this->agentId, (int) $closed['assignee_user_id'], 'Der schließende Agent bleibt als Bearbeiter eingetragen');
+        $this->assertSame('Hd-agent', $closed['assignee_name']);
+        $this->assertContains('assigned', array_column($this->service()->timeline($id), 'type'), 'Übernahme wird im Verlauf dokumentiert');
+    }
+
+    public function testClosingKeepsExistingAssignee(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        $this->service()->assign($id, $this->agent2Id, null);
+
+        $closed = $this->service()->changeStatus($id, 'closed', null, 'Gerät getauscht.');
+
+        $this->assertSame($this->agent2Id, (int) $closed['assignee_user_id'], 'Ein vorhandener Bearbeiter wird nicht überschrieben');
+    }
+
+    public function testSystemCloseDoesNotAssignCloser(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+
+        $closed = $this->service()->changeStatus($id, 'closed', null, 'Automatisch geschlossen.', null, null, true);
+
+        $this->assertNull($closed['assignee_user_id'], 'Automatische Schließungen tragen keinen Bearbeiter ein');
+    }
+
     // ------------------------------------------------------------------ Kommentare
 
     public function testCommentsVisibilityAndAutoStatusChange(): void

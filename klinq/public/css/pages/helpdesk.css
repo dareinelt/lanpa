@@ -370,6 +370,9 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
     background: var(--color-surface);
 }
 .hd-step.is-future { opacity: 0.65; }
+.hd-step.is-next { opacity: 1; }
+.hd-step.is-next .hd-step-goto:hover .hd-step-title,
+.hd-step.is-next .hd-step-goto:focus-visible .hd-step-title { color: var(--color-primary); }
 .hd-step.is-current {
     border-color: var(--color-primary);
     box-shadow: 0 0 0 1px var(--color-primary-soft);

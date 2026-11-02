@@ -85,7 +85,7 @@ Alle Stammdaten werden **deaktiviert statt gelöscht** (`is_active`), damit Hist
 
 ### Dokumente
 
-`documents`: polymorph über `entity_type` (`asset|purchase_order|license|movement|supplier|import|handover`) und `entity_id`; `document_type` (`order|order_confirmation|delivery_note|invoice|license|photo|signature|handover_protocol|other`), `original_name`, `stored_name` (UUID-basiert, eindeutig), `mime_type`, `size_bytes`, `sha256`, Hochladender. Die Dateien liegen unter `storage/uploads/JJJJ/MM/` außerhalb des Webroots.
+`documents`: polymorph über `entity_type` (`asset|purchase_order|license|movement|supplier|import|handover|ticket|knowledge_article|task`) und `entity_id`; `document_type` (`order|order_confirmation|delivery_note|invoice|license|photo|signature|handover_protocol|attachment|other`), `original_name`, `stored_name` (UUID-basiert, eindeutig), `mime_type`, `size_bytes`, `sha256`, Hochladender. Die Dateien liegen unter `storage/uploads/JJJJ/MM/` außerhalb des Webroots. Aufgabenanhänge sind zusätzlich in `task_attachments` (`document_id` → `task_id`) verknüpft.
 
 ### Übergabeprotokolle
 

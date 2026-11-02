@@ -6,12 +6,17 @@ namespace Tests\Integration;
 
 use App\Exceptions\ForbiddenException;
 use App\Exceptions\ValidationException;
+use App\Repositories\DocumentRepository;
 use App\Repositories\EmployeeRepository;
 use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TaskRepository;
+use App\Repositories\TicketAttachmentRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Security\CurrentUser;
+use App\Services\DocumentService;
+use App\Services\Helpdesk\TaskAttachmentService;
 use App\Services\Helpdesk\TaskService;
+use App\Services\Helpdesk\TicketAttachmentService;
 use App\Services\Helpdesk\TicketService;
 use Tests\Support\DatabaseTestCase;
 
@@ -22,6 +27,9 @@ use Tests\Support\DatabaseTestCase;
  */
 final class TaskServiceIntegrationTest extends DatabaseTestCase
 {
+    /** 1x1-PNG für Uploads und eingebettete Bilder in Kommentaren. */
+    private const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
+
     private int $agentId;
     private int $agent2Id;
     private int $requesterEmployeeId;
@@ -97,6 +105,25 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
             'impact' => 1,
             'urgency' => 2,
         ], 'web');
+    }
+
+    /** $_FILES-Eintrag mit einer kleinen PNG-Datei; der Aufrufer räumt die temporäre Datei auf. @return array<string,mixed> */
+    private function pngUpload(string $name = 'screenshot.png'): array
+    {
+        $tmp = (string) tempnam(sys_get_temp_dir(), 'klinq-att');
+        file_put_contents($tmp, (string) base64_decode(self::PNG_BASE64));
+
+        return ['name' => $name, 'tmp_name' => $tmp, 'size' => (int) filesize($tmp), 'error' => UPLOAD_ERR_OK];
+    }
+
+    /** Legt eine PNG-Datei als Ticketanhang ab und liefert den documents-Datensatz. @return array<string,mixed> */
+    private function attachPngToTicket(int $ticketId): array
+    {
+        $upload = $this->pngUpload();
+        $documentId = $this->c->get(TicketAttachmentService::class)->store($ticketId, null, false, $upload);
+        @unlink((string) $upload['tmp_name']);
+
+        return $this->c->get(DocumentRepository::class)->find($documentId) ?? [];
     }
 
     public function testConvertClosesTicketAndLinksTask(): void
@@ -334,6 +361,100 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         $task = $this->service()->convert((int) $this->createTicket()['id'], []);
 
         $this->assertSame([], $this->service()->journal((int) $task['id']));
+    }
+
+    public function testConvertCarriesTicketCommentsIntoJournal(): void
+    {
+        $ticket = $this->createTicket();
+        $tickets = $this->c->get(TicketService::class);
+        $public = $tickets->addComment((int) $ticket['id'], 'Bildschirm bleibt auch nach dem Neustart schwarz.', 'public', 'web');
+        $tickets->addComment((int) $ticket['id'], 'Netzteil wurde bereits getauscht.', 'internal', 'web');
+        $this->pdo->prepare('UPDATE ticket_comments SET created_at = ? WHERE id = ?')->execute(['2024-03-05 08:15:00', (int) $public['id']]);
+
+        // Die Umwandlung durch einen zweiten Agenten zeigt, dass Autor und Zeitpunkt erhalten bleiben.
+        $this->loginAs($this->agent2Id, 'helpdesk_agent');
+        $task = $this->service()->convert((int) $ticket['id'], ['comment' => 'Aus dem Ticket übernommen.']);
+
+        $journal = $this->service()->journal((int) $task['id']);
+        $this->assertSame(['ticket_comment', 'ticket_comment_internal', 'conversion'], array_column($journal, 'type'));
+        $this->assertSame('Bildschirm bleibt auch nach dem Neustart schwarz.', $journal[0]['body']);
+        $this->assertSame($this->agentId, (int) $journal[0]['author_user_id']);
+        $this->assertSame('Agent ' . $this->agentId, $journal[0]['author_name']);
+        $this->assertSame('2024-03-05 08:15:00', (string) $journal[0]['created_at']);
+        $this->assertSame('Netzteil wurde bereits getauscht.', $journal[1]['body']);
+        $this->assertSame($this->agentId, (int) $journal[1]['author_user_id']);
+        $this->assertSame('Aus dem Ticket übernommen.', $journal[2]['body']);
+        $this->assertSame($this->agent2Id, (int) $journal[2]['author_user_id']);
+    }
+
+    public function testConvertCarriesInlineImagesOfComments(): void
+    {
+        $ticket = $this->createTicket();
+        $image = '![Screenshot](data:image/png;base64,' . self::PNG_BASE64 . ')';
+        $this->c->get(TicketService::class)->addComment((int) $ticket['id'], 'Hier das Bild: ' . $image, 'public', 'web');
+
+        $task = $this->service()->convert((int) $ticket['id'], []);
+
+        $journal = $this->service()->journal((int) $task['id']);
+        $this->assertCount(1, $journal);
+        $this->assertStringContains('data:image/png;base64,' . self::PNG_BASE64, (string) $journal[0]['body']);
+    }
+
+    public function testConvertCopiesTicketAttachmentsToTheTask(): void
+    {
+        $ticket = $this->createTicket();
+        $source = $this->attachPngToTicket((int) $ticket['id']);
+        $documents = $this->c->get(DocumentService::class);
+
+        $task = $this->service()->convert((int) $ticket['id'], []);
+
+        $attachments = $this->service()->attachments((int) $task['id']);
+        $this->assertCount(1, $attachments);
+        $this->assertSame('screenshot.png', $attachments[0]['original_name']);
+        $this->assertSame('task', $attachments[0]['entity_type']);
+        $this->assertSame((int) $task['id'], (int) $attachments[0]['entity_id']);
+        $this->assertTrue((int) $attachments[0]['id'] !== (int) $source['id'], 'Die Aufgabe erhält eine eigene Kopie');
+
+        $copyPath = $documents->path($attachments[0]);
+        $sourcePath = $documents->path($source);
+        $this->assertTrue(is_file($copyPath));
+        $this->assertSame(file_get_contents($sourcePath), file_get_contents($copyPath));
+        // Der Anhang bleibt zusätzlich am Ticket erhalten.
+        $this->assertTrue(is_file($sourcePath));
+        $this->assertSame(1, $this->c->get(TicketAttachmentRepository::class)->countForTicket((int) $ticket['id']));
+
+        $this->assertContains('attachments_copied', array_column($this->service()->events((int) $task['id']), 'type'));
+        $journal = $this->service()->journal((int) $task['id']);
+        $this->assertSame('ticket_attachments', $journal[0]['type']);
+        $this->assertStringContains('screenshot.png', (string) $journal[0]['body']);
+
+        @unlink($copyPath);
+        @unlink($sourcePath);
+    }
+
+    public function testTaskAttachmentsCanBeUploadedAndDeleted(): void
+    {
+        $task = $this->service()->convert((int) $this->createTicket()['id'], []);
+        $documents = $this->c->get(DocumentService::class);
+        $attachmentService = $this->c->get(TaskAttachmentService::class);
+
+        $documentId = $attachmentService->store((int) $task['id'], $this->pngUpload(), 'Aus dem Ticket');
+        $document = $this->c->get(DocumentRepository::class)->find($documentId);
+
+        $this->assertNotNull($document);
+        $this->assertSame('task', $document['entity_type']);
+        $this->assertSame((int) $task['id'], (int) $document['entity_id']);
+        $this->assertSame('Aus dem Ticket', $document['note']);
+        $this->assertCount(1, $this->service()->attachments((int) $task['id']));
+
+        $path = $documents->path($document);
+        $this->assertTrue(is_file($path));
+
+        $attachmentService->delete((int) $task['id'], $documentId);
+
+        $this->assertSame([], $this->service()->attachments((int) $task['id']));
+        $this->assertFalse(is_file($path));
+        $this->assertContains('attachment_removed', array_column($this->service()->events((int) $task['id']), 'type'));
     }
 
     // ------------------------------------------------------------------ Direkte Anlage (ohne Ticket)

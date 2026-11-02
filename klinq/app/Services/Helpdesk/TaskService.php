@@ -12,6 +12,8 @@ use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TaskCommentRepository;
 use App\Repositories\TaskJournalRepository;
 use App\Repositories\TaskRepository;
+use App\Repositories\TicketAttachmentRepository;
+use App\Repositories\TicketCommentRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Security\CurrentUser;
 use App\Services\AuditLogService;
@@ -46,8 +48,11 @@ final class TaskService
         private readonly TaskCategoryRepository $categories,
         private readonly TaskCommentRepository $comments,
         private readonly TaskJournalRepository $journal,
+        private readonly TaskAttachmentService $taskAttachments,
         private readonly TaskNumberService $numbers,
         private readonly TicketService $tickets,
+        private readonly TicketCommentRepository $ticketComments,
+        private readonly TicketAttachmentRepository $ticketAttachments,
         private readonly TicketMasterDataRepository $masterData,
         private readonly AuditLogService $audit,
         private readonly CurrentUser $currentUser
@@ -119,6 +124,12 @@ final class TaskService
     public function journal(int $taskId): array
     {
         return $this->journal->forTask($taskId);
+    }
+
+    /** Anhänge der Aufgabe (hochgeladen oder aus dem Ticket übernommen). @return array<int,array<string,mixed>> */
+    public function attachments(int $taskId): array
+    {
+        return $this->taskAttachments->forTask($taskId);
     }
 
     /** Aktive Agenten, denen eine Aufgabe zugewiesen werden darf. @return array<int,array<string,mixed>> */
@@ -196,8 +207,10 @@ final class TaskService
 
     /**
      * Wandelt ein Ticket in eine Aufgabe um und schließt das Ticket anschließend (es ist mit der
-     * Aufgabe verknüpft und wird dort weiterbearbeitet). Ein optionaler Kommentar landet als
-     * Eintrag im Journal der Aufgabe.
+     * Aufgabe verknüpft und wird dort weiterbearbeitet). Kommentare des Tickets werden als
+     * unveränderliche Einträge ins Journal der Aufgabe übernommen (dadurch bleiben auch die im Text
+     * eingebetteten Bilder erhalten), Anhänge als eigene Aufgabenanhänge kopiert. Ein optionaler
+     * Kommentar aus dem Dialog landet zusätzlich als Eintrag im Journal.
      *
      * @param array<string,mixed> $input subject, description, priority_id, due_at, category_id, comment
      * @return array<string,mixed>
@@ -233,7 +246,12 @@ final class TaskService
         $userName = $this->currentUser->displayName();
 
         $journalId = null;
-        $taskId = $this->tasks->transaction(function () use ($ticketId, $ticket, $subject, $description, $priorityId, $category, $dueAt, $now, $userId, $userName, $comment, &$journalId): int {
+        $carried = ['comments' => 0, 'attachments' => 0];
+        // Vor dem Schließen des Tickets lesen: der Systemhinweis „In Aufgabe … umgewandelt.“ entsteht
+        // erst durch changeStatus() und gehört nicht in das Journal der Aufgabe.
+        $ticketComments = $this->ticketComments->forTicket($ticketId, true);
+        $ticketAttachments = $this->ticketAttachments->forTicket($ticketId, true);
+        $taskId = $this->tasks->transaction(function () use ($ticketId, $ticket, $subject, $description, $priorityId, $category, $dueAt, $now, $userId, $userName, $comment, $ticketComments, $ticketAttachments, &$journalId, &$carried): int {
             $number = $this->numbers->next();
             $id = $this->tasks->create([
                 'number' => $number,
@@ -273,6 +291,23 @@ final class TaskService
                 'ticket_id' => $ticketId,
                 'ticket_number' => (string) $ticket['number'],
             ]);
+            // Kommentare des Tickets übernimmt das Journal; es ist unveränderlich und bereits vorhanden.
+            foreach ($ticketComments as $ticketComment) {
+                $this->carryOverTicketComment($id, $ticketComment);
+                $carried['comments']++;
+            }
+            // Anhänge werden als eigene Dateien kopiert, damit die Aufgabe eigenständig bleibt.
+            foreach ($ticketAttachments as $ticketAttachment) {
+                $this->taskAttachments->copyFromTicket($id, $ticketAttachment);
+                $carried['attachments']++;
+            }
+            if ($ticketAttachments !== []) {
+                $this->tasks->addEvent($id, 'attachments_copied', $userId, $userName, null, null, (string) count($ticketAttachments), [
+                    'ticket_id' => $ticketId,
+                    'count' => count($ticketAttachments),
+                ]);
+                $this->createJournalEntry($id, 'ticket_attachments', $this->attachmentsSummary($ticketAttachments, (string) $ticket['number']));
+            }
             if ($comment !== null) {
                 $journalId = $this->createJournalEntry($id, 'conversion', $comment);
             }
@@ -285,6 +320,8 @@ final class TaskService
             'subject' => (string) $task['subject'],
             'source_ticket_id' => $ticketId,
             'category_id' => $task['category_id'],
+            'ticket_comments' => $carried['comments'],
+            'ticket_attachments' => $carried['attachments'],
         ]);
         $this->auditJournalEntry($taskId, (string) $task['number'], $journalId);
 
@@ -647,6 +684,41 @@ final class TaskService
             return;
         }
         $this->audit->log('task.journal', 'task', $taskId, $number, null, ['journal_id' => $journalId]);
+    }
+
+    /**
+     * Übernimmt einen Ticket-Kommentar als unveränderlichen Journal-Eintrag. Autor, Zeitpunkt und
+     * Sichtbarkeit bleiben erhalten; im Text eingebettete Bilder (Base64) werden dadurch mitkopiert.
+     *
+     * @param array<string,mixed> $comment
+     */
+    private function carryOverTicketComment(int $taskId, array $comment): int
+    {
+        $internal = (string) ($comment['type'] ?? 'public') === 'internal';
+
+        return $this->journal->create([
+            'task_id' => $taskId,
+            'type' => $internal ? 'ticket_comment_internal' : 'ticket_comment',
+            'body' => mb_substr((string) ($comment['body'] ?? ''), 0, TicketService::MAX_TEXT_CHARS),
+            'author_user_id' => isset($comment['author_user_id']) ? (int) $comment['author_user_id'] : null,
+            'author_name' => mb_substr((string) ($comment['author_name'] ?? 'System'), 0, 200),
+            'created_at' => (string) $comment['created_at'],
+        ]);
+    }
+
+    /**
+     * Journal-Text, der die Übernahme der Ticketanhänge zusammenfasst.
+     *
+     * @param array<int,array<string,mixed>> $attachments
+     */
+    private function attachmentsSummary(array $attachments, string $ticketNumber): string
+    {
+        $names = array_map(static fn (array $attachment): string => (string) $attachment['original_name'], $attachments);
+        $prefix = count($names) === 1
+            ? 'Anhang aus Ticket ' . $ticketNumber . ' übernommen: '
+            : count($names) . ' Anhänge aus Ticket ' . $ticketNumber . ' übernommen: ';
+
+        return mb_substr($prefix . implode(', ', $names), 0, TicketService::MAX_TEXT_CHARS);
     }
 
     private function validPriorityId(mixed $value): ?int

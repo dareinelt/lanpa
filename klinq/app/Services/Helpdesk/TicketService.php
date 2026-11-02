@@ -45,6 +45,9 @@ final class TicketService
      */
     public const MAX_TEXT_CHARS = 2000000;
 
+    /** Höchstlänge des Betreffs (Spalte `helpdesk_tickets.subject`). */
+    public const MAX_SUBJECT_CHARS = 255;
+
     public function __construct(
         private readonly TicketRepository $tickets,
         private readonly TicketMasterDataRepository $masterData,
@@ -1503,7 +1506,7 @@ final class TicketService
     private function validate(array $input, ?array $existing, bool $portal): array
     {
         $v = (new Validator($input))
-            ->string('subject', 'Betreff', true, 255, 3)
+            ->string('subject', 'Betreff', true, self::MAX_SUBJECT_CHARS, 3)
             ->text('description', 'Beschreibung', true, self::MAX_TEXT_CHARS)
             ->id('ticket_type_id', 'Tickettyp', !$portal)
             ->id('category_id', 'Kategorie')

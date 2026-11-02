@@ -7,6 +7,7 @@ namespace Tests\Unit;
 use App\Security\CurrentUser;
 use App\Security\Permissions;
 use App\Core\Config;
+use App\Exceptions\ValidationException;
 use App\Services\Helpdesk\ReporterIdentityService;
 use App\Services\Helpdesk\QuickReportSettingsService;
 use App\Support\IpRange;
@@ -59,6 +60,26 @@ final class QuickReportTest extends TestCase
         $this->assertFalse(QuickReportSettingsService::contentValidationFrom([], false));
         $this->assertTrue(QuickReportSettingsService::contentValidationFrom(['content_validation' => '1'], false));
         $this->assertFalse(QuickReportSettingsService::contentValidationFrom(['content_validation' => '0'], true));
+    }
+
+    public function testSettingsValidationTreatsMissingCheckboxAsDisabled(): void
+    {
+        $on = QuickReportSettingsService::validate(['shared_accounts' => "empfang\nFIRMA\\Empfang", 'content_validation' => '1']);
+        $this->assertTrue($on['content_validation']);
+        $this->assertSame(['empfang'], $on['shared_accounts']);
+        $this->assertSame(QuickReportSettingsService::DEFAULT_SHARED_ACCOUNTS_HINT, $on['shared_accounts_hint']);
+
+        $off = QuickReportSettingsService::validate(['shared_accounts' => '']);
+        $this->assertFalse($off['content_validation']);
+        $this->assertSame([], $off['shared_accounts']);
+    }
+
+    public function testSettingsValidationRejectsInvalidAccounts(): void
+    {
+        $this->assertThrows(
+            ValidationException::class,
+            static fn () => QuickReportSettingsService::validate(['shared_accounts' => 'gültig<script>', 'content_validation' => '1'])
+        );
     }
 
     public function testAllowedNetworksMatchIpv4AndIpv6(): void

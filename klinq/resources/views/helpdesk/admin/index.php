@@ -46,13 +46,20 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
 </div>
 <form method="post" action="/helpdesk/admin/quick-report" novalidate>
 <?= csrf_field() ?>
+<?php
+// Nach einem fehlgeschlagenen Speichern die Eingabe zeigen; ein fehlendes Häkchen heißt dort „aus“.
+$contentValidationChecked = isset($_SESSION['_old_input']['shared_accounts'])
+    ? !empty($_SESSION['_old_input']['content_validation'])
+    : $quickReport['content_validation'];
+?>
 <div class="card mb-4">
     <div class="card-header"><h2>Inhaltliche Prüfung</h2><span class="text-muted text-sm">Betreff und Beschreibung</span></div>
     <p class="text-muted text-sm">Vor dem Anlegen einer Meldung aus dem Störungsformular werden Betreff und Beschreibung auf Mindestinhalt geprüft: kein Aufsatz im Betreff, keine Floskeln wie „siehe unten“, kein Screenshot ohne Text, keine bloße Wiederholung des Betreffs und keine reine Inventarnummer.</p>
     <div class="form-group">
-        <label class="checkbox-field"><input type="checkbox" name="content_validation" value="1"<?= checked($quickReport['content_validation']) ?>> <span>Inhaltliche Prüfung aktiv</span></label>
+        <label class="checkbox-field"><input type="checkbox" name="content_validation" value="1"<?= checked($contentValidationChecked) ?>> <span>Inhaltliche Prüfung aktiv</span></label>
         <span class="form-hint">Ohne Häkchen nimmt das Formular jede Meldung an, die die Pflichtfelder füllt; die Betreffgrenze steigt dann wieder auf 255 Zeichen.</span>
     </div>
+    <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button></div>
 </div>
 <div class="card mb-4">
     <div class="card-header"><h2>Sammelkonten</h2><span class="text-muted text-sm">Pflicht für zusätzlichen Benutzer</span></div>

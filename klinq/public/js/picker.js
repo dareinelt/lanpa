@@ -10,10 +10,26 @@
         const label = root.querySelector("[data-picker-label]");
         const meta = root.querySelector("[data-picker-meta]");
         const clear = root.querySelector("[data-picker-clear]");
+        // data-picker-create-url: unbekannte Personen direkt aus der Suche heraus anlegen
+        const createUrl = root.getAttribute("data-picker-create-url");
+        const createDialog = createUrl ? root.querySelector("[data-picker-create-dialog]") : null;
+        const createTitle = createDialog ? createDialog.querySelector("[data-picker-create-title]") : null;
+        const createEmail = createDialog ? createDialog.querySelector("[data-picker-create-email]") : null;
+        const createPhone = createDialog ? createDialog.querySelector("[data-picker-create-phone]") : null;
+        const createKeep = createDialog ? createDialog.querySelector("[data-picker-create-keep]") : null;
+        const createSubmit = createDialog ? createDialog.querySelector("[data-picker-create-submit]") : null;
+        const createError = createDialog ? createDialog.querySelector("[data-picker-create-error]") : null;
         let timer = null;
         let items = [];
         let active = -1;
         let controller = null;
+        let createTerm = "";
+
+        // Der Dialog steht im Formular und damit ggf. in einem ausgeblendeten
+        // Assistenten-Schritt; als Modal funktioniert er nur direkt im Body.
+        if (createDialog && createDialog.parentNode !== document.body) {
+            document.body.appendChild(createDialog);
+        }
 
         function escapeHtml(s) {
             return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -21,7 +37,13 @@
 
         function render() {
             if (!items.length) {
-                results.innerHTML = input.value.trim().length >= 1 ? '<li class="picker-empty">Keine Treffer</li>' : "";
+                const term = input.value.trim();
+                if (term.length < 1) {
+                    results.innerHTML = "";
+                } else {
+                    results.innerHTML = '<li class="picker-empty">Keine Treffer</li>'
+                        + (createDialog ? '<li class="picker-add"><button type="button" class="btn btn-sm" data-picker-create>' + escapeHtml("„" + term + "“ hinzufügen") + '</button></li>' : "");
+                }
                 results.hidden = results.innerHTML === "";
                 input.setAttribute("aria-expanded", results.hidden ? "false" : "true");
                 return;
@@ -91,6 +113,87 @@
             apply(item, item.id);
         }
 
+        /** Fehler im Anlege-Dialog anzeigen (leer = ausblenden). */
+        function showCreateError(message) {
+            if (!createError) { return; }
+            createError.textContent = message || "";
+            createError.hidden = !message;
+        }
+
+        function openCreate() {
+            if (!createDialog) { return; }
+            createTerm = input.value.trim();
+            if (createTitle) { createTitle.textContent = "„" + createTerm + "“ hinzufügen"; }
+            showCreateError("");
+            results.hidden = true;
+            if (createEmail) { createEmail.value = ""; }
+            if (createPhone) { createPhone.value = ""; }
+            if (typeof createDialog.showModal === "function") { createDialog.showModal(); } else { createDialog.setAttribute("open", "true"); }
+            if (createEmail) { createEmail.focus(); }
+        }
+
+        function closeCreate() {
+            if (!createDialog) { return; }
+            if (typeof createDialog.close === "function") { createDialog.close(); } else { createDialog.removeAttribute("open"); }
+        }
+
+        /** Unbekannte Person anlegen und direkt als Auswahl uebernehmen. */
+        function submitCreate() {
+            if (!createDialog || !createUrl) { return; }
+            const email = createEmail ? createEmail.value.trim() : "";
+            const phone = createPhone ? createPhone.value.trim() : "";
+            if (email === "" && phone === "") {
+                showCreateError("Bitte E-Mail-Adresse oder Rückrufnummer angeben.");
+                return;
+            }
+            if (email !== "" && createEmail && !createEmail.checkValidity()) {
+                showCreateError("Bitte eine gültige E-Mail-Adresse angeben.");
+                return;
+            }
+            showCreateError("");
+            if (createSubmit) { createSubmit.disabled = true; }
+            const payload = { name: createTerm, email: email, phone: phone, keep: createKeep ? createKeep.checked : true };
+            const request = window.AppUI && window.AppUI.api
+                ? window.AppUI.api(createUrl, { method: "POST", body: payload })
+                : fetch(createUrl, {
+                    method: "POST",
+                    headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-Token": csrfToken() },
+                    credentials: "same-origin",
+                    body: JSON.stringify(payload)
+                }).then(function (r) {
+                    return r.json().then(function (data) {
+                        if (!r.ok) { throw new Error((data && data.error) || "Person konnte nicht angelegt werden."); }
+                        return data;
+                    });
+                });
+            Promise.resolve(request)
+                .then(function (data) {
+                    if (!data || !data.id) { throw new Error("Person konnte nicht angelegt werden."); }
+                    closeCreate();
+                    apply({ name: data.name, meta: data.meta }, data.id);
+                })
+                .catch(function (error) {
+                    showCreateError((error && error.message) || "Person konnte nicht angelegt werden.");
+                })
+                .then(function () { if (createSubmit) { createSubmit.disabled = false; } });
+        }
+
+        if (createDialog) {
+            createDialog.addEventListener("click", function (e) {
+                if (e.target.closest("[data-picker-create-submit]")) { submitCreate(); }
+            });
+            createDialog.addEventListener("keydown", function (e) {
+                const field = e.target;
+                if (e.key === "Enter" && field && field.tagName === "INPUT" && field.type !== "checkbox") {
+                    e.preventDefault();
+                    submitCreate();
+                }
+            });
+            createDialog.addEventListener("close", function () {
+                if (!input.hidden) { input.focus(); }
+            });
+        }
+
         function reset() {
             value.value = "";
             selected.hidden = true;
@@ -118,6 +221,7 @@
             else if (e.key === "Escape") { results.hidden = true; }
         });
         results.addEventListener("click", function (e) {
+            if (e.target.closest("[data-picker-create]")) { openCreate(); return; }
             const btn = e.target.closest("button[data-index]");
             if (btn) { choose(items[Number(btn.getAttribute("data-index"))]); }
         });

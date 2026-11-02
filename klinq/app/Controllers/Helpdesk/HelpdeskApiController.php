@@ -199,6 +199,21 @@ final class HelpdeskApiController extends HelpdeskBaseController
         return $this->json(['id' => $id]);
     }
 
+    /**
+     * Legt einen Melder an, der in keiner Identitaetsquelle steht (z. B. ein
+     * externer Anrufer). Mit "Zu Kontakten hinzufuegen" bleibt die Person in
+     * der Personenauswahl verfuegbar, sonst gilt sie nur fuer dieses Ticket.
+     */
+    public function createPerson(Request $request): Response
+    {
+        return $this->json($this->people->createContact(
+            $request->string('name'),
+            $request->string('email'),
+            $request->string('phone'),
+            $request->bool('keep')
+        ));
+    }
+
     /** Wissensartikel-Vorschläge zum eingegebenen Betreff (Portal + Agent). */
     public function suggestArticles(Request $request): Response
     {

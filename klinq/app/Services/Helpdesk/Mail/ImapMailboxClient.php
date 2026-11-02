@@ -30,7 +30,10 @@ final class ImapMailboxClient implements MailboxClientInterface
     public function fetchUnprocessed(int $limit): array
     {
         $this->connect();
-        $response = $this->command('UID SEARCH UNSEEN UNKEYWORD ' . self::FAILED_FLAG);
+        // Kein UNKEYWORD: Exchange unterstützt für KEYWORD/UNKEYWORD nur $MDNSent (MS-STANXIMAP)
+        // und lehnt benutzerdefinierte Keywords mit „BAD Command Argument Error“ ab. Fehlgeschlagene
+        // Nachrichten werden deshalb als gelesen markiert und über UNSEEN übersprungen.
+        $response = $this->command('UID SEARCH UNSEEN');
         $uids = [];
         foreach ($response as $line) {
             if (preg_match('/^\* SEARCH\s*(.*)$/i', $line, $m) === 1) {
@@ -77,7 +80,11 @@ final class ImapMailboxClient implements MailboxClientInterface
     public function markFailed(string $uid): void
     {
         $this->connect();
-        $this->command(sprintf('UID STORE %s +FLAGS.SILENT (\Seen %s)', $uid, self::FAILED_FLAG), true);
+        // \Seen zuerst und in einem eigenen Kommando: Es ist das Merkmal, über das der nächste Lauf
+        // die Nachricht überspringt. Das zusätzliche Keyword ist nur eine Markierung für Server, die
+        // benutzerdefinierte Flags unterstützen; Exchange lehnt es ab (siehe fetchUnprocessed()).
+        $this->command(sprintf('UID STORE %s +FLAGS.SILENT (\Seen)', $uid));
+        $this->command(sprintf('UID STORE %s +FLAGS.SILENT (%s)', $uid, self::FAILED_FLAG), true);
     }
 
     /**

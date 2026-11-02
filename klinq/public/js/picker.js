@@ -35,6 +35,13 @@
             return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
         }
 
+        /** Beschriftung der Anlege-Aktion aus dem eingegebenen Namen ("Gustav Gans hinzufügen"). */
+        function createLabel(term) {
+            const max = 60;
+            const short = term.length > max ? term.slice(0, max - 1).trim() + "…" : term;
+            return short + " hinzufügen";
+        }
+
         function render() {
             if (!items.length) {
                 const term = input.value.trim();
@@ -42,7 +49,7 @@
                     results.innerHTML = "";
                 } else {
                     results.innerHTML = '<li class="picker-empty">Keine Treffer</li>'
-                        + (createDialog ? '<li class="picker-add"><button type="button" class="btn btn-sm" data-picker-create>' + escapeHtml("„" + term + "“ hinzufügen") + '</button></li>' : "");
+                        + (createDialog ? '<li class="picker-add"><button type="button" class="btn btn-sm" data-picker-create>' + escapeHtml(createLabel(term)) + '</button></li>' : "");
                 }
                 results.hidden = results.innerHTML === "";
                 input.setAttribute("aria-expanded", results.hidden ? "false" : "true");
@@ -123,7 +130,7 @@
         function openCreate() {
             if (!createDialog) { return; }
             createTerm = input.value.trim();
-            if (createTitle) { createTitle.textContent = "„" + createTerm + "“ hinzufügen"; }
+            if (createTitle) { createTitle.textContent = createLabel(createTerm); }
             showCreateError("");
             results.hidden = true;
             if (createEmail) { createEmail.value = ""; }

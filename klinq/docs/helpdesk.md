@@ -239,7 +239,8 @@ gelangen. Die Suche läuft live über die interne Schnittstelle `GET /internal/k
 - **Lokale Mitarbeiter** bleiben zusätzlich wählbar (phonetische Suche), damit die Felder auch ohne erreichbares
   Intranet funktionieren.
 - **Unbekannte Personen anlegen**: Führt die Suche zu keinem Treffer, bietet die Auswahlliste unter „Keine Treffer“
-  die Aktion **„eingegebener Nutzer“ hinzufügen** an. Der Dialog erfasst E-Mail-Adresse und **Rückrufnummer**
+  die Aktion **„<eingegebener Name> hinzufügen“** an – die Beschriftung wird dynamisch aus der Eingabe gebildet
+  (z. B. „Gustav Gans hinzufügen“). Der Dialog erfasst E-Mail-Adresse und **Rückrufnummer**
   (mindestens eine der beiden Angaben) sowie die Option **Zu Kontakten hinzufügen**. Der Name ist der eingegebene
   Suchbegriff. Die Person wird als lokaler Mitarbeiter mit `source = manual` angelegt
   (`PersonDirectoryService::createContact()`), unabhängig von einer Identitätsquelle:

@@ -217,7 +217,7 @@ final class QuickReportController extends HelpdeskBaseController
             'requiresAffected' => $requiresAffected,
             'sharedAccountHint' => $requiresAffected ? $this->quickSettings->sharedAccountsHint() : '',
             'contentValidation' => $contentValidation,
-            'maxSubjectChars' => $contentValidation ? QuickReportContentValidator::MAX_SUBJECT_CHARS : 255,
+            'maxSubjectChars' => $contentValidation ? QuickReportContentValidator::MAX_SUBJECT_CHARS : TicketService::MAX_SUBJECT_CHARS,
         ], $status);
     }
 

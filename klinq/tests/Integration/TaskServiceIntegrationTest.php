@@ -355,6 +355,30 @@ final class TaskServiceIntegrationTest extends DatabaseTestCase
         $this->assertNull($cleared['category_id']);
     }
 
+    public function testChangeDueDateAddsAndRemovesDueDate(): void
+    {
+        $task = $this->service()->create(['subject' => 'Fälligkeit nachtragen']);
+        $this->assertNull($task['due_at']);
+
+        $dated = $this->service()->changeDueDate((int) $task['id'], ['due_at' => '2032-04-20']);
+        $this->assertStringContains('2032-04-20', (string) $dated['due_at']);
+        $events = $this->service()->events((int) $task['id']);
+        $this->assertContains('due_changed', array_column($events, 'type'));
+        $this->assertSame('2032-04-20', end($events)['new_value']);
+
+        $cleared = $this->service()->changeDueDate((int) $task['id'], ['due_at' => '']);
+        $this->assertNull($cleared['due_at']);
+    }
+
+    public function testChangeDueDateRejectsInvalidDate(): void
+    {
+        $task = $this->service()->create(['subject' => 'Ungültige Fälligkeit']);
+
+        $this->assertThrows(ValidationException::class, function () use ($task): void {
+            $this->service()->changeDueDate((int) $task['id'], ['due_at' => '31.12.2030']);
+        }, 'gültiges Datum');
+    }
+
     public function testEventsDocumentTheLifecycle(): void
     {
         $task = $this->service()->convert((int) $this->createTicket()['id'], []);

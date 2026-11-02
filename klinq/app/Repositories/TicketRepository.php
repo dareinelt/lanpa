@@ -610,7 +610,8 @@ final class TicketRepository extends BaseRepository
 
     /**
      * Tickets, die dem Benutzer weitergeleitet und von ihm noch nicht übernommen wurden
-     * (Hinweis auf dem Help-Desk-Dashboard).
+     * (Hinweis auf dem Help-Desk-Dashboard). Geschlossene und stornierte Tickets bleiben außen vor,
+     * weil sie nicht mehr übernommen werden können.
      * @return array<int,array<string,mixed>>
      */
     public function pendingForwards(int $userId, int $limit = 10): array
@@ -619,6 +620,7 @@ final class TicketRepository extends BaseRepository
 
         return $this->fetchAll(
             self::SELECT . " WHERE t.forwarded_to_user_id = :uid AND t.forward_acknowledged_at IS NULL AND t.merged_into_ticket_id IS NULL
+                AND st.category NOT IN ('closed','cancelled')
                 ORDER BY t.forwarded_at DESC, t.id DESC LIMIT {$limit}",
             ['uid' => $userId]
         );

@@ -181,7 +181,8 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   und markiert das Ticket in `tickets.forwarded_to_user_id`/`forwarded_by_user_id`/`forwarded_at`; quittiert wird
   über `forward_acknowledged_at`, sobald der neue Bearbeiter **Übernehmen** (`POST …/take`,
   `TicketService::takeOver`) nutzt. Bis dahin erscheint das Ticket in der Dashboard-Karte **An Sie weitergeleitet**
-  (`TicketRepository::pendingForwards`) und in der Liste gelb hervorgehoben.
+  (`TicketRepository::pendingForwards`) und in der Liste gelb hervorgehoben. Geschlossene und stornierte Tickets
+  blendet die Dashboard-Karte aus, da sie nicht mehr übernommen werden können.
 - **Bearbeiter beim Annehmen und Schließen**: `TicketService::changeStatus()` trägt den handelnden Agenten
   in `tickets.assignee_user_id` ein, wenn er das Ticket annimmt (`in_progress`) oder abschließt (`resolved`/
   `closed`) – auch wenn zuvor automatisch der 2nd Level des Tages zugewiesen wurde (Verlaufseintrag

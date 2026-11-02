@@ -57,7 +57,9 @@ final class ReporterIdentityService
         }
 
         $user = $username !== null ? $this->users->findByUsername($username) : null;
-        if ($user === null && $this->currentUser->isAuthenticated()) {
+        if ($user === null && $intranet === null && $this->currentUser->isAuthenticated()) {
+            // Nur ohne Einstiegsschein zaehlt die vorhandene Anmeldung. Mit Schein ist der
+            // Melder die dort genannte Person – auch wenn sie kein Konto in KLINQ hat.
             $user = $this->users->find((int) $this->currentUser->id());
         }
 
@@ -76,6 +78,14 @@ final class ReporterIdentityService
             $employee = !empty($ad['personnel_number']) ? $this->employees->findByPersonnelNumber((string) $ad['personnel_number']) : null;
             if ($employee === null && !empty($ad['email'])) {
                 $employee = $this->employees->findByEmail((string) $ad['email']);
+            }
+        }
+        if ($employee === null) {
+            // Letzter Treffer ohne Netzzugriff: E-Mail-Adresse aus dem Intranet-Einstiegsschein.
+            // Telefonbuch und Mitarbeiterdatei fuehren nicht immer denselben Anmeldenamen.
+            $email = trim((string) ($intranet['email'] ?? ''));
+            if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL) !== false) {
+                $employee = $this->employees->findByEmail($email);
             }
         }
 

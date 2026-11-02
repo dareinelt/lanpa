@@ -1597,6 +1597,9 @@ final class TicketService
 
         return [
             'requester_email' => $email !== null && filter_var($email, FILTER_VALIDATE_EMAIL) !== false ? mb_strtolower($email) : null,
+            // Anzeigename mitschreiben: Ohne Mitarbeiter-/Benutzerdatensatz in KLINQ
+            // (Person nur im Intranet-Telefonbuch) stand in der Liste sonst nur die E-Mail-Adresse.
+            'reporter_name' => $trim($reporter['display_name'] ?? null, 200),
             'reporter_username' => $trim($reporter['username'] ?? null, 100),
             'reporter_host' => $trim($reporter['host'] ?? null, 255),
             'reporter_ip' => $trim($reporter['ip'] ?? null, 45),

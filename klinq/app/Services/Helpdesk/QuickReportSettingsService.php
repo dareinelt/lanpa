@@ -102,7 +102,7 @@ final class QuickReportSettingsService
     {
         $this->currentUser->require('helpdesk.admin');
         $before = $this->all();
-        $data = $this->validate($input);
+        $data = self::validate($input);
 
         $this->settings->setMany([
             self::PREFIX . 'shared_accounts' => self::formatAccounts($data['shared_accounts']),
@@ -121,7 +121,7 @@ final class QuickReportSettingsService
      * @param array<string,mixed> $input
      * @return array{shared_accounts:list<string>,shared_accounts_hint:string,content_validation:bool}
      */
-    public function validate(array $input): array
+    public static function validate(array $input): array
     {
         $v = new Validator($input);
         $v->text('shared_accounts', 'Sammelkonten', false, 20000)

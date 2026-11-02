@@ -248,6 +248,36 @@ final class PersonDirectoryServiceTest extends TestCase
         $this->assertSame(['create', 'activate'], $actions);
     }
 
+    public function testCreateContactDoesNotReactivateADeactivatedEmployee(): void
+    {
+        $this->pdo->exec(
+            "INSERT INTO employees (display_name, first_name, last_name, email, source, is_active, deactivated_at)
+             VALUES ('Ausgeschieden, Paul', 'Paul', 'Ausgeschieden', 'paul@example.local', 'manual', 0, '2024-01-01 00:00:00')"
+        );
+        $id = (int) $this->pdo->lastInsertId();
+
+        $contact = $this->service()->createContact('Paul', 'paul@example.local', '', true);
+
+        $this->assertSame($id, $contact['id'], 'Die E-Mail verweist auf den vorhandenen Mitarbeiter.');
+        $row = $this->employee($id);
+        $this->assertSame(0, (int) $row['is_active'], 'Ein bewusst deaktivierter Mitarbeiter bleibt inaktiv.');
+        $this->assertNotNull($row['deactivated_at']);
+        $this->assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM audit_logs')->fetchColumn());
+    }
+
+    public function testCreateContactReusesAPhoneOnlyContactByNameAndNumber(): void
+    {
+        $service = $this->service();
+        $first = $service->createContact('Externer Anrufer', '', '0451 1234', false);
+        $second = $service->createContact('Externer Anrufer', '', '0451/1234', true);
+        $other = $service->createContact('Anderer Anrufer', '', '0451 1234', false);
+
+        $this->assertSame($first['id'], $second['id'], 'Gleicher Name und gleiche Rufnummer bedeuten gleiche Person.');
+        $this->assertTrue($first['id'] !== $other['id'], 'Anderer Name ergibt einen eigenen Kontakt.');
+        $this->assertSame(1, (int) $this->employee($first['id'])['is_active']);
+        $this->assertSame(4, (int) $this->pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn());
+    }
+
     public function testCreateContactValidatesTheInput(): void
     {
         $service = $this->service();

@@ -170,36 +170,47 @@ final class PersonDirectoryService
         }
 
         // Gleiche E-Mail = gleiche Person: vorhandene Datensaetze (auch aus dem
-        // Verzeichnis) werden verwendet, damit keine Dubletten entstehen.
-        $existing = $email !== '' ? $this->employees->findByEmail($email) : null;
-        if ($existing !== null) {
-            return $this->reuseContact($existing, $keepContact);
-        }
+        // Verzeichnis) werden verwendet, damit keine Dubletten entstehen. Ohne
+        // E-Mail gilt ein manueller Kontakt mit gleichem Namen und gleicher
+        // Rufnummer als dieselbe Person. Suche und Anlage laufen unter einer
+        // Sperre, damit doppelte Absendungen keine zwei Datensaetze erzeugen.
+        $lockKey = 'contact:' . ($email !== '' ? $email : mb_strtolower($name) . '|' . preg_replace('/\D+/', '', $phone));
 
-        $data = [
-            'display_name' => $name,
-            'email' => $email !== '' ? $email : null,
-            'phone' => $phone !== '' ? $phone : null,
-            'source' => 'manual',
-            'is_active' => $keepContact ? 1 : 0,
-            'deactivated_at' => $keepContact ? null : gmdate('Y-m-d H:i:s'),
-        ];
-        $id = $this->employees->create($data);
+        return $this->employees->withLock($lockKey, function () use ($name, $email, $phone, $keepContact): array {
+            $existing = $email !== ''
+                ? $this->employees->findByEmail($email)
+                : $this->employees->findPhoneContact($name, $phone);
+            if ($existing !== null) {
+                return $this->reuseContact($existing, $keepContact);
+            }
 
-        $this->audit->log('create', 'employee', $id, $name, null, [
-            'display_name' => $name,
-            'email' => $email,
-            'phone' => $phone,
-            'source' => 'kontakt',
-        ]);
+            $data = [
+                'display_name' => $name,
+                'email' => $email !== '' ? $email : null,
+                'phone' => $phone !== '' ? $phone : null,
+                'source' => 'manual',
+                'is_active' => $keepContact ? 1 : 0,
+                'deactivated_at' => $keepContact ? null : gmdate('Y-m-d H:i:s'),
+            ];
+            $id = $this->employees->create($data);
 
-        return ['id' => $id, 'name' => $name, 'meta' => self::contactMeta($data)];
+            $this->audit->log('create', 'employee', $id, $name, null, [
+                'display_name' => $name,
+                'email' => $email,
+                'phone' => $phone,
+                'source' => 'kontakt',
+            ]);
+
+            return ['id' => $id, 'name' => $name, 'meta' => self::contactMeta($data)];
+        });
     }
 
     /**
      * Verwendet einen bereits vorhandenen Datensatz zur eingegebenen E-Mail.
      * Ein frueher ohne Kontakt-Option erfasster Melder wird dabei wieder
-     * sichtbar; Datensaetze aus dem Verzeichnis bleiben unveraendert.
+     * sichtbar. Datensaetze aus dem Verzeichnis und gepflegte Mitarbeiter
+     * (mit Nachname aus der Stammdatenpflege) bleiben unveraendert – ein
+     * bewusst deaktivierter Mitarbeiter wird nicht still reaktiviert.
      *
      * @param array<string,mixed> $employee
      * @return array{id:int,name:string,meta:string}
@@ -207,8 +218,9 @@ final class PersonDirectoryService
     private function reuseContact(array $employee, bool $keepContact): array
     {
         $id = (int) $employee['id'];
-        $manual = (string) ($employee['source'] ?? '') === 'manual';
-        if ($keepContact && $manual && empty($employee['is_active'])) {
+        $ticketContact = (string) ($employee['source'] ?? '') === 'manual'
+            && trim((string) ($employee['last_name'] ?? '')) === '';
+        if ($keepContact && $ticketContact && empty($employee['is_active'])) {
             $this->employees->update($id, ['is_active' => 1, 'deactivated_at' => null]);
             $this->audit->log('activate', 'employee', $id, (string) $employee['display_name'], ['is_active' => 0], ['is_active' => 1]);
         }

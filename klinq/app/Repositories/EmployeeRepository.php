@@ -36,6 +36,52 @@ final class EmployeeRepository extends BaseRepository
         return $this->fetchOne('SELECT * FROM employees WHERE username = :u LIMIT 1', ['u' => $username]);
     }
 
+    /**
+     * Manuell erfasster Kontakt ohne E-Mail mit gleichem Namen und gleicher Rufnummer
+     * (Vergleich nur über die Ziffern); aktive Datensätze zuerst.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findPhoneContact(string $name, string $phone): ?array
+    {
+        $digits = (string) preg_replace('/\D+/', '', $phone);
+        if ($digits === '' || trim($name) === '') {
+            return null;
+        }
+        $rows = $this->fetchAll(
+            "SELECT * FROM employees
+             WHERE source = 'manual' AND display_name = :n AND (email IS NULL OR email = '') AND phone IS NOT NULL
+             ORDER BY is_active DESC, id",
+            ['n' => trim($name)]
+        );
+        foreach ($rows as $row) {
+            if (preg_replace('/\D+/', '', (string) $row['phone']) === $digits) {
+                return $row;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Führt den Block unter einer benannten Datenbanksperre aus (MySQL GET_LOCK), damit
+     * gleichzeitige Anfragen nicht beide „nicht gefunden“ sehen und doppelt anlegen.
+     * Andere Treiber (z. B. SQLite in Unit-Tests) laufen ohne Sperre.
+     */
+    public function withLock(string $name, callable $callback): mixed
+    {
+        if ($this->pdo->getAttribute(\PDO::ATTR_DRIVER_NAME) !== 'mysql') {
+            return $callback();
+        }
+        $name = 'klinq:' . substr(hash('sha256', $name), 0, 48);
+        $this->fetchValue('SELECT GET_LOCK(:n, 10)', ['n' => $name]);
+        try {
+            return $callback();
+        } finally {
+            $this->fetchValue('SELECT RELEASE_LOCK(:n)', ['n' => $name]);
+        }
+    }
+
     /** @return array<string,mixed>|null */
     public function findByGuid(string $guid): ?array
     {

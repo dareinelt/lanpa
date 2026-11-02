@@ -270,7 +270,8 @@ Beschreibung und Kommentare (intern wie extern, Agenten- und Portalansicht) sind
 
 - **Dateianhänge** laufen wie bisher über `DocumentService` (Tabelle `documents`, `entity_type = ticket`); im Assistenten und im klassischen Formular steht dafür ein Mehrfach-Upload im Schritt „Beschreibung“ bereit (`attachments[]`, maximal fünf Dateien je Vorgang, Whitelist/MIME-Prüfung wie in `config/uploads.php`). Beim Anlegen des Tickets werden die Dateien nach erfolgreicher Validierung mitgespeichert.
 - **Bilder aus der Zwischenablage** werden per `STRG+V` direkt im Textfeld eingefügt (`public/js/helpdesk-media.js`), auch im öffentlichen Störungsformular. Das Skript skaliert auf maximal 1400 px Kantenlänge, komprimiert als JPEG auf höchstens ca. 900 KB und legt die Bilddaten als **base64-Data-URI** ab. Im Textfeld steht nur eine kurze Marke (`[Bild 1]`), das Bild erscheint als Vorschau unter dem Feld; beim Absenden ersetzt das Skript die Marke durch `![Bild](data:image/…)`. So bleibt das Bild Teil des Textes und wird zusammen mit ihm in der Datenbank gespeichert. Screenshots, die nur als Base64-Text in der Zwischenablage liegen, werden ebenfalls erkannt.
-- Die Ausgabe rendert `App\Support\RichText::toHtml()` (Helfer `rich_text()`), Textkontexte wie Benachrichtigungen, Wissensdatenbank und Merge-Protokoll nutzen `RichText::toPlain()`. Textgrenzen: `TicketService::MAX_TEXT_CHARS` (2 000 000 Zeichen) für Beschreibung und Kommentare.
+- Die Ausgabe rendert `App\Support\RichText::toHtml()` (Helfer `rich_text()`), Textkontexte wie Benachrichtigungen und Merge-Protokoll nutzen `RichText::toPlain()`. Textgrenzen: `TicketService::MAX_TEXT_CHARS` (2 000 000 Zeichen) für Beschreibung und Kommentare, `KnowledgeBaseService::MAX_BODY_CHARS` (4 000 000 Zeichen) für Wissensartikel.
+- **Wissensdatenbank**: Artikel nutzen dieselbe Kette – Bilder per `STRG+V` im Inhalt (Anzeige über `rich_text()` in Agenten- und Portalansicht) und Anhänge über `DocumentService` mit `entity_type = knowledge_article`. Siehe Abschnitt [Wissensdatenbank](#wissensdatenbank).
 
 ### E-Mail aus dem Ticket senden
 
@@ -510,6 +511,12 @@ Je Empfänger geht eine eigene Nachricht über `TicketNotificationService::sendT
 ## Wissensdatenbank
 
 `knowledge_articles` mit Titel, Zusammenfassung, Inhalt (Markdown-light: Absätze, Listen, `**fett**`, Code), Kategorie, Tags, Sichtbarkeit (`internal` = nur Agenten, `public` = auch Portal), Status (`draft`/`published`/`archived`), Aufrufzähler. Artikel lassen sich mit Tickets verknüpfen (`knowledge_article_tickets`); die Suche schlägt beim Anlegen im Portal und im Ticketdetail passende Artikel vor.
+
+**Bilder und Anhänge** folgen dem Workflow der Help-Desk-Tickets:
+
+- **Bilder per STRG+V**: Das Inhaltsfeld (`#f-body`) trägt `data-hd-media-images`; `public/js/helpdesk-media.js` fügt Screenshots aus der Zwischenablage als Marke `[Bild N]` ein, zeigt eine Vorschau und ersetzt die Marke beim Absenden durch `![Bild](data:image/…)`. Agenten- und Portalansicht rendern den Inhalt mit `rich_text()`, sodass die Bilder im Text erscheinen. Textgrenze: `KnowledgeBaseService::MAX_BODY_CHARS` (4 000 000 Zeichen) – Platz für mehrere Screenshots.
+- **Anhänge**: Das Formular übernimmt `attachments[]` (maximal fünf Dateien je Vorgang) direkt beim Anlegen oder Speichern; im Artikel selbst gibt es zusätzlich einen Einzel-Upload mit optionaler Notiz. Ablage über `DocumentService` (`documents` mit `entity_type = knowledge_article`, `entity_id = Artikel-ID`) – ohne eigene Verknüpfungstabelle. Whitelist und Größenlimit stammen aus `config/uploads.php`.
+- **Zugriff**: `KnowledgeArticleAttachmentService` verlangt `knowledgebase.manage` zum Hochladen und Löschen; der Download prüft ausschließlich die Sichtbarkeit des Artikels (`KnowledgeBaseService::getVisible()`), also Agenten über `/helpdesk/knowledge/{id}/attachments/{document}`, Portalnutzer über `/portal/knowledge/{id}/attachments/{document}`. Bilder und PDFs werden inline ausgeliefert (`?download=1` erzwingt den Download).
 
 ![Wissensdatenbank im Agentenbereich](screenshots/helpdesk-knowledge.png)
 

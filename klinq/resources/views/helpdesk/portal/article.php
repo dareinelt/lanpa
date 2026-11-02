@@ -17,8 +17,18 @@ $articleTags = array_values(array_filter(array_map('trim', explode(',', (string)
         <dt>Veröffentlicht</dt><dd><?= fmt_datetime($article['published_at'] ?? null) ?></dd>
         <dt>Aktualisiert</dt><dd><?= fmt_datetime($article['updated_at'] ?? null) ?></dd>
     </dl>
-    <div class="kb-article-body"><?= nl2br_e($article['body'] ?? '') ?></div>
+    <div class="kb-article-body"><?= rich_text($article['body'] ?? '') ?></div>
     <?php if ($articleTags !== []): ?><div class="tag-list mt-4"><?php foreach ($articleTags as $tag): ?><span class="tag-chip"><?= e($tag) ?></span><?php endforeach; ?></div><?php endif; ?>
+    <?php if ($attachments !== []): ?>
+    <div class="mt-4">
+        <h2 class="mb-2">Anhänge</h2>
+        <ul class="side-list">
+            <?php foreach ($attachments as $a): ?>
+            <li><span class="side-list-main"><a href="/portal/knowledge/<?= (int) $article['id'] ?>/attachments/<?= (int) $a['id'] ?>"><?= icon('download') ?> <?= e($a['original_name']) ?></a><span class="text-xs text-muted"><?= fmt_bytes((int) $a['size_bytes']) ?> · <?= fmt_datetime($a['created_at'] ?? null) ?></span></span></li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php endif; ?>
 </article>
 <div class="card mt-4">
     <div class="card-header"><h2>War das hilfreich?</h2></div>

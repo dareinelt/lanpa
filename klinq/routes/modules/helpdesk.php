@@ -7,6 +7,7 @@ use App\Controllers\Helpdesk\HelpdeskApiController;
 use App\Controllers\Helpdesk\HelpdeskDashboardController;
 use App\Controllers\Helpdesk\HelpdeskReportController;
 use App\Controllers\Helpdesk\HelpdeskSupportShiftController;
+use App\Controllers\Helpdesk\KnowledgeArticleAttachmentController;
 use App\Controllers\Helpdesk\KnowledgeBaseController;
 use App\Controllers\Helpdesk\PortalController;
 use App\Controllers\Helpdesk\QuickReportController;
@@ -30,6 +31,7 @@ return static function (Router $router, Container $c): void {
     $tasks = static fn (): TaskController => $c->get(TaskController::class);
     $files = static fn (): TicketAttachmentController => $c->get(TicketAttachmentController::class);
     $kb = static fn (): KnowledgeBaseController => $c->get(KnowledgeBaseController::class);
+    $kbFiles = static fn (): KnowledgeArticleAttachmentController => $c->get(KnowledgeArticleAttachmentController::class);
     $reports = static fn (): HelpdeskReportController => $c->get(HelpdeskReportController::class);
     $admin = static fn (): HelpdeskAdminController => $c->get(HelpdeskAdminController::class);
     $api = static fn (): HelpdeskApiController => $c->get(HelpdeskApiController::class);
@@ -107,6 +109,9 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/knowledge/{id}', static fn (Request $r): Response => $kb()->update($r), 'knowledgebase.manage');
     $router->post('/helpdesk/knowledge/{id}/tickets', static fn (Request $r): Response => $kb()->linkTicket($r), 'knowledgebase.manage');
     $router->post('/helpdesk/knowledge/{id}/tickets/{ticket}/unlink', static fn (Request $r): Response => $kb()->unlinkTicket($r), 'knowledgebase.manage');
+    $router->post('/helpdesk/knowledge/{id}/attachments', static fn (Request $r): Response => $kbFiles()->upload($r), 'knowledgebase.manage');
+    $router->get('/helpdesk/knowledge/{id}/attachments/{document}', static fn (Request $r): Response => $kbFiles()->download($r), 'knowledgebase.view');
+    $router->post('/helpdesk/knowledge/{id}/attachments/{document}/delete', static fn (Request $r): Response => $kbFiles()->delete($r), 'knowledgebase.manage');
 
     // Berichte
     $router->get('/helpdesk/reports', static fn (Request $r): Response => $reports()->index($r), 'helpdesk.reports');
@@ -141,6 +146,7 @@ return static function (Router $router, Container $c): void {
     $router->post('/portal/tickets/{id}/reopen', static fn (Request $r): Response => $portal()->reopen($r), 'portal.view');
     $router->get('/portal/knowledge', static fn (Request $r): Response => $portal()->knowledge($r), 'knowledgebase.view');
     $router->get('/portal/knowledge/{id}', static fn (Request $r): Response => $portal()->article($r), 'knowledgebase.view');
+    $router->get('/portal/knowledge/{id}/attachments/{document}', static fn (Request $r): Response => $kbFiles()->download($r), 'knowledgebase.view');
 
     // ------------------------------------------------------------------ JSON-API
     $router->get('/api/helpdesk/tickets/search', static fn (Request $r): Response => $api()->searchTickets($r), 'portal.view');

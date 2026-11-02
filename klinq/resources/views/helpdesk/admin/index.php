@@ -44,11 +44,19 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
     <p class="text-muted text-xs mb-0"><?= $quickReport['networks'] !== [] ? 'Zugriff beschränkt auf: ' . e(implode(', ', $quickReport['networks'])) . '.' : '' ?><?= $quickReport['enabled'] ? '' : ' Aktivierung über HELPDESK_QUICK_REPORT_ENABLED=true.' ?></p>
     <?php endif; ?>
 </div>
+<form method="post" action="/helpdesk/admin/quick-report" novalidate>
+<?= csrf_field() ?>
+<div class="card mb-4">
+    <div class="card-header"><h2>Inhaltliche Prüfung</h2><span class="text-muted text-sm">Betreff und Beschreibung</span></div>
+    <p class="text-muted text-sm">Vor dem Anlegen einer Meldung aus dem Störungsformular werden Betreff und Beschreibung auf Mindestinhalt geprüft: kein Aufsatz im Betreff, keine Floskeln wie „siehe unten“, kein Screenshot ohne Text, keine bloße Wiederholung des Betreffs und keine reine Inventarnummer.</p>
+    <div class="form-group">
+        <label class="checkbox-field"><input type="checkbox" name="content_validation" value="1"<?= checked($quickReport['content_validation']) ?>> <span>Inhaltliche Prüfung aktiv</span></label>
+        <span class="form-hint">Ohne Häkchen nimmt das Formular jede Meldung an, die die Pflichtfelder füllt; die Betreffgrenze steigt dann wieder auf 255 Zeichen.</span>
+    </div>
+</div>
 <div class="card mb-4">
     <div class="card-header"><h2>Sammelkonten</h2><span class="text-muted text-sm">Pflicht für zusätzlichen Benutzer</span></div>
     <p class="text-muted text-sm">Anmeldenamen von AD-/SSO-Konten („Sammelkonten“ bzw. anonyme Konten), bei denen im Formular zwingend ein zusätzlicher Benutzer angegeben werden muss. Konto eintippen, Vorschlag auswählen und mit <kbd>Enter</kbd> übernehmen; die eingetragenen Konten stehen darunter und lassen sich dort wieder entfernen. Schreibweisen wie <span class="mono">DOMAIN\konto</span> oder <span class="mono">konto@domain</span> werden auf den Anmeldenamen reduziert.</p>
-    <form method="post" action="/helpdesk/admin/quick-report" novalidate>
-        <?= csrf_field() ?>
         <div class="form-row">
             <div class="form-group<?= has_error('shared_accounts') ? ' has-error' : '' ?>">
                 <label for="quick-report-shared-account-input">Konten</label>
@@ -82,8 +90,8 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
             </div>
         </div>
         <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button></div>
-    </form>
 </div>
+</form>
 <?php unset($_SESSION['_old_input'], $_SESSION['_errors']); ?>
 <?php elseif ($isErrorOrigins): ?>
 <div class="card mb-4">

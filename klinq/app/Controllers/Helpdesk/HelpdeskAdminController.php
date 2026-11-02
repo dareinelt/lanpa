@@ -154,6 +154,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
                 'networks' => (array) $this->config->get('helpdesk.quick_report.allowed_networks', []),
                 'shared_accounts' => $quickReportSettings['shared_accounts'],
                 'shared_accounts_hint' => $quickReportSettings['shared_accounts_hint'],
+                'content_validation' => $quickReportSettings['content_validation'],
             ],
             'errorOrigin' => [
                 'origins_text' => $errorOriginSettings['origins_text'],

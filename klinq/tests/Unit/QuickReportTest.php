@@ -53,6 +53,14 @@ final class QuickReportTest extends TestCase
         $this->assertFalse(QuickReportSettingsService::isSharedAccount('empfang', []));
     }
 
+    public function testContentValidationTogglePrefersStoredValueOverTheDefault(): void
+    {
+        $this->assertTrue(QuickReportSettingsService::contentValidationFrom([], true));
+        $this->assertFalse(QuickReportSettingsService::contentValidationFrom([], false));
+        $this->assertTrue(QuickReportSettingsService::contentValidationFrom(['content_validation' => '1'], false));
+        $this->assertFalse(QuickReportSettingsService::contentValidationFrom(['content_validation' => '0'], true));
+    }
+
     public function testAllowedNetworksMatchIpv4AndIpv6(): void
     {
         $this->assertTrue(IpRange::matches('10.12.3.44', '10.0.0.0/8'));

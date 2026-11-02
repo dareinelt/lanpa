@@ -16,9 +16,11 @@ use App\Support\Validator;
  *
  * Gepflegt wird ein Katalog an AD-/SSO-Anmeldenamen („Sammelkonten“ bzw. anonyme Konten).
  * Meldet sich ein solches Konto am Formular, ist die Angabe eines zusätzlichen Benutzers
- * Pflicht; der zugehörige Erklärungstext ist frei anpassbar. Gespeichert wird in
- * `system_settings` unter dem Präfix `helpdesk.quick_report.`; die Umgebung liefert nur
- * Startwerte, solange in der Datenbank nichts hinterlegt ist.
+ * Pflicht; der zugehörige Erklärungstext ist frei anpassbar. Zusätzlich lässt sich die
+ * inhaltliche Prüfung von Betreff und Beschreibung (`QuickReportContentValidator`)
+ * abschalten. Gespeichert wird in `system_settings` unter dem Präfix
+ * `helpdesk.quick_report.`; die Umgebung liefert nur Startwerte, solange in der Datenbank
+ * nichts hinterlegt ist.
  */
 final class QuickReportSettingsService
 {
@@ -39,7 +41,7 @@ final class QuickReportSettingsService
 
     /**
      * Effektive Einstellungen (Datenbank vor Umgebung), Konten normalisiert.
-     * @return array{shared_accounts:string,shared_accounts_hint:string}
+     * @return array{shared_accounts:string,shared_accounts_hint:string,content_validation:bool}
      */
     public function all(): array
     {
@@ -61,6 +63,10 @@ final class QuickReportSettingsService
         return [
             'shared_accounts' => self::formatAccounts(self::normalizeAccounts($accounts)),
             'shared_accounts_hint' => $hint,
+            'content_validation' => self::contentValidationFrom(
+                $stored,
+                (bool) $this->config->get('helpdesk.quick_report.content_validation', true)
+            ),
         ];
     }
 
@@ -75,6 +81,12 @@ final class QuickReportSettingsService
         return (string) $this->all()['shared_accounts_hint'];
     }
 
+    /** Sind Betreff und Beschreibung auf Mindestinhalt zu prüfen? */
+    public function contentValidationEnabled(): bool
+    {
+        return (bool) $this->all()['content_validation'];
+    }
+
     /** Ist für dieses Konto die Angabe eines zusätzlichen Benutzers Pflicht? */
     public function requiresAffectedUser(?string $username): bool
     {
@@ -84,7 +96,7 @@ final class QuickReportSettingsService
     /**
      * Einstellungen speichern; protokolliert die Änderung im Audit-Log.
      * @param array<string,mixed> $input
-     * @return array{shared_accounts:string,shared_accounts_hint:string}
+     * @return array{shared_accounts:string,shared_accounts_hint:string,content_validation:bool}
      */
     public function save(array $input): array
     {
@@ -95,6 +107,7 @@ final class QuickReportSettingsService
         $this->settings->setMany([
             self::PREFIX . 'shared_accounts' => self::formatAccounts($data['shared_accounts']),
             self::PREFIX . 'shared_accounts_hint' => $data['shared_accounts_hint'],
+            self::PREFIX . 'content_validation' => $data['content_validation'] ? '1' : '0',
         ], $this->currentUser->id());
 
         $after = $this->all();
@@ -106,13 +119,15 @@ final class QuickReportSettingsService
     /**
      * Eingaben prüfen und in typisierte Werte überführen.
      * @param array<string,mixed> $input
-     * @return array{shared_accounts:list<string>,shared_accounts_hint:string}
+     * @return array{shared_accounts:list<string>,shared_accounts_hint:string,content_validation:bool}
      */
     public function validate(array $input): array
     {
         $v = new Validator($input);
         $v->text('shared_accounts', 'Sammelkonten', false, 20000)
-            ->text('shared_accounts_hint', 'Erklärungstext', false, self::MAX_HINT_LENGTH);
+            ->text('shared_accounts_hint', 'Erklärungstext', false, self::MAX_HINT_LENGTH)
+            // Fehlendes Häkchen bedeutet „aus“ – der Standard greift nur, solange nichts gespeichert ist.
+            ->bool('content_validation');
 
         $accounts = self::normalizeAccounts((string) ($v->value('shared_accounts') ?? ''));
         foreach (self::candidates((string) ($input['shared_accounts'] ?? '')) as $candidate) {
@@ -130,10 +145,14 @@ final class QuickReportSettingsService
         $hint = trim((string) ($v->value('shared_accounts_hint') ?? ''));
         $v->set('shared_accounts_hint', $hint !== '' ? $hint : self::DEFAULT_SHARED_ACCOUNTS_HINT);
 
-        /** @var array{shared_accounts:list<string>,shared_accounts_hint:string} $clean */
+        /** @var array{shared_accounts:list<string>,shared_accounts_hint:string,content_validation:int} $clean */
         $clean = $v->validated();
 
-        return $clean;
+        return [
+            'shared_accounts' => $clean['shared_accounts'],
+            'shared_accounts_hint' => $clean['shared_accounts_hint'],
+            'content_validation' => $clean['content_validation'] === 1,
+        ];
     }
 
     /**
@@ -163,6 +182,20 @@ final class QuickReportSettingsService
         $normalized = ReporterIdentityService::normalize($username);
 
         return $normalized !== null && in_array($normalized, $accounts, true);
+    }
+
+    /**
+     * Schalter der inhaltlichen Prüfung aus den gespeicherten Rohwerten (ohne Präfix) lesen.
+     * Nur ein gespeichertes '0' schaltet ab; ohne Datenbankwert gilt der Startwert.
+     * @param array<string,mixed> $stored
+     */
+    public static function contentValidationFrom(array $stored, bool $default): bool
+    {
+        if (!array_key_exists('content_validation', $stored)) {
+            return $default;
+        }
+
+        return (string) $stored['content_validation'] !== '0';
     }
 
     /** @param list<string> $accounts */

@@ -71,6 +71,18 @@ final class HelpdeskMailParserTest extends TestCase
         $this->assertSame('Größe: 5 € Übergabe', $mail->text);
     }
 
+    public function testPlainTextBodyCollapsesExcessiveBlankLines(): void
+    {
+        $raw = "From: a@example.test\nSubject: Abstaende\nMessage-ID: <nl@example.test>\n\n"
+            . "Hallo Zusammen,\n\n\n\n\nnach dem Hinweis von Herrn Brose.\n\n\n\nMit freundlichen Gruessen\n";
+
+        $mail = $this->parser()->parse($raw);
+        $this->assertSame(
+            "Hallo Zusammen,\n\nnach dem Hinweis von Herrn Brose.\n\nMit freundlichen Gruessen",
+            $mail->text
+        );
+    }
+
     public function testFallsBackToGeneratedMessageIdWhenMissing(): void
     {
         $raw = "From: a@example.test\nSubject: Ohne ID\nDate: Mon, 02 Mar 2026 09:15:00 +0100\n\nInhalt\n";

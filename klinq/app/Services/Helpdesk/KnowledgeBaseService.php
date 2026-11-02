@@ -22,6 +22,9 @@ final class KnowledgeBaseService
     public const STATUSES = ['draft' => 'Entwurf', 'published' => 'Veröffentlicht', 'archived' => 'Archiviert'];
     public const VISIBILITIES = ['internal' => 'Nur Help Desk', 'public' => 'Alle Benutzer (Portal)'];
 
+    /** Textgrenze des Inhalts – eingebettete Base64-Bilder (STRG+V) zählen mit. */
+    public const MAX_BODY_CHARS = 4000000;
+
     public function __construct(
         private readonly KnowledgeBaseRepository $articles,
         private readonly TicketCategoryRepository $categories,
@@ -181,7 +184,7 @@ final class KnowledgeBaseService
         $v = (new Validator($input))
             ->string('title', 'Titel', true, 255, 3)
             ->string('summary', 'Kurzfassung', false, 500)
-            ->text('body', 'Inhalt', true, 60000)
+            ->text('body', 'Inhalt', true, self::MAX_BODY_CHARS)
             ->id('category_id', 'Kategorie')
             ->in('status', 'Status', array_keys(self::STATUSES), true)
             ->in('visibility', 'Sichtbarkeit', array_keys(self::VISIBILITIES), true)

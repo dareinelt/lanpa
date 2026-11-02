@@ -263,6 +263,11 @@ final class HelpdeskLogicTest extends TestCase
         $this->assertTrue(mb_strlen(KnowledgeBaseService::slugify(str_repeat('a', 300))) <= 190);
     }
 
+    public function testKnowledgeBodyLimitFitsPastedScreenshots(): void
+    {
+        $this->assertSame(4000000, KnowledgeBaseService::MAX_BODY_CHARS, 'Mehrere eingefügte Screenshots müssen in den Artikeltext passen');
+    }
+
     // ------------------------------------------------------------------ Berechtigungen
 
     public function testHelpdeskRolesAndPermissions(): void

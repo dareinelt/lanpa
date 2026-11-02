@@ -16,6 +16,7 @@ use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\TicketRepository;
 use App\Repositories\TicketTemplateRepository;
 use App\Security\CurrentUser;
+use App\Services\Helpdesk\KnowledgeArticleAttachmentService;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\TicketPriorityMatrix;
 use App\Services\Helpdesk\TicketService;
@@ -39,6 +40,7 @@ final class PortalController extends HelpdeskBaseController
         private readonly TicketCategoryRepository $categories,
         private readonly TicketTemplateRepository $templates,
         private readonly KnowledgeBaseRepository $articles,
+        private readonly KnowledgeArticleAttachmentService $articleAttachments,
         private readonly TicketSlaService $slaService,
         private readonly Config $config
     ) {
@@ -247,6 +249,7 @@ final class PortalController extends HelpdeskBaseController
             'activeNav' => 'portal-knowledge',
             'areaLabel' => 'Portal',
             'article' => $article,
+            'attachments' => $this->articleAttachments->forArticle((int) $article['id']),
             'createUrl' => $this->createUrl($request),
         ]);
     }

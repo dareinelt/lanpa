@@ -6,6 +6,7 @@ use App\Controllers\Helpdesk\HelpdeskAdminController;
 use App\Controllers\Helpdesk\HelpdeskApiController;
 use App\Controllers\Helpdesk\HelpdeskDashboardController;
 use App\Controllers\Helpdesk\HelpdeskReportController;
+use App\Controllers\Helpdesk\KnowledgeArticleAttachmentController;
 use App\Controllers\Helpdesk\KnowledgeBaseController;
 use App\Controllers\Helpdesk\PortalController;
 use App\Controllers\Helpdesk\HelpdeskSupportShiftController;
@@ -22,6 +23,7 @@ use App\Core\Logger;
 use App\Core\View;
 use App\Repositories\AssetRepository;
 use App\Repositories\CostCenterRepository;
+use App\Repositories\DocumentRepository;
 use App\Repositories\EmployeeRepository;
 use App\Repositories\HelpdeskSupportShiftRepository;
 use App\Repositories\KnowledgeBaseRepository;
@@ -53,6 +55,7 @@ use App\Services\Helpdesk\AiSettingsService;
 use App\Services\Helpdesk\HelpdeskAdminService;
 use App\Services\Helpdesk\HelpdeskAiService;
 use App\Services\Helpdesk\HelpdeskSchedulerService;
+use App\Services\Helpdesk\KnowledgeArticleAttachmentService;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\ReporterIdentityService;
 use App\Services\Lanpa\LanpaIdentityService;
@@ -199,6 +202,13 @@ return static function (Container $c): void {
         $c->get(TicketCategoryRepository::class),
         $c->get(TicketTagRepository::class),
         $c->get(TicketRepository::class),
+        $c->get(AuditLogService::class),
+        $c->get(CurrentUser::class)
+    ));
+    $c->singleton(KnowledgeArticleAttachmentService::class, static fn (Container $c): KnowledgeArticleAttachmentService => new KnowledgeArticleAttachmentService(
+        $c->get(KnowledgeBaseService::class),
+        $c->get(DocumentService::class),
+        $c->get(DocumentRepository::class),
         $c->get(AuditLogService::class),
         $c->get(CurrentUser::class)
     ));
@@ -401,6 +411,7 @@ return static function (Container $c): void {
         $c->get(TicketCategoryRepository::class),
         $c->get(TicketTemplateRepository::class),
         $c->get(KnowledgeBaseRepository::class),
+        $c->get(KnowledgeArticleAttachmentService::class),
         $c->get(TicketSlaService::class),
         $c->get(Config::class)
     ));
@@ -457,7 +468,15 @@ return static function (Container $c): void {
         $c->get(TicketCategoryRepository::class),
         $c->get(TicketTagRepository::class),
         $c->get(TicketService::class),
+        $c->get(KnowledgeArticleAttachmentService::class),
         $c->get(Config::class)
+    ));
+    $c->singleton(KnowledgeArticleAttachmentController::class, static fn (Container $c): KnowledgeArticleAttachmentController => new KnowledgeArticleAttachmentController(
+        $c->get(View::class),
+        $c->get(CurrentUser::class),
+        $c->get(KnowledgeBaseService::class),
+        $c->get(KnowledgeArticleAttachmentService::class),
+        $c->get(DocumentService::class)
     ));
     $c->singleton(HelpdeskReportController::class, static fn (Container $c): HelpdeskReportController => new HelpdeskReportController(
         $c->get(View::class),

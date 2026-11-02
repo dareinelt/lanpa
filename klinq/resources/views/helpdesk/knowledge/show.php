@@ -21,12 +21,37 @@ $visibilityColor = static fn (string $v): string => $v === 'public' ? 'success' 
             <dt>Veröffentlicht</dt><dd><?= fmt_datetime($article['published_at'] ?? null) ?></dd>
             <dt>Geändert</dt><dd><?= fmt_datetime($article['updated_at'] ?? null) ?><?= !empty($article['updated_by_name']) ? ' · ' . e($article['updated_by_name']) : '' ?></dd>
         </dl>
-        <div class="kb-article-body"><?= nl2br_e($article['body'] ?? '') ?></div>
+        <div class="kb-article-body"><?= rich_text($article['body'] ?? '') ?></div>
     </article>
     <aside>
         <div class="card mb-4">
             <div class="card-header"><h2>Tags</h2></div>
             <?php if ($tags === []): ?><p class="text-muted mb-0">Keine Tags.</p><?php else: ?><div class="tag-list"><?php foreach ($tags as $tag): ?><span class="tag-chip is-<?= e($tag['color'] ?? 'neutral') ?>"><?= e($tag['name'] ?? $tag) ?></span><?php endforeach; ?></div><?php endif; ?>
+        </div>
+        <div class="card mb-4" id="attachments">
+            <div class="card-header"><h2>Anhänge <span class="text-muted">(<?= count($attachments) ?>)</span></h2></div>
+            <?php if ($attachments === []): ?><p class="text-muted mb-0">Keine Anhänge.</p><?php else: ?>
+            <table class="table table-compact">
+                <thead><tr><th>Datei</th><th>Größe</th><th></th></tr></thead>
+                <tbody>
+                <?php foreach ($attachments as $a): ?>
+                    <tr>
+                        <td><a href="/helpdesk/knowledge/<?= (int) $article['id'] ?>/attachments/<?= (int) $a['id'] ?>"><?= icon('paperclip', 'icon icon-xs') ?> <?= e($a['original_name']) ?></a><?php if (!empty($a['note'])): ?><div class="text-xs text-muted"><?= e($a['note']) ?></div><?php endif; ?></td>
+                        <td class="nowrap"><?= fmt_bytes((int) $a['size_bytes']) ?></td>
+                        <td class="text-right"><?php if ($canManage): ?><form method="post" action="/helpdesk/knowledge/<?= (int) $article['id'] ?>/attachments/<?= (int) $a['id'] ?>/delete" class="inline-form" data-confirm="Anhang „<?= e($a['original_name']) ?>“ löschen?"><?= csrf_field() ?><button type="submit" class="btn btn-ghost btn-sm" aria-label="Löschen"><?= icon('trash') ?></button></form><?php endif; ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+            <?php if ($canManage): ?>
+            <form method="post" action="/helpdesk/knowledge/<?= (int) $article['id'] ?>/attachments" enctype="multipart/form-data" class="card-form">
+                <?= csrf_field() ?>
+                <div class="form-group"><label for="f-att-file">Datei</label><input id="f-att-file" type="file" name="file" required></div>
+                <div class="form-group"><label for="f-att-note">Notiz</label><input id="f-att-note" name="note" maxlength="500"></div>
+                <button type="submit" class="btn btn-secondary btn-sm"><?= icon('upload') ?> Hochladen</button>
+            </form>
+            <?php endif; ?>
         </div>
         <div class="card card-flush" id="tickets">
             <div class="card-header"><h2>Verknüpfte Tickets</h2></div>

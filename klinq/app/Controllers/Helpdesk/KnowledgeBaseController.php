@@ -12,6 +12,7 @@ use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\TicketCategoryRepository;
 use App\Repositories\TicketTagRepository;
 use App\Security\CurrentUser;
+use App\Services\Helpdesk\KnowledgeArticleAttachmentService;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\TicketService;
 use App\Support\Paginator;
@@ -27,6 +28,7 @@ final class KnowledgeBaseController extends HelpdeskBaseController
         private readonly TicketCategoryRepository $categories,
         private readonly TicketTagRepository $tags,
         private readonly TicketService $tickets,
+        private readonly KnowledgeArticleAttachmentService $attachments,
         private readonly Config $config
     ) {
         parent::__construct($view, $currentUser);
@@ -74,6 +76,7 @@ final class KnowledgeBaseController extends HelpdeskBaseController
             'areaLabel' => 'Help Desk',
             'article' => $article,
             'tags' => $this->tags->forArticle((int) $article['id']),
+            'attachments' => $this->attachments->forArticle((int) $article['id']),
             'linkedTickets' => $this->currentUser->can('helpdesk.view') ? $this->articles->linkedTickets((int) $article['id']) : [],
             'canManage' => $this->service->canManage(),
             'statuses' => KnowledgeBaseService::STATUSES,
@@ -100,6 +103,7 @@ final class KnowledgeBaseController extends HelpdeskBaseController
         $article = null;
         $response = $this->attempt($request, function () use ($request, $ticketId, &$article): void {
             $article = $this->service->create($request->all(), $ticketId);
+            $this->storeUploads((int) $article['id'], $request);
         }, '/helpdesk/knowledge/new' . ($ticketId !== null ? '?ticket=' . $ticketId : ''));
         if ($response !== null) {
             return $response;
@@ -119,7 +123,10 @@ final class KnowledgeBaseController extends HelpdeskBaseController
     public function update(Request $request): Response
     {
         $id = $request->paramInt('id');
-        $response = $this->attempt($request, fn () => $this->service->update($id, $request->all()), '/helpdesk/knowledge/' . $id . '/edit');
+        $response = $this->attempt($request, function () use ($id, $request): void {
+            $this->service->update($id, $request->all());
+            $this->storeUploads($id, $request);
+        }, '/helpdesk/knowledge/' . $id . '/edit');
 
         return $response ?? $this->respond($request, 'Artikel gespeichert.', '/helpdesk/knowledge/' . $id);
     }
@@ -140,6 +147,15 @@ final class KnowledgeBaseController extends HelpdeskBaseController
         return $this->respond($request, 'Verknüpfung entfernt.', $this->safeBack($request, '/helpdesk/knowledge/' . $id . '#tickets'));
     }
 
+    /** Anhänge aus dem Formular (`attachments[]`) übernehmen; Fehler werden gemeldet, nicht abgebrochen. */
+    private function storeUploads(int $articleId, Request $request): void
+    {
+        $upload = $this->attachments->storeAll($articleId, $request->files()['attachments'] ?? null);
+        if ($upload['errors'] !== []) {
+            $this->flash('warning', 'Nicht übernommene Anhänge: ' . implode(' | ', $upload['errors']));
+        }
+    }
+
     /** @param array<string,mixed>|null $article @param array<string,mixed> $prefill */
     private function renderForm(?array $article, array $prefill, ?int $ticketId): Response
     {
@@ -152,9 +168,10 @@ final class KnowledgeBaseController extends HelpdeskBaseController
             'sourceTicketId' => $ticketId,
             'categories' => $this->categories->all(true),
             'tags' => $article !== null ? $this->tags->forArticle((int) $article['id']) : [],
+            'attachments' => $article !== null ? $this->attachments->forArticle((int) $article['id']) : [],
             'statuses' => KnowledgeBaseService::STATUSES,
             'visibilities' => KnowledgeBaseService::VISIBILITIES,
-            'scripts' => ['/js/helpdesk.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-media.js'],
         ]);
     }
 }

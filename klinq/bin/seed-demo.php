@@ -532,9 +532,9 @@ try {
     $ka = static function (string $title, string $slug, string $summary, string $body, ?int $catId, string $status, string $visibility, int $views, int $createdBy) use ($pdo): int {
         return ins(
             $pdo,
-            'INSERT INTO knowledge_articles (title, slug, summary, body, category_id, status, visibility, view_count, published_at, created_by, created_by_name, updated_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)',
-            [$title, $slug, $summary, $body, $catId, $status, $visibility, $views, $createdBy, 'Max Mustermann', $createdBy]
+            'INSERT INTO knowledge_articles (title, slug, summary, body, body_plain, category_id, status, visibility, view_count, published_at, created_by, created_by_name, updated_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?)',
+            [$title, $slug, $summary, $body, $body, $catId, $status, $visibility, $views, $createdBy, 'Max Mustermann', $createdBy]
         );
     };
     $ka1 = $ka('VPN einrichten und verbinden', 'vpn-einrichten', 'Schritt-für-Schritt-Anleitung zur VPN-Einrichtung auf Notebooks.', "## Voraussetzungen\n- Dienst-Notebook mit Windows 11\n- Gültiges Benutzerkonto\n\n## Einrichtung\n1. VPN-Client starten\n2. Server „vpn.musterfirma.de“ eingeben\n3. Mit Benutzerkonto anmelden\n\nBei Problemen ein Ticket in der Kategorie **Netzwerk → VPN** erstellen.", $catNetzwerk, 'published', 'internal', 142, $uLead);

@@ -4,6 +4,7 @@ $scripts = ['/js/helpdesk-media.js', '/js/picker.js'];
 $affected = $affected ?? null;
 $requiresAffected = $requiresAffected ?? false;
 $sharedAccountHint = $sharedAccountHint ?? '';
+$contentValidation = $contentValidation ?? true;
 $detected = [];
 if (!empty($reporter['display_name'])) {
     $detected[] = ['Gemeldet von', $reporter['display_name'] . (!empty($reporter['username']) ? ' (' . $reporter['username'] . ')' : '')];
@@ -37,14 +38,16 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
             <div class="form-group<?= has_error('subject') ? ' has-error' : '' ?>">
                 <label for="q-subject">Worum geht es? <span class="required">*</span></label>
                 <input id="q-subject" name="subject" value="<?= e(old('subject')) ?>" maxlength="<?= (int) ($maxSubjectChars ?? 120) ?>" required autofocus placeholder="z. B. Drucker druckt nicht">
-                <p class="form-hint">Kurz und konkret – Details gehören in die Beschreibung.</p>
+                <?php if ($contentValidation): ?>
+                    <p class="form-hint">Kurz und konkret – Details gehören in die Beschreibung.</p>
+                <?php endif; ?>
                 <?= field_error('subject') ?>
             </div>
             <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">
                 <label for="q-description">Was ist passiert? <span class="required">*</span></label>
                 <textarea id="q-description" name="description" rows="7" required placeholder="Beschreiben Sie die Störung: Was funktioniert nicht? Seit wann? Welche Meldung erscheint?" data-hd-media-images data-hd-media-preview="#q-description-preview"><?= e(old('description')) ?></textarea>
                 <div class="hd-media-preview" id="q-description-preview" hidden></div>
-                <p class="form-hint">Bitte in Worten beschreiben – ein Screenshot allein reicht nicht. Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
+                <p class="form-hint"><?= $contentValidation ? 'Bitte in Worten beschreiben – ein Screenshot allein reicht nicht. ' : '' ?>Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
                 <?= field_error('description') ?>
             </div>
             <details class="quick-more"<?= ($affected !== null || has_error('affected_employee_id') || $requiresAffected) ? ' open' : '' ?>>

@@ -83,11 +83,14 @@ final class QuickReportController extends HelpdeskBaseController
         ];
         // Betreff und Beschreibung müssen für sich aussagekräftig sein: kein Aufsatz im Betreff,
         // keine Floskeln („siehe unten“), kein Screenshot ohne Text und keine bloße Wiederholung.
-        $contentErrors = QuickReportContentValidator::validate($input['subject'], $input['description']);
-        if ($contentErrors !== []) {
-            $this->withOldInput($request, $contentErrors);
+        // Die Prüfung ist in den Help-Desk-Einstellungen abschaltbar.
+        if ($this->quickSettings->contentValidationEnabled()) {
+            $contentErrors = QuickReportContentValidator::validate($input['subject'], $input['description']);
+            if ($contentErrors !== []) {
+                $this->withOldInput($request, $contentErrors);
 
-            return $this->renderForm($request, null, 422, $reporter);
+                return $this->renderForm($request, null, 422, $reporter);
+            }
         }
         $affectedId = $request->int('affected_employee_id');
         // Sammelkonten (anonyme Konten) dürfen nur mit zusätzlichem Benutzer melden – die
@@ -203,6 +206,8 @@ final class QuickReportController extends HelpdeskBaseController
     {
         $reporter ??= $this->identity->detect($request);
         $requiresAffected = $this->quickSettings->requiresAffectedUser($reporter['username'] ?? null);
+        // Ist die inhaltliche Prüfung abgeschaltet, gelten wieder die Grenzen aus TicketService.
+        $contentValidation = $this->quickSettings->contentValidationEnabled();
 
         return $this->render('helpdesk.quick.form', [
             'title' => 'Störung melden',
@@ -211,7 +216,8 @@ final class QuickReportController extends HelpdeskBaseController
             'affected' => $this->selectedAffected(),
             'requiresAffected' => $requiresAffected,
             'sharedAccountHint' => $requiresAffected ? $this->quickSettings->sharedAccountsHint() : '',
-            'maxSubjectChars' => QuickReportContentValidator::MAX_SUBJECT_CHARS,
+            'contentValidation' => $contentValidation,
+            'maxSubjectChars' => $contentValidation ? QuickReportContentValidator::MAX_SUBJECT_CHARS : 255,
         ], $status);
     }
 

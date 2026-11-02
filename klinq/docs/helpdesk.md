@@ -505,7 +505,7 @@ Bewusst minimales Formular für Personen, die sich **nicht** anmelden sollen ode
 - eine Beschreibung, die nur Floskeln („siehe Bild“, „siehe beigefügten Screenshot“) oder nur Inventarnummern enthält,
 - eine Beschreibung, die den Betreff wörtlich wiederholt – auch mit anderer Groß-/Kleinschreibung oder ergänzt um Floskeln.
 
-Bilder und Satzzeichen zählen dabei nicht als Text; geprüft wird auf normalisierten Wortfolgen. Die Fehlermeldungen erscheinen direkt am jeweiligen Feld, die Eingaben bleiben erhalten. Agenten- und Portalformular sind nicht betroffen.
+Bilder und Satzzeichen zählen dabei nicht als Text; geprüft wird auf normalisierten Wortfolgen. Die Fehlermeldungen erscheinen direkt am jeweiligen Feld, die Eingaben bleiben erhalten. Agenten- und Portalformular sind nicht betroffen. Die Prüfung lässt sich im Reiter **Störungsformular** über das Kontrollkästchen **Inhaltliche Prüfung aktiv** abschalten (`helpdesk.quick_report.content_validation`, Startwert `HELPDESK_QUICK_REPORT_CONTENT_VALIDATION=true`); dann gelten wieder nur die Pflichtfeld- und Längenregeln aus `TicketService`, und der Betreff darf bis 255 Zeichen lang sein.
 
 **Zusätzlicher Benutzer** (aufklappbar): Ist nicht der Melder selbst betroffen, lässt sich im Feld „Betroffener Mitarbeiter“ eine Person über die bekannte Autovervollständigung mit Vorschlagsliste auswählen (`/stoerung/benutzer`, Übernahme aus dem Telefonbuch über `/stoerung/benutzer/uebernehmen`). Die Auswahl landet als `tickets.affected_employee_id` im Ticket; ohne Auswahl wird wie bisher der Melder als betroffener Mitarbeiter eingetragen. Weil die Route ohne Anmeldung erreichbar ist, gelten dieselben Schutzmaßnahmen wie für das Formular (CSRF, Netzbeschränkung, Abschaltbarkeit) und zusätzlich eine eigene Obergrenze von 20 Telefonbuch-Übernahmen je Sitzung und Stunde.
 
@@ -914,6 +914,7 @@ Die folgenden Variablen sind nur **Startwerte** für das Versandkonto ausgehende
 | `HELPDESK_QUICK_REPORT_RATE_LIMIT` | `10` | Meldungen je Browsersitzung und Stunde (0 = unbegrenzt) |
 | `HELPDESK_QUICK_REPORT_SHARED_ACCOUNTS` | leer | Startwerte für den Katalog der Sammelkonten (AD-/SSO-Anmeldenamen, kommagetrennt); Pflege in der Administration, DB hat Vorrang |
 | `HELPDESK_QUICK_REPORT_SHARED_ACCOUNTS_HINT` | leer | Startwert für den Erklärungstext über dem Pflichtfeld; leer = Standardtext |
+| `HELPDESK_QUICK_REPORT_CONTENT_VALIDATION` | `true` | Startwert für die inhaltliche Prüfung von Betreff und Beschreibung (Reiter „Störungsformular“, Kontrollkästchen „Inhaltliche Prüfung aktiv“); die Datenbank hat Vorrang |
 | `HELPDESK_REPLY_TEMPLATE_PREFIX` | leer | Startwert für den Präfix-Text der Agentenmails (Reiter „Vorlageneinstellungen“); die Datenbank hat Vorrang |
 | `HELPDESK_REPLY_TEMPLATE_CONFIRMATION` | leer | Startwert für den Bestätigungstext der Eingangsbestätigung (Reiter „Vorlageneinstellungen“, Platzhalter `{anrede}`, `{name}`, `{ticketnummer}`, `{betreff}`, `{datum}`, `{link}`, `{firma}`); die Datenbank hat Vorrang |
 | `HELPDESK_REPLY_TEMPLATE_FOOTER` | leer | Startwert für den Hinweis am Fuß jeder Benachrichtigungsmail (Reiter „Vorlageneinstellungen“, Platzhalter `{firma}`); ohne gespeicherten und ohne konfigurierten Wert gilt der eingebaute Standardtext, die Datenbank hat Vorrang |

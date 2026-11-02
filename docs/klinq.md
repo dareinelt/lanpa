@@ -283,6 +283,9 @@ zeigt; Schema und Port bleiben so die des Aufrufs.
   Inventarnummer bestehen (`PC24001`, `DR19015`), eine Beschreibung ohne Text
   (nur Screenshot) sowie eine Beschreibung, die lediglich den Betreff
   wiederholt. Die Meldung erscheint am Formular, die Eingaben bleiben erhalten.
+  Abschaltbar in den Help-Desk-Einstellungen unter „Störungsformular“
+  (Kontrollkästchen „Inhaltliche Prüfung aktiv“, `helpdesk.quick_report.content_validation`,
+  Startwert `HELPDESK_QUICK_REPORT_CONTENT_VALIDATION`).
 
 ### 5.1 Personenauswahl aus dem Telefonbuch
 

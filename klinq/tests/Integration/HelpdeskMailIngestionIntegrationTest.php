@@ -14,6 +14,7 @@ use App\Services\Helpdesk\TicketMailIngestionService;
 use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketNotificationService;
 use App\Services\Helpdesk\TicketService;
+use App\Services\SettingsService;
 use Tests\Support\DatabaseTestCase;
 
 /** E-Mail-Eingang: Ticketerstellung, Threading über Message-ID/Ticketnummer, Duplikate, Auto-Replies, Anhänge. */
@@ -290,6 +291,59 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         $result = $this->ingestion->ingestRaw('', 'u1');
         $this->assertContains($result['action'], [TicketMailIngestionService::ACTION_FAILED, TicketMailIngestionService::ACTION_IGNORED]);
         $this->assertNull($result['ticket_id']);
+    }
+
+    // ------------------------------------------------------------------ Abruf
+
+    public function testPullKeepsLoggedInUserWhileWorkingAsSystemUser(): void
+    {
+        $dir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'klinq-mail-' . bin2hex(random_bytes(6));
+        mkdir($dir, 0775, true);
+        file_put_contents($dir . DIRECTORY_SEPARATOR . '001.eml', $this->raw('gast@extern.test', 'Drucker streikt', 'Bitte prüfen.'));
+
+        // Systembenutzer ohne settings.manage: Ein login() würde die Sitzung des Administrators
+        // ersetzen, sodass der Redirect nach /admin/helpdesk-mail mit 403 endet.
+        $stmt = $this->pdo->prepare("INSERT INTO users (username, display_name, email, role_id, auth_source, is_active) SELECT 'hd-mail-system', 'HD System', 'hd-system@example.test', id, 'local', 1 FROM roles WHERE name = 'helpdesk_agent'");
+        $stmt->execute();
+        $systemId = (int) $this->pdo->lastInsertId();
+
+        $this->c->get(SettingsService::class)->setMany([
+            'helpdesk.mail.enabled' => '1',
+            'helpdesk.mail.driver' => 'file',
+            'helpdesk.mail.file_path' => $dir,
+            'helpdesk.mail.system_user' => 'hd-mail-system',
+        ], $this->adminId);
+
+        try {
+            $result = $this->ingestion->pull(5);
+
+            $this->assertSame(1, $result['fetched']);
+            $this->assertSame(1, $result['created']);
+            $this->assertSame(0, $result['failed']);
+            $createdBy = (int) $this->pdo->query("SELECT created_by FROM tickets WHERE subject = 'Drucker streikt'")->fetchColumn();
+            $this->assertSame($systemId, $createdBy, 'Ticket wird im Kontext des Systembenutzers angelegt');
+
+            $current = $this->c->get(CurrentUser::class);
+            $this->assertSame($this->adminId, $current->id(), 'Sitzung bleibt beim angemeldeten Administrator');
+            $this->assertSame('helpdesk_admin', $current->role());
+        } finally {
+            $this->removeDirectory($dir);
+        }
+    }
+
+    private function removeDirectory(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+        foreach (scandir($dir) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $path = $dir . DIRECTORY_SEPARATOR . $entry;
+            is_dir($path) ? $this->removeDirectory($path) : @unlink($path);
+        }
+        @rmdir($dir);
     }
 
     // ------------------------------------------------------------------ Anhänge

@@ -71,37 +71,45 @@ final class TicketMailIngestionService
     public function pull(?int $limit = null): array
     {
         $limit ??= max(1, (int) $this->settings->get('batch_size', 50));
-        $this->loginSystemUser();
+        $systemUser = $this->systemUser();
 
-        /** @var MailboxClientInterface $mailbox */
-        $mailbox = ($this->mailboxFactory)();
-        $result = ['source' => $mailbox->describe(), 'fetched' => 0, 'created' => 0, 'comments' => 0, 'ignored' => 0, 'failed' => 0, 'items' => []];
-        try {
-            $messages = $mailbox->fetchUnprocessed($limit);
-            $result['fetched'] = count($messages);
-            foreach ($messages as $uid => $raw) {
-                $uid = (string) $uid;
-                $outcome = $this->ingestRaw($raw, $uid);
-                $result['items'][] = ['uid' => $uid, 'action' => $outcome['action'], 'ticket' => $outcome['ticket_number'], 'detail' => $outcome['detail']];
-                match ($outcome['action']) {
-                    self::ACTION_CREATED => $result['created']++,
-                    self::ACTION_COMMENT => $result['comments']++,
-                    self::ACTION_IGNORED => $result['ignored']++,
-                    default => $result['failed']++,
-                };
-                try {
-                    if ($outcome['action'] === self::ACTION_FAILED) {
-                        $mailbox->markFailed($uid);
-                    } else {
-                        $mailbox->markProcessed($uid);
+        // runAs() statt login(): Beim manuellen Abruf aus der Administration darf die Sitzung des
+        // angemeldeten Benutzers nicht durch den Systembenutzer ersetzt werden (sonst fehlt nach dem
+        // Redirect das Recht settings.manage und die Seite antwortet mit 403).
+        /** @var array{source:string,fetched:int,created:int,comments:int,ignored:int,failed:int,items:list<array{uid:string,action:string,ticket:?string,detail:?string}>} $result */
+        $result = $this->currentUser->runAs($systemUser, function () use ($limit): array {
+            /** @var MailboxClientInterface $mailbox */
+            $mailbox = ($this->mailboxFactory)();
+            $result = ['source' => $mailbox->describe(), 'fetched' => 0, 'created' => 0, 'comments' => 0, 'ignored' => 0, 'failed' => 0, 'items' => []];
+            try {
+                $messages = $mailbox->fetchUnprocessed($limit);
+                $result['fetched'] = count($messages);
+                foreach ($messages as $uid => $raw) {
+                    $uid = (string) $uid;
+                    $outcome = $this->ingestRaw($raw, $uid);
+                    $result['items'][] = ['uid' => $uid, 'action' => $outcome['action'], 'ticket' => $outcome['ticket_number'], 'detail' => $outcome['detail']];
+                    match ($outcome['action']) {
+                        self::ACTION_CREATED => $result['created']++,
+                        self::ACTION_COMMENT => $result['comments']++,
+                        self::ACTION_IGNORED => $result['ignored']++,
+                        default => $result['failed']++,
+                    };
+                    try {
+                        if ($outcome['action'] === self::ACTION_FAILED) {
+                            $mailbox->markFailed($uid);
+                        } else {
+                            $mailbox->markProcessed($uid);
+                        }
+                    } catch (\Throwable $e) {
+                        $this->logger->warning('Mail-Eingang: Nachricht konnte nicht bestätigt werden', ['uid' => $uid, 'error' => $e->getMessage()]);
                     }
-                } catch (\Throwable $e) {
-                    $this->logger->warning('Mail-Eingang: Nachricht konnte nicht bestätigt werden', ['uid' => $uid, 'error' => $e->getMessage()]);
                 }
+            } finally {
+                $mailbox->close();
             }
-        } finally {
-            $mailbox->close();
-        }
+
+            return $result;
+        });
         $this->logger->info('Mail-Eingang verarbeitet', array_diff_key($result, ['items' => true]));
         $this->settings->recordRun(array_diff_key($result, ['items' => true]));
 
@@ -357,8 +365,11 @@ final class TicketMailIngestionService
 
     // ------------------------------------------------------------------ Hilfen
 
-    /** Systembenutzer des Mail-Eingangs anmelden (muss helpdesk.create besitzen). */
-    public function loginSystemUser(): void
+    /**
+     * Systembenutzer des Mail-Eingangs ermitteln (muss helpdesk.create besitzen).
+     * @return array<string,mixed>
+     */
+    private function systemUser(): array
     {
         $username = (string) $this->settings->get('system_user', 'admin');
         $user = $this->users->findByUsername($username);
@@ -368,7 +379,8 @@ final class TicketMailIngestionService
         if (!$this->permissions->roleHas((string) $user['role'], 'helpdesk.create')) {
             throw new \RuntimeException(sprintf('Systembenutzer „%s“ hat keine Berechtigung helpdesk.create (Rolle %s).', $username, (string) $user['role']));
         }
-        $this->currentUser->login($user);
+
+        return $user;
     }
 
     private function isOwnAddress(string $email): bool

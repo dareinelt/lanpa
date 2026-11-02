@@ -187,13 +187,16 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 - **Weiterleiten von Tickets**: `POST /helpdesk/tickets/{id}/forward` (`helpdesk.assign`) setzt den Bearbeiter neu
   und markiert das Ticket in `tickets.forwarded_to_user_id`/`forwarded_by_user_id`/`forwarded_at`; quittiert wird
   über `forward_acknowledged_at`, sobald der neue Bearbeiter **Übernehmen** (`POST …/take`,
-  `TicketService::takeOver`) nutzt. Bis dahin erscheint das Ticket in der Dashboard-Karte **An Sie weitergeleitet**
+  `TicketService::takeOver`) nutzt oder das Ticket selbst in Bearbeitung nimmt, löst oder schließt
+  (`changeStatus()`, Verlaufseintrag `forward_accepted`). Bis dahin erscheint das Ticket in der Dashboard-Karte **An Sie weitergeleitet**
   (`TicketRepository::pendingForwards`) und in der Liste gelb hervorgehoben. Geschlossene und stornierte Tickets
   blendet die Dashboard-Karte aus, da sie nicht mehr übernommen werden können.
 - **Bearbeiter beim Annehmen und Schließen**: `TicketService::changeStatus()` trägt den handelnden Agenten
-  in `tickets.assignee_user_id` ein, wenn er das Ticket annimmt (`in_progress`) oder abschließt (`resolved`/
+  in `tickets.assignee_user_id` ein, wenn er das Ticket annimmt (`in_progress` aus `new`/`open` oder ohne
+  Bearbeiter) oder abschließt (`resolved`/
   `closed`) – auch wenn zuvor automatisch der 2nd Level des Tages zugewiesen wurde (Verlaufseintrag
-  `assigned`). Automatische Wechsel (`$system = true`, etwa `HelpdeskSchedulerService::autoClose()`,
+  `assigned`). Das Fortsetzen nach einer Pausierung und Wiedereröffnungen lassen einen vorhandenen
+  Bearbeiter stehen. Automatische Wechsel (`$system = true`, etwa `HelpdeskSchedulerService::autoClose()`,
   die Melder-Wiedereröffnung und `TaskService::convert()`) ändern den Bearbeiter nicht.
 - **SLA/Eskalation**: Fristen aus `ticket_slas` (je Kategorie/Priorität), Warn-/Eskalationsschwellen aus
   `HELPDESK_SLA_WARNING_PERCENT`/`HELPDESK_ESCALATION_PERCENT`; `HelpdeskSchedulerService` prüft periodisch
@@ -321,8 +324,10 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   angeheftete Einträge über `is_pinned`/`pinned_at` oben; ersetzt das frühere Einzelfeld `tasks.note`),
   `task_journal` (unveränderliche Journal-Einträge je Aufgabe, u. a. Kommentare aus Zuweisung und Umwandlung;
   bei der Umwandlung kommen die Ticket-Kommentare als `ticket_comment`/`ticket_comment_internal` mit Autor und
-  Zeitpunkt hinzu, die übernommenen Dateien als `ticket_attachments`), `task_attachments` (Verknüpfung
-  `document_id` → `task_id`; die Dateien selbst liegen in `documents` mit `entity_type = task`),
+  Zeitpunkt hinzu, die übernommenen Dateien als `ticket_attachments`; die HTML-Fassung per Mail eingegangener
+  Inhalte steht in `tasks.description_html`/`task_journal.body_html`, Migration 031), `task_attachments` (Verknüpfung
+  `document_id` → `task_id`; die Dateien selbst liegen in `documents` mit `entity_type = task`; ausgeliefert nur
+  über die Aufgabenroute, nicht über `/documents/{id}`),
   `task_events`
   (Verlauf: Anlage, Umwandlung, Annahme, Zuweisung, Statuswechsel, Kategorie- und Fälligkeitswechsel, Anhänge)
 

@@ -250,8 +250,13 @@ gelangen. Die Suche läuft live über die interne Schnittstelle `GET /internal/k
     über Name, E-Mail-Adresse und Rufnummer auffindbar.
   - ohne die Option (`is_active = 0`, `deactivated_at` gesetzt): der Datensatz dient nur dem aktuellen Ticket; die
     Ticketverweise bleiben gültig, die Person taucht aber nicht mehr in der Suche auf. Wird sie später erneut mit
-    gesetzter Option angelegt, aktiviert `reuseContact()` den vorhandenen Datensatz (Audit `activate`).
-  Eine bereits vorhandene E-Mail-Adresse wird wiederverwendet, damit keine Dubletten entstehen. E-Mail und
+    gesetzter Option angelegt, aktiviert `reuseContact()` den vorhandenen Datensatz (Audit `activate`). Das gilt
+    nur für solche Ticket-Kontakte (`source = manual` ohne Nachnamen); bewusst deaktivierte Mitarbeiter aus der
+    Stammdatenpflege oder dem Verzeichnis werden verwendet, aber nicht reaktiviert.
+  Eine bereits vorhandene E-Mail-Adresse wird wiederverwendet, damit keine Dubletten entstehen; ohne E-Mail gilt
+  ein manueller Kontakt mit gleichem Namen und gleicher Rufnummer (Vergleich nur der Ziffern) als dieselbe Person.
+  Suche und Anlage laufen unter einer Datenbanksperre (`EmployeeRepository::withLock`, MySQL `GET_LOCK`), und die
+  Oberfläche sendet den Dialog nicht doppelt ab. E-Mail und
   Rückrufnummer stehen danach am Ticket (Melder-E-Mail/-Telefon) und in der Zusatzzeile der Auswahl.
 - Endpunkte: `GET /api/helpdesk/people/search?q=…` (Berechtigung `helpdesk.view`),
   `POST /api/helpdesk/people/adopt` mit `ref` = Telefonbuch-ID und `POST /api/helpdesk/people/create` mit
@@ -275,7 +280,7 @@ Ansichten *Meine*, *Meine Gruppe*, *Nicht zugewiesen*, *Alle offenen*, *SLA-krit
 
 ![Assistent für neue Tickets: abgeschlossene Schritte als Zusammenfassung oberhalb des aktuellen Schritts](screenshots/helpdesk-ticket-wizard.png)
 
-Beide Modi nutzen dieselben Felder (`views/helpdesk/tickets/_fields.php`) und denselben POST-Endpunkt; die serverseitige Validierung bleibt unverändert. Im Assistenten werden abgeschlossene Schritte oberhalb des aktuellen Schritts mit einer Zusammenfassung angezeigt und lassen sich aufklappen. Über „Zurück“ oder Klick auf einen Schritt lässt sich jederzeit wechseln, ohne Eingaben zu verlieren; der jeweils nächste Schritt wird klickbar, sobald alle Pflichtfelder des aktuellen Schritts gültig ausgefüllt sind (Schritte ohne Pflichtfelder sind sofort klickbar). Der Bearbeiter ist mit dem heutigen 2nd-Level-Support vorbelegt (`SupportShiftService::secondLevelUserIdToday()`), sonst „– nicht zugewiesen –“. Der Melder bleibt bewusst leer und wird vom Agenten eingetragen (siehe „Personenauswahl (Melder und Betroffene)“). Beim Verlassen über „Schließen“, den Moduswechsel oder die Navigation fragt der Assistent nach, bevor der Bearbeitungsfortschritt verloren geht (`public/js/helpdesk-wizard.js`).
+Beide Modi nutzen dieselben Felder (`views/helpdesk/tickets/_fields.php`) und denselben POST-Endpunkt; die serverseitige Validierung bleibt unverändert. Im Assistenten werden abgeschlossene Schritte oberhalb des aktuellen Schritts mit einer Zusammenfassung angezeigt und lassen sich aufklappen. Über „Zurück“ oder Klick auf einen Schritt lässt sich jederzeit wechseln, ohne Eingaben zu verlieren; der jeweils nächste Schritt wird klickbar, sobald alle Pflichtfelder des aktuellen Schritts gültig ausgefüllt sind (Schritte ohne Pflichtfelder sind sofort klickbar); bereits besuchte spätere Schritte bleiben nach einem Rücksprung direkt erreichbar, solange alle Schritte bis dorthin vollständig sind. Der Bearbeiter ist mit dem heutigen 2nd-Level-Support vorbelegt (`SupportShiftService::secondLevelUserIdToday()`), sonst „– nicht zugewiesen –“. Der Melder bleibt bewusst leer und wird vom Agenten eingetragen (siehe „Personenauswahl (Melder und Betroffene)“). Beim Verlassen über „Schließen“, den Moduswechsel oder die Navigation fragt der Assistent nach, bevor der Bearbeitungsfortschritt verloren geht (`public/js/helpdesk-wizard.js`).
 
 #### Bevorzugter Eingabemodus je Benutzer
 
@@ -535,7 +540,8 @@ Je Empfänger geht eine eigene Nachricht über `TicketNotificationService::sendT
 
 - **Bilder per STRG+V**: Das Inhaltsfeld (`#f-body`) trägt `data-hd-media-images`; `public/js/helpdesk-media.js` fügt Screenshots aus der Zwischenablage als Marke `[Bild N]` ein, zeigt eine Vorschau und ersetzt die Marke beim Absenden durch `![Bild](data:image/…)`. Agenten- und Portalansicht rendern den Inhalt mit `rich_text()`, sodass die Bilder im Text erscheinen. Textgrenze: `KnowledgeBaseService::MAX_BODY_CHARS` (4 000 000 Zeichen) – Platz für mehrere Screenshots.
 - **Anhänge**: Das Formular übernimmt `attachments[]` (maximal fünf Dateien je Vorgang) direkt beim Anlegen oder Speichern; im Artikel selbst gibt es zusätzlich einen Einzel-Upload mit optionaler Notiz. Ablage über `DocumentService` (`documents` mit `entity_type = knowledge_article`, `entity_id = Artikel-ID`) – ohne eigene Verknüpfungstabelle. Whitelist und Größenlimit stammen aus `config/uploads.php`.
-- **Zugriff**: `KnowledgeArticleAttachmentService` verlangt `knowledgebase.manage` zum Hochladen und Löschen; der Download prüft ausschließlich die Sichtbarkeit des Artikels (`KnowledgeBaseService::getVisible()`), also Agenten über `/helpdesk/knowledge/{id}/attachments/{document}`, Portalnutzer über `/portal/knowledge/{id}/attachments/{document}`. Bilder und PDFs werden inline ausgeliefert (`?download=1` erzwingt den Download).
+- **Zugriff**: `KnowledgeArticleAttachmentService` verlangt `knowledgebase.manage` zum Hochladen und Löschen; der Download prüft ausschließlich die Sichtbarkeit des Artikels (`KnowledgeBaseService::getVisible()`), also Agenten über `/helpdesk/knowledge/{id}/attachments/{document}`, Portalnutzer über `/portal/knowledge/{id}/attachments/{document}`. Bilder und PDFs werden inline ausgeliefert (`?download=1` erzwingt den Download). Die allgemeine Dokumentroute `/documents/{id}` liefert Anhänge von Tickets, Aufgaben und Wissensartikeln nicht aus (404), damit deren Objektprüfung nicht umgangen werden kann.
+- **Suche**: Die Volltextsuche über Artikel läuft auf `knowledge_articles.body_plain` – dem Inhalt ohne eingebettete Base64-Bilder (gepflegt von `KnowledgeBaseRepository::create()/update()`, Migration 032) –, damit kurze Suchbegriffe nicht zufällig in Bilddaten treffen.
 
 ![Wissensdatenbank im Agentenbereich](screenshots/helpdesk-knowledge.png)
 
@@ -587,7 +593,12 @@ für interne Notizen) samt Autor, Zeitpunkt und Sichtbarkeit – dadurch bleiben
 eingebetteten Bilder (Base64-Data-URI) erhalten. Die am Ticket hochgeladenen Dateien werden als eigene
 Aufgabenanhänge kopiert (neue Datei, eigener `documents`-Datensatz, Verknüpfung in `task_attachments`, siehe
 „Anhänge“); das Ticket behält seine Anhänge. Ein Journal-Eintrag `ticket_attachments` fasst die übernommenen
-Dateien zusammen, im Verlauf steht zusätzlich das Ereignis `attachments_copied`.
+Dateien zusammen, im Verlauf steht zusätzlich das Ereignis `attachments_copied`. Fehlt die Datei eines Anhangs auf
+dem Server, wird er übersprungen und im Journal-Eintrag als „nicht mehr vorhanden“ aufgeführt – die Umwandlung
+bricht deshalb nicht ab. Scheitert sie aus anderem Grund, werden bereits kopierte Dateien wieder entfernt.
+Die HTML-Fassung per E-Mail eingegangener Tickets und Kommentare wird mit übernommen (`tasks.description_html`,
+`task_journal.body_html`, Migration 031); wird die Beschreibung im Overlay geändert, gilt nur noch der Klartext.
+Das Ticket wird erst geschlossen, wenn Aufgabe, Journal und Anhänge angelegt sind.
 **Das Ticket wird dabei geschlossen** (Systemvorgang mit Hinweis in der Historie) und bleibt mit der Aufgabe
 verknüpft: Im Ticketdetail erscheint ein Verweis auf die Aufgabennummer, in der Aufgabe ein Verweis auf das
 Ticket. Je Ticket ist höchstens eine Aufgabe möglich (`tasks.source_ticket_id` ist eindeutig).
@@ -793,7 +804,7 @@ Verweise auf zusammengeführte Tickets werden zum Zielticket weitergeleitet. Ver
 Der MIME-Parser liefert neben dem Klartext auch den HTML-Teil (`InboundMail::$html`). Er wird beim Anlegen eines Tickets in `tickets.description_html` und bei Antworten in `ticket_comments.body_html` gespeichert und in Ticketansicht und Serviceportal **1:1** dargestellt – mit Formatierungen, Tabellen, Links und Bildern wie in der versendeten Nachricht.
 
 - **Klartext bleibt maßgeblich** für Suche (`FULLTEXT`), Benachrichtigungen, API und CSV-Export; die HTML-Spalten dienen ausschließlich der Anzeige. Ist die Spalte `NULL` (Web-/Portal-Tickets, ältere Datensätze), rendert `rich_body()` wie bisher den maskierten Text.
-- **Bereinigung**: Der HTML-Teil läuft beim Speichern und beim Rendern durch `App\Support\HtmlSanitizer` (Allowlist, Skripte und Ereignisattribute entfernt, `style` gefiltert, Links mit `rel="noopener noreferrer"`).
+- **Bereinigung**: Der HTML-Teil läuft beim Speichern und beim Rendern durch `App\Support\HtmlSanitizer` (Allowlist, Skripte und Ereignisattribute entfernt, `style` gefiltert, Links mit `rel="noopener noreferrer"`). Ausgewertet wird nur der `<body>`-Inhalt: Kopfbereich, `<title>` und `<meta>`-Zeichensatzangaben fallen weg, Umlaute bleiben unabhängig vom deklarierten Zeichensatz (z. B. `iso-8859-1`) korrekt, und Inhalt nach überzähligen schließenden Tags geht nicht verloren. Bei Mail-HTML entfernt der Sanitizer zusätzlich `class`-Attribute (`HtmlSanitizer::clean($html, $max, false)`), damit fremde Mails keine Klassen der Oberfläche (etwa Overlays) nutzen; Beschreibung und Kommentare sind per CSS (`.ticket-description`, `.comment-body`: `position: relative; overflow: auto; isolation: isolate`) auf ihren Bereich begrenzt.
 - **Eingebettete Bilder** (`cid:`-Verweise) ersetzt der Eingang durch Data-URIs, sofern das Bild ein PNG/JPEG/GIF/WebP bis 128 KB ist (`TicketMailIngestionService::inlineCidImages()`); größere Bilder bleiben als Anhang am Ticket. Fremde Bild-URLs werden von der CSP (`img-src 'self' data: blob:`) blockiert – Bilder werden also nie von Fremdservern nachgeladen.
 - **Herkunftshinweis**: Bei neu eröffneten Tickets ergänzt derselbe Hinweis wie im Klartext („— Eingegangen per E-Mail von …“) den HTML-Abschluss.
 - Eine von Hand geänderte Beschreibung ersetzt die HTML-Fassung (`description_html` wird geleert), damit keine veraltete Darstellung stehen bleibt. Reine Zeilenende-Unterschiede (Browser-Textareas senden CRLF, Mails werden mit LF gespeichert) gelten dabei nicht als Änderung; `TicketService` vereinheitlicht die Zeilenenden vor dem Vergleich.

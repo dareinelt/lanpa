@@ -227,6 +227,37 @@ final class UserRepository extends BaseRepository
         );
     }
 
+    /**
+     * Zuletzt gewählte Sortierung der Ticketliste (Spalte und Richtung).
+     *
+     * Bewusst als eigene Abfrage: die Sortierung gehört nicht zur Sitzung, damit
+     * sie geräteunabhängig gilt. Leere Werte bedeuten „noch keine Wahl“.
+     *
+     * @return array{sort:string,dir:string}
+     */
+    public function ticketSort(int $id): array
+    {
+        $row = $this->fetchOne('SELECT ticket_sort, ticket_sort_dir FROM users WHERE id = ? LIMIT 1', [$id]);
+
+        return [
+            'sort' => (string) ($row['ticket_sort'] ?? ''),
+            'dir' => (string) ($row['ticket_sort_dir'] ?? ''),
+        ];
+    }
+
+    /**
+     * Merkt sich die zuletzt gewählte Sortierung der Ticketliste. Wird nur bei
+     * einer Änderung geschrieben.
+     */
+    public function rememberTicketSort(int $id, string $sort, string $dir): void
+    {
+        $this->execute(
+            'UPDATE users SET ticket_sort = ?, ticket_sort_dir = ?
+             WHERE id = ? AND (ticket_sort IS NULL OR ticket_sort <> ? OR ticket_sort_dir IS NULL OR ticket_sort_dir <> ?)',
+            [$sort, $dir, $id, $sort, $dir]
+        );
+    }
+
     public function recordLoginFailure(int $id, int $maxAttempts, int $lockMinutes): void
     {
         $this->execute(

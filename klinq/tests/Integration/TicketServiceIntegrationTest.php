@@ -333,15 +333,42 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertContains('assigned', array_column($this->service()->timeline($id), 'type'), 'Übernahme wird im Verlauf dokumentiert');
     }
 
-    public function testClosingKeepsExistingAssignee(): void
+    public function testClosingTicketReassignsToClosingAgent(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        // Etwa der automatisch eingetragene 2nd Level des Tages.
+        $this->service()->assign($id, $this->agent2Id, null);
+
+        $closed = $this->service()->changeStatus($id, 'closed', null, 'Gerät getauscht.');
+
+        $this->assertSame($this->agentId, (int) $closed['assignee_user_id'], 'Der schließende Agent löst den bisherigen Bearbeiter ab');
+        $this->assertSame('Hd-agent', $closed['assignee_name']);
+        $this->assertContains('assigned', array_column($this->service()->timeline($id), 'type'), 'Wechsel wird im Verlauf dokumentiert');
+    }
+
+    public function testAcceptingTicketAssignsActingAgent(): void
     {
         $ticket = $this->createTicket();
         $id = (int) $ticket['id'];
         $this->service()->assign($id, $this->agent2Id, null);
 
-        $closed = $this->service()->changeStatus($id, 'closed', null, 'Gerät getauscht.');
+        $accepted = $this->service()->changeStatus($id, 'in_progress');
 
-        $this->assertSame($this->agent2Id, (int) $closed['assignee_user_id'], 'Ein vorhandener Bearbeiter wird nicht überschrieben');
+        $this->assertSame('in_progress', $accepted['status_code']);
+        $this->assertSame($this->agentId, (int) $accepted['assignee_user_id'], 'Wer das Ticket annimmt, wird Bearbeiter');
+    }
+
+    public function testSystemStatusChangeKeepsAssignee(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        $this->service()->assign($id, $this->agent2Id, null);
+
+        // Wiedereröffnung durch den Melder läuft als Systemwechsel.
+        $this->service()->changeStatus($id, 'in_progress', 'Melder hat geantwortet.', null, null, null, true);
+
+        $this->assertSame($this->agent2Id, (int) $this->service()->get($id)['assignee_user_id'], 'Automatische Wechsel ändern den Bearbeiter nicht');
     }
 
     public function testSystemCloseDoesNotAssignCloser(): void

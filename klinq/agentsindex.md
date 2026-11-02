@@ -182,10 +182,11 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   über `forward_acknowledged_at`, sobald der neue Bearbeiter **Übernehmen** (`POST …/take`,
   `TicketService::takeOver`) nutzt. Bis dahin erscheint das Ticket in der Dashboard-Karte **An Sie weitergeleitet**
   (`TicketRepository::pendingForwards`) und in der Liste gelb hervorgehoben.
-- **Bearbeiter beim Schließen**: `TicketService::changeStatus()` trägt den schließenden Agenten in
-  `tickets.assignee_user_id` ein, wenn das Ticket bis dahin niemandem zugewiesen war (Verlaufseintrag
-  `assigned`); ein vorhandener Bearbeiter bleibt unverändert. Automatische Schließungen (`$system = true`,
-  etwa `HelpdeskSchedulerService::autoClose()` und `TaskService::convert()`) tragen niemanden ein.
+- **Bearbeiter beim Annehmen und Schließen**: `TicketService::changeStatus()` trägt den handelnden Agenten
+  in `tickets.assignee_user_id` ein, wenn er das Ticket annimmt (`in_progress`) oder abschließt (`resolved`/
+  `closed`) – auch wenn zuvor automatisch der 2nd Level des Tages zugewiesen wurde (Verlaufseintrag
+  `assigned`). Automatische Wechsel (`$system = true`, etwa `HelpdeskSchedulerService::autoClose()`,
+  die Melder-Wiedereröffnung und `TaskService::convert()`) ändern den Bearbeiter nicht.
 - **SLA/Eskalation**: Fristen aus `ticket_slas` (je Kategorie/Priorität), Warn-/Eskalationsschwellen aus
   `HELPDESK_SLA_WARNING_PERCENT`/`HELPDESK_ESCALATION_PERCENT`; `HelpdeskSchedulerService` prüft periodisch
   Eskalation, Auto-Close (`HELPDESK_AUTO_CLOSE_DAYS`) und ruft die Mailabholung.

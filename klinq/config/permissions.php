@@ -64,21 +64,26 @@ $helpdeskAdmin = array_merge($helpdeskLead, ['helpdesk.admin', 'documents.manage
 // Die Rolle "portal" enthält bewusst keine Rechte der Assetverwaltung: Mitarbeitende ohne
 // ausdrückliche KLINQ-Berechtigung sehen ausschließlich ihren eigenen Help-Desk-Bereich.
 $portal = ['portal.view', 'portal.create', 'knowledgebase.view'];
+// Rechte des Asset-Managements. Sie gelten für die Rolle "assetmanagement" und zusätzlich für
+// die gleichnamige Berechtigungsgruppe: Da nur die höchste Rolle gewinnt, erhielte ein
+// Help-Desk-Agent, der auch in der AD-Gruppe "Asset-Management" ist, sonst nur Agentenrechte
+// und könnte z. B. Standorte, Hersteller und Artikel nicht pflegen.
+$assetManagement = array_values(array_unique(array_merge($allViews, $portal, [
+    'assets.manage', 'assets.retire', 'labels.print',
+    'movements.checkout', 'movements.return', 'movements.complete',
+    'handover.manage', 'handover.sign',
+    'employees.manage', 'employees.sync',
+    'locations.manage', 'costcenters.manage',
+    'manufacturers.manage', 'articles.manage',
+    'documents.manage', 'licenses.manage',
+    'reports.export', 'imports.manage', 'audit.view',
+])));
 
 return [
     'all' => $all,
     'roles' => [
         'admin' => $all,
-        'assetmanagement' => array_values(array_unique(array_merge($allViews, $portal, [
-            'assets.manage', 'assets.retire', 'labels.print',
-            'movements.checkout', 'movements.return', 'movements.complete',
-            'handover.manage', 'handover.sign',
-            'employees.manage', 'employees.sync',
-            'locations.manage', 'costcenters.manage',
-            'manufacturers.manage', 'articles.manage',
-            'documents.manage', 'licenses.manage',
-            'reports.export', 'imports.manage', 'audit.view',
-        ]))),
+        'assetmanagement' => $assetManagement,
         'lager' => array_values(array_unique(array_merge($allViews, $portal, [
             'labels.print',
             'movements.checkout', 'movements.return', 'movements.complete',
@@ -117,8 +122,10 @@ return [
     // Ticketaufrufe (helpdesk.view_history). "ticket_loeschen" und "ticket_stornieren" geben
     // das Löschen bzw. Stornieren von Tickets frei, "aufgabenverteilung" das Zuweisen von
     // Aufgaben an einen bestimmten Agenten. Admins haben diese Rechte ohnehin über
-    // ihre Rolle; alle anderen Rollen benötigen die jeweilige Gruppe.
+    // ihre Rolle; alle anderen Rollen benötigen die jeweilige Gruppe. "assetmanagement" gibt die
+    // Rechte des Asset-Managements auch dann, wenn eine höhere Rolle (z. B. Help-Desk-Agent) gewinnt.
     'groups' => [
+        'assetmanagement' => $assetManagement,
         'statistik' => ['helpdesk.reports'],
         'ticketaufruf' => ['helpdesk.view_history'],
         'ticket_loeschen' => ['helpdesk.delete'],
@@ -126,6 +133,7 @@ return [
         'aufgabenverteilung' => ['helpdesk.tasks.assign'],
     ],
     'group_labels' => [
+        'assetmanagement' => 'Asset-Management',
         'statistik' => 'Statistik',
         'ticketaufruf' => 'Darf Ticketaufruf auswerten',
         'ticket_loeschen' => 'Darf Tickets löschen',

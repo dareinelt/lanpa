@@ -94,7 +94,9 @@ final class KlinqConfigService
         'klinq_asset_groups' => [
             'label' => 'Asset-Management',
             'role' => 'assetmanagement',
-            'permission' => '',
+            // Zusaetzlich als Berechtigungsgruppe, damit die Rechte auch neben einer hoeheren
+            // Rolle (z. B. Help-Desk-Agent) erhalten bleiben.
+            'permission' => 'assetmanagement',
             'area' => 'assets',
         ],
         'klinq_statistics_groups' => [

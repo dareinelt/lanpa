@@ -11,7 +11,7 @@
             <label for="f-parent">Übergeordneter Standort</label>
             <select id="f-parent" name="parent_id">
                 <option value="">— Oberste Ebene —</option>
-                <?php foreach ($parentOptions as $l): ?><option value="<?= (int) $l['id'] ?>"<?= selected(form_value($row, 'parent_id', $presetParent ?? ''), $l['id']) ?>><?= str_repeat('  ', (int) $l['depth']) ?><?= e($l['name']) ?> (<?= e($types[$l['type']] ?? $l['type']) ?>)</option><?php endforeach; ?>
+                <?php foreach ($parentOptions as $l): ?><option value="<?= (int) $l['id'] ?>"<?= selected(form_value($row, 'parent_id', $presetParent ?? ''), $l['id']) ?>><?= str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', (int) $l['depth']) ?><?= (int) $l['depth'] > 0 ? '↳ ' : '' ?><?= e($l['name']) ?> (<?= e($types[$l['type']] ?? $l['type']) ?>)</option><?php endforeach; ?>
             </select>
             <?= field_error('parent_id') ?>
         </div>

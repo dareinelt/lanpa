@@ -47,6 +47,41 @@ final class MasterDataIntegrationTest extends DatabaseTestCase
         $this->assertSame(0, (int) $repo->find($room)['is_active']);
     }
 
+    public function testMoveChangesParentAndSiblingOrder(): void
+    {
+        $svc = $this->c->get(LocationService::class);
+        $repo = $this->c->get(LocationRepository::class);
+        $site = $svc->create(['name' => 'Wolfsburg', 'type' => 'site', 'is_active' => '1']);
+        $a = $svc->create(['name' => 'Haus A', 'type' => 'building', 'parent_id' => (string) $site, 'is_active' => '1']);
+        $b = $svc->create(['name' => 'Haus B', 'type' => 'building', 'parent_id' => (string) $site, 'is_active' => '1']);
+        $floor = $svc->create(['name' => 'EG', 'type' => 'floor', 'parent_id' => (string) $a, 'is_active' => '1']);
+        $room = $svc->create(['name' => 'Raum 1', 'type' => 'room', 'parent_id' => (string) $floor, 'is_active' => '1']);
+
+        // Reihenfolge: Haus B vor Haus A
+        $svc->move($b, $repo->find($b), $site, [$b, $a]);
+        $this->assertSame(['Haus B', 'Haus A'], array_column($repo->children($site), 'name'));
+
+        // EG samt Raum unter Haus B verschieben
+        $moved = $svc->move($floor, $repo->find($floor), $b, [$floor]);
+        $this->assertSame($b, (int) $moved['parent_id']);
+        $this->assertSame('Wolfsburg / Haus B / EG / Raum 1', $repo->find($room)['full_path']);
+        $this->assertSame(3, (int) $repo->find($room)['depth']);
+
+        // Zur Wurzel verschieben
+        $svc->move($floor, $repo->find($floor), null, [$floor]);
+        $this->assertSame('EG / Raum 1', $repo->find($room)['full_path']);
+        $this->assertSame(0, (int) $repo->find($floor)['depth']);
+
+        $this->assertThrows(ValidationException::class, function () use ($svc, $repo, $floor, $room): void {
+            $svc->move($floor, $repo->find($floor), $room, [$floor]);
+        }, 'Unterstandort');
+
+        $svc->create(['name' => 'EG', 'type' => 'floor', 'parent_id' => (string) $a, 'is_active' => '1']);
+        $this->assertThrows(ValidationException::class, function () use ($svc, $repo, $floor, $a): void {
+            $svc->move($floor, $repo->find($floor), $a, [$floor]);
+        }, 'bereits');
+    }
+
     public function testManufacturerDuplicateWarningAndOverride(): void
     {
         $svc = $this->c->get(ManufacturerService::class);

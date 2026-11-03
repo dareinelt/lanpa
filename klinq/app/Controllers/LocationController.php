@@ -106,6 +106,36 @@ final class LocationController extends BaseController
         return $this->redirect($this->backUrl($request, '/locations/' . $id));
     }
 
+    /** Drag & Drop im Standortbaum: neuer übergeordneter Standort und Reihenfolge (JSON). */
+    public function move(Request $request): Response
+    {
+        $id = $request->paramInt('id');
+        $row = $this->locations->find($id);
+        if ($row === null) {
+            return $this->json(['ok' => false, 'error' => 'Standort nicht gefunden.'], 404);
+        }
+        $order = $request->input('order', []);
+        $order = is_array($order)
+            ? array_values(array_filter(array_map(static fn (mixed $v): int => is_numeric($v) ? (int) $v : 0, $order), static fn (int $v): bool => $v > 0))
+            : [];
+        $parentId = $request->int('parent_id');
+        try {
+            $moved = $this->service->move($id, $row, $parentId !== null && $parentId > 0 ? $parentId : null, $order);
+        } catch (ValidationException $e) {
+            return $this->json(['ok' => false, 'error' => implode(' ', $e->errors()), 'errors' => $e->errors()], 422);
+        }
+
+        return $this->json([
+            'ok' => true,
+            'message' => 'Standort „' . $moved['name'] . '“ wurde verschoben.',
+            'location' => [
+                'id' => (int) $moved['id'],
+                'parent_id' => $moved['parent_id'] !== null ? (int) $moved['parent_id'] : null,
+                'full_path' => $moved['full_path'],
+            ],
+        ]);
+    }
+
     /** JSON-Suche für Auswahlfelder (Picker). */
     public function search(Request $request): Response
     {

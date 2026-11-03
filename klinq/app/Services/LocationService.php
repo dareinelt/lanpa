@@ -120,6 +120,80 @@ final class LocationService
         });
     }
 
+    /**
+     * Verschiebt einen Standort (Drag & Drop im Baum): neuer übergeordneter Standort und
+     * Reihenfolge der Geschwister. Nicht genannte Geschwister (z. B. ausgeblendete inaktive)
+     * folgen in ihrer bisherigen Reihenfolge.
+     *
+     * @param array<string,mixed> $existing
+     * @param list<int> $order IDs der Geschwister in neuer Reihenfolge (inklusive des verschobenen Standorts)
+     * @return array<string,mixed> Aktualisierter Datensatz
+     */
+    public function move(int $id, array $existing, ?int $newParentId, array $order): array
+    {
+        if ($newParentId === $id) {
+            throw ValidationException::single('parent_id', 'Ein Standort kann nicht sich selbst untergeordnet werden.');
+        }
+        if ($newParentId !== null && in_array($newParentId, $this->locations->descendantIds($id), true)) {
+            throw ValidationException::single('parent_id', 'Ein Standort kann nicht einem eigenen Unterstandort zugeordnet werden.');
+        }
+        $parent = $newParentId !== null ? $this->locations->find($newParentId) : null;
+        if ($newParentId !== null && $parent === null) {
+            throw ValidationException::single('parent_id', 'Übergeordneter Standort nicht gefunden.');
+        }
+        $oldParentId = $existing['parent_id'] !== null ? (int) $existing['parent_id'] : null;
+        $parentChanged = $oldParentId !== $newParentId;
+        if ($parentChanged && $this->locations->findSibling($newParentId, (string) $existing['name'], $id) !== null) {
+            throw ValidationException::single('name', 'Unter dem Ziel existiert bereits ein Standort mit dem Namen „' . $existing['name'] . '“.');
+        }
+
+        $this->locations->transaction(function () use ($id, $existing, $parent, $newParentId, $parentChanged, $order): void {
+            $path = (string) $existing['full_path'];
+            if ($parentChanged) {
+                $this->locations->update($id, ['parent_id' => $newParentId]);
+                $depth = $parent === null ? 0 : (int) $parent['depth'] + 1;
+                $path = $parent === null ? (string) $existing['name'] : $parent['full_path'] . self::SEPARATOR . $existing['name'];
+                $this->locations->updatePath($id, $path, $depth);
+                $this->recomputeChildren($id, $path, $depth);
+            }
+
+            $siblings = $this->locations->children($newParentId);
+            $siblingIds = array_map(static fn (array $s): int => (int) $s['id'], $siblings);
+            $sorted = [];
+            foreach ($order as $siblingId) {
+                if (in_array($siblingId, $siblingIds, true) && !in_array($siblingId, $sorted, true)) {
+                    $sorted[] = $siblingId;
+                }
+            }
+            if (!in_array($id, $sorted, true)) {
+                $sorted[] = $id;
+            }
+            foreach ($siblingIds as $siblingId) {
+                if (!in_array($siblingId, $sorted, true)) {
+                    $sorted[] = $siblingId;
+                }
+            }
+            $current = array_column($siblings, 'sort_order', 'id');
+            foreach ($sorted as $index => $siblingId) {
+                $sortOrder = ($index + 1) * 10;
+                if ((int) ($current[$siblingId] ?? -1) !== $sortOrder) {
+                    $this->locations->update($siblingId, ['sort_order' => $sortOrder]);
+                }
+            }
+
+            $this->audit->log(
+                'move',
+                'location',
+                $id,
+                $path,
+                ['parent_id' => $existing['parent_id'], 'full_path' => $existing['full_path'], 'sort_order' => $existing['sort_order']],
+                ['parent_id' => $newParentId, 'full_path' => $path, 'sort_order' => (array_search($id, $sorted, true) + 1) * 10]
+            );
+        });
+
+        return $this->locations->find($id) ?? $existing;
+    }
+
     /** @param array<string,mixed> $existing */
     public function setActive(int $id, array $existing, bool $active): void
     {

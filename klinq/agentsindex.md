@@ -309,7 +309,7 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
 
 - **Kern**: `assets`, `asset_history`, `movements`, `asset_types`, `asset_categories`, `asset_statuses`,
   `inventory_sequences`
-- **Stammdaten**: `locations` (hierarchisch, Zyklusschutz), `cost_centers`, `employees`, `manufacturers`,
+- **Stammdaten**: `locations` (hierarchisch, Zyklusschutz; Baum mit Ein-/Ausklappen, Suche und Drag & Drop über `POST /locations/{id}/move`, `public/js/location-tree.js`), `cost_centers`, `employees`, `manufacturers`,
   `articles`, `suppliers`
 - **Einkauf**: `purchase_orders`, `purchase_order_items`, `goods_receipts`, `goods_receipt_items`,
   `purchase_order_templates(_items)`, `purchase_requests(_items)`

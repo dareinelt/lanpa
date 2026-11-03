@@ -583,7 +583,8 @@ prüft bei jedem Zugriff zusätzlich `helpdesk.tasks`.
 
 Über **Neue Aufgabe** in der Kopfzeile beider Listen (`GET /helpdesk/aufgaben/neu`) legen Agenten mit
 `helpdesk.tasks` eine Aufgabe ohne Ticketbezug an (`POST /helpdesk/aufgaben`, Formular mit CSRF-Schutz). Das
-Formular fragt **Betreff** (Pflicht, 3–255 Zeichen), **Beschreibung** (optional), **Kategorie** aus dem Katalog,
+Formular fragt **Betreff** (Pflicht, 3–255 Zeichen), **Beschreibung** (optional; Screenshots per `STRG+V` über
+`public/js/helpdesk-media.js` wie im Ticketformular), **Kategorie** aus dem Katalog,
 **Priorität** (Vorgabe ist die Standardpriorität aus der Administration) und ein **Fälligkeitsdatum** (optional,
 gespeichert als Tagesende) ab. Die Aufgabe startet als `open`, ist niemandem zugewiesen und erscheint sofort unter
 **Alle Aufgaben**, wo sie angenommen oder zugewiesen wird. `source_ticket_id` bleibt leer; im Verlauf steht das

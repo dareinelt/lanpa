@@ -1,4 +1,5 @@
 <?php require_once __DIR__ . '/../../partials/helpers.php'; ob_start();
+$scripts = ['/js/helpdesk-media.js'];
 $val = static fn (string $key, string $default = ''): string => form_value(null, $key, $default);
 $oldPriority = $val('priority_id');
 $defaultPriority = $oldPriority !== '' ? $oldPriority : ($defaultPriorityId !== null ? (string) $defaultPriorityId : '');
@@ -23,7 +24,9 @@ $defaultPriority = $oldPriority !== '' ? $oldPriority : ($defaultPriorityId !== 
         </div>
         <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">
             <label for="f-description">Beschreibung</label>
-            <textarea id="f-description" name="description" rows="10"><?= e($val('description')) ?></textarea>
+            <textarea id="f-description" name="description" rows="10" maxlength="2000000" data-hd-media-images data-hd-media-preview="#f-description-preview"><?= e($val('description')) ?></textarea>
+            <div class="hd-media-preview" id="f-description-preview" hidden></div>
+            <p class="form-hint">Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
             <?= field_error('description') ?>
         </div>
         <div class="form-row form-row-3">

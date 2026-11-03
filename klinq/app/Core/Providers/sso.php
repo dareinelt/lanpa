@@ -13,6 +13,7 @@ use App\Repositories\UserRepository;
 use App\Security\CsrfTokenManager;
 use App\Security\CurrentUser;
 use App\Security\LanpaSsoToken;
+use App\Security\Permissions;
 use App\Services\AuditLogService;
 use App\Services\EmployeeService;
 use App\Services\Helpdesk\Ai\AiTransportInterface;
@@ -50,7 +51,8 @@ return static function (Container $c): void {
     $c->singleton(LanpaUserService::class, static fn (Container $c): LanpaUserService => new LanpaUserService(
         $c->get(UserRepository::class),
         $c->get(EmployeeRepository::class),
-        $c->get(Logger::class)
+        $c->get(Logger::class),
+        $c->get(Permissions::class)
     ));
     $c->singleton(LanpaSsoController::class, static fn (Container $c): LanpaSsoController => new LanpaSsoController(
         $c->get(View::class),

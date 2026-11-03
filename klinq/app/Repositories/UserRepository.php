@@ -132,6 +132,12 @@ final class UserRepository extends BaseRepository
         return $this->fetchAll('SELECT id, name, label FROM permission_groups ORDER BY label');
     }
 
+    /** Legt eine Berechtigungsgruppe an, falls sie noch fehlt (idempotent). */
+    public function ensurePermissionGroup(string $name, string $label): void
+    {
+        $this->execute('INSERT INTO permission_groups (name, label) VALUES (?, ?) ON DUPLICATE KEY UPDATE name = name', [$name, $label]);
+    }
+
     /** Gruppen-IDs, denen ein Benutzer aktuell zugeordnet ist. @return array<int,int> */
     public function groupIdsForUser(int $userId): array
     {

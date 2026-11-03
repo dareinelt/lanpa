@@ -41,7 +41,7 @@ Auswertungen). Die Anwendung bleibt in ihrem Verhalten unverändert.
 | **Dienst-Token** | Gemeinsames Geheimnis für die internen Schnittstellen (`/internal/klinq/*`), liegt als Datei im Volume `sso_token`. |
 | **Melder** | Person, die über `/stoerung` eine Störmeldung abgibt. |
 | **Bereich (area)** | Grobe Sichtbarkeit in KLINQ: `helpdesk`, `assets`, `statistics`, `tickets`, `admin`. |
-| **Berechtigungsgruppe** | Feine Zusatzfreigabe in KLINQ: `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`. |
+| **Berechtigungsgruppe** | Feine Zusatzfreigabe in KLINQ: `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung`. |
 
 ---
 
@@ -313,7 +313,7 @@ beider Anwendungen. Base64url ohne Auffüllzeichen (`-`, `_`, kein `=`).
 | `ip` | string | Client-Adresse (`ClientAddress::from`) |
 | `host` | string | Rechnername zur Client-Adresse |
 | `role` | string | `admin`, `helpdesk_admin`, `helpdesk_lead`, `helpdesk_agent`, `assetmanagement`, `readonly`, `portal` |
-| `permission_groups` | string[] | `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren` |
+| `permission_groups` | string[] | `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung` |
 | `areas` | string[] | `portal`, `helpdesk`, `assets`, `statistics`, `tickets`, `admin` |
 | `report_only` | bool | `true` nur bei `/stoerung` |
 | `iss` | string | immer `lanpa` |
@@ -424,7 +424,7 @@ Berechtigungsgruppe und Bereich:
 | `klinq_helpdesk_admin_groups` | Help-Desk-Administration | `helpdesk_admin` | – | `helpdesk` |
 | `klinq_helpdesk_lead_groups` | Help-Desk-Leitung | `helpdesk_lead` | – | `helpdesk` |
 | `klinq_helpdesk_agent_groups` | Help-Desk-Agenten | `helpdesk_agent` | – | `helpdesk` |
-| `klinq_asset_groups` | Asset-Management | `assetmanagement` | – | `assets` |
+| `klinq_asset_groups` | Asset-Management | `assetmanagement` | `assetmanagement` | `assets` |
 | `klinq_statistics_groups` | Statistiken (Auswertungen) | – | `statistik` | `statistics` |
 | `klinq_ticket_history_groups` | Ticketaufruf (Verlauf) | – | `ticketaufruf` | `tickets` |
 | `klinq_ticket_delete_groups` | Ticket löschen | – | `ticket_loeschen` | `helpdesk` |
@@ -435,6 +435,11 @@ Die Einträge für Löschen (`helpdesk.delete`) und Stornieren (`helpdesk.cancel
 vergeben gezielt diese beiden Rechte. Ohne diese Gruppen – und ohne Admin-Rolle –
 stehen beide Aktionen auch Help-Desk-Agenten, Leitungen und Administration nicht
 zur Verfügung.
+
+`klinq_asset_groups` vergibt neben der Rolle `assetmanagement` die gleichnamige
+Berechtigungsgruppe mit denselben Rechten. Gewinnt eine höhere Rolle (z. B.
+`helpdesk_agent`), bleiben so die Rechte des Asset-Managements (u. a.
+`locations.manage`, `manufacturers.manage`, `articles.manage`) erhalten.
 
 `klinq_task_assignment_groups` steuert die Aufgabenverteilung im Help Desk.
 Mitglieder dieser AD-Gruppen erhalten `helpdesk.tasks.assign` und dürfen damit

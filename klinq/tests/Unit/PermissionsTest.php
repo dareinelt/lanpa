@@ -88,6 +88,19 @@ final class PermissionsTest extends TestCase
         $this->assertFalse($this->permissions->hasEffective('lager', ['aufgabenverteilung'], 'helpdesk.tasks'));
     }
 
+    public function testAssetmanagementGroupGrantsMasterDataNextToAgentRole(): void
+    {
+        $this->assertTrue($this->permissions->groupExists('assetmanagement'));
+        foreach (['locations.manage', 'manufacturers.manage', 'articles.manage', 'assets.manage'] as $permission) {
+            $this->assertFalse($this->permissions->hasEffective('helpdesk_agent', [], $permission), 'Agent ohne Gruppe: ' . $permission);
+            $this->assertTrue($this->permissions->hasEffective('helpdesk_agent', ['assetmanagement'], $permission), 'Agent mit Gruppe: ' . $permission);
+            $this->assertTrue($this->permissions->hasEffective('helpdesk_lead', ['assetmanagement'], $permission), 'Leitung mit Gruppe: ' . $permission);
+        }
+        $this->assertSame($this->permissions->forRole('assetmanagement'), $this->permissions->forGroup('assetmanagement'));
+        $this->assertFalse($this->permissions->groupHas('assetmanagement', 'helpdesk.view'), 'Die Gruppe öffnet den Agentenbereich nicht');
+        $this->assertFalse($this->permissions->groupHas('assetmanagement', 'settings.manage'));
+    }
+
     public function testLagerCanCheckoutButNotManageSettings(): void    {
         $this->assertTrue($this->permissions->roleHas('lager', 'movements.checkout'));
         $this->assertFalse($this->permissions->roleHas('lager', 'settings.manage'));

@@ -85,7 +85,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–033), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–034), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -293,8 +293,11 @@ sind getrennte Rechte und standardmäßig keiner Help-Desk-Rolle zugeordnet; `he
 Lösen und Schließen ab. `helpdesk.tasks` (Aufgaben anlegen, annehmen, Status ändern, kommentieren, Ticket umwandeln) gehört zu den
 Help-Desk-Rollen; das Zuweisen an einen bestimmten Agenten (`helpdesk.tasks.assign`) vergibt nur die Gruppe
 „Aufgabenverteilung“ oder die Admin-Rolle. Die zugehörige AD-Gruppe wird im Intranet (LANPA) unter
-KLINQ → Zugriff als `klinq_task_assignment_groups` gepflegt. Die Gruppendatensätze legt Migration
-`033_permission_groups_defaults.sql` an (zusätzlich zu den Seedern); fehlt dennoch eine in
+KLINQ → Zugriff als `klinq_task_assignment_groups` gepflegt. Die Gruppe „Asset-Management“
+(`assetmanagement`) trägt dieselben Rechte wie die gleichnamige Rolle; das Intranet übergibt sie für Mitglieder
+der AD-Gruppe `klinq_asset_groups` zusätzlich, damit z. B. ein Help-Desk-Agent auch Standorte, Hersteller
+und Artikel pflegen darf (sonst gewänne nur die höhere Agentenrolle). Die Gruppendatensätze legen die Migrationen
+`033_permission_groups_defaults.sql` und `034_permission_group_assetmanagement.sql` an (zusätzlich zu den Seedern); fehlt dennoch eine in
 `config/permissions.php` bekannte Gruppe, legt `LanpaUserService` sie bei der Intranet-Anmeldung an
 (Warnung im Log), statt die übergebene Gruppe zu verwerfen.
 

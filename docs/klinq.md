@@ -127,7 +127,7 @@ selbst liegt in der `settings`-Tabelle des Intranets.
 | Help-Desk-Administration | Rolle `helpdesk_admin` |
 | Help-Desk-Leitung | Rolle `helpdesk_lead` |
 | Help-Desk-Agenten | Rolle `helpdesk_agent` |
-| Asset-Management | Rolle `assetmanagement` |
+| Asset-Management | Rolle `assetmanagement` und Berechtigungsgruppe `assetmanagement` |
 | Statistiken (Auswertungen) | Berechtigungsgruppe `statistik` |
 | Ticketaufruf (Verlauf) | Berechtigungsgruppe `ticketaufruf` |
 | Ticket löschen | Berechtigungsgruppe `ticket_loeschen` |
@@ -138,6 +138,10 @@ Regeln:
 
 * **Die höchste zutreffende Rolle gewinnt** (Admin vor Help-Desk-Administration
   vor Leitung vor Agent vor Asset-Management vor Nur-Lesen vor Serviceportal).
+* **Asset-Management bleibt neben einer höheren Rolle erhalten.** Die AD-Gruppe
+  übergibt zusätzlich die Berechtigungsgruppe `assetmanagement`; ein Help-Desk-Agent
+  (oder eine Leitung) in dieser Gruppe darf daher auch Assets, Standorte, Hersteller
+  und Artikel pflegen.
 * Berechtigungsgruppen (Statistiken, Ticketaufruf, Ticket löschen, Ticket
   stornieren, Aufgabenverteilung) sind unabhängig von der Rolle und werden
   zusätzlich vergeben.

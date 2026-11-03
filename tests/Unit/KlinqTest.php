@@ -125,8 +125,23 @@ Runner::test('KLINQ: höchste AD-Gruppe bestimmt die Rolle', static function ():
 
     Assert::same('helpdesk_agent', $access['role']);
     Assert::same(['helpdesk', 'assets'], $access['areas']);
+    Assert::same(['assetmanagement'], $access['permission_groups'], 'Asset-Rechte bleiben neben der höheren Agentenrolle erhalten');
     Assert::true($access['elevated']);
     Assert::same(['klinq_helpdesk_agent_groups', 'klinq_asset_groups'], $access['matched']);
+});
+
+Runner::test('KLINQ: Asset-Management wird zusätzlich als Berechtigungsgruppe übergeben', static function (): void {
+    $config = klinqConfig([
+        'klinq_helpdesk_agent_groups' => 'GG-Helpdesk',
+        'klinq_asset_groups' => 'GG-Assets',
+    ]);
+
+    $assets = $config->resolve(['gg-assets']);
+    Assert::same('assetmanagement', $assets['role']);
+    Assert::same(['assetmanagement'], $assets['permission_groups']);
+
+    $agent = $config->resolve(['gg-helpdesk']);
+    Assert::same([], $agent['permission_groups'], 'Ohne AD-Gruppe keine Asset-Rechte für Agenten');
 });
 
 Runner::test('KLINQ: ohne Treffer gilt die Vorgaberolle', static function (): void {

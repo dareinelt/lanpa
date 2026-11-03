@@ -289,7 +289,10 @@ sind getrennte Rechte und standardmäßig keiner Help-Desk-Rolle zugeordnet; `he
 Lösen und Schließen ab. `helpdesk.tasks` (Aufgaben anlegen, annehmen, Status ändern, kommentieren, Ticket umwandeln) gehört zu den
 Help-Desk-Rollen; das Zuweisen an einen bestimmten Agenten (`helpdesk.tasks.assign`) vergibt nur die Gruppe
 „Aufgabenverteilung“ oder die Admin-Rolle. Die zugehörige AD-Gruppe wird im Intranet (LANPA) unter
-KLINQ → Zugriff als `klinq_task_assignment_groups` gepflegt.
+KLINQ → Zugriff als `klinq_task_assignment_groups` gepflegt. Die Gruppendatensätze legt Migration
+`033_permission_groups_defaults.sql` an (zusätzlich zu den Seedern); fehlt dennoch eine in
+`config/permissions.php` bekannte Gruppe, legt `LanpaUserService` sie bei der Intranet-Anmeldung an
+(Warnung im Log), statt die übergebene Gruppe zu verwerfen.
 
 Prüfebenen:
 

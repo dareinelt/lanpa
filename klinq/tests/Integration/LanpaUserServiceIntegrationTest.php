@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration;
 
 use App\Repositories\EmployeeRepository;
+use App\Repositories\UserRepository;
 use App\Services\Lanpa\LanpaUserService;
 use Tests\Support\DatabaseTestCase;
 
@@ -103,5 +104,30 @@ final class LanpaUserServiceIntegrationTest extends DatabaseTestCase
             $this->assertSame(LanpaUserService::FALLBACK_ROLE, $user['role'], 'Rueckfallrolle ohne KLINQ-Berechtigung');
             $this->assertSame('portal', $user['role']);
         }
+    }
+
+    public function testProvisionRecreatesMissingConfiguredPermissionGroup(): void
+    {
+        // Fehlt der Gruppendatensatz (Seeder nicht gelaufen), darf das Recht aus der AD-Gruppe
+        // nicht verloren gehen.
+        $this->pdo->exec("DELETE FROM permission_groups WHERE name = 'aufgabenverteilung'");
+
+        $user = $this->service()->provision($this->claims([
+            'sub' => 'agent-aufgaben',
+            'role' => 'helpdesk_agent',
+            'permission_groups' => ['aufgabenverteilung', 'gibt_es_nicht'],
+        ]));
+
+        $this->assertNotNull($user);
+        $names = array_column($this->c->get(UserRepository::class)->permissionGroups(), 'name');
+        $this->assertTrue(in_array('aufgabenverteilung', $names, true), 'Gruppe wird angelegt');
+        $this->assertFalse(in_array('gibt_es_nicht', $names, true), 'Unbekannte Gruppen werden nicht angelegt');
+
+        $assigned = $this->pdo->prepare(
+            'SELECT COUNT(*) FROM user_permission_groups ug JOIN permission_groups g ON g.id = ug.group_id'
+            . ' WHERE ug.user_id = ? AND g.name = ?'
+        );
+        $assigned->execute([(int) $user['id'], 'aufgabenverteilung']);
+        $this->assertSame(1, (int) $assigned->fetchColumn(), 'Benutzer erhaelt die Gruppe');
     }
 }

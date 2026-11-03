@@ -645,7 +645,9 @@ Rückfragen dieser Art erscheinen als Overlay im Fenster und nicht mehr als Meld
 
 Die AD-Gruppe für die Aufgabenverteilung wird im Intranet unter **KLINQ → Berechtigungen** im Feld
 **Aufgabenverteilung** (`klinq_task_assignment_groups`) gepflegt; die Mitglieder erhalten in KLINQ die
-Berechtigungsgruppe `aufgabenverteilung`. Annehmen und Bearbeiten hängt dagegen an den Help-Desk-Rollen und
+Berechtigungsgruppe `aufgabenverteilung`. Die Gruppe wird beim Einstieg über die Intranet-Kachel
+abgeglichen – nach einer Änderung der AD-Mitgliedschaft KLINQ also einmal neu über das Intranet öffnen.
+Annehmen und Bearbeiten hängt dagegen an den Help-Desk-Rollen und
 braucht keine zusätzliche Gruppe.
 
 ![Zuweisungsdialog: Agent wählen, ohne Auswahl wird die Zuweisung aufgehoben](screenshots/helpdesk-aufgabe-zuweisen.png)

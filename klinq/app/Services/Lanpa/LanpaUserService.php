@@ -7,6 +7,7 @@ namespace App\Services\Lanpa;
 use App\Core\Logger;
 use App\Repositories\EmployeeRepository;
 use App\Repositories\UserRepository;
+use App\Security\Permissions;
 
 /**
  * Legt Benutzer aus dem Intranet (LANPA) an bzw. gleicht sie ab.
@@ -23,7 +24,8 @@ final class LanpaUserService
     public function __construct(
         private readonly UserRepository $users,
         private readonly EmployeeRepository $employees,
-        private readonly Logger $logger
+        private readonly Logger $logger,
+        private readonly Permissions $permissions
     ) {}
 
     /**
@@ -138,10 +140,40 @@ final class LanpaUserService
             return [];
         }
 
+        $ids = $this->matchGroupIds($wanted, $this->users->permissionGroups(), $missing);
+
+        // In config/permissions.php bekannte Gruppen, deren Datensatz fehlt (z. B. Seeder nicht
+        // gelaufen), werden angelegt – sonst ginge das Recht trotz gesetzter AD-Gruppe verloren.
+        $created = false;
+        foreach (array_keys($missing) as $name) {
+            if ($this->permissions->groupExists($name)) {
+                $this->users->ensurePermissionGroup($name, $this->permissions->groupLabels()[$name] ?? $name);
+                $this->logger->warning('LANPA-SSO: Berechtigungsgruppe fehlte und wurde angelegt.', ['gruppe' => $name]);
+                $created = true;
+            }
+        }
+        if ($created) {
+            $ids = $this->matchGroupIds($wanted, $this->users->permissionGroups(), $missing);
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param array<string,bool> $wanted
+     * @param array<int,array<string,mixed>> $groups
+     * @param array<string,bool> $missing gewünschte Namen ohne Datensatz (Ausgabe)
+     * @return array<int,int>
+     */
+    private function matchGroupIds(array $wanted, array $groups, ?array &$missing): array
+    {
+        $missing = $wanted;
         $ids = [];
-        foreach ($this->users->permissionGroups() as $group) {
-            if (isset($wanted[strtolower((string) $group['name'])])) {
+        foreach ($groups as $group) {
+            $name = strtolower((string) $group['name']);
+            if (isset($wanted[$name])) {
                 $ids[] = (int) $group['id'];
+                unset($missing[$name]);
             }
         }
 

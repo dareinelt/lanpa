@@ -258,6 +258,38 @@ final class UserRepository extends BaseRepository
         );
     }
 
+    /**
+     * Zuletzt gewählte Sortierung der Aufgabenliste (Spalte und Richtung).
+     *
+     * Gilt für „Alle Aufgaben“ und „Meine Aufgaben“ gemeinsam; wie bei der
+     * Ticketliste bewusst serverseitig, damit die Wahl geräteunabhängig ist.
+     * Leere Werte bedeuten „noch keine Wahl“.
+     *
+     * @return array{sort:string,dir:string}
+     */
+    public function taskSort(int $id): array
+    {
+        $row = $this->fetchOne('SELECT task_sort, task_sort_dir FROM users WHERE id = ? LIMIT 1', [$id]);
+
+        return [
+            'sort' => (string) ($row['task_sort'] ?? ''),
+            'dir' => (string) ($row['task_sort_dir'] ?? ''),
+        ];
+    }
+
+    /**
+     * Merkt sich die zuletzt gewählte Sortierung der Aufgabenliste. Wird nur bei
+     * einer Änderung geschrieben.
+     */
+    public function rememberTaskSort(int $id, string $sort, string $dir): void
+    {
+        $this->execute(
+            'UPDATE users SET task_sort = ?, task_sort_dir = ?
+             WHERE id = ? AND (task_sort IS NULL OR task_sort <> ? OR task_sort_dir IS NULL OR task_sort_dir <> ?)',
+            [$sort, $dir, $id, $sort, $dir]
+        );
+    }
+
     public function recordLoginFailure(int $id, int $maxAttempts, int $lockMinutes): void
     {
         $this->execute(

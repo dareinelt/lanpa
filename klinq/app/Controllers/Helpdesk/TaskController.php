@@ -11,6 +11,7 @@ use App\Core\View;
 use App\Repositories\TaskCategoryRepository;
 use App\Repositories\TaskRepository;
 use App\Repositories\TicketMasterDataRepository;
+use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\TaskService;
 use App\Support\Paginator;
@@ -29,6 +30,7 @@ final class TaskController extends HelpdeskBaseController
         private readonly TaskRepository $tasks,
         private readonly TaskCategoryRepository $categories,
         private readonly TicketMasterDataRepository $masterData,
+        private readonly UserRepository $users,
         private readonly Config $config
     ) {
         parent::__construct($view, $currentUser);
@@ -55,14 +57,39 @@ final class TaskController extends HelpdeskBaseController
         ];
     }
 
-    /** @return array{0:string,1:string} */
-    private function sortFrom(Request $request): array
+    /**
+     * Sortierung der Aufgabenliste: eine explizite Wahl in der Adresse gewinnt und wird
+     * als Benutzerpräferenz gemerkt, sonst gilt die zuletzt gespeicherte Wahl. Fehlt
+     * beides, bleibt es bei der Standardsortierung (Aktualisiert, absteigend).
+     *
+     * @return array{0:string,1:string}
+     */
+    private function sortFrom(Request $request, bool $remember = false): array
     {
-        $sort = $request->queryString('sort', 'updated_at');
+        $userId = (int) $this->currentUser->id();
+        $sort = $request->queryString('sort');
+        $dir = strtolower($request->queryString('dir'));
+        $explicit = $sort !== '' || $dir !== '';
+
+        if ($userId > 0 && !($sort !== '' && $dir !== '')) {
+            $saved = $this->users->taskSort($userId);
+            if ($sort === '') {
+                $sort = $saved['sort'];
+            }
+            if ($dir === '') {
+                $dir = $saved['dir'];
+            }
+        }
         if (!isset(TaskRepository::SORTABLE[$sort])) {
             $sort = 'updated_at';
         }
-        $dir = strtolower($request->queryString('dir', 'desc')) === 'asc' ? 'asc' : 'desc';
+        if ($dir !== 'asc' && $dir !== 'desc') {
+            $dir = 'desc';
+        }
+
+        if ($explicit && $remember) {
+            $this->users->rememberTaskSort($userId, $sort, $dir);
+        }
 
         return [$sort, $dir];
     }
@@ -82,9 +109,14 @@ final class TaskController extends HelpdeskBaseController
         // Der Aufgabenbereich ist Help-Desk-Rollen vorbehalten (siehe TaskService::get()).
         $this->currentUser->require('helpdesk.tasks');
         $filters = $this->filtersFrom($request, $mine);
-        [$sort, $dir] = $this->sortFrom($request);
+        [$sort, $dir] = $this->sortFrom($request, true);
         $perPage = max(10, min(200, $request->int('per_page', (int) $this->config->get('helpdesk.list_per_page', 25)) ?? 25));
         $paginator = new Paginator($this->tasks->countSearch($filters), $request->int('page', 1) ?? 1, $perPage);
+        // Aufgelöste Sortierung in die Links übernehmen, damit die aktive Spalte auch
+        // bei gespeicherter Präferenz markiert ist und Filter sie nicht zurücksetzen.
+        $query = $request->query();
+        $query['sort'] = $sort;
+        $query['dir'] = $dir;
 
         return $this->render('helpdesk.aufgaben.index', [
             'title' => $mine ? 'Meine Aufgaben' : 'Alle Aufgaben',
@@ -101,7 +133,7 @@ final class TaskController extends HelpdeskBaseController
             'agents' => $this->service->assignableAgents(),
             'paginator' => $paginator,
             'basePath' => $mine ? '/helpdesk/aufgaben/meine' : '/helpdesk/aufgaben',
-            'query' => $request->query(),
+            'query' => $query,
             'sort' => $sort,
             'dir' => $dir,
         ]);

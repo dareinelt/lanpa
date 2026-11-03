@@ -226,4 +226,20 @@ final class UserServiceIntegrationTest extends DatabaseTestCase
         $users->rememberTicketSort($adminId, 'updated_at', 'desc');
         $this->assertSame(['sort' => 'updated_at', 'dir' => 'desc'], $users->ticketSort($adminId));
     }
+
+    public function testTaskSortPreferenceIsRememberedPerUser(): void
+    {
+        $users = $this->c->get(UserRepository::class);
+        $adminId = $this->seedAdmin();
+        $otherId = $this->seedAdmin('zweiter-admin');
+
+        $this->assertSame(['sort' => '', 'dir' => ''], $users->taskSort($adminId), 'ohne Wahl keine Sortierung');
+
+        $users->rememberTaskSort($adminId, 'due_at', 'asc');
+        $this->assertSame(['sort' => 'due_at', 'dir' => 'asc'], $users->taskSort($adminId));
+        $this->assertSame(['sort' => '', 'dir' => ''], $users->taskSort($otherId), 'Präferenz gilt je Benutzer');
+
+        $users->rememberTaskSort($adminId, 'updated_at', 'desc');
+        $this->assertSame(['sort' => 'updated_at', 'dir' => 'desc'], $users->taskSort($adminId));
+    }
 }

@@ -405,6 +405,7 @@ return static function (Container $c): void {
         $c->get(TaskRepository::class),
         $c->get(TaskCategoryRepository::class),
         $c->get(TicketMasterDataRepository::class),
+        $c->get(UserRepository::class),
         $c->get(Config::class)
     ));
     $c->singleton(TaskAttachmentController::class, static fn (Container $c): TaskAttachmentController => new TaskAttachmentController(

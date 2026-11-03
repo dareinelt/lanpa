@@ -85,7 +85,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–030), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–033), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -178,6 +178,10 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Wahl im Sortierlink (`?sort=…&dir=…`) schreibt sie über `rememberTicketSort()` nur bei Änderung fort. Ohne
   Wahl gilt `updated_at`/`desc`; die aufgelöste Sortierung wird in die Listenlinks übernommen, damit die
   aktive Spalte markiert bleibt.
+- **Sortierung der Aufgabenliste je Benutzer**: `users.task_sort`/`task_sort_dir` speichern dieselbe Wahl für
+  „Alle Aufgaben“ und „Meine Aufgaben“. `TaskController::sortFrom()` löst sie über
+  `UserRepository::taskSort()`/`rememberTaskSort()` auf, gegen `TaskRepository::SORTABLE` geprüft; ohne Wahl
+  gilt ebenfalls `updated_at`/`desc`.
 - **Bilder in Beschreibung und Kommentaren** liegen als base64-Data-URI im Text (Markdown `![Bild](data:…)`,
   eingefügt per `STRG+V` durch `public/js/helpdesk-media.js`; im Feld als Marke `[Bild n]` mit Vorschau,
   beim Absenden aufgelöst), gerendert über `App\Support\RichText`;

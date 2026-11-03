@@ -570,7 +570,10 @@ Aufgaben sind Arbeitsaufträge, die nicht mehr am Melder hängen. Sie entstehen 
 umwandeln** aus einem Ticket (siehe unten) oder werden im Aufgabenbereich direkt über **Neue Aufgabe** angelegt.
 Sie liegen im Help Desk unter **Aufgaben** mit zwei Listen: **Alle Aufgaben** (`/helpdesk/aufgaben`) und
 **Meine Aufgaben** (`/helpdesk/aufgaben/meine`). Der Eintrag „Meine Aufgaben“ in der Seitenleiste zeigt die
-Anzahl der eigenen offenen Aufgaben als Zähler.
+Anzahl der eigenen offenen Aufgaben als Zähler. Die zuletzt gewählte Sortierung (Spalte und Richtung) gilt für
+beide Listen gemeinsam: Sie wird als Benutzerpräferenz in `users.task_sort`/`task_sort_dir` gespeichert –
+serverseitig, also unabhängig von PC oder Browser – und beim nächsten Öffnen wieder angewendet; ohne Wahl gilt
+*Aktualisiert, absteigend*.
 
 Der Bereich gehört den Help-Desk-Rollen (`helpdesk.tasks`): Nicht-Agenten sehen weder die Listen noch den
 Navigationspunkt, und auch die Berechtigungsgruppe „Aufgabenverteilung“ öffnet ihn nicht – `TaskService::get()`

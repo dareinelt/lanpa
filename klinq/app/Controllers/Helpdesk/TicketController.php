@@ -265,6 +265,12 @@ final class TicketController extends HelpdeskBaseController
 
     // ------------------------------------------------------------------ Detail
 
+    /** Mail-HTML der Beschreibung oder eines Kommentars für den isolierten Anzeigerahmen. */
+    public function mailHtml(Request $request): Response
+    {
+        return $this->ticketMailFrame($this->service, $request);
+    }
+
     public function show(Request $request): Response
     {
         $ticket = $this->service->getVisible($request->paramInt('id'));
@@ -334,7 +340,7 @@ final class TicketController extends HelpdeskBaseController
             'mergeCompose' => $this->mergeService->composeData($ticket),
             'taskForTicket' => $this->currentUser->can('helpdesk.tasks') ? $this->tasks->findByTicket($id) : null,
             'taskCategories' => $this->currentUser->can('helpdesk.tasks') ? $this->taskCategories->all() : [],
-            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-pins.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-pins.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js', '/js/helpdesk-mail-frame.js'],
         ]);
     }
 

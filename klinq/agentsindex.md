@@ -107,7 +107,7 @@ Browser → Apache → public/index.php → ApplicationFactory::create()->run()
 1. `ApplicationFactory` lädt `.env`/Umgebung in `Config`, setzt Zeitzone und Fehlerbehandlung, baut den
    `Container` (Singletons mit **expliziten** Fabriken, kein Reflection-Autowiring) und lädt automatisch alle
    `app/Core/Providers/*.php` sowie `routes/modules/*.php`.
-2. Middleware: CSP ohne `unsafe-inline`, `X-Frame-Options: DENY`, `nosniff`; Logging ab Status 400 (außer 404);
+2. Middleware: CSP ohne `unsafe-inline`, `X-Frame-Options: DENY` (Mail-Anzeigerahmen: `SAMEORIGIN`), `nosniff`; Logging ab Status 400 (außer 404);
    CSRF-Prüfung bei POST/PUT/PATCH/DELETE (`_csrf` oder `X-CSRF-Token`, `hash_equals`); Authorization lädt den
    Kontostatus je Anfrage (Deaktivierung und Rollenwechsel wirken sofort).
 3. Controller lesen Eingaben und delegieren; **Services** whitelisten alle Felder über `Validator`
@@ -206,8 +206,10 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 - **HTML-Inhalt eingehender Mails** wird 1:1 übernommen: `MimeMessageParser` liefert den HTML-Teil als
   `InboundMail::$html`, `TicketService` speichert ihn bereinigt in `tickets.description_html` bzw.
   `ticket_comments.body_html` (Migration 026). Klartext (`description`/`body`) bleibt maßgeblich für Suche,
-  Benachrichtigungen, API und Export; `rich_body()` in `resources/views/partials/helpers.php` rendert HTML,
-  wenn vorhanden, sonst wie bisher `rich_text()`. `cid:`-Bilder werden bis 128 KB als Data-URI eingebettet.
+  Benachrichtigungen, API und Export; `mail_body()` in `resources/views/partials/helpers.php` zeigt HTML
+  isoliert in einem `<iframe sandbox>` (Routen `…/mail-html`, `App\Support\MailFrame`, eigene CSP ohne Skripte,
+  Stylesheets der Mail via `HtmlSanitizer::mailDocument()` erhalten, Höhe per `helpdesk-mail-frame.js`),
+  sonst wie bisher `rich_text()`. `cid:`-Bilder werden bis 128 KB als Data-URI eingebettet.
   Beim Bearbeiten normalisiert `TicketService` die Zeilenenden, damit ein unveränderter Text die
   HTML-Fassung nicht verwirft.
 - **Agenten-E-Mail aus dem Ticket** (`TicketMailService`): Melder immer, betroffene Person optional; jede Person

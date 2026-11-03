@@ -128,8 +128,17 @@ final class TaskController extends HelpdeskBaseController
             'canAssign' => $this->currentUser->can('helpdesk.tasks.assign'),
             'canManageAttachments' => $this->currentUser->can('helpdesk.tasks.assign'),
             'currentUserId' => $this->currentUser->id(),
-            'scripts' => ['/js/helpdesk-pins.js', '/js/helpdesk-media.js'],
+            'scripts' => ['/js/helpdesk-pins.js', '/js/helpdesk-media.js', '/js/helpdesk-mail-frame.js'],
         ]);
+    }
+
+    /** Mail-HTML der Beschreibung oder eines Journal-Eintrags für den isolierten Anzeigerahmen. */
+    public function mailHtml(Request $request): Response
+    {
+        $task = $this->service->get($request->paramInt('id'));
+        $entryId = $request->param('entry') !== null ? $request->paramInt('entry') : null;
+
+        return $this->mailFrame($task, $entryId !== null ? $this->service->journal((int) $task['id']) : [], 'body_html', $entryId);
     }
 
     // ------------------------------------------------------------------ Aktionen

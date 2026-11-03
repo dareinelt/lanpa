@@ -1040,7 +1040,8 @@ final class TicketService
 
     /**
      * HTML-Fassung einer per E-Mail eingegangenen Nachricht bereinigen. Sie dient ausschließlich
-     * der Anzeige; maßgeblich bleiben die Klartextspalten `description`/`body` (Suche,
+     * der Anzeige im isolierten Rahmen ({@see \App\Support\MailFrame}) und behält dafür die
+     * Stylesheets der Mail; maßgeblich bleiben die Klartextspalten `description`/`body` (Suche,
      * Benachrichtigungen, API, Export).
      */
     private function mailHtml(?string $html): ?string
@@ -1048,7 +1049,7 @@ final class TicketService
         if ($html === null || trim($html) === '') {
             return null;
         }
-        $clean = HtmlSanitizer::clean($html, self::MAX_TEXT_CHARS, false);
+        $clean = HtmlSanitizer::mailDocument($html, self::MAX_TEXT_CHARS);
 
         return $clean !== '' ? $clean : null;
     }

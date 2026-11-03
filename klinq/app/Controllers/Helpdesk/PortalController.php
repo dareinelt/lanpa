@@ -210,8 +210,14 @@ final class PortalController extends HelpdeskBaseController
             'isAgent' => $this->service->isAgent(),
             'reopenDays' => (int) $this->config->get('helpdesk.reopen_days', 14),
             'now' => $now,
-            'scripts' => ['/js/helpdesk.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-mail-frame.js'],
         ]);
+    }
+
+    /** Mail-HTML der Beschreibung oder eines Kommentars für den isolierten Anzeigerahmen. */
+    public function mailHtml(Request $request): Response
+    {
+        return $this->ticketMailFrame($this->service, $request);
     }
 
     public function reopen(Request $request): Response

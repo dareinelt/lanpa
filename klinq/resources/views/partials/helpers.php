@@ -159,19 +159,20 @@ if (!function_exists('rich_text')) {
     }
 }
 
-if (!function_exists('rich_body')) {
+if (!function_exists('mail_body')) {
     /**
-     * Nachrichtentext für die Anzeige: bevorzugt die beim Eingang bereinigte HTML-Fassung einer
-     * E-Mail, sonst den maskierten Klartext. Das HTML läuft beim Rendern erneut durch den
-     * Sanitizer, damit auch ältere Datensätze sicher bleiben.
+     * Nachrichtentext für die Anzeige: Liegt eine HTML-Fassung einer E-Mail vor, wird sie isoliert
+     * in einem `<iframe sandbox>` aus `$frameUrl` geladen (eigene CSP, Layout wie im Mailprogramm);
+     * sonst der maskierte Klartext. Die Höhe passt `public/js/helpdesk-mail-frame.js` an.
      */
-    function rich_body(?string $text, ?string $html = null): string
+    function mail_body(?string $text, ?string $html, string $frameUrl): string
     {
-        if ($html !== null && trim($html) !== '') {
-            return \App\Support\HtmlSanitizer::clean($html, 0, false);
+        if ($html === null || trim($html) === '') {
+            return rich_text($text);
         }
 
-        return rich_text($text);
+        return '<iframe class="mail-frame" src="' . e($frameUrl) . '" sandbox="' . e(\App\Support\MailFrame::SANDBOX) . '"'
+            . ' title="E-Mail-Inhalt" loading="lazy" referrerpolicy="no-referrer" data-hd-mail-frame></iframe>';
     }
 }
 

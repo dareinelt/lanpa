@@ -41,7 +41,7 @@ Browser ──HTTP──▶ Apache ──▶ public/index.php ──▶ Applicat
 1. **`public/index.php`** lädt den Autoloader und ruft `ApplicationFactory::create()->run()` auf.
 2. **`ApplicationFactory`** liest `.env`/Umgebung in `Config`, setzt Zeitzone und Fehlerbehandlung, baut den `Container` (alle Dienste als Singletons mit expliziten Fabriken – kein Reflection-Autowiring), lädt alle `app/Core/Providers/*.php` und `routes/modules/*.php`.
 3. **`Router`** matcht Methode + Pfad (Parameter `{id}` → `([^/]+)`) und führt die Middleware-Kette aus:
-   - `SecurityHeadersMiddleware` – CSP (`default-src 'self'`, kein `unsafe-inline`), `X-Frame-Options: DENY`, `nosniff`, Referrer- und Permissions-Policy; vom Controller gesetzte strengere CSP bleibt erhalten.
+   - `SecurityHeadersMiddleware` – CSP (`default-src 'self'`, kein `unsafe-inline`), `X-Frame-Options: DENY` (Ausnahme: Mail-Anzeigerahmen `SAMEORIGIN`), `nosniff`, Referrer- und Permissions-Policy; vom Controller gesetzte strengere CSP bleibt erhalten.
    - `RequestLogMiddleware` – protokolliert Antworten ≥ 400 (außer 404).
    - `CsrfMiddleware` – prüft bei POST/PUT/PATCH/DELETE das Token (`_csrf`-Feld oder `X-CSRF-Token`-Header) mit `hash_equals`; Fehler → 403.
    - `AuthorizationMiddleware` – erzwingt Anmeldung, lädt den Kontostatus je Anfrage (Deaktivierung wirkt sofort, Rollenwechsel ohne Neuanmeldung) und prüft die Routen-Berechtigung.

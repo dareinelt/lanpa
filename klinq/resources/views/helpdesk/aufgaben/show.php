@@ -75,7 +75,7 @@ $journalLabels = [
 
     <section class="card">
         <h2 class="card-title">Beschreibung</h2>
-        <div class="ticket-description"><?= rich_body($task['description'], $task['description_html'] ?? null) ?></div>
+        <div class="ticket-description"><?= mail_body($task['description'], $task['description_html'] ?? null, '/helpdesk/aufgaben/' . (int) $task['id'] . '/mail-html') ?></div>
     </section>
 
     <details class="card card-collapsible" id="anhaenge">
@@ -170,7 +170,7 @@ $journalLabels = [
                 <span class="timeline-dot"></span>
                 <span class="timeline-time"><?= fmt_datetime($entry['created_at']) ?> · <?= e($entry['author_name']) ?></span>
                 <span class="timeline-title"><?= e($journalLabels[$entry['type']] ?? 'Notiz') ?></span>
-                <div class="comment-body"><?= rich_body($entry['body'], $entry['body_html'] ?? null) ?></div>
+                <div class="comment-body"><?= mail_body($entry['body'], $entry['body_html'] ?? null, '/helpdesk/aufgaben/' . (int) $task['id'] . '/journal/' . (int) $entry['id'] . '/mail-html') ?></div>
             </li>
             <?php endforeach; ?>
         </ul>

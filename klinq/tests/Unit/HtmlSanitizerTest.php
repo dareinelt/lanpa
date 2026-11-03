@@ -136,4 +136,46 @@ final class HtmlSanitizerTest extends TestCase
 
         $this->assertSame("Müller & Söhne\nZeile zwei", $text);
     }
+
+    public function testMailDocumentKeepsFilteredStyleSheetsAndClasses(): void
+    {
+        $html = HtmlSanitizer::mailDocument(
+            '<html><head><style>.crumb{display:inline}@import url(https://evil.test/x.css);'
+            . 'td{background:url(https://evil.test/t.png) no-repeat;width:expression(alert(1))}</style></head>'
+            . '<body><table bgcolor="#eeeeee"><tr><td class="crumb"><font color="red" face="Arial">KHWF</font></td></tr></table></body></html>'
+        );
+
+        $this->assertStringContains('<style>', $html);
+        $this->assertStringContains('.crumb{display:inline}', $html);
+        $this->assertStringContains('class="crumb"', $html);
+        $this->assertStringContains('bgcolor="#eeeeee"', $html);
+        $this->assertStringContains('<font color="red" face="Arial">KHWF</font>', $html);
+        $this->assertFalse(str_contains($html, '@import'), '@import');
+        $this->assertFalse(str_contains($html, 'evil.test'), 'evil.test');
+        $this->assertFalse(str_contains($html, 'expression'), 'expression');
+    }
+
+    public function testMailDocumentStyleSheetCannotCloseItsBlock(): void
+    {
+        $html = HtmlSanitizer::mailDocument('<style>p{color:red}</style ><p>Text</p><style>a{}</style><script>alert(1)</script>');
+        $this->assertFalse(str_contains($html, '<script'), '<script');
+
+        $html = HtmlSanitizer::mailDocument('<style>p{color:red}<\/style><img src=x onerror=alert(1)></style><p>Text</p>');
+        $this->assertFalse(str_contains($html, '<img'), 'Kein Element aus dem Stylesheet');
+        $this->assertSame(1, substr_count($html, '</style>'));
+    }
+
+    public function testMailDocumentIsIdempotent(): void
+    {
+        $once = HtmlSanitizer::mailDocument('<head><style>p{margin:0}</style></head><body><p class="x">Text</p></body>');
+
+        $this->assertSame($once, HtmlSanitizer::mailDocument($once));
+    }
+
+    public function testCleanStillDropsStyleSheetsAndPresentationalMailMarkup(): void
+    {
+        $html = HtmlSanitizer::clean('<style>p{color:red}</style><font color="red">Text</font><table><tr><td bgcolor="red">Zelle</td></tr></table>', 0, false);
+
+        $this->assertSame('Text<table><tr><td>Zelle</td></tr></table>', $html);
+    }
 }

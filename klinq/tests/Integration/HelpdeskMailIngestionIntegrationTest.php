@@ -201,7 +201,8 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         $this->assertStringContains('data:image/png;base64,', $descriptionHtml);
         $this->assertStringContains('Eingegangen per E-Mail von Gast Nutzer &lt;gast@extern.test&gt;', $descriptionHtml);
         $this->assertFalse(str_contains($descriptionHtml, 'alert(1)'));
-        $this->assertFalse(str_contains($descriptionHtml, 'color:red'));
+        // Stylesheets bleiben für die isolierte Anzeige im Sandbox-Rahmen erhalten
+        $this->assertStringContains('<style>p{color:red}</style>', $descriptionHtml);
         $this->assertFalse(str_contains($descriptionHtml, 'cid:logo'));
     }
 

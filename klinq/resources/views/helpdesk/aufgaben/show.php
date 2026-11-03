@@ -146,9 +146,10 @@ $journalLabels = [
             <?= csrf_field() ?>
             <div class="form-group">
                 <label for="task-comment-body" class="sr-only">Kommentar</label>
-                <textarea id="task-comment-body" name="body" rows="3" maxlength="2000000" placeholder="Kommentar eingeben …" required><?= e(old('body')) ?></textarea>
-                <?= field_error('body') ?>
-                <p class="form-hint">Kommentare erscheinen chronologisch; angeheftete Einträge stehen oben.</p>
+                <textarea id="task-comment-body" name="body" rows="3" maxlength="2000000"                 placeholder="Kommentar eingeben …" required data-hd-media-images data-hd-media-preview="#task-comment-media-preview"><?= e(old('body')) ?></textarea>
+                                <div class="hd-media-preview" id="task-comment-media-preview" hidden></div>
+                                <?= field_error('body') ?>
+                                <p class="form-hint">Kommentare erscheinen chronologisch; angeheftete Einträge stehen oben. Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
             </div>
             <div class="comment-form-footer">
                 <span></span>

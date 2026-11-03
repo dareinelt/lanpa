@@ -684,7 +684,9 @@ Jede Aufgabe hat einen eigenen **Kommentarverlauf** (`task_comments`). Kommentar
 der Karte **Kommentare** und erscheinen chronologisch in der Reihenfolge des Eintragens (`created_at`, bei
 gleichem Zeitstempel nach `id`); eine Filterung gibt es bewusst nicht. Schreiben dürfen alle
 Agenten mit `helpdesk.tasks` über das Feld unter der Liste (`POST /helpdesk/aufgaben/{id}/kommentare`); das
-Absenden springt zurück auf den Anker `#kommentare`. Ein Kommentar hält Autor (Name und optionaler
+Absenden springt zurück auf den Anker `#kommentare`. Screenshots lassen sich per `STRG+V` direkt einfügen
+(`public/js/helpdesk-media.js`, wie bei Ticketkommentaren); sie werden als `![Bild](data:image/…)` im Kommentartext
+gespeichert und über `rich_text()` angezeigt. Ein Kommentar hält Autor (Name und optionaler
 Benutzerbezug) und Zeitpunkt fest, wird auditiert (`task.comment`) und aktualisiert `tasks.updated_at`, damit
 die Aufgabe in den Listen oben bleibt. Kommentare sind inhaltlich unveränderlich – die Anwendung bietet kein
 Bearbeiten oder Löschen.

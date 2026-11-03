@@ -132,7 +132,7 @@ $statusTransitions = array_values(array_filter(
 
     <section class="card">
         <h2 class="card-title">Beschreibung</h2>
-        <div class="ticket-description"><?= rich_body($ticket['description'], $ticket['description_html'] ?? null) ?></div>
+        <div class="ticket-description"><?= mail_body($ticket['description'], $ticket['description_html'] ?? null, '/helpdesk/tickets/' . $id . '/mail-html') ?></div>
         <?php if (!empty($ticket['resolution'])): ?>
             <div class="ticket-resolution">
                 <h3><?= icon('check', 'icon icon-xs') ?> Lösung</h3>
@@ -177,7 +177,7 @@ $statusTransitions = array_values(array_filter(
                     <?php if ($c['source'] === 'email'): ?><span class="badge badge-info" title="<?= e(!empty($c['mail_from_address']) ? 'Absender: ' . $c['mail_from_address'] : 'Per E-Mail eingegangen') ?>"><?= icon('mail', 'icon icon-xs') ?> Per E-Mail<?= !empty($c['mail_from_address']) ? ' von ' . e($c['mail_from_address']) : '' ?></span><?php endif; ?>
                     <span class="text-muted text-xs"><?= fmt_datetime($c['created_at']) ?> · <?= e($sources[$c['source']] ?? $c['source']) ?></span>
                 </div>
-                <div class="comment-body"><?= rich_body($c['body'], $c['body_html'] ?? null) ?></div>
+                <div class="comment-body"><?= mail_body($c['body'], $c['body_html'] ?? null, '/helpdesk/tickets/' . $id . '/comments/' . (int) $c['id'] . '/mail-html') ?></div>
                 <?php $cAtt = array_filter($attachments, static fn (array $a): bool => (int) ($a['comment_id'] ?? 0) === (int) $c['id']); ?>
                 <?php if ($cAtt !== []): ?>
                 <ul class="comment-attachments">

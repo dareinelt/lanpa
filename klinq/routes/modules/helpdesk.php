@@ -60,6 +60,9 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/tickets', static fn (Request $r): Response => $tickets()->store($r), 'helpdesk.create');
     $router->post('/helpdesk/tickets/merge', static fn (Request $r): Response => $tickets()->mergeMany($r), 'helpdesk.merge');
     $router->get('/helpdesk/tickets/{id}', static fn (Request $r): Response => $tickets()->show($r), 'helpdesk.view');
+    // Mail-HTML (Beschreibung/Kommentar) als eigenes Dokument für den isolierten Anzeigerahmen
+    $router->get('/helpdesk/tickets/{id}/mail-html', static fn (Request $r): Response => $tickets()->mailHtml($r), 'helpdesk.view');
+    $router->get('/helpdesk/tickets/{id}/comments/{comment}/mail-html', static fn (Request $r): Response => $tickets()->mailHtml($r), 'helpdesk.view');
     $router->get('/helpdesk/tickets/{id}/edit', static fn (Request $r): Response => $tickets()->edit($r), 'helpdesk.update');
     $router->post('/helpdesk/tickets/{id}', static fn (Request $r): Response => $tickets()->update($r), 'helpdesk.update');
     $router->post('/helpdesk/tickets/{id}/status', static fn (Request $r): Response => $tickets()->status($r), 'helpdesk.update');
@@ -97,6 +100,8 @@ return static function (Router $router, Container $c): void {
     $router->get('/helpdesk/aufgaben/neu', static fn (Request $r): Response => $tasks()->create($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben', static fn (Request $r): Response => $tasks()->store($r), 'helpdesk.tasks');
     $router->get('/helpdesk/aufgaben/{id}', static fn (Request $r): Response => $tasks()->show($r), 'helpdesk.tasks');
+    $router->get('/helpdesk/aufgaben/{id}/mail-html', static fn (Request $r): Response => $tasks()->mailHtml($r), 'helpdesk.tasks');
+    $router->get('/helpdesk/aufgaben/{id}/journal/{entry}/mail-html', static fn (Request $r): Response => $tasks()->mailHtml($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/annehmen', static fn (Request $r): Response => $tasks()->claim($r), 'helpdesk.tasks');
     $router->post('/helpdesk/aufgaben/{id}/zuweisen', static fn (Request $r): Response => $tasks()->assign($r), 'helpdesk.tasks.assign');
     $router->post('/helpdesk/aufgaben/{id}/status', static fn (Request $r): Response => $tasks()->status($r), 'helpdesk.tasks');
@@ -148,6 +153,8 @@ return static function (Router $router, Container $c): void {
     $router->get('/portal/tickets/new', static fn (Request $r): Response => $portal()->create($r), 'portal.create');
     $router->post('/portal/tickets', static fn (Request $r): Response => $portal()->store($r), 'portal.create');
     $router->get('/portal/tickets/{id}', static fn (Request $r): Response => $portal()->show($r), 'portal.view');
+    $router->get('/portal/tickets/{id}/mail-html', static fn (Request $r): Response => $portal()->mailHtml($r), 'portal.view');
+    $router->get('/portal/tickets/{id}/comments/{comment}/mail-html', static fn (Request $r): Response => $portal()->mailHtml($r), 'portal.view');
     $router->post('/portal/tickets/{id}/comments', static fn (Request $r): Response => $files()->comment($r), 'portal.view');
     $router->post('/portal/tickets/{id}/attachments', static fn (Request $r): Response => $files()->upload($r), 'portal.view');
     $router->get('/portal/tickets/{id}/attachments/{document}', static fn (Request $r): Response => $files()->download($r), 'portal.view');

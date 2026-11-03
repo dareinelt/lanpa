@@ -19,8 +19,14 @@ final class HtmlSanitizer
     /** Elemente, die erhalten bleiben. */
     private const ALLOWED = ['p', 'br', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'small', 'ul', 'ol', 'li', 'blockquote', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'pre', 'code', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'img'];
 
+    /** Zusätzliche Elemente für E-Mail-Dokumente (Anzeige im isolierten Rahmen). */
+    private const DOCUMENT_ALLOWED = ['font', 'center', 'caption', 'colgroup', 'col'];
+
     /** Attribute, die an jedem erlaubten Element stehen dürfen. */
     private const GLOBAL_ATTRIBUTES = ['style', 'class', 'title', 'dir', 'lang'];
+
+    /** Obergrenze für die Stylesheets eines E-Mail-Dokuments in Zeichen. */
+    private const MAX_STYLESHEET_CHARS = 100000;
 
     /** Verbotene Muster in style-Attributen (Skripte, Fremdverweise, Überlagerung). */
     private const STYLE_DENY = '/expression|javascript:|vbscript:|behaviou?r\s*:|binding\s*:|@import|-moz-binding|position\s*:\s*fixed|url\s*\(\s*[\'"]?\s*(?!data:image\/)/i';
@@ -35,6 +41,23 @@ final class HtmlSanitizer
      */
     public static function clean(string $html, int $maxLength = 200000, bool $allowClasses = true): string
     {
+        return self::sanitize($html, $maxLength, $allowClasses, false);
+    }
+
+    /**
+     * Bereinigt eine eingehende HTML-E-Mail für die Anzeige im isolierten Rahmen
+     * (`<iframe sandbox>` mit eigener CSP). Anders als {@see clean()} bleiben `<style>`-Blöcke
+     * (gefiltert), `class`-Attribute und einige typische Mail-Elemente (`font`, `center`, `bgcolor` …)
+     * erhalten, damit die Nachricht so aussieht wie im Mailprogramm. Das Ergebnis darf nur in
+     * diesem Rahmen ausgegeben werden, nie direkt in einer Seite der Anwendung.
+     */
+    public static function mailDocument(string $html, int $maxLength = 200000): string
+    {
+        return self::sanitize($html, $maxLength, true, true);
+    }
+
+    private static function sanitize(string $html, int $maxLength, bool $allowClasses, bool $document): string
+    {
         $html = trim($html);
         if ($html === '') {
             return '';
@@ -44,6 +67,10 @@ final class HtmlSanitizer
         }
         if (!class_exists(\DOMDocument::class)) {
             return self::fallback($html);
+        }
+        $styles = '';
+        if ($document) {
+            [$html, $styles] = self::extractStyleSheets($html);
         }
         $html = self::bodyContent($html);
         // Nicht-ASCII als Zeichenreferenzen: libxml liest so auch dann richtig, wenn die Mail einen
@@ -67,14 +94,57 @@ final class HtmlSanitizer
             return self::fallback($html);
         }
 
-        self::walk($root, $allowClasses);
+        self::walk($root, $allowClasses, $document);
 
         $out = '';
         foreach ($root->childNodes as $child) {
             $out .= (string) $doc->saveHTML($child);
         }
+        $out = trim($out);
+        if ($styles !== '' && $out !== '') {
+            $out = '<style>' . $styles . '</style>' . $out;
+        }
 
-        return trim($out);
+        return $out;
+    }
+
+    /**
+     * Entfernt alle `<style>`-Blöcke aus dem HTML und liefert ihren gefilterten Inhalt gesammelt zurück.
+     *
+     * @return array{0:string,1:string} HTML ohne Stylesheets, bereinigtes CSS
+     */
+    private static function extractStyleSheets(string $html): array
+    {
+        $css = [];
+        $html = (string) preg_replace_callback('#<style\b[^>]*>(.*?)</style\s*>#is', static function (array $m) use (&$css): string {
+            $css[] = $m[1];
+
+            return '';
+        }, $html);
+        $styles = self::sanitizeStyleSheet(implode("\n", $css));
+
+        return [$html, $styles];
+    }
+
+    /**
+     * Filtert ein Stylesheet aus einer E-Mail: keine Fremdverweise (`@import`, `url()` außer
+     * eingebetteten Rasterbildern), keine Skriptausdrücke und kein `<`, damit der Block nicht
+     * vorzeitig geschlossen werden kann. Die CSP des Anzeigerahmens bleibt die zweite Schutzschicht.
+     */
+    private static function sanitizeStyleSheet(string $css): string
+    {
+        $css = str_replace(['<!--', '-->', '<', '\\'], '', $css);
+        $css = (string) preg_replace('#/\*.*?\*/#s', '', $css);
+        $css = (string) preg_replace('#/\*.*$#s', '', $css);
+        $css = (string) preg_replace('/@import\b[^;]*;?/i', '', $css);
+        $css = (string) preg_replace('/url\s*\(\s*(?![\'"]?\s*data:image\/(?:png|jpe?g|gif|webp)[;,])[^)]*\)/i', 'none', $css);
+        $css = (string) preg_replace('/expression\s*\(|javascript:|vbscript:|behaviou?r\s*:|-moz-binding|binding\s*:/i', '', $css);
+        $css = trim($css);
+        if (mb_strlen($css) > self::MAX_STYLESHEET_CHARS) {
+            return '';
+        }
+
+        return $css;
     }
 
     /**
@@ -111,7 +181,7 @@ final class HtmlSanitizer
     }
 
     /** Reduziert unbekannte Elemente auf ihren Inhalt und bereinigt Attribute. */
-    private static function walk(\DOMNode $node, bool $allowClasses): void
+    private static function walk(\DOMNode $node, bool $allowClasses, bool $document): void
     {
         $children = [];
         foreach ($node->childNodes as $child) {
@@ -130,12 +200,12 @@ final class HtmlSanitizer
                 $node->removeChild($child);
                 continue;
             }
-            self::walk($child, $allowClasses);
-            if (!in_array($tag, self::ALLOWED, true)) {
+            self::walk($child, $allowClasses, $document);
+            if (!in_array($tag, self::ALLOWED, true) && !($document && in_array($tag, self::DOCUMENT_ALLOWED, true))) {
                 self::unwrap($child);
                 continue;
             }
-            self::attributes($child, $tag, $allowClasses);
+            self::attributes($child, $tag, $allowClasses, $document);
         }
     }
 
@@ -152,7 +222,7 @@ final class HtmlSanitizer
         $parent->removeChild($element);
     }
 
-    private static function attributes(\DOMElement $element, string $tag, bool $allowClasses): void
+    private static function attributes(\DOMElement $element, string $tag, bool $allowClasses, bool $document): void
     {
         $allowed = $allowClasses ? self::GLOBAL_ATTRIBUTES : array_values(array_diff(self::GLOBAL_ATTRIBUTES, ['class']));
         $allowed = match ($tag) {
@@ -162,6 +232,15 @@ final class HtmlSanitizer
             'table' => [...$allowed, 'cellpadding', 'cellspacing', 'border', 'width', 'align'],
             default => $allowed,
         };
+        if ($document) {
+            $allowed = match ($tag) {
+                'table', 'tr', 'td', 'th' => [...$allowed, 'bgcolor', 'valign'],
+                'font' => [...$allowed, 'color', 'face', 'size'],
+                'col', 'colgroup' => [...$allowed, 'span', 'width', 'align', 'valign'],
+                'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'caption' => [...$allowed, 'align'],
+                default => $allowed,
+            };
+        }
 
         $drop = [];
         foreach ($element->attributes as $attribute) {
@@ -202,7 +281,10 @@ final class HtmlSanitizer
             'href' => preg_match('#^(https?://|mailto:|tel:)#i', $value) === 1,
             'src' => preg_match('#^(https?://|data:image/(png|jpe?g|gif|webp);base64,)#i', $value) === 1,
             'target', 'rel', 'dir', 'lang', 'align', 'valign', 'alt', 'title' => mb_strlen($value) <= 255,
-            'width', 'height', 'colspan', 'rowspan', 'cellpadding', 'cellspacing', 'border' => preg_match('/^\d{1,4}%?$/', $value) === 1,
+            'width', 'height', 'colspan', 'rowspan', 'cellpadding', 'cellspacing', 'border', 'span' => preg_match('/^\d{1,4}%?$/', $value) === 1,
+            'bgcolor', 'color' => preg_match('/^#?[A-Za-z0-9]{1,20}$/', $value) === 1,
+            'face' => preg_match('/^[A-Za-z0-9 ,_\-]{1,120}$/', $value) === 1,
+            'size' => preg_match('/^[+-]?[1-7]$/', $value) === 1,
             default => false,
         };
     }

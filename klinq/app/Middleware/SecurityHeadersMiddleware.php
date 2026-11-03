@@ -16,8 +16,11 @@ final class SecurityHeadersMiddleware
     {
         $response = $next($request);
 
+        // Nur der Anzeigerahmen für E-Mails (App\Support\MailFrame) setzt selbst SAMEORIGIN
+        if (!isset($response->headers()['X-Frame-Options'])) {
+            $response = $response->withHeader('X-Frame-Options', 'DENY');
+        }
         $response = $response
-            ->withHeader('X-Frame-Options', 'DENY')
             ->withHeader('X-Content-Type-Options', 'nosniff')
             ->withHeader('Referrer-Policy', 'same-origin')
             ->withHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');

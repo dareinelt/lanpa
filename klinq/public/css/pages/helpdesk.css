@@ -164,6 +164,8 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 /* Fremdes Mail-HTML bleibt in seinem Kasten und kann keine Oberfläche überlagern. */
 .ticket-description, .comment-body { position: relative; overflow: auto; isolation: isolate; }
 .ticket-description table, .comment-body table { max-width: 100%; }
+/* HTML-E-Mails: eigenes Dokument im <iframe sandbox>, Höhe setzt helpdesk-mail-frame.js */
+.mail-frame { display: block; width: 100%; height: 16rem; border: 0; background: transparent; }
 .ticket-description p, .comment-body p { margin: 0 0 var(--space-2); }
 .ticket-description blockquote, .comment-body blockquote { margin: 0 0 var(--space-2) var(--space-3); padding-left: var(--space-3); border-left: 2px solid var(--color-border); color: var(--color-text-muted); }
 .comment-attachments { margin-top: var(--space-2); display: flex; flex-wrap: wrap; gap: var(--space-2); font-size: var(--font-size-xs); }

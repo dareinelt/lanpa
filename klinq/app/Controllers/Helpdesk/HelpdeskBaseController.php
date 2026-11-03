@@ -8,7 +8,10 @@ use App\Controllers\BaseController;
 use App\Core\Request;
 use App\Core\Response;
 use App\Exceptions\ConflictException;
+use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Services\Helpdesk\TicketService;
+use App\Support\MailFrame;
 use App\Support\Url;
 
 /**
@@ -76,5 +79,45 @@ abstract class HelpdeskBaseController extends BaseController
         }
 
         return $this->redirect($redirect);
+    }
+
+    /**
+     * HTML einer per E-Mail eingegangenen Nachricht als eigenes Dokument für den Anzeigerahmen.
+     *
+     * @param list<array<string,mixed>> $rows Für den Benutzer sichtbare Einträge (Kommentare, Journal)
+     * @param string $column Spalte mit dem Mail-HTML
+     * @param int|null $rowId Eintrag; null = Datensatz selbst (Beschreibung)
+     * @param array<string,mixed> $record Ticket oder Aufgabe
+     */
+    protected function mailFrame(array $record, array $rows, string $column, ?int $rowId = null): Response
+    {
+        $html = null;
+        if ($rowId === null) {
+            $html = $record['description_html'] ?? null;
+        } else {
+            foreach ($rows as $row) {
+                if ((int) ($row['id'] ?? 0) === $rowId) {
+                    $html = $row[$column] ?? null;
+                    break;
+                }
+            }
+        }
+        if (!is_string($html) || trim($html) === '') {
+            throw new NotFoundException('Keine HTML-Fassung vorhanden.');
+        }
+
+        return MailFrame::response($html);
+    }
+
+    /**
+     * Mail-HTML eines Tickets (Beschreibung oder Kommentar) mit denselben Sichtbarkeitsregeln
+     * wie die Ticketansicht: interne Kommentare nur für Agenten.
+     */
+    protected function ticketMailFrame(TicketService $service, Request $request): Response
+    {
+        $ticket = $service->getVisible($request->paramInt('id'));
+        $commentId = $request->param('comment') !== null ? $request->paramInt('comment') : null;
+
+        return $this->mailFrame($ticket, $commentId !== null ? $service->comments($ticket) : [], 'body_html', $commentId);
     }
 }

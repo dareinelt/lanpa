@@ -20,7 +20,7 @@ final class HtmlSanitizer
     private const ALLOWED = ['p', 'br', 'div', 'span', 'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup', 'small', 'ul', 'ol', 'li', 'blockquote', 'a', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'pre', 'code', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'img'];
 
     /** Zusätzliche Elemente für E-Mail-Dokumente (Anzeige im isolierten Rahmen). */
-    private const DOCUMENT_ALLOWED = ['font', 'center', 'caption', 'colgroup', 'col'];
+    private const DOCUMENT_ALLOWED = ['font', 'center', 'caption', 'colgroup', 'col', 'details', 'summary'];
 
     /** Attribute, die an jedem erlaubten Element stehen dürfen. */
     private const GLOBAL_ATTRIBUTES = ['style', 'class', 'title', 'dir', 'lang'];

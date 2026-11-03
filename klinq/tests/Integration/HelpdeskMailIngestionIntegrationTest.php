@@ -15,6 +15,7 @@ use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketNotificationService;
 use App\Services\Helpdesk\TicketService;
 use App\Services\SettingsService;
+use App\Support\MailHistory;
 use Tests\Support\DatabaseTestCase;
 
 /** E-Mail-Eingang: Ticketerstellung, Threading über Message-ID/Ticketnummer, Duplikate, Auto-Replies, Anhänge. */
@@ -133,7 +134,11 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         $this->assertNull($ticket['requester_user_id']);
         $this->assertNull($ticket['requester_employee_id']);
         $this->assertStringContains('Papierstau', (string) $ticket['description']);
-        $this->assertFalse(str_contains((string) $ticket['description'], '> alt'));
+        // Der zitierte Verlauf bleibt erhalten, steht aber hinter der Markierung (eingeklappt angezeigt)
+        [$main, $history] = MailHistory::splitText((string) $ticket['description']);
+        $this->assertFalse(str_contains($main, '> alt'));
+        $this->assertStringContains('Eingegangen per E-Mail von Gast Nutzer <gast@extern.test>', $main);
+        $this->assertSame("Am 01.03.2026 schrieb jemand:\n> alt", $history);
         $this->assertStringContains('Eingegangen per E-Mail von Gast Nutzer <gast@extern.test>', (string) $ticket['description']);
         $this->assertNotNull($ticket['mail_message_id']);
         $this->assertSame('gast@extern.test', $ticket['mail_from_address']);
@@ -204,6 +209,28 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         // Stylesheets bleiben für die isolierte Anzeige im Sandbox-Rahmen erhalten
         $this->assertStringContains('<style>p{color:red}</style>', $descriptionHtml);
         $this->assertFalse(str_contains($descriptionHtml, 'cid:logo'));
+    }
+
+    public function testForwardedOutlookMailKeepsCollapsedHistory(): void
+    {
+        $text = "Hallo zusammen,\n\ndie ist bestimmt für Euch\n\n-----Ursprüngliche Nachricht-----\nVon: phoenix@khwf.de <phoenix@khwf.de>\nGesendet: Dienstag, 3. November 2026 09:45\nAn: Buchhaltung\nBetreff: Dell Support-Verträge\n\nFolgende E-Mail konnte nicht automatisch verarbeitet werden.";
+        $html = '<html><body><div class="WordSection1"><p>Hallo zusammen,</p><p>die ist bestimmt für Euch</p>'
+            . '<p>-----Ursprüngliche Nachricht-----<br><b>Von:</b> phoenix@khwf.de<br><b>Gesendet:</b> Dienstag, 3. November 2026 09:45</p>'
+            . '<p>Folgende E-Mail konnte nicht automatisch verarbeitet werden.</p></div></body></html>';
+        $result = $this->ingestion->ingestRaw($this->htmlMail('Buchhaltung <buchhaltung@extern.test>', 'WG: Dell Support-Verträge', $text, $html), '41');
+
+        $this->assertSame(TicketMailIngestionService::ACTION_CREATED, $result['action']);
+        $ticket = $this->c->get(TicketRepository::class)->find((int) $result['ticket_id']);
+        [$main, $history] = MailHistory::splitText((string) $ticket['description']);
+        $this->assertStringContains('die ist bestimmt für Euch', $main);
+        $this->assertFalse(str_contains($main, 'Ursprüngliche Nachricht'));
+        $this->assertStringContains('-----Ursprüngliche Nachricht-----', (string) $history);
+        $this->assertStringContains('Folgende E-Mail konnte nicht automatisch verarbeitet werden.', (string) $history);
+
+        $descriptionHtml = (string) $ticket['description_html'];
+        $this->assertStringContains('<details class="mail-history"><summary>Bisheriger E-Mail-Verlauf</summary>', $descriptionHtml);
+        $this->assertStringContains('Folgende E-Mail konnte nicht automatisch verarbeitet werden.', $descriptionHtml);
+        $this->assertTrue(strpos($descriptionHtml, 'die ist bestimmt') < strpos($descriptionHtml, '<details'));
     }
 
     public function testHtmlReplyIsAdoptedForCommentBody(): void

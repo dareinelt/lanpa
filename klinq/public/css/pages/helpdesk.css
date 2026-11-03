@@ -168,6 +168,11 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 .mail-frame { display: block; width: 100%; height: 16rem; border: 0; background: transparent; }
 .ticket-description p, .comment-body p { margin: 0 0 var(--space-2); }
 .ticket-description blockquote, .comment-body blockquote { margin: 0 0 var(--space-2) var(--space-3); padding-left: var(--space-3); border-left: 2px solid var(--color-border); color: var(--color-text-muted); }
+/* Zitierter E-Mail-Verlauf: eingeklappt, um Platz zu sparen */
+.mail-history { margin-top: var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md, 6px); }
+.mail-history > summary { cursor: pointer; color: var(--color-text-muted); font-weight: var(--font-weight-semibold); }
+.mail-history[open] > summary { margin-bottom: var(--space-2); }
+.mail-history-body { color: var(--color-text-muted); }
 .comment-attachments { margin-top: var(--space-2); display: flex; flex-wrap: wrap; gap: var(--space-2); font-size: var(--font-size-xs); }
 .comment-form textarea { min-height: 96px; }
 .comment-form.is-internal textarea { background: var(--color-warning-soft); }

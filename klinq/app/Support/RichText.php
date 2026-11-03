@@ -49,7 +49,20 @@ final class RichText
     /** Freitext als HTML: maskiert, mit Zeilenumbrüchen und eingebetteten Bildern. */
     public static function toHtml(?string $text): string
     {
-        $text = self::normalizeNewlines((string) ($text ?? ''));
+        // Zitierter E-Mail-Verlauf hinter der Markierungszeile erscheint als aufklappbarer Block
+        [$main, $history] = MailHistory::splitText((string) ($text ?? ''));
+        if ($history === null) {
+            return self::render($main);
+        }
+
+        return self::render($main)
+            . '<details class="' . MailHistory::CSS_CLASS . '"><summary>' . htmlspecialchars(MailHistory::LABEL, ENT_QUOTES, 'UTF-8') . '</summary>'
+            . '<div class="' . MailHistory::CSS_CLASS . '-body">' . self::render($history) . '</div></details>';
+    }
+
+    private static function render(string $text): string
+    {
+        $text = self::normalizeNewlines($text);
 
         // Bilder vor dem Maskieren durch Platzhalter ersetzen: Nur so bleiben die erzeugten
         // <img>-Elemente unversehrt und Alternativtexte werden korrekt maskiert.

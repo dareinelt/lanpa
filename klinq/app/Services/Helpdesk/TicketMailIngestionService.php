@@ -19,6 +19,7 @@ use App\Services\DocumentService;
 use App\Services\Helpdesk\Mail\InboundMail;
 use App\Services\Helpdesk\Mail\MailboxClientInterface;
 use App\Services\Helpdesk\Mail\MimeMessageParser;
+use App\Support\MailHistory;
 
 /**
  * E-Mail-Eingang des Help Desks: holt Nachrichten aus dem Postfach (IMAP oder .eml-Verzeichnis),
@@ -46,6 +47,9 @@ final class TicketMailIngestionService
 
     /** Bildtypen, die der HTML-Sanitizer als Data-URI zulässt. */
     private const INLINE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+    /** Obergrenze für den zitierten E-Mail-Verlauf in der Ticketbeschreibung (Zeichen). */
+    private const MAX_HISTORY_CHARS = 500000;
 
     public function __construct(
         private readonly Config $config,
@@ -306,6 +310,8 @@ final class TicketMailIngestionService
             $body = $mail->attachments !== [] ? '(Nur Anhänge, kein Text)' : $subject;
         }
         $description = mb_substr($body, 0, 60000) . "\n\n— Eingegangen per E-Mail von " . self::authorLabel($author);
+        // Zitierter Verlauf (weitergeleitete/beantwortete Nachrichten) bleibt erhalten, eingeklappt angezeigt
+        $description = MailHistory::appendText($description, mb_substr($mail->quotedText, 0, self::MAX_HISTORY_CHARS));
 
         $input = [
             'ticket_type_id' => (int) $type['id'],
@@ -362,6 +368,7 @@ final class TicketMailIngestionService
         }
         $html = $this->inlineCidImages($html, $mail->attachments);
         if ($author !== null) {
+            $html = MailHistory::collapseHtml($html);
             $html .= "\n<p>— Eingegangen per E-Mail von " . htmlspecialchars(self::authorLabel($author), ENT_QUOTES, 'UTF-8') . '</p>';
         }
 

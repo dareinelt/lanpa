@@ -32,7 +32,10 @@ final class MailFrame
             . '<meta name="referrer" content="no-referrer"><base target="_blank">'
             . '<style>html{color-scheme:light}body{margin:0;padding:0;background:transparent;color:#1f2933;'
             . 'font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;overflow-wrap:break-word}'
-            . 'img{max-width:100%;height:auto}</style>'
+            . 'img{max-width:100%;height:auto}'
+            . 'details.' . MailHistory::CSS_CLASS . '{margin:12px 0;padding:6px 10px;border:1px solid #d9dee3;border-radius:6px}'
+            . 'details.' . MailHistory::CSS_CLASS . '>summary{cursor:pointer;color:#52606d;font-weight:600}'
+            . 'details.' . MailHistory::CSS_CLASS . '[open]>summary{margin-bottom:8px}</style>'
             . '</head><body>' . $body . '</body></html>';
     }
 

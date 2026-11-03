@@ -44,19 +44,22 @@ final class MimeMessageParser
             $messageId = '<' . hash('sha256', ($headers['from'] ?? '') . '|' . ($headers['date'] ?? '') . '|' . ($headers['subject'] ?? '') . '|' . substr($text, 0, 500)) . '@generated.local>';
         }
 
+        [$reply, $quoted] = self::splitQuotedReply(self::normalizeBody($text));
+
         return new InboundMail(
             $messageId,
             $fromAddress,
             $fromName,
             self::normalizeWhitespace(self::decodeHeader($headers['subject'] ?? '')),
-            self::stripQuotedReply(self::normalizeBody($text)),
+            $reply,
             self::parseDate($headers['date'] ?? ''),
             self::normalizeId($headers['in-reply-to'] ?? '') ?: null,
             self::parseIdList($headers['references'] ?? ''),
             $attachments,
             $headers,
             '',
-            trim($html)
+            trim($html),
+            $quoted
         );
     }
 
@@ -247,7 +250,8 @@ final class MimeMessageParser
         if ($mime === 'message/rfc822' && !$isAttachment && $depth < 10) {
             // Weitergeleitete Nachricht als Text einbetten
             $inner = $this->parse($content);
-            $summary = "Weitergeleitete Nachricht von {$inner->fromAddress}: {$inner->subject}\n\n{$inner->text}";
+            $summary = "Weitergeleitete Nachricht von {$inner->fromAddress}: {$inner->subject}\n\n{$inner->text}"
+                . ($inner->quotedText !== '' ? "\n\n{$inner->quotedText}" : '');
 
             return [['kind' => 'text', 'content' => $summary, 'filename' => '', 'mime_type' => 'text/plain', 'content_id' => '']];
         }
@@ -350,6 +354,17 @@ final class MimeMessageParser
     /** Zitierte Vorgängernachricht abschneiden (Outlook-/Gmail-/Thunderbird-Trenner, „>“-Zeilen am Ende). */
     public static function stripQuotedReply(string $text): string
     {
+        return self::splitQuotedReply($text)[0];
+    }
+
+    /**
+     * Nachricht in eigenen Text und zitierten Verlauf trennen (Outlook-/Gmail-/Thunderbird-Trenner,
+     * „>“-Zeilen am Ende). Der Verlauf wird nicht verworfen: Neue Tickets zeigen ihn aufklappbar an.
+     *
+     * @return array{0:string,1:string} [eigener Text, zitierter Verlauf (leer = keiner erkannt)]
+     */
+    public static function splitQuotedReply(string $text): array
+    {
         $lines = explode("\n", $text);
         $cut = count($lines);
         $separators = [
@@ -383,14 +398,20 @@ final class MimeMessageParser
             array_pop($kept);
         }
         $result = trim(implode("\n", $kept));
+        $quoted = trim(implode("\n", array_slice($lines, count($kept))));
 
         // Falls alles Zitat war (z. B. Inline-Antwort), lieber den Originaltext ohne Zitatzeichen behalten
         if ($result === '') {
             $plain = array_filter($lines, static fn (string $l): bool => !str_starts_with(ltrim($l), '>'));
             $result = trim(implode("\n", $plain));
+            $quoted = '';
+        }
+        // Reine Weiterleitung ohne eigenen Text: Nur der Trenner bliebe übrig – dann alles als Text behalten
+        if ($quoted !== '' && trim((string) preg_replace($separators[0], '', $result)) === '') {
+            return [trim($text), ''];
         }
 
-        return $result !== '' ? $result : trim($text);
+        return $result !== '' ? [$result, $quoted] : [trim($text), ''];
     }
 
     private static function safeFilename(string $name, string $mime): string

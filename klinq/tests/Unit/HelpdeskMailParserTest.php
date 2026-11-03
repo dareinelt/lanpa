@@ -220,6 +220,31 @@ final class HelpdeskMailParserTest extends TestCase
         $this->assertSame('Antwort oben.', MimeMessageParser::stripQuotedReply($trailingQuotes));
     }
 
+    public function testSplitQuotedReplyKeepsHistory(): void
+    {
+        $outlook = "Erledigt, danke!\n\nVon: Helpdesk <hd@example.test>\nGesendet: Montag, 2. März 2026 09:00\nAn: Max\n\nBitte prüfen.";
+        $this->assertSame(['Erledigt, danke!', "Von: Helpdesk <hd@example.test>\nGesendet: Montag, 2. März 2026 09:00\nAn: Max\n\nBitte prüfen."], MimeMessageParser::splitQuotedReply($outlook));
+
+        $trailing = "Antwort oben.\n\n> alte Zeile 1\n> alte Zeile 2\n";
+        $this->assertSame(['Antwort oben.', "> alte Zeile 1\n> alte Zeile 2"], MimeMessageParser::splitQuotedReply($trailing));
+
+        $this->assertSame(['Nur Text', ''], MimeMessageParser::splitQuotedReply('Nur Text'));
+
+        // Reine Weiterleitung ohne eigenen Text bleibt vollständig Text
+        $forward = "-----Original Message-----\nFrom: x\nSent: Monday\nInhalt";
+        $this->assertSame([$forward, ''], MimeMessageParser::splitQuotedReply($forward));
+    }
+
+    public function testParsedMailCarriesQuotedText(): void
+    {
+        $raw = "From: a@example.test\nSubject: WG: Test\nMessage-ID: <fwd@example.test>\nContent-Type: text/plain; charset=utf-8\n\n"
+            . "Bitte ansehen.\n\n-----Ursprüngliche Nachricht-----\nVon: b@example.test\nAlter Text\n";
+        $mail = $this->parser()->parse($raw);
+        $this->assertSame('Bitte ansehen.', $mail->text);
+        $this->assertSame("-----Ursprüngliche Nachricht-----\nVon: b@example.test\nAlter Text", $mail->quotedText);
+        $this->assertSame($mail->quotedText, $mail->withUid('5')->quotedText);
+    }
+
     public function testStripQuotedReplyKeepsInlineAnswers(): void
     {
         // Bei Inline-Antworten bleibt der Kontext (Zitat + Antwort) erhalten, da die Antwort allein sinnlos wäre

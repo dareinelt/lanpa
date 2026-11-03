@@ -128,7 +128,7 @@ final class TaskController extends HelpdeskBaseController
             'canAssign' => $this->currentUser->can('helpdesk.tasks.assign'),
             'canManageAttachments' => $this->currentUser->can('helpdesk.tasks.assign'),
             'currentUserId' => $this->currentUser->id(),
-            'scripts' => ['/js/helpdesk-pins.js'],
+            'scripts' => ['/js/helpdesk-pins.js', '/js/helpdesk-media.js'],
         ]);
     }
 

@@ -48,6 +48,7 @@ return static function (Router $router, Container $c): void {
     $router->post('/locations', static fn (Request $r): Response => $loc()->store($r), 'locations.manage');
     $router->get('/locations/{id}/edit', static fn (Request $r): Response => $loc()->edit($r), 'locations.manage');
     $router->post('/locations/{id}', static fn (Request $r): Response => $loc()->update($r), 'locations.manage');
+    $router->post('/locations/{id}/move', static fn (Request $r): Response => $loc()->move($r), 'locations.manage');
     $router->post('/locations/{id}/toggle-active', static fn (Request $r): Response => $loc()->toggleActive($r), 'locations.manage');
     $router->get('/locations/{id}', static fn (Request $r): Response => $loc()->show($r), 'locations.view');
 };

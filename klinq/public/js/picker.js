@@ -43,6 +43,17 @@
             return short + " hinzufügen";
         }
 
+        /** Anlege-Aktion anbieten? Nur mit Dialog und eingegebenem Namen. */
+        function canCreate() {
+            return createDialog !== null && input.value.trim().length > 0;
+        }
+
+        /** Eintrag "<Name> hinzufügen" am Ende der Liste (Index items.length = per Tastatur erreichbar). */
+        function createItemHtml(isActive) {
+            return '<li class="picker-add"><button type="button" class="btn btn-sm' + (isActive ? " is-active" : "") + '" data-picker-create>'
+                + escapeHtml(createLabel(input.value.trim())) + '</button></li>';
+        }
+
         function render() {
             if (!items.length) {
                 const term = input.value.trim();
@@ -50,7 +61,7 @@
                     results.innerHTML = "";
                 } else {
                     results.innerHTML = '<li class="picker-empty">Keine Treffer</li>'
-                        + (createDialog ? '<li class="picker-add"><button type="button" class="btn btn-sm" data-picker-create>' + escapeHtml(createLabel(term)) + '</button></li>' : "");
+                        + (canCreate() ? createItemHtml(false) : "");
                 }
                 results.hidden = results.innerHTML === "";
                 input.setAttribute("aria-expanded", results.hidden ? "false" : "true");
@@ -62,7 +73,7 @@
                     + '<span>' + escapeHtml(item.label || item.name) + '</span>'
                     + (sub ? '<span class="result-meta">' + escapeHtml(sub) + '</span>' : "")
                     + '</button></li>';
-            }).join("");
+            }).join("") + (canCreate() ? createItemHtml(active === items.length) : "");
             results.hidden = false;
             input.setAttribute("aria-expanded", "true");
         }
@@ -227,9 +238,13 @@
         });
         input.addEventListener("keydown", function (e) {
             if (results.hidden) { return; }
-            if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, items.length - 1); render(); }
+            const last = items.length && canCreate() ? items.length : items.length - 1;
+            if (e.key === "ArrowDown") { e.preventDefault(); active = Math.min(active + 1, last); render(); }
             else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(active - 1, 0); render(); }
-            else if (e.key === "Enter") { if (active >= 0 && items[active]) { e.preventDefault(); choose(items[active]); } }
+            else if (e.key === "Enter") {
+                if (active >= 0 && items[active]) { e.preventDefault(); choose(items[active]); }
+                else if (items.length && active === items.length && canCreate()) { e.preventDefault(); openCreate(); }
+            }
             else if (e.key === "Escape") { results.hidden = true; }
         });
         results.addEventListener("click", function (e) {

@@ -123,12 +123,14 @@ $canMerge = $can('helpdesk.merge');
             $slaState = $r['sla_resolution_state'] === 'breached' || $r['sla_response_state'] === 'breached' ? 'breached' : ($r['sla_resolution_state'] === 'warning' || $r['sla_response_state'] === 'warning' ? 'warning' : 'ok');
             // An mich weitergeleitet und noch nicht übernommen: Zeile hervorheben, bis ich übernehme.
             $forwarded = !empty($r['forwarded_to_user_id']) && (int) $r['forwarded_to_user_id'] === (int) $user['id'] && empty($r['forward_acknowledged_at']);
-            $rowClass = trim('ticket-row' . ($closed ? ' is-closed' : '') . (!$closed && $slaState === 'breached' ? ' is-overdue' : '') . (!$closed && $slaState === 'warning' ? ' is-warning' : '') . ($forwarded ? ' is-forwarded' : ''));
+            // Neu hereingekommen und noch von keinem Agenten geöffnet (kein Verlaufseintrag „viewed“).
+            $unseen = !$closed && empty($r['first_viewed_at']);
+            $rowClass = trim('ticket-row' . ($closed ? ' is-closed' : '') . (!$closed && $slaState === 'breached' ? ' is-overdue' : '') . (!$closed && $slaState === 'warning' ? ' is-warning' : '') . ($forwarded ? ' is-forwarded' : '') . ($unseen ? ' is-unseen' : ''));
             $slaRule = \App\Services\Helpdesk\TicketSlaService::ruleFromRow($r);
             $remaining = $slaService->remainingMinutes($r['resolution_due_at'], $now, $slaRule);
             $business = $slaRule !== null ? $slaService->businessProgress($slaRule, $r['created_at'], $r['resolution_due_at'], $now) : null;
         ?>
-            <tr data-href="/helpdesk/tickets/<?= (int) $r['id'] ?>" class="<?= $rowClass ?>">
+            <tr data-href="/helpdesk/tickets/<?= (int) $r['id'] ?>" class="<?= $rowClass ?>"<?= $unseen ? ' title="Noch von keinem Agenten angesehen"' : '' ?>>
                 <?php if ($canMerge): ?>
                 <td class="ticket-select">
                     <input type="checkbox" data-hd-ticket-select value="<?= (int) $r['id'] ?>"

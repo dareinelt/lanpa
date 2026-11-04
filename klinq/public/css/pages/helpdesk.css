@@ -10,6 +10,9 @@
 .ticket-row.is-closed { opacity: 0.7; }
 .ticket-row.is-overdue td:first-child { box-shadow: inset 3px 0 0 var(--color-danger); }
 .ticket-row.is-warning td:first-child { box-shadow: inset 3px 0 0 var(--color-warning); }
+/* Neu hereingekommen, noch von keinem Agenten angesehen: fett und leicht rot hinterlegt */
+.ticket-row.is-unseen td { background: var(--color-danger-soft); font-weight: var(--font-weight-semibold); }
+.ticket-row.is-unseen .ticket-number a, .ticket-row.is-unseen .ticket-subject a { font-weight: 700; }
 /* An mich weitergeleitet, noch nicht übernommen */
 .ticket-row.is-forwarded td { background: var(--color-warning-soft); }
 .ticket-row.is-forwarded td:first-child { box-shadow: inset 3px 0 0 var(--color-warning); }

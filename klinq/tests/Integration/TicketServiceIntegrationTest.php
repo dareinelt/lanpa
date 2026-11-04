@@ -980,6 +980,23 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->assertCount(1, $this->viewedEvents($id));
     }
 
+    public function testFirstViewedAtMarksTicketsSeenByAgentsOnly(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+
+        $this->assertTrue($this->tickets()->find($id)['first_viewed_at'] === null, 'Frisches Ticket gilt als noch nicht angesehen.');
+
+        // Portalnutzer zählt nicht als Agent
+        $this->loginAs($this->portalUserId, 'lager');
+        $this->service()->recordView($id);
+        $this->assertTrue($this->tickets()->find($id)['first_viewed_at'] === null);
+
+        $this->loginAs($this->agentId, 'helpdesk_agent');
+        $this->service()->recordView($id);
+        $this->assertNotNull($this->tickets()->find($id)['first_viewed_at'], 'Nach dem Aufruf durch einen Agenten ist das Ticket angesehen.');
+    }
+
     public function testViewedEventsRequireTicketaufrufGroupExceptAdmin(): void
     {
         $ticket = $this->createTicket();

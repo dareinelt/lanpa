@@ -178,6 +178,10 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Wahl im Sortierlink (`?sort=…&dir=…`) schreibt sie über `rememberTicketSort()` nur bei Änderung fort. Ohne
   Wahl gilt `updated_at`/`desc`; die aufgelöste Sortierung wird in die Listenlinks übernommen, damit die
   aktive Spalte markiert bleibt.
+- **Noch nicht angesehene Tickets**: `TicketRepository::SELECT` liefert `first_viewed_at` als
+  `MIN(ticket_events.created_at)` der Ereignisse `type = 'viewed'` (geschrieben von
+  `TicketService::recordView()`, nur für Agenten). Die Liste markiert offene Tickets ohne solches Ereignis
+  mit `is-unseen` (fett, `--color-danger-soft`); weitergeleitete Tickets behalten die gelbe Markierung.
 - **Sortierung der Aufgabenliste je Benutzer**: `users.task_sort`/`task_sort_dir` speichern dieselbe Wahl für
   „Alle Aufgaben“ und „Meine Aufgaben“. `TaskController::sortFrom()` löst sie über
   `UserRepository::taskSort()`/`rememberTaskSort()` auf, gegen `TaskRepository::SORTABLE` geprüft; ohne Wahl

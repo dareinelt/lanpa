@@ -190,7 +190,7 @@
                 .then(function (data) {
                     if (!data || !data.id) { throw new Error("Person konnte nicht angelegt werden."); }
                     closeCreate();
-                    apply({ name: data.name, meta: data.meta }, data.id);
+                    apply({ name: data.name, meta: data.meta, email: data.email || email }, data.id);
                 })
                 .catch(function (error) {
                     showCreateError((error && error.message) || "Person konnte nicht angelegt werden.");

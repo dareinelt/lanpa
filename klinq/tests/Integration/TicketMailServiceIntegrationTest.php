@@ -45,6 +45,7 @@ final class TicketMailServiceIntegrationTest extends DatabaseTestCase
     private int $requesterId;
     private int $affectedId;
     private int $withoutMailId;
+    private int $colleagueId;
 
     protected function setUp(): void
     {
@@ -56,6 +57,7 @@ final class TicketMailServiceIntegrationTest extends DatabaseTestCase
         $this->requesterId = $employees->create(['first_name' => 'Max', 'last_name' => 'Melder', 'display_name' => 'Max Melder', 'email' => 'max@example.test', 'department' => 'Vertrieb', 'source' => 'manual', 'is_active' => 1]);
         $this->affectedId = $employees->create(['first_name' => 'Olga', 'last_name' => 'Betroffen', 'display_name' => 'Olga Betroffen', 'email' => 'olga@example.test', 'department' => 'Vertrieb', 'source' => 'manual', 'is_active' => 1]);
         $this->withoutMailId = $employees->create(['first_name' => 'Ohne', 'last_name' => 'Adresse', 'display_name' => 'Ohne Adresse', 'source' => 'manual', 'is_active' => 1]);
+        $this->colleagueId = $employees->create(['first_name' => 'Klara', 'last_name' => 'Kollegin', 'display_name' => 'Klara Kollegin', 'email' => 'klara@example.test', 'department' => 'Vertrieb', 'source' => 'manual', 'is_active' => 1]);
         $this->agentId = $this->createUser('hd-agent', 'helpdesk_agent', null, 'agent@example.test');
         $this->portalUserId = $this->createUser('portal-user', 'lager', $this->requesterId, 'portal@example.test');
         $this->loginAs($this->agentId, 'helpdesk_agent');
@@ -118,6 +120,86 @@ final class TicketMailServiceIntegrationTest extends DatabaseTestCase
 
         $this->assertSame($requests[0]['headers']['Message-ID'] ?? '', $requests[1]['headers']['Message-ID'] ?? '', 'Beide Empfänger gehören zum selben Nachrichtenkopf.');
         $this->assertMatches('/^<ticket-' . (int) $ticket['id'] . '\.agent-mail\.[0-9a-f]+@[^>]+>$/', $requests[0]['headers']['Message-ID'] ?? '');
+    }
+
+    public function testAdditionalRecipientsReceiveTheSameMessage(): void
+    {
+        $ticket = $this->createTicket(['affected_employee_id' => $this->affectedId]);
+
+        $result = $this->service()->send((int) $ticket['id'], [
+            'subject' => 'Antwort',
+            'body_html' => '<p>Bitte alle Beteiligten informieren.</p>',
+            'to_affected' => '1',
+            'additional_recipients' => [(string) $this->colleagueId],
+        ]);
+
+        $requests = self::stubRequests();
+        $this->assertCount(3, $requests);
+        $this->assertSame(['max@example.test', 'olga@example.test', 'klara@example.test'], $result['sent']);
+        $this->assertSame(['max@example.test', 'olga@example.test', 'klara@example.test'], array_column($requests, 'to'));
+        $this->assertSame(
+            $requests[0]['headers']['Message-ID'] ?? '',
+            $requests[2]['headers']['Message-ID'] ?? '',
+            'Auch weitere Empfänger gehören zum selben Nachrichtenkopf.'
+        );
+        $this->assertStringContains('Bitte alle Beteiligten informieren.', (string) ($requests[2]['html'] ?? ''));
+    }
+
+    public function testAdditionalRecipientsAreDeduplicated(): void
+    {
+        $ticket = $this->createTicket(['affected_employee_id' => $this->affectedId]);
+
+        $result = $this->service()->send((int) $ticket['id'], [
+            'subject' => 'Antwort',
+            'body_html' => '<p>Kurze Rückmeldung.</p>',
+            'to_affected' => '1',
+            // Melder und betroffene Person sind bereits angeschrieben.
+            'additional_recipients' => [(string) $this->requesterId, (string) $this->affectedId, (string) $this->colleagueId, (string) $this->colleagueId],
+        ]);
+
+        $this->assertSame(['max@example.test', 'olga@example.test', 'klara@example.test'], $result['sent']);
+        $this->assertCount(3, self::stubRequests());
+    }
+
+    public function testAdditionalRecipientsAreListedInTheComment(): void
+    {
+        $ticket = $this->createTicket();
+
+        $this->service()->send((int) $ticket['id'], [
+            'subject' => 'Antwort',
+            'body_html' => '<p>Kurze Rückmeldung.</p>',
+            'additional_recipients' => [(string) $this->colleagueId],
+        ]);
+
+        $comment = $this->pdo->query('SELECT body FROM ticket_comments WHERE ticket_id = ' . (int) $ticket['id'] . ' ORDER BY id DESC LIMIT 1')->fetch(\PDO::FETCH_ASSOC);
+        $body = (string) ($comment['body'] ?? '');
+        $this->assertStringContains('max@example.test', $body);
+        $this->assertStringContains('klara@example.test', $body);
+    }
+
+    public function testAdditionalRecipientWithoutMailIsRejected(): void
+    {
+        $ticket = $this->createTicket();
+
+        $error = $this->assertThrows(ValidationException::class, fn () => $this->service()->send((int) $ticket['id'], [
+            'subject' => 'Antwort',
+            'body_html' => '<p>Kurze Rückmeldung.</p>',
+            'additional_recipients' => [(string) $this->colleagueId, (string) $this->withoutMailId],
+        ]), 'keine E-Mail-Adresse');
+        $this->assertStringContains('Ohne Adresse', $error->getMessage());
+        $this->assertSame([], self::stubRequests(), 'Ohne Adresse für alle Empfänger geht keine E-Mail raus.');
+    }
+
+    public function testUnknownAdditionalRecipientIsRejected(): void
+    {
+        $ticket = $this->createTicket();
+
+        $this->assertThrows(ValidationException::class, fn () => $this->service()->send((int) $ticket['id'], [
+            'subject' => 'Antwort',
+            'body_html' => '<p>Kurze Rückmeldung.</p>',
+            'additional_recipients' => ['999999'],
+        ]), 'unbekannte Person');
+        $this->assertSame([], self::stubRequests());
     }
 
     public function testMailCarriesThreadHeadersButNoAutoSubmitted(): void
@@ -445,7 +527,8 @@ final class TicketMailServiceIntegrationTest extends DatabaseTestCase
             $this->c->get(CurrentUser::class),
             $config,
             $this->c->get(Logger::class),
-            $this->c->get(ReplyTemplateSettingsService::class)
+            $this->c->get(ReplyTemplateSettingsService::class),
+            $this->c->get(EmployeeRepository::class)
         );
     }
 

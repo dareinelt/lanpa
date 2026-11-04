@@ -145,7 +145,8 @@ return static function (Container $c): void {
         $c->get(CurrentUser::class),
         $c->get(Config::class),
         $c->get(Logger::class),
-        $c->get(ReplyTemplateSettingsService::class)
+        $c->get(ReplyTemplateSettingsService::class),
+        $c->get(EmployeeRepository::class)
     ));
     $c->singleton(TicketConfirmationService::class, static fn (Container $c): TicketConfirmationService => new TicketConfirmationService(
         $c->get(ReplyTemplateSettingsService::class),

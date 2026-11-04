@@ -81,6 +81,45 @@ final class TimelineGrouperTest extends TestCase
         $this->assertCount(2, $groups);
     }
 
+    public function testClosingStaysSeparateFromFollowingActions(): void
+    {
+        // Beim Schließen trägt changeStatus() den Agenten zusätzlich als Bearbeiter ein;
+        // der Schließen-Eintrag darf nicht hinter „+1“ verschwinden.
+        $groups = TimelineGrouper::group([
+            $this->event('viewed', '2026-10-27 11:23:00', 7),
+            $this->event('closed', '2026-10-27 11:23:30', 7),
+            $this->event('assigned', '2026-10-27 11:23:30', 7),
+        ]);
+
+        $this->assertCount(3, $groups);
+        $this->assertSame(['closed'], array_column($groups[1], 'type'));
+        $this->assertSame(['assigned'], array_column($groups[2], 'type'));
+    }
+
+    public function testStandaloneEventsSplitSurroundingGroups(): void
+    {
+        $groups = TimelineGrouper::group([
+            $this->event('comment', '2026-10-27 11:23:00', 7),
+            $this->event('reopened', '2026-10-27 11:23:10', 7),
+            $this->event('comment', '2026-10-27 11:23:20', 7),
+        ]);
+
+        $this->assertCount(3, $groups);
+    }
+
+    public function testEveryStandaloneTypeStaysAlone(): void
+    {
+        foreach (TimelineGrouper::STANDALONE_TYPES as $type) {
+            $groups = TimelineGrouper::group([
+                $this->event('viewed', '2026-10-27 11:23:00', 7),
+                $this->event($type, '2026-10-27 11:23:05', 7),
+            ]);
+
+            $this->assertCount(2, $groups, $type . ' steht für sich');
+            $this->assertSame([$type], array_column($groups[1], 'type'));
+        }
+    }
+
     public function testCustomWindowAndEmptyInput(): void
     {
         $events = [

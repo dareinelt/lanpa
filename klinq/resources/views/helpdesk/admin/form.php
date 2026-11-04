@@ -6,7 +6,8 @@ $isNew = $row === null;
 $action = $isNew ? '/helpdesk/admin/' . $kind : '/helpdesk/admin/' . $kind . '/' . (int) $row['id'];
 $back = '/helpdesk/admin?tab=' . $kind;
 $val = static fn (string $key, string $default = ''): string => form_value($row, $key, $default);
-$businessDays = array_filter(explode(',', $val('business_days', '1,2,3,4,5')));
+$businessHours = $row === null ? [] : (array) ($row['business_windows'] ?? []);
+$businessDays = $row === null ? [1, 2, 3, 4, 5] : array_keys($businessHours);
 $checkedIn = static fn (array $values, mixed $value): string => in_array((string) $value, array_map('strval', $values), true) ? ' checked' : '';
 $optionRows = static function (array $items, string $current, string $empty = '– keine –'): void { ?><option value=""><?= e($empty) ?></option><?php foreach ($items as $item): ?><option value="<?= (int) $item['id'] ?>"<?= selected($current, $item['id']) ?>><?= e(($item['parent_name'] ?? null) ? $item['parent_name'] . ' / ' . $item['name'] : ($item['display_name'] ?? $item['name'] ?? $item['username'] ?? '–')) ?></option><?php endforeach; ?><?php };
 ?>
@@ -50,7 +51,18 @@ $optionRows = static function (array $items, string $current, string $empty = '�
             <div class="form-row form-row-3"><div class="form-group"><label for="f-category">Kategorie</label><select id="f-category" name="category_id"><?php $optionRows($categories, $val('category_id')); ?></select></div><div class="form-group"><label for="f-response">Reaktionszeit (Min.)</label><input id="f-response" type="number" name="response_minutes" value="<?= e($val('response_minutes', '60')) ?>" min="1" required></div><div class="form-group"><label for="f-resolution">Lösungszeit (Min.)</label><input id="f-resolution" type="number" name="resolution_minutes" value="<?= e($val('resolution_minutes', '480')) ?>" min="1" required></div></div>
             <div class="form-group"><label for="f-description">Beschreibung</label><input id="f-description" name="description" value="<?= e($val('description')) ?>" maxlength="255"></div>
             <label class="checkbox-row"><input type="checkbox" name="business_hours_only" value="1"<?= form_checked($row, 'business_hours_only', false) ?> data-toggle-target="#business-hours"> Nur Geschäftszeiten zählen</label>
-            <div id="business-hours" class="card mt-4"><div class="checkbox-row"><?php foreach ([1 => 'Mo', 2 => 'Di', 3 => 'Mi', 4 => 'Do', 5 => 'Fr', 6 => 'Sa', 7 => 'So'] as $day => $label): ?><label><input type="checkbox" name="business_days[]" value="<?= $day ?>"<?= $checkedIn($businessDays, $day) ?>> <?= e($label) ?></label><?php endforeach; ?></div><div class="form-row form-row-3"><div class="form-group"><label for="f-start">Beginn</label><input id="f-start" type="time" name="business_start" value="<?= e($val('business_start', '08:00')) ?>"></div><div class="form-group"><label for="f-end">Ende</label><input id="f-end" type="time" name="business_end" value="<?= e($val('business_end', '17:00')) ?>"></div><div class="form-group"><label for="f-escalation-group">Eskalationsgruppe</label><select id="f-escalation-group" name="escalation_group_id"><?php $optionRows($groups, $val('escalation_group_id')); ?></select></div></div></div>
+            <div id="business-hours" class="card mt-4">
+                <p class="form-hint">Dienstzeiten je Wochentag. Nur gewählte Tage zählen; außerhalb dieser Zeiten steht der SLA-Zähler.</p>
+                <?php foreach ([1 => 'Mo', 2 => 'Di', 3 => 'Mi', 4 => 'Do', 5 => 'Fr', 6 => 'Sa', 7 => 'So'] as $day => $dayLabel): $span = $businessHours[$day] ?? ['08:00', '17:00']; ?>
+                    <div class="flex items-center gap-3 mb-2">
+                        <label class="checkbox-row"><input type="checkbox" name="business_days[]" value="<?= $day ?>"<?= $checkedIn($businessDays, $day) ?>> <?= e($dayLabel) ?></label>
+                        <input type="time" name="business_start[<?= $day ?>]" value="<?= e($span[0]) ?>" aria-label="Beginn <?= e($dayLabel) ?>">
+                        <span class="text-muted">bis</span>
+                        <input type="time" name="business_end[<?= $day ?>]" value="<?= e($span[1]) ?>" aria-label="Ende <?= e($dayLabel) ?>">
+                    </div>
+                <?php endforeach; ?>
+                <div class="form-group mt-4"><label for="f-escalation-group">Eskalationsgruppe</label><select id="f-escalation-group" name="escalation_group_id"><?php $optionRows($groups, $val('escalation_group_id')); ?></select></div>
+            </div>
             <div class="form-row form-row-3"><div class="form-group"><label for="f-warning">Warnschwelle (%)</label><input id="f-warning" type="number" name="warning_percent" value="<?= e($val('warning_percent', '75')) ?>" min="1" max="99"></div><div class="form-group"><label for="f-escalation">Eskalation (%)</label><input id="f-escalation" type="number" name="escalation_percent" value="<?= e($val('escalation_percent', '90')) ?>" min="1" max="100"></div><div class="form-group"><label for="f-sort">Sortierung</label><input id="f-sort" type="number" name="sort_order" value="<?= e($val('sort_order', '0')) ?>" min="0" max="9999"></div></div>
             <div class="checkbox-row"><label><input type="checkbox" name="is_default" value="1"<?= form_checked($row, 'is_default', false) ?>> Standard-SLA</label><label><input type="checkbox" name="is_active" value="1"<?= form_checked($row, 'is_active', true) ?>> Aktiv</label></div>
         <?php elseif ($kind === 'tags'): ?>

@@ -513,8 +513,8 @@ final class TicketService
             $update['sla_id'] = $slaId;
             $slaRule = $slaId !== null ? $this->slas->find($slaId) : null;
             $due = $slaRule !== null ? $this->sla->dueDates($slaRule, $this->sla->parse((string) $ticket['created_at'])) : ['response_due_at' => null, 'resolution_due_at' => null];
-            $update['response_due_at'] = $this->sla->shiftDue($due['response_due_at'], (int) $ticket['sla_paused_minutes']);
-            $update['resolution_due_at'] = $this->sla->shiftDue($due['resolution_due_at'], (int) $ticket['sla_paused_minutes']);
+            $update['response_due_at'] = $this->sla->shiftDueByRule($due['response_due_at'], (int) $ticket['sla_paused_minutes'], $slaRule);
+            $update['resolution_due_at'] = $this->sla->shiftDueByRule($due['resolution_due_at'], (int) $ticket['sla_paused_minutes'], $slaRule);
         }
 
         $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $input): void {
@@ -599,13 +599,14 @@ final class TicketService
         $update = ['status_id' => (int) $toStatus['id'], 'updated_by' => $this->currentUser->id()];
 
         // SLA pausieren/fortsetzen
+        $slaRule = TicketSlaService::ruleFromRow($ticket);
         $wasPaused = !empty($ticket['pauses_sla']) && !empty($ticket['sla_paused_at']);
         if ($wasPaused) {
-            $paused = (int) floor(($nowDt->getTimestamp() - $this->sla->parse((string) $ticket['sla_paused_at'])->getTimestamp()) / 60);
+            $paused = $this->sla->businessMinutesBetween($slaRule ?? [], $this->sla->parse((string) $ticket['sla_paused_at']), $nowDt);
             $update['sla_paused_at'] = null;
             $update['sla_paused_minutes'] = (int) $ticket['sla_paused_minutes'] + max(0, $paused);
-            $update['response_due_at'] = $ticket['first_response_at'] !== null ? $ticket['response_due_at'] : $this->sla->shiftDue($ticket['response_due_at'], $paused);
-            $update['resolution_due_at'] = $this->sla->shiftDue($ticket['resolution_due_at'], $paused);
+            $update['response_due_at'] = $ticket['first_response_at'] !== null ? $ticket['response_due_at'] : $this->sla->shiftDueByRule($ticket['response_due_at'], $paused, $slaRule);
+            $update['resolution_due_at'] = $this->sla->shiftDueByRule($ticket['resolution_due_at'], $paused, $slaRule);
         }
         if (!empty($toStatus['pauses_sla'])) {
             $update['sla_paused_at'] = $now;
@@ -977,12 +978,13 @@ final class TicketService
                 // Rückmeldung des Melders beendet die Pausierung automatisch
                 $inProgress = $this->masterData->statusByCode(TicketWorkflowService::IN_PROGRESS);
                 if ($inProgress !== null) {
-                    $paused = $ticket['sla_paused_at'] !== null ? (int) floor((time() - $this->sla->parse((string) $ticket['sla_paused_at'])->getTimestamp()) / 60) : 0;
+                    $slaRule = TicketSlaService::ruleFromRow($ticket);
+                    $paused = $ticket['sla_paused_at'] !== null ? $this->sla->businessMinutesBetween($slaRule ?? [], $this->sla->parse((string) $ticket['sla_paused_at']), new \DateTimeImmutable('now', new \DateTimeZone('UTC'))) : 0;
                     $update['status_id'] = (int) $inProgress['id'];
                     $update['sla_paused_at'] = null;
                     $update['paused_until'] = null;
                     $update['sla_paused_minutes'] = (int) $ticket['sla_paused_minutes'] + max(0, $paused);
-                    $update['resolution_due_at'] = $this->sla->shiftDue($ticket['resolution_due_at'], $paused);
+                    $update['resolution_due_at'] = $this->sla->shiftDueByRule($ticket['resolution_due_at'], $paused, $slaRule);
                     $this->event((int) $ticket['id'], 'resumed', 'status', (string) $ticket['status_name'], (string) $inProgress['name'], ['auto' => true]);
                 }
             }
@@ -1104,12 +1106,13 @@ final class TicketService
             } elseif ($this->workflow->resumesOnReporterReply((string) $ticket['status_code'])) {
                 $inProgress = $this->masterData->statusByCode(TicketWorkflowService::IN_PROGRESS);
                 if ($inProgress !== null) {
-                    $paused = $ticket['sla_paused_at'] !== null ? (int) floor((time() - $this->sla->parse((string) $ticket['sla_paused_at'])->getTimestamp()) / 60) : 0;
+                    $slaRule = TicketSlaService::ruleFromRow($ticket);
+                    $paused = $ticket['sla_paused_at'] !== null ? $this->sla->businessMinutesBetween($slaRule ?? [], $this->sla->parse((string) $ticket['sla_paused_at']), new \DateTimeImmutable('now', new \DateTimeZone('UTC'))) : 0;
                     $update['status_id'] = (int) $inProgress['id'];
                     $update['sla_paused_at'] = null;
                     $update['paused_until'] = null;
                     $update['sla_paused_minutes'] = (int) $ticket['sla_paused_minutes'] + max(0, $paused);
-                    $update['resolution_due_at'] = $this->sla->shiftDue($ticket['resolution_due_at'], $paused);
+                    $update['resolution_due_at'] = $this->sla->shiftDueByRule($ticket['resolution_due_at'], $paused, $slaRule);
                     $this->event((int) $ticket['id'], 'resumed', 'status', (string) $ticket['status_name'], (string) $inProgress['name'], ['auto' => true, 'via' => 'email']);
                 }
             } elseif ((string) $ticket['status_code'] === TicketWorkflowService::RESOLVED && !$author['is_agent']) {

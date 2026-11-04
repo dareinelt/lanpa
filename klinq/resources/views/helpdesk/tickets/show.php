@@ -9,14 +9,14 @@ $canConvert = $isAgent && $can('helpdesk.tasks') && !$readOnly
     && !in_array((string) $ticket['status_code'], ['closed', 'cancelled'], true) && $taskForTicket === null;
 $stateLabel = ['ok' => 'Im Plan', 'warning' => 'Warnung', 'breached' => 'Verletzt', 'met' => 'Eingehalten', 'none' => '–', 'paused' => 'Pausiert'];
 $stateClass = static fn (string $s): string => match ($s) { 'warning' => ' is-warning', 'breached' => ' is-breached', 'met' => ' is-met', default => '' };
-$percentBar = static function (?int $percent, string $state, ?string $startedAt, ?string $dueAt, int $warningPercent): string {
+$percentBar = static function (?int $percent, string $state, ?string $startedAt, ?string $dueAt, int $warningPercent, ?array $business = null): string {
     if ($percent === null || $startedAt === null || $dueAt === null) {
         return '';
     }
     $p = max(0, min(100, $percent));
 
     return '<progress class="sla-bar' . ($state === 'breached' ? ' is-breached' : ($state === 'warning' ? ' is-warning' : '')) . '" max="100" value="' . $p . '"'
-        . ' data-hd-sla-start="' . e($startedAt) . '" data-hd-sla-due="' . e($dueAt) . '" data-hd-sla-warning="' . $warningPercent . '"'
+        . ' data-hd-sla-start="' . e($startedAt) . '" data-hd-sla-due="' . e($dueAt) . '" data-hd-sla-warning="' . $warningPercent . '"' . sla_progress_attrs($business)
         . ' aria-label="SLA-Verbrauch ' . $p . '%"></progress>';
 };
 ?>
@@ -316,9 +316,9 @@ $statusTransitions = array_values(array_filter(
                     <?php if ($info['due'] === null): ?>–
                     <?php elseif (in_array($info['state'], ['met', 'none'], true) || $closed): ?>Fällig <?= fmt_datetime($info['due']) ?>
                     <?php elseif ($slaInfo['paused']): ?>Fällig <?= fmt_datetime($info['due']) ?> (pausiert)
-                    <?php else: ?><span class="sla-remaining<?= $info['remaining'] !== null && $info['remaining'] < 0 ? ' is-overdue' : '' ?>" data-hd-due="<?= e($info['due']) ?>"><?= e(\App\Services\Helpdesk\TicketSlaService::humanRemaining($info['remaining'])) ?></span> <span class="text-muted text-xs">(<?= fmt_datetime($info['due']) ?>)</span><?php endif; ?>
+                    <?php else: ?><span class="sla-remaining<?= $info['state'] === 'breached' ? ' is-overdue' : '' ?>" data-hd-due="<?= e($info['due']) ?>"<?= sla_progress_attrs($info['business'] ?? null) ?>><?= e(\App\Services\Helpdesk\TicketSlaService::humanRemaining($info['remaining'], $info['state'] === 'breached')) ?></span> <span class="text-muted text-xs">(<?= fmt_datetime($info['due']) ?>)</span><?php endif; ?>
                 </div>
-                <?php if (!$closed && !in_array($info['state'], ['met', 'none'], true)): ?><?= $percentBar($info['percent'], $info['state'], $ticket['created_at'], $info['due'], (int) ($slaInfo['warning_percent'] ?? 75)) ?><?php endif; ?>
+                <?php if (!$closed && !in_array($info['state'], ['met', 'none'], true)): ?><?= $percentBar($info['percent'], $info['state'], $ticket['created_at'], $info['due'], (int) ($slaInfo['warning_percent'] ?? 75), $info['business'] ?? null) ?><?php endif; ?>
             </div>
             <?php endforeach; ?>
             <?php if ($slaInfo['paused_minutes'] > 0): ?><div class="text-xs text-muted">Bisher <?= (int) $slaInfo['paused_minutes'] ?> min pausiert.</div><?php endif; ?>

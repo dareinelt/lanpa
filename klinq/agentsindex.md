@@ -204,7 +204,12 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   die Melder-Wiedereröffnung und `TaskService::convert()`) ändern den Bearbeiter nicht.
 - **SLA/Eskalation**: Fristen aus `ticket_slas` (je Kategorie/Priorität), Warn-/Eskalationsschwellen aus
   `HELPDESK_SLA_WARNING_PERCENT`/`HELPDESK_ESCALATION_PERCENT`; `HelpdeskSchedulerService` prüft periodisch
-  Eskalation, Auto-Close (`HELPDESK_AUTO_CLOSE_DAYS`) und ruft die Mailabholung.
+  Eskalation, Auto-Close (`HELPDESK_AUTO_CLOSE_DAYS`) und ruft die Mailabholung. Bei Regeln mit
+  `business_hours_only` rechnen Fristen, Fortschritt, Restzeit, Schwellen, Verletzung und Pausengutschrift in
+  Servicezeit-Minuten (`TicketSlaService::businessMinutesBetween()`); außerhalb der Servicezeiten steht der
+  Zähler still. Die Servicezeiten werden je Wochentag gepflegt (`ticket_slas.business_hours`, z. B.
+  `1=08:00-17:00,2=08:00-16:00`); `business_days`/`business_start`/`business_end` bleiben als gemeinsame
+  Zeiten für Altbestand und werden beim Speichern abgeleitet.
 - **Mail-Ingestion ist idempotent**: eingehende Nachrichten werden über `ticket_inbound_mails` (Message-ID)
   verfolgt; Antworten werden per Ticketnummer/`In-Reply-To` dem richtigen Ticket als Kommentar zugeordnet.
 - **HTML-Inhalt eingehender Mails** wird 1:1 übernommen: `MimeMessageParser` liefert den HTML-Teil als

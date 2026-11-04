@@ -281,9 +281,11 @@ final class HelpdeskAutomationIntegrationTest extends DatabaseTestCase
         $ticket = $this->createTicket(['category_id' => $catId, 'subcategory_id' => $subId]);
         $this->assertSame('Security', $ticket['group_name']);
 
-        $slaId = $admin->saveSla(null, ['name' => 'Security-SLA', 'priority_id' => '', 'category_id' => (string) $catId, 'response_minutes' => '30', 'resolution_minutes' => '600', 'business_hours_only' => '1', 'business_start' => '08:00', 'business_end' => '17:00', 'business_days' => ['1', '2', '3', '4', '5'], 'warning_percent' => '70', 'escalation_percent' => '90', 'is_active' => '1']);
+        $slaId = $admin->saveSla(null, ['name' => 'Security-SLA', 'priority_id' => '', 'category_id' => (string) $catId, 'response_minutes' => '30', 'resolution_minutes' => '600', 'business_hours_only' => '1', 'business_start' => ['1' => '08:00', '2' => '08:00', '3' => '08:00', '4' => '08:00', '5' => '08:00'], 'business_end' => ['1' => '17:00', '2' => '17:00', '3' => '17:00', '4' => '17:00', '5' => '16:00'], 'business_days' => ['1', '2', '3', '4', '5'], 'warning_percent' => '70', 'escalation_percent' => '90', 'is_active' => '1']);
         $sla = $this->c->get(TicketSlaRepository::class)->find($slaId);
         $this->assertSame('08:00:00', $sla['business_start']);
+        $this->assertSame('17:00:00', $sla['business_end']);
+        $this->assertSame('1=08:00-17:00,2=08:00-17:00,3=08:00-17:00,4=08:00-17:00,5=08:00-16:00', $sla['business_hours']);
         $this->assertThrows(ValidationException::class, fn () => $admin->saveSla(null, ['name' => 'Falsch', 'response_minutes' => '600', 'resolution_minutes' => '30']));
 
         $this->assertThrows(ForbiddenException::class, function () use ($admin): void {

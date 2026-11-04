@@ -4,10 +4,20 @@ $areaLabel = 'Help Desk';
 $scripts = ['/js/helpdesk.js'];
 $counts = $data['counts'] ?? [];
 $ticketUrl = static fn (array $ticket): string => '/helpdesk/tickets/' . (int) ($ticket['id'] ?? 0);
-$slaRemaining = static function (?string $due) use ($now): string {
-    return \App\Services\Helpdesk\TicketSlaService::humanRemaining($due ? (new \App\Services\Helpdesk\TicketSlaService())->remainingMinutes($due, $now) : null);
+$slaRemaining = static function (array $row) use ($now, $slaService): string {
+    $rule = \App\Services\Helpdesk\TicketSlaService::ruleFromRow($row);
+
+    return \App\Services\Helpdesk\TicketSlaService::humanRemaining(
+        $slaService->remainingMinutes($row['resolution_due_at'] ?? null, $now, $rule),
+        (string) ($row['sla_resolution_state'] ?? '') === 'breached'
+    );
 };
-$listTable = static function (array $rows) use ($ticketUrl, $slaRemaining): void { ?>
+$slaProgress = static function (array $row) use ($now, $slaService): ?array {
+    $rule = \App\Services\Helpdesk\TicketSlaService::ruleFromRow($row);
+
+    return $rule !== null ? $slaService->businessProgress($rule, (string) $row['created_at'], $row['resolution_due_at'] ?? null, $now) : null;
+};
+$listTable = static function (array $rows) use ($ticketUrl, $slaRemaining, $slaProgress): void { ?>
     <?php if ($rows === []): ?>
         <div class="table-empty">Keine Tickets vorhanden.</div>
     <?php else: ?>
@@ -29,7 +39,7 @@ $listTable = static function (array $rows) use ($ticketUrl, $slaRemaining): void
                         <?php if ($closed): ?>
                             <?= $state === 'met' ? badge('Eingehalten', 'success') : ($state === 'breached' ? badge('Verletzt', 'danger') : '<span class="text-muted">–</span>') ?>
                         <?php else: ?>
-                            <span class="sla-remaining<?= $state === 'breached' ? ' is-overdue' : '' ?>"<?= !empty($r['resolution_due_at']) ? ' data-hd-due="' . e($r['resolution_due_at']) . '"' : '' ?>><?= e($slaRemaining($r['resolution_due_at'] ?? null)) ?></span>
+                            <span class="sla-remaining<?= $state === 'breached' ? ' is-overdue' : '' ?>"<?= !empty($r['resolution_due_at']) ? ' data-hd-due="' . e($r['resolution_due_at']) . '"' : '' ?><?= sla_progress_attrs($slaProgress($r)) ?>><?= e($slaRemaining($r)) ?></span>
                         <?php endif; ?>
                     </td>
                 </tr>

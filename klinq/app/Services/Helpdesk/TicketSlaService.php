@@ -73,16 +73,21 @@ final class TicketSlaService
             return $start->modify("+{$minutes} minutes");
         }
 
-        [$tz, $days, $startH, $startM, $endH, $endM] = $window;
+        [$tz, $windows] = $window;
         $cursor = $start->setTimezone($tz);
         $remaining = $minutes;
         for ($guard = 0; $guard < 3660; $guard++) {
-            $dayStart = $cursor->setTime($startH, $startM);
-            $dayEnd = $cursor->setTime($endH, $endM);
-            if (!in_array((int) $cursor->format('N'), $days, true) || $cursor >= $dayEnd) {
-                $cursor = $cursor->modify('+1 day')->setTime($startH, $startM);
+            $span = $windows[(int) $cursor->format('N')] ?? null;
+            if ($span === null) {
+                $cursor = $cursor->modify('+1 day')->setTime(0, 0);
                 continue;
             }
+            $dayEnd = $this->atMinute($cursor, $span[1]);
+            if ($cursor >= $dayEnd) {
+                $cursor = $cursor->modify('+1 day')->setTime(0, 0);
+                continue;
+            }
+            $dayStart = $this->atMinute($cursor, $span[0]);
             if ($cursor < $dayStart) {
                 $cursor = $dayStart;
             }
@@ -91,7 +96,7 @@ final class TicketSlaService
                 return $cursor->modify("+{$remaining} minutes")->setTimezone(new \DateTimeZone('UTC'));
             }
             $remaining -= $available;
-            $cursor = $cursor->modify('+1 day')->setTime($startH, $startM);
+            $cursor = $cursor->modify('+1 day')->setTime(0, 0);
         }
 
         return $cursor->setTimezone(new \DateTimeZone('UTC'));
@@ -223,19 +228,27 @@ final class TicketSlaService
             return (int) floor(($to->getTimestamp() - $from->getTimestamp()) / 60);
         }
 
-        [$tz, $days, $startH, $startM, $endH, $endM] = $window;
+        [$tz, $windows] = $window;
         $cursor = $from->setTimezone($tz);
         $end = $to->setTimezone($tz);
         $minutes = 0;
         for ($guard = 0; $guard < 3660 && $cursor < $end; $guard++) {
-            $dayStart = $cursor->setTime($startH, $startM);
-            $dayEnd = $cursor->setTime($endH, $endM);
-            if (!in_array((int) $cursor->format('N'), $days, true) || $cursor >= $dayEnd) {
-                $cursor = $cursor->modify('+1 day')->setTime($startH, $startM);
+            $span = $windows[(int) $cursor->format('N')] ?? null;
+            if ($span === null) {
+                $cursor = $cursor->modify('+1 day')->setTime(0, 0);
                 continue;
             }
+            $dayEnd = $this->atMinute($cursor, $span[1]);
+            if ($cursor >= $dayEnd) {
+                $cursor = $cursor->modify('+1 day')->setTime(0, 0);
+                continue;
+            }
+            $dayStart = $this->atMinute($cursor, $span[0]);
             if ($cursor < $dayStart) {
                 $cursor = $dayStart;
+            }
+            if ($cursor >= $end) {
+                break;
             }
             $sliceEnd = $dayEnd < $end ? $dayEnd : $end;
             $minutes += (int) floor(($sliceEnd->getTimestamp() - $cursor->getTimestamp()) / 60);
@@ -248,11 +261,12 @@ final class TicketSlaService
     /**
      * Daten für den Live-Fortschrittsbalken im Browser (Dienstminuten-Segmente).
      * @param array<string,mixed> $sla
-     * @return array{elapsed:int,total:int,days:string,start:string,end:string,tz:string}|null
+     * @return array{elapsed:int,total:int,windows:string,tz:string}|null
      */
     public function businessProgress(array $sla, ?string $startedAt, ?string $dueAt, \DateTimeImmutable $now): ?array
     {
-        if ($startedAt === null || $dueAt === null || $this->window($sla) === null) {
+        $windows = self::businessWindows($sla);
+        if ($startedAt === null || $dueAt === null || $windows === []) {
             return null;
         }
         $start = $this->parse($startedAt);
@@ -260,9 +274,7 @@ final class TicketSlaService
         return [
             'elapsed' => $this->businessMinutesBetween($sla, $start, $now),
             'total' => $this->businessMinutesBetween($sla, $start, $this->parse($dueAt)),
-            'days' => implode(',', $this->businessDays($sla)),
-            'start' => sprintf('%02d:%02d', ...$this->time((string) ($sla['business_start'] ?? '08:00:00'))),
-            'end' => sprintf('%02d:%02d', ...$this->time((string) ($sla['business_end'] ?? '17:00:00'))),
+            'windows' => self::formatBusinessHours($windows),
             'tz' => $this->timezone,
         ];
     }
@@ -281,6 +293,7 @@ final class TicketSlaService
         return [
             'id' => (int) $row['sla_id'],
             'business_hours_only' => (int) $row['sla_business_hours_only'],
+            'business_hours' => (string) ($row['sla_business_hours'] ?? ''),
             'business_days' => (string) ($row['sla_business_days'] ?? '1,2,3,4,5'),
             'business_start' => (string) ($row['sla_business_start'] ?? '08:00:00'),
             'business_end' => (string) ($row['sla_business_end'] ?? '17:00:00'),
@@ -306,33 +319,104 @@ final class TicketSlaService
     /**
      * Geschäftszeiten-Fenster einer Regel; null, wenn kalendarisch gerechnet wird.
      * @param array<string,mixed> $sla
-     * @return array{0:\DateTimeZone,1:list<int>,2:int,3:int,4:int,5:int}|null
+     * @return array{0:\DateTimeZone,1:array<int,array{0:int,1:int}>}|null
      */
     private function window(array $sla): ?array
     {
         if (empty($sla['business_hours_only'])) {
             return null;
         }
-        $days = $this->businessDays($sla);
-        [$startH, $startM] = $this->time((string) ($sla['business_start'] ?? '08:00:00'));
-        [$endH, $endM] = $this->time((string) ($sla['business_end'] ?? '17:00:00'));
-        if ($days === [] || ($endH * 60 + $endM) <= ($startH * 60 + $startM)) {
-            return null;
+        $windows = self::businessWindows($sla);
+
+        return $windows === [] ? null : [new \DateTimeZone($this->timezone), $windows];
+    }
+
+    /**
+     * Dienstzeitfenster je Wochentag (1 = Mo … 7 = So) als Minuten seit Mitternacht.
+     * Maßgeblich ist `business_hours` (Zeiten je Tag); Regeln ohne diese Angabe nutzen
+     * weiterhin `business_days` mit gemeinsamem Beginn/Ende.
+     * @param array<string,mixed> $sla
+     * @return array<int,array{0:int,1:int}>
+     */
+    public static function businessWindows(array $sla): array
+    {
+        $windows = self::parseBusinessHours((string) ($sla['business_hours'] ?? ''));
+        if ($windows !== []) {
+            return $windows;
+        }
+        [$startH, $startM] = self::timeParts((string) ($sla['business_start'] ?? '08:00:00'));
+        [$endH, $endM] = self::timeParts((string) ($sla['business_end'] ?? '17:00:00'));
+        $start = $startH * 60 + $startM;
+        $end = $endH * 60 + $endM;
+        if ($end <= $start) {
+            return [];
+        }
+        $windows = [];
+        foreach (self::dayList($sla) as $day) {
+            $windows[$day] = [$start, $end];
         }
 
-        return [new \DateTimeZone($this->timezone), $days, $startH, $startM, $endH, $endM];
+        return $windows;
+    }
+
+    /**
+     * `business_hours` parsen: "1=08:00-17:00,2=08:00-16:00" → [1 => [480, 1020], 2 => [480, 960]].
+     * @return array<int,array{0:int,1:int}>
+     */
+    public static function parseBusinessHours(string $value): array
+    {
+        $windows = [];
+        foreach (explode(',', $value) as $chunk) {
+            if (!preg_match('/^([1-7])=([01]\d|2[0-3]):([0-5]\d)-([01]\d|2[0-3]):([0-5]\d)$/', trim($chunk), $m)) {
+                continue;
+            }
+            $start = (int) $m[2] * 60 + (int) $m[3];
+            $end = (int) $m[4] * 60 + (int) $m[5];
+            if ($end > $start) {
+                $windows[(int) $m[1]] = [$start, $end];
+            }
+        }
+        ksort($windows);
+
+        return $windows;
+    }
+
+    /**
+     * Fenster als `business_hours`-String.
+     * @param array<int,array{0:int,1:int}> $windows
+     */
+    public static function formatBusinessHours(array $windows): string
+    {
+        ksort($windows);
+        $parts = [];
+        foreach ($windows as $day => $span) {
+            $parts[] = sprintf('%d=%s-%s', $day, self::minutesToTime($span[0]), self::minutesToTime($span[1]));
+        }
+
+        return implode(',', $parts);
+    }
+
+    /** Minuten seit Mitternacht als "HH:MM". */
+    public static function minutesToTime(int $minutes): string
+    {
+        return sprintf('%02d:%02d', intdiv($minutes, 60) % 24, $minutes % 60);
     }
 
     /** @param array<string,mixed> $sla @return array<int,int> */
-    private function businessDays(array $sla): array
+    private static function dayList(array $sla): array
     {
         $days = array_map('intval', array_filter(explode(',', (string) ($sla['business_days'] ?? '1,2,3,4,5')), 'is_numeric'));
 
-        return array_values(array_filter($days, static fn (int $d): bool => $d >= 1 && $d <= 7));
+        return array_values(array_unique(array_filter($days, static fn (int $d): bool => $d >= 1 && $d <= 7)));
+    }
+
+    private function atMinute(\DateTimeImmutable $day, int $minutes): \DateTimeImmutable
+    {
+        return $day->setTime(intdiv($minutes, 60) % 24, $minutes % 60);
     }
 
     /** @return array{0:int,1:int} */
-    private function time(string $value): array
+    private static function timeParts(string $value): array
     {
         $parts = explode(':', $value);
 

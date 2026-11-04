@@ -240,9 +240,7 @@ final class HelpdeskAdminService
             ->int('response_minutes', 'Reaktionszeit (Minuten)', true, 1, 525600)
             ->int('resolution_minutes', 'Lösungszeit (Minuten)', true, 1, 525600)
             ->bool('business_hours_only')
-            ->pattern('business_days', 'Geschäftstage', '/^[1-7](,[1-7]){0,6}$/', 'Geschäftstage als Liste 1–7 (Mo=1), z. B. 1,2,3,4,5.')
-            ->pattern('business_start', 'Beginn', '/^([01]\d|2[0-3]):[0-5]\d$/', 'Uhrzeit im Format HH:MM.')
-            ->pattern('business_end', 'Ende', '/^([01]\d|2[0-3]):[0-5]\d$/', 'Uhrzeit im Format HH:MM.')
+            ->pattern('business_days', 'Diensttage', '/^[1-7](,[1-7]){0,6}$/', 'Bitte mindestens einen Wochentag wählen.')
             ->int('warning_percent', 'Warnschwelle (%)', false, 1, 99)
             ->int('escalation_percent', 'Eskalationsschwelle (%)', false, 1, 100)
             ->id('escalation_group_id', 'Eskalationsgruppe')
@@ -257,11 +255,8 @@ final class HelpdeskAdminService
             throw ValidationException::single('response_minutes', 'Die Reaktionszeit darf nicht länger als die Lösungszeit sein.');
         }
         $data['business_days'] ??= '1,2,3,4,5';
-        $data['business_start'] = ($data['business_start'] ?? '08:00') . ':00';
-        $data['business_end'] = ($data['business_end'] ?? '17:00') . ':00';
-        if ($data['business_start'] >= $data['business_end']) {
-            throw ValidationException::single('business_end', 'Das Ende der Geschäftszeit muss nach dem Beginn liegen.');
-        }
+        [$data['business_days'], $data['business_hours'], $data['business_start'], $data['business_end']] =
+            $this->slaBusinessHours($data['business_days'], $input);
         $data['sort_order'] ??= 0;
         $duplicate = $this->slas->findByName((string) $data['name']);
         if ($duplicate !== null && (int) $duplicate['id'] !== $id) {
@@ -293,6 +288,56 @@ final class HelpdeskAdminService
         });
 
         return $id;
+    }
+
+    /**
+     * Dienstzeiten je Wochentag aus den Formulareingaben (`business_start[Tag]`/`business_end[Tag]`).
+     * Rückgabe: [Tage-CSV, business_hours, kleinster Beginn, größtes Ende]. Beginn/Ende bleiben
+     * als gemeinsame Zeiten erhalten, damit Regeln ohne `business_hours` weiter funktionieren.
+     * @param array<string,mixed> $input
+     * @return array{0:string,1:?string,2:string,3:string}
+     */
+    private function slaBusinessHours(string $days, array $input): array
+    {
+        $list = array_values(array_unique(array_filter(
+            array_map('intval', explode(',', $days)),
+            static fn (int $day): bool => $day >= 1 && $day <= 7
+        )));
+        sort($list);
+        if ($list === []) {
+            throw ValidationException::single('business_days', 'Bitte mindestens einen Wochentag für die Dienstzeit wählen.');
+        }
+        $names = [1 => 'Montag', 2 => 'Dienstag', 3 => 'Mittwoch', 4 => 'Donnerstag', 5 => 'Freitag', 6 => 'Samstag', 7 => 'Sonntag'];
+        $starts = is_array($input['business_start'] ?? null) ? $input['business_start'] : [];
+        $ends = is_array($input['business_end'] ?? null) ? $input['business_end'] : [];
+        $windows = [];
+        foreach ($list as $day) {
+            $start = trim((string) ($starts[$day] ?? '')) ?: '08:00';
+            $end = trim((string) ($ends[$day] ?? '')) ?: '17:00';
+            if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $start) || !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $end)) {
+                throw ValidationException::single('business_days', "Bitte für {$names[$day]} Beginn und Ende im Format HH:MM angeben.");
+            }
+            if ($end <= $start) {
+                throw ValidationException::single('business_days', "Das Ende der Dienstzeit am {$names[$day]} muss nach dem Beginn liegen.");
+            }
+            $windows[$day] = [self::minutes($start), self::minutes($end)];
+        }
+        $startMin = min(array_map(static fn (array $span): int => $span[0], $windows));
+        $endMin = max(array_map(static fn (array $span): int => $span[1], $windows));
+
+        return [
+            implode(',', $list),
+            TicketSlaService::formatBusinessHours($windows),
+            TicketSlaService::minutesToTime($startMin) . ':00',
+            TicketSlaService::minutesToTime($endMin) . ':00',
+        ];
+    }
+
+    private static function minutes(string $time): int
+    {
+        $parts = explode(':', $time);
+
+        return (int) ($parts[0] ?? 0) * 60 + (int) ($parts[1] ?? 0);
     }
 
     // ------------------------------------------------------------------ Tags

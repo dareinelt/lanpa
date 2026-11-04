@@ -284,19 +284,20 @@
 
     // ---------------------------------------------------------------- SLA: Zähler pausiert außerhalb der Dienstzeiten
     const hdSlaWeekdays = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+    // Dienstzeiten je Wochentag: "1=480-1020,2=480-960" (Minuten seit Mitternacht).
     const hdSlaRule = function (el) {
         if (el.getAttribute("data-hd-sla-bh") !== "1") { return null; }
-        const days = (el.getAttribute("data-hd-sla-days") || "").split(",").map(Number).filter(function (d) { return d >= 1 && d <= 7; });
-        const from = (el.getAttribute("data-hd-sla-from") || "").split(":");
-        const to = (el.getAttribute("data-hd-sla-to") || "").split(":");
-        if (days.length === 0 || from.length < 2 || to.length < 2) { return null; }
-        const rule = {
-            days: days,
-            startMin: Number(from[0]) * 60 + Number(from[1]),
-            endMin: Number(to[0]) * 60 + Number(to[1]),
-            tz: el.getAttribute("data-hd-sla-tz") || "Europe/Berlin"
-        };
-        return rule.endMin > rule.startMin ? rule : null;
+        const windows = {};
+        (el.getAttribute("data-hd-sla-windows") || "").split(",").forEach(function (chunk) {
+            const parts = chunk.split("=");
+            const span = (parts[1] || "").split("-");
+            const day = Number(parts[0]);
+            const startMin = Number(span[0]);
+            const endMin = Number(span[1]);
+            if (day >= 1 && day <= 7 && endMin > startMin) { windows[day] = { startMin: startMin, endMin: endMin }; }
+        });
+        if (Object.keys(windows).length === 0) { return null; }
+        return { windows: windows, tz: el.getAttribute("data-hd-sla-tz") || "Europe/Berlin" };
     };
     const hdSlaZoned = function (ts, tz) {
         const parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(ts));
@@ -308,7 +309,8 @@
     };
     const hdSlaInside = function (rule, ts) {
         const zoned = hdSlaZoned(ts, rule.tz);
-        return rule.days.indexOf(zoned.day) !== -1 && zoned.minute >= rule.startMin && zoned.minute < rule.endMin;
+        const window = rule.windows[zoned.day];
+        return !!window && zoned.minute >= window.startMin && zoned.minute < window.endMin;
     };
     // Verbleibende Dienstminuten aus den Serverwerten; der Zähler läuft nur im Zeitfenster weiter.
     const hdSlaClock = function (el) {

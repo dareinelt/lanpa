@@ -270,12 +270,53 @@ final class HelpdeskLogicTest extends TestCase
         $this->assertSame('2026-03-10 17:00:00', $s->shiftDueByRule('2026-03-10 16:00:00', 60, null), 'ohne Regel kalendarisch');
     }
 
+    public function testSlaBusinessHoursPerWeekday(): void
+    {
+        $s = $this->sla();
+        // Dienstag 08:00–17:00, Mittwoch nur 08:00–12:00, alle anderen Tage ohne Dienstzeit
+        $sla = ['business_hours_only' => 1, 'business_hours' => '2=08:00-17:00,3=08:00-12:00', 'business_days' => '2,3', 'business_start' => '08:00:00', 'business_end' => '17:00:00'];
+        $at = static fn (string $t): \DateTimeImmutable => new \DateTimeImmutable($t, new \DateTimeZone('UTC'));
+
+        // Dienstag 09:00 bis Mittwoch 11:00 Ortszeit = 480 + 180 Dienstminuten
+        $this->assertSame(660, $s->businessMinutesBetween($sla, $at('2026-03-10 08:00:00'), $at('2026-03-11 10:00:00')));
+        // Montag ist kein Diensttag
+        $this->assertSame(0, $s->businessMinutesBetween($sla, $at('2026-03-09 08:00:00'), $at('2026-03-09 16:00:00')));
+        // 120 Minuten ab Dienstag 16:00 Ortszeit: 60 am Dienstag + 60 am Mittwoch ab 08:00
+        $this->assertSame('2026-03-11 08:00:00', $s->format($s->addMinutes($sla, $at('2026-03-10 15:00:00'), 120)));
+        // Mittwoch endet um 12:00, danach geht es erst am Folgedienstag weiter
+        $this->assertSame('2026-03-17 07:30:00', $s->format($s->addMinutes($sla, $at('2026-03-11 10:30:00'), 60)));
+
+        $progress = $s->businessProgress($sla, '2026-03-10 08:00:00', '2026-03-11 10:00:00', $at('2026-03-10 09:00:00'));
+        $this->assertSame('2=08:00-17:00,3=08:00-12:00', $progress['windows']);
+        $this->assertSame(660, $progress['total']);
+        $this->assertSame(60, $progress['elapsed']);
+    }
+
+    public function testSlaBusinessHoursParsingAndFallback(): void
+    {
+        $this->assertSame([2 => [480, 1020], 3 => [480, 720]], TicketSlaService::parseBusinessHours('2=08:00-17:00,3=08:00-12:00'));
+        $this->assertSame([], TicketSlaService::parseBusinessHours('3=12:00-08:00'), 'Ende vor Beginn wird verworfen');
+        $this->assertSame([], TicketSlaService::parseBusinessHours('9=08:00-09:00,1=25:00-26:00'), 'Ungültige Angaben werden verworfen');
+        $this->assertSame('1=07:30-16:00', TicketSlaService::formatBusinessHours([1 => [450, 960]]));
+        $this->assertSame('', TicketSlaService::formatBusinessHours([]));
+        $this->assertSame('07:30', TicketSlaService::minutesToTime(450));
+
+        // Ohne business_hours gelten weiterhin business_days mit gemeinsamem Beginn/Ende
+        $this->assertSame(
+            [1 => [450, 960], 2 => [450, 960]],
+            TicketSlaService::businessWindows(['business_days' => '1,2', 'business_start' => '07:30:00', 'business_end' => '16:00:00'])
+        );
+        $this->assertSame([], TicketSlaService::businessWindows(['business_days' => '', 'business_start' => '08:00:00', 'business_end' => '17:00:00']));
+        $this->assertSame([], TicketSlaService::businessWindows(['business_days' => '1', 'business_start' => '17:00:00', 'business_end' => '08:00:00']));
+    }
+
     public function testSlaRuleFromTicketRow(): void
     {
         $this->assertNull(TicketSlaService::ruleFromRow(['sla_id' => null]));
         $rule = TicketSlaService::ruleFromRow([
             'sla_id' => 3,
             'sla_business_hours_only' => 1,
+            'sla_business_hours' => '1=07:30-16:00',
             'sla_business_days' => '1,2,3',
             'sla_business_start' => '07:30:00',
             'sla_business_end' => '16:00:00',
@@ -284,6 +325,7 @@ final class HelpdeskLogicTest extends TestCase
         ]);
         $this->assertSame(3, $rule['id']);
         $this->assertSame(1, $rule['business_hours_only']);
+        $this->assertSame('1=07:30-16:00', $rule['business_hours']);
         $this->assertSame('1,2,3', $rule['business_days']);
         $this->assertSame('07:30:00', $rule['business_start']);
         $this->assertSame(85, $rule['escalation_percent']);

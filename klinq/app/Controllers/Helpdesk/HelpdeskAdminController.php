@@ -457,11 +457,16 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         };
     }
 
-    /** SLA-Datensatz zurück in Formular-Eingaben (Zeit HH:MM:SS → HH:MM). @param array<string,mixed> $row @return array<string,mixed> */
+    /** SLA-Datensatz zurück in Formular-Eingaben (Dienstzeiten je Wochentag als HH:MM). @param array<string,mixed> $row @return array<string,mixed> */
     private function slaInput(array $row): array
     {
-        $row['business_start'] = substr((string) ($row['business_start'] ?? '08:00:00'), 0, 5);
-        $row['business_end'] = substr((string) ($row['business_end'] ?? '17:00:00'), 0, 5);
+        $row['business_windows'] = array_map(
+            static fn (array $span): array => [
+                \App\Services\Helpdesk\TicketSlaService::minutesToTime($span[0]),
+                \App\Services\Helpdesk\TicketSlaService::minutesToTime($span[1]),
+            ],
+            \App\Services\Helpdesk\TicketSlaService::businessWindows($row)
+        );
 
         return $row;
     }

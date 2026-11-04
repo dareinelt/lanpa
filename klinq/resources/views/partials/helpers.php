@@ -46,7 +46,7 @@ if (!function_exists('sla_progress_attrs')) {
      * Datenattribute für die Live-Berechnung des SLA-Zählers im Browser.
      * Nur bei Geschäftszeiten-Regeln gesetzt; ohne sie rechnet das JS kalendarisch.
      *
-     * @param array{elapsed:int,total:int,days:string,start:string,end:string,tz:string,at?:int}|null $progress
+     * @param array{elapsed:int,total:int,windows:string,tz:string,at?:int}|null $progress
      */
     function sla_progress_attrs(?array $progress): string
     {
@@ -58,10 +58,60 @@ if (!function_exists('sla_progress_attrs')) {
             . ' data-hd-sla-elapsed="' . (int) $progress['elapsed'] . '"'
             . ' data-hd-sla-total="' . (int) $progress['total'] . '"'
             . ' data-hd-sla-at="' . (int) ($progress['at'] ?? time()) . '"'
-            . ' data-hd-sla-days="' . e((string) $progress['days']) . '"'
-            . ' data-hd-sla-from="' . e((string) $progress['start']) . '"'
-            . ' data-hd-sla-to="' . e((string) $progress['end']) . '"'
+            . ' data-hd-sla-windows="' . e((string) $progress['windows']) . '"'
             . ' data-hd-sla-tz="' . e((string) $progress['tz']) . '"';
+    }
+}
+
+if (!function_exists('sla_hours')) {
+    /**
+     * Dienstzeiten einer SLA-Regel je Wochentag (1 = Mo … 7 = So) als "HH:MM".
+     *
+     * @param array<string,mixed> $sla
+     * @return array<int,array{0:string,1:string}>
+     */
+    function sla_hours(array $sla): array
+    {
+        $hours = [];
+        foreach (\App\Services\Helpdesk\TicketSlaService::businessWindows($sla) as $day => $span) {
+            $hours[$day] = [
+                \App\Services\Helpdesk\TicketSlaService::minutesToTime($span[0]),
+                \App\Services\Helpdesk\TicketSlaService::minutesToTime($span[1]),
+            ];
+        }
+
+        return $hours;
+    }
+}
+
+if (!function_exists('sla_hours_label')) {
+    /**
+     * Dienstzeiten kompakt für Listen: aufeinanderfolgende Tage mit gleichen Zeiten werden
+     * zusammengefasst, z. B. „Mo–Fr 08:00–17:00, Sa 09:00–12:00“.
+     *
+     * @param array<string,mixed> $sla
+     */
+    function sla_hours_label(array $sla): string
+    {
+        $hours = sla_hours($sla);
+        if ($hours === []) {
+            return '–';
+        }
+        $names = [1 => 'Mo', 2 => 'Di', 3 => 'Mi', 4 => 'Do', 5 => 'Fr', 6 => 'Sa', 7 => 'So'];
+        $groups = [];
+        foreach ($hours as $day => [$start, $end]) {
+            $last = count($groups) - 1;
+            if ($last >= 0 && $groups[$last][1] === $day - 1 && $groups[$last][2] === $start && $groups[$last][3] === $end) {
+                $groups[$last][1] = $day;
+                continue;
+            }
+            $groups[] = [$day, $day, $start, $end];
+        }
+
+        return implode(', ', array_map(
+            static fn (array $group): string => ($group[0] === $group[1] ? $names[$group[0]] : $names[$group[0]] . '–' . $names[$group[1]]) . ' ' . $group[2] . '–' . $group[3],
+            $groups
+        ));
     }
 }
 

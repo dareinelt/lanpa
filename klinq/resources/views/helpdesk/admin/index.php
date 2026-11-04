@@ -271,7 +271,7 @@ $contentValidationChecked = isset($_SESSION['_old_input']['shared_accounts'])
                     <td><?= e($r['category_name'] ?? '–') ?></td>
                     <td class="mono"><?= (int) ($r['response_minutes'] ?? 0) ?> min</td>
                     <td class="mono"><?= (int) ($r['resolution_minutes'] ?? 0) ?> min</td>
-                    <td><?= !empty($r['business_hours_only']) ? e(($r['business_days'] ?? '') . ' · ' . substr((string) ($r['business_start'] ?? ''), 0, 5) . '–' . substr((string) ($r['business_end'] ?? ''), 0, 5)) : 'Nein' ?></td>
+                    <td><?= !empty($r['business_hours_only']) ? e(sla_hours_label($r)) : 'Nein' ?></td>
                     <td class="mono"><?= e((string) ($r['warning_percent'] ?? '–')) ?> / <?= e((string) ($r['escalation_percent'] ?? '–')) ?> %</td>
                     <td><?= $cellActive($r) ?></td>
                 <?php elseif ($kind === 'tags'): ?>

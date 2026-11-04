@@ -20,12 +20,23 @@ final class TimelineGrouper
     public const DEFAULT_WINDOW_MINUTES = 5;
 
     /**
+     * Ereignisse, die immer als eigener Eintrag erscheinen.
+     *
+     * Abschluss (gelöst, geschlossen, storniert) und Wiedereröffnung sind die Wegmarken eines
+     * Tickets. Sie dürfen nicht in einer Gruppe verschwinden, nur weil derselbe Agent im
+     * selben Moment noch etwas anderes ausgelöst hat – beim Schließen trägt
+     * `TicketService::changeStatus()` ihn etwa zusätzlich als Bearbeiter ein (`assigned`).
+     */
+    public const STANDALONE_TYPES = ['resolved', 'closed', 'cancelled', 'reopened'];
+
+    /**
      * Fasst die Ereignisse zu Gruppen zusammen; die Reihenfolge der Ereignisse bleibt erhalten.
      *
      * Eine Gruppe enthält nur Ereignisse desselben Benutzers. Das Zeitfenster wird ab dem
      * ersten Ereignis der Gruppe gemessen, damit eine lange Kette einzelner Aktionen nicht
-     * über die gesamte Historie zusammenwächst. Ereignisse ohne lesbaren Zeitstempel bleiben
-     * jeweils für sich.
+     * über die gesamte Historie zusammenwächst. Ereignisse aus
+     * {@see self::STANDALONE_TYPES} bleiben jeweils für sich und trennen die Umgebung in
+     * eigene Gruppen; Ereignisse ohne lesbaren Zeitstempel bleiben ebenfalls für sich.
      *
      * @param list<array<string,mixed>> $events chronologisch aufsteigende Ereignisse
      * @return list<list<array<string,mixed>>> Gruppen, jeweils chronologisch aufsteigend
@@ -37,11 +48,15 @@ final class TimelineGrouper
         $current = [];
         $currentActor = null;
         $currentStart = null;
+        $currentStandalone = false;
 
         foreach ($events as $event) {
             $actor = self::actorKey($event);
             $time = self::timestamp($event);
+            $standalone = self::isStandalone($event);
             $continues = $current !== []
+                && !$currentStandalone
+                && !$standalone
                 && $actor === $currentActor
                 && $time !== null
                 && $currentStart !== null
@@ -54,6 +69,7 @@ final class TimelineGrouper
             if ($current === []) {
                 $currentActor = $actor;
                 $currentStart = $time;
+                $currentStandalone = $standalone;
             }
             $current[] = $event;
         }
@@ -63,6 +79,12 @@ final class TimelineGrouper
         }
 
         return $groups;
+    }
+
+    /** Steht das Ereignis immer für sich (Abschluss, Wiedereröffnung)? */
+    private static function isStandalone(array $event): bool
+    {
+        return in_array((string) ($event['type'] ?? ''), self::STANDALONE_TYPES, true);
     }
 
     /** Schlüssel des Handelnden: das Benutzerkonto, sonst der hinterlegte Name. */

@@ -4,7 +4,8 @@
  *
  * Kurz aufeinanderfolgende Aktionen desselben Benutzers (z. B. Ticket ansehen und
  * kommentieren) fasst App\Support\TimelineGrouper zu einem Eintrag zusammen. Die übrigen
- * Ereignisse der Gruppe klappt das „+“ am rechten Rand auf.
+ * Ereignisse der Gruppe klappt das „+“ am rechten Rand auf. Abschluss und Wiedereröffnung
+ * stehen immer als eigener Eintrag (TimelineGrouper::STANDALONE_TYPES).
  */
 require_once __DIR__ . '/../../partials/helpers.php';
 

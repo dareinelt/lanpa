@@ -17,6 +17,7 @@ use App\Repositories\TicketWorklogRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketService;
+use App\Support\RichText;
 use Tests\Support\DatabaseTestCase;
 
 /** Kernabläufe des Ticketsystems gegen die Test-Datenbank (Anlage, Workflow, SLA, Zuweisung, Kommentare, Merge). */
@@ -425,6 +426,35 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $closed = $this->service()->changeStatus($id, 'closed', null, 'Automatisch geschlossen.', null, null, true);
 
         $this->assertNull($closed['assignee_user_id'], 'Automatische Schließungen tragen keinen Bearbeiter ein');
+    }
+
+    // ------------------------------------------------------------------ Bilder in der Lösung
+
+    public function testResolutionKeepsPastedImages(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+        // So schickt der Abschlussdialog einen per STRG+V eingefügten Screenshot: als Data-URI im Text.
+        $image = '![Bild](data:image/jpeg;base64,' . str_repeat('A', 4000) . ')';
+        $resolution = "Fehlerdialog beim Start:\n" . $image;
+
+        $closed = $this->service()->changeStatus($id, 'closed', null, $resolution);
+
+        $this->assertSame($resolution, (string) $closed['resolution'], 'Die Bilddaten bleiben in der Lösung erhalten.');
+        $this->assertSame($resolution, (string) $this->tickets()->find($id)['resolution'], 'Die Lösung passt vollständig in die Spalte (MEDIUMTEXT).');
+        $this->assertStringContains('class="text-image"', RichText::toHtml($resolution), 'Die Ticketansicht rendert das Bild.');
+        $this->assertSame("Fehlerdialog beim Start:\n[Bild]", RichText::toPlain($resolution), 'E-Mails erhalten nur den Platzhalter.');
+    }
+
+    public function testResolutionLengthIsLimited(): void
+    {
+        $ticket = $this->createTicket();
+
+        $this->assertThrows(
+            ValidationException::class,
+            fn () => $this->service()->changeStatus((int) $ticket['id'], 'closed', null, str_repeat('a', TicketService::MAX_TEXT_CHARS + 1)),
+            'zu lang'
+        );
     }
 
     // ------------------------------------------------------------------ Kommentare

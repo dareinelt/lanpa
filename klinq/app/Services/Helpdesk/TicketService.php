@@ -567,6 +567,9 @@ final class TicketService
             throw ValidationException::single('status', 'Unbekannter Status.');
         }
         $resolution = $resolution !== null ? trim($resolution) : null;
+        if ($resolution !== null && mb_strlen($resolution) > self::MAX_TEXT_CHARS) {
+            throw ValidationException::single('resolution', 'Die Lösung ist zu lang (max. ' . number_format(self::MAX_TEXT_CHARS, 0, ',', '.') . ' Zeichen).');
+        }
         if ($this->workflow->requiresResolution($toCode) && ($resolution === null || $resolution === '') && empty($ticket['resolution'])) {
             throw ValidationException::single('resolution', 'Bitte eine Lösungsbeschreibung angeben.');
         }

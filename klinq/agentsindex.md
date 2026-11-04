@@ -146,6 +146,8 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 
 - **Inventarnummern**: Format `PRÄFIX + YY + NNN` (z. B. `PC24001`), Vergabe in einer Transaktion über
   `inventory_sequences` mit `SELECT … FOR UPDATE`; manuell vergebene höhere Nummern ziehen die Sequenz nach.
+  Nachträglich änderbar nur im Bearbeiten-Formular mit Pflichtgrund (`inventory_number_reason`) – dokumentiert
+  als `inventory_number_changed` in `asset_history` (Grund in `note`) und im Audit-Log.
 - **Optimistische Sperre**: `assets.version` wird im Formular mitgeschickt; Konflikt → 409 statt stillem Überschreiben.
 - **Bewegungen dürfen unvollständig sein** („offen“) und werden am Desktop nachbearbeitet; jede Bewegung
   aktualisiert das Asset sofort und schreibt in `asset_history`.

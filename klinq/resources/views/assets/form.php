@@ -218,6 +218,23 @@
         </details>
         <?php endif; ?>
 
+        <?php if (!$isNew): ?>
+        <div class="form-row mt-3">
+            <div class="form-group">
+                <label for="f-invno">Inventarnummer</label>
+                <input id="f-invno" name="inventory_number" class="mono" maxlength="20" value="<?= e(form_value($row, 'inventory_number')) ?>" placeholder="z. B. PC24006" autocapitalize="characters" data-edit-invno data-initial="<?= e((string) $row['inventory_number']) ?>">
+                <?= field_error('inventory_number') ?>
+                <span class="form-hint">Format PRÄFIX + JJ + Nummer. Änderungen werden in der Historie dokumentiert.</span>
+            </div>
+            <div class="form-group">
+                <label for="f-invno-reason">Grund der Änderung <span class="required" data-edit-invno-required hidden>*</span></label>
+                <input id="f-invno-reason" name="inventory_number_reason" maxlength="500" value="<?= e(form_value($row, 'inventory_number_reason')) ?>" placeholder="z. B. Etikett falsch bedruckt" data-edit-invno-reason>
+                <?= field_error('inventory_number_reason') ?>
+                <span class="form-hint">Pflichtangabe, sobald die Inventarnummer geändert wird.</span>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <div class="form-actions">
             <button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button>
             <?php if ($isNew): ?><button type="submit" class="btn btn-secondary" name="save_and_new" value="1"><?= icon('plus') ?> Speichern &amp; weiteres anlegen</button><?php endif; ?>

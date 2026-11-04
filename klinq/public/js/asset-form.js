@@ -204,10 +204,60 @@
         typeField.addEventListener("change", handleTypeChange);
     }
 
+    /* Bei der Bearbeitung ist der Grund Pflicht, sobald sich die Inventarnummer ändert */
+    function bindInventoryNumberEdit() {
+        const input = form.querySelector("[data-edit-invno]");
+        const reason = form.querySelector("[data-edit-invno-reason]");
+        const marker = form.querySelector("[data-edit-invno-required]");
+        if (!input || !reason) { return; }
+        const initial = (input.getAttribute("data-initial") || "").trim().toUpperCase();
+        const group = reason.closest(".form-group");
+        let clientError = null;
+
+        function changed() { return input.value.trim().toUpperCase() !== initial; }
+
+        function clearError() {
+            if (clientError) { clientError.remove(); clientError = null; }
+            reason.removeAttribute("aria-invalid");
+        }
+
+        function apply() {
+            const isChanged = changed();
+            if (marker) { marker.hidden = !isChanged; }
+            if (isChanged) {
+                reason.setAttribute("required", "required");
+                reason.setAttribute("aria-required", "true");
+            } else {
+                reason.removeAttribute("required");
+                reason.removeAttribute("aria-required");
+                reason.value = "";
+                clearError();
+            }
+        }
+
+        form.addEventListener("submit", function (e) {
+            if (!changed() || reason.value.trim() !== "") { return; }
+            e.preventDefault();
+            reason.setAttribute("aria-invalid", "true");
+            if (!clientError && group) {
+                clientError = document.createElement("span");
+                clientError.className = "form-error";
+                group.appendChild(clientError);
+            }
+            if (clientError) { clientError.textContent = "Bitte einen Grund für die Änderung der Inventarnummer angeben."; }
+            reason.focus();
+        });
+
+        input.addEventListener("input", apply);
+        reason.addEventListener("input", clearError);
+        apply();
+    }
+
     typeField.addEventListener("change", applyTypeFields);
     if (articlePicker) { articlePicker.addEventListener("picker:change", function (e) { applyArticle(e.detail); }); }
     Array.prototype.forEach.call(form.querySelectorAll("[data-check]"), bindCheck);
     bindParent();
     bindInventoryNumberOverlay();
+    bindInventoryNumberEdit();
     applyTypeFields();
 })();

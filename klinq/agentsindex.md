@@ -197,9 +197,11 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 - **Ticketnummern** folgen `HELPDESK_TICKET_PREFIX-JJJJ-NNNNNN`, vergeben über `ticket_sequences` analog zu
   den Inventarnummern (`TicketNumberService`).
 - **Weiterleiten von Tickets**: `POST /helpdesk/tickets/{id}/forward` (`helpdesk.assign`) setzt den Bearbeiter neu
-  und markiert das Ticket in `tickets.forwarded_to_user_id`/`forwarded_by_user_id`/`forwarded_at`; quittiert wird
-  über `forward_acknowledged_at`, sobald der neue Bearbeiter **Übernehmen** (`POST …/take`,
-  `TicketService::takeOver`) nutzt oder das Ticket selbst in Bearbeitung nimmt, löst oder schließt
+  und markiert das Ticket in `tickets.forwarded_to_user_id`/`forwarded_by_user_id`/`forwarded_at`; der optionale
+  Grund aus dem Overlay landet in `tickets.forward_reason` (max. 255 Zeichen, Migration 037) und erscheint in
+  Benachrichtigung, Dashboard-Karte, Banner, Seitenleiste, Verlauf (`payload` des Ereignisses `forwarded`) und
+  Audit-Log. Quittiert wird über `forward_acknowledged_at`, sobald der neue Bearbeiter **Übernehmen**
+  (`POST …/take`, `TicketService::takeOver`) nutzt oder das Ticket selbst in Bearbeitung nimmt, löst oder schließt
   (`changeStatus()`, Verlaufseintrag `forward_accepted`). Bis dahin erscheint das Ticket in der Dashboard-Karte **An Sie weitergeleitet**
   (`TicketRepository::pendingForwards`) und in der Liste gelb hervorgehoben. Geschlossene und stornierte Tickets
   blendet die Dashboard-Karte aus, da sie nicht mehr übernommen werden können.

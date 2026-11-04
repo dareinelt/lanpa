@@ -86,6 +86,7 @@ $barList = static function (array $rows): void {
                     <?php if (!empty($f['group_name'])): ?> · <?= e($f['group_name']) ?><?php endif; ?>
                     · <?= e($f['priority_name'] ?? '–') ?>
                 </div>
+                <?php if (!empty($f['forward_reason'])): ?><div class="text-xs">Grund: <?= e($f['forward_reason']) ?></div><?php endif; ?>
             </div>
             <form method="post" action="<?= e($ticketUrl($f)) ?>/take" class="inline-form">
                 <?= csrf_field() ?>

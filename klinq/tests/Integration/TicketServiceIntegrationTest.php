@@ -324,12 +324,32 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $ticket = $this->createTicket();
         $id = (int) $ticket['id'];
 
-        $this->service()->forward($id, $this->agent2Id);
+        $this->service()->forward($id, $this->agent2Id, null, true, null, 'Bitte übernehmen');
         $reassigned = $this->service()->assign($id, $this->agentId, null);
 
         $this->assertNull($reassigned['forwarded_to_user_id']);
         $this->assertNull($reassigned['forwarded_at']);
         $this->assertNull($reassigned['forward_acknowledged_at']);
+        $this->assertNull($reassigned['forward_reason'], 'Neuzuweisung verwirft den Weiterleitungsgrund');
+    }
+
+    public function testForwardStoresOptionalReason(): void
+    {
+        $ticket = $this->createTicket();
+        $id = (int) $ticket['id'];
+
+        $forwarded = $this->service()->forward($id, $this->agent2Id, null, true, null, "  Bitte   wegen\nDrucker  ");
+        $this->assertSame('Bitte wegen Drucker', $forwarded['forward_reason'], 'Grund wird normalisiert gespeichert');
+
+        $events = array_values(array_filter($this->service()->timeline($id), static fn (array $e): bool => $e['type'] === 'forwarded'));
+        $this->assertCount(1, $events);
+        $payload = json_decode((string) $events[0]['payload'], true);
+        $this->assertSame('Bitte wegen Drucker', $payload['reason'] ?? null, 'Grund steht im Ereignis-Payload');
+
+        // Ohne Grund bleibt das Feld leer.
+        $this->service()->assign($id, $this->agentId, null);
+        $plain = $this->service()->forward($id, $this->agent2Id);
+        $this->assertNull($plain['forward_reason']);
     }
 
     // ------------------------------------------------------------------ Schließen

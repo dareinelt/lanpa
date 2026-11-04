@@ -177,27 +177,29 @@ Routen: `POST /helpdesk/support-shift/claim` (Berechtigung `helpdesk.view`), `PO
 
 Im Ticketdetail steht Agenten mit `helpdesk.assign` die Schaltfläche **Weiterleiten** zur Verfügung (nicht bei
 zusammengeführten oder geschlossenen Tickets). Sie öffnet ein Overlay mit Gruppenauswahl, Agentenauswahl (der aktuelle
-Bearbeiter und der angemeldete Nutzer sind ausgenommen) und der Option **Gruppe beibehalten** (`POST
+Bearbeiter und der angemeldete Nutzer sind ausgenommen), einem optionalen Feld **Grund** (Freitext, auf eine Zeile
+normalisiert, max. 255 Zeichen) und der Option **Gruppe beibehalten** (`POST
 /helpdesk/tickets/{id}/forward`, `TicketService::forward`). Das Weiterleiten setzt den Bearbeiter neu und markiert das
 Ticket zusätzlich als *weitergeleitet*:
 
-- `tickets.forwarded_to_user_id`, `forwarded_by_user_id`, `forwarded_at` (UTC) und `forward_acknowledged_at`
-  (Migration `025_helpdesk_ticket_forwarding.sql`).
+- `tickets.forwarded_to_user_id`, `forwarded_by_user_id`, `forwarded_at` (UTC), `forward_reason` (optionaler Grund)
+  und `forward_acknowledged_at` (Migrationen `025_helpdesk_ticket_forwarding.sql`, `037_helpdesk_ticket_forward_reason.sql`).
 - **Benachrichtigung**: Der neue Bearbeiter erhält eine E-Mail „Ticket weitergeleitet“ (inkl. Hinweis, wer weitergeleitet
-  hat, `TicketNotificationService::forwarded`) und auf dem Dashboard (`/helpdesk`) die Karte **An Sie weitergeleitet**
-  mit Nummer, Betreff, Absender, Zeitpunkt, Gruppe und Priorität sowie der Schaltfläche **Übernehmen**
+  hat, und – falls angegeben – dem Grund, `TicketNotificationService::forwarded`) und auf dem Dashboard (`/helpdesk`) die
+  Karte **An Sie weitergeleitet** mit Nummer, Betreff, Absender, Zeitpunkt, Gruppe, Priorität und ggf. dem Grund sowie
+  der Schaltfläche **Übernehmen**
   (`TicketRepository::pendingForwards`, `POST /helpdesk/tickets/{id}/take`). Geschlossene und stornierte Tickets
   erscheinen dort nicht, weil sie nicht mehr übernommen werden können (etwa nach dem automatischen Schließen durch
   den Scheduler, das die Weiterleitungsmarker unverändert lässt).
 - **Hervorhebung**: In der Liste (`/helpdesk/tickets`) erscheinen so markierte Tickets bis zur Übernahme gelb hinterlegt
   und mit dem Badge **An Sie weitergeleitet**; im Ticketdetail erscheint zusätzlich ein Banner mit **Übernehmen** und in
-  der Seitenleiste die Zeile **Weitergeleitet**.
+  der Seitenleiste die Zeile **Weitergeleitet** – beide zeigen den Grund, wenn einer angegeben wurde.
 - **Übernehmen** (`TicketService::takeOver`) setzt den Status wie bisher und quittiert die Weiterleitung
   (`forward_acknowledged_at`); damit verschwinden Hervorhebung, Badge, Banner und Dashboard-Karte. Wird das Ticket
   stattdessen anderweitig umgehängt (`TicketService::assign` ohne Weiterleitung), werden die Weiterleitungsmarker
-  verworfen.
-- **Historie**: Die Ereignisse `forwarded` („Weitergeleitet“) und `forward_accepted` („Weiterleitung übernommen“)
-  erscheinen im Verlauf; auditiert wird als `ticket.forward`.
+  samt Grund verworfen.
+- **Historie**: Die Ereignisse `forwarded` („Weitergeleitet“, mit dem Grund im `payload`) und `forward_accepted`
+  („Weiterleitung übernommen“) erscheinen im Verlauf; auditiert wird als `ticket.forward` inklusive Grund.
 
 ## Ticketdetail (`/helpdesk/tickets/{id}`)
 

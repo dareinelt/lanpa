@@ -643,6 +643,7 @@ final class TicketService
             $update['forwarded_to_user_id'] = null;
             $update['forwarded_by_user_id'] = null;
             $update['forwarded_at'] = null;
+            $update['forward_reason'] = null;
             $update['forward_acknowledged_at'] = null;
             $assignedToActor = true;
         }
@@ -806,10 +807,11 @@ final class TicketService
     /**
      * Zuweisung an Bearbeiter, Vertretung und/oder Gruppe. Mit $forward wird zusätzlich die
      * Weiterleitung an den neuen Bearbeiter vermerkt (Hinweis auf dessen Dashboard und
-     * Hervorhebung in der Ticketliste, bis er das Ticket übernimmt).
+     * Hervorhebung in der Ticketliste, bis er das Ticket übernimmt). $forwardReason ist ein
+     * optionaler Grund, der beim Empfänger und im Verlauf erscheint.
      * @return array<string,mixed>
      */
-    public function assign(int $id, ?int $assigneeId, ?int $groupId, ?int $deputyId = null, bool $keepGroup = false, ?int $expectedVersion = null, bool $forward = false): array
+    public function assign(int $id, ?int $assigneeId, ?int $groupId, ?int $deputyId = null, bool $keepGroup = false, ?int $expectedVersion = null, bool $forward = false, ?string $forwardReason = null): array
     {
         $this->currentUser->require('helpdesk.assign');
         $ticket = $this->get($id);
@@ -817,17 +819,20 @@ final class TicketService
         if ($this->workflow->isFinal((string) $ticket['status_code'])) {
             throw ValidationException::single('assignee_user_id', 'Abgeschlossene Tickets können nicht neu zugewiesen werden.');
         }
+        $forwardReason = $forward ? $this->normalizeForwardReason($forwardReason) : null;
         $update = ['assignee_user_id' => $this->validUser($assigneeId, 'assignee_user_id'), 'deputy_user_id' => $this->validUser($deputyId, 'deputy_user_id'), 'updated_by' => $this->currentUser->id()];
         if ($forward) {
             $update['forwarded_to_user_id'] = $update['assignee_user_id'];
             $update['forwarded_by_user_id'] = $this->currentUser->id();
             $update['forwarded_at'] = gmdate('Y-m-d H:i:s');
+            $update['forward_reason'] = $forwardReason;
             $update['forward_acknowledged_at'] = null;
         } elseif ((int) ($ticket['forwarded_to_user_id'] ?? 0) !== (int) ($update['assignee_user_id'] ?? 0)) {
             // Zuweisung an jemand anderen hebt eine offene Weiterleitung auf
             $update['forwarded_to_user_id'] = null;
             $update['forwarded_by_user_id'] = null;
             $update['forwarded_at'] = null;
+            $update['forward_reason'] = null;
             $update['forward_acknowledged_at'] = null;
         }
         if (!$keepGroup) {
@@ -844,14 +849,14 @@ final class TicketService
             }
         }
 
-        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $forward): void {
+        $this->tickets->transaction(function () use ($ticket, $update, $expectedVersion, $forward, $forwardReason): void {
             $id = (int) $ticket['id'];
             if (!$this->tickets->update($id, $update, $expectedVersion)) {
                 throw new ConflictException('Das Ticket wurde zwischenzeitlich geändert. Bitte neu laden.');
             }
             if ((int) ($ticket['assignee_user_id'] ?? 0) !== (int) ($update['assignee_user_id'] ?? 0)) {
                 $type = $forward ? 'forwarded' : ($update['assignee_user_id'] === null ? 'unassigned' : 'assigned');
-                $this->event($id, $type, 'assignee', $ticket['assignee_name'] ?? null, $update['assignee_user_id'] !== null ? $this->userName((int) $update['assignee_user_id']) : null);
+                $this->event($id, $type, 'assignee', $ticket['assignee_name'] ?? null, $update['assignee_user_id'] !== null ? $this->userName((int) $update['assignee_user_id']) : null, $forwardReason !== null ? ['reason' => $forwardReason] : null);
             }
             if (array_key_exists('group_id', $update) && (int) ($ticket['group_id'] ?? 0) !== (int) ($update['group_id'] ?? 0)) {
                 $this->event($id, 'group_changed', 'group', $ticket['group_name'] ?? null, $update['group_id'] !== null ? (string) ($this->masterData->findGroup((int) $update['group_id'])['name'] ?? '') : null);
@@ -865,7 +870,11 @@ final class TicketService
         });
 
         $fresh = $this->get($id);
-        $this->audit->log($forward ? 'forward' : 'assign', 'ticket', $id, $fresh['number'], ['assignee' => $ticket['assignee_name'], 'group' => $ticket['group_name']], ['assignee' => $fresh['assignee_name'], 'group' => $fresh['group_name']]);
+        $auditNew = ['assignee' => $fresh['assignee_name'], 'group' => $fresh['group_name']];
+        if ($forward && $forwardReason !== null) {
+            $auditNew['reason'] = $forwardReason;
+        }
+        $this->audit->log($forward ? 'forward' : 'assign', 'ticket', $id, $fresh['number'], ['assignee' => $ticket['assignee_name'], 'group' => $ticket['group_name']], $auditNew);
         if ($forward) {
             $this->notifications->forwarded($fresh, (string) $this->currentUser->displayName());
         } else {
@@ -877,10 +886,10 @@ final class TicketService
 
     /**
      * Ticket an einen anderen Bearbeiter weiterleiten. Die Zuweisung wechselt sofort; bis der neue
-     * Bearbeiter das Ticket übernimmt, bleibt es als weitergeleitet markiert.
+     * Bearbeiter das Ticket übernimmt, bleibt es als weitergeleitet markiert. Der Grund ist optional.
      * @return array<string,mixed>
      */
-    public function forward(int $id, ?int $assigneeId, ?int $groupId = null, bool $keepGroup = true, ?int $expectedVersion = null): array
+    public function forward(int $id, ?int $assigneeId, ?int $groupId = null, bool $keepGroup = true, ?int $expectedVersion = null, ?string $reason = null): array
     {
         $this->currentUser->require('helpdesk.assign');
         $ticket = $this->get($id);
@@ -899,7 +908,7 @@ final class TicketService
             throw ValidationException::single('assignee_user_id', 'Das Ticket ist diesem Agenten bereits zugewiesen.');
         }
 
-        return $this->assign($id, $assigneeId, $groupId, $ticket['deputy_user_id'] !== null ? (int) $ticket['deputy_user_id'] : null, $keepGroup, $expectedVersion, true);
+        return $this->assign($id, $assigneeId, $groupId, $ticket['deputy_user_id'] !== null ? (int) $ticket['deputy_user_id'] : null, $keepGroup, $expectedVersion, true, $reason);
     }
 
     /** Ist das Ticket dem Benutzer weitergeleitet und von ihm noch nicht übernommen? @param array<string,mixed> $ticket */
@@ -1671,6 +1680,14 @@ final class TicketService
         $user = $this->users->find($userId);
 
         return (string) ($user['display_name'] ?? $user['username'] ?? $userId);
+    }
+
+    /** Optionalen Weiterleitungsgrund auf eine Zeile normalisieren (leer = kein Grund). */
+    private function normalizeForwardReason(?string $reason): ?string
+    {
+        $reason = trim((string) preg_replace('/\s+/u', ' ', (string) $reason));
+
+        return $reason === '' ? null : mb_substr($reason, 0, 255);
     }
 
     /** @param array<string,mixed> $ticket */

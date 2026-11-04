@@ -450,7 +450,7 @@ final class TicketController extends HelpdeskBaseController
     {
         $id = $request->paramInt('id');
         $response = $this->attempt($request, function () use ($request, $id): void {
-            $this->service->forward($id, $request->int('assignee_user_id'), $request->int('group_id'), $request->bool('keep_group'), $request->int('version'));
+            $this->service->forward($id, $request->int('assignee_user_id'), $request->int('group_id'), $request->bool('keep_group'), $request->int('version'), $request->string('reason'));
         }, '/helpdesk/tickets/' . $id . '#assign', false);
 
         return $response ?? $this->respond($request, 'Ticket weitergeleitet.', '/helpdesk/tickets/' . $id);

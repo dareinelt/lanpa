@@ -89,7 +89,12 @@ final class TicketNotificationService
         }
         $key = 'forwarded_' . (int) ($ticket['assignee_user_id'] ?? 0) . '_' . (int) ($ticket['version'] ?? 0);
         $by = $forwardedBy !== '' ? $forwardedBy : 'Ein Kollege';
-        $this->sendTo($ticket, $key, [$email], 'Ticket weitergeleitet', $this->intro($ticket, $by . ' hat Ihnen ein Ticket weitergeleitet. Bitte übernehmen Sie es im Help Desk.'));
+        $message = $by . ' hat Ihnen ein Ticket weitergeleitet.';
+        $reason = trim((string) ($ticket['forward_reason'] ?? ''));
+        if ($reason !== '') {
+            $message .= ' Grund: ' . $reason;
+        }
+        $this->sendTo($ticket, $key, [$email], 'Ticket weitergeleitet', $this->intro($ticket, $message . ' Bitte übernehmen Sie es im Help Desk.'));
     }
 
     /**

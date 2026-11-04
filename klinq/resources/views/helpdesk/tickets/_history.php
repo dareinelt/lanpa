@@ -37,6 +37,13 @@ $renderEvent = static function (array $ev) use ($eventLabels): string {
         }
         $html .= '</span>';
     }
+    if (($ev['type'] ?? '') === 'forwarded' && !empty($ev['payload'])) {
+        $payload = json_decode((string) $ev['payload'], true);
+        $reason = is_array($payload) ? trim((string) ($payload['reason'] ?? '')) : '';
+        if ($reason !== '') {
+            $html .= '<span class="timeline-detail">Grund: ' . e($reason) . '</span>';
+        }
+    }
 
     return $html;
 };

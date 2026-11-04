@@ -113,7 +113,7 @@ $statusTransitions = array_values(array_filter(
 <?php if ($isForwardedToMe): ?>
     <div class="alert alert-warning hd-forward-banner">
         <?= icon('swap') ?>
-        <span>Dieses Ticket wurde <?= !empty($ticket['forwarded_by_name']) ? 'von <strong>' . e($ticket['forwarded_by_name']) . '</strong> ' : '' ?>an Sie weitergeleitet (<?= fmt_datetime($ticket['forwarded_at'] ?? null) ?>). Übernehmen Sie es, damit es nicht mehr als weitergeleitet gilt.</span>
+        <span>Dieses Ticket wurde <?= !empty($ticket['forwarded_by_name']) ? 'von <strong>' . e($ticket['forwarded_by_name']) . '</strong> ' : '' ?>an Sie weitergeleitet (<?= fmt_datetime($ticket['forwarded_at'] ?? null) ?>).<?php if (!empty($ticket['forward_reason'])): ?> <strong>Grund:</strong> <?= e($ticket['forward_reason']) ?><?php endif; ?> Übernehmen Sie es, damit es nicht mehr als weitergeleitet gilt.</span>
         <form method="post" action="/helpdesk/tickets/<?= $id ?>/take" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Übernehmen</button></form>
     </div>
 <?php endif; ?>
@@ -332,7 +332,7 @@ $statusTransitions = array_values(array_filter(
             <dt>Gruppe</dt><dd><?= e($ticket['group_name'] ?? '–') ?></dd>
             <dt>Bearbeiter</dt><dd><?= $ticket['assignee_name'] ? e($ticket['assignee_name']) : '<span class="text-muted">nicht zugewiesen</span>' ?></dd>
             <?php if (!empty($ticket['forwarded_at']) && empty($ticket['forward_acknowledged_at'])): ?>
-                <dt>Weitergeleitet</dt><dd><?= fmt_datetime($ticket['forwarded_at']) ?><?= !empty($ticket['forwarded_by_name']) ? ' von ' . e($ticket['forwarded_by_name']) : '' ?> <span class="badge is-warning">noch nicht übernommen</span></dd>
+                <dt>Weitergeleitet</dt><dd><?= fmt_datetime($ticket['forwarded_at']) ?><?= !empty($ticket['forwarded_by_name']) ? ' von ' . e($ticket['forwarded_by_name']) : '' ?> <span class="badge is-warning">noch nicht übernommen</span><?php if (!empty($ticket['forward_reason'])): ?><div class="text-xs text-muted">Grund: <?= e($ticket['forward_reason']) ?></div><?php endif; ?></dd>
             <?php endif; ?>
             <?php if ($ticket['deputy_name']): ?><dt>Vertretung</dt><dd><?= e($ticket['deputy_name']) ?></dd><?php endif; ?>
         </dl>
@@ -620,6 +620,11 @@ $statusTransitions = array_values(array_filter(
                         <option value="<?= (int) $a['id'] ?>"><?= e($a['display_name']) ?></option>
                     <?php endforeach; ?>
                 </select>
+            </div>
+            <div class="form-group">
+                <label for="fw-reason">Grund <span class="text-muted">(optional)</span></label>
+                <textarea id="fw-reason" name="reason" rows="2" maxlength="255" placeholder="z. B. benötigt Zugriff auf das Fachverfahren …"></textarea>
+                <p class="form-hint">Der Grund erscheint beim neuen Bearbeiter in der Benachrichtigung und im Ticketverlauf.</p>
             </div>
             <label class="checkbox-row"><input type="checkbox" name="keep_group" value="1" checked> Gruppe beibehalten, wenn Bearbeiter in anderer Gruppe</label>
         </div>

@@ -7,14 +7,15 @@ namespace App\Services\Helpdesk;
 use App\Core\Config;
 use App\Core\Logger;
 use App\Exceptions\ValidationException;
+use App\Repositories\EmployeeRepository;
 use App\Security\CurrentUser;
 use App\Services\Lanpa\LanpaBridge;
 use App\Services\MailClient;
 use App\Support\HtmlSanitizer;
 
 /**
- * E-Mail eines Agenten aus einem Ticket an die meldende und optional an die
- * betroffene Person.
+ * E-Mail eines Agenten aus einem Ticket an die meldende, optional an die
+ * betroffene Person und an weitere ausgewählte Empfänger.
  *
  * Der Text kommt aus dem Editor im Ticket. Die Signatur stammt unveränderlich
  * aus dem Intranet (Orvanta-Signatur des angemeldeten Agenten); sie steht
@@ -37,7 +38,8 @@ final class TicketMailService
         private readonly CurrentUser $currentUser,
         private readonly Config $config,
         private readonly Logger $logger,
-        private readonly ReplyTemplateSettingsService $replyTemplates
+        private readonly ReplyTemplateSettingsService $replyTemplates,
+        private readonly EmployeeRepository $employees
     ) {}
 
     /**
@@ -130,7 +132,9 @@ final class TicketMailService
     /**
      * E-Mail versenden, im Ticketverlauf protokollieren und das Ticket optional pausieren.
      *
-     * @param array<string,mixed> $input Formulardaten: subject, body_html, to_affected, pause_code, pause_until
+     * @param array<string,mixed> $input Formulardaten: subject, body_html, to_affected,
+     *                                   additional_recipients (Liste lokaler Mitarbeiter-IDs),
+     *                                   pause_code, pause_until
      * @return array{sent:list<string>,subject:string,paused:bool,pause_name:string,pause_warning:string}
      */
     public function send(int $id, array $input): array
@@ -156,6 +160,12 @@ final class TicketMailService
         if (($input['to_affected'] ?? '') === '1' && $compose['affected']['email'] !== '') {
             $recipients[] = $compose['affected']['email'];
         }
+        // Zusätzliche Empfänger aus der Personenauswahl; Dubletten (etwa die
+        // bereits angeschriebene meldende Person) werden stillschweigend entfernt.
+        $recipients = array_values(array_unique(array_merge(
+            $recipients,
+            $this->additionalRecipients($input['additional_recipients'] ?? null)
+        )));
 
         // Pausierung vorab prüfen, damit sie nicht erst nach dem Versand scheitert.
         $pause = $this->resolvePause($compose, $ticket, $input);
@@ -370,6 +380,49 @@ final class TicketMailService
     private function renderMergeBody(string $html): string
     {
         return '<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#222">' . $html . '</div>';
+    }
+
+    /**
+     * Zusätzliche Empfänger aus der Personenauswahl in E-Mail-Adressen auflösen.
+     *
+     * Die Auswahl kommt als Liste lokaler Mitarbeiter-IDs (Mehrfachauswahl im
+     * Sendedialog). Personen ohne hinterlegte Adresse können die Nachricht nicht
+     * erhalten; das wird gemeldet, statt sie unbemerkt zu überspringen.
+     *
+     * @param mixed $ids Rohwert aus dem Formular (Array von IDs oder null)
+     * @return list<string>
+     */
+    private function additionalRecipients(mixed $ids): array
+    {
+        if (!is_array($ids)) {
+            return [];
+        }
+
+        $emails = [];
+        $withoutMail = [];
+        foreach ($ids as $id) {
+            if (!is_scalar($id) || !ctype_digit(trim((string) $id))) {
+                continue;
+            }
+            $employee = $this->employees->find((int) $id);
+            if ($employee === null) {
+                throw ValidationException::single('additional_recipients', 'Die Auswahl enthält eine unbekannte Person. Bitte die Empfänger neu wählen.');
+            }
+            $email = self::firstEmail((string) ($employee['email'] ?? ''));
+            if ($email === '') {
+                $withoutMail[] = (string) $employee['display_name'];
+                continue;
+            }
+            $emails[$email] = true;
+        }
+        if ($withoutMail !== []) {
+            throw ValidationException::single(
+                'additional_recipients',
+                'Für folgende zusätzliche Empfänger ist keine E-Mail-Adresse hinterlegt: ' . implode(', ', $withoutMail) . '.'
+            );
+        }
+
+        return array_keys($emails);
     }
 
     /**

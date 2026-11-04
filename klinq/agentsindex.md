@@ -231,7 +231,9 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   sonst wie bisher `rich_text()`. `cid:`-Bilder werden bis 128 KB als Data-URI eingebettet.
   Beim Bearbeiten normalisiert `TicketService` die Zeilenenden, damit ein unveränderter Text die
   HTML-Fassung nicht verwirft.
-- **Agenten-E-Mail aus dem Ticket** (`TicketMailService`): Melder immer, betroffene Person optional; jede Person
+- **Agenten-E-Mail aus dem Ticket** (`TicketMailService`): Melder immer, betroffene Person optional, dazu beliebig
+  viele **weitere Empfänger** aus der Personenauswahl (Formularfeld `additional_recipients[]` mit lokalen
+  Mitarbeiter-IDs; Personen ohne E-Mail-Adresse werden abgelehnt, Dubletten entfernt); jede Person
   bekommt eine eigene Nachricht (`MailClient::send()` kann nur einen Empfänger) mit gemeinsamer `Message-ID`.
   Threading-Kopfzeilen wie bei Benachrichtigungen, aber **kein** `Auto-Submitted` und **kein**
   `TicketNotificationService::wrap()`. Die Orvanta-Signatur kommt über `LanpaBridge::signature()` aus dem Intranet
@@ -373,7 +375,8 @@ ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
   Etikettenvorschau (`labels.js`), Unterschrift (`signature-pad.js`), Offline-Warteschlange
   (`offline.js`, `offline-ui.js`, IndexedDB + `sw.js`), Kontextmenü und KI-Dialog im Help Desk
   (`helpdesk-ai.js` für Textfelder, `helpdesk-mail.js` für den Mail-Editor im Ticket – gleiche Styles
-  `.hd-ctx-menu`/`.hd-ai-dialog`, gemeinsame `window.AppUI`), Zusammenführen-Dialog (`helpdesk-merge.js`),
+  `.hd-ctx-menu`/`.hd-ai-dialog`, gemeinsame `window.AppUI`; die Empfängerauswahl nutzt `picker.js`),
+  Zusammenführen-Dialog (`helpdesk-merge.js`),
   Anheften von Kommunikations- und Aufgaben-Einträgen ohne Neuladen (`helpdesk-pins.js`).
 - CSS ist nach `base/`, `layout/`, `components/`, `pages/`, `utilities/` gegliedert und wird über
   `public/css/app.css` importiert; Design-Tokens als CSS-Variablen.

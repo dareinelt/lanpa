@@ -353,7 +353,7 @@ final class TicketController extends HelpdeskBaseController
             'mergeCompose' => $this->mergeService->composeData($ticket),
             'taskForTicket' => $this->currentUser->can('helpdesk.tasks') ? $this->tasks->findByTicket($id) : null,
             'taskCategories' => $this->currentUser->can('helpdesk.tasks') ? $this->taskCategories->all() : [],
-            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-pins.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js', '/js/helpdesk-mail-frame.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-pins.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/picker.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js', '/js/helpdesk-mail-frame.js'],
         ]);
     }
 
@@ -395,7 +395,8 @@ final class TicketController extends HelpdeskBaseController
     }
 
     /**
-     * E-Mail an die meldende und optional an die betroffene Person senden.
+     * E-Mail an die meldende, optional an die betroffene Person und an weitere
+     * ausgewählte Empfänger senden.
      * Die Signatur wird serverseitig angehängt; auf Wunsch wird das Ticket im
      * selben Schritt pausiert.
      */
@@ -408,6 +409,7 @@ final class TicketController extends HelpdeskBaseController
                 'subject' => $request->string('subject'),
                 'body_html' => $request->string('body_html'),
                 'to_affected' => $request->string('to_affected'),
+                'additional_recipients' => $request->input('additional_recipients', []),
                 'pause_code' => $request->string('pause_code'),
                 'pause_until' => $request->string('pause_until'),
             ]);

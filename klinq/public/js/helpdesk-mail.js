@@ -620,6 +620,99 @@
         syncPause();
     }
 
+    // ---------------------------------------------------------------- Weitere Empfänger
+
+    const extraRoot = root.querySelector("[data-hd-mail-extra]");
+    const extraPicker = extraRoot ? extraRoot.querySelector("[data-picker]") : null;
+    const extraList = root.querySelector("[data-hd-mail-extra-list]");
+    const extraInputs = root.querySelector("[data-hd-mail-extra-inputs]");
+    const extraRecipients = [];
+
+    /** Empfängerliste als Chips und als Formularfelder (additional_recipients[]) ausgeben. */
+    function renderExtra() {
+        if (!extraList || !extraInputs) {
+            return;
+        }
+        extraList.textContent = "";
+        extraRecipients.forEach(function (person, index) {
+            const entry = document.createElement("li");
+            entry.className = "hd-mail-extra-chip";
+            const name = document.createElement("span");
+            name.className = "hd-mail-extra-name";
+            name.textContent = person.name;
+            const mail = document.createElement("span");
+            mail.className = "hd-mail-extra-mail";
+            mail.textContent = person.email;
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "hd-mail-extra-remove";
+            remove.setAttribute("data-hd-mail-extra-remove", String(index));
+            remove.setAttribute("aria-label", person.name + " entfernen");
+            remove.textContent = "×";
+            entry.appendChild(name);
+            entry.appendChild(mail);
+            entry.appendChild(remove);
+            extraList.appendChild(entry);
+        });
+        extraList.hidden = extraRecipients.length === 0;
+
+        extraInputs.textContent = "";
+        extraRecipients.forEach(function (person) {
+            const field = document.createElement("input");
+            field.type = "hidden";
+            field.name = "additional_recipients[]";
+            field.value = String(person.id);
+            extraInputs.appendChild(field);
+        });
+    }
+
+    function resetExtraPicker() {
+        const clear = extraPicker ? extraPicker.querySelector("[data-picker-clear]") : null;
+        if (clear) {
+            clear.click();
+        }
+    }
+
+    if (extraPicker) {
+        // Die Personenauswahl liefert E-Mail und ID; die Auswahl selbst führt die
+        // Liste, damit mehrere Empfänger möglich sind. Der Picker wird danach
+        // zurückgesetzt und meldet das mit detail = null.
+        extraPicker.addEventListener("picker:change", function (event) {
+            const person = event.detail;
+            if (!person || !person.id) {
+                return;
+            }
+            const name = person.name || person.label || "";
+            if (extraRecipients.some(function (entry) { return entry.id === person.id; })) {
+                showError(name + " ist bereits als Empfänger eingetragen.");
+                resetExtraPicker();
+                return;
+            }
+            if (!person.email) {
+                showError("Für " + name + " ist keine E-Mail-Adresse hinterlegt.");
+                resetExtraPicker();
+                return;
+            }
+            extraRecipients.push({ id: person.id, name: name, email: person.email });
+            renderExtra();
+            if (errorEl) {
+                errorEl.hidden = true;
+            }
+            resetExtraPicker();
+        });
+    }
+
+    if (extraList) {
+        extraList.addEventListener("click", function (event) {
+            const button = event.target.closest("[data-hd-mail-extra-remove]");
+            if (!button) {
+                return;
+            }
+            extraRecipients.splice(Number(button.getAttribute("data-hd-mail-extra-remove")), 1);
+            renderExtra();
+        });
+    }
+
     // ---------------------------------------------------------------- Absenden
 
     function showError(message) {

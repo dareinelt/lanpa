@@ -542,6 +542,43 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 .hd-mail-recipient-role { min-width: 2.5rem; font-weight: 600; color: var(--color-text-muted); }
 .hd-mail-recipient-name { font-weight: 600; }
 .hd-mail-recipient-option { margin: 0; }
+.hd-mail-extra-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin: var(--space-2) 0 0;
+    padding: 0;
+    list-style: none;
+}
+.hd-mail-extra-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 100%;
+    padding: 2px var(--space-1) 2px var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-surface-muted, #f5f5f5);
+    font-size: var(--font-size-sm);
+}
+.hd-mail-extra-name { font-weight: 600; }
+.hd-mail-extra-mail { color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.hd-mail-extra-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    color: var(--color-text-muted);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+.hd-mail-extra-remove:hover { background: var(--color-border); color: var(--color-text); }
 .hd-mail-editor {
     min-height: 14rem;
     max-height: 42vh;

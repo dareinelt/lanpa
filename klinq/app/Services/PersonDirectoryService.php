@@ -38,9 +38,10 @@ final class PersonDirectoryService
      *
      * `id` ist die lokale Mitarbeiter-ID; bei noch nicht uebernommenen Personen
      * ist sie 0 und `ref` nennt die Telefonbuch-ID, die der Client beim
-     * Auswaehlen an die Uebernahme schickt.
+     * Auswaehlen an die Uebernahme schickt. `email` gehoert zum Treffer und
+     * erlaubt dem Client, Empfaenger ohne Adresse gleich abzuweisen.
      *
-     * @return list<array{id:int,name:string,meta:string,ref:int}>
+     * @return list<array{id:int,name:string,meta:string,ref:int,email:string}>
      */
     public function search(string $term, int $limit = self::LIMIT): array
     {
@@ -58,6 +59,7 @@ final class PersonDirectoryService
                 'name' => $entry['display_name'],
                 'meta' => self::meta($entry['department'], $entry['source'], $entry['username']),
                 'ref' => $id === null ? $entry['id'] : 0,
+                'email' => mb_strtolower(trim($entry['email'])),
             ];
             $items[$id === null ? 'ref:' . $entry['id'] : (string) $id] = $item;
         }
@@ -81,6 +83,7 @@ final class PersonDirectoryService
                 // stehen E-Mail und Rueckrufnummer in der Zusatzzeile.
                 'meta' => $meta !== '' ? $meta : self::contactMeta($row),
                 'ref' => 0,
+                'email' => mb_strtolower(trim((string) ($row['email'] ?? ''))),
             ];
         }
 
@@ -151,7 +154,10 @@ final class PersonDirectoryService
      * spaeter wieder in der Personenauswahl; ohne diese Option wird der
      * Datensatz inaktiv angelegt und dient nur dem aktuellen Ticket.
      *
-     * @return array{id:int,name:string,meta:string}
+     * `email` wird mitgeliefert, damit die aufrufende Stelle den Kontakt direkt
+     * anschreiben kann (z. B. zusaetzlicher Empfaenger einer Ticket-Mail).
+     *
+     * @return array{id:int,name:string,meta:string,email:string}
      */
     public function createContact(string $name, string $email, string $phone, bool $keepContact): array
     {
@@ -201,7 +207,7 @@ final class PersonDirectoryService
                 'source' => 'kontakt',
             ]);
 
-            return ['id' => $id, 'name' => $name, 'meta' => self::contactMeta($data)];
+            return ['id' => $id, 'name' => $name, 'meta' => self::contactMeta($data), 'email' => $email];
         });
     }
 
@@ -213,7 +219,7 @@ final class PersonDirectoryService
      * bewusst deaktivierter Mitarbeiter wird nicht still reaktiviert.
      *
      * @param array<string,mixed> $employee
-     * @return array{id:int,name:string,meta:string}
+     * @return array{id:int,name:string,meta:string,email:string}
      */
     private function reuseContact(array $employee, bool $keepContact): array
     {
@@ -229,6 +235,7 @@ final class PersonDirectoryService
             'id' => $id,
             'name' => (string) $employee['display_name'],
             'meta' => self::contactMeta($employee),
+            'email' => mb_strtolower(trim((string) ($employee['email'] ?? ''))),
         ];
     }
 

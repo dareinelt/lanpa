@@ -719,6 +719,50 @@ $statusTransitions = array_values(array_filter(
                 <?php endif; ?>
             </div>
 
+            <div class="form-group hd-mail-extra" data-hd-mail-extra>
+                <label for="mail-extra-search">Weitere Empfänger <span class="text-muted">(optional)</span></label>
+                <div class="picker" data-picker data-search-url="/api/helpdesk/people/search"
+                     data-resolve-url="/api/helpdesk/people/adopt" data-picker-create-url="/api/helpdesk/people/create">
+                    <input type="hidden" value="" data-picker-value>
+                    <div class="picker-selected" data-picker-selected hidden>
+                        <span class="picker-selected-text">
+                            <span class="picker-selected-label" data-picker-label></span>
+                            <span class="text-muted text-sm" data-picker-meta></span>
+                        </span>
+                        <button type="button" class="btn btn-ghost btn-sm picker-clear" data-picker-clear aria-label="Auswahl entfernen"><?= icon('x') ?></button>
+                    </div>
+                    <input id="mail-extra-search" type="search" class="picker-input" placeholder="Name, Benutzername, Personalnr. oder Telefon …" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" data-picker-input>
+                    <ul class="picker-results" role="listbox" hidden data-picker-results></ul>
+                    <dialog class="dialog" data-picker-create-dialog aria-labelledby="mail-extra-create-title">
+                        <div class="dialog-header">
+                            <h2 id="mail-extra-create-title" data-picker-create-title>Person hinzufügen</h2>
+                            <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+                        </div>
+                        <div class="dialog-body">
+                            <p class="text-muted text-sm">Die Person steht nicht im Verzeichnis. Sie erhält die Nachricht als weitere Empfängerin oder weiterer Empfänger; mit <strong>Zu Kontakten hinzufügen</strong> steht sie künftig in der Personenauswahl zur Verfügung.</p>
+                            <div class="form-group">
+                                <label for="mail-extra-create-email">E-Mail-Adresse</label>
+                                <input id="mail-extra-create-email" type="email" maxlength="255" autocomplete="off" data-picker-create-email>
+                            </div>
+                            <div class="form-group">
+                                <label for="mail-extra-create-phone">Rückrufnummer</label>
+                                <input id="mail-extra-create-phone" type="tel" maxlength="60" autocomplete="off" data-picker-create-phone>
+                            </div>
+                            <p class="form-hint">Für den Versand ist eine E-Mail-Adresse erforderlich.</p>
+                            <label class="checkbox-field"><input type="checkbox" value="1" checked data-picker-create-keep> <span>Zu Kontakten hinzufügen</span></label>
+                            <span class="form-error" hidden data-picker-create-error></span>
+                        </div>
+                        <div class="dialog-footer">
+                            <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+                            <button type="button" class="btn btn-primary" data-picker-create-submit><?= icon('plus') ?> Hinzufügen</button>
+                        </div>
+                    </dialog>
+                </div>
+                <ul class="hd-mail-extra-list" data-hd-mail-extra-list hidden></ul>
+                <div data-hd-mail-extra-inputs></div>
+                <p class="form-hint">Auswahl aus dem Intranet-Telefonbuch. Diese Personen erhalten dieselbe Nachricht zusätzlich zur meldenden Person.</p>
+            </div>
+
             <div class="form-group">
                 <label for="mail-subject">Betreff</label>
                 <input id="mail-subject" name="subject" maxlength="180" required value="<?= e($mailCompose['subject']) ?>" data-hd-mail-subject>

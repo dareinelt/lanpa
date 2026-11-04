@@ -557,7 +557,9 @@ $statusTransitions = array_values(array_filter(
             <?php endif; ?>
             <div class="form-group" data-show-for="resolved,closed">
                 <label for="st-resolution">Lösung <span class="text-muted">(Pflicht beim Schließen)</span></label>
-                <textarea id="st-resolution" name="resolution" rows="4" data-required-when-visible data-hd-field="ticket_resolution"><?= e($ticket['resolution'] ?? '') ?></textarea>
+                <textarea id="st-resolution" name="resolution" rows="4" maxlength="2000000" data-required-when-visible data-hd-field="ticket_resolution" data-hd-media-images data-hd-media-preview="#st-resolution-preview"><?= e($ticket['resolution'] ?? '') ?></textarea>
+                <div class="hd-media-preview" id="st-resolution-preview" hidden></div>
+                <p class="form-hint">Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
             </div>
             <div class="form-group" data-show-for="cancelled,closed">
                 <label for="st-reason">Grund <span class="text-muted">(beim Stornieren Pflicht, beim Schließen optional)</span></label>
@@ -581,7 +583,9 @@ $statusTransitions = array_values(array_filter(
             </div>
             <div class="form-group">
                 <label for="st-note">Kommentar an den Melder <span class="text-muted">(optional)</span></label>
-                <textarea id="st-note" name="note" rows="3" data-hd-field="ticket_comment"></textarea>
+                <textarea id="st-note" name="note" rows="3" maxlength="2000000" data-hd-field="ticket_comment" data-hd-media-images data-hd-media-preview="#st-note-preview"></textarea>
+                <div class="hd-media-preview" id="st-note-preview" hidden></div>
+                <p class="form-hint">Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
             </div>
         </div>
         <div class="dialog-footer"><button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button><button type="submit" class="btn btn-primary">Status setzen</button></div>

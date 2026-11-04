@@ -253,8 +253,32 @@
         renderPreview(textarea);
     }
 
+    /**
+     * Prüft, ob der abzusendende Text – also mit aufgelösten Bilddaten – das Feldlimit
+     * (`maxlength`) überschreitet. Ohne Limit (maxLength < 0) wird nichts begrenzt.
+     */
+    function exceedsLimit(textarea, dataUri) {
+        const limit = textarea.maxLength;
+        if (typeof limit !== "number" || limit <= 0) {
+            return false;
+        }
+        const store = storeFor(textarea);
+        let length = textarea.value.length;
+        store.images.forEach(function (uri, token) {
+            const count = textarea.value.split(token).length - 1;
+            if (count > 0) {
+                length += count * (("![Bild](" + uri + ")").length - token.length);
+            }
+        });
+        return length + ("![Bild](" + dataUri + ")").length > limit;
+    }
+
     /** Bild als Marke einfügen; die Daten bleiben in der Map und damit unsichtbar. */
     function addImage(textarea, dataUri) {
+        if (exceedsLimit(textarea, dataUri)) {
+            setNote(textarea, "Das Bild wurde nicht übernommen: Der Text wäre zu lang. Bitte weniger oder kleinere Bilder einfügen.");
+            return;
+        }
         const store = storeFor(textarea);
         store.note = "";
         const token = nextToken(textarea, store);

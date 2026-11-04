@@ -71,7 +71,8 @@ final class TicketRepository extends BaseRepository
             (SELECT COUNT(*) FROM ticket_comments tc WHERE tc.ticket_id = t.id) AS comment_count,
             (SELECT COUNT(*) FROM ticket_attachments ta WHERE ta.ticket_id = t.id) AS attachment_count,
             (SELECT COUNT(*) FROM ticket_assets tas WHERE tas.ticket_id = t.id) AS asset_count,
-            (SELECT GROUP_CONCAT(tg.name ORDER BY tg.name SEPARATOR \',\') FROM ticket_tag_relations tr JOIN ticket_tags tg ON tg.id = tr.tag_id WHERE tr.ticket_id = t.id) AS tag_names'
+            (SELECT GROUP_CONCAT(tg.name ORDER BY tg.name SEPARATOR \',\') FROM ticket_tag_relations tr JOIN ticket_tags tg ON tg.id = tr.tag_id WHERE tr.ticket_id = t.id) AS tag_names,
+            (SELECT MIN(te.created_at) FROM ticket_events te WHERE te.ticket_id = t.id AND te.type = \'viewed\') AS first_viewed_at'
         . self::FROM;
 
     private const FROM = '

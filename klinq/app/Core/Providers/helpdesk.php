@@ -335,7 +335,8 @@ return static function (Container $c): void {
         $c->get(CurrentUser::class),
         $c->get(TicketReportService::class),
         $c->get(TicketRepository::class),
-        $c->get(SupportShiftService::class)
+        $c->get(SupportShiftService::class),
+        $c->get(TicketSlaService::class)
     ));
     $c->singleton(TicketAttachmentService::class, static fn (Container $c): TicketAttachmentService => new TicketAttachmentService(
         $c->get(TicketService::class),

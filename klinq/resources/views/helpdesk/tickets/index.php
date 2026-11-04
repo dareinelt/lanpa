@@ -124,7 +124,9 @@ $canMerge = $can('helpdesk.merge');
             // An mich weitergeleitet und noch nicht übernommen: Zeile hervorheben, bis ich übernehme.
             $forwarded = !empty($r['forwarded_to_user_id']) && (int) $r['forwarded_to_user_id'] === (int) $user['id'] && empty($r['forward_acknowledged_at']);
             $rowClass = trim('ticket-row' . ($closed ? ' is-closed' : '') . (!$closed && $slaState === 'breached' ? ' is-overdue' : '') . (!$closed && $slaState === 'warning' ? ' is-warning' : '') . ($forwarded ? ' is-forwarded' : ''));
-            $remaining = $slaService->remainingMinutes($r['resolution_due_at'], $now);
+            $slaRule = \App\Services\Helpdesk\TicketSlaService::ruleFromRow($r);
+            $remaining = $slaService->remainingMinutes($r['resolution_due_at'], $now, $slaRule);
+            $business = $slaRule !== null ? $slaService->businessProgress($slaRule, $r['created_at'], $r['resolution_due_at'], $now) : null;
         ?>
             <tr data-href="/helpdesk/tickets/<?= (int) $r['id'] ?>" class="<?= $rowClass ?>">
                 <?php if ($canMerge): ?>
@@ -168,7 +170,7 @@ $canMerge = $can('helpdesk.merge');
                     <?php elseif ($r['sla_paused_at'] !== null): ?>
                         <span class="sla-paused"><?= icon('clock', 'icon icon-xs') ?> pausiert</span>
                     <?php else: ?>
-                        <span class="sla-remaining<?= $remaining !== null && $remaining < 0 ? ' is-overdue' : '' ?>" data-hd-due="<?= e($r['resolution_due_at']) ?>"><?= e(\App\Services\Helpdesk\TicketSlaService::humanRemaining($remaining)) ?></span>
+                        <span class="sla-remaining<?= $r['sla_resolution_state'] === 'breached' ? ' is-overdue' : '' ?>" data-hd-due="<?= e($r['resolution_due_at']) ?>"<?= sla_progress_attrs($business) ?>><?= e(\App\Services\Helpdesk\TicketSlaService::humanRemaining($remaining, $r['sla_resolution_state'] === 'breached')) ?></span>
                         <div class="text-xs text-muted"><?= fmt_datetime($r['resolution_due_at']) ?></div>
                     <?php endif; ?>
                 </td>

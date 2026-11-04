@@ -12,6 +12,7 @@ use App\Security\CurrentUser;
 use App\Services\Helpdesk\SupportShiftService;
 use App\Services\Helpdesk\TicketReportService;
 use App\Services\Helpdesk\TicketService;
+use App\Services\Helpdesk\TicketSlaService;
 
 /** Help-Desk-Dashboard: Kennzahlen, eigene Tickets, offene Warteschlange, SLA-Überblick. */
 final class HelpdeskDashboardController extends HelpdeskBaseController
@@ -21,7 +22,8 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
         CurrentUser $currentUser,
         private readonly TicketReportService $reports,
         private readonly TicketRepository $tickets,
-        private readonly SupportShiftService $supportShifts
+        private readonly SupportShiftService $supportShifts,
+        private readonly TicketSlaService $slaService
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -41,6 +43,7 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
             'viewCounts' => $this->tickets->viewCounts((int) $this->currentUser->id()),
             'now' => new \DateTimeImmutable('now', new \DateTimeZone('UTC')),
             'supportShift' => $shift,
+            'slaService' => $this->slaService,
             'isFirstLevel' => $shift['first'] !== null && (int) $shift['first']['user_id'] === (int) $this->currentUser->id(),
             'scripts' => ['/js/helpdesk.js'],
         ]);

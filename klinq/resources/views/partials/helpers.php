@@ -41,6 +41,30 @@ if (!function_exists('fmt_datetime')) {
     }
 }
 
+if (!function_exists('sla_progress_attrs')) {
+    /**
+     * Datenattribute für die Live-Berechnung des SLA-Zählers im Browser.
+     * Nur bei Geschäftszeiten-Regeln gesetzt; ohne sie rechnet das JS kalendarisch.
+     *
+     * @param array{elapsed:int,total:int,days:string,start:string,end:string,tz:string,at?:int}|null $progress
+     */
+    function sla_progress_attrs(?array $progress): string
+    {
+        if ($progress === null) {
+            return '';
+        }
+
+        return ' data-hd-sla-bh="1"'
+            . ' data-hd-sla-elapsed="' . (int) $progress['elapsed'] . '"'
+            . ' data-hd-sla-total="' . (int) $progress['total'] . '"'
+            . ' data-hd-sla-at="' . (int) ($progress['at'] ?? time()) . '"'
+            . ' data-hd-sla-days="' . e((string) $progress['days']) . '"'
+            . ' data-hd-sla-from="' . e((string) $progress['start']) . '"'
+            . ' data-hd-sla-to="' . e((string) $progress['end']) . '"'
+            . ' data-hd-sla-tz="' . e((string) $progress['tz']) . '"';
+    }
+}
+
 if (!function_exists('fmt_money')) {
     function fmt_money(mixed $value, string $fallback = '–'): string
     {

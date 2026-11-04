@@ -280,18 +280,31 @@ final class TicketController extends HelpdeskBaseController
         $shift = $this->supportShifts->today();
         $sla = !empty($ticket['sla_id']) ? $this->slas->find((int) $ticket['sla_id']) : null;
         $warning = $sla !== null ? $this->slaService->warningPercent($sla) : (int) $this->config->get('helpdesk.sla_warning_percent', 75);
+        $businessInfo = function (?string $dueAt) use ($sla, $ticket, $now): ?array {
+            if ($sla === null) {
+                return null;
+            }
+            $progress = $this->slaService->businessProgress($sla, (string) $ticket['created_at'], $dueAt, $now);
+            if ($progress === null) {
+                return null;
+            }
+
+            return $progress + ['at' => $now->getTimestamp()];
+        };
         $slaInfo = [
             'response' => [
-                'state' => $this->slaService->evaluate($ticket['response_due_at'], $ticket['first_response_at'], $now, $ticket['created_at'], $warning),
+                'state' => $this->slaService->evaluate($ticket['response_due_at'], $ticket['first_response_at'], $now, $ticket['created_at'], $warning, $sla),
                 'due' => $ticket['response_due_at'],
-                'remaining' => $this->slaService->remainingMinutes($ticket['response_due_at'], $now),
-                'percent' => $this->slaService->consumedPercent($ticket['created_at'], $ticket['response_due_at'], $now),
+                'remaining' => $this->slaService->remainingMinutes($ticket['response_due_at'], $now, $sla),
+                'percent' => $this->slaService->consumedPercent($ticket['created_at'], $ticket['response_due_at'], $now, $sla),
+                'business' => $businessInfo($ticket['response_due_at']),
             ],
             'resolution' => [
-                'state' => $this->slaService->evaluate($ticket['resolution_due_at'], $ticket['resolved_at'], $now, $ticket['created_at'], $warning),
+                'state' => $this->slaService->evaluate($ticket['resolution_due_at'], $ticket['resolved_at'], $now, $ticket['created_at'], $warning, $sla),
                 'due' => $ticket['resolution_due_at'],
-                'remaining' => $this->slaService->remainingMinutes($ticket['resolution_due_at'], $now),
-                'percent' => $this->slaService->consumedPercent($ticket['created_at'], $ticket['resolution_due_at'], $now),
+                'remaining' => $this->slaService->remainingMinutes($ticket['resolution_due_at'], $now, $sla),
+                'percent' => $this->slaService->consumedPercent($ticket['created_at'], $ticket['resolution_due_at'], $now, $sla),
+                'business' => $businessInfo($ticket['resolution_due_at']),
             ],
             'paused' => $ticket['sla_paused_at'] !== null,
             'paused_minutes' => (int) ($ticket['sla_paused_minutes'] ?? 0),

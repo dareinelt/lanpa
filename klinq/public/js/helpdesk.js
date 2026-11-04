@@ -282,19 +282,66 @@
         if (dialog) { hdSyncPause(dialog); }
     });
 
+    // ---------------------------------------------------------------- SLA: Zähler pausiert außerhalb der Dienstzeiten
+    const hdSlaWeekdays = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+    const hdSlaRule = function (el) {
+        if (el.getAttribute("data-hd-sla-bh") !== "1") { return null; }
+        const days = (el.getAttribute("data-hd-sla-days") || "").split(",").map(Number).filter(function (d) { return d >= 1 && d <= 7; });
+        const from = (el.getAttribute("data-hd-sla-from") || "").split(":");
+        const to = (el.getAttribute("data-hd-sla-to") || "").split(":");
+        if (days.length === 0 || from.length < 2 || to.length < 2) { return null; }
+        const rule = {
+            days: days,
+            startMin: Number(from[0]) * 60 + Number(from[1]),
+            endMin: Number(to[0]) * 60 + Number(to[1]),
+            tz: el.getAttribute("data-hd-sla-tz") || "Europe/Berlin"
+        };
+        return rule.endMin > rule.startMin ? rule : null;
+    };
+    const hdSlaZoned = function (ts, tz) {
+        const parts = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(ts));
+        const pick = function (type) {
+            const part = parts.find(function (p) { return p.type === type; });
+            return part ? part.value : "";
+        };
+        return { day: hdSlaWeekdays[pick("weekday")] || 0, minute: (Number(pick("hour")) % 24) * 60 + Number(pick("minute")) };
+    };
+    const hdSlaInside = function (rule, ts) {
+        const zoned = hdSlaZoned(ts, rule.tz);
+        return rule.days.indexOf(zoned.day) !== -1 && zoned.minute >= rule.startMin && zoned.minute < rule.endMin;
+    };
+    // Verbleibende Dienstminuten aus den Serverwerten; der Zähler läuft nur im Zeitfenster weiter.
+    const hdSlaClock = function (el) {
+        const rule = hdSlaRule(el);
+        if (!rule) { return null; }
+        const total = Number(el.getAttribute("data-hd-sla-total")) || 0;
+        const elapsed = Number(el.getAttribute("data-hd-sla-elapsed")) || 0;
+        return { rule: rule, total: total, leftMs: (total - elapsed) * 60000, last: Date.now() };
+    };
+    const hdSlaTick = function (clock, now) {
+        if (hdSlaInside(clock.rule, now)) { clock.leftMs -= Math.max(0, now - clock.last); }
+        clock.last = now;
+    };
+
     // ---------------------------------------------------------------- Ticketliste: Zeitanzeige relativ aktualisieren (SLA-Restzeit)
     document.querySelectorAll("[data-hd-due]").forEach(function (el) {
         const due = new Date(el.getAttribute("data-hd-due").replace(" ", "T") + "Z");
         if (isNaN(due.getTime())) { return; }
+        const clock = hdSlaClock(el);
+        // Einmal verletzt bleibt verletzt – auch wenn außerhalb der Dienstzeit 0 Minuten übrig sind.
+        const wasOverdue = el.classList.contains("is-overdue");
         function render() {
-            const minutes = Math.floor((due.getTime() - Date.now()) / 60000);
+            const now = Date.now();
+            if (clock) { hdSlaTick(clock, now); }
+            const minutes = clock ? Math.floor(clock.leftMs / 60000) : Math.floor((due.getTime() - now) / 60000);
             const abs = Math.abs(minutes);
             const parts = [];
             if (abs >= 1440) { parts.push(Math.floor(abs / 1440) + " T"); }
             if (abs % 1440 >= 60) { parts.push(Math.floor((abs % 1440) / 60) + " h"); }
             if (abs % 60 > 0 || parts.length === 0) { parts.push((abs % 60) + " min"); }
-            el.textContent = (minutes < 0 ? "überfällig seit " : "noch ") + parts.join(" ");
-            el.classList.toggle("is-overdue", minutes < 0);
+            const overdue = minutes < 0 || wasOverdue;
+            el.textContent = (overdue ? "überfällig seit " : "noch ") + parts.join(" ");
+            el.classList.toggle("is-overdue", overdue);
         }
         render();
         window.setInterval(render, 60000);
@@ -310,6 +357,7 @@
             el: el,
             start: start.getTime(),
             due: due.getTime(),
+            clock: hdSlaClock(el),
             warning: parseFloat(el.getAttribute("data-hd-sla-warning")) || 75
         });
     });
@@ -317,7 +365,15 @@
         const renderSlaBars = function () {
             const now = Date.now();
             slaBars.forEach(function (bar) {
-                const percent = (now - bar.start) * 100 / (bar.due - bar.start);
+                let percent;
+                if (bar.clock) {
+                    hdSlaTick(bar.clock, now);
+                    // Prozent aus Dienstminuten, sonst würde die Nachtzeit den Balken verfälschen
+                    const left = bar.clock.leftMs / 60000;
+                    percent = bar.clock.total > 0 ? (bar.clock.total - left) * 100 / bar.clock.total : 0;
+                } else {
+                    percent = (now - bar.start) * 100 / (bar.due - bar.start);
+                }
                 bar.el.value = Math.max(0, Math.min(100, percent));
                 bar.el.classList.toggle("is-warning", percent >= bar.warning && percent < 100);
                 bar.el.classList.toggle("is-breached", percent >= 100);

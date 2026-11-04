@@ -212,6 +212,81 @@ final class HelpdeskLogicTest extends TestCase
         $this->assertSame('noch 2 h 15 min', TicketSlaService::humanRemaining(135));
         $this->assertSame('noch 1 T 1 h', TicketSlaService::humanRemaining(1500));
         $this->assertSame('überfällig seit 40 min', TicketSlaService::humanRemaining(-40));
+        $this->assertSame('überfällig seit 0 min', TicketSlaService::humanRemaining(0, true), 'Verletzt trotz 0 Restminuten');
+    }
+
+    public function testSlaCounterPausesOutsideBusinessHours(): void
+    {
+        $s = $this->sla();
+        // Dienstzeit Mo–Fr 08:00–17:00 Ortszeit (März = MEZ = UTC+1)
+        $sla = ['business_hours_only' => 1, 'business_days' => '1,2,3,4,5', 'business_start' => '08:00:00', 'business_end' => '17:00:00', 'warning_percent' => 40];
+        $at = static fn (string $t): \DateTimeImmutable => new \DateTimeImmutable($t, new \DateTimeZone('UTC'));
+
+        // Dienstag 09:00 Ortszeit bis Mittwoch 17:00 Ortszeit = 480 + 540 Dienstminuten
+        $started = '2026-03-10 08:00:00';
+        $due = '2026-03-11 16:00:00';
+
+        $this->assertSame(1020, $s->businessMinutesBetween($sla, $at($started), $at($due)), 'Summe der Dienstminuten');
+        $this->assertSame(47, $s->consumedPercent($started, $due, $at('2026-03-10 18:00:00'), $sla), '19:00 Ortszeit');
+        $this->assertSame(540, $s->remainingMinutes($due, $at('2026-03-10 18:00:00'), $sla));
+
+        // Nachts steht der Zähler: 06:00 Ortszeit am Mittwoch ergibt denselben Stand
+        $this->assertSame(47, $s->consumedPercent($started, $due, $at('2026-03-11 05:00:00'), $sla), '06:00 Ortszeit');
+        $this->assertSame(540, $s->remainingMinutes($due, $at('2026-03-11 05:00:00'), $sla));
+        $this->assertSame('warning', $s->evaluate($due, null, $at('2026-03-11 05:00:00'), $started, 40, $sla));
+
+        // Ab Dienstbeginn läuft er weiter: 09:00 Ortszeit = 540 von 1020 Dienstminuten
+        $this->assertSame(52, $s->consumedPercent($started, $due, $at('2026-03-11 08:00:00'), $sla));
+        $this->assertSame(480, $s->remainingMinutes($due, $at('2026-03-11 08:00:00'), $sla));
+    }
+
+    public function testSlaCounterPausesOnWeekend(): void
+    {
+        $s = $this->sla();
+        $sla = ['business_hours_only' => 1, 'business_days' => '1,2,3,4,5', 'business_start' => '08:00:00', 'business_end' => '17:00:00'];
+        $at = static fn (string $t): \DateTimeImmutable => new \DateTimeImmutable($t, new \DateTimeZone('UTC'));
+
+        // Freitag 09:00 Ortszeit bis Montag 17:00 Ortszeit
+        $started = '2026-03-13 08:00:00';
+        $due = '2026-03-16 16:00:00';
+
+        $this->assertSame(47, $s->consumedPercent($started, $due, $at('2026-03-14 12:00:00'), $sla), 'Samstag');
+        $this->assertSame(47, $s->consumedPercent($started, $due, $at('2026-03-16 06:00:00'), $sla), 'Montag vor Dienstbeginn');
+        $this->assertSame(52, $s->consumedPercent($started, $due, $at('2026-03-16 08:00:00'), $sla), 'Montag 09:00 Ortszeit');
+    }
+
+    public function testSlaBusinessHoursFallbacksAndPauseShift(): void
+    {
+        $s = $this->sla();
+        $at = static fn (string $t): \DateTimeImmutable => new \DateTimeImmutable($t, new \DateTimeZone('UTC'));
+
+        // Ohne Geschäftszeiten bleibt alles kalendarisch
+        $this->assertSame(120, $s->businessMinutesBetween(['business_hours_only' => 0], $at('2026-03-10 10:00:00'), $at('2026-03-10 12:00:00')));
+        $this->assertSame(120, $s->remainingMinutes('2026-03-10 12:00:00', $at('2026-03-10 10:00:00'), ['business_hours_only' => 0]));
+
+        $sla = ['business_hours_only' => 1, 'business_days' => '1,2,3,4,5', 'business_start' => '08:00:00', 'business_end' => '17:00:00'];
+        // Pausierte Dienstminuten schieben die Fälligkeit über den Feierabend hinweg
+        $this->assertSame('2026-03-11 08:00:00', $s->shiftDueByRule('2026-03-10 16:00:00', 60, $sla));
+        $this->assertSame('2026-03-10 17:00:00', $s->shiftDueByRule('2026-03-10 16:00:00', 60, null), 'ohne Regel kalendarisch');
+    }
+
+    public function testSlaRuleFromTicketRow(): void
+    {
+        $this->assertNull(TicketSlaService::ruleFromRow(['sla_id' => null]));
+        $rule = TicketSlaService::ruleFromRow([
+            'sla_id' => 3,
+            'sla_business_hours_only' => 1,
+            'sla_business_days' => '1,2,3',
+            'sla_business_start' => '07:30:00',
+            'sla_business_end' => '16:00:00',
+            'sla_warning_percent' => 60,
+            'sla_escalation_percent' => 85,
+        ]);
+        $this->assertSame(3, $rule['id']);
+        $this->assertSame(1, $rule['business_hours_only']);
+        $this->assertSame('1,2,3', $rule['business_days']);
+        $this->assertSame('07:30:00', $rule['business_start']);
+        $this->assertSame(85, $rule['escalation_percent']);
     }
 
     // ------------------------------------------------------------------ Regeln

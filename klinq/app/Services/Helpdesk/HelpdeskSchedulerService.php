@@ -71,7 +71,7 @@ final class HelpdeskSchedulerService
 
             // Reaktionszeit (nur bis zur ersten Reaktion relevant)
             if ($ticket['first_response_at'] === null && $ticket['response_due_at'] !== null) {
-                $state = $this->sla->evaluate($ticket['response_due_at'], null, $now, $ticket['created_at'], $warning);
+                $state = $this->sla->evaluate($ticket['response_due_at'], null, $now, $ticket['created_at'], $warning, $rule);
                 if ($state !== $ticket['sla_response_state']) {
                     $update['sla_response_state'] = $state;
                     $events[] = ['response', $state];
@@ -79,7 +79,7 @@ final class HelpdeskSchedulerService
             }
             // Lösungszeit
             if ($ticket['resolution_due_at'] !== null) {
-                $state = $this->sla->evaluate($ticket['resolution_due_at'], null, $now, $ticket['created_at'], $warning);
+                $state = $this->sla->evaluate($ticket['resolution_due_at'], null, $now, $ticket['created_at'], $warning, $rule);
                 if ($state !== $ticket['sla_resolution_state']) {
                     $update['sla_resolution_state'] = $state;
                     $events[] = ['resolution', $state];
@@ -121,7 +121,7 @@ final class HelpdeskSchedulerService
         if ($ticket['resolution_due_at'] === null) {
             return false;
         }
-        $percent = $this->sla->consumedPercent($ticket['created_at'], $ticket['resolution_due_at'], $now);
+        $percent = $this->sla->consumedPercent($ticket['created_at'], $ticket['resolution_due_at'], $now, $rule);
         $level = 0;
         if ($percent !== null && $percent >= 100) {
             $level = 2;
@@ -165,16 +165,17 @@ final class HelpdeskSchedulerService
         }
         $count = 0;
         foreach ($this->tickets->pausedUntilReached($now->format('Y-m-d H:i:s')) as $ticket) {
+            $rule = TicketSlaService::ruleFromRow($ticket);
             $paused = $ticket['sla_paused_at'] !== null
-                ? (int) floor(($now->getTimestamp() - $this->sla->parse((string) $ticket['sla_paused_at'])->getTimestamp()) / 60)
+                ? $this->sla->businessMinutesBetween($rule ?? [], $this->sla->parse((string) $ticket['sla_paused_at']), $now)
                 : 0;
             $this->tickets->update((int) $ticket['id'], [
                 'status_id' => (int) $inProgress['id'],
                 'sla_paused_at' => null,
                 'paused_until' => null,
                 'sla_paused_minutes' => (int) $ticket['sla_paused_minutes'] + max(0, $paused),
-                'response_due_at' => $ticket['first_response_at'] !== null ? $ticket['response_due_at'] : $this->sla->shiftDue($ticket['response_due_at'], $paused),
-                'resolution_due_at' => $this->sla->shiftDue($ticket['resolution_due_at'], $paused),
+                'response_due_at' => $ticket['first_response_at'] !== null ? $ticket['response_due_at'] : $this->sla->shiftDueByRule($ticket['response_due_at'], $paused, $rule),
+                'resolution_due_at' => $this->sla->shiftDueByRule($ticket['resolution_due_at'], $paused, $rule),
             ]);
             $this->tickets->addEvent((int) $ticket['id'], 'resumed', null, self::SYSTEM_USER, 'status', (string) $ticket['status_name'], (string) $inProgress['name'], ['auto' => true]);
             $fresh = $this->tickets->find((int) $ticket['id']) ?? $ticket;

@@ -101,16 +101,28 @@ final class AssetService
     public function update(int $id, array $existing, array $input): void
     {
         $data = $this->validate($input, $existing);
-        unset($data['inventory_number'], $data['is_legacy']);
+        $inventoryNumberReason = $data['inventory_number_reason'] ?? null;
+        unset($data['inventory_number_reason'], $data['is_legacy']);
         $expectedVersion = isset($input['version']) && $input['version'] !== '' ? (int) $input['version'] : (int) $existing['version'];
 
-        $this->assets->transaction(function () use ($id, $existing, $data, $expectedVersion): void {
+        $this->assets->transaction(function () use ($id, $existing, $data, $expectedVersion, $inventoryNumberReason): void {
             if (!$this->assets->updateVersioned($id, $expectedVersion, $data)) {
                 throw new ConflictException('Das Asset wurde zwischenzeitlich von einer anderen Person geändert. Bitte Seite neu laden und Änderungen erneut vornehmen.');
             }
             $fresh = $this->assets->find($id) ?? $existing;
             $this->recordDiff($id, $existing, $fresh);
-            $this->audit->log('update', 'asset', $id, (string) $existing['inventory_number'], $existing, $data);
+            // Umnummerierung mit Pflichtgrund gesondert dokumentieren (recordDiff kennt keinen Grund)
+            if ($inventoryNumberReason !== null) {
+                $this->history->add($id, $this->entry(
+                    'inventory_number_changed',
+                    'inventory_number',
+                    (string) $existing['inventory_number'],
+                    (string) $fresh['inventory_number'],
+                    note: $inventoryNumberReason
+                ));
+            }
+            $auditData = $inventoryNumberReason !== null ? $data + ['inventory_number_reason' => $inventoryNumberReason] : $data;
+            $this->audit->log('update', 'asset', $id, (string) $fresh['inventory_number'], $existing, $auditData);
         });
     }
 
@@ -199,8 +211,9 @@ final class AssetService
             ->id('status_id', 'Status')
             ->id('parent_asset_id', 'Übergeordnetes Asset')
             ->text('note', 'Bemerkung', false, 5000);
+        $v->string('inventory_number', 'Inventarnummer', false, 20);
         if ($existing === null) {
-            $v->bool('is_legacy')->string('inventory_number', 'Inventarnummer', false, 20);
+            $v->bool('is_legacy');
         }
         $data = $v->validated();
 
@@ -283,19 +296,32 @@ final class AssetService
             }
         }
 
-        // Manuelle Inventarnummer (nur Altbestand/Import)
+        // Inventarnummer: bei der Anlage optional manuell (Altbestand/Import), bei der Bearbeitung nur mit Grund
         if ($existing === null) {
             if ($data['inventory_number'] !== null) {
-                $number = strtoupper(preg_replace('/\s+/', '', $data['inventory_number']) ?? '');
-                if (!InventoryNumberService::isValid($number) || !str_starts_with($number, (string) $type['inventory_prefix'])) {
-                    throw ValidationException::single('inventory_number', 'Die Inventarnummer muss dem Format ' . $type['inventory_prefix'] . 'JJNNN entsprechen (z. B. ' . $type['inventory_prefix'] . '88001).');
-                }
-                if ($this->assets->findByUniqueField('inventory_number', $number) !== null) {
-                    throw ValidationException::single('inventory_number', 'Diese Inventarnummer ist bereits vergeben.');
-                }
-                $data['inventory_number'] = $number;
+                $data['inventory_number'] = $this->checkInventoryNumber((string) $data['inventory_number'], (string) $type['inventory_prefix'], null);
             } else {
                 unset($data['inventory_number']);
+            }
+        } elseif (!array_key_exists('inventory_number', $input)) {
+            // Aufrufe ohne Formularfeld (z. B. Import/Systemprozesse) lassen die Nummer unverändert
+            unset($data['inventory_number']);
+        } elseif ($data['inventory_number'] === null) {
+            throw ValidationException::single('inventory_number', 'Inventarnummer ist erforderlich.');
+        } else {
+            $number = $this->checkInventoryNumber((string) $data['inventory_number'], (string) $type['inventory_prefix'], $excludeId);
+            if ($number === (string) $existing['inventory_number']) {
+                unset($data['inventory_number']);
+            } else {
+                $reason = trim((string) ($input['inventory_number_reason'] ?? ''));
+                if ($reason === '') {
+                    throw ValidationException::single('inventory_number_reason', 'Bitte einen Grund für die Änderung der Inventarnummer angeben.');
+                }
+                if (mb_strlen($reason) > 500) {
+                    throw ValidationException::single('inventory_number_reason', 'Der Grund darf höchstens 500 Zeichen lang sein.');
+                }
+                $data['inventory_number'] = $number;
+                $data['inventory_number_reason'] = $reason;
             }
         }
 
@@ -396,6 +422,23 @@ final class AssetService
         }
 
         return (string) $value;
+    }
+
+    /**
+     * Prüft eine manuell eingegebene Inventarnummer auf Format, Präfix und Eindeutigkeit.
+     * Liefert die normalisierte Nummer (Großbuchstaben, ohne Leerzeichen).
+     */
+    private function checkInventoryNumber(string $raw, string $prefix, ?int $excludeId): string
+    {
+        $number = strtoupper(preg_replace('/\s+/', '', $raw) ?? '');
+        if (!InventoryNumberService::isValid($number) || !str_starts_with($number, $prefix)) {
+            throw ValidationException::single('inventory_number', 'Die Inventarnummer muss dem Format ' . $prefix . 'JJNNN entsprechen (z. B. ' . $prefix . '88001).');
+        }
+        if ($this->assets->findByUniqueField('inventory_number', $number, $excludeId) !== null) {
+            throw ValidationException::single('inventory_number', 'Diese Inventarnummer ist bereits vergeben.');
+        }
+
+        return $number;
     }
 
     /** Seriennummer für Dublettenvergleich: Großbuchstaben, ohne Leerzeichen/Bindestriche. */

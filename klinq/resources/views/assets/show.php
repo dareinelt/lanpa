@@ -7,8 +7,9 @@ $eventLabels = [
     'created' => 'Angelegt', 'status_changed' => 'Statuswechsel', 'assignment_changed' => 'Zuordnung Mitarbeiter', 'location_changed' => 'Standortwechsel',
     'cost_center_changed' => 'Kostenstelle', 'field_changed' => 'Änderung', 'note' => 'Kommentar', 'checkout' => 'Entnahme', 'return' => 'Rückgabe',
     'label_printed' => 'Etikett gedruckt', 'movement_completed' => 'Vorgang abgeschlossen', 'movement_cancelled' => 'Vorgang storniert', 'goods_receipt' => 'Wareneingang', 'import' => 'Import', 'license_assigned' => 'Lizenz zugewiesen', 'license_removed' => 'Lizenz entfernt',
+    'inventory_number_changed' => 'Inventarnummer geändert',
 ];
-$eventClass = ['status_changed' => 'is-warning', 'created' => 'is-success', 'checkout' => 'is-warning', 'return' => 'is-success', 'movement_cancelled' => 'is-danger'];
+$eventClass = ['status_changed' => 'is-warning', 'created' => 'is-success', 'checkout' => 'is-warning', 'return' => 'is-success', 'movement_cancelled' => 'is-danger', 'inventory_number_changed' => 'is-warning'];
 ?>
 <div class="page-header">
     <div>
@@ -200,7 +201,7 @@ $eventClass = ['status_changed' => 'is-warning', 'created' => 'is-success', 'che
                 <span class="timeline-dot"></span>
                 <div class="timeline-time"><?= fmt_datetime($h['created_at']) ?> · <?= e($h['user_display_name'] ?? $h['actor_name']) ?></div>
                 <div class="timeline-title">
-                    <?= e($eventLabels[$h['event_type']] ?? $h['event_type']) ?><?= $h['field'] && !in_array($h['event_type'], ['status_changed', 'assignment_changed', 'location_changed', 'cost_center_changed'], true) ? ': ' . e($label) : '' ?>
+                    <?= e($eventLabels[$h['event_type']] ?? $h['event_type']) ?><?= $h['field'] && !in_array($h['event_type'], ['status_changed', 'assignment_changed', 'location_changed', 'cost_center_changed', 'inventory_number_changed'], true) ? ': ' . e($label) : '' ?>
                 </div>
                 <?php if ($h['event_type'] === 'created'): ?>
                     <div class="timeline-detail">Inventarnummer <span class="mono"><?= e($h['new_value']) ?></span> vergeben</div>

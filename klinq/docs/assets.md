@@ -1,6 +1,6 @@
 # Assets (Inventar)
 
-Das Asset ist das zentrale Objekt der Anwendung. Jedes physische Gerät erhält genau eine Inventarnummer, die auf dem Etikett steht und über die gesamte Lebensdauer erhalten bleibt.
+Das Asset ist das zentrale Objekt der Anwendung. Jedes physische Gerät erhält genau eine Inventarnummer, die auf dem Etikett steht und über die gesamte Lebensdauer erhalten bleibt. Sie kann in begründeten Ausnahmefällen (z. B. falsch bedrucktes Etikett) im Asset geändert werden; die Änderung ist nur mit Pflichtangabe eines Grundes möglich und wird in der Historie dokumentiert.
 
 ![Assetliste](screenshots/assets-list.png)
 
@@ -19,6 +19,7 @@ Regeln:
 - Wurden Nummern manuell oder per Import vergeben, springt die Sequenz automatisch hinter die höchste vorhandene Nummer (`InventoryNumberService::next`).
 - Manuelle Nummern sind nur bei „Altbestand nachinventarisieren“ möglich. Sie müssen dem Format `PRÄFIXJJNNN` entsprechen und mit dem Präfix des gewählten Assettyps beginnen (`assets.inventory_number` ist UNIQUE).
 - Der Assettyp ist nach dem Anlegen unveränderlich, weil er das Präfix bestimmt.
+- **Bearbeiten**: Die Inventarnummer lässt sich im Bearbeiten-Formular ändern. Voraussetzung sind die Berechtigung `assets.manage`, ein **Grund** (`inventory_number_reason`, Pflichtfeld) sowie eine freie Nummer mit passendem Präfix und gültigem Format. Die Änderung erzeugt einen Historieneintrag `inventory_number_changed` mit altem/neuem Wert und dem Grund (`asset_history.note`); das Audit-Log protokolliert zusätzlich den Grund. Die laufende Nummer der Sequenz bleibt unberührt – höhere Nummern werden bei der nächsten Vergabe automatisch übersprungen.
 
 ## Erfassung
 
@@ -62,6 +63,7 @@ Jede Änderung erzeugt Einträge in `asset_history` – mit Klartext (alter → 
 | `assignment_changed` | Mitarbeiterzuordnung geändert |
 | `location_changed` / `cost_center_changed` | Standort bzw. Kostenstelle geändert |
 | `field_changed` | Sonstige Felder (Bezeichnung, Seriennummer, Preis …) |
+| `inventory_number_changed` | Inventarnummer geändert (alter/neuer Wert, Grund in `note`) |
 | `note` | Freier Kommentar aus der Detailansicht |
 
 Bearbeitungen verwenden **optimistisches Locking** (`assets.version`): Speichert eine zweite Person zwischenzeitlich, wird die Änderung abgewiesen und die Seite zum Neuladen aufgefordert – stille Überschreibungen sind ausgeschlossen.

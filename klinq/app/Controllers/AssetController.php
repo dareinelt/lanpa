@@ -146,6 +146,7 @@ final class AssetController extends BaseController
             $this->service->update($id, $row, $request->all());
         } catch (ValidationException $e) {
             $this->withOldInput($request, $e->errors());
+            $this->flash('error', implode(' ', $e->errors()));
 
             return $this->redirect('/assets/' . $id . '/edit');
         } catch (ConflictException $e) {

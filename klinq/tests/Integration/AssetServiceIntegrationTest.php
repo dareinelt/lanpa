@@ -10,6 +10,7 @@ use App\Exceptions\ValidationException;
 use App\Repositories\AssetHistoryRepository;
 use App\Repositories\AssetRepository;
 use App\Repositories\AssetTypeRepository;
+use App\Repositories\AuditLogRepository;
 use App\Repositories\EmployeeRepository;
 use App\Security\CurrentUser;
 use App\Services\AssetService;
@@ -33,6 +34,17 @@ final class AssetServiceIntegrationTest extends DatabaseTestCase
     private function pcInput(array $overrides = []): array
     {
         return array_merge(['asset_type_id' => $this->typeId('PC'), 'name' => 'Testgerät'], $overrides);
+    }
+
+    /** Artikel aus den Stammdaten (Pflichtfeld beim Anlegen); wird mit der Testtransaktion zurückgerollt. */
+    private function createPcArticle(): int
+    {
+        $this->pdo->exec("INSERT INTO manufacturers (name) VALUES ('Testhersteller')");
+        $manufacturerId = (int) $this->pdo->lastInsertId();
+        $this->pdo->prepare('INSERT INTO articles (manufacturer_id, asset_type_id, name, article_number, is_active) VALUES (?, ?, ?, ?, 1)')
+            ->execute([$manufacturerId, (int) $this->typeId('PC'), 'Testgerät PC', 'PC-TEST']);
+
+        return (int) $this->pdo->lastInsertId();
     }
 
     public function testSequenceIsPerPrefixAndYearAndCatchesUpWithManualNumbers(): void
@@ -152,6 +164,78 @@ final class AssetServiceIntegrationTest extends DatabaseTestCase
         // Zweiter Bearbeiter mit veralteter Version
         $this->assertThrows(ConflictException::class, fn () => $svc->update($id, $existing, ['name' => 'Konflikt', 'version' => (string) $existing['version']]));
         $this->assertSame('Neu', $assets->find($id)['name']);
+    }
+
+    public function testInventoryNumberIsEditableOnlyWithReason(): void
+    {
+        $this->loginAs('admin');
+        $svc = $this->c->get(AssetService::class);
+        $assets = $this->c->get(AssetRepository::class);
+        $history = $this->c->get(AssetHistoryRepository::class);
+        $articleId = $this->createPcArticle();
+        $id = $svc->create($this->pcInput(['article_id' => (string) $articleId, 'is_legacy' => '1', 'inventory_number' => 'PC88001']))['id'];
+
+        // Ohne Grund wird die Änderung abgewiesen
+        $existing = $assets->find($id);
+        $this->assertThrows(ValidationException::class, fn () => $svc->update($id, $existing, [
+            'article_id' => (string) $articleId,
+            'inventory_number' => 'PC88002',
+            'version' => (string) $existing['version'],
+        ]), 'Grund');
+        $this->assertSame('PC88001', $assets->find($id)['inventory_number']);
+
+        // Präfix des Assettyps und Format bleiben verbindlich
+        $this->assertThrows(ValidationException::class, fn () => $svc->update($id, $existing, [
+            'article_id' => (string) $articleId,
+            'inventory_number' => 'MD88002',
+            'inventory_number_reason' => 'Korrektur',
+            'version' => (string) $existing['version'],
+        ]), 'Format');
+        $this->assertThrows(ValidationException::class, fn () => $svc->update($id, $existing, [
+            'article_id' => (string) $articleId,
+            'inventory_number' => 'PC8801',
+            'inventory_number_reason' => 'Korrektur',
+            'version' => (string) $existing['version'],
+        ]), 'Format');
+
+        // Mit Grund: normalisiert gespeichert und in Historie + Audit dokumentiert
+        $svc->update($id, $existing, [
+            'article_id' => (string) $articleId,
+            'inventory_number' => ' pc88002 ',
+            'inventory_number_reason' => 'Etikett falsch bedruckt',
+            'version' => (string) $existing['version'],
+        ]);
+        $fresh = $assets->find($id);
+        $this->assertSame('PC88002', $fresh['inventory_number']);
+        $change = array_values(array_filter($history->forAsset($id), static fn ($h) => $h['event_type'] === 'inventory_number_changed'))[0];
+        $this->assertSame('PC88001', $change['old_value']);
+        $this->assertSame('PC88002', $change['new_value']);
+        $this->assertSame('Etikett falsch bedruckt', $change['note']);
+        $audit = array_values(array_filter(
+            $this->c->get(AuditLogRepository::class)->forObject('asset', $id),
+            static fn ($a) => $a['action'] === 'update'
+        ));
+        $this->assertSame('Etikett falsch bedruckt', json_decode((string) $audit[0]['new_data'], true)['inventory_number_reason']);
+
+        // Bereits vergebene Nummer wird abgelehnt
+        $other = $svc->create($this->pcInput(['article_id' => (string) $articleId, 'is_legacy' => '1', 'inventory_number' => 'PC88003']))['id'];
+        $otherRow = $assets->find($other);
+        $this->assertThrows(ValidationException::class, fn () => $svc->update($other, $otherRow, [
+            'article_id' => (string) $articleId,
+            'inventory_number' => 'PC88002',
+            'inventory_number_reason' => 'Tausch',
+            'version' => (string) $otherRow['version'],
+        ]), 'vergeben');
+
+        // Unveränderte Nummer benötigt keinen Grund
+        $svc->update($id, $fresh, [
+            'article_id' => (string) $articleId,
+            'inventory_number' => 'PC88002',
+            'name' => 'Umbenannt',
+            'version' => (string) $fresh['version'],
+        ]);
+        $this->assertSame('Umbenannt', $assets->find($id)['name']);
+        $this->assertCount(1, array_filter($history->forAsset($id), static fn ($h) => $h['event_type'] === 'inventory_number_changed'));
     }
 
     public function testStatusChangeClearsAssignmentAndRequiresRetirePermission(): void

@@ -256,7 +256,7 @@ $journalLabels = [
     <?php endif; ?>
 
     <?php if ($can('helpdesk.tasks')): ?>
-        <details class="side-edit">
+        <details class="side-edit"<?= has_error('due_at') ? ' open' : '' ?>>
         <summary class="side-edit-summary"><?= icon('pen', 'icon icon-xs') ?> Fälligkeit ändern</summary>
         <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/faelligkeit" class="stack-form">
             <?= csrf_field() ?>

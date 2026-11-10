@@ -423,6 +423,15 @@
     }
     document.querySelectorAll("[data-toggle-target]").forEach(applyToggle);
 
+    // Wischbare Reiterleisten (schmale Bildschirme): aktiven Reiter sichtbar machen.
+    // scrollLeft statt scrollIntoView, damit die Seite selbst nicht springt.
+    document.querySelectorAll(".status-tabs").forEach(function (tabs) {
+        const active = tabs.querySelector(".status-tab.is-active");
+        if (!active || tabs.scrollWidth <= tabs.clientWidth) { return; }
+        const offset = active.getBoundingClientRect().left - tabs.getBoundingClientRect().left + tabs.scrollLeft;
+        tabs.scrollLeft = Math.max(0, offset - (tabs.clientWidth - active.offsetWidth) / 2);
+    });
+
     window.AppUI = {
         toast: showToast,
         confirm: confirmOverlay,

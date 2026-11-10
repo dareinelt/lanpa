@@ -187,7 +187,7 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 - **Noch nicht angesehene Tickets**: `TicketRepository::SELECT` liefert `first_viewed_at` als
   `MIN(ticket_events.created_at)` der Ereignisse `type = 'viewed'` (geschrieben von
   `TicketService::recordView()`, nur für Agenten). Die Liste markiert offene Tickets ohne solches Ereignis
-  mit `is-unseen` (fett, `--color-danger-soft`); weitergeleitete Tickets behalten die gelbe Markierung.
+  mit `is-unseen` (fett, Akzentstreifen und leichte Akzentfläche; Legende unter der Tabelle); weitergeleitete Tickets behalten die gelbe Markierung.
 - **Sortierung der Aufgabenliste je Benutzer**: `users.task_sort`/`task_sort_dir` speichern dieselbe Wahl für
   „Alle Aufgaben“ und „Meine Aufgaben“. `TaskController::sortFrom()` löst sie über
   `UserRepository::taskSort()`/`rememberTaskSort()` auf, gegen `TaskRepository::SORTABLE` geprüft; ohne Wahl

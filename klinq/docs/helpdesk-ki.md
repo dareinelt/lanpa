@@ -71,6 +71,17 @@ Grenzwerte: 8.000 Zeichen markierter Text, 1.000 Zeichen Anweisung, 1.200 Ausgab
 Anweisungen und erzeugte Texte werden **nicht** gespeichert; sie stehen nur im Browser und im Speicher des
 Anfrage-Threads.
 
+## Datumsvorschläge für Kalendertermine
+
+Derselbe Endpunkt analysiert beim Dialog **Termin anlegen** im Ticket den Tickettext auf Datumsangaben
+(`CalendarDateSuggestionService`, `GET /helpdesk/tickets/{id}/termin-vorschlaege`). Das Modell erhält Betreff und
+Beschreibung (eingebettete Bilder entfernt, höchstens 6.000 Zeichen) sowie Wochentag und Datum der Ticketerstellung
+als Bezug für relative Angaben und soll nur JSON liefern:
+`{"termine":[{"datum":"JJJJ-MM-TT","beginn":"HH:MM"|null,"ende":"HH:MM"|null,"beschreibung":"…","textstelle":"…"}]}`.
+Die Antwort wird tolerant ausgewertet (Codeblöcke, Begleittext, Datum auch als `TT.MM.JJJJ`), jedes Datum geprüft,
+doppelte Angaben werden zusammengefasst (höchstens 10). Gespeichert wird nichts. Ist die KI ausgeschaltet oder nicht
+erreichbar, trägt der Agent das Datum manuell ein – siehe [Help Desk → Kalender](helpdesk.md#kalender).
+
 ## Konfiguration: Administration → „KI-Unterstützung (Help Desk)“
 
 Die Seite liegt unter `/admin/helpdesk-ai` und benötigt das Recht `settings.manage`

@@ -105,6 +105,10 @@ Der Seeder legt diese Standardgründe an:
 - Das Ende liegt in `tickets.paused_until` (UTC) und muss in der Zukunft liegen.
 - Erreicht der Scheduler (`php bin/helpdesk.php process`) das Pausenende, setzt er das Ticket automatisch auf **In Bearbeitung**,
   schreibt das Ereignis `resumed` und schickt die Statusbenachrichtigung. Pausierte Minuten werden dabei der SLA gutgeschrieben.
+- Ist das Pausenende abgelaufen und der Scheduler noch nicht gelaufen, bleibt das Ticket bis dahin pausiert. Schließen,
+  „Weiter bearbeiten“ und Stornieren funktionieren trotzdem: Der Statusdialog (`public/js/helpdesk.js`) belegt „Pausiert bis“
+  nur beim Pausieren vor und ersetzt ein abgelaufenes Ende durch „eine Stunde ab jetzt“. Ausgeblendet bleibt das Feld leer und
+  ohne `min`, damit es die Formularprüfung des Browsers nicht blockiert.
 - Bei „Warten auf Rückmeldung“ (`waiting_feedback`) beendet eine Antwort des Melders (Kommentar oder E-Mail) die Pausierung
   ebenfalls sofort (Ereignis `resumed`).
 - Zwischen Pausierungen kann direkt gewechselt werden; dabei wird das neue Pausenende gesetzt.

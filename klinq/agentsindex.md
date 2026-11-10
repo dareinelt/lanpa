@@ -195,8 +195,8 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Die Felder des Statusdialogs (`#st-resolution`, `#st-note`) tragen dieselben Attribute; `tickets.resolution`
   ist deshalb `MEDIUMTEXT` (Migration 036). Grenze: `TicketService::MAX_TEXT_CHARS`. Bilddateien unter den
   Anhängen (MIME-Typ `image/…`) öffnen sich per Klick im Overlay (`public/js/ui.js`, Link-Attribut
-  `data-image-overlay` samt `data-image-title`) – im Ticket, an Kommentaren, in der Aufgabe und im Portal;
-  ohne JavaScript bleibt der Link der normale Aufruf der Datei.
+  `data-image-overlay` samt `data-image-title`) – im Ticket, an Kommentaren, in der Aufgabe, im Wissensartikel
+  und in den Portalansichten; ohne JavaScript bleibt der Link der normale Aufruf der Datei.
 - **Ticketnummern** folgen `HELPDESK_TICKET_PREFIX-JJJJ-NNNNNN`, vergeben über `ticket_sequences` analog zu
   den Inventarnummern (`TicketNumberService`).
 - **Weiterleiten von Tickets**: `POST /helpdesk/tickets/{id}/forward` (`helpdesk.assign`) setzt den Bearbeiter neu

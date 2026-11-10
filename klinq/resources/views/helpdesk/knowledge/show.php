@@ -36,7 +36,7 @@ $visibilityColor = static fn (string $v): string => $v === 'public' ? 'success' 
                 <tbody>
                 <?php foreach ($attachments as $a): ?>
                     <tr>
-                        <td><a href="/helpdesk/knowledge/<?= (int) $article['id'] ?>/attachments/<?= (int) $a['id'] ?>"><?= icon('paperclip', 'icon icon-xs') ?> <?= e($a['original_name']) ?></a><?php if (!empty($a['note'])): ?><div class="text-xs text-muted"><?= e($a['note']) ?></div><?php endif; ?></td>
+                        <td><a href="/helpdesk/knowledge/<?= (int) $article['id'] ?>/attachments/<?= (int) $a['id'] ?>"<?= attachment_overlay_attrs($a) ?>><?= attachment_icon($a) ?> <?= e($a['original_name']) ?></a><?php if (!empty($a['note'])): ?><div class="text-xs text-muted"><?= e($a['note']) ?></div><?php endif; ?></td>
                         <td class="nowrap"><?= fmt_bytes((int) $a['size_bytes']) ?></td>
                         <td class="text-right"><?php if ($canManage): ?><form method="post" action="/helpdesk/knowledge/<?= (int) $article['id'] ?>/attachments/<?= (int) $a['id'] ?>/delete" class="inline-form" data-confirm="Anhang „<?= e($a['original_name']) ?>“ löschen?"><?= csrf_field() ?><button type="submit" class="btn btn-ghost btn-sm" aria-label="Löschen"><?= icon('trash') ?></button></form><?php endif; ?></td>
                     </tr>

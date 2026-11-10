@@ -24,7 +24,7 @@ $articleTags = array_values(array_filter(array_map('trim', explode(',', (string)
         <h2 class="mb-2">Anhänge</h2>
         <ul class="side-list">
             <?php foreach ($attachments as $a): ?>
-            <li><span class="side-list-main"><a href="/portal/knowledge/<?= (int) $article['id'] ?>/attachments/<?= (int) $a['id'] ?>"><?= icon('download') ?> <?= e($a['original_name']) ?></a><span class="text-xs text-muted"><?= fmt_bytes((int) $a['size_bytes']) ?> · <?= fmt_datetime($a['created_at'] ?? null) ?></span></span></li>
+            <li><span class="side-list-main"><a href="/portal/knowledge/<?= (int) $article['id'] ?>/attachments/<?= (int) $a['id'] ?>"<?= attachment_overlay_attrs($a) ?>><?= attachment_icon($a) ?> <?= e($a['original_name']) ?></a><span class="text-xs text-muted"><?= fmt_bytes((int) $a['size_bytes']) ?> · <?= fmt_datetime($a['created_at'] ?? null) ?></span></span></li>
             <?php endforeach; ?>
         </ul>
     </div>

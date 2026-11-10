@@ -59,6 +59,7 @@ $statusTransitions = array_values(array_filter(
             <?php if ($isMerged): ?><span class="badge is-neutral"><?= icon('merge', 'icon icon-xs') ?> Zusammengeführt in <a href="/helpdesk/tickets/<?= (int) $ticket['merged_into_ticket_id'] ?>"><?= e($ticket['merged_into_number']) ?></a></span><?php endif; ?>
             <?php if ((int) $ticket['escalation_level'] > 0): ?><span class="badge is-danger">Eskalationsstufe <?= (int) $ticket['escalation_level'] ?></span><?php endif; ?>
             <?php if ((int) $ticket['reopen_count'] > 0): ?><span class="badge is-warning"><?= (int) $ticket['reopen_count'] ?>× wiedereröffnet</span><?php endif; ?>
+            <?php foreach (($calendarEvents ?? []) as $calEvent): ?><a class="badge badge-info" href="/helpdesk/kalender/<?= (int) $calEvent['id'] ?>" title="<?= e($calEvent['title']) ?>"><?= icon('calendar', 'icon icon-xs') ?> Termin <?= e($calEvent['start_local']->format('d.m.Y')) ?><?= empty($calEvent['all_day']) ? ' ' . e($calEvent['start_local']->format('H:i')) : '' ?></a><?php endforeach; ?>
             <?php if ($taskForTicket !== null): ?><span class="badge badge-info"><?= icon('inbox', 'icon icon-xs') ?> Aufgabe <a href="/helpdesk/aufgaben/<?= (int) $taskForTicket['id'] ?>"><?= e($taskForTicket['number']) ?></a></span><?php endif; ?>
             <?php if ($ticket['source'] === 'email'): ?>
                 <span class="badge badge-info"><?= icon('mail', 'icon icon-xs') ?> Per E-Mail eröffnet<?= !empty($ticket['mail_from_address']) ? ' von ' . e(trim(($ticket['mail_from_name'] ?? '') . ' <' . $ticket['mail_from_address'] . '>')) : '' ?></span>
@@ -94,6 +95,9 @@ $statusTransitions = array_values(array_filter(
         <?php endif; ?>
         <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed && (int) ($ticket['assignee_user_id'] ?? 0) !== (int) $user['id']): ?>
             <form method="post" action="/helpdesk/tickets/<?= $id ?>/take" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('user') ?> Übernehmen</button></form>
+        <?php endif; ?>
+        <?php if ($isAgent && $can('helpdesk.update') && !$readOnly): ?>
+            <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="calendar-dialog"><?= icon('calendar') ?> Termin anlegen</button>
         <?php endif; ?>
         <?php if ($canConvert): ?>
             <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="convert-dialog"><?= icon('inbox') ?> In Aufgabe umwandeln</button>
@@ -648,6 +652,39 @@ $statusTransitions = array_values(array_filter(
             </div>
         </div>
         <div class="dialog-footer"><button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button><button type="submit" class="btn btn-primary">Zuweisen</button></div>
+    </form>
+</dialog>
+<?php endif; ?>
+<?php if ($isAgent && $can('helpdesk.update') && !$readOnly):
+    $values = ['title' => \App\Services\Helpdesk\HelpdeskCalendarService::ticketTitle($ticket), 'date' => '', 'end_date' => '', 'start_time' => '09:00', 'end_time' => '10:00', 'all_day' => '0', 'location' => '', 'description' => ''];
+    $prefix = 'tcal';
+?>
+<dialog id="calendar-dialog" class="dialog hd-cal-dialog" data-hd-cal-ticket="<?= $id ?>" data-hd-cal-ai="<?= !empty($calendarAiEnabled) ? '1' : '0' ?>">
+    <form method="post" action="/helpdesk/tickets/<?= $id ?>/termin" novalidate data-hd-cal-ticket-form>
+        <?= csrf_field() ?>
+        <div class="dialog-header">
+            <h2><?= icon('calendar') ?> Termin anlegen</h2>
+            <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+        </div>
+        <div class="dialog-body">
+            <div class="hd-cal-suggest" data-hd-cal-suggest aria-live="polite">
+                <?php if (!empty($calendarAiEnabled)): ?>
+                    <p class="hd-cal-suggest-status text-sm text-muted" data-hd-cal-suggest-status><?= icon('sparkle', 'icon icon-xs') ?> Der Tickettext wird auf Datumsangaben analysiert …</p>
+                <?php else: ?>
+                    <p class="hd-cal-suggest-status text-sm text-muted" data-hd-cal-suggest-status>Die KI-Analyse ist nicht eingerichtet. Bitte das Datum manuell eintragen.</p>
+                <?php endif; ?>
+                <fieldset class="hd-cal-suggest-list" data-hd-cal-suggest-list hidden>
+                    <legend class="text-sm">Erkannte Daten im Tickettext</legend>
+                    <div data-hd-cal-suggest-options></div>
+                </fieldset>
+            </div>
+            <?php include __DIR__ . '/../kalender/_fields.php'; ?>
+            <p class="form-error" data-hd-cal-choice-error hidden>Bitte eines der erkannten Daten wählen oder ein Datum eintragen.</p>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+            <button type="submit" class="btn btn-primary" data-hd-cal-submit><?= icon('calendar') ?> Im Kalender eintragen</button>
+        </div>
     </form>
 </dialog>
 <?php endif; ?>

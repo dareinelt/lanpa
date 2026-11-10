@@ -178,6 +178,23 @@ final class ModuleNavigationTest extends TestCase
         $this->assertContains('helpdesk-aufgaben-meine', $agentKeys);
     }
 
+    /** Der Kalender steht unter „Tickets“ und „Aufgaben“ und ist für alle Agenten sichtbar, auch ohne Aufgabenrecht. */
+    public function testCalendarIsVisibleForAllAgentsBelowTasks(): void
+    {
+        $agentKeys = $this->keys(ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['helpdesk.view', 'helpdesk.tasks'])));
+        $this->assertContains('helpdesk-kalender', $agentKeys);
+        $this->assertTrue(
+            array_search('helpdesk-kalender', $agentKeys, true) > array_search('helpdesk-aufgaben-meine', $agentKeys, true),
+            'Kalender folgt auf die Aufgaben'
+        );
+
+        $withoutTasks = $this->keys(ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['helpdesk.view'])));
+        $this->assertContains('helpdesk-kalender', $withoutTasks);
+
+        $portal = $this->keys(ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['portal.view', 'knowledgebase.view'])));
+        $this->assertFalse(in_array('helpdesk-kalender', $portal, true), 'Das Portal zeigt keinen Help-Desk-Kalender');
+    }
+
     public function testBadgesComeFromOpenCounts(): void
     {
         $items = ModuleNavigation::items(ModuleNavigation::ASSETS, $this->can(['movements.view']), ['checkouts' => 2, 'returns' => 3]);

@@ -8,9 +8,10 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
 use App\Security\CurrentUser;
+use App\Services\Helpdesk\HelpdeskCalendarService;
 use App\Services\Helpdesk\SupportShiftService;
 
-/** Übernahme der tagesweisen 1st-/2nd-Level-Zuständigkeit über das Dashboard-Overlay „Zuständigkeit“. */
+/** Übernahme der tagesweisen 1st-/2nd-Level-Zuständigkeit über das Dashboard-Overlay „Zuständigkeit“; danach folgt das Termin-Overlay des Tages. */
 final class HelpdeskSupportShiftController extends HelpdeskBaseController
 {
     public function __construct(
@@ -26,6 +27,8 @@ final class HelpdeskSupportShiftController extends HelpdeskBaseController
         $level = $request->int('level');
         $response = $this->attempt($request, function () use ($level): void {
             $this->shifts->claim((int) $level);
+            // Nach erfolgreicher Übernahme zeigt das Dashboard einmalig die Termine des Tages.
+            $_SESSION[HelpdeskCalendarService::OVERLAY_SESSION_KEY] = (int) $level;
         }, '/helpdesk', false);
 
         $label = $level === SupportShiftService::SECOND_LEVEL ? '2nd Level Support' : '1st Level Support';

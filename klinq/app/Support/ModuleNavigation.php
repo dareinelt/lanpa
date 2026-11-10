@@ -377,6 +377,9 @@ final class ModuleNavigation
                 $items[] = self::link('helpdesk-aufgaben', '/helpdesk/aufgaben', 'inbox', 'Alle Aufgaben');
                 $items[] = self::link('helpdesk-aufgaben-meine', '/helpdesk/aufgaben/meine', 'user', 'Meine Aufgaben', $count('tasks'));
             }
+            // Kalender: für alle Agenten sichtbar, unabhängig vom Aufgabenrecht
+            $items[] = self::section('Kalender');
+            $items[] = self::link('helpdesk-kalender', '/helpdesk/kalender', 'calendar', 'Kalender');
             if ($can('helpdesk.reports') || $can('helpdesk.categories') || $can('helpdesk.admin')) {
                 $items[] = self::section('Auswertung & System');
                 if ($can('helpdesk.reports')) {

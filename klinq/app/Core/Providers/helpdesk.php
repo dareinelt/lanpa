@@ -9,6 +9,7 @@ use App\Controllers\Helpdesk\HelpdeskReportController;
 use App\Controllers\Helpdesk\KnowledgeArticleAttachmentController;
 use App\Controllers\Helpdesk\KnowledgeBaseController;
 use App\Controllers\Helpdesk\PortalController;
+use App\Controllers\Helpdesk\HelpdeskCalendarController;
 use App\Controllers\Helpdesk\HelpdeskSupportShiftController;
 use App\Controllers\Helpdesk\QuickReportController;
 use App\Controllers\Helpdesk\TicketAttachmentController;
@@ -26,6 +27,7 @@ use App\Repositories\AssetRepository;
 use App\Repositories\CostCenterRepository;
 use App\Repositories\DocumentRepository;
 use App\Repositories\EmployeeRepository;
+use App\Repositories\HelpdeskCalendarRepository;
 use App\Repositories\HelpdeskSupportShiftRepository;
 use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\LocationRepository;
@@ -56,7 +58,9 @@ use App\Services\Helpdesk\Ai\AiTransportInterface;
 use App\Services\Helpdesk\Ai\CurlAiTransport;
 use App\Services\Helpdesk\AiSettingsService;
 use App\Services\Helpdesk\HelpdeskAdminService;
+use App\Services\Helpdesk\CalendarDateSuggestionService;
 use App\Services\Helpdesk\HelpdeskAiService;
+use App\Services\Helpdesk\HelpdeskCalendarService;
 use App\Services\Helpdesk\HelpdeskSchedulerService;
 use App\Services\Helpdesk\KnowledgeArticleAttachmentService;
 use App\Services\Helpdesk\KnowledgeBaseService;
@@ -106,7 +110,7 @@ return static function (Container $c): void {
         TicketRelationRepository::class, TicketTemplateRepository::class, TicketRuleRepository::class, TicketReportRepository::class,
         KnowledgeBaseRepository::class, HelpdeskSupportShiftRepository::class, TaskRepository::class,
         TaskCategoryRepository::class, TaskCommentRepository::class, TaskJournalRepository::class,
-        TaskAttachmentRepository::class,
+        TaskAttachmentRepository::class, HelpdeskCalendarRepository::class,
     ] as $repository) {
         $c->singleton($repository, static fn (Container $c): object => new $repository($c->get(PDO::class)));
     }
@@ -308,6 +312,20 @@ return static function (Container $c): void {
         dirname(__DIR__, 3) . '/storage/tmp/helpdesk-ai-availability.json'
     ));
 
+    // Kalender des Help Desk und Datumsvorschläge aus Tickets (KI-Endpunkt aus AiSettingsService)
+    $c->singleton(CalendarDateSuggestionService::class, static fn (Container $c): CalendarDateSuggestionService => new CalendarDateSuggestionService(
+        $c->get(AiSettingsService::class),
+        $c->get(AiTransportInterface::class),
+        (string) $c->get(Config::class)->get('app.timezone', 'Europe/Berlin')
+    ));
+    $c->singleton(HelpdeskCalendarService::class, static fn (Container $c): HelpdeskCalendarService => new HelpdeskCalendarService(
+        $c->get(HelpdeskCalendarRepository::class),
+        $c->get(TicketService::class),
+        $c->get(CurrentUser::class),
+        $c->get(AuditLogService::class),
+        (string) $c->get(Config::class)->get('app.timezone', 'Europe/Berlin')
+    ));
+
     // Postfach-Client je Konfiguration aus der Administration (imap = Socket-IMAP-Client, file = .eml-Verzeichnis)
     $c->singleton(MailboxClientInterface::class, static function (Container $c): MailboxClientInterface {
         return MailboxClientFactory::create($c->get(MailboxSettingsService::class)->mailboxOptions(), dirname(__DIR__, 3));
@@ -337,7 +355,8 @@ return static function (Container $c): void {
         $c->get(TicketReportService::class),
         $c->get(TicketRepository::class),
         $c->get(SupportShiftService::class),
-        $c->get(TicketSlaService::class)
+        $c->get(TicketSlaService::class),
+        $c->get(HelpdeskCalendarService::class)
     ));
     $c->singleton(TicketAttachmentService::class, static fn (Container $c): TicketAttachmentService => new TicketAttachmentService(
         $c->get(TicketService::class),
@@ -377,7 +396,9 @@ return static function (Container $c): void {
         $c->get(ReplyTemplateSettingsService::class),
         $c->get(ErrorOriginSettingsService::class),
         $c->get(TaskRepository::class),
-        $c->get(TaskCategoryRepository::class)
+        $c->get(TaskCategoryRepository::class),
+        $c->get(HelpdeskCalendarService::class),
+        $c->get(CalendarDateSuggestionService::class)
     ));
     $c->singleton(TaskAttachmentService::class, static fn (Container $c): TaskAttachmentService => new TaskAttachmentService(
         $c->get(DocumentService::class),
@@ -580,5 +601,12 @@ return static function (Container $c): void {
         $c->get(View::class),
         $c->get(CurrentUser::class),
         $c->get(SupportShiftService::class)
+    ));
+    $c->singleton(HelpdeskCalendarController::class, static fn (Container $c): HelpdeskCalendarController => new HelpdeskCalendarController(
+        $c->get(View::class),
+        $c->get(CurrentUser::class),
+        $c->get(HelpdeskCalendarService::class),
+        $c->get(CalendarDateSuggestionService::class),
+        $c->get(TicketService::class)
     ));
 };

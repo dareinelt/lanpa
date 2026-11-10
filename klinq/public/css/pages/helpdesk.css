@@ -298,6 +298,7 @@ a.kb-card:hover h3, a.kb-card:focus-visible h3 { text-decoration: underline; }
     .ticket-subject { min-width: 7rem; }
     .table .badge { white-space: normal; }
     .config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: var(--space-3) var(--space-4); }
 }
 @media (max-width: 720px) {
     .impact-grid { grid-template-columns: 1fr; }

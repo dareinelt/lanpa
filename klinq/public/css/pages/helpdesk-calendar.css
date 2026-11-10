@@ -84,6 +84,7 @@
 .hd-cal-event.is-past { opacity: 0.6; }
 .hd-cal-event-time { display: block; font-weight: var(--font-weight-semibold); white-space: nowrap; }
 .hd-cal-event-title { display: block; overflow: hidden; text-overflow: ellipsis; }
+.hd-cal-event.is-allday .hd-cal-event-title, .hd-cal-month-cell .hd-cal-event-title { white-space: nowrap; }
 .hd-cal-event-title .icon { vertical-align: -2px; }
 .hd-cal-event-meta { display: block; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -111,9 +112,11 @@
     text-decoration: none;
 }
 .hd-cal-dayhead:hover { background: var(--color-surface-alt); text-decoration: none; }
-.hd-cal-dayhead-name { font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.hd-cal-dayhead-name, .hd-cal-dayhead-short { font-size: var(--font-size-sm); color: var(--color-text-muted); }
+.hd-cal-dayhead-short { display: none; }
 .hd-cal-dayhead-num { font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); }
 .hd-cal-dayhead.is-today .hd-cal-dayhead-name,
+.hd-cal-dayhead.is-today .hd-cal-dayhead-short,
 .hd-cal-dayhead.is-today .hd-cal-dayhead-num { color: var(--color-primary); }
 .hd-cal-dayhead.is-today { box-shadow: inset 0 -3px 0 var(--color-primary); }
 
@@ -177,8 +180,14 @@ a.hd-cal-slot:hover { background-color: var(--color-primary-soft); }
     z-index: 2;
     box-shadow: 0 0 0 1px var(--color-surface);
 }
-.hd-cal-event.is-timed.is-short { padding-block: 0; }
-.hd-cal-event.is-timed.is-short .hd-cal-event-time { display: inline; margin-right: var(--space-1); }
+.hd-cal-event.is-timed.is-short {
+    padding-block: 1px;
+    min-height: 18px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+/* Kurze Termine: Titel statt Uhrzeit – die Lage im Raster zeigt die Zeit, der Tooltip nennt sie genau. */
+.hd-cal-event.is-timed.is-short .hd-cal-event-time { display: none; }
 .hd-cal-event.is-timed.is-short .hd-cal-event-title { display: inline; }
 .hd-cal-event.is-timed.is-short .hd-cal-event-meta { display: none; }
 
@@ -271,14 +280,23 @@ a.hd-cal-slot:hover { background-color: var(--color-primary-soft); }
 /* ------------------------------------------------------------------ Formular / Dialoge */
 .hd-cal-datetime { display: flex; gap: var(--space-2); }
 .hd-cal-datetime input[type="date"] { flex: 1 1 auto; min-width: 0; }
-.hd-cal-datetime input[type="time"] { flex: 0 0 7.5rem; }
+.hd-cal-datetime input[type="time"] {
+    flex: 0 0 7.5rem;
+    /* Zeitfelder sind im globalen Formularstil nicht enthalten; hier wie die übrigen Felder darstellen. */
+    min-height: var(--control-height);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-text);
+}
 .hd-cal-when { margin-bottom: var(--space-4); }
 .hd-cal-delete { margin-top: var(--space-4); }
 .hd-cal-readonly { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-4); margin: 0; }
 .hd-cal-readonly dt { color: var(--color-text-muted); }
 .hd-cal-readonly dd { margin: 0; white-space: pre-line; }
 
-.hd-cal-dialog { max-width: 640px; }
+.hd-cal-dialog { max-width: 720px; }
 .hd-cal-suggest { margin-bottom: var(--space-4); }
 .hd-cal-suggest-status { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); }
 .hd-cal-suggest-status.is-warning { color: var(--color-warning); }
@@ -297,6 +315,7 @@ a.hd-cal-slot:hover { background-color: var(--color-primary-soft); }
 .hd-cal-suggest-list [data-hd-cal-suggest-options] { display: flex; flex-direction: column; gap: var(--space-2); }
 .hd-cal-suggest-option { align-items: center; padding: var(--space-2) var(--space-3); }
 .hd-cal-suggest-option:has(input:checked) { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.hd-cal-choice-error { margin: var(--space-2) 0 0; }
 .hd-cal-suggest-excerpt { display: block; color: var(--color-text-muted); font-size: var(--font-size-xs); margin-top: 2px; }
 
 .hd-cal-agenda { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
@@ -318,8 +337,14 @@ a.hd-cal-slot:hover { background-color: var(--color-primary-soft); }
 @media (max-width: 760px) {
     .hd-cal { --hd-cal-time-col: 44px; }
     .hd-cal-title { font-size: var(--font-size-md); }
-    .hd-cal-dayhead { flex-direction: column; gap: 0; padding: var(--space-1); }
-    .hd-cal-dayhead-name { font-size: var(--font-size-xs); }
+    .hd-cal-toolbar { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
+    .hd-cal-dayhead { flex-direction: column; gap: 0; padding: var(--space-1); min-width: 0; }
+    .hd-cal-dayhead-name { display: none; }
+    .hd-cal-dayhead-short { display: block; font-size: var(--font-size-xs); }
+    .hd-cal-dayhead-num { font-size: var(--font-size-sm); }
+    .hd-cal-allday-label { font-size: 0.625rem; padding-inline: 2px; hyphens: auto; }
+    .hd-cal-event { padding-inline: var(--space-1); }
+    .hd-cal-event-meta { display: none; }
     .hd-cal-month-cell { min-height: 72px; padding: 2px; }
     .hd-cal-month-cell .hd-cal-event-time { display: none; }
     .hd-cal-agenda-time { flex-basis: 5.5rem; }

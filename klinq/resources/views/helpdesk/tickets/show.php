@@ -677,9 +677,9 @@ $statusTransitions = array_values(array_filter(
                     <legend class="text-sm">Erkannte Daten im Tickettext</legend>
                     <div data-hd-cal-suggest-options></div>
                 </fieldset>
+                <p class="form-error hd-cal-choice-error" data-hd-cal-choice-error role="alert" hidden>Bitte eines der erkannten Daten wählen oder ein Datum eintragen.</p>
             </div>
             <?php include __DIR__ . '/../kalender/_fields.php'; ?>
-            <p class="form-error" data-hd-cal-choice-error hidden>Bitte eines der erkannten Daten wählen oder ein Datum eintragen.</p>
         </div>
         <div class="dialog-footer">
             <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>

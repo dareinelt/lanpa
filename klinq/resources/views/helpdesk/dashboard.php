@@ -191,7 +191,7 @@ $barList = static function (array $rows): void {
     </div>
     <div class="dialog-footer">
         <a class="btn btn-secondary" href="/helpdesk/kalender?ansicht=tag&amp;datum=<?= e($todayLocal) ?>"><?= icon('calendar') ?> Zum Kalender</a>
-        <button type="button" class="btn btn-primary" data-dialog-close>Verstanden</button>
+        <button type="button" class="btn btn-primary" data-dialog-close autofocus>Verstanden</button>
     </div>
 </dialog>
 <?php endif; ?>

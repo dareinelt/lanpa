@@ -92,7 +92,7 @@ $eventTitle = static function (array $e): string {
             <div class="hd-cal-corner"></div>
             <?php foreach ($range['days'] as $day): ?>
                 <a class="hd-cal-dayhead<?= $day === $today ? ' is-today' : '' ?>" href="<?= e($url('tag', $day)) ?>"<?= $day === $today ? ' aria-current="date"' : '' ?>>
-                    <span class="hd-cal-dayhead-name"><?= e(Cal::weekdayName($day)) ?></span>
+                    <span class="hd-cal-dayhead-name"><?= e(Cal::weekdayName($day)) ?></span><span class="hd-cal-dayhead-short" aria-hidden="true"><?= e(mb_substr(Cal::weekdayName($day), 0, 2)) ?></span>
                     <span class="hd-cal-dayhead-num"><?= (int) substr($day, 8, 2) ?>.<?= (int) substr($day, 5, 2) ?>.</span>
                 </a>
             <?php endforeach; ?>

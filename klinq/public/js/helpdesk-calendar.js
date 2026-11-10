@@ -51,7 +51,8 @@
             const hourHeight = hour ? hour.getBoundingClientRect().height : 48;
             const today = root.querySelector('.hd-cal-day[data-day="' + localDate(new Date()) + '"]');
             const startHour = today ? Math.max(0, Math.min(7, Math.floor(minutesNow() / 60) - 1)) : 7;
-            scroller.scrollTop = Math.round(hourHeight * startHour);
+            // Etwas Luft lassen, damit die Beschriftung der ersten Stunde sichtbar bleibt.
+            scroller.scrollTop = Math.max(0, Math.round(hourHeight * startHour) - 12);
             nowLine(root);
             window.setInterval(function () { nowLine(root); }, 60000);
         }
@@ -244,7 +245,10 @@
             const chosen = form.querySelector('input[name="suggestion"]:checked');
             if ((requireChoice && !chosen) || !date.value) {
                 event.preventDefault();
+                // Nicht an die globale Absendesperre (ui.js) weitergeben, sonst bliebe der Button gesperrt.
+                event.stopPropagation();
                 choiceError.hidden = false;
+                choiceError.scrollIntoView({ block: "nearest" });
                 (requireChoice && !chosen ? options.querySelector("input") : date).focus();
             }
         });

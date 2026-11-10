@@ -6,10 +6,8 @@ use App\Security\Csrf;
 use App\Support\Html;
 
 /** @var array<string,mixed> $item */
-/** @var list<array<string,mixed>> $users */
-/** @var list<int> $assignedUserIds */
+/** @var list<array<string,mixed>> $users bereits zugeordnete Einzelbenutzer */
 /** @var list<string> $assignedGroupNames */
-$assigned = array_fill_keys(array_map('intval', $assignedUserIds), true);
 $groupValue = Html::e(implode(', ', $assignedGroupNames));
 ?>
 <div class="toolbar">
@@ -18,9 +16,8 @@ $groupValue = Html::e(implode(', ', $assignedGroupNames));
 
 <h2>Berechtigungen für „<?= Html::e((string) $item['title']) ?>“</h2>
 <p class="field__hint">
-    Ohne Berechtigungseintrag ist die Kachel für alle sichtbar. Sobald mindestens
-    ein Benutzer oder eine Gruppe zugeordnet ist, sehen nur diese Benutzer bzw.
-    Mitglieder dieser AD-Gruppen die Kachel.
+    Ohne Eintrag ist das Element für alle sichtbar. Sobald mindestens eine
+    AD-Gruppe zugeordnet ist, sehen nur Mitglieder dieser Gruppen das Element.
 </p>
 
 <form method="post" action="/admin/navigation/berechtigungen" class="form form--wide">
@@ -28,10 +25,27 @@ $groupValue = Html::e(implode(', ', $assignedGroupNames));
     <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
 
     <fieldset class="fieldset">
-        <legend>Benutzer</legend>
-        <?php if ($users === []) { ?>
-            <p class="empty-state">Es sind noch keine Benutzer mit hinterlegtem Windows-Benutzernamen (SamAccountName) importiert. Führen Sie zuerst die AD-Synchronisation durch.</p>
-        <?php } else { ?>
+        <legend>Sichtbarkeit über AD-Gruppen</legend>
+        <div class="field group-suggest">
+            <label for="groups">Gruppennamen (kommagetrennt)</label>
+            <input type="text" id="groups" name="groups" maxlength="1000" value="<?= $groupValue ?>"
+                   autocomplete="off" spellcheck="false" aria-describedby="groups-hint"
+                   data-group-suggest="/admin/ad/gruppen">
+            <p class="field__hint" id="groups-hint">
+                Namen der Active-Directory-Gruppen, deren Mitglieder das Element sehen dürfen (z. B. Verwaltung, Geschäftsleitung).
+                Beim Tippen werden die per AD-Synchronisation übernommenen Gruppen vorgeschlagen
+                (Pfeiltasten und Eingabetaste zur Auswahl, Tab übernimmt die Ergänzung).
+                Leer lassen, damit das Element für alle sichtbar ist.
+            </p>
+        </div>
+    </fieldset>
+
+    <?php if ($users !== []) { ?>
+        <fieldset class="fieldset">
+            <legend>Bisher zugeordnete Einzelbenutzer</legend>
+            <p class="field__hint">
+                Einzelbenutzer werden nicht mehr neu zugeordnet. Haken entfernen, um eine bestehende Zuordnung aufzuheben.
+            </p>
             <div class="permission-list">
                 <?php foreach ($users as $user) {
                     $userId = (int) $user['id'];
@@ -45,30 +59,14 @@ $groupValue = Html::e(implode(', ', $assignedGroupNames));
                     }
                     ?>
                     <label class="permission-list__item">
-                        <input type="checkbox" name="users[]" value="<?= $userId ?>"
-                            <?= isset($assigned[$userId]) ? 'checked' : '' ?>>
+                        <input type="checkbox" name="users[]" value="<?= $userId ?>" checked>
                         <span><?= Html::e($label) ?></span>
                         <span class="permission-list__hint"><?= Html::e((string) ($user['samaccount_name'] ?? '')) ?></span>
                     </label>
                 <?php } ?>
             </div>
-        <?php } ?>
-    </fieldset>
-
-    <fieldset class="fieldset">
-        <legend>AD-Gruppen</legend>
-        <div class="field group-suggest">
-            <label for="groups">Gruppennamen (kommagetrennt)</label>
-            <input type="text" id="groups" name="groups" maxlength="1000" value="<?= $groupValue ?>"
-                   autocomplete="off" spellcheck="false" aria-describedby="groups-hint"
-                   data-group-suggest="/admin/ad/gruppen">
-            <p class="field__hint" id="groups-hint">
-                Namen der Active-Directory-Gruppen, deren Mitglieder die Kachel sehen dürfen (z. B. Verwaltung, Geschäftsleitung).
-                Beim Tippen werden die per AD-Synchronisation übernommenen Gruppen vorgeschlagen
-                (Pfeiltasten und Eingabetaste zur Auswahl, Tab übernimmt die Ergänzung).
-            </p>
-        </div>
-    </fieldset>
+        </fieldset>
+    <?php } ?>
 
     <div class="form__actions">
         <button type="submit" class="button button--primary">Berechtigungen speichern</button>

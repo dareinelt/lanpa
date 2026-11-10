@@ -334,6 +334,36 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     }
 
     /**
+     * Eintraege zu den angegebenen IDs (auch inaktive), z. B. bereits
+     * vergebene benutzerbasierte Kachel-Berechtigungen.
+     *
+     * @param list<int> $ids
+     *
+     * @return list<array<string,mixed>>
+     */
+    public function usersByIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn (int $id): bool => $id > 0)));
+        if ($ids === []) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($ids), '?'));
+        $statement = $this->pdo->prepare(
+            "SELECT id, identity_source_id, samaccount_name, display_name, first_name, last_name, department
+               FROM phonebook
+              WHERE id IN ({$placeholders})
+              ORDER BY display_name ASC, id ASC"
+        );
+        $statement->execute($ids);
+
+        /** @var list<array<string,mixed>> $rows */
+        $rows = $statement->fetchAll();
+
+        return $rows;
+    }
+
+    /**
      * Zaehlt die fuer die Suche sichtbaren Eintraege.
      */
     public function countVisible(bool $includeWithoutEmail = false): int

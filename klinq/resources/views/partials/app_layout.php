@@ -89,7 +89,7 @@ ob_start();
         <div class="search-box topbar-search" id="global-search">
             <?= icon('search') ?>
             <label for="global-search-input" class="visually-hidden">Globale Suche</label>
-            <input id="global-search-input" type="search" placeholder="Inventarnr., Seriennr., Mitarbeiter, Standort …" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="global-search-results" enterkeyhint="search">
+            <input id="global-search-input" type="search" placeholder="<?= e($activeModule === \App\Support\ModuleNavigation::HELPDESK ? 'Ticketnr. oder Betreff …' : 'Inventarnr., Seriennr., Mitarbeiter, Standort …') ?>" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="global-search-results" enterkeyhint="search">
             <ul class="search-results" id="global-search-results" hidden></ul>
         </div>
         <?php endif; ?>
@@ -143,7 +143,12 @@ ob_start();
         </details>
         <?php endif; ?>
         <a class="topbar-user" href="/profile/password" title="Passwort ändern">
-            <span class="topbar-user-name"><?= e($user['display_name'] ?? $user['username'] ?? '') ?> · <?= e($roleLabels[$user['role'] ?? ''] ?? ($user['role'] ?? '')) ?></span>
+            <?php
+            // Rolle nur nennen, wenn sie sich vom Namen unterscheidet (sonst „Administrator · Administrator“)
+            $topbarName = (string) ($user['display_name'] ?? $user['username'] ?? '');
+            $topbarRole = (string) ($roleLabels[$user['role'] ?? ''] ?? ($user['role'] ?? ''));
+            ?>
+            <span class="topbar-user-name"><?= e($topbarName) ?><?= $topbarRole !== '' && mb_strtolower($topbarRole) !== mb_strtolower($topbarName) ? ' · ' . e($topbarRole) : '' ?></span>
             <span class="avatar" aria-hidden="true"><?= e(mb_substr((string) ($user['display_name'] ?? $user['username'] ?? '?'), 0, 1)) ?></span>
         </a>
     </header>

@@ -209,15 +209,23 @@
         if (rowLink && !event.target.closest("a, button, input, form")) {
             window.location.href = rowLink.getAttribute("data-href");
         }
-        // Dropdowns (z. B. Modulwechsel) schließen, sobald außerhalb geklickt wird
-        document.querySelectorAll("details[data-module-switcher][open]").forEach(function (details) {
-            if (!details.contains(event.target)) { details.open = false; }
+        // Dropdowns (z. B. Modulwechsel, Aktionsmenüs) schließen, sobald außerhalb geklickt wird;
+        // Aktionsmenüs zusätzlich nach der Wahl eines Eintrags.
+        document.querySelectorAll("details[data-module-switcher][open], details[data-menu][open]").forEach(function (details) {
+            if (!details.contains(event.target) || event.target.closest(".action-menu-item")) { details.open = false; }
         });
+        // Nur ein Aktionsmenü gleichzeitig geöffnet
+        const menuSummary = event.target.closest("details[data-menu] > summary");
+        if (menuSummary) {
+            document.querySelectorAll("details[data-menu][open]").forEach(function (details) {
+                if (details !== menuSummary.parentElement) { details.open = false; }
+            });
+        }
     });
 
     document.addEventListener("keydown", function (event) {
         if (event.key !== "Escape") { return; }
-        document.querySelectorAll("details[data-module-switcher][open]").forEach(function (details) {
+        document.querySelectorAll("details[data-module-switcher][open], details[data-menu][open]").forEach(function (details) {
             details.open = false;
             const summary = details.querySelector("summary");
             if (summary) { summary.focus(); }

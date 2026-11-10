@@ -241,7 +241,11 @@ a.hd-cal-slot:hover { background-color: var(--color-primary-soft); }
     min-width: 0;
 }
 .hd-cal-month-cell:first-child { border-left: none; }
-.hd-cal-month-cell.is-weekend, .hd-cal-month-head .is-weekend { background: var(--color-surface-alt); }
+/* Wochenenden deutlich absetzen (wie in Outlook): gedämpfte Fläche und Schrift. */
+.hd-cal-month-cell.is-weekend, .hd-cal-month-head .is-weekend {
+    background: color-mix(in srgb, var(--color-neutral-soft) 75%, var(--color-surface));
+}
+.hd-cal-month-head .is-weekend, .hd-cal-month-cell.is-weekend .hd-cal-daynum { color: var(--color-text-muted); }
 .hd-cal-month-cell.is-outside .hd-cal-daynum { color: var(--color-text-muted); font-weight: var(--font-weight-regular); }
 .hd-cal-month-cell.is-today { box-shadow: inset 0 3px 0 var(--color-primary); }
 .hd-cal-month-cell.is-today .hd-cal-daynum { background: var(--color-primary); color: var(--color-text-inverse); }

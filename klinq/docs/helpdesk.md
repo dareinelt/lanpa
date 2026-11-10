@@ -174,6 +174,13 @@ aufgerufen aus `HelpdeskSchedulerService::run` bzw. `php bin/helpdesk.php proces
   eine interne Notiz „Zuständig am dd.mm.yyyy war {Anzeigename}, kein Kommentar erfolgt.“. Die Verarbeitung ist je Tag
   idempotent (`helpdesk_support_shifts.reminder_finalized_at`).
 
+- **Termine des Tages**: Direkt nach der Übernahme (1st oder 2nd Level) öffnet das Dashboard einmalig das Overlay
+  „Termine heute“ mit allen Terminen des [Help-Desk-Kalenders](#kalender) für den heutigen Tag (laufende Termine
+  hervorgehoben, vergangene abgeblendet). Stehen keine Termine an, erscheint nur der Hinweis „Für heute stehen keine
+  Termine im Help-Desk-Kalender an.“
+
+  ![Overlay „Termine heute“ nach Übernahme des 2nd Level Supports](screenshots/helpdesk-kalender-termine-heute.png)
+
 Routen: `POST /helpdesk/support-shift/claim` (Berechtigung `helpdesk.view`), `POST /helpdesk/tickets/{id}/assign-second-level`
 (Berechtigung `helpdesk.assign`, zusätzlich serverseitig auf den heutigen 1st Level beschränkt).
 
@@ -208,10 +215,10 @@ Ticket zusätzlich als *weitergeleitet*:
 ## Ticketdetail (`/helpdesk/tickets/{id}`)
 
 - **Kopf**: Nummer, Betreff, Status/Priorität/Typ, Melder (Mitarbeiter mit Abteilung, Standort, Telefon), betroffener Mitarbeiter, Zuständigkeit, Fälligkeiten, SLA-Balken.
-- **Aktionen**: In der Kopfzeile stehen die Schaltflächen **Annehmen**, **Schließen**, **Pausieren** und **Stornieren** direkt neben **E-Mail senden** und **Beobachten**; darunter folgen Übernehmen, Zuweisen (Agent/Gruppe/Vertretung), **Weiterleiten** (siehe „Ticket weiterleiten“), **Zusammenführen** (Overlay mit Suche, Grund und optionaler Info-E-Mail, siehe „Ticket zusammenführen“), **In Aufgabe umwandeln** (siehe „Aufgaben“) und Löschen (`helpdesk.delete`).
-  - **Annehmen** setzt den Status auf `in_progress`, trägt den annehmenden Agenten als Bearbeiter ein und ersetzt damit den bisherigen Eintrag „In Bearbeitung“ in **Status ändern**. Die Beschriftung folgt der Ausgangslage: „Annehmen“ aus `new`/`open`, „Weiter bearbeiten“ aus einer Pausierung, „Wieder öffnen“ aus „Gelöst“/„Geschlossen“.
+- **Aktionen**: Die Kopfzeile bleibt einzeilig. Direkt sichtbar sind **E-Mail senden**, **Annehmen**, **Schließen**, **Pausieren** und **Übernehmen**; das Menü **Status** enthält die übrigen Statuswechsel (früher die Leiste „Status ändern“ unter der Kopfzeile), das Menü **Weitere …** **Weiterleiten** (siehe „Ticket weiterleiten“), **An 2nd Level zuweisen**, **Termin anlegen** (siehe „Kalender“), **In Aufgabe umwandeln** (siehe „Aufgaben“), **Bearbeiten**, **Beobachten**, **Drucken** und – abgesetzt, rot – **Stornieren**. Die Menüs schließen nach einer Auswahl, mit <kbd>Esc</kbd> oder beim Klick daneben. Weiter unten folgen Zuweisen (Agent/Gruppe/Vertretung), **Zusammenführen** (Overlay mit Suche, Grund und optionaler Info-E-Mail, siehe „Ticket zusammenführen“) und Löschen (`helpdesk.delete`).
+  - **Annehmen** setzt den Status auf `in_progress`, trägt den annehmenden Agenten als Bearbeiter ein und ersetzt damit den bisherigen Eintrag „In Bearbeitung“ im Menü **Status**. Die Beschriftung folgt der Ausgangslage: „Annehmen“ aus `new`/`open`, „Weiter bearbeiten“ aus einer Pausierung, „Wieder öffnen“ aus „Gelöst“/„Geschlossen“.
   - **Schließen** öffnet den Schließen-Dialog (Lösung, Schließungsgrund, Fehlerursprung, Checkbox „Melder informieren“) und ersetzt den Eintrag „Gelöst“; `resolved` ist damit nur noch programmatisch erreichbar. Der tatsächlich handelnde Agent steht anschließend als Bearbeiter im Ticket: `TicketService::changeStatus()` trägt ihn beim **Annehmen** (`in_progress`) und beim **Schließen** (`resolved`/`closed`) in `assignee_user_id` ein (Verlaufseintrag `assigned`) – auch wenn zuvor automatisch der 2nd Level des Tages zugewiesen wurde. Automatische Wechsel (Scheduler, Melder-Wiedereröffnung, Umwandlung in eine Aufgabe) ändern den Bearbeiter nicht.
-  - **Pausieren** und **Stornieren** (`helpdesk.cancel`) liegen ebenfalls in der Kopfzeile; **Status ändern** enthält nur noch die übrigen Zustände. Stornieren erscheint nur mit der jeweiligen Berechtigungsgruppe.
+  - **Pausieren** liegt in der Kopfzeile, **Stornieren** (`helpdesk.cancel`) am Ende von **Weitere …**; das Menü **Status** enthält nur noch die übrigen Zustände. Stornieren erscheint nur mit der jeweiligen Berechtigungsgruppe.
 - **Kommunikation**: öffentliche Kommentare (Melder sieht sie im Portal, E-Mail-Benachrichtigung) und **interne Notizen** (`helpdesk.internal_note`, nur Agenten). Für Agenten ist die **interne Notiz** vorausgewählt; öffentliche Antworten müssen bewusst gewählt werden. Anhänge je Kommentar oder direkt am Ticket, optional intern. Zusätzlich **„E-Mail senden“** – eine echte Nachricht an den Melder (siehe „E-Mail aus dem Ticket senden“).
   - **Anheften**: Die **Pinnadel** oben rechts an einem Eintrag heftet ihn an den Anfang der Kommunikation (`POST /helpdesk/tickets/{id}/comments/{comment}/pin`, Feld `pinned=1|0`); ein zweiter Klick löst die Anheftung. Angeheftete Einträge stehen vor allen übrigen (`ORDER BY is_pinned DESC, created_at, id`), untereinander chronologisch, und tragen die Markierung **Angeheftet**. Gesetzt werden `ticket_comments.is_pinned` und `pinned_at` (UTC), auditiert als `ticket.comment.pin` bzw. `ticket.comment.unpin`. Nur Agenten mit `helpdesk.comment` (nicht im schreibgeschützten Zustand zusammengeführter Tickets); der Sprung zurück geht auf `#comment-{id}`. `public/js/helpdesk-pins.js` schickt das Formular per `fetch` (JSON-Antwort mit `ok`, `message`, `comment`, `pinned`) und sortiert die Liste anschließend im Browser neu – Anheften und Lösen der Anheftung wirken also ohne Neuladen der Seite; ohne JavaScript greift der klassische POST mit Redirect.
 - **Arbeitszeiten** (`helpdesk.worklog`): Minuten (in 15-Minuten-Schritten), Tätigkeit, Datum; Summe im Kopf. Der Bereich ist – wie **Anhänge** – aufklappbar und standardmäßig geschlossen.
@@ -777,6 +784,53 @@ angezeigt.
 Ergänzende Bemerkungen gehören in die Kommentare.
 
 ![Aufgabendetail mit Quelle (Ticket), Verlauf und Statuswechsel](screenshots/helpdesk-aufgabe-detail.png)
+
+## Kalender
+
+Der Navigationspunkt **Kalender** (unter „Tickets“ und „Aufgaben“) sammelt alle für den Help Desk relevanten Termine.
+Er ist für alle Agenten sichtbar (`helpdesk.view`); anlegen, ändern und löschen dürfen Rollen mit `helpdesk.update`.
+
+- **Ansichten** wie in Outlook: **Tag**, **Arbeitswoche** (Montag–Freitag, mit Kalenderwoche) und **Monat** (volle
+  Wochen Mo–So). Umschalter oben rechts, „Heute“, vor/zurück und Sprung zu einem Datum. Die gewählte Ansicht bleibt
+  für die Sitzung erhalten.
+- **Tagesraster** (Tag/Arbeitswoche): 24 Stunden, beim Öffnen auf 07:00 Uhr bzw. die aktuelle Stunde gerollt,
+  Zeiten vor 07:00 und ab 19:00 Uhr abgesetzt, rote Linie für „jetzt“. Überschneidende Termine stehen nebeneinander,
+  ganztägige und mehrtägige ganztägige Termine in der Zeile „Ganztägig“. Ein Klick in einen freien Stundenblock legt
+  einen Termin zu dieser Uhrzeit an, ein Klick in die Ganztageszeile einen ganztägigen Termin.
+- **Monat**: bis zu drei Termine je Tag, darüber „+N weitere“ (öffnet die Tagesansicht); die Tageszahl führt zur
+  Tagesansicht, „+“ legt einen Termin an.
+- **Farben**: manuell eingetragene Termine in der Primärfarbe, Termine aus Tickets in der Akzentfarbe mit Ticketsymbol.
+- **Termin**: Titel, Beginn (Datum + Uhrzeit), Ende (Datum + Uhrzeit, ohne Endzeit eine Stunde), „Ganztägig“, Ort und
+  Beschreibung; höchstens 31 Tage Dauer. Speicherung in UTC, Anzeige in `APP_TIMEZONE`.
+
+![Kalender in der Ansicht Arbeitswoche mit Ganztageszeile, nebeneinanderliegenden Terminen und Jetzt-Linie](screenshots/helpdesk-kalender-arbeitswoche.png)
+
+![Kalender in der Monatsansicht](screenshots/helpdesk-kalender-monat.png)
+
+### Termin aus einem Ticket
+
+Im Ticketdetail öffnet **Weitere … → Termin anlegen** einen Dialog. Beim Öffnen wird der Tickettext (Betreff und Beschreibung,
+ohne eingebettete Bilder, höchstens 6.000 Zeichen) an den konfigurierten KI-Endpunkt geschickt
+(siehe [KI-Unterstützung](helpdesk-ki.md#datumsvorschläge-für-kalendertermine)); relative Angaben wie „morgen“
+bezieht das Modell auf das Erstellungsdatum des Tickets.
+
+- **Ein Datum erkannt**: Es wird als Vorschlag übernommen (Datum, ggf. Uhrzeit, Textstelle in der Beschreibung) und
+  bleibt änderbar.
+- **Mehrere Daten erkannt**: Alle erscheinen als Auswahl mit der jeweiligen Textstelle; nichts ist vorbelegt, das
+  Absenden ist erst nach der Wahl eines Datums (oder „Anderes Datum manuell eintragen“) möglich.
+- **Zeitraum** („vom 23.12. bis 2.1.“): Beginn und Ende werden übernommen, ohne Uhrzeit als ganztägiger Termin.
+- **Kein Datum, KI nicht eingerichtet oder nicht erreichbar**: Das Datum wird manuell eingetragen.
+- Die Analyse dauert mit lokalen Modellen einige Sekunden (beim ersten Aufruf bis zu etwa 40 Sekunden); ein
+  währenddessen selbst eingetragenes Datum bleibt erhalten.
+
+![Dialog „Termin anlegen“ mit drei erkannten Daten zur Auswahl](screenshots/helpdesk-kalender-termin-aus-ticket.png)
+
+Der Titel ist mit „Ticketnummer · Betreff“ vorbelegt. Der Termin bleibt mit dem Ticket verknüpft (Badge „Termin
+TT.MM.JJJJ HH:MM“ im Ticketkopf, Verweis auf das Ticket im Termin).
+
+Routen: `GET /helpdesk/kalender`, `GET /helpdesk/kalender/neu`, `POST /helpdesk/kalender`, `GET|POST /helpdesk/kalender/{id}`,
+`POST /helpdesk/kalender/{id}/loeschen`, `GET /helpdesk/tickets/{id}/termin-vorschlaege` (JSON),
+`POST /helpdesk/tickets/{id}/termin`. Tabelle `helpdesk_calendar_events` (Migration 038).
 
 ## Automatisierung
 

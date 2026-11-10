@@ -41,7 +41,7 @@ $acceptLabel = match (true) {
     ($ticket['status_category'] ?? '') === 'pending' => 'Weiter bearbeiten',
     default => 'Annehmen',
 };
-// „In Bearbeitung“, „Gelöst“, „Geschlossen“ und „Storniert“ liegen in der Kopfzeile.
+// „In Bearbeitung“, „Gelöst“, „Geschlossen“ und „Storniert“ liegen in der Kopfzeile; die übrigen Wechsel im Menü „Status“.
 $statusTransitions = array_values(array_filter(
     $actionTransitions,
     static fn (array $t): bool => !in_array((string) $t['code'], ['in_progress', 'resolved', 'closed', 'cancelled'], true)
@@ -59,6 +59,7 @@ $statusTransitions = array_values(array_filter(
             <?php if ($isMerged): ?><span class="badge is-neutral"><?= icon('merge', 'icon icon-xs') ?> Zusammengeführt in <a href="/helpdesk/tickets/<?= (int) $ticket['merged_into_ticket_id'] ?>"><?= e($ticket['merged_into_number']) ?></a></span><?php endif; ?>
             <?php if ((int) $ticket['escalation_level'] > 0): ?><span class="badge is-danger">Eskalationsstufe <?= (int) $ticket['escalation_level'] ?></span><?php endif; ?>
             <?php if ((int) $ticket['reopen_count'] > 0): ?><span class="badge is-warning"><?= (int) $ticket['reopen_count'] ?>× wiedereröffnet</span><?php endif; ?>
+            <?php foreach (($calendarEvents ?? []) as $calEvent): ?><a class="badge badge-info" href="/helpdesk/kalender/<?= (int) $calEvent['id'] ?>" title="<?= e($calEvent['title']) ?>"><?= icon('calendar', 'icon icon-xs') ?> Termin <?= e($calEvent['start_local']->format('d.m.Y')) ?><?= empty($calEvent['all_day']) ? ' ' . e($calEvent['start_local']->format('H:i')) : '' ?></a><?php endforeach; ?>
             <?php if ($taskForTicket !== null): ?><span class="badge badge-info"><?= icon('inbox', 'icon icon-xs') ?> Aufgabe <a href="/helpdesk/aufgaben/<?= (int) $taskForTicket['id'] ?>"><?= e($taskForTicket['number']) ?></a></span><?php endif; ?>
             <?php if ($ticket['source'] === 'email'): ?>
                 <span class="badge badge-info"><?= icon('mail', 'icon icon-xs') ?> Per E-Mail eröffnet<?= !empty($ticket['mail_from_address']) ? ' von ' . e(trim(($ticket['mail_from_name'] ?? '') . ' <' . $ticket['mail_from_address'] . '>')) : '' ?></span>
@@ -66,7 +67,7 @@ $statusTransitions = array_values(array_filter(
             <span class="text-muted text-sm">Quelle: <?= e($sources[$ticket['source']] ?? $ticket['source']) ?> · erstellt <?= fmt_datetime($ticket['created_at']) ?> von <?= e($ticket['created_by_name'] ?? 'system') ?></span>
         </div>
     </div>
-    <div class="page-actions">
+    <div class="page-actions ticket-toolbar">
         <?php if ($isAgent && $can('helpdesk.comment') && !$readOnly): ?>
             <?php if (!empty($mailCompose['available'])): ?>
                 <button type="button" class="btn btn-primary btn-sm" data-dialog-open="mail-dialog"><?= icon('mail') ?> E-Mail senden</button>
@@ -84,25 +85,44 @@ $statusTransitions = array_values(array_filter(
             <?php if ($pauseTransitions !== []): ?>
                 <button type="button" class="btn btn-secondary btn-sm" data-hd-status="<?= e($pauseTransitions[0]['code']) ?>" data-hd-label="<?= e($pauseTransitions[0]['name']) ?>" data-requires-resolution="0" data-requires-reason="0" data-hd-pause="1"><?= icon('clock') ?> <?= ($ticket['status_category'] ?? '') === 'pending' ? 'Pausierung ändern' : 'Pausieren' ?></button>
             <?php endif; ?>
-            <?php if ($cancelTransition !== null): ?>
-                <button type="button" class="btn btn-danger btn-sm" data-hd-status="<?= e($cancelTransition['code']) ?>" data-hd-label="<?= e($cancelTransition['name']) ?>" data-requires-resolution="0" data-requires-reason="<?= !empty($cancelTransition['requires_reason']) ? '1' : '0' ?>"><?= icon('x') ?> <?= e($cancelTransition['name']) ?></button>
-            <?php endif; ?>
-        <?php endif; ?>
-        <form method="post" action="/helpdesk/tickets/<?= $id ?>/watch" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('eye') ?> <?= $isWatching ? 'Nicht mehr beobachten' : 'Beobachten' ?></button></form>
-        <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed): ?>
-            <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="forward-dialog"><?= icon('swap') ?> Weiterleiten</button>
         <?php endif; ?>
         <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed && (int) ($ticket['assignee_user_id'] ?? 0) !== (int) $user['id']): ?>
             <form method="post" action="/helpdesk/tickets/<?= $id ?>/take" class="inline-form"><?= csrf_field() ?><button type="submit" class="btn btn-secondary btn-sm"><?= icon('user') ?> Übernehmen</button></form>
         <?php endif; ?>
-        <?php if ($canConvert): ?>
-            <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="convert-dialog"><?= icon('inbox') ?> In Aufgabe umwandeln</button>
+        <?php if ($statusTransitions !== [] && !$readOnly): ?>
+            <details class="action-menu" data-menu>
+                <summary class="btn btn-secondary btn-sm"><?= icon('swap') ?> Status <?= icon('chevron-down', 'icon icon-xs action-menu-caret') ?></summary>
+                <div class="action-menu-list" role="menu" aria-label="Status ändern">
+                    <?php foreach ($statusTransitions as $t): ?>
+                        <button type="button" role="menuitem" class="action-menu-item<?= $t['category'] === 'cancelled' ? ' is-danger' : '' ?>" data-hd-status="<?= e($t['code']) ?>" data-hd-label="<?= e($t['name']) ?>" data-requires-resolution="<?= !empty($t['requires_resolution']) ? '1' : '0' ?>" data-requires-reason="<?= !empty($t['requires_reason']) ? '1' : '0' ?>"><?= e($t['name']) ?></button>
+                    <?php endforeach; ?>
+                </div>
+            </details>
         <?php endif; ?>
-        <?php if (($isFirstLevelSupport ?? false) && $secondLevelSupport !== null && !$readOnly && !$closed): ?>
-            <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="second-level-dialog"><?= icon('shield') ?> An 2nd Level zuweisen</button>
-        <?php endif; ?>
-        <?php if ($canUpdate): ?><a class="btn btn-secondary btn-sm" href="/helpdesk/tickets/<?= $id ?>/edit"><?= icon('pen') ?> Bearbeiten</a><?php endif; ?>
-        <a class="btn btn-ghost btn-sm" href="/helpdesk/tickets/<?= $id ?>?print=1" target="_blank" rel="noopener"><?= icon('print') ?></a>
+        <details class="action-menu" data-menu>
+            <summary class="btn btn-secondary btn-sm" aria-label="Weitere Aktionen">Weitere … <?= icon('chevron-down', 'icon icon-xs action-menu-caret') ?></summary>
+            <div class="action-menu-list is-end" role="menu" aria-label="Weitere Aktionen">
+                <?php if ($isAgent && $can('helpdesk.assign') && !$readOnly && !$closed): ?>
+                    <button type="button" role="menuitem" class="action-menu-item" data-dialog-open="forward-dialog"><?= icon('swap') ?> Weiterleiten</button>
+                <?php endif; ?>
+                <?php if (($isFirstLevelSupport ?? false) && $secondLevelSupport !== null && !$readOnly && !$closed): ?>
+                    <button type="button" role="menuitem" class="action-menu-item" data-dialog-open="second-level-dialog"><?= icon('shield') ?> An 2nd Level zuweisen</button>
+                <?php endif; ?>
+                <?php if ($isAgent && $can('helpdesk.update') && !$readOnly): ?>
+                    <button type="button" role="menuitem" class="action-menu-item" data-dialog-open="calendar-dialog"><?= icon('calendar') ?> Termin anlegen</button>
+                <?php endif; ?>
+                <?php if ($canConvert): ?>
+                    <button type="button" role="menuitem" class="action-menu-item" data-dialog-open="convert-dialog"><?= icon('inbox') ?> In Aufgabe umwandeln</button>
+                <?php endif; ?>
+                <?php if ($canUpdate): ?><a role="menuitem" class="action-menu-item" href="/helpdesk/tickets/<?= $id ?>/edit"><?= icon('pen') ?> Bearbeiten</a><?php endif; ?>
+                <form method="post" action="/helpdesk/tickets/<?= $id ?>/watch"><?= csrf_field() ?><button type="submit" role="menuitem" class="action-menu-item"><?= icon('eye') ?> <?= $isWatching ? 'Nicht mehr beobachten' : 'Beobachten' ?></button></form>
+                <a role="menuitem" class="action-menu-item" href="/helpdesk/tickets/<?= $id ?>?print=1" target="_blank" rel="noopener"><?= icon('print') ?> Drucken</a>
+                <?php if ($isAgent && $transitions !== [] && !$readOnly && $cancelTransition !== null): ?>
+                    <hr class="action-menu-separator">
+                    <button type="button" role="menuitem" class="action-menu-item is-danger" data-hd-status="<?= e($cancelTransition['code']) ?>" data-hd-label="<?= e($cancelTransition['name']) ?>" data-requires-resolution="0" data-requires-reason="<?= !empty($cancelTransition['requires_reason']) ? '1' : '0' ?>"><?= icon('x') ?> <?= e($cancelTransition['name']) ?></button>
+                <?php endif; ?>
+            </div>
+        </details>
     </div>
 </div>
 
@@ -118,14 +138,6 @@ $statusTransitions = array_values(array_filter(
     </div>
 <?php endif; ?>
 
-<?php if ($transitions !== [] && !$readOnly): ?>
-<section class="ticket-actions" id="status">
-    <span class="text-muted text-sm">Status ändern:</span>
-    <?php foreach ($statusTransitions as $t): ?>
-        <button type="button" class="btn btn-sm <?= $t['category'] === 'resolved' || $t['category'] === 'closed' ? 'btn-primary' : ($t['category'] === 'cancelled' ? 'btn-danger' : 'btn-secondary') ?>" data-hd-status="<?= e($t['code']) ?>" data-hd-label="<?= e($t['name']) ?>" data-requires-resolution="<?= !empty($t['requires_resolution']) ? '1' : '0' ?>" data-requires-reason="<?= !empty($t['requires_reason']) ? '1' : '0' ?>"><?= e($t['name']) ?></button>
-    <?php endforeach; ?>
-</section>
-<?php endif; ?>
 
 <div class="ticket-layout">
 <div class="ticket-main">
@@ -648,6 +660,39 @@ $statusTransitions = array_values(array_filter(
             </div>
         </div>
         <div class="dialog-footer"><button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button><button type="submit" class="btn btn-primary">Zuweisen</button></div>
+    </form>
+</dialog>
+<?php endif; ?>
+<?php if ($isAgent && $can('helpdesk.update') && !$readOnly):
+    $values = ['title' => \App\Services\Helpdesk\HelpdeskCalendarService::ticketTitle($ticket), 'date' => '', 'end_date' => '', 'start_time' => '09:00', 'end_time' => '10:00', 'all_day' => '0', 'location' => '', 'description' => ''];
+    $prefix = 'tcal';
+?>
+<dialog id="calendar-dialog" class="dialog hd-cal-dialog" data-hd-cal-ticket="<?= $id ?>" data-hd-cal-ai="<?= !empty($calendarAiEnabled) ? '1' : '0' ?>">
+    <form method="post" action="/helpdesk/tickets/<?= $id ?>/termin" novalidate data-hd-cal-ticket-form>
+        <?= csrf_field() ?>
+        <div class="dialog-header">
+            <h2><?= icon('calendar') ?> Termin anlegen</h2>
+            <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+        </div>
+        <div class="dialog-body">
+            <div class="hd-cal-suggest" data-hd-cal-suggest aria-live="polite">
+                <?php if (!empty($calendarAiEnabled)): ?>
+                    <p class="hd-cal-suggest-status text-sm text-muted" data-hd-cal-suggest-status><?= icon('sparkle', 'icon icon-xs') ?> Der Tickettext wird auf Datumsangaben analysiert …</p>
+                <?php else: ?>
+                    <p class="hd-cal-suggest-status text-sm text-muted" data-hd-cal-suggest-status>Die KI-Analyse ist nicht eingerichtet. Bitte das Datum manuell eintragen.</p>
+                <?php endif; ?>
+                <fieldset class="hd-cal-suggest-list" data-hd-cal-suggest-list hidden>
+                    <legend class="text-sm">Erkannte Daten im Tickettext</legend>
+                    <div data-hd-cal-suggest-options></div>
+                </fieldset>
+                <p class="form-error hd-cal-choice-error" data-hd-cal-choice-error role="alert" hidden>Bitte eines der erkannten Daten wählen oder ein Datum eintragen.</p>
+            </div>
+            <?php include __DIR__ . '/../kalender/_fields.php'; ?>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+            <button type="submit" class="btn btn-primary" data-hd-cal-submit><?= icon('calendar') ?> Im Kalender eintragen</button>
+        </div>
     </form>
 </dialog>
 <?php endif; ?>

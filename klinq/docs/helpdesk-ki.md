@@ -71,6 +71,46 @@ Grenzwerte: 8.000 Zeichen markierter Text, 1.000 Zeichen Anweisung, 1.200 Ausgab
 Anweisungen und erzeugte Texte werden **nicht** gespeichert; sie stehen nur im Browser und im Speicher des
 Anfrage-Threads.
 
+## Datumsvorschläge für Kalendertermine
+
+Derselbe Endpunkt analysiert beim Dialog **Termin anlegen** im Ticket den Tickettext auf Datumsangaben
+(`CalendarDateSuggestionService`, `GET /helpdesk/tickets/{id}/termin-vorschlaege`). Das Modell erhält Betreff und
+Beschreibung (eingebettete Bilder entfernt, höchstens 6.000 Zeichen), Wochentag und Datum der Ticketerstellung als
+Bezug für relative Angaben sowie eine **Kalenderhilfe** (Wochentage der nächsten 14 Tage, Zeiträume der nächsten
+zehn Kalenderwochen) – kleine Modelle rechnen Wochentage und „KW 48“ sonst häufig falsch. Erwartet wird nur JSON:
+`{"termine":[{"datum":"JJJJ-MM-TT","beginn":"HH:MM"|null,"ende":"HH:MM"|null,"datum_ende":"JJJJ-MM-TT"|null,"beschreibung":"…","textstelle":"…"}]}`.
+
+Die Antwort wird tolerant ausgewertet (Codeblöcke, Begleittext, Datum auch als `TT.MM.JJJJ`) und abgesichert:
+
+- jedes Datum wird geprüft; Daten **vor der Erstellung des Tickets** werden verworfen (Vergangenes, kein Termin),
+- doppelte Angaben werden zusammengefasst (höchstens 10),
+- fehlt bei einem Zeitraum das Enddatum, wird es aus der zitierten Textstelle abgeleitet („vom 23.12. bis 2.1.“ →
+  2026-12-23 bis 2027-01-02, inklusive Jahreswechsel); Zeiträume über 31 Tage werden nicht übernommen.
+
+Gespeichert wird nichts. Der Dialog weist nach 6 Sekunden darauf hin, dass die Analyse noch läuft; ein in der
+Zwischenzeit selbst eingetragenes Datum wird von später eintreffenden Vorschlägen nicht überschrieben. Ist die KI
+ausgeschaltet oder nicht erreichbar, trägt der Agent das Datum manuell ein – siehe
+[Help Desk → Kalender](helpdesk.md#kalender).
+
+### Erprobt mit Gemma 4 e4b (Q4_K_M) auf CPU
+
+Getestet mit `gemma4:e4b` (7,5 Mrd. Parameter, Quantisierung Q4_K_M, 6,6 GB) in Ollama auf 4 CPU-Kernen ohne GPU:
+
+| Tickettext (Auszug) | Ergebnis |
+|---|---|
+| „am Donnerstag, 12.11., ab 8 Uhr abbauen … Freitag, 13.11., 9 bis 12 Uhr Aufbau … bis Montag, 16.11. Bescheid geben“ | 3 Daten zur Auswahl |
+| „Können Sie morgen um 14 Uhr …“ (Ticket vom 10.11.) | 11.11., 14:00 |
+| „Gesendet: Montag, 9. November 2026 … am 3. Dezember zwischen 13:30 und 15 Uhr“ | nur 03.12., 13:30–15:00 (Mail-Kopf ignoriert) |
+| „Rollout in KW 48, am besten Dienstag früh um halb acht“ | 24.11., 07:30 (erst mit Kalenderhilfe richtig) |
+| „vom 23.12. bis 2.1. im Urlaub“ | 23.12.2026–02.01.2027, ganztägig |
+| „Seit dem 2.11. stürzt … ab. Herr Meier ist erst übermorgen wieder da, dann ab 10 Uhr“ | nur 12.11., 10:00 |
+| „Gerät 12.3.4 auf Station 1.11 zeigt Fehler 13.05. Version 2026.11“ | kein Datum |
+
+Antwortzeiten: 3–19 Sekunden, beim ersten Aufruf nach dem Laden des Modells etwa 30–40 Sekunden. Das Zeitlimit der
+KI (`HELPDESK_AI_TIMEOUT`, Standard 60 Sekunden) reicht dafür; die Wartezeit auf die KI zählt unter Linux nicht zu
+`max_execution_time`. Ein Beispiel im Prompt („So sieht ein Zeitraum aus …“) hat das Modell in diesem Test zu
+erfundenen Terminen aus Zahlenfolgen verleitet und wurde deshalb nicht übernommen.
+
 ## Konfiguration: Administration → „KI-Unterstützung (Help Desk)“
 
 Die Seite liegt unter `/admin/helpdesk-ai` und benötigt das Recht `settings.manage`
@@ -142,6 +182,9 @@ docker compose exec -T ai ollama list      # geladenes Modell anzeigen
 
 - In der Administration „Modell ermitteln“ und „Verbindung testen“ ausführen – mit dem Testcontainer
   erscheint als Modell `qwen3.5:0.8b`.
+- Für realistische Tests der Datumsvorschläge ein größeres Modell laden, z. B. `AI_MODEL=gemma4:e4b`
+  (Q4_K_M, rund 6,6 GB Download, etwa 10 GB Arbeitsspeicher); kleine Modelle wie `qwen3.5:0.8b` liefern hier oft
+  unbrauchbares JSON.
 
 ### Grenzen winziger Modelle
 

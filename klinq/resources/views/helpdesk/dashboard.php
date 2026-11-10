@@ -1,7 +1,7 @@
 <?php require_once __DIR__ . '/../partials/helpers.php'; ob_start();
 $activeNav = 'helpdesk';
 $areaLabel = 'Help Desk';
-$scripts = ['/js/helpdesk.js'];
+$scripts = ['/js/helpdesk.js', '/js/helpdesk-calendar.js'];
 $counts = $data['counts'] ?? [];
 $ticketUrl = static fn (array $ticket): string => '/helpdesk/tickets/' . (int) ($ticket['id'] ?? 0);
 $slaRemaining = static function (array $row) use ($now, $slaService): string {
@@ -162,4 +162,37 @@ $barList = static function (array $rows): void {
     </div>
     <div class="dialog-footer"><button type="button" class="btn btn-secondary" data-dialog-close>Schließen</button></div>
 </dialog>
+<?php if (!empty($todayEvents)):
+    $nowLocal = new \DateTimeImmutable('now', $calendarTimezone);
+    $todayLocal = $nowLocal->format('Y-m-d');
+?>
+<dialog id="today-events-dialog" class="dialog hd-cal-today-dialog" data-dialog-autoopen aria-labelledby="today-events-title">
+    <div class="dialog-header"><h2 id="today-events-title"><?= icon('calendar') ?> Termine heute</h2><button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button></div>
+    <div class="dialog-body">
+        <p class="text-muted text-sm"><?= e(\App\Services\Helpdesk\HelpdeskCalendarService::longDay($todayLocal)) ?> · <?= count($todayEvents) === 1 ? '1 Termin' : count($todayEvents) . ' Termine' ?> im Help-Desk-Kalender</p>
+        <ul class="hd-cal-agenda">
+            <?php foreach ($todayEvents as $ev):
+                $past = $ev['end_local'] <= $nowLocal;
+                $running = !$past && $ev['start_local'] <= $nowLocal;
+            ?>
+            <li class="hd-cal-agenda-item<?= $past ? ' is-past' : '' ?><?= $running ? ' is-running' : '' ?><?= !empty($ev['ticket_id']) ? ' is-ticket' : '' ?>">
+                <span class="hd-cal-agenda-time"><?= e(\App\Services\Helpdesk\HelpdeskCalendarService::timeLabel($ev, $todayLocal)) ?></span>
+                <div class="hd-cal-agenda-main">
+                    <a href="/helpdesk/kalender/<?= (int) $ev['id'] ?>"><strong><?= e($ev['title']) ?></strong></a>
+                    <?php if ($running): ?> <?= badge('läuft', 'success') ?><?php elseif ($past): ?> <?= badge('vorbei', 'neutral') ?><?php endif; ?>
+                    <div class="text-xs text-muted">
+                        <?php if (!empty($ev['location'])): ?><?= icon('map', 'icon icon-xs') ?> <?= e($ev['location']) ?><?php endif; ?>
+                        <?php if (!empty($ev['ticket_id'])): ?> <?= icon('ticket', 'icon icon-xs') ?> <a href="/helpdesk/tickets/<?= (int) $ev['ticket_id'] ?>"><?= e($ev['ticket_number'] ?? 'Ticket') ?></a><?php endif; ?>
+                    </div>
+                </div>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <div class="dialog-footer">
+        <a class="btn btn-secondary" href="/helpdesk/kalender?ansicht=tag&amp;datum=<?= e($todayLocal) ?>"><?= icon('calendar') ?> Zum Kalender</a>
+        <button type="button" class="btn btn-primary" data-dialog-close autofocus>Verstanden</button>
+    </div>
+</dialog>
+<?php endif; ?>
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../partials/app_layout.php'; ?>

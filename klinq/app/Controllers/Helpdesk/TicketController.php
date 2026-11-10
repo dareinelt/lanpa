@@ -26,6 +26,8 @@ use App\Repositories\TicketTemplateRepository;
 use App\Repositories\TicketWorklogRepository;
 use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
+use App\Services\Helpdesk\CalendarDateSuggestionService;
+use App\Services\Helpdesk\HelpdeskCalendarService;
 use App\Services\Helpdesk\ErrorOriginSettingsService;
 use App\Services\Helpdesk\HelpdeskAiService;
 use App\Services\Helpdesk\KnowledgeBaseService;
@@ -76,7 +78,9 @@ final class TicketController extends HelpdeskBaseController
         private readonly ReplyTemplateSettingsService $replyTemplates,
         private readonly ErrorOriginSettingsService $errorOrigins,
         private readonly TaskRepository $tasks,
-        private readonly TaskCategoryRepository $taskCategories
+        private readonly TaskCategoryRepository $taskCategories,
+        private readonly HelpdeskCalendarService $calendar,
+        private readonly CalendarDateSuggestionService $dateSuggestions
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -352,8 +356,10 @@ final class TicketController extends HelpdeskBaseController
             'mailCompose' => $this->mailService->composeData($ticket),
             'mergeCompose' => $this->mergeService->composeData($ticket),
             'taskForTicket' => $this->currentUser->can('helpdesk.tasks') ? $this->tasks->findByTicket($id) : null,
+            'calendarEvents' => $this->calendar->forTicket($id),
+            'calendarAiEnabled' => $this->dateSuggestions->isEnabled(),
             'taskCategories' => $this->currentUser->can('helpdesk.tasks') ? $this->taskCategories->all() : [],
-            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-pins.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/picker.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js', '/js/helpdesk-mail-frame.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-pins.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/picker.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js', '/js/helpdesk-mail-frame.js', '/js/helpdesk-calendar.js'],
         ]);
     }
 

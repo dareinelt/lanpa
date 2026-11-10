@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Controllers\Helpdesk\HelpdeskAdminController;
+use App\Controllers\Helpdesk\HelpdeskCalendarController;
 use App\Controllers\Helpdesk\HelpdeskApiController;
 use App\Controllers\Helpdesk\HelpdeskDashboardController;
 use App\Controllers\Helpdesk\HelpdeskReportController;
@@ -31,6 +32,7 @@ return static function (Router $router, Container $c): void {
     $tickets = static fn (): TicketController => $c->get(TicketController::class);
     $tasks = static fn (): TaskController => $c->get(TaskController::class);
     $taskFiles = static fn (): TaskAttachmentController => $c->get(TaskAttachmentController::class);
+    $calendar = static fn (): HelpdeskCalendarController => $c->get(HelpdeskCalendarController::class);
     $files = static fn (): TicketAttachmentController => $c->get(TicketAttachmentController::class);
     $kb = static fn (): KnowledgeBaseController => $c->get(KnowledgeBaseController::class);
     $kbFiles = static fn (): KnowledgeArticleAttachmentController => $c->get(KnowledgeArticleAttachmentController::class);
@@ -85,6 +87,9 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/tickets/{id}/relations/{relation}/delete', static fn (Request $r): Response => $tickets()->removeRelation($r), 'helpdesk.update');
     $router->post('/helpdesk/tickets/{id}/delete', static fn (Request $r): Response => $tickets()->delete($r), 'helpdesk.delete');
     // Ticket in eine Aufgabe umwandeln (schließt das Ticket und verknüpft es mit der Aufgabe)
+    // Termin aus dem Ticket: Datumsvorschläge aus dem Tickettext (KI) und Anlage im Help-Desk-Kalender
+    $router->get('/helpdesk/tickets/{id}/termin-vorschlaege', static fn (Request $r): Response => $calendar()->suggestions($r), 'helpdesk.update');
+    $router->post('/helpdesk/tickets/{id}/termin', static fn (Request $r): Response => $calendar()->storeFromTicket($r), 'helpdesk.update');
     $router->post('/helpdesk/tickets/{id}/in-aufgabe', static fn (Request $r): Response => $tasks()->convert($r), 'helpdesk.tasks');
 
     // Kommentare und Anhänge (Agent)
@@ -95,6 +100,14 @@ return static function (Router $router, Container $c): void {
     $router->post('/helpdesk/tickets/{id}/attachments/{document}/delete', static fn (Request $r): Response => $files()->delete($r), 'helpdesk.update');
 
     // Aufgaben („Alle Aufgaben“ und „Meine Aufgaben“). „Meine“ und „neu“ sind vor der {id}-Route registriert.
+    // Kalender des Help Desk (Tag/Arbeitswoche/Monat) – sichtbar für alle Agenten, Pflege mit helpdesk.update
+    $router->get('/helpdesk/kalender', static fn (Request $r): Response => $calendar()->index($r), 'helpdesk.view');
+    $router->get('/helpdesk/kalender/neu', static fn (Request $r): Response => $calendar()->create($r), 'helpdesk.update');
+    $router->post('/helpdesk/kalender', static fn (Request $r): Response => $calendar()->store($r), 'helpdesk.update');
+    $router->get('/helpdesk/kalender/{id}', static fn (Request $r): Response => $calendar()->edit($r), 'helpdesk.view');
+    $router->post('/helpdesk/kalender/{id}', static fn (Request $r): Response => $calendar()->update($r), 'helpdesk.update');
+    $router->post('/helpdesk/kalender/{id}/loeschen', static fn (Request $r): Response => $calendar()->delete($r), 'helpdesk.update');
+
     $router->get('/helpdesk/aufgaben', static fn (Request $r): Response => $tasks()->index($r), 'helpdesk.tasks');
     $router->get('/helpdesk/aufgaben/meine', static fn (Request $r): Response => $tasks()->mine($r), 'helpdesk.tasks');
     $router->get('/helpdesk/aufgaben/neu', static fn (Request $r): Response => $tasks()->create($r), 'helpdesk.tasks');

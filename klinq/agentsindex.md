@@ -45,6 +45,10 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
   Berechtigungsgruppe „Aufgabenverteilung“ weisen sie einem Agenten direkt zu; jede Aufgabe führt einen
   chronologischen Kommentarverlauf, ein unveränderliches Journal für Kommentare aus Zuweisung und Umwandlung
   sowie eigene Anhänge
+- Kalender (`/helpdesk/kalender`, Navigationspunkt „Kalender“ unter Tickets und Aufgaben, für alle Agenten):
+  Ansichten Tag/Arbeitswoche/Monat, manuelle Termine und „Termin anlegen“ aus einem Ticket mit Datumsvorschlag
+  aus dem Tickettext über den KI-Endpunkt (mehrere Daten → Auswahl erforderlich); nach Übernahme der
+  1st-/2nd-Level-Zuständigkeit zeigt das Dashboard einmalig ein Overlay mit den Terminen des Tages
 - Ticket-Berichte/CSV-Export (Recht nur über die Berechtigungsgruppe „Statistik“ oder Admin-Rolle)
 - Ticket löschen und stornieren als getrennte Rechte (nur über die Berechtigungsgruppen „Darf Tickets löschen“
   bzw. „Darf Tickets stornieren“ oder Admin-Rolle)
@@ -85,7 +89,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–034), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–038), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034), Servicezeiten der SLA (035), Screenshots in der Lösung (036), Grund der Weiterleitung (037), Help-Desk-Kalender (038) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -140,7 +144,7 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 | Import | `routes/modules/imports.php` | `ImportController` | `ImportService`, `Support\CsvReader` | `imports/` | [import](docs/import.md) |
 | Benutzer/Profil | `routes/modules/users.php` | `UserController`, `ProfileController`, `AuthController` | `UserService`, `AuthService` | `users/`, `profile/`, `auth/` | [audit](docs/audit.md) |
 | Audit & Admin | `routes/modules/audit.php`, `admin.php` | `AuditController`, `AdminController`, `HelpdeskMailboxController`, `HelpdeskOutboundMailController` | `AuditLogService`, `SettingsService`, `Helpdesk\MailboxSettingsService`, `Helpdesk\OutboundMailSettingsService`, `Support\Secret` | `audit/`, `admin/` | [audit](docs/audit.md), [helpdesk](docs/helpdesk.md) |
-| Help Desk (Agent/Portal/API) | `routes/modules/helpdesk.php` | `Helpdesk\{HelpdeskDashboardController, TicketController, TicketAttachmentController, KnowledgeBaseController, KnowledgeArticleAttachmentController, HelpdeskReportController, HelpdeskAdminController, HelpdeskApiController, PortalController, QuickReportController, HelpdeskSupportShiftController}` | `Helpdesk\{TicketService, TicketWorkflowService, TicketSlaService, TicketRuleService, TicketRuleEvaluator, TicketMergeService, TicketNumberService, TicketNotificationService, TicketMailService, TicketPriorityMatrix, TicketReportService, TicketMailIngestionService, HelpdeskAdminService, HelpdeskSchedulerService, KnowledgeBaseService, KnowledgeArticleAttachmentService, MailboxSettingsService, ReporterIdentityService, QuickReportContentValidator, SharedAccountSuggestionService, SupportShiftService}`, `Helpdesk\Mail\{ImapMailboxClient, FileMailboxClient,    MailboxClientFactory, MimeMessageParser}`, `PersonDirectoryService` (Personenauswahl für Melder/Betroffene aus dem Intranet-Telefonbuch, `/api/helpdesk/people/search`, `…/adopt` und `…/create` für unbekannte Personen), `Support\HtmlSanitizer` (Bereinigung des Mail-Editors) | `helpdesk/` | [helpdesk](docs/helpdesk.md) |
+| Help Desk (Agent/Portal/API) | `routes/modules/helpdesk.php` | `Helpdesk\{HelpdeskDashboardController, TicketController, TicketAttachmentController, KnowledgeBaseController, KnowledgeArticleAttachmentController, HelpdeskReportController, HelpdeskAdminController, HelpdeskApiController, PortalController, QuickReportController, HelpdeskSupportShiftController, HelpdeskCalendarController}` | `Helpdesk\{TicketService, TicketWorkflowService, TicketSlaService, TicketRuleService, TicketRuleEvaluator, TicketMergeService, TicketNumberService, TicketNotificationService, TicketMailService, TicketPriorityMatrix, TicketReportService, TicketMailIngestionService, HelpdeskAdminService, HelpdeskSchedulerService, KnowledgeBaseService, KnowledgeArticleAttachmentService, MailboxSettingsService, ReporterIdentityService, QuickReportContentValidator, SharedAccountSuggestionService, SupportShiftService, HelpdeskCalendarService, CalendarDateSuggestionService}`, `Helpdesk\Mail\{ImapMailboxClient, FileMailboxClient,    MailboxClientFactory, MimeMessageParser}`, `PersonDirectoryService` (Personenauswahl für Melder/Betroffene aus dem Intranet-Telefonbuch, `/api/helpdesk/people/search`, `…/adopt` und `…/create` für unbekannte Personen), `Support\HtmlSanitizer` (Bereinigung des Mail-Editors) | `helpdesk/` | [helpdesk](docs/helpdesk.md) |
 
 ### Fachliche Kernregeln (häufige Fehlerquellen)
 
@@ -368,6 +372,23 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   über die Aufgabenroute, nicht über `/documents/{id}`),
   `task_events`
   (Verlauf: Anlage, Umwandlung, Annahme, Zuweisung, Statuswechsel, Kategorie- und Fälligkeitswechsel, Anhänge)
+- **Kalender**: `helpdesk_calendar_events` (Migration 038; `title`, `description`, `location`, `starts_at`/`ends_at`
+  in UTC, `all_day` – ganztägig = lokaler Tagesbeginn bis Beginn des Folgetags nach dem Enddatum, `ticket_id`
+  `ON DELETE SET NULL` für Termine aus Tickets, `created_by`/`created_by_name`/`updated_by`). Abfrage über
+  Überschneidung (`starts_at < bis AND ends_at > von`), damit mehrtägige Termine an jedem Tag erscheinen.
+  `HelpdeskCalendarService::range()` rechnet Tag/Arbeitswoche (Mo–Fr)/Monat (volle Wochen Mo–So) in
+  `APP_TIMEZONE`, `layoutDay()` legt überschneidende Termine nebeneinander. Routen: `GET /helpdesk/kalender`
+  (`?ansicht=tag|arbeitswoche|monat&datum=JJJJ-MM-TT`, `helpdesk.view`, Ansicht je Sitzung gemerkt),
+  `GET /helpdesk/kalender/neu`, `POST /helpdesk/kalender`, `GET|POST /helpdesk/kalender/{id}`,
+  `POST /helpdesk/kalender/{id}/loeschen` (schreibend `helpdesk.update`), `GET /helpdesk/tickets/{id}/termin-vorschlaege`
+  (JSON, `CalendarDateSuggestionService` über `AiSettingsService`/`AiChatClient`, Referenzdatum = Erstellung des
+  Tickets plus Kalenderhilfe `calendarAid()` (Wochentage, ISO-Kalenderwochen), Daten vor der Erstellung verworfen,
+  `datum_ende` bzw. `endDateFromExcerpt()` für Zeiträume, Base64-Bilder entfernt, nichts gespeichert; erprobt mit
+  `gemma4:e4b`, siehe `docs/helpdesk-ki.md`) und `POST /helpdesk/tickets/{id}/termin`. Nach
+  `POST /helpdesk/support-shift/claim` setzt der Controller den Sitzungsmarker
+  `HelpdeskCalendarService::OVERLAY_SESSION_KEY`; das Dashboard verbraucht ihn und öffnet das Overlay „Termine heute“
+  (ohne Termine nur ein Hinweis). Positionen im Raster setzt `public/js/helpdesk-calendar.js` als CSS-Variablen
+  (CSP ohne Inline-Styles).
 
 ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
 

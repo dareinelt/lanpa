@@ -247,7 +247,8 @@ final class NavigationController extends AdminController
             'pageTitle' => 'Kachel-Berechtigungen',
             'activeNav' => 'navigation',
             'item' => $item,
-            'users' => Container::phonebookRepository()->assignableUsers(),
+            // Nur bereits vergebene Einzelbenutzer; neue Freigaben erfolgen ueber AD-Gruppen.
+            'users' => Container::phonebookRepository()->usersByIds($permissions['user_ids']),
             'sourceLabels' => Container::identitySources()->hasAdditionalSources() ? Container::identitySources()->labels() : [],
             'assignedUserIds' => $permissions['user_ids'],
             'assignedGroupNames' => $permissions['group_names'],
@@ -264,6 +265,12 @@ final class NavigationController extends AdminController
         if (!is_array($userIds)) {
             $userIds = [];
         }
+        // Einzelbenutzer lassen sich nur noch entfernen, nicht neu zuordnen.
+        $existingUserIds = Container::navigation()->permissions($id)['user_ids'];
+        $userIds = array_values(array_filter(
+            array_map('intval', $userIds),
+            static fn (int $userId): bool => in_array($userId, $existingUserIds, true)
+        ));
 
         try {
             Container::navigation()->assignPermissions($id, $userIds, $this->splitGroupNames((string) $request->input('groups', '')));

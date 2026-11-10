@@ -136,8 +136,10 @@ als Gruppen-Basis (abweichend: `NEXTCLOUD_LDAP_GROUPS_BASE_DN`).
 
 ### Kachel-Berechtigungen mit Vorschlägen
 
-Unter **Office → Berechtigungen** (bzw. Navigation → Berechtigungen) werden
-Benutzer und AD-Gruppen zugeordnet. Beim Tippen eines Gruppennamens wird der
+Unter **Office → Berechtigungen** bzw. **Inhalt → Navigation → Berechtigungen**
+(je Element) wird die Sichtbarkeit über AD-Gruppen eingeschränkt. Einzelbenutzer
+werden dort nicht mehr neu zugeordnet; bereits vorhandene Einzelzuordnungen
+werden angezeigt und lassen sich entfernen. Beim Tippen eines Gruppennamens wird der
 Rest direkt im Feld ergänzt (übernehmen mit <kbd>Tab</kbd>) und eine Liste
 passender Gruppen erscheint unterhalb des Felds (<kbd>↑</kbd>/<kbd>↓</kbd>,
 <kbd>Enter</kbd>, <kbd>Esc</kbd>). Die Vorschläge stammen **ausschließlich aus

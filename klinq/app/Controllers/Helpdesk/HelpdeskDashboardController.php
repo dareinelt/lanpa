@@ -57,7 +57,7 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
     /**
      * Termin-Overlay nach Übernahme der Zuständigkeit: Die Übernahme setzt einen einmaligen Sitzungsmarker;
      * das Dashboard zeigt danach die Termine des Tages, sofern der Benutzer weiterhin aktiver 1st- oder
-     * 2nd-Level-Zuständiger ist. Ohne Termine genügt ein Hinweis statt eines leeren Overlays.
+     * 2nd-Level-Zuständiger ist. Ohne noch anstehende Termine genügt ein Hinweis statt des Overlays.
      *
      * @param array{date:string,first:?array<string,mixed>,second:?array<string,mixed>} $shift
      * @return list<array<string,mixed>>|null null = kein Overlay
@@ -79,8 +79,13 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
             return null;
         }
         $events = $this->calendar->today();
-        if ($events === []) {
-            $this->flash('info', 'Für heute stehen keine Termine im Help-Desk-Kalender an.');
+        // „Anstehend“: mindestens ein Termin ist noch nicht vorbei; vergangene bleiben zur Einordnung sichtbar.
+        $now = new \DateTimeImmutable('now', $this->calendar->timezone());
+        $upcoming = array_filter($events, static fn (array $e): bool => $e['end_local'] > $now);
+        if ($upcoming === []) {
+            $this->flash('info', $events === []
+                ? 'Für heute stehen keine Termine im Help-Desk-Kalender an.'
+                : 'Für heute stehen keine weiteren Termine im Help-Desk-Kalender an.');
 
             return null;
         }

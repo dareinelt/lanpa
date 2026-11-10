@@ -5,10 +5,12 @@
     --hd-cal-hour: 48px;
     --hd-cal-minute: calc(var(--hd-cal-hour) / 60);
     --hd-cal-time-col: 64px;
+    /* Weiche Flächen aus Farbe + Oberfläche mischen: --color-accent wird vom Intranet-Design nicht
+       übernommen, ein festes -soft wäre im dunklen Modus zu hell für die helle Schrift. */
     --hd-cal-manual: var(--color-primary);
-    --hd-cal-manual-soft: var(--color-primary-soft);
+    --hd-cal-manual-soft: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
     --hd-cal-ticket: var(--color-accent);
-    --hd-cal-ticket-soft: var(--color-accent-soft);
+    --hd-cal-ticket-soft: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
 }
 
 .hd-cal-sr {
@@ -80,7 +82,12 @@
 .hd-cal-event:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .hd-cal-event.is-ticket { border-left-color: var(--hd-cal-ticket); background: var(--hd-cal-ticket-soft); }
 .hd-cal-event.is-allday { background: var(--hd-cal-manual); color: var(--color-text-inverse); border-left-color: transparent; }
-.hd-cal-event.is-allday.is-ticket { background: var(--hd-cal-ticket); }
+.hd-cal-event.is-allday.is-ticket {
+    /* Ganztägige Ticket-Termine als weiche Fläche: für die Akzentfarbe gibt es keine passende Schriftfarbe im Intranet-Design. */
+    background: color-mix(in srgb, var(--hd-cal-ticket) 28%, var(--color-surface));
+    color: var(--color-text);
+    border-left-color: var(--hd-cal-ticket);
+}
 .hd-cal-event.is-past { opacity: 0.6; }
 .hd-cal-event-time { display: block; font-weight: var(--font-weight-semibold); white-space: nowrap; }
 .hd-cal-event-title { display: block; overflow: hidden; text-overflow: ellipsis; }
@@ -328,6 +335,7 @@ a.hd-cal-slot:hover { background-color: var(--color-primary-soft); }
     border-radius: var(--radius-sm);
 }
 .hd-cal-agenda-item.is-ticket { border-left-color: var(--color-accent); }
+.hd-cal-agenda-item.is-running.is-ticket { border-left-color: var(--color-success); }
 .hd-cal-agenda-item.is-past { opacity: 0.6; }
 .hd-cal-agenda-item.is-running { background: var(--color-success-soft); }
 .hd-cal-agenda-time { flex: 0 0 7.5rem; font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; }

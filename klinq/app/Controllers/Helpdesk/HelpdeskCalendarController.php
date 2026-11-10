@@ -65,11 +65,14 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
         $values = [
             'title' => '',
             'date' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1 ? $date : $this->calendar->localToday(),
-            'start_time' => preg_match('/^\d{2}:\d{2}$/', $time) === 1 ? $time : '09:00',
+            'start_time' => preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time) === 1 ? $time : '09:00',
             'all_day' => $request->queryString('ganztags') === '1' ? '1' : '0',
         ];
         $values['end_date'] = $values['date'];
-        $values['end_time'] = $values['all_day'] === '1' ? '' : (new \DateTimeImmutable('2000-01-01 ' . $values['start_time']))->modify('+1 hour')->format('H:i');
+        // Ende eine Stunde nach Beginn, höchstens 23:59 (der Termin bleibt am selben Tag)
+        [$h, $m] = array_map('intval', explode(':', $values['start_time']));
+        $endMinutes = min(23 * 60 + 59, $h * 60 + $m + 60);
+        $values['end_time'] = $values['all_day'] === '1' ? '' : sprintf('%02d:%02d', intdiv($endMinutes, 60), $endMinutes % 60);
         if ($values['all_day'] === '1') {
             $values['start_time'] = '';
         }

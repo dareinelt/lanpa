@@ -42,7 +42,7 @@ $journalLabels = [
             <?php endif; ?>
             <?= badge($statuses[$task['status']] ?? $task['status'], $statusColors[$task['status']] ?? 'neutral') ?>
             <?php if ($task['priority_name'] !== null): ?>
-                <span class="badge is-<?= e($task['priority_color']) ?>"><span class="prio-dot"></span><?= e($task['priority_name']) ?></span>
+                <span class="badge is-neutral"><span class="prio-dot is-<?= e($task['priority_color']) ?>"></span><?= e($task['priority_name']) ?></span>
             <?php endif; ?>
             <?php if ($unassigned): ?>
                 <span class="badge badge-neutral">Nicht zugewiesen</span>
@@ -75,7 +75,11 @@ $journalLabels = [
 
     <section class="card">
         <h2 class="card-title">Beschreibung</h2>
+        <?php if (trim((string) ($task['description'] ?? '')) === '' && empty($task['description_html'])): ?>
+        <p class="text-muted mb-0">Keine Beschreibung hinterlegt.</p>
+        <?php else: ?>
         <div class="ticket-description"><?= mail_body($task['description'], $task['description_html'] ?? null, '/helpdesk/aufgaben/' . (int) $task['id'] . '/mail-html') ?></div>
+        <?php endif; ?>
     </section>
 
     <details class="card card-collapsible" id="anhaenge">
@@ -206,7 +210,7 @@ $journalLabels = [
     </section>
 </div>
 
-<aside class="ticket-side">
+<aside class="ticket-sidebar">
 
     <section class="card">
         <h2 class="card-title">Details</h2>
@@ -230,11 +234,10 @@ $journalLabels = [
                 <dt>Quelle</dt><dd><a href="/helpdesk/tickets/<?= (int) $task['source_ticket_id'] ?>"><?= e($task['source_ticket_number']) ?></a><div class="text-xs text-muted"><?= e($task['source_ticket_subject']) ?></div></dd>
             <?php endif; ?>
         </dl>
-    </section>
 
     <?php if ($can('helpdesk.tasks')): ?>
-    <section class="card">
-        <h2 class="card-title">Kategorie</h2>
+        <details class="side-edit">
+        <summary class="side-edit-summary"><?= icon('pen', 'icon icon-xs') ?> Kategorie ändern</summary>
         <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/kategorie" class="stack-form">
             <?= csrf_field() ?>
             <input type="hidden" name="version" value="<?= (int) $task['version'] ?>">
@@ -247,14 +250,14 @@ $journalLabels = [
                     <?php endforeach; ?>
                 </select>
             </div>
-            <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Speichern</button>
+            <button type="submit" class="btn btn-secondary btn-sm"><?= icon('check') ?> Speichern</button>
         </form>
-    </section>
+        </details>
     <?php endif; ?>
 
     <?php if ($can('helpdesk.tasks')): ?>
-    <section class="card">
-        <h2 class="card-title">Fälligkeit</h2>
+        <details class="side-edit"<?= has_error('due_at') ? ' open' : '' ?>>
+        <summary class="side-edit-summary"><?= icon('pen', 'icon icon-xs') ?> Fälligkeit ändern</summary>
         <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/faelligkeit" class="stack-form">
             <?= csrf_field() ?>
             <input type="hidden" name="version" value="<?= (int) $task['version'] ?>">
@@ -264,14 +267,14 @@ $journalLabels = [
                 <?= field_error('due_at') ?>
                 <p class="form-hint">Ein beim Anlegen ausgelassenes Datum lässt sich hier nachtragen; leer lassen entfernt die Fälligkeit.</p>
             </div>
-            <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Speichern</button>
+            <button type="submit" class="btn btn-secondary btn-sm"><?= icon('check') ?> Speichern</button>
         </form>
-    </section>
+        </details>
     <?php endif; ?>
 
     <?php if ($canChangeStatus): ?>
-    <section class="card">
-        <h2 class="card-title">Status ändern</h2>
+        <details class="side-edit">
+        <summary class="side-edit-summary"><?= icon('pen', 'icon icon-xs') ?> Status ändern</summary>
         <form method="post" action="/helpdesk/aufgaben/<?= $id ?>/status" class="stack-form">
             <?= csrf_field() ?>
             <input type="hidden" name="version" value="<?= (int) $task['version'] ?>">
@@ -283,10 +286,11 @@ $journalLabels = [
                     <?php endforeach; ?>
                 </select>
             </div>
-            <button type="submit" class="btn btn-primary btn-sm"><?= icon('check') ?> Speichern</button>
+            <button type="submit" class="btn btn-secondary btn-sm"><?= icon('check') ?> Speichern</button>
         </form>
-    </section>
+        </details>
     <?php endif; ?>
+    </section>
 </aside>
 </div>
 

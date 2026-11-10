@@ -10,3 +10,5 @@
 @media print {
     .no-print { display: none !important; }
 }
+/* Zahlen in Tabellen und Kennzahlen: gleich breite Ziffern ohne Schreibmaschinenschrift */
+.tabular { font-variant-numeric: tabular-nums; }

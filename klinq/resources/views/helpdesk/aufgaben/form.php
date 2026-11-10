@@ -58,7 +58,7 @@ $defaultPriority = $oldPriority !== '' ? $oldPriority : ($defaultPriorityId !== 
         <p class="form-hint">Die Aufgabe erscheint anschließend unter „Alle Aufgaben“ und kann dort zugewiesen und bearbeitet werden.</p>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary"><?= icon('check') ?> Aufgabe anlegen</button>
-            <a class="btn btn-ghost" href="/helpdesk/aufgaben">Abbrechen</a>
+            <a class="btn btn-secondary" href="/helpdesk/aufgaben">Abbrechen</a>
         </div>
     </form>
 </div>

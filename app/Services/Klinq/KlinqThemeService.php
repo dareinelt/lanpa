@@ -88,23 +88,52 @@ final class KlinqThemeService
         $background = (string) ($base['background'] ?? '#ffffff');
         $text = (string) ($base['text'] ?? '#1f2933');
         $surface = (string) ($base['surface'] ?? $background);
+        $surfaceHover = (string) ($base['surfaceHover'] ?? $background);
+        $accentSoft = $this->theme->mix($primary, $background, 0.88);
+
+        // Akzent und gedaempfte Texte erscheinen in KLINQ als Schriftfarbe auf allen
+        // Flaechen (Links, aktive Reiter, Tabellenkoepfe, Hinweise). Vor allem im
+        // dunklen Modus reicht der Kontrast der Intranetfarben dafuer nicht immer;
+        // die Farbe wird daher so weit angepasst, bis sie ueberall lesbar ist.
+        $readable = static function (string $color, array $backgrounds): string {
+            foreach ($backgrounds as $backgroundColor) {
+                $color = Color::ensureContrast($backgroundColor, $color);
+            }
+
+            return $color;
+        };
+        $accentText = $readable($primary, [$background, $surface, $surfaceHover, $accentSoft]);
+        $onAccent = Color::bestTextColor($accentText);
+
+        // Hover- und gedrueckte Zustaende der Schaltflaechen: wie bisher dezent
+        // abgewandelt; reicht der Kontrast zur Schrift nicht, wird die Flaeche von
+        // der Schriftfarbe weg statt zu ihr hin verschoben.
+        $away = $onAccent === '#ffffff' ? '#000000' : '#ffffff';
+        $accentHover = $this->theme->mix($accentText, $background, 0.15);
+        if (Color::contrastRatio($accentHover, $onAccent) < Color::MIN_CONTRAST) {
+            $accentHover = $this->theme->mix($accentText, $away, 0.12);
+        }
+        $accentDark = $this->theme->mix($accentText, '#000000', 0.22);
+        if (Color::contrastRatio($accentDark, $onAccent) < Color::MIN_CONTRAST) {
+            $accentDark = $this->theme->mix($accentText, $away, 0.24);
+        }
 
         $variables = [
             // Akzent dezent abgeschwaecht, damit KLINQ eigenstaendig bleibt.
-            '--klinq-lanpa-accent' => $this->theme->mix($primary, $background, 0.15),
-            '--klinq-lanpa-accent-strong' => $primary,
-            // Dunklerer Akzent fuer gedrueckte Zustaende (:active).
-            '--klinq-lanpa-accent-dark' => $this->theme->mix($primary, '#000000', 0.22),
+            '--klinq-lanpa-accent' => $accentHover,
+            '--klinq-lanpa-accent-strong' => $accentText,
+            // Abgewandelter Akzent fuer gedrueckte Zustaende (:active).
+            '--klinq-lanpa-accent-dark' => $accentDark,
             // Sehr heller Akzentton fuer Flaechen (Hover, Badges, Hinweise).
-            '--klinq-lanpa-accent-soft' => $this->theme->mix($primary, $background, 0.88),
-            '--klinq-lanpa-on-accent' => $this->theme->readableTextColor($primary),
+            '--klinq-lanpa-accent-soft' => $accentSoft,
+            '--klinq-lanpa-on-accent' => $onAccent,
             '--klinq-lanpa-background' => $background,
             '--klinq-lanpa-surface' => $surface,
-            '--klinq-lanpa-surface-hover' => (string) ($base['surfaceHover'] ?? $background),
+            '--klinq-lanpa-surface-hover' => $surfaceHover,
             '--klinq-lanpa-border' => $this->theme->mix($text, $background, 0.82),
             '--klinq-lanpa-border-strong' => $this->theme->mix($text, $background, 0.68),
             '--klinq-lanpa-text' => $text,
-            '--klinq-lanpa-muted' => (string) ($base['muted'] ?? $text),
+            '--klinq-lanpa-muted' => $readable((string) ($base['muted'] ?? $text), [$background, $surface, $surfaceHover]),
             // Steuert die Darstellung der Bedienelemente des Browsers
             // (Dateiauswahl, Auswahllisten, Bildlaufleisten).
             '--klinq-lanpa-color-scheme' => $dark ? 'dark' : 'light',
@@ -116,6 +145,8 @@ final class KlinqThemeService
                 // Die Statusfarbe dient im dunklen Modus als Schriftfarbe auf
                 // ihrer eigenen gedaempften Flaeche; dort muss sie lesbar sein.
                 $status = Color::ensureContrast($soft, $color);
+                // Statusfarben stehen auch direkt auf Karten (Kennzahlen, Hinweise).
+                $status = $readable($status, [$surface, $surfaceHover]);
             } else {
                 $soft = self::STATUS_SOFT_COLORS[$name];
                 $status = $color;

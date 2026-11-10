@@ -22,6 +22,9 @@ $detected[] = ['Rechner', $reporter['host'] ?? (($reporter['ip'] ?? '') !== '' ?
 ?>
 <div class="quick-page">
     <div class="quick-card">
+        <?php if (!empty($user) && isset($can) && $can('portal.view')): ?>
+        <a class="quick-back" href="/portal"><?= icon('arrow-left', 'icon icon-xs') ?> Zurück zum Service-Portal</a>
+        <?php endif; ?>
         <div class="quick-brand">
             <span class="brand-logo" aria-hidden="true"><?= icon('ticket') ?></span>
             <div>

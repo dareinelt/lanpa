@@ -129,26 +129,26 @@ $selectedAffected = $selectedEmployee($affectedId);
         </div>
     </div>
     <?php else: ?>
-    <fieldset>
+    <fieldset class="hd-form-section">
         <legend>Anliegen</legend>
         <?php $step = 1; include __DIR__ . '/_fields.php'; ?>
         <?php $step = 3; include __DIR__ . '/_fields.php'; ?>
         <?php $step = 4; include __DIR__ . '/_fields.php'; ?>
     </fieldset>
 
-    <fieldset>
+    <fieldset class="hd-form-section">
         <legend>Priorisierung</legend>
         <?php $step = 5; include __DIR__ . '/_fields.php'; ?>
     </fieldset>
 
-    <fieldset>
+    <fieldset class="hd-form-section">
         <legend>Personen &amp; Zuordnung</legend>
         <?php $step = 2; include __DIR__ . '/_fields.php'; ?>
         <?php $step = 7; include __DIR__ . '/_fields.php'; ?>
         <?php $step = 6; include __DIR__ . '/_fields.php'; ?>
     </fieldset>
 
-    <fieldset>
+    <fieldset class="hd-form-section">
         <legend>Assets &amp; Tags</legend>
         <?php $step = 8; include __DIR__ . '/_fields.php'; ?>
     </fieldset>

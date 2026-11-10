@@ -6,6 +6,8 @@
     --color-primary-soft: #e8f1fa;
     --color-accent: #0e8276;
     --color-accent-soft: #e6f4f2;
+    /* Schrift auf --color-accent (wird vom Intranet-Design nicht verändert) */
+    --color-on-accent: #ffffff;
 
     --color-bg: #f4f6f8;
     --color-surface: #ffffff;
@@ -27,6 +29,11 @@
     --color-info-soft: #e8f1fa;
     --color-neutral: #5b6b7b;
     --color-neutral-soft: #eceff2;
+    /* Abgesetzte Fläche (Empfängerlisten, Chips) – folgt der Zweitfläche des Designs */
+    --color-surface-muted: var(--color-surface-alt);
+    /* Hintergrund eingebetteter HTML-E-Mails: Mails sind für helles Papier gestaltet,
+       daher auch im dunklen Design hell (sonst dunkle Mailschrift auf dunkler Fläche). */
+    --color-mail-paper: #ffffff;
 
     /*
      * Feste Farben der waehlbaren Farbpunkte (Typen, Status, Prioritaeten).
@@ -52,6 +59,7 @@
     --font-size-xs: 0.75rem;
     --font-size-sm: 0.875rem;
     --font-size-md: 1rem;
+    --font-size-base: var(--font-size-md);
     --font-size-lg: 1.125rem;
     --font-size-xl: 1.375rem;
     --font-size-2xl: 1.75rem;

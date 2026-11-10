@@ -10,7 +10,7 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
 ?>
 <div class="page-header">
     <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : ($isErrorOrigins ? 'Katalog der Fehlerursprünge beim Schließen eines Tickets.' : ($isReplyTemplates ? 'Fester Präfix-Text für Agenten-E-Mails.' : ($isNotifications ? 'E-Mails an den Melder je Aktion im Ticket.' : 'Stammdaten, SLAs, Vorlagen und Automatisierungen.'))) ?></p></div>
-    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isSettingsTab): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new"><?= icon('plus') ?> Neu</a><?php endif; ?></div>
+    <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isSettingsTab): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new" title="Neuer Eintrag in „<?= e((string) ($kinds[$kind] ?? '')) ?>“"><?= icon('plus') ?> Eintrag anlegen</a><?php endif; ?></div>
 </div>
 <div class="status-tabs admin-tabs" role="tablist" aria-label="Administrationsbereiche">
     <?php foreach ($kinds as $key => $label): ?>
@@ -20,9 +20,15 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
 <?php if (!$isSettingsTab): ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Konfiguration</h2><span class="text-muted text-sm">aus Umgebung</span></div>
-    <div class="grid grid-4">
+    <?php $configLabels = [
+        'enabled' => 'Help Desk aktiv', 'ticket_prefix' => 'Ticketpräfix', 'escalation_enabled' => 'Eskalation aktiv',
+        'escalation_interval_minutes' => 'Eskalationsintervall (min)', 'auto_close_days' => 'Automatisch schließen nach (Tagen)',
+        'reopen_days' => 'Wiedereröffnen bis (Tage)', 'notifications_enabled' => 'Benachrichtigungen', 'mail_intake_enabled' => 'E-Mail-Eingang',
+        'sla_warning_percent' => 'SLA-Warnung ab (%)', 'sla_escalation_percent' => 'SLA-Eskalation ab (%)',
+    ]; ?>
+    <div class="grid grid-4 config-grid">
         <?php foreach ($config as $key => $value): ?>
-            <div><span class="kpi-value text-sm"><?= is_bool($value) ? e($yesNo($value)) : e((string) $value) ?></span><span class="kpi-label"><?= e(str_replace('_', ' ', $key)) ?></span></div>
+            <div><span class="kpi-value"><?= is_bool($value) ? e($yesNo($value)) : e((string) $value) ?></span><span class="kpi-label"><?= e($configLabels[$key] ?? str_replace('_', ' ', $key)) ?></span></div>
         <?php endforeach; ?>
     </div>
 </div>
@@ -243,53 +249,53 @@ $contentValidationChecked = isset($_SESSION['_old_input']['shared_accounts'])
                     <td class="mono"><?= e($r['code'] ?? '–') ?><?php if ($kind === 'statuses'): ?><div class="text-xs text-muted"><?= e($statusCategories[$r['category']] ?? $r['category'] ?? '–') ?><?= !empty($r['pauses_sla']) ? ' · SLA pausiert' : '' ?><?= ($r['category'] ?? '') === 'pending' ? ' · Pausengrund' : '' ?></div><?php elseif ($kind === 'priorities'): ?><div class="text-xs text-muted">Stufe <?= (int) ($r['level'] ?? 0) ?><?= !empty($r['is_default']) ? ' · Standard' : '' ?></div><?php endif; ?></td>
                     <td><strong><?= e($r['name'] ?? '–') ?></strong><div class="text-xs text-muted"><?= e($r['description'] ?? '') ?></div></td>
                     <td><span class="color-swatch is-<?= e($r['color'] ?? 'neutral') ?>"></span><?= e($colorName($r['color'] ?? 'neutral')) ?></td>
-                    <td class="mono"><?= (int) ($r['sort_order'] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($r['sort_order'] ?? 0) ?></td>
                     <td><?= $cellActive($r) ?></td>
-                    <td class="mono"><?= (int) ($usage[(int) $r['id']] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($usage[(int) $r['id']] ?? 0) ?></td>
                 <?php elseif ($kind === 'groups'): ?>
                     <td><strong><?= e($r['name'] ?? '–') ?></strong><div class="text-xs text-muted"><?= e($r['description'] ?? '') ?></div></td>
                     <td><?= e($r['email'] ?? '–') ?></td>
-                    <td class="mono"><?= $memberCount($r) ?></td>
-                    <td class="mono"><?= (int) ($r['open_tickets'] ?? 0) ?></td>
+                    <td class="tabular"><?= $memberCount($r) ?></td>
+                    <td class="tabular"><?= (int) ($r['open_tickets'] ?? 0) ?></td>
                     <td><?= $cellActive($r) ?></td>
-                    <td class="mono"><?= (int) ($usage[(int) $r['id']] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($usage[(int) $r['id']] ?? 0) ?></td>
                 <?php elseif ($kind === 'categories'): ?>
                     <td><strong><?= e($r['name'] ?? '–') ?></strong><div class="text-xs text-muted"><?= e($r['description'] ?? '') ?></div></td>
                     <td><?= e($r['parent_name'] ?? '–') ?></td>
                     <td><?= e($r['default_group_name'] ?? '–') ?></td>
                     <td><?= e($r['default_priority_name'] ?? '–') ?></td>
                     <td><?= $cellActive($r) ?></td>
-                    <td class="mono"><?= (int) ($r['ticket_count'] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($r['ticket_count'] ?? 0) ?></td>
                 <?php elseif ($kind === 'task-categories'): ?>
                     <td><span class="badge badge-neutral"><?= e($r['name'] ?? '–') ?></span></td>
-                    <td class="mono"><?= (int) ($r['sort_order'] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($r['sort_order'] ?? 0) ?></td>
                     <td><?= $cellActive($r) ?></td>
-                    <td class="mono"><?= (int) ($usage[(int) $r['id']] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($usage[(int) $r['id']] ?? 0) ?></td>
                 <?php elseif ($kind === 'slas'): ?>
                     <td><strong><?= e($r['name'] ?? '–') ?></strong><?= !empty($r['is_default']) ? ' ' . badge('Standard', 'info') : '' ?><div class="text-xs text-muted"><?= e($r['description'] ?? '') ?></div></td>
                     <td><?= e($r['priority_name'] ?? '–') ?></td>
                     <td><?= e($r['category_name'] ?? '–') ?></td>
-                    <td class="mono"><?= (int) ($r['response_minutes'] ?? 0) ?> min</td>
-                    <td class="mono"><?= (int) ($r['resolution_minutes'] ?? 0) ?> min</td>
+                    <td class="tabular"><?= (int) ($r['response_minutes'] ?? 0) ?> min</td>
+                    <td class="tabular"><?= (int) ($r['resolution_minutes'] ?? 0) ?> min</td>
                     <td><?= !empty($r['business_hours_only']) ? e(sla_hours_label($r)) : 'Nein' ?></td>
-                    <td class="mono"><?= e((string) ($r['warning_percent'] ?? '–')) ?> / <?= e((string) ($r['escalation_percent'] ?? '–')) ?> %</td>
+                    <td class="tabular"><?= e((string) ($r['warning_percent'] ?? '–')) ?> / <?= e((string) ($r['escalation_percent'] ?? '–')) ?> %</td>
                     <td><?= $cellActive($r) ?></td>
                 <?php elseif ($kind === 'tags'): ?>
                     <td><span class="tag-chip is-<?= e($r['color'] ?? 'neutral') ?>"><?= e($r['name'] ?? '–') ?></span></td>
                     <td><span class="color-swatch is-<?= e($r['color'] ?? 'neutral') ?>"></span><?= e($colorName($r['color'] ?? 'neutral')) ?></td>
-                    <td class="mono"><?= (int) ($usage[(int) $r['id']] ?? $r['ticket_count'] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($usage[(int) $r['id']] ?? $r['ticket_count'] ?? 0) ?></td>
                 <?php elseif ($kind === 'templates'): ?>
                     <td><strong><?= e($r['name'] ?? '–') ?></strong><div class="text-xs text-muted"><?= e($r['description'] ?? '') ?></div></td>
                     <td><?= e($r['type_name'] ?? '–') ?></td>
                     <td><?= e($r['category_name'] ?? '–') ?><?= !empty($r['subcategory_name']) ? ' / ' . e($r['subcategory_name']) : '' ?></td>
                     <td><?= badge(!empty($r['is_portal_visible']) ? 'Portal' : 'Intern', !empty($r['is_portal_visible']) ? 'success' : 'neutral') ?></td>
                     <td><?= $cellActive($r) ?></td>
-                    <td class="mono"><?= (int) ($r['sort_order'] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($r['sort_order'] ?? 0) ?></td>
                 <?php else: ?>
                     <td><strong><?= e($r['name'] ?? '–') ?></strong><div class="text-xs text-muted"><?= e($r['description'] ?? '') ?></div></td>
                     <td class="mono"><?= e($r['trigger_event'] ?? '–') ?></td>
                     <td><?= $cellActive($r) ?></td>
-                    <td class="mono"><?= (int) ($r['sort_order'] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($r['sort_order'] ?? 0) ?></td>
                     <td><?= e($yesNo($r['stop_processing'] ?? 0)) ?></td>
                 <?php endif; ?>
                     <td class="table-actions nowrap">

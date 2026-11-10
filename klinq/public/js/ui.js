@@ -178,6 +178,16 @@
     }
 
     document.addEventListener("click", function (event) {
+        // Einklappbare Filterleiste (schmale Bildschirme): weitere Filter ein-/ausblenden
+        const filterToggle = event.target.closest("[data-filter-toggle]");
+        if (filterToggle) {
+            const bar = document.getElementById(filterToggle.getAttribute("aria-controls") || "");
+            if (bar) {
+                const open = !bar.classList.contains("is-open");
+                bar.classList.toggle("is-open", open);
+                filterToggle.setAttribute("aria-expanded", open ? "true" : "false");
+            }
+        }
         const imageLink = event.target.closest("[data-image-overlay]");
         if (imageLink && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
             event.preventDefault();
@@ -412,6 +422,15 @@
         target.querySelectorAll("[data-required-when-visible]").forEach(function (field) { field.required = on; });
     }
     document.querySelectorAll("[data-toggle-target]").forEach(applyToggle);
+
+    // Wischbare Reiterleisten (schmale Bildschirme): aktiven Reiter sichtbar machen.
+    // scrollLeft statt scrollIntoView, damit die Seite selbst nicht springt.
+    document.querySelectorAll(".status-tabs").forEach(function (tabs) {
+        const active = tabs.querySelector(".status-tab.is-active");
+        if (!active || tabs.scrollWidth <= tabs.clientWidth) { return; }
+        const offset = active.getBoundingClientRect().left - tabs.getBoundingClientRect().left + tabs.scrollLeft;
+        tabs.scrollLeft = Math.max(0, offset - (tabs.clientWidth - active.offsetWidth) / 2);
+    });
 
     window.AppUI = {
         toast: showToast,

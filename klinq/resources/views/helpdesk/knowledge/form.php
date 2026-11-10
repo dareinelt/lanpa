@@ -25,7 +25,7 @@ $tagValue = is_array($tags) ? implode(', ', array_map(static fn (mixed $t): stri
             <div class="form-group<?= has_error('tags') ? ' has-error' : '' ?>"><label for="f-tags">Tags</label><input id="f-tags" name="tags" value="<?= e(form_value(null, 'tags', $prefill['tags'] ?? $tagValue)) ?>" maxlength="500" list="tag-suggestions" data-hd-tags><datalist id="tag-suggestions"></datalist><p class="form-hint">Mehrere Tags mit Komma trennen.</p><?= field_error('tags') ?></div>
             <div class="form-group<?= has_error('slug') ? ' has-error' : '' ?>"><label for="f-slug">Kurzlink (optional)</label><input id="f-slug" name="slug" value="<?= e($val('slug')) ?>" maxlength="200" class="mono"><?= field_error('slug') ?></div>
         </div>
-        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> <?= $isNew ? 'Artikel anlegen' : 'Speichern' ?></button><a class="btn btn-ghost" href="<?= e($back) ?>">Abbrechen</a></div>
+        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> <?= $isNew ? 'Artikel anlegen' : 'Speichern' ?></button><a class="btn btn-secondary" href="<?= e($back) ?>">Abbrechen</a></div>
     </form>
 </div>
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

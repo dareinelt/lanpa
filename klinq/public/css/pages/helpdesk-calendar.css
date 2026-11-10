@@ -349,14 +349,15 @@ a.hd-cal-slot:hover { background-color: var(--color-primary-soft); }
 
 /* ------------------------------------------------------------------ Schmale Fenster */
 @media (max-width: 760px) {
-    .hd-cal { --hd-cal-time-col: 44px; }
-    .hd-cal-title { font-size: var(--font-size-md); }
+    .hd-cal { --hd-cal-time-col: 48px; }
+    /* Titel darf umbrechen, damit die Kalenderwoche sichtbar bleibt */
+    .hd-cal-title { font-size: var(--font-size-md); white-space: normal; overflow: visible; }
     .hd-cal-toolbar { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
     .hd-cal-dayhead { flex-direction: column; gap: 0; padding: var(--space-1); min-width: 0; }
     .hd-cal-dayhead-name { display: none; }
     .hd-cal-dayhead-short { display: block; font-size: var(--font-size-xs); }
     .hd-cal-dayhead-num { font-size: var(--font-size-sm); }
-    .hd-cal-allday-label { font-size: 0.625rem; padding-inline: 2px; hyphens: auto; }
+    .hd-cal-allday-label { font-size: 0.5625rem; padding-inline: 2px; hyphens: manual; overflow-wrap: normal; word-break: normal; text-align: center; }
     .hd-cal-event { padding-inline: var(--space-1); }
     .hd-cal-event-meta { display: none; }
     .hd-cal-month-cell { min-height: 72px; padding: 2px; }

@@ -54,7 +54,7 @@ $statusTransitions = array_values(array_filter(
         <h1><?= e($ticket['subject']) ?></h1>
         <div class="ticket-header-badges">
             <?= badge($ticket['status_name'], $ticket['status_color']) ?>
-            <span class="badge is-<?= e($ticket['priority_color']) ?>"><span class="prio-dot"></span><?= e($ticket['priority_name']) ?></span>
+            <span class="badge is-neutral"><span class="prio-dot is-<?= e($ticket['priority_color']) ?>"></span><?= e($ticket['priority_name']) ?></span>
             <?= badge($ticket['type_name'], $ticket['type_color'] ?? 'neutral') ?>
             <?php if ($isMerged): ?><span class="badge is-neutral"><?= icon('merge', 'icon icon-xs') ?> Zusammengeführt in <a href="/helpdesk/tickets/<?= (int) $ticket['merged_into_ticket_id'] ?>"><?= e($ticket['merged_into_number']) ?></a></span><?php endif; ?>
             <?php if ((int) $ticket['escalation_level'] > 0): ?><span class="badge is-danger">Eskalationsstufe <?= (int) $ticket['escalation_level'] ?></span><?php endif; ?>
@@ -77,10 +77,10 @@ $statusTransitions = array_values(array_filter(
         <?php endif; ?>
         <?php if ($isAgent && $transitions !== [] && !$readOnly): ?>
             <?php if ($acceptTransition !== null): ?>
-                <button type="button" class="btn btn-secondary btn-sm" data-hd-status="<?= e($acceptTransition['code']) ?>" data-hd-label="<?= e($acceptLabel) ?>" data-requires-resolution="0" data-requires-reason="0"><?= icon('user') ?> <?= e($acceptLabel) ?></button>
+                <button type="button" class="btn btn-secondary btn-sm" data-hd-status="<?= e($acceptTransition['code']) ?>" data-hd-label="<?= e($acceptLabel) ?>" data-requires-resolution="0" data-requires-reason="0"><?= icon('timer') ?> <?= e($acceptLabel) ?></button>
             <?php endif; ?>
             <?php if ($closeTransition !== null): ?>
-                <button type="button" class="btn btn-primary btn-sm" data-hd-status="<?= e($closeTransition['code']) ?>" data-hd-label="<?= e($closeTransition['name']) ?>" data-requires-resolution="<?= !empty($closeTransition['requires_resolution']) ? '1' : '0' ?>" data-requires-reason="0"><?= icon('check') ?> Schließen</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-hd-status="<?= e($closeTransition['code']) ?>" data-hd-label="<?= e($closeTransition['name']) ?>" data-requires-resolution="<?= !empty($closeTransition['requires_resolution']) ? '1' : '0' ?>" data-requires-reason="0"><?= icon('check') ?> Schließen</button>
             <?php endif; ?>
             <?php if ($pauseTransitions !== []): ?>
                 <button type="button" class="btn btn-secondary btn-sm" data-hd-status="<?= e($pauseTransitions[0]['code']) ?>" data-hd-label="<?= e($pauseTransitions[0]['name']) ?>" data-requires-resolution="0" data-requires-reason="0" data-hd-pause="1"><?= icon('clock') ?> <?= ($ticket['status_category'] ?? '') === 'pending' ? 'Pausierung ändern' : 'Pausieren' ?></button>
@@ -491,7 +491,7 @@ $statusTransitions = array_values(array_filter(
         <?php endif; ?>
         <?php if ($can('helpdesk.merge') && !$readOnly && !$closed): ?>
         <div id="merge" class="side-edit">
-            <button type="button" class="btn btn-danger btn-sm" data-dialog-open="merge-dialog"><?= icon('merge') ?> Ticket zusammenführen …</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="merge-dialog"><?= icon('merge') ?> Ticket zusammenführen …</button>
             <p class="form-hint">Führt dieses Ticket in ein bestehendes Ticket über und informiert die meldende Person optional per E-Mail.</p>
         </div>
         <?php endif; ?>
@@ -529,6 +529,9 @@ $statusTransitions = array_values(array_filter(
         <h3 class="text-sm">Vorschläge</h3>
         <ul class="side-list"><?php foreach ($articles as $a): ?><li><div class="side-list-main"><a href="/helpdesk/knowledge/<?= (int) $a['id'] ?>"><?= e($a['title']) ?></a><?php if (!empty($a['summary'])): ?><div class="text-xs text-muted"><?= e(mb_strimwidth((string) $a['summary'], 0, 120, '…')) ?></div><?php endif; ?></div>
             <?php if ($can('knowledgebase.manage') && !$readOnly): ?><form method="post" action="/helpdesk/knowledge/<?= (int) $a['id'] ?>/tickets" class="inline-form"><?= csrf_field() ?><input type="hidden" name="ticket" value="<?= e($ticket['number']) ?>"><button type="submit" class="btn btn-ghost btn-sm" title="Mit Ticket verknüpfen"><?= icon('link') ?></button></form><?php endif; ?></li><?php endforeach; ?></ul>
+        <?php endif; ?>
+        <?php if ($linkedArticles === [] && $articles === []): ?>
+        <p class="text-muted text-sm mb-0">Keine passenden Artikel gefunden.</p>
         <?php endif; ?>
         <?php if ($can('knowledgebase.manage') && !empty($ticket['resolution'])): ?>
             <a class="btn btn-secondary btn-sm mt-2" href="/helpdesk/knowledge/new?ticket=<?= $id ?>"><?= icon('plus') ?> Artikel aus Lösung erstellen</a>

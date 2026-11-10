@@ -25,7 +25,7 @@ $prefix = 'cal';
     <div class="alert alert-info"><?= icon('ticket') ?> Aus Ticket <a href="/helpdesk/tickets/<?= (int) $event['ticket_id'] ?>"><?= e($event['ticket_number'] ?? ('#' . (int) $event['ticket_id'])) ?></a><?= !empty($event['ticket_subject']) ? ' · ' . e($event['ticket_subject']) : '' ?></div>
 <?php endif; ?>
 
-<div class="card card-form">
+<div class="card card-form card-form-wide">
     <?php if ($canEdit): ?>
     <form method="post" action="<?= $isNew ? '/helpdesk/kalender' : '/helpdesk/kalender/' . (int) $event['id'] ?>" novalidate>
         <?= csrf_field() ?>

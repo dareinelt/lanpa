@@ -1,5 +1,5 @@
 <?php require_once __DIR__ . '/../../partials/helpers.php'; ob_start();
-$activeNav = 'portal';
+$activeNav = 'portal-tickets';
 $areaLabel = 'Portal';
 $scripts = ['/js/helpdesk.js', '/js/helpdesk-media.js'];
 $val = static fn (string $key, string $default = ''): string => form_value(null, $key, $prefill[$key] ?? $default);
@@ -25,7 +25,7 @@ $val = static fn (string $key, string $default = ''): string => form_value(null,
             <div class="form-group<?= has_error('urgency') ? ' has-error' : '' ?>"><label>Dringlichkeit</label><div class="impact-grid"><?php foreach ($urgencyLabels as $key => $label): ?><label><input type="radio" name="urgency" value="<?= (int) $key ?>"<?= checked($val('urgency', '2') === (string) $key) ?>> <?= e($label) ?></label><?php endforeach; ?></div><?= field_error('urgency') ?></div>
         </div>
         <div class="form-group<?= has_error('file') ? ' has-error' : '' ?>"><label for="f-file">Anhang</label><input id="f-file" type="file" name="file"><p class="form-hint">Optional: Screenshot oder Datei zur Fehlermeldung.</p><?= field_error('file') ?></div>
-        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> Anfrage absenden</button><a class="btn btn-ghost" href="/portal">Abbrechen</a></div>
+        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> Anfrage absenden</button><a class="btn btn-secondary" href="/portal">Abbrechen</a></div>
     </form>
 </div>
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

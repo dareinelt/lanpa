@@ -676,18 +676,18 @@ Einstellung des Intranets und nicht der Systemeinstellung des Rechners.
 
 | Variable | Ableitung |
 | --- | --- |
-| `--klinq-lanpa-accent` | Akzentfarbe, 15 % in Richtung Hintergrund abgeschwächt |
-| `--klinq-lanpa-accent-strong` | Akzentfarbe unverändert |
-| `--klinq-lanpa-accent-dark` | Akzentfarbe, 22 % in Richtung Schwarz |
+| `--klinq-lanpa-accent` | lesbare Akzentfarbe, 15 % in Richtung Hintergrund abgeschwächt (Hover); reicht der Kontrast zu `--klinq-lanpa-on-accent` nicht (< 4,5:1), stattdessen 12 % von der Schriftfarbe weg verschoben |
+| `--klinq-lanpa-accent-strong` | Akzentfarbe; so weit angepasst, bis sie auf Hintergrund, Fläche, Hover-Fläche und `--klinq-lanpa-accent-soft` den Mindestkontrast 4,5:1 erreicht (Links, aktive Reiter) – im hellen Standarddesign unverändert |
+| `--klinq-lanpa-accent-dark` | lesbare Akzentfarbe, 22 % in Richtung Schwarz (`:active`); bei zu geringem Kontrast zur Schrift 24 % von ihr weg |
 | `--klinq-lanpa-accent-soft` | Akzentfarbe, 88 % in Richtung Hintergrund |
-| `--klinq-lanpa-on-accent` | lesbare Textfarbe auf dem Akzent |
+| `--klinq-lanpa-on-accent` | Schwarz oder Weiß nach tatsächlichem Kontrast zu `--klinq-lanpa-accent-strong` (`Color::bestTextColor`) |
 | `--klinq-lanpa-background` | Hintergrund |
 | `--klinq-lanpa-surface` | Fläche |
 | `--klinq-lanpa-surface-hover` | Fläche bei Hover |
 | `--klinq-lanpa-border` | Text 82 % in Richtung Hintergrund |
 | `--klinq-lanpa-border-strong` | Text 68 % in Richtung Hintergrund (Rahmen von Eingabefeldern) |
 | `--klinq-lanpa-text` | Textfarbe |
-| `--klinq-lanpa-muted` | gedämpfte Textfarbe |
+| `--klinq-lanpa-muted` | gedämpfte Textfarbe; auf Hintergrund, Fläche und Hover-Fläche auf mindestens 4,5:1 angehoben |
 | `--klinq-lanpa-color-scheme` | `dark` im dunklen, sonst `light` (steuert Dateiauswahl, Auswahllisten und Bildlaufleisten des Browsers) |
 
 Die Statusfarben werden je Design getrennt abgeleitet, weil sie in KLINQ zwei
@@ -696,7 +696,7 @@ interne Notizen) und Hintergrund von Schaltflächen und Meldungen.
 
 | Variable | Heller Modus | Dunkler Modus |
 | --- | --- | --- |
-| `--klinq-lanpa-<name>` | `#107c41`, `#9a6a00`, `#b3261e`, `#5b6b7b` (Erfolg, Warnung, Fehler, Neutral) | Ausgangsfarbe, so weit aufgehellt, bis sie auf der eigenen gedämpften Fläche den Mindestkontrast 4,5:1 erreicht (`App\Support\Color::ensureContrast`) |
+| `--klinq-lanpa-<name>` | `#107c41`, `#9a6a00`, `#b3261e`, `#5b6b7b` (Erfolg, Warnung, Fehler, Neutral) | Ausgangsfarbe, so weit aufgehellt, bis sie auf der eigenen gedämpften Fläche sowie auf Fläche und Hover-Fläche den Mindestkontrast 4,5:1 erreicht (`App\Support\Color::ensureContrast`) |
 | `--klinq-lanpa-<name>-soft` | `#e5f3ec`, `#fdf3d7`, `#fbeae9`, `#eceff2` | Ausgangsfarbe 82 % in Richtung Hintergrund abgedunkelt |
 | `--klinq-lanpa-on-<name>` | lesbare Textfarbe auf der Vollfläche | lesbare Textfarbe auf der Vollfläche (Schwarz oder Weiß nach tatsächlichem Kontrast) |
 | `--klinq-lanpa-on-text` | Textfarbe auf `--klinq-lanpa-text` (Standard-Toast) | ebenso |

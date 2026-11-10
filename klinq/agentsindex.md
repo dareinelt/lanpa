@@ -193,7 +193,10 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   `[Bild n]` mit Vorschau, beim Absenden aufgelöst), gerendert über `App\Support\RichText`;
   Dateianhänge laufen weiter über `DocumentService` (`documents`, `entity_type = ticket`).
   Die Felder des Statusdialogs (`#st-resolution`, `#st-note`) tragen dieselben Attribute; `tickets.resolution`
-  ist deshalb `MEDIUMTEXT` (Migration 036). Grenze: `TicketService::MAX_TEXT_CHARS`.
+  ist deshalb `MEDIUMTEXT` (Migration 036). Grenze: `TicketService::MAX_TEXT_CHARS`. Bilddateien unter den
+  Anhängen (MIME-Typ `image/…`) öffnen sich per Klick im Overlay (`public/js/ui.js`, Link-Attribut
+  `data-image-overlay` samt `data-image-title`) – im Ticket, an Kommentaren, in der Aufgabe und im Portal;
+  ohne JavaScript bleibt der Link der normale Aufruf der Datei.
 - **Ticketnummern** folgen `HELPDESK_TICKET_PREFIX-JJJJ-NNNNNN`, vergeben über `ticket_sequences` analog zu
   den Inventarnummern (`TicketNumberService`).
 - **Weiterleiten von Tickets**: `POST /helpdesk/tickets/{id}/forward` (`helpdesk.assign`) setzt den Bearbeiter neu
@@ -377,7 +380,8 @@ ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
   (`helpdesk-ai.js` für Textfelder, `helpdesk-mail.js` für den Mail-Editor im Ticket – gleiche Styles
   `.hd-ctx-menu`/`.hd-ai-dialog`, gemeinsame `window.AppUI`; die Empfängerauswahl nutzt `picker.js`),
   Zusammenführen-Dialog (`helpdesk-merge.js`),
-  Anheften von Kommunikations- und Aufgaben-Einträgen ohne Neuladen (`helpdesk-pins.js`).
+  Anheften von Kommunikations- und Aufgaben-Einträgen ohne Neuladen (`helpdesk-pins.js`),
+  Bildanhänge im Overlay (`ui.js`, Links mit `data-image-overlay`).
 - CSS ist nach `base/`, `layout/`, `components/`, `pages/`, `utilities/` gegliedert und wird über
   `public/css/app.css` importiert; Design-Tokens als CSS-Variablen.
 - **Keine Inline-Styles und keine Inline-Skripte** – die CSP verbietet `unsafe-inline`.

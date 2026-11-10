@@ -36,6 +36,78 @@
         }
     }
 
+    /**
+     * Bildanhänge erscheinen im Overlay statt in der Browseransicht: Links mit
+     * `data-image-overlay` öffnen einen Dialog mit Bild, Dateiname und Download-Verweis.
+     * Ohne JavaScript bleibt der Link ein normaler Aufruf der Datei.
+     */
+    function imageDialog() {
+        let dialog = document.getElementById("ui-image-dialog");
+        if (dialog) { return dialog; }
+        dialog = document.createElement("dialog");
+        dialog.id = "ui-image-dialog";
+        dialog.className = "dialog dialog-image";
+        dialog.setAttribute("aria-labelledby", "ui-image-dialog-title");
+
+        const header = document.createElement("div");
+        header.className = "dialog-header";
+        const title = document.createElement("h2");
+        title.id = "ui-image-dialog-title";
+        header.appendChild(title);
+        const closeTop = document.createElement("button");
+        closeTop.type = "button";
+        closeTop.className = "btn btn-ghost btn-sm";
+        closeTop.setAttribute("data-dialog-close", "");
+        closeTop.setAttribute("aria-label", "Schließen");
+        closeTop.textContent = "×";
+        header.appendChild(closeTop);
+
+        const body = document.createElement("div");
+        body.className = "dialog-body dialog-image-body";
+        const image = document.createElement("img");
+        image.alt = "";
+        body.appendChild(image);
+
+        const footer = document.createElement("div");
+        footer.className = "dialog-footer";
+        const download = document.createElement("a");
+        download.className = "btn btn-secondary";
+        download.textContent = "Herunterladen";
+        download.setAttribute("download", "");
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "btn btn-primary";
+        close.textContent = "Schließen";
+        close.setAttribute("data-dialog-close", "");
+        footer.appendChild(download);
+        footer.appendChild(close);
+
+        dialog.appendChild(header);
+        dialog.appendChild(body);
+        dialog.appendChild(footer);
+        // Bild beim Schließen freigeben, damit der Speicher nicht bis zum Seitenwechsel belegt bleibt
+        dialog.addEventListener("close", function () { image.removeAttribute("src"); });
+        document.body.appendChild(dialog);
+        return dialog;
+    }
+
+    /** Bild eines Anhangs im Overlay zeigen; Download-Adresse ergänzt `download=1` für die Anlage. */
+    function openImageOverlay(link) {
+        const dialog = imageDialog();
+        const name = (link.getAttribute("data-image-title") || link.textContent || "").trim();
+        const download = new URL(link.href, window.location.href);
+        download.searchParams.set("download", "1");
+        dialog.querySelector("h2").textContent = name;
+        dialog.querySelector("img").src = link.href;
+        dialog.querySelector("img").alt = name;
+        dialog.querySelector("a").href = download.toString();
+        if (typeof dialog.showModal === "function") {
+            dialog.showModal();
+        } else {
+            window.open(link.href, "_blank", "noopener");
+        }
+    }
+
     function csrfToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
         return meta ? meta.getAttribute("content") : "";
@@ -106,6 +178,11 @@
     }
 
     document.addEventListener("click", function (event) {
+        const imageLink = event.target.closest("[data-image-overlay]");
+        if (imageLink && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
+            event.preventDefault();
+            openImageOverlay(imageLink);
+        }
         const opener = event.target.closest("[data-dialog-open]");
         if (opener) {
             const validateFormId = opener.getAttribute("data-dialog-validate");
@@ -333,6 +410,7 @@
         confirm: confirmOverlay,
         openDialog: openDialog,
         closeDialog: closeDialog,
+        openImage: openImageOverlay,
         api: api,
         basePath: BASE_PATH,
         url: withBase,

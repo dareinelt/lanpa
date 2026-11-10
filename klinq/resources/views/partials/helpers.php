@@ -218,6 +218,38 @@ if (!function_exists('icon')) {
     }
 }
 
+if (!function_exists('attachment_is_image')) {
+    /** Bildanhang? Maßgeblich ist der MIME-Typ aus `documents`. */
+    function attachment_is_image(array $document): bool
+    {
+        return str_starts_with((string) ($document['mime_type'] ?? ''), 'image/');
+    }
+}
+
+if (!function_exists('attachment_icon')) {
+    /** Auge für Bilder (öffnen im Overlay), Büroklammer für alles andere. */
+    function attachment_icon(array $document, string $class = 'icon icon-xs'): string
+    {
+        return icon(attachment_is_image($document) ? 'eye' : 'paperclip', $class);
+    }
+}
+
+if (!function_exists('attachment_overlay_attrs')) {
+    /**
+     * Öffnet Bildanhänge im Overlay von `public/js/ui.js`; ohne JavaScript bleibt der Link normal.
+     *
+     * @param array<string,mixed> $document
+     */
+    function attachment_overlay_attrs(array $document): string
+    {
+        if (!attachment_is_image($document)) {
+            return '';
+        }
+
+        return ' data-image-overlay="1" data-image-title="' . e($document['original_name'] ?? '') . '"';
+    }
+}
+
 if (!function_exists('nl2br_e')) {
     function nl2br_e(?string $value): string
     {

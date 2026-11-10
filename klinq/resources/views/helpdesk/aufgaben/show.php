@@ -92,7 +92,7 @@ $journalLabels = [
             <?php foreach ($attachments as $a): ?>
                 <?php $canDeleteAttachment = $canManageAttachments || (int) ($a['uploaded_by'] ?? 0) === (int) ($currentUserId ?? 0); ?>
                 <tr>
-                    <td><a href="/helpdesk/aufgaben/<?= $id ?>/anhaenge/<?= (int) $a['id'] ?>"><?= icon('paperclip', 'icon icon-xs') ?> <?= e($a['original_name']) ?></a><?php if (!empty($a['note'])): ?><div class="text-xs text-muted"><?= e($a['note']) ?></div><?php endif; ?></td>
+                    <td><a href="/helpdesk/aufgaben/<?= $id ?>/anhaenge/<?= (int) $a['id'] ?>"<?= attachment_overlay_attrs($a) ?>><?= attachment_icon($a) ?> <?= e($a['original_name']) ?></a><?php if (!empty($a['note'])): ?><div class="text-xs text-muted"><?= e($a['note']) ?></div><?php endif; ?></td>
                     <td class="nowrap"><?= fmt_bytes((int) $a['size_bytes']) ?></td>
                     <td class="nowrap text-sm"><?= fmt_datetime($a['created_at']) ?><div class="text-xs text-muted"><?= e($a['uploaded_by_name']) ?></div></td>
                     <td class="text-right">

@@ -181,7 +181,7 @@ $statusTransitions = array_values(array_filter(
                 <?php $cAtt = array_filter($attachments, static fn (array $a): bool => (int) ($a['comment_id'] ?? 0) === (int) $c['id']); ?>
                 <?php if ($cAtt !== []): ?>
                 <ul class="comment-attachments">
-                    <?php foreach ($cAtt as $a): ?><li><a href="/helpdesk/tickets/<?= $id ?>/attachments/<?= (int) $a['id'] ?>"><?= icon('paperclip', 'icon icon-xs') ?> <?= e($a['original_name']) ?></a> <span class="text-muted text-xs"><?= fmt_bytes((int) $a['size_bytes']) ?></span></li><?php endforeach; ?>
+                    <?php foreach ($cAtt as $a): ?><li><a href="/helpdesk/tickets/<?= $id ?>/attachments/<?= (int) $a['id'] ?>"<?= attachment_overlay_attrs($a) ?>><?= attachment_icon($a) ?> <?= e($a['original_name']) ?></a> <span class="text-muted text-xs"><?= fmt_bytes((int) $a['size_bytes']) ?></span></li><?php endforeach; ?>
                 </ul>
                 <?php endif; ?>
             </li>
@@ -223,7 +223,7 @@ $statusTransitions = array_values(array_filter(
             <tbody>
             <?php foreach ($attachments as $a): ?>
                 <tr>
-                    <td><a href="/helpdesk/tickets/<?= $id ?>/attachments/<?= (int) $a['id'] ?>"><?= icon('paperclip', 'icon icon-xs') ?> <?= e($a['original_name']) ?></a><?php if ((int) $a['is_internal'] === 1): ?> <span class="badge is-warning">Intern</span><?php endif; ?><?php if (!empty($a['note'])): ?><div class="text-xs text-muted"><?= e($a['note']) ?></div><?php endif; ?></td>
+                    <td><a href="/helpdesk/tickets/<?= $id ?>/attachments/<?= (int) $a['id'] ?>"<?= attachment_overlay_attrs($a) ?>><?= attachment_icon($a) ?> <?= e($a['original_name']) ?></a><?php if ((int) $a['is_internal'] === 1): ?> <span class="badge is-warning">Intern</span><?php endif; ?><?php if (!empty($a['note'])): ?><div class="text-xs text-muted"><?= e($a['note']) ?></div><?php endif; ?></td>
                     <td class="nowrap"><?= fmt_bytes((int) $a['size_bytes']) ?></td>
                     <td class="nowrap text-sm"><?= fmt_datetime($a['created_at']) ?><div class="text-xs text-muted"><?= e($a['uploaded_by_name']) ?></div></td>
                     <td class="text-right">

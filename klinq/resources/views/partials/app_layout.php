@@ -55,12 +55,18 @@ ob_start();
             <span class="brand-logo" aria-hidden="true"><?= icon($moduleIcon) ?></span>
             <span><?= e($moduleLabel) ?></span>
         </a>
+        <?php
+        // Unterseiten ohne eigenen Menüpunkt (z. B. „Meine Tickets“ des Portals im
+        // Agentenmenü) markieren den übergeordneten Punkt.
+        $navKeys = array_column(array_filter($navItems, static fn (array $i): bool => $i['type'] !== 'section'), 'key');
+        $activeNavItem = in_array($activeNav, $navKeys, true) ? $activeNav : (str_starts_with($activeNav, 'portal') && in_array('portal', $navKeys, true) ? 'portal' : $activeNav);
+        ?>
         <nav class="sidebar-nav" aria-label="Hauptnavigation">
             <?php foreach ($navItems as $item): ?>
                 <?php if ($item['type'] === 'section'): ?>
                     <span class="sidebar-section-label"><?= e($item['label']) ?></span>
                 <?php else: ?>
-                    <?php $isActive = $activeNav === $item['key']; ?>
+                    <?php $isActive = $activeNavItem === $item['key']; ?>
                     <a href="<?= e($item['href']) ?>" class="<?= $isActive ? 'is-active' : '' ?>"<?= $isActive ? ' aria-current="page"' : '' ?>>
                         <?= icon($item['icon']) ?><span><?= e($item['label']) ?></span>
                         <?php if (!empty($item['badge'])): ?><span class="nav-badge"><?= (int) $item['badge'] ?></span><?php endif; ?>

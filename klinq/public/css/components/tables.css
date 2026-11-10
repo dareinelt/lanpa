@@ -1,4 +1,16 @@
-.table-wrapper { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    /* Scrollschatten: Ist die Tabelle breiter als der Rahmen, zeigt ein Schatten am
+       Rand, dass seitlich weitere Spalten folgen (reines CSS, verschwindet am Ende). */
+    background:
+        linear-gradient(to right, var(--color-surface) 30%, transparent) left center / 40px 100% no-repeat local,
+        linear-gradient(to left, var(--color-surface) 30%, transparent) right center / 40px 100% no-repeat local,
+        radial-gradient(farthest-side at 0 50%, color-mix(in srgb, var(--color-text) 22%, transparent), transparent) left center / 14px 100% no-repeat scroll,
+        radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--color-text) 22%, transparent), transparent) right center / 14px 100% no-repeat scroll,
+        var(--color-surface);
+}
 .table { width: 100%; border-collapse: collapse; font-size: var(--font-size-sm); }
 .table th, .table td { text-align: left; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); vertical-align: middle; }
 .table th { background: var(--color-surface-alt); font-weight: var(--font-weight-semibold); color: var(--color-text-muted); white-space: nowrap; }
@@ -9,6 +21,8 @@
 .table tr.is-clickable { cursor: pointer; }
 .table .table-actions { text-align: right; white-space: nowrap; width: 1%; }
 .table .table-actions .btn + .btn { margin-left: var(--space-1); }
+/* Aktionen nebeneinander, auch wenn eine davon ein Formular ist */
+.table .table-actions form { display: inline-block; margin: 0 0 0 var(--space-1); }
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .table td.nowrap, .table th.nowrap { white-space: nowrap; }
 .table-empty { padding: var(--space-6); text-align: center; color: var(--color-text-muted); }

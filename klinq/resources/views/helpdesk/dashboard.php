@@ -33,7 +33,7 @@ $listTable = static function (array $rows) use ($ticketUrl, $slaRemaining, $slaP
                 <tr class="<?= e($rowClass) ?>" data-href="<?= e($ticketUrl($r)) ?>">
                     <td class="ticket-number"><a href="<?= e($ticketUrl($r)) ?>"><?= e($r['number'] ?? '–') ?></a></td>
                     <td class="ticket-subject"><a href="<?= e($ticketUrl($r)) ?>"><?= e($r['subject'] ?? '–') ?></a><div class="ticket-meta"><?= e($r['requester_name'] ?? $r['requester_user_name'] ?? '–') ?> · <?= fmt_datetime($r['updated_at'] ?? null) ?></div></td>
-                    <td class="nowrap"><span class="prio-dot is-<?= e($r['priority_color'] ?? 'neutral') ?>"></span><?= e($r['priority_name'] ?? '–') ?></td>
+                    <td class="nowrap" title="Priorität: <?= e($r['priority_name'] ?? '–') ?>"><span class="prio-dot is-<?= e($r['priority_color'] ?? 'neutral') ?>"></span><span class="prio-name"><?= e($r['priority_name'] ?? '–') ?></span></td>
                     <td><?= badge($r['status_name'] ?? '–', $r['status_color'] ?? 'neutral') ?></td>
                     <td class="sla-cell">
                         <?php if ($closed): ?>
@@ -54,7 +54,7 @@ $barList = static function (array $rows): void {
     <?php if ($rows === []): ?><p class="text-muted mb-0">Keine Daten.</p><?php else: ?>
     <ul class="bar-list">
         <?php foreach ($rows as $r): ?>
-            <li><label><?= e($r['label'] ?? '–') ?></label><progress class="bar-progress" value="<?= (int) ($r['cnt'] ?? 0) ?>" max="<?= (int) $max ?>"></progress><span class="mono"><?= (int) ($r['cnt'] ?? 0) ?></span></li>
+            <li><label><?= e($r['label'] ?? '–') ?></label><progress class="bar-progress" value="<?= (int) ($r['cnt'] ?? 0) ?>" max="<?= (int) $max ?>"></progress><span class="tabular"><?= (int) ($r['cnt'] ?? 0) ?></span></li>
         <?php endforeach; ?>
     </ul>
     <?php endif; ?>
@@ -97,7 +97,7 @@ $barList = static function (array $rows): void {
     </ul>
 </section>
 <?php endif; ?>
-<div class="grid grid-4 mb-4">
+<div class="grid grid-4 mb-4 hd-kpis">
     <a class="card stat-card is-info" href="/helpdesk/tickets?view=mine_open"><span class="stat-value"><?= (int) ($counts['new_count'] ?? 0) ?></span><span class="stat-label">Neu</span></a>
     <a class="card stat-card" href="/helpdesk/tickets?view=open"><span class="stat-value"><?= (int) ($counts['open_count'] ?? 0) ?> <span class="text-sm text-muted">/ <?= (int) ($counts['in_progress'] ?? 0) ?></span></span><span class="stat-label">Offen / in Bearbeitung</span></a>
     <a class="card stat-card is-warning" href="/helpdesk/tickets?view=paused"><span class="stat-value"><?= (int) ($counts['paused'] ?? 0) ?></span><span class="stat-label">Pausiert</span></a>
@@ -108,8 +108,10 @@ $barList = static function (array $rows): void {
     <div class="card stat-card"><span class="stat-value"><?= (int) ($counts['created_today'] ?? 0) ?> / <?= (int) ($counts['resolved_today'] ?? 0) ?></span><span class="stat-label">Heute erstellt / gelöst</span></div>
 </div>
 <div class="status-tabs mb-4" aria-label="Schnellansichten">
-    <?php foreach ($views as $key => $label): ?>
-        <a class="status-tab" href="/helpdesk/tickets?view=<?= e($key) ?>"><?= e($label) ?> <span class="status-tab-count"><?= (int) ($viewCounts[$key] ?? 0) ?></span></a>
+    <?php foreach ($views as $key => $label):
+        // „Kritisch“ fehlt in den Ansichtszählern; die Kennzahl oben zählt dieselbe Ansicht.
+        $n = $viewCounts[$key] ?? ($key === 'critical' && isset($counts['critical']) ? (int) $counts['critical'] : null); ?>
+        <a class="status-tab" href="/helpdesk/tickets?view=<?= e($key) ?>"><?= e($label) ?><?php if ($n !== null): ?> <span class="status-tab-count"><?= (int) $n ?></span><?php endif; ?></a>
     <?php endforeach; ?>
 </div>
 <div class="hd-lists">
@@ -124,7 +126,7 @@ $barList = static function (array $rows): void {
         <ul class="bar-list">
             <?php $maxDay = max(1, ...array_map(static fn (array $r): int => max((int) ($r['created_count'] ?? 0), (int) ($r['resolved_count'] ?? 0)), $data['per_day'] ?: [['created_count' => 1, 'resolved_count' => 1]])); ?>
             <?php foreach (($data['per_day'] ?? []) as $r): ?>
-                <li><label><?= fmt_date($r['day'] ?? null) ?></label><progress class="bar-progress" value="<?= (int) ($r['created_count'] ?? 0) ?>" max="<?= (int) $maxDay ?>"></progress><span class="mono">+<?= (int) ($r['created_count'] ?? 0) ?> / ✓<?= (int) ($r['resolved_count'] ?? 0) ?></span></li>
+                <li><label><?= fmt_date($r['day'] ?? null) ?></label><progress class="bar-progress" value="<?= (int) ($r['created_count'] ?? 0) ?>" max="<?= (int) $maxDay ?>"></progress><span class="tabular">+<?= (int) ($r['created_count'] ?? 0) ?> / ✓<?= (int) ($r['resolved_count'] ?? 0) ?></span></li>
             <?php endforeach; ?>
         </ul>
     </div>

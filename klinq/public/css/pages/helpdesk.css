@@ -2,17 +2,27 @@
 
 /* Ticketliste */
 .ticket-number { font-family: var(--font-mono); font-size: var(--font-size-sm); white-space: nowrap; }
-.ticket-subject { min-width: 16rem; }
+/* Ticketnummern: Monospace bleibt (Ziffern untereinander), Unterstreichung erst beim Überfahren */
+.ticket-number a { text-decoration: none; }
+.ticket-number a:hover, .ticket-number a:focus-visible { text-decoration: underline; }
+.ticket-subject { min-width: 12rem; }
 .ticket-subject a { font-weight: var(--font-weight-semibold); }
 /* Aufgaben-Kategorie als Pill vor dem Aufgabentitel */
 .task-category { margin-right: var(--space-2); font-weight: var(--font-weight-medium); }
 .ticket-meta { font-size: var(--font-size-xs); color: var(--color-text-muted); display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: 2px; }
-.ticket-row.is-closed { opacity: 0.7; }
+.ticket-row.is-closed td { color: var(--color-text-muted); }
+/* Neu hereingekommen, noch von keinem Agenten angesehen: fett mit Akzentstreifen
+   (bewusst nicht in der Fehlerfarbe – „ungesehen“ ist kein Fehler) */
+.ticket-row.is-unseen td { background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); font-weight: var(--font-weight-semibold); }
+.ticket-row.is-unseen td:first-child { box-shadow: inset 3px 0 0 var(--color-primary); }
+.ticket-row.is-unseen .ticket-number a, .ticket-row.is-unseen .ticket-subject a { font-weight: 700; }
+.ticket-legend { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin: var(--space-2) 0 0; font-size: var(--font-size-xs); color: var(--color-text-muted); }
+.ticket-legend-item { display: inline-flex; align-items: center; gap: var(--space-1); }
+.ticket-legend-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: color-mix(in srgb, var(--color-primary) 5%, var(--color-surface)); box-shadow: inset 3px 0 0 var(--color-primary); }
+.ticket-legend-swatch.is-overdue { background: transparent; box-shadow: inset 3px 0 0 var(--color-danger); }
+.ticket-legend-swatch.is-warning { background: transparent; box-shadow: inset 3px 0 0 var(--color-warning); }
 .ticket-row.is-overdue td:first-child { box-shadow: inset 3px 0 0 var(--color-danger); }
 .ticket-row.is-warning td:first-child { box-shadow: inset 3px 0 0 var(--color-warning); }
-/* Neu hereingekommen, noch von keinem Agenten angesehen: fett und leicht rot hinterlegt */
-.ticket-row.is-unseen td { background: var(--color-danger-soft); font-weight: var(--font-weight-semibold); }
-.ticket-row.is-unseen .ticket-number a, .ticket-row.is-unseen .ticket-subject a { font-weight: 700; }
 /* An mich weitergeleitet, noch nicht übernommen */
 .ticket-row.is-forwarded td { background: var(--color-warning-soft); }
 .ticket-row.is-forwarded td:first-child { box-shadow: inset 3px 0 0 var(--color-warning); }
@@ -74,6 +84,9 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 
 /* Ticket-Detail */
 .ticket-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); gap: var(--space-4); align-items: start; }
+/* Hauptspalte: gleichmäßige Abstände zwischen den Karten (wie in der Seitenleiste) */
+.ticket-layout > :first-child { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.ticket-layout > :first-child > .card { margin: 0; }
 .ticket-sidebar > .card { margin-bottom: var(--space-4); }
 
 /* Aufklappbare Karten (Anhänge, Arbeitszeit) */
@@ -168,7 +181,7 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 .ticket-description, .comment-body { position: relative; overflow: auto; isolation: isolate; }
 .ticket-description table, .comment-body table { max-width: 100%; }
 /* HTML-E-Mails: eigenes Dokument im <iframe sandbox>, Höhe setzt helpdesk-mail-frame.js */
-.mail-frame { display: block; width: 100%; height: 16rem; border: 0; background: transparent; }
+.mail-frame { display: block; box-sizing: content-box; width: calc(100% - 2 * var(--space-3)); height: 16rem; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-sm); background: var(--color-mail-paper); }
 .ticket-description p, .comment-body p { margin: 0 0 var(--space-2); }
 .ticket-description blockquote, .comment-body blockquote { margin: 0 0 var(--space-2) var(--space-3); padding-left: var(--space-3); border-left: 2px solid var(--color-border); color: var(--color-text-muted); }
 /* Zitierter E-Mail-Verlauf: eingeklappt, um Platz zu sparen */
@@ -190,13 +203,27 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 
 /* Wissensdatenbank */
 .kb-article-body { overflow-wrap: anywhere; line-height: 1.6; max-width: 80ch; }
+.kb-article-meta { padding-bottom: var(--space-4); margin-bottom: var(--space-4); border-bottom: 1px solid var(--color-border); }
+/* Formular am Ende einer randlosen Karte (card-flush) braucht eigenen Innenabstand */
+.card-flush > .card-flush-form { padding: var(--space-4) var(--space-5) var(--space-5); border-top: 1px solid var(--color-border); }
 .kb-article-summary { font-size: var(--font-size-lg); color: var(--color-text-muted); }
 .kb-card-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--space-4); }
-.kb-card h3 { margin: 0 0 var(--space-1); font-size: var(--font-size-base); }
+a.kb-card { text-decoration: none; color: inherit; }
+a.kb-card:hover { border-color: var(--color-primary); }
+.kb-card h3 { margin: 0 0 var(--space-1); font-size: var(--font-size-base); color: var(--color-primary); }
+a.kb-card:hover h3, a.kb-card:focus-visible h3 { text-decoration: underline; }
 .kb-card p { margin: 0; color: var(--color-text-muted); font-size: var(--font-size-sm); }
 
 /* Dashboard */
-.hd-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.hd-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+/* Kompakte Dashboard-Listen: Betreff darf umbrechen, damit Status und SLA sichtbar bleiben */
+.hd-lists .ticket-subject { min-width: 8rem; }
+.hd-lists .badge { white-space: normal; text-align: center; }
+/* Kompakte Listen: Priorität nur als Farbpunkt (Name als Tooltip und für Screenreader) */
+.hd-lists .prio-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.hd-lists .prio-dot { margin-right: 0; }
+.hd-lists .table-compact th, .hd-lists .table-compact td { padding-left: var(--space-2); padding-right: var(--space-2); }
+.hd-lists .table-compact th:first-child, .hd-lists .table-compact td:first-child { padding-left: var(--space-4); }
 .bar-list { list-style: none; margin: 0; padding: 0; }
 .bar-list li { display: grid; grid-template-columns: minmax(6rem, 1fr) 3fr auto; gap: var(--space-2); align-items: center; padding: var(--space-1) 0; font-size: var(--font-size-sm); }
 .bar-list .bar { height: 10px; background: var(--color-neutral-soft); border-radius: var(--radius-full); overflow: hidden; }
@@ -224,6 +251,10 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 
 /* Administration */
 .admin-tabs { margin-bottom: var(--space-4); }
+/* Konfigurationsübersichten: Werte in Lesegröße, lange Texte brechen um */
+.config-grid { gap: var(--space-4); }
+.config-grid .kpi-value { font-size: var(--font-size-md); overflow-wrap: anywhere; }
+.config-grid .kpi-label { text-transform: none; letter-spacing: 0; font-size: var(--font-size-xs); }
 /* Feste Palette: Farbpunkte bleiben in jedem Design gleich (siehe tokens.css). */
 .color-swatch { display: inline-block; width: 12px; height: 12px; border-radius: var(--radius-full); vertical-align: middle; margin-right: var(--space-1); background: var(--color-palette-neutral); }
 .color-swatch.is-info { background: var(--color-palette-info); }
@@ -243,12 +274,30 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 .topbar-area-label.is-portal { color: var(--color-success); background: var(--color-success-soft); }
 
 @media (max-width: 960px) {
-    .ticket-layout, .sla-panel, .hd-lists { grid-template-columns: 1fr; }
-    .ticket-sidebar .sla-panel { grid-template-columns: 1fr; }
+    .ticket-layout, .sla-panel, .hd-lists { grid-template-columns: minmax(0, 1fr); }
+    .ticket-sidebar .sla-panel { grid-template-columns: minmax(0, 1fr); }
     .member-list { columns: 1; }
 }
+/* Rufnummer in der kompakten Seitenleiste in Lesegröße (sonst größer als alle anderen Werte) */
+.ticket-sidebar .detail-phone { font-size: inherit; }
+/* Umschalter der Filterleiste nur auf schmalen Bildschirmen */
+.filter-collapse-toggle { display: none; }
+
 @media (max-width: 640px) {
-    .ticket-sidebar .detail-list { grid-template-columns: 1fr; gap: 0; }
+    .ticket-sidebar .detail-list { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    /* Kennzahlen zweispaltig statt einer Karte je Zeile */
+    .hd-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+    .hd-kpis .stat-card, .hd-kpis.kpi-card, .hd-kpis > .card { padding: var(--space-3); }
+    .hd-kpis .stat-value, .hd-kpis .kpi-value { font-size: var(--font-size-2xl); }
+    /* Reiter wischbar in einer Zeile statt fünf umbrochener Zeilen */
+    .status-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+    .status-tab { flex: 0 0 auto; white-space: nowrap; }
+    /* Filter: Suche bleibt sichtbar, übrige Felder über „Weitere Filter“ */
+    .filter-collapse-toggle { display: inline-flex; margin-bottom: var(--space-3); }
+    .filter-collapsible:not(.is-open) > :not(.filter-wide):not(input[type="hidden"]) { display: none; }
+    .ticket-subject { min-width: 7rem; }
+    .table .badge { white-space: normal; }
+    .config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
     .impact-grid { grid-template-columns: 1fr; }
@@ -331,6 +380,13 @@ progress.is-info::-moz-progress-bar { background: var(--color-info); }
 .ai-test-question { background: var(--color-surface-alt); border: 1px solid var(--color-border); }
 .ai-test-answer { background: var(--color-primary-soft); border: 1px solid var(--color-primary); }
 .ai-test-meta { margin: 0; }
+
+/* Klassisches Ticketformular: Abschnitte deutlich von Feldbeschriftungen absetzen */
+.hd-form-section { margin: 0; padding: var(--space-5) 0 0; border-top: 1px solid var(--color-border); }
+.hd-form-section + .hd-form-section { margin-top: var(--space-5); }
+.hd-form-section:first-of-type { padding-top: 0; border-top: 0; }
+.hd-form-section > legend { float: left; width: 100%; margin: 0 0 var(--space-3); padding: 0; font-size: var(--font-size-lg); font-weight: var(--font-weight-semibold); color: var(--color-text); }
+.hd-form-section > legend + * { clear: both; }
 
 /* Modus-Umschalter im Ticketformular */
 .hd-mode-switch {

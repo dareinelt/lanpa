@@ -29,7 +29,7 @@ if (!empty($secondLevelAssigneeId)) {
     </div>
     <?php endif; ?>
     <div class="form-group<?= has_error('subject') ? ' has-error' : '' ?>">
-        <label for="f-subject">Betreff *</label>
+        <label for="f-subject">Betreff <span class="required">*</span></label>
         <input id="f-subject" name="subject" required minlength="3" maxlength="255" value="<?= e(form_value($row, 'subject')) ?>" data-hd-kb-suggest="#kb-suggest" data-hd-field="ticket_subject" autofocus>
         <?= field_error('subject') ?>
     </div>
@@ -94,7 +94,7 @@ if (!empty($secondLevelAssigneeId)) {
 <?php elseif ($step === 3): ?>
     <?php $canEditDescription = !$isEdit || $can('helpdesk.admin'); ?>
     <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">
-        <label for="f-description">Beschreibung<?= $canEditDescription ? ' *' : '' ?></label>
+        <label for="f-description">Beschreibung<?= $canEditDescription ? ' <span class="required">*</span>' : '' ?></label>
         <textarea id="f-description" name="description" rows="8" required maxlength="2000000" data-hd-field="ticket_description" data-hd-media-images data-hd-media-preview="#f-description-preview"<?= $canEditDescription ? '' : ' readonly aria-readonly="true"' ?>><?= e(form_value($row, 'description')) ?></textarea>
         <div class="hd-media-preview" id="f-description-preview" hidden></div>
         <?php if ($canEditDescription): ?>
@@ -116,7 +116,7 @@ if (!empty($secondLevelAssigneeId)) {
 <?php elseif ($step === 4): ?>
     <div class="form-row form-row-3">
         <div class="form-group<?= has_error('ticket_type_id') ? ' has-error' : '' ?>">
-            <label for="f-type">Typ *</label>
+            <label for="f-type">Typ <span class="required">*</span></label>
             <select id="f-type" name="ticket_type_id" required>
                 <?php foreach ($types as $t): ?><option value="<?= (int) $t['id'] ?>"<?= selected(form_value($row, 'ticket_type_id', $types[0]['id'] ?? ''), $t['id']) ?>><?= e($t['name']) ?></option><?php endforeach; ?>
             </select>
@@ -156,7 +156,7 @@ if (!empty($secondLevelAssigneeId)) {
         <div class="form-group<?= has_error('priority_id') ? ' has-error' : '' ?>">
             <label for="f-priority">Priorität <span class="text-muted">(überschreibt Matrix)</span></label>
             <select id="f-priority" name="priority_id">
-                <option value="">automatisch aus Auswirkung × Dringlichkeit</option>
+                <option value="" title="automatisch aus Auswirkung × Dringlichkeit">automatisch (Matrix)</option>
                 <?php foreach ($priorities as $p): ?><option value="<?= (int) $p['id'] ?>"<?= selected(form_value($row, 'priority_id'), $p['id']) ?>><?= e($p['name']) ?></option><?php endforeach; ?>
             </select>
             <?= field_error('priority_id') ?>

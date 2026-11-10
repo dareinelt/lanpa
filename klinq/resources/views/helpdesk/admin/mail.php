@@ -10,6 +10,24 @@ $configLabels = [
     'processed_mailbox' => 'Verarbeitet nach', 'interval_minutes' => 'Intervall (min)', 'batch_size' => 'Nachrichten je Lauf',
     'system_user' => 'Systembenutzer', 'allow_unknown_senders' => 'Unbekannte Absender', 'default_type' => 'Standardtyp', 'mail_domain' => 'Message-ID-Domain',
 ];
+// Technische Kürzel lesbar darstellen (Treiber, Verschlüsselung, Server ohne Hostnamen)
+$configValue = static function (string $key, mixed $value): string {
+    $value = (string) $value;
+    if ($value === '') {
+        return '–';
+    }
+    if ($key === 'driver') {
+        return ['imap' => 'IMAP', 'pop3' => 'POP3', 'file' => 'Datei'][$value] ?? $value;
+    }
+    if ($key === 'encryption') {
+        return ['ssl' => 'SSL/TLS', 'tls' => 'STARTTLS', 'starttls' => 'STARTTLS', 'none' => 'keine'][strtolower($value)] ?? $value;
+    }
+    if ($key === 'host' && ctype_digit($value)) {
+        return '– (Port ' . $value . ')';
+    }
+
+    return $value;
+};
 ?>
 <div class="page-header">
     <div><h1 class="page-title">E-Mail-Eingang</h1><p class="page-subtitle text-muted">Abgeholte Nachrichten und ihre Zuordnung zu Tickets (Threading über Message-ID und Ticketnummer).</p></div>
@@ -20,19 +38,19 @@ $configLabels = [
 <?php endif; ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Konfiguration</h2><span class="text-muted text-sm">letzter Abruf: <?= $lastRun !== null ? fmt_datetime($lastRun) : '–' ?><?php if ($canConfigure): ?> · <a href="/admin/helpdesk-mail">bearbeiten</a><?php endif; ?></span></div>
-    <div class="grid grid-4">
+    <div class="grid grid-4 config-grid">
         <?php foreach ($config as $key => $value): ?>
-            <div><span class="kpi-value text-sm"><?= is_bool($value) ? e($yesNo($value)) : e((string) ($value !== '' ? $value : '–')) ?></span><span class="kpi-label"><?= e($configLabels[$key] ?? $key) ?></span></div>
+            <div><span class="kpi-value"><?= is_bool($value) ? e($yesNo($value)) : e($configValue((string) $key, $value)) ?></span><span class="kpi-label"><?= e($configLabels[$key] ?? $key) ?></span></div>
         <?php endforeach; ?>
     </div>
 </div>
-<div class="grid grid-4 mb-4">
+<div class="grid grid-4 mb-4 hd-kpis">
     <?php foreach ($counts as $action => $count): ?>
         <div class="card kpi-card"><span class="kpi-value"><?= (int) $count ?></span><span class="kpi-label"><?= e($actionLabel[$action] ?? $action) ?></span></div>
     <?php endforeach; ?>
 </div>
 <div class="card card-flush">
-    <div class="card-header"><h2>Protokoll</h2><span class="text-muted text-sm">letzte <?= count($rows) ?> Nachrichten</span></div>
+    <div class="card-header"><h2>Protokoll</h2><span class="text-muted text-sm"><?= $rows === [] ? 'keine Einträge' : (count($rows) === 1 ? 'letzte Nachricht' : 'letzte ' . count($rows) . ' Nachrichten') ?></span></div>
     <?php if ($rows === []): ?>
         <div class="table-empty">Noch keine Nachrichten verarbeitet.</div>
     <?php else: ?>

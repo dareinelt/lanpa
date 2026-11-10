@@ -13,11 +13,11 @@ $visibilityColor = static fn (string $v): string => $v === 'public' ? 'success' 
     </div>
     <div class="page-actions"><?php if ($canManage): ?><a class="btn btn-secondary" href="/helpdesk/knowledge/<?= (int) $article['id'] ?>/edit"><?= icon('pen') ?> Bearbeiten</a><?php endif; ?></div>
 </div>
-<div class="grid grid-2">
+<div class="ticket-layout">
     <article class="card">
-        <dl class="detail-list mb-4">
+        <dl class="detail-list kb-article-meta">
             <dt>Kategorie</dt><dd><?= e($article['category_name'] ?? '–') ?></dd>
-            <dt>Aufrufe</dt><dd class="mono"><?= (int) ($article['view_count'] ?? 0) ?></dd>
+            <dt>Aufrufe</dt><dd><?= (int) ($article['view_count'] ?? 0) ?></dd>
             <dt>Veröffentlicht</dt><dd><?= fmt_datetime($article['published_at'] ?? null) ?></dd>
             <dt>Geändert</dt><dd><?= fmt_datetime($article['updated_at'] ?? null) ?><?= !empty($article['updated_by_name']) ? ' · ' . e($article['updated_by_name']) : '' ?></dd>
         </dl>
@@ -68,7 +68,7 @@ $visibilityColor = static fn (string $v): string => $v === 'public' ? 'success' 
             </tbody></table></div>
             <?php endif; ?>
             <?php if ($canManage): ?>
-            <form method="post" action="/helpdesk/knowledge/<?= (int) $article['id'] ?>/tickets" class="card-form">
+            <form method="post" action="/helpdesk/knowledge/<?= (int) $article['id'] ?>/tickets" class="card-form card-flush-form">
                 <?= csrf_field() ?>
                 <div class="form-group<?= has_error('ticket') ? ' has-error' : '' ?>"><label for="f-ticket">Ticket verknüpfen</label><input id="f-ticket" name="ticket" value="<?= e(form_value(null, 'ticket')) ?>" list="ticket-suggestions" data-hd-ticket-search="" placeholder="Ticketnummer oder Betreff"><datalist id="ticket-suggestions"></datalist><?= field_error('ticket') ?></div>
                 <button type="submit" class="btn btn-secondary btn-sm"><?= icon('link') ?> Verknüpfen</button>

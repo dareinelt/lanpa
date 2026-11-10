@@ -1,11 +1,11 @@
 <?php require_once __DIR__ . '/../../partials/helpers.php'; ob_start();
-$activeNav = 'portal';
+$activeNav = 'portal-tickets';
 $areaLabel = 'Portal';
 $tabs = ['portal_open' => 'Offen', 'portal_resolved' => 'Gelöst', 'all' => 'Alle'];
 $hasFilter = ($q ?? '') !== '';
 ?>
 <div class="page-header">
-    <div><h1 class="page-title">Meine Tickets</h1><p class="page-subtitle text-muted"><?= (int) $paginator->total ?> Anfragen</p></div>
+    <div><h1 class="page-title">Meine Tickets</h1><p class="page-subtitle text-muted"><?= (int) $paginator->total ?> <?= (int) $paginator->total === 1 ? 'Anfrage' : 'Anfragen' ?></p></div>
     <div class="page-actions"><?php if ($canCreate): ?><a class="btn btn-primary" href="<?= e($createUrl) ?>"><?= icon('plus') ?> Neue Anfrage</a><?php endif; ?></div>
 </div>
 <div class="status-tabs mb-4" role="tablist" aria-label="Ansichten">
@@ -22,7 +22,7 @@ $hasFilter = ($q ?? '') !== '';
     <div class="empty-state">Keine Tickets gefunden.</div>
 <?php else: ?>
     <div class="table-wrapper"><table class="table"><thead><tr><th>Nr.</th><th>Betreff</th><th>Status</th><th>Priorität</th><th>Kategorie</th><th>Aktualisiert</th></tr></thead><tbody>
-    <?php foreach ($rows as $t): ?><tr class="ticket-row<?= in_array($t['status_category'] ?? '', ['resolved', 'closed', 'cancelled'], true) ? ' is-closed' : '' ?>" data-href="/portal/tickets/<?= (int) $t['id'] ?>"><td class="ticket-number"><a href="/portal/tickets/<?= (int) $t['id'] ?>"><?= e($t['number']) ?></a></td><td class="ticket-subject"><a href="/portal/tickets/<?= (int) $t['id'] ?>"><?= e($t['subject']) ?></a><div class="ticket-meta"><?= fmt_datetime($t['created_at'] ?? null) ?> · <?= (int) ($t['comment_count'] ?? 0) ?> Kommentare</div></td><td><?= badge($t['status_name'] ?? '–', $t['status_color'] ?? 'neutral') ?></td><td><span class="prio-dot is-<?= e($t['priority_color'] ?? 'neutral') ?>"></span><?= e($t['priority_name'] ?? '–') ?></td><td><?= e($t['category_name'] ?? '–') ?></td><td class="nowrap"><?= fmt_datetime($t['updated_at'] ?? null) ?></td></tr><?php endforeach; ?>
+    <?php foreach ($rows as $t): ?><tr class="ticket-row<?= in_array($t['status_category'] ?? '', ['resolved', 'closed', 'cancelled'], true) ? ' is-closed' : '' ?>" data-href="/portal/tickets/<?= (int) $t['id'] ?>"><td class="ticket-number"><a href="/portal/tickets/<?= (int) $t['id'] ?>"><?= e($t['number']) ?></a></td><td class="ticket-subject"><a href="/portal/tickets/<?= (int) $t['id'] ?>"><?= e($t['subject']) ?></a><div class="ticket-meta"><?= fmt_datetime($t['created_at'] ?? null) ?> · <?= (int) ($t['comment_count'] ?? 0) ?> <?= (int) ($t['comment_count'] ?? 0) === 1 ? 'Kommentar' : 'Kommentare' ?></div></td><td><?= badge($t['status_name'] ?? '–', $t['status_color'] ?? 'neutral') ?></td><td><span class="prio-dot is-<?= e($t['priority_color'] ?? 'neutral') ?>"></span><?= e($t['priority_name'] ?? '–') ?></td><td><?= e($t['category_name'] ?? '–') ?></td><td class="nowrap"><?= fmt_datetime($t['updated_at'] ?? null) ?></td></tr><?php endforeach; ?>
     </tbody></table></div>
 <?php endif; ?>
 </div>

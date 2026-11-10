@@ -13,7 +13,7 @@ $canMerge = $can('helpdesk.merge');
 <div class="page-header">
     <div>
         <h1>Tickets</h1>
-        <p class="page-subtitle text-muted mb-0"><?= (int) $paginator->total ?> Tickets · <?= e($views[$filters['view']] ?? 'Alle') ?></p>
+        <p class="page-subtitle text-muted mb-0"><?= (int) $paginator->total ?> <?= (int) $paginator->total === 1 ? 'Ticket' : 'Tickets' ?> · <?= e($views[$filters['view']] ?? 'Alle') ?></p>
     </div>
     <div class="page-actions">
         <?php if ($canMerge): ?><button type="button" class="btn btn-secondary" data-hd-bulk-merge hidden><?= icon('merge') ?> Zusammenführen<span data-hd-bulk-merge-count></span></button><?php endif; ?>
@@ -28,7 +28,8 @@ $canMerge = $can('helpdesk.merge');
     <?php endforeach; ?>
 </div>
 
-<form method="get" action="/helpdesk/tickets" class="filter-bar filter-bar-dense" role="search">
+<button type="button" class="btn btn-secondary filter-collapse-toggle" data-filter-toggle aria-controls="ticket-filter" aria-expanded="<?= $hasFilter ? 'true' : 'false' ?>"><?= icon('filter') ?> Weitere Filter<?= $hasFilter ? ' (aktiv)' : '' ?></button>
+<form method="get" action="/helpdesk/tickets" class="filter-bar filter-bar-dense filter-collapsible<?= $hasFilter ? ' is-open' : '' ?>" id="ticket-filter" role="search">
     <input type="hidden" name="view" value="<?= e($filters['view']) ?>">
     <?php if ($sort !== 'created_at' || $dir !== 'desc'): ?><input type="hidden" name="sort" value="<?= e($sort) ?>"><input type="hidden" name="dir" value="<?= e($dir) ?>"><?php endif; ?>
     <?php foreach (['requester_employee_id', 'employee_id', 'asset_id', 'created_from', 'created_to'] as $hidden): ?>
@@ -146,9 +147,9 @@ $canMerge = $can('helpdesk.merge');
                     <div class="ticket-meta">
                         <span><?= e($r['type_name']) ?></span>
                         <?php if ($r['category_name']): ?><span>· <?= e($r['category_name']) ?><?= $r['subcategory_name'] ? ' / ' . e($r['subcategory_name']) : '' ?></span><?php endif; ?>
-                        <?php if ((int) $r['comment_count'] > 0): ?><span title="Kommentare">· <?= (int) $r['comment_count'] ?> Kommentare</span><?php endif; ?>
+                        <?php if ((int) $r['comment_count'] > 0): ?><span title="Kommentare">· <?= (int) $r['comment_count'] ?> <?= (int) $r['comment_count'] === 1 ? 'Kommentar' : 'Kommentare' ?></span><?php endif; ?>
                         <?php if ((int) $r['attachment_count'] > 0): ?><span title="Anhänge">· <?= icon('paperclip', 'icon icon-xs') ?> <?= (int) $r['attachment_count'] ?></span><?php endif; ?>
-                        <?php if ((int) $r['asset_count'] > 0): ?><span>· <?= (int) $r['asset_count'] ?> Asset(s)</span><?php endif; ?>
+                        <?php if ((int) $r['asset_count'] > 0): ?><span>· <?= (int) $r['asset_count'] ?> <?= (int) $r['asset_count'] === 1 ? 'Asset' : 'Assets' ?></span><?php endif; ?>
                         <?php if (!empty($r['tag_names'])): ?><span class="tag-list"><?php foreach (explode(',', (string) $r['tag_names']) as $tagName): ?><a class="tag-chip" href="<?= e(query_url('/helpdesk/tickets', $query, ['tag' => trim($tagName), 'page' => null])) ?>"><?= e(trim($tagName)) ?></a><?php endforeach; ?></span><?php endif; ?>
                     </div>
                 </td>
@@ -184,6 +185,13 @@ $canMerge = $can('helpdesk.merge');
     </div>
 <?php endif; ?>
 </div>
+<?php if ($rows !== []): ?>
+<p class="ticket-legend" aria-label="Legende">
+    <span class="ticket-legend-item"><span class="ticket-legend-swatch" aria-hidden="true"></span> Fett: noch von keinem Agenten angesehen</span>
+    <span class="ticket-legend-item"><span class="ticket-legend-swatch is-warning" aria-hidden="true"></span> SLA-Warnung</span>
+    <span class="ticket-legend-item"><span class="ticket-legend-swatch is-overdue" aria-hidden="true"></span> SLA überschritten</span>
+</p>
+<?php endif; ?>
 <?php include __DIR__ . '/../../partials/pagination.php'; ?>
 
 <?php if ($canMerge): ?>

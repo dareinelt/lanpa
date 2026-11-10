@@ -66,8 +66,8 @@ $renderEvent = static function (array $ev) use ($eventLabels): string {
         <details class="timeline-group">
             <summary class="timeline-group-summary">
                 <?= $renderEvent($newest) ?>
-                <span class="timeline-group-toggle" aria-hidden="true">
-                    <span class="timeline-group-more">+<?= count($older) ?></span>
+                <span class="timeline-group-toggle" title="<?= count($older) === 1 ? '1 weiterer Eintrag' : count($older) . ' weitere Einträge' ?>">
+                    <span class="timeline-group-more">+<?= count($older) ?> weitere</span>
                     <span class="timeline-group-close">−</span>
                 </span>
             </summary>

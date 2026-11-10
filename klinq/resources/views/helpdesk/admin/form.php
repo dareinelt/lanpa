@@ -82,7 +82,7 @@ $optionRows = static function (array $items, string $current, string $empty = 'â
             <div class="rule-hints mb-4"><p>Felder: <?php foreach ($ruleFields as $hint): ?><code><?= e($hint) ?></code> <?php endforeach; ?></p><p>Operatoren: <?php foreach ($ruleOperators as $hint): ?><code><?= e($hint) ?></code> <?php endforeach; ?></p><p>Aktionen: <?php foreach ($ruleActions as $hint): ?><code><?= e($hint) ?></code> <?php endforeach; ?></p></div>
             <div class="form-row form-row-3"><div class="form-group"><label for="f-sort">Sortierung</label><input id="f-sort" type="number" name="sort_order" value="<?= e($val('sort_order', '0')) ?>" min="0" max="9999"></div><label class="checkbox-row"><input type="checkbox" name="stop_processing" value="1"<?= form_checked($row, 'stop_processing', false) ?>> Weitere Regeln stoppen</label><label class="checkbox-row"><input type="checkbox" name="is_active" value="1"<?= form_checked($row, 'is_active', true) ?>> Aktiv</label></div>
         <?php endif; ?>
-        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> <?= $isNew ? 'Anlegen' : 'Speichern' ?></button><a class="btn btn-ghost" href="<?= e($back) ?>">Abbrechen</a></div>
+        <div class="form-actions"><button type="submit" class="btn btn-primary"><?= icon('check') ?> <?= $isNew ? 'Anlegen' : 'Speichern' ?></button><a class="btn btn-secondary" href="<?= e($back) ?>">Abbrechen</a></div>
     </form>
 </div>
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

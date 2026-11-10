@@ -38,7 +38,7 @@ $visibilityColor = static fn (string $v): string => $v === 'public' ? 'success' 
                     <td><?= e($r['category_name'] ?? '–') ?></td>
                     <td><?= badge($statuses[$r['status']] ?? $r['status'], $statusColor((string) $r['status'])) ?></td>
                     <td><?= badge($visibilities[$r['visibility']] ?? $r['visibility'], $visibilityColor((string) $r['visibility'])) ?></td>
-                    <td class="mono"><?= (int) ($r['view_count'] ?? 0) ?></td>
+                    <td class="tabular"><?= (int) ($r['view_count'] ?? 0) ?></td>
                     <td class="nowrap"><?= fmt_datetime($r['updated_at'] ?? null) ?></td>
                 </tr>
             <?php endforeach; ?>

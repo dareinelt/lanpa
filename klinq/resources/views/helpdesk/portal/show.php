@@ -1,5 +1,5 @@
 <?php require_once __DIR__ . '/../../partials/helpers.php'; ob_start();
-$activeNav = 'portal';
+$activeNav = 'portal-tickets';
 $areaLabel = 'Portal';
 $scripts = ['/js/helpdesk.js', '/js/helpdesk-media.js'];
 $userId = (int) ($user['id'] ?? 0);

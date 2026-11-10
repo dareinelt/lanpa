@@ -24,8 +24,8 @@ $ticketUrl = static fn (array $t): string => '/portal/tickets/' . (int) ($t['id'
     <div class="card card-flush">
         <div class="card-header"><h2>Meine offenen Anfragen</h2><span class="text-muted text-sm"><?= (int) $openCount ?></span></div>
         <?php if ($open === []): ?><div class="table-empty">Sie haben keine offenen Anfragen.</div><?php else: ?>
-        <div class="table-wrapper"><table class="table table-compact"><thead><tr><th>Nr.</th><th>Betreff</th><th>Status</th><th>Aktualisiert</th></tr></thead><tbody>
-        <?php foreach ($open as $t): ?><tr class="ticket-row" data-href="<?= e($ticketUrl($t)) ?>"><td class="ticket-number"><a href="<?= e($ticketUrl($t)) ?>"><?= e($t['number']) ?></a></td><td class="ticket-subject"><a href="<?= e($ticketUrl($t)) ?>"><?= e($t['subject']) ?></a></td><td><?= badge($t['status_name'] ?? '–', $t['status_color'] ?? 'neutral') ?></td><td class="nowrap"><?= fmt_datetime($t['updated_at'] ?? null) ?></td></tr><?php endforeach; ?>
+        <div class="table-wrapper"><table class="table table-compact"><thead><tr><th>Nr.</th><th>Betreff</th><th>Status</th></tr></thead><tbody>
+        <?php foreach ($open as $t): ?><tr class="ticket-row" data-href="<?= e($ticketUrl($t)) ?>"><td class="ticket-number"><a href="<?= e($ticketUrl($t)) ?>"><?= e($t['number']) ?></a></td><td class="ticket-subject"><a href="<?= e($ticketUrl($t)) ?>"><?= e($t['subject']) ?></a><div class="ticket-meta">aktualisiert <?= fmt_datetime($t['updated_at'] ?? null) ?></div></td><td><?= badge($t['status_name'] ?? '–', $t['status_color'] ?? 'neutral') ?></td></tr><?php endforeach; ?>
         </tbody></table></div>
         <?php endif; ?>
         <div class="form-actions"><a class="btn btn-ghost" href="/portal/tickets">Alle meine Anfragen</a></div>
@@ -44,7 +44,7 @@ $ticketUrl = static fn (array $t): string => '/portal/tickets/' . (int) ($t['id'
     </div>
     <div class="card">
         <div class="card-header"><h2>Übersicht</h2></div>
-        <div class="kpi-row"><div><span class="kpi-value"><?= (int) $openCount ?></span><span class="kpi-label">offen</span></div><div><span class="kpi-value"><?= (int) $resolvedCount ?></span><span class="kpi-label">gelöst</span></div><div><span class="kpi-value mono"><?= (int) $userId ?></span><span class="kpi-label">Benutzer-ID</span></div></div>
+        <div class="kpi-row"><div><span class="kpi-value"><?= (int) $openCount ?></span><span class="kpi-label">offen</span></div><div><span class="kpi-value"><?= (int) $resolvedCount ?></span><span class="kpi-label">gelöst</span></div></div>
     </div>
 </div>
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

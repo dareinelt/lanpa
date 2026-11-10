@@ -178,6 +178,16 @@
     }
 
     document.addEventListener("click", function (event) {
+        // Einklappbare Filterleiste (schmale Bildschirme): weitere Filter ein-/ausblenden
+        const filterToggle = event.target.closest("[data-filter-toggle]");
+        if (filterToggle) {
+            const bar = document.getElementById(filterToggle.getAttribute("aria-controls") || "");
+            if (bar) {
+                const open = !bar.classList.contains("is-open");
+                bar.classList.toggle("is-open", open);
+                filterToggle.setAttribute("aria-expanded", open ? "true" : "false");
+            }
+        }
         const imageLink = event.target.closest("[data-image-overlay]");
         if (imageLink && event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey) {
             event.preventDefault();

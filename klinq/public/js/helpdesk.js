@@ -269,9 +269,19 @@
         if (notify) { notify.checked = true; }
         const pauseUntil = dialog.querySelector("input[name='pause_until']");
         if (pauseUntil) {
-            const preset = dialog.getAttribute("data-paused-until") || "";
-            pauseUntil.min = hdLocalInput(new Date());
-            pauseUntil.value = preset !== "" ? hdUtcToLocal(preset) : hdLocalInput(new Date(Date.now() + 3600000));
+            const pauseBlock = pauseUntil.closest("[data-show-for]");
+            if (pauseBlock && pauseBlock.hidden) {
+                // Ausgeblendet darf das Feld die Formularprüfung nicht blockieren: Ein abgelaufenes
+                // Pausenende läge vor "min" und der Browser bräche das Absenden ohne Meldung ab.
+                pauseUntil.removeAttribute("min");
+                pauseUntil.value = "";
+            } else {
+                const min = hdLocalInput(new Date());
+                const preset = hdUtcToLocal(dialog.getAttribute("data-paused-until") || "");
+                pauseUntil.min = min;
+                // Abgelaufenes Pausenende nicht vorbelegen, sondern wie ohne Vorgabe eine Stunde ab jetzt
+                pauseUntil.value = preset > min ? preset : hdLocalInput(new Date(Date.now() + 3600000));
+            }
         }
         if (trigger.hasAttribute("data-hd-pause")) { hdSyncPause(dialog); }
         if (typeof dialog.showModal === "function") { dialog.showModal(); }

@@ -186,6 +186,38 @@ final class HelpdeskCalendarTest extends TestCase
         $this->assertSame([], CalendarDateSuggestionService::parse('{"termine":[{"datum":"2026-02-30"},{"datum":"morgen"}]}'));
     }
 
+    public function testParseReadsDateRangesWithinLimits(): void
+    {
+        $list = CalendarDateSuggestionService::parse('{"termine":[{"datum":"2026-12-23","datum_ende":"2027-01-02","beschreibung":"Urlaub"},{"datum":"2026-11-20","datum_ende":"2026-11-19"},{"datum":"2026-11-21","datum_ende":"2027-03-01"}]}');
+
+        $this->assertSame('2027-01-02', $list[2]['end_date']);
+        $this->assertNull($list[0]['end_date'], 'Ende vor Beginn wird verworfen');
+        $this->assertNull($list[1]['end_date'], 'Mehr als 31 Tage wird verworfen');
+    }
+
+    public function testParseDropsPastDatesAndDerivesEndDateFromExcerpt(): void
+    {
+        $list = CalendarDateSuggestionService::parse(
+            '{"termine":[{"datum":"2026-11-02","textstelle":"Seit dem 2.11."},{"datum":"2026-12-23","textstelle":"vom 23.12. bis 2.1."}]}',
+            '2026-11-10'
+        );
+
+        $this->assertCount(1, $list, 'Daten vor der Ticketerstellung sind keine Termine');
+        $this->assertSame('2027-01-02', $list[0]['end_date']);
+        $this->assertSame('2026-11-20', CalendarDateSuggestionService::endDateFromExcerpt('vom 18.11. bis zum 20.11.', '2026-11-18'));
+        $this->assertNull(CalendarDateSuggestionService::endDateFromExcerpt('am 18.11. um 9 Uhr', '2026-11-18'));
+    }
+
+    public function testCalendarAidListsWeekdaysAndIsoWeeks(): void
+    {
+        $aid = CalendarDateSuggestionService::calendarAid(new \DateTimeImmutable('2026-11-10 10:00', new \DateTimeZone('Europe/Berlin')));
+
+        $this->assertStringContains('Dienstag 2026-11-10', $aid);
+        $this->assertStringContains('Montag 2026-11-23', $aid);
+        $this->assertStringContains('KW 48: 2026-11-23 (Mo) bis 2026-11-29 (So)', $aid);
+        $this->assertStringContains('KW 53: 2026-12-28 (Mo) bis 2027-01-03 (So)', $aid, '2026 hat 53 ISO-Wochen');
+    }
+
     public function testParseDropsEndBeforeStart(): void
     {
         $list = CalendarDateSuggestionService::parse('{"termine":[{"datum":"2026-11-20","beginn":"14:00","ende":"13:00"}]}');

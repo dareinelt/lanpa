@@ -42,7 +42,7 @@ final class CalendarDateSuggestionService
      * Erkannte Termine eines Tickets.
      *
      * @param array<string,mixed> $ticket Ticketzeile (subject, description, created_at in UTC)
-     * @return array{available:bool,message:string,suggestions:list<array{date:string,start:?string,end:?string,label:string,excerpt:string}>}
+     * @return array{available:bool,message:string,suggestions:list<array{date:string,end_date:?string,start:?string,end:?string,label:string,excerpt:string}>}
      */
     public function suggest(array $ticket): array
     {
@@ -76,7 +76,7 @@ final class CalendarDateSuggestionService
             return ['available' => false, 'message' => 'Die KI ist derzeit nicht erreichbar. Bitte das Datum manuell eintragen.', 'suggestions' => []];
         }
 
-        $suggestions = self::parse($response['content']);
+        $suggestions = self::parse($response['content'], $reference->format('Y-m-d'));
         $count = count($suggestions);
 
         return [
@@ -108,12 +108,14 @@ final class CalendarDateSuggestionService
 
     /**
      * Antwort des Modells auswerten. Erwartet {"termine":[{"datum":"JJJJ-MM-TT","beginn":"HH:MM"|null,
-     * "ende":"HH:MM"|null,"beschreibung":"…","textstelle":"…"}]}, akzeptiert aber auch eine bloße Liste,
-     * englische Schlüssel, Codeblöcke und Begleittext.
+     * "ende":"HH:MM"|null,"datum_ende":"JJJJ-MM-TT"|null,"beschreibung":"…","textstelle":"…"}]}, akzeptiert aber auch eine bloße Liste,
+     * englische Schlüssel, Codeblöcke und Begleittext. Mit $notBefore (JJJJ-MM-TT, Erstellung des Tickets)
+     * werden Daten davor verworfen – sie beschreiben Vergangenes, keine Termine. Fehlt bei einem Zeitraum
+     * das Enddatum, wird es aus der Textstelle („bis 2.1.“) abgeleitet.
      *
-     * @return list<array{date:string,start:?string,end:?string,label:string,excerpt:string}>
+     * @return list<array{date:string,end_date:?string,start:?string,end:?string,label:string,excerpt:string}>
      */
-    public static function parse(string $content): array
+    public static function parse(string $content, ?string $notBefore = null): array
     {
         $decoded = self::decodeJson($content);
         if (!is_array($decoded)) {
@@ -136,12 +138,20 @@ final class CalendarDateSuggestionService
                 continue;
             }
             $date = self::normalizeDate((string) ($item['datum'] ?? $item['date'] ?? ''));
-            if ($date === null) {
+            if ($date === null || ($notBefore !== null && $date < $notBefore)) {
                 continue;
             }
+            $excerpt = (string) ($item['textstelle'] ?? $item['excerpt'] ?? $item['quote'] ?? '');
             $start = self::normalizeTime($item['beginn'] ?? $item['start'] ?? $item['uhrzeit'] ?? $item['time'] ?? null);
             $end = self::normalizeTime($item['ende'] ?? $item['end'] ?? null);
-            if ($start === null || ($end !== null && $end <= $start)) {
+            // Mehrtägig (z. B. Urlaub vom 23.12. bis 2.1.): Enddatum nur übernehmen, wenn es nach dem Beginn
+            // liegt und der Zeitraum plausibel ist (höchstens 31 Tage, wie im Kalender).
+            $endDate = self::normalizeDate((string) ($item['datum_ende'] ?? $item['end_date'] ?? $item['bis'] ?? ''))
+                ?? self::endDateFromExcerpt($excerpt, $date);
+            if ($endDate !== null && ($endDate <= $date || (new \DateTimeImmutable($date))->modify('+31 days')->format('Y-m-d') < $endDate)) {
+                $endDate = null;
+            }
+            if ($start === null || ($endDate === null && $end !== null && $end <= $start)) {
                 $end = null;
             }
             $key = $date . '|' . ($start ?? '');
@@ -150,10 +160,11 @@ final class CalendarDateSuggestionService
             }
             $result[$key] = [
                 'date' => $date,
+                'end_date' => $endDate,
                 'start' => $start,
                 'end' => $end,
                 'label' => self::clip((string) ($item['beschreibung'] ?? $item['label'] ?? $item['description'] ?? ''), 120),
-                'excerpt' => self::clip((string) ($item['textstelle'] ?? $item['excerpt'] ?? $item['quote'] ?? ''), 200),
+                'excerpt' => self::clip($excerpt, 200),
             ];
             if (count($result) >= self::MAX_SUGGESTIONS) {
                 break;
@@ -173,19 +184,45 @@ final class CalendarDateSuggestionService
         $system = 'Du analysierst Tickettexte eines IT-Help-Desks und findest darin Termine und Datumsangaben '
             . '(z. B. Vor-Ort-Termine, Einsätze, Fristen, Rückrufe, Umzüge, Schulungen). '
             . 'Antworte ausschließlich mit JSON in der Form '
-            . '{"termine":[{"datum":"JJJJ-MM-TT","beginn":"HH:MM oder null","ende":"HH:MM oder null","beschreibung":"kurze Bezeichnung","textstelle":"wörtliche Stelle im Text"}]}. '
-            . 'Relative Angaben wie „morgen“ oder „nächsten Montag“ beziehst du auf das Referenzdatum. '
+            . '{"termine":[{"datum":"JJJJ-MM-TT","beginn":"HH:MM oder null","ende":"HH:MM oder null","datum_ende":"JJJJ-MM-TT oder null","beschreibung":"kurze Bezeichnung","textstelle":"wörtliche Stelle im Text"}]}. '
+            . '„datum_ende“ setzt du nur bei Zeiträumen über mehrere Tage (z. B. „vom 23.12. bis 2.1.“), sonst null. '
+            . 'Relative Angaben wie „morgen“, „nächsten Montag“ oder „KW 48“ beziehst du auf das Referenzdatum; '
+            . 'Wochentage und Kalenderwochen liest du aus der mitgelieferten Kalenderhilfe ab, statt sie zu berechnen. '
+            . 'Datumsangaben aus E-Mail-Kopfzeilen (Gesendet, Datum) und Daten in der Vergangenheit sind keine Termine. '
             . 'Fehlt das Jahr, wähle das nächste passende Datum ab dem Referenzdatum. '
             . 'Erfinde keine Daten; enthält der Text keine Datumsangabe, antworte mit {"termine":[]}. '
             . 'Keine Erklärungen, kein Markdown.';
         $weekday = self::WEEKDAYS[(int) $reference->format('N') - 1];
         $user = 'Referenzdatum (Erstellung des Tickets): ' . $weekday . ', ' . $reference->format('Y-m-d') . "\n\n"
+            . self::calendarAid($reference) . "\n\n"
             . "Tickettext:\n\"\"\"\n" . $text . "\n\"\"\"";
 
         return [
             ['role' => 'system', 'content' => $system],
             ['role' => 'user', 'content' => $user],
         ];
+    }
+
+    /**
+     * Kalenderhilfe für das Modell: Wochentage der nächsten 14 Tage und die Zeiträume der nächsten
+     * Kalenderwochen. Kleine Modelle rechnen Wochentage und Kalenderwochen sonst häufig falsch.
+     */
+    public static function calendarAid(\DateTimeImmutable $reference): string
+    {
+        $day = $reference->setTime(0, 0);
+        $days = [];
+        for ($i = 0; $i < 14; $i++) {
+            $d = $day->modify('+' . $i . ' days');
+            $days[] = self::WEEKDAYS[(int) $d->format('N') - 1] . ' ' . $d->format('Y-m-d');
+        }
+        $monday = $day->modify('-' . ((int) $day->format('N') - 1) . ' days');
+        $weeks = [];
+        for ($i = 0; $i < 10; $i++) {
+            $from = $monday->modify('+' . (7 * $i) . ' days');
+            $weeks[] = 'KW ' . (int) $from->format('W') . ': ' . $from->format('Y-m-d') . ' (Mo) bis ' . $from->modify('+6 days')->format('Y-m-d') . ' (So)';
+        }
+
+        return "Kalenderhilfe – die nächsten Tage:\n" . implode("\n", $days) . "\nKalenderwochen:\n" . implode("\n", $weeks);
     }
 
     private function reference(string $createdAtUtc): \DateTimeImmutable
@@ -237,6 +274,28 @@ final class CalendarDateSuggestionService
         }
 
         return null;
+    }
+
+    /**
+     * Enddatum eines Zeitraums aus der Textstelle, z. B. „vom 23.12. bis 2.1.“ → 2027-01-02 bei Beginn 2026-12-23.
+     * Ohne Jahr gilt das erste passende Datum nach dem Beginn.
+     */
+    public static function endDateFromExcerpt(string $excerpt, string $startDate): ?string
+    {
+        if (preg_match('/(?:bis(?:\s+zum)?|–|-)\s*(\d{1,2})\.(\d{1,2})\.(\d{4})?/u', $excerpt, $m) !== 1) {
+            return null;
+        }
+        $start = new \DateTimeImmutable($startDate);
+        $year = isset($m[3]) && $m[3] !== '' ? (int) $m[3] : (int) $start->format('Y');
+        if (!checkdate((int) $m[2], (int) $m[1], $year)) {
+            return null;
+        }
+        $end = sprintf('%04d-%02d-%02d', $year, (int) $m[2], (int) $m[1]);
+        if ((!isset($m[3]) || $m[3] === '') && $end <= $startDate) {
+            $end = sprintf('%04d-%02d-%02d', $year + 1, (int) $m[2], (int) $m[1]);
+        }
+
+        return $end > $startDate ? $end : null;
     }
 
     private static function normalizeDate(string $value): ?string

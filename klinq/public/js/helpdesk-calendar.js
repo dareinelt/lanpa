@@ -141,10 +141,20 @@
         const description = form.querySelector('[name="description"]');
         let requireChoice = false;
         let loaded = false;
+        // Hat der Anwender während der Analyse schon selbst ein Datum eingetragen, überschreibt
+        // ein später eintreffender Vorschlag seine Eingabe nicht.
+        let touched = false;
+        [date, endDate, start, end, allDay].forEach(function (field) {
+            field.addEventListener("input", function () { touched = true; });
+        });
 
         function apply(suggestion) {
             date.value = suggestion.date;
-            endDate.value = suggestion.date;
+            endDate.value = suggestion.end_date || suggestion.date;
+            if (suggestion.end_date && !suggestion.start) {
+                // Mehrtägiger Zeitraum ohne Uhrzeit (z. B. Urlaub): ganztägig eintragen
+                allDay.checked = true;
+            }
             if (suggestion.start) {
                 allDay.checked = false;
                 start.value = suggestion.start;
@@ -176,7 +186,8 @@
                 input.value = String(index);
                 const text = document.createElement("span");
                 const head = document.createElement("strong");
-                head.textContent = formatDate(s.date) + (s.start ? ", " + s.start + (s.end ? "–" + s.end : "") + " Uhr" : "");
+                head.textContent = formatDate(s.date) + (s.end_date ? " – " + formatDate(s.end_date) : "")
+                    + (s.start ? ", " + s.start + (s.end ? "–" + s.end : "") + " Uhr" : "");
                 text.appendChild(head);
                 if (s.label) {
                     text.appendChild(document.createTextNode(" · " + s.label));
@@ -209,7 +220,10 @@
             options.appendChild(manual);
             list.hidden = false;
 
-            if (suggestions.length === 1) {
+            if (touched) {
+                // Eigene Eingabe behalten; die Vorschläge stehen zur Wahl bereit.
+                manualInput.checked = true;
+            } else if (suggestions.length === 1) {
                 // Ein Datum: als Vorschlag übernehmen, bleibt änderbar.
                 options.querySelector('input[value="0"]').checked = true;
                 apply(suggestions[0]);
@@ -229,12 +243,21 @@
                 return;
             }
             dialog.classList.add("is-loading");
+            // Lokale Modelle auf CPU brauchen beim ersten Aufruf (Modell laden) gern eine halbe Minute.
+            const slowHint = window.setTimeout(function () {
+                if (dialog.classList.contains("is-loading")) {
+                    status.textContent = "Die KI-Analyse dauert noch einen Moment … Das Datum kann währenddessen schon manuell eingetragen werden.";
+                }
+            }, 6000);
             UI.api("/helpdesk/tickets/" + dialog.getAttribute("data-hd-cal-ticket") + "/termin-vorschlaege")
                 .then(render)
                 .catch(function () {
                     render({ available: false, message: "Die KI ist derzeit nicht erreichbar. Bitte das Datum manuell eintragen.", suggestions: [] });
                 })
-                .finally(function () { dialog.classList.remove("is-loading"); });
+                .finally(function () {
+                    window.clearTimeout(slowHint);
+                    dialog.classList.remove("is-loading");
+                });
         }
 
         document.querySelectorAll('[data-dialog-open="' + dialog.id + '"]').forEach(function (button) {

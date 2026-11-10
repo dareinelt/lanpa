@@ -382,7 +382,9 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   `GET /helpdesk/kalender/neu`, `POST /helpdesk/kalender`, `GET|POST /helpdesk/kalender/{id}`,
   `POST /helpdesk/kalender/{id}/loeschen` (schreibend `helpdesk.update`), `GET /helpdesk/tickets/{id}/termin-vorschlaege`
   (JSON, `CalendarDateSuggestionService` über `AiSettingsService`/`AiChatClient`, Referenzdatum = Erstellung des
-  Tickets, Base64-Bilder entfernt, nichts gespeichert) und `POST /helpdesk/tickets/{id}/termin`. Nach
+  Tickets plus Kalenderhilfe `calendarAid()` (Wochentage, ISO-Kalenderwochen), Daten vor der Erstellung verworfen,
+  `datum_ende` bzw. `endDateFromExcerpt()` für Zeiträume, Base64-Bilder entfernt, nichts gespeichert; erprobt mit
+  `gemma4:e4b`, siehe `docs/helpdesk-ki.md`) und `POST /helpdesk/tickets/{id}/termin`. Nach
   `POST /helpdesk/support-shift/claim` setzt der Controller den Sitzungsmarker
   `HelpdeskCalendarService::OVERLAY_SESSION_KEY`; das Dashboard verbraucht ihn und öffnet das Overlay „Termine heute“
   (ohne Termine nur ein Hinweis). Positionen im Raster setzt `public/js/helpdesk-calendar.js` als CSS-Variablen

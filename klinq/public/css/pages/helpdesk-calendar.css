@@ -308,6 +308,8 @@ a.hd-cal-slot:hover { background-color: var(--color-primary-soft); }
 .hd-cal-readonly dd { margin: 0; white-space: pre-line; }
 
 .hd-cal-dialog { max-width: 720px; }
+/* Oben verankern: Treffen die Vorschläge ein, wächst der Dialog nach unten statt zu springen. */
+.hd-cal-dialog[open] { margin-top: min(8vh, 64px); }
 .hd-cal-suggest { margin-bottom: var(--space-4); }
 .hd-cal-suggest-status { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-3); }
 .hd-cal-suggest-status.is-warning { color: var(--color-warning); }

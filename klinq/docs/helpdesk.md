@@ -818,7 +818,10 @@ bezieht das Modell auf das Erstellungsdatum des Tickets.
   bleibt änderbar.
 - **Mehrere Daten erkannt**: Alle erscheinen als Auswahl mit der jeweiligen Textstelle; nichts ist vorbelegt, das
   Absenden ist erst nach der Wahl eines Datums (oder „Anderes Datum manuell eintragen“) möglich.
+- **Zeitraum** („vom 23.12. bis 2.1.“): Beginn und Ende werden übernommen, ohne Uhrzeit als ganztägiger Termin.
 - **Kein Datum, KI nicht eingerichtet oder nicht erreichbar**: Das Datum wird manuell eingetragen.
+- Die Analyse dauert mit lokalen Modellen einige Sekunden (beim ersten Aufruf bis zu etwa 40 Sekunden); ein
+  währenddessen selbst eingetragenes Datum bleibt erhalten.
 
 ![Dialog „Termin anlegen“ mit drei erkannten Daten zur Auswahl](screenshots/helpdesk-kalender-termin-aus-ticket.png)
 

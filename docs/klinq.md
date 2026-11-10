@@ -360,7 +360,10 @@ Statusfarben (Erfolg, Warnung, Fehler, Neutral) liefert das Intranet ebenfalls
 je Design: Im Dunkelmodus werden ihre Flächen abgedunkelt und ihre Schriftfarbe
 so weit aufgehellt, bis der Mindestkontrast erreicht ist. Dadurch bleiben
 interne Notizen, Hinweise und Badges lesbar – im hellen Modus sehen sie
-unverändert aus. Zusätzlich übernimmt KLINQ die Designwahl für die
+unverändert aus. Ebenso werden Akzentfarbe (Links, aktive Reiter) und gedämpfte
+Texte bei Bedarf angehoben, bis sie auf allen Flächen den Mindestkontrast
+4,5:1 erreichen; die Schrift auf Akzent-Schaltflächen ist Schwarz oder Weiß,
+je nachdem, was tatsächlich besser lesbar ist. Zusätzlich übernimmt KLINQ die Designwahl für die
 Bedienelemente des Browsers (`color-scheme`), damit Dateiauswahl,
 Auswahllisten und Bildlaufleisten nicht hell aus dem dunklen Design fallen.
 

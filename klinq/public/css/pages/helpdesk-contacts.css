@@ -1,0 +1,26 @@
+/* Kontaktverzeichnis des Help Desk: Liste mit Ähnlichkeitshinweis, Formular mit Erreichbarkeitsgruppe.
+ * Farben ausschließlich über Design-Token (helles/dunkles Design, LANPA-Farben). */
+
+.hd-contacts-hint { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1); margin: 0 0 var(--space-3); }
+
+.hd-contacts-table td { vertical-align: top; }
+.hd-contacts-phones { white-space: nowrap; }
+.hd-contacts-company { white-space: nowrap; }
+.hd-contacts-company .badge { margin-left: var(--space-1); vertical-align: middle; }
+.hd-contacts-table a.tag-chip { text-decoration: none; }
+.hd-contacts-table a.tag-chip:hover { background: var(--color-primary-soft); color: var(--color-primary); }
+/* Folgezeilen derselben Firma: Firmenname zurücknehmen, damit die alphabetische Gruppierung lesbar bleibt */
+.hd-contacts-table tr.is-same-company .hd-contacts-company strong { color: var(--color-text-muted); font-weight: var(--font-weight-regular); }
+.hd-contacts-table tr.is-same-company td { border-top-color: transparent; }
+.hd-contacts-name { min-width: 14rem; }
+.hd-contacts-notes { max-width: 28rem; overflow-wrap: break-word; }
+
+.hd-contacts-reach { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4) 0; margin: 0 0 var(--space-4); }
+.hd-contacts-reach legend { padding: 0 var(--space-1); font-weight: var(--font-weight-semibold); }
+.hd-contacts-reach.has-error { border-color: var(--color-danger); }
+.hd-contacts-reach > .form-error { display: block; margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
+
+.hd-contacts-delete { margin-top: var(--space-4); }
+.hd-contacts-readonly { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-4); margin: 0; }
+.hd-contacts-readonly dt { color: var(--color-text-muted); }
+.hd-contacts-readonly dd { margin: 0; }

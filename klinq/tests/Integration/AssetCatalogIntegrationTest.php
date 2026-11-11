@@ -191,4 +191,27 @@ final class AssetCatalogIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ValidationException::class, fn () => $svc->setStock($toner, $repo->find($toner), ['stock_quantity' => '-1']));
         $this->assertThrows(ValidationException::class, fn () => $svc->setStock($notebook, $repo->find($notebook), ['stock_quantity' => '5']));
     }
+
+    public function testGoodsReceiptCreatesLagerartikelWithoutInventoryNumber(): void
+    {
+        $this->pdo->exec("INSERT INTO users (username, display_name, role_id) SELECT 'katalogtest', 'Katalog Test', id FROM roles WHERE name = 'admin'");
+        $this->c->get(CurrentUser::class)->login(['id' => (int) $this->pdo->lastInsertId(), 'username' => 'katalogtest', 'display_name' => 'Katalog Test', 'role' => 'admin']);
+        $typeId = $this->c->get(AssetCatalogService::class)->saveType(null, $this->typeInput(['code' => 'HSET', 'name' => 'Headsets', 'inventory_prefix' => '', 'requires_inventory_number' => '0', 'has_serial_number' => '0']));
+        $this->pdo->exec("INSERT INTO manufacturers (name) VALUES ('Headsetwerk')");
+        $this->pdo->prepare('INSERT INTO articles (manufacturer_id, asset_type_id, name, is_active) VALUES (?, ?, ?, 1)')->execute([(int) $this->pdo->lastInsertId(), $typeId, 'Headset Mono']);
+        $articleId = (string) $this->pdo->lastInsertId();
+        $this->pdo->exec("INSERT INTO suppliers (name) VALUES ('Lagerlieferant')");
+        $supplierId = (string) $this->pdo->lastInsertId();
+
+        $orders = $this->c->get(\App\Services\PurchaseOrderService::class);
+        $orderRepo = $this->c->get(\App\Repositories\PurchaseOrderRepository::class);
+        $id = $orders->create(['supplier_id' => $supplierId]);
+        $item = $orders->addItem($id, $orderRepo->find($id), ['article_id' => $articleId, 'quantity' => '2', 'unit_price' => '19,90', 'creates_assets' => '1']);
+        $orders->markOrdered($id, $orderRepo->find($id));
+        $orders->receive($id, $orderRepo->find($id), ['received_at' => date('Y-m-d'), 'items' => [$item => ['quantity' => '2']]]);
+
+        $rows = $this->pdo->query('SELECT inventory_number FROM assets WHERE asset_type_id = ' . (int) $typeId)->fetchAll(\PDO::FETCH_COLUMN);
+        $this->assertCount(2, $rows);
+        $this->assertSame([null, null], $rows);
+    }
 }

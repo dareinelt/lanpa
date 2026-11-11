@@ -117,7 +117,8 @@ final class AssetController extends BaseController
 
             return $this->redirect('/assets/new');
         }
-        $this->flash('success', 'Asset ' . AssetService::label($result) . ' wurde angelegt.');
+        // Lagerartikel ohne Inventarnummer: Anzeigename aus dem gespeicherten Datensatz (Artikel/Bezeichnung)
+        $this->flash('success', 'Asset ' . AssetService::label($this->assets->find($result['id']) ?? $result) . ' wurde angelegt.');
         if ($request->string('save_and_new') === '1') {
             return $this->redirect('/assets/new?' . http_build_query(array_filter([
                 'asset_type_id' => $request->string('asset_type_id'),

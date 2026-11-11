@@ -33,7 +33,7 @@ $newUrl = '/catalogs/' . $kind . '/new' . (!$isTypes && $typeFilter !== null ? '
     <?php elseif ($isTypes): ?>
     <div class="table-wrapper">
     <table class="table">
-        <thead><tr><th>Assettyp</th><th>Code</th><th>Inventarnummer</th><th>Kennungen und Funktionen</th><th class="num">Sort.</th><th class="num">Kategorien</th><th class="num">Artikel</th><th class="num">Assets</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Assettyp</th><th>Code</th><th>Inventarnummer</th><th>Kennungen</th><th class="num">Kategorien</th><th class="num">Artikel</th><th class="num">Assets</th><th>Status</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($rows as $r): ?>
             <tr class="<?= (int) $r['is_active'] ? '' : 'is-muted' ?>">
@@ -42,7 +42,6 @@ $newUrl = '/catalogs/' . $kind . '/new' . (!$isTypes && $typeFilter !== null ? '
                 <td class="mono"><?= e($r['code']) ?></td>
                 <td class="nowrap"><?= (int) $r['requires_inventory_number'] === 1 ? '<span class="mono"><strong>' . e((string) $r['inventory_prefix']) . '</strong></span> <span class="text-muted text-sm">z. B. ' . e((string) $r['inventory_prefix']) . date('y') . '001</span>' : badge('Lagerartikel', 'neutral') ?></td>
                 <td class="text-sm"><?= $features !== [] ? e(implode(' · ', $features)) : '<span class="text-muted">–</span>' ?></td>
-                <td class="num"><?= (int) $r['sort_order'] ?></td>
                 <td class="num"><a href="/catalogs?tab=asset-categories&amp;asset_type_id=<?= (int) $r['id'] ?>"><?= (int) $r['category_count'] ?></a></td>
                 <td class="num"><a href="/articles?asset_type_id=<?= (int) $r['id'] ?>&amp;active="><?= (int) $r['article_count'] ?></a></td>
                 <td class="num"><a href="/assets?asset_type_id=<?= (int) $r['id'] ?>"><?= (int) $r['asset_count'] ?></a></td>

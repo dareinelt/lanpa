@@ -7,7 +7,7 @@
             <li><a href="/movements/<?= (int) $r['id'] ?>">
                 <?= icon($r['type'] === 'checkout' ? 'checkout' : 'return') ?>
                 <div class="m-list-main">
-                    <div class="m-list-title"><span class="mono"><?= e(asset_number($r)) ?></span> · <?= $r['type'] === 'checkout' ? 'Entnahme' : 'Rückgabe' ?><?= $r['employee_name'] ? ' · ' . e($r['employee_name']) : '' ?></div>
+                    <div class="m-list-title"><span class="mono"><?= e(asset_label($r)) ?></span> · <?= $r['type'] === 'checkout' ? 'Entnahme' : 'Rückgabe' ?><?= $r['employee_name'] ? ' · ' . e($r['employee_name']) : '' ?></div>
                     <div class="m-list-sub"><?= fmt_datetime($r['movement_at']) ?><?= $missing ? ' · fehlt: ' . e(implode(', ', $missing)) : ' · Prüfung ausstehend' ?></div>
                 </div>
                 <?= icon('chevron-right') ?>

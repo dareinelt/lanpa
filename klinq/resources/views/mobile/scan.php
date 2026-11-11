@@ -32,7 +32,7 @@
             <li><a href="/m/asset/<?= e(rawurlencode(asset_code($r))) ?>">
                 <?= icon($r['type'] === 'checkout' ? 'checkout' : 'return') ?>
                 <div class="m-list-main">
-                    <div class="m-list-title"><span class="mono"><?= e(asset_number($r)) ?></span> · <?= $r['type'] === 'checkout' ? 'Entnahme' : 'Rückgabe' ?></div>
+                    <div class="m-list-title"><span class="mono"><?= e(asset_label($r)) ?></span> · <?= $r['type'] === 'checkout' ? 'Entnahme' : 'Rückgabe' ?></div>
                     <div class="m-list-sub"><?= e($r['employee_name'] ?? $r['to_location_path'] ?? '') ?> · <?= fmt_datetime($r['movement_at']) ?></div>
                 </div>
                 <?php if ($r['status'] === 'open'): ?><?= badge('offen', 'warning') ?><?php endif; ?>

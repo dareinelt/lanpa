@@ -32,7 +32,7 @@ $inv = rawurlencode(asset_code($asset));
         <?php foreach ($children as $c): ?>
             <li><a href="/m/asset/<?= e(rawurlencode(asset_code($c))) ?>">
                 <?= icon($c['asset_type_icon'] ?: 'box') ?>
-                <div class="m-list-main"><div class="m-list-title mono"><?= e(asset_number($c)) ?></div><div class="m-list-sub"><?= e($c['category_name'] ?? $c['asset_type_name']) ?> · <?= e($c['name'] ?: ($c['article_name'] ?? '')) ?></div></div>
+                <div class="m-list-main"><div class="m-list-title mono"><?= e(asset_label($c)) ?></div><div class="m-list-sub"><?= e($c['category_name'] ?? $c['asset_type_name']) ?> · <?= e($c['name'] ?: ($c['article_name'] ?? '')) ?></div></div>
                 <?= badge($c['status_name'], $c['status_color']) ?>
             </a></li>
         <?php endforeach; ?>

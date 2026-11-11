@@ -28,7 +28,7 @@
                 <span class="form-hint">Bestimmt das Präfix der Inventarnummer und lässt sich später nicht ändern.</span>
                 <?php else: ?>
                 <input id="f-type" value="<?= e($row['asset_type_name']) ?>" readonly>
-                <input type="hidden" name="asset_type_id" value="<?= (int) $row['asset_type_id'] ?>" data-category-filter data-prefix="<?= e($row['asset_type_code']) ?>" data-serial="<?= (int) $row['has_serial_number'] ?>" data-mac="<?= (int) $row['has_mac_address'] ?>" data-imei="<?= (int) $row['has_imei'] ?>">
+                <input type="hidden" name="asset_type_id" value="<?= (int) $row['asset_type_id'] ?>" data-category-filter data-prefix="<?= e($row['asset_type_prefix'] ?? $row['asset_type_code']) ?>" data-serial="<?= (int) $row['has_serial_number'] ?>" data-mac="<?= (int) $row['has_mac_address'] ?>" data-imei="<?= (int) $row['has_imei'] ?>">
                 <?php endif; ?>
             </div>
             <div class="form-group">

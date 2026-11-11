@@ -77,6 +77,17 @@ Bearbeitungen verwenden **optimistisches Locking** (`assets.version`): Speichert
 
 ![Globale Suche](screenshots/search.png)
 
+## Kataloge: Assettypen und Kategorien
+
+Assettypen und Kategorien sind bearbeitbare Kataloge unter **Auswertung & System → Kataloge** (`/catalogs`, nur Admins mit `settings.manage`). Die Seite hat je Katalog einen Tab:
+
+- **Assettypen** (`/catalogs?tab=asset-types`): Bezeichnung, Code (Großbuchstaben/Ziffern/`-`/`_`, eindeutig, z. B. für den CSV-Import), Inventarnummern-Präfix (1–6 Buchstaben, eindeutig), Symbol, Sortierung, Kennungsfelder (Seriennummer, MAC-Adresse, IMEI) und „Lizenzen zuordenbar“. Das **Präfix ist gesperrt, sobald Assets des Typs existieren**, weil deren Inventarnummern damit beginnen. Die Liste zeigt je Typ die Anzahl Kategorien, Artikel und Assets.
+- **Kategorien** (`/catalogs?tab=asset-categories`, filterbar nach Assettyp): Assettyp, Bezeichnung (eindeutig je Assettyp), Sortierung. Der **Assettyp einer Kategorie ist gesperrt, sobald Assets oder Artikel sie verwenden**, weil Kategorie und Typ eines Datensatzes zusammenpassen müssen.
+
+Einträge werden nicht gelöscht, sondern **deaktiviert**: Deaktivierte Typen und Kategorien stehen bei neuen Assets, Artikeln und Bestellpositionen nicht mehr zur Auswahl. Beim Bearbeiten eines Assets oder Artikels bleibt eine bereits gewählte, inzwischen deaktivierte Kategorie (bzw. beim Artikel der Assettyp) auswählbar und wird nicht stillschweigend entfernt. Alle Änderungen landen im Audit-Log (`asset_type`, `asset_category`).
+
+Der Seeder (`database/seeders/001_defaults.sql`) spielt die Standardtypen (PC, MD, NET, ZUB) und -kategorien nur in eine **leere** Tabelle ein; im Katalog umbenannte oder deaktivierte Einträge werden bei späteren Migrationsläufen nicht überschrieben oder neu angelegt.
+
 ## Berechtigungen
 
 | Berechtigung | Wirkung |
@@ -84,6 +95,7 @@ Bearbeitungen verwenden **optimistisches Locking** (`assets.version`): Speichert
 | `assets.view` | Liste, Detail, Suche |
 | `assets.manage` | Anlegen, Bearbeiten, Statuswechsel, Kommentare |
 | `assets.retire` | Ausmustern / Entsorgen |
+| `settings.manage` | Kataloge Assettypen und Kategorien pflegen (Auswertung & System → Kataloge) |
 
 ## Relevante Klassen
 
@@ -92,4 +104,5 @@ Bearbeitungen verwenden **optimistisches Locking** (`assets.version`): Speichert
 - `App\Services\SearchService` – globale Suche
 - `App\Repositories\AssetRepository`, `AssetHistoryRepository`, `AssetStatusRepository`
 - `App\Controllers\AssetController`, `SearchController`
-- Tests: `tests/Unit/InventoryNumberTest.php`, `tests/Unit/AssetNormalizerTest.php`, `tests/Integration/AssetServiceIntegrationTest.php`
+- Kataloge: `App\Controllers\CatalogController`, `App\Services\AssetCatalogService`, `App\Repositories\AssetTypeRepository`, Views `resources/views/catalogs/`, Routen `routes/modules/catalogs.php`
+- Tests: `tests/Unit/InventoryNumberTest.php`, `tests/Unit/AssetNormalizerTest.php`, `tests/Integration/AssetServiceIntegrationTest.php`, `tests/Integration/AssetCatalogIntegrationTest.php`

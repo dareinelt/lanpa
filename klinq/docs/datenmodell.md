@@ -60,8 +60,8 @@ erDiagram
 
 | Tabelle | Wesentliche Spalten |
 |---|---|
-| `asset_types` | `code`, `name`, `inventory_prefix`, Flags `has_serial_number/has_mac_address/has_imei/supports_licenses`, `icon`, `sort_order` |
-| `asset_categories` | je Typ: `name`, `sort_order` |
+| `asset_types` | `code`, `name`, `inventory_prefix`, Flags `has_serial_number/has_mac_address/has_imei/supports_licenses`, `icon`, `sort_order`, `is_active`; gepflegt unter Auswertung & System → Kataloge ([Assets](assets.md#kataloge-assettypen-und-kategorien)) |
+| `asset_categories` | je Typ: `name` (eindeutig je Typ), `sort_order`, `is_active`; gepflegt unter Auswertung & System → Kataloge |
 | `asset_statuses` | `code`, `name`, `color`, `is_available`, `is_final` |
 | `manufacturers` | `name` (eindeutig), `short_name`, `website`, `contact`, `phonetic_key` (Kölner Phonetik) und `normalized_name` für die Dublettenwarnung |
 | `articles` | `manufacturer_id`, `asset_type_id`, `asset_category_id`, `name`, `article_number`, `normalized_name`/`phonetic_key` (Dublettenwarnung), `is_handover_relevant` (Asset erscheint im Übergabeprotokoll), `is_consumable` mit `minimum_stock`/`stock_quantity` (Verbrauchsmaterial ohne Assets, Grundlage der Bestellvorschläge) |

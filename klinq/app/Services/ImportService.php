@@ -39,7 +39,7 @@ final class ImportService
     /** Spalten: Schlüssel => [Bezeichnung, Aliasnamen (normalisiert), Pflicht, Hinweis, Beispiel]. */
     public const COLUMNS = [
         'inventory_number' => ['Inventarnummer', ['inventarnummer', 'inventarnr', 'inventar_nr', 'inventory_number', 'inv_nr'], false, 'Leer = automatisch vergeben (Altbestand: Jahreskennung 88)', 'PC88001'],
-        'asset_type' => ['Assettyp', ['assettyp', 'typ', 'asset_type', 'type', 'geraetetyp'], true, 'Code (PC, MD, NET, ZUB) oder Name; leer, wenn aus der Inventarnummer ableitbar', 'PC'],
+        'asset_type' => ['Assettyp', ['assettyp', 'typ', 'asset_type', 'type', 'geraetetyp'], true, 'Code (z. B. PC, MD, NET, ZUB – siehe Kataloge) oder Name; leer, wenn aus der Inventarnummer ableitbar', 'PC'],
         'category' => ['Kategorie', ['kategorie', 'category'], false, 'Name innerhalb des Assettyps', 'Notebook'],
         'name' => ['Bezeichnung', ['bezeichnung', 'name', 'modell', 'model', 'geraet'], false, '', 'ThinkPad T14 Gen 3'],
         'manufacturer' => ['Hersteller', ['hersteller', 'manufacturer'], true, 'Name; unbekannte Hersteller werden optional angelegt', 'Lenovo'],

@@ -33,6 +33,7 @@ final class ModuleNavigationTest extends TestCase
         $this->assertSame(ModuleNavigation::SYSTEM, ModuleNavigation::moduleFor('reports'));
         $this->assertSame(ModuleNavigation::SYSTEM, ModuleNavigation::moduleFor('imports'));
         $this->assertSame(ModuleNavigation::SYSTEM, ModuleNavigation::moduleFor('audit'));
+        $this->assertSame(ModuleNavigation::SYSTEM, ModuleNavigation::moduleFor('catalogs'));
         $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleFor(''));
         $this->assertSame(ModuleNavigation::HELPDESK, ModuleNavigation::moduleFor('helpdesk'));
         $this->assertSame(ModuleNavigation::HELPDESK, ModuleNavigation::moduleFor('helpdesk-tickets'));
@@ -138,7 +139,7 @@ final class ModuleNavigationTest extends TestCase
         }
 
         $systemKeys = $this->keys(ModuleNavigation::items(ModuleNavigation::SYSTEM, $can));
-        $this->assertSame(['reports', 'imports', 'audit', 'admin'], $systemKeys);
+        $this->assertSame(['reports', 'imports', 'catalogs', 'audit', 'admin'], $systemKeys);
         foreach ($systemKeys as $key) {
             $this->assertSame(ModuleNavigation::SYSTEM, ModuleNavigation::moduleFor($key), 'Auswertung & System enthält Fremdeintrag: ' . $key);
         }

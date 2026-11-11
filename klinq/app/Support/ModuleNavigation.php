@@ -12,7 +12,7 @@ use ArrayAccess;
  * Die Oberfläche ist in eigenständige Module aufgeteilt (Assetverwaltung, Help Desk,
  * Auswertung & System). Jedes Modul besitzt eine eigene Navigation; in der Topbar wird
  * über ein Dropdown zwischen den Modulen gewechselt. Das Modul "Auswertung & System"
- * (Berichte, Import, Audit-Log, Administration) ist dort nur für Admins sichtbar (siehe
+ * (Berichte, Import, Kataloge, Audit-Log, Administration) ist dort nur für Admins sichtbar (siehe
  * modules()). Diese Klasse ist die einzige Quelle für Modulzuordnung und
  * Navigationseinträge (siehe partials/app_layout.php).
  *
@@ -30,7 +30,7 @@ final class ModuleNavigation
     private const HELPDESK_PREFIXES = ['helpdesk', 'portal'];
 
     /** Navigationsschlüssel, die zum Modul "Auswertung & System" gehören (nur für Admins). */
-    private const SYSTEM_KEYS = ['reports', 'imports', 'audit', 'admin'];
+    private const SYSTEM_KEYS = ['reports', 'imports', 'catalogs', 'audit', 'admin'];
 
     /**
      * Rechte, die den Zugang zur Assetverwaltung freigeben.
@@ -59,7 +59,7 @@ final class ModuleNavigation
      * Pfadpräfixe der beiden merkbaren Module (Assetverwaltung, Help Desk).
      *
      * Nur eindeutig zuzuordnende Seiten stehen hier; neutrale Pfade (Profil, globale Suche,
-     * JSON-Endpunkte) und der Systembereich (Berichte, Import, Audit, Administration) ändern
+     * JSON-Endpunkte) und der Systembereich (Berichte, Import, Kataloge, Audit, Administration) ändern
      * die Auswahl bewusst nicht.
      */
     private const MODULE_PATHS = [
@@ -245,7 +245,7 @@ final class ModuleNavigation
                 'label' => self::label(self::SYSTEM),
                 'icon' => 'chart',
                 'href' => self::home(self::SYSTEM, $can),
-                'description' => 'Berichte, Import, Audit-Log und Administration',
+                'description' => 'Berichte, Import, Kataloge, Audit-Log und Administration',
             ];
         }
 
@@ -345,6 +345,10 @@ final class ModuleNavigation
         }
         if ($can('imports.manage')) {
             $items[] = self::link('imports', '/imports', 'import', 'Import');
+        }
+        if ($can('settings.manage')) {
+            // Bearbeitbare Kataloge der Assetverwaltung (Assettypen, Kategorien)
+            $items[] = self::link('catalogs', '/catalogs', 'list', 'Kataloge');
         }
         if ($can('audit.view')) {
             $items[] = self::link('audit', '/audit', 'shield', 'Audit-Log');

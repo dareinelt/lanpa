@@ -121,10 +121,12 @@ final class ModuleNavigationTest extends TestCase
 
     public function testModulesShowOnlyTheirOwnNavigation(): void
     {
-        $can = $this->can(['assets.view', 'movements.view', 'settings.manage', 'reports.view', 'imports.manage', 'audit.view', 'helpdesk.view', 'knowledgebase.view', 'helpdesk.reports', 'portal.view']);
+        $can = $this->can(['assets.view', 'movements.view', 'articles.view', 'settings.manage', 'reports.view', 'imports.manage', 'audit.view', 'helpdesk.view', 'knowledgebase.view', 'helpdesk.reports', 'portal.view']);
 
         $assetKeys = $this->keys(ModuleNavigation::items(ModuleNavigation::ASSETS, $can));
         $this->assertContains('assets', $assetKeys);
+        $this->assertContains('consumables', $assetKeys);
+        $this->assertSame(ModuleNavigation::ASSETS, ModuleNavigation::moduleForPath('/consumables'));
         $this->assertFalse(in_array('admin', $assetKeys, true));
         $this->assertFalse(in_array('reports', $assetKeys, true));
         foreach ($assetKeys as $key) {

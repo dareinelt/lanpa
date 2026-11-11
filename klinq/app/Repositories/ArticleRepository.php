@@ -169,6 +169,39 @@ final class ArticleRepository extends BaseRepository
         );
     }
 
+    /**
+     * Verbrauchsmaterial-Übersicht: Verbrauchsartikel mit Bestand, Mindestbestand und Assettyp.
+     *
+     * @param array<string,mixed> $filters q, below ('1' = nur am/unter Mindestbestand), active ('1'|'0'|'')
+     * @return array<int,array<string,mixed>>
+     */
+    public function consumables(array $filters): array
+    {
+        $sql = 'SELECT a.id, a.name, a.article_number, a.stock_quantity, a.minimum_stock, a.is_active,
+                m.name AS manufacturer_name, t.name AS asset_type_name, c.name AS category_name
+            FROM articles a
+            JOIN manufacturers m ON m.id = a.manufacturer_id
+            JOIN asset_types t ON t.id = a.asset_type_id
+            LEFT JOIN asset_categories c ON c.id = a.asset_category_id
+            WHERE a.is_consumable = 1';
+        $params = [];
+        $active = (string) ($filters['active'] ?? '1');
+        if ($active === '1' || $active === '0') {
+            $sql .= ' AND a.is_active = :active';
+            $params['active'] = (int) $active;
+        }
+        if (($filters['below'] ?? '') === '1') {
+            $sql .= ' AND a.minimum_stock IS NOT NULL AND a.stock_quantity <= a.minimum_stock';
+        }
+        $q = trim((string) ($filters['q'] ?? ''));
+        if ($q !== '') {
+            $sql .= ' AND (a.name LIKE :q OR a.article_number LIKE :q OR m.name LIKE :q)';
+            $params['q'] = $this->like($q);
+        }
+
+        return $this->fetchAll($sql . ' ORDER BY (a.minimum_stock IS NOT NULL AND a.stock_quantity <= a.minimum_stock) DESC, m.name, a.name', $params);
+    }
+
     public function addStock(int $id, int $quantity): void
     {
         $this->execute('UPDATE articles SET stock_quantity = stock_quantity + ? WHERE id = ?', [$quantity, $id]);

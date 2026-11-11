@@ -104,7 +104,27 @@ Der Statuswechsel erfolgt als atomare Reservierung (`open → converted`); eine 
 
 ## Verbrauchsmaterial und Bestellvorschläge (`/orders/replenishment`)
 
-Artikel, die nicht inventarisiert werden (Toner, Kabel, Batterien), lassen sich im Artikelstamm als **Verbrauchsmaterial** kennzeichnen und erhalten dann *Mindestbestand* und *Aktuellen Bestand*. Wird der Haken entfernt, setzt die Anwendung Mindestbestand und Bestand zurück.
+Artikel, die nicht inventarisiert, sondern nur als **Menge** geführt werden (Toner, Tinte, Batterien), lassen sich im Artikelstamm als **Verbrauchsmaterial** kennzeichnen und erhalten dann *Mindestbestand* und *Aktuellen Bestand*. Wird der Haken entfernt, setzt die Anwendung Mindestbestand und Bestand zurück.
+
+**Verbrauchsmaterial oder Lagerartikel?**
+
+| | Verbrauchsmaterial | Lagerartikel |
+|---|---|---|
+| Beispiel | Toner, Tinte, Batterien | Kabel, Headset, Kleinzubehör |
+| Geführt als | Menge je Artikel (`articles.stock_quantity`) | einzelne Assets ohne Inventarnummer |
+| Einrichtung | Artikel → Häkchen *Verbrauchsmaterial* | Assettyp ohne *Inventarnummer vergeben* ([Kataloge](assets.md#lagerartikel-assets-ohne-inventarnummer)) |
+| Wareneingang | erhöht den Bestand | erzeugt je Stück ein Asset |
+| Ausgabe | neuer Bestand auf der Seite *Verbrauchsmaterial* | Entnahme/Rückgabe je Stück |
+| Nachbestellung | Bestellvorschläge bei Mindestbestand | – |
+
+### Ablauf im Alltag
+
+1. **Anlegen**: *Bestand → Verbrauchsmaterial* → **Verbrauchsmaterial anlegen** (öffnet das Artikelformular mit gesetztem Häkchen) – Mindestbestand und Anfangsbestand eintragen.
+2. **Bestellen**: Fällt der Bestand auf oder unter den Mindestbestand, zeigt die Übersicht *nachbestellen*; **Bestellvorschläge** erzeugt daraus einen Bestellentwurf.
+3. **Wareneingang**: Die Lieferung erhöht den Bestand automatisch.
+4. **Ausgabe/Inventur**: In der Übersicht den neuen Bestand eintragen und speichern (`POST /consumables/{id}/stock`, Recht `articles.manage`, Audit-Log *Bestand gesetzt* mit altem und neuem Wert).
+
+Die Übersicht **Bestand → Verbrauchsmaterial** (`/consumables`, Recht `articles.view`) listet alle Verbrauchsartikel mit Bestand, Mindestbestand und Status (*nachbestellen* / *ausreichend* / *kein Mindestbestand*), unterschreitende Artikel zuerst; filterbar nach Text und „Am/unter Mindestbestand“.
 
 - Positionen mit einem Verbrauchsartikel erzeugen **nie** Assets oder Inventarnummern – das Häkchen *erzeugt Assets* wird beim Speichern automatisch entfernt und die Position auf der Bestellseite als *Verbrauchsmaterial* gekennzeichnet.
 - Beim Wareneingang erhöht die gelieferte Menge stattdessen den Lagerbestand des Artikels (`articles.stock_quantity`) – in derselben Transaktion wie die Lieferung.

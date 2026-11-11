@@ -165,4 +165,30 @@ final class AssetCatalogIntegrationTest extends DatabaseTestCase
         $assets->update($first['id'], $row, ['article_id' => $articleId, 'name' => 'Toner Lager', 'inventory_number' => '', 'version' => (string) $row['version']]);
         $this->assertNull($this->c->get(\App\Repositories\AssetRepository::class)->find($first['id'])['inventory_number']);
     }
+
+    public function testConsumableOverviewAndStockCorrection(): void
+    {
+        $this->c->get(CurrentUser::class)->login(['id' => 1, 'username' => 'tester', 'display_name' => 'Test User', 'role' => 'admin']);
+        $repo = $this->c->get(\App\Repositories\ArticleRepository::class);
+        $svc = $this->c->get(\App\Services\ArticleService::class);
+        $type = (int) $this->c->get(AssetTypeRepository::class)->findByCode('ZUB')['id'];
+        $this->pdo->exec("INSERT INTO manufacturers (name) VALUES ('Druckerhaus')");
+        $m = (int) $this->pdo->lastInsertId();
+        $ins = $this->pdo->prepare('INSERT INTO articles (manufacturer_id, asset_type_id, name, is_active, is_consumable, minimum_stock, stock_quantity) VALUES (?, ?, ?, 1, ?, ?, ?)');
+        $ins->execute([$m, $type, 'Toner Test', 1, 3, 2]);
+        $toner = (int) $this->pdo->lastInsertId();
+        $ins->execute([$m, $type, 'Notebook Test', 0, null, 0]);
+        $notebook = (int) $this->pdo->lastInsertId();
+
+        $ids = array_map('intval', array_column($repo->consumables(['q' => 'Test']), 'id'));
+        $this->assertContains($toner, $ids);
+        $this->assertFalse(in_array($notebook, $ids, true));
+        $this->assertContains($toner, array_map('intval', array_column($repo->consumables(['q' => 'Toner', 'below' => '1']), 'id')));
+
+        $this->assertSame(8, $svc->setStock($toner, $repo->find($toner), ['stock_quantity' => '8', 'note' => 'Inventur']));
+        $this->assertSame(8, (int) $repo->find($toner)['stock_quantity']);
+        $this->assertSame([], $repo->consumables(['q' => 'Toner', 'below' => '1']));
+        $this->assertThrows(ValidationException::class, fn () => $svc->setStock($toner, $repo->find($toner), ['stock_quantity' => '-1']));
+        $this->assertThrows(ValidationException::class, fn () => $svc->setStock($notebook, $repo->find($notebook), ['stock_quantity' => '5']));
+    }
 }

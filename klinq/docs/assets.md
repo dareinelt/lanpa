@@ -118,5 +118,6 @@ Abzugrenzen ist **Verbrauchsmaterial** (Artikel mit „Verbrauchsmaterial“, z.
 - `App\Services\SearchService` – globale Suche
 - `App\Repositories\AssetRepository`, `AssetHistoryRepository`, `AssetStatusRepository`
 - `App\Controllers\AssetController`, `SearchController`
+- Verbrauchsmaterial: `App\Controllers\ConsumableController`, `ArticleService::setStock()`, `ArticleRepository::consumables()`, Views `resources/views/consumables/`, Routen `routes/modules/consumables.php`
 - Kataloge: `App\Controllers\CatalogController`, `App\Services\AssetCatalogService`, `App\Repositories\AssetTypeRepository`, Views `resources/views/catalogs/`, Routen `routes/modules/catalogs.php`
 - Tests: `tests/Unit/InventoryNumberTest.php`, `tests/Unit/AssetNormalizerTest.php`, `tests/Integration/AssetServiceIntegrationTest.php`, `tests/Integration/AssetCatalogIntegrationTest.php`

@@ -21,7 +21,7 @@ final class AuditController extends BaseController
         'cancel' => 'Storniert', 'complete' => 'Abgeschlossen', 'receive' => 'Wareneingang', 'assign' => 'Zugeordnet',
         'release' => 'Freigegeben', 'upload' => 'Dokument hochgeladen', 'print' => 'Gedruckt', 'import' => 'Import',
         'login' => 'Anmeldung', 'logout' => 'Abmeldung', 'login_failed' => 'Anmeldung fehlgeschlagen', 'sync' => 'AD-Sync',
-        'retire' => 'Ausgemustert', 'merge' => 'Zusammengeführt', 'reset_password' => 'Passwort zurückgesetzt', 'change_password' => 'Passwort geändert',
+        'retire' => 'Ausgemustert', 'stock' => 'Bestand gesetzt', 'merge' => 'Zusammengeführt', 'reset_password' => 'Passwort zurückgesetzt', 'change_password' => 'Passwort geändert',
     ];
 
     public const OBJECT_LABELS = [

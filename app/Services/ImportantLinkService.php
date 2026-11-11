@@ -61,8 +61,8 @@ final class ImportantLinkService
         }
 
         $url = trim((string) ($input['url'] ?? ''));
-        if (!Validator::isSafeUrl($url)) {
-            $errors['url'] = 'Bitte eine gültige http(s)-URL oder einen internen Pfad (/telefonliste) angeben.';
+        if (!Validator::isSafeLinkUrl($url)) {
+            $errors['url'] = 'Bitte eine gültige http(s)-URL, eine mailto:-Adresse oder einen internen Pfad (/telefonliste) angeben.';
         }
 
         if ($errors !== []) {

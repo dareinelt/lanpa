@@ -22,6 +22,25 @@ Runner::test('URL-Validierung weist gefährliche Eingaben ab', static function (
     Assert::false(Validator::isSafeUrl("https://exa\nmple.internal/"));
 });
 
+Runner::test('mailto-Adressen werden für wichtige Links akzeptiert', static function (): void {
+    Assert::true(Validator::isSafeMailto('mailto:info@example.de'));
+    Assert::true(Validator::isSafeMailto('MAILTO:Info@Example.DE'));
+    Assert::true(Validator::isSafeMailto('mailto:info@example.de?subject=Hallo%20Welt'));
+    Assert::true(Validator::isSafeLinkUrl('mailto:info@example.de'));
+    Assert::same('info@example.de', Validator::mailtoAddress('mailto:info@example.de?subject=Hallo'));
+    Assert::same('info@example.de', Validator::mailtoAddress('mailto:info%40example.de'));
+    Assert::null(Validator::mailtoAddress('https://example.internal'));
+});
+
+Runner::test('Ungültige mailto-Ziele werden abgewiesen', static function (): void {
+    Assert::false(Validator::isSafeMailto('mailto:'));
+    Assert::false(Validator::isSafeMailto('mailto:info@example.de,leitung@example.de'));
+    Assert::false(Validator::isSafeMailto('mailto:javascript:alert(1)'));
+    Assert::false(Validator::isSafeLinkUrl('javascript:alert(1)'));
+    // Normale Ziele bleiben unverändert auf http(s) und interne Pfade begrenzt.
+    Assert::false(Validator::isSafeUrl('mailto:info@example.de'));
+});
+
 Runner::test('Farbwerte werden geprüft und normalisiert', static function (): void {
     Assert::true(Validator::isHexColor('#abc'));
     Assert::true(Validator::isHexColor('#1F4E79'));

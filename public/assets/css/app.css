@@ -883,9 +883,18 @@ code {
     gap: .4rem;
 }
 
+.important-links__item {
+    display: flex;
+    align-items: center;
+    gap: .25rem;
+    min-width: 0;
+}
+
 .important-links__link {
     display: flex;
     align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
     gap: .6rem;
     padding: .5rem .6rem;
     border-radius: var(--radius-sm);
@@ -920,6 +929,58 @@ code {
 
 .important-links__label {
     font-size: .95rem;
+    overflow-wrap: anywhere;
+}
+
+/* Kopieren-Schaltfläche für mailto:-Einträge; ohne JavaScript bleibt sie verborgen. */
+.important-links__copy {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--color-muted);
+    cursor: pointer;
+}
+
+.important-links__copy[hidden] {
+    display: none;
+}
+
+.important-links__copy:hover,
+.important-links__copy:focus-visible {
+    background: var(--color-surface-hover);
+    border-color: var(--color-border);
+    color: var(--color-text);
+}
+
+.important-links__copy .tile__icon {
+    width: 15px;
+    height: 15px;
+}
+
+.important-links__copy-done {
+    display: none;
+}
+
+.important-links__copy.is-copied {
+    color: #1a7f37;
+}
+
+.important-links__copy.is-copied .important-links__copy-icon {
+    display: none;
+}
+
+.important-links__copy.is-copied .important-links__copy-done {
+    display: block;
+}
+
+.important-links__copy.is-copy-failed {
+    color: var(--color-accent);
 }
 
 /* Telefonliste */

@@ -36,6 +36,28 @@ final class Html
     }
 
     /**
+     * Attributwert fuer href: wie url(), erlaubt zusaetzlich mailto:-Ziele
+     * (z. B. "Wichtige Links").
+     */
+    public static function linkUrl(?string $url): string
+    {
+        return self::e(self::safeLinkUrl($url));
+    }
+
+    /**
+     * Wie safeUrl(), erlaubt zusaetzlich mailto:-Ziele.
+     */
+    public static function safeLinkUrl(?string $url): string
+    {
+        $url = trim((string) $url);
+        if ($url === '' || !Validator::isSafeLinkUrl($url)) {
+            return '#';
+        }
+
+        return $url;
+    }
+
+    /**
      * Geprueftes Ziel ohne Maskierung.
      *
      * Fuer Templates, die den Wert an mehreren Stellen ausgeben und erst dort

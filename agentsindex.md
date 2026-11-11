@@ -298,6 +298,7 @@ Muster: Service erhält Repositories per Konstruktor, validiert Eingaben
 
 - `Html::e()` – zentrales Escaping (htmlspecialchars, UTF-8).
 - `Html::safeUrl()` – prüft ein Ziel (`javascript:`/`data:` gesperrt) und gibt es unmaskiert zurück; `Html::url()` liefert dieselbe Prüfung maskiert für die direkte Ausgabe. In Templates, die einen Wert mehrfach ausgeben (z. B. `href` und `data-nav-href`), `safeUrl()` verwenden und erst an der Ausgabestelle maskieren.
+- `Html::linkUrl()`/`Html::safeLinkUrl()` – wie `safeUrl()`/`url()`, erlauben zusätzlich `mailto:`-Adressen (Prüfung über `Validator::isSafeMailto()`); für „Wichtige Links“ gedacht, die auch E-Mail-Adressen enthalten dürfen. `Validator::mailtoAddress()` liefert die Adresse aus einem `mailto:`-Ziel (oder `null`).
 - `Validator` – Eingabe-/URL-/Farb-/Typ-Prüfung.
 - `Sanitizer` – HTML-Reinigung (Rich-Text).
 - `SvgSanitizer::isSafe()` – Prüfung hochgeladener SVG-Dateien (verbotene Elemente/Attribute, keine Entities/DOCTYPE, `<svg` erforderlich); genutzt von `LogoService` und `NavigationIconService`.
@@ -397,7 +398,7 @@ Migrationen liegen in `database/migrations/` (numerisch sortiert, werden von `mi
 | `sync_log` | Protokoll der AD-Läufe | `status` (running/success/error), `processed`, `deactivated`, `message` |
 | `audit_log` | Änderungsprotokoll (optional) | `admin_user_id`, `action`, `subject` |
 | `emergency_numbers` | Notfallnummern-Kacheln | `label`, `phone`, `sort_order`, `active` |
-| `important_links` | „Wichtige Links“ | `title`, `url`, `icon_file`, `icon_mime`, `active` |
+| `important_links` | „Wichtige Links“ | `title`, `url`, `icon_file`, `icon_mime`, `active` (Ziel ist eine http(s)-URL, ein interner Pfad oder eine `mailto:`-Adresse) |
 | `announcements` | Mitteilungs-Overlay | `title`, `message`, `active` |
 | `alarm_groups` | Alarmierungsziele (Gruppen oder Einzelrufnummern) | `type` (group/number), `group_number`, `description`, `sort_order`, `active` |
 | `alarm_log` | Verlauf ausgelöster Alarmierungen | `navigation_id`, `title`, `alarm_text`, `group_number`, `mode`, `status`, `message`, `triggered_at` |

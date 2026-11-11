@@ -1,7 +1,7 @@
 <?php require_once __DIR__ . '/../partials/helpers.php'; ob_start();
 $issued = $asset['employee_id'] !== null || in_array($asset['status_code'], ['issued', 'return_expected'], true);
 $final = (int) $asset['status_final'] === 1;
-$inv = rawurlencode($asset['inventory_number']);
+$inv = rawurlencode(asset_code($asset));
 ?>
 <?php include __DIR__ . '/_asset_card.php'; ?>
 
@@ -30,9 +30,9 @@ $inv = rawurlencode($asset['inventory_number']);
     <h2 class="text-sm text-muted mb-2">Zugehörige Assets (<?= count($children) ?>)</h2>
     <ul class="m-list">
         <?php foreach ($children as $c): ?>
-            <li><a href="/m/asset/<?= e(rawurlencode($c['inventory_number'])) ?>">
+            <li><a href="/m/asset/<?= e(rawurlencode(asset_code($c))) ?>">
                 <?= icon($c['asset_type_icon'] ?: 'box') ?>
-                <div class="m-list-main"><div class="m-list-title mono"><?= e($c['inventory_number']) ?></div><div class="m-list-sub"><?= e($c['category_name'] ?? $c['asset_type_name']) ?> · <?= e($c['name'] ?: ($c['article_name'] ?? '')) ?></div></div>
+                <div class="m-list-main"><div class="m-list-title mono"><?= e(asset_number($c)) ?></div><div class="m-list-sub"><?= e($c['category_name'] ?? $c['asset_type_name']) ?> · <?= e($c['name'] ?: ($c['article_name'] ?? '')) ?></div></div>
                 <?= badge($c['status_name'], $c['status_color']) ?>
             </a></li>
         <?php endforeach; ?>

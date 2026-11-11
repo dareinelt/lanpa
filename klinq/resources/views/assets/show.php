@@ -15,16 +15,17 @@ $eventClass = ['status_changed' => 'is-warning', 'created' => 'is-success', 'che
     <div>
         <p class="page-subtitle text-muted mb-0"><a href="/assets">Assets</a> / <?= e($row['asset_type_name']) ?></p>
         <div class="asset-title">
-            <h1 class="mono"><?= e($row['inventory_number']) ?></h1>
+            <h1<?= (string) ($row['inventory_number'] ?? '') !== '' ? ' class="mono"' : '' ?>><?= e(asset_label($row)) ?></h1>
             <?= badge($row['status_name'], $row['status_color']) ?>
             <?php if ((int) $row['is_legacy']): ?><?= badge('Altbestand', 'neutral') ?><?php endif; ?>
+            <?php if ((string) ($row['inventory_number'] ?? '') === ''): ?><?= badge('Lagerartikel', 'neutral') ?><?php endif; ?>
         </div>
         <p class="text-muted mb-0"><?= e(implode(' · ', array_filter([$row['manufacturer_name'], $displayName, $row['category_name']]))) ?></p>
     </div>
     <div class="page-actions">
-        <?php if ($can('labels.print')): ?><a class="btn btn-secondary" href="/labels?ids=<?= (int) $row['id'] ?>"><?= icon('print') ?> Etikett</a><?php endif; ?>
-        <?php if ($can('movements.checkout') && (int) $row['status_available'] === 1): ?><a class="btn btn-secondary" href="/movements/checkout?asset=<?= e(rawurlencode($row['inventory_number'])) ?>"><?= icon('checkout') ?> Entnahme</a><?php endif; ?>
-        <?php if ($can('movements.return') && $row['employee_id']): ?><a class="btn btn-secondary" href="/movements/return?asset=<?= e(rawurlencode($row['inventory_number'])) ?>"><?= icon('return') ?> Rückgabe</a><?php endif; ?>
+        <?php if ($can('labels.print') && (string) ($row['inventory_number'] ?? '') !== ''): ?><a class="btn btn-secondary" href="/labels?ids=<?= (int) $row['id'] ?>"><?= icon('print') ?> Etikett</a><?php endif; ?>
+        <?php if ($can('movements.checkout') && (int) $row['status_available'] === 1): ?><a class="btn btn-secondary" href="/movements/checkout?asset=<?= e(rawurlencode(asset_code($row))) ?>"><?= icon('checkout') ?> Entnahme</a><?php endif; ?>
+        <?php if ($can('movements.return') && $row['employee_id']): ?><a class="btn btn-secondary" href="/movements/return?asset=<?= e(rawurlencode(asset_code($row))) ?>"><?= icon('return') ?> Rückgabe</a><?php endif; ?>
         <?php if ($can('assets.manage')): ?>
             <button type="button" class="btn btn-secondary" data-dialog-open="status-dialog"><?= icon('swap') ?> Status</button>
             <a class="btn btn-primary" href="/assets/<?= (int) $row['id'] ?>/edit"><?= icon('pen') ?> Bearbeiten</a>
@@ -87,7 +88,7 @@ $eventClass = ['status_changed' => 'is-warning', 'created' => 'is-success', 'che
         <tbody>
         <?php foreach ($children as $c): ?>
             <tr class="is-clickable" data-href="/assets/<?= (int) $c['id'] ?>">
-                <td class="mono"><strong><?= e($c['inventory_number']) ?></strong></td>
+                <td class="mono"><strong><?= e(asset_number($c)) ?></strong></td>
                 <td><?= e($c['category_name'] ?? $c['asset_type_name']) ?></td>
                 <td><?= e($c['name'] ?: ($c['article_name'] ?? '–')) ?></td>
                 <td class="mono text-sm"><?= e($c['serial_number'] ?? '–') ?></td>
@@ -101,7 +102,7 @@ $eventClass = ['status_changed' => 'is-warning', 'created' => 'is-success', 'che
 
 <?php if (!empty($movements)): ?>
 <div class="card card-flush mt-4" id="movements">
-    <div class="card-header"><h2>Bewegungen</h2><?php if ($can('movements.view')): ?><a class="btn btn-link btn-sm" href="/movements?range=all&q=<?= e(rawurlencode($row['inventory_number'])) ?>">Alle anzeigen</a><?php endif; ?></div>
+    <div class="card-header"><h2>Bewegungen</h2><?php if ($can('movements.view')): ?><a class="btn btn-link btn-sm" href="/movements?range=all&amp;asset_id=<?= (int) $row['id'] ?>">Alle anzeigen</a><?php endif; ?></div>
     <table class="table table-compact">
         <thead><tr><th>Datum</th><th>Vorgang</th><th>Mitarbeiter</th><th>Standort</th><th>Status</th><th></th></tr></thead>
         <tbody>

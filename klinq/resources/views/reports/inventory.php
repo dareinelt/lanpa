@@ -116,7 +116,7 @@ $exportQuery = http_build_query(array_filter(array_merge($query, ['page' => null
         <tbody>
         <?php foreach ($rows as $r): $warrantyExpired = $r['warranty_until'] !== null && $r['warranty_until'] < date('Y-m-d'); ?>
             <tr class="is-clickable<?= (int) $r['status_final'] ? ' is-muted' : '' ?>" data-href="/assets/<?= (int) $r['id'] ?>">
-                <td class="mono nowrap"><strong><?= e($r['inventory_number']) ?></strong></td>
+                <td class="mono nowrap"><strong><?= e(asset_number($r)) ?></strong></td>
                 <td class="nowrap"><?= icon($r['asset_type_icon'] ?: 'box', 'icon icon-muted') ?> <?= e($r['asset_type_name']) ?></td>
                 <td class="nowrap"><?= e($r['name'] ?: ($r['article_name'] ?? '–')) ?><br><span class="text-muted text-xs"><?= e($r['manufacturer_name'] ?? '') ?></span></td>
                 <td class="mono text-sm"><?= e($r['serial_number'] ?? '–') ?></td>

@@ -37,7 +37,7 @@ $stateTone = match ($status['state']) { 'ok' => 'success', 'outdated' => 'warnin
             <?php $addedIds = array_map(static fn (array $i): int => (int) $i['id'], $diff['added']); ?>
             <?php foreach ($status['items'] as $i): ?>
                 <tr class="is-clickable<?= in_array((int) $i['id'], $addedIds, true) ? ' row-highlight' : '' ?>" data-href="/assets/<?= (int) $i['id'] ?>">
-                    <td class="mono"><strong><?= e($i['inventory_number']) ?></strong><?= in_array((int) $i['id'], $addedIds, true) && $status['current'] !== null ? ' ' . badge('neu', 'warning') : '' ?></td>
+                    <td class="mono"><strong><?= e(asset_number($i)) ?></strong><?= in_array((int) $i['id'], $addedIds, true) && $status['current'] !== null ? ' ' . badge('neu', 'warning') : '' ?></td>
                     <td><?= e(trim(($i['manufacturer_name'] ?? '') . ' ' . $i['article_name'])) ?><br><span class="text-muted text-sm"><?= e($i['asset_type_name']) ?></span></td>
                     <td class="mono"><?= e($i['serial_number'] ?? '–') ?></td>
                     <td><?= fmt_date($i['assigned_at'] ?? null) ?></td>
@@ -48,7 +48,7 @@ $stateTone = match ($status['state']) { 'ok' => 'success', 'outdated' => 'warnin
         <?php endif; ?>
         <?php if ($diff['removed'] !== []): ?>
             <div class="card-footer text-sm text-muted">Nicht mehr zugeordnet seit Version <?= (int) $status['current']['version'] ?>:
-                <?= e(implode(', ', array_map(static fn (array $i): string => $i['inventory_number'], $diff['removed']))) ?></div>
+                <?= e(implode(', ', array_map(static fn (array $i): string => asset_label($i), $diff['removed']))) ?></div>
         <?php endif; ?>
     </div>
 

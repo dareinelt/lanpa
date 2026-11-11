@@ -13,7 +13,7 @@ $source = $row ?? $prefill;
     <form method="post" action="<?= e($action) ?>" novalidate>
         <?= csrf_field() ?>
         <?php if ($isTypes): ?>
-        <?php $prefixLocked = !$isNew && $assetCount > 0; ?>
+        <?php $prefixLocked = !$isNew && $assetCount > 0 && (string) $row['inventory_prefix'] !== ''; ?>
         <div class="form-group">
             <label for="f-name">Bezeichnung *</label>
             <input id="f-name" name="name" value="<?= e(form_value($row, 'name')) ?>" required maxlength="100" autofocus>
@@ -33,8 +33,8 @@ $source = $row ?? $prefill;
                     <input type="hidden" name="inventory_prefix" value="<?= e((string) $row['inventory_prefix']) ?>">
                     <p class="form-hint">Nicht mehr änderbar: <?= (int) $assetCount ?> Asset(s) tragen Inventarnummern mit diesem Präfix.</p>
                 <?php else: ?>
-                    <input id="f-prefix" name="inventory_prefix" value="<?= e(form_value($row, 'inventory_prefix')) ?>" required maxlength="6" class="mono" pattern="[A-Za-z]{1,6}">
-                    <p class="form-hint">1 bis 6 Buchstaben; Inventarnummern lauten Präfix + Jahr + laufende Nummer (z. B. PC26001). Nach dem ersten Asset nicht mehr änderbar.</p>
+                    <input id="f-prefix" name="inventory_prefix" value="<?= e(form_value($row, 'inventory_prefix')) ?>" maxlength="6" class="mono" pattern="[A-Za-z]{1,6}">
+                    <p class="form-hint">1 bis 6 Buchstaben; Inventarnummern lauten Präfix + Jahr + laufende Nummer (z. B. PC26001). Pflicht, wenn Inventarnummern vergeben werden; nach dem ersten Asset nicht mehr änderbar.</p>
                 <?php endif; ?>
                 <?= field_error('inventory_prefix') ?>
             </div>
@@ -55,6 +55,8 @@ $source = $row ?? $prefill;
         </div>
         <fieldset class="form-group">
             <legend>Kennungsfelder und Funktionen</legend>
+            <label class="checkbox-field"><input type="checkbox" name="requires_inventory_number" value="1"<?= form_checked($row, 'requires_inventory_number') ?>> <span>Inventarnummer vergeben (Pflichtfeld)</span></label>
+            <p class="form-hint">Ohne Häkchen erhalten Assets dieses Typs keine Inventarnummer (z. B. Kabel, Kleinzubehör) und damit auch kein Inventaretikett und keine Scan-Erfassung; ein Präfix ist dann nicht nötig. Beim Umstellen behalten vorhandene Assets ihre Nummer bzw. bleiben ohne Nummer.</p>
             <label class="checkbox-field"><input type="checkbox" name="has_serial_number" value="1"<?= form_checked($row, 'has_serial_number') ?>> <span>Seriennummer erfassen</span></label>
             <label class="checkbox-field"><input type="checkbox" name="has_mac_address" value="1"<?= form_checked($row, 'has_mac_address', false) ?>> <span>MAC-Adresse erfassen</span></label>
             <label class="checkbox-field"><input type="checkbox" name="has_imei" value="1"<?= form_checked($row, 'has_imei', false) ?>> <span>IMEI erfassen</span></label>

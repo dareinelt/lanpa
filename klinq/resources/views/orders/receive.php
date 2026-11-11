@@ -62,7 +62,7 @@ $val = static fn (string $key, string $default = ''): string => $old !== null ? 
                     <div class="receive-item-title">
                         <span class="text-muted">Pos. <?= (int) $it['position'] ?></span>
                         <strong><?= e($it['description']) ?></strong>
-                        <span class="text-sm text-muted"><?= $it['asset_type_name'] ? icon($it['asset_type_icon'] ?: 'box', 'icon icon-sm icon-muted') . ' ' . e($it['asset_type_name']) . ' (' . e($it['inventory_prefix']) . ')' : 'ohne Asset' ?><?= $it['article_number'] ? ' · Art.-Nr. ' . e($it['article_number']) : '' ?></span>
+                        <span class="text-sm text-muted"><?= $it['asset_type_name'] ? icon($it['asset_type_icon'] ?: 'box', 'icon icon-sm icon-muted') . ' ' . e(type_label(['name' => $it['asset_type_name'], 'inventory_prefix' => $it['inventory_prefix'], 'requires_inventory_number' => $it['requires_inventory_number'] ?? 1])) : 'ohne Asset' ?><?= $it['article_number'] ? ' · Art.-Nr. ' . e($it['article_number']) : '' ?></span>
                     </div>
                     <div class="receive-item-qty">
                         <label for="q-<?= $id ?>">Geliefert <span class="text-muted">(offen: <?= (int) $it['quantity_open'] ?> von <?= (int) $it['quantity'] ?>)</span></label>

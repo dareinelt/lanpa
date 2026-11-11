@@ -48,10 +48,13 @@ final class AssetCatalogService
 
         $input['code'] = strtoupper(trim((string) ($input['code'] ?? '')));
         $input['inventory_prefix'] = strtoupper(trim((string) ($input['inventory_prefix'] ?? '')));
+        // Ohne Inventarnummer ist das Präfix optional (leer → NULL)
+        $requiresNumber = filter_var($input['requires_inventory_number'] ?? false, FILTER_VALIDATE_BOOL);
         $data = (new Validator($input))
             ->pattern('code', 'Code', '/^[A-Z0-9_-]{1,20}$/', 'Der Code darf nur aus Großbuchstaben, Ziffern, „-“ und „_“ bestehen (höchstens 20 Zeichen).', true)
             ->string('name', 'Bezeichnung', true, 100)
-            ->pattern('inventory_prefix', 'Inventarnummern-Präfix', '/^[A-Z]{1,6}$/', 'Das Präfix muss aus 1 bis 6 Buchstaben (A–Z) bestehen.', true)
+            ->bool('requires_inventory_number')
+            ->pattern('inventory_prefix', 'Inventarnummern-Präfix', '/^[A-Z]{1,6}$/', 'Das Präfix muss aus 1 bis 6 Buchstaben (A–Z) bestehen.', $requiresNumber)
             ->bool('has_serial_number')
             ->bool('has_mac_address')
             ->bool('has_imei')
@@ -66,12 +69,12 @@ final class AssetCatalogService
         if ($byCode !== null && (int) $byCode['id'] !== $id) {
             throw ValidationException::single('code', 'Dieser Code ist bereits vergeben.');
         }
-        $byPrefix = $this->types->findByPrefix($data['inventory_prefix']);
+        $byPrefix = $data['inventory_prefix'] !== null ? $this->types->findByPrefix($data['inventory_prefix']) : null;
         if ($byPrefix !== null && (int) $byPrefix['id'] !== $id) {
             throw ValidationException::single('inventory_prefix', 'Dieses Präfix wird bereits vom Assettyp „' . $byPrefix['name'] . '“ verwendet.');
         }
         // Inventarnummern vorhandener Assets beginnen mit dem Präfix – danach nicht mehr änderbar.
-        if ($existing !== null && $data['inventory_prefix'] !== (string) $existing['inventory_prefix'] && $this->types->assetCount((int) $id) > 0) {
+        if ($existing !== null && $data['inventory_prefix'] !== $existing['inventory_prefix'] && $this->types->assetCount((int) $id) > 0) {
             throw ValidationException::single('inventory_prefix', 'Das Präfix kann nicht mehr geändert werden, weil bereits Assets mit diesem Assettyp existieren.');
         }
 

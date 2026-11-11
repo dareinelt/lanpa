@@ -8,7 +8,7 @@ Das Asset ist das zentrale Objekt der Anwendung. Jedes physische Gerät erhält 
 
 | Bestandteil | Bedeutung | Beispiel |
 |---|---|---|
-| Präfix | Buchstabenkürzel des Assettyps (`asset_types.inventory_prefix`) | `PC`, `MD`, `NET`, `ZUB` |
+| Präfix | Buchstabenkürzel des Assettyps (`asset_types.inventory_prefix`; nur bei Typen mit Inventarnummer, siehe [Lagerartikel](#lagerartikel-assets-ohne-inventarnummer)) | `PC`, `MD`, `NET`, `ZUB` |
 | Jahr | zweistelliges Jahr der Anlage | `26` |
 | Laufnummer | mindestens dreistellig, pro Präfix **und** Jahr fortlaufend; ab 1000 wird sie länger (kein Überlauf) | `001` … `999`, `1000` |
 | Altbestand | Jahreskennung `88` für nachinventarisierte Geräte ohne bekanntes Anschaffungsjahr | `PC88001` |
@@ -82,11 +82,25 @@ Bearbeitungen verwenden **optimistisches Locking** (`assets.version`): Speichert
 Assettypen und Kategorien sind bearbeitbare Kataloge unter **Auswertung & System → Kataloge** (`/catalogs`, nur Admins mit `settings.manage`). Die Seite hat je Katalog einen Tab:
 
 - **Assettypen** (`/catalogs?tab=asset-types`): Bezeichnung, Code (Großbuchstaben/Ziffern/`-`/`_`, eindeutig, z. B. für den CSV-Import), Inventarnummern-Präfix (1–6 Buchstaben, eindeutig), Symbol, Sortierung, Kennungsfelder (Seriennummer, MAC-Adresse, IMEI) und „Lizenzen zuordenbar“. Das **Präfix ist gesperrt, sobald Assets des Typs existieren**, weil deren Inventarnummern damit beginnen. Die Liste zeigt je Typ die Anzahl Kategorien, Artikel und Assets.
+- **Inventarnummer vergeben (Pflichtfeld)**: Standardmäßig an. Ohne Häkchen ist der Typ ein Typ für **Lagerartikel** (siehe unten); ein Präfix ist dann nicht nötig.
 - **Kategorien** (`/catalogs?tab=asset-categories`, filterbar nach Assettyp): Assettyp, Bezeichnung (eindeutig je Assettyp), Sortierung. Der **Assettyp einer Kategorie ist gesperrt, sobald Assets oder Artikel sie verwenden**, weil Kategorie und Typ eines Datensatzes zusammenpassen müssen.
 
 Einträge werden nicht gelöscht, sondern **deaktiviert**: Deaktivierte Typen und Kategorien stehen bei neuen Assets, Artikeln und Bestellpositionen nicht mehr zur Auswahl. Beim Bearbeiten eines Assets oder Artikels bleibt eine bereits gewählte, inzwischen deaktivierte Kategorie (bzw. beim Artikel der Assettyp) auswählbar und wird nicht stillschweigend entfernt. Alle Änderungen landen im Audit-Log (`asset_type`, `asset_category`).
 
 Der Seeder (`database/seeders/001_defaults.sql`) spielt die Standardtypen (PC, MD, NET, ZUB) und -kategorien nur in eine **leere** Tabelle ein; im Katalog umbenannte oder deaktivierte Einträge werden bei späteren Migrationsläufen nicht überschrieben oder neu angelegt.
+
+## Lagerartikel (Assets ohne Inventarnummer)
+
+Für Dinge, die einzeln geführt, aber nicht inventarisiert werden sollen (z. B. Kabel, Kleinzubehör), wird beim Assettyp das Häkchen **„Inventarnummer vergeben (Pflichtfeld)“** entfernt (`asset_types.requires_inventory_number = 0`). Assets dieses Typs heißen in der Oberfläche **Lagerartikel**:
+
+- Sie erhalten **keine Inventarnummer** (`assets.inventory_number` bleibt `NULL`, es wird keine Sequenz verbraucht); eine manuell eingegebene Nummer wird abgewiesen, auch im CSV-Import.
+- Sie sind sonst vollwertige Assets: Status, Standort, Mitarbeiter, Historie, Entnahme/Rückgabe, Übergabeprotokoll, Lizenzen, Ticket-Verknüpfung.
+- In Tabellen steht statt der Nummer „Lagerartikel“, in Überschriften die Bezeichnung bzw. der Artikel und die Seriennummer (`AssetService::label()`).
+- Für Links, Scan-Eingaben, Formularfelder und den Offline-Modus gilt die Ersatzkennung **`#<Asset-ID>`** (`AssetService::code()`), die `MovementService::resolveAsset()` auflöst; Seriennummern funktionieren wie gewohnt.
+- **Kein Inventaretikett**: Lagerartikel werden beim Etikettendruck übersprungen, die Schaltfläche „Etikett“ entfällt.
+- **Umstellen eines Typs** ändert vorhandene Assets nicht: Bereits vergebene Nummern bleiben erhalten, Assets ohne Nummer bleiben ohne Nummer (auch nach dem Einschalten der Pflicht – beim Bearbeiten darf das Feld dann leer bleiben). Das Präfix ist gesperrt, sobald Assets mit Inventarnummer existieren.
+
+Abzugrenzen ist **Verbrauchsmaterial** (Artikel mit „Verbrauchsmaterial“, z. B. Toner, Tinte): Dafür entstehen gar keine Einzel-Assets, sondern nur ein Lagerbestand je Artikel – siehe [Verbrauchsmaterial](einkauf.md#verbrauchsmaterial-und-bestellvorschläge-ordersreplenishment).
 
 ## Berechtigungen
 

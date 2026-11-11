@@ -131,7 +131,7 @@ $showItemForm = $editable && ($editing !== null || $old !== null || $items === [
                     <label for="i-type">Assettyp</label>
                     <select id="i-type" name="asset_type_id" data-item-type>
                         <option value="">– keiner –</option>
-                        <?php foreach ($types as $t): ?><option value="<?= (int) $t['id'] ?>"<?= selected($itemVal('asset_type_id', $editing['effective_asset_type_id'] ?? ''), $t['id']) ?>><?= e($t['name']) ?> (<?= e($t['inventory_prefix']) ?>)</option><?php endforeach; ?>
+                        <?php foreach ($types as $t): ?><option value="<?= (int) $t['id'] ?>"<?= selected($itemVal('asset_type_id', $editing['effective_asset_type_id'] ?? ''), $t['id']) ?>><?= e(type_label($t)) ?></option><?php endforeach; ?>
                     </select>
                     <?= field_error('asset_type_id') ?>
                 </div>
@@ -223,7 +223,7 @@ $showItemForm = $editable && ($editing !== null || $old !== null || $items === [
         <tbody>
         <?php foreach ($assets as $a): ?>
             <tr data-href="/assets/<?= (int) $a['id'] ?>">
-                <td class="mono font-semibold"><a href="/assets/<?= (int) $a['id'] ?>"><?= e($a['inventory_number']) ?></a></td>
+                <td class="mono font-semibold"><a href="/assets/<?= (int) $a['id'] ?>"><?= e(asset_number($a)) ?></a></td>
                 <td><?= icon($a['asset_type_icon'] ?: 'box', 'icon icon-sm icon-muted') ?> <?= e($a['asset_type_name']) ?></td>
                 <td><?= e($a['name'] ?: ($a['article_name'] ?? '–')) ?></td>
                 <td class="mono"><?= e($a['serial_number'] ?? '–') ?></td>

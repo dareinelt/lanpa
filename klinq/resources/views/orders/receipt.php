@@ -47,7 +47,7 @@
         <tbody>
         <?php foreach ($assets as $a): ?>
             <tr data-href="/assets/<?= (int) $a['id'] ?>">
-                <td class="mono font-semibold"><a href="/assets/<?= (int) $a['id'] ?>"><?= e($a['inventory_number']) ?></a></td>
+                <td class="mono font-semibold"><a href="/assets/<?= (int) $a['id'] ?>"><?= e(asset_number($a)) ?></a></td>
                 <td><?= icon($a['asset_type_icon'] ?: 'box', 'icon icon-sm icon-muted') ?> <?= e($a['asset_type_name']) ?></td>
                 <td><?= e($a['name'] ?: ($a['article_name'] ?? '–')) ?></td>
                 <td class="mono"><?= e($a['serial_number'] ?? '–') ?></td>

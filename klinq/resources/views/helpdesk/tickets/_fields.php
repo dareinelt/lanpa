@@ -231,7 +231,7 @@ if (!empty($secondLevelAssigneeId)) {
         <?php if ($isEdit): ?>
         <div class="form-group">
             <label>Verknüpfte Assets</label>
-            <p class="form-hint"><?= $linkedAssets === [] ? 'Keine.' : e(implode(', ', array_map(static fn (array $la): string => (string) $la['inventory_number'], $linkedAssets))) ?> – Assets werden auf der <a href="/helpdesk/tickets/<?= (int) $ticket['id'] ?>#assets">Ticketseite</a> verwaltet.</p>
+            <p class="form-hint"><?= $linkedAssets === [] ? 'Keine.' : e(implode(', ', array_map(static fn (array $la): string => asset_label($la), $linkedAssets))) ?> – Assets werden auf der <a href="/helpdesk/tickets/<?= (int) $ticket['id'] ?>#assets">Ticketseite</a> verwaltet.</p>
         </div>
         <?php else: ?>
         <div class="form-group<?= has_error('asset_id') ? ' has-error' : '' ?>">
@@ -247,7 +247,7 @@ if (!empty($secondLevelAssigneeId)) {
                     }
                 }
                 ?>
-                <?php foreach ($offered as $ea): ?><option value="<?= (int) $ea['id'] ?>"<?= in_array((int) $ea['id'], $selectedAssets, true) ? ' selected' : '' ?>><?= e($ea['inventory_number']) ?> · <?= e($ea['name'] ?? $ea['article_name'] ?? '') ?></option><?php endforeach; ?>
+                <?php foreach ($offered as $ea): ?><option value="<?= (int) $ea['id'] ?>"<?= in_array((int) $ea['id'], $selectedAssets, true) ? ' selected' : '' ?>><?= e(asset_number($ea)) ?> · <?= e($ea['name'] ?? $ea['article_name'] ?? '') ?></option><?php endforeach; ?>
             </select>
             <p class="form-hint">Die Liste zeigt die Assets des Melders bzw. des betroffenen Mitarbeiters.</p>
             <?= field_error('asset_id') ?>

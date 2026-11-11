@@ -34,13 +34,14 @@ $newUrl = '/catalogs/' . $kind . '/new' . (!$isTypes && $typeFilter !== null ? '
     <?php elseif ($isTypes): ?>
     <div class="table-wrapper">
     <table class="table">
-        <thead><tr><th>Assettyp</th><th>Code</th><th>Präfix</th><th>Seriennr.</th><th>MAC</th><th>IMEI</th><th>Lizenzen</th><th class="num">Sortierung</th><th class="num">Kategorien</th><th class="num">Artikel</th><th class="num">Assets</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Assettyp</th><th>Code</th><th>Inv.-Nr.</th><th>Präfix</th><th>Seriennr.</th><th>MAC</th><th>IMEI</th><th>Lizenzen</th><th class="num">Sortierung</th><th class="num">Kategorien</th><th class="num">Artikel</th><th class="num">Assets</th><th>Status</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($rows as $r): ?>
             <tr class="<?= (int) $r['is_active'] ? '' : 'is-muted' ?>">
                 <td><?= icon((string) ($r['icon'] ?: 'box'), 'icon icon-sm icon-muted') ?> <strong><?= e($r['name']) ?></strong></td>
                 <td class="mono"><?= e($r['code']) ?></td>
-                <td class="mono"><?= e($r['inventory_prefix']) ?></td>
+                <td><?= (int) $r['requires_inventory_number'] === 1 ? 'Ja' : badge('ohne', 'neutral') ?></td>
+                <td class="mono"><?= e((string) ($r['inventory_prefix'] ?? '')) ?: '–' ?></td>
                 <td><?= $yesNo($r['has_serial_number']) ?></td>
                 <td><?= $yesNo($r['has_mac_address']) ?></td>
                 <td><?= $yesNo($r['has_imei']) ?></td>

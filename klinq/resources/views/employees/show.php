@@ -71,7 +71,7 @@
         <tbody>
         <?php foreach ($assets as $a): ?>
             <tr class="is-clickable" data-href="/assets/<?= (int) $a['id'] ?>">
-                <td class="mono"><strong><?= e($a['inventory_number']) ?></strong></td>
+                <td class="mono"><strong><?= e(asset_number($a)) ?></strong></td>
                 <td><?= e($a['name'] ?? '') ?></td>
                 <td><?= e($a['asset_type_name'] ?? '') ?></td>
                 <td><?= fmt_date($a['assigned_at'] ?? null) ?></td>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Services\AssetService;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
@@ -75,7 +76,7 @@ final class MovementController extends BaseController
         $costCenterId = $old['cost_center_id'] ?? ($asset['cost_center_id'] ?? null);
 
         return $this->render('movements.checkout_capture', array_merge($this->formOptions(), [
-            'title' => 'Entnahme ' . $asset['inventory_number'],
+            'title' => 'Entnahme ' . AssetService::label($asset),
             'activeNav' => 'assets',
             'asset' => $asset,
             'costCenterId' => $costCenterId,
@@ -140,7 +141,7 @@ final class MovementController extends BaseController
         }
 
         return $this->render('movements.return_capture', array_merge($this->formOptions(), [
-            'title' => 'Rückgabe ' . $asset['inventory_number'],
+            'title' => 'Rückgabe ' . AssetService::label($asset),
             'activeNav' => 'assets',
             'asset' => $asset,
             'locationId' => $locationId,
@@ -226,7 +227,7 @@ final class MovementController extends BaseController
         $row = $this->findOrFail($this->movements->find($request->paramInt('id')), 'Vorgang nicht gefunden');
 
         return $this->render('movements.show', array_merge($this->formOptions(), [
-            'title' => ($row['type'] === 'checkout' ? 'Entnahme' : 'Retoure') . ' ' . $row['inventory_number'],
+            'title' => ($row['type'] === 'checkout' ? 'Entnahme' : 'Retoure') . ' ' . AssetService::label($row),
             'activeNav' => $row['status'] === 'open' ? 'open-checkouts' : 'movements',
             'row' => $row,
             'documents' => $this->documents->forEntity('movement', (int) $row['id']),
@@ -292,6 +293,7 @@ final class MovementController extends BaseController
             'location_id' => $request->queryString('location_id'),
             'cost_center_id' => $request->queryString('cost_center_id'),
             'asset_type_id' => $request->queryString('asset_type_id'),
+            'asset_id' => $request->queryString('asset_id'),
             'missing' => $request->queryString('missing'),
             'source' => $request->queryString('source'),
         ];

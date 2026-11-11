@@ -38,7 +38,7 @@ $selectedType = form_value($row, 'asset_type_id');
                 <label for="f-type">Assettyp *</label>
                 <select id="f-type" name="asset_type_id" required data-category-filter>
                     <option value="">Bitte wählen</option>
-                    <?php foreach ($assetTypes as $t): ?><option value="<?= (int) $t['id'] ?>"<?= selected($selectedType, $t['id']) ?>><?= e($t['name']) ?> (<?= e($t['inventory_prefix']) ?>)</option><?php endforeach; ?>
+                    <?php foreach ($assetTypes as $t): ?><option value="<?= (int) $t['id'] ?>"<?= selected($selectedType, $t['id']) ?>><?= e(type_label($t)) ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('asset_type_id') ?>
             </div>

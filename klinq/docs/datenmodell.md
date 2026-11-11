@@ -37,7 +37,7 @@ erDiagram
 
 | Spalte | Bedeutung |
 |---|---|
-| `inventory_number` | Eindeutig, Format `<PREFIX><JJ><NNN>` (z. B. `PC26001`), Altbestand mit Jahreskennung `88`; Vergabe über `inventory_sequences` ([Assets](assets.md)) |
+| `inventory_number` | Eindeutig; `NULL` bei Lagerartikeln (Assettyp ohne Inventarnummer). Format `<PREFIX><JJ><NNN>` (z. B. `PC26001`), Altbestand mit Jahreskennung `88`; Vergabe über `inventory_sequences` ([Assets](assets.md)) |
 | `asset_type_id`, `asset_category_id` | Typ (PC, MD, NET, ZUB) und optionale Kategorie innerhalb des Typs |
 | `manufacturer_id`, `article_id`, `name` | Hersteller, Artikel/Modell, Freitextbezeichnung |
 | `serial_number`, `serial_number_normalized` | Seriennummer; normalisiert (Großschreibung, ohne Trennzeichen) und **eindeutig je Assettyp** (`uq_assets_type_serial`) |
@@ -60,7 +60,7 @@ erDiagram
 
 | Tabelle | Wesentliche Spalten |
 |---|---|
-| `asset_types` | `code`, `name`, `inventory_prefix`, Flags `has_serial_number/has_mac_address/has_imei/supports_licenses`, `icon`, `sort_order`, `is_active`; gepflegt unter Auswertung & System → Kataloge ([Assets](assets.md#kataloge-assettypen-und-kategorien)) |
+| `asset_types` | `code`, `name`, `inventory_prefix` (NULL bei Typen ohne Inventarnummer), `requires_inventory_number` (0 = Lagerartikel ohne Inventarnummer), Flags `has_serial_number/has_mac_address/has_imei/supports_licenses`, `icon`, `sort_order`, `is_active`; gepflegt unter Auswertung & System → Kataloge ([Assets](assets.md#kataloge-assettypen-und-kategorien)) |
 | `asset_categories` | je Typ: `name` (eindeutig je Typ), `sort_order`, `is_active`; gepflegt unter Auswertung & System → Kataloge |
 | `asset_statuses` | `code`, `name`, `color`, `is_available`, `is_final` |
 | `manufacturers` | `name` (eindeutig), `short_name`, `website`, `contact`, `phonetic_key` (Kölner Phonetik) und `normalized_name` für die Dublettenwarnung |

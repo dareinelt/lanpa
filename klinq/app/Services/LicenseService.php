@@ -103,10 +103,10 @@ final class LicenseService
             throw ValidationException::single('note', 'Die Bemerkung darf höchstens 255 Zeichen lang sein.');
         }
         if ((int) $asset['status_final'] === 1) {
-            throw ValidationException::single('asset_id', 'Das Asset ' . $asset['inventory_number'] . ' ist bereits ausgeschieden.');
+            throw ValidationException::single('asset_id', 'Das Asset ' . AssetService::label($asset) . ' ist bereits ausgeschieden.');
         }
         if ($this->licenses->activeAssignment((int) $license['id'], (int) $asset['id']) !== null) {
-            throw ValidationException::single('asset_id', 'Diese Lizenz ist dem Asset ' . $asset['inventory_number'] . ' bereits zugeordnet.');
+            throw ValidationException::single('asset_id', 'Diese Lizenz ist dem Asset ' . AssetService::label($asset) . ' bereits zugeordnet.');
         }
         if ((int) $license['available_count'] <= 0) {
             throw new ConflictException('Alle ' . $license['quantity'] . ' Einheiten dieser Lizenz sind bereits vergeben.');

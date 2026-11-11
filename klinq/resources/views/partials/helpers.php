@@ -211,6 +211,40 @@ if (!function_exists('query_url')) {
     }
 }
 
+if (!function_exists('asset_label')) {
+    /** Anzeigename eines Assets: Inventarnummer, sonst Bezeichnung/Seriennummer (Typen ohne Inventarnummer). */
+    function asset_label(array $asset): string
+    {
+        return \App\Services\AssetService::label($asset);
+    }
+}
+
+if (!function_exists('asset_number')) {
+    /** Inventarnummer für Tabellenzellen; ohne Nummer ein einheitlicher Platzhalter. */
+    function asset_number(array $asset): string
+    {
+        return \App\Services\AssetService::number($asset);
+    }
+}
+
+if (!function_exists('asset_code')) {
+    /** Kennung für Links/Formularfelder: Inventarnummer oder „#<Asset-ID>“. */
+    function asset_code(array $asset): string
+    {
+        return \App\Services\AssetService::code($asset);
+    }
+}
+
+if (!function_exists('type_label')) {
+    /** Assettyp mit Präfix in Klammern, sofern der Typ eines hat (Auswahllisten). */
+    function type_label(array $type): string
+    {
+        $prefix = trim((string) ($type['inventory_prefix'] ?? ''));
+
+        return (string) $type['name'] . ($prefix !== '' && (int) ($type['requires_inventory_number'] ?? 1) === 1 ? ' (' . $prefix . ')' : '');
+    }
+}
+
 if (!function_exists('icon')) {
     function icon(string $name, string $class = 'icon'): string
     {

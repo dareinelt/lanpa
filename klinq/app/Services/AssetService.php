@@ -66,7 +66,7 @@ final class AssetService
 
     /**
      * @param array<string,mixed> $input
-     * @return array{id:int, inventory_number:string}
+     * @return array{id:int, inventory_number:?string}
      */
     public function create(array $input): array
     {
@@ -76,8 +76,11 @@ final class AssetService
         $manualNumber = $data['inventory_number'] ?? null;
         unset($data['inventory_number']);
 
-        return $this->assets->transaction(function () use ($data, $type, $legacy, $manualNumber): array {
-            $number = $manualNumber ?? $this->numbers->next((string) $type['inventory_prefix'], $legacy);
+        $withNumber = self::typeRequiresInventoryNumber($type);
+
+        return $this->assets->transaction(function () use ($data, $type, $legacy, $manualNumber, $withNumber): array {
+            // Assettypen ohne Inventarnummer: Feld bleibt NULL (nie '' – eindeutiger Index), keine Sequenz
+            $number = $withNumber ? ($manualNumber ?? $this->numbers->next((string) $type['inventory_prefix'], $legacy)) : null;
             $data['inventory_number'] = $number;
             $data['created_by'] = $this->currentUser->id();
             $id = $this->assets->create($data);
@@ -88,7 +91,7 @@ final class AssetService
                     $this->history->add($id, $this->entry(self::EVENT_TYPES[$field] ?? 'field_changed', $field, null, (string) $row[self::FIELD_LABELS[$field][1]], newId: (int) $row[$field]));
                 }
             }
-            $this->audit->log('create', 'asset', $id, $number, null, $data);
+            $this->audit->log('create', 'asset', $id, self::label($row + $data), null, $data);
 
             return ['id' => $id, 'inventory_number' => $number];
         });
@@ -122,7 +125,7 @@ final class AssetService
                 ));
             }
             $auditData = $inventoryNumberReason !== null ? $data + ['inventory_number_reason' => $inventoryNumberReason] : $data;
-            $this->audit->log('update', 'asset', $id, (string) $fresh['inventory_number'], $existing, $auditData);
+            $this->audit->log('update', 'asset', $id, self::label($fresh), $existing, $auditData);
         });
     }
 
@@ -156,7 +159,7 @@ final class AssetService
             $this->assets->update($id, $data);
             $fresh = $this->assets->find($id) ?? $existing;
             $this->recordDiff($id, $existing, $fresh, $note !== null && trim($note) !== '' ? trim($note) : null);
-            $this->audit->log('status', 'asset', $id, (string) $existing['inventory_number'], ['status_id' => $existing['status_id']], $data);
+            $this->audit->log('status', 'asset', $id, self::label($existing), ['status_id' => $existing['status_id']], $data);
         });
     }
 
@@ -259,7 +262,7 @@ final class AssetService
         if ($data['serial_number_normalized'] !== null) {
             $dup = $this->assets->findBySerial((int) $data['asset_type_id'], $data['serial_number_normalized'], $excludeId);
             if ($dup !== null) {
-                throw ValidationException::single('serial_number', 'Diese Seriennummer ist innerhalb des Assettyps bereits vergeben (' . $dup['inventory_number'] . ').');
+                throw ValidationException::single('serial_number', 'Diese Seriennummer ist innerhalb des Assettyps bereits vergeben (' . self::label($dup) . ').');
             }
         }
         if ($data['mac_address'] !== null) {
@@ -270,7 +273,7 @@ final class AssetService
             $data['mac_address'] = $mac;
             $dup = $this->assets->findByUniqueField('mac_address', $mac, $excludeId);
             if ($dup !== null) {
-                throw ValidationException::single('mac_address', 'Diese MAC-Adresse ist bereits bei ' . $dup['inventory_number'] . ' hinterlegt.');
+                throw ValidationException::single('mac_address', 'Diese MAC-Adresse ist bereits bei ' . self::label($dup) . ' hinterlegt.');
             }
         }
         if ($data['imei'] !== null) {
@@ -281,7 +284,7 @@ final class AssetService
             $data['imei'] = $imei;
             $dup = $this->assets->findByUniqueField('imei', $imei, $excludeId);
             if ($dup !== null) {
-                throw ValidationException::single('imei', 'Diese IMEI ist bereits bei ' . $dup['inventory_number'] . ' hinterlegt.');
+                throw ValidationException::single('imei', 'Diese IMEI ist bereits bei ' . self::label($dup) . ' hinterlegt.');
             }
         }
         if ($data['purchase_date'] !== null && $data['warranty_until'] !== null && $data['warranty_until'] < $data['purchase_date']) {
@@ -296,8 +299,14 @@ final class AssetService
             }
         }
 
-        // Inventarnummer: bei der Anlage optional manuell (Altbestand/Import), bei der Bearbeitung nur mit Grund
-        if ($existing === null) {
+        // Inventarnummer: bei der Anlage optional manuell (Altbestand/Import), bei der Bearbeitung nur mit Grund.
+        // Assettypen ohne Inventarnummer vergeben keine; eine vorhandene (Typ später umgestellt) bleibt unverändert.
+        if (!self::typeRequiresInventoryNumber($type)) {
+            if ($existing === null && $data['inventory_number'] !== null) {
+                throw ValidationException::single('inventory_number', 'Der Assettyp „' . $type['name'] . '“ vergibt keine Inventarnummern.');
+            }
+            unset($data['inventory_number']);
+        } elseif ($existing === null) {
             if ($data['inventory_number'] !== null) {
                 $data['inventory_number'] = $this->checkInventoryNumber((string) $data['inventory_number'], (string) $type['inventory_prefix'], null);
             } else {
@@ -307,10 +316,14 @@ final class AssetService
             // Aufrufe ohne Formularfeld (z. B. Import/Systemprozesse) lassen die Nummer unverändert
             unset($data['inventory_number']);
         } elseif ($data['inventory_number'] === null) {
-            throw ValidationException::single('inventory_number', 'Inventarnummer ist erforderlich.');
+            // Asset ohne Nummer (Typ erst später auf „mit Inventarnummer“ umgestellt): darf leer bleiben
+            if (trim((string) ($existing['inventory_number'] ?? '')) !== '') {
+                throw ValidationException::single('inventory_number', 'Inventarnummer ist erforderlich.');
+            }
+            unset($data['inventory_number']);
         } else {
             $number = $this->checkInventoryNumber((string) $data['inventory_number'], (string) $type['inventory_prefix'], $excludeId);
-            if ($number === (string) $existing['inventory_number']) {
+            if ($number === (string) ($existing['inventory_number'] ?? '')) {
                 unset($data['inventory_number']);
             } else {
                 $reason = trim((string) ($input['inventory_number_reason'] ?? ''));
@@ -439,6 +452,53 @@ final class AssetService
         }
 
         return $number;
+    }
+
+    /** Vergibt der Assettyp Inventarnummern? (Spalte fehlt nur bei Altdaten → ja) @param array<string,mixed> $type */
+    public static function typeRequiresInventoryNumber(array $type): bool
+    {
+        return (int) ($type['requires_inventory_number'] ?? 1) === 1;
+    }
+
+    /**
+     * Anzeigename eines Assets: Inventarnummer, sonst Bezeichnung/Artikel und Seriennummer
+     * (Assettypen ohne Inventarnummer).
+     *
+     * @param array<string,mixed> $asset
+     */
+    public static function label(array $asset): string
+    {
+        $number = trim((string) ($asset['inventory_number'] ?? ''));
+        if ($number !== '') {
+            return $number;
+        }
+        $name = trim((string) ($asset['name'] ?? $asset['asset_name'] ?? '')) ?: trim((string) ($asset['article_name'] ?? ''));
+        $serial = trim((string) ($asset['serial_number'] ?? ''));
+        $parts = array_filter([$name, $serial !== '' ? 'SN ' . $serial : '']);
+
+        return $parts !== [] ? implode(' · ', $parts) : 'Asset ' . self::code($asset);
+    }
+
+    /**
+     * Kennung für Links, Scan-Eingaben und Formularfelder: Inventarnummer, sonst „#<Asset-ID>“
+     * (wird von MovementService::resolveAsset() aufgelöst). Zeilen mit `asset_id`
+     * (Bewegungen, Lizenzzuordnungen) verwenden diese statt der eigenen `id`.
+     *
+     * @param array<string,mixed> $asset
+     */
+    public static function code(array $asset): string
+    {
+        $number = trim((string) ($asset['inventory_number'] ?? ''));
+
+        return $number !== '' ? $number : '#' . (int) ($asset['asset_id'] ?? $asset['id'] ?? 0);
+    }
+
+    /** Inventarnummer für Tabellenzellen; Assets ohne Nummer („Lagerartikel“) erhalten einen einheitlichen Platzhalter. @param array<string,mixed> $asset */
+    public static function number(array $asset): string
+    {
+        $number = trim((string) ($asset['inventory_number'] ?? ''));
+
+        return $number !== '' ? $number : 'Lagerartikel';
     }
 
     /** Seriennummer für Dublettenvergleich: Großbuchstaben, ohne Leerzeichen/Bindestriche. */

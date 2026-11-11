@@ -56,7 +56,7 @@ final class SearchService
 
         if ($this->user->can('assets.view')) {
             $groups[] = $this->group('assets', 'Assets', '/assets?status=all&q=' . rawurlencode($term), array_map(static fn (array $a): array => [
-                'title' => $a['inventory_number'] . ' · ' . ($a['name'] ?: ($a['article_name'] ?? $a['asset_type_name'])),
+                'title' => (string) ($a['inventory_number'] ?? '') !== '' ? $a['inventory_number'] . ' · ' . ($a['name'] ?: ($a['article_name'] ?? $a['asset_type_name'])) : AssetService::number($a) . ' · ' . AssetService::label($a),
                 'meta' => implode(' · ', array_filter([$a['manufacturer_name'], $a['serial_number'] ? 'SN ' . $a['serial_number'] : null, $a['status_name'], $a['employee_name'], $a['location_path']])),
                 'url' => '/assets/' . (int) $a['id'],
             ], $this->assets->quickSearch($term, $perGroup)));

@@ -140,7 +140,7 @@
                 <tr class="is-clickable" data-href="/movements/<?= (int) $m['id'] ?>">
                     <td class="nowrap"><?= fmt_datetime($m['movement_at']) ?></td>
                     <td><?= $m['type'] === 'checkout' ? badge('Entnahme', 'info') : badge('Retoure', 'success') ?></td>
-                    <td><strong><?= e($m['inventory_number']) ?></strong><br><span class="text-muted text-sm"><?= e($m['asset_name'] ?? '') ?></span></td>
+                    <td><strong><?= e(asset_number($m)) ?></strong><br><span class="text-muted text-sm"><?= e($m['asset_name'] ?? '') ?></span></td>
                     <td><?= e($m['employee_name'] ?? '–') ?></td>
                     <td><?= $m['status'] === 'open' ? badge('Offen', 'warning') : ($m['status'] === 'cancelled' ? badge('Storniert', 'neutral') : badge('Abgeschlossen', 'success')) ?></td>
                 </tr>
@@ -162,7 +162,7 @@
             <?php foreach ($returnsDueSoon as $a): $overdue = $a['expected_return_at'] < date('Y-m-d'); ?>
                 <li>
                     <div>
-                        <div class="task-title"><a href="/assets/<?= (int) $a['id'] ?>"><?= e($a['inventory_number']) ?></a> <?= e($a['name'] ?? '') ?></div>
+                        <div class="task-title"><a href="/assets/<?= (int) $a['id'] ?>"><?= e(asset_number($a)) ?></a> <?= e($a['name'] ?? '') ?></div>
                         <div class="task-meta"><?= e($a['employee_name'] ?? '–') ?> · fällig <?= fmt_date($a['expected_return_at']) ?></div>
                     </div>
                     <div class="task-actions"><?= $overdue ? badge('Überfällig', 'danger') : badge('Geplant', 'info') ?></div>
@@ -203,7 +203,7 @@
             <?php foreach ($recentHistory as $h): ?>
                 <tr>
                     <td class="nowrap"><?= fmt_datetime($h['created_at']) ?></td>
-                    <td><a href="/assets?q=<?= e(urlencode($h['inventory_number'])) ?>"><?= e($h['inventory_number']) ?></a></td>
+                    <td><a href="/assets/<?= (int) $h['asset_id'] ?>"><?= e(asset_number($h)) ?></a></td>
                     <td><?= e($h['event_type']) ?></td>
                     <td><?php if ($h['field']): ?><span class="text-muted"><?= e($h['field']) ?>:</span> <?= e($h['old_value'] ?? '–') ?> → <?= e($h['new_value'] ?? '–') ?><?php else: ?><?= e($h['note'] ?? '') ?><?php endif; ?></td>
                     <td><?= e($h['user_name']) ?></td>

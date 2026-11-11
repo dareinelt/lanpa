@@ -7,7 +7,7 @@ namespace App\Repositories;
 final class AssetRepository extends BaseRepository
 {
     private const SELECT = 'SELECT a.*,
-            t.name AS asset_type_name, t.code AS asset_type_code, t.icon AS asset_type_icon, t.inventory_prefix AS asset_type_prefix,
+            t.name AS asset_type_name, t.code AS asset_type_code, t.icon AS asset_type_icon, t.inventory_prefix AS asset_type_prefix, t.requires_inventory_number,
             t.has_serial_number, t.has_mac_address, t.has_imei, t.supports_licenses,
             cat.name AS category_name,
             m.name AS manufacturer_name,

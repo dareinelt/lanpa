@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers\Helpdesk;
 
+use App\Services\AssetService;
 use App\Core\Config;
 use App\Core\Request;
 use App\Core\Response;
@@ -166,8 +167,8 @@ final class HelpdeskApiController extends HelpdeskBaseController
 
         return $this->json(['items' => array_map(static fn (array $a): array => [
             'id' => (int) $a['id'],
-            'name' => $a['inventory_number'] . ' · ' . ($a['article_name'] ?? $a['model'] ?? $a['manufacturer_name'] ?? ''),
-            'label' => $a['inventory_number'],
+            'name' => AssetService::number($a) . ' · ' . ($a['article_name'] ?? $a['model'] ?? $a['manufacturer_name'] ?? ''),
+            'label' => AssetService::label($a),
             'meta' => trim(($a['article_name'] ?? '') . ' ' . ($a['serial_number'] ?? '')),
         ], $rows)]);
     }

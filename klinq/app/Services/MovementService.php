@@ -51,7 +51,7 @@ final class MovementService
     ) {}
 
     /**
-     * Asset anhand eines Scans oder einer Eingabe finden: Inventarnummer, QR-URL (…/a/PC26001) oder Seriennummer.
+     * Asset anhand eines Scans oder einer Eingabe finden: Inventarnummer, QR-URL (…/a/PC26001), „#<Asset-ID>“ oder Seriennummer.
      * @return array<string,mixed>|null
      */
     public function resolveAsset(string $code): ?array
@@ -62,6 +62,10 @@ final class MovementService
         }
         if (preg_match('#/a/([^/?\#]+)#', $code, $m)) {
             $code = rawurldecode($m[1]);
+        }
+        // Assets ohne Inventarnummer: Kennung „#<Asset-ID>“ (AssetService::code)
+        if (preg_match('/^#(\d+)$/', $code, $m)) {
+            return $this->assets->find((int) $m[1]);
         }
         $asset = $this->assets->findByInventoryNumber(strtoupper($code));
         if ($asset !== null) {
@@ -170,7 +174,7 @@ final class MovementService
             $summary = 'an ' . $employee['display_name'] . ($location !== null ? ' · ' . $location['full_path'] : ' · Standort offen');
             $this->assetService->addMovementEvent((int) $asset['id'], $movementId, 'checkout', $asset['location_path'] ?? null, $summary, $data['note']);
             $this->assetService->recordDiff((int) $asset['id'], $asset, $fresh, null, $movementId);
-            $this->audit->log('checkout', 'movement', $movementId, $asset['inventory_number'] . ' → ' . $employee['display_name'], null, [
+            $this->audit->log('checkout', 'movement', $movementId, AssetService::label($asset) . ' → ' . $employee['display_name'], null, [
                 'asset_id' => (int) $asset['id'], 'employee_id' => (int) $employee['id'], 'location_id' => $location['id'] ?? null, 'missing' => $missing, 'source' => $source, 'signed_electronically' => $signedElectronically,
             ]);
 
@@ -272,7 +276,7 @@ final class MovementService
             $note = trim(implode("\n", array_filter([$data['has_damage'] ? 'Schaden: ' . $data['damage_description'] : null, $data['note']])));
             $this->assetService->addMovementEvent((int) $asset['id'], $movementId, 'return', $asset['employee_name'] !== null ? 'von ' . $asset['employee_name'] : null, $summary, $note !== '' ? $note : null);
             $this->assetService->recordDiff((int) $asset['id'], $asset, $fresh, null, $movementId);
-            $this->audit->log('return', 'movement', $movementId, $asset['inventory_number'] . ' ← ' . ($asset['employee_name'] ?? '–'), null, [
+            $this->audit->log('return', 'movement', $movementId, AssetService::label($asset) . ' ← ' . ($asset['employee_name'] ?? '–'), null, [
                 'asset_id' => (int) $asset['id'], 'condition' => $data['condition_code'], 'has_damage' => (bool) $data['has_damage'], 'target_status' => $target['code'], 'missing' => $missing, 'source' => $source, 'signed_electronically' => $signedElectronically,
             ]);
 
@@ -405,7 +409,7 @@ final class MovementService
             if ($row['status'] === 'completed' && $movement['status'] !== 'completed') {
                 $this->assetService->addMovementEvent((int) $movement['asset_id'], $id, 'movement_completed', null, ($isCheckout ? 'Entnahme' : 'Retoure') . ' abgeschlossen');
             }
-            $this->audit->log('update', 'movement', $id, $movement['inventory_number'], $movement, $row);
+            $this->audit->log('update', 'movement', $id, AssetService::label($movement), $movement, $row);
 
             return $this->movements->find($id) ?? [];
         });
@@ -449,7 +453,7 @@ final class MovementService
             }
             $this->movements->update($id, ['status' => 'cancelled', 'note' => trim(($movement['note'] ?? '') . "\nStorniert: " . $reason)]);
             $this->assetService->addMovementEvent((int) $movement['asset_id'], $id, 'movement_cancelled', null, ($movement['type'] === 'checkout' ? 'Entnahme' : 'Retoure') . ' storniert', $reason);
-            $this->audit->log('cancel', 'movement', $id, $movement['inventory_number'], ['status' => $movement['status']], ['status' => 'cancelled', 'reason' => $reason]);
+            $this->audit->log('cancel', 'movement', $id, AssetService::label($movement), ['status' => $movement['status']], ['status' => 'cancelled', 'reason' => $reason]);
         });
 
         return $this->movements->find($id) ?? $movement;
@@ -473,7 +477,7 @@ final class MovementService
         try {
             $html = MovementReceiptRenderer::renderDocument($movement, $this->settings->companyName());
             $pdf = $this->pdf->render($html);
-            $subject = ($movement['type'] === 'checkout' ? 'Entnahmenachweis' : 'Retourennachweis') . ' ' . $movement['inventory_number'];
+            $subject = ($movement['type'] === 'checkout' ? 'Entnahmenachweis' : 'Retourennachweis') . ' ' . AssetService::label($movement);
             $attachments = [];
             if ($pdf !== null) {
                 $this->documents->storeGenerated('movement', (int) $movement['id'], 'movement_receipt', $pdf, $subject . '.pdf', 'Automatisch per E-Mail versendet');
@@ -481,7 +485,7 @@ final class MovementService
             }
             $body = '<p>Hallo ' . htmlspecialchars((string) ($movement['employee_name'] ?? ''), ENT_QUOTES, 'UTF-8') . ',</p>'
                 . '<p>im Anhang finden Sie Ihren ' . ($movement['type'] === 'checkout' ? 'Entnahmenachweis' : 'Retourennachweis')
-                . ' für ' . htmlspecialchars((string) $movement['inventory_number'], ENT_QUOTES, 'UTF-8') . '.</p>'
+                . ' für ' . htmlspecialchars(AssetService::label($movement), ENT_QUOTES, 'UTF-8') . '.</p>'
                 . '<p>Diese E-Mail wurde automatisch von KLINQ erzeugt.</p>';
             $sent = $this->mail->send($email, $subject, $body, $attachments);
             if ($sent) {
@@ -555,7 +559,7 @@ final class MovementService
     {
         if (isset($input['asset_version']) && $input['asset_version'] !== '' && (int) $input['asset_version'] !== (int) $asset['version']) {
             throw new ConflictException(
-                'Das Asset ' . $asset['inventory_number'] . ' wurde zwischenzeitlich geändert (aktuell: ' . $asset['status_name'] . ($asset['employee_name'] ? ', ' . $asset['employee_name'] : '') . '). Bitte prüfen und erneut erfassen.',
+                'Das Asset ' . AssetService::label($asset) . ' wurde zwischenzeitlich geändert (aktuell: ' . $asset['status_name'] . ($asset['employee_name'] ? ', ' . $asset['employee_name'] : '') . '). Bitte prüfen und erneut erfassen.',
                 ['asset_id' => (int) $asset['id'], 'version' => (int) $asset['version'], 'status' => $asset['status_code'], 'employee_name' => $asset['employee_name']]
             );
         }

@@ -1,11 +1,11 @@
 <?php require_once __DIR__ . '/../partials/helpers.php'; ob_start();
 $old = $_SESSION['_old_input'] ?? [];
-$inv = rawurlencode($asset['inventory_number']);
+$inv = rawurlencode(asset_code($asset));
 ?>
 <?php $compact = true; include __DIR__ . '/_asset_card.php'; ?>
 <form method="post" action="/m/checkout" class="m-form" id="movement-form" data-movement="checkout">
     <?= csrf_field() ?>
-    <input type="hidden" name="inventory_number" value="<?= e($asset['inventory_number']) ?>">
+    <input type="hidden" name="inventory_number" value="<?= e(asset_code($asset)) ?>">
     <input type="hidden" name="asset_id" value="<?= (int) $asset['id'] ?>">
     <input type="hidden" name="asset_version" value="<?= (int) $asset['version'] ?>">
     <input type="hidden" name="client_transaction_id" value="<?= e($old['client_transaction_id'] ?? bin2hex(random_bytes(16))) ?>">

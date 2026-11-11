@@ -10,9 +10,7 @@ namespace App\Repositories;
  */
 final class HelpdeskContactRepository extends BaseRepository
 {
-    private const SELECT = "SELECT c.*, (SELECT GROUP_CONCAT(t.tag ORDER BY t.tag SEPARATOR '\x1f')
-            FROM helpdesk_contact_tags t WHERE t.contact_id = c.id) AS tag_list
-        FROM helpdesk_contacts c";
+    private const SELECT = 'SELECT c.* FROM helpdesk_contacts c';
 
     private const ORDER = ' ORDER BY c.company, c.last_name, c.first_name, c.id';
 
@@ -22,7 +20,7 @@ final class HelpdeskContactRepository extends BaseRepository
      */
     public function all(): array
     {
-        return array_map([self::class, 'withTags'], $this->fetchAll(self::SELECT . self::ORDER));
+        return $this->withTags($this->fetchAll(self::SELECT . self::ORDER));
     }
 
     /** @return array<string,mixed>|null */
@@ -30,7 +28,7 @@ final class HelpdeskContactRepository extends BaseRepository
     {
         $row = $this->fetchOne(self::SELECT . ' WHERE c.id = :id', ['id' => $id]);
 
-        return $row === null ? null : self::withTags($row);
+        return $row === null ? null : $this->withTags([$row])[0];
     }
 
     /** Alle vergebenen Stichworte mit Anzahl der Kontakte. @return list<array{tag:string,count:int}> */
@@ -72,13 +70,28 @@ final class HelpdeskContactRepository extends BaseRepository
         return $this->execute('DELETE FROM helpdesk_contacts WHERE id = :id', ['id' => $id]);
     }
 
-    /** @param array<string,mixed> $row @return array<string,mixed> */
-    private static function withTags(array $row): array
+    /**
+     * Ergänzt `tags` (alphabetisch) in einem Zugriff für alle Zeilen. Bewusst ohne GROUP_CONCAT,
+     * dessen Standardlänge (group_concat_max_len) lange Stichwortlisten still abschneiden würde.
+     *
+     * @param list<array<string,mixed>> $rows
+     * @return list<array<string,mixed>>
+     */
+    private function withTags(array $rows): array
     {
-        $list = (string) ($row['tag_list'] ?? '');
-        $row['tags'] = $list === '' ? [] : explode("\x1f", $list);
-        unset($row['tag_list']);
+        $ids = array_values(array_unique(array_map(static fn (array $r): int => (int) $r['id'], $rows)));
+        if ($ids === []) {
+            return $rows;
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $byContact = [];
+        foreach ($this->fetchAll("SELECT contact_id, tag FROM helpdesk_contact_tags WHERE contact_id IN ({$placeholders}) ORDER BY tag", $ids) as $t) {
+            $byContact[(int) $t['contact_id']][] = (string) $t['tag'];
+        }
+        foreach ($rows as $i => $row) {
+            $rows[$i]['tags'] = $byContact[(int) $row['id']] ?? [];
+        }
 
-        return $row;
+        return $rows;
     }
 }

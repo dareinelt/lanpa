@@ -47,6 +47,12 @@ final class HelpdeskContactTest extends TestCase
         $this->assertNull(FuzzySearch::match('rpx', ['RPDoc']), 'Kurze Wörter ohne Tippfehler-Toleranz');
         $this->assertNull(FuzzySearch::match('rpdoc siemens', ['RPDoc']), 'Alle Wörter müssen passen');
         $this->assertNull(FuzzySearch::match('rpdoc', ['', null]));
+        // Keine Treffer über kurze Füllwörter in der Bemerkung (phonetisch bzw. per Tippfehler gleich)
+        $this->assertNull(FuzzySearch::match('Bauer', ['Erreichbar per E-Mail']), '„per“ klingt wie „Bauer“');
+        $this->assertNull(FuzzySearch::match('Maier', ['nur vormittags']), '„nur“ klingt wie „Maier“');
+        $this->assertNull(FuzzySearch::match('Haas', ['Support aus Kiel']), '„aus“ klingt wie „Haas“');
+        $this->assertNull(FuzzySearch::match('desk', ['Leiter des Labors']), '„des“ ist kein Tippfehler von „desk“');
+        $this->assertNull(FuzzySearch::match('Maier', ['mehr Infos']), 'Kurzer Phonetikcode nur bei ähnlicher Schreibweise');
         $this->assertSame(0, FuzzySearch::tolerance(3));
         $this->assertSame(1, FuzzySearch::tolerance(5));
         $this->assertSame(2, FuzzySearch::tolerance(9));

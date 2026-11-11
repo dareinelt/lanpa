@@ -117,15 +117,19 @@ final class FuzzySearch
         }
         $phonetic = ColognePhonetic::encodeWord($term);
         foreach (array_merge($words, $compactFields) as $candidate) {
-            if (preg_match('/\d/', $candidate) === 1 && preg_match('/[a-z]/', $candidate) !== 1) {
+            // Kurze Wörter („per“, „aus“, „des“) nie unscharf vergleichen – sonst Treffer über Füllwörter
+            if (strlen($candidate) < self::MIN_FUZZY_LENGTH || (preg_match('/\d/', $candidate) === 1 && preg_match('/[a-z]/', $candidate) !== 1)) {
                 continue;
             }
             // Ganzes Wort oder gleich langer Wortanfang (Eingabe während des Tippens)
-            if (levenshtein($term, $candidate) <= $tolerance
+            $distance = levenshtein($term, $candidate);
+            if ($distance <= $tolerance
                 || (strlen($candidate) > $length && levenshtein($term, substr($candidate, 0, $length)) <= $tolerance)) {
                 return true;
             }
-            if ($phonetic !== '' && strlen($phonetic) >= 2 && ColognePhonetic::encodeWord($candidate) === $phonetic) {
+            // Gleicher Klang: kurze phonetische Codes (z. B. „67“ für Maier/Meyer/mehr) nur bei ähnlicher Schreibweise
+            if ($phonetic !== '' && strlen($phonetic) >= 2 && ColognePhonetic::encodeWord($candidate) === $phonetic
+                && (strlen($phonetic) >= 3 || $distance <= 2)) {
                 return true;
             }
         }

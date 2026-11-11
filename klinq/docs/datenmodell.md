@@ -112,6 +112,7 @@ Alle Stammdaten werden **deaktiviert statt gelöscht** (`is_active`), damit Hist
 - E-Mail-Eingang: `ticket_inbound_mails` (Protokoll je abgeholter Nachricht: `message_id` eindeutig → Duplikaterkennung, `mailbox_uid`, `from_address`, `subject`, `action` `created|comment|ignored|failed`, `ticket_id` (`ON DELETE SET NULL`), `comment_id`, `matched_by` `reference|subject|none`, `detail`, `received_at`).
 - Wissensdatenbank: `knowledge_articles` (`slug`, Titel, `summary`, `body`, `body_plain` (Suchfassung ohne Base64-Bilder, Migration 032), Kategorie, `visibility` `internal|public`, `status` `draft|published|archived`, `view_count`, Autor), `knowledge_article_tags`, `knowledge_article_tickets`.
 - Kalender: `helpdesk_calendar_events` (`title`, `description`, `location`, `starts_at`/`ends_at` in UTC, `all_day`, optional `ticket_id` → `tickets` mit `ON DELETE SET NULL`, `created_by`/`created_by_name`/`updated_by`; Migration 038). Ganztägige Termine reichen vom lokalen Tagesbeginn bis zum Beginn des Tages nach dem Enddatum.
+- Kontaktverzeichnis: `helpdesk_contacts` (`company`, `first_name`, `last_name`, `phone`, `mobile`, `email`, `notes`, `created_by`/`created_by_name`/`updated_by`; Index über Firma/Name/Vorname für die alphabetische Sortierung) und `helpdesk_contact_tags` (`contact_id` → `helpdesk_contacts` mit `ON DELETE CASCADE`, `tag`, Primärschlüssel aus beiden; Migration 039). Die Regel „Rufnummer oder E-Mail-Adresse“ prüft `HelpdeskContactService`.
 
 Details: [Help Desk](helpdesk.md).
 

@@ -196,6 +196,21 @@ final class ModuleNavigationTest extends TestCase
         $this->assertFalse(in_array('helpdesk-kalender', $portal, true), 'Das Portal zeigt keinen Help-Desk-Kalender');
     }
 
+    /** Das Kontaktverzeichnis steht direkt unter dem Kalender und ist für alle Agenten sichtbar, nicht im Portal. */
+    public function testContactDirectoryFollowsCalendar(): void
+    {
+        $agentKeys = $this->keys(ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['helpdesk.view'])));
+        $this->assertContains('helpdesk-kontakte', $agentKeys);
+        $this->assertSame(
+            array_search('helpdesk-kalender', $agentKeys, true) + 1,
+            array_search('helpdesk-kontakte', $agentKeys, true),
+            'Kontaktverzeichnis folgt direkt auf den Kalender'
+        );
+
+        $portal = $this->keys(ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['portal.view', 'knowledgebase.view'])));
+        $this->assertFalse(in_array('helpdesk-kontakte', $portal, true), 'Das Portal zeigt kein Kontaktverzeichnis');
+    }
+
     public function testBadgesComeFromOpenCounts(): void
     {
         $items = ModuleNavigation::items(ModuleNavigation::ASSETS, $this->can(['movements.view']), ['checkouts' => 2, 'returns' => 3]);

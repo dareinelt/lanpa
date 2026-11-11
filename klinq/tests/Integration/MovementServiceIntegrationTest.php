@@ -55,7 +55,7 @@ final class MovementServiceIntegrationTest extends DatabaseTestCase
     {
         $typeId = (string) $this->c->get(AssetTypeRepository::class)->findByCode('PC')['id'];
         $created = $this->c->get(AssetService::class)->create(array_merge(
-            ['asset_type_id' => $typeId, 'name' => 'Bewegungstest', 'location_id' => (string) $this->stockLocationId],
+            ['asset_type_id' => $typeId, 'article_id' => (string) $this->articleIdFor('PC'), 'name' => 'Bewegungstest', 'location_id' => (string) $this->stockLocationId],
             $overrides
         ));
 

@@ -32,6 +32,38 @@ abstract class DatabaseTestCase extends TestCase
         $this->pdo->beginTransaction();
     }
 
+    /** @var array<string,int> Je Test angelegte Stammartikel, Schlüssel = Assettyp-Code */
+    private array $testArticles = [];
+
+    /**
+     * Liefert einen aktiven Stammartikel für den Assettyp (Pflichtfeld beim Anlegen von Assets).
+     * Wird je Test und Assettyp nur einmal angelegt und mit der Testtransaktion zurückgerollt.
+     */
+    protected function articleIdFor(string $typeCode): int
+    {
+        $code = strtoupper($typeCode);
+        if (isset($this->testArticles[$code])) {
+            return $this->testArticles[$code];
+        }
+        $type = $this->pdo->prepare('SELECT id FROM asset_types WHERE code = ?');
+        $type->execute([$code]);
+        $typeId = $type->fetchColumn();
+        if ($typeId === false) {
+            throw new \RuntimeException('Assettyp ' . $code . ' fehlt in der Test-Datenbank.');
+        }
+        $manufacturer = $this->pdo->prepare('SELECT id FROM manufacturers WHERE name = ?');
+        $manufacturer->execute(['Testhersteller']);
+        $manufacturerId = $manufacturer->fetchColumn();
+        if ($manufacturerId === false) {
+            $this->pdo->prepare('INSERT INTO manufacturers (name) VALUES (?)')->execute(['Testhersteller']);
+            $manufacturerId = $this->pdo->lastInsertId();
+        }
+        $this->pdo->prepare('INSERT INTO articles (manufacturer_id, asset_type_id, name, article_number, is_active) VALUES (?, ?, ?, ?, 1)')
+            ->execute([(int) $manufacturerId, (int) $typeId, 'Testgerät ' . $code, $code . '-TEST']);
+
+        return $this->testArticles[$code] = (int) $this->pdo->lastInsertId();
+    }
+
     protected function tearDown(): void
     {
         if (isset($this->pdo) && $this->pdo->inTransaction()) {

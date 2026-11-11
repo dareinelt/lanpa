@@ -55,7 +55,7 @@ final class ReportServiceIntegrationTest extends DatabaseTestCase
     {
         $typeId = (string) $this->c->get(AssetTypeRepository::class)->findByCode('PC')['id'];
         $created = $this->c->get(AssetService::class)->create(array_merge([
-            'asset_type_id' => $typeId, 'name' => 'Report-Gerät', 'location_id' => (string) $this->childLocationId,
+            'asset_type_id' => $typeId, 'article_id' => (string) $this->articleIdFor('PC'), 'name' => 'Report-Gerät', 'location_id' => (string) $this->childLocationId,
             'cost_center_id' => (string) $this->costCenterId, 'purchase_price' => '100,00',
         ], $overrides));
 

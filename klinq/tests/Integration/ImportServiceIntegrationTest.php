@@ -39,7 +39,10 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
         $this->locationId = $locations->create(['name' => 'Import-Raum', 'type' => 'room', 'parent_id' => $site, 'full_path' => 'Import-Standort / Import-Raum', 'depth' => 1, 'is_active' => 1]);
         $this->c->get(CostCenterRepository::class)->create(['number' => '96001', 'description' => 'Import-KST', 'is_active' => 1]);
         $this->c->get(EmployeeRepository::class)->create(['display_name' => 'Import Nutzer', 'username' => 'inutzer', 'personnel_number' => '96001', 'department' => 'Import', 'is_active' => 1]);
-        $this->c->get(ManufacturerService::class)->create(['name' => 'Importwerk', 'is_active' => '1'], true);
+        $manufacturerId = $this->c->get(ManufacturerService::class)->create(['name' => 'Importwerk', 'is_active' => '1'], true);
+        // Stammartikel des Herstellers: Die Spalte „Artikel“ ist beim Import Pflicht
+        $this->pdo->prepare('INSERT INTO articles (manufacturer_id, asset_type_id, name, article_number, is_active) SELECT ?, id, ?, ?, 1 FROM asset_types WHERE code = ?')
+            ->execute([$manufacturerId, 'Importmodell', 'IMP-1', 'PC']);
     }
 
     protected function tearDown(): void
@@ -79,18 +82,18 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
         return ['name' => $name, 'tmp_name' => $tmp, 'size' => strlen($content), 'error' => UPLOAD_ERR_OK, 'type' => 'text/csv'];
     }
 
-    private const HEADER = "Inventarnummer;Assettyp;Bezeichnung;Hersteller;Seriennummer;Status;Mitarbeiter;Standort;Kostenstelle;Kaufdatum;Kaufpreis;Altbestand\n";
+    private const HEADER = "Inventarnummer;Assettyp;Bezeichnung;Hersteller;Artikel;Seriennummer;Status;Mitarbeiter;Standort;Kostenstelle;Kaufdatum;Kaufpreis;Altbestand\n";
 
     private function sampleCsv(): string
     {
         return self::HEADER
-            . ";PC;Import Gerät 1;Importwerk;IMPT-001;Lagerbestand;;Import-Standort / Import-Raum;96001;15.03.2024;1.299,00;Ja\n"
-            . ";PC;Import Gerät 2;Importwerk;IMPT-002;Ausgegeben;inutzer;Import-Raum;96001;2023-02-01;100;Ja\n"
-            . ";PC;Neuer Hersteller;Neuwerk GmbH;IMPT-003;Lagerbestand;;;;;;Ja\n"
-            . ";PC;Falsches Datum;Importwerk;IMPT-004;Lagerbestand;;;;31.02.2024;;Ja\n"
-            . ";PC;Unbekannter Nutzer;Importwerk;IMPT-005;Ausgegeben;niemand;;;;;Ja\n"
-            . ";PC;Serien-Dublette;Importwerk;IMPT-001;Lagerbestand;;;;;;Ja\n"
-            . ";;Ohne Typ;Importwerk;IMPT-006;Lagerbestand;;;;;;Ja\n";
+            . ";PC;Import Gerät 1;Importwerk;Importmodell;IMPT-001;Lagerbestand;;Import-Standort / Import-Raum;96001;15.03.2024;1.299,00;Ja\n"
+            . ";PC;Import Gerät 2;Importwerk;Importmodell;IMPT-002;Ausgegeben;inutzer;Import-Raum;96001;2023-02-01;100;Ja\n"
+            . ";PC;Neuer Hersteller;Neuwerk GmbH;Importmodell;IMPT-003;Lagerbestand;;;;;;Ja\n"
+            . ";PC;Falsches Datum;Importwerk;Importmodell;IMPT-004;Lagerbestand;;;;31.02.2024;;Ja\n"
+            . ";PC;Unbekannter Nutzer;Importwerk;Importmodell;IMPT-005;Ausgegeben;niemand;;;;;Ja\n"
+            . ";PC;Serien-Dublette;Importwerk;Importmodell;IMPT-001;Lagerbestand;;;;;;Ja\n"
+            . ";;Ohne Typ;Importwerk;Importmodell;IMPT-006;Lagerbestand;;;;;;Ja\n";
     }
 
     // ------------------------------------------------------------------ Analyse
@@ -103,8 +106,9 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame('preview', $run['status']);
         $this->assertSame(7, (int) $run['rows_total']);
         $this->assertSame(2, (int) $run['rows_valid']);
-        $this->assertSame(1, (int) $run['rows_warning']);
-        $this->assertSame(3, (int) $run['rows_error']);
+        // Neuer Hersteller: Hinweis, aber ohne vorhandenen Hersteller kein Stammartikel → Fehler
+        $this->assertSame(0, (int) $run['rows_warning']);
+        $this->assertSame(4, (int) $run['rows_error']);
         $this->assertSame(1, (int) $run['rows_duplicate']);
         $this->assertSame(';', $run['delimiter']);
         $this->assertSame('UTF-8', $run['encoding']);
@@ -118,8 +122,9 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
         $this->assertCount(7, $rows);
         $this->assertSame('valid', $rows[0]['status']);
         $this->assertSame('valid', $rows[1]['status']);
-        $this->assertSame('warning', $rows[2]['status']);
+        $this->assertSame('error', $rows[2]['status']);
         $this->assertStringContains('Neuwerk GmbH', $rows[2]['messages'][0]['text']);
+        $this->assertSame('article', $rows[2]['messages'][1]['field']);
         $this->assertSame('error', $rows[3]['status']);
         $this->assertSame('purchase_date', $rows[3]['messages'][0]['field']);
         $this->assertSame('error', $rows[4]['status']);
@@ -145,11 +150,11 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
     public function testDetectsDuplicatesAgainstDatabase(): void
     {
         $typeId = (string) $this->c->get(AssetTypeRepository::class)->findByCode('PC')['id'];
-        $existing = $this->c->get(AssetService::class)->create(['asset_type_id' => $typeId, 'name' => 'Vorhanden', 'serial_number' => 'IMPT-EXIST', 'purchase_price' => '']);
+        $existing = $this->c->get(AssetService::class)->create(['asset_type_id' => $typeId, 'article_id' => (string) $this->articleIdFor('PC'), 'name' => 'Vorhanden', 'serial_number' => 'IMPT-EXIST', 'purchase_price' => '']);
 
         $csv = self::HEADER
-            . $existing['inventory_number'] . ";PC;Nummer doppelt;Importwerk;IMPT-010;Lagerbestand;;;;;;Nein\n"
-            . ";PC;Serial doppelt;Importwerk;IMPT-EXIST;Lagerbestand;;;;;;Nein\n";
+            . $existing['inventory_number'] . ";PC;Nummer doppelt;Importwerk;Importmodell;IMPT-010;Lagerbestand;;;;;;Nein\n"
+            . ";PC;Serial doppelt;Importwerk;Importmodell;IMPT-EXIST;Lagerbestand;;;;;;Nein\n";
         $runId = $this->service()->upload($this->uploadFor($csv), []);
         $rows = $this->c->get(ImportRepository::class)->rows($runId);
 
@@ -171,7 +176,7 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
 
     public function testExplicitDelimiterAndWindows1252(): void
     {
-        $content = mb_convert_encoding("Assettyp,Bezeichnung,Standort\nPC,Gerät Ü,Import-Standort / Import-Raum\n", 'Windows-1252', 'UTF-8');
+        $content = mb_convert_encoding("Assettyp,Bezeichnung,Hersteller,Artikel,Standort\nPC,Gerät Ü,Importwerk,Importmodell,Import-Standort / Import-Raum\n", 'Windows-1252', 'UTF-8');
         $runId = $this->service()->upload($this->uploadFor($content), ['delimiter' => 'comma']);
         $run = $this->c->get(ImportRepository::class)->findRun($runId);
 
@@ -190,12 +195,12 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
         $run = $this->service()->commit($runId);
 
         $this->assertSame('completed', $run['status']);
-        $this->assertSame(3, (int) $run['rows_imported']);
+        $this->assertSame(2, (int) $run['rows_imported']);
         $this->assertNotNull($run['committed_at']);
 
         $rows = $this->c->get(ImportRepository::class)->rows($runId);
         $imported = array_values(array_filter($rows, static fn (array $r): bool => $r['status'] === 'imported'));
-        $this->assertCount(3, $imported);
+        $this->assertCount(2, $imported);
         foreach ($imported as $row) {
             $this->assertNotNull($row['asset_id']);
             $this->assertMatches('/^PC88\d{3,}$/', (string) $row['inventory_number']);
@@ -215,13 +220,15 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
         $this->assertNotNull($second['employee_id']);
         $this->assertSame('2023-02-01', $second['purchase_date']);
 
-        $third = $assets->find((int) $imported[2]['asset_id']);
-        $this->assertSame('Neuwerk GmbH', $third['manufacturer_name']);
-        $this->assertNotNull($this->c->get(ManufacturerRepository::class)->findByNormalizedName(\App\Support\ColognePhonetic::normalizedName('Neuwerk GmbH')));
+        $this->assertSame((int) $this->pdo->query("SELECT id FROM articles WHERE name = 'Importmodell'")->fetchColumn(), (int) $first['article_id']);
+        $this->assertSame('Importwerk', $first['manufacturer_name']);
+
+        // Zeile mit neuem Hersteller ist ohne Stammartikel nicht importierbar; der Hersteller wird dann auch nicht angelegt
+        $this->assertNull($this->c->get(ManufacturerRepository::class)->findByNormalizedName(\App\Support\ColognePhonetic::normalizedName('Neuwerk GmbH')));
 
         // Fehlerzeilen bleiben im Protokoll, ohne Assets
         $errors = array_filter($rows, static fn (array $r): bool => in_array($r['status'], ['error', 'duplicate'], true));
-        $this->assertCount(4, $errors);
+        $this->assertCount(5, $errors);
     }
 
     public function testStrictCommitAbortsWhenFileHasProblems(): void
@@ -237,7 +244,7 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
 
     public function testCommitTwiceIsRejected(): void
     {
-        $csv = self::HEADER . ";PC;Einmal;Importwerk;IMPT-020;Lagerbestand;;;;;;Nein\n";
+        $csv = self::HEADER . ";PC;Einmal;Importwerk;Importmodell;IMPT-020;Lagerbestand;;;;;;Nein\n";
         $runId = $this->service()->upload($this->uploadFor($csv), []);
         $this->service()->commit($runId);
 
@@ -247,13 +254,13 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
 
     public function testCommitReanalysesAndSkipsRowsThatBecameDuplicates(): void
     {
-        $csv = self::HEADER . ";PC;Später doppelt;Importwerk;IMPT-030;Lagerbestand;;;;;;Nein\n";
+        $csv = self::HEADER . ";PC;Später doppelt;Importwerk;Importmodell;IMPT-030;Lagerbestand;;;;;;Nein\n";
         $runId = $this->service()->upload($this->uploadFor($csv), []);
         $this->assertSame(1, (int) $this->c->get(ImportRepository::class)->findRun($runId)['rows_valid']);
 
         // Zwischenzeitlich manuell angelegt
         $typeId = (string) $this->c->get(AssetTypeRepository::class)->findByCode('PC')['id'];
-        $this->c->get(AssetService::class)->create(['asset_type_id' => $typeId, 'name' => 'Manuell', 'serial_number' => 'IMPT-030', 'purchase_price' => '']);
+        $this->c->get(AssetService::class)->create(['asset_type_id' => $typeId, 'article_id' => (string) $this->articleIdFor('PC'), 'name' => 'Manuell', 'serial_number' => 'IMPT-030', 'purchase_price' => '']);
 
         $run = $this->service()->commit($runId);
         $this->assertSame(0, (int) $run['rows_imported']);
@@ -279,7 +286,7 @@ final class ImportServiceIntegrationTest extends DatabaseTestCase
         $csv = $this->service()->errorReportCsv($runId);
         $lines = array_filter(explode("\n", trim($csv)));
 
-        $this->assertCount(5, $lines); // Kopf + 3 Fehler + 1 Dublette
+        $this->assertCount(6, $lines); // Kopf + 4 Fehler + 1 Dublette
         $this->assertStringContains('Zeile;Status;Meldungen;Inventarnummer', $lines[array_key_first($lines)]);
         $this->assertStringContains('31.02.2024', $csv);
         $this->assertStringContains('Zeile 1', $csv);

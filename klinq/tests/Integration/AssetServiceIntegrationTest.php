@@ -33,18 +33,13 @@ final class AssetServiceIntegrationTest extends DatabaseTestCase
     /** @param array<string,mixed> $overrides */
     private function pcInput(array $overrides = []): array
     {
-        return array_merge(['asset_type_id' => $this->typeId('PC'), 'name' => 'Testgerät'], $overrides);
+        return array_merge(['asset_type_id' => $this->typeId('PC'), 'article_id' => (string) $this->createPcArticle(), 'name' => 'Testgerät'], $overrides);
     }
 
     /** Artikel aus den Stammdaten (Pflichtfeld beim Anlegen); wird mit der Testtransaktion zurückgerollt. */
     private function createPcArticle(): int
     {
-        $this->pdo->exec("INSERT INTO manufacturers (name) VALUES ('Testhersteller')");
-        $manufacturerId = (int) $this->pdo->lastInsertId();
-        $this->pdo->prepare('INSERT INTO articles (manufacturer_id, asset_type_id, name, article_number, is_active) VALUES (?, ?, ?, ?, 1)')
-            ->execute([$manufacturerId, (int) $this->typeId('PC'), 'Testgerät PC', 'PC-TEST']);
-
-        return (int) $this->pdo->lastInsertId();
+        return $this->articleIdFor('PC');
     }
 
     public function testSequenceIsPerPrefixAndYearAndCatchesUpWithManualNumbers(): void
@@ -130,7 +125,7 @@ final class AssetServiceIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ValidationException::class, fn () => $svc->create($this->pcInput(['serial_number' => 'abc-123'])), 'Seriennummer');
         $this->assertThrows(ValidationException::class, fn () => $svc->create($this->pcInput(['mac_address' => '001122334455'])), 'MAC');
         // Gleiche Seriennummer bei anderem Assettyp ist erlaubt
-        $svc->create(['asset_type_id' => $this->typeId('ZUB'), 'serial_number' => 'ABC123']);
+        $svc->create(['asset_type_id' => $this->typeId('ZUB'), 'article_id' => (string) $this->articleIdFor('ZUB'), 'serial_number' => 'ABC123']);
     }
 
     public function testManualNumberMustMatchTypePrefixAndFormat(): void
@@ -153,7 +148,7 @@ final class AssetServiceIntegrationTest extends DatabaseTestCase
         $id = $svc->create($this->pcInput(['name' => 'Alt']))['id'];
         $existing = $assets->find($id);
 
-        $svc->update($id, $existing, ['name' => 'Neu', 'version' => (string) $existing['version']]);
+        $svc->update($id, $existing, ['article_id' => (string) $existing['article_id'], 'name' => 'Neu', 'version' => (string) $existing['version']]);
         $fresh = $assets->find($id);
         $this->assertSame('Neu', $fresh['name']);
         $this->assertSame((int) $existing['version'] + 1, (int) $fresh['version']);
@@ -162,7 +157,7 @@ final class AssetServiceIntegrationTest extends DatabaseTestCase
         $this->assertSame('Neu', $change['new_value']);
 
         // Zweiter Bearbeiter mit veralteter Version
-        $this->assertThrows(ConflictException::class, fn () => $svc->update($id, $existing, ['name' => 'Konflikt', 'version' => (string) $existing['version']]));
+        $this->assertThrows(ConflictException::class, fn () => $svc->update($id, $existing, ['article_id' => (string) $existing['article_id'], 'name' => 'Konflikt', 'version' => (string) $existing['version']]));
         $this->assertSame('Neu', $assets->find($id)['name']);
     }
 

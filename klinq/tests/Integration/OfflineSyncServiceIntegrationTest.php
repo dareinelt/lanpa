@@ -63,7 +63,7 @@ final class OfflineSyncServiceIntegrationTest extends DatabaseTestCase
     private function createAsset(string $name = 'Offline-Asset'): array
     {
         $typeId = (string) $this->c->get(AssetTypeRepository::class)->findByCode('PC')['id'];
-        $created = $this->c->get(AssetService::class)->create(['asset_type_id' => $typeId, 'name' => $name, 'location_id' => (string) $this->locationId]);
+        $created = $this->c->get(AssetService::class)->create(['asset_type_id' => $typeId, 'article_id' => (string) $this->articleIdFor('PC'), 'name' => $name, 'location_id' => (string) $this->locationId]);
 
         return $this->c->get(AssetRepository::class)->find((int) $created['id']);
     }

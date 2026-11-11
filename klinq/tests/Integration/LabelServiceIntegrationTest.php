@@ -57,7 +57,7 @@ final class LabelServiceIntegrationTest extends DatabaseTestCase
     {
         $typeId = (string) $this->c->get(AssetTypeRepository::class)->findByCode($typeCode)['id'];
 
-        $created = $this->c->get(AssetService::class)->create(array_merge(['asset_type_id' => $typeId, 'name' => 'Etikettentest'], $overrides));
+        $created = $this->c->get(AssetService::class)->create(array_merge(['asset_type_id' => $typeId, 'article_id' => (string) $this->articleIdFor($typeCode), 'name' => 'Etikettentest'], $overrides));
 
         return $this->c->get(AssetRepository::class)->find((int) $created['id']);
     }

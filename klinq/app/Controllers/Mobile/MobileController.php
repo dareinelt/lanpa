@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers\Mobile;
 
+use App\Services\AssetService;
 use App\Controllers\BaseController;
 use App\Controllers\MovementController;
 use App\Core\Request;
@@ -73,10 +74,10 @@ final class MobileController extends BaseController
         }
         $action = $request->queryString('action');
         if ($action === 'checkout' || $action === 'return') {
-            return $this->redirect('/m/' . $action . '?asset=' . rawurlencode((string) $asset['inventory_number']));
+            return $this->redirect('/m/' . $action . '?asset=' . rawurlencode(AssetService::code($asset)));
         }
 
-        return $this->redirect('/m/asset/' . rawurlencode((string) $asset['inventory_number']));
+        return $this->redirect('/m/asset/' . rawurlencode(AssetService::code($asset)));
     }
 
     public function asset(Request $request): Response
@@ -88,7 +89,7 @@ final class MobileController extends BaseController
         $asset = $this->assetOrFail($inventory);
 
         return $this->render('mobile.asset', [
-            'title' => $asset['inventory_number'],
+            'title' => AssetService::label($asset),
             'activeNav' => 'scan',
             'asset' => $asset,
             'children' => $this->assets->children((int) $asset['id']),
@@ -107,12 +108,12 @@ final class MobileController extends BaseController
         if ($asset['employee_id'] !== null) {
             $this->flash('warning', 'Das Asset ist bereits an ' . $asset['employee_name'] . ' ausgegeben. Bitte zuerst die Rückgabe erfassen.');
 
-            return $this->redirect('/m/asset/' . rawurlencode((string) $asset['inventory_number']));
+            return $this->redirect('/m/asset/' . rawurlencode(AssetService::code($asset)));
         }
         if ((int) $asset['status_final'] === 1) {
             $this->flash('error', 'Das Asset ist ' . mb_strtolower((string) $asset['status_name']) . ' und kann nicht ausgegeben werden.');
 
-            return $this->redirect('/m/asset/' . rawurlencode((string) $asset['inventory_number']));
+            return $this->redirect('/m/asset/' . rawurlencode(AssetService::code($asset)));
         }
         $old = $_SESSION['_old_input'] ?? [];
         $employee = !empty($old['employee_id']) ? $this->employees->find((int) $old['employee_id']) : null;
@@ -121,7 +122,7 @@ final class MobileController extends BaseController
         $costCenterId = $old['cost_center_id'] ?? ($asset['cost_center_id'] ?? null);
 
         return $this->render('mobile.checkout', [
-            'title' => 'Entnahme ' . $asset['inventory_number'],
+            'title' => 'Entnahme ' . AssetService::label($asset),
             'activeNav' => 'scan',
             'asset' => $asset,
             'employee' => $employee,
@@ -164,7 +165,7 @@ final class MobileController extends BaseController
         if ($asset['employee_id'] === null && !in_array($asset['status_code'], ['issued', 'return_expected'], true)) {
             $this->flash('warning', 'Das Asset ist derzeit nicht ausgegeben (' . $asset['status_name'] . ').');
 
-            return $this->redirect('/m/asset/' . rawurlencode((string) $asset['inventory_number']));
+            return $this->redirect('/m/asset/' . rawurlencode(AssetService::code($asset)));
         }
         $old = $_SESSION['_old_input'] ?? [];
         $locationId = $old['to_location_id'] ?? null;
@@ -175,7 +176,7 @@ final class MobileController extends BaseController
         }
 
         return $this->render('mobile.return', [
-            'title' => 'Rückgabe ' . $asset['inventory_number'],
+            'title' => 'Rückgabe ' . AssetService::label($asset),
             'activeNav' => 'scan',
             'asset' => $asset,
             'children' => $this->assets->children((int) $asset['id']),

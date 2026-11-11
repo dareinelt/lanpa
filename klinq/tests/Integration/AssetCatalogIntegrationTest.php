@@ -9,6 +9,7 @@ use App\Repositories\AssetTypeRepository;
 use App\Security\CurrentUser;
 use App\Services\AssetCatalogService;
 use App\Services\AssetService;
+use App\Services\MovementService;
 use Tests\Support\DatabaseTestCase;
 
 /** Kataloge „Assettypen“ und „Kategorien“ (Auswertung & System → Kataloge). */
@@ -18,7 +19,7 @@ final class AssetCatalogIntegrationTest extends DatabaseTestCase
     private function typeInput(array $overrides = []): array
     {
         return array_merge([
-            'code' => 'drk', 'name' => 'Drucker', 'inventory_prefix' => 'dr', 'icon' => 'print',
+            'code' => 'drk', 'name' => 'Drucker', 'inventory_prefix' => 'dr', 'requires_inventory_number' => '1', 'icon' => 'print',
             'has_serial_number' => '1', 'has_mac_address' => '1', 'sort_order' => '50', 'is_active' => '1',
         ], $overrides);
     }
@@ -119,5 +120,98 @@ final class AssetCatalogIntegrationTest extends DatabaseTestCase
         $this->assertSame(0, (int) $usage[$id]['asset_count']);
         $types = array_column($repo->allWithUsage(), null, 'id');
         $this->assertTrue((int) $types[$pc]['category_count'] >= 5);
+    }
+
+    public function testTypeWithoutInventoryNumberNeedsNoPrefixAndAssetsStayWithoutNumber(): void
+    {
+        $this->c->get(CurrentUser::class)->login(['id' => 1, 'username' => 'tester', 'display_name' => 'Test User', 'role' => 'admin']);
+        $svc = $this->c->get(AssetCatalogService::class);
+        $repo = $this->c->get(AssetTypeRepository::class);
+
+        // Mit Inventarnummer bleibt das Präfix Pflicht
+        $e = $this->assertThrows(ValidationException::class, fn () => $svc->saveType(null, $this->typeInput(['code' => 'TON', 'inventory_prefix' => '', 'requires_inventory_number' => '1'])));
+        $this->assertTrue(isset($e->errors()['inventory_prefix']));
+
+        $id = $svc->saveType(null, $this->typeInput(['code' => 'TON', 'name' => 'Toner', 'inventory_prefix' => '', 'requires_inventory_number' => '0', 'has_serial_number' => '0']));
+        $type = $repo->find($id);
+        $this->assertNull($type['inventory_prefix']);
+        $this->assertSame(0, (int) $type['requires_inventory_number']);
+        // Zweiter Typ ohne Präfix kollidiert nicht (NULL ist im eindeutigen Index mehrfach erlaubt)
+        $svc->saveType(null, $this->typeInput(['code' => 'TIN', 'name' => 'Tinte', 'inventory_prefix' => '', 'requires_inventory_number' => '0']));
+
+        $this->pdo->exec("INSERT INTO manufacturers (name) VALUES ('Lagertest')");
+        $this->pdo->prepare('INSERT INTO articles (manufacturer_id, asset_type_id, name, is_active) VALUES (?, ?, ?, 1)')
+            ->execute([(int) $this->pdo->lastInsertId(), $id, 'Toner schwarz']);
+        $articleId = (string) $this->pdo->lastInsertId();
+        $assets = $this->c->get(AssetService::class);
+        $first = $assets->create(['asset_type_id' => (string) $id, 'article_id' => $articleId]);
+        $second = $assets->create(['asset_type_id' => (string) $id, 'article_id' => $articleId, 'name' => 'Toner Empfang']);
+        $this->assertNull($first['inventory_number']);
+        $this->assertNull($second['inventory_number']);
+        $this->assertSame(0, $repo->assetCount($id));
+
+        // Manuelle Nummer wird abgewiesen
+        $e = $this->assertThrows(ValidationException::class, fn () => $assets->create(['asset_type_id' => (string) $id, 'article_id' => $articleId, 'inventory_number' => 'TON26001']));
+        $this->assertTrue(isset($e->errors()['inventory_number']));
+
+        // Ersatzkennung „#<ID>“ löst das Asset auf (Entnahme/Rückgabe, Offline)
+        $row = $this->c->get(\App\Repositories\AssetRepository::class)->find($first['id']);
+        $this->assertSame('#' . $first['id'], AssetService::code($row));
+        $this->assertSame('Lagerartikel', AssetService::number($row));
+        $this->assertSame('Toner schwarz', AssetService::label($row));
+        $this->assertSame($first['id'], (int) $this->c->get(MovementService::class)->resolveAsset('#' . $first['id'])['id']);
+
+        // Bearbeiten ohne Inventarnummer bleibt ohne Nummer
+        $assets->update($first['id'], $row, ['article_id' => $articleId, 'name' => 'Toner Lager', 'inventory_number' => '', 'version' => (string) $row['version']]);
+        $this->assertNull($this->c->get(\App\Repositories\AssetRepository::class)->find($first['id'])['inventory_number']);
+    }
+
+    public function testConsumableOverviewAndStockCorrection(): void
+    {
+        $this->c->get(CurrentUser::class)->login(['id' => 1, 'username' => 'tester', 'display_name' => 'Test User', 'role' => 'admin']);
+        $repo = $this->c->get(\App\Repositories\ArticleRepository::class);
+        $svc = $this->c->get(\App\Services\ArticleService::class);
+        $type = (int) $this->c->get(AssetTypeRepository::class)->findByCode('ZUB')['id'];
+        $this->pdo->exec("INSERT INTO manufacturers (name) VALUES ('Druckerhaus')");
+        $m = (int) $this->pdo->lastInsertId();
+        $ins = $this->pdo->prepare('INSERT INTO articles (manufacturer_id, asset_type_id, name, is_active, is_consumable, minimum_stock, stock_quantity) VALUES (?, ?, ?, 1, ?, ?, ?)');
+        $ins->execute([$m, $type, 'Toner Test', 1, 3, 2]);
+        $toner = (int) $this->pdo->lastInsertId();
+        $ins->execute([$m, $type, 'Notebook Test', 0, null, 0]);
+        $notebook = (int) $this->pdo->lastInsertId();
+
+        $ids = array_map('intval', array_column($repo->consumables(['q' => 'Test']), 'id'));
+        $this->assertContains($toner, $ids);
+        $this->assertFalse(in_array($notebook, $ids, true));
+        $this->assertContains($toner, array_map('intval', array_column($repo->consumables(['q' => 'Toner', 'below' => '1']), 'id')));
+
+        $this->assertSame(8, $svc->setStock($toner, $repo->find($toner), ['stock_quantity' => '8', 'note' => 'Inventur']));
+        $this->assertSame(8, (int) $repo->find($toner)['stock_quantity']);
+        $this->assertSame([], $repo->consumables(['q' => 'Toner', 'below' => '1']));
+        $this->assertThrows(ValidationException::class, fn () => $svc->setStock($toner, $repo->find($toner), ['stock_quantity' => '-1']));
+        $this->assertThrows(ValidationException::class, fn () => $svc->setStock($notebook, $repo->find($notebook), ['stock_quantity' => '5']));
+    }
+
+    public function testGoodsReceiptCreatesLagerartikelWithoutInventoryNumber(): void
+    {
+        $this->pdo->exec("INSERT INTO users (username, display_name, role_id) SELECT 'katalogtest', 'Katalog Test', id FROM roles WHERE name = 'admin'");
+        $this->c->get(CurrentUser::class)->login(['id' => (int) $this->pdo->lastInsertId(), 'username' => 'katalogtest', 'display_name' => 'Katalog Test', 'role' => 'admin']);
+        $typeId = $this->c->get(AssetCatalogService::class)->saveType(null, $this->typeInput(['code' => 'HSET', 'name' => 'Headsets', 'inventory_prefix' => '', 'requires_inventory_number' => '0', 'has_serial_number' => '0']));
+        $this->pdo->exec("INSERT INTO manufacturers (name) VALUES ('Headsetwerk')");
+        $this->pdo->prepare('INSERT INTO articles (manufacturer_id, asset_type_id, name, is_active) VALUES (?, ?, ?, 1)')->execute([(int) $this->pdo->lastInsertId(), $typeId, 'Headset Mono']);
+        $articleId = (string) $this->pdo->lastInsertId();
+        $this->pdo->exec("INSERT INTO suppliers (name) VALUES ('Lagerlieferant')");
+        $supplierId = (string) $this->pdo->lastInsertId();
+
+        $orders = $this->c->get(\App\Services\PurchaseOrderService::class);
+        $orderRepo = $this->c->get(\App\Repositories\PurchaseOrderRepository::class);
+        $id = $orders->create(['supplier_id' => $supplierId]);
+        $item = $orders->addItem($id, $orderRepo->find($id), ['article_id' => $articleId, 'quantity' => '2', 'unit_price' => '19,90', 'creates_assets' => '1']);
+        $orders->markOrdered($id, $orderRepo->find($id));
+        $orders->receive($id, $orderRepo->find($id), ['received_at' => date('Y-m-d'), 'items' => [$item => ['quantity' => '2']]]);
+
+        $rows = $this->pdo->query('SELECT inventory_number FROM assets WHERE asset_type_id = ' . (int) $typeId)->fetchAll(\PDO::FETCH_COLUMN);
+        $this->assertCount(2, $rows);
+        $this->assertSame([null, null], $rows);
     }
 }

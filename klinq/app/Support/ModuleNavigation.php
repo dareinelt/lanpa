@@ -80,6 +80,7 @@ final class ModuleNavigation
         '/cost-centers' => self::ASSETS,
         '/manufacturers' => self::ASSETS,
         '/articles' => self::ASSETS,
+        '/consumables' => self::ASSETS,
     ];
 
     /** Ermittelt das Modul zu einem Navigationsschlüssel ($activeNav). */
@@ -298,6 +299,10 @@ final class ModuleNavigation
         }
         if ($can('licenses.view')) {
             $items[] = self::link('licenses', '/licenses', 'key', 'Lizenzen');
+        }
+        if ($can('articles.view')) {
+            // Verbrauchsartikel (Toner, Tinte …): nur Bestandsmenge, keine Einzel-Assets
+            $items[] = self::link('consumables', '/consumables', 'layers', 'Verbrauchsmaterial');
         }
 
         if ($can('orders.view') || $can('suppliers.view')) {

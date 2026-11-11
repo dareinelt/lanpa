@@ -112,10 +112,10 @@ final class AssetTypeRepository extends BaseRepository
         return $this->fetchAll($sql . ' ORDER BY t.sort_order, t.name, c.sort_order, c.name', $params);
     }
 
-    /** Anzahl Assets eines Assettyps (Inventarnummern hängen am Präfix). */
+    /** Anzahl Assets eines Assettyps mit Inventarnummer (diese hängen am Präfix). */
     public function assetCount(int $assetTypeId): int
     {
-        return (int) ($this->fetchOne('SELECT COUNT(*) AS n FROM assets WHERE asset_type_id = :id', ['id' => $assetTypeId])['n'] ?? 0);
+        return (int) ($this->fetchOne('SELECT COUNT(*) AS n FROM assets WHERE asset_type_id = :id AND inventory_number IS NOT NULL', ['id' => $assetTypeId])['n'] ?? 0);
     }
 
     /** Anzahl Assets und Artikel, die eine Kategorie verwenden. */

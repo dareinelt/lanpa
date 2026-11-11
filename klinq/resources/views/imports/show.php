@@ -79,7 +79,7 @@ $tabCounts = ['valid' => (int) $run['rows_valid'], 'warning' => (int) $run['rows
             <p><?= icon('check', 'icon text-success') ?> <strong><?= (int) $run['rows_imported'] ?></strong> Asset(s) wurden angelegt<?= $problemCount > 0 ? ', <strong>' . $problemCount . '</strong> Zeile(n) übersprungen (siehe Fehlerreport)' : '' ?>. Der Lauf ist im Audit-Log festgehalten.</p>
             <?php if ($importedRows): ?>
             <div class="import-asset-links">
-                <?php foreach ($importedRows as $ir): ?><a class="badge badge-neutral mono" href="/assets/<?= (int) $ir['asset_id'] ?>"><?= e($ir['inventory_number']) ?></a><?php endforeach; ?>
+                <?php foreach ($importedRows as $ir): ?><a class="badge badge-neutral mono" href="/assets/<?= (int) $ir['asset_id'] ?>"><?= e(asset_number($ir)) ?></a><?php endforeach; ?>
                 <?php if ((int) $run['rows_imported'] > count($importedRows)): ?><span class="text-muted text-sm">… und <?= (int) $run['rows_imported'] - count($importedRows) ?> weitere</span><?php endif; ?>
             </div>
             <?php endif; ?>
@@ -135,8 +135,8 @@ $tabCounts = ['valid' => (int) $run['rows_valid'], 'warning' => (int) $run['rows
                 <td class="text-right text-muted"><?= (int) $row['row_number'] ?></td>
                 <td class="nowrap"><?= $rowBadge($row['status']) ?></td>
                 <td class="mono nowrap">
-                    <?php if ($row['asset_id']): ?><a href="/assets/<?= (int) $row['asset_id'] ?>"><?= e($row['inventory_number']) ?></a>
-                    <?php elseif ($row['inventory_number']): ?><?= e($row['inventory_number']) ?>
+                    <?php if ($row['asset_id']): ?><a href="/assets/<?= (int) $row['asset_id'] ?>"><?= e(asset_number($row)) ?></a>
+                    <?php elseif ($row['inventory_number']): ?><?= e(asset_number($row)) ?>
                     <?php else: ?><span class="text-muted">automatisch</span><?php endif; ?>
                 </td>
                 <td class="text-sm"><?= e($row['summary']) ?: '<span class="text-muted">–</span>' ?></td>

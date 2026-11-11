@@ -32,6 +32,8 @@ final class LabelController extends BaseController
         $ids = $dummy ? [] : $this->idsFromRequest($request);
         $filters = !$dummy && $ids === [] ? $this->assetController->filters($request) : [];
         $rows = $dummy ? [$this->labels->dummyAsset()] : $this->labels->assetsFor($ids, $filters);
+        // Lagerartikel (Assets ohne Inventarnummer) erhalten kein Inventaretikett
+        $rows = array_values(array_filter($rows, static fn (array $row): bool => (string) ($row['inventory_number'] ?? '') !== ''));
         $layout = $this->labels->layout();
         $labels = array_map(fn (array $row): array => $this->labels->labelFor($row, $layout), $rows);
         $copies = max(1, min(20, $request->int('copies', 1) ?? 1));

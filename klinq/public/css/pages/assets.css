@@ -31,3 +31,11 @@
 
 .value-old { text-decoration: line-through; color: var(--color-text-muted); }
 .value-arrow { color: var(--color-text-muted); margin: 0 var(--space-1); }
+
+/* Verbrauchsmaterial: Bestand direkt in der Tabelle setzen */
+.stock-form { display: flex; gap: var(--space-2); align-items: center; flex-wrap: nowrap; }
+.stock-form input[type="number"] { width: 5.5rem; }
+
+/* Kataloge: Präfixfeld nur so breit wie nötig */
+input.input-prefix { max-width: 10rem; }
+.filter-bar .form-group.filter-compact { flex: 0 1 20rem; }

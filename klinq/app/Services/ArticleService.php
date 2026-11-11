@@ -108,6 +108,28 @@ final class ArticleService
     }
 
     /** @param array<string,mixed> $existing */
+    /**
+     * Bestand eines Verbrauchsartikels korrigieren (Inventur, Ausgabe aus dem Lager).
+     *
+     * @param array<string,mixed> $existing
+     * @param array<string,mixed> $input stock_quantity (neuer Bestand), note (optional)
+     */
+    public function setStock(int $id, array $existing, array $input): int
+    {
+        if ((int) ($existing['is_consumable'] ?? 0) !== 1) {
+            throw ValidationException::single('stock_quantity', 'Der Artikel ist kein Verbrauchsmaterial.');
+        }
+        $data = (new Validator($input))
+            ->int('stock_quantity', 'Bestand', true, 0, 1000000)
+            ->string('note', 'Bemerkung', false, 255)
+            ->validated();
+        $this->articles->update($id, ['stock_quantity' => $data['stock_quantity']]);
+        $this->audit->log('stock', 'article', $id, (string) $existing['name'], ['stock_quantity' => (int) $existing['stock_quantity']], ['stock_quantity' => $data['stock_quantity'], 'note' => $data['note']]);
+
+        return (int) $data['stock_quantity'];
+    }
+
+    /** @param array<string,mixed> $existing */
     public function setActive(int $id, array $existing, bool $active): void
     {
         $this->articles->update($id, ['is_active' => $active ? 1 : 0]);

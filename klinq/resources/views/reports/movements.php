@@ -135,7 +135,7 @@ $presets = [
         <?php foreach ($rows as $m): ?>
             <tr class="is-clickable" data-href="/movements/<?= (int) $m['id'] ?>">
                 <td class="nowrap"><?= fmt_date($m['movement_date']) ?><br><span class="text-muted text-xs"><?= e(\App\Services\ReportService::time($m['movement_at']) ?? '') ?></span></td>
-                <td><strong class="mono"><?= e($m['inventory_number']) ?></strong><br><span class="text-muted text-sm"><?= e($m['asset_name'] ?: $m['asset_type_name']) ?></span></td>
+                <td><strong class="mono"><?= e(asset_number($m)) ?></strong><br><span class="text-muted text-sm"><?= e($m['asset_name'] ?: $m['asset_type_name']) ?></span></td>
                 <td><?= e($m['employee_name'] ?? '–') ?><?= $m['employee_department'] ? '<br><span class="text-muted text-xs">' . e($m['employee_department']) . '</span>' : '' ?></td>
                 <?php if ($isReturn): ?>
                     <td><?= $m['condition_code'] ? badge($conditions[$m['condition_code']] ?? $m['condition_code'], in_array($m['condition_code'], ['damaged', 'defective'], true) ? 'danger' : ($m['condition_code'] === 'worn' ? 'warning' : 'success')) : '–' ?><?= (int) $m['has_damage'] ? ' ' . badge('Schaden', 'danger') : '' ?></td>

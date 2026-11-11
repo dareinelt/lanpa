@@ -94,7 +94,7 @@ final class DashboardService
     public function recentAssetHistory(int $limit): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT h.id, h.event_type, h.field, h.old_value, h.new_value, h.note, h.actor_name AS user_name, h.created_at, a.inventory_number, a.name AS asset_name
+            'SELECT h.id, h.event_type, h.field, h.old_value, h.new_value, h.note, h.actor_name AS user_name, h.created_at, h.asset_id, a.inventory_number, a.name AS asset_name
              FROM asset_history h
              JOIN assets a ON a.id = h.asset_id
              ORDER BY h.created_at DESC LIMIT ' . (int) $limit

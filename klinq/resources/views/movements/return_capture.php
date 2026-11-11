@@ -6,7 +6,7 @@ $condition = $val('condition_code', 'ok');
 <div class="page-header">
     <div>
         <p class="breadcrumb text-sm text-muted mb-2"><a href="/assets/<?= (int) $asset['id'] ?>"><?= icon('arrow-left', 'icon icon-sm') ?> Zurück</a></p>
-        <h1><?= icon('return') ?> Rückgabe <span class="mono"><?= e($asset['inventory_number']) ?></span></h1>
+        <h1><?= icon('return') ?> Rückgabe <span class="mono"><?= e(asset_label($asset)) ?></span></h1>
         <p class="page-subtitle text-muted mb-0"><?= $asset['employee_name'] ? 'von ' . e($asset['employee_name']) : '' ?><?= $asset['location_path'] ? ' · bisher ' . e($asset['location_path']) : '' ?></p>
     </div>
 </div>
@@ -16,7 +16,7 @@ $condition = $val('condition_code', 'ok');
 <div class="card mt-4">
     <form method="post" action="/movements/return" enctype="multipart/form-data" class="card-form-wide" id="return-form">
         <?= csrf_field() ?>
-        <input type="hidden" name="inventory_number" value="<?= e($asset['inventory_number']) ?>">
+        <input type="hidden" name="inventory_number" value="<?= e(asset_code($asset)) ?>">
         <input type="hidden" name="asset_id" value="<?= (int) $asset['id'] ?>">
         <input type="hidden" name="asset_version" value="<?= (int) $asset['version'] ?>">
         <input type="hidden" name="client_transaction_id" value="<?= e($old['client_transaction_id'] ?? bin2hex(random_bytes(16))) ?>">

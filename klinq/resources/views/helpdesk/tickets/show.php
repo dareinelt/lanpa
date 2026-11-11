@@ -433,7 +433,7 @@ $statusTransitions = array_values(array_filter(
         <ul class="side-list">
             <?php foreach ($assets as $a): ?>
             <li>
-                <div class="side-list-main"><a href="/assets/<?= (int) $a['asset_id'] ?>"><?= e($a['inventory_number']) ?></a> <?= e($a['asset_name'] ?? $a['article_name'] ?? '') ?><div class="text-xs text-muted"><?= e($a['asset_type_name']) ?><?= $a['serial_number'] ? ' · SN ' . e($a['serial_number']) : '' ?><?= $a['employee_name'] ? ' · ' . e($a['employee_name']) : '' ?><?= !empty($a['note']) ? ' · ' . e($a['note']) : '' ?></div></div>
+                <div class="side-list-main"><a href="/assets/<?= (int) $a['asset_id'] ?>"><?= e(asset_number($a)) ?></a> <?= e($a['asset_name'] ?? $a['article_name'] ?? '') ?><div class="text-xs text-muted"><?= e($a['asset_type_name']) ?><?= $a['serial_number'] ? ' · SN ' . e($a['serial_number']) : '' ?><?= $a['employee_name'] ? ' · ' . e($a['employee_name']) : '' ?><?= !empty($a['note']) ? ' · ' . e($a['note']) : '' ?></div></div>
                 <?php if ($canUpdate): ?><form method="post" action="/helpdesk/tickets/<?= $id ?>/assets/<?= (int) $a['asset_id'] ?>/remove" class="inline-form" data-confirm="Verknüpfung entfernen?"><?= csrf_field() ?><button type="submit" class="btn btn-ghost btn-sm" aria-label="Entfernen"><?= icon('x') ?></button></form><?php endif; ?>
             </li>
             <?php endforeach; ?>
@@ -448,7 +448,7 @@ $statusTransitions = array_values(array_filter(
                     <label for="asset-select">Asset verknüpfen</label>
                     <select id="asset-select" name="asset_id" required>
                         <option value="">– Asset des Melders wählen –</option>
-                        <?php foreach ($employeeAssets as $ea): ?><option value="<?= (int) $ea['id'] ?>"><?= e($ea['inventory_number']) ?> · <?= e($ea['name'] ?? $ea['article_name'] ?? '') ?></option><?php endforeach; ?>
+                        <?php foreach ($employeeAssets as $ea): ?><option value="<?= (int) $ea['id'] ?>"><?= e(asset_number($ea)) ?> · <?= e($ea['name'] ?? $ea['article_name'] ?? '') ?></option><?php endforeach; ?>
                     </select>
                     <p class="form-hint">Es werden die dem Melder zugeordneten Assets angeboten. Andere Assets über <a href="/assets">Assets</a> → „Ticket erstellen“ verknüpfen.</p>
                 </div>

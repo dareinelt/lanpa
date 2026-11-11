@@ -1,13 +1,13 @@
 <?php require_once __DIR__ . '/../partials/helpers.php'; ob_start();
 $old = $_SESSION['_old_input'] ?? [];
-$inv = rawurlencode($asset['inventory_number']);
+$inv = rawurlencode(asset_code($asset));
 $condition = $old['condition_code'] ?? 'ok';
 ?>
 <?php $compact = true; include __DIR__ . '/_asset_card.php'; ?>
 <?php if ($asset['employee_name']): ?><p class="text-muted mb-0">Rückgabe von <strong><?= e($asset['employee_name']) ?></strong><?= $asset['location_path'] ? ' · bisher ' . e($asset['location_path']) : '' ?></p><?php endif; ?>
 <form method="post" action="/m/return" class="m-form" id="movement-form" data-movement="return" enctype="multipart/form-data">
     <?= csrf_field() ?>
-    <input type="hidden" name="inventory_number" value="<?= e($asset['inventory_number']) ?>">
+    <input type="hidden" name="inventory_number" value="<?= e(asset_code($asset)) ?>">
     <input type="hidden" name="asset_id" value="<?= (int) $asset['id'] ?>">
     <input type="hidden" name="asset_version" value="<?= (int) $asset['version'] ?>">
     <input type="hidden" name="client_transaction_id" value="<?= e($old['client_transaction_id'] ?? bin2hex(random_bytes(16))) ?>">

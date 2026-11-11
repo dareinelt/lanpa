@@ -83,7 +83,7 @@ final class AssetController extends BaseController
         $row = $this->findOrFail($this->assets->find($request->paramInt('id')), 'Asset nicht gefunden');
 
         return $this->render('assets.show', [
-            'title' => $row['inventory_number'],
+            'title' => AssetService::label($row),
             'activeNav' => 'assets',
             'row' => $row,
             'history' => $this->history->forAsset((int) $row['id']),
@@ -117,7 +117,8 @@ final class AssetController extends BaseController
 
             return $this->redirect('/assets/new');
         }
-        $this->flash('success', 'Asset ' . $result['inventory_number'] . ' wurde angelegt.');
+        // Lagerartikel ohne Inventarnummer: Anzeigename aus dem gespeicherten Datensatz (Artikel/Bezeichnung)
+        $this->flash('success', 'Asset ' . AssetService::label($this->assets->find($result['id']) ?? $result) . ' wurde angelegt.');
         if ($request->string('save_and_new') === '1') {
             return $this->redirect('/assets/new?' . http_build_query(array_filter([
                 'asset_type_id' => $request->string('asset_type_id'),
@@ -154,7 +155,7 @@ final class AssetController extends BaseController
 
             return $this->redirect('/assets/' . $id . '/edit');
         }
-        $this->flash('success', 'Asset ' . $row['inventory_number'] . ' wurde gespeichert.');
+        $this->flash('success', 'Asset ' . AssetService::label($row) . ' wurde gespeichert.');
 
         return $this->redirect('/assets/' . $id);
     }
@@ -170,7 +171,7 @@ final class AssetController extends BaseController
 
             return $this->redirect('/assets/' . $id);
         }
-        $this->flash('success', 'Status von ' . $row['inventory_number'] . ' wurde geändert.');
+        $this->flash('success', 'Status von ' . AssetService::label($row) . ' wurde geändert.');
 
         return $this->redirect('/assets/' . $id);
     }
@@ -198,9 +199,9 @@ final class AssetController extends BaseController
 
         return $this->json(['items' => array_map(static fn (array $r): array => [
             'id' => (int) $r['id'],
-            'inventory_number' => $r['inventory_number'],
+            'inventory_number' => AssetService::code($r),
             'name' => $r['name'] ?? $r['article_name'] ?? '',
-            'label' => trim($r['inventory_number'] . ' · ' . ($r['name'] ?? $r['article_name'] ?? ''), ' ·'),
+            'label' => (string) ($r['inventory_number'] ?? '') !== '' ? trim($r['inventory_number'] . ' · ' . ($r['name'] ?? $r['article_name'] ?? ''), ' ·') : AssetService::label($r),
             'meta' => implode(' · ', array_filter([$r['asset_type_name'], $r['status_name'], $r['employee_name'] ?? null, $r['location_path'] ?? null])),
             'type' => $r['asset_type_name'],
             'status' => $r['status_name'],
@@ -303,7 +304,7 @@ final class AssetController extends BaseController
             $ctx['supplier_id'] = 'Lieferant: ' . $s['name'];
         }
         if (!empty($filters['parent_asset_id']) && ($p = $this->assets->find((int) $filters['parent_asset_id']))) {
-            $ctx['parent_asset_id'] = 'Zugehörig zu: ' . $p['inventory_number'];
+            $ctx['parent_asset_id'] = 'Zugehörig zu: ' . AssetService::label($p);
         }
 
         return $ctx;
@@ -317,7 +318,7 @@ final class AssetController extends BaseController
         }
 
         return $this->render('assets.form', [
-            'title' => $row === null ? 'Asset anlegen' : 'Asset ' . $row['inventory_number'] . ' bearbeiten',
+            'title' => $row === null ? 'Asset anlegen' : 'Asset ' . AssetService::label($row) . ' bearbeiten',
             'activeNav' => 'assets',
             'row' => $row,
             'types' => $this->types->all(true),

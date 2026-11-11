@@ -38,7 +38,7 @@ final class ImportService
 
     /** Spalten: Schlüssel => [Bezeichnung, Aliasnamen (normalisiert), Pflicht, Hinweis, Beispiel]. */
     public const COLUMNS = [
-        'inventory_number' => ['Inventarnummer', ['inventarnummer', 'inventarnr', 'inventar_nr', 'inventory_number', 'inv_nr'], false, 'Leer = automatisch vergeben (Altbestand: Jahreskennung 88)', 'PC88001'],
+        'inventory_number' => ['Inventarnummer', ['inventarnummer', 'inventarnr', 'inventar_nr', 'inventory_number', 'inv_nr'], false, 'Leer = automatisch vergeben (Altbestand: Jahreskennung 88); bei Assettypen ohne Inventarnummer leer lassen', 'PC88001'],
         'asset_type' => ['Assettyp', ['assettyp', 'typ', 'asset_type', 'type', 'geraetetyp'], true, 'Code (z. B. PC, MD, NET, ZUB – siehe Kataloge) oder Name; leer, wenn aus der Inventarnummer ableitbar', 'PC'],
         'category' => ['Kategorie', ['kategorie', 'category'], false, 'Name innerhalb des Assettyps', 'Notebook'],
         'name' => ['Bezeichnung', ['bezeichnung', 'name', 'modell', 'model', 'geraet'], false, '', 'ThinkPad T14 Gen 3'],
@@ -278,6 +278,9 @@ final class ImportService
         }
         if ($type !== null) {
             $input['asset_type_id'] = (string) $type['id'];
+            if ($number !== '' && !AssetService::typeRequiresInventoryNumber($type)) {
+                $add('error', 'inventory_number', 'Der Assettyp ' . $type['name'] . ' vergibt keine Inventarnummern – Spalte leer lassen.');
+            }
         }
 
         // Altbestand
@@ -455,7 +458,7 @@ final class ImportService
             'line' => $line,
             'status' => $status,
             'inventory_number' => $number !== '' ? $number : null,
-            'expected_number' => $number !== '' ? $number : ($type !== null ? $type['inventory_prefix'] . ($legacy ? InventoryNumberService::LEGACY_YEAR_CODE : date('y')) . '…' : null),
+            'expected_number' => $number !== '' ? $number : ($type !== null && AssetService::typeRequiresInventoryNumber($type) ? $type['inventory_prefix'] . ($legacy ? InventoryNumberService::LEGACY_YEAR_CODE : date('y')) . '…' : null),
             'asset_id' => null,
             'summary' => implode(' · ', $summaryParts),
             'messages' => $messages,

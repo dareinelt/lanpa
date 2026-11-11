@@ -29,10 +29,10 @@
     <h2 class="text-sm text-muted mb-2">Zuletzt erfasst</h2>
     <ul class="m-list">
         <?php foreach ($recent as $r): ?>
-            <li><a href="/m/asset/<?= e(rawurlencode($r['inventory_number'])) ?>">
+            <li><a href="/m/asset/<?= e(rawurlencode(asset_code($r))) ?>">
                 <?= icon($r['type'] === 'checkout' ? 'checkout' : 'return') ?>
                 <div class="m-list-main">
-                    <div class="m-list-title"><span class="mono"><?= e($r['inventory_number']) ?></span> · <?= $r['type'] === 'checkout' ? 'Entnahme' : 'Rückgabe' ?></div>
+                    <div class="m-list-title"><span class="mono"><?= e(asset_label($r)) ?></span> · <?= $r['type'] === 'checkout' ? 'Entnahme' : 'Rückgabe' ?></div>
                     <div class="m-list-sub"><?= e($r['employee_name'] ?? $r['to_location_path'] ?? '') ?> · <?= fmt_datetime($r['movement_at']) ?></div>
                 </div>
                 <?php if ($r['status'] === 'open'): ?><?= badge('offen', 'warning') ?><?php endif; ?>

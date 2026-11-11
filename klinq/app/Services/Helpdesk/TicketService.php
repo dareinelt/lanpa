@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Helpdesk;
 
+use App\Services\AssetService;
 use App\Core\Config;
 use App\Exceptions\ConflictException;
 use App\Exceptions\ForbiddenException;
@@ -1242,7 +1243,7 @@ final class TicketService
         }
         $this->tickets->transaction(function () use ($ticketId, $assetId, $note, $asset): void {
             $this->tickets->addAsset($ticketId, $assetId, $note !== null ? mb_substr(trim($note), 0, 255) : null, $this->currentUser->id());
-            $this->event($ticketId, 'asset_linked', 'asset', null, (string) $asset['inventory_number'], ['asset_id' => $assetId]);
+            $this->event($ticketId, 'asset_linked', 'asset', null, AssetService::label($asset), ['asset_id' => $assetId]);
             $this->tickets->update($ticketId, ['updated_by' => $this->currentUser->id()]);
         });
         $this->audit->log('link', 'ticket', $ticketId, $ticket['number'], null, ['asset' => $asset['inventory_number']]);
@@ -1255,7 +1256,7 @@ final class TicketService
         $asset = $this->assets->find($assetId);
         $this->tickets->transaction(function () use ($ticketId, $assetId, $asset): void {
             if ($this->tickets->removeAsset($ticketId, $assetId) > 0) {
-                $this->event($ticketId, 'asset_unlinked', 'asset', (string) ($asset['inventory_number'] ?? $assetId), null, ['asset_id' => $assetId]);
+                $this->event($ticketId, 'asset_unlinked', 'asset', $asset !== null ? AssetService::label($asset) : (string) $assetId, null, ['asset_id' => $assetId]);
                 $this->tickets->update($ticketId, ['updated_by' => $this->currentUser->id()]);
             }
         });

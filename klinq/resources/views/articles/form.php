@@ -38,7 +38,7 @@ $selectedType = form_value($row, 'asset_type_id');
                 <label for="f-type">Assettyp *</label>
                 <select id="f-type" name="asset_type_id" required data-category-filter>
                     <option value="">Bitte wählen</option>
-                    <?php foreach ($assetTypes as $t): ?><option value="<?= (int) $t['id'] ?>"<?= selected($selectedType, $t['id']) ?>><?= e($t['name']) ?> (<?= e($t['inventory_prefix']) ?>)</option><?php endforeach; ?>
+                    <?php foreach ($assetTypes as $t): ?><option value="<?= (int) $t['id'] ?>"<?= selected($selectedType, $t['id']) ?>><?= e(type_label($t)) ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('asset_type_id') ?>
             </div>
@@ -72,7 +72,8 @@ $selectedType = form_value($row, 'asset_type_id');
         <label class="checkbox-field"><input type="checkbox" name="is_active" value="1"<?= form_checked($row, 'is_active') ?>> <span>Aktiv</span></label>
         <label class="checkbox-field"><input type="checkbox" name="is_handover_relevant" value="1"<?= form_checked($row, 'is_handover_relevant', false) ?>> <span>Relevant für Übergabeprotokoll</span></label>
         <span class="form-hint">Assets dieses Artikels erscheinen im Übergabeprotokoll des Mitarbeiters (z. B. Notebook, Smartphone – nicht Kabel oder Verbrauchsmaterial).</span>
-        <label class="checkbox-field mt-3"><input type="checkbox" name="is_consumable" value="1"<?= form_checked($row, 'is_consumable', false) ?>> <span>Verbrauchsmaterial</span></label>
+        <label class="checkbox-field mt-3"><input type="checkbox" name="is_consumable" value="1"<?= form_checked($row, 'is_consumable', $isNew && ($_GET['is_consumable'] ?? '') === '1') ?>> <span>Verbrauchsmaterial</span></label>
+        <span class="form-hint">Für Material, das nur als Menge geführt wird (z. B. Toner, Tinte, Batterien): Es entstehen keine einzelnen Assets; der Wareneingang erhöht den Bestand. Übersicht unter <a href="/consumables">Bestand → Verbrauchsmaterial</a>.</span>
         <div class="form-row">
             <div class="form-group"><label for="f-min-stock">Mindestbestand</label><input id="f-min-stock" type="number" name="minimum_stock" min="0" value="<?= e(form_value($row, 'minimum_stock')) ?>"><span class="form-hint">Bei Unterschreitung wird ein Bestellvorschlag angezeigt.</span></div>
             <div class="form-group"><label for="f-stock">Aktueller Bestand</label><input id="f-stock" type="number" name="stock_quantity" min="0" value="<?= e(form_value($row, 'stock_quantity', '0')) ?>"></div>

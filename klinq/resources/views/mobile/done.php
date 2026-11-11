@@ -1,12 +1,12 @@
 <?php require_once __DIR__ . '/../partials/helpers.php'; ob_start();
 $isCheckout = $movement['type'] === 'checkout';
 $open = $movement['status'] === 'open';
-$inv = rawurlencode($movement['inventory_number']);
+$inv = rawurlencode(asset_code($movement));
 ?>
 <div class="card m-done<?= $open ? ' is-warning' : '' ?>">
     <div class="m-done-icon"><?= icon($open ? 'clock' : 'check') ?></div>
     <h2><?= $isCheckout ? 'Entnahme' : 'Rückgabe' ?> <?= $open ? 'gespeichert (offen)' : 'abgeschlossen' ?></h2>
-    <p class="text-muted"><span class="mono font-semibold"><?= e($movement['inventory_number']) ?></span><?= $movement['employee_name'] ? ($isCheckout ? ' → ' : ' von ') . e($movement['employee_name']) : '' ?><br><?= fmt_datetime($movement['movement_at']) ?></p>
+    <p class="text-muted"><span class="mono font-semibold"><?= e(asset_label($movement)) ?></span><?= $movement['employee_name'] ? ($isCheckout ? ' → ' : ' von ') . e($movement['employee_name']) : '' ?><br><?= fmt_datetime($movement['movement_at']) ?></p>
     <?php if ($open): ?>
         <p class="text-warning mb-0"><?= $missing ? 'Fehlt noch: <strong>' . e(implode(', ', $missing)) . '</strong>. ' : '' ?>Der Vorgang steht in der Liste „Offene Vorgänge“ und wird dort vervollständigt.</p>
     <?php else: ?>

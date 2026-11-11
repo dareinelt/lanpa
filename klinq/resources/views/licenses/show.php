@@ -79,7 +79,7 @@ $scripts = ['/js/picker.js'];
         <tbody>
         <?php foreach ($activeAssignments as $a): ?>
             <tr data-href="/assets/<?= (int) $a['asset_id'] ?>">
-                <td class="mono font-semibold"><a href="/assets/<?= (int) $a['asset_id'] ?>"><?= e($a['inventory_number']) ?></a></td>
+                <td class="mono font-semibold"><a href="/assets/<?= (int) $a['asset_id'] ?>"><?= e(asset_number($a)) ?></a></td>
                 <td class="nowrap"><?= icon($a['asset_type_icon'] ?: 'box', 'icon icon-sm icon-muted') ?> <?= e($a['asset_type_name']) ?></td>
                 <td><?= e($a['asset_name'] ?? $a['article_name'] ?? '–') ?><?= $a['serial_number'] ? ' <span class="text-muted text-xs mono">' . e($a['serial_number']) . '</span>' : '' ?></td>
                 <td><?= e($a['employee_name'] ?? '–') ?></td>
@@ -88,7 +88,7 @@ $scripts = ['/js/picker.js'];
                 <td class="text-sm nowrap"><?= fmt_datetime($a['assigned_at']) ?><br><span class="text-muted text-xs"><?= e($a['assigned_by']) ?><?= $a['note'] ? ' · ' . e($a['note']) : '' ?></span></td>
                 <td class="table-actions">
                     <?php if ($can('licenses.manage')): ?>
-                    <form method="post" action="/licenses/<?= (int) $row['id'] ?>/assignments/<?= (int) $a['id'] ?>/release" data-confirm="Zuordnung zu <?= e($a['inventory_number']) ?> aufheben?"><?= csrf_field() ?><button type="submit" class="btn btn-ghost btn-sm" title="Zuordnung aufheben"><?= icon('x') ?> Freigeben</button></form>
+                    <form method="post" action="/licenses/<?= (int) $row['id'] ?>/assignments/<?= (int) $a['id'] ?>/release" data-confirm="Zuordnung zu <?= e(asset_number($a)) ?> aufheben?"><?= csrf_field() ?><button type="submit" class="btn btn-ghost btn-sm" title="Zuordnung aufheben"><?= icon('x') ?> Freigeben</button></form>
                     <?php endif; ?>
                 </td>
             </tr>
@@ -164,7 +164,7 @@ $scripts = ['/js/picker.js'];
             <tbody>
             <?php foreach ($releasedAssignments as $a): ?>
                 <tr class="is-muted" data-href="/assets/<?= (int) $a['asset_id'] ?>">
-                    <td class="mono"><a href="/assets/<?= (int) $a['asset_id'] ?>"><?= e($a['inventory_number']) ?></a></td>
+                    <td class="mono"><a href="/assets/<?= (int) $a['asset_id'] ?>"><?= e(asset_number($a)) ?></a></td>
                     <td class="text-sm"><?= fmt_datetime($a['assigned_at']) ?><br><span class="text-muted text-xs"><?= e($a['assigned_by']) ?></span></td>
                     <td class="text-sm"><?= fmt_datetime($a['released_at']) ?><br><span class="text-muted text-xs"><?= e($a['released_by'] ?? '') ?></span></td>
                 </tr>

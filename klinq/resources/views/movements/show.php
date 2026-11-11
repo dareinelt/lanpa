@@ -10,7 +10,7 @@ $statusBadge = match ($row['status']) { 'open' => badge('Offen', 'warning'), 'co
 <div class="page-header">
     <div>
         <p class="breadcrumb text-sm text-muted mb-2"><a href="<?= e($back) ?>"><?= icon('arrow-left', 'icon icon-sm') ?> Zurück</a></p>
-        <h1><?= icon($isCheckout ? 'checkout' : 'return') ?> <?= $isCheckout ? 'Entnahme' : 'Retoure' ?> <a class="mono" href="/assets/<?= (int) $row['asset_id'] ?>"><?= e($row['inventory_number']) ?></a> <?= $statusBadge ?></h1>
+        <h1><?= icon($isCheckout ? 'checkout' : 'return') ?> <?= $isCheckout ? 'Entnahme' : 'Retoure' ?> <a class="mono" href="/assets/<?= (int) $row['asset_id'] ?>"><?= e(asset_label($row)) ?></a> <?= $statusBadge ?></h1>
         <p class="page-subtitle text-muted mb-0"><?= fmt_datetime($row['movement_at']) ?> · erfasst von <?= e($row['created_by_name'] ?? '?') ?> (<?= e(App\Services\MovementService::SOURCES[$row['source']] ?? $row['source']) ?>)<?php if ($row['completed_at']): ?> · abgeschlossen <?= fmt_datetime($row['completed_at']) ?> von <?= e($row['completed_by_name'] ?? '?') ?><?php endif; ?><?php if ((int) ($row['signed_electronically'] ?? 0) === 1): ?> · <?= badge('Elektronische Signatur verwendet', 'success') ?><?php endif; ?></p>
     </div>
     <div class="page-actions">
@@ -32,7 +32,7 @@ $statusBadge = match ($row['status']) { 'open' => badge('Offen', 'warning'), 'co
     <div class="card">
         <div class="card-header"><h2>Asset</h2></div>
         <dl class="detail-list">
-            <dt>Inventarnummer</dt><dd><a class="mono font-semibold" href="/assets/<?= (int) $row['asset_id'] ?>"><?= e($row['inventory_number']) ?></a></dd>
+            <dt>Inventarnummer</dt><dd><a class="mono font-semibold" href="/assets/<?= (int) $row['asset_id'] ?>"><?= e(asset_number($row)) ?></a></dd>
             <dt>Typ</dt><dd><?= icon($row['asset_type_icon'] ?: 'box', 'icon icon-muted') ?> <?= e($row['asset_type_name']) ?></dd>
             <dt>Bezeichnung</dt><dd><?= e($row['asset_name'] ?: ($row['article_name'] ?? '–')) ?><?= $row['manufacturer_name'] ? ' <span class="text-muted">(' . e($row['manufacturer_name']) . ')</span>' : '' ?></dd>
             <dt>Seriennummer</dt><dd class="mono"><?= e($row['serial_number'] ?? '–') ?></dd>

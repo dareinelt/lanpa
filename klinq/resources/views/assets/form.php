@@ -1,7 +1,7 @@
 <?php require_once __DIR__ . '/../partials/helpers.php'; ob_start(); $isNew = $row === null; $back = $isNew ? '/assets' : '/assets/' . (int) $row['id']; ?>
 <div class="page-header">
     <div>
-        <?php if (!$isNew): ?><p class="page-subtitle text-muted mb-0"><a href="/assets">Assets</a> / <a href="<?= e($back) ?>" class="mono"><?= e($row['inventory_number']) ?></a></p><?php endif; ?>
+        <?php if (!$isNew): ?><p class="page-subtitle text-muted mb-0"><a href="/assets">Assets</a> / <a href="<?= e($back) ?>" class="mono"><?= e(asset_label($row)) ?></a></p><?php endif; ?>
         <h1><?= e($title) ?></h1>
     </div>
     <div class="page-actions"><a class="btn btn-ghost" href="<?= e($back) ?>"><?= icon('arrow-left') ?> Zurück</a></div>
@@ -21,14 +21,14 @@
                     <option value="">Bitte wählen …</option>
                     <?php foreach ($types as $t): ?>
                         <option value="<?= (int) $t['id'] ?>"<?= selected(form_value($row, 'asset_type_id'), $t['id']) ?>
-                                data-prefix="<?= e($t['inventory_prefix']) ?>" data-serial="<?= (int) $t['has_serial_number'] ?>" data-mac="<?= (int) $t['has_mac_address'] ?>" data-imei="<?= (int) $t['has_imei'] ?>"><?= e($t['name']) ?> (<?= e($t['inventory_prefix']) ?>)</option>
+                                data-prefix="<?= (int) ($t['requires_inventory_number'] ?? 1) === 1 ? e((string) $t['inventory_prefix']) : '' ?>" data-serial="<?= (int) $t['has_serial_number'] ?>" data-mac="<?= (int) $t['has_mac_address'] ?>" data-imei="<?= (int) $t['has_imei'] ?>"><?= e(type_label($t)) ?></option>
                     <?php endforeach; ?>
                 </select>
                 <?= field_error('asset_type_id') ?>
-                <span class="form-hint">Bestimmt das Präfix der Inventarnummer und lässt sich später nicht ändern.</span>
+                <span class="form-hint">Bestimmt das Präfix der Inventarnummer (bei Typen mit Inventarnummer) und lässt sich später nicht ändern.</span>
                 <?php else: ?>
                 <input id="f-type" value="<?= e($row['asset_type_name']) ?>" readonly>
-                <input type="hidden" name="asset_type_id" value="<?= (int) $row['asset_type_id'] ?>" data-category-filter data-prefix="<?= e($row['asset_type_prefix'] ?? $row['asset_type_code']) ?>" data-serial="<?= (int) $row['has_serial_number'] ?>" data-mac="<?= (int) $row['has_mac_address'] ?>" data-imei="<?= (int) $row['has_imei'] ?>">
+                <input type="hidden" name="asset_type_id" value="<?= (int) $row['asset_type_id'] ?>" data-category-filter data-prefix="<?= (int) ($row['requires_inventory_number'] ?? 1) === 1 ? e((string) ($row['asset_type_prefix'] ?? '')) : '' ?>" data-serial="<?= (int) $row['has_serial_number'] ?>" data-mac="<?= (int) $row['has_mac_address'] ?>" data-imei="<?= (int) $row['has_imei'] ?>">
                 <?php endif; ?>
             </div>
             <div class="form-group">
@@ -218,7 +218,9 @@
         </details>
         <?php endif; ?>
 
-        <?php if (!$isNew): ?>
+        <?php if (!$isNew && (int) ($row['requires_inventory_number'] ?? 1) !== 1 && (string) ($row['inventory_number'] ?? '') === ''): ?>
+        <p class="form-hint mt-3">Der Assettyp „<?= e($row['asset_type_name']) ?>“ vergibt keine Inventarnummern.</p>
+        <?php elseif (!$isNew): ?>
         <div class="form-row mt-3">
             <div class="form-group">
                 <label for="f-invno">Inventarnummer</label>

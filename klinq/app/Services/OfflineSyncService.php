@@ -59,7 +59,8 @@ final class OfflineSyncService
             ],
             'assets' => array_map(static fn (array $a): array => [
                 'id' => (int) $a['id'],
-                'inventory_number' => $a['inventory_number'],
+                // Lagerartikel ohne Inventarnummer: Kennung „#<ID>“ (vom Server per resolveAsset aufgelöst)
+                'inventory_number' => AssetService::code($a),
                 'serial_number' => $a['serial_number'],
                 'name' => $a['name'],
                 'version' => (int) $a['version'],

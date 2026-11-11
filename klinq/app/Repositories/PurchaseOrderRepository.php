@@ -25,7 +25,7 @@ final class PurchaseOrderRepository extends BaseRepository
 
     private const ITEM_SELECT = 'SELECT i.*, a.name AS article_name, a.article_number, a.manufacturer_id, m.name AS manufacturer_name,
             COALESCE(i.asset_type_id, a.asset_type_id) AS effective_asset_type_id,
-            t.name AS asset_type_name, t.icon AS asset_type_icon, t.inventory_prefix, t.has_serial_number, a.is_consumable,
+            t.name AS asset_type_name, t.icon AS asset_type_icon, t.inventory_prefix, t.requires_inventory_number, t.has_serial_number, a.is_consumable,
             (i.quantity - i.quantity_received) AS quantity_open,
             (SELECT COUNT(*) FROM assets x WHERE x.purchase_order_item_id = i.id) AS asset_count
         FROM purchase_order_items i

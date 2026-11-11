@@ -31,7 +31,7 @@ $statusBadge = static fn (string $s): string => match ($s) {
             <tr class="is-clickable<?= $r['status'] === 'cancelled' ? ' is-muted' : '' ?>" data-href="/movements/<?= (int) $r['id'] ?>">
                 <td class="text-sm nowrap"><?= fmt_datetime($r['movement_at']) ?></td>
                 <td class="nowrap"><?= icon($isCheckout ? 'checkout' : 'return', 'icon ' . ($isCheckout ? 'text-info' : 'text-success')) ?> <?= $isCheckout ? 'Entnahme' : 'Retoure' ?></td>
-                <td><span class="mono"><strong><?= e($r['inventory_number']) ?></strong></span><br><span class="text-muted text-sm"><?= e($r['asset_type_name']) ?><?= $r['asset_name'] || $r['article_name'] ? ' · ' . e($r['asset_name'] ?: $r['article_name']) : '' ?></span></td>
+                <td><span class="mono"><strong><?= e(asset_number($r)) ?></strong></span><br><span class="text-muted text-sm"><?= e($r['asset_type_name']) ?><?= $r['asset_name'] || $r['article_name'] ? ' · ' . e($r['asset_name'] ?: $r['article_name']) : '' ?></span></td>
                 <td><?= $r['employee_name'] ? e($r['employee_name']) : '<span class="text-muted">–</span>' ?></td>
                 <td class="text-sm"><?php if ($isCheckout): ?><?= e($r['to_location_path'] ?? '–') ?><?php else: ?><?= e($r['to_location_path'] ?? '–') ?><?php endif; ?><?php if ($r['from_location_path'] && $r['from_location_path'] !== $r['to_location_path']): ?><br><span class="text-muted text-xs">von <?= e($r['from_location_path']) ?></span><?php endif; ?></td>
                 <td class="mono"><?= e($r['cost_center_number'] ?? '–') ?></td>

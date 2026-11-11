@@ -145,10 +145,11 @@ final class ArticleService
             if ($category === null || (int) $category['asset_type_id'] !== (int) $data['asset_type_id']) {
                 throw ValidationException::single('asset_category_id', 'Die Kategorie passt nicht zum gewählten Assettyp.');
             }
-            if ((int) $data['is_consumable'] !== 1) {
-                $data['minimum_stock'] = null;
-                $data['stock_quantity'] = 0;
-            }
+        }
+        // Kein Verbrauchsmaterial (mehr): Mindestbestand und Bestand unabhängig von der Kategorie zurücksetzen
+        if ((int) $data['is_consumable'] !== 1) {
+            $data['minimum_stock'] = null;
+            $data['stock_quantity'] = 0;
         }
 
         $data['normalized_name'] = mb_substr(ColognePhonetic::normalizedArticleName($data['name']), 0, 200);

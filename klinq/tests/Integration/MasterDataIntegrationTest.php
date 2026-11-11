@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Tests\Integration;
 
 use App\Exceptions\ValidationException;
+use App\Repositories\ArticleRepository;
+use App\Repositories\AssetTypeRepository;
 use App\Repositories\CostCenterRepository;
 use App\Repositories\LocationRepository;
 use App\Repositories\ManufacturerRepository;
+use App\Services\ArticleService;
 use App\Services\CostCenterService;
 use App\Services\DuplicateWarningException;
 use App\Services\LocationService;
@@ -111,5 +114,34 @@ final class MasterDataIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ValidationException::class, static function () use ($svc): void {
             $svc->create(['number' => '7777', 'description' => 'Zu kurz', 'is_active' => '1']);
         });
+    }
+
+    public function testClearingConsumableResetsStockForArticleWithoutCategory(): void
+    {
+        $svc = $this->c->get(ArticleService::class);
+        $repo = $this->c->get(ArticleRepository::class);
+        $manufacturerId = $this->c->get(ManufacturerService::class)->create(['name' => 'Verbrauchstest GmbH', 'is_active' => '1'], true);
+        $input = [
+            'manufacturer_id' => (string) $manufacturerId,
+            'asset_type_id' => (string) $this->c->get(AssetTypeRepository::class)->findByCode('ZUB')['id'],
+            'asset_category_id' => '',
+            'name' => 'Toner Testmodell 4711',
+            'is_active' => '1',
+            'is_consumable' => '1',
+            'minimum_stock' => '5',
+            'stock_quantity' => '12',
+        ];
+        $id = $svc->create($input, true);
+        $created = $repo->find($id);
+        $this->assertNull($created['asset_category_id']);
+        $this->assertSame(5, (int) $created['minimum_stock']);
+        $this->assertSame(12, (int) $created['stock_quantity']);
+
+        // Haken „Verbrauchsmaterial“ entfernen: Bestandsfelder müssen auch ohne Kategorie zurückgesetzt werden
+        $svc->update($id, $created, array_merge($input, ['is_consumable' => '0']), true);
+        $updated = $repo->find($id);
+        $this->assertSame(0, (int) $updated['is_consumable']);
+        $this->assertNull($updated['minimum_stock']);
+        $this->assertSame(0, (int) $updated['stock_quantity']);
     }
 }

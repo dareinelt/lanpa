@@ -44,6 +44,58 @@ final class Validator
         return filter_var($url, FILTER_VALIDATE_URL) !== false;
     }
 
+    /**
+     * Erlaubt http(s)-Ziele, interne Pfade sowie mailto:-Adressen
+     * (z. B. fuer die "Wichtigen Links").
+     */
+    public static function isSafeLinkUrl(string $url): bool
+    {
+        return self::isSafeUrl($url) || self::isSafeMailto($url);
+    }
+
+    /**
+     * Erlaubt ein mailto:-Ziel mit genau einer E-Mail-Adresse. Optionale
+     * Parameter (subject, body, cc, ...) sind zulaessig, werden aber nicht
+     * ausgewertet.
+     */
+    public static function isSafeMailto(string $url): bool
+    {
+        $url = trim($url);
+        if ($url === '' || strlen($url) > 2048) {
+            return false;
+        }
+
+        if (preg_match('/[\x00-\x1F\x7F]/', $url) === 1) {
+            return false;
+        }
+
+        $address = self::mailtoAddress($url);
+
+        return $address !== null && filter_var($address, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    /**
+     * Liest die E-Mail-Adresse aus einem mailto:-Ziel (ohne Parameter).
+     */
+    public static function mailtoAddress(string $url): ?string
+    {
+        $url = trim($url);
+
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+        if (!is_string($scheme) || strtolower($scheme) !== 'mailto') {
+            return null;
+        }
+
+        $path = parse_url($url, PHP_URL_PATH);
+        if (!is_string($path)) {
+            return null;
+        }
+
+        $address = rawurldecode($path);
+
+        return $address === '' ? null : $address;
+    }
+
     public static function isHexColor(string $color): bool
     {
         return preg_match('/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', trim($color)) === 1;

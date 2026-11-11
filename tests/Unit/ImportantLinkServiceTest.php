@@ -77,6 +77,27 @@ Runner::test('Nur aktive wichtige Links werden auf der Startseite angezeigt', st
     Assert::same($activeId, (int) $activeItems[0]['id']);
 });
 
+Runner::test('mailto-Adressen werden als wichtige Links gespeichert', static function (): void {
+    $service = importantLinksTestService(importantLinksTestPdo());
+
+    $id = $service->create(['title' => 'IT-Support', 'url' => 'mailto:it@example.de', 'active' => true]);
+    $item = $service->find($id);
+
+    Assert::true(is_array($item));
+    Assert::same('mailto:it@example.de', (string) ($item['url'] ?? ''));
+});
+
+Runner::test('mailto-Links ohne gueltige Adresse werden abgewiesen', static function (): void {
+    $service = importantLinksTestService(importantLinksTestPdo());
+
+    try {
+        $service->create(['title' => 'Support', 'url' => 'mailto:', 'active' => true]);
+        Assert::true(false);
+    } catch (ValidationException $exception) {
+        Assert::true(isset($exception->errors()['url']));
+    }
+});
+
 Runner::test('Aendert sich die URL, wird ein zuvor gespeichertes Icon verworfen', static function (): void {
     $pdo = importantLinksTestPdo();
     $repository = new ImportantLinkRepository($pdo);

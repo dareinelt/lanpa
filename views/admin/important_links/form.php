@@ -31,7 +31,7 @@ $action = $isNew ? '/admin/wichtige-links/neu' : '/admin/wichtige-links/bearbeit
         <input type="text" id="url" name="url" required maxlength="2048"
                value="<?= Html::e((string) $item['url']) ?>"
                <?= isset($errors['url']) ? 'aria-invalid="true" aria-describedby="url-error"' : 'aria-describedby="url-hint"' ?>>
-        <p class="field__hint" id="url-hint">Vollständige https-URL oder ein interner Pfad (z. B. /telefonliste). Das Favicon der Seite wird, wenn möglich, automatisch übernommen.</p>
+        <p class="field__hint" id="url-hint">Vollständige https-URL, eine mailto:-Adresse (z. B. mailto:info@example.de) oder ein interner Pfad (z. B. /telefonliste). Bei mailto:-Adressen erscheint auf der Startseite eine Schaltfläche zum Kopieren der Adresse. Das Favicon der Seite wird, wenn möglich, automatisch übernommen.</p>
         <?php if (isset($errors['url'])) { ?>
             <p class="field__error" id="url-error"><?= Html::e($errors['url']) ?></p>
         <?php } ?>

@@ -106,6 +106,91 @@
         });
     }
 
+    // Kopiert einen Text (z. B. eine E-Mail-Adresse der wichtigen Links).
+    // Ohne Clipboard-API (Intranet ueber http) uebernimmt das ein Hilfsfeld.
+    function copyText(text, onDone, onFailed) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(onDone, function () {
+                legacyCopyText(text, onDone, onFailed);
+            });
+            return;
+        }
+
+        legacyCopyText(text, onDone, onFailed);
+    }
+
+    function legacyCopyText(text, onDone, onFailed) {
+        var field = document.createElement('textarea');
+        field.value = text;
+        field.setAttribute('readonly', 'readonly');
+        field.style.position = 'fixed';
+        field.style.top = '-1000px';
+        field.style.opacity = '0';
+        document.body.appendChild(field);
+
+        var copied = false;
+        try {
+            field.select();
+            field.setSelectionRange(0, text.length);
+            copied = document.execCommand('copy');
+        } catch (error) {
+            copied = false;
+        }
+
+        document.body.removeChild(field);
+
+        if (copied) {
+            onDone();
+        } else if (onFailed) {
+            onFailed();
+        }
+    }
+
+    function initCopyButtons() {
+        var buttons = document.querySelectorAll('[data-copy-text]');
+
+        Array.prototype.forEach.call(buttons, function (button) {
+            var text = button.getAttribute('data-copy-text') || '';
+            if (text === '') {
+                return;
+            }
+
+            var label = button.getAttribute('aria-label') || 'Kopieren';
+            var title = button.getAttribute('title') || label;
+            var timer = null;
+
+            function reset() {
+                timer = null;
+                button.classList.remove('is-copied', 'is-copy-failed');
+                button.setAttribute('aria-label', label);
+                button.setAttribute('title', title);
+            }
+
+            function show(state, message) {
+                if (timer !== null) {
+                    window.clearTimeout(timer);
+                }
+
+                button.classList.remove('is-copied', 'is-copy-failed');
+                button.classList.add(state);
+                button.setAttribute('aria-label', message);
+                button.setAttribute('title', message);
+                timer = window.setTimeout(reset, 2000);
+            }
+
+            // Ohne JavaScript bleibt die Schaltflaeche verborgen.
+            button.hidden = false;
+
+            button.addEventListener('click', function () {
+                copyText(text, function () {
+                    show('is-copied', 'Kopiert');
+                }, function () {
+                    show('is-copy-failed', 'Kopieren nicht möglich');
+                });
+            });
+        });
+    }
+
     function announcementStore() {
         try {
             return window.localStorage;
@@ -337,6 +422,7 @@
         initTheme();
         initConfirmations();
         initColorFields();
+        initCopyButtons();
         initAnnouncements();
         initAnnouncementMenu();
         initNavToggle();

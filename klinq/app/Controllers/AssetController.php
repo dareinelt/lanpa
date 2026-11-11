@@ -321,7 +321,7 @@ final class AssetController extends BaseController
             'activeNav' => 'assets',
             'row' => $row,
             'types' => $this->types->all(true),
-            'categories' => $this->types->categories(null, true),
+            'categories' => $this->types->selectableCategories($row !== null && $row['asset_category_id'] !== null ? (int) $row['asset_category_id'] : null),
             'statuses' => $this->statuses->all(true),
             'manufacturers' => $this->manufacturers->activeForSelect(),
             'articles' => $this->articles->activeForSelect(),

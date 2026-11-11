@@ -126,8 +126,8 @@ final class ArticleController extends CrudController
     {
         return [
             'manufacturers' => $this->manufacturers->activeForSelect(),
-            'assetTypes' => $this->assetTypes->all(true),
-            'categories' => $this->assetTypes->categories(null, true),
+            'assetTypes' => $this->assetTypes->selectable($row !== null ? (int) $row['asset_type_id'] : null),
+            'categories' => $this->assetTypes->selectableCategories($row !== null && $row['asset_category_id'] !== null ? (int) $row['asset_category_id'] : null),
         ];
     }
 }

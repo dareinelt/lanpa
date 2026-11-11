@@ -7,12 +7,16 @@ INSERT INTO roles (name, label) VALUES
     ('readonly', 'Nur lesen')
 ON DUPLICATE KEY UPDATE label = VALUES(label);
 
-INSERT INTO asset_types (code, name, inventory_prefix, has_serial_number, has_mac_address, has_imei, supports_licenses, icon, sort_order) VALUES
-    ('PC', 'PC / Endgerät', 'PC', 1, 1, 0, 1, 'laptop', 10),
-    ('MD', 'Mobilgerät', 'MD', 1, 1, 1, 1, 'phone', 20),
-    ('NET', 'Netzwerkgerät', 'NET', 1, 1, 0, 0, 'network', 30),
-    ('ZUB', 'Zubehör / Peripherie', 'ZUB', 1, 0, 0, 0, 'box', 40)
-ON DUPLICATE KEY UPDATE name = VALUES(name), sort_order = VALUES(sort_order);
+-- Assettypen und Kategorien sind Kataloge („Auswertung & System → Kataloge“) und werden nur in eine
+-- leere Tabelle eingespielt; danach überschreibt der Seeder keine im Katalog gepflegten Einträge mehr.
+INSERT INTO asset_types (code, name, inventory_prefix, has_serial_number, has_mac_address, has_imei, supports_licenses, icon, sort_order)
+SELECT v.* FROM (
+    SELECT 'PC' AS code, 'PC / Endgerät' AS name, 'PC' AS inventory_prefix, 1 AS has_serial_number, 1 AS has_mac_address, 0 AS has_imei, 1 AS supports_licenses, 'laptop' AS icon, 10 AS sort_order UNION ALL
+    SELECT 'MD', 'Mobilgerät', 'MD', 1, 1, 1, 1, 'phone', 20 UNION ALL
+    SELECT 'NET', 'Netzwerkgerät', 'NET', 1, 1, 0, 0, 'network', 30 UNION ALL
+    SELECT 'ZUB', 'Zubehör / Peripherie', 'ZUB', 1, 0, 0, 0, 'box', 40
+) v
+WHERE NOT EXISTS (SELECT 1 FROM asset_types);
 
 INSERT IGNORE INTO asset_categories (asset_type_id, name, sort_order)
 SELECT t.id, c.name, c.sort_order FROM asset_types t
@@ -34,7 +38,8 @@ JOIN (
     SELECT 'ZUB', 'Maus', 50 UNION ALL
     SELECT 'ZUB', 'Headset', 60 UNION ALL
     SELECT 'ZUB', 'Netzteil', 70
-) c ON c.code = t.code;
+) c ON c.code = t.code
+WHERE NOT EXISTS (SELECT 1 FROM asset_categories);
 
 INSERT INTO asset_statuses (code, name, color, is_available, is_final, sort_order) VALUES
     ('in_stock', 'Lagerbestand', 'success', 1, 0, 10),

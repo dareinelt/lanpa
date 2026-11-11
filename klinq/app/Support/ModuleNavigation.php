@@ -380,6 +380,9 @@ final class ModuleNavigation
             // Kalender: für alle Agenten sichtbar, unabhängig vom Aufgabenrecht
             $items[] = self::section('Kalender');
             $items[] = self::link('helpdesk-kalender', '/helpdesk/kalender', 'calendar', 'Kalender');
+            // Kontaktverzeichnis: gemeinsames Adressbuch aller Agenten, direkt unter dem Kalender
+            $items[] = self::section('Kontakte');
+            $items[] = self::link('helpdesk-kontakte', '/helpdesk/kontakte', 'contacts', 'Kontaktverzeichnis');
             if ($can('helpdesk.reports') || $can('helpdesk.categories') || $can('helpdesk.admin')) {
                 $items[] = self::section('Auswertung & System');
                 if ($can('helpdesk.reports')) {

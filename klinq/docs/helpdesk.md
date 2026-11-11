@@ -832,6 +832,46 @@ Routen: `GET /helpdesk/kalender`, `GET /helpdesk/kalender/neu`, `POST /helpdesk/
 `POST /helpdesk/kalender/{id}/loeschen`, `GET /helpdesk/tickets/{id}/termin-vorschlaege` (JSON),
 `POST /helpdesk/tickets/{id}/termin`. Tabelle `helpdesk_calendar_events` (Migration 038).
 
+## Kontaktverzeichnis
+
+Der Navigationspunkt **Kontaktverzeichnis** (Abschnitt „Kontakte“, direkt unter dem Kalender) ist ein über alle
+Agenten geteiltes Adressbuch für wichtige Kontakte – z. B. Hersteller-Hotlines, Dienstleister und Ansprechpartner
+externer Firmen. Jeder Agent darf lesen (`helpdesk.view`) und schreiben (anlegen, ändern, löschen mit
+`helpdesk.update`, das alle Help-Desk-Rollen haben); Portalbenutzer sehen das Verzeichnis nicht.
+
+- **Felder**: **Firma**, **Vorname** und **Name** sind Pflicht. Unter „Erreichbarkeit“ ist mindestens eine
+  **Rufnummer** (Telefon oder Mobil) **oder** eine **E-Mail-Adresse** anzugeben. Optional sind **Stichworte** und eine
+  **Bemerkung** (z. B. Kundennummer, Servicezeiten).
+- **Stichworte (Tags)**: kommagetrennt eingeben, vorhandene Stichworte werden beim Tippen vorgeschlagen. Doppelungen
+  (ohne Groß-/Kleinschreibung) und ein führendes „#“ werden entfernt; höchstens 20 Stichworte zu je 50 Zeichen.
+  Ein Klick auf ein Stichwort in der Liste filtert danach, ebenso die Auswahl „Stichwort“ neben der Suche.
+- **Sortierung**: immer alphabetisch nach Firma, innerhalb einer Firma nach Name und Vorname. Folgezeilen derselben
+  Firma zeigen den Firmennamen zurückgenommen, damit die Gruppierung erkennbar bleibt.
+- **Suche** über **alle Felder** einschließlich Stichworten und Bemerkung. Mehrere Wörter müssen alle passen
+  (in beliebigen Feldern, z. B. „Mustermann RPDoc“). Rufnummern und E-Mail-Adressen sind anklickbar (`tel:`/`mailto:`).
+- **Ähnlichkeitsfunktion**: Findet die Suche einen Kontakt nicht wörtlich, greifen ähnliche Treffer – sie stehen
+  in derselben alphabetischen Liste und sind mit dem Badge **„ähnlich“** markiert; ein Hinweis über der Tabelle nennt
+  ihre Anzahl. Ein Kontakt der Firma „RPDoc“ wird so auch mit „rp doc“ oder „rpdok“ gefunden:
+  - Leer- und Satzzeichen werden ignoriert („rp doc“, „Rp-Doc“ → „RPDoc“; „053112345“ → „0531 123-45“),
+  - kleine Tippfehler werden toleriert (ab 4 Zeichen ein, ab 8 Zeichen zwei abweichende Zeichen, auch am Wortanfang
+    während des Tippens),
+  - gleich klingende Wörter werden über die Kölner Phonetik erkannt („Maier“ → „Meyer“),
+  - Umlaute gelten als ausgeschrieben („Röntgen“ = „Roentgen“).
+  Ziffernfolgen (Rufnummern) werden nie unscharf verglichen, damit „12346“ keine Nummer „12345“ trifft.
+  Die Ähnlichkeitssuche läuft in PHP über das gesamte Verzeichnis (`App\Support\FuzzySearch`); sie ist auf ein
+  Adressbuch mit einigen tausend Einträgen ausgelegt.
+- Alle Änderungen werden im Audit-Log protokolliert (`helpdesk_contact`).
+
+![Kontaktverzeichnis, alphabetisch nach Firma mit Rufnummern, E-Mail und Stichworten](screenshots/helpdesk-kontakte-liste.png)
+
+![Ähnlichkeitssuche: „rpdok“ findet die Kontakte der Firma RPDoc, markiert mit „ähnlich“](screenshots/helpdesk-kontakte-aehnlich.png)
+
+![Neuer Kontakt: ohne Rufnummer und E-Mail-Adresse wird die Gruppe „Erreichbarkeit“ als fehlerhaft markiert](screenshots/helpdesk-kontakte-neu.png)
+
+Routen: `GET /helpdesk/kontakte` (`?q=`, `?tag=`, `?page=`), `GET /helpdesk/kontakte/neu`, `POST /helpdesk/kontakte`,
+`GET|POST /helpdesk/kontakte/{id}`, `POST /helpdesk/kontakte/{id}/loeschen`. Tabellen `helpdesk_contacts` und
+`helpdesk_contact_tags` (Migration 039).
+
 ## Automatisierung
 
 - **Vorlagen** (`ticket_templates`): vorbelegte Felder für Portal und Agenten, optional auf Rollen/Portal beschränkt.

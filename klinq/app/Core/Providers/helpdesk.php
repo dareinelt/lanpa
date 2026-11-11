@@ -10,6 +10,7 @@ use App\Controllers\Helpdesk\KnowledgeArticleAttachmentController;
 use App\Controllers\Helpdesk\KnowledgeBaseController;
 use App\Controllers\Helpdesk\PortalController;
 use App\Controllers\Helpdesk\HelpdeskCalendarController;
+use App\Controllers\Helpdesk\HelpdeskContactController;
 use App\Controllers\Helpdesk\HelpdeskSupportShiftController;
 use App\Controllers\Helpdesk\QuickReportController;
 use App\Controllers\Helpdesk\TicketAttachmentController;
@@ -28,6 +29,7 @@ use App\Repositories\CostCenterRepository;
 use App\Repositories\DocumentRepository;
 use App\Repositories\EmployeeRepository;
 use App\Repositories\HelpdeskCalendarRepository;
+use App\Repositories\HelpdeskContactRepository;
 use App\Repositories\HelpdeskSupportShiftRepository;
 use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\LocationRepository;
@@ -61,6 +63,7 @@ use App\Services\Helpdesk\HelpdeskAdminService;
 use App\Services\Helpdesk\CalendarDateSuggestionService;
 use App\Services\Helpdesk\HelpdeskAiService;
 use App\Services\Helpdesk\HelpdeskCalendarService;
+use App\Services\Helpdesk\HelpdeskContactService;
 use App\Services\Helpdesk\HelpdeskSchedulerService;
 use App\Services\Helpdesk\KnowledgeArticleAttachmentService;
 use App\Services\Helpdesk\KnowledgeBaseService;
@@ -110,7 +113,7 @@ return static function (Container $c): void {
         TicketRelationRepository::class, TicketTemplateRepository::class, TicketRuleRepository::class, TicketReportRepository::class,
         KnowledgeBaseRepository::class, HelpdeskSupportShiftRepository::class, TaskRepository::class,
         TaskCategoryRepository::class, TaskCommentRepository::class, TaskJournalRepository::class,
-        TaskAttachmentRepository::class, HelpdeskCalendarRepository::class,
+        TaskAttachmentRepository::class, HelpdeskCalendarRepository::class, HelpdeskContactRepository::class,
     ] as $repository) {
         $c->singleton($repository, static fn (Container $c): object => new $repository($c->get(PDO::class)));
     }
@@ -324,6 +327,13 @@ return static function (Container $c): void {
         $c->get(CurrentUser::class),
         $c->get(AuditLogService::class),
         (string) $c->get(Config::class)->get('app.timezone', 'Europe/Berlin')
+    ));
+
+    // Kontaktverzeichnis des Help Desk (gemeinsames Adressbuch aller Agenten)
+    $c->singleton(HelpdeskContactService::class, static fn (Container $c): HelpdeskContactService => new HelpdeskContactService(
+        $c->get(HelpdeskContactRepository::class),
+        $c->get(CurrentUser::class),
+        $c->get(AuditLogService::class)
     ));
 
     // Postfach-Client je Konfiguration aus der Administration (imap = Socket-IMAP-Client, file = .eml-Verzeichnis)
@@ -608,5 +618,10 @@ return static function (Container $c): void {
         $c->get(HelpdeskCalendarService::class),
         $c->get(CalendarDateSuggestionService::class),
         $c->get(TicketService::class)
+    ));
+    $c->singleton(HelpdeskContactController::class, static fn (Container $c): HelpdeskContactController => new HelpdeskContactController(
+        $c->get(View::class),
+        $c->get(CurrentUser::class),
+        $c->get(HelpdeskContactService::class)
     ));
 };

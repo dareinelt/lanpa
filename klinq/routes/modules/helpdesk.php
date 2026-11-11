@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Controllers\Helpdesk\HelpdeskAdminController;
 use App\Controllers\Helpdesk\HelpdeskCalendarController;
+use App\Controllers\Helpdesk\HelpdeskContactController;
 use App\Controllers\Helpdesk\HelpdeskApiController;
 use App\Controllers\Helpdesk\HelpdeskDashboardController;
 use App\Controllers\Helpdesk\HelpdeskReportController;
@@ -33,6 +34,7 @@ return static function (Router $router, Container $c): void {
     $tasks = static fn (): TaskController => $c->get(TaskController::class);
     $taskFiles = static fn (): TaskAttachmentController => $c->get(TaskAttachmentController::class);
     $calendar = static fn (): HelpdeskCalendarController => $c->get(HelpdeskCalendarController::class);
+    $contacts = static fn (): HelpdeskContactController => $c->get(HelpdeskContactController::class);
     $files = static fn (): TicketAttachmentController => $c->get(TicketAttachmentController::class);
     $kb = static fn (): KnowledgeBaseController => $c->get(KnowledgeBaseController::class);
     $kbFiles = static fn (): KnowledgeArticleAttachmentController => $c->get(KnowledgeArticleAttachmentController::class);
@@ -107,6 +109,14 @@ return static function (Router $router, Container $c): void {
     $router->get('/helpdesk/kalender/{id}', static fn (Request $r): Response => $calendar()->edit($r), 'helpdesk.view');
     $router->post('/helpdesk/kalender/{id}', static fn (Request $r): Response => $calendar()->update($r), 'helpdesk.update');
     $router->post('/helpdesk/kalender/{id}/loeschen', static fn (Request $r): Response => $calendar()->delete($r), 'helpdesk.update');
+
+    // Kontaktverzeichnis des Help Desk – gemeinsames Adressbuch, jeder Agent darf lesen und schreiben
+    $router->get('/helpdesk/kontakte', static fn (Request $r): Response => $contacts()->index($r), 'helpdesk.view');
+    $router->get('/helpdesk/kontakte/neu', static fn (Request $r): Response => $contacts()->create($r), 'helpdesk.update');
+    $router->post('/helpdesk/kontakte', static fn (Request $r): Response => $contacts()->store($r), 'helpdesk.update');
+    $router->get('/helpdesk/kontakte/{id}', static fn (Request $r): Response => $contacts()->edit($r), 'helpdesk.view');
+    $router->post('/helpdesk/kontakte/{id}', static fn (Request $r): Response => $contacts()->update($r), 'helpdesk.update');
+    $router->post('/helpdesk/kontakte/{id}/loeschen', static fn (Request $r): Response => $contacts()->delete($r), 'helpdesk.update');
 
     $router->get('/helpdesk/aufgaben', static fn (Request $r): Response => $tasks()->index($r), 'helpdesk.tasks');
     $router->get('/helpdesk/aufgaben/meine', static fn (Request $r): Response => $tasks()->mine($r), 'helpdesk.tasks');

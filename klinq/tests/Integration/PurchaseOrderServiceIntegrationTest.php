@@ -183,7 +183,8 @@ final class PurchaseOrderServiceIntegrationTest extends DatabaseTestCase
     {
         $id = $this->service()->create(['supplier_id' => (string) $this->supplierId]);
         $e = $this->assertThrows(ValidationException::class, fn () => $this->service()->addItem($id, $this->order($id), ['description' => 'Irgendwas', 'quantity' => '1', 'creates_assets' => '1']));
-        $this->assertTrue(isset($e->errors()['asset_type_id']));
+        // Assets erzeugende Positionen brauchen einen Stammartikel; der Assettyp wird daraus abgeleitet
+        $this->assertTrue(isset($e->errors()['article_id']));
 
         $e = $this->assertThrows(ValidationException::class, fn () => $this->service()->addItem($id, $this->order($id), ['quantity' => '1']));
         $this->assertTrue(isset($e->errors()['description']));

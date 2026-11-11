@@ -124,6 +124,8 @@ Artikel, die nicht inventarisiert, sondern nur als **Menge** geführt werden (To
 3. **Wareneingang**: Die Lieferung erhöht den Bestand automatisch.
 4. **Ausgabe/Inventur**: In der Übersicht den neuen Bestand eintragen und speichern (`POST /consumables/{id}/stock`, Recht `articles.manage`, Audit-Log *Bestand gesetzt* mit altem und neuem Wert).
 
+![Verbrauchsmaterial](screenshots/consumables.png)
+
 Die Übersicht **Bestand → Verbrauchsmaterial** (`/consumables`, Recht `articles.view`) listet alle Verbrauchsartikel mit Bestand, Mindestbestand und Status (*nachbestellen* / *ausreichend* / *kein Mindestbestand*), unterschreitende Artikel zuerst; filterbar nach Text und „Am/unter Mindestbestand“.
 
 - Positionen mit einem Verbrauchsartikel erzeugen **nie** Assets oder Inventarnummern – das Häkchen *erzeugt Assets* wird beim Speichern automatisch entfernt und die Position auf der Bestellseite als *Verbrauchsmaterial* gekennzeichnet.

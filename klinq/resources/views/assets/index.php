@@ -94,7 +94,7 @@
         <tbody>
         <?php foreach ($rows as $r): $warrantyExpired = $r['warranty_until'] !== null && $r['warranty_until'] < date('Y-m-d'); ?>
             <tr class="is-clickable<?= (int) $r['status_final'] ? ' is-muted' : '' ?>" data-href="/assets/<?= (int) $r['id'] ?>">
-                <td class="mono"><strong><?= e(asset_number($r)) ?></strong><?= (int) $r['is_legacy'] ? ' <span class="text-muted text-xs" title="Nachinventarisierter Altbestand">Alt</span>' : '' ?></td>
+                <td class="mono"><?= (string) ($r['inventory_number'] ?? '') !== '' ? '<strong>' . e($r['inventory_number']) . '</strong>' : badge('Lagerartikel', 'neutral') ?><?= (int) $r['is_legacy'] ? ' <span class="text-muted text-xs" title="Nachinventarisierter Altbestand">Alt</span>' : '' ?></td>
                 <td><?= icon($r['asset_type_icon'] ?: 'box', 'icon icon-muted') ?> <?= e($r['category_name'] ?? $r['asset_type_name']) ?></td>
                 <td><?= e($r['name'] ?: ($r['article_name'] ?? '–')) ?><?= $r['manufacturer_name'] ? '<br><span class="text-muted text-sm">' . e($r['manufacturer_name']) . '</span>' : '' ?></td>
                 <td class="mono text-sm"><?= e($r['serial_number'] ?? '–') ?></td>

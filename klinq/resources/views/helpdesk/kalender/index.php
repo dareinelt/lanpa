@@ -3,11 +3,16 @@ use App\Services\Helpdesk\HelpdeskCalendarService as Cal;
 
 $view = $range['view'];
 $url = static fn (string $v, string $d): string => '/helpdesk/kalender?ansicht=' . rawurlencode($v) . '&datum=' . rawurlencode($d);
-$eventUrl = static fn (array $e): string => '/helpdesk/kalender/' . (int) $e['id'];
+$eventUrl = static fn (array $e): string => '/helpdesk/kalender/' . (int) $e['id']
+    . (!empty($e['is_series']) && (string) ($e['occurrence'] ?? '') !== '' ? '?termin=' . rawurlencode((string) $e['occurrence']) : '');
 $newUrl = static fn (string $d, ?string $t = null): string => '/helpdesk/kalender/neu?datum=' . rawurlencode($d) . ($t !== null ? '&zeit=' . rawurlencode($t) : '&ganztags=1');
 $isTodayInRange = in_array($today, $range['days'], true);
 $weekdayShort = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-$eventClass = static fn (array $e): string => 'hd-cal-event' . (!empty($e['ticket_id']) ? ' is-ticket' : '');
+$eventClass = static fn (array $e): string => 'hd-cal-event' . (!empty($e['ticket_id']) ? ' is-ticket' : '') . (!empty($e['is_series']) ? ' is-series' : '');
+/** Kennzeichnung von Serienterminen (Vorkommen und abweichende Einzeltermine). */
+$seriesMark = static fn (array $e): string => empty($e['is_series'])
+    ? ''
+    : '<span class="hd-cal-repeat" title="' . e('Serientermin: ' . Cal::recurrenceLabel($e)) . '">' . icon('refresh', 'icon icon-xs') . '</span>';
 $eventTitle = static function (array $e): string {
     $parts = [Cal::timeLabel($e), (string) $e['title']];
     if (!empty($e['location'])) {
@@ -16,9 +21,13 @@ $eventTitle = static function (array $e): string {
     if (!empty($e['ticket_number'])) {
         $parts[] = 'Ticket ' . $e['ticket_number'];
     }
+    if (!empty($e['is_series'])) {
+        $parts[] = 'Serie: ' . Cal::recurrenceLabel($e);
+    }
 
     return implode(' · ', $parts);
 };
+$hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_series'])) !== [];
 ?>
 <div class="page-header">
     <div>
@@ -75,7 +84,7 @@ $eventTitle = static function (array $e): string {
                 <?php foreach ($shown as $ev): ?>
                     <a class="<?= e($eventClass($ev)) ?><?= !empty($ev['all_day']) ? ' is-allday' : '' ?>" href="<?= e($eventUrl($ev)) ?>" title="<?= e($eventTitle($ev)) ?>">
                         <?php if (empty($ev['all_day'])): ?><span class="hd-cal-event-time"><?= e($ev['start_local']->format('Y-m-d') === $day ? $ev['start_local']->format('H:i') : '…') ?></span><?php endif; ?>
-                        <span class="hd-cal-event-title"><?= e($ev['title']) ?></span>
+                        <?= $seriesMark($ev) ?><span class="hd-cal-event-title"><?= e($ev['title']) ?></span>
                     </a>
                 <?php endforeach; ?>
                 <?php if ($more > 0): ?><a class="hd-cal-more" href="<?= e($url('tag', $day)) ?>">+<?= $more ?> weitere</a><?php endif; ?>
@@ -102,7 +111,7 @@ $eventTitle = static function (array $e): string {
             <?php foreach ($range['days'] as $day): ?>
                 <div class="hd-cal-allday-cell<?= $day === $today ? ' is-today' : '' ?>">
                     <?php foreach (Cal::onDay($events, $day, $timezone, true) as $ev): ?>
-                        <a class="<?= e($eventClass($ev)) ?> is-allday" href="<?= e($eventUrl($ev)) ?>" title="<?= e($eventTitle($ev)) ?>"><span class="hd-cal-event-title"><?= e($ev['title']) ?></span></a>
+                        <a class="<?= e($eventClass($ev)) ?> is-allday" href="<?= e($eventUrl($ev)) ?>" title="<?= e($eventTitle($ev)) ?>"><?= $seriesMark($ev) ?><span class="hd-cal-event-title"><?= e($ev['title']) ?></span></a>
                     <?php endforeach; ?>
                     <?php if ($canEdit): ?><a class="hd-cal-allday-add" href="<?= e($newUrl($day)) ?>" aria-label="Ganztägigen Termin am <?= e(Cal::longDay($day)) ?> anlegen"></a><?php endif; ?>
                 </div>
@@ -126,7 +135,7 @@ $eventTitle = static function (array $e): string {
                         <a class="<?= e($eventClass($ev)) ?> is-timed<?= $item['height'] < 45 ? ' is-short' : '' ?><?= $ev['end_local'] < new \DateTimeImmutable('now', $timezone) ? ' is-past' : '' ?>" href="<?= e($eventUrl($ev)) ?>" title="<?= e($eventTitle($ev)) ?>"
                            data-top="<?= (int) $item['top'] ?>" data-height="<?= (int) $item['height'] ?>" data-col="<?= (int) $item['column'] ?>" data-cols="<?= (int) $item['columns'] ?>">
                             <span class="hd-cal-event-time"><?= e($item['continues_before'] ? '… ' . $ev['end_local']->format('H:i') : $ev['start_local']->format('H:i') . '–' . $ev['end_local']->format('H:i')) ?></span>
-                            <span class="hd-cal-event-title"><?php if (!empty($ev['ticket_id'])): ?><?= icon('ticket', 'icon icon-xs') ?> <?php endif; ?><?= e($ev['title']) ?></span>
+                            <span class="hd-cal-event-title"><?php if (!empty($ev['ticket_id'])): ?><?= icon('ticket', 'icon icon-xs') ?> <?php endif; ?><?= $seriesMark($ev) ?><?= e($ev['title']) ?></span>
                             <?php if (!empty($ev['location'])): ?><span class="hd-cal-event-meta"><?= e($ev['location']) ?></span><?php endif; ?>
                         </a>
                     <?php endforeach; ?>
@@ -139,6 +148,7 @@ $eventTitle = static function (array $e): string {
     <div class="hd-cal-legend text-xs text-muted">
         <span><span class="hd-cal-swatch"></span> Manuell eingetragen</span>
         <span><span class="hd-cal-swatch is-ticket"></span> Aus Ticket</span>
+        <?php if ($hasSeries): ?><span><?= icon('refresh', 'icon icon-xs') ?> Serientermin</span><?php endif; ?>
         <?php if ($events === []): ?><span>· Keine Termine in diesem Zeitraum</span><?php endif; ?>
     </div>
 </div>

@@ -119,6 +119,25 @@
         return (parseInt(pb[0], 10) * 60 + parseInt(pb[1], 10)) - (parseInt(pa[0], 10) * 60 + parseInt(pa[1], 10));
     }
 
+    // ------------------------------------------------------------------ Serientermine
+    var SERIES_UNITS = { daily: "Tage", weekly: "Wochen", monthly: "Monate", yearly: "Jahre" };
+
+    function initRecurrence(form) {
+        const rule = form.querySelector("[data-hd-cal-recurrence]");
+        if (!rule) { return; }
+        const extras = form.querySelectorAll("[data-hd-cal-series-extra]");
+        const unit = form.querySelector("[data-hd-cal-interval-unit]");
+
+        function apply() {
+            const enabled = rule.value !== "";
+            extras.forEach(function (field) { field.hidden = !enabled; });
+            if (unit) { unit.textContent = SERIES_UNITS[rule.value] || SERIES_UNITS.weekly; }
+        }
+
+        rule.addEventListener("change", apply);
+        apply();
+    }
+
     // ------------------------------------------------------------------ Dialog „Termin anlegen“ im Ticket
     function formatDate(iso) {
         const p = iso.split("-");
@@ -280,6 +299,7 @@
     // ------------------------------------------------------------------ Start
     document.querySelectorAll("[data-hd-cal]").forEach(initGrid);
     document.querySelectorAll("[data-hd-cal-when]").forEach(function (el) { initFields(el.closest("form") || el); });
+    document.querySelectorAll("[data-hd-cal-series]").forEach(function (el) { initRecurrence(el.closest("form") || el); });
     document.querySelectorAll("[data-hd-cal-ticket]").forEach(initTicketDialog);
     document.querySelectorAll("dialog[data-dialog-autoopen]").forEach(function (dialog) {
         if (typeof dialog.showModal === "function") { dialog.showModal(); }

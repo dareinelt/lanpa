@@ -92,29 +92,51 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
 
     public function edit(Request $request): Response
     {
-        $event = $this->calendar->get($request->paramInt('id'));
+        $id = $request->paramInt('id');
+        $event = $this->calendar->get($id);
+        $occurrence = $request->queryString('termin');
+        $values = $occurrence !== ''
+            ? $this->calendar->occurrenceValues($id, $occurrence)
+            : HelpdeskCalendarService::formValues($event);
 
-        return $this->renderForm($event, HelpdeskCalendarService::formValues($event));
+        return $this->renderForm($event, $values, $occurrence);
     }
 
     public function update(Request $request): Response
     {
         $id = $request->paramInt('id');
+        $scope = $this->scope($request);
         $event = null;
-        $response = $this->attempt($request, function () use ($request, $id, &$event): void {
-            $event = $this->calendar->update($id, $request->all());
+        $response = $this->attempt($request, function () use ($request, $id, $scope, &$event): void {
+            $event = $this->calendar->update($id, $request->all(), $scope);
         }, '/helpdesk/kalender/' . $id);
 
-        return $response ?? $this->respond($request, 'Termin gespeichert.', $this->calendarUrl($event));
+        return $response ?? $this->respond(
+            $request,
+            $scope === HelpdeskCalendarService::SCOPE_OCCURRENCE ? 'Einzelner Termin der Serie gespeichert.' : 'Termin gespeichert.',
+            $this->calendarUrl($event, $scope === HelpdeskCalendarService::SCOPE_OCCURRENCE ? $request->string('occurrence') : '')
+        );
     }
 
     public function delete(Request $request): Response
     {
         $id = $request->paramInt('id');
+        $scope = $this->scope($request);
+        $occurrence = $request->string('termin');
         $event = $this->calendar->get($id);
-        $this->calendar->delete($id);
+        $this->calendar->delete($id, $scope, $occurrence !== '' ? $occurrence : null);
 
-        return $this->respond($request, 'Termin gelöscht.', $this->calendarUrl($event));
+        $message = $scope === HelpdeskCalendarService::SCOPE_OCCURRENCE ? 'Termin der Serie gelöscht.' : 'Termin gelöscht.';
+
+        return $this->respond($request, $message, $this->calendarUrl($event, $scope === HelpdeskCalendarService::SCOPE_OCCURRENCE ? $occurrence : ''));
+    }
+
+    /** Umfang einer Änderung an einem Serientermin; ohne Angabe gilt die ganze Serie. */
+    private function scope(Request $request): string
+    {
+        return $request->string('scope') === HelpdeskCalendarService::SCOPE_OCCURRENCE
+            ? HelpdeskCalendarService::SCOPE_OCCURRENCE
+            : HelpdeskCalendarService::SCOPE_SERIES;
     }
 
     /** Datumsvorschläge aus dem Tickettext (JSON für den Dialog „Termin anlegen“). */
@@ -150,7 +172,7 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
      * @param array<string,mixed>|null $event
      * @param array<string,string> $values
      */
-    private function renderForm(?array $event, array $values): Response
+    private function renderForm(?array $event, array $values, string $occurrence = ''): Response
     {
         $old = $_SESSION['_old_input'] ?? [];
         foreach (array_keys($values + ['location' => '', 'description' => '']) as $key) {
@@ -161,6 +183,10 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
         if ($old !== [] && !array_key_exists('all_day', $old)) {
             $values['all_day'] = '0';
         }
+        // Bei Serienterminen wird beim Speichern gefragt, ob nur dieser Termin gilt (Vorgabe) oder die Serie.
+        $isSeries = $event !== null && !empty($event['recurrence']);
+        $values['occurrence'] = (string) ($old['occurrence'] ?? ($occurrence !== '' ? $occurrence : ($values['occurrence'] ?? '')));
+        $values['scope'] = (string) ($old['scope'] ?? ($isSeries ? HelpdeskCalendarService::SCOPE_OCCURRENCE : HelpdeskCalendarService::SCOPE_SERIES));
 
         return $this->render('helpdesk.kalender.form', [
             'title' => $event === null ? 'Neuer Termin' : 'Termin bearbeiten',
@@ -174,8 +200,11 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
     }
 
     /** @param array<string,mixed>|null $event */
-    private function calendarUrl(?array $event): string
+    private function calendarUrl(?array $event, string $day = ''): string
     {
+        if ($day !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) === 1) {
+            return '/helpdesk/kalender?datum=' . $day;
+        }
         if ($event === null) {
             return '/helpdesk/kalender';
         }

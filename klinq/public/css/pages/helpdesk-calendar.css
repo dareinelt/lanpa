@@ -302,10 +302,37 @@ a.hd-cal-slot:hover { background-color: var(--color-primary-soft); }
     color: var(--color-text);
 }
 .hd-cal-when { margin-bottom: var(--space-4); }
-.hd-cal-delete { margin-top: var(--space-4); }
+.hd-cal-delete { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
+.hd-cal-delete form { margin: 0; }
 .hd-cal-readonly { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-2) var(--space-4); margin: 0; }
 .hd-cal-readonly dt { color: var(--color-text-muted); }
 .hd-cal-readonly dd { margin: 0; white-space: pre-line; }
+
+/* ------------------------------------------------------------------ Serientermine */
+.hd-cal-interval { display: flex; align-items: center; gap: var(--space-2); }
+.hd-cal-interval input { flex: 0 0 5.5rem; min-width: 0; }
+.hd-cal-series-note { display: flex; align-items: center; gap: var(--space-1); }
+.hd-cal-series-note .icon { color: var(--color-primary); }
+.hd-cal-scope { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); margin: var(--space-4) 0; }
+.hd-cal-scope legend { padding-inline: var(--space-1); font-weight: var(--font-weight-semibold); font-size: var(--font-size-sm); }
+.hd-cal-scope-options { display: grid; gap: var(--space-2); }
+.hd-cal-scope-option {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+}
+.hd-cal-scope-option:has(input:checked) { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.hd-cal-scope-option input { margin-top: 3px; }
+.hd-cal-scope-title { display: block; font-weight: var(--font-weight-semibold); }
+.hd-cal-scope-text { display: block; color: var(--color-text-muted); font-size: var(--font-size-xs); }
+.hd-cal-repeat { color: var(--color-text-muted); margin-inline-end: 3px; }
+.hd-cal-repeat .icon { vertical-align: -2px; }
+.hd-cal-event.is-allday .hd-cal-repeat { color: inherit; }
+.hd-cal-legend .hd-cal-repeat { margin-inline-end: 0; }
 
 .hd-cal-dialog { max-width: 720px; }
 /* Oben verankern: Treffen die Vorschläge ein, wächst der Dialog nach unten statt zu springen. */

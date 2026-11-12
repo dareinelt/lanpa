@@ -691,6 +691,7 @@ $statusTransitions = array_values(array_filter(
                 <p class="form-error hd-cal-choice-error" data-hd-cal-choice-error role="alert" hidden>Bitte eines der erkannten Daten wählen oder ein Datum eintragen.</p>
             </div>
             <?php include __DIR__ . '/../kalender/_fields.php'; ?>
+            <?php $checklistItems = []; include __DIR__ . '/../kalender/_checklist_fields.php'; ?>
         </div>
         <div class="dialog-footer">
             <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>

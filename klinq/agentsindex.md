@@ -47,7 +47,8 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
   sowie eigene Anhänge
 - Kalender (`/helpdesk/kalender`, Navigationspunkt „Kalender“ unter Tickets und Aufgaben, für alle Agenten):
   Ansichten Tag/Arbeitswoche/Monat, manuelle Termine (optional als Serientermin täglich/wöchentlich/monatlich/
-  jährlich mit Abstand und Serienende; Vorkommen werden beim Anzeigen berechnet) und „Termin anlegen“ aus einem
+  jährlich mit Abstand und Serienende; Vorkommen werden beim Anzeigen berechnet), optionale Checkliste je Termin
+  (Punkte je Vorkommen von Agenten zu bestätigen, für alle sichtbar, nicht für künftige Termine) und „Termin anlegen“ aus einem
   Ticket mit Datumsvorschlag aus dem Tickettext über den KI-Endpunkt (mehrere Daten → Auswahl erforderlich); nach
   Übernahme der 1st-/2nd-Level-Zuständigkeit zeigt das Dashboard einmalig ein Overlay mit den Terminen des Tages
 - Kontaktverzeichnis (`/helpdesk/kontakte`, Navigationspunkt „Kontaktverzeichnis“ direkt unter dem Kalender, für
@@ -94,7 +95,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–043), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034), Servicezeiten der SLA (035), Screenshots in der Lösung (036), Grund der Weiterleitung (037), Help-Desk-Kalender (038), Kontaktverzeichnis (039), Assettypen ohne Inventarnummer/Lagerartikel (040), Vorlagenumfang und Berechtigungsgruppe „Help-Desk-Vorlagen“ (041), Serientermine im Help-Desk-Kalender (043) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–044), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034), Servicezeiten der SLA (035), Screenshots in der Lösung (036), Grund der Weiterleitung (037), Help-Desk-Kalender (038), Kontaktverzeichnis (039), Assettypen ohne Inventarnummer/Lagerartikel (040), Vorlagenumfang und Berechtigungsgruppe „Help-Desk-Vorlagen“ (041), Serientermine im Help-Desk-Kalender (043), Checklisten für Kalendertermine (044) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen/Kategorien – nur in leere Tabellen, danach Pflege im Katalog –, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -410,7 +411,13 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   `scope` (`series`/`occurrence`) zwischen ganzer Serie (Einzeltermine werden verworfen, Formulardaten werden vor der
   Prüfung über `shiftInputDates()` vom aufgerufenen Tag auf den ersten Termin zurückverschoben) und einzelnem Vorkommen
   (Wiederholung wird nicht geprüft; `occurrenceDate()` akzeptiert nur echte Vorkommen, vorhandene Einzeltermine je
-  `series_date` werden wiederverwendet). Routen: `GET /helpdesk/kalender`
+  `series_date` werden wiederverwendet). Checkliste (Migration 044): `helpdesk_calendar_checklist_items` (`event_id` →
+  Wurzeltermin der Serie, `position`, `label`) und `helpdesk_calendar_checklist_confirmations` (`item_id`,
+  `occurrence_key` = `''` bei Einzelterminen bzw. lokaler Tag des Vorkommens/`series_date`, `confirmed_by`/
+  `confirmed_by_name`/`confirmed_at`, UNIQUE `(item_id, occurrence_key)`); synchronisiert nur bei
+  `checklist_submitted=1`, `HelpdeskCalendarService::checklist()`/`confirmChecklistItem()` sperren künftige Tage,
+  `POST /helpdesk/kalender/{id}/checkliste` (`confirm`/`revoke` = Punkt-ID, `termin`, `helpdesk.update`).
+  Routen: `GET /helpdesk/kalender`
   (`?ansicht=tag|arbeitswoche|monat&datum=JJJJ-MM-TT`, `helpdesk.view`, Ansicht je Sitzung gemerkt),
   `GET /helpdesk/kalender/neu`, `POST /helpdesk/kalender`, `GET|POST /helpdesk/kalender/{id}`
   (`?termin=JJJJ-MM-TT` wählt das Vorkommen, das Formular gibt es als `occurrence` zurück),

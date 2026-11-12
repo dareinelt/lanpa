@@ -131,6 +131,25 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
         return $this->respond($request, $message, $this->calendarUrl($event, $scope === HelpdeskCalendarService::SCOPE_OCCURRENCE ? $occurrence : ''));
     }
 
+    /** Checklistenpunkt eines Termins bestätigen oder Bestätigung zurücknehmen (je Vorkommen bei Serien). */
+    public function checklist(Request $request): Response
+    {
+        $id = $request->paramInt('id');
+        $occurrence = $request->string('termin');
+        $confirm = $request->string('confirm');
+        $itemId = (int) ($confirm !== '' ? $confirm : $request->string('revoke'));
+        $back = '/helpdesk/kalender/' . $id . (preg_match('/^\d{4}-\d{2}-\d{2}$/', $occurrence) === 1 ? '?termin=' . $occurrence : '');
+        $response = $this->attempt($request, function () use ($id, $itemId, $occurrence, $confirm): void {
+            $this->calendar->confirmChecklistItem($id, $itemId, $occurrence, $confirm !== '');
+        }, $back, false);
+
+        return $response ?? $this->respond(
+            $request,
+            $confirm !== '' ? 'Checklistenpunkt bestätigt.' : 'Bestätigung zurückgenommen.',
+            $back
+        );
+    }
+
     /** Umfang einer Änderung an einem Serientermin; ohne Angabe gilt die ganze Serie. */
     private function scope(Request $request): string
     {
@@ -187,6 +206,9 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
         $isSeries = $event !== null && !empty($event['recurrence']);
         $values['occurrence'] = (string) ($old['occurrence'] ?? ($occurrence !== '' ? $occurrence : ($values['occurrence'] ?? '')));
         $values['scope'] = (string) ($old['scope'] ?? ($isSeries ? HelpdeskCalendarService::SCOPE_OCCURRENCE : HelpdeskCalendarService::SCOPE_SERIES));
+        $checklistItems = array_key_exists('checklist_submitted', $old)
+            ? HelpdeskCalendarService::parseChecklist($old['checklist'] ?? [])
+            : ($event !== null ? $this->calendar->checklistItems($event) : []);
 
         return $this->render('helpdesk.kalender.form', [
             'title' => $event === null ? 'Neuer Termin' : 'Termin bearbeiten',
@@ -194,6 +216,8 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
             'areaLabel' => 'Help Desk',
             'event' => $event,
             'values' => $values,
+            'checklistItems' => $checklistItems,
+            'checklist' => $event !== null ? $this->calendar->checklist($event, $isSeries ? $values['occurrence'] : '') : null,
             'canEdit' => $this->currentUser->can('helpdesk.update'),
             'scripts' => ['/js/helpdesk-calendar.js'],
         ]);

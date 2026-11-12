@@ -28,6 +28,7 @@ use App\Repositories\AssetRepository;
 use App\Repositories\CostCenterRepository;
 use App\Repositories\DocumentRepository;
 use App\Repositories\EmployeeRepository;
+use App\Repositories\HelpdeskCalendarChecklistRepository;
 use App\Repositories\HelpdeskCalendarRepository;
 use App\Repositories\HelpdeskContactRepository;
 use App\Repositories\HelpdeskSupportShiftRepository;
@@ -113,7 +114,7 @@ return static function (Container $c): void {
         TicketRelationRepository::class, TicketTemplateRepository::class, TicketRuleRepository::class, TicketReportRepository::class,
         KnowledgeBaseRepository::class, HelpdeskSupportShiftRepository::class, TaskRepository::class,
         TaskCategoryRepository::class, TaskCommentRepository::class, TaskJournalRepository::class,
-        TaskAttachmentRepository::class, HelpdeskCalendarRepository::class, HelpdeskContactRepository::class,
+        TaskAttachmentRepository::class, HelpdeskCalendarRepository::class, HelpdeskCalendarChecklistRepository::class, HelpdeskContactRepository::class,
     ] as $repository) {
         $c->singleton($repository, static fn (Container $c): object => new $repository($c->get(PDO::class)));
     }
@@ -326,6 +327,7 @@ return static function (Container $c): void {
         $c->get(TicketService::class),
         $c->get(CurrentUser::class),
         $c->get(AuditLogService::class),
+        $c->get(HelpdeskCalendarChecklistRepository::class),
         (string) $c->get(Config::class)->get('app.timezone', 'Europe/Berlin')
     ));
 

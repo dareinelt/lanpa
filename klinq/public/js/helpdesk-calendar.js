@@ -1,6 +1,6 @@
 /*
  * Help-Desk-Kalender: Lage der Termine im Tagesraster, Jetzt-Linie, Formularhilfen (Ganztägig, Ende
- * nachführen), automatisches Termin-Overlay nach Übernahme der Zuständigkeit und der Dialog
+ * nachführen), Checkliste („Checkliste anlegen“), automatisches Termin-Overlay nach Übernahme der Zuständigkeit und der Dialog
  * „Termin anlegen“ im Ticket mit Datumsvorschlägen aus dem Tickettext (KI).
  * Inline-Styles sind per CSP gesperrt; Positionen werden deshalb als CSS-Variablen über das CSSOM gesetzt.
  */
@@ -296,10 +296,78 @@
         });
     }
 
+    // ------------------------------------------------------------------ Checkliste
+    function initChecklist(root) {
+        const open = root.querySelector("[data-hd-cal-checklist-open]");
+        const panel = root.querySelector("[data-hd-cal-checklist-panel]");
+        const rows = root.querySelector("[data-hd-cal-checklist-rows]");
+        const template = root.querySelector("[data-hd-cal-checklist-template]");
+        const add = root.querySelector("[data-hd-cal-checklist-add]");
+        const max = parseInt(root.getAttribute("data-max"), 10) || 30;
+        if (!open || !panel || !rows || !template || !add) { return; }
+        // Zeilenindizes bleiben eindeutig, auch nach Entfernen von Zeilen.
+        let next = rows.children.length;
+
+        function count() { return rows.querySelectorAll("[data-hd-cal-checklist-row]").length; }
+
+        function update() {
+            const empty = count() === 0;
+            panel.hidden = empty;
+            open.hidden = !empty;
+            add.hidden = count() >= max;
+        }
+
+        function bind(row) {
+            const remove = row.querySelector("[data-hd-cal-checklist-remove]");
+            remove.hidden = false;
+            remove.addEventListener("click", function () {
+                const sibling = row.nextElementSibling || row.previousElementSibling;
+                row.remove();
+                update();
+                const field = sibling ? sibling.querySelector('input[type="text"]') : null;
+                (field || open).focus();
+            });
+        }
+
+        function addRow() {
+            if (count() >= max) { return; }
+            const html = template.innerHTML.split("__INDEX__").join(String(next++));
+            rows.insertAdjacentHTML("beforeend", html);
+            const row = rows.lastElementChild;
+            bind(row);
+            update();
+            row.querySelector('input[type="text"]').focus();
+        }
+
+        // Leere Platzhalterzeilen (für Browser ohne JavaScript) entfallen; bei Fehlern bleibt die Liste offen.
+        rows.querySelectorAll("[data-hd-cal-checklist-row]").forEach(function (row) {
+            const label = row.querySelector('input[type="text"]');
+            const id = row.querySelector('input[type="hidden"]');
+            if (!label.value.trim() && !id) {
+                row.remove();
+            } else {
+                bind(row);
+            }
+        });
+        open.addEventListener("click", addRow);
+        add.addEventListener("click", addRow);
+        rows.addEventListener("keydown", function (event) {
+            // Enter im letzten Punkt legt einen neuen Punkt an, statt das Formular abzusenden.
+            if (event.key === "Enter" && event.target.matches('input[type="text"]')) {
+                event.preventDefault();
+                if (event.target.closest("[data-hd-cal-checklist-row]") === rows.lastElementChild && event.target.value.trim()) {
+                    addRow();
+                }
+            }
+        });
+        update();
+    }
+
     // ------------------------------------------------------------------ Start
     document.querySelectorAll("[data-hd-cal]").forEach(initGrid);
     document.querySelectorAll("[data-hd-cal-when]").forEach(function (el) { initFields(el.closest("form") || el); });
     document.querySelectorAll("[data-hd-cal-series]").forEach(function (el) { initRecurrence(el.closest("form") || el); });
+    document.querySelectorAll("[data-hd-cal-checklist]").forEach(initChecklist);
     document.querySelectorAll("[data-hd-cal-ticket]").forEach(initTicketDialog);
     document.querySelectorAll("dialog[data-dialog-autoopen]").forEach(function (dialog) {
         if (typeof dialog.showModal === "function") { dialog.showModal(); }

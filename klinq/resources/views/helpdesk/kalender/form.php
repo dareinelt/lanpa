@@ -35,11 +35,53 @@ $dayLabel = $backDate !== '' ? \App\Services\Helpdesk\HelpdeskCalendarService::l
     <div class="alert alert-info"><?= icon('ticket') ?> Aus Ticket <a href="/helpdesk/tickets/<?= (int) $event['ticket_id'] ?>"><?= e($event['ticket_number'] ?? ('#' . (int) $event['ticket_id'])) ?></a><?= !empty($event['ticket_subject']) ? ' · ' . e($event['ticket_subject']) : '' ?></div>
 <?php endif; ?>
 
+<?php if (!$isNew && $checklist !== null && $checklist['total'] > 0): $checklistDone = $checklist['confirmed'] === $checklist['total']; ?>
+<section class="card hd-cal-checklist" aria-labelledby="hd-cal-checklist-title">
+    <div class="hd-cal-checklist-head">
+        <h2 id="hd-cal-checklist-title" class="card-title"><?= icon('list') ?> Checkliste</h2>
+        <?= badge($checklistDone ? 'Erledigt' : $checklist['confirmed'] . '/' . $checklist['total'] . ' bestätigt', $checklistDone ? 'success' : 'warning') ?>
+    </div>
+    <?php if ($isSeries || $checklist['occurrence'] !== ''): ?>
+        <p class="text-muted text-xs mb-0">Gilt nur für den Termin am <?= e(\App\Services\Helpdesk\HelpdeskCalendarService::longDay($checklist['occurrence'] !== '' ? $checklist['occurrence'] : $backDate)) ?>.</p>
+    <?php endif; ?>
+    <?php if ($checklist['is_future']): ?>
+        <p class="alert alert-info hd-cal-checklist-future"><?= icon('clock') ?> Der Termin liegt in der Zukunft. Die Checkliste kann erst am Termintag abgearbeitet werden.</p>
+    <?php endif; ?>
+    <form method="post" action="/helpdesk/kalender/<?= (int) $event['id'] ?>/checkliste">
+        <?= csrf_field() ?>
+        <input type="hidden" name="termin" value="<?= e($checklist['occurrence']) ?>">
+        <ul class="hd-cal-checklist-items">
+            <?php foreach ($checklist['items'] as $item): ?>
+                <li class="hd-cal-checklist-item<?= $item['is_confirmed'] ? ' is-confirmed' : '' ?>">
+                    <span class="hd-cal-checklist-state" aria-hidden="true"><?= icon($item['is_confirmed'] ? 'check' : 'clock', 'icon icon-sm') ?></span>
+                    <span class="hd-cal-checklist-label">
+                        <?= e($item['label']) ?>
+                        <?php if ($item['is_confirmed']): ?>
+                            <span class="hd-cal-checklist-by text-xs text-muted">Bestätigt von <?= e((string) ($item['confirmed_by_name'] ?? 'unbekannt')) ?> am <?= e($item['confirmed_local']->format('d.m.Y H:i')) ?> Uhr</span>
+                        <?php else: ?>
+                            <span class="hd-cal-checklist-by text-xs text-muted">Offen</span>
+                        <?php endif; ?>
+                    </span>
+                    <?php if ($checklist['can_confirm']): ?>
+                        <?php if ($item['is_confirmed']): ?>
+                            <button type="submit" name="revoke" value="<?= (int) $item['id'] ?>" class="btn btn-ghost btn-sm">Bestätigung zurücknehmen</button>
+                        <?php else: ?>
+                            <button type="submit" name="confirm" value="<?= (int) $item['id'] ?>" class="btn btn-primary btn-sm"><?= icon('check') ?> Bestätigt</button>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                </li>
+            <?php endforeach; ?>
+        </ul>
+    </form>
+</section>
+<?php endif; ?>
+
 <div class="card card-form card-form-wide">
     <?php if ($canEdit): ?>
     <form method="post" action="<?= $isNew ? '/helpdesk/kalender' : '/helpdesk/kalender/' . (int) $event['id'] ?>" novalidate>
         <?= csrf_field() ?>
         <?php include __DIR__ . '/_fields.php'; ?>
+        <?php include __DIR__ . '/_checklist_fields.php'; ?>
         <?php if ($isSeries): ?>
             <input type="hidden" name="occurrence" value="<?= e($day) ?>">
             <fieldset class="hd-cal-scope" data-hd-cal-scope>

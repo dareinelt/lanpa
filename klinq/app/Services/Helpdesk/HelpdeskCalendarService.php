@@ -6,6 +6,7 @@ namespace App\Services\Helpdesk;
 
 use App\Exceptions\NotFoundException;
 use App\Exceptions\ValidationException;
+use App\Repositories\HelpdeskCalendarChecklistRepository;
 use App\Repositories\HelpdeskCalendarRepository;
 use App\Security\CurrentUser;
 use App\Services\AuditLogService;
@@ -22,6 +23,9 @@ use App\Services\AuditLogService;
  * - Serientermine stehen einmal in der Tabelle und werden beim Lesen aufgefächert ({@see eventsIn()}).
  *   Einzelne Termine einer Serie lassen sich abweichend ändern oder absagen; sie verweisen über
  *   `series_parent_id`/`series_date` auf ihren Serientermin ({@see self::SCOPE_OCCURRENCE}).
+ * - Optional trägt ein Termin eine Checkliste („Checkliste anlegen“), deren Punkte der bearbeitende Agent
+ *   als „Bestätigt“ abhakt. Die Punkte hängen am Einzel- bzw. Serientermin und gelten für alle Vorkommen;
+ *   bestätigt wird je Vorkommen ({@see confirmChecklistItem()}).
  */
 final class HelpdeskCalendarService
 {
@@ -44,6 +48,10 @@ final class HelpdeskCalendarService
     private const MAX_DAYS = 31;
     private const MAX_INTERVAL = 99;
 
+    /** Obergrenzen der Checkliste eines Termins. */
+    public const MAX_CHECKLIST_ITEMS = 30;
+    public const MAX_CHECKLIST_LABEL = 300;
+
     /** Obergrenze je Serie und Zeitraum (Schutz vor Endlosschleifen bei täglicher Wiederholung). */
     private const MAX_OCCURRENCES = 400;
 
@@ -55,6 +63,7 @@ final class HelpdeskCalendarService
         private readonly TicketService $tickets,
         private readonly CurrentUser $currentUser,
         private readonly AuditLogService $audit,
+        private readonly HelpdeskCalendarChecklistRepository $checklists,
         private readonly string $timezone = 'Europe/Berlin'
     ) {}
 
@@ -163,7 +172,7 @@ final class HelpdeskCalendarService
         usort($list, static fn (array $a, array $b): int => [empty($a['all_day']) ? 1 : 0, (string) $a['starts_at'], (string) $a['ends_at']]
             <=> [empty($b['all_day']) ? 1 : 0, (string) $b['starts_at'], (string) $b['ends_at']]);
 
-        return array_map(fn (array $e): array => $this->decorate($e), $list);
+        return $this->withChecklistCounts(array_map(fn (array $e): array => $this->decorate($e), $list));
     }
 
     /** Termine des heutigen Tages (lokal), für das Overlay nach Übernahme der Zuständigkeit. @return list<array<string,mixed>> */
@@ -193,23 +202,34 @@ final class HelpdeskCalendarService
     }
 
     /**
-     * @param array<string,mixed> $input title, date, end_date, start_time, end_time, all_day, location, description
+     * @param array<string,mixed> $input title, date, end_date, start_time, end_time, all_day, location, description,
+     *        optional checklist (siehe {@see parseChecklist()}) mit checklist_submitted = 1
      * @return array<string,mixed> Der angelegte Termin
      */
     public function create(array $input, ?int $ticketId = null): array
     {
         $this->currentUser->require('helpdesk.update');
+        $checklist = $this->validateChecklist($input);
         $data = $this->validate($input);
         if ($ticketId !== null) {
             $this->tickets->get($ticketId);
         }
-        $id = $this->events->create($data + [
-            'ticket_id' => $ticketId,
-            'created_by' => $this->currentUser->id(),
-            'created_by_name' => $this->currentUser->displayName() !== '' ? $this->currentUser->displayName() : 'system',
-            'updated_by' => $this->currentUser->id(),
-        ]);
-        $this->audit->log('create', 'helpdesk_calendar_event', $id, $data['title'], null, $data + ['ticket_id' => $ticketId]);
+        $id = $this->events->transaction(function () use ($data, $ticketId, $checklist): int {
+            $id = $this->events->create($data + [
+                'ticket_id' => $ticketId,
+                'created_by' => $this->currentUser->id(),
+                'created_by_name' => $this->currentUser->displayName() !== '' ? $this->currentUser->displayName() : 'system',
+                'updated_by' => $this->currentUser->id(),
+            ]);
+            if ($checklist !== null) {
+                $this->saveChecklist($id, $checklist);
+            }
+
+            return $id;
+        });
+        $labels = $checklist !== null ? array_column($checklist, 'label') : [];
+        $this->audit->log('create', 'helpdesk_calendar_event', $id, $data['title'], null, $data + ['ticket_id' => $ticketId]
+            + ($labels !== [] ? ['checklist' => $labels] : []));
 
         return $this->get($id);
     }
@@ -239,7 +259,25 @@ final class HelpdeskCalendarService
         if ($old === null) {
             throw new NotFoundException('Termin nicht gefunden.');
         }
+        // Die Checkliste gehört zum Einzel- bzw. Serientermin und gilt unabhängig vom Umfang der Änderung.
+        $checklist = $this->validateChecklist($input);
         $parent = $this->parentOf($old);
+        $event = $this->updateEvent($id, $old, $parent, $input, $scope);
+        if ($checklist !== null) {
+            $this->updateChecklist($parent !== null ? (int) $parent['id'] : $id, $checklist);
+        }
+
+        return $event;
+    }
+
+    /**
+     * @param array<string,mixed> $old
+     * @param array<string,mixed>|null $parent
+     * @param array<string,mixed> $input
+     * @return array<string,mixed>
+     */
+    private function updateEvent(int $id, array $old, ?array $parent, array $input, string $scope): array
+    {
         if ($parent !== null && $scope === self::SCOPE_OCCURRENCE) {
             return $this->updateOccurrence($old, $parent, $input);
         }
@@ -296,6 +334,246 @@ final class HelpdeskCalendarService
         }
 
         $this->cancelOccurrence($event, $parent, $this->occurrenceDate($occurrence, $event, $parent));
+    }
+
+    // ------------------------------------------------------------------ Checkliste
+
+    /**
+     * Checklistenpunkte aus dem Formular (`checklist[n][label]`, optional `checklist[n][id]`); leere Zeilen entfallen.
+     * @return list<array{id:?int,label:string}>
+     */
+    public static function parseChecklist(mixed $raw): array
+    {
+        if (!is_array($raw)) {
+            return [];
+        }
+        $items = [];
+        foreach ($raw as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $label = trim(preg_replace('/\s+/u', ' ', (string) ($row['label'] ?? '')) ?? '');
+            if ($label === '') {
+                continue;
+            }
+            $id = (int) ($row['id'] ?? 0);
+            $items[] = ['id' => $id > 0 ? $id : null, 'label' => $label];
+        }
+
+        return $items;
+    }
+
+    /** Punkte der Checkliste eines Termins (am Einzel- bzw. Serientermin). @param array<string,mixed> $event @return list<array<string,mixed>> */
+    public function checklistItems(array $event): array
+    {
+        return $this->checklists->items($this->checklistRootId($event));
+    }
+
+    /**
+     * Checkliste eines Termins für ein Vorkommen: Punkte mit Bestätigung (wer, wann) und Bearbeitbarkeit.
+     * Bei Serienterminen gilt der Stand nur für das aufgerufene Vorkommen; Vorkommen nach dem heutigen
+     * Tag lassen sich noch nicht abhaken.
+     *
+     * @param array<string,mixed> $event
+     * @return array{items:list<array<string,mixed>>,total:int,confirmed:int,occurrence:string,is_future:bool,can_confirm:bool}
+     */
+    public function checklist(array $event, string $occurrence = '', ?\DateTimeImmutable $nowUtc = null): array
+    {
+        $key = $this->checklistKey($event, $occurrence);
+        $day = $this->checklistDay($event, $key);
+        $isFuture = $day > $this->localToday($nowUtc);
+        $tz = $this->timezone();
+        $items = [];
+        $confirmed = 0;
+        foreach ($this->checklists->itemsWithConfirmations($this->checklistRootId($event), $key) as $row) {
+            $row['is_confirmed'] = ($row['confirmed_at'] ?? null) !== null;
+            $row['confirmed_local'] = $row['is_confirmed']
+                ? (new \DateTimeImmutable((string) $row['confirmed_at'], new \DateTimeZone('UTC')))->setTimezone($tz)
+                : null;
+            $confirmed += $row['is_confirmed'] ? 1 : 0;
+            $items[] = $row;
+        }
+
+        return [
+            'items' => $items,
+            'total' => count($items),
+            'confirmed' => $confirmed,
+            'occurrence' => $key,
+            'is_future' => $isFuture,
+            'can_confirm' => !$isFuture && $this->currentUser->can('helpdesk.update'),
+        ];
+    }
+
+    /**
+     * Bestätigt einen Checklistenpunkt für ein Vorkommen oder nimmt die Bestätigung zurück.
+     * Vorkommen in der Zukunft (Termintag nach heute, lokal) können nicht abgearbeitet werden.
+     */
+    public function confirmChecklistItem(int $eventId, int $itemId, string $occurrence, bool $confirmed, ?\DateTimeImmutable $nowUtc = null): void
+    {
+        $this->currentUser->require('helpdesk.update');
+        $event = $this->events->find($eventId);
+        if ($event === null) {
+            throw new NotFoundException('Termin nicht gefunden.');
+        }
+        $parent = $this->parentOf($event);
+        $key = $parent !== null ? $this->occurrenceDate($occurrence, $event, $parent) : '';
+        $day = $this->checklistDay($event, $key);
+        $now = $nowUtc ?? new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        if ($day > $this->localToday($now)) {
+            throw new ValidationException(['checklist' => 'Checklisten von Terminen in der Zukunft können noch nicht abgearbeitet werden.']);
+        }
+        $rootId = $parent !== null ? (int) $parent['id'] : (int) $event['id'];
+        $item = null;
+        foreach ($this->checklists->items($rootId) as $row) {
+            if ((int) $row['id'] === $itemId) {
+                $item = $row;
+                break;
+            }
+        }
+        if ($item === null) {
+            throw new NotFoundException('Checklistenpunkt nicht gefunden.');
+        }
+        if ($confirmed) {
+            $this->checklists->confirm(
+                $itemId,
+                $key,
+                $this->currentUser->id(),
+                $this->currentUser->displayName() !== '' ? $this->currentUser->displayName() : 'system',
+                $now->format('Y-m-d H:i:s')
+            );
+        } else {
+            $this->checklists->revoke($itemId, $key);
+        }
+        $this->audit->log($confirmed ? 'checklist_confirm' : 'checklist_revoke', 'helpdesk_calendar_event', $rootId, (string) $event['title'], null, [
+            'checklist_item' => (string) $item['label'],
+            'occurrence' => $day,
+        ]);
+    }
+
+    /**
+     * Prüft die Checkliste aus dem Formular. Ohne `checklist_submitted` bleibt die Checkliste unverändert (null).
+     * @param array<string,mixed> $input
+     * @return list<array{id:?int,label:string}>|null
+     */
+    private function validateChecklist(array $input): ?array
+    {
+        if ((string) ($input['checklist_submitted'] ?? '') !== '1') {
+            return null;
+        }
+        $items = self::parseChecklist($input['checklist'] ?? []);
+        if (count($items) > self::MAX_CHECKLIST_ITEMS) {
+            throw new ValidationException(['checklist' => 'Eine Checkliste hat höchstens ' . self::MAX_CHECKLIST_ITEMS . ' Punkte.']);
+        }
+        foreach ($items as $item) {
+            if (mb_strlen($item['label']) > self::MAX_CHECKLIST_LABEL) {
+                throw new ValidationException(['checklist' => 'Ein Checklistenpunkt ist zu lang (höchstens ' . self::MAX_CHECKLIST_LABEL . ' Zeichen).']);
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * Gleicht die Checkliste eines Termins ab: bekannte Punkte behalten ihre Bestätigungen, entfernte Punkte
+     * verschwinden samt Bestätigungen.
+     * @param list<array{id:?int,label:string}> $items
+     */
+    private function saveChecklist(int $eventId, array $items): void
+    {
+        $existing = [];
+        foreach ($this->checklists->items($eventId) as $row) {
+            $existing[(int) $row['id']] = $row;
+        }
+        $kept = [];
+        foreach ($items as $index => $item) {
+            $position = $index + 1;
+            if ($item['id'] !== null && isset($existing[$item['id']]) && !isset($kept[$item['id']])) {
+                $kept[$item['id']] = true;
+                $row = $existing[$item['id']];
+                if ((string) $row['label'] !== $item['label'] || (int) $row['position'] !== $position) {
+                    $this->checklists->updateItem($item['id'], $item['label'], $position);
+                }
+                continue;
+            }
+            $this->checklists->createItem(['event_id' => $eventId, 'position' => $position, 'label' => $item['label']]);
+        }
+        foreach (array_keys($existing) as $id) {
+            if (!isset($kept[$id])) {
+                $this->checklists->deleteItem($id);
+            }
+        }
+    }
+
+    /** @param list<array{id:?int,label:string}> $items */
+    private function updateChecklist(int $eventId, array $items): void
+    {
+        $before = array_map(static fn (array $r): string => (string) $r['label'], $this->checklists->items($eventId));
+        $this->events->transaction(fn () => $this->saveChecklist($eventId, $items));
+        $after = array_column($items, 'label');
+        if ($before !== $after) {
+            $event = $this->events->find($eventId);
+            $this->audit->log('update', 'helpdesk_calendar_event', $eventId, (string) ($event['title'] ?? ''), ['checklist' => $before], ['checklist' => $after]);
+        }
+    }
+
+    /** Termin, an dem die Checkliste hängt (Serientermin bei Vorkommen und Einzelterminen einer Serie). @param array<string,mixed> $event */
+    private function checklistRootId(array $event): int
+    {
+        return ($event['series_parent_id'] ?? null) !== null ? (int) $event['series_parent_id'] : (int) $event['id'];
+    }
+
+    /**
+     * Schlüssel der Bestätigungen: '' beim Einzeltermin, sonst Termintag des Vorkommens.
+     * @param array<string,mixed> $event
+     */
+    private function checklistKey(array $event, string $occurrence = ''): string
+    {
+        if (($event['series_parent_id'] ?? null) !== null && (string) ($event['series_date'] ?? '') !== '') {
+            return (string) $event['series_date'];
+        }
+        if ((string) ($event['recurrence'] ?? '') === '') {
+            return '';
+        }
+        if ($occurrence !== '' && self::parseDate($occurrence) !== null) {
+            return $occurrence;
+        }
+
+        return (string) ($event['occurrence'] ?? $this->localDay((string) $event['starts_at']));
+    }
+
+    /**
+     * Tag, an dem das Vorkommen stattfindet (verschobene Einzeltermine einer Serie: tatsächlicher Beginn).
+     * @param array<string,mixed> $event
+     */
+    private function checklistDay(array $event, string $key): string
+    {
+        if ($key !== '' && ($event['series_parent_id'] ?? null) === null) {
+            return $key;
+        }
+
+        return $this->localDay((string) $event['starts_at']);
+    }
+
+    /**
+     * Ergänzt Termine um den Stand ihrer Checkliste (checklist_total, checklist_confirmed) für Raster und Overlay.
+     * @param list<array<string,mixed>> $events
+     * @return list<array<string,mixed>>
+     */
+    private function withChecklistCounts(array $events): array
+    {
+        $rootIds = array_values(array_unique(array_map(fn (array $e): int => $this->checklistRootId($e), $events)));
+        $totals = $this->checklists->countItems($rootIds);
+        if ($totals === []) {
+            return $events;
+        }
+        $confirmations = $this->checklists->countConfirmations(array_keys($totals));
+        foreach ($events as $i => $event) {
+            $root = $this->checklistRootId($event);
+            $events[$i]['checklist_total'] = $totals[$root] ?? 0;
+            $events[$i]['checklist_confirmed'] = $confirmations[$root][$this->checklistKey($event)] ?? 0;
+        }
+
+        return $events;
     }
 
     // ------------------------------------------------------------------ Serientermine

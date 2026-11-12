@@ -38,6 +38,7 @@ use App\Services\Helpdesk\TicketMailService;
 use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketPriorityMatrix;
 use App\Services\Helpdesk\TicketReportService;
+use App\Services\Helpdesk\MentionService;
 use App\Services\Helpdesk\TicketService;
 use App\Services\Helpdesk\TicketSlaService;
 use App\Services\Helpdesk\TicketWorkflowService;
@@ -80,7 +81,8 @@ final class TicketController extends HelpdeskBaseController
         private readonly TaskRepository $tasks,
         private readonly TaskCategoryRepository $taskCategories,
         private readonly HelpdeskCalendarService $calendar,
-        private readonly CalendarDateSuggestionService $dateSuggestions
+        private readonly CalendarDateSuggestionService $dateSuggestions,
+        private readonly MentionService $mentions
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -280,6 +282,10 @@ final class TicketController extends HelpdeskBaseController
         $ticket = $this->service->getVisible($request->paramInt('id'));
         $id = (int) $ticket['id'];
         $this->service->recordView($id);
+        $isAgent = $this->service->isAgent();
+        if ($isAgent) {
+            $this->mentions->markTicketRead($id);
+        }
         $now = new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
         $shift = $this->supportShifts->today();
         $sla = !empty($ticket['sla_id']) ? $this->slas->find((int) $ticket['sla_id']) : null;
@@ -348,7 +354,8 @@ final class TicketController extends HelpdeskBaseController
             'sources' => TicketService::SOURCES,
             'impactLabels' => TicketPriorityMatrix::IMPACT_LABELS,
             'urgencyLabels' => TicketPriorityMatrix::URGENCY_LABELS,
-            'isAgent' => $this->service->isAgent(),
+            'isAgent' => $isAgent,
+            'mentionAgents' => $isAgent ? $this->mentions->suggestions() : [],
             'now' => $now,
             'isFirstLevelSupport' => $shift['first'] !== null && (int) $shift['first']['user_id'] === (int) $this->currentUser->id(),
             'secondLevelSupport' => $shift['second'],
@@ -359,7 +366,7 @@ final class TicketController extends HelpdeskBaseController
             'calendarEvents' => $this->calendar->forTicket($id),
             'calendarAiEnabled' => $this->dateSuggestions->isEnabled(),
             'taskCategories' => $this->currentUser->can('helpdesk.tasks') ? $this->taskCategories->all() : [],
-            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-pins.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/picker.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js', '/js/helpdesk-mail-frame.js', '/js/helpdesk-calendar.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-pins.js', '/js/helpdesk-ai.js', '/js/helpdesk-media.js', '/js/picker.js', '/js/helpdesk-mail.js', '/js/helpdesk-merge.js',             '/js/helpdesk-mail-frame.js', '/js/helpdesk-calendar.js', '/js/helpdesk-mentions.js'],
         ]);
     }
 

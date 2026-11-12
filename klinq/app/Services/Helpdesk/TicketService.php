@@ -72,7 +72,8 @@ final class TicketService
         private readonly AuditLogService $audit,
         private readonly CurrentUser $currentUser,
         private readonly Config $config,
-        private readonly ErrorOriginSettingsService $errorOrigins
+        private readonly ErrorOriginSettingsService $errorOrigins,
+        private readonly ?MentionService $mentions = null
     ) {}
 
     // ------------------------------------------------------------------ Lesen / Sichtbarkeit
@@ -1024,6 +1025,9 @@ final class TicketService
             }
             $this->tickets->update((int) $ticket['id'], $update);
             $this->event((int) $ticket['id'], $type === 'internal' ? 'internal_note' : 'comment', null, null, mb_substr($body, 0, 120), ['comment_id' => $commentId]);
+            if ($type === 'internal' && $this->isAgent()) {
+                $this->mentions?->notifyTicketComment((int) $ticket['id'], $commentId, $body);
+            }
 
             return $commentId;
         });

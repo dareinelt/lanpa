@@ -35,6 +35,14 @@
 .hd-forward-item a { font-weight: var(--font-weight-semibold); }
 .hd-forward-banner { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); }
 .hd-forward-banner span { flex: 1 1 18rem; }
+
+/* Erwähnungen (@Name): Dashboard-Hinweis und Vorschlagsliste im Kommentarfeld */
+.hd-mention-card { border-color: var(--color-info); }
+.hd-mention-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-3); }
+.hd-mention-head .card-title { margin: 0; }
+.hd-mention-excerpt { margin-top: var(--space-1); color: var(--color-text); overflow-wrap: anywhere; }
+.hd-mention-host { position: relative; }
+.picker-results.hd-mention-results { right: auto; max-height: 260px; }
 .filter-bar.filter-bar-dense .form-group { min-width: 9rem; }
 .filter-bar .filter-toggle { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--font-size-sm); align-self: end; padding-bottom: var(--space-2); }
 

@@ -13,6 +13,7 @@ use App\Repositories\TaskRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
+use App\Services\Helpdesk\MentionService;
 use App\Services\Helpdesk\TaskService;
 use App\Support\Paginator;
 
@@ -31,7 +32,8 @@ final class TaskController extends HelpdeskBaseController
         private readonly TaskCategoryRepository $categories,
         private readonly TicketMasterDataRepository $masterData,
         private readonly UserRepository $users,
-        private readonly Config $config
+        private readonly Config $config,
+        private readonly MentionService $mentions
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -142,6 +144,7 @@ final class TaskController extends HelpdeskBaseController
     public function show(Request $request): Response
     {
         $task = $this->service->get($request->paramInt('id'));
+        $this->mentions->markTaskRead((int) $task['id']);
 
         return $this->render('helpdesk.aufgaben.show', [
             'title' => $task['number'] . ' · ' . $task['subject'],
@@ -160,7 +163,8 @@ final class TaskController extends HelpdeskBaseController
             'canAssign' => $this->currentUser->can('helpdesk.tasks.assign'),
             'canManageAttachments' => $this->currentUser->can('helpdesk.tasks.assign'),
             'currentUserId' => $this->currentUser->id(),
-            'scripts' => ['/js/helpdesk-pins.js', '/js/helpdesk-media.js', '/js/helpdesk-mail-frame.js'],
+            'mentionAgents' => $this->mentions->suggestions(),
+            'scripts' => ['/js/helpdesk-pins.js', '/js/helpdesk-media.js', '/js/helpdesk-mail-frame.js', '/js/helpdesk-mentions.js'],
         ]);
     }
 

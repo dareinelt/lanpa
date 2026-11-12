@@ -15,6 +15,7 @@ use App\Repositories\TicketRepository;
 use App\Repositories\TicketTagRepository;
 use App\Repositories\TicketWorklogRepository;
 use App\Security\CurrentUser;
+use App\Services\Helpdesk\MentionService;
 use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketService;
 use App\Support\RichText;
@@ -505,6 +506,28 @@ final class TicketServiceIntegrationTest extends DatabaseTestCase
         $this->loginAs($this->agentId, 'helpdesk_agent');
         $this->assertCount(3, $this->service()->comments($this->service()->get($id)));
         $this->assertSame(2, $this->c->get(TicketCommentRepository::class)->countForTicket($id, 'public'));
+    }
+
+    public function testInternalNoteMentionNotifiesAgentUntilTicketIsOpened(): void
+    {
+        $id = (int) $this->createTicket()['id'];
+        $mentions = $this->c->get(MentionService::class);
+
+        $this->service()->addComment($id, '@hd-agent2 bitte kurz prüfen', 'public');
+        $this->service()->addComment($id, 'Ich selbst: @hd-agent', 'internal');
+        $note = $this->service()->addComment($id, '@hd-agent2 bitte kurz prüfen', 'internal');
+
+        $this->loginAs($this->agent2Id, 'helpdesk_agent');
+        $unread = $mentions->unreadForCurrentUser();
+        $this->assertCount(1, $unread, 'Nur die interne Notiz löst eine Erwähnung aus');
+        $this->assertSame((int) $note['id'], (int) $unread[0]['comment_id']);
+        $this->assertSame($id, (int) $unread[0]['ticket_id']);
+
+        $mentions->markTicketRead($id);
+        $this->assertCount(0, $mentions->unreadForCurrentUser());
+
+        $this->loginAs($this->agentId, 'helpdesk_agent');
+        $this->assertCount(0, $mentions->unreadForCurrentUser(), 'Selbsterwähnung erzeugt keine Benachrichtigung');
     }
 
     public function testCommunicationEntriesCanBePinned(): void

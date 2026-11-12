@@ -321,6 +321,21 @@ Beschreibung und Kommentare (intern wie extern, Agenten- und Portalansicht) sind
 - **Abschlussdialog**: Dieselbe Kette gilt beim Lösen und Schließen. Die Felder **Lösung** (`#st-resolution`) und **Kommentar an den Melder** (`#st-note`) im Statusdialog tragen `data-hd-media-images` samt Vorschau; Screenshots lassen sich dort ebenfalls per `STRG+V` einfügen. Die Lösung steht damit als base64-Data-URI in `tickets.resolution`, das seit Migration `036_helpdesk_resolution_media.sql` `MEDIUMTEXT` ist (vorher `TEXT`, 64 KB). Ticket- und Portalansicht zeigen die Bilder über `rich_text()`; in der Schließungs-E-Mail, in Benachrichtigungen und beim Erzeugen eines Wissensartikels ersetzt `RichText::toPlain()` sie durch `[Bild]`. Das Skript verweigert weitere Bilder, sobald der aufgelöste Text das `maxlength` des Feldes überschreiten würde (Hinweis unter dem Feld statt serverseitiger Ablehnung).
 - **Wissensdatenbank**: Artikel nutzen dieselbe Kette – Bilder per `STRG+V` im Inhalt (Anzeige über `rich_text()` in Agenten- und Portalansicht) und Anhänge über `DocumentService` mit `entity_type = knowledge_article`. Siehe Abschnitt [Wissensdatenbank](#wissensdatenbank).
 
+### Agenten erwähnen (@Name)
+
+In **internen Notizen** an Tickets und in **Aufgabenkommentaren** können Agenten andere Agenten mit `@Name` markieren. Der markierte Agent erhält eine Benachrichtigung auf seinem Help-Desk-Dashboard.
+
+- **Vorschlagsliste**: Sobald im Kommentarfeld ein `@` am Wortanfang getippt wird, erscheint direkt am Cursor eine Liste aller Help-Desk-Agenten (Rollen aus `TicketService::AGENT_ROLES`, ohne den eigenen Benutzer). Jeder weitere Buchstabe filtert die Liste nach Anzeige- und Benutzername – Treffer am Wortanfang zuerst, danach Treffer innerhalb des Namens; der beste Treffer ist vorausgewählt. **Pfeiltasten** wählen, **Enter**/**Tab** oder Klick übernimmt (`@Vorname Nachname `), **Escape** schließt die Liste. Am Ticket ist die Liste nur aktiv, solange „Interne Notiz“ gewählt ist – öffentliche Antworten lösen keine Erwähnung aus.
+- **Erkennung**: Beim Speichern sucht `App\Services\Helpdesk\MentionService::parse()` nach `@` am Wortanfang (nicht in E-Mail-Adressen) und ordnet den längsten passenden Anzeige- oder Benutzernamen eines Agenten zu (ohne Groß-/Kleinschreibung); `@Name` lässt sich also auch von Hand tippen. Mehrfachnennungen zählen einmal, Selbsterwähnungen werden ignoriert.
+- **Benachrichtigung**: Je erwähntem Agenten entsteht ein Eintrag in `helpdesk_mentions` (Migration `045_helpdesk_mentions.sql`) mit Ticket bzw. Aufgabe, Kommentar, Autor und Textauszug (200 Zeichen, eingefügte Bilder als `[Bild]`). Das Dashboard zeigt ungelesene Erwähnungen in der Karte **Sie wurden erwähnt** (Anker `#erwaehnungen`); der Link springt direkt zum Kommentar (`#comment-{id}` am Ticket, `#kommentar-{id}` an der Aufgabe).
+- **Gelesen**: Eine Erwähnung gilt als gelesen, sobald der Agent das Ticket bzw. die Aufgabe öffnet, über die Schaltfläche **Gelesen** (`POST /helpdesk/erwaehnungen/{id}/gelesen`) oder über **Alle als gelesen markieren** (`POST /helpdesk/erwaehnungen/gelesen`). Ohne ungelesene Erwähnungen entfällt die Karte.
+
+![Vorschlagsliste nach Eingabe von „@“ in einer internen Notiz](screenshots/helpdesk-erwaehnung-liste.png)
+
+![Gefilterte Vorschlagsliste nach „@Sa“](screenshots/helpdesk-erwaehnung-filter.png)
+
+![Dashboard-Karte „Sie wurden erwähnt“ mit Ticket- und Aufgabenkommentar](screenshots/helpdesk-erwaehnung-dashboard.png)
+
 ### E-Mail aus dem Ticket senden
 
 Agenten können aus einem Ticket heraus eine echte E-Mail an die **meldende Person** und optional an die **betroffene
@@ -727,7 +742,8 @@ Absenden springt zurück auf den Anker `#kommentare`. Screenshots lassen sich pe
 gespeichert und über `rich_text()` angezeigt. Ein Kommentar hält Autor (Name und optionaler
 Benutzerbezug) und Zeitpunkt fest, wird auditiert (`task.comment`) und aktualisiert `tasks.updated_at`, damit
 die Aufgabe in den Listen oben bleibt. Kommentare sind inhaltlich unveränderlich – die Anwendung bietet kein
-Bearbeiten oder Löschen.
+Bearbeiten oder Löschen. Andere Agenten lassen sich mit `@Name` erwähnen und werden auf ihrem Dashboard
+benachrichtigt (siehe [Agenten erwähnen](#agenten-erwähnen-name)).
 
 **Anheften**: Über die **Pinnadel** oben rechts am Kommentar (`POST /helpdesk/aufgaben/{id}/kommentare/{comment}/pin`,
 Feld `pinned=1|0`) lässt sich ein Kommentar oben an die Liste heften; ein zweiter Klick löst die Anheftung wieder.

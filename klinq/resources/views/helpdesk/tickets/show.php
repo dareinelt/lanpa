@@ -210,9 +210,9 @@ $statusTransitions = array_values(array_filter(
             </div>
             <div class="form-group">
                 <label for="comment-body" class="sr-only">Kommentar</label>
-                <textarea id="comment-body" name="body" rows="4" placeholder="Antwort oder Notiz eingeben …" maxlength="2000000" data-hd-field="ticket_comment" data-hd-media-images data-hd-media-preview="#comment-media-preview"></textarea>
+                <textarea id="comment-body" name="body" rows="4" placeholder="Antwort oder Notiz eingeben …" maxlength="2000000" data-hd-field="ticket_comment" data-hd-media-images data-hd-media-preview="#comment-media-preview"<?php if (($mentionAgents ?? []) !== []): ?> data-hd-mentions="<?= e((string) json_encode($mentionAgents, JSON_UNESCAPED_UNICODE)) ?>"<?php endif; ?>></textarea>
                 <div class="hd-media-preview" id="comment-media-preview" hidden></div>
-                <p class="form-hint">Bilder aus der Zwischenablage mit STRG+V einfügen – sie bleiben im Text erhalten.</p>
+                <p class="form-hint">Bilder aus der Zwischenablage mit STRG+V einfügen – sie bleiben im Text erhalten.<?php if (($mentionAgents ?? []) !== []): ?> In internen Notizen andere Agenten mit „@Name“ erwähnen – sie werden auf ihrem Dashboard benachrichtigt.<?php endif; ?></p>
             </div>
             <div class="comment-form-footer">
                 <label class="file-label"><?= icon('paperclip', 'icon icon-xs') ?> Anhang <input type="file" name="file"></label>

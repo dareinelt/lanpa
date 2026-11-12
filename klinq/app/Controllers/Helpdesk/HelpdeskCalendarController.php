@@ -43,6 +43,15 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
         $today = $this->calendar->localToday();
         $date = $request->queryString('datum');
         $range = HelpdeskCalendarService::range($view, $date !== '' ? $date : $today);
+        $canEdit = $this->currentUser->can('helpdesk.update');
+
+        // Overlay „Neuer Termin“: nach einem Validierungsfehler mit der Eingabe erneut geöffnet.
+        $old = $_SESSION['_old_input'] ?? [];
+        $reopen = $canEdit && ($old['dialog'] ?? '') === 'neu';
+        $newValues = $this->newValues(in_array($today, $range['days'], true) ? $today : $range['date'], '09:00', false);
+        if ($reopen) {
+            $newValues = $this->withOld($newValues, $old);
+        }
 
         return $this->render('helpdesk.kalender.index', [
             'title' => 'Kalender',
@@ -52,7 +61,10 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
             'today' => $today,
             'events' => $this->calendar->eventsIn($range),
             'timezone' => $this->calendar->timezone(),
-            'canEdit' => $this->currentUser->can('helpdesk.update'),
+            'canEdit' => $canEdit,
+            'newValues' => $newValues,
+            'newChecklistItems' => $reopen ? HelpdeskCalendarService::parseChecklist($old['checklist'] ?? []) : [],
+            'newDialogOpen' => $reopen,
             'scripts' => ['/js/helpdesk-calendar.js'],
         ]);
     }
@@ -62,30 +74,24 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
         $this->currentUser->require('helpdesk.update');
         $date = $request->queryString('datum');
         $time = $request->queryString('zeit');
-        $values = [
-            'title' => '',
-            'date' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1 ? $date : $this->calendar->localToday(),
-            'start_time' => preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time) === 1 ? $time : '09:00',
-            'all_day' => $request->queryString('ganztags') === '1' ? '1' : '0',
-        ];
-        $values['end_date'] = $values['date'];
-        // Ende eine Stunde nach Beginn, höchstens 23:59 (der Termin bleibt am selben Tag)
-        [$h, $m] = array_map('intval', explode(':', $values['start_time']));
-        $endMinutes = min(23 * 60 + 59, $h * 60 + $m + 60);
-        $values['end_time'] = $values['all_day'] === '1' ? '' : sprintf('%02d:%02d', intdiv($endMinutes, 60), $endMinutes % 60);
-        if ($values['all_day'] === '1') {
-            $values['start_time'] = '';
-        }
 
-        return $this->renderForm(null, $values);
+        return $this->renderForm(null, $this->newValues(
+            preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1 ? $date : $this->calendar->localToday(),
+            preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $time) === 1 ? $time : '09:00',
+            $request->queryString('ganztags') === '1'
+        ));
     }
 
     public function store(Request $request): Response
     {
         $event = null;
+        // Aus dem Overlay im Kalender: bei Fehlern zurück in dieselbe Ansicht, das Overlay öffnet sich erneut.
+        $errorRedirect = $request->string('dialog') === 'neu'
+            ? $this->safeBack($request, '/helpdesk/kalender')
+            : '/helpdesk/kalender/neu';
         $response = $this->attempt($request, function () use ($request, &$event): void {
             $event = $this->calendar->create($request->all());
-        }, '/helpdesk/kalender/neu');
+        }, $errorRedirect);
 
         return $response ?? $this->respond($request, 'Termin angelegt.', $this->calendarUrl($event));
     }
@@ -194,14 +200,7 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
     private function renderForm(?array $event, array $values, string $occurrence = ''): Response
     {
         $old = $_SESSION['_old_input'] ?? [];
-        foreach (array_keys($values + ['location' => '', 'description' => '']) as $key) {
-            if (array_key_exists($key, $old)) {
-                $values[$key] = (string) $old[$key];
-            }
-        }
-        if ($old !== [] && !array_key_exists('all_day', $old)) {
-            $values['all_day'] = '0';
-        }
+        $values = $this->withOld($values, $old);
         // Bei Serienterminen wird beim Speichern gefragt, ob nur dieser Termin gilt (Vorgabe) oder die Serie.
         $isSeries = $event !== null && !empty($event['recurrence']);
         $values['occurrence'] = (string) ($old['occurrence'] ?? ($occurrence !== '' ? $occurrence : ($values['occurrence'] ?? '')));
@@ -221,6 +220,45 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
             'canEdit' => $this->currentUser->can('helpdesk.update'),
             'scripts' => ['/js/helpdesk-calendar.js'],
         ]);
+    }
+
+    /**
+     * Vorgaben eines neuen Termins: Ende eine Stunde nach Beginn, höchstens 23:59 (der Termin bleibt am selben Tag).
+     * @return array<string,string>
+     */
+    private function newValues(string $date, string $time, bool $allDay): array
+    {
+        [$h, $m] = array_map('intval', explode(':', $time));
+        $endMinutes = min(23 * 60 + 59, $h * 60 + $m + 60);
+
+        return [
+            'title' => '',
+            'date' => $date,
+            'end_date' => $date,
+            'start_time' => $allDay ? '' : $time,
+            'end_time' => $allDay ? '' : sprintf('%02d:%02d', intdiv($endMinutes, 60), $endMinutes % 60),
+            'all_day' => $allDay ? '1' : '0',
+        ];
+    }
+
+    /**
+     * Formularwerte mit der alten Eingabe nach einem Validierungsfehler überschreiben.
+     * @param array<string,string> $values
+     * @param array<string,mixed> $old
+     * @return array<string,string>
+     */
+    private function withOld(array $values, array $old): array
+    {
+        foreach (array_keys($values + ['location' => '', 'description' => '', 'recurrence' => '', 'recurrence_interval' => '', 'recurrence_until' => '']) as $key) {
+            if (array_key_exists($key, $old)) {
+                $values[$key] = (string) $old[$key];
+            }
+        }
+        if ($old !== [] && !array_key_exists('all_day', $old)) {
+            $values['all_day'] = '0';
+        }
+
+        return $values;
     }
 
     /** @param array<string,mixed>|null $event */

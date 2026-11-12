@@ -807,6 +807,61 @@ Er ist für alle Agenten sichtbar (`helpdesk.view`); anlegen, ändern und lösch
 
 ![Kalender in der Monatsansicht](screenshots/helpdesk-kalender-monat.png)
 
+### Serientermine
+
+Im Formular „Neuer Termin“ und im Dialog **Termin anlegen** des Ticketdetails gibt es den Block **Wiederholung**.
+Ohne Auswahl bleibt es ein Einzeltermin.
+
+- **Rhythmus**: Täglich, Wöchentlich, Monatlich oder Jährlich, jeweils mit Abstand („alle *n* Tage/Wochen/Monate/Jahre“,
+  1 bis 99). Der Abstand bezieht sich auf den Beginn des ersten Termins, die Uhrzeit bleibt für alle Termine gleich.
+- **Serienende**: optionales Datum „wiederholen bis“. Ohne Angabe läuft die Serie unbefristet und wird beim Anzeigen
+  berechnet, nicht gespeichert – es entstehen also keine Datensätze im Voraus.
+- **Monatsenden** werden geklemmt: Ein am 31. angelegter Monatstermin liegt im Februar am letzten Tag des Monats,
+  im April am 30.
+- **Zeitumstellung**: Die Dauer wird als Wanduhr-Abstand übernommen, ein Termin von 09:00 bis 10:30 Uhr bleibt
+  also auch über die Umstellung 09:00–10:30 Uhr Ortszeit.
+- **Ganztägige Serien** sind möglich (z. B. Wochenend-Bereitschaft).
+
+![Formular „Neuer Termin“ mit Wiederholung, Abstand und Serienende](screenshots/helpdesk-kalender-serie-neu.png)
+
+Ein Serientermin wird einmal gespeichert; die einzelnen Vorkommen entstehen beim Anzeigen (Tag, Arbeitswoche, Monat,
+Ticketsuche). In den Ansichten trägt jeder Termin einer Serie ein Wiederholungssymbol, die Legende unter dem Kalender
+erklärt es.
+
+![Monatsansicht mit vier Serienterminen und Wiederholungssymbolen](screenshots/helpdesk-kalender-serien-monat.png)
+
+#### Einzelner Termin oder ganze Serie
+
+Wird ein Termin einer Serie geöffnet, zeigt das Formular den Serienhinweis („Serientermin · Wöchentlich bis
+31.12.2026“) und den Umschalter **Umfang der Änderung**:
+
+- **Nur diesen Termin** (Vorgabe): Der gewählte Termin wird als abweichender Einzeltermin gespeichert – Titel, Zeiten,
+  Ort und Beschreibung dürfen abweichen, die übrige Serie bleibt unverändert. Er hängt an der Serie und verschwindet mit
+  ihr.
+- **Ganze Serie**: Die Änderung gilt für alle Termine einschließlich der abweichenden Einzeltermine, die dabei
+  verworfen werden. Der erste Termin bleibt der Bezugstag: Verschiebt man den aufgerufenen Termin, wird die Serie so
+  verschoben, dass der gewählte Tag der neue erste Termin ist.
+
+Beim Löschen stehen entsprechend zwei Wege zur Verfügung:
+
+- **Nur diesen Termin absagen** (Sekundärknopf): Der Termin wird als Ausnahme vermerkt und in den Ansichten
+  ausgeblendet; die übrige Serie bleibt bestehen. Nachfrage: „Nur den Termin am Dienstag, 1. Dezember 2026 absagen?
+  Die übrigen Termine der Serie bleiben erhalten.“
+- **Ganze Serie löschen** (roter Knopf): Entfernt die Serie samt allen abweichenden und abgesagten Einzelterminen.
+
+![Serientermin bearbeiten mit Serienhinweis, Umschalter für den Umfang und beiden Löschwegen](screenshots/helpdesk-kalender-serie-bearbeiten.png)
+
+Nach dem Speichern oder Löschen landet man wieder im Kalender auf dem Tag, an dem der Termin aufgerufen wurde – bei
+einem abweichenden Einzeltermin also auf dessen eigenem Datum.
+
+![Arbeitswoche mit einem verschobenen Einzeltermin der Serie](screenshots/helpdesk-kalender-serien-arbeitswoche.png)
+
+Regeln und Grenzen (Serverseite prüft unabhängig vom Formular):
+
+- Eine tägliche Wiederholung braucht einen größeren Abstand als die Termindauer, sonst überschneiden sich die Termine.
+- Das Serienende muss am oder nach dem ersten Termin liegen; ein ungültiges Datum wird abgelehnt.
+- Je Serie und Anzeigezeitraum werden höchstens 400 Vorkommen erzeugt (Schutz vor Endlosschleifen).
+
 ### Termin aus einem Ticket
 
 Im Ticketdetail öffnet **Weitere … → Termin anlegen** einen Dialog. Beim Öffnen wird der Tickettext (Betreff und Beschreibung,
@@ -826,11 +881,16 @@ bezieht das Modell auf das Erstellungsdatum des Tickets.
 ![Dialog „Termin anlegen“ mit drei erkannten Daten zur Auswahl](screenshots/helpdesk-kalender-termin-aus-ticket.png)
 
 Der Titel ist mit „Ticketnummer · Betreff“ vorbelegt. Der Termin bleibt mit dem Ticket verknüpft (Badge „Termin
-TT.MM.JJJJ HH:MM“ im Ticketkopf, Verweis auf das Ticket im Termin).
+TT.MM.JJJJ HH:MM“ im Ticketkopf, Verweis auf das Ticket im Termin). Der Block **Wiederholung** ist auch hier
+verfügbar, sodass aus einem Ticket direkt eine Serie entstehen kann.
+
+![Dialog „Termin anlegen“ im Ticket mit gesetzter Wiederholung](screenshots/helpdesk-kalender-serie-aus-ticket.png)
 
 Routen: `GET /helpdesk/kalender`, `GET /helpdesk/kalender/neu`, `POST /helpdesk/kalender`, `GET|POST /helpdesk/kalender/{id}`,
 `POST /helpdesk/kalender/{id}/loeschen`, `GET /helpdesk/tickets/{id}/termin-vorschlaege` (JSON),
-`POST /helpdesk/tickets/{id}/termin`. Tabelle `helpdesk_calendar_events` (Migration 038).
+`POST /helpdesk/tickets/{id}/termin`. Beim Aufruf eines Serientermins markiert `?termin=JJJJ-MM-TT` den gewählten Tag
+(`GET /helpdesk/kalender/{id}?termin=2026-11-24`), das Formular gibt ihn als `occurrence` und den Umfang als `scope`
+(`series` oder `occurrence`) zurück. Tabelle `helpdesk_calendar_events` (Migration 038, Serienspalten aus Migration 043).
 
 ## Kontaktverzeichnis
 

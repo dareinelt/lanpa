@@ -97,6 +97,185 @@ final class HelpdeskCalendarIntegrationTest extends DatabaseTestCase
         $this->assertThrows(\App\Exceptions\NotFoundException::class, fn () => $this->calendar()->get((int) $event['id']));
     }
 
+    public function testSeriesIsStoredOnceAndExpandedPerOccurrence(): void
+    {
+        $series = $this->calendar()->create([
+            'title' => 'Wartung Serverraum',
+            'date' => '2026-11-10',
+            'start_time' => '09:00',
+            'end_time' => '10:30',
+            'recurrence' => 'weekly',
+            'recurrence_interval' => '1',
+            'recurrence_until' => '2026-12-08',
+        ]);
+        $this->assertSame('weekly', $series['recurrence']);
+        $this->assertSame('Wöchentlich bis 08.12.2026', HelpdeskCalendarService::recurrenceLabel($series));
+
+        $stored = (int) $this->pdo->query('SELECT COUNT(*) FROM helpdesk_calendar_events')->fetchColumn();
+        $this->assertSame(1, $stored, 'Die Serie steht genau einmal in der Datenbank');
+
+        $events = $this->calendar()->eventsIn(['start' => '2026-11-01', 'end' => '2026-12-01']);
+        $days = array_map(static fn (array $e): string => $e['occurrence'], $events);
+
+        $this->assertSame(['2026-11-10', '2026-11-17', '2026-11-24'], $days);
+        $this->assertSame('09:00', $events[1]['start_local']->format('H:i'));
+        $this->assertTrue($events[1]['is_series']);
+        $this->assertSame((int) $series['id'], (int) $events[1]['id'], 'Vorkommen tragen den Serientermin als Datensatz');
+
+        $december = $this->calendar()->eventsIn(['start' => '2026-12-01', 'end' => '2027-01-01']);
+        $this->assertSame(['2026-12-01', '2026-12-08'], array_map(static fn (array $e): string => $e['occurrence'], $december), 'Serienende wird eingehalten');
+    }
+
+    public function testMonthlySeriesClampsToLastDayOfMonth(): void
+    {
+        $this->calendar()->create([
+            'title' => 'Monatsabschluss',
+            'date' => '2026-01-31',
+            'start_time' => '16:00',
+            'recurrence' => 'monthly',
+        ]);
+
+        $events = $this->calendar()->eventsIn(['start' => '2026-01-01', 'end' => '2026-05-01']);
+
+        $this->assertSame(['2026-01-31', '2026-02-28', '2026-03-31', '2026-04-30'], array_map(static fn (array $e): string => $e['occurrence'], $events));
+    }
+
+    public function testOccurrencesKeepWallClockTimeAcrossDaylightSaving(): void
+    {
+        $series = $this->calendar()->create([
+            'title' => 'Bereitschaftsübergabe',
+            'date' => '2026-10-18',
+            'start_time' => '09:00',
+            'end_time' => '10:00',
+            'recurrence' => 'weekly',
+        ]);
+
+        $events = $this->calendar()->eventsIn(['start' => '2026-10-18', 'end' => '2026-11-02']);
+        $this->assertSame(['2026-10-18', '2026-10-25', '2026-11-01'], array_map(static fn (array $e): string => $e['occurrence'], $events));
+        $this->assertSame('09:00', $events[1]['start_local']->format('H:i'), 'Sommerzeit');
+        $this->assertSame('09:00', $events[2]['start_local']->format('H:i'), 'Winterzeit: Uhrzeit bleibt gleich');
+        $this->assertSame('10:00', $events[2]['end_local']->format('H:i'), 'Dauer bleibt eine Stunde');
+
+        $row = $this->pdo->query('SELECT starts_at FROM helpdesk_calendar_events WHERE id = ' . (int) $series['id'])->fetch();
+        $this->assertSame('2026-10-18 07:00:00', $row['starts_at']);
+    }
+
+    public function testRecurrenceValidation(): void
+    {
+        $base = ['title' => 'Serie', 'date' => '2026-11-10', 'start_time' => '09:00'];
+
+        $this->assertThrows(ValidationException::class, fn () => $this->calendar()->create($base + ['recurrence' => 'stündlich']));
+        $this->assertThrows(ValidationException::class, fn () => $this->calendar()->create($base + ['recurrence' => 'weekly', 'recurrence_until' => '2026-11-09']));
+        $this->assertThrows(ValidationException::class, fn () => $this->calendar()->create($base + [
+            'recurrence' => 'daily', 'recurrence_interval' => '1', 'end_date' => '2026-11-12', 'end_time' => '10:00',
+        ]));
+
+        $this->assertSame('', $this->calendar()->create($base)['recurrence'], 'Ohne Angabe bleibt der Termin einmalig');
+    }
+
+    public function testEditingSingleOccurrenceKeepsTheRestOfTheSeries(): void
+    {
+        $series = $this->calendar()->create([
+            'title' => 'Wartung Serverraum',
+            'date' => '2026-11-10',
+            'start_time' => '09:00',
+            'end_time' => '10:30',
+            'recurrence' => 'weekly',
+        ]);
+        $id = (int) $series['id'];
+
+        $occurrence = $this->calendar()->update($id, [
+            'title' => 'Wartung Serverraum (nachmittags)',
+            'date' => '2026-11-17',
+            'end_date' => '2026-11-17',
+            'start_time' => '14:00',
+            'end_time' => '15:30',
+            'occurrence' => '2026-11-17',
+        ], HelpdeskCalendarService::SCOPE_OCCURRENCE);
+
+        $this->assertTrue($id !== (int) $occurrence['id'], 'Abweichender Termin ist ein eigener Datensatz');
+        $this->assertSame($id, (int) $occurrence['series_parent_id']);
+        $this->assertSame('2026-11-17', $occurrence['series_date']);
+
+        $events = $this->calendar()->eventsIn(['start' => '2026-11-09', 'end' => '2026-11-24']);
+        $byDay = [];
+        foreach ($events as $event) {
+            $byDay[$event['occurrence']] = $event;
+        }
+        $this->assertSame('Wartung Serverraum (nachmittags)', $byDay['2026-11-17']['title']);
+        $this->assertSame('14:00', $byDay['2026-11-17']['start_local']->format('H:i'));
+        $this->assertSame('Wartung Serverraum', $byDay['2026-11-10']['title']);
+        $this->assertSame('09:00', $byDay['2026-11-10']['start_local']->format('H:i'));
+
+        $values = $this->calendar()->occurrenceValues($id, '2026-11-24');
+        $this->assertSame('2026-11-24', $values['date']);
+        $this->assertSame('09:00', $values['start_time'], 'Andere Vorkommen übernehmen die Uhrzeit des Serientermins');
+        $this->assertSame('2026-11-17', $this->calendar()->occurrenceValues($id, '2026-11-17')['date']);
+    }
+
+    public function testEditingWholeSeriesKeepsAnchorAndDropsDeviations(): void
+    {
+        $series = $this->calendar()->create([
+            'title' => 'Wartung Serverraum',
+            'date' => '2026-11-10',
+            'start_time' => '09:00',
+            'recurrence' => 'weekly',
+            'recurrence_until' => '2026-12-31',
+        ]);
+        $id = (int) $series['id'];
+        $this->calendar()->update($id, [
+            'title' => 'Wartung Serverraum',
+            'date' => '2026-11-17',
+            'start_time' => '14:00',
+            'occurrence' => '2026-11-17',
+        ], HelpdeskCalendarService::SCOPE_OCCURRENCE);
+        $this->assertSame(2, (int) $this->pdo->query('SELECT COUNT(*) FROM helpdesk_calendar_events')->fetchColumn());
+
+        $updated = $this->calendar()->update($id, [
+            'title' => 'Wartung Serverraum',
+            'date' => '2026-11-17',
+            'start_time' => '08:00',
+            'end_time' => '09:00',
+            'recurrence' => 'weekly',
+            'recurrence_interval' => '2',
+            'occurrence' => '2026-11-17',
+        ], HelpdeskCalendarService::SCOPE_SERIES);
+
+        $this->assertSame('2026-11-10', $updated['start_local']->format('Y-m-d'), 'Der Beginn der Serie bleibt bestehen');
+        $this->assertSame('08:00', $updated['start_local']->format('H:i'));
+        $this->assertSame(2, $updated['recurrence_interval']);
+        $this->assertNull($updated['recurrence_until']);
+        $this->assertSame(1, (int) $this->pdo->query('SELECT COUNT(*) FROM helpdesk_calendar_events')->fetchColumn(), 'Abweichende Einzeltermine entfallen');
+
+        $this->assertSame(['2026-11-10', '2026-11-24'], array_map(
+            static fn (array $e): string => $e['occurrence'],
+            $this->calendar()->eventsIn(['start' => '2026-11-01', 'end' => '2026-12-01'])
+        ));
+    }
+
+    public function testCancelingSingleOccurrenceKeepsSeries(): void
+    {
+        $series = $this->calendar()->create([
+            'title' => 'Wartung Serverraum',
+            'date' => '2026-11-10',
+            'start_time' => '09:00',
+            'recurrence' => 'weekly',
+        ]);
+        $id = (int) $series['id'];
+
+        $this->calendar()->delete($id, HelpdeskCalendarService::SCOPE_OCCURRENCE, '2026-11-17');
+        $days = array_map(static fn (array $e): string => $e['occurrence'], $this->calendar()->eventsIn(['start' => '2026-11-09', 'end' => '2026-11-24']));
+        $this->assertSame(['2026-11-10'], $days, 'Abgesagter Termin verschwindet, die Serie bleibt');
+
+        // Erneut absagen: der vorhandene Einzeltermin wird zur Ausblendemarke.
+        $this->calendar()->delete($id, HelpdeskCalendarService::SCOPE_OCCURRENCE, '2026-11-17');
+        $markers = (int) $this->pdo->query('SELECT COUNT(*) FROM helpdesk_calendar_events WHERE series_canceled = 1')->fetchColumn();
+        $this->assertSame(1, $markers);
+
+        $this->calendar()->delete($id, HelpdeskCalendarService::SCOPE_SERIES);
+        $this->assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM helpdesk_calendar_events')->fetchColumn(), 'Ganze Serie löscht auch die Ausblendemarken');
+    }
+
     public function testPortalUserCannotWrite(): void
     {
         $this->loginAs($this->agentId, 'portal');

@@ -304,8 +304,12 @@ $contentValidationChecked = isset($_SESSION['_old_input']['shared_accounts'])
                     <td><?= e($yesNo($r['stop_processing'] ?? 0)) ?></td>
                 <?php endif; ?>
                     <td class="table-actions nowrap">
+                        <?php if ($kind === 'templates' && empty($r['can_edit'])): ?>
+                        <span class="text-xs text-muted" title="Freigegebene Vorlage eines anderen Benutzers">Nur Ansicht</span>
+                        <?php else: ?>
                         <a class="btn btn-ghost btn-sm" href="/helpdesk/admin/<?= e($kind) ?>/<?= (int) $r['id'] ?>/edit"><?= icon('pen') ?> Bearbeiten</a>
                         <form method="post" action="/helpdesk/admin/<?= e($kind) ?>/<?= (int) $r['id'] ?>/toggle"<?= in_array($kind, ['tags', 'rules'], true) ? ' data-confirm="' . e(($kind === 'tags' ? 'Tag' : 'Regel') . ' wirklich löschen?') . '"' : '' ?>><?= csrf_field() ?><button type="submit" class="btn btn-ghost btn-sm"><?= icon(in_array($kind, ['tags', 'rules'], true) ? 'trash' : (!empty($r['is_active']) ? 'x' : 'refresh')) ?> <?= in_array($kind, ['tags', 'rules'], true) ? 'Löschen' : (!empty($r['is_active']) ? 'Deaktivieren' : 'Aktivieren') ?></button></form>
+                                               <?php endif; ?>
                     </td>
                 </tr>
             <?php endforeach; ?>

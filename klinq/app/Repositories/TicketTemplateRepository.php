@@ -53,10 +53,23 @@ final class TicketTemplateRepository extends BaseRepository
         return $this->fetchOne(self::SELECT . ' WHERE tp.id = :id', ['id' => $id]);
     }
 
-    /** @return array<string,mixed>|null */
-    public function findByName(string $name): ?array
+    /**
+     * Namenskonflikt im Umfang der Vorlage: Freigegebene Vorlagen tragen einen eindeutigen Namen
+     * (Datenbank: uq_ticket_templates_shared_name); zusätzlich doppelt keine Vorlage einen Namen
+     * desselben Erstellers. Fremde persönliche Vorlagen zählen nicht – sie bleiben unsichtbar.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findNameConflict(string $name, int $ownerId, ?int $excludeId = null): ?array
     {
-        return $this->fetchOne(self::SELECT . ' WHERE tp.name = :n', ['n' => $name]);
+        $sql = 'SELECT tp.id, tp.name FROM ticket_templates tp WHERE tp.name = :n AND tp.id <> :exclude AND (tp.is_shared = 1';
+        $params = ['n' => $name, 'exclude' => $excludeId ?? 0];
+        if ($ownerId > 0) {
+            $sql .= ' OR tp.created_by = :owner';
+            $params['owner'] = $ownerId;
+        }
+
+        return $this->fetchOne($sql . ') LIMIT 1', $params);
     }
 
     /** @param array<string,mixed> $data */

@@ -402,6 +402,23 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         return $row;
     }
 
+    /**
+     * Vorlagenliste der Administration; `can_edit` markiert, ob Bearbeiten/Umschalten angeboten wird
+     * (freigegebene Vorlagen anderer Benutzer sind für die Gruppe „vorlagen“ nur sichtbar).
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function templateRows(): array
+    {
+        $manageAll = $this->canManageAllTemplates();
+        $userId = (int) $this->currentUser->id();
+        $rows = $this->templates->all(false, false, $manageAll ? null : $userId);
+
+        return array_map(static fn (array $row): array => $row + [
+            'can_edit' => $manageAll || ($userId > 0 && (int) ($row['created_by'] ?? 0) === $userId),
+        ], $rows);
+    }
+
     /** @return array<string,string> */
     private function visibleKinds(): array
     {
@@ -427,7 +444,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'task-categories' => $this->taskCategories->all(false),
             'slas' => $this->slas->all(false),
             'tags' => $this->tags->all(),
-            'templates' => $this->templates->all(false, false, $this->canManageAllTemplates() ? null : $this->currentUser->id()),
+            'templates' => $this->templateRows(),
             'rules' => $this->rules->all(),
             default => [],
         };

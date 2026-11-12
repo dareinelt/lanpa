@@ -154,6 +154,31 @@ final class ModuleNavigationTest extends TestCase
     }
 
     /**
+     * Die Berechtigungsgruppe „vorlagen“ öffnet die Help-Desk-Administration ausschließlich für
+     * den Reiter „Vorlagen“ – ohne Agentenbereich und ohne vollen Einstellungszugang.
+     */
+    public function testTemplateGroupGetsItsOwnAdministrationEntry(): void
+    {
+        $items = ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['portal.view', 'helpdesk.templates']));
+        $this->assertSame(['portal', 'portal-tickets', 'helpdesk-admin'], $this->keys($items));
+
+        $entry = $items[2];
+        $this->assertSame('Help-Desk-Administration', $entry['label']);
+        $this->assertSame('/helpdesk/admin?tab=templates', $entry['href']);
+        $this->assertSame(ModuleNavigation::HELPDESK, ModuleNavigation::moduleFor((string) $entry['key']));
+
+        $agent = ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['helpdesk.view', 'helpdesk.templates']));
+        $admin = array_values(array_filter($agent, static fn (array $item): bool => ($item['key'] ?? '') === 'helpdesk-admin'));
+        $this->assertCount(1, $admin);
+        $this->assertSame('Help-Desk-Administration', $admin[0]['label']);
+
+        $categoryManager = ModuleNavigation::items(ModuleNavigation::HELPDESK, $this->can(['helpdesk.view', 'helpdesk.categories', 'helpdesk.templates']));
+        $settings = array_values(array_filter($categoryManager, static fn (array $item): bool => ($item['key'] ?? '') === 'helpdesk-admin'));
+        $this->assertSame('Help-Desk-Einstellungen', $settings[0]['label'], 'Vollzugriff behält den bisherigen Einstellungsnamen');
+        $this->assertSame('/helpdesk/admin', $settings[0]['href']);
+    }
+
+    /**
      * Der Bereich „Aufgaben“ hängt am Agentenbereich (`helpdesk.view`). Rollen mit Assetzugriff
      * sehen im Help Desk nur das Portal, und selbst ein einzeln vergebenes `helpdesk.tasks`
      * öffnet die Aufgabenliste nicht.

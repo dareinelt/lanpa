@@ -133,6 +133,7 @@ selbst liegt in der `settings`-Tabelle des Intranets.
 | Ticket löschen | Berechtigungsgruppe `ticket_loeschen` |
 | Ticket stornieren | Berechtigungsgruppe `ticket_stornieren` |
 | Aufgabenverteilung | Berechtigungsgruppe `aufgabenverteilung` |
+| Help-Desk-Vorlagen (nur eigene oder alle) | Berechtigungsgruppe `vorlagen` |
 
 Regeln:
 
@@ -143,7 +144,7 @@ Regeln:
   (oder eine Leitung) in dieser Gruppe darf daher auch Assets, Standorte, Hersteller
   und Artikel pflegen.
 * Berechtigungsgruppen (Statistiken, Ticketaufruf, Ticket löschen, Ticket
-  stornieren, Aufgabenverteilung) sind unabhängig von der Rolle und werden
+  stornieren, Aufgabenverteilung, Help-Desk-Vorlagen) sind unabhängig von der Rolle und werden
   zusätzlich vergeben.
 * **Löschen und Stornieren sind getrennte Rechte.** Ohne die jeweilige Gruppe –
   und ohne Admin-Rolle – dürfen auch Help-Desk-Agenten, Leitungen und die
@@ -154,6 +155,12 @@ Regeln:
   annehmen und bearbeiten dürfen alle Help-Desk-Rollen; die Gruppe ist nur für
   die Zuweisung an andere nötig (Einzelheiten in der KLINQ-Dokumentation,
   Abschnitt „Aufgaben“).
+* **Help-Desk-Vorlagen:** Mitglieder der Gruppe „Help-Desk-Vorlagen“ erhalten in
+  KLINQ das Navigationselement **Help-Desk-Administration** mit ausschließlich
+  dem Reiter **Vorlagen** und legen dort Vorlagen an – wahlweise nur für sich
+  selbst oder für alle Agenten. Ein Help-Desk-Rolle ist dafür nicht nötig; die
+  Gruppe ersetzt keine Rolle. Wer die Leitung oder die Help-Desk-Administration
+  innehat, verwaltet weiterhin alle Vorlagen.
 * Wer in keiner der Gruppen ist, erhält `klinq_default_role`
   (Vorgabe: `portal` – ausschließlich das Serviceportal mit den eigenen Tickets,
   Hilfe & Anleitungen und der Störmeldung). Die Rolle sieht **keinen** Teil der

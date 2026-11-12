@@ -153,8 +153,10 @@ return static function (Router $router, Container $c): void {
     $router->get('/helpdesk/reports', static fn (Request $r): Response => $reports()->index($r), 'helpdesk.reports');
     $router->get('/helpdesk/reports/export', static fn (Request $r): Response => $reports()->export($r), 'helpdesk.export');
 
-    // Administration – je Bereich eigene Berechtigung; der Bereich wird aus dem Pfad gelesen
-    $router->get('/helpdesk/admin', static fn (Request $r): Response => $admin()->index($r), 'helpdesk.categories');
+    // Administration – je Bereich eigene Berechtigung; der Bereich wird aus dem Pfad gelesen.
+    // Die Übersicht selbst prüft das Recht des gewählten Bereichs im Controller, damit auch die
+    // Vorlagenrolle („helpdesk.templates“) hereinkommt und nur ihren Reiter sieht.
+    $router->get('/helpdesk/admin', static fn (Request $r): Response => $admin()->index($r), null);
     $router->get('/helpdesk/admin/mail', static fn (Request $r): Response => $admin()->mail($r), 'helpdesk.admin');
     $router->post('/helpdesk/admin/quick-report', static fn (Request $r): Response => $admin()->saveQuickReport($r), 'helpdesk.admin');
     $router->post('/helpdesk/admin/error-origins', static fn (Request $r): Response => $admin()->saveErrorOrigins($r), 'helpdesk.admin');

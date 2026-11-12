@@ -18,18 +18,33 @@ final class TicketTemplateRepository extends BaseRepository
         LEFT JOIN users u ON u.id = tp.assignee_user_id
         LEFT JOIN ticket_slas s ON s.id = tp.sla_id';
 
-    /** @return array<int,array<string,mixed>> */
-    public function all(bool $activeOnly = false, bool $portalOnly = false): array
+    /**
+     * @param int|null $viewerId Wenn gesetzt, werden nur Vorlagen geliefert, die dieser Benutzer
+     *                           sehen darf: für alle freigegebene sowie seine eigenen persönlichen.
+     * @return array<int,array<string,mixed>>
+     */
+    public function all(bool $activeOnly = false, bool $portalOnly = false, ?int $viewerId = null): array
     {
         $where = [];
+        $params = [];
         if ($activeOnly) {
             $where[] = 'tp.is_active = 1';
         }
         if ($portalOnly) {
-            $where[] = 'tp.is_portal_visible = 1';
+            // Persönliche Vorlagen (is_shared = 0) erreichen das Portal nur über ihren Ersteller.
+            $where[] = $viewerId === null
+                ? 'tp.is_portal_visible = 1'
+                : '(tp.is_portal_visible = 1 OR (tp.is_shared = 0 AND tp.created_by = :viewer))';
+        }
+        if ($viewerId !== null) {
+            $where[] = '(tp.is_shared = 1 OR tp.created_by = :viewer)';
+            $params['viewer'] = $viewerId;
         }
 
-        return $this->fetchAll(self::SELECT . ($where === [] ? '' : ' WHERE ' . implode(' AND ', $where)) . ' ORDER BY tp.sort_order, tp.name');
+        return $this->fetchAll(
+            self::SELECT . ($where === [] ? '' : ' WHERE ' . implode(' AND ', $where)) . ' ORDER BY tp.sort_order, tp.name',
+            $params
+        );
     }
 
     /** @return array<string,mixed>|null */

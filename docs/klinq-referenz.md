@@ -41,7 +41,7 @@ Auswertungen). Die Anwendung bleibt in ihrem Verhalten unverändert.
 | **Dienst-Token** | Gemeinsames Geheimnis für die internen Schnittstellen (`/internal/klinq/*`), liegt als Datei im Volume `sso_token`. |
 | **Melder** | Person, die über `/stoerung` eine Störmeldung abgibt. |
 | **Bereich (area)** | Grobe Sichtbarkeit in KLINQ: `helpdesk`, `assets`, `statistics`, `tickets`, `admin`. |
-| **Berechtigungsgruppe** | Feine Zusatzfreigabe in KLINQ: `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung`. |
+| **Berechtigungsgruppe** | Feine Zusatzfreigabe in KLINQ: `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung`, `vorlagen`. |
 
 ---
 
@@ -313,7 +313,7 @@ beider Anwendungen. Base64url ohne Auffüllzeichen (`-`, `_`, kein `=`).
 | `ip` | string | Client-Adresse (`ClientAddress::from`) |
 | `host` | string | Rechnername zur Client-Adresse |
 | `role` | string | `admin`, `helpdesk_admin`, `helpdesk_lead`, `helpdesk_agent`, `assetmanagement`, `readonly`, `portal` |
-| `permission_groups` | string[] | `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung` |
+| `permission_groups` | string[] | `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung`, `vorlagen` |
 | `areas` | string[] | `portal`, `helpdesk`, `assets`, `statistics`, `tickets`, `admin` |
 | `report_only` | bool | `true` nur bei `/stoerung` |
 | `iss` | string | immer `lanpa` |
@@ -415,7 +415,7 @@ KLINQ) bleibt unverändert; sie ist keine Anmeldefunktion.
 
 ### 8.1 Zuordnung im Intranet
 
-`KlinqConfigService::GROUP_KEYS` verbindet zehn Einstellungen mit Rolle,
+`KlinqConfigService::GROUP_KEYS` verbindet elf Einstellungen mit Rolle,
 Berechtigungsgruppe und Bereich:
 
 | Einstellung | Bezeichnung im Formular | Rolle | Berechtigung | Bereich |
@@ -430,6 +430,7 @@ Berechtigungsgruppe und Bereich:
 | `klinq_ticket_delete_groups` | Ticket löschen | – | `ticket_loeschen` | `helpdesk` |
 | `klinq_ticket_cancel_groups` | Ticket stornieren | – | `ticket_stornieren` | `helpdesk` |
 | `klinq_task_assignment_groups` | Aufgabenverteilung | – | `aufgabenverteilung` | `helpdesk` |
+| `klinq_template_groups` | Help-Desk-Vorlagen (nur eigene oder alle) | – | `vorlagen` | `helpdesk` |
 
 Die Einträge für Löschen (`helpdesk.delete`) und Stornieren (`helpdesk.cancel`)
 vergeben gezielt diese beiden Rechte. Ohne diese Gruppen – und ohne Admin-Rolle –
@@ -446,6 +447,16 @@ Mitglieder dieser AD-Gruppen erhalten `helpdesk.tasks.assign` und dürfen damit
 Aufgaben aus „Alle Aufgaben“ einem bestimmten Agenten zuweisen. Das Annehmen und
 Bearbeiten von Aufgaben (`helpdesk.tasks`) hängt dagegen an den Help-Desk-Rollen
 und benötigt keine zusätzliche Gruppe.
+
+`klinq_template_groups` öffnet die Vorlagenverwaltung ohne Help-Desk-Rolle: Die
+Mitglieder erhalten `helpdesk.templates`, in der Navigation erscheint
+**Help-Desk-Administration** mit ausschließlich dem Reiter **Vorlagen**
+(`/helpdesk/admin?tab=templates`). Sie legen Vorlagen an, die per
+`ticket_templates.is_shared` entweder für alle Agenten oder nur für sie selbst
+gelten; fremde persönliche Vorlagen bleiben ihnen verborgen. Vollzugriff auf alle
+Vorlagen behält, wer `helpdesk.templates.manage` besitzt (`klinq_helpdesk_lead_groups`,
+`klinq_helpdesk_admin_groups`, `klinq_admin_groups`). Die Rolle ändert die Gruppe
+nicht (`role` leer) – sie ist eine additive Freigabe.
 
 Weitere Einstellungen:
 

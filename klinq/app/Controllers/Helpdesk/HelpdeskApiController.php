@@ -257,7 +257,7 @@ final class HelpdeskApiController extends HelpdeskBaseController
     /** Sichtbare Vorlagen (Agent: alle aktiven, Portal: nur portalsichtbare). */
     public function templates(Request $request): Response
     {
-        $rows = $this->templates->all(true, !$this->service->isAgent());
+        $rows = $this->templates->all(true, !$this->service->isAgent(), (int) $this->currentUser->id());
 
         return $this->json(['items' => array_map(static fn (array $t): array => ['id' => (int) $t['id'], 'name' => $t['name'], 'label' => $t['name'], 'meta' => $t['description'] ?? ''], $rows)]);
     }

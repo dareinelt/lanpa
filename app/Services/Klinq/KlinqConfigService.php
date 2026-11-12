@@ -129,6 +129,14 @@ final class KlinqConfigService
             'permission' => 'aufgabenverteilung',
             'area' => 'helpdesk',
         ],
+        'klinq_template_groups' => [
+            // Eigene Berechtigungsgruppe ohne Rolle: Mitglieder bleiben in ihrer bisherigen Rolle
+            // und duerfen zusaetzlich Help-Desk-Vorlagen anlegen und bearbeiten.
+            'label' => 'Help-Desk-Vorlagen (nur eigene oder alle)',
+            'role' => '',
+            'permission' => 'vorlagen',
+            'area' => 'helpdesk',
+        ],
     ];
 
     public function __construct(

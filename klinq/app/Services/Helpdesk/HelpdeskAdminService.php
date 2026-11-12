@@ -383,6 +383,11 @@ final class HelpdeskAdminService
     {
         $this->currentUser->require('helpdesk.templates');
         $existing = $id !== null ? ($this->templates->find($id) ?? throw new NotFoundException('Vorlage nicht gefunden.')) : null;
+        // Ohne Verwaltungsrecht (Berechtigungsgruppe „vorlagen“) sind nur eigene Vorlagen erreichbar.
+        $manageAll = $this->currentUser->can('helpdesk.templates.manage');
+        if ($existing !== null && !$manageAll && (int) ($existing['created_by'] ?? 0) !== (int) $this->currentUser->id()) {
+            throw new NotFoundException('Vorlage nicht gefunden.');
+        }
         $v = (new Validator($input))
             ->string('name', 'Bezeichnung', true, 120)
             ->string('description', 'Beschreibung', false, 255)
@@ -396,6 +401,7 @@ final class HelpdeskAdminService
             ->id('assignee_user_id', 'Bearbeiter')
             ->id('sla_id', 'SLA')
             ->string('tags', 'Tags', false, 500)
+            ->bool('is_shared')
             ->bool('is_portal_visible')
             ->bool('is_active')
             ->int('sort_order', 'Sortierung', false, 0, 9999);
@@ -404,6 +410,11 @@ final class HelpdeskAdminService
         }
         $data = $v->validated();
         $data['sort_order'] ??= 0;
+        if (!$manageAll) {
+            // Vorlagen aus der Gruppe „vorlagen“ gehen nicht ins Portal; eine bestehende
+            // Portal-Freigabe eines Administrators bleibt beim Bearbeiten erhalten.
+            $data['is_portal_visible'] = $existing !== null ? (int) ($existing['is_portal_visible'] ?? 0) : 0;
+        }
         $duplicate = $this->templates->findByName((string) $data['name']);
         if ($duplicate !== null && (int) $duplicate['id'] !== $id) {
             throw ValidationException::single('name', 'Diese Bezeichnung ist bereits vergeben.');

@@ -182,6 +182,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'notificationSettings' => $this->notificationSettings->all(),
             'statusCategories' => HelpdeskAdminService::STATUS_CATEGORIES,
             'triggers' => TicketRuleRepository::TRIGGERS,
+            'canManageAllTemplates' => $this->canManageAllTemplates(),
         ]);
     }
 
@@ -378,6 +379,29 @@ final class HelpdeskAdminController extends HelpdeskBaseController
 
     // ------------------------------------------------------------------ intern
 
+    /**
+     * Vorlagen aller Benutzer verwalten (Leitung/Administration) oder nur die eigenen
+     * (Berechtigungsgruppe „vorlagen“).
+     */
+    private function canManageAllTemplates(): bool
+    {
+        return $this->currentUser->can('helpdesk.templates.manage');
+    }
+
+    /** Vorlage laden und – ohne Verwaltungsrecht – auf eigene Vorlagen begrenzen. @return array<string,mixed>|null */
+    private function templateRow(int $id): ?array
+    {
+        $row = $this->templates->find($id);
+        if ($row === null) {
+            return null;
+        }
+        if (!$this->canManageAllTemplates() && (int) ($row['created_by'] ?? 0) !== (int) $this->currentUser->id()) {
+            return null;
+        }
+
+        return $row;
+    }
+
     /** @return array<string,string> */
     private function visibleKinds(): array
     {
@@ -403,7 +427,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'task-categories' => $this->taskCategories->all(false),
             'slas' => $this->slas->all(false),
             'tags' => $this->tags->all(),
-            'templates' => $this->templates->all(false),
+            'templates' => $this->templates->all(false, false, $this->canManageAllTemplates() ? null : $this->currentUser->id()),
             'rules' => $this->rules->all(),
             default => [],
         };
@@ -436,7 +460,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'task-categories' => $this->taskCategories->find($id),
             'slas' => $this->slas->find($id),
             'tags' => $this->tags->find($id),
-            'templates' => $this->templates->find($id),
+            'templates' => $this->templateRow($id),
             'rules' => $this->rules->find($id),
             default => throw new NotFoundException('Unbekannter Bereich.'),
         };
@@ -510,6 +534,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'slas' => $this->slas->all(true),
             'groupMembers' => $groupMembers,
             'groupLeads' => $groupLeads,
+            'canManageAllTemplates' => $this->canManageAllTemplates(),
             'scripts' => ['/js/helpdesk.js'],
         ]);
     }

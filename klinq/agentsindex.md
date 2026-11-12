@@ -93,7 +93,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–040), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034), Servicezeiten der SLA (035), Screenshots in der Lösung (036), Grund der Weiterleitung (037), Help-Desk-Kalender (038), Kontaktverzeichnis (039), Assettypen ohne Inventarnummer/Lagerartikel (040) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–041), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034), Servicezeiten der SLA (035), Screenshots in der Lösung (036), Grund der Weiterleitung (037), Help-Desk-Kalender (038), Kontaktverzeichnis (039), Assettypen ohne Inventarnummer/Lagerartikel (040), Vorlagenumfang und Berechtigungsgruppe „Help-Desk-Vorlagen“ (041) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen/Kategorien – nur in leere Tabellen, danach Pflege im Katalog –, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -333,8 +333,14 @@ Help-Desk-Rollen; das Zuweisen an einen bestimmten Agenten (`helpdesk.tasks.assi
 KLINQ → Zugriff als `klinq_task_assignment_groups` gepflegt. Die Gruppe „Asset-Management“
 (`assetmanagement`) trägt dieselben Rechte wie die gleichnamige Rolle; das Intranet übergibt sie für Mitglieder
 der AD-Gruppe `klinq_asset_groups` zusätzlich, damit z. B. ein Help-Desk-Agent auch Standorte, Hersteller
-und Artikel pflegen darf (sonst gewänne nur die höhere Agentenrolle). Die Gruppendatensätze legen die Migrationen
-`033_permission_groups_defaults.sql` und `034_permission_group_assetmanagement.sql` an (zusätzlich zu den Seedern); fehlt dennoch eine in
+und Artikel pflegen darf (sonst gewänne nur die höhere Agentenrolle). Die Gruppe „Darf Help-Desk-Vorlagen
+anlegen“ (`vorlagen`, AD-Gruppe `klinq_template_groups`) vergibt `helpdesk.templates`: Mitglieder erhalten das
+Navigationselement **Help-Desk-Administration** mit ausschließlich dem Reiter **Vorlagen** und legen dort
+Vorlagen an, die per `ticket_templates.is_shared` entweder für alle Agenten oder nur für sie selbst gelten;
+fremde persönliche Vorlagen verwalten weiterhin nur `helpdesk.templates.manage` (Leitung, Administration,
+Admin-Rolle). Die Gruppendatensätze legen die Migrationen
+`033_permission_groups_defaults.sql`, `034_permission_group_assetmanagement.sql` und
+`041_helpdesk_template_scope.sql` an (zusätzlich zu den Seedern); fehlt dennoch eine in
 `config/permissions.php` bekannte Gruppe, legt `LanpaUserService` sie bei der Intranet-Anmeldung an
 (Warnung im Log), statt die übergebene Gruppe zu verwerfen.
 
@@ -507,7 +513,7 @@ docker compose exec app php tests/run.php # alle Tests inkl. Integration (Test-D
 | Help-Desk-Regeln/SLA/Eskalation | `Helpdesk/TicketRuleService`, `Helpdesk/TicketRuleEvaluator`, `Helpdesk/TicketSlaService`, `Helpdesk/HelpdeskSchedulerService`, `HELPDESK_*`-Variablen, `docs/helpdesk.md` |
 | Help-Desk-Mail-Eingang | `Helpdesk/TicketMailIngestionService`, `Helpdesk/Mail/*`, `Helpdesk/MailboxSettingsService`, `HelpdeskMailboxController`, `HELPDESK_MAIL_*`/`HELPDESK_IMAP_*`-Variablen |
 | Help-Desk-Mail-Versand | `MailClient` (Konto vor Container), `Helpdesk/OutboundMailSettingsService`, `Helpdesk/Mail/SmtpTransport`, `HelpdeskOutboundMailController`, `HELPDESK_SMTP_*`-Variablen (nur Startwerte) |
-| Neue Berechtigungsgruppe | `config/permissions.php` (`groups`/`group_labels`) → Recht an Route/Service prüfen → `UserService` (Zuordnung) |
+| Neue Berechtigungsgruppe | `config/permissions.php` (`groups`/`group_labels`) → Migration mit `INSERT` in `permission_groups` → Recht an Route/Service prüfen → `UserService` (Zuordnung) → im Intranet `KlinqConfigService::GROUP_KEYS` (`app/Services/Klinq/`) für die AD-Gruppe |
 
 ---
 

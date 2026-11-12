@@ -407,8 +407,10 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   und beim Anzeigen expandiert (`occurrences()`: Monatsende geklemmt, Dauer als Wanduhr-Abstand über die
   Zeitumstellung, höchstens 400 Vorkommen je Zeitraum, optional bis `recurrence_until`); abweichende und abgesagte
   Einzeltermine sind Zeilen mit `series_parent_id`, die Expansion überspringt sie. Beim Ändern/Löschen entscheidet
-  `scope` (`series`/`occurrence`) zwischen ganzer Serie (Einzeltermine werden verworfen, Datumsverschiebung über
-  `shiftDates()` auf den aufgerufenen Tag) und einzelnem Vorkommen. Routen: `GET /helpdesk/kalender`
+  `scope` (`series`/`occurrence`) zwischen ganzer Serie (Einzeltermine werden verworfen, Formulardaten werden vor der
+  Prüfung über `shiftInputDates()` vom aufgerufenen Tag auf den ersten Termin zurückverschoben) und einzelnem Vorkommen
+  (Wiederholung wird nicht geprüft; `occurrenceDate()` akzeptiert nur echte Vorkommen, vorhandene Einzeltermine je
+  `series_date` werden wiederverwendet). Routen: `GET /helpdesk/kalender`
   (`?ansicht=tag|arbeitswoche|monat&datum=JJJJ-MM-TT`, `helpdesk.view`, Ansicht je Sitzung gemerkt),
   `GET /helpdesk/kalender/neu`, `POST /helpdesk/kalender`, `GET|POST /helpdesk/kalender/{id}`
   (`?termin=JJJJ-MM-TT` wählt das Vorkommen, das Formular gibt es als `occurrence` zurück),

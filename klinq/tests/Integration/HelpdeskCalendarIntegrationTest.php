@@ -276,6 +276,58 @@ final class HelpdeskCalendarIntegrationTest extends DatabaseTestCase
         $this->assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM helpdesk_calendar_events')->fetchColumn(), 'Ganze Serie löscht auch die Ausblendemarken');
     }
 
+    public function testSeriesEdgeCasesFromReview(): void
+    {
+        // Tägliche ganztägige Serie: das exklusive Ende um 00:00 zählt nicht als zweiter Tag.
+        $daily = $this->calendar()->create(['title' => 'Bereitschaft', 'date' => '2026-11-10', 'all_day' => '1', 'recurrence' => 'daily']);
+        $this->assertSame('daily', $daily['recurrence']);
+
+        $series = $this->calendar()->create([
+            'title' => 'Wartung Serverraum',
+            'date' => '2026-11-10',
+            'start_time' => '09:00',
+            'recurrence' => 'weekly',
+            'recurrence_until' => '2026-11-24',
+        ]);
+        $id = (int) $series['id'];
+        $count = fn (): int => (int) $this->pdo->query('SELECT COUNT(*) FROM helpdesk_calendar_events WHERE series_parent_id = ' . $id)->fetchColumn();
+
+        // Einzelnes Vorkommen über das Serienende hinaus verschieben: die Wiederholung wird nicht geprüft.
+        $moved = $this->calendar()->update($id, [
+            'title' => 'Wartung Serverraum', 'date' => '2026-11-26', 'start_time' => '09:00', 'occurrence' => '2026-11-24',
+        ], HelpdeskCalendarService::SCOPE_OCCURRENCE);
+        $this->assertSame('2026-11-24', $moved['series_date']);
+
+        // Veralteter Aufruf über den Serientermin ändert den vorhandenen Einzeltermin statt einen zweiten anzulegen.
+        $this->calendar()->update($id, [
+            'title' => 'Wartung (verschoben)', 'date' => '2026-11-25', 'start_time' => '09:00', 'occurrence' => '2026-11-24',
+        ], HelpdeskCalendarService::SCOPE_OCCURRENCE);
+        $this->assertSame(1, $count());
+
+        // Tage ohne Vorkommen werden abgelehnt (keine verwaisten Einzeltermine oder Ausblendemarken).
+        $this->assertThrows(ValidationException::class, fn () => $this->calendar()->update($id, [
+            'title' => 'x', 'date' => '2026-11-11', 'start_time' => '09:00', 'occurrence' => '2026-11-11',
+        ], HelpdeskCalendarService::SCOPE_OCCURRENCE));
+        $this->assertThrows(ValidationException::class, fn () => $this->calendar()->delete($id, HelpdeskCalendarService::SCOPE_OCCURRENCE, '2026-12-01'));
+        $this->assertSame(1, $count());
+
+        // Serie über ein späteres Vorkommen verkürzen: das Serienende wird gegen den ersten Termin geprüft.
+        $updated = $this->calendar()->update($id, [
+            'title' => 'Wartung Serverraum', 'date' => '2026-11-17', 'start_time' => '09:00',
+            'recurrence' => 'weekly', 'recurrence_until' => '2026-11-12', 'occurrence' => '2026-11-17',
+        ], HelpdeskCalendarService::SCOPE_SERIES);
+        $this->assertSame('2026-11-10', $updated['start_local']->format('Y-m-d'));
+        $this->assertSame('2026-11-12', $updated['recurrence_until']);
+
+        // Mehrtägiges Vorkommen, das am Serienende beginnt, erscheint auch an den Folgetagen.
+        $this->calendar()->create([
+            'title' => 'Inventur', 'date' => '2026-10-22', 'end_date' => '2026-10-26', 'start_time' => '08:00', 'end_time' => '16:00',
+            'recurrence' => 'weekly', 'recurrence_until' => '2026-10-29',
+        ]);
+        $titles = array_map(static fn (array $e): string => $e['title'], $this->calendar()->eventsIn(['start' => '2026-11-01', 'end' => '2026-11-02']));
+        $this->assertContains('Inventur', $titles);
+    }
+
     public function testPortalUserCannotWrite(): void
     {
         $this->loginAs($this->agentId, 'portal');

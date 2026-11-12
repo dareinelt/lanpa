@@ -858,8 +858,12 @@ einem abweichenden Einzeltermin also auf dessen eigenem Datum.
 
 Regeln und Grenzen (Serverseite prüft unabhängig vom Formular):
 
-- Eine tägliche Wiederholung braucht einen größeren Abstand als die Termindauer, sonst überschneiden sich die Termine.
-- Das Serienende muss am oder nach dem ersten Termin liegen; ein ungültiges Datum wird abgelehnt.
+- Eine tägliche Wiederholung braucht einen größeren Abstand als die Termindauer, sonst überschneiden sich die Termine;
+  ein ganztägiger Termin belegt dabei nur seinen eigenen Tag (täglich ganztägig ist erlaubt).
+- Das Serienende muss am oder nach dem ersten Termin liegen; ein ungültiges Datum wird abgelehnt. Beim Bearbeiten der
+  ganzen Serie über einen späteren Termin wird gegen den ersten Termin der Serie geprüft.
+- Ein einzelner Termin darf auch über das Serienende hinaus verschoben werden; Wiederholung und Serienende ändert er
+  nicht. Geändert oder abgesagt werden können nur Tage, an denen die Serie tatsächlich einen Termin hat.
 - Je Serie und Anzeigezeitraum werden höchstens 400 Vorkommen erzeugt (Schutz vor Endlosschleifen).
 
 ### Termin aus einem Ticket

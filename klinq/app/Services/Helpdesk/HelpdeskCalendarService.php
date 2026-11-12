@@ -143,7 +143,9 @@ final class HelpdeskCalendarService
             $rows[(int) $row['id']] = $row;
         }
         // Serien, die vor dem Zeitraum begonnen haben: ihr erstes Vorkommen liegt nicht im Zeitraum.
-        foreach ($this->events->recurring($range['start'], $to) as $row) {
+        // Das letzte Vorkommen kann bis zu MAX_DAYS über das Serienende hinaus in den Zeitraum reichen.
+        $untilFrom = $fromLocal->modify('-' . self::MAX_DAYS . ' days')->format('Y-m-d');
+        foreach ($this->events->recurring($untilFrom, $to) as $row) {
             $series[(int) $row['id']] ??= $row;
         }
 
@@ -242,8 +244,8 @@ final class HelpdeskCalendarService
             return $this->updateOccurrence($old, $parent, $input);
         }
 
-        $data = $this->validate($input);
         if ($parent === null) {
+            $data = $this->validate($input);
             $this->events->update($id, $data + ['updated_by' => $this->currentUser->id()]);
             $this->audit->log('update', 'helpdesk_calendar_event', $id, $data['title'], array_intersect_key($old, $data), $data);
 
@@ -251,13 +253,15 @@ final class HelpdeskCalendarService
         }
 
         // Ganze Serie: Werte und Wiederholung ersetzen, abweichende Einzeltermine entfallen.
-        // Wurde ein einzelnes Vorkommen bearbeitet, bleibt der Beginn der Serie bestehen; übernommen
-        // werden nur Uhrzeit, Dauer und die übrigen Felder.
+        // Wurde ein einzelnes Vorkommen bearbeitet, bleibt der Beginn der Serie bestehen: Die Daten des
+        // Formulars werden vor der Prüfung um den Abstand Vorkommen → erster Termin zurückverschoben,
+        // damit auch das Serienende gegen den ersten Termin geprüft wird.
         $occurrence = trim((string) ($input['occurrence'] ?? ''));
         $anchorDay = $this->localDay((string) $parent['starts_at']);
         if ($occurrence !== '' && self::parseDate($occurrence) !== null && $occurrence !== $anchorDay) {
-            $data = $this->shiftDates($data, $occurrence, $anchorDay);
+            $input = self::shiftInputDates($input, $occurrence, $anchorDay);
         }
+        $data = $this->validate($input);
         $parentId = (int) $parent['id'];
         $this->events->transaction(function () use ($parentId, $data): void {
             $this->events->update($parentId, $data + ['updated_by' => $this->currentUser->id()]);
@@ -482,19 +486,43 @@ final class HelpdeskCalendarService
         return $row;
     }
 
-    /** Termintag des Vorkommens: aus dem Formular, sonst aus dem Einzeltermin bzw. dessen Beginn. */
+    /**
+     * Termintag des Vorkommens. Ein vorhandener Einzeltermin behält seinen gespeicherten Tag; beim
+     * Serientermin muss der Tag aus dem Formular ein Vorkommen der Serie sein.
+     * @param array<string,mixed> $event
+     * @param array<string,mixed> $parent
+     */
     private function occurrenceDate(?string $occurrence, array $event, array $parent): string
     {
-        $value = trim((string) $occurrence);
-        if ($value !== '' && self::parseDate($value) !== null) {
-            return $value;
-        }
-        if (($event['series_date'] ?? null) !== null && (string) $event['series_date'] !== '') {
+        if ((int) $event['id'] !== (int) $parent['id'] && (string) ($event['series_date'] ?? '') !== '') {
             return (string) $event['series_date'];
         }
-        $tz = $this->timezone();
+        $value = trim((string) $occurrence);
+        if ($value === '') {
+            return $this->localDay((string) $parent['starts_at']);
+        }
+        if (self::parseDate($value) === null || $this->occurrenceOn($parent, $value) === null) {
+            throw new ValidationException(['occurrence' => 'An diesem Tag gibt es keinen Termin der Serie.']);
+        }
 
-        return (new \DateTimeImmutable((string) ($parent['starts_at'] ?? $event['starts_at']), new \DateTimeZone('UTC')))->setTimezone($tz)->format('Y-m-d');
+        return $value;
+    }
+
+    /**
+     * Vorkommen der Serie, das am lokalen Tag `$day` beginnt.
+     * @param array<string,mixed> $parent
+     * @return array{start:\DateTimeImmutable,end:\DateTimeImmutable}|null
+     */
+    private function occurrenceOn(array $parent, string $day): ?array
+    {
+        $dayStart = new \DateTimeImmutable($day . ' 00:00:00', $this->timezone());
+        foreach ($this->occurrences($parent, $dayStart, $dayStart->modify('+1 day')) as $key => $item) {
+            if ($key === $day) {
+                return $item;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -506,10 +534,15 @@ final class HelpdeskCalendarService
      */
     private function updateOccurrence(array $event, array $parent, array $input): array
     {
-        $data = $this->validate($input);
+        // Die Wiederholung gehört zur Serie; für ein einzelnes Vorkommen wird sie weder geprüft noch geändert.
+        $data = $this->validate(['recurrence' => ''] + array_diff_key($input, ['recurrence' => true]));
         $day = $this->occurrenceDate((string) ($input['occurrence'] ?? ''), $event, $parent);
         $data = $this->asOccurrence($data, $parent, $day);
 
+        // Über einen veralteten Aufruf des Serientermins kann es den Einzeltermin schon geben.
+        if ((int) $event['id'] === (int) $parent['id']) {
+            $event = $this->childrenByDate((int) $parent['id'])[$day] ?? $event;
+        }
         if ((int) $event['id'] === (int) $parent['id']) {
             $id = $this->events->create($data + [
                 'ticket_id' => $parent['ticket_id'] ?? null,
@@ -572,17 +605,9 @@ final class HelpdeskCalendarService
      */
     private function canceledOccurrence(array $parent, string $day): array
     {
-        $tz = $this->timezone();
-        $dayStart = new \DateTimeImmutable($day . ' 00:00:00', $tz);
-        $start = null;
-        $end = null;
-        foreach ($this->occurrences($parent, $dayStart, $dayStart->modify('+1 day')) as $key => $item) {
-            if ($key === $day) {
-                $start = $this->toUtc($item['start']);
-                $end = $this->toUtc($item['end']);
-                break;
-            }
-        }
+        $item = $this->occurrenceOn($parent, $day);
+        $start = $item !== null ? $this->toUtc($item['start']) : null;
+        $end = $item !== null ? $this->toUtc($item['end']) : null;
 
         return [
             'title' => (string) $parent['title'],
@@ -860,7 +885,8 @@ final class HelpdeskCalendarService
         }
         $interval = max(1, min(self::MAX_INTERVAL, (int) ($input['recurrence_interval'] ?? 1)));
         if ($rule === 'daily') {
-            $spanDays = (int) $start->setTime(0, 0)->diff($end->setTime(0, 0))->days + 1;
+            // Letzter belegter Augenblick: ganztägige Termine enden exklusiv um 00:00 des Folgetags.
+            $spanDays = (int) $start->setTime(0, 0)->diff($end->modify('-1 second')->setTime(0, 0))->days + 1;
             if ($interval < $spanDays) {
                 $errors['recurrence_interval'] = 'Bei täglicher Wiederholung muss der Abstand größer als die Termindauer sein.';
             }
@@ -916,24 +942,24 @@ final class HelpdeskCalendarService
     }
 
     /**
-     * Verschiebt Beginn und Ende um die Tage zwischen zwei Termintagen (Wanduhr, damit die Uhrzeit bleibt).
-     * @param array<string,mixed> $data
+     * Verschiebt Beginn- und Enddatum des Formulars um die Tage zwischen zwei Termintagen (Uhrzeiten bleiben).
+     * @param array<string,mixed> $input
      * @return array<string,mixed>
      */
-    private function shiftDates(array $data, string $fromDay, string $toDay): array
+    private static function shiftInputDates(array $input, string $fromDay, string $toDay): array
     {
         $days = (int) (new \DateTimeImmutable($fromDay))->diff(new \DateTimeImmutable($toDay))->format('%r%a');
         if ($days === 0) {
-            return $data;
+            return $input;
         }
-        $tz = $this->timezone();
-        $utc = new \DateTimeZone('UTC');
-        foreach (['starts_at', 'ends_at'] as $key) {
-            $local = (new \DateTimeImmutable((string) $data[$key], $utc))->setTimezone($tz);
-            $data[$key] = $this->toUtc($local->modify(sprintf('%+d day', $days)));
+        foreach (['date', 'end_date'] as $key) {
+            $date = self::parseDate((string) ($input[$key] ?? ''));
+            if ($date !== null) {
+                $input[$key] = $date->modify(sprintf('%+d day', $days))->format('Y-m-d');
+            }
         }
 
-        return $data;
+        return $input;
     }
 
     private static function parseDate(string $value): ?\DateTimeImmutable

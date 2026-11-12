@@ -37,8 +37,9 @@ final class HelpdeskCalendarRepository extends BaseRepository
     }
 
     /**
-     * Serientermine, die vor dem Zeitraum beginnen und dort weiterlaufen (unbefristet oder bis `fromDay`).
-     * @param string $fromDay erster Tag des Zeitraums (lokal, Y-m-d) für den Abgleich mit `recurrence_until`
+     * Serientermine, die vor dem Zeitraum beginnen und dort weiterlaufen können (unbefristet oder bis
+     * mindestens `fromDay`).
+     * @param string $fromDay frühester relevanter Serienende-Tag (lokal, Y-m-d) für den Abgleich mit `recurrence_until`
      * @return list<array<string,mixed>>
      */
     public function recurring(string $fromDay, string $toUtc): array

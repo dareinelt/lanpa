@@ -13,6 +13,12 @@ $eventClass = static fn (array $e): string => 'hd-cal-event' . (!empty($e['ticke
 $seriesMark = static fn (array $e): string => empty($e['is_series'])
     ? ''
     : '<span class="hd-cal-repeat" title="' . e('Serientermin: ' . Cal::recurrenceLabel($e)) . '">' . icon('refresh', 'icon icon-xs') . '</span>';
+/** Stand der Checkliste (offen: hervorgehoben, erledigt: Häkchen). */
+$checklistMark = static fn (array $e): string => (int) ($e['checklist_total'] ?? 0) === 0
+    ? ''
+    : '<span class="hd-cal-checklist-mark' . ((int) $e['checklist_confirmed'] < (int) $e['checklist_total'] ? ' is-open' : ' is-done') . '">'
+        . icon((int) $e['checklist_confirmed'] < (int) $e['checklist_total'] ? 'list' : 'check', 'icon icon-xs')
+        . (int) $e['checklist_confirmed'] . '/' . (int) $e['checklist_total'] . '</span>';
 $eventTitle = static function (array $e): string {
     $parts = [Cal::timeLabel($e), (string) $e['title']];
     if (!empty($e['location'])) {
@@ -23,6 +29,9 @@ $eventTitle = static function (array $e): string {
     }
     if (!empty($e['is_series'])) {
         $parts[] = 'Serie: ' . Cal::recurrenceLabel($e);
+    }
+    if ((int) ($e['checklist_total'] ?? 0) > 0) {
+        $parts[] = 'Checkliste ' . (int) $e['checklist_confirmed'] . '/' . (int) $e['checklist_total'] . ' bestätigt';
     }
 
     return implode(' · ', $parts);
@@ -84,7 +93,7 @@ $hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_s
                 <?php foreach ($shown as $ev): ?>
                     <a class="<?= e($eventClass($ev)) ?><?= !empty($ev['all_day']) ? ' is-allday' : '' ?>" href="<?= e($eventUrl($ev)) ?>" title="<?= e($eventTitle($ev)) ?>">
                         <?php if (empty($ev['all_day'])): ?><span class="hd-cal-event-time"><?= e($ev['start_local']->format('Y-m-d') === $day ? $ev['start_local']->format('H:i') : '…') ?></span><?php endif; ?>
-                        <?= $seriesMark($ev) ?><span class="hd-cal-event-title"><?= e($ev['title']) ?></span>
+                        <?= $seriesMark($ev) ?><span class="hd-cal-event-title"><?= e($ev['title']) ?></span><?= $checklistMark($ev) ?>
                     </a>
                 <?php endforeach; ?>
                 <?php if ($more > 0): ?><a class="hd-cal-more" href="<?= e($url('tag', $day)) ?>">+<?= $more ?> weitere</a><?php endif; ?>
@@ -111,7 +120,7 @@ $hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_s
             <?php foreach ($range['days'] as $day): ?>
                 <div class="hd-cal-allday-cell<?= $day === $today ? ' is-today' : '' ?>">
                     <?php foreach (Cal::onDay($events, $day, $timezone, true) as $ev): ?>
-                        <a class="<?= e($eventClass($ev)) ?> is-allday" href="<?= e($eventUrl($ev)) ?>" title="<?= e($eventTitle($ev)) ?>"><?= $seriesMark($ev) ?><span class="hd-cal-event-title"><?= e($ev['title']) ?></span></a>
+                        <a class="<?= e($eventClass($ev)) ?> is-allday" href="<?= e($eventUrl($ev)) ?>" title="<?= e($eventTitle($ev)) ?>"><?= $seriesMark($ev) ?><span class="hd-cal-event-title"><?= e($ev['title']) ?></span><?= $checklistMark($ev) ?></a>
                     <?php endforeach; ?>
                     <?php if ($canEdit): ?><a class="hd-cal-allday-add" href="<?= e($newUrl($day)) ?>" aria-label="Ganztägigen Termin am <?= e(Cal::longDay($day)) ?> anlegen"></a><?php endif; ?>
                 </div>
@@ -137,6 +146,7 @@ $hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_s
                             <span class="hd-cal-event-time"><?= e($item['continues_before'] ? '… ' . $ev['end_local']->format('H:i') : $ev['start_local']->format('H:i') . '–' . $ev['end_local']->format('H:i')) ?></span>
                             <span class="hd-cal-event-title"><?php if (!empty($ev['ticket_id'])): ?><?= icon('ticket', 'icon icon-xs') ?> <?php endif; ?><?= $seriesMark($ev) ?><?= e($ev['title']) ?></span>
                             <?php if (!empty($ev['location'])): ?><span class="hd-cal-event-meta"><?= e($ev['location']) ?></span><?php endif; ?>
+                            <?= $checklistMark($ev) ?>
                         </a>
                     <?php endforeach; ?>
                 </div>
@@ -149,6 +159,7 @@ $hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_s
         <span><span class="hd-cal-swatch"></span> Manuell eingetragen</span>
         <span><span class="hd-cal-swatch is-ticket"></span> Aus Ticket</span>
         <?php if ($hasSeries): ?><span><?= icon('refresh', 'icon icon-xs') ?> Serientermin</span><?php endif; ?>
+        <?php if (array_filter($events, static fn (array $e): bool => (int) ($e['checklist_total'] ?? 0) > 0) !== []): ?><span><?= icon('list', 'icon icon-xs') ?> Checkliste (bestätigt/gesamt)</span><?php endif; ?>
         <?php if ($events === []): ?><span>· Keine Termine in diesem Zeitraum</span><?php endif; ?>
     </div>
 </div>

@@ -180,8 +180,9 @@ $barList = static function (array $rows): void {
             <li class="hd-cal-agenda-item<?= $past ? ' is-past' : '' ?><?= $running ? ' is-running' : '' ?><?= !empty($ev['ticket_id']) ? ' is-ticket' : '' ?>">
                 <span class="hd-cal-agenda-time"><?= e(\App\Services\Helpdesk\HelpdeskCalendarService::timeLabel($ev, $todayLocal)) ?></span>
                 <div class="hd-cal-agenda-main">
-                    <a href="/helpdesk/kalender/<?= (int) $ev['id'] ?>"><strong><?= e($ev['title']) ?></strong></a>
+                    <a href="/helpdesk/kalender/<?= (int) $ev['id'] ?><?= !empty($ev['is_series']) ? '?termin=' . e(rawurlencode((string) $ev['occurrence'])) : '' ?>"><strong><?= e($ev['title']) ?></strong></a>
                     <?php if ($running): ?> <?= badge('läuft', 'success') ?><?php elseif ($past): ?> <?= badge('vorbei', 'neutral') ?><?php endif; ?>
+                    <?php if ((int) ($ev['checklist_total'] ?? 0) > 0): ?> <?= badge('Checkliste ' . (int) $ev['checklist_confirmed'] . '/' . (int) $ev['checklist_total'], (int) $ev['checklist_confirmed'] < (int) $ev['checklist_total'] ? 'warning' : 'success') ?><?php endif; ?>
                     <div class="text-xs text-muted">
                         <?php if (!empty($ev['location'])): ?><?= icon('map', 'icon icon-xs') ?> <?= e($ev['location']) ?><?php endif; ?>
                         <?php if (!empty($ev['ticket_id'])): ?> <?= icon('ticket', 'icon icon-xs') ?> <a href="/helpdesk/tickets/<?= (int) $ev['ticket_id'] ?>"><?= e($ev['ticket_number'] ?? 'Ticket') ?></a><?php endif; ?>

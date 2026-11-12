@@ -109,6 +109,7 @@ return static function (Router $router, Container $c): void {
     $router->get('/helpdesk/kalender/{id}', static fn (Request $r): Response => $calendar()->edit($r), 'helpdesk.view');
     $router->post('/helpdesk/kalender/{id}', static fn (Request $r): Response => $calendar()->update($r), 'helpdesk.update');
     $router->post('/helpdesk/kalender/{id}/loeschen', static fn (Request $r): Response => $calendar()->delete($r), 'helpdesk.update');
+    $router->post('/helpdesk/kalender/{id}/checkliste', static fn (Request $r): Response => $calendar()->checklist($r), 'helpdesk.update');
 
     // Kontaktverzeichnis des Help Desk – gemeinsames Adressbuch, jeder Agent darf lesen und schreiben
     $router->get('/helpdesk/kontakte', static fn (Request $r): Response => $contacts()->index($r), 'helpdesk.view');

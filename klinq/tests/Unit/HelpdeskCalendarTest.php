@@ -143,6 +143,19 @@ final class HelpdeskCalendarTest extends TestCase
         $this->assertSame('', $values['start_time']);
     }
 
+    public function testParseChecklistDropsEmptyRowsAndNormalizesWhitespace(): void
+    {
+        $items = HelpdeskCalendarService::parseChecklist([
+            ['id' => '7', 'label' => "  Backup\n geprüft "],
+            ['label' => '   '],
+            'kaputt',
+            ['id' => 'x', 'label' => 'Neu'],
+        ]);
+
+        $this->assertSame([['id' => 7, 'label' => 'Backup geprüft'], ['id' => null, 'label' => 'Neu']], $items);
+        $this->assertSame([], HelpdeskCalendarService::parseChecklist('kein Array'));
+    }
+
     public function testTicketTitle(): void
     {
         $this->assertSame('HD-2026-000042 · Umzug Büro 3.12', HelpdeskCalendarService::ticketTitle(['number' => 'HD-2026-000042', 'subject' => 'Umzug Büro 3.12']));

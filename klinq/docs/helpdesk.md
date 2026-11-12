@@ -866,6 +866,24 @@ Regeln und Grenzen (Serverseite prüft unabhängig vom Formular):
   nicht. Geändert oder abgesagt werden können nur Tage, an denen die Serie tatsächlich einen Termin hat.
 - Je Serie und Anzeigezeitraum werden höchstens 400 Vorkommen erzeugt (Schutz vor Endlosschleifen).
 
+### Checkliste
+
+Beim Anlegen oder Bearbeiten eines Termins (auch im Dialog „Termin anlegen“ eines Tickets) fügt der Knopf
+**Checkliste anlegen** optional eine Liste von Punkten hinzu (höchstens 30, je bis 300 Zeichen; leere Zeilen werden
+ignoriert). Der bearbeitende Agent hakt jeden Punkt in der Termindetailansicht mit **Bestätigt** ab; eine Bestätigung
+lässt sich zurücknehmen.
+
+- **Sichtbarkeit**: Die Checkliste samt Stand („2/3 bestätigt“ bzw. „Erledigt“) ist für alle mit Lesezugriff auf den
+  Help Desk sichtbar – je Punkt mit Agent und Zeitpunkt der Bestätigung. Kalenderansichten und das Dashboard zeigen
+  bei Terminen mit Checkliste ein Symbol mit dem Stand.
+- **Serientermine**: Die Punkte werden einmal für die ganze Serie festgelegt, abgehakt wird aber je Termin. Eine
+  Checkliste gilt nur für den Termin, über den sie aufgerufen wurde („Gilt nur für den Termin am …“); verschobene
+  Einzeltermine behalten ihren Stand.
+- **Zukunft**: Checklisten von Terminen, die nach dem heutigen Tag liegen, können noch nicht abgearbeitet werden.
+- **Ändern der Punkte**: Umbenannte Punkte behalten ihre Bestätigungen, entfernte Punkte verlieren sie. Wird ein
+  Einzeltermin nachträglich zur Serie, gelten seine Bestätigungen für den ersten Termin der Serie weiter.
+- Abhaken und Zurücknehmen erfordern `helpdesk.update` und werden im Audit-Log protokolliert.
+
 ### Termin aus einem Ticket
 
 Im Ticketdetail öffnet **Weitere … → Termin anlegen** einen Dialog. Beim Öffnen wird der Tickettext (Betreff und Beschreibung,
@@ -891,10 +909,11 @@ verfügbar, sodass aus einem Ticket direkt eine Serie entstehen kann.
 ![Dialog „Termin anlegen“ im Ticket mit gesetzter Wiederholung](screenshots/helpdesk-kalender-serie-aus-ticket.png)
 
 Routen: `GET /helpdesk/kalender`, `GET /helpdesk/kalender/neu`, `POST /helpdesk/kalender`, `GET|POST /helpdesk/kalender/{id}`,
-`POST /helpdesk/kalender/{id}/loeschen`, `GET /helpdesk/tickets/{id}/termin-vorschlaege` (JSON),
-`POST /helpdesk/tickets/{id}/termin`. Beim Aufruf eines Serientermins markiert `?termin=JJJJ-MM-TT` den gewählten Tag
+`POST /helpdesk/kalender/{id}/loeschen`, `POST /helpdesk/kalender/{id}/checkliste`,
+`GET /helpdesk/tickets/{id}/termin-vorschlaege` (JSON), `POST /helpdesk/tickets/{id}/termin`. Beim Aufruf eines Serientermins markiert `?termin=JJJJ-MM-TT` den gewählten Tag
 (`GET /helpdesk/kalender/{id}?termin=2026-11-24`), das Formular gibt ihn als `occurrence` und den Umfang als `scope`
-(`series` oder `occurrence`) zurück. Tabelle `helpdesk_calendar_events` (Migration 038, Serienspalten aus Migration 043).
+(`series` oder `occurrence`) zurück. Tabelle `helpdesk_calendar_events` (Migration 038, Serienspalten aus Migration 043), Checklisten in
+`helpdesk_calendar_checklist_items`/`helpdesk_calendar_checklist_confirmations` (Migration 044).
 
 ## Kontaktverzeichnis
 

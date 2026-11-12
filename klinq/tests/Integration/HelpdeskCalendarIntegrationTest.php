@@ -334,6 +334,117 @@ final class HelpdeskCalendarIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ForbiddenException::class, fn () => $this->calendar()->create(['title' => 'X', 'date' => '2026-07-14', 'start_time' => '09:00']));
     }
 
+    public function testChecklistIsCreatedWithEventAndConfirmedByAgent(): void
+    {
+        $event = $this->calendar()->create([
+            'title' => 'Serverwartung', 'date' => '2026-07-14', 'start_time' => '09:00',
+            'checklist_submitted' => '1',
+            'checklist' => [['label' => 'Backup geprüft'], ['label' => '  '], ['label' => 'Dienste neu gestartet']],
+        ]);
+        $id = (int) $event['id'];
+        $items = $this->calendar()->checklistItems($event);
+        $this->assertSame(['Backup geprüft', 'Dienste neu gestartet'], array_column($items, 'label'), 'Leere Punkte entfallen');
+
+        $before = new \DateTimeImmutable('2026-07-13 10:00:00', new \DateTimeZone('UTC'));
+        $this->assertFalse($this->calendar()->checklist($event, '', $before)['can_confirm'], 'Zukünftige Termine sind gesperrt');
+        $this->assertThrows(ValidationException::class, fn () => $this->calendar()->confirmChecklistItem($id, (int) $items[0]['id'], '', true, $before));
+
+        $onDay = new \DateTimeImmutable('2026-07-14 08:00:00', new \DateTimeZone('UTC'));
+        $this->calendar()->confirmChecklistItem($id, (int) $items[0]['id'], '', true, $onDay);
+        $status = $this->calendar()->checklist($event, '', $onDay);
+        $this->assertSame(1, $status['confirmed']);
+        $this->assertSame('Agent ' . $this->agentId, $status['items'][0]['confirmed_by_name']);
+        $this->assertSame('14.07.2026 10:00', $status['items'][0]['confirmed_local']->format('d.m.Y H:i'));
+
+        $row = $this->calendar()->eventsIn(HelpdeskCalendarService::range('tag', '2026-07-14'))[0];
+        $this->assertSame(2, $row['checklist_total']);
+        $this->assertSame(1, $row['checklist_confirmed']);
+
+        // Lesende Benutzer sehen den Stand, dürfen aber nicht abhaken
+        $this->loginAs($this->agentId, 'portal');
+        $this->assertFalse($this->calendar()->checklist($event, '', $onDay)['can_confirm']);
+        $this->assertThrows(ForbiddenException::class, fn () => $this->calendar()->confirmChecklistItem($id, (int) $items[1]['id'], '', true, $onDay));
+        $this->loginAs($this->agentId, 'helpdesk_agent');
+
+        $this->calendar()->confirmChecklistItem($id, (int) $items[0]['id'], '', false, $onDay);
+        $this->assertSame(0, $this->calendar()->checklist($event, '', $onDay)['confirmed'], 'Bestätigung zurückgenommen');
+    }
+
+    public function testChecklistUpdateKeepsConfirmationsOfRemainingItems(): void
+    {
+        $event = $this->calendar()->create([
+            'title' => 'Rollout', 'date' => '2026-07-14', 'start_time' => '09:00',
+            'checklist_submitted' => '1', 'checklist' => [['label' => 'A'], ['label' => 'B']],
+        ]);
+        $id = (int) $event['id'];
+        [$a, $b] = $this->calendar()->checklistItems($event);
+        $now = new \DateTimeImmutable('2026-07-14 12:00:00', new \DateTimeZone('UTC'));
+        $this->calendar()->confirmChecklistItem($id, (int) $a['id'], '', true, $now);
+
+        $base = ['title' => 'Rollout', 'date' => '2026-07-14', 'start_time' => '09:00'];
+        $this->calendar()->update($id, $base);
+        $this->assertCount(2, $this->calendar()->checklistItems($event), 'Ohne Checklistenfelder bleibt die Checkliste unverändert');
+
+        $this->calendar()->update($id, $base + ['checklist_submitted' => '1', 'checklist' => [
+            ['id' => (string) $a['id'], 'label' => 'A (geändert)'], ['label' => 'C'],
+        ]]);
+        $status = $this->calendar()->checklist($event, '', $now);
+        $this->assertSame(['A (geändert)', 'C'], array_column($status['items'], 'label'));
+        $this->assertSame(1, $status['confirmed'], 'Geänderter Punkt behält seine Bestätigung');
+        $this->assertFalse(in_array((int) $b['id'], array_map(static fn (array $i): int => (int) $i['id'], $status['items']), true));
+
+        $tooMany = array_fill(0, HelpdeskCalendarService::MAX_CHECKLIST_ITEMS + 1, ['label' => 'X']);
+        $this->assertThrows(ValidationException::class, fn () => $this->calendar()->update($id, $base + ['checklist_submitted' => '1', 'checklist' => $tooMany]));
+    }
+
+    public function testSingleEventConvertedToSeriesKeepsConfirmations(): void
+    {
+        $event = $this->calendar()->create([
+            'title' => 'Patchday', 'date' => '2026-07-14', 'start_time' => '09:00',
+            'checklist_submitted' => '1', 'checklist' => [['label' => 'Updates eingespielt']],
+        ]);
+        $id = (int) $event['id'];
+        $item = (int) $this->calendar()->checklistItems($event)[0]['id'];
+        $now = new \DateTimeImmutable('2026-07-21 12:00:00', new \DateTimeZone('UTC'));
+        $this->calendar()->confirmChecklistItem($id, $item, '', true, $now);
+
+        $series = $this->calendar()->update($id, ['title' => 'Patchday', 'date' => '2026-07-14', 'start_time' => '09:00', 'recurrence' => 'weekly']);
+        $first = $this->calendar()->checklist($series, '2026-07-14', $now);
+        $this->assertSame(1, $first['confirmed'], 'Bestätigung gilt für den ersten Termin der Serie weiter');
+        $this->assertSame('Agent ' . $this->agentId, $first['items'][0]['confirmed_by_name']);
+        $this->assertSame(0, $this->calendar()->checklist($series, '2026-07-21', $now)['confirmed']);
+    }
+
+    public function testSeriesChecklistIsConfirmedPerOccurrence(): void
+    {
+        $series = $this->calendar()->create([
+            'title' => 'Wochencheck', 'date' => '2026-11-10', 'start_time' => '09:00', 'recurrence' => 'weekly',
+            'checklist_submitted' => '1', 'checklist' => [['label' => 'Logs gesichtet']],
+        ]);
+        $id = (int) $series['id'];
+        $item = (int) $this->calendar()->checklistItems($series)[0]['id'];
+        $now = new \DateTimeImmutable('2026-11-17 12:00:00', new \DateTimeZone('UTC'));
+
+        $this->calendar()->confirmChecklistItem($id, $item, '2026-11-17', true, $now);
+        $this->assertSame(1, $this->calendar()->checklist($series, '2026-11-17', $now)['confirmed']);
+        $this->assertSame(0, $this->calendar()->checklist($series, '2026-11-10', $now)['confirmed'], 'Gilt nur für das aufgerufene Vorkommen');
+        $this->assertTrue($this->calendar()->checklist($series, '2026-11-24', $now)['is_future']);
+        $this->assertThrows(ValidationException::class, fn () => $this->calendar()->confirmChecklistItem($id, $item, '2026-11-24', true, $now));
+        $this->assertThrows(ValidationException::class, fn () => $this->calendar()->confirmChecklistItem($id, $item, '2026-11-18', true, $now));
+
+        $counts = [];
+        foreach ($this->calendar()->eventsIn(['start' => '2026-11-09', 'end' => '2026-11-25']) as $e) {
+            $counts[$e['occurrence']] = [$e['checklist_confirmed'], $e['checklist_total']];
+        }
+        $this->assertSame(['2026-11-10' => [0, 1], '2026-11-17' => [1, 1], '2026-11-24' => [0, 1]], $counts);
+
+        // Ein abweichender Einzeltermin behält die Bestätigung seines Termintags
+        $child = $this->calendar()->update($id, [
+            'title' => 'Wochencheck', 'date' => '2026-11-17', 'start_time' => '15:00', 'occurrence' => '2026-11-17',
+        ], HelpdeskCalendarService::SCOPE_OCCURRENCE);
+        $this->assertSame(1, $this->calendar()->checklist($child, '', $now)['confirmed']);
+    }
+
     public function testCreateFromTicketLinksTicketAndDefaultsTitle(): void
     {
         $ticket = $this->createTicket('Umzug Arbeitsplatz', 'Bitte am 20.11.2026 um 14 Uhr den PC umziehen.');

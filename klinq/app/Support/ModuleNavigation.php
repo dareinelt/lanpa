@@ -392,13 +392,16 @@ final class ModuleNavigation
             // Kontaktverzeichnis: gemeinsames Adressbuch aller Agenten, direkt unter dem Kalender
             $items[] = self::section('Kontakte');
             $items[] = self::link('helpdesk-kontakte', '/helpdesk/kontakte', 'contacts', 'Kontaktverzeichnis');
-            if ($can('helpdesk.reports') || $can('helpdesk.categories') || $can('helpdesk.admin')) {
+            if ($can('helpdesk.reports') || $can('helpdesk.categories') || $can('helpdesk.admin') || $can('helpdesk.templates')) {
                 $items[] = self::section('Auswertung & System');
                 if ($can('helpdesk.reports')) {
                     $items[] = self::link('helpdesk-reports', '/helpdesk/reports', 'chart', 'Ticket-Berichte');
                 }
                 if ($can('helpdesk.categories') || $can('helpdesk.admin')) {
                     $items[] = self::link('helpdesk-admin', '/helpdesk/admin', 'settings', 'Help-Desk-Einstellungen');
+                } elseif ($can('helpdesk.templates')) {
+                    // Vorlagenrolle: eigener Einstieg, dort nur der Reiter „Vorlagen“.
+                    $items[] = self::link('helpdesk-admin', '/helpdesk/admin?tab=templates', 'settings', 'Help-Desk-Administration');
                 }
             }
             if ($can('portal.view')) {
@@ -419,6 +422,10 @@ final class ModuleNavigation
         ];
         if ($can('knowledgebase.view')) {
             $items[] = self::link('portal-knowledge', '/portal/knowledge', 'book', 'Hilfe & Anleitungen');
+        }
+        if ($can('helpdesk.templates')) {
+            // Vorlagenrolle ohne Agentenrechte: eigener Einstieg in die Help-Desk-Administration.
+            $items[] = self::link('helpdesk-admin', '/helpdesk/admin?tab=templates', 'settings', 'Help-Desk-Administration');
         }
 
         return $items;

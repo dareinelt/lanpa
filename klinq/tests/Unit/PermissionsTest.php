@@ -79,13 +79,31 @@ final class PermissionsTest extends TestCase
             $this->assertTrue($this->permissions->roleHas($role, 'helpdesk.tasks'), $role . ' bearbeitet Aufgaben');
         }
 
-        foreach (['statistik', 'ticketaufruf', 'ticket_loeschen', 'ticket_stornieren'] as $group) {
+        foreach (['statistik', 'ticketaufruf', 'ticket_loeschen', 'ticket_stornieren', 'vorlagen'] as $group) {
             $this->assertFalse($this->permissions->groupHas($group, 'helpdesk.tasks'), 'Gruppe ' . $group . ' öffnet den Aufgabenbereich nicht');
         }
         $this->assertTrue($this->permissions->groupHas('aufgabenverteilung', 'helpdesk.tasks.assign'));
         $this->assertFalse($this->permissions->groupHas('aufgabenverteilung', 'helpdesk.tasks'), 'Die Gruppe weist zu, sie öffnet den Bereich nicht');
         $this->assertFalse($this->permissions->hasEffective('portal', ['aufgabenverteilung'], 'helpdesk.tasks'));
         $this->assertFalse($this->permissions->hasEffective('lager', ['aufgabenverteilung'], 'helpdesk.tasks'));
+    }
+
+    public function testTemplateGroupOnlyOpensTemplateManagement(): void
+    {
+        $this->assertTrue($this->permissions->groupExists('vorlagen'));
+        $this->assertTrue($this->permissions->groupHas('vorlagen', 'helpdesk.templates'));
+        $this->assertFalse($this->permissions->groupHas('vorlagen', 'helpdesk.templates.manage'), 'Nur Leitung und Administration verwalten alle Vorlagen');
+        $this->assertFalse($this->permissions->groupHas('vorlagen', 'helpdesk.view'), 'Die Gruppe öffnet keinen Agentenbereich');
+        $this->assertFalse($this->permissions->groupHas('vorlagen', 'helpdesk.admin'));
+        $this->assertFalse($this->permissions->groupHas('vorlagen', 'helpdesk.categories'));
+
+        $this->assertTrue($this->permissions->hasEffective('portal', ['vorlagen'], 'helpdesk.templates'));
+        $this->assertFalse($this->permissions->hasEffective('portal', ['vorlagen'], 'helpdesk.categories'), 'Der Reiter „Vorlagen“ bleibt der einzige');
+
+        foreach (['helpdesk_lead', 'helpdesk_admin', 'admin'] as $role) {
+            $this->assertTrue($this->permissions->roleHas($role, 'helpdesk.templates.manage'), $role . ' verwaltet alle Vorlagen');
+        }
+        $this->assertFalse($this->permissions->roleHas('helpdesk_agent', 'helpdesk.templates.manage'));
     }
 
     public function testAssetmanagementGroupGrantsMasterDataNextToAgentRole(): void

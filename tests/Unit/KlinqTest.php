@@ -212,6 +212,25 @@ Runner::test('KLINQ: Aufgabenverteilung ist eine eigene Berechtigungsgruppe', st
     Assert::same([], $agent['permission_groups'], 'Ohne Gruppe darf ein Agent nicht zuweisen');
 });
 
+Runner::test('KLINQ: Help-Desk-Vorlagen sind eine eigene Berechtigungsgruppe ohne Rollenwechsel', static function (): void {
+    $config = klinqConfig([
+        'klinq_helpdesk_agent_groups' => 'GG-Helpdesk',
+        'klinq_template_groups' => 'GG-Vorlagen',
+    ]);
+
+    $author = $config->resolve(['gg-helpdesk', 'GG-Vorlagen']);
+    Assert::same('helpdesk_agent', $author['role'], 'Die Gruppe ersetzt keine Rolle');
+    Assert::same(['vorlagen'], $author['permission_groups']);
+    Assert::same(['helpdesk'], $author['areas']);
+
+    $withoutRole = $config->resolve(['GG-Vorlagen']);
+    Assert::same('portal', $withoutRole['role'], 'Ohne Help-Desk-Rolle bleibt es bei der Vorgaberolle');
+    Assert::same(['vorlagen'], $withoutRole['permission_groups']);
+
+    $agent = $config->resolve(['gg-helpdesk']);
+    Assert::same([], $agent['permission_groups'], 'Ohne Gruppe erhält ein Agent keine Vorlagenfreigabe');
+});
+
 Runner::test('KLINQ: Administration umfasst alle Bereiche', static function (): void {
     $access = klinqConfig(['klinq_admin_groups' => 'GG-Intranet-Admin'])->resolve(['gg-intranet-admin']);
 

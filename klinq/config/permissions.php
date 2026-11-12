@@ -35,7 +35,7 @@ $all = [
     'helpdesk.merge', 'helpdesk.escalate', 'helpdesk.sla', 'helpdesk.worklog', 'helpdesk.delete',
     'helpdesk.cancel', 'helpdesk.reports', 'helpdesk.export', 'helpdesk.view_history',
     'helpdesk.tasks', 'helpdesk.tasks.assign',
-    'helpdesk.categories', 'helpdesk.templates', 'helpdesk.admin',
+    'helpdesk.categories', 'helpdesk.templates', 'helpdesk.templates.manage', 'helpdesk.admin',
     'knowledgebase.view', 'knowledgebase.manage',
 ];
 
@@ -58,6 +58,8 @@ $helpdeskAgent = [
 ];
 $helpdeskLead = array_merge($helpdeskAgent, [
     'helpdesk.escalate', 'helpdesk.sla', 'helpdesk.export', 'helpdesk.categories', 'helpdesk.templates',
+    // Leitung und Administration verwalten alle Vorlagen, auch die persönlichen anderer Benutzer.
+    'helpdesk.templates.manage',
 ]);
 $helpdeskAdmin = array_merge($helpdeskLead, ['helpdesk.admin', 'documents.manage']);
 // Alle Mitarbeiter dürfen im Portal eigene Tickets erstellen und Wissensartikel lesen.
@@ -124,6 +126,9 @@ return [
     // Aufgaben an einen bestimmten Agenten. Admins haben diese Rechte ohnehin über
     // ihre Rolle; alle anderen Rollen benötigen die jeweilige Gruppe. "assetmanagement" gibt die
     // Rechte des Asset-Managements auch dann, wenn eine höhere Rolle (z. B. Help-Desk-Agent) gewinnt.
+    // "vorlagen" ist die Help-Desk-Vorlagenrolle: Sie öffnet die Help-Desk-Administration mit dem
+    // Reiter „Vorlagen“ und erlaubt das Anlegen eigener Vorlagen (persönlich oder für alle) –
+    // Vorlagen anderer Benutzer verwalten weiterhin nur "helpdesk.templates.manage".
     'groups' => [
         'assetmanagement' => $assetManagement,
         'statistik' => ['helpdesk.reports'],
@@ -131,6 +136,7 @@ return [
         'ticket_loeschen' => ['helpdesk.delete'],
         'ticket_stornieren' => ['helpdesk.cancel'],
         'aufgabenverteilung' => ['helpdesk.tasks.assign'],
+        'vorlagen' => ['helpdesk.templates'],
     ],
     'group_labels' => [
         'assetmanagement' => 'Asset-Management',
@@ -139,5 +145,6 @@ return [
         'ticket_loeschen' => 'Darf Tickets löschen',
         'ticket_stornieren' => 'Darf Tickets stornieren',
         'aufgabenverteilung' => 'Darf Aufgaben zuweisen',
+        'vorlagen' => 'Darf Help-Desk-Vorlagen anlegen',
     ],
 ];

@@ -6,10 +6,11 @@ $yesNo = static fn (mixed $v): string => (int) $v === 1 ? 'Ja' : 'Nein';
 $cellActive = static fn (array $r): string => array_key_exists('is_active', $r) ? active_badge($r['is_active']) : '–';
 $memberCount = static fn (array $r): int => (int) ($r['member_count'] ?? (is_array($r['members'] ?? null) ? count($r['members']) : 0));
 $isNotifications = $isNotifications ?? false;
+$canManageAllTemplates = $canManageAllTemplates ?? true;
 $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNotifications;
 ?>
 <div class="page-header">
-    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : ($isErrorOrigins ? 'Katalog der Fehlerursprünge beim Schließen eines Tickets.' : ($isReplyTemplates ? 'Fester Präfix-Text für Agenten-E-Mails.' : ($isNotifications ? 'E-Mails an den Melder je Aktion im Ticket.' : 'Stammdaten, SLAs, Vorlagen und Automatisierungen.'))) ?></p></div>
+    <div><h1 class="page-title">Help-Desk-Administration</h1><p class="page-subtitle text-muted"><?= $isQuickReport ? 'Öffentliches Formular für Anwender ohne Anmeldung.' : ($isErrorOrigins ? 'Katalog der Fehlerursprünge beim Schließen eines Tickets.' : ($isReplyTemplates ? 'Fester Präfix-Text für Agenten-E-Mails.' : ($isNotifications ? 'E-Mails an den Melder je Aktion im Ticket.' : ($canManageAllTemplates ? 'Stammdaten, SLAs, Vorlagen und Automatisierungen.' : 'Vorlagen für sich selbst oder für alle Agenten anlegen und bearbeiten.')))) ?></p></div>
     <div class="page-actions"><?php if ($can('helpdesk.admin')): ?><a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('mail') ?> E-Mail-Eingang</a> <?php endif; ?><?php if (!$isSettingsTab): ?><a class="btn btn-primary" href="/helpdesk/admin/<?= e($kind) ?>/new" title="Neuer Eintrag in „<?= e((string) ($kinds[$kind] ?? '')) ?>“"><?= icon('plus') ?> Eintrag anlegen</a><?php endif; ?></div>
 </div>
 <div class="status-tabs admin-tabs" role="tablist" aria-label="Administrationsbereiche">
@@ -17,7 +18,10 @@ $isSettingsTab = $isQuickReport || $isErrorOrigins || $isReplyTemplates || $isNo
         <a class="status-tab<?= $kind === $key ? ' is-active' : '' ?>" href="/helpdesk/admin?tab=<?= e($key) ?>"><?= e($label) ?></a>
     <?php endforeach; ?>
 </div>
-<?php if (!$isSettingsTab): ?>
+<?php if (!$isSettingsTab && !$canManageAllTemplates): ?>
+<div class="alert alert-info"><?= icon('info') ?> Sie sehen Ihre eigenen Vorlagen und alle Vorlagen, die für alle Agenten freigegeben sind. Vorlagen anderer Benutzer verwaltet die Help-Desk-Administration.</div>
+<?php endif; ?>
+<?php if (!$isSettingsTab && $canManageAllTemplates): ?>
 <div class="card mb-4">
     <div class="card-header"><h2>Konfiguration</h2><span class="text-muted text-sm">aus Umgebung</span></div>
     <?php $configLabels = [
@@ -237,7 +241,7 @@ $contentValidationChecked = isset($_SESSION['_old_input']['shared_accounts'])
             <?php elseif ($kind === 'tags'): ?>
                 <tr><th>Name</th><th>Farbe</th><th>Nutzung</th><th></th></tr>
             <?php elseif ($kind === 'templates'): ?>
-                <tr><th>Name</th><th>Typ</th><th>Kategorie</th><th>Portal</th><th>Aktiv</th><th>Sortierung</th><th></th></tr>
+                <tr><th>Name</th><th>Typ</th><th>Kategorie</th><th>Freigabe</th><th>Portal</th><th>Aktiv</th><th>Sortierung</th><th></th></tr>
             <?php else: ?>
                 <tr><th>Name</th><th>Auslöser</th><th>Aktiv</th><th>Sortierung</th><th>Stoppt</th><th></th></tr>
             <?php endif; ?>
@@ -288,6 +292,7 @@ $contentValidationChecked = isset($_SESSION['_old_input']['shared_accounts'])
                     <td><strong><?= e($r['name'] ?? '–') ?></strong><div class="text-xs text-muted"><?= e($r['description'] ?? '') ?></div></td>
                     <td><?= e($r['type_name'] ?? '–') ?></td>
                     <td><?= e($r['category_name'] ?? '–') ?><?= !empty($r['subcategory_name']) ? ' / ' . e($r['subcategory_name']) : '' ?></td>
+                    <td><?= !empty($r['is_shared']) ? badge('Alle Agenten', 'info') : badge('Nur ich', 'neutral') ?></td>
                     <td><?= badge(!empty($r['is_portal_visible']) ? 'Portal' : 'Intern', !empty($r['is_portal_visible']) ? 'success' : 'neutral') ?></td>
                     <td><?= $cellActive($r) ?></td>
                     <td class="tabular"><?= (int) ($r['sort_order'] ?? 0) ?></td>

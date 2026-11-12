@@ -689,7 +689,7 @@ final class TicketController extends HelpdeskBaseController
             'confirmationText' => $wizard ? $this->replyTemplates->confirmationText() : '',
             'modeQuery' => $query,
             'secondLevelAssigneeId' => $wizard ? $this->supportShifts->secondLevelUserIdToday() : null,
-            'templates' => $this->templates->all(true),
+            'templates' => $this->templates->all(true, false, (int) $this->currentUser->id()),
             'types' => $this->masterData->types(),
             'priorities' => $this->masterData->priorities(),
             'groups' => $this->masterData->groups(),

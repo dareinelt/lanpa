@@ -431,7 +431,7 @@ final class TicketService
     public function prefillFromTemplate(int $templateId, bool $portal): array
     {
         $template = $this->templates->find($templateId);
-        if ($template === null || empty($template['is_active']) || ($portal && empty($template['is_portal_visible']))) {
+        if ($template === null || !$this->canUseTemplate($template, $portal)) {
             return [];
         }
 
@@ -448,6 +448,27 @@ final class TicketService
             'tags' => $template['tags'],
             'template_id' => $template['id'],
         ];
+    }
+
+    /**
+     * Vorlagenfreigabe: „für alle“ (is_shared) gilt für alle Agenten, persönliche Vorlagen nur für
+     * ihren Ersteller. Die Administration sieht alle; im Portal kommen zusätzlich nur
+     * portalsichtbare und eigene Vorlagen an.
+     *
+     * @param array<string,mixed> $template
+     */
+    private function canUseTemplate(array $template, bool $portal): bool
+    {
+        if (empty($template['is_active'])) {
+            return false;
+        }
+        $isOwn = (int) ($template['created_by'] ?? 0) > 0
+            && (int) $template['created_by'] === (int) $this->currentUser->id();
+        if (empty($template['is_shared']) && !$isOwn && !$this->currentUser->can('helpdesk.templates.manage')) {
+            return false;
+        }
+
+        return !$portal || !empty($template['is_portal_visible']) || $isOwn;
     }
 
     // ------------------------------------------------------------------ Ändern

@@ -397,6 +397,24 @@ final class HelpdeskCalendarIntegrationTest extends DatabaseTestCase
         $this->assertThrows(ValidationException::class, fn () => $this->calendar()->update($id, $base + ['checklist_submitted' => '1', 'checklist' => $tooMany]));
     }
 
+    public function testSingleEventConvertedToSeriesKeepsConfirmations(): void
+    {
+        $event = $this->calendar()->create([
+            'title' => 'Patchday', 'date' => '2026-07-14', 'start_time' => '09:00',
+            'checklist_submitted' => '1', 'checklist' => [['label' => 'Updates eingespielt']],
+        ]);
+        $id = (int) $event['id'];
+        $item = (int) $this->calendar()->checklistItems($event)[0]['id'];
+        $now = new \DateTimeImmutable('2026-07-21 12:00:00', new \DateTimeZone('UTC'));
+        $this->calendar()->confirmChecklistItem($id, $item, '', true, $now);
+
+        $series = $this->calendar()->update($id, ['title' => 'Patchday', 'date' => '2026-07-14', 'start_time' => '09:00', 'recurrence' => 'weekly']);
+        $first = $this->calendar()->checklist($series, '2026-07-14', $now);
+        $this->assertSame(1, $first['confirmed'], 'Bestätigung gilt für den ersten Termin der Serie weiter');
+        $this->assertSame('Agent ' . $this->agentId, $first['items'][0]['confirmed_by_name']);
+        $this->assertSame(0, $this->calendar()->checklist($series, '2026-07-21', $now)['confirmed']);
+    }
+
     public function testSeriesChecklistIsConfirmedPerOccurrence(): void
     {
         $series = $this->calendar()->create([

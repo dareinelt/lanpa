@@ -415,7 +415,8 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   Wurzeltermin der Serie, `position`, `label`) und `helpdesk_calendar_checklist_confirmations` (`item_id`,
   `occurrence_key` = `''` bei Einzelterminen bzw. lokaler Tag des Vorkommens/`series_date`, `confirmed_by`/
   `confirmed_by_name`/`confirmed_at`, UNIQUE `(item_id, occurrence_key)`); synchronisiert nur bei
-  `checklist_submitted=1`, `HelpdeskCalendarService::checklist()`/`confirmChecklistItem()` sperren künftige Tage,
+  `checklist_submitted=1`, beim Umwandeln eines Einzeltermins in eine Serie verschiebt `moveConfirmations()` die
+  Bestätigungen von `''` auf den ersten Termin, `HelpdeskCalendarService::checklist()`/`confirmChecklistItem()` sperren künftige Tage,
   `POST /helpdesk/kalender/{id}/checkliste` (`confirm`/`revoke` = Punkt-ID, `termin`, `helpdesk.update`).
   Routen: `GET /helpdesk/kalender`
   (`?ansicht=tag|arbeitswoche|monat&datum=JJJJ-MM-TT`, `helpdesk.view`, Ansicht je Sitzung gemerkt),

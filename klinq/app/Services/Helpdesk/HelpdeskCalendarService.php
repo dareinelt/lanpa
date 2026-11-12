@@ -284,7 +284,13 @@ final class HelpdeskCalendarService
 
         if ($parent === null) {
             $data = $this->validate($input);
-            $this->events->update($id, $data + ['updated_by' => $this->currentUser->id()]);
+            $this->events->transaction(function () use ($id, $old, $data): void {
+                $this->events->update($id, $data + ['updated_by' => $this->currentUser->id()]);
+                // Wird ein Einzeltermin zur Serie, gelten seine Bestätigungen für deren ersten Termin weiter.
+                if ((string) ($old['recurrence'] ?? '') === '' && (string) ($data['recurrence'] ?? '') !== '') {
+                    $this->checklists->moveConfirmations($id, '', $this->localDay((string) $data['starts_at']));
+                }
+            });
             $this->audit->log('update', 'helpdesk_calendar_event', $id, $data['title'], array_intersect_key($old, $data), $data);
 
             return $this->get($id);

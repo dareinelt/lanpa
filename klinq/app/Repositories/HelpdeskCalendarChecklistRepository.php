@@ -113,6 +113,18 @@ final class HelpdeskCalendarChecklistRepository extends BaseRepository
         );
     }
 
+    /** Verschiebt die Bestätigungen eines Termins auf einen anderen Vorkommensschlüssel. */
+    public function moveConfirmations(int $eventId, string $fromKey, string $toKey): int
+    {
+        return $this->execute(
+            'UPDATE IGNORE helpdesk_calendar_checklist_confirmations c
+                JOIN helpdesk_calendar_checklist_items i ON i.id = c.item_id
+                SET c.occurrence_key = :to
+                WHERE i.event_id = :e AND c.occurrence_key = :from',
+            ['to' => $toKey, 'e' => $eventId, 'from' => $fromKey]
+        );
+    }
+
     public function revoke(int $itemId, string $occurrenceKey): int
     {
         return $this->execute(

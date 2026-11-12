@@ -880,7 +880,8 @@ lässt sich zurücknehmen.
   Checkliste gilt nur für den Termin, über den sie aufgerufen wurde („Gilt nur für den Termin am …“); verschobene
   Einzeltermine behalten ihren Stand.
 - **Zukunft**: Checklisten von Terminen, die nach dem heutigen Tag liegen, können noch nicht abgearbeitet werden.
-- **Ändern der Punkte**: Umbenannte Punkte behalten ihre Bestätigungen, entfernte Punkte verlieren sie.
+- **Ändern der Punkte**: Umbenannte Punkte behalten ihre Bestätigungen, entfernte Punkte verlieren sie. Wird ein
+  Einzeltermin nachträglich zur Serie, gelten seine Bestätigungen für den ersten Termin der Serie weiter.
 - Abhaken und Zurücknehmen erfordern `helpdesk.update` und werden im Audit-Log protokolliert.
 
 ### Termin aus einem Ticket

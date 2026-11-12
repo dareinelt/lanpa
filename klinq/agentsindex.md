@@ -338,7 +338,9 @@ anlegen“ (`vorlagen`, AD-Gruppe `klinq_template_groups`) vergibt `helpdesk.tem
 Navigationselement **Help-Desk-Administration** mit ausschließlich dem Reiter **Vorlagen** und legen dort
 Vorlagen an, die per `ticket_templates.is_shared` entweder für alle Agenten oder nur für sie selbst gelten;
 fremde persönliche Vorlagen verwalten weiterhin nur `helpdesk.templates.manage` (Leitung, Administration,
-Admin-Rolle). Die Gruppendatensätze legen die Migrationen
+Admin-Rolle), freigegebene fremde Vorlagen sind für die Gruppe nur sichtbar. Vorlagennamen sind seit
+`042_helpdesk_template_name_scope.sql` nur unter freigegebenen Vorlagen (und je Ersteller im Service) eindeutig.
+Die Gruppendatensätze legen die Migrationen
 `033_permission_groups_defaults.sql`, `034_permission_group_assetmanagement.sql` und
 `041_helpdesk_template_scope.sql` an (zusätzlich zu den Seedern); fehlt dennoch eine in
 `config/permissions.php` bekannte Gruppe, legt `LanpaUserService` sie bei der Intranet-Anmeldung an

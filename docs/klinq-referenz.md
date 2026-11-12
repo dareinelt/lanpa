@@ -453,7 +453,10 @@ Mitglieder erhalten `helpdesk.templates`, in der Navigation erscheint
 **Help-Desk-Administration** mit ausschließlich dem Reiter **Vorlagen**
 (`/helpdesk/admin?tab=templates`). Sie legen Vorlagen an, die per
 `ticket_templates.is_shared` entweder für alle Agenten oder nur für sie selbst
-gelten; fremde persönliche Vorlagen bleiben ihnen verborgen. Vollzugriff auf alle
+gelten; fremde persönliche Vorlagen bleiben ihnen verborgen, freigegebene Vorlagen
+anderer Benutzer sehen sie nur zur Ansicht. Vorlagennamen sind nur unter
+freigegebenen und den eigenen Vorlagen eindeutig (Migration
+`042_helpdesk_template_name_scope.sql`). Vollzugriff auf alle
 Vorlagen behält, wer `helpdesk.templates.manage` besitzt (`klinq_helpdesk_lead_groups`,
 `klinq_helpdesk_admin_groups`, `klinq_admin_groups`). Die Rolle ändert die Gruppe
 nicht (`role` leer) – sie ist eine additive Freigabe.

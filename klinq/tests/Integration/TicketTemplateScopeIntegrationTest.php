@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Integration;
 
 use App\Exceptions\NotFoundException;
+use App\Exceptions\ValidationException;
 use App\Repositories\TicketTemplateRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskAdminService;
@@ -170,6 +171,43 @@ final class TicketTemplateScopeIntegrationTest extends DatabaseTestCase
         $service = $this->c->get(HelpdeskAdminService::class);
         $service->saveTemplate($personal, ['name' => 'Von der Leitung umbenannt', 'is_active' => '1', 'is_shared' => '0']);
         $this->assertSame('Von der Leitung umbenannt', $this->templates()->find($personal)['name'] ?? null, 'Die Leitung verwaltet alle Vorlagen');
+    }
+
+    public function testPortalPrefillMatchesThePortalList(): void
+    {
+        $sharedInternal = $this->template('Geteilt intern', $this->ownerId, true, false);
+        $personal = $this->template('Persönlich intern', $this->ownerId, false, false);
+
+        $this->loginAs($this->ownerId, 'helpdesk_agent');
+        $service = $this->c->get(TicketService::class);
+        $this->assertSame([], $service->prefillFromTemplate($sharedInternal, true), 'Eigene freigegebene Vorlage ohne Portal-Freigabe bleibt im Agentenbereich');
+        $this->assertSame('Betreff Persönlich intern', $service->prefillFromTemplate($personal, true)['subject'] ?? null, 'Eigene persönliche Vorlage gilt auch im Portal');
+    }
+
+    public function testTemplateNamesAreUniqueOnlyWithinTheVisibleScope(): void
+    {
+        $this->template('Fremd persönlich', $this->otherId, false);
+        $this->template('Fremd für Freigabe', $this->otherId, false);
+        $this->template('Geteilt belegt', $this->otherId, true);
+
+        $this->loginAs($this->ownerId, 'portal', ['vorlagen']);
+        $service = $this->c->get(HelpdeskAdminService::class);
+
+        $personal = $service->saveTemplate(null, ['name' => 'Fremd persönlich', 'is_shared' => '0', 'is_active' => '1']);
+        $this->assertSame(0, (int) ($this->templates()->find($personal)['is_shared'] ?? 1), 'Fremde persönliche Namen blockieren nicht');
+        $shared = $service->saveTemplate(null, ['name' => 'Fremd für Freigabe', 'is_shared' => '1', 'is_active' => '1']);
+        $this->assertSame(1, (int) ($this->templates()->find($shared)['is_shared'] ?? 0), 'Auch eine Freigabe darf einen fremden persönlichen Namen tragen');
+
+        $this->assertThrows(
+            ValidationException::class,
+            fn () => $service->saveTemplate(null, ['name' => 'Geteilt belegt', 'is_shared' => '0', 'is_active' => '1']),
+            'bereits vergeben'
+        );
+        $this->assertThrows(
+            ValidationException::class,
+            fn () => $service->saveTemplate(null, ['name' => 'Fremd persönlich', 'is_shared' => '0', 'is_active' => '1']),
+            'bereits vergeben'
+        );
     }
 
     public function testEditingKeepsPortalReleaseOfAManagedTemplate(): void

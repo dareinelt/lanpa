@@ -452,8 +452,8 @@ final class TicketService
 
     /**
      * Vorlagenfreigabe: „für alle“ (is_shared) gilt für alle Agenten, persönliche Vorlagen nur für
-     * ihren Ersteller. Die Administration sieht alle; im Portal kommen zusätzlich nur
-     * portalsichtbare und eigene Vorlagen an.
+     * ihren Ersteller. Die Administration sieht alle; im Portal gelten – wie in
+     * TicketTemplateRepository::all() – nur portalsichtbare und eigene persönliche Vorlagen.
      *
      * @param array<string,mixed> $template
      */
@@ -468,7 +468,7 @@ final class TicketService
             return false;
         }
 
-        return !$portal || !empty($template['is_portal_visible']) || $isOwn;
+        return !$portal || !empty($template['is_portal_visible']) || ($isOwn && empty($template['is_shared']));
     }
 
     // ------------------------------------------------------------------ Ändern

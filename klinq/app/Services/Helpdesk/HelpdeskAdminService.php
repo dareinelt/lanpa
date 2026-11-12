@@ -415,8 +415,9 @@ final class HelpdeskAdminService
             // Portal-Freigabe eines Administrators bleibt beim Bearbeiten erhalten.
             $data['is_portal_visible'] = $existing !== null ? (int) ($existing['is_portal_visible'] ?? 0) : 0;
         }
-        $duplicate = $this->templates->findByName((string) $data['name']);
-        if ($duplicate !== null && (int) $duplicate['id'] !== $id) {
+        // Eindeutigkeit im Umfang der Vorlage, damit fremde persönliche Vorlagen nicht über den Namen auffallen.
+        $ownerId = $existing !== null ? (int) ($existing['created_by'] ?? 0) : (int) $this->currentUser->id();
+        if ($this->templates->findNameConflict((string) $data['name'], $ownerId, $id) !== null) {
             throw ValidationException::single('name', 'Diese Bezeichnung ist bereits vergeben.');
         }
         if (!empty($data['category_id'])) {

@@ -802,6 +802,13 @@ Er ist für alle Agenten sichtbar (`helpdesk.view`); anlegen, ändern und lösch
 - **Farben**: manuell eingetragene Termine in der Primärfarbe, Termine aus Tickets in der Akzentfarbe mit Ticketsymbol.
 - **Termin**: Titel, Beginn (Datum + Uhrzeit), Ende (Datum + Uhrzeit, ohne Endzeit eine Stunde), „Ganztägig“, Ort und
   Beschreibung; höchstens 31 Tage Dauer. Speicherung in UTC, Anzeige in `APP_TIMEZONE`.
+- **Neuer Termin als Overlay**: „Neuer Termin“, „+“ in der Monatsansicht, ein freier Stundenblock oder die
+  Ganztageszeile öffnen das Overlay **Neuer Termin** über dem Kalender, vorbelegt mit dem gewählten Tag und der
+  Uhrzeit. Bei fehlerhafter Eingabe öffnet sich das Overlay nach dem Absenden erneut mit Eingabe und Hinweisen; die
+  Kalenderansicht bleibt erhalten. Ohne JavaScript bzw. per Strg-/Mittelklick führen die Links weiterhin zur
+  Formularseite `/helpdesk/kalender/neu`.
+
+![Overlay „Neuer Termin“ über der Arbeitswoche](screenshots/helpdesk-kalender-neuer-termin-overlay.png)
 
 ![Kalender in der Ansicht Arbeitswoche mit Ganztageszeile, nebeneinanderliegenden Terminen und Jetzt-Linie](screenshots/helpdesk-kalender-arbeitswoche.png)
 
@@ -809,7 +816,7 @@ Er ist für alle Agenten sichtbar (`helpdesk.view`); anlegen, ändern und lösch
 
 ### Serientermine
 
-Im Formular „Neuer Termin“ und im Dialog **Termin anlegen** des Ticketdetails gibt es den Block **Wiederholung**.
+Im Overlay „Neuer Termin“ und im Dialog **Termin anlegen** des Ticketdetails gibt es den Block **Wiederholung**.
 Ohne Auswahl bleibt es ein Einzeltermin.
 
 - **Rhythmus**: Täglich, Wöchentlich, Monatlich oder Jährlich, jeweils mit Abstand („alle *n* Tage/Wochen/Monate/Jahre“,
@@ -873,13 +880,27 @@ Beim Anlegen oder Bearbeiten eines Termins (auch im Dialog „Termin anlegen“ 
 ignoriert). Der bearbeitende Agent hakt jeden Punkt in der Termindetailansicht mit **Bestätigt** ab; eine Bestätigung
 lässt sich zurücknehmen.
 
+![Overlay „Neuer Termin“ mit geöffneter Checkliste und zwei Punkten](screenshots/helpdesk-kalender-checkliste-anlegen.png)
+
+![Termindetail mit Checkliste: zwei Punkte bestätigt mit Agent und Zeitpunkt, ein offener Punkt mit Knopf „Bestätigt“](screenshots/helpdesk-kalender-checkliste-abhaken.png)
+
 - **Sichtbarkeit**: Die Checkliste samt Stand („2/3 bestätigt“ bzw. „Erledigt“) ist für alle mit Lesezugriff auf den
   Help Desk sichtbar – je Punkt mit Agent und Zeitpunkt der Bestätigung. Kalenderansichten und das Dashboard zeigen
-  bei Terminen mit Checkliste ein Symbol mit dem Stand.
+  bei Terminen mit Checkliste ein Symbol mit dem Stand: offen hervorgehoben, erledigt mit Häkchen, bei künftigen
+  Terminen neutral.
+
+  ![Erledigte Checkliste mit den bestätigenden Agenten je Punkt](screenshots/helpdesk-kalender-checkliste-erledigt.png)
+
+  ![Arbeitswoche mit Checklisten-Stand an den Terminen](screenshots/helpdesk-kalender-checkliste-woche.png)
+
+  ![Monatsansicht: Serientermin mit erledigter Checkliste am Montag, künftige Termine der Serie neutral mit 0/3](screenshots/helpdesk-kalender-checkliste-monat.png)
 - **Serientermine**: Die Punkte werden einmal für die ganze Serie festgelegt, abgehakt wird aber je Termin. Eine
   Checkliste gilt nur für den Termin, über den sie aufgerufen wurde („Gilt nur für den Termin am …“); verschobene
   Einzeltermine behalten ihren Stand.
-- **Zukunft**: Checklisten von Terminen, die nach dem heutigen Tag liegen, können noch nicht abgearbeitet werden.
+- **Zukunft**: Checklisten von Terminen, die nach dem heutigen Tag liegen, können noch nicht abgearbeitet werden; die
+  Punkte erscheinen neutral mit einem Hinweis.
+
+  ![Künftiger Termin einer Serie: Checkliste gesperrt mit Hinweis](screenshots/helpdesk-kalender-checkliste-serie-zukunft.png)
 - **Ändern der Punkte**: Umbenannte Punkte behalten ihre Bestätigungen, entfernte Punkte verlieren sie. Wird ein
   Einzeltermin nachträglich zur Serie, gelten seine Bestätigungen für den ersten Termin der Serie weiter.
 - Abhaken und Zurücknehmen erfordern `helpdesk.update` und werden im Audit-Log protokolliert.
@@ -910,7 +931,9 @@ verfügbar, sodass aus einem Ticket direkt eine Serie entstehen kann.
 
 Routen: `GET /helpdesk/kalender`, `GET /helpdesk/kalender/neu`, `POST /helpdesk/kalender`, `GET|POST /helpdesk/kalender/{id}`,
 `POST /helpdesk/kalender/{id}/loeschen`, `POST /helpdesk/kalender/{id}/checkliste`,
-`GET /helpdesk/tickets/{id}/termin-vorschlaege` (JSON), `POST /helpdesk/tickets/{id}/termin`. Beim Aufruf eines Serientermins markiert `?termin=JJJJ-MM-TT` den gewählten Tag
+`GET /helpdesk/tickets/{id}/termin-vorschlaege` (JSON), `POST /helpdesk/tickets/{id}/termin`. Das Overlay sendet
+`dialog=neu` und `back` (aktuelle Kalenderansicht) mit; bei Validierungsfehlern leitet `POST /helpdesk/kalender` dorthin
+zurück und das Overlay öffnet sich erneut. Beim Aufruf eines Serientermins markiert `?termin=JJJJ-MM-TT` den gewählten Tag
 (`GET /helpdesk/kalender/{id}?termin=2026-11-24`), das Formular gibt ihn als `occurrence` und den Umfang als `scope`
 (`series` oder `occurrence`) zurück. Tabelle `helpdesk_calendar_events` (Migration 038, Serienspalten aus Migration 043), Checklisten in
 `helpdesk_calendar_checklist_items`/`helpdesk_calendar_checklist_confirmations` (Migration 044).

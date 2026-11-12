@@ -13,12 +13,18 @@ $eventClass = static fn (array $e): string => 'hd-cal-event' . (!empty($e['ticke
 $seriesMark = static fn (array $e): string => empty($e['is_series'])
     ? ''
     : '<span class="hd-cal-repeat" title="' . e('Serientermin: ' . Cal::recurrenceLabel($e)) . '">' . icon('refresh', 'icon icon-xs') . '</span>';
-/** Stand der Checkliste (offen: hervorgehoben, erledigt: Häkchen). */
-$checklistMark = static fn (array $e): string => (int) ($e['checklist_total'] ?? 0) === 0
-    ? ''
-    : '<span class="hd-cal-checklist-mark' . ((int) $e['checklist_confirmed'] < (int) $e['checklist_total'] ? ' is-open' : ' is-done') . '">'
-        . icon((int) $e['checklist_confirmed'] < (int) $e['checklist_total'] ? 'list' : 'check', 'icon icon-xs')
-        . (int) $e['checklist_confirmed'] . '/' . (int) $e['checklist_total'] . '</span>';
+/** Stand der Checkliste (offen: hervorgehoben, künftig: neutral, erledigt: Häkchen). */
+$checklistMark = static function (array $e): string {
+    $total = (int) ($e['checklist_total'] ?? 0);
+    if ($total === 0) {
+        return '';
+    }
+    $done = (int) $e['checklist_confirmed'] >= $total;
+    $state = $done ? 'is-done' : (!empty($e['checklist_future']) ? 'is-future' : 'is-open');
+
+    return '<span class="hd-cal-checklist-mark ' . $state . '">' . icon($done ? 'check' : 'list', 'icon icon-xs')
+        . (int) $e['checklist_confirmed'] . '/' . $total . '</span>';
+};
 $eventTitle = static function (array $e): string {
     $parts = [Cal::timeLabel($e), (string) $e['title']];
     if (!empty($e['location'])) {
@@ -31,7 +37,8 @@ $eventTitle = static function (array $e): string {
         $parts[] = 'Serie: ' . Cal::recurrenceLabel($e);
     }
     if ((int) ($e['checklist_total'] ?? 0) > 0) {
-        $parts[] = 'Checkliste ' . (int) $e['checklist_confirmed'] . '/' . (int) $e['checklist_total'] . ' bestätigt';
+        $parts[] = 'Checkliste ' . (int) $e['checklist_confirmed'] . '/' . (int) $e['checklist_total'] . ' bestätigt'
+            . (!empty($e['checklist_future']) ? ' (erst am Termintag abzuarbeiten)' : '');
     }
 
     return implode(' · ', $parts);
@@ -45,7 +52,7 @@ $hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_s
     </div>
     <?php if ($canEdit): ?>
     <div class="page-actions">
-        <a class="btn btn-primary" href="<?= e($newUrl($isTodayInRange ? $today : $range['date'], '09:00')) ?>"><?= icon('plus') ?> Neuer Termin</a>
+        <a class="btn btn-primary" data-hd-cal-new href="<?= e($newUrl($isTodayInRange ? $today : $range['date'], '09:00')) ?>"><?= icon('plus') ?> Neuer Termin</a>
     </div>
     <?php endif; ?>
 </div>
@@ -88,7 +95,7 @@ $hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_s
             <div class="<?= e($classes) ?>" role="gridcell">
                 <div class="hd-cal-month-day">
                     <a class="hd-cal-daynum" href="<?= e($url('tag', $day)) ?>" aria-label="<?= e(Cal::longDay($day)) ?>"><?= e(Cal::monthCellLabel($day)) ?></a>
-                    <?php if ($canEdit): ?><a class="hd-cal-add" href="<?= e($newUrl($day, '09:00')) ?>" aria-label="Neuer Termin am <?= e(Cal::longDay($day)) ?>" title="Neuer Termin"><?= icon('plus', 'icon icon-xs') ?></a><?php endif; ?>
+                    <?php if ($canEdit): ?><a class="hd-cal-add" data-hd-cal-new href="<?= e($newUrl($day, '09:00')) ?>" aria-label="Neuer Termin am <?= e(Cal::longDay($day)) ?>" title="Neuer Termin"><?= icon('plus', 'icon icon-xs') ?></a><?php endif; ?>
                 </div>
                 <?php foreach ($shown as $ev): ?>
                     <a class="<?= e($eventClass($ev)) ?><?= !empty($ev['all_day']) ? ' is-allday' : '' ?>" href="<?= e($eventUrl($ev)) ?>" title="<?= e($eventTitle($ev)) ?>">
@@ -122,7 +129,7 @@ $hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_s
                     <?php foreach (Cal::onDay($events, $day, $timezone, true) as $ev): ?>
                         <a class="<?= e($eventClass($ev)) ?> is-allday" href="<?= e($eventUrl($ev)) ?>" title="<?= e($eventTitle($ev)) ?>"><?= $seriesMark($ev) ?><span class="hd-cal-event-title"><?= e($ev['title']) ?></span><?= $checklistMark($ev) ?></a>
                     <?php endforeach; ?>
-                    <?php if ($canEdit): ?><a class="hd-cal-allday-add" href="<?= e($newUrl($day)) ?>" aria-label="Ganztägigen Termin am <?= e(Cal::longDay($day)) ?> anlegen"></a><?php endif; ?>
+                    <?php if ($canEdit): ?><a class="hd-cal-allday-add" data-hd-cal-new href="<?= e($newUrl($day)) ?>" aria-label="Ganztägigen Termin am <?= e(Cal::longDay($day)) ?> anlegen"></a><?php endif; ?>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -135,7 +142,7 @@ $hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_s
                 <div class="hd-cal-day<?= $day === $today ? ' is-today' : '' ?>" data-day="<?= e($day) ?>">
                     <?php for ($h = 0; $h < 24; $h++): ?>
                         <?php if ($canEdit): ?>
-                            <a class="hd-cal-slot<?= $h < 7 || $h >= 19 ? ' is-off' : '' ?>" href="<?= e($newUrl($day, sprintf('%02d:00', $h))) ?>" aria-label="Neuer Termin <?= e(Cal::shortDay($day)) ?> <?= sprintf('%02d:00', $h) ?>" tabindex="-1"></a>
+                            <a class="hd-cal-slot<?= $h < 7 || $h >= 19 ? ' is-off' : '' ?>" data-hd-cal-new href="<?= e($newUrl($day, sprintf('%02d:00', $h))) ?>" aria-label="Neuer Termin <?= e(Cal::shortDay($day)) ?> <?= sprintf('%02d:00', $h) ?>" tabindex="-1"></a>
                         <?php else: ?>
                             <div class="hd-cal-slot<?= $h < 7 || $h >= 19 ? ' is-off' : '' ?>"></div>
                         <?php endif; ?>
@@ -163,4 +170,29 @@ $hasSeries = array_filter($events, static fn (array $e): bool => !empty($e['is_s
         <?php if ($events === []): ?><span>· Keine Termine in diesem Zeitraum</span><?php endif; ?>
     </div>
 </div>
+<?php if ($canEdit):
+    $values = $newValues;
+    $prefix = 'ncal';
+    $checklistItems = $newChecklistItems;
+?>
+<dialog id="hd-cal-new-dialog" class="dialog hd-cal-dialog" data-hd-cal-new-dialog aria-labelledby="hd-cal-new-title"<?= $newDialogOpen ? ' data-dialog-autoopen' : '' ?>>
+    <form method="post" action="/helpdesk/kalender" novalidate>
+        <?= csrf_field() ?>
+        <input type="hidden" name="dialog" value="neu">
+        <input type="hidden" name="back" value="<?= e($url($view, $range['date'])) ?>">
+        <div class="dialog-header">
+            <h2 id="hd-cal-new-title"><?= icon('calendar') ?> Neuer Termin</h2>
+            <button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button>
+        </div>
+        <div class="dialog-body">
+            <?php include __DIR__ . '/_fields.php'; ?>
+            <?php include __DIR__ . '/_checklist_fields.php'; ?>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="btn btn-secondary" data-dialog-close>Abbrechen</button>
+            <button type="submit" class="btn btn-primary"><?= icon('check') ?> Termin anlegen</button>
+        </div>
+    </form>
+</dialog>
+<?php endif; ?>
 <?php $innerContent = ob_get_clean(); include __DIR__ . '/../../partials/app_layout.php'; ?>

@@ -359,6 +359,14 @@ final class HelpdeskCalendarIntegrationTest extends DatabaseTestCase
         $row = $this->calendar()->eventsIn(HelpdeskCalendarService::range('tag', '2026-07-14'))[0];
         $this->assertSame(2, $row['checklist_total']);
         $this->assertSame(1, $row['checklist_confirmed']);
+        $this->assertFalse($row['checklist_future']);
+
+        $nextYear = (new \DateTimeImmutable('+1 year'))->format('Y-m-d');
+        $this->calendar()->create([
+            'title' => 'Künftige Wartung', 'date' => $nextYear, 'start_time' => '09:00',
+            'checklist_submitted' => '1', 'checklist' => [['label' => 'Vorbereitet']],
+        ]);
+        $this->assertTrue($this->calendar()->eventsIn(HelpdeskCalendarService::range('tag', $nextYear))[0]['checklist_future'], 'Künftige Checklisten sind in den Ansichten markiert');
 
         // Lesende Benutzer sehen den Stand, dürfen aber nicht abhaken
         $this->loginAs($this->agentId, 'portal');

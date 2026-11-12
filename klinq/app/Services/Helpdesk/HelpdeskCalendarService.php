@@ -573,10 +573,13 @@ final class HelpdeskCalendarService
             return $events;
         }
         $confirmations = $this->checklists->countConfirmations(array_keys($totals));
+        $today = $this->localToday();
         foreach ($events as $i => $event) {
             $root = $this->checklistRootId($event);
+            $key = $this->checklistKey($event);
             $events[$i]['checklist_total'] = $totals[$root] ?? 0;
-            $events[$i]['checklist_confirmed'] = $confirmations[$root][$this->checklistKey($event)] ?? 0;
+            $events[$i]['checklist_confirmed'] = $confirmations[$root][$key] ?? 0;
+            $events[$i]['checklist_future'] = $this->checklistDay($event, $key) > $today;
         }
 
         return $events;

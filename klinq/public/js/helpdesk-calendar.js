@@ -1,6 +1,7 @@
 /*
  * Help-Desk-Kalender: Lage der Termine im Tagesraster, Jetzt-Linie, Formularhilfen (Ganztägig, Ende
- * nachführen), Checkliste („Checkliste anlegen“), automatisches Termin-Overlay nach Übernahme der Zuständigkeit und der Dialog
+ * nachführen), Checkliste („Checkliste anlegen“), Overlay „Neuer Termin“ im Kalender, automatisches Termin-Overlay
+ * nach Übernahme der Zuständigkeit und der Dialog
  * „Termin anlegen“ im Ticket mit Datumsvorschlägen aus dem Tickettext (KI).
  * Inline-Styles sind per CSP gesperrt; Positionen werden deshalb als CSS-Variablen über das CSSOM gesetzt.
  */
@@ -363,12 +364,64 @@
         update();
     }
 
+    // ------------------------------------------------------------------ Overlay „Neuer Termin“ im Kalender
+    function initNewDialog(dialog) {
+        const form = dialog.querySelector("form");
+        const field = function (name) { return form.querySelector('[name="' + name + '"]'); };
+        const allDay = form.querySelector("[data-hd-cal-allday]");
+        const recurrence = form.querySelector("[data-hd-cal-recurrence]");
+
+        function open(link) {
+            const params = new URL(link.href, window.location.href).searchParams;
+            const date = params.get("datum") || "";
+            const time = params.get("zeit") || "";
+            const isAllDay = params.get("ganztags") === "1";
+            ["title", "location", "description", "recurrence_until"].forEach(function (name) {
+                if (field(name)) { field(name).value = ""; }
+            });
+            if (field("recurrence_interval")) { field("recurrence_interval").value = "1"; }
+            if (recurrence) {
+                recurrence.value = "";
+                recurrence.dispatchEvent(new Event("change"));
+            }
+            form.querySelectorAll("[data-hd-cal-checklist-remove]").forEach(function (button) { button.click(); });
+            form.querySelectorAll(".has-error").forEach(function (el) { el.classList.remove("has-error"); });
+            form.querySelectorAll(".form-error").forEach(function (el) { el.remove(); });
+            field("date").value = date;
+            field("end_date").value = date;
+            field("start_time").value = isAllDay ? "" : (time || "09:00");
+            field("end_time").value = isAllDay ? "" : addMinutes(time || "09:00", 60);
+            allDay.checked = isAllDay;
+            allDay.dispatchEvent(new Event("change"));
+            dialog.showModal();
+            field("title").focus();
+        }
+
+        document.addEventListener("click", function (event) {
+            const link = event.target.closest("a[data-hd-cal-new]");
+            // Mittelklick und Strg-/Umschalt-Klick öffnen weiterhin die Formularseite.
+            if (!link || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) { return; }
+            if (typeof dialog.showModal !== "function") { return; }
+            event.preventDefault();
+            open(link);
+        });
+
+        if (dialog.hasAttribute("data-dialog-autoopen")) {
+            // Nach einem Validierungsfehler das erste fehlerhafte Feld fokussieren (nach dem automatischen Öffnen).
+            window.setTimeout(function () {
+                const invalid = form.querySelector(".has-error input:not([type=hidden]), .has-error select, .has-error textarea");
+                if (invalid) { invalid.focus(); }
+            }, 0);
+        }
+    }
+
     // ------------------------------------------------------------------ Start
     document.querySelectorAll("[data-hd-cal]").forEach(initGrid);
     document.querySelectorAll("[data-hd-cal-when]").forEach(function (el) { initFields(el.closest("form") || el); });
     document.querySelectorAll("[data-hd-cal-series]").forEach(function (el) { initRecurrence(el.closest("form") || el); });
     document.querySelectorAll("[data-hd-cal-checklist]").forEach(initChecklist);
     document.querySelectorAll("[data-hd-cal-ticket]").forEach(initTicketDialog);
+    document.querySelectorAll("[data-hd-cal-new-dialog]").forEach(initNewDialog);
     document.querySelectorAll("dialog[data-dialog-autoopen]").forEach(function (dialog) {
         if (typeof dialog.showModal === "function") { dialog.showModal(); }
     });

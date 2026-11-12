@@ -36,10 +36,10 @@ $dayLabel = $backDate !== '' ? \App\Services\Helpdesk\HelpdeskCalendarService::l
 <?php endif; ?>
 
 <?php if (!$isNew && $checklist !== null && $checklist['total'] > 0): $checklistDone = $checklist['confirmed'] === $checklist['total']; ?>
-<section class="card hd-cal-checklist" aria-labelledby="hd-cal-checklist-title">
+<section class="card card-form card-form-wide hd-cal-checklist<?= $checklist['is_future'] ? ' is-future' : '' ?>" aria-labelledby="hd-cal-checklist-title">
     <div class="hd-cal-checklist-head">
         <h2 id="hd-cal-checklist-title" class="card-title"><?= icon('list') ?> Checkliste</h2>
-        <?= badge($checklistDone ? 'Erledigt' : $checklist['confirmed'] . '/' . $checklist['total'] . ' bestätigt', $checklistDone ? 'success' : 'warning') ?>
+        <?= badge($checklistDone ? 'Erledigt' : $checklist['confirmed'] . '/' . $checklist['total'] . ' bestätigt', $checklistDone ? 'success' : ($checklist['is_future'] ? 'neutral' : 'warning')) ?>
     </div>
     <?php if ($isSeries || $checklist['occurrence'] !== ''): ?>
         <p class="text-muted text-xs mb-0">Gilt nur für den Termin am <?= e(\App\Services\Helpdesk\HelpdeskCalendarService::longDay($checklist['occurrence'] !== '' ? $checklist['occurrence'] : $backDate)) ?>.</p>

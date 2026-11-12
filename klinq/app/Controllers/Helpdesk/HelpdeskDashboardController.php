@@ -10,6 +10,7 @@ use App\Core\View;
 use App\Repositories\TicketRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskCalendarService;
+use App\Services\Helpdesk\MentionService;
 use App\Services\Helpdesk\SupportShiftService;
 use App\Services\Helpdesk\TicketReportService;
 use App\Services\Helpdesk\TicketService;
@@ -25,7 +26,8 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
         private readonly TicketRepository $tickets,
         private readonly SupportShiftService $supportShifts,
         private readonly TicketSlaService $slaService,
-        private readonly HelpdeskCalendarService $calendar
+        private readonly HelpdeskCalendarService $calendar,
+        private readonly MentionService $mentions
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -42,6 +44,7 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
             'areaLabel' => 'Help Desk',
             'data' => $data,
             'pendingForwards' => $this->tickets->pendingForwards((int) $this->currentUser->id()),
+            'mentions' => $this->mentions->unreadForCurrentUser(),
             'views' => TicketService::views(),
             'viewCounts' => $this->tickets->viewCounts((int) $this->currentUser->id()),
             'now' => new \DateTimeImmutable('now', new \DateTimeZone('UTC')),
@@ -52,6 +55,22 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
             'calendarTimezone' => $this->calendar->timezone(),
             'scripts' => ['/js/helpdesk.js'],
         ]);
+    }
+
+    /** Markiert eine Erwähnung des angemeldeten Agenten als gelesen. */
+    public function mentionRead(Request $request): Response
+    {
+        $this->mentions->markRead($request->paramInt('id'));
+
+        return $this->respond($request, '', '/helpdesk#erwaehnungen');
+    }
+
+    /** Markiert alle Erwähnungen des angemeldeten Agenten als gelesen. */
+    public function mentionsReadAll(Request $request): Response
+    {
+        $this->mentions->markAllRead();
+
+        return $this->respond($request, 'Alle Erwähnungen als gelesen markiert.', '/helpdesk');
     }
 
     /**

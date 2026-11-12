@@ -56,6 +56,8 @@ return static function (Router $router, Container $c): void {
 
     // ------------------------------------------------------------------ Agentenbereich
     $router->get('/helpdesk', static fn (Request $r): Response => $dash()->index($r), 'helpdesk.view');
+    $router->post('/helpdesk/erwaehnungen/gelesen', static fn (Request $r): Response => $dash()->mentionsReadAll($r), 'helpdesk.view');
+    $router->post('/helpdesk/erwaehnungen/{id}/gelesen', static fn (Request $r): Response => $dash()->mentionRead($r), 'helpdesk.view');
     $router->post('/helpdesk/support-shift/claim', static fn (Request $r): Response => $shifts()->claim($r), 'helpdesk.view');
 
     $router->get('/helpdesk/tickets', static fn (Request $r): Response => $tickets()->index($r), 'helpdesk.view');

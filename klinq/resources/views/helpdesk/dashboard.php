@@ -97,6 +97,41 @@ $barList = static function (array $rows): void {
     </ul>
 </section>
 <?php endif; ?>
+<?php if (($mentions ?? []) !== []): ?>
+<section class="card hd-forward-card hd-mention-card mb-4" id="erwaehnungen">
+    <div class="hd-mention-head">
+        <h2 class="card-title"><?= icon('bell', 'icon icon-xs') ?> Sie wurden erwähnt <span class="badge is-info"><?= count($mentions) ?></span></h2>
+        <form method="post" action="/helpdesk/erwaehnungen/gelesen" class="inline-form">
+            <?= csrf_field() ?>
+            <button type="submit" class="btn btn-ghost btn-sm"><?= icon('check') ?> Alle als gelesen markieren</button>
+        </form>
+    </div>
+    <ul class="hd-forward-list">
+        <?php foreach ($mentions as $m):
+            $isTask = $m['task_id'] !== null;
+            $mentionUrl = $isTask
+                ? '/helpdesk/aufgaben/' . (int) $m['task_id'] . '#kommentar-' . (int) $m['comment_id']
+                : '/helpdesk/tickets/' . (int) $m['ticket_id'] . '#comment-' . (int) $m['comment_id'];
+            $number = $isTask ? ($m['task_number'] ?? '–') : ($m['ticket_number'] ?? '–');
+            $subject = $isTask ? ($m['task_subject'] ?? '–') : ($m['ticket_subject'] ?? '–');
+        ?>
+        <li class="hd-forward-item">
+            <div>
+                <a href="<?= e($mentionUrl) ?>"><strong><?= e($number) ?></strong> <?= e($subject) ?></a>
+                <div class="text-xs text-muted">
+                    <?= $isTask ? 'Aufgabenkommentar' : 'Interne Notiz' ?> von <?= e($m['mentioned_by_name'] ?? 'Unbekannt') ?> · <?= fmt_datetime($m['created_at'] ?? null) ?>
+                </div>
+                <?php if (!empty($m['excerpt'])): ?><div class="text-xs hd-mention-excerpt"><?= e($m['excerpt']) ?></div><?php endif; ?>
+            </div>
+            <form method="post" action="/helpdesk/erwaehnungen/<?= (int) $m['id'] ?>/gelesen" class="inline-form">
+                <?= csrf_field() ?>
+                <button type="submit" class="btn btn-secondary btn-sm"><?= icon('check') ?> Gelesen</button>
+            </form>
+        </li>
+        <?php endforeach; ?>
+    </ul>
+</section>
+<?php endif; ?>
 <div class="grid grid-4 mb-4 hd-kpis">
     <a class="card stat-card is-info" href="/helpdesk/tickets?view=mine_open"><span class="stat-value"><?= (int) ($counts['new_count'] ?? 0) ?></span><span class="stat-label">Neu</span></a>
     <a class="card stat-card" href="/helpdesk/tickets?view=open"><span class="stat-value"><?= (int) ($counts['open_count'] ?? 0) ?> <span class="text-sm text-muted">/ <?= (int) ($counts['in_progress'] ?? 0) ?></span></span><span class="stat-label">Offen / in Bearbeitung</span></a>

@@ -55,7 +55,8 @@ final class TaskService
         private readonly TicketAttachmentRepository $ticketAttachments,
         private readonly TicketMasterDataRepository $masterData,
         private readonly AuditLogService $audit,
-        private readonly CurrentUser $currentUser
+        private readonly CurrentUser $currentUser,
+        private readonly ?MentionService $mentions = null
     ) {}
 
     // ------------------------------------------------------------------ Ansichten
@@ -597,6 +598,7 @@ final class TaskService
                 'author_name' => mb_substr($userName, 0, 200),
             ]);
             $this->tasks->update($id, ['updated_by' => $userId]);
+            $this->mentions?->notifyTaskComment($id, $commentId, $body);
 
             return $commentId;
         });

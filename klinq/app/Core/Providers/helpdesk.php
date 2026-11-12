@@ -31,6 +31,7 @@ use App\Repositories\EmployeeRepository;
 use App\Repositories\HelpdeskCalendarChecklistRepository;
 use App\Repositories\HelpdeskCalendarRepository;
 use App\Repositories\HelpdeskContactRepository;
+use App\Repositories\HelpdeskMentionRepository;
 use App\Repositories\HelpdeskSupportShiftRepository;
 use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\LocationRepository;
@@ -68,6 +69,7 @@ use App\Services\Helpdesk\HelpdeskContactService;
 use App\Services\Helpdesk\HelpdeskSchedulerService;
 use App\Services\Helpdesk\KnowledgeArticleAttachmentService;
 use App\Services\Helpdesk\KnowledgeBaseService;
+use App\Services\Helpdesk\MentionService;
 use App\Services\Helpdesk\ReporterIdentityService;
 use App\Services\Lanpa\LanpaIdentityService;
 use App\Services\Helpdesk\SecondLevelReminderService;
@@ -115,11 +117,17 @@ return static function (Container $c): void {
         KnowledgeBaseRepository::class, HelpdeskSupportShiftRepository::class, TaskRepository::class,
         TaskCategoryRepository::class, TaskCommentRepository::class, TaskJournalRepository::class,
         TaskAttachmentRepository::class, HelpdeskCalendarRepository::class, HelpdeskCalendarChecklistRepository::class, HelpdeskContactRepository::class,
+        HelpdeskMentionRepository::class,
     ] as $repository) {
         $c->singleton($repository, static fn (Container $c): object => new $repository($c->get(PDO::class)));
     }
 
     // Fachlogik ohne Abhängigkeiten
+    $c->singleton(MentionService::class, static fn (Container $c): MentionService => new MentionService(
+        $c->get(HelpdeskMentionRepository::class),
+        $c->get(TicketMasterDataRepository::class),
+        $c->get(CurrentUser::class)
+    ));
     $c->singleton(TicketWorkflowService::class, static fn (): TicketWorkflowService => new TicketWorkflowService());
     $c->singleton(TicketRuleEvaluator::class, static fn (): TicketRuleEvaluator => new TicketRuleEvaluator());
     $c->singleton(TicketSlaService::class, static function (Container $c): TicketSlaService {
@@ -195,7 +203,8 @@ return static function (Container $c): void {
         $c->get(AuditLogService::class),
         $c->get(CurrentUser::class),
         $c->get(Config::class),
-        $c->get(ErrorOriginSettingsService::class)
+        $c->get(ErrorOriginSettingsService::class),
+        $c->get(MentionService::class)
     ));
     $c->singleton(TicketMergeService::class, static fn (Container $c): TicketMergeService => new TicketMergeService(
         $c->get(TicketRepository::class),
@@ -368,7 +377,8 @@ return static function (Container $c): void {
         $c->get(TicketRepository::class),
         $c->get(SupportShiftService::class),
         $c->get(TicketSlaService::class),
-        $c->get(HelpdeskCalendarService::class)
+        $c->get(HelpdeskCalendarService::class),
+        $c->get(MentionService::class)
     ));
     $c->singleton(TicketAttachmentService::class, static fn (Container $c): TicketAttachmentService => new TicketAttachmentService(
         $c->get(TicketService::class),
@@ -410,7 +420,8 @@ return static function (Container $c): void {
         $c->get(TaskRepository::class),
         $c->get(TaskCategoryRepository::class),
         $c->get(HelpdeskCalendarService::class),
-        $c->get(CalendarDateSuggestionService::class)
+        $c->get(CalendarDateSuggestionService::class),
+        $c->get(MentionService::class)
     ));
     $c->singleton(TaskAttachmentService::class, static fn (Container $c): TaskAttachmentService => new TaskAttachmentService(
         $c->get(DocumentService::class),
@@ -431,7 +442,8 @@ return static function (Container $c): void {
         $c->get(TicketAttachmentRepository::class),
         $c->get(TicketMasterDataRepository::class),
         $c->get(AuditLogService::class),
-        $c->get(CurrentUser::class)
+        $c->get(CurrentUser::class),
+        $c->get(MentionService::class)
     ));
     $c->singleton(TaskController::class, static fn (Container $c): TaskController => new TaskController(
         $c->get(View::class),
@@ -441,7 +453,8 @@ return static function (Container $c): void {
         $c->get(TaskCategoryRepository::class),
         $c->get(TicketMasterDataRepository::class),
         $c->get(UserRepository::class),
-        $c->get(Config::class)
+        $c->get(Config::class),
+        $c->get(MentionService::class)
     ));
     $c->singleton(TaskAttachmentController::class, static fn (Container $c): TaskAttachmentController => new TaskAttachmentController(
         $c->get(View::class),

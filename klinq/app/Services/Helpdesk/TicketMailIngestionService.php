@@ -19,6 +19,7 @@ use App\Services\DocumentService;
 use App\Services\Helpdesk\Mail\InboundMail;
 use App\Services\Helpdesk\Mail\MailboxClientInterface;
 use App\Services\Helpdesk\Mail\MimeMessageParser;
+use App\Services\PersonDirectoryService;
 use App\Support\MailHistory;
 
 /**
@@ -66,7 +67,8 @@ final class TicketMailIngestionService
         private readonly DocumentService $documents,
         private readonly MimeMessageParser $parser,
         private readonly MailboxSettingsService $settings,
-        private readonly \Closure $mailboxFactory
+        private readonly \Closure $mailboxFactory,
+        private readonly ?PersonDirectoryService $directory = null
     ) {}
 
     public function enabled(): bool
@@ -266,6 +268,9 @@ final class TicketMailIngestionService
         if ($employee === null && $user !== null && !empty($user['employee_id'])) {
             $employee = $this->employees->find((int) $user['employee_id']);
         }
+        if ($employee === null && $ticket === null) {
+            $employee = $this->phonebookEmployee($email);
+        }
         $name = $mail->fromName;
         if ($user !== null) {
             $name = (string) ($user['display_name'] ?? $name);
@@ -293,6 +298,28 @@ final class TicketMailIngestionService
             'is_requester' => $isRequester,
             'is_agent' => $isAgent && !$isRequester,
         ];
+    }
+
+    /**
+     * Absender ohne lokalen Mitarbeiter (z. B. noch nie in KLINQ angemeldet) im Telefonbuch des
+     * Intranets suchen und als Mitarbeiter übernehmen, damit Melder samt Abteilung und Telefon
+     * vollständig im Ticket stehen. Fehler der Anbindung verhindern die Ticketanlage nicht.
+     * @return array<string,mixed>|null
+     */
+    private function phonebookEmployee(string $email): ?array
+    {
+        if ($email === '' || $this->directory === null) {
+            return null;
+        }
+        try {
+            $id = $this->directory->adoptByEmail($email);
+        } catch (\Throwable $e) {
+            $this->logger->warning('Mail-Eingang: Telefonbuchabgleich fehlgeschlagen', ['email' => $email, 'error' => $e->getMessage()]);
+
+            return null;
+        }
+
+        return $id !== null ? $this->employees->find($id) : null;
     }
 
     /** @param array{user_id:?int,employee_id:?int,name:string,email:string} $author @return array<string,mixed> */

@@ -101,6 +101,28 @@ final class PersonDirectoryService
         if ($entry === null) {
             return null;
         }
+
+        return $this->adoptEntry($entry);
+    }
+
+    /**
+     * Wie adopt(), aber ueber die E-Mail-Adresse (Absender im Stoerungspostfach).
+     * Steht die Adresse nicht eindeutig im Telefonbuch, gibt es null.
+     */
+    public function adoptByEmail(string $email): ?int
+    {
+        $entry = $this->lanpa->phonebookEntryByEmail($email);
+
+        return $entry === null ? null : $this->adoptEntry($entry);
+    }
+
+    /**
+     * @param array{id:int,external_id:string,username:string,display_name:string,first_name:string,
+     *              last_name:string,title:string,personnel_number:string,phone:string,mobile:string,
+     *              email:string,department:string,source:string} $entry
+     */
+    private function adoptEntry(array $entry): ?int
+    {
         $existing = $this->resolve($entry);
         if ($existing !== null) {
             return $existing;

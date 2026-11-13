@@ -366,7 +366,8 @@ return static function (Container $c): void {
         $c->get(DocumentService::class),
         $c->get(MimeMessageParser::class),
         $c->get(MailboxSettingsService::class),
-        static fn (): MailboxClientInterface => MailboxClientFactory::create($c->get(MailboxSettingsService::class)->mailboxOptions(), dirname(__DIR__, 3))
+        static fn (): MailboxClientInterface => MailboxClientFactory::create($c->get(MailboxSettingsService::class)->mailboxOptions(), dirname(__DIR__, 3)),
+        $c->get(PersonDirectoryService::class)
     ));
 
     // Controller

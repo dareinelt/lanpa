@@ -231,6 +231,32 @@ final class PhonebookRepository extends Repository implements PhonebookStoreInte
     }
 
     /**
+     * Aktiver, sichtbarer Eintrag zu einer E-Mail-Adresse (Gross-/Kleinschreibung
+     * egal). Fuehren mehrere Eintraege dieselbe Adresse (z. B. in verschiedenen
+     * Identitaetsquellen), ist die Person nicht eindeutig und es gibt null.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function findVisibleByEmail(string $email): ?array
+    {
+        $email = mb_strtolower(trim($email));
+        if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            return null;
+        }
+        $statement = $this->pdo->prepare(
+            'SELECT id, identity_source_id, external_id, samaccount_name, display_name, first_name, last_name,
+                    title, personnel_number, phone, mobile, email, department
+               FROM phonebook
+              WHERE active = 1 AND visible = 1 AND LOWER(email) = :email
+              LIMIT 2'
+        );
+        $statement->execute(['email' => $email]);
+        $rows = $statement->fetchAll();
+
+        return count($rows) === 1 && is_array($rows[0]) ? $rows[0] : null;
+    }
+
+    /**
      * Findet einen aktiven Telefonbucheintrag anhand seines SamAccountNames
      * innerhalb einer Identitaetsquelle (0 = Hauptquelle); SamAccountNames
      * sind nur je Verzeichnis eindeutig. Der Vergleich ist case-insensitiv

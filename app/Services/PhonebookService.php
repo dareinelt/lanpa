@@ -117,6 +117,19 @@ final class PhonebookService
     }
 
     /**
+     * Eindeutiger Telefonbucheintrag zu einer E-Mail-Adresse, z. B. fuer den
+     * Absender einer Mail an das KLINQ-Stoerungspostfach.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function directoryEntryByEmail(string $email): ?array
+    {
+        $row = $this->repository->findVisibleByEmail($email);
+
+        return $row === null ? null : $this->directoryEntryFromRow($row);
+    }
+
+    /**
      * @param array<string,mixed> $row
      *
      * @return array<string,mixed>

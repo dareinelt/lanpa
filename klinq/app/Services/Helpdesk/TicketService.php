@@ -277,6 +277,12 @@ final class TicketService
             $extraFields = $this->reporterFields($reporter);
             $createdByName = mb_substr(trim((string) ($reporter['display_name'] ?? '')) ?: 'Störungsmeldung', 0, 200);
         }
+        // E-Mail-Eingang: Absender mit KLINQ-Konto, aber ohne Mitarbeiterdatensatz (z. B. über das
+        // Intranet angelegt) ist selbst der Melder. validate() übernimmt requester_user_id nicht,
+        // sonst fiele die Meldung unten auf das Systemkonto zurück.
+        if ($source === 'email' && empty($data['requester_employee_id'])) {
+            $data['requester_user_id'] = $this->activeUserId($input['requester_user_id'] ?? null);
+        }
         // Nur beim E-Mail-Eingang wird der Systembenutzer als Melder hinterlegt; ist der Absender
         // unbekannt/extern, wird er unten wieder entfernt. Agenten-Tickets (web, phone, api) bleiben
         // ohne Melder, wenn keiner ausgewählt wurde – der anlegende Agent ist nicht der Melder.

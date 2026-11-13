@@ -177,6 +177,24 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         $this->assertSame('rita@example.test', $ticket['requester_email']);
     }
 
+    public function testKnownUserWithoutEmployeeBecomesRequester(): void
+    {
+        // Benutzerkonto ohne Mitarbeiterdatensatz (z. B. per Intranet-SSO angelegt)
+        $stmt = $this->pdo->prepare("INSERT INTO users (username, display_name, email, role_id, auth_source, is_active) SELECT 'julia.portal', 'Julia Portal', 'julia@example.test', id, 'local', 1 FROM roles WHERE name = 'portal'");
+        $stmt->execute();
+        $userId = (int) $this->pdo->lastInsertId();
+
+        $result = $this->ingestion->ingestRaw($this->raw('Julia Portal <julia@example.test>', 'Scanner defekt', 'Der Scanner zieht kein Papier ein.'));
+
+        $this->assertSame(TicketMailIngestionService::ACTION_CREATED, $result['action']);
+        $ticket = $this->c->get(TicketRepository::class)->find((int) $result['ticket_id']);
+        $this->assertNotNull($ticket);
+        // Der Absender selbst ist Melder – nicht das Systemkonto des E-Mail-Eingangs.
+        $this->assertSame($userId, (int) $ticket['requester_user_id']);
+        $this->assertNull($ticket['requester_employee_id']);
+        $this->assertSame('Julia Portal', $ticket['requester_name']);
+    }
+
     public function testEmptySubjectAndBodyStillCreateTicket(): void
     {
         $result = $this->ingestion->ingestRaw($this->raw('x@extern.test', '', ''));

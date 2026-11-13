@@ -244,6 +244,10 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
   Zeiten für Altbestand und werden beim Speichern abgeleitet.
 - **Mail-Ingestion ist idempotent**: eingehende Nachrichten werden über `ticket_inbound_mails` (Message-ID)
   verfolgt; Antworten werden per Ticketnummer/`In-Reply-To` dem richtigen Ticket als Kommentar zugeordnet.
+  Ausnahme: zuvor `ignored` protokollierte Nachrichten werden bei erneutem Abruf neu bewertet (alter Eintrag
+  wird ersetzt). Auto-Reply-Erkennung in `InboundMail::automaticReason()` (`X-Auto-Response-Suppress` zählt
+  bewusst nicht); Absender in `helpdesk.mail.allowed_senders` umgehen Auto-Reply- und Unbekannt-Prüfung.
+  Admins sehen ignorierte Mails der letzten 24 h als Dashboard-Hinweis mit Overlay zur Freigabe.
 - **HTML-Inhalt eingehender Mails** wird 1:1 übernommen: `MimeMessageParser` liefert den HTML-Teil als
   `InboundMail::$html`, `TicketService` speichert ihn bereinigt in `tickets.description_html` bzw.
   `ticket_comments.body_html` (Migration 026). Klartext (`description`/`body`) bleibt maßgeblich für Suche,

@@ -79,7 +79,21 @@ final class TicketRuleRepository extends BaseRepository
 
     public function inboundMailExists(string $messageId): bool
     {
-        return $this->fetchValue('SELECT 1 FROM ticket_inbound_mails WHERE message_id = :m', ['m' => mb_substr($messageId, 0, 255)]) !== null;
+        return $this->inboundMailAction($messageId) !== null;
+    }
+
+    /** Protokollierte Aktion zu einer Message-ID (null = noch nicht verarbeitet). */
+    public function inboundMailAction(string $messageId): ?string
+    {
+        $action = $this->fetchValue('SELECT action FROM ticket_inbound_mails WHERE message_id = :m', ['m' => mb_substr($messageId, 0, 255)]);
+
+        return $action !== null ? (string) $action : null;
+    }
+
+    /** Ignorierten Protokolleintrag entfernen, damit die Nachricht erneut verarbeitet werden kann. */
+    public function deleteIgnoredInboundMail(string $messageId): void
+    {
+        $this->execute("DELETE FROM ticket_inbound_mails WHERE message_id = :m AND action = 'ignored'", ['m' => mb_substr($messageId, 0, 255)]);
     }
 
     /** @param array<string,mixed> $data */
@@ -89,6 +103,9 @@ final class TicketRuleRepository extends BaseRepository
         $data['from_address'] = mb_substr((string) ($data['from_address'] ?? ''), 0, 255);
         $data['subject'] = mb_substr((string) ($data['subject'] ?? ''), 0, 255);
         $data['detail'] = isset($data['detail']) ? mb_substr((string) $data['detail'], 0, 500) : null;
+        if (isset($data['mail_headers']) && is_array($data['mail_headers'])) {
+            $data['mail_headers'] = $data['mail_headers'] !== [] ? (string) json_encode($data['mail_headers'], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) : null;
+        }
 
         return $this->insertRow('ticket_inbound_mails', $data);
     }
@@ -97,6 +114,19 @@ final class TicketRuleRepository extends BaseRepository
     public function recentInboundMails(int $limit = 50): array
     {
         return $this->fetchAll('SELECT m.*, t.number AS ticket_number FROM ticket_inbound_mails m LEFT JOIN tickets t ON t.id = m.ticket_id ORDER BY m.id DESC LIMIT ' . max(1, $limit));
+    }
+
+    /**
+     * Ignorierte Eingangsmails seit einem Zeitpunkt (UTC, „Y-m-d H:i:s“), neueste zuerst.
+     * @return list<array<string,mixed>>
+     */
+    public function ignoredInboundMailsSince(string $since, int $limit = 100): array
+    {
+        return $this->fetchAll(
+            "SELECT id, message_id, from_address, subject, detail, received_at, created_at FROM ticket_inbound_mails
+             WHERE action = 'ignored' AND created_at >= :since ORDER BY id DESC LIMIT " . max(1, $limit),
+            ['since' => $since]
+        );
     }
 
     /** @return array<int,array<string,mixed>> */

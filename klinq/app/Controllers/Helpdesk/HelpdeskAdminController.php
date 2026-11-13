@@ -262,6 +262,27 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         return $this->json(['items' => $this->accountSuggestions->suggest($request->queryString('q'))]);
     }
 
+    /** Absender eines ignorierten Protokolleintrags in „Immer zulassen“ aufnehmen. */
+    public function allowMailSender(Request $request): Response
+    {
+        $this->currentUser->require('helpdesk.admin');
+        $email = $request->string('email');
+        // Nur feste interne Rücksprungziele zulassen (kein offener Redirect).
+        $target = $request->string('return') === 'dashboard' ? '/helpdesk' : '/helpdesk/admin/mail';
+        try {
+            $added = $this->mailSettings->allowSender($email);
+        } catch (ValidationException $e) {
+            $this->flash('error', implode(' ', $e->errors()));
+
+            return $this->redirect($target);
+        }
+        $this->flash('success', $added
+            ? sprintf('E-Mails von %s werden künftig immer verarbeitet. Bereits ignorierte Nachrichten im Postfach wieder als ungelesen in den Eingangsordner verschieben, um sie erneut abzuholen.', mb_strtolower($email))
+            : sprintf('%s steht bereits in der Liste „Immer zulassen“.', mb_strtolower($email)));
+
+        return $this->redirect($target);
+    }
+
     /** Protokoll des E-Mail-Eingangs (IMAP) mit Konfigurationsübersicht. */
     public function mail(Request $request): Response
     {
@@ -280,6 +301,7 @@ final class HelpdeskAdminController extends HelpdeskBaseController
             'areaLabel' => 'Help Desk',
             'rows' => $rows,
             'counts' => $counts,
+            'allowedSenders' => $this->mailSettings->allowedSenders(),
             'canConfigure' => $this->currentUser->can('settings.manage'),
             'lastRun' => $this->mailSettings->lastRun(),
             'config' => [

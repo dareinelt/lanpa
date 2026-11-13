@@ -8,8 +8,10 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
 use App\Repositories\TicketRepository;
+use App\Repositories\TicketRuleRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskCalendarService;
+use App\Services\Helpdesk\MailboxSettingsService;
 use App\Services\Helpdesk\MentionService;
 use App\Services\Helpdesk\SupportShiftService;
 use App\Services\Helpdesk\TicketReportService;
@@ -27,7 +29,9 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
         private readonly SupportShiftService $supportShifts,
         private readonly TicketSlaService $slaService,
         private readonly HelpdeskCalendarService $calendar,
-        private readonly MentionService $mentions
+        private readonly MentionService $mentions,
+        private readonly TicketRuleRepository $rules,
+        private readonly MailboxSettingsService $mailSettings
     ) {
         parent::__construct($view, $currentUser);
     }
@@ -52,9 +56,28 @@ final class HelpdeskDashboardController extends HelpdeskBaseController
             'slaService' => $this->slaService,
             'isFirstLevel' => $shift['first'] !== null && (int) $shift['first']['user_id'] === (int) $this->currentUser->id(),
             'todayEvents' => $todayEvents,
+            'ignoredMails' => $this->ignoredMails(),
+            'allowedSenders' => $this->currentUser->can('helpdesk.admin') ? $this->mailSettings->allowedSenders() : [],
             'calendarTimezone' => $this->calendar->timezone(),
             'scripts' => ['/js/helpdesk.js'],
         ]);
+    }
+
+    /**
+     * Für Help-Desk-Admins: in den letzten 24 Stunden ignorierte Eingangsmails (Hinweis mit Overlay,
+     * aus dem Absender freigegeben werden können).
+     * @return list<array<string,mixed>>
+     */
+    private function ignoredMails(): array
+    {
+        if (!$this->currentUser->can('helpdesk.admin')) {
+            return [];
+        }
+
+        $rows = $this->rules->ignoredInboundMailsSince(gmdate('Y-m-d H:i:s', time() - 86400));
+
+        // Eigene Systemadresse wird immer ignoriert (Schleifenschutz) – eine Freigabe wäre wirkungslos.
+        return array_values(array_filter($rows, static fn (array $r): bool => !str_starts_with((string) ($r['detail'] ?? ''), 'Absender ist die eigene Systemadresse')));
     }
 
     /** Markiert eine Erwähnung des angemeldeten Agenten als gelesen. */

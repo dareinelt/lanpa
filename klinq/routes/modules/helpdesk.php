@@ -161,6 +161,7 @@ return static function (Router $router, Container $c): void {
     // Vorlagenrolle („helpdesk.templates“) hereinkommt und nur ihren Reiter sieht.
     $router->get('/helpdesk/admin', static fn (Request $r): Response => $admin()->index($r), null);
     $router->get('/helpdesk/admin/mail', static fn (Request $r): Response => $admin()->mail($r), 'helpdesk.admin');
+    $router->post('/helpdesk/admin/mail/allow-sender', static fn (Request $r): Response => $admin()->allowMailSender($r), 'helpdesk.admin');
     $router->post('/helpdesk/admin/quick-report', static fn (Request $r): Response => $admin()->saveQuickReport($r), 'helpdesk.admin');
     $router->post('/helpdesk/admin/error-origins', static fn (Request $r): Response => $admin()->saveErrorOrigins($r), 'helpdesk.admin');
     $router->post('/helpdesk/admin/reply-templates', static fn (Request $r): Response => $admin()->saveReplyTemplates($r), 'helpdesk.admin');

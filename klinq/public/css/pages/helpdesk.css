@@ -263,6 +263,20 @@ a.kb-card:hover h3, a.kb-card:focus-visible h3 { text-decoration: underline; }
 .config-grid { gap: var(--space-4); }
 .config-grid .kpi-value { font-size: var(--font-size-md); overflow-wrap: anywhere; }
 .config-grid .kpi-label { text-transform: none; letter-spacing: 0; font-size: var(--font-size-xs); }
+
+/* Mail-Protokoll: aufklappbare Details zu ignorierten Nachrichten */
+.hd-mail-ignored > summary { cursor: pointer; list-style: none; white-space: nowrap; }
+.hd-mail-ignored > summary::-webkit-details-marker { display: none; }
+.hd-mail-ignored > summary::after { content: " ▸"; color: var(--color-text-muted, inherit); }
+.hd-mail-ignored[open] > summary::after { content: " ▾"; }
+.hd-mail-ignored-body { min-width: 22rem; max-width: 36rem; margin-top: var(--space-2); }
+.hd-mail-headers { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: 0 0 var(--space-2); font-size: var(--font-size-xs); }
+.hd-mail-headers dt { font-weight: 600; }
+.hd-mail-headers dd { margin: 0; overflow-wrap: anywhere; }
+/* Dashboard-Hinweis auf ignorierte Eingangsmails (nur Help-Desk-Admins) */
+.hd-ignored-mail-alert > .btn { float: right; margin: -2px 0 0 var(--space-3); }
+.hd-ignored-mails-dialog { width: min(760px, calc(100vw - 2rem)); }
+.hd-ignored-mails-dialog .hd-forward-item > div { min-width: 0; overflow-wrap: anywhere; }
 /* Feste Palette: Farbpunkte bleiben in jedem Design gleich (siehe tokens.css). */
 .color-swatch { display: inline-block; width: 12px; height: 12px; border-radius: var(--radius-full); vertical-align: middle; margin-right: var(--space-1); background: var(--color-palette-neutral); }
 .color-swatch.is-info { background: var(--color-palette-info); }

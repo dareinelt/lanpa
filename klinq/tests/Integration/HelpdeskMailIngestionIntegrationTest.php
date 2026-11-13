@@ -565,6 +565,42 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         }
     }
 
+    public function testOutlookReplyWithAutoResponseSuppressCreatesTicket(): void
+    {
+        $result = $this->ingestion->ingestRaw($this->raw('gast@extern.test', 'AW: Umzüge', 'Bitte die PCs mit umziehen.', ['X-Auto-Response-Suppress' => 'All', 'Thread-Topic' => 'Umzüge']));
+
+        $this->assertSame(TicketMailIngestionService::ACTION_CREATED, $result['action']);
+        $this->assertNotNull($result['ticket_id']);
+    }
+
+    public function testIgnoredMailLogsReasonAndHeadersAndAllowedSenderIsReprocessed(): void
+    {
+        $raw = $this->raw('update@vendor.test', 'Neue Version verfügbar', 'Bitte installieren.', ['Auto-Submitted' => 'auto-generated']);
+        $rules = $this->c->get(TicketRuleRepository::class);
+
+        $first = $this->ingestion->ingestRaw($raw);
+        $this->assertSame(TicketMailIngestionService::ACTION_IGNORED, $first['action']);
+        $this->assertStringContains('Automatische Nachricht: ', (string) $first['detail']);
+        $this->assertStringContains('Auto-Submitted', (string) $first['detail']);
+        $log = $rules->recentInboundMails(1)[0];
+        $headers = json_decode((string) $log['mail_headers'], true);
+        $this->assertSame('auto-generated', $headers['auto-submitted'] ?? null);
+
+        $ignored = $rules->ignoredInboundMailsSince(gmdate('Y-m-d H:i:s', time() - 86400));
+        $this->assertContains('update@vendor.test', array_map(static fn (array $r): string => mb_strtolower((string) $r['from_address']), $ignored));
+
+        $settings = $this->c->get(MailboxSettingsService::class);
+        $this->assertTrue($settings->allowSender('Update@Vendor.test'));
+        $this->assertFalse($settings->allowSender('update@vendor.test'));
+        $this->assertTrue($settings->isAllowedSender('UPDATE@vendor.test'));
+
+        // Dieselbe Nachricht erneut abgerufen: wird jetzt verarbeitet, kein Duplikat.
+        $second = $this->ingestion->ingestRaw($raw);
+        $this->assertSame(TicketMailIngestionService::ACTION_CREATED, $second['action']);
+        $count = (int) $this->pdo->query("SELECT COUNT(*) FROM ticket_inbound_mails WHERE from_address = 'update@vendor.test'")->fetchColumn();
+        $this->assertSame(1, $count);
+    }
+
     public function testUnparsableMessageIsLoggedAsFailed(): void
     {
         $result = $this->ingestion->ingestRaw('', 'u1');

@@ -32,8 +32,9 @@ use App\Support\MailHistory;
  *  2. Ticketnummer im Betreff (z. B. „Re: [HD-2026-000012] Drucker“)
  *  3. sonst neues Ticket
  *
- * Schutzmechanismen: Duplikaterkennung über Message-ID, Erkennung automatischer Nachrichten
- * (Auto-Submitted, Precedence, Bounces), eigene Absenderadresse wird ignoriert, Anhänge werden über
+ * Schutzmechanismen: Duplikaterkennung über Message-ID (zuvor ignorierte Nachrichten werden erneut bewertet),
+ * Erkennung automatischer Nachrichten (Auto-Submitted, Precedence, Listen, Bounces) mit Ausnahmeliste
+ * „Immer zulassen“, eigene Absenderadresse wird ignoriert, Anhänge werden über
  * den Dokumentendienst (Whitelist, Größenlimit) gespeichert.
  */
 final class TicketMailIngestionService
@@ -161,14 +162,23 @@ final class TicketMailIngestionService
             'matched_by' => 'none',
         ];
 
-        if ($this->rules->inboundMailExists($mail->messageId)) {
+        $previous = $this->rules->inboundMailAction($mail->messageId);
+        if ($previous !== null && $previous !== self::ACTION_IGNORED) {
             return $this->finish($log, self::ACTION_IGNORED, null, null, 'Duplikat (Message-ID bereits verarbeitet)', false);
         }
-        if ($mail->isAutomatic()) {
-            return $this->finish($log, self::ACTION_IGNORED, null, null, 'Automatische Nachricht (Auto-Reply/Bounce/Liste)');
+        if ($previous === self::ACTION_IGNORED) {
+            // Zuvor ignorierte Nachricht (z. B. nach „Absender immer zulassen“ zurück ins Postfach verschoben) neu bewerten
+            $this->rules->deleteIgnoredInboundMail($mail->messageId);
         }
         if ($this->isOwnAddress($mail->fromAddress)) {
             return $this->finish($log, self::ACTION_IGNORED, null, null, 'Absender ist die eigene Systemadresse');
+        }
+        $allowed = $this->settings->isAllowedSender($mail->fromAddress);
+        $automatic = $allowed ? null : $mail->automaticReason();
+        if ($automatic !== null) {
+            $log['mail_headers'] = $mail->diagnosticHeaders();
+
+            return $this->finish($log, self::ACTION_IGNORED, null, null, 'Automatische Nachricht: ' . $automatic);
         }
 
         try {
@@ -185,7 +195,7 @@ final class TicketMailIngestionService
                 return $this->finish($log, self::ACTION_COMMENT, (int) $target['id'], (int) ($comment['id'] ?? 0), sprintf('Kommentar von %s (%s)', $author['email'], $matchedBy), true, (string) $target['number']);
             }
 
-            if ($author['user_id'] === null && $author['employee_id'] === null && !(bool) $this->settings->get('allow_unknown_senders', true)) {
+            if (!$allowed && $author['user_id'] === null && $author['employee_id'] === null && !(bool) $this->settings->get('allow_unknown_senders', true)) {
                 return $this->finish($log, self::ACTION_IGNORED, null, null, 'Unbekannter Absender (allow_unknown_senders = false)');
             }
 

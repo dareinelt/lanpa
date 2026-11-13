@@ -308,7 +308,7 @@ final class HelpdeskMailParserTest extends TestCase
     {
         $this->assertTrue($this->mail(['auto-submitted' => 'auto-replied'])->isAutomatic());
         $this->assertFalse($this->mail(['auto-submitted' => 'no'])->isAutomatic());
-        $this->assertTrue($this->mail(['x-auto-response-suppress' => 'All'])->isAutomatic());
+        $this->assertFalse($this->mail(['x-auto-response-suppress' => 'All'])->isAutomatic());
         $this->assertTrue($this->mail(['precedence' => 'bulk'])->isAutomatic());
         $this->assertTrue($this->mail(['list-unsubscribe' => '<mailto:x>'])->isAutomatic());
         $this->assertTrue($this->mail(['content-type' => 'multipart/report; report-type=delivery-status'])->isAutomatic());
@@ -316,6 +316,33 @@ final class HelpdeskMailParserTest extends TestCase
         $this->assertTrue($this->mail([], 'noreply@example.test')->isAutomatic());
         $this->assertTrue($this->mail([], '')->isAutomatic());
         $this->assertFalse($this->mail([], 'max@example.test')->isAutomatic());
+    }
+
+    public function testOutlookReplyWithAutoResponseSuppressIsNotAutomatic(): void
+    {
+        // Outlook/Exchange setzt diese Header auch bei normalen, von Menschen geschriebenen Antworten.
+        $mail = $this->mail(['x-auto-response-suppress' => 'All', 'x-ms-exchange-organization-authas' => 'Internal', 'thread-topic' => 'Umzüge']);
+        $this->assertFalse($mail->isAutomatic());
+        $this->assertNull($mail->automaticReason());
+    }
+
+    public function testAutomaticReasonAndDiagnosticHeaders(): void
+    {
+        $mail = $this->mail(['auto-submitted' => 'auto-replied', 'x-auto-response-suppress' => 'All', 'subject' => 'egal']);
+        $this->assertTrue(str_contains((string) $mail->automaticReason(), 'Auto-Submitted'));
+        $headers = $mail->diagnosticHeaders();
+        $this->assertSame('auto-replied', $headers['auto-submitted'] ?? null);
+        $this->assertSame('All', $headers['x-auto-response-suppress'] ?? null);
+        $this->assertFalse(isset($headers['subject']));
+    }
+
+    public function testParseAllowedSendersNormalizesAndDeduplicates(): void
+    {
+        $this->assertSame(
+            ['a@example.test', 'b@example.test', 'c@example.test'],
+            \App\Services\Helpdesk\MailboxSettingsService::parseSenders(" A@Example.test\r\nb@example.test, c@example.test; a@example.test\n\n")
+        );
+        $this->assertSame([], \App\Services\Helpdesk\MailboxSettingsService::parseSenders(''));
     }
 
     /** @param array<string,string> $headers */

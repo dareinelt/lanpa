@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Helpdesk;
 
 use App\Core\Config;
+use App\Exceptions\ValidationException;
 use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
@@ -179,7 +180,8 @@ final class MailboxSettingsService
             ->int('interval_minutes', 'Abrufintervall', true, 0, 1440)
             ->string('system_user', 'Systembenutzer', true, 190)
             ->bool('allow_unknown_senders')
-            ->string('default_type', 'Standard-Tickettyp', true, 60);
+            ->string('default_type', 'Standard-Tickettyp', true, 60)
+            ->text('allowed_senders', 'Immer zulassen', false, 20000);
 
         $enabled = (bool) $v->value('enabled');
         $driver = (string) ($v->value('driver') ?? 'imap');
@@ -213,6 +215,13 @@ final class MailboxSettingsService
         if ($type !== '' && $this->masterData->typeByCode($type) === null) {
             $v->addError('default_type', 'Der Tickettyp ist unbekannt.');
         }
+        $invalidSenders = array_filter(
+            self::parseSenders((string) ($v->value('allowed_senders') ?? '')),
+            static fn (string $address): bool => filter_var($address, FILTER_VALIDATE_EMAIL) === false
+        );
+        if ($invalidSenders !== []) {
+            $v->addError('allowed_senders', 'Ungültige E-Mail-Adresse(n): ' . implode(', ', $invalidSenders));
+        }
 
         $data = $v->validated();
         $defaults = $this->defaults();
@@ -230,8 +239,54 @@ final class MailboxSettingsService
         if (!$clean['move_processed']) {
             $clean['processed_mailbox'] = '';
         }
+        $clean['allowed_senders'] = implode("\n", self::parseSenders($clean['allowed_senders']));
 
         return $clean;
+    }
+
+    // ------------------------------------------------------------------ Immer zulassen
+
+    /** Absender, deren E-Mails nie als automatisch/unbekannt ignoriert werden. @return list<string> */
+    public function allowedSenders(): array
+    {
+        return self::parseSenders((string) $this->get('allowed_senders', ''));
+    }
+
+    public function isAllowedSender(string $email): bool
+    {
+        $email = mb_strtolower(trim($email));
+
+        return $email !== '' && in_array($email, $this->allowedSenders(), true);
+    }
+
+    /**
+     * Absender in die Liste „Immer zulassen“ aufnehmen (aus dem Mail-Protokoll heraus).
+     * @return bool true, wenn die Adresse neu aufgenommen wurde
+     */
+    public function allowSender(string $email): bool
+    {
+        $this->currentUser->require('helpdesk.admin');
+        $email = mb_strtolower(trim($email));
+        if (filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            throw ValidationException::single('email', 'Ungültige E-Mail-Adresse.');
+        }
+        $before = $this->allowedSenders();
+        if (in_array($email, $before, true)) {
+            return false;
+        }
+        $after = array_merge($before, [$email]);
+        $this->settings->set(self::PREFIX . 'allowed_senders', implode("\n", $after), $this->currentUser->id());
+        $this->audit->log('update', 'settings', null, 'Help-Desk-Postfach: Absender immer zulassen', ['allowed_senders' => implode(', ', $before)], ['allowed_senders' => implode(', ', $after)]);
+
+        return true;
+    }
+
+    /** Liste aus Zeilen/Kommas/Semikolons einlesen, kleinschreiben und deduplizieren. @return list<string> */
+    public static function parseSenders(string $raw): array
+    {
+        $parts = preg_split('/[\s,;]+/', mb_strtolower($raw)) ?: [];
+
+        return array_values(array_unique(array_filter($parts, static fn (string $p): bool => $p !== '')));
     }
 
     // ------------------------------------------------------------------ Laufzeit
@@ -326,6 +381,7 @@ final class MailboxSettingsService
             'system_user' => (string) ($env['system_user'] ?? 'admin'),
             'allow_unknown_senders' => (bool) ($env['allow_unknown_senders'] ?? true),
             'default_type' => (string) ($env['default_type'] ?? 'incident'),
+            'allowed_senders' => '',
         ];
     }
 

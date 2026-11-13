@@ -169,6 +169,12 @@ $actionColor = ['created' => 'success', 'comment' => 'info', 'ignored' => 'neutr
             <span class="form-hint">Ohne Haken werden nur E-Mails von bekannten Mitarbeitern oder Benutzern zu Tickets.</span>
         </div>
     </div>
+    <div class="form-group <?= has_error('allowed_senders') ? 'has-error' : '' ?>">
+        <label for="hm-allowed-senders">Immer zulassen</label>
+        <textarea id="hm-allowed-senders" name="allowed_senders" rows="4" placeholder="absender@example.org"><?= e($val('allowed_senders')) ?></textarea>
+        <span class="form-hint">Eine E-Mail-Adresse pro Zeile. Nachrichten dieser Absender werden nie als automatische Nachricht oder unbekannter Absender verworfen.</span>
+        <?= field_error('allowed_senders') ?>
+    </div>
 
     <div class="form-actions">
         <button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button>

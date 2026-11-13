@@ -132,6 +132,15 @@ $barList = static function (array $rows): void {
     </ul>
 </section>
 <?php endif; ?>
+<?php if (($ignoredMails ?? []) !== []):
+    $ignoredCount = count($ignoredMails);
+?>
+<div class="alert alert-warning mb-4 hd-ignored-mail-alert">
+    <?= icon('mail', 'icon icon-xs') ?>
+    <button type="button" class="btn btn-secondary btn-sm" data-dialog-open="ignored-mails-dialog"><?= icon('list') ?> Anzeigen</button>
+    <span><strong><?= $ignoredCount === 1 ? '1 eingehende E-Mail wurde' : $ignoredCount . ' eingehende E-Mails wurden' ?></strong> in den letzten 24 Stunden ignoriert und <?= $ignoredCount === 1 ? 'hat' : 'haben' ?> kein Ticket erzeugt.</span>
+</div>
+<?php endif; ?>
 <div class="grid grid-4 mb-4 hd-kpis">
     <a class="card stat-card is-info" href="/helpdesk/tickets?view=mine_open"><span class="stat-value"><?= (int) ($counts['new_count'] ?? 0) ?></span><span class="stat-label">Neu</span></a>
     <a class="card stat-card" href="/helpdesk/tickets?view=open"><span class="stat-value"><?= (int) ($counts['open_count'] ?? 0) ?> <span class="text-sm text-muted">/ <?= (int) ($counts['in_progress'] ?? 0) ?></span></span><span class="stat-label">Offen / in Bearbeitung</span></a>
@@ -230,6 +239,44 @@ $barList = static function (array $rows): void {
     <div class="dialog-footer">
         <a class="btn btn-secondary" href="/helpdesk/kalender?ansicht=tag&amp;datum=<?= e($todayLocal) ?>"><?= icon('calendar') ?> Zum Kalender</a>
         <button type="button" class="btn btn-primary" data-dialog-close autofocus>Verstanden</button>
+    </div>
+</dialog>
+<?php endif; ?>
+<?php if (($ignoredMails ?? []) !== []):
+    $allowedLookup = array_flip($allowedSenders ?? []);
+?>
+<dialog id="ignored-mails-dialog" class="dialog hd-ignored-mails-dialog" aria-labelledby="ignored-mails-title">
+    <div class="dialog-header"><h2 id="ignored-mails-title"><?= icon('mail') ?> Ignorierte E-Mails (24 h)</h2><button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button></div>
+    <div class="dialog-body">
+        <p class="text-muted text-sm">Diese Nachrichten wurden beim Abruf nicht als Ticket übernommen. Wird ein Absender freigegeben, werden seine E-Mails künftig immer verarbeitet. Bereits ignorierte Nachrichten im Postfach wieder als ungelesen in den Eingangsordner verschieben, damit sie erneut abgeholt werden.</p>
+        <ul class="hd-forward-list">
+            <?php foreach ($ignoredMails as $im):
+                $from = mb_strtolower(trim((string) ($im['from_address'] ?? '')));
+            ?>
+            <li class="hd-forward-item">
+                <div>
+                    <strong><?= e($from !== '' ? $from : '(kein Absender)') ?></strong> <?= e($im['subject'] ?? '–') ?>
+                    <div class="text-xs text-muted"><?= fmt_datetime($im['received_at'] ?? $im['created_at'] ?? null) ?><?php if (!empty($im['detail'])): ?> · <?= e($im['detail']) ?><?php endif; ?></div>
+                </div>
+                <?php if ($from === ''): ?>
+                    <span class="text-xs text-muted">–</span>
+                <?php elseif (isset($allowedLookup[$from])): ?>
+                    <?= badge('zugelassen', 'success') ?>
+                <?php else: ?>
+                <form method="post" action="/helpdesk/admin/mail/allow-sender" class="inline-form">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="email" value="<?= e($from) ?>">
+                    <input type="hidden" name="return" value="dashboard">
+                    <button type="submit" class="btn btn-secondary btn-sm"><?= icon('check') ?> Immer zulassen</button>
+                </form>
+                <?php endif; ?>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <div class="dialog-footer">
+        <a class="btn btn-secondary" href="/helpdesk/admin/mail"><?= icon('list') ?> Zum Mail-Protokoll</a>
+        <button type="button" class="btn btn-primary" data-dialog-close>Schließen</button>
     </div>
 </dialog>
 <?php endif; ?>

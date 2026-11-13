@@ -63,7 +63,37 @@ $configValue = static function (string $key, mixed $value): string {
                     <td class="nowrap text-sm"><?= fmt_datetime($r['created_at']) ?><?php if (!empty($r['received_at'])): ?><div class="text-xs text-muted">gesendet <?= fmt_datetime($r['received_at']) ?></div><?php endif; ?></td>
                     <td class="text-sm"><?= e($r['from_address'] !== '' ? $r['from_address'] : '–') ?></td>
                     <td class="text-sm"><?= e($r['subject'] !== '' ? $r['subject'] : '(ohne Betreff)') ?><div class="text-xs text-muted mono"><?= e(mb_strimwidth((string) $r['message_id'], 0, 60, '…')) ?></div></td>
-                    <td><?= badge($actionLabel[$r['action']] ?? $r['action'], $actionColor[$r['action']] ?? 'neutral') ?></td>
+                    <td><?php if ($r['action'] === 'ignored'): ?>
+                        <?php
+                        $headers = json_decode((string) ($r['mail_headers'] ?? ''), true);
+                        $headers = is_array($headers) ? $headers : [];
+                        $sender = mb_strtolower((string) $r['from_address']);
+                        ?>
+                        <details class="hd-mail-ignored">
+                            <summary title="Details anzeigen"><?= badge($actionLabel['ignored'], 'neutral') ?></summary>
+                            <div class="hd-mail-ignored-body">
+                                <p class="text-sm mb-2"><strong>Grund:</strong> <?= e((string) ($r['detail'] ?? '–')) ?></p>
+                                <?php if ($headers !== []): ?>
+                                    <dl class="hd-mail-headers">
+                                        <?php foreach ($headers as $name => $value): ?>
+                                            <dt class="mono"><?= e(ucwords((string) $name, '-')) ?></dt><dd class="mono"><?= e((string) $value) ?></dd>
+                                        <?php endforeach; ?>
+                                    </dl>
+                                <?php endif; ?>
+                                <?php if ($sender === ''): ?>
+                                    <p class="text-xs text-muted mb-0">Ohne Absenderadresse kann keine Ausnahme angelegt werden.</p>
+                                <?php elseif (in_array($sender, $allowedSenders, true)): ?>
+                                    <p class="text-xs text-muted mb-0"><?= icon('check', 'icon icon-xs') ?> <?= e($sender) ?> wird bereits immer zugelassen. Zum erneuten Abholen die Nachricht im Postfach wieder als ungelesen in den Eingangsordner verschieben.</p>
+                                <?php else: ?>
+                                    <form method="post" action="/helpdesk/admin/mail/allow-sender" class="inline-form">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="email" value="<?= e($sender) ?>">
+                                        <button type="submit" class="btn btn-secondary btn-sm"><?= icon('check') ?> E-Mails von <?= e($sender) ?> immer zulassen</button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                        </details>
+                    <?php else: ?><?= badge($actionLabel[$r['action']] ?? $r['action'], $actionColor[$r['action']] ?? 'neutral') ?><?php endif; ?></td>
                     <td class="text-sm"><?= e($matchedLabel[$r['matched_by']] ?? $r['matched_by']) ?></td>
                     <td class="mono text-sm"><?php if (!empty($r['ticket_id']) && !empty($r['ticket_number'])): ?><a href="/helpdesk/tickets/<?= (int) $r['ticket_id'] ?>"><?= e($r['ticket_number']) ?></a><?php else: ?>–<?php endif; ?></td>
                     <td class="text-xs text-muted"><?= e($r['detail'] ?? '') ?></td>

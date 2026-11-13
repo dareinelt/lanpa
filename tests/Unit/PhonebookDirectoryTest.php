@@ -125,6 +125,24 @@ Runner::test('Einzelabruf für die Übernahme liefert nur aktive und sichtbare E
 });
 
 
+Runner::test('Einzelabruf über die E-Mail-Adresse liefert nur eindeutige, sichtbare Einträge', static function (): void {
+    $pdo = phonebookDirectoryPdo();
+    $pdo->exec("INSERT INTO phonebook (id, identity_source_id, external_id, samaccount_name, display_name, last_name, department, email, active, visible) VALUES
+        (1, 0, 'c1', 'cfinke', 'Finke, Claudine', 'Finke', 'Station 3', 'Claudine.Finke@example.de', 1, 1),
+        (2, 0, 'c2', 'versteckt', 'Versteckt, Vera', 'Versteckt', '', 'vera@example.de', 1, 0),
+        (3, 0, 'c3', 'doppelt1', 'Doppelt, Dora', 'Doppelt', '', 'dora@example.de', 1, 1),
+        (4, 2, 'c4', 'doppelt2', 'Doppelt, Dora (Nord)', 'Doppelt', '', 'DORA@example.de', 1, 1)");
+
+    $service = new PhonebookService(new PhonebookRepository($pdo));
+
+    $entry = $service->directoryEntryByEmail(' claudine.finke@EXAMPLE.de ');
+    Assert::same('cfinke', $entry['username'] ?? null, 'Die Adresse wird ohne Rücksicht auf Groß-/Kleinschreibung gefunden.');
+    Assert::same('Station 3', $entry['department'] ?? null);
+    Assert::same(null, $service->directoryEntryByEmail('vera@example.de'), 'Ausgeblendete Einträge werden nicht geliefert.');
+    Assert::same(null, $service->directoryEntryByEmail('dora@example.de'), 'Mehrdeutige Adressen liefern keinen Treffer.');
+    Assert::same(null, $service->directoryEntryByEmail('keine-mail'), 'Ungültige Adressen werden abgewiesen.');
+});
+
 Runner::test('SamAccountName-Suche ohne Quellenbindung bevorzugt die Hauptquelle', static function (): void {
     $pdo = phonebookDirectoryPdo();
     $pdo->exec("INSERT INTO phonebook (id, identity_source_id, external_id, samaccount_name, display_name, first_name, last_name, email, active) VALUES

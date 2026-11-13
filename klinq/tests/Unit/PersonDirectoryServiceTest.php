@@ -193,6 +193,32 @@ final class PersonDirectoryServiceTest extends TestCase
         $this->assertSame(2, (int) $this->pdo->query('SELECT COUNT(*) FROM employees')->fetchColumn());
     }
 
+    public function testAdoptByEmailTakesOverTheMatchingPhonebookEntry(): void
+    {
+        $this->transport->entry = [
+            'id' => 13, 'external_id' => '', 'username' => 'cfinke', 'display_name' => 'Finke, Claudine',
+            'first_name' => 'Claudine', 'last_name' => 'Finke', 'title' => '', 'personnel_number' => '',
+            'phone' => '0531 123', 'mobile' => '', 'email' => 'Claudine.Finke@example.local',
+            'department' => 'Station 3', 'source' => '',
+        ];
+
+        $id = $this->service()->adoptByEmail(' claudine.finke@EXAMPLE.local ');
+
+        $this->assertNotNull($id);
+        $this->assertSame('http://intranet-app/internal/klinq/telefonbuch?email=claudine.finke%40example.local', $this->transport->url);
+        $row = $this->employee($id);
+        $this->assertSame('Finke, Claudine', $row['display_name']);
+        $this->assertSame('Station 3', $row['department']);
+        $this->assertSame('0531 123', $row['phone']);
+
+        // Antwortet das Intranet mit einer anderen Adresse, gilt das nicht als Treffer.
+        $this->transport->entry['email'] = 'andere@example.local';
+        $this->assertNull($this->service()->adoptByEmail('neu@example.local'));
+        $calls = $this->transport->calls;
+        $this->assertNull($this->service()->adoptByEmail('keine-mail'));
+        $this->assertSame($calls, $this->transport->calls, 'Ungültige Adressen lösen keine Anfrage aus.');
+    }
+
     public function testCreateContactKeepsThePersonInTheSelection(): void
     {
         $contact = $this->service()->createContact('Anrufer, Anna', 'Anna.Anrufer@Example.Local', '0170 555', true);
@@ -332,7 +358,7 @@ final class PersonDirectoryTransport implements AiTransportInterface
     {
         $this->calls++;
         $this->url = $url;
-        if (str_contains($url, 'id=')) {
+        if (str_contains($url, 'id=') || str_contains($url, 'email=')) {
             return [
                 'status' => $this->entry === null ? 404 : 200,
                 'body' => $this->entry === null ? '' : (string) json_encode($this->entry),

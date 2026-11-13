@@ -225,6 +225,28 @@ final class LanpaBridge
         return self::person($this->phonebookRequest(['id' => $id]));
     }
 
+    /**
+     * Eindeutiger Telefonbucheintrag zu einer E-Mail-Adresse
+     * (GET /internal/klinq/telefonbuch?email=…), z. B. fuer den Absender einer
+     * Mail an das Stoerungspostfach. null bei unbekannter oder mehrdeutiger
+     * Adresse sowie bei inaktiver Anbindung.
+     *
+     * @return array{id:int,external_id:string,username:string,display_name:string,first_name:string,
+     *               last_name:string,title:string,personnel_number:string,phone:string,mobile:string,
+     *               email:string,department:string,source:string}|null
+     */
+    public function phonebookEntryByEmail(string $email): ?array
+    {
+        $email = mb_strtolower(trim($email));
+        if ($email === '' || filter_var($email, FILTER_VALIDATE_EMAIL) === false) {
+            return null;
+        }
+        $entry = self::person($this->phonebookRequest(['email' => $email]));
+
+        // Nur ein Eintrag mit genau dieser Adresse gilt als Treffer.
+        return $entry !== null && mb_strtolower($entry['email']) === $email ? $entry : null;
+    }
+
     /** @param array<string,mixed> $query */
     private function phonebookRequest(array $query): ?array
     {

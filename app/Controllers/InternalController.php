@@ -249,7 +249,8 @@ final class InternalController
      * Identitaetsquellen – auch Personen ohne E-Mail-Adresse. Mit ?id= liefert
      * er genau einen Eintrag; KLINQ nutzt das, um eine ausgewaehlte Person als
      * lokalen Mitarbeiter zu uebernehmen, ohne den Datensatz vom Client zu
-     * uebernehmen.
+     * uebernehmen. Mit ?email= liefert er den eindeutigen Eintrag zu einer
+     * Adresse (Absender im Stoerungspostfach).
      */
     public function klinqPhonebook(Request $request): Response
     {
@@ -263,8 +264,9 @@ final class InternalController
 
         $service = Container::phonebook();
         $id = $request->queryInt('id', 0);
-        if ($id > 0) {
-            $entry = $service->directoryEntry($id);
+        $email = trim((string) $request->query('email', ''));
+        if ($id > 0 || $email !== '') {
+            $entry = $id > 0 ? $service->directoryEntry($id) : $service->directoryEntryByEmail($email);
 
             return $entry === null
                 ? $this->deny(404)

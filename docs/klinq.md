@@ -305,7 +305,9 @@ suchen live im Telefonbuch des Intranets (alle Identitätsquellen), nicht nur im
 nach KLINQ synchronisierten AD-Bestand. Dafür ruft KLINQ
 `GET /internal/klinq/telefonbuch` auf (Token wie `sso-config`, Dienst
 `KLINQ_SERVICE`): `?q=…` liefert Treffer – auch Personen ohne E-Mail-Adresse –,
-`?id=…` einen Einzeleintrag. Gesucht wird über Name, E-Mail-Adresse,
+`?id=…` einen Einzeleintrag, `?email=…` den Einzeleintrag zu einer
+E-Mail-Adresse (nur bei genau einem sichtbaren Treffer; genutzt vom
+Help-Desk-E-Mail-Eingang, um unbekannte Absender als Melder zu übernehmen). Gesucht wird über Name, E-Mail-Adresse,
 Benutzername, Abteilung und **Personalnummer** (aus dem AD-Attribut
 `employeeNumber`, im Intranet pflegbar über `LDAP_ATTR_PERSONNEL_NUMBER`);
 Telefonnummern werden nur bei Begriffen ohne Buchstaben durchsucht, sonst

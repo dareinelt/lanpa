@@ -4,16 +4,31 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use App\Core\Config;
+use App\Core\Logger;
 use App\Repositories\EmployeeRepository;
+use App\Repositories\TicketAttachmentRepository;
 use App\Repositories\TicketCommentRepository;
 use App\Repositories\TicketMasterDataRepository;
 use App\Repositories\TicketRepository;
 use App\Repositories\TicketRuleRepository;
+use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
+use App\Security\Permissions;
+use App\Services\AuditLogService;
+use App\Services\DocumentService;
+use App\Services\EmployeeService;
+use App\Services\Helpdesk\Ai\AiTransportInterface;
+use App\Services\Helpdesk\Mail\MailboxClientFactory;
+use App\Services\Helpdesk\Mail\MailboxClientInterface;
+use App\Services\Helpdesk\Mail\MimeMessageParser;
+use App\Services\Helpdesk\MailboxSettingsService;
 use App\Services\Helpdesk\TicketMailIngestionService;
 use App\Services\Helpdesk\TicketMergeService;
 use App\Services\Helpdesk\TicketNotificationService;
 use App\Services\Helpdesk\TicketService;
+use App\Services\Lanpa\LanpaBridge;
+use App\Services\PersonDirectoryService;
 use App\Services\SettingsService;
 use App\Support\MailHistory;
 use Tests\Support\DatabaseTestCase;
@@ -118,6 +133,48 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         return $this->c->get(TicketCommentRepository::class)->forTicket($ticketId, true);
     }
 
+    /**
+     * Mail-Eingang mit Intranet-Anbindung, deren Telefonbuch genau den übergebenen Eintrag liefert.
+     * @param array<string,mixed> $entry
+     */
+    private function ingestionWithPhonebook(array $entry): TicketMailIngestionService
+    {
+        $transport = new class ($entry) implements AiTransportInterface {
+            /** @param array<string,mixed> $entry */
+            public function __construct(private readonly array $entry) {}
+
+            public function request(string $method, string $url, array $headers, ?string $body, int $timeout): array
+            {
+                return ['status' => 200, 'body' => (string) json_encode($this->entry), 'error' => null];
+            }
+        };
+        $config = $this->c->get(Config::class);
+        $bridge = new LanpaBridge($config->with(['lanpa' => ['enabled' => true, 'internal_url' => 'http://intranet.test', 'service_token' => 'dienst-token']]), $transport);
+        $employees = $this->c->get(EmployeeRepository::class);
+        $audit = $this->c->get(AuditLogService::class);
+        $directory = new PersonDirectoryService($bridge, $employees, $this->c->get(EmployeeService::class), $audit);
+        $settings = $this->c->get(MailboxSettingsService::class);
+
+        return new TicketMailIngestionService(
+            $config,
+            $this->c->get(Logger::class),
+            $this->c->get(CurrentUser::class),
+            $this->c->get(Permissions::class),
+            $this->c->get(TicketRepository::class),
+            $this->c->get(TicketRuleRepository::class),
+            $this->c->get(TicketMasterDataRepository::class),
+            $this->c->get(TicketAttachmentRepository::class),
+            $employees,
+            $this->c->get(UserRepository::class),
+            $this->c->get(TicketService::class),
+            $this->c->get(DocumentService::class),
+            $this->c->get(MimeMessageParser::class),
+            $settings,
+            static fn (): MailboxClientInterface => MailboxClientFactory::create($settings->mailboxOptions(), dirname(__DIR__, 2)),
+            $directory
+        );
+    }
+
     // ------------------------------------------------------------------ Neue Tickets
 
     public function testUnknownSenderCreatesTicketWithExternalRequester(): void
@@ -193,6 +250,29 @@ final class HelpdeskMailIngestionIntegrationTest extends DatabaseTestCase
         $this->assertSame($userId, (int) $ticket['requester_user_id']);
         $this->assertNull($ticket['requester_employee_id']);
         $this->assertSame('Julia Portal', $ticket['requester_name']);
+    }
+
+    public function testUnknownSenderIsCompletedFromIntranetPhonebook(): void
+    {
+        $ingestion = $this->ingestionWithPhonebook([
+            'id' => 42, 'external_id' => '', 'username' => 'cfinke', 'display_name' => 'Finke, Claudine',
+            'first_name' => 'Claudine', 'last_name' => 'Finke', 'title' => 'Pflegekraft', 'personnel_number' => '',
+            'phone' => '0531 4711', 'mobile' => '', 'email' => 'claudine.finke@example.test',
+            'department' => 'Station 3', 'source' => '',
+        ]);
+
+        $result = $ingestion->ingestRaw($this->raw('claudine.finke@example.test', 'PC startet nicht', 'Der PC im Stationszimmer startet nicht.'));
+
+        $this->assertSame(TicketMailIngestionService::ACTION_CREATED, $result['action']);
+        $ticket = $this->c->get(TicketRepository::class)->find((int) $result['ticket_id']);
+        $this->assertNotNull($ticket);
+        // Noch nie angemeldet: Melder wird aus dem Telefonbuch übernommen statt Systemkonto/externer Absender.
+        $this->assertNotNull($ticket['requester_employee_id']);
+        $this->assertNull($ticket['requester_user_id']);
+        $this->assertSame('Finke, Claudine', $ticket['requester_name']);
+        $employee = $this->c->get(EmployeeRepository::class)->find((int) $ticket['requester_employee_id']);
+        $this->assertSame('Station 3', $employee['department']);
+        $this->assertSame('0531 4711', $employee['phone']);
     }
 
     public function testEmptySubjectAndBodyStillCreateTicket(): void

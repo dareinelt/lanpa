@@ -249,6 +249,7 @@ $barList = static function (array $rows): void {
     <div class="dialog-header"><h2 id="ignored-mails-title"><?= icon('mail') ?> Ignorierte E-Mails (24 h)</h2><button type="button" class="btn btn-ghost btn-sm" data-dialog-close aria-label="Schließen"><?= icon('x') ?></button></div>
     <div class="dialog-body">
         <p class="text-muted text-sm">Diese Nachrichten wurden beim Abruf nicht als Ticket übernommen. Wird ein Absender freigegeben, werden seine E-Mails künftig immer verarbeitet. Bereits ignorierte Nachrichten im Postfach wieder als ungelesen in den Eingangsordner verschieben, damit sie erneut abgeholt werden.</p>
+        <div class="alert alert-compact" data-hd-allow-sender-status role="status" hidden></div>
         <ul class="hd-forward-list">
             <?php foreach ($ignoredMails as $im):
                 $from = mb_strtolower(trim((string) ($im['from_address'] ?? '')));
@@ -263,7 +264,7 @@ $barList = static function (array $rows): void {
                 <?php elseif (isset($allowedLookup[$from])): ?>
                     <?= badge('zugelassen', 'success') ?>
                 <?php else: ?>
-                <form method="post" action="/helpdesk/admin/mail/allow-sender" class="inline-form">
+                <form method="post" action="/helpdesk/admin/mail/allow-sender" class="inline-form" data-hd-allow-sender>
                     <?= csrf_field() ?>
                     <input type="hidden" name="email" value="<?= e($from) ?>">
                     <input type="hidden" name="return" value="dashboard">

@@ -409,4 +409,38 @@
         printOpenedGroups.forEach(function (el) { el.open = false; });
         printOpenedGroups.length = 0;
     });
+
+    // ---------------------------------------------------------------- Dashboard: ignorierte E-Mails – Absender freigeben, ohne das Overlay zu schließen
+    document.addEventListener("submit", async function (event) {
+        const form = event.target.closest("form[data-hd-allow-sender]");
+        if (!form || !UI.api) { return; }
+        event.preventDefault();
+        const button = form.querySelector("button[type=submit]");
+        const status = (form.closest("dialog") || document).querySelector("[data-hd-allow-sender-status]");
+        const showStatus = function (message, type) {
+            if (!status) { if (UI.toast) { UI.toast(message, type); } return; }
+            status.className = "alert alert-compact alert-" + type;
+            status.textContent = message;
+            status.hidden = false;
+        };
+        if (button) { button.disabled = true; }
+        try {
+            const data = await UI.api(form.getAttribute("action"), { method: "POST", body: new FormData(form) });
+            const email = String((data && data.email) || "").toLowerCase();
+            // Alle Einträge desselben Absenders als zugelassen markieren
+            document.querySelectorAll("form[data-hd-allow-sender]").forEach(function (other) {
+                const input = other.querySelector("input[name=email]");
+                if (other === form || (input && input.value.trim().toLowerCase() === email)) {
+                    const badge = document.createElement("span");
+                    badge.className = "badge is-success";
+                    badge.textContent = "zugelassen";
+                    other.replaceWith(badge);
+                }
+            });
+            showStatus((data && data.message) || "Absender zugelassen.", "success");
+        } catch (error) {
+            if (button) { button.disabled = false; }
+            showStatus(error.message || "Absender konnte nicht zugelassen werden.", "error");
+        }
+    });
 })();

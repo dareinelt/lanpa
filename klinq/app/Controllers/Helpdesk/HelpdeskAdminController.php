@@ -272,15 +272,18 @@ final class HelpdeskAdminController extends HelpdeskBaseController
         try {
             $added = $this->mailSettings->allowSender($email);
         } catch (ValidationException $e) {
+            if ($request->wantsJson()) {
+                return $this->json(['ok' => false, 'error' => implode(' ', $e->errors())], 422);
+            }
             $this->flash('error', implode(' ', $e->errors()));
 
             return $this->redirect($target);
         }
-        $this->flash('success', $added
-            ? sprintf('E-Mails von %s werden künftig immer verarbeitet. Bereits ignorierte Nachrichten im Postfach wieder als ungelesen in den Eingangsordner verschieben, um sie erneut abzuholen.', mb_strtolower($email))
-            : sprintf('%s steht bereits in der Liste „Immer zulassen“.', mb_strtolower($email)));
 
-        return $this->redirect($target);
+        // Aus dem Dashboard-Overlay per fetch(): JSON, damit das Overlay geöffnet bleibt.
+        return $this->respond($request, $added
+            ? sprintf('E-Mails von %s werden künftig immer verarbeitet. Bereits ignorierte Nachrichten im Postfach wieder als ungelesen in den Eingangsordner verschieben, um sie erneut abzuholen.', mb_strtolower($email))
+            : sprintf('%s steht bereits in der Liste „Immer zulassen“.', mb_strtolower($email)), $target, ['email' => mb_strtolower(trim($email))]);
     }
 
     /** Protokoll des E-Mail-Eingangs (IMAP) mit Konfigurationsübersicht. */

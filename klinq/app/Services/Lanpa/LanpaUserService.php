@@ -13,8 +13,10 @@ use App\Security\Permissions;
  * Legt Benutzer aus dem Intranet (LANPA) an bzw. gleicht sie ab.
  *
  * Rolle und Berechtigungsgruppen werden im Intranet ueber AD-Gruppen vergeben und
- * mit dem Einstiegsschein uebergeben. Sie ersetzen bei jeder Anmeldung die in KLINQ
- * gespeicherten Zuordnungen; damit ist das Intranet die einzige Quelle.
+ * mit dem Einstiegsschein uebergeben. Lokal in KLINQ unter „Administration → Benutzer“
+ * abweichend festgelegte Rollen (`role_override = 1`), manuell zugewiesene
+ * Berechtigungsgruppen (`source = 'manual'`) sowie deaktivierte Konten bleiben beim
+ * erneuten Einstieg erhalten.
  */
 final class LanpaUserService
 {
@@ -68,34 +70,39 @@ final class LanpaUserService
                 'email' => $email === '' ? null : $email,
                 'password_hash' => null,
                 'role_id' => $roleId,
+                'sso_role_id' => $roleId,
+                'role_override' => 0,
                 'auth_source' => 'ldap',
                 'employee_id' => $employeeId,
                 'is_active' => 1,
             ]);
-            $this->users->syncGroups($id, $groupIds);
+            $this->users->syncSsoGroups($id, $groupIds);
             $user = $this->users->find($id);
             $this->logger->info('LANPA-SSO: Benutzer angelegt.', ['benutzer' => $username, 'rolle' => $role]);
         } else {
+            $keepLocalRole = (int) ($user['role_override'] ?? 0) === 1;
             $data = [
                 'display_name' => $displayName,
                 'email' => $email === '' ? null : $email,
-                'role_id' => $roleId,
+                'sso_role_id' => $roleId,
                 'auth_source' => 'ldap',
-                'is_active' => 1,
                 'locked_until' => null,
                 'failed_logins' => 0,
             ];
+            if (!$keepLocalRole) {
+                $data['role_id'] = $roleId;
+            }
             // Eine bereits gepflegte Verknüpfung nie mit NULL überschreiben, nur weil der
             // Abgleich gerade keinen Mitarbeiter findet (z. B. AD-Abfrage nicht erreichbar).
             if ($employeeId !== null) {
                 $data['employee_id'] = $employeeId;
             }
             $this->users->update((int) $user['id'], $data);
-            $this->users->syncGroups((int) $user['id'], $groupIds);
+            $this->users->syncSsoGroups((int) $user['id'], $groupIds);
             $user = $this->users->find((int) $user['id']);
         }
 
-        if ($user !== null) {
+        if ($user !== null && (int) ($user['is_active'] ?? 1) === 1) {
             $this->users->recordLoginSuccess((int) $user['id']);
         }
 

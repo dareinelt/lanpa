@@ -231,6 +231,27 @@ Runner::test('KLINQ: Help-Desk-Vorlagen sind eine eigene Berechtigungsgruppe ohn
     Assert::same([], $agent['permission_groups'], 'Ohne Gruppe erhält ein Agent keine Vorlagenfreigabe');
 });
 
+Runner::test('KLINQ: Lieferanten anlegen ist eine eigene Berechtigungsgruppe ohne Rollenwechsel', static function (): void {
+    $config = klinqConfig([
+        'klinq_helpdesk_agent_groups' => 'GG-Helpdesk',
+        'klinq_supplier_groups' => 'GG-Lieferanten',
+    ]);
+
+    $agentWithSupplier = $config->resolve(['gg-helpdesk', 'GG-Lieferanten']);
+    Assert::same('helpdesk_agent', $agentWithSupplier['role'], 'Die Gruppe ersetzt keine Rolle');
+    Assert::same(['lieferanten'], $agentWithSupplier['permission_groups']);
+    Assert::same(['helpdesk', 'assets'], $agentWithSupplier['areas']);
+    Assert::true($agentWithSupplier['elevated']);
+
+    $withoutRole = $config->resolve(['GG-Lieferanten']);
+    Assert::same('portal', $withoutRole['role'], 'Ohne sonstige Rolle bleibt es bei der Vorgaberolle');
+    Assert::same(['lieferanten'], $withoutRole['permission_groups']);
+    Assert::same(['assets', 'portal'], $withoutRole['areas']);
+
+    $agent = $config->resolve(['gg-helpdesk']);
+    Assert::same([], $agent['permission_groups'], 'Ohne Gruppe erhält ein Agent keine Lieferantenfreigabe');
+});
+
 Runner::test('KLINQ: Administration umfasst alle Bereiche', static function (): void {
     $access = klinqConfig(['klinq_admin_groups' => 'GG-Intranet-Admin'])->resolve(['gg-intranet-admin']);
 

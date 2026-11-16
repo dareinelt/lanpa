@@ -32,27 +32,61 @@
             <input id="f-email" name="email" type="email" value="<?= e(form_value($row, 'email')) ?>" maxlength="255">
             <?= field_error('email') ?>
         </div>
+        <?php $currentRole = (string) form_value($row, 'role', $isNew ? 'portal' : ''); ?>
+        <?php $roleGroupMap = is_array($impliedGroupsByRole ?? null) ? $impliedGroupsByRole : []; ?>
+        <?php $roleImpliedNames = $roleGroupMap[$currentRole] ?? []; ?>
         <div class="form-group">
             <label for="f-role">Rolle *</label>
-            <select id="f-role" name="role" required<?= $isSelf ? ' aria-describedby="role-hint"' : '' ?>>
+            <select id="f-role" name="role" required<?= ($isSelf || $isLdap) ? ' aria-describedby="role-hint"' : '' ?> data-role-groups="<?= e((string) json_encode($roleGroupMap, JSON_UNESCAPED_UNICODE)) ?>">
                 <option value="">– bitte wählen –</option>
                 <?php foreach ($roleLabels as $name => $label): ?>
-                    <option value="<?= e($name) ?>"<?= selected(form_value($row, 'role', $isNew ? 'portal' : ''), $name) ?>><?= e($label) ?></option>
+                    <option value="<?= e($name) ?>"<?= selected($currentRole, $name) ?>><?= e($label) ?></option>
                 <?php endforeach; ?>
             </select>
             <?= field_error('role') ?>
-            <?php if ($isSelf): ?><p class="form-hint" id="role-hint">Die eigene Administratorrolle kann nicht entzogen werden.</p><?php endif; ?>
+            <?php if ($isSelf): ?>
+                <p class="form-hint" id="role-hint">Die eigene Administratorrolle kann nicht entzogen werden.</p>
+            <?php elseif ($isLdap): ?>
+                <?php if ((int) ($row['role_override'] ?? 0) === 1): ?>
+                    <p class="form-hint" id="role-hint">Rolle ist lokal in KLINQ festgelegt und übersteuert die Intranet-SSO-Gruppenzuordnung<?= !empty($row['sso_role_label']) ? ' (Intranet-SSO: ' . e((string) $row['sso_role_label']) . ')' : '' ?>.</p>
+                <?php else: ?>
+                    <p class="form-hint" id="role-hint">Wird aus dem Intranet-SSO (AD-Gruppen) übernommen; eine hier abweichend gewählte Rolle übersteuert die Intranet-SSO-Zuordnung.</p>
+                <?php endif; ?>
+            <?php endif; ?>
         </div>
         <?php if ($groups): ?>
         <div class="form-group">
             <label>Berechtigungsgruppen</label>
-            <div class="checkbox-row">
-                <?php $checkedGroups = $_SESSION['_old_input']['groups'] ?? $selectedGroups; ?>
+            <div class="checkbox-row" data-permission-groups>
+                <?php $checkedGroups = array_map('intval', (array) ($_SESSION['_old_input']['groups'] ?? $selectedGroups)); ?>
+                <?php $ssoGroupList = array_map('intval', (array) ($ssoGroups ?? [])); ?>
                 <?php foreach ($groups as $g): ?>
-                    <label class="checkbox-field"><input type="checkbox" name="groups[]" value="<?= (int) $g['id'] ?>"<?= in_array((int) $g['id'], array_map('intval', (array) $checkedGroups), true) ? ' checked' : '' ?>> <span><?= e($g['label']) ?></span></label>
+                    <?php
+                    $gid = (int) $g['id'];
+                    $gname = (string) $g['name'];
+                    $fromSso = $isLdap && in_array($gid, $ssoGroupList, true);
+                    $isManual = !$fromSso && in_array($gid, $checkedGroups, true);
+                    $fromRole = !$fromSso && in_array($gname, $roleImpliedNames, true);
+                    $isChecked = $fromSso || $isManual || $fromRole;
+                    $isDisabled = $fromSso || $fromRole;
+                    $originNote = $fromSso ? '(Intranet-SSO)' : ($fromRole ? '(in Rolle enthalten)' : '');
+                    ?>
+                    <label class="checkbox-field">
+                        <input type="checkbox" name="groups[]" value="<?= $gid ?>"
+                            data-group-name="<?= e($gname) ?>"
+                            data-from-sso="<?= $fromSso ? '1' : '0' ?>"
+                            data-manual-checked="<?= $isManual ? '1' : '0' ?>"
+                            <?= $isChecked ? 'checked' : '' ?><?= $isDisabled ? ' disabled' : '' ?>>
+                        <span><?= e($g['label']) ?> <small class="text-muted" data-group-origin<?= $originNote === '' ? ' hidden' : '' ?>><?= e($originNote) ?></small></span>
+                    </label>
+                    <?php if ($fromSso): ?>
+                        <input type="hidden" name="groups[]" value="<?= $gid ?>">
+                    <?php elseif ($isManual && $fromRole): ?>
+                        <input type="hidden" name="groups[]" value="<?= $gid ?>" data-manual-hidden="<?= $gid ?>">
+                    <?php endif; ?>
                 <?php endforeach; ?>
             </div>
-            <p class="form-hint">Zusätzlich zur Rolle zuweisbare Rechte, z. B. „Statistik“ für die Help-Desk-Ticket-Berichte. Einem Benutzer können mehrere Gruppen zugeordnet werden.</p>
+            <p class="form-hint">Bereits über Intranet-SSO (LDAP/AD-Gruppen) oder die gewählte Rolle gesetzte Berechtigungen sind ebenfalls angehakt. Zusätzlich gesetzte Haken gelten ergänzend und bleiben bei späteren Intranet-SSO-Anmeldungen erhalten.</p>
         </div>
         <?php endif; ?>
         <?php if ($isNew): ?>

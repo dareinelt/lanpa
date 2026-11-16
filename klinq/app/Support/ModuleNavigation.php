@@ -206,7 +206,13 @@ final class ModuleNavigation
             };
         }
 
-        return '/dashboard';
+        return match (true) {
+            $can('dashboard.view') => '/dashboard',
+            $can('assets.view') => '/assets',
+            $can('orders.view') => '/orders',
+            $can('suppliers.view') => '/suppliers',
+            default => '/dashboard',
+        };
     }
 
     /**
@@ -315,21 +321,23 @@ final class ModuleNavigation
             }
         }
 
-        $items[] = self::section('Stammdaten');
-        if ($can('employees.view')) {
-            $items[] = self::link('employees', '/employees', 'users', 'Mitarbeiter');
-        }
-        if ($can('locations.view')) {
-            $items[] = self::link('locations', '/locations', 'map', 'Standorte');
-        }
-        if ($can('costcenters.view')) {
-            $items[] = self::link('costcenters', '/cost-centers', 'hash', 'Kostenstellen');
-        }
-        if ($can('manufacturers.view')) {
-            $items[] = self::link('manufacturers', '/manufacturers', 'factory', 'Hersteller');
-        }
-        if ($can('articles.view')) {
-            $items[] = self::link('articles', '/articles', 'tag', 'Artikel');
+        if ($can('employees.view') || $can('locations.view') || $can('costcenters.view') || $can('manufacturers.view') || $can('articles.view')) {
+            $items[] = self::section('Stammdaten');
+            if ($can('employees.view')) {
+                $items[] = self::link('employees', '/employees', 'users', 'Mitarbeiter');
+            }
+            if ($can('locations.view')) {
+                $items[] = self::link('locations', '/locations', 'map', 'Standorte');
+            }
+            if ($can('costcenters.view')) {
+                $items[] = self::link('costcenters', '/cost-centers', 'hash', 'Kostenstellen');
+            }
+            if ($can('manufacturers.view')) {
+                $items[] = self::link('manufacturers', '/manufacturers', 'factory', 'Hersteller');
+            }
+            if ($can('articles.view')) {
+                $items[] = self::link('articles', '/articles', 'tag', 'Artikel');
+            }
         }
 
         return $items;

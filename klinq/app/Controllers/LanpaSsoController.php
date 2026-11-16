@@ -59,6 +59,9 @@ final class LanpaSsoController extends BaseController
         if ($user === null) {
             return $this->rejected('Für Ihr Konto liegt keine gültige Rolle vor.', 403);
         }
+        if ((int) ($user['is_active'] ?? 1) !== 1) {
+            return $this->rejected('Ihr Konto wurde deaktiviert. Bitte wenden Sie sich an die Administration.', 403);
+        }
 
         $this->session->regenerate();
         $this->currentUser->login($user);

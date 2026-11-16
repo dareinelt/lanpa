@@ -10,11 +10,14 @@ final class UserRepository extends BaseRepository
     // groups_csv: kommagetrennte Namen der zugeordneten Berechtigungsgruppen (einem Benutzer
     // können mehrere Gruppen zugeordnet werden, z. B. "Statistik" für Ticket-Berichte)
     private const SELECT = 'SELECT u.*, r.name AS role, r.label AS role_label,
+        sr.name AS sso_role, sr.label AS sso_role_label,
         (u.locked_until IS NOT NULL AND u.locked_until > NOW()) AS is_locked,
         (SELECT GROUP_CONCAT(pg.name ORDER BY pg.name SEPARATOR \',\')
             FROM user_permission_groups upg JOIN permission_groups pg ON pg.id = upg.group_id
             WHERE upg.user_id = u.id) AS groups_csv
-        FROM users u JOIN roles r ON r.id = u.role_id';
+        FROM users u
+        JOIN roles r ON r.id = u.role_id
+        LEFT JOIN roles sr ON sr.id = u.sso_role_id';
 
     /** @param array<string,mixed>|null $row @return array<string,mixed>|null */
     private static function withGroups(?array $row): ?array
@@ -144,12 +147,52 @@ final class UserRepository extends BaseRepository
         return array_map('intval', array_column($this->fetchAll('SELECT group_id FROM user_permission_groups WHERE user_id = ?', [$userId]), 'group_id'));
     }
 
-    /** Setzt die Gruppenzuordnung eines Benutzers (ersetzt bestehende Zuordnungen). @param array<int,int> $groupIds */
+    /** Gruppen-IDs eines Benutzers, die aus dem Intranet/SSO stammen. @return array<int,int> */
+    public function ssoGroupIdsForUser(int $userId): array
+    {
+        return array_map(
+            'intval',
+            array_column($this->fetchAll("SELECT group_id FROM user_permission_groups WHERE user_id = ? AND source = 'sso'", [$userId]), 'group_id')
+        );
+    }
+
+    /** Setzt die Gruppenzuordnung eines lokalen Benutzers (ersetzt bestehende Zuordnungen). @param array<int,int> $groupIds */
     public function syncGroups(int $userId, array $groupIds): void
     {
         $this->execute('DELETE FROM user_permission_groups WHERE user_id = ?', [$userId]);
         foreach (array_unique(array_map('intval', $groupIds)) as $groupId) {
-            $this->execute('INSERT IGNORE INTO user_permission_groups (user_id, group_id) VALUES (?, ?)', [$userId, $groupId]);
+            $this->execute("INSERT IGNORE INTO user_permission_groups (user_id, group_id, source) VALUES (?, ?, 'manual')", [$userId, $groupId]);
+        }
+    }
+
+    /**
+     * Pflegt die in KLINQ manuell zugewiesenen Berechtigungsgruppen eines Kontos,
+     * ohne vom Intranet (SSO) übergebene Gruppen zu löschen oder umzuschreiben.
+     *
+     * @param array<int,int> $groupIds
+     */
+    public function syncManualGroups(int $userId, array $groupIds): void
+    {
+        $ssoIds = $this->ssoGroupIdsForUser($userId);
+        $this->execute("DELETE FROM user_permission_groups WHERE user_id = ? AND source = 'manual'", [$userId]);
+        foreach (array_unique(array_map('intval', $groupIds)) as $groupId) {
+            if (!in_array($groupId, $ssoIds, true)) {
+                $this->execute("INSERT IGNORE INTO user_permission_groups (user_id, group_id, source) VALUES (?, ?, 'manual')", [$userId, $groupId]);
+            }
+        }
+    }
+
+    /**
+     * Gleicht die vom Intranet (SSO) übergebenen Berechtigungsgruppen ab,
+     * ohne lokal unter „Administration → Benutzer“ vergebene Gruppen zu entfernen.
+     *
+     * @param array<int,int> $groupIds
+     */
+    public function syncSsoGroups(int $userId, array $groupIds): void
+    {
+        $this->execute("DELETE FROM user_permission_groups WHERE user_id = ? AND source = 'sso'", [$userId]);
+        foreach (array_unique(array_map('intval', $groupIds)) as $groupId) {
+            $this->execute("INSERT IGNORE INTO user_permission_groups (user_id, group_id, source) VALUES (?, ?, 'sso')", [$userId, $groupId]);
         }
     }
 

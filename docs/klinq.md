@@ -134,6 +134,7 @@ selbst liegt in der `settings`-Tabelle des Intranets.
 | Ticket stornieren | Berechtigungsgruppe `ticket_stornieren` |
 | Aufgabenverteilung | Berechtigungsgruppe `aufgabenverteilung` |
 | Help-Desk-Vorlagen (nur eigene oder alle) | Berechtigungsgruppe `vorlagen` |
+| Lieferanten anlegen | Berechtigungsgruppe `lieferanten` |
 
 Regeln:
 
@@ -144,8 +145,18 @@ Regeln:
   (oder eine Leitung) in dieser Gruppe darf daher auch Assets, Standorte, Hersteller
   und Artikel pflegen.
 * Berechtigungsgruppen (Statistiken, Ticketaufruf, Ticket löschen, Ticket
-  stornieren, Aufgabenverteilung, Help-Desk-Vorlagen) sind unabhängig von der Rolle und werden
+  stornieren, Aufgabenverteilung, Help-Desk-Vorlagen, Lieferanten anlegen) sind unabhängig von der Rolle und werden
   zusätzlich vergeben.
+* **Lieferanten anlegen:** Mitglieder der Gruppe „Lieferanten anlegen“ (`lieferanten`)
+  dürfen Lieferanten unter **Assetverwaltung → Einkauf → Lieferanten** anlegen,
+  bearbeiten und deaktivieren (`suppliers.view`, `suppliers.manage`), ohne dafür
+  die Rolle `einkauf` oder `admin` zu benötigen.
+* **Lokale Vergabe in KLINQ übersteuert Intranet-SSO:** Wird in KLINQ unter
+  **Auswertung & System → Administration → Benutzer** eine abweichende Rolle
+  oder ein zusätzlicher Haken unter „Berechtigungsgruppen“ gesetzt, bleibt diese
+  lokale Festlegung bei späteren Anmeldungen über das Intranet erhalten. Über
+  Intranet-SSO (AD-Gruppen) oder die Rolle gesetzte Berechtigungen werden dort
+  ebenfalls als gesetzte Haken angezeigt.
 * **Löschen und Stornieren sind getrennte Rechte.** Ohne die jeweilige Gruppe –
   und ohne Admin-Rolle – dürfen auch Help-Desk-Agenten, Leitungen und die
   Help-Desk-Administration keine Tickets löschen oder stornieren. Schließen und

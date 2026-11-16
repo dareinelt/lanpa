@@ -169,6 +169,7 @@ Zur Bestellung können Bestellung, Auftragsbestätigung, Lieferschein, Rechnung 
 | `orders.view` – Bestellungen, Vorlagen, Bestellvorschläge sehen und Bedarf melden | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `orders.manage` – anlegen, ändern, Status, Positionen, stornieren, Vorlagen speichern/verwenden, Bedarfe übernehmen, Bestellvorschläge erzeugen | ✓ | ✓ | – | – | – |
 | `orders.receive` – Wareneingang buchen | ✓ | ✓ | ✓ | – | – |
+| `suppliers.manage` – Lieferanten anlegen, ändern und deaktivieren (auch über Berechtigungsgruppe „Darf Lieferanten anlegen“ / `lieferanten`) | ✓ | ✓ | – | – | – |
 | `documents.manage` – Dokumente hochladen/löschen | ✓ | ✓ | ✓ | ✓ | – |
 
 Der Wareneingang legt Assets ohne zusätzliche `assets.manage`-Prüfung an, damit die Rolle *Einkauf* Lieferungen buchen kann.

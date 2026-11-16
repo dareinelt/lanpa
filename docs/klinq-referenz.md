@@ -41,7 +41,7 @@ Auswertungen). Die Anwendung bleibt in ihrem Verhalten unverändert.
 | **Dienst-Token** | Gemeinsames Geheimnis für die internen Schnittstellen (`/internal/klinq/*`), liegt als Datei im Volume `sso_token`. |
 | **Melder** | Person, die über `/stoerung` eine Störmeldung abgibt. |
 | **Bereich (area)** | Grobe Sichtbarkeit in KLINQ: `helpdesk`, `assets`, `statistics`, `tickets`, `admin`. |
-| **Berechtigungsgruppe** | Feine Zusatzfreigabe in KLINQ: `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung`, `vorlagen`. |
+| **Berechtigungsgruppe** | Feine Zusatzfreigabe in KLINQ: `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung`, `vorlagen`, `lieferanten`. |
 
 ---
 
@@ -313,7 +313,7 @@ beider Anwendungen. Base64url ohne Auffüllzeichen (`-`, `_`, kein `=`).
 | `ip` | string | Client-Adresse (`ClientAddress::from`) |
 | `host` | string | Rechnername zur Client-Adresse |
 | `role` | string | `admin`, `helpdesk_admin`, `helpdesk_lead`, `helpdesk_agent`, `assetmanagement`, `readonly`, `portal` |
-| `permission_groups` | string[] | `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung`, `vorlagen` |
+| `permission_groups` | string[] | `assetmanagement`, `statistik`, `ticketaufruf`, `ticket_loeschen`, `ticket_stornieren`, `aufgabenverteilung`, `vorlagen`, `lieferanten` |
 | `areas` | string[] | `portal`, `helpdesk`, `assets`, `statistics`, `tickets`, `admin` |
 | `report_only` | bool | `true` nur bei `/stoerung` |
 | `iss` | string | immer `lanpa` |
@@ -415,7 +415,7 @@ KLINQ) bleibt unverändert; sie ist keine Anmeldefunktion.
 
 ### 8.1 Zuordnung im Intranet
 
-`KlinqConfigService::GROUP_KEYS` verbindet elf Einstellungen mit Rolle,
+`KlinqConfigService::GROUP_KEYS` verbindet zwölf Einstellungen mit Rolle,
 Berechtigungsgruppe und Bereich:
 
 | Einstellung | Bezeichnung im Formular | Rolle | Berechtigung | Bereich |
@@ -431,6 +431,7 @@ Berechtigungsgruppe und Bereich:
 | `klinq_ticket_cancel_groups` | Ticket stornieren | – | `ticket_stornieren` | `helpdesk` |
 | `klinq_task_assignment_groups` | Aufgabenverteilung | – | `aufgabenverteilung` | `helpdesk` |
 | `klinq_template_groups` | Help-Desk-Vorlagen (nur eigene oder alle) | – | `vorlagen` | `helpdesk` |
+| `klinq_supplier_groups` | Lieferanten anlegen | – | `lieferanten` | `assets` |
 
 Die Einträge für Löschen (`helpdesk.delete`) und Stornieren (`helpdesk.cancel`)
 vergeben gezielt diese beiden Rechte. Ohne diese Gruppen – und ohne Admin-Rolle –
@@ -488,7 +489,7 @@ Weitere Einstellungen:
 1. AD-Gruppen normalisieren (Leerraum entfernen, Kleinschreibung) und in einer
    Menge ablegen. Groß-/Kleinschreibung spielt damit keine Rolle.
 2. Start mit `klinq_default_role`.
-3. Für jede der zehn Zuordnungen in der Reihenfolge aus 8.1: Ist mindestens
+3. Für jede der zwölf Zuordnungen in der Reihenfolge aus 8.1: Ist mindestens
    eine konfigurierte Gruppe in der Menge enthalten, gilt der Eintrag als
    Treffer (`matched`) – **die erste genannte Gruppe je Feld genügt**.
    * Rolle: übernehmen, wenn ihr Gewicht höher ist als das der aktuellen Rolle.
@@ -527,12 +528,21 @@ Weitere Einstellungen:
 ### 8.4 Übergabe und Wirkung in KLINQ
 
 `role`, `permission_groups` und `areas` stehen im Schein.
-`LanpaUserService::provision()` setzt daraus `role_id` und die
-Berechtigungsgruppen des Benutzers. Eine unbekannte oder fehlende Rolle führt
-zum Rückfall auf `portal` (eigene Tickets, keine Assetverwaltung); fehlt auch
-diese Rolle in KLINQ, wird der Einstieg mit HTTP 403 abgelehnt. Die Rolle wird
-mit `klinq/bin/migrate.php` angelegt (Seeder `003_helpdesk_defaults.sql`, läuft
-im Container bei jedem Start).
+`LanpaUserService::provision()` speichert die vom Intranet gelieferte Rolle in
+`users.sso_role_id` und gleicht die übergebenen Berechtigungsgruppen als
+`user_permission_groups.source = 'sso'` ab. Wurde in KLINQ unter
+**Administration → Benutzer** lokal eine abweichende Rolle vergeben
+(`users.role_override = 1`), bleibt `users.role_id` beim erneuten SSO-Einstieg
+unverändert erhalten; wird die Rolle dort wieder auf die Intranet-SSO-Rolle
+zurückgestellt, gilt erneut `role_override = 0`. Ebenso bleiben manuell in KLINQ
+gesetzte Berechtigungsgruppen (`source = 'manual'`) bei jedem SSO-Abgleich
+bestehen und übersteuern fehlende AD-Gruppen additiv. Deaktivierte Konten
+(`is_active = 0`) werden durch `LanpaUserService::provision()` nicht reaktiviert
+und in `LanpaSsoController::enter()` mit HTTP 403 abgewiesen. Eine unbekannte
+oder fehlende Rolle führt zum Rückfall auf `portal` (eigene Tickets, keine
+Assetverwaltung); fehlt auch diese Rolle in KLINQ, wird der Einstieg mit
+HTTP 403 abgelehnt. Die Rolle wird mit `klinq/bin/migrate.php` angelegt
+(Seeder `003_helpdesk_defaults.sql`, läuft im Container bei jedem Start).
 
 **Wichtig:** Die Rechte werden beim Einstieg eingefroren. Änderungen an den
 AD-Gruppen wirken mit dem nächsten Aufruf der Kachel, nicht in einer laufenden
@@ -577,7 +587,7 @@ Zeigt:
 
 ### 9.2 Berechtigungen
 
-Formular mit neun Gruppenfeldern, Rollenauswahl und Schalter für
+Formular mit zwölf Gruppenfeldern, Rollenauswahl und Schalter für
 `/stoerung`. Nach dem Speichern zeigt die Seite je Feld die aufgelösten
 Bereiche und Rollen, damit Fehlkonfigurationen sichtbar werden.
 

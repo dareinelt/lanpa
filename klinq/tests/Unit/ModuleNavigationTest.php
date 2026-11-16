@@ -223,6 +223,23 @@ final class ModuleNavigationTest extends TestCase
         $this->assertFalse(in_array('helpdesk-kalender', $portal, true), 'Das Portal zeigt keinen Help-Desk-Kalender');
     }
 
+    public function testSupplierGroupOpensSupplierAreaCleanlyWithoutEmptySections(): void
+    {
+        $permissions = new Permissions(new Config(dirname(__DIR__, 2) . '/config'));
+        $can = static fn (string $permission): bool => $permissions->hasEffective('portal', ['lieferanten'], $permission);
+
+        $this->assertTrue(ModuleNavigation::canEnterAssets($can));
+        $this->assertSame('/suppliers', ModuleNavigation::home(ModuleNavigation::ASSETS, $can));
+
+        $items = ModuleNavigation::items(ModuleNavigation::ASSETS, $can);
+        $this->assertSame(['suppliers'], $this->keys($items));
+        $sections = array_values(array_map(
+            static fn (array $item): string => (string) $item['label'],
+            array_filter($items, static fn (array $item): bool => $item['type'] === 'section')
+        ));
+        $this->assertSame(['Einkauf'], $sections, 'Keine leeren Abschnittsüberschriften ohne Stammdatenrechte');
+    }
+
     /** Das Kontaktverzeichnis steht direkt unter dem Kalender und ist für alle Agenten sichtbar, nicht im Portal. */
     public function testContactDirectoryFollowsCalendar(): void
     {

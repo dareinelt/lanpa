@@ -203,4 +203,32 @@ final class PermissionsTest extends TestCase
         $this->assertTrue($user->can('helpdesk.cancel'));
         $this->assertFalse($user->can('helpdesk.delete'));
     }
+
+    public function testSupplierGroupGrantsSupplierManagementWithoutOrderOrAdminRights(): void
+    {
+        $this->assertTrue($this->permissions->groupExists('lieferanten'));
+        $this->assertSame('Darf Lieferanten anlegen', $this->permissions->groupLabels()['lieferanten'] ?? null);
+        $this->assertTrue($this->permissions->groupHas('lieferanten', 'suppliers.view'));
+        $this->assertTrue($this->permissions->groupHas('lieferanten', 'suppliers.manage'));
+        $this->assertFalse($this->permissions->groupHas('lieferanten', 'orders.manage'));
+        $this->assertFalse($this->permissions->groupHas('lieferanten', 'settings.manage'));
+
+        foreach (['helpdesk_agent', 'helpdesk_lead', 'helpdesk_admin', 'assetmanagement', 'lager', 'portal'] as $role) {
+            $this->assertFalse($this->permissions->roleHas($role, 'suppliers.manage'), $role . ' verwaltet ohne Gruppe keine Lieferanten');
+            $this->assertTrue($this->permissions->hasEffective($role, ['lieferanten'], 'suppliers.manage'), $role . ' mit Gruppe verwaltet Lieferanten');
+            $this->assertTrue($this->permissions->hasEffective($role, ['lieferanten'], 'suppliers.view'));
+            $this->assertFalse($this->permissions->hasEffective($role, ['lieferanten'], 'orders.manage'));
+        }
+    }
+
+    public function testImpliedGroupsForRoleReflectIncludedPermissions(): void
+    {
+        $this->assertSame($this->permissions->groupNames(), $this->permissions->impliedGroupsForRole('admin'));
+        $this->assertSame(['assetmanagement'], $this->permissions->impliedGroupsForRole('assetmanagement'));
+        $this->assertSame(['lieferanten'], $this->permissions->impliedGroupsForRole('einkauf'));
+        $this->assertSame(['vorlagen'], $this->permissions->impliedGroupsForRole('helpdesk_lead'));
+        $this->assertSame(['vorlagen'], $this->permissions->impliedGroupsForRole('helpdesk_admin'));
+        $this->assertSame([], $this->permissions->impliedGroupsForRole('helpdesk_agent'));
+        $this->assertSame([], $this->permissions->impliedGroupsForRole('portal'));
+    }
 }

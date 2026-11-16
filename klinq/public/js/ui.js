@@ -423,6 +423,60 @@
     }
     document.querySelectorAll("[data-toggle-target]").forEach(applyToggle);
 
+    // Benutzerverwaltung: In der gewählten Rolle enthaltene Berechtigungsgruppen live anhaken
+    const roleSelect = document.querySelector("select[data-role-groups]");
+    const groupContainer = document.querySelector("[data-permission-groups]");
+    if (roleSelect && groupContainer) {
+        let roleMap = {};
+        try { roleMap = JSON.parse(roleSelect.getAttribute("data-role-groups") || "{}") || {}; } catch (e) { roleMap = {}; }
+
+        const syncRoleImpliedGroups = function () {
+            const implied = Array.isArray(roleMap[roleSelect.value]) ? roleMap[roleSelect.value] : [];
+            groupContainer.querySelectorAll('input[type="checkbox"][data-group-name]').forEach(function (box) {
+                if (box.getAttribute("data-from-sso") === "1") { return; }
+                const groupName = box.getAttribute("data-group-name") || "";
+                const manual = box.getAttribute("data-manual-checked") === "1";
+                const fromRole = implied.indexOf(groupName) !== -1;
+                const note = box.closest("label") ? box.closest("label").querySelector("[data-group-origin]") : null;
+                const hidden = groupContainer.querySelector('input[type="hidden"][data-manual-hidden="' + box.value + '"]');
+
+                if (fromRole) {
+                    box.checked = true;
+                    box.disabled = true;
+                    if (note) {
+                        note.textContent = "(in Rolle enthalten)";
+                        note.hidden = false;
+                    }
+                    if (manual && !hidden) {
+                        const input = document.createElement("input");
+                        input.type = "hidden";
+                        input.name = "groups[]";
+                        input.value = box.value;
+                        input.setAttribute("data-manual-hidden", box.value);
+                        groupContainer.appendChild(input);
+                    }
+                } else {
+                    box.disabled = false;
+                    box.checked = manual;
+                    if (note) {
+                        note.textContent = "";
+                        note.hidden = true;
+                    }
+                    if (hidden) { hidden.remove(); }
+                }
+            });
+        };
+
+        groupContainer.addEventListener("change", function (event) {
+            const box = event.target;
+            if (box.matches('input[type="checkbox"][data-group-name]') && !box.disabled) {
+                box.setAttribute("data-manual-checked", box.checked ? "1" : "0");
+            }
+        });
+        roleSelect.addEventListener("change", syncRoleImpliedGroups);
+        syncRoleImpliedGroups();
+    }
+
     // Wischbare Reiterleisten (schmale Bildschirme): aktiven Reiter sichtbar machen.
     // scrollLeft statt scrollIntoView, damit die Seite selbst nicht springt.
     document.querySelectorAll(".status-tabs").forEach(function (tabs) {

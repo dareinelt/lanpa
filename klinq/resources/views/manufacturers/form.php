@@ -1,7 +1,7 @@
-<?php require_once __DIR__ . '/../partials/helpers.php'; ob_start(); $isNew = $row === null; $duplicates = $duplicates ?? []; ?>
+<?php require_once __DIR__ . '/../partials/helpers.php'; ob_start(); $isNew = $row === null; $duplicates = $duplicates ?? []; $back = ($returnTo ?? '') !== '' ? $returnTo : ($isNew ? '/manufacturers' : '/manufacturers/' . (int) $row['id']); ?>
 <div class="page-header">
     <div><h1><?= e($title) ?></h1></div>
-    <div class="page-actions"><a class="btn btn-ghost" href="<?= e($isNew ? '/manufacturers' : '/manufacturers/' . (int) $row['id']) ?>"><?= icon('arrow-left') ?> Zurück</a></div>
+    <div class="page-actions"><a class="btn btn-ghost" href="<?= e($back) ?>"><?= icon('arrow-left') ?> Zurück</a></div>
 </div>
 <div class="card card-form">
     <?php if ($duplicates): ?>
@@ -51,7 +51,7 @@
         <label class="checkbox-field"><input type="checkbox" name="is_active" value="1"<?= form_checked($row, 'is_active') ?>> <span>Aktiv</span></label>
         <div class="form-actions">
             <button type="submit" class="btn <?= $duplicates ? 'btn-warning' : 'btn-primary' ?>"><?= icon('check') ?> <?= $duplicates ? 'Trotzdem speichern' : 'Speichern' ?></button>
-            <a class="btn btn-ghost" href="<?= e($isNew ? '/manufacturers' : '/manufacturers/' . (int) $row['id']) ?>">Abbrechen</a>
+            <a class="btn btn-ghost" href="<?= e($back) ?>">Abbrechen</a>
         </div>
     </form>
 </div>

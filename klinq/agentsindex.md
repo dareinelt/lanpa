@@ -175,11 +175,13 @@ Jedes Modul folgt demselben Schnitt: **Routendatei → Controller → Service �
 - **Wareneingang**: je gelieferter Einheit entsteht ein Asset – außer bei Verbrauchsartikeln
   (`articles.is_consumable`): diese werden nur als Lagerbestand (`stock_quantity`) geführt und erzeugen
   **niemals** Assets oder Inventarnummern (`PurchaseOrderService::…` Wareneingang).
-- **Verbrauchsmaterial hat keinen Assettyp**: `articles.asset_type_id`/`asset_category_id` sind dort `NULL`
-  (Migration 049); Validierung, Artikel-JOINs (`LEFT JOIN asset_types`), Bestellpositionen, Import und
-  Asset-Anlage sind null-sicher, Artikelauswahl für Assets liefert nur Nicht-Verbraucher
-  (`ArticleRepository::searchForPicker()`). Im Formular deaktiviert `public/js/article-form.js` Typ und
-  Kategorie, sobald der Haken *Verbrauchsmaterial* gesetzt ist (auch beim Absprung `?is_consumable=1`).
+- **Verbrauchsmaterial hat keinen Assettyp**: `articles.asset_type_id`/`asset_category_id` sind dort `NULL` und
+  `is_handover_relevant = 0` (Migration 049 bereinigt nur Artikel ohne zugeordnete Assets; bei `asset_count > 0`
+  sind Assettyp und `is_consumable` gesperrt). Validierung, Artikel-JOINs (`LEFT JOIN asset_types`),
+  Bestellpositionen, Import und Asset-Anlage sind null-sicher, Artikelauswahl für Assets liefert nur
+  Nicht-Verbraucher (`ArticleRepository::searchForPicker()`), `ArticleService::setStock()` unterstützt `stock_quantity`
+  und relatives `delta`. Im Formular deaktiviert `public/js/article-form.js` Typ und Kategorie und schaltet
+  Bestands-/Übergabefelder kontextabhängig um, sobald der Haken *Verbrauchsmaterial* gesetzt ist (auch beim Absprung `?is_consumable=1`).
 - **Übergabeprotokolle** sind je Mitarbeiter versioniert: `draft → signed → superseded/cancelled`; das zuletzt
   unterschriebene Protokoll gilt, ältere bleiben als PDF archiviert.
 - **AD-Sync löscht nie**: fehlende/deaktivierte Konten werden inaktiv gesetzt; Identifikation nur über `objectGUID`.

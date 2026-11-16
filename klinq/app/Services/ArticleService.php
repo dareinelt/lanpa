@@ -102,22 +102,32 @@ final class ArticleService
      */
     public function update(int $id, array $existing, array $input, bool $ignoreDuplicates = false): void
     {
-        $data = $this->validate($input, $id, $ignoreDuplicates);
+        $data = $this->validate($input, $id, $ignoreDuplicates, $existing);
         $this->articles->update($id, $data);
         $this->audit->log('update', 'article', $id, $data['name'], $existing, $data);
     }
 
-    /** @param array<string,mixed> $existing */
     /**
      * Bestand eines Verbrauchsartikels korrigieren (Inventur, Ausgabe aus dem Lager).
+     * Unterstützt sowohl absoluten Zielbestand (stock_quantity) als auch relative Änderung (delta).
      *
      * @param array<string,mixed> $existing
-     * @param array<string,mixed> $input stock_quantity (neuer Bestand), note (optional)
+     * @param array<string,mixed> $input stock_quantity oder delta, note (optional)
      */
     public function setStock(int $id, array $existing, array $input): int
     {
         if ((int) ($existing['is_consumable'] ?? 0) !== 1) {
             throw ValidationException::single('stock_quantity', 'Der Artikel ist kein Verbrauchsmaterial.');
+        }
+        if (isset($input['delta']) && trim((string) $input['delta']) !== '') {
+            $v = (new Validator($input))
+                ->int('delta', 'Änderung', true, -1000000, 1000000)
+                ->string('note', 'Bemerkung', false, 255)
+                ->validated();
+            $newStock = $this->articles->adjustStock($id, (int) $v['delta']);
+            $this->audit->log('stock', 'article', $id, (string) $existing['name'], ['stock_quantity' => (int) $existing['stock_quantity']], ['stock_quantity' => $newStock, 'delta' => (int) $v['delta'], 'note' => $v['note']]);
+
+            return $newStock;
         }
         $data = (new Validator($input))
             ->int('stock_quantity', 'Bestand', true, 0, 1000000)
@@ -138,9 +148,10 @@ final class ArticleService
 
     /**
      * @param array<string,mixed> $input
+     * @param array<string,mixed>|null $existing
      * @return array<string,mixed>
      */
-    private function validate(array $input, ?int $excludeId, bool $ignoreDuplicates): array
+    private function validate(array $input, ?int $excludeId, bool $ignoreDuplicates, ?array $existing = null): array
     {
         $data = (new Validator($input))
             ->id('manufacturer_id', 'Hersteller', true)
@@ -153,22 +164,35 @@ final class ArticleService
             ->bool('is_handover_relevant')
             ->bool('is_consumable')
             ->int('minimum_stock', 'Mindestbestand', false, 0)
-            ->int('stock_quantity', 'Aktueller Bestand', true, 0)
+            ->int('stock_quantity', 'Aktueller Bestand', false, 0)
             ->validated();
+        $data['stock_quantity'] ??= 0;
 
         if ($this->manufacturers->find((int) $data['manufacturer_id']) === null) {
             throw ValidationException::single('manufacturer_id', 'Hersteller nicht gefunden. Bitte zuerst den Hersteller anlegen.');
         }
+        $hasAssets = $existing !== null && (int) ($existing['asset_count'] ?? 0) > 0;
         if ((int) $data['is_consumable'] === 1) {
-            // Verbrauchsmaterial wird als Menge geführt: kein Assettyp, damit auch keine Kategorie.
-            $data['asset_type_id'] = null;
-            $data['asset_category_id'] = null;
+            if ($hasAssets && (int) ($existing['is_consumable'] ?? 0) !== 1) {
+                throw ValidationException::single('is_consumable', 'Diesem Artikel sind bereits Assets zugeordnet; er kann nicht als Verbrauchsmaterial gekennzeichnet werden.');
+            }
+            // Verbrauchsmaterial erzeugt keine Einzel-Assets und erscheint nicht im Übergabeprotokoll.
+            $data['is_handover_relevant'] = 0;
+            if ($hasAssets && $existing['asset_type_id'] !== null) {
+                $data['asset_type_id'] = (int) $existing['asset_type_id'];
+            } else {
+                $data['asset_type_id'] = null;
+                $data['asset_category_id'] = null;
+            }
         } else {
             if ($data['asset_type_id'] === null) {
                 throw ValidationException::single('asset_type_id', 'Assettyp ist erforderlich.');
             }
             if ($this->assetTypes->find((int) $data['asset_type_id']) === null) {
                 throw ValidationException::single('asset_type_id', 'Assettyp nicht gefunden.');
+            }
+            if ($hasAssets && $existing['asset_type_id'] !== null && (int) $data['asset_type_id'] !== (int) $existing['asset_type_id']) {
+                throw ValidationException::single('asset_type_id', 'Der Assettyp kann nicht geändert werden, solange dem Artikel Assets zugeordnet sind.');
             }
             if ($data['asset_category_id'] !== null) {
                 $category = $this->assetTypes->findCategory((int) $data['asset_category_id']);

@@ -99,7 +99,7 @@ final class AssetController extends BaseController
     public function create(Request $request): Response
     {
         $prefill = [];
-        foreach (['asset_type_id', 'article_id', 'employee_id', 'location_id', 'cost_center_id', 'supplier_id', 'purchase_order_id'] as $key) {
+        foreach (['asset_type_id', 'asset_category_id', 'article_id', 'employee_id', 'location_id', 'cost_center_id', 'supplier_id', 'purchase_order_id', 'purchase_date', 'purchase_price', 'warranty_until'] as $key) {
             if ($request->queryString($key) !== '') {
                 $prefill[$key] = $request->queryString($key);
             }
@@ -122,11 +122,16 @@ final class AssetController extends BaseController
         if ($request->string('save_and_new') === '1') {
             return $this->redirect('/assets/new?' . http_build_query(array_filter([
                 'asset_type_id' => $request->string('asset_type_id'),
+                'asset_category_id' => $request->string('asset_category_id'),
                 'article_id' => $request->string('article_id'),
                 'supplier_id' => $request->string('supplier_id'),
+                'purchase_order_id' => $request->string('purchase_order_id'),
+                'purchase_date' => $request->string('purchase_date'),
+                'purchase_price' => $request->string('purchase_price'),
+                'warranty_until' => $request->string('warranty_until'),
                 'location_id' => $request->string('location_id'),
                 'cost_center_id' => $request->string('cost_center_id'),
-            ])));
+            ], static fn (string $v): bool => $v !== '')));
         }
 
         return $this->redirect('/assets/' . $result['id']);
@@ -246,23 +251,23 @@ final class AssetController extends BaseController
                     $normalized = AssetService::normalizeSerial($value) ?? '';
                     if ($normalized !== '') {
                         if ($typeId && ($dup = $this->assets->findBySerial($typeId, $normalized, $exclude))) {
-                            $hits[] = ['level' => 'error', 'asset' => $dup, 'message' => 'Seriennummer im Assettyp bereits vergeben'];
+                            $hits[] = ['level' => 'error', 'asset' => $dup, 'label' => AssetService::label($dup), 'message' => 'Seriennummer im Assettyp bereits vergeben'];
                         }
                         foreach ($typeId ? $this->assets->findSerialElsewhere($typeId, $normalized, $exclude) : [] as $dup) {
-                            $hits[] = ['level' => 'warning', 'asset' => $dup, 'message' => 'Gleiche Seriennummer bei ' . $dup['asset_type_name']];
+                            $hits[] = ['level' => 'warning', 'asset' => $dup, 'label' => AssetService::label($dup), 'message' => 'Gleiche Seriennummer bei ' . $dup['asset_type_name']];
                         }
                     }
                     break;
                 case 'mac_address':
                     $normalized = AssetService::normalizeMac($value) ?? '';
                     if ($normalized !== '' && ($dup = $this->assets->findByUniqueField('mac_address', $normalized, $exclude))) {
-                        $hits[] = ['level' => 'error', 'asset' => $dup, 'message' => 'MAC-Adresse bereits vergeben'];
+                        $hits[] = ['level' => 'error', 'asset' => $dup, 'label' => AssetService::label($dup), 'message' => 'MAC-Adresse bereits vergeben'];
                     }
                     break;
                 case 'imei':
                     $normalized = AssetService::normalizeImei($value) ?? '';
                     if ($normalized !== '' && ($dup = $this->assets->findByUniqueField('imei', $normalized, $exclude))) {
-                        $hits[] = ['level' => 'error', 'asset' => $dup, 'message' => 'IMEI bereits vergeben'];
+                        $hits[] = ['level' => 'error', 'asset' => $dup, 'label' => AssetService::label($dup), 'message' => 'IMEI bereits vergeben'];
                     }
                     break;
             }
@@ -321,15 +326,15 @@ final class AssetController extends BaseController
             'title' => $row === null ? 'Asset anlegen' : 'Asset ' . AssetService::label($row) . ' bearbeiten',
             'activeNav' => 'assets',
             'row' => $row,
-            'types' => $this->types->all(true),
+            'types' => $this->types->selectable($row !== null ? (int) $row['asset_type_id'] : null),
             'categories' => $this->types->selectableCategories($row !== null && $row['asset_category_id'] !== null ? (int) $row['asset_category_id'] : null),
-            'statuses' => $this->statuses->all(true),
-            'manufacturers' => $this->manufacturers->activeForSelect(),
-            'articles' => $this->articles->activeForSelect(),
-            'suppliers' => $this->suppliers->activeForSelect(),
-            'locationOptions' => LocationService::flatten($this->locations->all(true)),
-            'costCenters' => $this->costCenters->activeForSelect(),
-            'employees' => $this->employees->activeForSelect(),
+            'statuses' => $this->statuses->selectable($row !== null ? (int) $row['status_id'] : null),
+            'manufacturers' => $this->manufacturers->activeForSelect($row !== null && $row['manufacturer_id'] !== null ? (int) $row['manufacturer_id'] : null),
+            'articles' => $this->articles->activeForSelect(null, $row !== null && $row['article_id'] !== null ? (int) $row['article_id'] : null),
+            'suppliers' => $this->suppliers->activeForSelect($row !== null && $row['supplier_id'] !== null ? (int) $row['supplier_id'] : null),
+            'locationOptions' => LocationService::flatten($this->locations->selectable($row !== null && $row['location_id'] !== null ? (int) $row['location_id'] : null)),
+            'costCenters' => $this->costCenters->activeForSelect($row !== null && $row['cost_center_id'] !== null ? (int) $row['cost_center_id'] : null),
+            'employees' => $this->employees->activeForSelect($row !== null && $row['employee_id'] !== null ? (int) $row['employee_id'] : null),
             'canRetire' => $this->currentUser->can('assets.retire'),
         ]);
     }

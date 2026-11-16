@@ -1,7 +1,7 @@
-<?php require_once __DIR__ . '/../partials/helpers.php'; ob_start(); $isNew = $row === null; ?>
+<?php require_once __DIR__ . '/../partials/helpers.php'; ob_start(); $isNew = $row === null; $backUrl = ($returnTo ?? '') !== '' ? $returnTo : '/cost-centers'; ?>
 <div class="page-header">
     <div><h1><?= e($title) ?></h1></div>
-    <div class="page-actions"><a class="btn btn-ghost" href="/cost-centers"><?= icon('arrow-left') ?> Zurück</a></div>
+    <div class="page-actions"><a class="btn btn-ghost" href="<?= e($backUrl) ?>"><?= icon('arrow-left') ?> Zurück</a></div>
 </div>
 <div class="card card-form card-form-narrow">
     <form method="post" action="<?= e($isNew ? '/cost-centers' : '/cost-centers/' . (int) $row['id']) ?>" novalidate>
@@ -17,7 +17,7 @@
                 <label for="f-location">Standort</label>
                 <select id="f-location" name="location_id">
                     <option value="">Kein Standort</option>
-                    <?php foreach ($locationOptions as $l): ?><option value="<?= (int) $l['id'] ?>"<?= selected(form_value($row, 'location_id'), $l['id']) ?>><?= str_repeat('  ', (int) $l['depth']) ?><?= e($l['name']) ?></option><?php endforeach; ?>
+                    <?php foreach ($locationOptions as $l): ?><option value="<?= (int) $l['id'] ?>"<?= selected(form_value($row, 'location_id'), $l['id']) ?>><?= str_repeat('  ', (int) $l['depth']) ?><?= e($l['name']) ?><?= (int) ($l['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('location_id') ?>
             </div>
@@ -30,7 +30,7 @@
         <label class="checkbox-field"><input type="checkbox" name="is_active" value="1"<?= form_checked($row, 'is_active') ?>> <span>Aktiv</span></label>
         <div class="form-actions">
             <button type="submit" class="btn btn-primary"><?= icon('check') ?> Speichern</button>
-            <a class="btn btn-ghost" href="/cost-centers">Abbrechen</a>
+            <a class="btn btn-ghost" href="<?= e($backUrl) ?>">Abbrechen</a>
         </div>
     </form>
 </div>

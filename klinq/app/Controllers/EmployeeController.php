@@ -61,8 +61,8 @@ final class EmployeeController extends CrudController
     protected function formData(?array $row): array
     {
         return [
-            'locationOptions' => LocationService::flatten($this->locations->all(true)),
-            'costCenters' => $this->costCenters->activeForSelect(),
+            'locationOptions' => LocationService::flatten($this->locations->selectable($row !== null && $row['location_id'] !== null ? (int) $row['location_id'] : null)),
+            'costCenters' => $this->costCenters->activeForSelect($row !== null && $row['cost_center_id'] !== null ? (int) $row['cost_center_id'] : null),
         ];
     }
 

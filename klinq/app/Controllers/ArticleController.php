@@ -101,7 +101,7 @@ final class ArticleController extends CrudController
             'category_name' => $a['category_name'],
             'article_number' => $a['article_number'],
             'is_handover_relevant' => (bool) $a['is_handover_relevant'],
-            'is_consumable' => (bool) $a['is_consumable'],
+            'is_consumable' => (bool) ($a['is_consumable'] ?? false),
         ], $rows)]);
     }
 
@@ -125,9 +125,41 @@ final class ArticleController extends CrudController
     protected function formData(?array $row): array
     {
         return [
-            'manufacturers' => $this->manufacturers->activeForSelect(),
+            'manufacturers' => $this->manufacturers->activeForSelect($row !== null ? (int) $row['manufacturer_id'] : null),
             'assetTypes' => $this->assetTypes->selectable($row !== null && $row['asset_type_id'] !== null ? (int) $row['asset_type_id'] : null),
             'categories' => $this->assetTypes->selectableCategories($row !== null && $row['asset_category_id'] !== null ? (int) $row['asset_category_id'] : null),
         ];
+    }
+
+    protected function renderForm(Request $request, ?array $row, array $extra = []): Response
+    {
+        $returnTo = $this->safeReturn($request->queryString('return') !== '' ? $request->queryString('return') : $request->string('return'));
+        $isConsumableContext = $returnTo === '/consumables'
+            || ($row === null && ($request->queryString('is_consumable') === '1' || (string) ($_SESSION['_old_input']['is_consumable'] ?? '') === '1'));
+        if ($isConsumableContext) {
+            $extra['activeNav'] ??= 'consumables';
+        }
+        if ($row === null && ($request->queryString('is_consumable') === '1' || (string) ($_SESSION['_old_input']['is_consumable'] ?? '') === '1')) {
+            $extra['title'] ??= 'Verbrauchsmaterial anlegen';
+        }
+        if ($returnTo !== '') {
+            $extra['returnTo'] = $returnTo;
+        }
+
+        return parent::renderForm($request, $row, $extra);
+    }
+
+    protected function preserveQuery(Request $request): string
+    {
+        $params = [];
+        $return = $this->safeReturn($request->string('return'));
+        if ($return !== '') {
+            $params['return'] = $return;
+        }
+        if ($request->string('is_consumable') === '1') {
+            $params['is_consumable'] = '1';
+        }
+
+        return $params !== [] ? '?' . http_build_query($params) : '';
     }
 }

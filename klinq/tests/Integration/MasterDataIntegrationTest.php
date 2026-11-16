@@ -8,9 +8,12 @@ use App\Exceptions\ValidationException;
 use App\Repositories\ArticleRepository;
 use App\Repositories\AssetTypeRepository;
 use App\Repositories\CostCenterRepository;
+use App\Repositories\EmployeeRepository;
 use App\Repositories\LocationRepository;
 use App\Repositories\ManufacturerRepository;
+use App\Security\CurrentUser;
 use App\Services\ArticleService;
+use App\Services\AssetService;
 use App\Services\CostCenterService;
 use App\Services\DuplicateWarningException;
 use App\Services\LocationService;
@@ -191,5 +194,99 @@ final class MasterDataIntegrationTest extends DatabaseTestCase
         $this->assertSame(0, (int) $updated['is_consumable']);
         $this->assertNull($updated['minimum_stock']);
         $this->assertSame(0, (int) $updated['stock_quantity']);
+    }
+
+    public function testArticleWithExistingAssetsCannotBecomeConsumableOrChangeAssetType(): void
+    {
+        $this->c->get(CurrentUser::class)->login(['id' => 1, 'username' => 'tester', 'display_name' => 'Test User', 'role' => 'admin']);
+        $svc = $this->c->get(ArticleService::class);
+        $repo = $this->c->get(ArticleRepository::class);
+        $types = $this->c->get(AssetTypeRepository::class);
+        $pcTypeId = (int) $types->findByCode('PC')['id'];
+        $zubTypeId = (int) $types->findByCode('ZUB')['id'];
+        $manufacturerId = $this->c->get(ManufacturerService::class)->create(['name' => 'Bestandsschutz GmbH', 'is_active' => '1'], true);
+
+        $articleId = $svc->create([
+            'manufacturer_id' => (string) $manufacturerId,
+            'asset_type_id' => (string) $pcTypeId,
+            'name' => 'Workstation Pro 900',
+            'is_active' => '1',
+        ], true);
+        $this->c->get(AssetService::class)->create([
+            'asset_type_id' => (string) $pcTypeId,
+            'article_id' => (string) $articleId,
+            'name' => 'Rechner Buchhaltung',
+        ]);
+        $existing = $repo->find($articleId);
+        $this->assertSame(1, (int) $existing['asset_count']);
+
+        $this->assertThrows(ValidationException::class, fn () => $svc->update($articleId, $existing, [
+            'manufacturer_id' => (string) $manufacturerId,
+            'name' => 'Workstation Pro 900',
+            'is_active' => '1',
+            'is_consumable' => '1',
+        ], true), 'Assets zugeordnet');
+
+        $this->assertThrows(ValidationException::class, fn () => $svc->update($articleId, $existing, [
+            'manufacturer_id' => (string) $manufacturerId,
+            'asset_type_id' => (string) $zubTypeId,
+            'name' => 'Workstation Pro 900',
+            'is_active' => '1',
+        ], true), 'Assettyp kann nicht geändert werden');
+
+        // Normale Stammdatenpflege bei gleichem Assettyp bleibt uneingeschränkt möglich
+        $svc->update($articleId, $existing, [
+            'manufacturer_id' => (string) $manufacturerId,
+            'asset_type_id' => (string) $pcTypeId,
+            'name' => 'Workstation Pro 900 G2',
+            'article_number' => 'WP-900-G2',
+            'is_active' => '1',
+        ], true);
+        $this->assertSame('WP-900-G2', $repo->find($articleId)['article_number']);
+
+        $pickerRows = $repo->searchForPicker('Workstation Pro 900 G2', $pcTypeId);
+        $this->assertCount(1, $pickerRows);
+        $this->assertSame(0, (int) $pickerRows[0]['is_consumable']);
+    }
+
+    public function testConsumableRelativeStockAdjustmentClampsAtZero(): void
+    {
+        $svc = $this->c->get(ArticleService::class);
+        $repo = $this->c->get(ArticleRepository::class);
+        $manufacturerId = $this->c->get(ManufacturerService::class)->create(['name' => 'Lagerkomfort GmbH', 'is_active' => '1'], true);
+        $id = $svc->create([
+            'manufacturer_id' => (string) $manufacturerId,
+            'name' => 'Patchkabel Cat6a 2m',
+            'is_active' => '1',
+            'is_consumable' => '1',
+            'is_handover_relevant' => '1',
+            'stock_quantity' => '4',
+        ], true);
+        $created = $repo->find($id);
+        $this->assertSame(0, (int) $created['is_handover_relevant']);
+
+        $this->assertSame(3, $svc->setStock($id, $repo->find($id), ['delta' => '-1']));
+        $this->assertSame(5, $svc->setStock($id, $repo->find($id), ['delta' => '2']));
+        $this->assertSame(0, $svc->setStock($id, $repo->find($id), ['delta' => '-50']));
+    }
+
+    public function testSelectableMasterDataPreservesCurrentDeactivatedAssignments(): void
+    {
+        $locSvc = $this->c->get(LocationService::class);
+        $locRepo = $this->c->get(LocationRepository::class);
+        $siteId = $locSvc->create(['name' => 'Altstandort', 'type' => 'site', 'is_active' => '1']);
+        $roomId = $locSvc->create(['name' => 'Serverraum Alt', 'type' => 'room', 'parent_id' => (string) $siteId, 'is_active' => '1']);
+        $locSvc->setActive($siteId, $locRepo->find($siteId), false);
+
+        $this->assertFalse(in_array($roomId, array_map('intval', array_column($locRepo->selectable(), 'id')), true));
+        $withCurrent = LocationService::flatten($locRepo->selectable($roomId));
+        $byId = array_column($withCurrent, null, 'id');
+        $this->assertTrue(isset($byId[$siteId], $byId[$roomId]));
+        $this->assertSame(1, (int) $byId[$roomId]['depth']);
+
+        $empRepo = $this->c->get(EmployeeRepository::class);
+        $empId = $empRepo->create(['display_name' => 'Erika Ausgeschieden', 'last_name' => 'Ausgeschieden', 'is_active' => 0]);
+        $this->assertFalse(in_array($empId, array_map('intval', array_column($empRepo->activeForSelect(), 'id')), true));
+        $this->assertContains($empId, array_map('intval', array_column($empRepo->activeForSelect($empId), 'id')));
     }
 }

@@ -42,10 +42,17 @@ final class CostCenterRepository extends BaseRepository
         return (int) $this->fetchValue("SELECT COUNT(*) FROM cost_centers c {$where}", $params);
     }
 
-    /** @return array<int,array<string,mixed>> */
-    public function activeForSelect(): array
+    /**
+     * Aktive Kostenstellen plus optional die aktuell zugeordnete (auch wenn deaktiviert).
+     * @return array<int,array<string,mixed>>
+     */
+    public function activeForSelect(?int $currentId = null): array
     {
-        return $this->fetchAll('SELECT id, number, description, location_id FROM cost_centers WHERE is_active = 1 ORDER BY number');
+        if ($currentId === null) {
+            return $this->fetchAll('SELECT id, number, description, location_id, is_active FROM cost_centers WHERE is_active = 1 ORDER BY number');
+        }
+
+        return $this->fetchAll('SELECT id, number, description, location_id, is_active FROM cost_centers WHERE is_active = 1 OR id = :current ORDER BY number', ['current' => $currentId]);
     }
 
     /** @param array<string,mixed> $data */

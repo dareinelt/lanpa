@@ -15,7 +15,7 @@ $val = static fn (string $key, string $default = ''): string => form_value($row,
                 <label for="f-manufacturer">Hersteller</label>
                 <select id="f-manufacturer" name="manufacturer_id">
                     <option value="">– keiner –</option>
-                    <?php foreach ($manufacturers as $m): ?><option value="<?= (int) $m['id'] ?>"<?= selected($val('manufacturer_id'), $m['id']) ?>><?= e($m['name']) ?></option><?php endforeach; ?>
+                    <?php foreach ($manufacturers as $m): ?><option value="<?= (int) $m['id'] ?>"<?= selected($val('manufacturer_id'), $m['id']) ?>><?= e($m['name']) ?><?= (int) ($m['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('manufacturer_id') ?>
             </div>
@@ -73,7 +73,7 @@ $val = static fn (string $key, string $default = ''): string => form_value($row,
                 <label for="f-supplier">Lieferant</label>
                 <select id="f-supplier" name="supplier_id">
                     <option value="">– keiner –</option>
-                    <?php foreach ($suppliers as $s): ?><option value="<?= (int) $s['id'] ?>"<?= selected($val('supplier_id'), $s['id']) ?>><?= e($s['name']) ?></option><?php endforeach; ?>
+                    <?php foreach ($suppliers as $s): ?><option value="<?= (int) $s['id'] ?>"<?= selected($val('supplier_id'), $s['id']) ?>><?= e($s['name']) ?><?= (int) ($s['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('supplier_id') ?>
             </div>
@@ -89,7 +89,7 @@ $val = static fn (string $key, string $default = ''): string => form_value($row,
                 <label for="f-cc">Kostenstelle</label>
                 <select id="f-cc" name="cost_center_id">
                     <option value="">– keine –</option>
-                    <?php foreach ($costCenters as $cc): ?><option value="<?= (int) $cc['id'] ?>"<?= selected($val('cost_center_id'), $cc['id']) ?>><?= e($cc['number']) ?> · <?= e($cc['description']) ?></option><?php endforeach; ?>
+                    <?php foreach ($costCenters as $cc): ?><option value="<?= (int) $cc['id'] ?>"<?= selected($val('cost_center_id'), $cc['id']) ?>><?= e($cc['number']) ?> · <?= e($cc['description']) ?><?= (int) ($cc['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('cost_center_id') ?>
             </div>

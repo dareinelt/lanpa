@@ -39,10 +39,17 @@ final class SupplierRepository extends BaseRepository
         return (int) $this->fetchValue("SELECT COUNT(*) FROM suppliers s {$where}", $params);
     }
 
-    /** @return array<int,array<string,mixed>> */
-    public function activeForSelect(): array
+    /**
+     * Aktive Lieferanten plus optional der aktuell zugeordnete (auch wenn deaktiviert).
+     * @return array<int,array<string,mixed>>
+     */
+    public function activeForSelect(?int $currentId = null): array
     {
-        return $this->fetchAll('SELECT id, name, customer_number FROM suppliers WHERE is_active = 1 ORDER BY name');
+        if ($currentId === null) {
+            return $this->fetchAll('SELECT id, name, customer_number, is_active FROM suppliers WHERE is_active = 1 ORDER BY name');
+        }
+
+        return $this->fetchAll('SELECT id, name, customer_number, is_active FROM suppliers WHERE is_active = 1 OR id = :current ORDER BY name', ['current' => $currentId]);
     }
 
     /** @return array<string,mixed>|null */

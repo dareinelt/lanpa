@@ -20,7 +20,7 @@ $back = $isNew ? '/orders' : '/orders/' . (int) $row['id'];
                 <label for="f-supplier">Lieferant <span class="required">*</span></label>
                 <select id="f-supplier" name="supplier_id" required<?= $isNew ? ' autofocus' : '' ?>>
                     <option value="">– bitte wählen –</option>
-                    <?php foreach ($suppliers as $s): ?><option value="<?= (int) $s['id'] ?>"<?= selected(form_value($row, 'supplier_id'), $s['id']) ?>><?= e($s['name']) ?><?= $s['customer_number'] ? ' · Kd.-Nr. ' . e($s['customer_number']) : '' ?></option><?php endforeach; ?>
+                    <?php foreach ($suppliers as $s): ?><option value="<?= (int) $s['id'] ?>"<?= selected(form_value($row, 'supplier_id'), $s['id']) ?>><?= e($s['name']) ?><?= $s['customer_number'] ? ' · Kd.-Nr. ' . e($s['customer_number']) : '' ?><?= (int) ($s['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('supplier_id') ?>
             </div>
@@ -46,7 +46,7 @@ $back = $isNew ? '/orders' : '/orders/' . (int) $row['id'];
             <label for="f-cc">Kostenstelle</label>
             <select id="f-cc" name="cost_center_id">
                 <option value="">– keine –</option>
-                <?php foreach ($costCenters as $cc): ?><option value="<?= (int) $cc['id'] ?>"<?= selected(form_value($row, 'cost_center_id'), $cc['id']) ?>><?= e($cc['number']) ?> · <?= e($cc['description']) ?></option><?php endforeach; ?>
+                <?php foreach ($costCenters as $cc): ?><option value="<?= (int) $cc['id'] ?>"<?= selected(form_value($row, 'cost_center_id'), $cc['id']) ?>><?= e($cc['number']) ?> · <?= e($cc['description']) ?><?= (int) ($cc['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
             </select>
             <p class="form-hint">Wird beim Wareneingang als Kostenstelle der neuen Assets übernommen.</p>
             <?= field_error('cost_center_id') ?>

@@ -109,7 +109,7 @@ abstract class CrudController extends BaseController
         } catch (ValidationException $e) {
             $this->withOldInput($request, $e->errors());
 
-            return $this->redirect($this->basePath() . '/' . $id . '/edit');
+            return $this->redirect($this->basePath() . '/' . $id . '/edit' . $this->preserveQuery($request));
         }
         $this->flash('success', $this->label() . ' wurde gespeichert.');
 

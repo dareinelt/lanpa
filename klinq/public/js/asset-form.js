@@ -80,9 +80,10 @@
             try {
                 const data = await AppUI.api(checkUrl + "?" + params.toString());
                 list.innerHTML = data.hits.map(function (h) {
+                    const assetLabel = h.asset.inventory_number || h.label || ("#" + h.asset.id);
                     return '<li class="' + (h.level === "error" ? "is-error" : "is-warning") + '">' +
                         AppUI.escapeHtml(h.message) + ': <a href="' + AppUI.url("/assets/" + h.asset.id) + '" target="_blank" rel="noopener">' +
-                        AppUI.escapeHtml(h.asset.inventory_number) + "</a></li>";
+                        AppUI.escapeHtml(assetLabel) + "</a></li>";
                 }).join("");
                 list.hidden = data.hits.length === 0;
             } catch (e) { list.hidden = true; }
@@ -106,7 +107,7 @@
                 datalist.innerHTML = "";
                 data.items.forEach(function (item) {
                     if (assetId && String(item.id) === assetId) { return; }
-                    known[item.inventory_number] = item.id;
+                    known[String(item.inventory_number || "").toUpperCase()] = item.id;
                     const opt = document.createElement("option");
                     opt.value = item.inventory_number;
                     opt.label = item.name ? item.inventory_number + " – " + item.name : item.inventory_number;

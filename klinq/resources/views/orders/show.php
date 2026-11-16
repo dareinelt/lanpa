@@ -82,7 +82,7 @@ $showItemForm = $editable && ($editing !== null || $old !== null || $items === [
                     <?php if ($it['article_id']): ?><br><span class="text-sm text-muted"><a href="/articles/<?= (int) $it['article_id'] ?>/edit"><?= e($it['manufacturer_name']) ?> <?= e($it['article_name']) ?></a><?= $it['article_number'] ? ' · ' . e($it['article_number']) : '' ?><?= (int) ($it['is_consumable'] ?? 0) ? ' · Verbrauchsmaterial' : '' ?></span><?php endif; ?>
                     <?php if ($it['note']): ?><br><span class="text-sm text-muted"><?= e($it['note']) ?></span><?php endif; ?>
                 </td>
-                <td><?= $it['asset_type_name'] ? icon($it['asset_type_icon'] ?: 'box', 'icon icon-sm icon-muted') . ' ' . e($it['asset_type_name']) : '<span class="text-muted">–</span>' ?><?= (int) $it['creates_assets'] === 0 ? '<br><span class="text-xs text-muted">ohne Asset</span>' : '' ?></td>
+                <td><?= $it['asset_type_name'] ? icon($it['asset_type_icon'] ?: 'box', 'icon icon-sm icon-muted') . ' ' . e($it['asset_type_name']) : '<span class="text-muted">–</span>' ?><?= (int) ($it['is_consumable'] ?? 0) === 1 ? '<br><span class="text-xs text-muted">Bestandsartikel</span>' : ((int) $it['creates_assets'] === 0 ? '<br><span class="text-xs text-muted">ohne Asset</span>' : '') ?></td>
                 <td class="text-right"><?= (int) $it['quantity'] ?></td>
                 <td class="text-right"><?= (int) $it['quantity_received'] ?><?= $open > 0 && in_array($status, ['ordered', 'partially_delivered'], true) ? ' <span class="text-xs text-warning">(' . $open . ' offen)</span>' : '' ?></td>
                 <td class="text-right mono"><?= fmt_money($it['unit_price']) ?></td>
@@ -115,14 +115,14 @@ $showItemForm = $editable && ($editing !== null || $old !== null || $items === [
                     <label for="i-article">Artikel</label>
                     <select id="i-article" name="article_id" data-article-select>
                         <option value="">– frei (nur für Positionen ohne Asset) –</option>
-                        <?php foreach ($articles as $a): ?><option value="<?= (int) $a['id'] ?>" data-type="<?= $a['asset_type_id'] !== null ? (int) $a['asset_type_id'] : '' ?>" data-label="<?= e($a['manufacturer_name'] . ' ' . $a['name']) ?>"<?= selected($itemVal('article_id'), $a['id']) ?>><?= e($a['manufacturer_name']) ?> <?= e($a['name']) ?><?= $a['article_number'] ? ' · ' . e($a['article_number']) : '' ?></option><?php endforeach; ?>
+                        <?php foreach ($articles as $a): ?><option value="<?= (int) $a['id'] ?>" data-type="<?= $a['asset_type_id'] !== null ? (int) $a['asset_type_id'] : '' ?>" data-consumable="<?= (int) ($a['is_consumable'] ?? 0) ?>" data-label="<?= e($a['manufacturer_name'] . ' ' . $a['name']) ?>"<?= selected($itemVal('article_id'), $a['id']) ?>><?= e($a['manufacturer_name']) ?> <?= e($a['name']) ?><?= $a['article_number'] ? ' · ' . e($a['article_number']) : '' ?><?= (int) ($a['is_consumable'] ?? 0) === 1 ? ' · Verbrauchsmaterial' : '' ?><?= (int) ($a['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                     </select>
-                    <p class="form-hint">Positionen, die Assets erzeugen, benötigen einen Stammartikel; Assettyp, Hersteller und Bezeichnung werden übernommen.</p>
+                    <p class="form-hint">Positionen, die Assets erzeugen, benötigen einen Stammartikel; bei Verbrauchsmaterial erhöht der Wareneingang direkt den Bestand.</p>
                     <?= field_error('article_id') ?>
                 </div>
                 <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">
                     <label for="i-desc">Bezeichnung <span class="required">*</span></label>
-                    <input id="i-desc" name="description" value="<?= e($itemVal('description')) ?>" maxlength="255" data-item-description placeholder="z. B. Notebook 14&quot; inkl. Dockingstation">
+                    <input id="i-desc" name="description" value="<?= e($itemVal('description')) ?>" maxlength="255" data-item-description placeholder="z. B. Notebook 14&quot; inkl. Dockingstation (wird bei Artikelwahl übernommen)">
                     <?= field_error('description') ?>
                 </div>
             </div>
@@ -152,7 +152,7 @@ $showItemForm = $editable && ($editing !== null || $old !== null || $items === [
                     <input id="i-note" name="note" value="<?= e($itemVal('note')) ?>" maxlength="255">
                 </div>
                 <div class="form-group">
-                    <label class="checkbox-field mt-4"><input type="checkbox" name="creates_assets" value="1"<?= $old !== null ? checked($old['creates_assets'] ?? false) : checked($editing['creates_assets'] ?? true) ?>> <span>Erzeugt Assets beim Wareneingang (je Stück eine Inventarnummer)</span></label>
+                    <label class="checkbox-field mt-4"><input type="checkbox" name="creates_assets" value="1" data-creates-assets<?= $old !== null ? checked($old['creates_assets'] ?? false) : checked($editing['creates_assets'] ?? ($itemVal('article_id') !== '')) ?>> <span>Erzeugt Assets beim Wareneingang (je Stück eine Inventarnummer)</span></label>
                 </div>
             </div>
             <div class="form-actions">

@@ -1,10 +1,15 @@
 <?php require_once __DIR__ . '/../partials/helpers.php'; ob_start(); $isNew = $row === null; $duplicates = $duplicates ?? [];
 $presetManufacturer = $isNew ? ($_GET['manufacturer_id'] ?? '') : '';
 $selectedType = form_value($row, 'asset_type_id');
+$backUrl = ($returnTo ?? '') !== '' ? $returnTo : '/articles';
+$assetCount = !$isNew ? (int) ($row['asset_count'] ?? 0) : 0;
+$lockedByAssets = $assetCount > 0;
+$isConsumableDefault = $isNew && ($_GET['is_consumable'] ?? '') === '1';
+$isConsumableChecked = form_checked($row, 'is_consumable', $isConsumableDefault) !== '';
 ?>
 <div class="page-header">
     <div><h1><?= e($title) ?></h1></div>
-    <div class="page-actions"><a class="btn btn-ghost" href="/articles"><?= icon('arrow-left') ?> Zurück</a></div>
+    <div class="page-actions"><a class="btn btn-ghost" href="<?= e($backUrl) ?>"><?= icon('arrow-left') ?> Zurück</a></div>
 </div>
 <div class="card card-form">
     <?php if (!$manufacturers): ?>
@@ -30,24 +35,29 @@ $selectedType = form_value($row, 'asset_type_id');
                 <label for="f-manufacturer">Hersteller *</label>
                 <select id="f-manufacturer" name="manufacturer_id" required data-duplicate-context="manufacturer_id">
                     <option value="">Bitte wählen</option>
-                    <?php foreach ($manufacturers as $m): ?><option value="<?= (int) $m['id'] ?>"<?= selected(form_value($row, 'manufacturer_id', $presetManufacturer), $m['id']) ?>><?= e($m['name']) ?></option><?php endforeach; ?>
+                    <?php foreach ($manufacturers as $m): ?><option value="<?= (int) $m['id'] ?>"<?= selected(form_value($row, 'manufacturer_id', $presetManufacturer), $m['id']) ?>><?= e($m['name']) ?><?= (int) ($m['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('manufacturer_id') ?>
             </div>
             <div class="form-group">
-                <label for="f-type">Assettyp <span class="required" data-consumable-required>*</span></label>
-                <select id="f-type" name="asset_type_id" required data-category-filter data-consumable-type>
+                <label for="f-type">Assettyp <span class="required" data-consumable-required<?= $isConsumableChecked ? ' hidden' : '' ?>>*</span></label>
+                <?php if ($lockedByAssets && $row['asset_type_id'] !== null): ?><input type="hidden" name="asset_type_id" value="<?= (int) $row['asset_type_id'] ?>"><?php endif; ?>
+                <select id="f-type" name="asset_type_id"<?= $isConsumableChecked || $lockedByAssets ? '' : ' required' ?><?= $isConsumableChecked || $lockedByAssets ? ' disabled' : '' ?><?= $lockedByAssets ? ' data-locked-by-assets="1"' : '' ?> data-category-filter data-consumable-type>
                     <option value="">Bitte wählen</option>
-                    <?php foreach ($assetTypes as $t): ?><option value="<?= (int) $t['id'] ?>"<?= selected($selectedType, $t['id']) ?>><?= e(type_label($t)) ?></option><?php endforeach; ?>
+                    <?php foreach ($assetTypes as $t): ?><option value="<?= (int) $t['id'] ?>"<?= selected($selectedType, $t['id']) ?>><?= e(type_label($t)) ?><?= (int) ($t['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('asset_type_id') ?>
-                <span class="form-hint" data-consumable-hint hidden>Verbrauchsmaterial gehört zu keinem Assettyp; Typ und Kategorie entfallen.</span>
+                <?php if ($lockedByAssets): ?>
+                <span class="form-hint">Diesem Artikel <?= $assetCount === 1 ? 'ist bereits 1 Asset' : 'sind bereits ' . $assetCount . ' Assets' ?> zugeordnet; der Assettyp ist deshalb festgelegt.</span>
+                <?php else: ?>
+                <span class="form-hint" data-consumable-hint<?= $isConsumableChecked ? '' : ' hidden' ?>>Verbrauchsmaterial gehört zu keinem Assettyp; Typ und Kategorie entfallen.</span>
+                <?php endif; ?>
             </div>
         </div>
         <div class="form-row">
             <div class="form-group">
                 <label for="f-name">Bezeichnung *</label>
-                <input id="f-name" name="name" value="<?= e(form_value($row, 'name')) ?>" required maxlength="200" placeholder="z. B. ThinkPad T14 Gen 5" data-duplicate-check="/api/articles/check<?= $isNew ? '' : '?exclude=' . (int) $row['id'] ?>" data-duplicate-entity="articles" <?= has_error('name') ? 'aria-invalid="true"' : '' ?>>
+                <input id="f-name" name="name" value="<?= e(form_value($row, 'name')) ?>" required maxlength="200" placeholder="<?= $isConsumableChecked ? 'z. B. Toner CF259A (26A) schwarz' : 'z. B. ThinkPad T14 Gen 5' ?>" data-consumable-name data-duplicate-check="/api/articles/check<?= $isNew ? '' : '?exclude=' . (int) $row['id'] ?>" data-duplicate-entity="articles" <?= has_error('name') ? 'aria-invalid="true"' : '' ?>>
                 <?= field_error('name') ?>
                 <div id="duplicate-live" class="duplicate-hint" hidden></div>
             </div>
@@ -59,9 +69,9 @@ $selectedType = form_value($row, 'asset_type_id');
         </div>
         <div class="form-group">
             <label for="f-category">Kategorie</label>
-            <select id="f-category" name="asset_category_id" data-consumable-category>
+            <select id="f-category" name="asset_category_id" data-consumable-category<?= $isConsumableChecked ? ' disabled' : '' ?>>
                 <option value="">Keine</option>
-                <?php foreach ($categories as $cat): ?><option value="<?= (int) $cat['id'] ?>" data-type="<?= (int) $cat['asset_type_id'] ?>"<?= selected(form_value($row, 'asset_category_id'), $cat['id']) ?>><?= e($cat['name']) ?></option><?php endforeach; ?>
+                <?php foreach ($categories as $cat): ?><option value="<?= (int) $cat['id'] ?>" data-type="<?= (int) $cat['asset_type_id'] ?>"<?= selected(form_value($row, 'asset_category_id'), $cat['id']) ?>><?= e($cat['name']) ?><?= (int) ($cat['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
             </select>
             <?= field_error('asset_category_id') ?>
             <span class="form-hint">Nur Kategorien des gewählten Assettyps.</span>
@@ -71,17 +81,18 @@ $selectedType = form_value($row, 'asset_type_id');
             <textarea id="f-desc" name="description" rows="3"><?= e(form_value($row, 'description')) ?></textarea>
         </div>
         <label class="checkbox-field"><input type="checkbox" name="is_active" value="1"<?= form_checked($row, 'is_active') ?>> <span>Aktiv</span></label>
-        <label class="checkbox-field"><input type="checkbox" name="is_handover_relevant" value="1"<?= form_checked($row, 'is_handover_relevant', false) ?>> <span>Relevant für Übergabeprotokoll</span></label>
+        <label class="checkbox-field"><input type="checkbox" name="is_handover_relevant" value="1" data-consumable-handover<?= $isConsumableChecked ? ' disabled' : form_checked($row, 'is_handover_relevant', false) ?>> <span>Relevant für Übergabeprotokoll</span></label>
         <span class="form-hint">Assets dieses Artikels erscheinen im Übergabeprotokoll des Mitarbeiters (z. B. Notebook, Smartphone – nicht Kabel oder Verbrauchsmaterial).</span>
-        <label class="checkbox-field mt-3"><input type="checkbox" name="is_consumable" value="1" data-consumable-toggle<?= form_checked($row, 'is_consumable', $isNew && ($_GET['is_consumable'] ?? '') === '1') ?>> <span>Verbrauchsmaterial</span></label>
+        <label class="checkbox-field mt-3"><input type="checkbox" name="is_consumable" value="1" data-consumable-toggle<?= $isConsumableChecked ? ' checked' : '' ?><?= $lockedByAssets && !$isConsumableChecked ? ' disabled' : '' ?>> <span>Verbrauchsmaterial</span></label>
+        <?= field_error('is_consumable') ?>
         <span class="form-hint">Für Material, das nur als Menge geführt wird (z. B. Toner, Tinte, Batterien): Es entstehen keine einzelnen Assets; der Wareneingang erhöht den Bestand. Übersicht unter <a href="/consumables">Bestand → Verbrauchsmaterial</a>.</span>
-        <div class="form-row">
-            <div class="form-group"><label for="f-min-stock">Mindestbestand</label><input id="f-min-stock" type="number" name="minimum_stock" min="0" value="<?= e(form_value($row, 'minimum_stock')) ?>"><span class="form-hint">Bei Unterschreitung wird ein Bestellvorschlag angezeigt.</span></div>
-            <div class="form-group"><label for="f-stock">Aktueller Bestand</label><input id="f-stock" type="number" name="stock_quantity" min="0" value="<?= e(form_value($row, 'stock_quantity', '0')) ?>"></div>
+        <div class="form-row mt-3" data-consumable-stock<?= $isConsumableChecked ? '' : ' hidden' ?>>
+            <div class="form-group"><label for="f-min-stock">Mindestbestand</label><input id="f-min-stock" type="number" name="minimum_stock" min="0" value="<?= e(form_value($row, 'minimum_stock')) ?>"><?= field_error('minimum_stock') ?><span class="form-hint">Bei Unterschreitung wird ein Bestellvorschlag angezeigt.</span></div>
+            <div class="form-group"><label for="f-stock">Aktueller Bestand</label><input id="f-stock" type="number" name="stock_quantity" min="0" value="<?= e(form_value($row, 'stock_quantity', '0')) ?>"><?= field_error('stock_quantity') ?></div>
         </div>
         <div class="form-actions">
             <button type="submit" class="btn <?= $duplicates ? 'btn-warning' : 'btn-primary' ?>"><?= icon('check') ?> <?= $duplicates ? 'Trotzdem speichern' : 'Speichern' ?></button>
-            <a class="btn btn-ghost" href="/articles">Abbrechen</a>
+            <a class="btn btn-ghost" href="<?= e($backUrl) ?>">Abbrechen</a>
         </div>
     </form>
 </div>

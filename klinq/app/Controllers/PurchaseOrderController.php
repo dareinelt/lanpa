@@ -101,6 +101,8 @@ final class PurchaseOrderController extends BaseController
             }
         }
 
+        $editingTypeId = $editing !== null ? ($editing['effective_asset_type_id'] ?? $editing['asset_type_id']) : null;
+
         return $this->render('orders.show', [
             'title' => 'Bestellung ' . $row['order_number'],
             'activeNav' => 'orders',
@@ -110,8 +112,8 @@ final class PurchaseOrderController extends BaseController
             'receipts' => $this->orders->receipts($id),
             'assets' => $this->orders->assetsFor($id),
             'documents' => $this->documents->forEntity('purchase_order', $id),
-            'articles' => $this->articles->activeForSelect(),
-            'types' => $this->types->all(true),
+            'articles' => $this->articles->activeForSelect(null, $editing !== null && $editing['article_id'] !== null ? (int) $editing['article_id'] : null),
+            'types' => $this->types->selectable($editingTypeId !== null ? (int) $editingTypeId : null),
             'documentTypes' => DocumentService::UPLOAD_TYPES,
             'statuses' => PurchaseOrderService::STATUSES,
             'statusColors' => PurchaseOrderService::STATUS_COLORS,
@@ -274,7 +276,13 @@ final class PurchaseOrderController extends BaseController
 
             return $this->redirect('/orders/' . $id);
         }
-        $this->flash('success', sprintf('Wareneingang gebucht: %d Stück, %d Assets angelegt.', $result['quantity'], count($result['asset_ids'])));
+        $assetCount = count($result['asset_ids']);
+        $this->flash(
+            'success',
+            $assetCount > 0
+                ? sprintf('Wareneingang gebucht: %d Stück, %d Assets angelegt.', $result['quantity'], $assetCount)
+                : sprintf('Wareneingang gebucht: %d Stück.', $result['quantity'])
+        );
 
         return $this->redirect('/orders/' . $id . '/receipts/' . $result['receipt_id']);
     }
@@ -344,12 +352,14 @@ final class PurchaseOrderController extends BaseController
             $row['is_new'] = true;
         }
 
+        $isExisting = $row !== null && empty($row['is_new']);
+
         return $this->render('orders.form', [
-            'title' => $row === null || !empty($row['is_new']) ? 'Neue Bestellung' : 'Bestellung ' . $row['order_number'] . ' bearbeiten',
+            'title' => !$isExisting ? 'Neue Bestellung' : 'Bestellung ' . $row['order_number'] . ' bearbeiten',
             'activeNav' => 'orders',
             'row' => $row,
-            'suppliers' => $this->suppliers->activeForSelect(),
-            'costCenters' => $this->costCenters->activeForSelect(),
+            'suppliers' => $this->suppliers->activeForSelect($isExisting && $row['supplier_id'] !== null ? (int) $row['supplier_id'] : null),
+            'costCenters' => $this->costCenters->activeForSelect($isExisting && $row['cost_center_id'] !== null ? (int) $row['cost_center_id'] : null),
             'nextNumber' => $this->orders->nextOrderNumber(),
         ]);
     }

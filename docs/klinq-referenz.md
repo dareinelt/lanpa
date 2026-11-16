@@ -663,7 +663,10 @@ Abfrage gelingt, ist die KI-Verwaltung in KLINQ nur lesend.
 1. Eingaben prüfen (nur die KI-Felder),
 2. `GET <url>/models` – die Modellliste muss das gewählte Modell enthalten,
 3. `POST <url>/chat/completions` mit `TEST_PROMPT` („Wer bist du?“),
-   `max_tokens` 400, Antwort auf 4000 Zeichen gekürzt,
+   `max_tokens` 400 und `reasoning_effort: "none"` (einmalige Wiederholung ohne
+   dieses Feld bei HTTP `400`/`422`; Antworten, die ausschließlich Denktext in
+   `reasoning`/`reasoning_content` enthalten, werden abgewiesen; Text aus
+   `choices[0].message.content` oder `choices[0].text` wird auf 4000 Zeichen gekürzt),
 4. Ergebnis (Antwort, Modell, Dauer, Fehlertext) an das Formular.
 
 Der Test verwendet die eingegebenen Werte, nicht die gespeicherten – so lässt

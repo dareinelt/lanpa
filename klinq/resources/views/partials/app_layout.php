@@ -159,6 +159,10 @@ ob_start();
         </a>
     </header>
     <main class="main-content" id="main">
+        <?php if (!isset($aiEnabled) && in_array('/js/helpdesk-ai.js', $scripts ?? [], true)): ?>
+            <?php $resolvedAi = is_callable($helpdeskAiConfig ?? null) ? $helpdeskAiConfig() : ['enabled' => false]; ?>
+            <span hidden data-hd-ai-config data-enabled="<?= !empty($resolvedAi['enabled']) ? '1' : '0' ?>"></span>
+        <?php endif; ?>
         <?php include __DIR__ . '/flash.php'; ?>
         <?= $innerContent ?? '' ?>
     </main>

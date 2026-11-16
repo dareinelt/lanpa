@@ -13,7 +13,7 @@ $units = ['daily' => 'Tage', 'weekly' => 'Wochen', 'monthly' => 'Monate', 'yearl
 ?>
 <div class="form-group<?= has_error('title') ? ' has-error' : '' ?>">
     <label for="<?= e($prefix) ?>-title">Titel <span class="required">*</span></label>
-    <input id="<?= e($prefix) ?>-title" name="title" value="<?= e($v('title')) ?>" maxlength="200" required>
+    <input id="<?= e($prefix) ?>-title" name="title" value="<?= e($v('title')) ?>" maxlength="200" required data-hd-field="generic">
     <?= field_error('title') ?>
 </div>
 <div class="hd-cal-when" data-hd-cal-when>
@@ -67,7 +67,7 @@ $units = ['daily' => 'Tage', 'weekly' => 'Wochen', 'monthly' => 'Monate', 'yearl
 </div>
 <div class="form-group<?= has_error('location') ? ' has-error' : '' ?>">
     <label for="<?= e($prefix) ?>-location">Ort <span class="text-muted">(optional)</span></label>
-    <input id="<?= e($prefix) ?>-location" name="location" value="<?= e($v('location')) ?>" maxlength="200" placeholder="z. B. Raum 2.14, Station 3, Telefon">
+    <input id="<?= e($prefix) ?>-location" name="location" value="<?= e($v('location')) ?>" maxlength="200" placeholder="z. B. Raum 2.14, Station 3, Telefon" data-hd-field="generic">
     <?= field_error('location') ?>
 </div>
 <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">

@@ -422,7 +422,12 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
 - **Rechtschreibung**: `helpdesk_spellcheck_words` (Migration 048; `user_id` → `users` `ON DELETE CASCADE`,
   `word` `VARCHAR(64)` mit `utf8mb4_bin`, eindeutig je Benutzer, höchstens 1 000 Einträge) ist das persönliche
   Wörterbuch der Rechtschreibprüfung im Help-Desk-Kontextmenü; gepflegt über
-  `POST /api/helpdesk/rechtschreibung/woerterbuch` und `…/woerterbuch/entfernen`.
+  `POST /api/helpdesk/rechtschreibung/woerterbuch` und `…/woerterbuch/entfernen`. Weitere Endpunkte:
+  `GET /api/helpdesk/rechtschreibung/vorschlaege`, `POST /api/helpdesk/rechtschreibung/pruefen` (Batch-Prüfung für
+  rote Wellenlinien direkt im Text), `POST /api/helpdesk/rechtschreibung/korrigieren` (`SpellcheckProofreader` –
+  deterministische Offline-Basis-Korrektur ohne KI) sowie `POST /api/helpdesk/ai/wortvorschlaege` und
+  `POST /api/helpdesk/ai/korrigieren` (KI-Wortvorschläge/Synonyme und Schnellkorrektur mit automatischem
+  Offline-Rückfall bei `502`/`503`).
 - **Kalender**: `helpdesk_calendar_events` (Migration 038; `title`, `description`, `location`, `starts_at`/`ends_at`
   in UTC, `all_day` – ganztägig = lokaler Tagesbeginn bis Beginn des Folgetags nach dem Enddatum, `ticket_id`
   `ON DELETE SET NULL` für Termine aus Tickets, `created_by`/`created_by_name`/`updated_by`; Migration 043 ergänzt
@@ -565,7 +570,7 @@ docker compose exec app php tests/run.php # alle Tests inkl. Integration (Test-D
 | Help-Desk-Regeln/SLA/Eskalation | `Helpdesk/TicketRuleService`, `Helpdesk/TicketRuleEvaluator`, `Helpdesk/TicketSlaService`, `Helpdesk/HelpdeskSchedulerService`, `HELPDESK_*`-Variablen, `docs/helpdesk.md` |
 | Help-Desk-Mail-Eingang | `Helpdesk/TicketMailIngestionService`, `Helpdesk/Mail/*`, `Helpdesk/MailboxSettingsService`, `HelpdeskMailboxController`, `HELPDESK_MAIL_*`/`HELPDESK_IMAP_*`-Variablen |
 | Help-Desk-Mail-Versand | `MailClient` (Konto vor Container), `Helpdesk/OutboundMailSettingsService`, `Helpdesk/Mail/SmtpTransport`, `HelpdeskOutboundMailController`, `HELPDESK_SMTP_*`-Variablen (nur Startwerte) |
-| Help-Desk-Rechtschreibprüfung | `Helpdesk/Spellcheck/*`, `HelpdeskSpellcheckService`, `HelpdeskSpellcheckWordRepository`, `bin/spellcheck-dictionary.php`, `public/js/helpdesk-ai.js`, `HELPDESK_SPELLCHECK_*`-Variablen, `docs/helpdesk.md` |
+| Help-Desk-Rechtschreibprüfung | `Helpdesk/Spellcheck/*` (inkl. `SpellcheckProofreader`), `HelpdeskSpellcheckService`, `HelpdeskAiService` (`suggestWords`, `proofread`), `HelpdeskSpellcheckWordRepository`, `bin/spellcheck-dictionary.php`, `public/js/helpdesk-ai.js`, `public/js/helpdesk-mail.js`, `HELPDESK_SPELLCHECK_*`-Variablen, `docs/helpdesk.md`, `docs/helpdesk-ki.md` |
 | Neue Berechtigungsgruppe | `config/permissions.php` (`groups`/`group_labels`) → Migration mit `INSERT` in `permission_groups` → Recht an Route/Service prüfen → `UserService` (Zuordnung) → im Intranet `KlinqConfigService::GROUP_KEYS` (`app/Services/Klinq/`) für die AD-Gruppe |
 
 ---

@@ -1,7 +1,7 @@
 <?php require_once __DIR__ . '/../../partials/helpers.php'; ob_start();
 $activeNav = 'helpdesk-knowledge';
 $areaLabel = 'Help Desk';
-$scripts = ['/js/helpdesk.js', '/js/helpdesk-media.js'];
+$scripts = array_values(array_unique(array_merge(['/js/helpdesk.js', '/js/helpdesk-media.js', '/js/helpdesk-ai.js'], $scripts ?? [])));
 $isNew = $article === null;
 $back = $isNew ? '/helpdesk/knowledge' : '/helpdesk/knowledge/' . (int) $article['id'];
 $val = static fn (string $key, string $default = ''): string => form_value($article, $key, $prefill[$key] ?? $default);
@@ -12,7 +12,7 @@ $tagValue = is_array($tags) ? implode(', ', array_map(static fn (mixed $t): stri
     <form method="post" action="<?= e($isNew ? '/helpdesk/knowledge' : '/helpdesk/knowledge/' . (int) $article['id']) ?>" enctype="multipart/form-data" novalidate>
         <?= csrf_field() ?>
         <?php if ($sourceTicketId !== null): ?><input type="hidden" name="source_ticket_id" value="<?= (int) $sourceTicketId ?>"><?php endif; ?>
-        <div class="form-group<?= has_error('title') ? ' has-error' : '' ?>"><label for="f-title">Titel <span class="required">*</span></label><input id="f-title" name="title" value="<?= e($val('title')) ?>" maxlength="255" required autofocus><?= field_error('title') ?></div>
+        <div class="form-group<?= has_error('title') ? ' has-error' : '' ?>"><label for="f-title">Titel <span class="required">*</span></label><input id="f-title" name="title" value="<?= e($val('title')) ?>" maxlength="255" required autofocus data-hd-field="generic"><?= field_error('title') ?></div>
         <div class="form-group<?= has_error('summary') ? ' has-error' : '' ?>"><label for="f-summary">Kurzfassung</label><textarea id="f-summary" name="summary" rows="3" maxlength="500" data-hd-field="generic"><?= e($val('summary')) ?></textarea><?= field_error('summary') ?></div>
         <div class="form-group<?= has_error('body') ? ' has-error' : '' ?>"><label for="f-body">Inhalt <span class="required">*</span></label><textarea id="f-body" name="body" rows="14" required maxlength="4000000" data-hd-field="generic" data-hd-media-images data-hd-media-preview="#f-body-preview"><?= e($val('body')) ?></textarea><div class="hd-media-preview" id="f-body-preview" hidden></div><p class="form-hint">Bilder aus der Zwischenablage mit STRG+V einfügen – sie bleiben im Text erhalten.</p><?= field_error('body') ?></div>
         <div class="form-group<?= has_error('attachments') ? ' has-error' : '' ?>"><label for="f-attachments">Anhänge <span class="text-muted">(optional)</span></label><input id="f-attachments" type="file" name="attachments[]" multiple data-hd-file-input data-hd-file-list="#f-attachment-list"><ul class="hd-file-list" id="f-attachment-list" hidden></ul><p class="form-hint">Bis zu 5 Dateien je Vorgang.<?php if (!$isNew && $attachments !== []): ?> Bereits hinterlegt: <?= count($attachments) ?> – Verwaltung im Artikel.<?php endif; ?></p><?= field_error('attachments') ?></div>

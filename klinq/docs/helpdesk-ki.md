@@ -14,27 +14,35 @@ selbst enthält kein Modell.
 |---|---|
 | `/helpdesk/tickets/{id}` (Ticketdetail) | Kommentar/Antwort (Tonalität folgt dem gewählten Kommentartyp „Interne Notiz“/„Öffentliche Antwort“), Kommentar beim Statuswechsel, Lösungsbeschreibung beim Schließen, Notiz zur Übergabe an die 2. Ebene |
 | `/helpdesk/tickets/new` und `/helpdesk/tickets/{id}/edit` | Betreff, Beschreibung |
-| `/helpdesk/tickets/{id}` → „E-Mail senden“ | Nachricht im Mail-Editor (Modus `ticket_mail`, Tonalität einer Agentenantwort an die meldende Person) |
+| `/helpdesk/tickets/{id}` → „E-Mail senden“ | Betreff (`data-hd-field`), Nachricht im Mail-Editor (Modus `ticket_mail`, Tonalität einer Agentenantwort an die meldende Person) |
 | `/helpdesk/aufgaben/neu`, `/helpdesk/aufgaben/{id}` | Titel, Beschreibung, Kommentar |
-| `/helpdesk/knowledge/new`, `/helpdesk/knowledge/{id}/edit` | Zusammenfassung, Inhalt |
+| `/helpdesk/knowledge/new`, `/helpdesk/knowledge/{id}/edit` | Titel, Zusammenfassung, Inhalt |
 | `/helpdesk/kalender/neu`, `/helpdesk/kalender/{id}` | Titel, Beschreibung, Ort |
 | `/helpdesk/kontakte/neu`, `/helpdesk/kontakte/{id}` | Notizen |
+| `/helpdesk/admin` (Vorlagen) | Standard-Betreff, Standard-Beschreibung |
 
 Das Menü wird per Rechtsklick oder per <kbd>Menü</kbd>-Taste (Kontextmenütaste) auf dem Feld geöffnet und
-lässt sich mit den Pfeiltasten, <kbd>Enter</kbd>/<kbd>Leertaste</kbd> und <kbd>Esc</kbd> bedienen.
-Es ersetzt das Browser-Menü nur in diesen Feldern; gesperrte (`readonly`) Felder bleiben unberührt.
+lässt sich mit den Pfeiltasten, <kbd>Enter</kbd>/<kbd>Leertaste</kbd> und <kbd>Esc</kbd> bedienen. Ein Rechtsklick
+auf ein Wort setzt den Cursor wie in Word direkt in das angeklickte Wort.
+Es ersetzt das Browser-Menü nur in diesen Feldern; gesperrte (`readonly`/`disabled`) Felder bleiben unberührt.
 
 | Eintrag | Kürzel | Wirkung |
 |---|---|---|
+| Korrekturvorschläge / **KI**-Vorschläge | – | ersetzt das rot unterkringelte Wort (inkl. KI-Kontextkorrekturen bei erreichbarem Endpunkt) |
+| Alternative Formulierungen laden | – | lädt bis zu 5 satzpassende Synonyme per KI für ein korrekt geschriebenes Wort |
 | Rückgängig / Wiederholen | `Strg+Z` / `Strg+Y` | Rückgängig/Wiederholen im Feld |
 | Ausschneiden | `Strg+X` | Markierung in die Zwischenablage |
 | Kopieren | `Strg+C` | Markierung in die Zwischenablage |
 | Einfügen | `Strg+V` | Zwischenablage an der Cursorposition (Rückfall auf das Browser-Verhalten, wenn der Browser den Lesezugriff verweigert) |
 | Alles auswählen | `Strg+A` | gesamtes Feld markieren |
+| Rechtschreibung & Grammatik korrigieren / Basis-Korrektur anwenden | `Alt+Umschalt+K` | korrigiert Markierung oder gesamtes Feld per KI – fällt ohne erreichbaren KI-Endpunkt automatisch auf die lokale Basis-Korrektur ohne KI zurück |
 | Mit KI verbessern … | – | öffnet den Dialog (nur wenn die KI aktiv und erreichbar ist **und** Text markiert wurde) |
 
-Dasselbe Menü enthält oberhalb der Bearbeitungsbefehle die **Rechtschreibprüfung** mit Korrekturvorschlägen,
-„Alle ignorieren“ und „Zum Wörterbuch hinzufügen“ – unabhängig von der KI und ohne Netzabruf. Einzelheiten:
+Dasselbe Menü enthält oberhalb der Bearbeitungsbefehle die **Inline-Rechtschreibprüfung** (rote Wellenlinie direkt im
+Text für Rechtschreibfehler, Wortwiederholungen und „seid“/„wider“-Verwechslungen, „Alle ignorieren“, persönliches
+Wörterbuch) – die Grundprüfung und die **Basis-Korrektur ohne KI** funktionieren vollständig lokal ohne KI-Endpunkt;
+ist der KI-Endpunkt erreichbar, steuert er zusätzlich kontextsensitive Wortvorschläge, Synonyme und die
+KI-Grammatikkorrektur bei. Einzelheiten:
 [Help Desk](helpdesk.md#rechtschreibprüfung-im-kontextmenü).
 
 Auf macOS zeigt das Menü `⌘` statt `Strg`.
@@ -213,14 +221,25 @@ die nur aus Denktext besteht, als Fehler behandelt statt als leerer Vorschlag ü
 ## Technik
 
 - **Konfiguration**: `app/Services/Helpdesk/AiSettingsService.php` (Präfix `helpdesk.ai.`, verschlüsselter
-  Schlüssel, `runTest()`, `fetchModels()`), Transport `app/Services/Helpdesk/Ai/AiChatClient.php` /
-  `AiChatResponse.php`, Fachlogik `app/Services/Helpdesk/HelpdeskAiService.php` (Prompt-Aufbau je Feld,
-  `cleanOutput()`, Erreichbarkeits-Cache in `storage/tmp/helpdesk-ai-availability.json`).
+  Schlüssel, `runTest()` inkl. verwalteter LANPA-Vorgaben, `fetchModels()`), Transport
+  `app/Services/Helpdesk/Ai/AiChatClient.php` / `AiChatResponse.php`, Fachlogik
+  `app/Services/Helpdesk/HelpdeskAiService.php` (Prompt-Aufbau je Feld, kontextsensitive Wortvorschläge
+  `suggestWords()`, Schnellkorrektur `proofread()` mit Platzhalter-Prüfung für `[Bild N]`/`{name}`,
+  `cleanOutput()`, Erreichbarkeits-Cache in `storage/tmp/helpdesk-ai-availability.json` mit Schlüssel-Fingerprint
+  und sofortiger Invalidierung bei `401`/`403`), lokale Rückfallebene
+  `app/Services/Helpdesk/Spellcheck/SpellcheckProofreader.php` (deterministische Basis-Korrektur ohne KI).
 - **Oberfläche**: `resources/views/admin/helpdesk_ai.php`, `public/js/helpdesk-ai-admin.js` (Modell ermitteln,
-  Verbindungstest), `public/js/helpdesk-ai.js` (Kontextmenü, Dialog, Textbereiche), `public/js/helpdesk-mail.js`
-  (dasselbe Menü und derselbe Dialog im Mail-Editor des Tickets), Styles in `public/css/pages/helpdesk.css`.
+  Verbindungstest – auch bei zentral durch LANPA verwaltetem Endpunkt), `public/js/helpdesk-ai.js` (Inline-Wellenlinie
+  `.hd-spell-overlay`, Kontextmenü, KI-Wortvorschläge/Synonyme, Schnellkorrektur `Alt+Umschalt+K` mit Offline-Rückfall,
+  KI-Dialog; Konfiguration wird in `partials/app_layout.php` automatisch eingebunden, sobald `/js/helpdesk-ai.js`
+  geladen wird), `public/js/helpdesk-mail.js` (Inline-Unterkringelung per `CSS.highlights`, Kontextmenü und KI-Dialog
+  im Mail-Editor des Tickets), Styles in `public/css/pages/helpdesk.css`.
 - **Routen**: `GET|POST /admin/helpdesk-ai`, `POST /admin/helpdesk-ai/models`, `POST /admin/helpdesk-ai/test`
-  (Recht `settings.manage`) sowie `POST /api/helpdesk/ai/verbessern` (`routes/modules/helpdesk.php`).
-- **Tests**: `tests/Unit/HelpdeskAiChatTest.php` prüft die Antwortauswertung (Inhalt, Denktext, Fehlerfälle,
-  Wiederholung ohne `reasoning_effort`). Ausführen: `docker compose exec -T app php tests/run.php --filter=HelpdeskAiChat`.
-- **Migration**: keine eigene Migration – die Einstellungen liegen in `system_settings`.
+  (Recht `settings.manage`) sowie `POST /api/helpdesk/ai/verbessern`, `POST /api/helpdesk/ai/wortvorschlaege` und
+  `POST /api/helpdesk/ai/korrigieren` (mit automatischem Rückfall auf die Basis-Korrektur bei `502`/`503`;
+  `routes/modules/helpdesk.php`).
+- **Tests**: `tests/Unit/HelpdeskAiChatTest.php` und `tests/Unit/HelpdeskSpellcheckTest.php` prüfen Antwortauswertung,
+  Denktext-Filter, Wiederholung ohne `reasoning_effort`, Cache-Invalidierung, KI-Wortvorschläge, Platzhalter-Schutz
+  und die Offline-Basis-Korrektur. Ausführen: `php tests/run.php --unit`.
+- **Migration**: keine eigene Migration für die KI-Einstellungen (`system_settings`); persönliches Wörterbuch in
+  `048_helpdesk_spellcheck_words.sql`.

@@ -10,6 +10,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
 use App\Exceptions\ForbiddenException;
+use App\Exceptions\HttpException;
 use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\TicketCategoryRepository;
 use App\Repositories\TicketMasterDataRepository;
@@ -258,6 +259,98 @@ final class HelpdeskApiController extends HelpdeskBaseController
     }
 
     /**
+     * Kontextbezogene KI-Wortvorschläge oder Synonyme für ein Wort im Satzkontext.
+     */
+    public function suggestWords(Request $request): Response
+    {
+        $result = $this->ai->suggestWords(
+            $request->string('word'),
+            $request->string('sentence'),
+            $request->string('mode', 'generic'),
+            $request->bool('synonyms'),
+            [
+                'subject' => $request->string('subject'),
+                'ticket' => $request->string('ticket'),
+            ]
+        );
+
+        return $this->json([
+            'ok' => true,
+            'valid' => $result['valid'],
+            'suggestions' => $result['suggestions'],
+            'model' => $result['model'],
+            'usage' => $result['usage'],
+        ]);
+    }
+
+    /**
+     * 1-Klick-Korrektur für Rechtschreibung, Grammatik und Zeichensetzung.
+     * Fällt bei nicht verfügbarem KI-Endpunkt (502/503) automatisch auf die
+     * lokale Basis-Korrektur ohne KI zurück.
+     */
+    public function proofread(Request $request): Response
+    {
+        $text = $request->string('text');
+        try {
+            $result = $this->ai->proofread(
+                $text,
+                $request->string('mode', 'generic'),
+                [
+                    'subject' => $request->string('subject'),
+                    'ticket' => $request->string('ticket'),
+                ]
+            );
+
+            return $this->json([
+                'ok' => true,
+                'text' => $result['text'],
+                'changed' => $result['changed'],
+                'fallback' => false,
+                'model' => $result['model'],
+                'usage' => $result['usage'],
+            ]);
+        } catch (HttpException $exception) {
+            if ($exception->statusCode() !== 502 && $exception->statusCode() !== 503) {
+                throw $exception;
+            }
+            $basic = $this->spellcheck->proofread((int) ($this->currentUser->id() ?? 0), $text);
+
+            return $this->json([
+                'ok' => true,
+                'text' => $basic['text'],
+                'changed' => $basic['changed'],
+                'fallback' => true,
+                'fallback_reason' => 'KI-Endpunkt nicht erreichbar – Basis-Korrektur ohne KI angewendet.',
+                'replacements' => $basic['replacements'],
+                'model' => 'basis-korrektur',
+                'usage' => ['input_tokens' => 0, 'output_tokens' => 0],
+            ]);
+        }
+    }
+
+    /**
+     * Direkte lokale Basis-Korrektur ohne KI (wenn kein KI-Endpunkt aktiv ist
+     * oder ausdrücklich lokal korrigiert werden soll).
+     */
+    public function spellcheckProofread(Request $request): Response
+    {
+        $result = $this->spellcheck->proofread(
+            (int) ($this->currentUser->id() ?? 0),
+            $request->string('text')
+        );
+
+        return $this->json([
+            'ok' => true,
+            'text' => $result['text'],
+            'changed' => $result['changed'],
+            'fallback' => false,
+            'replacements' => $result['replacements'],
+            'dictionary_available' => $result['available'],
+            'model' => 'basis-korrektur',
+        ]);
+    }
+
+    /**
      * Rechtschreibprüfung: Vorschläge für ein Wort im Kontextmenü.
      *
      * Ohne `word` antwortet der Endpunkt nur mit der Bereitschaftsprüfung
@@ -267,6 +360,17 @@ final class HelpdeskApiController extends HelpdeskBaseController
     public function spellcheckSuggestions(Request $request): Response
     {
         return $this->json($this->spellcheck->suggestions((int) ($this->currentUser->id() ?? 0), $request->queryString('word')));
+    }
+
+    /** Rechtschreibprüfung: mehrere Wörter eines Textfeldes in einem Durchgang vorprüfen. */
+    public function spellcheckCheckWords(Request $request): Response
+    {
+        $words = $request->input('words', []);
+
+        return $this->json($this->spellcheck->checkWords(
+            (int) ($this->currentUser->id() ?? 0),
+            is_array($words) ? array_values($words) : []
+        ));
     }
 
     /** Eigenes Wort ins persönliche Wörterbuch aufnehmen („Zum Wörterbuch hinzufügen“). */

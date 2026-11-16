@@ -338,31 +338,57 @@ In **internen Notizen** an Tickets und in **Aufgabenkommentaren** können Agente
 
 ### Rechtschreibprüfung im Kontextmenü
 
-Alle Help-Desk-Textfelder mit `data-hd-field` (Ticketbeschreibung, Kommentar, Lösung, Weiterleitungsgrund,
-Umwandlungshinweis, Aufgabenbeschreibung und -kommentar, Wissensartikel, Kontaktnotizen und Kalenderbeschreibung)
-prüfen auf Wunsch die Rechtschreibung. Ein Rechtsklick auf ein Wort öffnet das App-eigene Kontextmenü
-(`public/js/helpdesk-ai.js`) mit einem Abschnitt **Rechtschreibung**:
+Alle bearbeitbaren Help-Desk-Felder mit `data-hd-field` (ein- und mehrzeilig: Betreff/Titel, Ticketbeschreibung,
+Kommentar, Lösung, Weiterleitungsgrund, Umwandlungshinweis, Aufgabenbeschreibung und -kommentar, Wissensartikel,
+Kontaktnotizen, Kalenderort/-beschreibung sowie der Betreff im Mail-Dialog) und der Rich-Text-Mail-Editor (`#mail-body`)
+prüfen laufend die Rechtschreibung direkt im Text.
 
-- **Vorschläge** – bis zu acht Korrekturen, sortiert nach Ähnlichkeit; ein Klick ersetzt das Wort. Rechtschreibfehler
-  werden nur beim Rechtsklick geprüft, nicht dauerhaft unterstrichen (Textfelder lassen sich nicht über die
-  CSS-Highlight-API markieren).
-- **Alle ignorieren** – das Wort gilt für die laufende Sitzung als korrekt.
-- **Zum Wörterbuch hinzufügen** – das Wort landet im persönlichen Wörterbuch (`helpdesk_spellcheck_words`,
-  Migration `048_helpdesk_spellcheck_words.sql`) und gilt danach auf allen Geräten. Höchstens 1 000 Wörter je Benutzer.
+- **Rote Wellenlinie direkt im Text (wie in Word)**: Unbekannte Wörter, versehentliche Wortwiederholungen („das das“)
+  sowie typische Kontextverwechslungen („seid“ bei Zeitangaben statt „seit“, „wider“ im Sinne von „erneut“ statt
+  „wieder“) werden ohne separates Zusatzkästchen direkt im Eingabefeld rot unterkringelt – in `<textarea>` und
+  `<input type="text">` über ein pixelgenau synchronisiertes Spiegel-Overlay (`.hd-spell-overlay` / `.hd-spell-mark`),
+  im `contenteditable`-Mail-Editor über die CSS-Highlight-API (`::highlight(hd-spell-error)`).
+- **Direkte Korrektur per Rechtsklick**: Ein Rechtsklick auf ein unterkringeltes (oder beliebiges) Wort setzt den Cursor
+  sofort in dieses Wort und öffnet das Kontextmenü (`public/js/helpdesk-ai.js` bzw. `public/js/helpdesk-mail.js`) mit
+  dem Abschnitt **Rechtschreibung**:
+  - **Vorschläge** – bis zu acht Hunspell-Korrekturen nach Ähnlichkeit; ist der KI-Endpunkt aktiv, ergänzt die KI
+    kontextsensitiv bis zu vier satzpassende Korrekturen (mit Badge **KI**). Bei korrekt geschriebenen Wörtern lässt
+    sich im selben Abschnitt **Alternative Formulierungen laden** abrufen (kontextpassende Synonyme per KI).
+    Bei Wortwiederholungen bietet ein Klick **Doppeltes Wort „…“ löschen**, bei „seid“/„wider“ den passenden
+    Kontextvorschlag an.
+  - **Alle ignorieren** – das Wort gilt für die laufende Sitzung in allen Feldern als korrekt.
+  - **„…“ zum Wörterbuch hinzufügen** – das Wort landet im persönlichen Wörterbuch (`helpdesk_spellcheck_words`,
+    Migration `048_helpdesk_spellcheck_words.sql`) und gilt sofort sitzungs- und geräteübergreifend (höchstens
+    1 000 Wörter je Benutzer). Ist ein Wort bereits im persönlichen Wörterbuch enthalten, bietet das Menü an selber
+    Stelle **Aus Wörterbuch entfernen** an.
+- **Gesamtkorrektur & Offline-Basis-Korrektur (`Alt+Umschalt+K`)**: Im Kontextmenü und per Tastenkürzel
+  <kbd>Alt</kbd>+<kbd>Umschalt</kbd>+<kbd>K</kbd> lässt sich die Markierung oder das gesamte Feld in einem Schritt
+  bereinigen (inklusive Rückgängig-Unterstützung). Ist der KI-Endpunkt aktiv und erreichbar, übernimmt die KI
+  Rechtschreibung, Grammatik und Zeichensetzung (`POST /api/helpdesk/ai/korrigieren`) unter Wahrung von
+  `@Erwähnungen`, Ticket-/Assetnummern, URLs und `[Bild N]`-Marken. Steht der KI-Endpunkt nicht zur Verfügung oder
+  liefert er einen Fehler (`502`/`503`), greift automatisch die lokale **Basis-Korrektur ohne KI**
+  (`SpellcheckProofreader`, `POST /api/helpdesk/rechtschreibung/korrigieren`): Sie bereinigt deterministisch
+  Mehrfachleerzeichen, Abstände vor Satzzeichen, Wortdubletten, Anreden/Grußformeln („Guten Tag“,
+  „Mit freundlichen Grüßen“), Satzanfänge, „seid“/„wider“, kleingeschriebene Nomen, ASCII-Umlaute (`geprueft` →
+  `geprüft`, `Geraet` → `Gerät`) sowie eindeutige Tippfehler aus dem Hunspell-Wörterbuch.
 
-Wörter mit Ziffern, Wörter in Großbuchstaben (`EDV`) und Adressen bleiben wie in Word ungeprüft; abgekürzte Wörter
-werden mit Punkt geprüft („Kundennr.“). Fehlt das Wörterbuch oder ist die Prüfung abgeschaltet, blendet das Menü den
-Abschnitt aus – die Textbearbeitung funktioniert unverändert weiter.
+![Rote Wellenlinie direkt im Kommentarfeld und Rechtsklick-Korrektur mit KI-Vorschlag](screenshots/helpdesk-spellcheck-context-menu.png)
 
-Die Prüfung läuft vollständig in KLINQ (`app/Services/Helpdesk/Spellcheck/`, Hunspell-kompatibel, ohne KI und ohne
-Netzabruf je Anfrage). `php bin/spellcheck-dictionary.php` lädt das deutsche Wörterbuch einmalig (Standardquelle
+![Offline-Basis-Korrektur ohne KI im Kontextmenü bei abgeschaltetem KI-Endpunkt](screenshots/helpdesk-spellcheck-offline-fallback.png)
+
+Wörter mit Ziffern, Wörter in Großbuchstaben (`EDV`), `@Erwähnungen` und Adressen bleiben wie in Word ungeprüft;
+abgekürzte Wörter werden mit Punkt geprüft („Kundennr.“). Fehlt das Wörterbuch oder ist die Prüfung abgeschaltet,
+blendet das Menü den Abschnitt aus – die Textbearbeitung funktioniert unverändert weiter.
+
+Die Wörterbuchprüfung läuft vollständig in KLINQ (`app/Services/Helpdesk/Spellcheck/`, Hunspell-kompatibel, ohne
+externen Netzabruf). `php bin/spellcheck-dictionary.php` lädt das deutsche Wörterbuch einmalig (Standardquelle
 `HELPDESK_SPELLCHECK_URL`), übersetzt es in ein binäres Format unter `HELPDESK_SPELLCHECK_DIR` und tauscht es erst
 nach vollständigem Erfolg aus; der Containerstart ruft das Skript im Hintergrund auf (`--force` erzwingt eine
 Neuerzeugung). Endpunkte: `GET /api/helpdesk/rechtschreibung/vorschlaege?word=…` (ohne `word` nur die
-Bereitschaftsprüfung), `POST /api/helpdesk/rechtschreibung/woerterbuch` und
-`POST /api/helpdesk/rechtschreibung/woerterbuch/entfernen`. Schalter: `HELPDESK_SPELLCHECK_ENABLED` (Standard `true`),
-`HELPDESK_SPELLCHECK_TIMEOUT` für den Download. Der Mail-Editor im Ticket (`public/js/helpdesk-mail.js`) bringt sein
-eigenes Kontextmenü mit und ist hier nicht eingebunden.
+Bereitschaftsprüfung), `POST /api/helpdesk/rechtschreibung/pruefen` (Batch-Prüfung für die Inline-Unterkringelung),
+`POST /api/helpdesk/rechtschreibung/korrigieren` (Offline-Basis-Korrektur ohne KI),
+`POST /api/helpdesk/rechtschreibung/woerterbuch` und `POST /api/helpdesk/rechtschreibung/woerterbuch/entfernen`.
+Schalter: `HELPDESK_SPELLCHECK_ENABLED` (Standard `true`), `HELPDESK_SPELLCHECK_TIMEOUT` für den Download.
 
 ### E-Mail aus dem Ticket senden
 
@@ -387,11 +413,12 @@ ein Overlay mit dem Mail-Editor aus Orvanta – samt **Kontextmenü** und **KI-U
   aus der Zwischenablage bleiben erhalten. Der Text wird **serverseitig** durch `App\Support\HtmlSanitizer` gefiltert
   (Allowlist für Tags und Attribute, keine Skripte, keine `javascript:`-Ziele, `style` ohne `url()`/`position:fixed`);
   Bilder sind nur als `http(s)`- oder `data:image`-Quelle erlaubt.
-- **Kontextmenü** (Rechtsklick in den Text): Rückgängig, Wiederherstellen, Ausschneiden, Kopieren, Einfügen, Alles
-  auswählen sowie **„Mit KI verbessern …“** für den markierten Text und – nach einem Vorschlag – **„KI-Vorschlag weiter
-  verfeinern …“**.
+- **Kontextmenü** (Rechtsklick in Betreff oder Nachricht): Inline-Unterkringelung von Rechtschreibfehlern,
+  Wortdubletten und „seid“/„wider“-Verwechslungen samt direkter Korrektur per Rechtsklick, Rückgängig,
+  Wiederherstellen, Ausschneiden, Kopieren, Einfügen, Alles auswählen sowie **„Mit KI verbessern …“** für den
+  markierten Text und – nach einem Vorschlag – **„KI-Vorschlag weiter verfeinern …“**.
 
-![Kontextmenü im Mail-Editor mit KI-Einträgen](screenshots/helpdesk-mail-context-menu.png)
+![Inline-Unterkringelung in Betreff und Nachricht des Mail-Editors mit Rechtsklick-Korrektur](screenshots/helpdesk-mail-context-menu.png)
 
 - **KI-Funktion**: Der Dialog entspricht dem Editor im Ticket (`/api/helpdesk/ai/verbessern`), verwendet aber den
   Modus `ticket_mail`, damit die KI den Ton einer Agentenantwort an die meldende Person trifft. Der **API-Schlüssel

@@ -68,6 +68,16 @@ final class ApplicationFactory
         $view->share('openCounts', self::lazyOpenCounts($container, $currentUser));
         $view->share('helpdeskEnabled', (bool) $config->get('helpdesk.enabled', true));
         $view->share('helpdeskNotifications', self::lazyHelpdeskNotifications($container, $currentUser));
+        $view->share('helpdeskAiConfig', static function () use ($container, $currentUser): array {
+            if (!$currentUser->isAuthenticated()) {
+                return ['enabled' => false];
+            }
+            try {
+                return ['enabled' => $container->get(\App\Services\Helpdesk\HelpdeskAiService::class)->isEnabled()];
+            } catch (\Throwable) {
+                return ['enabled' => false];
+            }
+        });
         $view->share('lanpaDesignCss', $container->get(\App\Services\Lanpa\LanpaBridge::class)->designCssUrl());
 
         if (isset($_SERVER['REMOTE_ADDR'])) {

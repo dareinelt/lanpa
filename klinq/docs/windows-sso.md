@@ -28,7 +28,11 @@ Browser ──▶ LANPA /klinq/ (auth-Container, NTLM/Kerberos)
    und Einmaligkeit (`LANPA_SSO_REPLAY_STORE`) und legt daraus die Sitzung an.
 
 Das Ticket enthält Anmeldename, Anzeigename, E-Mail, Telefon, Abteilung, Standort,
-Rechnername, IP-Adresse sowie die vom Intranet vergebenen Berechtigungen.
+Rechnername, IP-Adresse sowie die vom Intranet vergebenen Berechtigungen. Lokal in KLINQ
+unter **Administration → Benutzer** abweichend festgelegte Rollen (`users.role_override = 1`),
+manuell gesetzte zusätzliche Berechtigungsgruppen (`user_permission_groups.source = 'manual'`)
+sowie ein deaktivierter Kontostatus (`is_active = 0`) bleiben beim erneuten Einstieg über
+`/sso/lanpa` erhalten.
 
 Beim Anlegen bzw. Abgleich des Benutzers verknüpft `App\Services\Lanpa\LanpaUserService`
 das Konto mit dem lokalen Mitarbeiterdatensatz (`users.employee_id`): zuerst über den

@@ -7,6 +7,7 @@ namespace App\Middleware;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\Router;
+use App\Core\View;
 use App\Exceptions\ForbiddenException;
 use App\Repositories\UserRepository;
 use App\Security\CurrentUser;
@@ -23,7 +24,8 @@ final class AuthorizationMiddleware
     public function __construct(
         private readonly Router $router,
         private readonly CurrentUser $currentUser,
-        private readonly UserRepository $users
+        private readonly UserRepository $users,
+        private readonly ?View $view = null
     ) {}
 
     public function __invoke(Request $request, callable $next): Response
@@ -54,6 +56,7 @@ final class AuthorizationMiddleware
             return Response::redirect('/login');
         }
         $this->currentUser->refresh($account);
+        $this->view?->share('user', $this->currentUser->user());
 
         if ($route->permission !== null && !$this->currentUser->can($route->permission)) {
             throw new ForbiddenException();

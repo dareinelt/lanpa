@@ -95,7 +95,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–045), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034), Servicezeiten der SLA (035), Screenshots in der Lösung (036), Grund der Weiterleitung (037), Help-Desk-Kalender (038), Kontaktverzeichnis (039), Assettypen ohne Inventarnummer/Lagerartikel (040), Vorlagenumfang und Berechtigungsgruppe „Help-Desk-Vorlagen“ (041), Serientermine im Help-Desk-Kalender (043), Checklisten für Kalendertermine (044), Erwähnungen in internen Kommentaren (045) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–047), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034), Servicezeiten der SLA (035), Screenshots in der Lösung (036), Grund der Weiterleitung (037), Help-Desk-Kalender (038), Kontaktverzeichnis (039), Assettypen ohne Inventarnummer/Lagerartikel (040), Vorlagenumfang und Berechtigungsgruppe „Help-Desk-Vorlagen“ (041), Serientermine im Help-Desk-Kalender (043), Checklisten für Kalendertermine (044), Erwähnungen in internen Kommentaren (045), Kopfzeilen eingehender Mails (046), lokale Rollen-/Gruppenübersteuerung gegenüber Intranet-SSO und Berechtigungsgruppe „Lieferanten“ (047) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen/Kategorien – nur in leere Tabellen, danach Pflege im Katalog –, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -346,9 +346,17 @@ Vorlagen an, die per `ticket_templates.is_shared` entweder für alle Agenten ode
 fremde persönliche Vorlagen verwalten weiterhin nur `helpdesk.templates.manage` (Leitung, Administration,
 Admin-Rolle), freigegebene fremde Vorlagen sind für die Gruppe nur sichtbar. Vorlagennamen sind seit
 `042_helpdesk_template_name_scope.sql` nur unter freigegebenen Vorlagen (und je Ersteller im Service) eindeutig.
+Die Gruppe „Darf Lieferanten anlegen“ (`lieferanten`, AD-Gruppe `klinq_supplier_groups`) vergibt
+`suppliers.view` und `suppliers.manage`, sodass z. B. Help-Desk-Agenten oder Asset-Management-Mitarbeitende
+Lieferanten anlegen und pflegen können, ohne die Rolle `einkauf` oder `admin` zu erhalten.
+In der Benutzerverwaltung (`/admin/users/{id}/edit`) werden über Intranet-SSO (`user_permission_groups.source = 'sso'`)
+oder durch die gewählte Rolle (`Permissions::impliedGroupsForRole()`) abgedeckte Berechtigungsgruppen als
+gesetzte Haken angezeigt; lokal gesetzte zusätzliche Haken (`source = 'manual'`) sowie lokal abweichend gesetzte
+Rollen (`users.role_override = 1`, Referenz `users.sso_role_id`) bleiben bei späteren Intranet-SSO-Anmeldungen
+erhalten (Migration `047_local_user_overrides_and_supplier_group.sql`).
 Die Gruppendatensätze legen die Migrationen
-`033_permission_groups_defaults.sql`, `034_permission_group_assetmanagement.sql` und
-`041_helpdesk_template_scope.sql` an (zusätzlich zu den Seedern); fehlt dennoch eine in
+`033_permission_groups_defaults.sql`, `034_permission_group_assetmanagement.sql`,
+`041_helpdesk_template_scope.sql` und `047_local_user_overrides_and_supplier_group.sql` an (zusätzlich zu den Seedern); fehlt dennoch eine in
 `config/permissions.php` bekannte Gruppe, legt `LanpaUserService` sie bei der Intranet-Anmeldung an
 (Warnung im Log), statt die übergebene Gruppe zu verwerfen.
 

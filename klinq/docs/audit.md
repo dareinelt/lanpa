@@ -53,7 +53,7 @@ Die Rechtezuordnung liegt in `config/permissions.php` und wird bei **jeder Anfra
 - **Anmeldename**: 3–64 Zeichen aus Buchstaben, Ziffern sowie `. _ - @`, beginnend mit Buchstabe oder Ziffer; eindeutig; nachträglich nicht änderbar.
 - **Anzeigename**, optionale **E-Mail**, **Rolle**, **Aktiv**.
 - **Passwort** (nur lokale Konten): mindestens 10 Zeichen, mindestens ein Buchstabe und ein weiteres Zeichen (Ziffer oder Sonderzeichen). Es wird als Argon2id-Hash gespeichert.
-- **AD-Konten** (`auth_source = ldap`) haben kein lokales Passwort; für sie können nur Rolle, Anzeigename, E-Mail und Aktiv-Status gepflegt werden. Anmeldung erfolgt gegen das Verzeichnis ([AD-Synchronisation](ad-sync.md)).
+- **AD-/Intranet-SSO-Konten** (`auth_source = ldap`) haben kein lokales Passwort; für sie können Rolle, Berechtigungsgruppen, Anzeigename, E-Mail und Aktiv-Status gepflegt werden. Über Intranet-SSO (AD-Gruppen) oder die Rolle gesetzte Berechtigungsgruppen sind in den Checkboxen bereits angehakt; lokal abweichend gewählte Rollen (`role_override = 1`) und zusätzlich gesetzte Berechtigungsgruppen (`source = 'manual'`, z. B. „Darf Lieferanten anlegen“) übersteuern die Intranet-SSO-Gruppenzuordnung und bleiben bei späteren Anmeldungen erhalten. Deaktivierte Konten werden beim SSO-Einstieg nicht reaktiviert.
 
 Schutzregeln, die die Anwendung erzwingt:
 

@@ -130,4 +130,105 @@ final class LanpaUserServiceIntegrationTest extends DatabaseTestCase
         $assigned->execute([(int) $user['id'], 'aufgabenverteilung']);
         $this->assertSame(1, (int) $assigned->fetchColumn(), 'Benutzer erhaelt die Gruppe');
     }
+
+    public function testLocalAdminRoleAndManualGroupsSurviveSubsequentSsoProvisioning(): void
+    {
+        $users = $this->c->get(UserRepository::class);
+        $userService = $this->c->get(\App\Services\UserService::class);
+        $currentUser = $this->c->get(\App\Security\CurrentUser::class);
+        $hasher = $this->c->get(\App\Security\PasswordHasher::class);
+
+        $rootId = $users->create([
+            'username' => 'root-sso-test',
+            'display_name' => 'Root Admin',
+            'password_hash' => $hasher->hash('Sicher12345!'),
+            'role_id' => $users->roleId('admin'),
+            'auth_source' => 'local',
+            'is_active' => 1,
+        ]);
+        $currentUser->login(['id' => $rootId, 'username' => 'root-sso-test', 'display_name' => 'Root Admin', 'role' => 'admin']);
+
+        // 1. Agent meldet sich über Intranet-SSO mit Rolle helpdesk_agent und Gruppe statistik an
+        $agent = $this->service()->provision($this->claims([
+            'sub' => 'KHWF\\hd.agent',
+            'name' => 'Helpdesk Agent',
+            'role' => 'helpdesk_agent',
+            'permission_groups' => ['statistik'],
+        ]));
+        $this->assertNotNull($agent);
+        $agentId = (int) $agent['id'];
+        $this->assertSame('helpdesk_agent', $agent['role']);
+        $this->assertSame(['statistik'], $agent['groups']);
+
+        $groupsByName = array_column($users->permissionGroups(), 'id', 'name');
+        $this->assertSame([(int) $groupsByName['statistik']], $users->ssoGroupIdsForUser($agentId), 'SSO-Gruppe ist als SSO-Quelle erkennbar');
+
+        // 2. Lokal in KLINQ wird Rolle „Administrator“ und zusätzlich Gruppe „lieferanten“ gesetzt
+        $userService->update($agentId, $agent, [
+            'display_name' => 'Helpdesk Agent',
+            'email' => 'dreinelt@example.test',
+            'role' => 'admin',
+            'is_active' => '1',
+            'groups' => [(string) $groupsByName['statistik'], (string) $groupsByName['lieferanten']],
+        ]);
+        $updated = $users->find($agentId);
+        $this->assertSame('admin', $updated['role']);
+        $this->assertSame(1, (int) $updated['role_override']);
+
+        // 3. Erneuter Einstieg über Intranet-SSO (liefert weiterhin helpdesk_agent und nur noch ticketaufruf):
+        //    lokal gesetzte Rolle „admin“ und manuell gesetzter Haken „lieferanten“ schlagen die SSO-Gruppen!
+        $reentered = $this->service()->provision($this->claims([
+            'sub' => 'KHWF\\hd.agent',
+            'name' => 'Helpdesk Agent',
+            'role' => 'helpdesk_agent',
+            'permission_groups' => ['ticketaufruf'],
+        ]));
+        $this->assertNotNull($reentered);
+        $this->assertSame('admin', $reentered['role'], 'Lokal vergebene Administratorrolle bleibt erhalten');
+        $this->assertSame('helpdesk_agent', $reentered['sso_role'], 'Intranet-SSO-Rolle bleibt nachvollziehbar');
+        $this->assertSame(['lieferanten', 'ticketaufruf'], $reentered['groups'], 'Manueller Haken bleibt erhalten, SSO-Gruppen werden abgeglichen');
+
+        $sessionUser = new \App\Security\CurrentUser($this->c->get(\App\Security\Permissions::class));
+        $sessionUser->login($reentered);
+        $this->assertTrue($sessionUser->can('suppliers.manage'), 'Agent mit lokaler Admin-Rolle darf Lieferanten anlegen');
+
+        // 4. Setzt ein anderer Admin die Rolle wieder auf die Intranet-SSO-Rolle zurück, greift künftig wieder SSO
+        $currentUser->login(['id' => $rootId, 'username' => 'root-sso-test', 'display_name' => 'Root Admin', 'role' => 'admin']);
+        $userService->update($agentId, $reentered, [
+            'display_name' => 'Helpdesk Agent',
+            'email' => 'dreinelt@example.test',
+            'role' => 'helpdesk_agent',
+            'is_active' => '1',
+            'groups' => [(string) $groupsByName['ticketaufruf'], (string) $groupsByName['lieferanten']],
+        ]);
+        $reset = $users->find($agentId);
+        $this->assertSame(0, (int) $reset['role_override'], 'Rückstellung auf SSO-Rolle hebt lokalen Override auf');
+        $this->assertSame(['lieferanten', 'ticketaufruf'], $reset['groups']);
+
+        $promotedBySso = $this->service()->provision($this->claims([
+            'sub' => 'KHWF\\hd.agent',
+            'name' => 'Helpdesk Agent',
+            'role' => 'helpdesk_lead',
+            'permission_groups' => [],
+        ]));
+        $this->assertSame('helpdesk_lead', $promotedBySso['role'], 'Nach Rückstellung übernimmt das Konto wieder Rollenänderungen aus SSO');
+        $this->assertSame(['lieferanten'], $promotedBySso['groups'], 'Manuell gesetzter Haken „lieferanten“ bleibt weiterhin bestehen');
+
+        $sessionUser->login($promotedBySso);
+        $this->assertTrue($sessionUser->can('suppliers.manage'), 'Agent darf allein über Gruppe „lieferanten“ Lieferanten anlegen');
+        $this->assertFalse($sessionUser->can('orders.manage'), 'Gruppe „lieferanten“ gewährt keine Bestellverwaltung');
+    }
+
+    public function testDeactivatedUserIsNotReactivatedBySsoProvisioning(): void
+    {
+        $users = $this->c->get(UserRepository::class);
+        $user = $this->service()->provision($this->claims(['sub' => 'gesperrt.user', 'role' => 'helpdesk_agent']));
+        $this->assertNotNull($user);
+
+        $users->update((int) $user['id'], ['is_active' => 0]);
+
+        $afterSso = $this->service()->provision($this->claims(['sub' => 'gesperrt.user', 'role' => 'helpdesk_agent']));
+        $this->assertNotNull($afterSso);
+        $this->assertSame(0, (int) $afterSso['is_active'], 'Deaktiviertes Konto wird durch SSO nicht reaktiviert');
+    }
 }

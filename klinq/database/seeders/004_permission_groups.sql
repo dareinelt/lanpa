@@ -6,5 +6,6 @@ INSERT INTO permission_groups (name, label) VALUES
     ('statistik', 'Statistik'),
     ('ticketaufruf', 'Darf Ticketaufruf auswerten'),
     ('ticket_loeschen', 'Darf Tickets löschen'),
-    ('ticket_stornieren', 'Darf Tickets stornieren')
+    ('ticket_stornieren', 'Darf Tickets stornieren'),
+    ('lieferanten', 'Darf Lieferanten anlegen')
 ON DUPLICATE KEY UPDATE label = VALUES(label);

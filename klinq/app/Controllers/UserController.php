@@ -129,8 +129,10 @@ final class UserController extends BaseController
             'areaLabel' => 'Administration',
             'row' => $row,
             'roleLabels' => $this->permissions->roleLabels(),
+            'impliedGroupsByRole' => $this->permissions->impliedGroupsByRole(),
             'groups' => $this->users->permissionGroups(),
             'selectedGroups' => $row === null ? [] : $this->users->groupIdsForUser((int) $row['id']),
+            'ssoGroups' => $row === null ? [] : $this->users->ssoGroupIdsForUser((int) $row['id']),
             'isSelf' => $row !== null && (int) $row['id'] === $this->currentUser->id(),
             'passwordMin' => UserService::PASSWORD_MIN_LENGTH,
         ]);

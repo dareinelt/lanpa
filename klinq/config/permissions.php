@@ -129,6 +129,8 @@ return [
     // "vorlagen" ist die Help-Desk-Vorlagenrolle: Sie öffnet die Help-Desk-Administration mit dem
     // Reiter „Vorlagen“ und erlaubt das Anlegen eigener Vorlagen (persönlich oder für alle) –
     // Vorlagen anderer Benutzer verwalten weiterhin nur "helpdesk.templates.manage".
+    // "lieferanten" erlaubt das Anlegen, Bearbeiten und Deaktivieren von Lieferanten
+    // (suppliers.view, suppliers.manage) ohne Vollzugriff auf Einkauf oder Administration.
     'groups' => [
         'assetmanagement' => $assetManagement,
         'statistik' => ['helpdesk.reports'],
@@ -137,6 +139,7 @@ return [
         'ticket_stornieren' => ['helpdesk.cancel'],
         'aufgabenverteilung' => ['helpdesk.tasks.assign'],
         'vorlagen' => ['helpdesk.templates'],
+        'lieferanten' => ['suppliers.view', 'suppliers.manage'],
     ],
     'group_labels' => [
         'assetmanagement' => 'Asset-Management',
@@ -146,5 +149,6 @@ return [
         'ticket_stornieren' => 'Darf Tickets stornieren',
         'aufgabenverteilung' => 'Darf Aufgaben zuweisen',
         'vorlagen' => 'Darf Help-Desk-Vorlagen anlegen',
+        'lieferanten' => 'Darf Lieferanten anlegen',
     ],
 ];

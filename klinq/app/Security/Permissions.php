@@ -81,6 +81,43 @@ final class Permissions
     }
 
     /**
+     * Berechtigungsgruppen, deren sämtliche Rechte bereits in der Rolle enthalten sind.
+     *
+     * @return array<int,string>
+     */
+    public function impliedGroupsForRole(string $role): array
+    {
+        $rolePermissions = $this->forRole($role);
+        if ($rolePermissions === []) {
+            return [];
+        }
+        $implied = [];
+        foreach ($this->groupNames() as $group) {
+            $groupPermissions = $this->forGroup($group);
+            if ($groupPermissions !== [] && array_diff($groupPermissions, $rolePermissions) === []) {
+                $implied[] = $group;
+            }
+        }
+
+        return $implied;
+    }
+
+    /**
+     * Zuordnung Rolle => bereits in der Rolle enthaltene Berechtigungsgruppen.
+     *
+     * @return array<string,array<int,string>>
+     */
+    public function impliedGroupsByRole(): array
+    {
+        $map = [];
+        foreach ($this->roleNames() as $role) {
+            $map[$role] = $this->impliedGroupsForRole($role);
+        }
+
+        return $map;
+    }
+
+    /**
      * @param array<int,string> $groups
      */
     public function hasEffective(string $role, array $groups, string $permission): bool

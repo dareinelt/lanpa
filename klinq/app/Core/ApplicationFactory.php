@@ -117,7 +117,7 @@ final class ApplicationFactory
         $c->singleton(SecurityHeadersMiddleware::class, static fn (Container $c): SecurityHeadersMiddleware => new SecurityHeadersMiddleware($c->get(Config::class)));
         $c->singleton(RequestLogMiddleware::class, static fn (Container $c): RequestLogMiddleware => new RequestLogMiddleware($c->get(Logger::class)));
         $c->singleton(CsrfMiddleware::class, static fn (Container $c): CsrfMiddleware => new CsrfMiddleware($c->get(CsrfTokenManager::class)));
-        $c->singleton(AuthorizationMiddleware::class, static fn (Container $c): AuthorizationMiddleware => new AuthorizationMiddleware($c->get(Router::class), $c->get(CurrentUser::class), $c->get(UserRepository::class)));
+        $c->singleton(AuthorizationMiddleware::class, static fn (Container $c): AuthorizationMiddleware => new AuthorizationMiddleware($c->get(Router::class), $c->get(CurrentUser::class), $c->get(UserRepository::class), $c->get(View::class)));
 
         // Repositories
         $c->singleton(UserRepository::class, static fn (Container $c): UserRepository => new UserRepository($c->get(PDO::class)));

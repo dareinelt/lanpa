@@ -62,15 +62,42 @@ final class UserService
         $data = $this->validateProfile($input, $id, $existing);
         $this->guardSelfAndLastAdmin($id, $existing, $data['role'], (bool) $data['is_active']);
 
-        $this->users->update($id, [
+        $newRoleId = $this->users->roleId($data['role']);
+        $fields = [
             'display_name' => $data['display_name'],
             'email' => $data['email'],
-            'role_id' => $this->users->roleId($data['role']),
+            'role_id' => $newRoleId,
             'is_active' => $data['is_active'],
             'can_sign_electronically' => $data['can_sign_electronically'],
-        ]);
-        $this->users->syncGroups($id, $data['group_ids']);
-        $this->audit->log('update', 'user', $id, (string) $existing['username'], $this->auditData($existing), $this->auditData($data + ['username' => $existing['username'], 'auth_source' => $existing['auth_source']]));
+        ];
+
+        if (($existing['auth_source'] ?? '') === 'ldap') {
+            if (($existing['sso_role_id'] ?? null) !== null) {
+                $fields['role_override'] = $newRoleId !== (int) $existing['sso_role_id'] ? 1 : 0;
+            } elseif ($newRoleId !== (int) $existing['role_id']) {
+                $fields['role_override'] = 1;
+            }
+            $this->users->update($id, $fields);
+            $this->users->syncManualGroups($id, $data['group_ids']);
+            $effectiveGroups = $this->users->find($id)['groups'] ?? $data['groups'];
+        } else {
+            $this->users->update($id, $fields);
+            $this->users->syncGroups($id, $data['group_ids']);
+            $effectiveGroups = $data['groups'];
+        }
+
+        $this->audit->log(
+            'update',
+            'user',
+            $id,
+            (string) $existing['username'],
+            $this->auditData($existing),
+            $this->auditData(array_merge($data, [
+                'groups' => $effectiveGroups,
+                'username' => $existing['username'],
+                'auth_source' => $existing['auth_source'],
+            ]))
+        );
     }
 
     /** @param array<string,mixed> $existing */

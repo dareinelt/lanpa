@@ -137,6 +137,14 @@ final class KlinqConfigService
             'permission' => 'vorlagen',
             'area' => 'helpdesk',
         ],
+        'klinq_supplier_groups' => [
+            // Eigene Berechtigungsgruppe ohne Rolle: erlaubt das Anlegen, Bearbeiten und
+            // Deaktivieren von Lieferanten (z. B. fuer Help-Desk-Agenten oder Asset-Management).
+            'label' => 'Lieferanten anlegen',
+            'role' => '',
+            'permission' => 'lieferanten',
+            'area' => 'assets',
+        ],
     ];
 
     public function __construct(

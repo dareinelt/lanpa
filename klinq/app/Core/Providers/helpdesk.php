@@ -32,6 +32,7 @@ use App\Repositories\HelpdeskCalendarChecklistRepository;
 use App\Repositories\HelpdeskCalendarRepository;
 use App\Repositories\HelpdeskContactRepository;
 use App\Repositories\HelpdeskMentionRepository;
+use App\Repositories\HelpdeskSpellcheckWordRepository;
 use App\Repositories\HelpdeskSupportShiftRepository;
 use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\LocationRepository;
@@ -67,6 +68,8 @@ use App\Services\Helpdesk\HelpdeskAiService;
 use App\Services\Helpdesk\HelpdeskCalendarService;
 use App\Services\Helpdesk\HelpdeskContactService;
 use App\Services\Helpdesk\HelpdeskSchedulerService;
+use App\Services\Helpdesk\HelpdeskSpellcheckService;
+use App\Services\Helpdesk\Spellcheck\SpellcheckUserWords;
 use App\Services\Helpdesk\KnowledgeArticleAttachmentService;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\MentionService;
@@ -118,6 +121,7 @@ return static function (Container $c): void {
         TaskCategoryRepository::class, TaskCommentRepository::class, TaskJournalRepository::class,
         TaskAttachmentRepository::class, HelpdeskCalendarRepository::class, HelpdeskCalendarChecklistRepository::class, HelpdeskContactRepository::class,
         HelpdeskMentionRepository::class,
+        HelpdeskSpellcheckWordRepository::class,
     ] as $repository) {
         $c->singleton($repository, static fn (Container $c): object => new $repository($c->get(PDO::class)));
     }
@@ -323,6 +327,16 @@ return static function (Container $c): void {
         $c->get(AiSettingsService::class),
         $c->get(AiTransportInterface::class),
         dirname(__DIR__, 3) . '/storage/tmp/helpdesk-ai-availability.json'
+    ));
+
+    // Rechtschreibprüfung ohne KI: Wörterbuch aus storage/dictionaries, persönliches Wörterbuch je Benutzer
+    $c->singleton(SpellcheckUserWords::class, static fn (Container $c): SpellcheckUserWords => new SpellcheckUserWords(
+        $c->get(HelpdeskSpellcheckWordRepository::class),
+        $c->get(Logger::class)
+    ));
+    $c->singleton(HelpdeskSpellcheckService::class, static fn (Container $c): HelpdeskSpellcheckService => new HelpdeskSpellcheckService(
+        $c->get(Config::class),
+        $c->get(SpellcheckUserWords::class)
     ));
 
     // Kalender des Help Desk und Datumsvorschläge aus Tickets (KI-Endpunkt aus AiSettingsService)
@@ -622,6 +636,7 @@ return static function (Container $c): void {
         $c->get(KnowledgeBaseService::class),
         $c->get(KnowledgeBaseRepository::class),
         $c->get(HelpdeskAiService::class),
+        $c->get(HelpdeskSpellcheckService::class),
         $c->get(PersonDirectoryService::class),
         $c->get(Config::class)
     ));

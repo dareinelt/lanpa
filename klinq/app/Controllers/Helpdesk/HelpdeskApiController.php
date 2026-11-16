@@ -9,6 +9,7 @@ use App\Core\Config;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\View;
+use App\Exceptions\ForbiddenException;
 use App\Repositories\KnowledgeBaseRepository;
 use App\Repositories\TicketCategoryRepository;
 use App\Repositories\TicketMasterDataRepository;
@@ -17,6 +18,7 @@ use App\Repositories\TicketTagRepository;
 use App\Repositories\TicketTemplateRepository;
 use App\Security\CurrentUser;
 use App\Services\Helpdesk\HelpdeskAiService;
+use App\Services\Helpdesk\HelpdeskSpellcheckService;
 use App\Services\Helpdesk\KnowledgeBaseService;
 use App\Services\Helpdesk\TicketService;
 use App\Services\PersonDirectoryService;
@@ -36,6 +38,7 @@ final class HelpdeskApiController extends HelpdeskBaseController
         private readonly KnowledgeBaseService $knowledge,
         private readonly KnowledgeBaseRepository $articles,
         private readonly HelpdeskAiService $ai,
+        private readonly HelpdeskSpellcheckService $spellcheck,
         private readonly PersonDirectoryService $people,
         private readonly Config $config
     ) {
@@ -252,6 +255,44 @@ final class HelpdeskApiController extends HelpdeskBaseController
             'model' => $result['model'],
             'usage' => $result['usage'],
         ]);
+    }
+
+    /**
+     * Rechtschreibprüfung: Vorschläge für ein Wort im Kontextmenü.
+     *
+     * Ohne `word` antwortet der Endpunkt nur mit der Bereitschaftsprüfung
+     * (`available`) – so lädt das Kontextmenü den Abschnitt nicht, solange das
+     * Wörterbuch fehlt oder HELPDESK_SPELLCHECK_ENABLED aus ist.
+     */
+    public function spellcheckSuggestions(Request $request): Response
+    {
+        return $this->json($this->spellcheck->suggestions((int) ($this->currentUser->id() ?? 0), $request->queryString('word')));
+    }
+
+    /** Eigenes Wort ins persönliche Wörterbuch aufnehmen („Zum Wörterbuch hinzufügen“). */
+    public function spellcheckAddWord(Request $request): Response
+    {
+        return $this->json(['words' => $this->spellcheck->addWord($this->spellcheckUserId(), $request->string('word'))]);
+    }
+
+    /** Eigenes Wort wieder aus dem persönlichen Wörterbuch entfernen. */
+    public function spellcheckRemoveWord(Request $request): Response
+    {
+        return $this->json(['words' => $this->spellcheck->removeWord($this->spellcheckUserId(), $request->string('word'))]);
+    }
+
+    /**
+     * Benutzer für das persönliche Wörterbuch. Die Routen verlangen `portal.view`,
+     * ein Aufruf ohne Benutzerkennung ist damit nicht erreichbar.
+     */
+    private function spellcheckUserId(): int
+    {
+        $id = $this->currentUser->id();
+        if ($id === null) {
+            throw new ForbiddenException('Rechtschreibprüfung erfordert eine Anmeldung.');
+        }
+
+        return $id;
     }
 
     /** Sichtbare Vorlagen (Agent: alle aktiven, Portal: nur portalsichtbare). */

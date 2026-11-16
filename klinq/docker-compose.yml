@@ -19,6 +19,7 @@ services:
       - assets_uploads:/var/www/html/storage/uploads
       - assets_logs:/var/www/html/storage/logs
       - assets_labels:/var/www/html/storage/labels
+      - assets_dictionaries:/var/www/html/storage/dictionaries
     restart: unless-stopped
 
   # HTML→PDF (WeasyPrint) für Übergabeprotokolle; nur im internen Netz erreichbar
@@ -107,4 +108,5 @@ volumes:
   assets_uploads:
   assets_logs:
   assets_labels:
+  assets_dictionaries:
   assets_ai:

@@ -1,5 +1,5 @@
 <?php require_once __DIR__ . '/../../partials/helpers.php'; ob_start();
-$scripts = ['/js/helpdesk-media.js'];
+$scripts = array_values(array_unique(array_merge(['/js/helpdesk-media.js', '/js/helpdesk-ai.js'], $scripts ?? [])));
 $val = static fn (string $key, string $default = ''): string => form_value(null, $key, $default);
 $oldPriority = $val('priority_id');
 $defaultPriority = $oldPriority !== '' ? $oldPriority : ($defaultPriorityId !== null ? (string) $defaultPriorityId : '');
@@ -19,7 +19,7 @@ $defaultPriority = $oldPriority !== '' ? $oldPriority : ($defaultPriorityId !== 
         <?= csrf_field() ?>
         <div class="form-group<?= has_error('subject') ? ' has-error' : '' ?>">
             <label for="f-subject">Betreff <span class="required">*</span></label>
-            <input id="f-subject" name="subject" value="<?= e($val('subject')) ?>" maxlength="255" required autofocus>
+            <input id="f-subject" name="subject" value="<?= e($val('subject')) ?>" maxlength="255" required autofocus data-hd-field="generic">
             <?= field_error('subject') ?>
         </div>
         <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">

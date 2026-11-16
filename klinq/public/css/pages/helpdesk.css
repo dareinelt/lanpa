@@ -330,7 +330,10 @@ a.kb-card:hover h3, a.kb-card:focus-visible h3 { text-decoration: underline; }
 .hd-ctx-menu {
     position: fixed;
     z-index: 3000;
-    min-width: 220px;
+    min-width: 230px;
+    max-width: min(350px, calc(100vw - 16px));
+    max-height: min(78vh, 540px);
+    overflow-y: auto;
     padding: var(--space-1);
     background: var(--color-surface);
     border: 1px solid var(--color-border);
@@ -380,9 +383,95 @@ a.kb-card:hover h3, a.kb-card:focus-visible h3 { text-decoration: underline; }
 .hd-ctx-item.is-spell { color: var(--color-primary); }
 .hd-ctx-item.is-spell .hd-ctx-label { font-weight: 500; }
 .hd-ctx-item.is-spell:hover, .hd-ctx-item.is-spell.is-active { background: var(--color-primary-soft); }
+.hd-ctx-item.is-ai-spell { color: var(--color-primary); }
+.hd-ctx-item.is-ai-spell .hd-ctx-label { font-weight: 600; }
+.hd-ctx-item.is-ai-spell:hover, .hd-ctx-item.is-ai-spell.is-active { background: var(--color-primary-soft); }
+.hd-ctx-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--color-primary-soft);
+    color: var(--color-primary);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1.4;
+}
+.hd-ctx-note {
+    padding: var(--space-1) var(--space-3);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+}
+.hd-ctx-note.is-valid {
+    color: var(--color-success);
+    font-weight: 500;
+}
+
+/* Synchronisierte Inline-Wellenlinie (wie in MS Word) für Textfelder */
+.hd-spell-host {
+    position: relative;
+}
+.hd-spell-overlay {
+    position: absolute;
+    z-index: 2;
+    pointer-events: none;
+    overflow: hidden;
+    background: transparent;
+    color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.hd-spell-overlay[hidden] {
+    display: none !important;
+}
+.hd-spell-layer {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 100%;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    color: transparent;
+    will-change: transform;
+}
+.hd-spell-layer.is-single-line {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    min-height: 0;
+    white-space: pre;
+}
+.hd-spell-layer-inner {
+    white-space: pre;
+    color: transparent;
+}
+.hd-spell-mark {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: transparent;
+    font: inherit;
+    letter-spacing: inherit;
+    word-spacing: inherit;
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: #dc2626;
+    text-decoration-skip-ink: none;
+    text-underline-offset: 2px;
+}
+
+/* Wellenlinie im formatierbaren E-Mail-Editor (CSS Custom Highlight API) */
+::highlight(hd-spell-error) {
+    text-decoration: underline wavy #dc2626;
+    text-decoration-skip-ink: none;
+}
 
 /* KI-Dialog „Mit KI verbessern“ */
 .hd-ai-dialog .dialog-body { display: grid; gap: var(--space-3); }
+.hd-ai-error-actions { margin-top: var(--space-2); display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .hd-ai-excerpt {
     margin: 0;
     padding: var(--space-2) var(--space-3);

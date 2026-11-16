@@ -65,7 +65,7 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
             'newValues' => $newValues,
             'newChecklistItems' => $reopen ? HelpdeskCalendarService::parseChecklist($old['checklist'] ?? []) : [],
             'newDialogOpen' => $reopen,
-            'scripts' => ['/js/helpdesk-calendar.js'],
+            'scripts' => ['/js/helpdesk-calendar.js', '/js/helpdesk-ai.js'],
         ]);
     }
 

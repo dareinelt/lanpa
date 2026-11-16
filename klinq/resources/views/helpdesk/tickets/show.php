@@ -814,14 +814,14 @@ $statusTransitions = array_values(array_filter(
 
             <div class="form-group">
                 <label for="mail-subject">Betreff</label>
-                <input id="mail-subject" name="subject" maxlength="180" required value="<?= e($mailCompose['subject']) ?>" data-hd-mail-subject>
+                <input id="mail-subject" name="subject" maxlength="180" required value="<?= e($mailCompose['subject']) ?>" data-hd-mail-subject data-hd-field="ticket_subject">
             </div>
 
             <div class="form-group">
                 <label for="mail-body">Nachricht</label>
                 <div id="mail-body" class="hd-mail-editor" contenteditable="true" role="textbox" aria-multiline="true"
-                     spellcheck="true" data-placeholder="Nachricht an die meldende Person …" data-hd-mail-editor></div>
-                <p class="form-hint">Rechtsklick öffnet das Kontextmenü mit Ausschneiden, Kopieren, Einfügen und „Mit KI verbessern“.</p>
+                     spellcheck="false" data-placeholder="Nachricht an die meldende Person …" data-hd-mail-editor></div>
+                <p class="form-hint">Rechtsklick öffnet das Kontextmenü mit Rechtschreibprüfung, Ausschneiden, Kopieren, Einfügen und KI-Unterstützung.</p>
             </div>
 
             <?php if ($mailCompose['pauses'] !== []): ?>
@@ -912,7 +912,7 @@ $statusTransitions = array_values(array_filter(
                     </div>
                     <div class="form-group">
                         <label for="merge-subject">Betreff</label>
-                        <input id="merge-subject" name="subject" maxlength="180" value="<?= e($mergeCompose['subject']) ?>" data-hd-merge-subject>
+                        <input id="merge-subject" name="subject" maxlength="180" value="<?= e($mergeCompose['subject']) ?>" data-hd-merge-subject data-hd-field="ticket_subject">
                     </div>
                     <div class="form-group">
                         <label for="merge-body">Nachricht</label>

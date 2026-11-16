@@ -28,7 +28,7 @@ $managed = !empty($settings['managed_by_intranet']);
 </div>
 
 <?php if ($managed): ?>
-    <div class="alert alert-info mb-4"><?= icon('info', 'icon icon-xs') ?> Endpunkt, Modell und API-SchlÃ¼ssel werden im Intranet unter <em>Administration â†’ KLINQ â†’ KI-Endpunkt</em> gepflegt und von dort Ã¼bernommen. Die Werte hier sind nur lesend.</div>
+    <div class="alert alert-info mb-4"><?= icon('info', 'icon icon-xs') ?> Endpunkt, Modell und API-Schlüssel werden im Intranet unter <em>Administration → KLINQ → KI-Endpunkt</em> gepflegt und von dort übernommen. Die Werte hier sind nur lesend.</div>
 <?php endif; ?>
 
 <form method="post" action="/admin/helpdesk-ai" class="card" novalidate data-ai-form>
@@ -99,7 +99,7 @@ $managed = !empty($settings['managed_by_intranet']);
         <span class="form-hint">Leer lassen für die Standardfrage „<?= e($defaultTestPrompt) ?>“.</span>
     </div>
     <div class="form-actions">
-        <button type="button" class="btn btn-secondary" data-ai-test<?= $managed ? ' disabled' : '' ?>><?= icon('link') ?> Verbindung testen</button>
+        <button type="button" class="btn btn-secondary" data-ai-test><?= icon('link') ?> Verbindung testen</button>
     </div>
 
     <div class="ai-test-result" data-ai-result hidden>

@@ -11,7 +11,7 @@ final class ArticleRepository extends BaseRepository
                                    (SELECT COUNT(*) FROM assets s WHERE s.article_id = a.id) AS asset_count
                             FROM articles a
                             JOIN manufacturers m ON m.id = a.manufacturer_id
-                            JOIN asset_types t ON t.id = a.asset_type_id
+                            LEFT JOIN asset_types t ON t.id = a.asset_type_id
                             LEFT JOIN asset_categories c ON c.id = a.asset_category_id';
 
     /** @return array<string,mixed>|null */
@@ -54,7 +54,8 @@ final class ArticleRepository extends BaseRepository
     }
 
     /**
-     * Autovervollständigung für das Asset-Formular: nur aktive Artikel, optional auf einen Assettyp beschränkt.
+     * Autovervollständigung für das Asset-Formular: nur aktive Artikel mit Assettyp,
+     * optional auf einen Assettyp beschränkt. Verbrauchsmaterial erzeugt keine Assets.
      * @return array<int,array<string,mixed>>
      */
     public function searchForPicker(string $term, ?int $assetTypeId = null, int $limit = 15): array
@@ -65,7 +66,7 @@ final class ArticleRepository extends BaseRepository
                 JOIN manufacturers m ON m.id = a.manufacturer_id
                 JOIN asset_types t ON t.id = a.asset_type_id
                 LEFT JOIN asset_categories c ON c.id = a.asset_category_id
-                WHERE a.is_active = 1';
+                WHERE a.is_active = 1 AND a.is_consumable = 0';
         $params = [];
         if ($term !== '') {
             $sql .= ' AND (a.name LIKE :q OR a.article_number LIKE :q OR m.name LIKE :q OR CONCAT(m.name, \' \', a.name) LIKE :q)';
@@ -170,7 +171,8 @@ final class ArticleRepository extends BaseRepository
     }
 
     /**
-     * Verbrauchsmaterial-Übersicht: Verbrauchsartikel mit Bestand, Mindestbestand und Assettyp.
+     * Verbrauchsmaterial-Übersicht: Verbrauchsartikel mit Bestand und Mindestbestand
+     * (Verbrauchsmaterial hat keinen Assettyp).
      *
      * @param array<string,mixed> $filters q, below ('1' = nur am/unter Mindestbestand), active ('1'|'0'|'')
      * @return array<int,array<string,mixed>>
@@ -178,11 +180,9 @@ final class ArticleRepository extends BaseRepository
     public function consumables(array $filters): array
     {
         $sql = 'SELECT a.id, a.name, a.article_number, a.stock_quantity, a.minimum_stock, a.is_active,
-                m.name AS manufacturer_name, t.name AS asset_type_name, c.name AS category_name
+                m.name AS manufacturer_name
             FROM articles a
             JOIN manufacturers m ON m.id = a.manufacturer_id
-            JOIN asset_types t ON t.id = a.asset_type_id
-            LEFT JOIN asset_categories c ON c.id = a.asset_category_id
             WHERE a.is_consumable = 1';
         $params = [];
         $active = (string) ($filters['active'] ?? '1');

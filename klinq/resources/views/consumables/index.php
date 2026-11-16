@@ -28,7 +28,7 @@ include __DIR__ . '/../partials/filter_bar.php';
         <tbody>
         <?php foreach ($rows as $r): ?>
             <tr class="<?= (int) $r['is_active'] ? '' : 'is-muted' ?>">
-                <td><strong><?= e($r['manufacturer_name'] . ' ' . $r['name']) ?></strong><br><span class="text-muted text-sm"><?= e(implode(' · ', array_filter([$r['asset_type_name'], $r['category_name']]))) ?></span></td>
+                <td><strong><?= e($r['manufacturer_name'] . ' ' . $r['name']) ?></strong></td>
                 <td class="mono"><?= e($r['article_number'] ?? '–') ?></td>
                 <td class="num"><strong><?= (int) $r['stock_quantity'] ?></strong></td>
                 <td class="num"><?= $r['minimum_stock'] !== null ? (int) $r['minimum_stock'] : '–' ?></td>

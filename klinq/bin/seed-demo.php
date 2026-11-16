@@ -143,7 +143,7 @@ try {
     // -------------------------------------------------------------------------
     // 5. Artikel
     // -------------------------------------------------------------------------
-    $art = static function (int $mfrId, int $typeId, ?int $catId, string $name, ?string $number, ?string $desc, bool $handover, bool $consumable = false, ?int $min = null, int $stock = 0) use ($pdo): int {
+    $art = static function (int $mfrId, ?int $typeId, ?int $catId, string $name, ?string $number, ?string $desc, bool $handover, bool $consumable = false, ?int $min = null, int $stock = 0) use ($pdo): int {
         return ins(
             $pdo,
             'INSERT INTO articles (manufacturer_id, asset_type_id, asset_category_id, name, normalized_name, phonetic_key, article_number, description, is_handover_relevant, is_consumable, minimum_stock, stock_quantity, is_active)
@@ -168,9 +168,9 @@ try {
     $artDock = $art($mDell, $typeZub, $catDock, 'WD22TB4 Dockingstation', 'WD22TB4', 'Thunderbolt 4 Dock', true);
     $artDrucker = $art($mHP, $typeZub, $catDrucker, 'LaserJet Pro 4003dn', '2Z629A', 'Netzwerkdrucker', false);
     $artHeadset = $art($mLogitech, $typeZub, $catHeadset, 'Zone Wireless 2', '981-001267', 'Headset', false);
-    $artTastatur = $art($mLogitech, $typeZub, $catTastatur, 'MX Keys S', '920-011415', 'Tastatur', false, true, 5, 8);
-    $artMaus = $art($mLogitech, $typeZub, $catMaus, 'MX Master 3S', '910-006556', 'Maus', false, true, 5, 6);
-    $artKabel = $art($mDell, $typeZub, null, 'USB-C auf DisplayPort Kabel', '470-AEFB', 'Verbrauchsmaterial', false, true, 10, 12);
+    $artTastatur = $art($mLogitech, null, null, 'MX Keys S', '920-011415', 'Tastatur', false, true, 5, 8);
+    $artMaus = $art($mLogitech, null, null, 'MX Master 3S', '910-006556', 'Maus', false, true, 5, 6);
+    $artKabel = $art($mDell, null, null, 'USB-C auf DisplayPort Kabel', '470-AEFB', 'Verbrauchsmaterial', false, true, 10, 12);
 
     // -------------------------------------------------------------------------
     // 6. Mitarbeiter
@@ -301,8 +301,8 @@ try {
     $po3i1 = $poItem($po3, 1, $artMonitor, $typeZub, 'Dell UltraSharp U2723QE', 6, 0, '559.00', true);
 
     $po4 = $po('BEST-2024-0004', $supIngram, 'draft', '2024-09-18', null, $ccIT, 'Entwurf – Tastaturen & Mäuse');
-    $po4i1 = $poItem($po4, 1, $artTastatur, $typeZub, 'Logitech MX Keys S', 4, 0, '109.00', false);
-    $po4i2 = $poItem($po4, 2, $artMaus, $typeZub, 'Logitech MX Master 3S', 4, 0, '99.00', false);
+    $po4i1 = $poItem($po4, 1, $artTastatur, null, 'Logitech MX Keys S', 4, 0, '109.00', false);
+    $po4i2 = $poItem($po4, 2, $artMaus, null, 'Logitech MX Master 3S', 4, 0, '99.00', false);
 
     // -------------------------------------------------------------------------
     // 10. Assets

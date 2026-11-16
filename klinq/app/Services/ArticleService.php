@@ -144,7 +144,7 @@ final class ArticleService
     {
         $data = (new Validator($input))
             ->id('manufacturer_id', 'Hersteller', true)
-            ->id('asset_type_id', 'Assettyp', true)
+            ->id('asset_type_id', 'Assettyp')
             ->id('asset_category_id', 'Kategorie')
             ->string('name', 'Bezeichnung', true, 200)
             ->string('article_number', 'Artikelnummer', false, 100)
@@ -159,17 +159,24 @@ final class ArticleService
         if ($this->manufacturers->find((int) $data['manufacturer_id']) === null) {
             throw ValidationException::single('manufacturer_id', 'Hersteller nicht gefunden. Bitte zuerst den Hersteller anlegen.');
         }
-        if ($this->assetTypes->find((int) $data['asset_type_id']) === null) {
-            throw ValidationException::single('asset_type_id', 'Assettyp nicht gefunden.');
-        }
-        if ($data['asset_category_id'] !== null) {
-            $category = $this->assetTypes->findCategory((int) $data['asset_category_id']);
-            if ($category === null || (int) $category['asset_type_id'] !== (int) $data['asset_type_id']) {
-                throw ValidationException::single('asset_category_id', 'Die Kategorie passt nicht zum gewählten Assettyp.');
+        if ((int) $data['is_consumable'] === 1) {
+            // Verbrauchsmaterial wird als Menge geführt: kein Assettyp, damit auch keine Kategorie.
+            $data['asset_type_id'] = null;
+            $data['asset_category_id'] = null;
+        } else {
+            if ($data['asset_type_id'] === null) {
+                throw ValidationException::single('asset_type_id', 'Assettyp ist erforderlich.');
             }
-        }
-        // Kein Verbrauchsmaterial (mehr): Mindestbestand und Bestand unabhängig von der Kategorie zurücksetzen
-        if ((int) $data['is_consumable'] !== 1) {
+            if ($this->assetTypes->find((int) $data['asset_type_id']) === null) {
+                throw ValidationException::single('asset_type_id', 'Assettyp nicht gefunden.');
+            }
+            if ($data['asset_category_id'] !== null) {
+                $category = $this->assetTypes->findCategory((int) $data['asset_category_id']);
+                if ($category === null || (int) $category['asset_type_id'] !== (int) $data['asset_type_id']) {
+                    throw ValidationException::single('asset_category_id', 'Die Kategorie passt nicht zum gewählten Assettyp.');
+                }
+            }
+            // Kein Verbrauchsmaterial: Mindestbestand und Bestand unabhängig von der Kategorie zurücksetzen
             $data['minimum_stock'] = null;
             $data['stock_quantity'] = 0;
         }

@@ -116,6 +116,54 @@ final class MasterDataIntegrationTest extends DatabaseTestCase
         });
     }
 
+    public function testConsumableArticleNeedsNoAssetType(): void
+    {
+        $svc = $this->c->get(ArticleService::class);
+        $repo = $this->c->get(ArticleRepository::class);
+        $manufacturerId = $this->c->get(ManufacturerService::class)->create(['name' => 'Ohne-Typ GmbH', 'is_active' => '1'], true);
+
+        $id = $svc->create([
+            'manufacturer_id' => (string) $manufacturerId,
+            'name' => 'Toner ohne Typ 0815',
+            'is_active' => '1',
+            'is_consumable' => '1',
+            'minimum_stock' => '3',
+            'stock_quantity' => '7',
+        ], true);
+        $created = $repo->find($id);
+        $this->assertNull($created['asset_type_id']);
+        $this->assertNull($created['asset_category_id']);
+        $this->assertSame(3, (int) $created['minimum_stock']);
+
+        // Ein trotzdem übermittelter Assettyp wird bei Verbrauchsmaterial verworfen
+        $withType = $svc->create([
+            'manufacturer_id' => (string) $manufacturerId,
+            'asset_type_id' => (string) $this->c->get(AssetTypeRepository::class)->findByCode('ZUB')['id'],
+            'name' => 'Toner ohne Typ 0816',
+            'is_active' => '1',
+            'is_consumable' => '1',
+            'stock_quantity' => '0',
+        ], true);
+        $this->assertNull($repo->find($withType)['asset_type_id']);
+
+        // Verbrauchsmaterial erzeugt keine Assets und erscheint deshalb nicht im Asset-Picker
+        $this->assertSame([], $repo->searchForPicker('Toner ohne Typ'));
+        $this->assertContains($id, array_map('intval', array_column($repo->consumables(['q' => 'Toner ohne Typ']), 'id')));
+    }
+
+    public function testNonConsumableArticleStillRequiresAssetType(): void
+    {
+        $svc = $this->c->get(ArticleService::class);
+        $manufacturerId = $this->c->get(ManufacturerService::class)->create(['name' => 'Mit-Typ GmbH', 'is_active' => '1'], true);
+
+        $this->assertThrows(ValidationException::class, fn (): int => $svc->create([
+            'manufacturer_id' => (string) $manufacturerId,
+            'name' => 'Notebook ohne Typ 0815',
+            'is_active' => '1',
+            'stock_quantity' => '0',
+        ], true), 'Assettyp');
+    }
+
     public function testClearingConsumableResetsStockForArticleWithoutCategory(): void
     {
         $svc = $this->c->get(ArticleService::class);

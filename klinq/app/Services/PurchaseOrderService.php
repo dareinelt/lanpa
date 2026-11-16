@@ -455,7 +455,7 @@ final class PurchaseOrderService
             if ($article === null) {
                 throw ValidationException::single('article_id', 'Artikel nicht gefunden.');
             }
-            $data['asset_type_id'] = (int) $article['asset_type_id'];
+            $data['asset_type_id'] = $article['asset_type_id'] !== null ? (int) $article['asset_type_id'] : null;
             $data['description'] ??= trim($article['manufacturer_name'] . ' ' . $article['name']);
             if ((int) ($article['is_consumable'] ?? 0) === 1) {
                 $data['creates_assets'] = 0;

@@ -237,9 +237,15 @@ final class AssetService
         if ((int) $article['is_active'] !== 1 && !$keepsArticle) {
             throw ValidationException::single('article_id', 'Der Artikel „' . $article['name'] . '“ ist inaktiv und kann nicht mehr verwendet werden.');
         }
-        $data['asset_type_id'] ??= (int) $article['asset_type_id'];
-        if ((int) $article['asset_type_id'] !== (int) $data['asset_type_id']) {
-            throw ValidationException::single('article_id', 'Der Artikel gehört zum Assettyp „' . $article['asset_type_name'] . '“ und passt nicht zum gewählten Assettyp.');
+        $articleIsConsumable = (int) ($article['is_consumable'] ?? 0) === 1;
+        if ($articleIsConsumable && !$keepsArticle) {
+            throw ValidationException::single('article_id', 'Der Artikel „' . $article['name'] . '“ ist Verbrauchsmaterial und kann keine Assets erzeugen.');
+        }
+        if (!$articleIsConsumable) {
+            $data['asset_type_id'] ??= (int) $article['asset_type_id'];
+            if ((int) $article['asset_type_id'] !== (int) $data['asset_type_id']) {
+                throw ValidationException::single('article_id', 'Der Artikel gehört zum Assettyp „' . $article['asset_type_name'] . '“ und passt nicht zum gewählten Assettyp.');
+            }
         }
         $data['manufacturer_id'] = (int) $article['manufacturer_id'];
         $data['asset_category_id'] ??= $article['asset_category_id'] !== null ? (int) $article['asset_category_id'] : null;

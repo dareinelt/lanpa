@@ -206,8 +206,12 @@ return static function (Router $router, Container $c): void {
     $router->post('/api/helpdesk/people/create', static fn (Request $r): Response => $api()->createPerson($r), 'helpdesk.view');
     $router->get('/api/helpdesk/knowledge/suggest', static fn (Request $r): Response => $api()->suggestArticles($r), 'knowledgebase.view');
     $router->post('/api/helpdesk/ai/verbessern', static fn (Request $r): Response => $api()->improve($r), 'portal.view');
-    // Rechtschreibprüfung (Kontextmenü der Help-Desk-Textfelder): Vorschläge und persönliches Wörterbuch
+    $router->post('/api/helpdesk/ai/wortvorschlaege', static fn (Request $r): Response => $api()->suggestWords($r), 'portal.view');
+    $router->post('/api/helpdesk/ai/korrigieren', static fn (Request $r): Response => $api()->proofread($r), 'portal.view');
+    // Rechtschreibprüfung (Kontextmenü und Komfortleiste der Help-Desk-Textfelder): Vorprüfung, Vorschläge, Basis-Korrektur und persönliches Wörterbuch
     $router->get('/api/helpdesk/rechtschreibung/vorschlaege', static fn (Request $r): Response => $api()->spellcheckSuggestions($r), 'portal.view');
+    $router->post('/api/helpdesk/rechtschreibung/pruefen', static fn (Request $r): Response => $api()->spellcheckCheckWords($r), 'portal.view');
+    $router->post('/api/helpdesk/rechtschreibung/korrigieren', static fn (Request $r): Response => $api()->spellcheckProofread($r), 'portal.view');
     $router->post('/api/helpdesk/rechtschreibung/woerterbuch', static fn (Request $r): Response => $api()->spellcheckAddWord($r), 'portal.view');
     $router->post('/api/helpdesk/rechtschreibung/woerterbuch/entfernen', static fn (Request $r): Response => $api()->spellcheckRemoveWord($r), 'portal.view');
 };

@@ -510,6 +510,76 @@ Runner::test('KLINQ: KI-Einstellungen werden geprüft', static function (): void
     Assert::same('', $cleared['values']['klinq_ai_api_key']);
 });
 
+Runner::test('KLINQ: KI-Verbindungstest schaltet Denkmodus ab und weicht bei 400 aus', static function (): void {
+    $probe = new class implements \App\Contracts\OfficeProbeInterface {
+        /** @var list<array<string,mixed>> */
+        public array $chatPayloads = [];
+        public bool $rejectReasoning = false;
+        public bool $reasoningOnly = false;
+
+        public function request(string $method, string $url, array $headers = [], ?string $body = null, int $timeout = 4): array
+        {
+            if ($method === 'GET' && str_ends_with($url, '/models')) {
+                return [
+                    'status' => 200,
+                    'body' => '{"data":[{"id":"gemma4:e4b"}]}',
+                    'error' => null,
+                ];
+            }
+            $payload = (array) json_decode((string) $body, true);
+            $this->chatPayloads[] = $payload;
+            if ($this->rejectReasoning && array_key_exists('reasoning_effort', $payload)) {
+                return ['status' => 400, 'body' => '{"error":{"message":"unknown field reasoning_effort"}}', 'error' => null];
+            }
+            if ($this->reasoningOnly) {
+                return ['status' => 200, 'body' => '{"choices":[{"message":{"content":"","reasoning":"denke nach"}}]}', 'error' => null];
+            }
+
+            return [
+                'status' => 200,
+                'body' => '{"choices":[{"message":{"content":"Ich bin KLINQ-KI."}}],"usage":{"completion_tokens":6}}',
+                'error' => null,
+            ];
+        }
+
+        public function tcp(string $host, int $port, string $payload = '', int $timeout = 3, int $readBytes = 64): ?string
+        {
+            return null;
+        }
+    };
+
+    $service = new KlinqAiService(klinqSettings(), $probe);
+    $ok = $service->runTest([
+        'klinq_ai_url' => 'http://ki-server:11434/v1',
+        'klinq_ai_model' => 'gemma4:e4b',
+        'klinq_ai_timeout' => '30',
+    ]);
+    Assert::true($ok['ok']);
+    Assert::same('Ich bin KLINQ-KI.', $ok['answer']);
+    Assert::same('none', $probe->chatPayloads[0]['reasoning_effort'] ?? null);
+
+    $probe->chatPayloads = [];
+    $probe->rejectReasoning = true;
+    $retried = $service->runTest([
+        'klinq_ai_url' => 'http://ki-server:11434/v1',
+        'klinq_ai_model' => 'gemma4:e4b',
+        'klinq_ai_timeout' => '30',
+    ]);
+    Assert::true($retried['ok']);
+    Assert::same(2, count($probe->chatPayloads));
+    Assert::false(array_key_exists('reasoning_effort', $probe->chatPayloads[1]));
+
+    $probe->rejectReasoning = false;
+    $probe->reasoningOnly = true;
+    $thoughtOnly = $service->runTest([
+        'klinq_ai_url' => 'http://ki-server:11434/v1',
+        'klinq_ai_model' => 'gemma4:e4b',
+        'klinq_ai_timeout' => '30',
+    ]);
+    Assert::false($thoughtOnly['ok']);
+    Assert::contains('Denkspur', $thoughtOnly['steps'][1]['message'] ?? '');
+});
+
 Runner::test('KLINQ: Berechtigungsseite rendert das Ergebnis ohne Gruppenzuordnung', static function (): void {
     $config = klinqConfig();
 

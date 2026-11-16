@@ -342,16 +342,27 @@ final class KlinqAiService
      */
     private function chat(string $url, string $model, string $key, string $prompt, int $timeout): array
     {
-        $body = json_encode([
+        $payload = [
             'model' => $model,
             'messages' => [['role' => 'user', 'content' => $prompt]],
             'max_tokens' => self::TEST_MAX_TOKENS,
             'temperature' => 0.7,
             'stream' => false,
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            // Denkmodus abschalten (z. B. Gemma 4 / Qwen unter Ollama), damit das
+            // Tokenbudget für die eigentliche Antwort genutzt wird.
+            'reasoning_effort' => 'none',
+        ];
+        $headers = ['Content-Type' => 'application/json'] + self::authHeaders($key);
 
         $started = hrtime(true);
-        $response = $this->probe->request('POST', $url . '/chat/completions', ['Content-Type' => 'application/json'] + self::authHeaders($key), (string) $body, $timeout);
+        $body = (string) json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $response = $this->probe->request('POST', $url . '/chat/completions', $headers, $body, $timeout);
+        if (($response['status'] === 400 || $response['status'] === 422) && $response['error'] === null) {
+            // Manche OpenAI-kompatiblen Server lehnen unbekannte Felder wie reasoning_effort ab.
+            unset($payload['reasoning_effort']);
+            $retryBody = (string) json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $response = $this->probe->request('POST', $url . '/chat/completions', $headers, $retryBody, $timeout);
+        }
         $duration = (int) round((hrtime(true) - $started) / 1e6);
         $fail = static fn (string $message): array => ['ok' => false, 'message' => $message, 'answer' => '', 'duration_ms' => $duration, 'tokens' => 0];
 
@@ -366,13 +377,21 @@ final class KlinqAiService
             return $fail('Anfrage abgelehnt (HTTP ' . $response['status'] . ')' . ($detail !== '' ? ': ' . $detail : '.'));
         }
 
-        $message = is_array($data) ? ($data['choices'][0]['message'] ?? null) : null;
-        $content = is_array($message) ? ($message['content'] ?? null) : null;
-        // Denkende Modelle liefern bei knappem Tokenbudget nur reasoning_content.
-        if ((!is_string($content) || trim($content) === '') && is_array($message) && is_string($message['reasoning_content'] ?? null)) {
-            $content = $message['reasoning_content'];
+        $choice = is_array($data) ? ($data['choices'][0] ?? null) : null;
+        $message = is_array($choice) ? ($choice['message'] ?? null) : null;
+        $content = is_array($message) && is_string($message['content'] ?? null) ? trim($message['content']) : '';
+        if ($content === '' && is_array($choice) && is_string($choice['text'] ?? null)) {
+            $content = trim($choice['text']);
         }
-        if (!is_string($content) || trim($content) === '') {
+        if ($content === '') {
+            if (is_array($message)) {
+                foreach (['reasoning_content', 'reasoning', 'thinking'] as $reasoningKey) {
+                    if (is_string($message[$reasoningKey] ?? null) && trim($message[$reasoningKey]) !== '') {
+                        return $fail('Das Modell hat nur eine Denkspur ohne Textantwort geliefert.');
+                    }
+                }
+            }
+
             return $fail('Das Modell hat keine Textantwort geliefert.');
         }
 

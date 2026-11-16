@@ -272,6 +272,14 @@ final class AiSettingsService
 
         $url = rtrim(trim((string) ($input['url'] ?? '')), '/');
         $model = trim((string) ($input['model'] ?? ''));
+        if ($this->managedByIntranet()) {
+            if ($url === '') {
+                $url = $this->url();
+            }
+            if ($model === '') {
+                $model = $this->model();
+            }
+        }
         $timeout = (int) ($input['timeout'] ?? $this->timeout());
         $timeout = max(5, min(900, $timeout));
         $prompt = trim((string) ($input['test_prompt'] ?? ''));

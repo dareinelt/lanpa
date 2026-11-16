@@ -33,7 +33,7 @@
                 <label for="f-location">Standort</label>
                 <select id="f-location" name="location_id">
                     <option value="">Kein Standort</option>
-                    <?php foreach ($locationOptions as $l): ?><option value="<?= (int) $l['id'] ?>"<?= selected(form_value($row, 'location_id'), $l['id']) ?>><?= str_repeat('  ', (int) $l['depth']) ?><?= e($l['name']) ?></option><?php endforeach; ?>
+                    <?php foreach ($locationOptions as $l): ?><option value="<?= (int) $l['id'] ?>"<?= selected(form_value($row, 'location_id'), $l['id']) ?>><?= str_repeat('  ', (int) $l['depth']) ?><?= e($l['name']) ?><?= (int) ($l['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?php if ($fromAd && $row['ad_location']): ?><span class="form-hint">AD-Angabe: <?= e($row['ad_location']) ?></span><?php endif; ?>
             </div>
@@ -41,7 +41,7 @@
                 <label for="f-cc">Kostenstelle</label>
                 <select id="f-cc" name="cost_center_id">
                     <option value="">Keine Kostenstelle</option>
-                    <?php foreach ($costCenters as $c): ?><option value="<?= (int) $c['id'] ?>"<?= selected(form_value($row, 'cost_center_id'), $c['id']) ?>><?= e($c['number']) ?> – <?= e($c['description']) ?></option><?php endforeach; ?>
+                    <?php foreach ($costCenters as $c): ?><option value="<?= (int) $c['id'] ?>"<?= selected(form_value($row, 'cost_center_id'), $c['id']) ?>><?= e($c['number']) ?> – <?= e($c['description']) ?><?= (int) ($c['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?php if ($fromAd && $row['ad_cost_center']): ?><span class="form-hint">AD-Angabe: <?= e($row['ad_cost_center']) ?></span><?php endif; ?>
             </div>

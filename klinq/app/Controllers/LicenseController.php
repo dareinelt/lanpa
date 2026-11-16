@@ -224,9 +224,9 @@ final class LicenseController extends BaseController
             'activeNav' => 'licenses',
             'row' => $row,
             'prefill' => $prefill,
-            'manufacturers' => $this->manufacturers->activeForSelect(),
-            'suppliers' => $this->suppliers->activeForSelect(),
-            'costCenters' => $this->costCenters->activeForSelect(),
+            'manufacturers' => $this->manufacturers->activeForSelect($row !== null && $row['manufacturer_id'] !== null ? (int) $row['manufacturer_id'] : null),
+            'suppliers' => $this->suppliers->activeForSelect($row !== null && $row['supplier_id'] !== null ? (int) $row['supplier_id'] : null),
+            'costCenters' => $this->costCenters->activeForSelect($row !== null && $row['cost_center_id'] !== null ? (int) $row['cost_center_id'] : null),
             'orders' => $this->orders->forSelect(),
             'licenseTypes' => LicenseService::LICENSE_TYPES,
         ]);

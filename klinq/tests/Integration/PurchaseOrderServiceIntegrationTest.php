@@ -392,4 +392,74 @@ final class PurchaseOrderServiceIntegrationTest extends DatabaseTestCase
             $this->assertThrows(ForbiddenException::class, fn () => $this->service()->cancel($id, $this->order($id), 'nein'));
         }
     }
+
+    public function testOrderKeepsDeactivatedCostCenterAndArticleOnEdit(): void
+    {
+        [$id, $phoneItem] = $this->createOrderWithItems();
+        $this->pdo->prepare('UPDATE cost_centers SET is_active = 0 WHERE id = ?')->execute([$this->costCenterId]);
+        $this->pdo->prepare('UPDATE articles SET is_active = 0 WHERE id = ?')->execute([$this->articleId]);
+
+        // Bestehende Bestellung mit nun deaktivierter Kostenstelle bleibt bearbeitbar
+        $existing = $this->order($id);
+        $this->service()->update($id, $existing, [
+            'order_number' => $existing['order_number'],
+            'supplier_id' => (string) $this->supplierId,
+            'cost_center_id' => (string) $this->costCenterId,
+            'note' => 'Aktualisierte Notiz',
+        ]);
+        $this->assertSame('Aktualisierte Notiz', $this->order($id)['note']);
+
+        // Bestehende Position mit deaktiviertem Artikel darf angepasst werden, neue Position damit nicht
+        $this->service()->updateItem($this->order($id), $this->repo()->findItem($phoneItem), [
+            'article_id' => (string) $this->articleId,
+            'quantity' => '5',
+            'unit_price' => '879.00',
+            'creates_assets' => '1',
+        ]);
+        $this->assertSame(5, (int) $this->repo()->findItem($phoneItem)['quantity']);
+
+        $this->assertThrows(ValidationException::class, fn () => $this->service()->addItem($id, $this->order($id), [
+            'article_id' => (string) $this->articleId,
+            'quantity' => '1',
+            'creates_assets' => '1',
+        ]), 'inaktiv');
+    }
+
+    public function testConvertDemandRequestEnablesAssetCreationForHardwareAndKeepsZeroForConsumable(): void
+    {
+        $proc = $this->c->get(ProcurementController::class);
+        $procRepo = $this->c->get(ProcurementRepository::class);
+
+        $consumableId = $this->c->get(ArticleRepository::class)->create([
+            'manufacturer_id' => (int) $this->c->get(ArticleRepository::class)->find($this->articleId)['manufacturer_id'],
+            'asset_type_id' => null,
+            'name' => 'Toner Einheit Schwarz',
+            'normalized_name' => 'toner einheit schwarz',
+            'phonetic_key' => '267',
+            'is_active' => 1,
+            'is_consumable' => 1,
+            'stock_quantity' => 1,
+        ]);
+
+        $proc->storeRequest(new Request(['REQUEST_METHOD' => 'POST'], [], ['article_id' => (string) $this->articleId, 'quantity' => '2'], []));
+        $proc->storeRequest(new Request(['REQUEST_METHOD' => 'POST'], [], ['article_id' => (string) $consumableId, 'quantity' => '3'], []));
+
+        $open = array_values(array_filter($procRepo->requests($this->userId), static fn (array $r): bool => $r['status'] === 'open'));
+        $this->assertCount(2, $open);
+        $this->assertTrue(((string) ($open[0]['items_summary'] ?? '')) !== '');
+
+        foreach ($open as $req) {
+            $resp = $proc->convertRequest(new Request(['REQUEST_METHOD' => 'POST'], [], ['supplier_id' => (string) $this->supplierId], ['id' => (string) $req['id']]));
+            $this->assertSame(302, $resp->status());
+        }
+
+        foreach ($procRepo->requests($this->userId) as $req) {
+            $items = $this->repo()->items((int) $req['purchase_order_id']);
+            if ((int) $items[0]['article_id'] === $this->articleId) {
+                $this->assertSame(1, (int) $items[0]['creates_assets']);
+            } elseif ((int) $items[0]['article_id'] === $consumableId) {
+                $this->assertSame(0, (int) $items[0]['creates_assets']);
+            }
+        }
+    }
 }

@@ -43,6 +43,6 @@ final class CostCenterController extends CrudController
 
     protected function formData(?array $row): array
     {
-        return ['locationOptions' => LocationService::flatten($this->locations->all(true))];
+        return ['locationOptions' => LocationService::flatten($this->locations->selectable($row !== null && $row['location_id'] !== null ? (int) $row['location_id'] : null))];
     }
 }

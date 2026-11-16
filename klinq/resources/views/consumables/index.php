@@ -8,7 +8,7 @@ $isBelow = static fn (array $r): bool => $r['minimum_stock'] !== null && (int) $
     </div>
     <div class="page-actions">
         <?php if ($can('orders.view')): ?><a class="btn btn-secondary" href="/orders/replenishment"><?= icon('cart') ?> Bestellvorschläge<?= $belowCount > 0 ? ' (' . $belowCount . ')' : '' ?></a><?php endif; ?>
-        <?php if ($can('articles.manage')): ?><a class="btn btn-primary" href="/articles/new?is_consumable=1"><?= icon('plus') ?> Verbrauchsmaterial anlegen</a><?php endif; ?>
+        <?php if ($can('articles.manage')): ?><a class="btn btn-primary" href="/articles/new?is_consumable=1&amp;return=<?= e(rawurlencode('/consumables')) ?>"><?= icon('plus') ?> Verbrauchsmaterial anlegen</a><?php endif; ?>
     </div>
 </div>
 <p class="text-muted text-sm">Verbrauchsmaterial (Toner, Tinte, Batterien) wird nur als <strong>Menge je Artikel</strong> geführt – ohne einzelne Assets. Der Wareneingang erhöht den Bestand; Ausgaben und Inventur hier als neuen Bestand eintragen. Am oder unter Mindestbestand erscheint der Artikel in den Bestellvorschlägen.</p>
@@ -20,15 +20,15 @@ include __DIR__ . '/../partials/filter_bar.php';
 ?>
 <div class="card card-flush">
     <?php if (!$rows): ?>
-        <div class="table-empty">Kein Verbrauchsmaterial gefunden.<?php if ($can('articles.manage')): ?> <a href="/articles/new?is_consumable=1">Verbrauchsmaterial anlegen</a> oder einen vorhandenen Artikel unter „Artikel“ als Verbrauchsmaterial kennzeichnen.<?php endif; ?></div>
+        <div class="table-empty">Kein Verbrauchsmaterial gefunden.<?php if ($can('articles.manage')): ?> <a href="/articles/new?is_consumable=1&amp;return=<?= e(rawurlencode('/consumables')) ?>">Verbrauchsmaterial anlegen</a> oder einen vorhandenen Artikel unter „Artikel“ als Verbrauchsmaterial kennzeichnen.<?php endif; ?></div>
     <?php else: ?>
     <div class="table-wrapper">
     <table class="table">
-        <thead><tr><th>Artikel</th><th>Artikelnummer</th><th class="num">Bestand</th><th class="num">Mindestbestand</th><th>Status</th><?php if ($can('articles.manage')): ?><th>Bestand setzen</th><th></th><?php endif; ?></tr></thead>
+        <thead><tr><th>Artikel</th><th>Artikelnummer</th><th class="num">Bestand</th><th class="num">Mindestbestand</th><th>Status</th><?php if ($can('articles.manage')): ?><th>Bestand anpassen</th><th></th><?php endif; ?></tr></thead>
         <tbody>
         <?php foreach ($rows as $r): ?>
             <tr class="<?= (int) $r['is_active'] ? '' : 'is-muted' ?>">
-                <td><strong><?= e($r['manufacturer_name'] . ' ' . $r['name']) ?></strong><br><span class="text-muted text-sm"><?= e(implode(' · ', array_filter([$r['asset_type_name'], $r['category_name']]))) ?></span></td>
+                <td><strong><?= e($r['manufacturer_name'] . ' ' . $r['name']) ?></strong></td>
                 <td class="mono"><?= e($r['article_number'] ?? '–') ?></td>
                 <td class="num"><strong><?= (int) $r['stock_quantity'] ?></strong></td>
                 <td class="num"><?= $r['minimum_stock'] !== null ? (int) $r['minimum_stock'] : '–' ?></td>
@@ -37,6 +37,8 @@ include __DIR__ . '/../partials/filter_bar.php';
                 <td>
                     <form method="post" action="/consumables/<?= (int) $r['id'] ?>/stock" class="stock-form">
                         <?= csrf_field() ?>
+                        <button type="submit" name="delta" value="-1" class="btn btn-secondary btn-sm" title="1 Stück entnehmen"<?= (int) $r['stock_quantity'] <= 0 ? ' disabled' : '' ?>>−1</button>
+                        <button type="submit" name="delta" value="1" class="btn btn-secondary btn-sm" title="1 Stück zubuchen">+1</button>
                         <label class="visually-hidden" for="stock-<?= (int) $r['id'] ?>">Neuer Bestand für <?= e($r['name']) ?></label>
                         <input id="stock-<?= (int) $r['id'] ?>" type="number" name="stock_quantity" min="0" step="1" value="<?= (int) $r['stock_quantity'] ?>" required>
                         <button type="submit" class="btn btn-secondary btn-sm" title="Bestand speichern"><?= icon('check') ?></button>

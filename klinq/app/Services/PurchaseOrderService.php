@@ -423,7 +423,7 @@ final class PurchaseOrderService
         }
         if ($data['cost_center_id'] !== null) {
             $cc = $this->costCenters->find((int) $data['cost_center_id']);
-            if ($cc === null || (int) $cc['is_active'] !== 1) {
+            if ($cc === null || ((int) $cc['is_active'] !== 1 && ($existing === null || (int) ($existing['cost_center_id'] ?? 0) !== (int) $cc['id']))) {
                 throw ValidationException::single('cost_center_id', 'Die Kostenstelle existiert nicht oder ist deaktiviert.');
             }
         }
@@ -455,7 +455,11 @@ final class PurchaseOrderService
             if ($article === null) {
                 throw ValidationException::single('article_id', 'Artikel nicht gefunden.');
             }
-            $data['asset_type_id'] = (int) $article['asset_type_id'];
+            $keepsArticle = $existing !== null && (int) ($existing['article_id'] ?? 0) === (int) $article['id'];
+            if ((int) $article['is_active'] !== 1 && !$keepsArticle) {
+                throw ValidationException::single('article_id', 'Der Artikel „' . $article['name'] . '“ ist inaktiv und kann nicht mehr verwendet werden.');
+            }
+            $data['asset_type_id'] = $article['asset_type_id'] !== null ? (int) $article['asset_type_id'] : null;
             $data['description'] ??= trim($article['manufacturer_name'] . ' ' . $article['name']);
             if ((int) ($article['is_consumable'] ?? 0) === 1) {
                 $data['creates_assets'] = 0;

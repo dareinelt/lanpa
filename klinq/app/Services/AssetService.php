@@ -237,9 +237,15 @@ final class AssetService
         if ((int) $article['is_active'] !== 1 && !$keepsArticle) {
             throw ValidationException::single('article_id', 'Der Artikel „' . $article['name'] . '“ ist inaktiv und kann nicht mehr verwendet werden.');
         }
-        $data['asset_type_id'] ??= (int) $article['asset_type_id'];
-        if ((int) $article['asset_type_id'] !== (int) $data['asset_type_id']) {
-            throw ValidationException::single('article_id', 'Der Artikel gehört zum Assettyp „' . $article['asset_type_name'] . '“ und passt nicht zum gewählten Assettyp.');
+        $articleIsConsumable = (int) ($article['is_consumable'] ?? 0) === 1;
+        if ($articleIsConsumable && !$keepsArticle) {
+            throw ValidationException::single('article_id', 'Der Artikel „' . $article['name'] . '“ ist Verbrauchsmaterial und kann keine Assets erzeugen.');
+        }
+        if (!$articleIsConsumable) {
+            $data['asset_type_id'] ??= (int) $article['asset_type_id'];
+            if (!$keepsArticle && (int) $article['asset_type_id'] !== (int) $data['asset_type_id']) {
+                throw ValidationException::single('article_id', 'Der Artikel gehört zum Assettyp „' . $article['asset_type_name'] . '“ und passt nicht zum gewählten Assettyp.');
+            }
         }
         $data['manufacturer_id'] = (int) $article['manufacturer_id'];
         $data['asset_category_id'] ??= $article['asset_category_id'] !== null ? (int) $article['asset_category_id'] : null;
@@ -251,8 +257,9 @@ final class AssetService
             throw ValidationException::single('asset_type_id', 'Assettyp nicht gefunden.');
         }
         if ($data['asset_category_id'] !== null) {
+            $keepsCategory = $existing !== null && (int) ($existing['asset_category_id'] ?? 0) === (int) $data['asset_category_id'];
             $category = $this->types->findCategory((int) $data['asset_category_id']);
-            if ($category === null || (int) $category['asset_type_id'] !== (int) $data['asset_type_id']) {
+            if ($category === null || (!$keepsCategory && (int) $category['asset_type_id'] !== (int) $data['asset_type_id'])) {
                 throw ValidationException::single('asset_category_id', 'Die Kategorie gehört nicht zum gewählten Assettyp.');
             }
         }
@@ -290,12 +297,44 @@ final class AssetService
         if ($data['purchase_date'] !== null && $data['warranty_until'] !== null && $data['warranty_until'] < $data['purchase_date']) {
             throw ValidationException::single('warranty_until', 'Das Garantieende darf nicht vor dem Kaufdatum liegen.');
         }
+        if (array_key_exists('parent_asset_code', $input)) {
+            $parentCode = trim((string) ($input['parent_asset_code'] ?? ''));
+            if ($parentCode === '') {
+                $data['parent_asset_id'] = null;
+            } else {
+                $selectedParent = $data['parent_asset_id'] !== null ? $this->assets->find((int) $data['parent_asset_id']) : null;
+                $matchesSelected = $selectedParent !== null && (
+                    strcasecmp((string) ($selectedParent['inventory_number'] ?? ''), $parentCode) === 0
+                    || strcasecmp(self::code($selectedParent), $parentCode) === 0
+                );
+                if (!$matchesSelected) {
+                    $resolved = preg_match('/^#(\d+)$/', $parentCode, $m) === 1
+                        ? $this->assets->find((int) $m[1])
+                        : $this->assets->findByInventoryNumber($parentCode);
+                    if ($resolved === null) {
+                        throw ValidationException::single('parent_asset_id', 'Übergeordnetes Asset „' . $parentCode . '“ nicht gefunden.');
+                    }
+                    $data['parent_asset_id'] = (int) $resolved['id'];
+                }
+            }
+        }
         if ($data['parent_asset_id'] !== null) {
             if ($excludeId !== null && (int) $data['parent_asset_id'] === $excludeId) {
                 throw ValidationException::single('parent_asset_id', 'Ein Asset kann nicht sich selbst übergeordnet sein.');
             }
-            if ($this->assets->find((int) $data['parent_asset_id']) === null) {
+            $anc = $this->assets->find((int) $data['parent_asset_id']);
+            if ($anc === null) {
                 throw ValidationException::single('parent_asset_id', 'Übergeordnetes Asset nicht gefunden.');
+            }
+            $seen = $excludeId !== null ? [$excludeId => true] : [];
+            $cursor = $anc;
+            for ($depth = 0; $cursor !== null && $depth < 25; $depth++) {
+                $cid = (int) $cursor['id'];
+                if (isset($seen[$cid])) {
+                    throw ValidationException::single('parent_asset_id', 'Zyklische Überordnung ist nicht zulässig.');
+                }
+                $seen[$cid] = true;
+                $cursor = $cursor['parent_asset_id'] !== null ? $this->assets->find((int) $cursor['parent_asset_id']) : null;
             }
         }
 

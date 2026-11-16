@@ -130,10 +130,18 @@ final class EmployeeRepository extends BaseRepository
         return (int) $this->fetchValue("SELECT COUNT(*) FROM employees e {$where}", $params);
     }
 
-    /** @return array<int,array<string,mixed>> */
-    public function activeForSelect(): array
+    /**
+     * Aktive Mitarbeiter plus optional der aktuell zugeordnete (auch wenn deaktiviert,
+     * damit das Bearbeiten eines Assets eine bestehende Zuordnung nicht stillschweigend löst).
+     * @return array<int,array<string,mixed>>
+     */
+    public function activeForSelect(?int $currentId = null): array
     {
-        return $this->fetchAll('SELECT id, display_name, department, personnel_number FROM employees WHERE is_active = 1 ORDER BY last_name, first_name');
+        if ($currentId === null) {
+            return $this->fetchAll('SELECT id, display_name, department, personnel_number, is_active FROM employees WHERE is_active = 1 ORDER BY last_name, first_name');
+        }
+
+        return $this->fetchAll('SELECT id, display_name, department, personnel_number, is_active FROM employees WHERE is_active = 1 OR id = :current ORDER BY last_name, first_name', ['current' => $currentId]);
     }
 
     /** Für die phonetische Autovervollständigung (Melder-Suche); enthält zusätzlich Benutzername, E-Mail und Telefon für Suche und Ergebnisanzeige. @return array<int,array<string,mixed>> */

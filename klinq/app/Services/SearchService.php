@@ -90,11 +90,19 @@ final class SearchService
             ], $this->manufacturers->search(['q' => $term, 'active' => ''], $perGroup, 0)));
         }
         if ($this->user->can('articles.view')) {
-            $groups[] = $this->group('articles', 'Artikel', '/articles?active=&q=' . rawurlencode($term), array_map(static fn (array $a): array => [
-                'title' => $a['manufacturer_name'] . ' ' . $a['name'],
-                'meta' => implode(' · ', array_filter([$a['article_number'], $a['asset_type_name'], ((int) $a['asset_count']) . ' Assets'])),
-                'url' => '/assets?status=all&article_id=' . (int) $a['id'],
-            ], $this->articles->search(['q' => $term, 'active' => ''], $perGroup, 0)));
+            $groups[] = $this->group('articles', 'Artikel', '/articles?active=&q=' . rawurlencode($term), array_map(static function (array $a): array {
+                $isConsumable = (int) ($a['is_consumable'] ?? 0) === 1;
+
+                return [
+                    'title' => $a['manufacturer_name'] . ' ' . $a['name'],
+                    'meta' => implode(' · ', array_filter($isConsumable
+                        ? [$a['article_number'], 'Verbrauchsmaterial', ((int) ($a['stock_quantity'] ?? 0)) . ' Stk. Bestand']
+                        : [$a['article_number'], $a['asset_type_name'], ((int) $a['asset_count']) . ' Assets'])),
+                    'url' => $isConsumable
+                        ? '/consumables?active=&q=' . rawurlencode((string) ($a['article_number'] ?: $a['name']))
+                        : '/assets?status=all&article_id=' . (int) $a['id'],
+                ];
+            }, $this->articles->search(['q' => $term, 'active' => ''], $perGroup, 0)));
         }
         if ($this->user->can('suppliers.view')) {
             $groups[] = $this->group('suppliers', 'Lieferanten', '/suppliers?active=&q=' . rawurlencode($term), array_map(static fn (array $s): array => [

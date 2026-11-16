@@ -37,7 +37,8 @@ final class ProcurementRepository extends BaseRepository
     {
         $where = $userId === null ? '' : ' WHERE r.requested_by = :user';
         return $this->fetchAll('SELECT r.*, cc.number AS cost_center_number, po.order_number,
-            (SELECT COUNT(*) FROM purchase_request_items i WHERE i.purchase_request_id = r.id) AS item_count
+            (SELECT COUNT(*) FROM purchase_request_items i WHERE i.purchase_request_id = r.id) AS item_count,
+            (SELECT GROUP_CONCAT(CONCAT(i.quantity, \'× \', i.description) ORDER BY i.id SEPARATOR \', \') FROM purchase_request_items i WHERE i.purchase_request_id = r.id) AS items_summary
             FROM purchase_requests r LEFT JOIN cost_centers cc ON cc.id = r.cost_center_id LEFT JOIN purchase_orders po ON po.id = r.purchase_order_id'
             . $where . ' ORDER BY FIELD(r.status, \'open\', \'converted\', \'cancelled\'), r.created_at DESC', $userId === null ? [] : ['user' => $userId]);
     }

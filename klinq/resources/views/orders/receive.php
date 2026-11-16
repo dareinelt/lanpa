@@ -49,20 +49,26 @@ $val = static fn (string $key, string $default = ''): string => $old !== null ? 
             <p class="text-muted mb-0">Alle Positionen sind bereits vollständig geliefert.</p>
         <?php else: ?>
         <div class="receive-items">
-        <?php foreach ($items as $it):
+        <?php
+        $anyCreatesAssets = false;
+        foreach ($items as $it):
             $id = (int) $it['id'];
             $line = $oldItems[$id] ?? [];
             $qty = (string) ($line['quantity'] ?? '');
             $serials = array_values((array) ($line['serials'] ?? []));
-            $createsAssets = (int) $it['creates_assets'] === 1;
+            $isConsumable = (int) ($it['is_consumable'] ?? 0) === 1;
+            $createsAssets = (int) $it['creates_assets'] === 1 && !$isConsumable;
+            if ($createsAssets) {
+                $anyCreatesAssets = true;
+            }
             $qtyKey = "items.{$id}.quantity";
         ?>
-            <fieldset class="receive-item<?= has_error($qtyKey) ? ' has-error' : '' ?>" data-receive-item data-item-id="<?= $id ?>" data-serial="<?= $createsAssets && (int) $it['has_serial_number'] === 1 ? '1' : '0' ?>" data-creates-assets="<?= $createsAssets ? '1' : '0' ?>">
+            <fieldset class="receive-item<?= has_error($qtyKey) ? ' has-error' : '' ?>" data-receive-item data-item-id="<?= $id ?>" data-serial="<?= $createsAssets && (int) $it['has_serial_number'] === 1 ? '1' : '0' ?>" data-creates-assets="<?= $createsAssets ? '1' : '0' ?>" data-consumable="<?= $isConsumable ? '1' : '0' ?>">
                 <div class="receive-item-head">
                     <div class="receive-item-title">
                         <span class="text-muted">Pos. <?= (int) $it['position'] ?></span>
                         <strong><?= e($it['description']) ?></strong>
-                        <span class="text-sm text-muted"><?= $it['asset_type_name'] ? icon($it['asset_type_icon'] ?: 'box', 'icon icon-sm icon-muted') . ' ' . e(type_label(['name' => $it['asset_type_name'], 'inventory_prefix' => $it['inventory_prefix'], 'requires_inventory_number' => $it['requires_inventory_number'] ?? 1])) : 'ohne Asset' ?><?= $it['article_number'] ? ' · Art.-Nr. ' . e($it['article_number']) : '' ?></span>
+                        <span class="text-sm text-muted"><?= $isConsumable ? 'Verbrauchsmaterial (erhöht Bestand)' : ($it['asset_type_name'] ? icon($it['asset_type_icon'] ?: 'box', 'icon icon-sm icon-muted') . ' ' . e(type_label(['name' => $it['asset_type_name'], 'inventory_prefix' => $it['inventory_prefix'], 'requires_inventory_number' => $it['requires_inventory_number'] ?? 1])) : 'ohne Asset') ?><?= $it['article_number'] ? ' · Art.-Nr. ' . e($it['article_number']) : '' ?></span>
                     </div>
                     <div class="receive-item-qty">
                         <label for="q-<?= $id ?>">Geliefert <span class="text-muted">(offen: <?= (int) $it['quantity_open'] ?> von <?= (int) $it['quantity'] ?>)</span></label>
@@ -92,7 +98,7 @@ $val = static fn (string $key, string $default = ''): string => $old !== null ? 
     </div>
 
     <div class="form-actions receive-actions">
-        <button type="submit" class="btn btn-primary btn-lg"<?= $items === [] ? ' disabled' : '' ?>><?= icon('check') ?> Wareneingang buchen & Assets anlegen</button>
+        <button type="submit" class="btn btn-primary btn-lg"<?= $items === [] ? ' disabled' : '' ?>><?= icon('check') ?> <?= ($anyCreatesAssets ?? false) ? 'Wareneingang buchen & Assets anlegen' : 'Wareneingang buchen' ?></button>
         <a class="btn btn-ghost" href="/orders/<?= (int) $row['id'] ?>">Abbrechen</a>
         <span class="text-sm text-muted" data-receive-summary></span>
     </div>

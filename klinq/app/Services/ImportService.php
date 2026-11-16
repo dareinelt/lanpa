@@ -327,7 +327,9 @@ final class ImportService
                 $add('error', 'article', 'Artikel „' . $article['name'] . '“ ist inaktiv.');
             } else {
                 $input['article_id'] = (string) $article['id'];
-                if ($type !== null && (int) $article['asset_type_id'] !== (int) $type['id']) {
+                if ((int) ($article['is_consumable'] ?? 0) === 1) {
+                    $add('error', 'article', 'Artikel „' . $article['name'] . '“ ist Verbrauchsmaterial und kann keine Assets erzeugen.');
+                } elseif ($type !== null && (int) $article['asset_type_id'] !== (int) $type['id']) {
                     $add('error', 'article', 'Artikel „' . $article['name'] . '“ gehört zum Assettyp ' . $article['asset_type_name'] . ', nicht zu ' . $type['name'] . '.');
                 }
             }

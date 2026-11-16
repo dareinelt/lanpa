@@ -124,7 +124,7 @@
                 <label for="f-supplier">Lieferant</label>
                 <select id="f-supplier" name="supplier_id">
                     <option value="">Kein Lieferant</option>
-                    <?php foreach ($suppliers as $s): ?><option value="<?= (int) $s['id'] ?>"<?= selected(form_value($row, 'supplier_id'), $s['id']) ?>><?= e($s['name']) ?></option><?php endforeach; ?>
+                    <?php foreach ($suppliers as $s): ?><option value="<?= (int) $s['id'] ?>"<?= selected(form_value($row, 'supplier_id'), $s['id']) ?>><?= e($s['name']) ?><?= (int) ($s['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('supplier_id') ?>
             </div>
@@ -144,7 +144,7 @@
                 <label for="f-employee">Mitarbeiter</label>
                 <select id="f-employee" name="employee_id">
                     <option value="">Nicht zugeordnet</option>
-                    <?php foreach ($employees as $emp): ?><option value="<?= (int) $emp['id'] ?>"<?= selected(form_value($row, 'employee_id'), $emp['id']) ?>><?= e($emp['display_name']) ?><?= $emp['department'] ? ' · ' . e($emp['department']) : '' ?></option><?php endforeach; ?>
+                    <?php foreach ($employees as $emp): ?><option value="<?= (int) $emp['id'] ?>"<?= selected(form_value($row, 'employee_id'), $emp['id']) ?>><?= e($emp['display_name']) ?><?= $emp['department'] ? ' · ' . e($emp['department']) : '' ?><?= (int) ($emp['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('employee_id') ?>
                 <span class="form-hint">Für den regulären Ablauf die <strong>Entnahme</strong> nutzen – hier nur Direktzuordnung/Korrektur. Mit Mitarbeiter wird der Status automatisch „Ausgegeben“.</span>
@@ -160,7 +160,7 @@
                 <label for="f-location">Standort</label>
                 <select id="f-location" name="location_id">
                     <option value="">Kein Standort</option>
-                    <?php foreach ($locationOptions as $l): ?><option value="<?= (int) $l['id'] ?>"<?= selected(form_value($row, 'location_id'), $l['id']) ?>><?= str_repeat('  ', (int) $l['depth']) ?><?= e($l['name']) ?></option><?php endforeach; ?>
+                    <?php foreach ($locationOptions as $l): ?><option value="<?= (int) $l['id'] ?>"<?= selected(form_value($row, 'location_id'), $l['id']) ?>><?= str_repeat('  ', (int) $l['depth']) ?><?= e($l['name']) ?><?= (int) ($l['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('location_id') ?>
             </div>
@@ -168,7 +168,7 @@
                 <label for="f-cc">Kostenstelle</label>
                 <select id="f-cc" name="cost_center_id">
                     <option value="">Keine Kostenstelle</option>
-                    <?php foreach ($costCenters as $c): ?><option value="<?= (int) $c['id'] ?>"<?= selected(form_value($row, 'cost_center_id'), $c['id']) ?>><?= e($c['number']) ?> – <?= e($c['description']) ?></option><?php endforeach; ?>
+                    <?php foreach ($costCenters as $c): ?><option value="<?= (int) $c['id'] ?>"<?= selected(form_value($row, 'cost_center_id'), $c['id']) ?>><?= e($c['number']) ?> – <?= e($c['description']) ?><?= (int) ($c['is_active'] ?? 1) === 1 ? '' : ' (inaktiv)' ?></option><?php endforeach; ?>
                 </select>
                 <?= field_error('cost_center_id') ?>
             </div>
@@ -185,8 +185,13 @@
                 <?= field_error('status_id') ?>
             </div>
             <div class="form-group">
+                <?php
+                $parentCodeDefault = !$isNew && !empty($row['parent_asset_id'])
+                    ? ((string) ($row['parent_inventory_number'] ?? '') !== '' ? (string) $row['parent_inventory_number'] : '#' . (int) $row['parent_asset_id'])
+                    : '';
+                ?>
                 <label for="f-parent">Übergeordnetes Asset (Inventarnr.)</label>
-                <input id="f-parent" list="parent-assets" class="mono" placeholder="z. B. PC24001" data-parent-input value="<?= e(!$isNew && $row['parent_inventory_number'] ? $row['parent_inventory_number'] : '') ?>" autocomplete="off">
+                <input id="f-parent" name="parent_asset_code" list="parent-assets" class="mono" placeholder="z. B. PC24001" data-parent-input value="<?= e(form_value($row, 'parent_asset_code', $parentCodeDefault)) ?>" autocomplete="off">
                 <input type="hidden" name="parent_asset_id" value="<?= e(form_value($row, 'parent_asset_id')) ?>" data-parent-id>
                 <datalist id="parent-assets"></datalist>
                 <?= field_error('parent_asset_id') ?>

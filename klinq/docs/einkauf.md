@@ -61,12 +61,12 @@ Der Status *Teilweise geliefert* / *Vollständig geliefert* wird nach jedem Ware
 
 Positionen werden direkt auf der Bestellseite erfasst. Zwei Arten:
 
-- **Artikelposition** – Auswahl aus dem Artikelstamm. Bezeichnung (`Hersteller Artikelname`) und Assettyp werden übernommen; die erzeugten Assets erhalten Artikel, Hersteller und Typ.
+- **Artikelposition** – Auswahl aus dem Artikelstamm. Bezeichnung (`Hersteller Artikelname`) und Assettyp werden übernommen; die erzeugten Assets erhalten Artikel, Hersteller und Typ. Hat der Artikel keinen Typ (Verbrauchsmaterial), bleibt das Feld in der Position leer.
 - **Freie Position** – beliebige Bezeichnung mit optionalem Assettyp. Ohne Haken *erzeugt Assets* (z. B. Versandkosten, Dienstleistungen) wird die Menge nur mitgezählt, es entstehen keine Assets.
 
 Weitere Felder: Menge (1–10 000), Netto-Einzelpreis (deutsche oder englische Schreibweise), Bemerkung. Die Fußzeile summiert Menge, gelieferte Menge und Gesamtwert. Regeln:
 
-- Positionen, die Assets erzeugen, benötigen einen Assettyp (direkt oder über den Artikel).
+- Positionen, die Assets erzeugen, benötigen einen Assettyp (direkt oder über den Artikel); Positionen mit Verbrauchsmaterial benötigen keinen.
 - Die Menge kann nicht unter die bereits gelieferte Menge gesenkt werden; Positionen mit Lieferungen lassen sich nicht löschen.
 - Positionsnummern werden nicht wiederverwendet.
 
@@ -90,7 +90,7 @@ Bedarfsmeldungen sind der Weg für alle, die selbst nicht bestellen dürfen: Jed
 | Kostenstelle | optional, wird in die spätere Bestellung übernommen |
 | Begründung / Hinweis | Freitext, landet als Bemerkung in der Bestellung |
 
-Die Liste zeigt eigene Meldungen; mit `orders.manage` sind alle Meldungen sichtbar – sortiert nach Status (offen zuerst) und Meldedatum. Der Einkauf wählt zu einer offenen Meldung einen Lieferanten und übernimmt sie mit `In Bestellung übernehmen`: In einer Transaktion wird die Meldung auf *Übernommen* gesetzt, ein Bestellentwurf mit der Bemerkung `Aus Bedarfsmeldung #<Nr.>` angelegt und jede Bedarfsposition als Bestellposition eingefügt. Die Meldung verlinkt danach dauerhaft auf die Bestellung.
+Die Liste zeigt eigene Meldungen; mit `orders.manage` sind alle Meldungen sichtbar – sortiert nach Status (offen zuerst) und Meldedatum, inklusive kompakter Positionsübersicht (*Bedarf*). Der Einkauf wählt zu einer offenen Meldung einen Lieferanten und übernimmt sie mit `In Bestellung übernehmen`: In einer Transaktion wird die Meldung auf *Übernommen* gesetzt, ein Bestellentwurf mit der Bemerkung `Aus Bedarfsmeldung #<Nr.>` angelegt und jede Bedarfsposition als Bestellposition eingefügt (Stammartikel erzeugen beim späteren Wareneingang regulär Assets, Verbrauchsartikel erhöhen den Bestand, Freitextpositionen zählen ohne Asset-Anlage). Die Meldung verlinkt danach dauerhaft auf die Bestellung.
 
 Der Statuswechsel erfolgt als atomare Reservierung (`open → converted`); eine zweite, gleichzeitige Übernahme schlägt mit einem Konflikt fehl, sodass keine doppelten Bestellungen entstehen.
 
@@ -106,6 +106,8 @@ Der Statuswechsel erfolgt als atomare Reservierung (`open → converted`); eine 
 
 Artikel, die nicht inventarisiert, sondern nur als **Menge** geführt werden (Toner, Tinte, Batterien), lassen sich im Artikelstamm als **Verbrauchsmaterial** kennzeichnen und erhalten dann *Mindestbestand* und *Aktuellen Bestand*. Wird der Haken entfernt, setzt die Anwendung Mindestbestand und Bestand zurück.
 
+Verbrauchsmaterial gehört zu **keinem Assettyp** (PC/NET/…) und zu keiner Kategorie: Sobald der Haken gesetzt ist – oder das Formular über *Bestand → Verbrauchsmaterial → Verbrauchsmaterial anlegen* (`/articles/new?is_consumable=1`) geöffnet wird – sind die Felder *Assettyp* und *Kategorie* deaktiviert und leer, *Relevant für Übergabeprotokoll* wird ausgeblendet, ein Hinweis erklärt den Grund und die Pflichtmarkierung entfällt. Beim versehentlichen Umschalten im Formular merkt sich der Browser eine zuvor getroffene Typ-/Kategorieauswahl; beim Speichern als Verbrauchsmaterial bleiben `asset_type_id` und `asset_category_id` `NULL` und `is_handover_relevant = 0`. Artikel, denen bereits Assets zugeordnet sind, können zum Schutz des Altbestands nachträglich weder auf Verbrauchsmaterial umgestellt noch im Assettyp geändert werden; Migration `049_articles_consumable_without_asset_type.sql` lässt solche historischen Datensätze ebenfalls unangetastet.
+
 **Verbrauchsmaterial oder Lagerartikel?**
 
 | | Verbrauchsmaterial | Lagerartikel |
@@ -119,12 +121,16 @@ Artikel, die nicht inventarisiert, sondern nur als **Menge** geführt werden (To
 
 ### Ablauf im Alltag
 
-1. **Anlegen**: *Bestand → Verbrauchsmaterial* → **Verbrauchsmaterial anlegen** (öffnet das Artikelformular mit gesetztem Häkchen) – Mindestbestand und Anfangsbestand eintragen.
+1. **Anlegen**: *Bestand → Verbrauchsmaterial* → **Verbrauchsmaterial anlegen** (öffnet das Artikelformular mit gesetztem Häkchen) – *Assettyp* und *Kategorie* sind dann bereits deaktiviert; nur Mindestbestand und Anfangsbestand eintragen.
 2. **Bestellen**: Fällt der Bestand auf oder unter den Mindestbestand, zeigt die Übersicht *nachbestellen*; **Bestellvorschläge** erzeugt daraus einen Bestellentwurf.
 3. **Wareneingang**: Die Lieferung erhöht den Bestand automatisch.
-4. **Ausgabe/Inventur**: In der Übersicht den neuen Bestand eintragen und speichern (`POST /consumables/{id}/stock`, Recht `articles.manage`, Audit-Log *Bestand gesetzt* mit altem und neuem Wert).
+4. **Ausgabe/Inventur**: In der Übersicht per Schnellbuttons **−1 / +1** zu-/abbuchen oder den exakten Zielbestand eintragen und speichern (`POST /consumables/{id}/stock` mit `delta` oder `stock_quantity`, Recht `articles.manage`, Audit-Log mit altem und neuem Wert).
 
 ![Verbrauchsmaterial](screenshots/consumables.png)
+
+Das Formular für Verbrauchsmaterial zeigt den deaktivierten Assettyp samt Hinweis:
+
+![Artikelformular für Verbrauchsmaterial ohne Assettyp](screenshots/article-form-consumable.png)
 
 Die Übersicht **Bestand → Verbrauchsmaterial** (`/consumables`, Recht `articles.view`) listet alle Verbrauchsartikel mit Bestand, Mindestbestand und Status (*nachbestellen* / *ausreichend* / *kein Mindestbestand*), unterschreitende Artikel zuerst; filterbar nach Text und „Am/unter Mindestbestand“.
 

@@ -1,4 +1,4 @@
-<?php require_once __DIR__ . '/../partials/helpers.php'; ob_start(); $isNew = $row === null; $back = $isNew ? '/suppliers' : '/suppliers/' . (int) $row['id']; ?>
+<?php require_once __DIR__ . '/../partials/helpers.php'; ob_start(); $isNew = $row === null; $back = ($returnTo ?? '') !== '' ? $returnTo : ($isNew ? '/suppliers' : '/suppliers/' . (int) $row['id']); ?>
 <div class="page-header">
     <div><h1><?= e($title) ?></h1></div>
     <div class="page-actions"><a class="btn btn-ghost" href="<?= e($back) ?>"><?= icon('arrow-left') ?> Zurück</a></div>

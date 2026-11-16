@@ -17,6 +17,22 @@ final class AssetStatusRepository extends BaseRepository
         return $onlyActive ? array_values(array_filter($rows, static fn (array $r): bool => (int) $r['is_active'] === 1)) : $rows;
     }
 
+    /**
+     * Aktive Status plus optional der aktuell gesetzte (auch wenn deaktiviert).
+     * @return array<int,array<string,mixed>>
+     */
+    public function selectable(?int $currentId = null): array
+    {
+        if ($currentId === null) {
+            return $this->all(true);
+        }
+
+        return array_values(array_filter(
+            array_values($this->byCode()),
+            static fn (array $r): bool => (int) $r['is_active'] === 1 || (int) $r['id'] === $currentId
+        ));
+    }
+
     /** @return array<string,mixed>|null */
     public function find(int $id): ?array
     {

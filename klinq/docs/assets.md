@@ -27,10 +27,10 @@ Regeln:
 
 - **Typabhängige Felder**: MAC-Adresse und IMEI werden nur eingeblendet, wenn der Assettyp sie vorsieht (`has_mac_address`, `has_imei`).
 - **Artikel (Pflicht)**: Jedes Asset verweist auf einen zuvor angelegten Stammartikel (Stammdaten → Artikel). Die Auswahl erfolgt über ein Textfeld mit Vervollständigung (`GET /api/articles/search`, Suche nach Name, Artikelnummer, Hersteller); freie Eingaben sind nicht möglich. Assettyp, Hersteller und Kategorie werden vom Artikel abgeleitet. Das gilt auch für den CSV-Import (Spalte *Artikel* ist Pflicht) und den Wareneingang (Positionen, die Assets erzeugen, benötigen einen Artikel).
-- **Artikelstamm**: Artikel werden wie Hersteller phonetisch auf Dubletten geprüft (Kölner Phonetik über `normalized_name`/`phonetic_key`, Live-Hinweis über `GET /api/articles/check`, Bestätigung beim Speichern). Die Checkbox **„Relevant für Übergabeprotokoll“** legt fest, ob Assets dieses Artikels im [Übergabeprotokoll](uebergabeprotokoll.md) des Mitarbeiters erscheinen. Die Checkbox **„Verbrauchsmaterial“** mit *Mindestbestand* und *Aktuellem Bestand* kennzeichnet Artikel, die nicht inventarisiert werden: Sie erzeugen im Wareneingang keine Assets, sondern erhöhen nur ihren Lagerbestand, und erscheinen bei Unterschreitung in den [Bestellvorschlägen](einkauf.md).
+- **Artikelstamm**: Artikel werden wie Hersteller phonetisch auf Dubletten geprüft (Kölner Phonetik über `normalized_name`/`phonetic_key`, Live-Hinweis über `GET /api/articles/check`, Bestätigung beim Speichern). Die Checkbox **„Relevant für Übergabeprotokoll“** legt fest, ob Assets dieses Artikels im [Übergabeprotokoll](uebergabeprotokoll.md) des Mitarbeiters erscheinen. Die Checkbox **„Verbrauchsmaterial“** mit *Mindestbestand* und *Aktuellem Bestand* kennzeichnet Artikel, die nicht inventarisiert werden: Sie erzeugen im Wareneingang keine Assets, sondern erhöhen nur ihren Lagerbestand, und erscheinen bei Unterschreitung in den [Bestellvorschlägen](einkauf.md). Verbrauchsmaterial hat **keinen Assettyp und keine Kategorie**: Die Felder sind im Formular deaktiviert (auch beim Absprung über *Bestand → Verbrauchsmaterial*), ein Typ ist dort nicht Pflicht, und ein Verbrauchsartikel lässt sich nicht als Asset erfassen. Sobald einem Artikel bereits Assets zugeordnet sind, sind Assettyp und Verbrauchsmaterial-Kennzeichnung gesperrt, damit bestehende Inventardatensätze konsistent bleiben.
 - **Normalisierung**: Seriennummern werden für den Dublettenvergleich in Großbuchstaben ohne Leer-/Trennzeichen gespeichert (`serial_number_normalized`), MAC-Adressen als `AA:BB:CC:DD:EE:FF`, IMEI als 14–16 Ziffern. Beträge akzeptieren deutsches (`1.299,00`) und englisches (`1,299.00`) Format.
 - **Dubletten**: Seriennummern sind je Assettyp eindeutig, MAC-Adresse und IMEI global. Während der Eingabe prüft `GET /api/assets/check` live und zeigt den Treffer an; der Server lehnt Dubletten beim Speichern zusätzlich ab.
-- **Speichern & weiteres anlegen** behält Typ, Artikel, Hersteller, Standort, Kostenstelle, Lieferant und Kaufdaten als Vorbelegung – für die Erfassung ganzer Lieferungen.
+- **Speichern & weiteres anlegen** behält Typ, Kategorie, Artikel, Hersteller, Standort, Kostenstelle, Lieferant, Bestellung sowie Kauf- und Garantiedaten als Vorbelegung – für die Erfassung ganzer Lieferungen.
 
 ## Status und automatische Ableitung
 
@@ -91,7 +91,7 @@ Assettypen und Kategorien sind bearbeitbare Kataloge unter **Auswertung & System
 
 ![Kataloge – Kategorien](screenshots/catalogs-categories.png)
 
-Einträge werden nicht gelöscht, sondern **deaktiviert**: Deaktivierte Typen und Kategorien stehen bei neuen Assets, Artikeln und Bestellpositionen nicht mehr zur Auswahl. Beim Bearbeiten eines Assets oder Artikels bleibt eine bereits gewählte, inzwischen deaktivierte Kategorie (bzw. beim Artikel der Assettyp) auswählbar und wird nicht stillschweigend entfernt. Alle Änderungen landen im Audit-Log (`asset_type`, `asset_category`).
+Einträge werden nicht gelöscht, sondern **deaktiviert**: Deaktivierte Typen, Kategorien und Stammdaten (Standorte inkl. Elternpfad, Mitarbeiter, Hersteller, Lieferanten, Kostenstellen, Artikel) stehen bei Neuanlagen nicht mehr zur Auswahl. Beim Bearbeiten bestehender Datensätze bleibt eine bereits gespeicherte, inzwischen deaktivierte Zuordnung jedoch sichtbar (`(inaktiv)`) und erhalten, sodass beim Speichern keine Zuordnungen oder Ausgabestatus stillschweigend verloren gehen. Alle Änderungen landen im Audit-Log (`asset_type`, `asset_category`).
 
 Der Seeder (`database/seeders/001_defaults.sql`) spielt die Standardtypen (PC, MD, NET, ZUB) und -kategorien nur in eine **leere** Tabelle ein; im Katalog umbenannte oder deaktivierte Einträge werden bei späteren Migrationsläufen nicht überschrieben oder neu angelegt.
 
@@ -110,7 +110,7 @@ Für Dinge, die einzeln geführt, aber nicht inventarisiert werden sollen (z. B.
 
 ![Lagerartikel in der Detailansicht](screenshots/asset-detail-lagerartikel.png)
 
-Abzugrenzen ist **Verbrauchsmaterial** (Artikel mit „Verbrauchsmaterial“, z. B. Toner, Tinte): Dafür entstehen gar keine Einzel-Assets, sondern nur ein Lagerbestand je Artikel – siehe [Verbrauchsmaterial](einkauf.md#verbrauchsmaterial-und-bestellvorschläge-ordersreplenishment).
+Abzugrenzen ist **Verbrauchsmaterial** (Artikel mit „Verbrauchsmaterial“, z. B. Toner, Tinte): Dafür entstehen gar keine Einzel-Assets, sondern nur ein Lagerbestand je Artikel; Assettyp und Kategorie entfallen dort. Siehe [Verbrauchsmaterial](einkauf.md#verbrauchsmaterial-und-bestellvorschläge-ordersreplenishment).
 
 ## Berechtigungen
 

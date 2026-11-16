@@ -274,4 +274,71 @@ final class AssetServiceIntegrationTest extends DatabaseTestCase
         $direct = $search->resolveDirect($created['inventory_number']);
         $this->assertSame('/assets/' . $created['id'], $direct);
     }
+
+    public function testParentAssetCodeResolvesServerSidePreservesStockParentAndBlocksCycles(): void
+    {
+        $this->loginAs('admin');
+        $svc = $this->c->get(AssetService::class);
+        $assets = $this->c->get(AssetRepository::class);
+
+        $notebook = $svc->create($this->pcInput(['name' => 'Hauptnotebook']));
+        $dock = $svc->create([
+            'asset_type_id' => $this->typeId('ZUB'),
+            'article_id' => (string) $this->articleIdFor('ZUB'),
+            'name' => 'USB-C Dock',
+            'parent_asset_code' => $notebook['inventory_number'],
+            'parent_asset_id' => '',
+        ]);
+        $this->assertSame((int) $notebook['id'], (int) $assets->find($dock['id'])['parent_asset_id']);
+
+        // Übergeordneter Lagerartikel ohne Inventarnummer (#ID) bleibt beim Bearbeiten erhalten
+        $childCable = $svc->create([
+            'asset_type_id' => $this->typeId('ZUB'),
+            'article_id' => (string) $this->articleIdFor('ZUB'),
+            'name' => 'Netzteil zu Dock',
+            'parent_asset_id' => (string) $dock['id'],
+        ]);
+        $cableRow = $assets->find($childCable['id']);
+        $svc->update($childCable['id'], $cableRow, [
+            'article_id' => (string) $cableRow['article_id'],
+            'name' => 'Netzteil 100W zu Dock',
+            'parent_asset_code' => '#' . $dock['id'],
+            'parent_asset_id' => (string) $dock['id'],
+            'version' => (string) $cableRow['version'],
+        ]);
+        $this->assertSame((int) $dock['id'], (int) $assets->find($childCable['id'])['parent_asset_id']);
+
+        // Zyklus (Notebook unter eigenem Kind-Asset) und unbekannter Code werden abgewiesen
+        $nbRow = $assets->find($notebook['id']);
+        $this->assertThrows(ValidationException::class, fn () => $svc->update($notebook['id'], $nbRow, [
+            'article_id' => (string) $nbRow['article_id'],
+            'parent_asset_code' => '#' . $childCable['id'],
+            'version' => (string) $nbRow['version'],
+        ]), 'Zyklische');
+
+        $this->assertThrows(ValidationException::class, fn () => $svc->create($this->pcInput([
+            'parent_asset_code' => 'PC999999',
+        ])), 'nicht gefunden');
+    }
+
+    public function testGlobalSearchRoutesConsumableArticleToConsumablesOverview(): void
+    {
+        $this->loginAs('admin');
+        $mId = $this->c->get(\App\Services\ManufacturerService::class)->create(['name' => 'Suchtoner AG', 'is_active' => '1'], true);
+        $this->c->get(\App\Services\ArticleService::class)->create([
+            'manufacturer_id' => (string) $mId,
+            'name' => 'Spezialtoner ZX-77',
+            'article_number' => 'ZX-77-BLK',
+            'is_active' => '1',
+            'is_consumable' => '1',
+            'stock_quantity' => '9',
+        ], true);
+
+        $groups = array_column($this->c->get(SearchService::class)->search('ZX-77'), null, 'key');
+        $this->assertCount(1, $groups['articles']['items']);
+        $hit = $groups['articles']['items'][0];
+        $this->assertStringContains('Verbrauchsmaterial', $hit['meta']);
+        $this->assertStringContains('9 Stk. Bestand', $hit['meta']);
+        $this->assertStringContains('/consumables?', $hit['url']);
+    }
 }

@@ -41,10 +41,17 @@ final class ManufacturerRepository extends BaseRepository
         return (int) $this->fetchValue("SELECT COUNT(*) FROM manufacturers m {$where}", $params);
     }
 
-    /** @return array<int,array<string,mixed>> */
-    public function activeForSelect(): array
+    /**
+     * Aktive Hersteller plus optional der aktuell zugeordnete (auch wenn deaktiviert).
+     * @return array<int,array<string,mixed>>
+     */
+    public function activeForSelect(?int $currentId = null): array
     {
-        return $this->fetchAll('SELECT id, name, short_name FROM manufacturers WHERE is_active = 1 ORDER BY name');
+        if ($currentId === null) {
+            return $this->fetchAll('SELECT id, name, short_name, is_active FROM manufacturers WHERE is_active = 1 ORDER BY name');
+        }
+
+        return $this->fetchAll('SELECT id, name, short_name, is_active FROM manufacturers WHERE is_active = 1 OR id = :current ORDER BY name', ['current' => $currentId]);
     }
 
     /**

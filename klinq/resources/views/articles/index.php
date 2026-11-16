@@ -43,7 +43,7 @@ ob_start(); ?>
                 <td><a href="/manufacturers/<?= (int) $r['manufacturer_id'] ?>"><?= e($r['manufacturer_name']) ?></a></td>
                 <td><strong><?= e($r['name']) ?></strong></td>
                 <td class="mono"><?= e($r['article_number'] ?? '–') ?></td>
-                <td><?= e($r['asset_type_name']) ?></td>
+                <td><?= $r['asset_type_name'] !== null ? e($r['asset_type_name']) : '<span class="text-muted">–</span>' ?></td>
                 <td><?= e($r['category_name'] ?? '–') ?></td>
                 <td><?= (int) ($r['is_handover_relevant'] ?? 0) ? badge('Übergabe', 'info') : '<span class="text-muted">–</span>' ?></td>
                 <td><?= (int) ($r['is_consumable'] ?? 0) ? badge((int) $r['stock_quantity'] . ' / ' . (int) $r['minimum_stock'], (int) $r['stock_quantity'] <= (int) $r['minimum_stock'] ? 'warning' : 'info') : '<span class="text-muted">–</span>' ?></td>

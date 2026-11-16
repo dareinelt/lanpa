@@ -52,9 +52,23 @@ final class ProcurementController extends BaseController
         $this->currentUser->require('orders.manage');
         $template = $this->findOrFail($this->procurement->template($request->paramInt('id')), 'Vorlage nicht gefunden');
         if ($template['supplier_id'] === null) { $this->flash('error', 'Die Vorlage hat keinen Lieferanten.'); return $this->redirect('/orders/templates'); }
-        $orderId = $this->orderService->create(['supplier_id' => (string) $template['supplier_id'], 'cost_center_id' => (string) ($template['cost_center_id'] ?? ''), 'note' => (string) ($template['note'] ?? '')]);
-        foreach ($this->procurement->templateItems((int) $template['id']) as $item) {
-            $this->orderService->addItem($orderId, $this->orders->find($orderId) ?? [], $item);
+        try {
+            $orderId = $this->procurement->transaction(function () use ($template): int {
+                $orderId = $this->orderService->create(['supplier_id' => (string) $template['supplier_id'], 'cost_center_id' => (string) ($template['cost_center_id'] ?? ''), 'note' => (string) ($template['note'] ?? '')]);
+                foreach ($this->procurement->templateItems((int) $template['id']) as $item) {
+                    $this->orderService->addItem($orderId, $this->orders->find($orderId) ?? [], $item);
+                }
+
+                return $orderId;
+            });
+        } catch (ValidationException $e) {
+            $this->flash('error', implode(' ', $e->errors()));
+
+            return $this->redirect('/orders/templates');
+        } catch (ConflictException $e) {
+            $this->flash('error', $e->getMessage());
+
+            return $this->redirect('/orders/templates');
         }
         $this->flash('success', 'Entwurf aus Vorlage erstellt.');
         return $this->redirect('/orders/' . $orderId);
@@ -94,18 +108,39 @@ final class ProcurementController extends BaseController
         $this->currentUser->require('orders.manage');
         $demandId = $request->paramInt('id');
         $supplierId = $request->int('supplier_id') ?? 0;
-        $orderId = $this->procurement->transaction(function () use ($demandId, $supplierId): int {
-            if (!$this->procurement->claimRequest($demandId)) {
-                throw new ConflictException('Die Bedarfsmeldung wurde bereits verarbeitet.');
-            }
-            $demand = $this->findOrFail($this->procurement->request($demandId), 'Bedarfsmeldung nicht gefunden');
-            $orderId = $this->orderService->create(['supplier_id' => (string) $supplierId, 'cost_center_id' => (string) ($demand['cost_center_id'] ?? ''), 'note' => 'Aus Bedarfsmeldung #' . $demand['id'] . ($demand['note'] ? ': ' . $demand['note'] : '')]);
-            foreach ($this->procurement->requestItems((int) $demand['id']) as $item) {
-                $this->orderService->addItem($orderId, $this->orders->find($orderId) ?? [], ['article_id' => (string) ($item['article_id'] ?? ''), 'description' => $item['description'], 'quantity' => (string) $item['quantity'], 'creates_assets' => '0', 'note' => $item['note']]);
-            }
-            $this->procurement->updateRequest((int) $demand['id'], ['purchase_order_id' => $orderId]);
-            return $orderId;
-        });
+        if ($supplierId < 1) {
+            $this->flash('error', 'Bitte einen Lieferanten auswählen.');
+
+            return $this->redirect('/orders/requests');
+        }
+        try {
+            $orderId = $this->procurement->transaction(function () use ($demandId, $supplierId): int {
+                if (!$this->procurement->claimRequest($demandId)) {
+                    throw new ConflictException('Die Bedarfsmeldung wurde bereits verarbeitet.');
+                }
+                $demand = $this->findOrFail($this->procurement->request($demandId), 'Bedarfsmeldung nicht gefunden');
+                $orderId = $this->orderService->create(['supplier_id' => (string) $supplierId, 'cost_center_id' => (string) ($demand['cost_center_id'] ?? ''), 'note' => 'Aus Bedarfsmeldung #' . $demand['id'] . ($demand['note'] ? ': ' . $demand['note'] : '')]);
+                foreach ($this->procurement->requestItems((int) $demand['id']) as $item) {
+                    $this->orderService->addItem($orderId, $this->orders->find($orderId) ?? [], [
+                        'article_id' => (string) ($item['article_id'] ?? ''),
+                        'description' => $item['description'],
+                        'quantity' => (string) $item['quantity'],
+                        'creates_assets' => $item['article_id'] !== null ? '1' : '0',
+                        'note' => $item['note'],
+                    ]);
+                }
+                $this->procurement->updateRequest((int) $demand['id'], ['purchase_order_id' => $orderId]);
+                return $orderId;
+            });
+        } catch (ValidationException $e) {
+            $this->flash('error', implode(' ', $e->errors()));
+
+            return $this->redirect('/orders/requests');
+        } catch (ConflictException $e) {
+            $this->flash('error', $e->getMessage());
+
+            return $this->redirect('/orders/requests');
+        }
         $this->flash('success', 'Bedarfsmeldung in Bestellung übernommen.');
         return $this->redirect('/orders/' . $orderId);
     }
@@ -121,9 +156,23 @@ final class ProcurementController extends BaseController
         $supplierId = $request->int('supplier_id') ?? 0;
         $suggestions = $this->articles->replenishmentSuggestions();
         if ($supplierId < 1 || $suggestions === []) { $this->flash('error', 'Bitte Lieferant wählen; es müssen Bestellvorschläge vorhanden sein.'); return $this->redirect('/orders/replenishment'); }
-        $orderId = $this->orderService->create(['supplier_id' => (string) $supplierId, 'note' => 'Automatisch aus Bestandsunterschreitungen erstellt.']);
-        foreach ($suggestions as $article) {
-            $this->orderService->addItem($orderId, $this->orders->find($orderId) ?? [], ['article_id' => (string) $article['id'], 'quantity' => (string) max(1, (int) $article['minimum_stock'] * 2 - (int) $article['stock_quantity']), 'creates_assets' => '0']);
+        try {
+            $orderId = $this->procurement->transaction(function () use ($supplierId, $suggestions): int {
+                $orderId = $this->orderService->create(['supplier_id' => (string) $supplierId, 'note' => 'Automatisch aus Bestandsunterschreitungen erstellt.']);
+                foreach ($suggestions as $article) {
+                    $this->orderService->addItem($orderId, $this->orders->find($orderId) ?? [], ['article_id' => (string) $article['id'], 'quantity' => (string) max(1, (int) $article['minimum_stock'] * 2 - (int) $article['stock_quantity']), 'creates_assets' => '0']);
+                }
+
+                return $orderId;
+            });
+        } catch (ValidationException $e) {
+            $this->flash('error', implode(' ', $e->errors()));
+
+            return $this->redirect('/orders/replenishment');
+        } catch (ConflictException $e) {
+            $this->flash('error', $e->getMessage());
+
+            return $this->redirect('/orders/replenishment');
         }
         $this->flash('success', 'Bestellvorschlag als Entwurf erstellt.');
         return $this->redirect('/orders/' . $orderId);

@@ -2,26 +2,56 @@
 (function () {
     "use strict";
 
-    // Positionsformular: Artikelwahl übernimmt Assettyp und schlägt Bezeichnung vor
+    // Positionsformular: Artikelwahl übernimmt Assettyp, steuert „Erzeugt Assets“ und schlägt Bezeichnung vor
     const articleSelect = document.querySelector("[data-article-select]");
     if (articleSelect) {
         const typeSelect = document.querySelector("[data-item-type]");
         const description = document.querySelector("[data-item-description]");
+        const createsCheckbox = document.querySelector("[data-creates-assets]");
         let lastSuggested = description ? description.value : "";
-        articleSelect.addEventListener("change", function () {
+
+        function syncArticleSelection(isInitial) {
             const opt = articleSelect.selectedOptions[0];
             if (!opt || !opt.value) {
+                // Freie Position ohne Stammartikel: Assettyp optional, keine Asset-Erzeugung möglich
                 if (typeSelect) { typeSelect.disabled = false; }
+                if (createsCheckbox) {
+                    createsCheckbox.checked = false;
+                    createsCheckbox.disabled = true;
+                }
                 return;
             }
-            if (typeSelect && opt.dataset.type) {
-                typeSelect.value = opt.dataset.type;
+            const isConsumable = opt.dataset.consumable === "1";
+            if (isConsumable) {
+                if (typeSelect) {
+                    typeSelect.value = "";
+                    typeSelect.disabled = true;
+                }
+                if (createsCheckbox) {
+                    createsCheckbox.checked = false;
+                    createsCheckbox.disabled = true;
+                }
+            } else {
+                if (typeSelect) {
+                    if (opt.dataset.type) { typeSelect.value = opt.dataset.type; }
+                    typeSelect.disabled = true;
+                }
+                if (createsCheckbox) {
+                    const wasDisabled = createsCheckbox.disabled;
+                    createsCheckbox.disabled = false;
+                    if (!isInitial && wasDisabled) {
+                        createsCheckbox.checked = true;
+                    }
+                }
             }
-            if (description && (description.value.trim() === "" || description.value === lastSuggested)) {
+            if (!isInitial && description && (description.value.trim() === "" || description.value === lastSuggested)) {
                 description.value = opt.dataset.label || "";
                 lastSuggested = description.value;
             }
-        });
+        }
+
+        articleSelect.addEventListener("change", function () { syncArticleSelection(false); });
+        syncArticleSelection(true);
     }
 
     // Wareneingang
@@ -70,14 +100,22 @@
     function updateSummary() {
         let pieces = 0;
         let assets = 0;
+        let consumables = 0;
         items.forEach(function (item) {
             const qty = parseInt((item.querySelector("[data-receive-qty]") || {}).value || "0", 10) || 0;
             pieces += qty;
             if (item.dataset.createsAssets === "1") { assets += qty; }
+            if (item.dataset.consumable === "1") { consumables += qty; }
         });
-        if (summary) {
-            summary.textContent = pieces > 0 ? pieces + " Stück, " + assets + " neue Assets" : "";
+        if (!summary) { return; }
+        if (pieces <= 0) {
+            summary.textContent = "";
+            return;
         }
+        const parts = [pieces + " Stück"];
+        if (assets > 0) { parts.push(assets + (assets === 1 ? " neues Asset" : " neue Assets")); }
+        if (consumables > 0) { parts.push(consumables + " Stück Bestandszugang"); }
+        summary.textContent = parts.join(" · ");
     }
 
     items.forEach(function (item) {

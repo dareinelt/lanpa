@@ -38,6 +38,31 @@ final class LocationRepository extends BaseRepository
         );
     }
 
+    /**
+     * Aktive Standorte plus optional der aktuell zugeordnete samt seiner Elternkette,
+     * damit der Standortbaum beim Bearbeiten auch bei deaktiviertem Standort konsistent bleibt.
+     * @return array<int,array<string,mixed>>
+     */
+    public function selectable(?int $currentId = null): array
+    {
+        if ($currentId === null) {
+            return $this->all(true);
+        }
+
+        return $this->fetchAll(
+            'WITH RECURSIVE anc AS (
+                SELECT id, parent_id FROM locations WHERE id = :current
+                UNION ALL
+                SELECT p.id, p.parent_id FROM locations p JOIN anc a ON a.parent_id = p.id
+             )
+             SELECT l.*, (SELECT COUNT(*) FROM assets a WHERE a.location_id = l.id) AS asset_count
+             FROM locations l
+             WHERE l.is_active = 1 OR l.id IN (SELECT id FROM anc)
+             ORDER BY l.full_path',
+            ['current' => $currentId]
+        );
+    }
+
     /** @return array<int,array<string,mixed>> */
     public function children(?int $parentId): array
     {

@@ -11,7 +11,7 @@ final class ArticleRepository extends BaseRepository
                                    (SELECT COUNT(*) FROM assets s WHERE s.article_id = a.id) AS asset_count
                             FROM articles a
                             JOIN manufacturers m ON m.id = a.manufacturer_id
-                            JOIN asset_types t ON t.id = a.asset_type_id
+                            LEFT JOIN asset_types t ON t.id = a.asset_type_id
                             LEFT JOIN asset_categories c ON c.id = a.asset_category_id';
 
     /** @return array<string,mixed>|null */
@@ -39,33 +39,41 @@ final class ArticleRepository extends BaseRepository
         return (int) $this->fetchValue("SELECT COUNT(*) FROM articles a JOIN manufacturers m ON m.id = a.manufacturer_id {$where}", $params);
     }
 
-    /** @return array<int,array<string,mixed>> */
-    public function activeForSelect(?int $assetTypeId = null): array
+    /**
+     * Aktive Artikel plus optional der aktuell zugeordnete (auch wenn deaktiviert).
+     * @return array<int,array<string,mixed>>
+     */
+    public function activeForSelect(?int $assetTypeId = null, ?int $currentId = null): array
     {
-        $sql = 'SELECT a.id, a.name, a.article_number, a.asset_type_id, a.asset_category_id, a.manufacturer_id, a.is_consumable, m.name AS manufacturer_name
-                FROM articles a JOIN manufacturers m ON m.id = a.manufacturer_id WHERE a.is_active = 1';
-        $params = [];
+        $sql = 'SELECT a.id, a.name, a.article_number, a.asset_type_id, a.asset_category_id, a.manufacturer_id, a.is_consumable, a.is_active, m.name AS manufacturer_name
+                FROM articles a JOIN manufacturers m ON m.id = a.manufacturer_id
+                WHERE (' . ($currentId !== null ? 'a.is_active = 1 OR a.id = :current' : 'a.is_active = 1') . ')';
+        $params = $currentId !== null ? ['current' => $currentId] : [];
         if ($assetTypeId !== null) {
-            $sql .= ' AND a.asset_type_id = :type';
+            $sql .= $currentId !== null ? ' AND (a.asset_type_id = :type OR a.id = :current_type)' : ' AND a.asset_type_id = :type';
             $params['type'] = $assetTypeId;
+            if ($currentId !== null) {
+                $params['current_type'] = $currentId;
+            }
         }
 
         return $this->fetchAll($sql . ' ORDER BY m.name, a.name', $params);
     }
 
     /**
-     * Autovervollständigung für das Asset-Formular: nur aktive Artikel, optional auf einen Assettyp beschränkt.
+     * Autovervollständigung für das Asset-Formular: nur aktive Artikel mit Assettyp,
+     * optional auf einen Assettyp beschränkt. Verbrauchsmaterial erzeugt keine Assets.
      * @return array<int,array<string,mixed>>
      */
     public function searchForPicker(string $term, ?int $assetTypeId = null, int $limit = 15): array
     {
-        $sql = 'SELECT a.id, a.name, a.article_number, a.asset_type_id, a.asset_category_id, a.manufacturer_id, a.is_handover_relevant,
+        $sql = 'SELECT a.id, a.name, a.article_number, a.asset_type_id, a.asset_category_id, a.manufacturer_id, a.is_handover_relevant, a.is_consumable,
                        m.name AS manufacturer_name, t.name AS asset_type_name, c.name AS category_name
                 FROM articles a
                 JOIN manufacturers m ON m.id = a.manufacturer_id
                 JOIN asset_types t ON t.id = a.asset_type_id
                 LEFT JOIN asset_categories c ON c.id = a.asset_category_id
-                WHERE a.is_active = 1';
+                WHERE a.is_active = 1 AND a.is_consumable = 0';
         $params = [];
         if ($term !== '') {
             $sql .= ' AND (a.name LIKE :q OR a.article_number LIKE :q OR m.name LIKE :q OR CONCAT(m.name, \' \', a.name) LIKE :q)';
@@ -158,6 +166,14 @@ final class ArticleRepository extends BaseRepository
         $this->updateRow('articles', $id, $data);
     }
 
+    /** Atomare relative Bestandsänderung (auf 0..1000000 begrenzt); liefert den neuen Bestand. */
+    public function adjustStock(int $id, int $delta): int
+    {
+        $this->execute('UPDATE articles SET stock_quantity = GREATEST(0, LEAST(1000000, CAST(stock_quantity AS SIGNED) + ?)) WHERE id = ?', [$delta, $id]);
+
+        return (int) $this->fetchValue('SELECT stock_quantity FROM articles WHERE id = :id', ['id' => $id]);
+    }
+
     /** @return array<int,array<string,mixed>> Nachbestellvorschläge für aktive Verbrauchsartikel. */
     public function replenishmentSuggestions(): array
     {
@@ -170,7 +186,8 @@ final class ArticleRepository extends BaseRepository
     }
 
     /**
-     * Verbrauchsmaterial-Übersicht: Verbrauchsartikel mit Bestand, Mindestbestand und Assettyp.
+     * Verbrauchsmaterial-Übersicht: Verbrauchsartikel mit Bestand und Mindestbestand
+     * (Verbrauchsmaterial hat keinen Assettyp).
      *
      * @param array<string,mixed> $filters q, below ('1' = nur am/unter Mindestbestand), active ('1'|'0'|'')
      * @return array<int,array<string,mixed>>
@@ -178,11 +195,9 @@ final class ArticleRepository extends BaseRepository
     public function consumables(array $filters): array
     {
         $sql = 'SELECT a.id, a.name, a.article_number, a.stock_quantity, a.minimum_stock, a.is_active,
-                m.name AS manufacturer_name, t.name AS asset_type_name, c.name AS category_name
+                m.name AS manufacturer_name
             FROM articles a
             JOIN manufacturers m ON m.id = a.manufacturer_id
-            JOIN asset_types t ON t.id = a.asset_type_id
-            LEFT JOIN asset_categories c ON c.id = a.asset_category_id
             WHERE a.is_consumable = 1';
         $params = [];
         $active = (string) ($filters['active'] ?? '1');

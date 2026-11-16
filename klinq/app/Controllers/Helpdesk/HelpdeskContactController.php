@@ -108,7 +108,7 @@ final class HelpdeskContactController extends HelpdeskBaseController
             'values' => $values,
             'allTags' => $this->contacts->tags(),
             'canEdit' => $this->currentUser->can('helpdesk.update'),
-            'scripts' => ['/js/helpdesk-contacts.js'],
+            'scripts' => ['/js/helpdesk-contacts.js', '/js/helpdesk-ai.js'],
         ]);
     }
 

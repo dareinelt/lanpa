@@ -336,6 +336,34 @@ In **internen Notizen** an Tickets und in **Aufgabenkommentaren** können Agente
 
 ![Dashboard-Karte „Sie wurden erwähnt“ mit Ticket- und Aufgabenkommentar](screenshots/helpdesk-erwaehnung-dashboard.png)
 
+### Rechtschreibprüfung im Kontextmenü
+
+Alle Help-Desk-Textfelder mit `data-hd-field` (Ticketbeschreibung, Kommentar, Lösung, Weiterleitungsgrund,
+Umwandlungshinweis, Aufgabenbeschreibung und -kommentar, Wissensartikel, Kontaktnotizen und Kalenderbeschreibung)
+prüfen auf Wunsch die Rechtschreibung. Ein Rechtsklick auf ein Wort öffnet das App-eigene Kontextmenü
+(`public/js/helpdesk-ai.js`) mit einem Abschnitt **Rechtschreibung**:
+
+- **Vorschläge** – bis zu acht Korrekturen, sortiert nach Ähnlichkeit; ein Klick ersetzt das Wort. Rechtschreibfehler
+  werden nur beim Rechtsklick geprüft, nicht dauerhaft unterstrichen (Textfelder lassen sich nicht über die
+  CSS-Highlight-API markieren).
+- **Alle ignorieren** – das Wort gilt für die laufende Sitzung als korrekt.
+- **Zum Wörterbuch hinzufügen** – das Wort landet im persönlichen Wörterbuch (`helpdesk_spellcheck_words`,
+  Migration `048_helpdesk_spellcheck_words.sql`) und gilt danach auf allen Geräten. Höchstens 1 000 Wörter je Benutzer.
+
+Wörter mit Ziffern, Wörter in Großbuchstaben (`EDV`) und Adressen bleiben wie in Word ungeprüft; abgekürzte Wörter
+werden mit Punkt geprüft („Kundennr.“). Fehlt das Wörterbuch oder ist die Prüfung abgeschaltet, blendet das Menü den
+Abschnitt aus – die Textbearbeitung funktioniert unverändert weiter.
+
+Die Prüfung läuft vollständig in KLINQ (`app/Services/Helpdesk/Spellcheck/`, Hunspell-kompatibel, ohne KI und ohne
+Netzabruf je Anfrage). `php bin/spellcheck-dictionary.php` lädt das deutsche Wörterbuch einmalig (Standardquelle
+`HELPDESK_SPELLCHECK_URL`), übersetzt es in ein binäres Format unter `HELPDESK_SPELLCHECK_DIR` und tauscht es erst
+nach vollständigem Erfolg aus; der Containerstart ruft das Skript im Hintergrund auf (`--force` erzwingt eine
+Neuerzeugung). Endpunkte: `GET /api/helpdesk/rechtschreibung/vorschlaege?word=…` (ohne `word` nur die
+Bereitschaftsprüfung), `POST /api/helpdesk/rechtschreibung/woerterbuch` und
+`POST /api/helpdesk/rechtschreibung/woerterbuch/entfernen`. Schalter: `HELPDESK_SPELLCHECK_ENABLED` (Standard `true`),
+`HELPDESK_SPELLCHECK_TIMEOUT` für den Download. Der Mail-Editor im Ticket (`public/js/helpdesk-mail.js`) bringt sein
+eigenes Kontextmenü mit und ist hier nicht eingebunden.
+
 ### E-Mail aus dem Ticket senden
 
 Agenten können aus einem Ticket heraus eine echte E-Mail an die **meldende Person** und optional an die **betroffene

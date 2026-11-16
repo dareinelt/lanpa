@@ -15,6 +15,10 @@ selbst enthält kein Modell.
 | `/helpdesk/tickets/{id}` (Ticketdetail) | Kommentar/Antwort (Tonalität folgt dem gewählten Kommentartyp „Interne Notiz“/„Öffentliche Antwort“), Kommentar beim Statuswechsel, Lösungsbeschreibung beim Schließen, Notiz zur Übergabe an die 2. Ebene |
 | `/helpdesk/tickets/new` und `/helpdesk/tickets/{id}/edit` | Betreff, Beschreibung |
 | `/helpdesk/tickets/{id}` → „E-Mail senden“ | Nachricht im Mail-Editor (Modus `ticket_mail`, Tonalität einer Agentenantwort an die meldende Person) |
+| `/helpdesk/aufgaben/neu`, `/helpdesk/aufgaben/{id}` | Titel, Beschreibung, Kommentar |
+| `/helpdesk/knowledge/new`, `/helpdesk/knowledge/{id}/edit` | Zusammenfassung, Inhalt |
+| `/helpdesk/kalender/neu`, `/helpdesk/kalender/{id}` | Titel, Beschreibung, Ort |
+| `/helpdesk/kontakte/neu`, `/helpdesk/kontakte/{id}` | Notizen |
 
 Das Menü wird per Rechtsklick oder per <kbd>Menü</kbd>-Taste (Kontextmenütaste) auf dem Feld geöffnet und
 lässt sich mit den Pfeiltasten, <kbd>Enter</kbd>/<kbd>Leertaste</kbd> und <kbd>Esc</kbd> bedienen.
@@ -28,6 +32,10 @@ Es ersetzt das Browser-Menü nur in diesen Feldern; gesperrte (`readonly`) Felde
 | Einfügen | `Strg+V` | Zwischenablage an der Cursorposition (Rückfall auf das Browser-Verhalten, wenn der Browser den Lesezugriff verweigert) |
 | Alles auswählen | `Strg+A` | gesamtes Feld markieren |
 | Mit KI verbessern … | – | öffnet den Dialog (nur wenn die KI aktiv und erreichbar ist **und** Text markiert wurde) |
+
+Dasselbe Menü enthält oberhalb der Bearbeitungsbefehle die **Rechtschreibprüfung** mit Korrekturvorschlägen,
+„Alle ignorieren“ und „Zum Wörterbuch hinzufügen“ – unabhängig von der KI und ohne Netzabruf. Einzelheiten:
+[Help Desk](helpdesk.md#rechtschreibprüfung-im-kontextmenü).
 
 Auf macOS zeigt das Menü `⌘` statt `Strg`.
 

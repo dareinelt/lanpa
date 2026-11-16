@@ -72,6 +72,6 @@ $units = ['daily' => 'Tage', 'weekly' => 'Wochen', 'monthly' => 'Monate', 'yearl
 </div>
 <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">
     <label for="<?= e($prefix) ?>-description">Beschreibung <span class="text-muted">(optional)</span></label>
-    <textarea id="<?= e($prefix) ?>-description" name="description" rows="4" maxlength="5000"><?= e($v('description')) ?></textarea>
+    <textarea id="<?= e($prefix) ?>-description" name="description" rows="4" maxlength="5000" data-hd-field="generic"><?= e($v('description')) ?></textarea>
     <?= field_error('description') ?>
 </div>

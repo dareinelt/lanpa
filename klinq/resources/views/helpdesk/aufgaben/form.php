@@ -24,7 +24,7 @@ $defaultPriority = $oldPriority !== '' ? $oldPriority : ($defaultPriorityId !== 
         </div>
         <div class="form-group<?= has_error('description') ? ' has-error' : '' ?>">
             <label for="f-description">Beschreibung</label>
-            <textarea id="f-description" name="description" rows="10" maxlength="2000000" data-hd-media-images data-hd-media-preview="#f-description-preview"><?= e($val('description')) ?></textarea>
+            <textarea id="f-description" name="description" rows="10" maxlength="2000000" data-hd-field="generic" data-hd-media-images data-hd-media-preview="#f-description-preview"><?= e($val('description')) ?></textarea>
             <div class="hd-media-preview" id="f-description-preview" hidden></div>
             <p class="form-hint">Screenshots lassen sich mit STRG+V direkt aus der Zwischenablage einfügen.</p>
             <?= field_error('description') ?>

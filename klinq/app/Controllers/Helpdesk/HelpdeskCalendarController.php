@@ -218,7 +218,7 @@ final class HelpdeskCalendarController extends HelpdeskBaseController
             'checklistItems' => $checklistItems,
             'checklist' => $event !== null ? $this->calendar->checklist($event, $isSeries ? $values['occurrence'] : '') : null,
             'canEdit' => $this->currentUser->can('helpdesk.update'),
-            'scripts' => ['/js/helpdesk-calendar.js'],
+            'scripts' => ['/js/helpdesk-calendar.js', '/js/helpdesk-ai.js'],
         ]);
     }
 

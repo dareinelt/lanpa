@@ -367,6 +367,19 @@ a.kb-card:hover h3, a.kb-card:focus-visible h3 { text-decoration: underline; }
 .hd-ctx-label { flex: 1; }
 .hd-ctx-key { color: var(--color-text-muted); font-size: var(--font-size-xs); font-variant-numeric: tabular-nums; }
 .hd-ctx-sep { height: 1px; margin: var(--space-1) var(--space-2); background: var(--color-border); }
+/* Abschnittskopf im Kontextmenü (z. B. „Rechtschreibung“) */
+.hd-ctx-head {
+    padding: var(--space-1) var(--space-3) var(--space-2);
+    color: var(--color-text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+/* Vorschläge der Rechtschreibprüfung: als Korrektur erkennbar, ohne zu schreien */
+.hd-ctx-item.is-spell { color: var(--color-primary); }
+.hd-ctx-item.is-spell .hd-ctx-label { font-weight: 500; }
+.hd-ctx-item.is-spell:hover, .hd-ctx-item.is-spell.is-active { background: var(--color-primary-soft); }
 
 /* KI-Dialog „Mit KI verbessern“ */
 .hd-ai-dialog .dialog-body { display: grid; gap: var(--space-3); }

@@ -1,7 +1,8 @@
 /* Help Desk: App-eigenes Kontextmenü für Agenten-Textfelder (Rückgängig, Ausschneiden,
- * Kopieren, Einfügen, Alles auswählen) und „Mit KI verbessern“ für markierte Absätze.
- * KI-Ergebnisse werden als Textbereich gemerkt, damit sie sich verfeinern oder
- * zurücksetzen lassen. Rein datenattribut-gesteuert, ohne Inline-Skripte (CSP). */
+ * Kopieren, Einfügen, Alles auswählen), Rechtschreibprüfung mit Vorschlägen für das
+ * Wort unter dem Cursor und „Mit KI verbessern“ für markierte Absätze. KI-Ergebnisse
+ * werden als Textbereich gemerkt, damit sie sich verfeinern oder zurücksetzen lassen.
+ * Rein datenattribut-gesteuert, ohne Inline-Skripte (CSP). */
 (function () {
     "use strict";
 
@@ -24,7 +25,7 @@
 
     /** Von der KI erzeugte Textbereiche je Feld: {start, end, original, current}. */
     const blocks = new WeakMap();
-    const state = { menu: null, field: null, items: [], index: -1, snapshot: null };
+    const state = { menu: null, field: null, items: [], index: -1, snapshot: null, x: 0, y: 0 };
     let dialog = null;
     let promptEl = null;
     let submitEl = null;
@@ -176,11 +177,225 @@
         });
     }
 
+    // ---------------------------------------------------------------- Rechtschreibprüfung
+
+    const SPELL_ENDPOINT = "/api/helpdesk/rechtschreibung/vorschlaege";
+    const SPELL_WORDS_ENDPOINT = "/api/helpdesk/rechtschreibung/woerterbuch";
+    const SPELL_MIN_WORD_LENGTH = 2;
+    const SPELL_MAX_WORD_LENGTH = 64;
+    const SPELL_RETRY_MS = 30000;
+    // Wortgrenzen wie bei Hunspell (WORDCHARS ß-.): Buchstaben, Ziffern und einzelne
+    // Binde-/Schlusszeichen im Wort ("E-Mail"). Ein Punkt nach dem Wort bleibt stehen,
+    // wird aber mitgeprüft ("Kundennr.").
+    const SPELL_TOKEN_RE = (function () {
+        try {
+            return new RegExp("[\\p{L}\\p{M}0-9]+(?:[.\\-'\u2019]?[\\p{L}\\p{M}0-9]+)*", "gu");
+        } catch (e) {
+            return new RegExp("[A-Za-z\u00c0-\u024f0-9]+(?:[.\\-'\u2019]?[A-Za-z\u00c0-\u024f0-9]+)*", "g");
+        }
+    }());
+    // Adressen prüft das Wörterbuch nicht.
+    const SPELL_ADDRESS_RE = /(?:https?:\/\/|ftp:\/\/|mailto:|www\.)[^\s<>"']+|[^\s<>"'@()\[\]]+@[^\s<>"'@()\[\]]+\.[^\s<>"'@()\[\]]+/gi;
+
+    const spell = {
+        enabled: true,                      // "available: false" vom Server schaltet dauerhaft ab
+        known: Object.create(null),         // Wort -> true (korrekt) | false (fehlerhaft)
+        suggestions: Object.create(null),   // Wort -> Liste (leer = keine Vorschläge)
+        pending: Object.create(null),       // Wort -> Anfrage läuft
+        blockedUntil: 0
+    };
+
+    /** Bereiche mit Web- und E-Mail-Adressen als [start, end]. */
+    function spellAddressSpans(text) {
+        const spans = [];
+        let match;
+        SPELL_ADDRESS_RE.lastIndex = 0;
+        while ((match = SPELL_ADDRESS_RE.exec(text)) !== null) {
+            spans.push([match.index, match.index + match[0].length]);
+            if (SPELL_ADDRESS_RE.lastIndex === match.index) {
+                SPELL_ADDRESS_RE.lastIndex += 1;
+            }
+        }
+        return spans;
+    }
+
+    /** Treffer des Wortmusters als prüfbares Wort (mit absoluten Positionen), sonst null. */
+    function spellTargetAt(text, token, skip, offset) {
+        const word = token.word;
+        if (word.length < SPELL_MIN_WORD_LENGTH || word.length > SPELL_MAX_WORD_LENGTH) {
+            return null;
+        }
+        // Wie in Word und Outlook bleiben Wörter mit Ziffern und Wörter in
+        // Großbuchstaben ("EDV", "LG") ungeprüft, dazu alle Adressen.
+        if (/[0-9]/.test(word) || (word === word.toUpperCase() && word !== word.toLowerCase())) {
+            return null;
+        }
+        for (let i = 0; i < skip.length; i += 1) {
+            if (token.start < skip[i][1] && token.end > skip[i][0]) {
+                return null;
+            }
+        }
+        return {
+            start: offset + token.start,
+            end: offset + token.end,
+            word: word,
+            key: text.charAt(token.end) === "." ? word + "." : word
+        };
+    }
+
+    /** Wort unter dem Cursor; steht der Cursor direkt dahinter, gilt das Wort davor. */
+    function spellWordAt(el) {
+        if (!el || typeof el.selectionStart !== "number") {
+            return null;
+        }
+        const value = el.value;
+        const caret = el.selectionStart;
+        const from = Math.max(0, caret - SPELL_MAX_WORD_LENGTH);
+        const text = value.slice(from, Math.min(value.length, caret + SPELL_MAX_WORD_LENGTH));
+        const skip = spellAddressSpans(text);
+        const position = caret - from;
+        let match;
+        let found = null;
+        SPELL_TOKEN_RE.lastIndex = 0;
+        while ((match = SPELL_TOKEN_RE.exec(text)) !== null) {
+            const start = match.index;
+            if (start > position) {
+                break;
+            }
+            if (position <= start + match[0].length) {
+                found = { start: start, end: start + match[0].length, word: match[0] };
+            }
+            if (SPELL_TOKEN_RE.lastIndex === match.index) {
+                SPELL_TOKEN_RE.lastIndex += 1;
+            }
+        }
+        return found ? spellTargetAt(text, found, skip, from) : null;
+    }
+
+    /** Vorschläge anfordern; bei Ergebnis wird ein offenes Menü neu aufgebaut. */
+    function spellRequest(key) {
+        if (spell.pending[key] || Date.now() < spell.blockedUntil) {
+            return;
+        }
+        spell.pending[key] = true;
+        api(SPELL_ENDPOINT + "?word=" + encodeURIComponent(key)).then(function (data) {
+            if (data && data.available === false) {
+                // Ohne aufbereitetes Wörterbuch bleibt der Abschnitt dauerhaft aus.
+                spell.enabled = false;
+                return;
+            }
+            spell.known[key] = !!(data && data.known);
+            spell.suggestions[key] = (data && data.suggestions) || [];
+        }).catch(function () {
+            spell.blockedUntil = Date.now() + SPELL_RETRY_MS;
+        }).then(function () {
+            delete spell.pending[key];
+            spellRefresh();
+        });
+    }
+
+    /** Offenes Kontextmenü neu aufbauen (nach Eintreffen der Vorschläge). */
+    function spellRefresh() {
+        if (!state.menu || !state.field || !state.field.isConnected) {
+            return;
+        }
+        showMenu(state.x, state.y, cleanItems(menuItems(state.field)), state.field);
+    }
+
+    /** Wort für diese Sitzung als korrekt behandeln („Alle ignorieren“). */
+    function spellAccept(target) {
+        spell.known[target.word] = true;
+        spell.known[target.key] = true;
+        delete spell.suggestions[target.word];
+        delete spell.suggestions[target.key];
+    }
+
+    /** Fehlerhaftes Wort durch einen Vorschlag ersetzen. */
+    function spellReplace(el, target, suggestion) {
+        if (!el.isConnected || el.value.slice(target.start, target.end) !== target.word) {
+            toast("Das Wort steht nicht mehr im Text.", "info");
+            return;
+        }
+        replaceRange(el, target.start, target.end, suggestion);
+        // Vorschläge stammen aus dem Wörterbuch und gelten damit als korrekt.
+        spell.known[target.word] = true;
+        spell.known[suggestion] = true;
+        if (target.key !== target.word) {
+            spell.known[target.key] = true;
+            spell.known[suggestion + "."] = true;
+        }
+    }
+
+    /** Wort ins persönliche Wörterbuch aufnehmen (serverseitig, gilt auf allen Geräten). */
+    function spellAddWord(target) {
+        if (!api) {
+            return;
+        }
+        api(SPELL_WORDS_ENDPOINT, { method: "POST", body: { word: target.key } }).then(function () {
+            spellAccept(target);
+            toast("„" + target.key + "“ wurde in Ihr Wörterbuch aufgenommen.", "success");
+        }).catch(function (error) {
+            const data = error && error.data;
+            const errors = data && data.errors;
+            let message = "";
+            if (errors) {
+                const keys = Object.keys(errors);
+                message = keys.length ? errors[keys[0]] : "";
+            }
+            if (!message) {
+                message = (data && (data.error || data.message)) || (error && error.message);
+            }
+            toast(String(message || "Das Wort konnte nicht aufgenommen werden."), "error");
+        });
+    }
+
+    /** Einträge des Abschnitts „Rechtschreibung“ (leer, wenn nichts zu prüfen ist). */
+    function spellItems(el) {
+        if (!spell.enabled || !api) {
+            return [];
+        }
+        const target = spellWordAt(el);
+        if (!target || spell.known[target.key] === true) {
+            return [];
+        }
+        const items = [{ header: true, label: "Rechtschreibung" }];
+        if (Date.now() < spell.blockedUntil) {
+            items.push({ label: "Derzeit nicht verfügbar", disabled: true });
+        } else if (spell.suggestions[target.key] === undefined) {
+            items.push({ label: "Wird gesucht …", disabled: true });
+            spellRequest(target.key);
+        } else {
+            const list = spell.suggestions[target.key];
+            if (!list.length) {
+                items.push({ label: "Keine Vorschläge", disabled: true });
+            }
+            list.forEach(function (suggestion) {
+                items.push({
+                    label: suggestion,
+                    spell: true,
+                    run: function () { spellReplace(el, target, suggestion); }
+                });
+            });
+            items.push(
+                { separator: true },
+                { label: "Alle ignorieren", run: function () { spellAccept(target); } },
+                { label: "Zum Wörterbuch hinzufügen", run: function () { spellAddWord(target); } }
+            );
+        }
+        items.push({ separator: true });
+        return items;
+    }
+
     // ---------------------------------------------------------------- Kontextmenü
 
     function menuItems(el) {
         const editable = canEdit(el);
-        const items = [
+        const items = [];
+        if (editable) {
+            // Rechtschreibung steht wie in Orvanta über den KI-Einträgen.
+            spellItems(el).forEach(function (item) { items.push(item); });
+        }
+        items.push(
             { label: "Rückgängig", key: MOD + "Z", disabled: !editable, run: function () { restore(state.snapshot); execCommand("undo"); } },
             { label: "Wiederholen", key: MOD + "Y", disabled: !editable, run: function () { restore(state.snapshot); execCommand("redo"); } },
             { separator: true },
@@ -189,7 +404,7 @@
             { label: "Einfügen", key: MOD + "V", disabled: !editable, run: pasteClipboard },
             { separator: true },
             { label: "Alles auswählen", key: MOD + "A", run: function () { selectAll(el); } }
-        ];
+        );
         if (!AI_ENABLED) {
             return items;
         }
@@ -247,6 +462,8 @@
         hideMenu();
         state.field = field;
         state.items = items;
+        state.x = x;
+        state.y = y;
         const menu = document.createElement("div");
         menu.className = "hd-ctx-menu";
         menu.setAttribute("role", "menu");
@@ -259,9 +476,17 @@
                 menu.appendChild(sep);
                 return;
             }
+            if (item.header) {
+                const head = document.createElement("div");
+                head.className = "hd-ctx-head";
+                head.setAttribute("role", "presentation");
+                head.textContent = item.label;
+                menu.appendChild(head);
+                return;
+            }
             const button = document.createElement("button");
             button.type = "button";
-            button.className = "hd-ctx-item" + (item.ai ? " is-ai" : "");
+            button.className = "hd-ctx-item" + (item.ai ? " is-ai" : "") + (item.spell ? " is-spell" : "");
             button.setAttribute("role", "menuitem");
             button.setAttribute("aria-disabled", item.disabled ? "true" : "false");
             button.disabled = !!item.disabled;

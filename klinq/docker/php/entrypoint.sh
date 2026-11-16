@@ -26,8 +26,16 @@ case "$KLINQ_BASE_PATH" in
 esac
 export KLINQ_BASE_PATH
 
-mkdir -p storage/uploads storage/logs storage/labels storage/tmp
+mkdir -p storage/uploads storage/logs storage/labels storage/tmp storage/dictionaries
 chown -R www-data:www-data storage
+
+# Rechtschreibprüfung: Woerterbuch einmalig aus dem Netz holen und aufbereiten.
+# Laeuft nur, wenn der Datensatz fehlt, und im Hintergrund, damit ein fehlender
+# Internetzugang den Start nicht verzoegert. Als www-data, damit die Dateien
+# (chmod 0640) fuer den Webserver lesbar bleiben.
+if [ "${HELPDESK_SPELLCHECK_ENABLED:-true}" = "true" ]; then
+    su -s /bin/sh www-data -c "php bin/spellcheck-dictionary.php --quiet || echo '[entrypoint] WARNUNG: Rechtschreibpruefung ohne Woerterbuch gestartet.' >&2" &
+fi
 
 # Zeitgesteuerte Jobs (AD-Synchronisation, Help-Desk-SLA/Eskalation, Help-Desk-E-Mail-Eingang) als Hintergrundprozess (nur wenn konfiguriert)
 ad_scheduled=0; hd_scheduled=0; mail_scheduled=0

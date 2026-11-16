@@ -95,7 +95,7 @@ Modul **Help Desk** (per `HELPDESK_ENABLED` abschaltbar) – IT-Ticketsystem mit
 | `routes/web.php`, `routes/modules/*.php` | Routen je Modul (u. a. `helpdesk.php` für Agentenbereich/Portal/API), **jede Route trägt ihre Berechtigung** |
 | `resources/views/` | PHP-Templates je Modul (u. a. `helpdesk/`), `partials/` (Layouts, Helfer, Filterleiste, Pagination, Flash, Icons) |
 | `config/` | `app.php`, `database.php`, `ldap.php`, `lanpa.php`, `mail.php`, `uploads.php`, `permissions.php` (Rollen **und** zusätzlich zuweisbare Berechtigungsgruppen) – gespeist aus Umgebungsvariablen |
-| `database/migrations/` | Nummerierte SQL-Migrationen (001–047), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034), Servicezeiten der SLA (035), Screenshots in der Lösung (036), Grund der Weiterleitung (037), Help-Desk-Kalender (038), Kontaktverzeichnis (039), Assettypen ohne Inventarnummer/Lagerartikel (040), Vorlagenumfang und Berechtigungsgruppe „Help-Desk-Vorlagen“ (041), Serientermine im Help-Desk-Kalender (043), Checklisten für Kalendertermine (044), Erwähnungen in internen Kommentaren (045), Kopfzeilen eingehender Mails (046), lokale Rollen-/Gruppenübersteuerung gegenüber Intranet-SSO und Berechtigungsgruppe „Lieferanten“ (047) |
+| `database/migrations/` | Nummerierte SQL-Migrationen (001–048), genau einmal angewendet über `schema_migrations`; u. a. Help-Desk-Kernschema (008), Mail-Eingang (009), Störungsmeldung (010), Berechtigungsgruppen (011), Mail-Postfacheinstellungen (012), elektronische Signatur bei Bewegungen (013) und deren Opt-in je Benutzer (014), Help-Desk-Pausierung mit Pausenende (019), Aufgaben im Help Desk (021), Aufgaben-Kategorien (022), Aufgaben-Kommentare statt Notiz (023), Anheften von Kommentaren (024), Weiterleiten von Tickets (025), HTML-Inhalt eingehender Mails (026), Aufgaben-Journal (027), Anzeigename des Melders (028), Sortierung der Ticketliste je Benutzer (029), Anhänge an Aufgaben (030), HTML-Inhalt von Aufgaben (031), Volltextsuche ohne Base64-Bilder (032), Sortierung der Aufgabenliste je Benutzer (033), Berechtigungsgruppe Asset-Management (034), Servicezeiten der SLA (035), Screenshots in der Lösung (036), Grund der Weiterleitung (037), Help-Desk-Kalender (038), Kontaktverzeichnis (039), Assettypen ohne Inventarnummer/Lagerartikel (040), Vorlagenumfang und Berechtigungsgruppe „Help-Desk-Vorlagen“ (041), Serientermine im Help-Desk-Kalender (043), Checklisten für Kalendertermine (044), Erwähnungen in internen Kommentaren (045), Kopfzeilen eingehender Mails (046), lokale Rollen-/Gruppenübersteuerung gegenüber Intranet-SSO und Berechtigungsgruppe „Lieferanten“ (047), persönliches Wörterbuch der Rechtschreibprüfung (048) |
 | `database/seeders/`, `database/fixtures/` | Stammdaten (Rollen, Assettypen/Kategorien – nur in leere Tabellen, danach Pflege im Katalog –, Status, Help-Desk-Standardwerte, Berechtigungsgruppen) bzw. Fake-AD-Daten |
 | `bin/` | CLI: `migrate.php`, `sync-ad.php`, `helpdesk.php` (Eskalation/Auto-Close/Pausierungs-Ende/Mailabholung), `install.sh` (Docker-freie Installation), `build-docs-pdf.py` (Handbuch-PDF) |
 | `storage/` | `uploads/`, `logs/`, `labels/`, `tmp/`, `mail-inbox/` (Help-Desk-Dateipostfach für Tests) – außerhalb des Webroots, als Docker-Volumes eingebunden |
@@ -412,6 +412,10 @@ Alle Zeitstempel liegen in **UTC** (DB-Sitzung auf `+00:00`), reine Datumsfelder
   (200 Zeichen, Bilder als `[Bild]`), `created_at`, `read_at` = gelesen). Angelegt von `MentionService` in
   `TicketService::addComment()` (nur interne Notizen von Agenten) und `TaskService::addComment()`; gelesen beim
   Öffnen von Ticket/Aufgabe oder per `POST /helpdesk/erwaehnungen/{id}/gelesen` bzw. `/helpdesk/erwaehnungen/gelesen`.
+- **Rechtschreibung**: `helpdesk_spellcheck_words` (Migration 048; `user_id` → `users` `ON DELETE CASCADE`,
+  `word` `VARCHAR(64)` mit `utf8mb4_bin`, eindeutig je Benutzer, höchstens 1 000 Einträge) ist das persönliche
+  Wörterbuch der Rechtschreibprüfung im Help-Desk-Kontextmenü; gepflegt über
+  `POST /api/helpdesk/rechtschreibung/woerterbuch` und `…/woerterbuch/entfernen`.
 - **Kalender**: `helpdesk_calendar_events` (Migration 038; `title`, `description`, `location`, `starts_at`/`ends_at`
   in UTC, `all_day` – ganztägig = lokaler Tagesbeginn bis Beginn des Folgetags nach dem Enddatum, `ticket_id`
   `ON DELETE SET NULL` für Termine aus Tickets, `created_by`/`created_by_name`/`updated_by`; Migration 043 ergänzt
@@ -466,7 +470,8 @@ ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
   (`search.js`, `picker.js`), Duplikatprüfung (`duplicate-check.js`), Scan (`scan.js`, `vendor/jsqr.js` lokal),
   Etikettenvorschau (`labels.js`), Unterschrift (`signature-pad.js`), Offline-Warteschlange
   (`offline.js`, `offline-ui.js`, IndexedDB + `sw.js`), Kontextmenü und KI-Dialog im Help Desk
-  (`helpdesk-ai.js` für Textfelder, `helpdesk-mail.js` für den Mail-Editor im Ticket – gleiche Styles
+  (`helpdesk-ai.js` für Textfelder inkl. Rechtschreibprüfung über `data-hd-field`, `helpdesk-mail.js` für den
+  Mail-Editor im Ticket – gleiche Styles
   `.hd-ctx-menu`/`.hd-ai-dialog`, gemeinsame `window.AppUI`; die Empfängerauswahl nutzt `picker.js`),
   Zusammenführen-Dialog (`helpdesk-merge.js`),
   Anheften von Kommunikations- und Aufgaben-Einträgen ohne Neuladen (`helpdesk-pins.js`),
@@ -489,7 +494,7 @@ ER-Diagramm und Feldbeschreibungen: [`docs/datenmodell.md`](docs/datenmodell.md)
   `SESSION_*`, `ADMIN_*`, `PDF_SERVICE_*`, `MAIL_*`/`SMTP_*`, `MAX_UPLOAD_BYTES`/`ALLOWED_UPLOAD_EXTENSIONS`,
   `AD_*` (inkl. Attribut-Mapping und `AD_DRIVER=fake` für Tests), `LANPA_*` und `KLINQ_SSO_SECRET` (Intranet-Anbindung),
   `HELPDESK_*` (Modul-Schalter, SLA-Schwellen, Eskalation/Auto-Close, Mail-Eingang per IMAP,
-  Störungsmeldeformular `/stoerung`).
+  Störungsmeldeformular `/stoerung`, Rechtschreibprüfung `HELPDESK_SPELLCHECK_*`).
 - Start: `cp .env.example .env && docker compose up --build -d` → <http://localhost:8080>.
   Migrationen laufen im Entrypoint; `docker-compose.override.yml` bindet den Quellcode live ein (Entwicklung).
   Alternativ ohne Docker: `sudo bin/install.sh` (Debian/Ubuntu, inkl. SSL-Zertifikat).
@@ -513,7 +518,7 @@ docker compose exec app php tests/run.php # alle Tests inkl. Integration (Test-D
 ```
 
 - `tests/Unit/` – Router, Validator, Rechte-/Routeninventar, QR-Code, CSV, Argon2id, Inventarnummern,
-  Standortbaum, Kölner Phonetik, Handover-Renderer …
+  Standortbaum, Kölner Phonetik, Handover-Renderer, Rechtschreibprüfung (`HelpdeskSpellcheckTest`) …
 - `tests/Integration/` – Services gegen die Test-Datenbank (`DB_TEST_DATABASE`, angelegt via
   `docker/mysql/init/01-test-database.sh`); Basisklasse `tests/Support/DatabaseTestCase.php`.
 - Integrationstests werden übersprungen (nicht rot), wenn keine Test-Datenbank erreichbar ist.
@@ -553,6 +558,7 @@ docker compose exec app php tests/run.php # alle Tests inkl. Integration (Test-D
 | Help-Desk-Regeln/SLA/Eskalation | `Helpdesk/TicketRuleService`, `Helpdesk/TicketRuleEvaluator`, `Helpdesk/TicketSlaService`, `Helpdesk/HelpdeskSchedulerService`, `HELPDESK_*`-Variablen, `docs/helpdesk.md` |
 | Help-Desk-Mail-Eingang | `Helpdesk/TicketMailIngestionService`, `Helpdesk/Mail/*`, `Helpdesk/MailboxSettingsService`, `HelpdeskMailboxController`, `HELPDESK_MAIL_*`/`HELPDESK_IMAP_*`-Variablen |
 | Help-Desk-Mail-Versand | `MailClient` (Konto vor Container), `Helpdesk/OutboundMailSettingsService`, `Helpdesk/Mail/SmtpTransport`, `HelpdeskOutboundMailController`, `HELPDESK_SMTP_*`-Variablen (nur Startwerte) |
+| Help-Desk-Rechtschreibprüfung | `Helpdesk/Spellcheck/*`, `HelpdeskSpellcheckService`, `HelpdeskSpellcheckWordRepository`, `bin/spellcheck-dictionary.php`, `public/js/helpdesk-ai.js`, `HELPDESK_SPELLCHECK_*`-Variablen, `docs/helpdesk.md` |
 | Neue Berechtigungsgruppe | `config/permissions.php` (`groups`/`group_labels`) → Migration mit `INSERT` in `permission_groups` → Recht an Route/Service prüfen → `UserService` (Zuordnung) → im Intranet `KlinqConfigService::GROUP_KEYS` (`app/Services/Klinq/`) für die AD-Gruppe |
 
 ---

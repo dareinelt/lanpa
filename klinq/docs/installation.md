@@ -80,6 +80,7 @@ Das Upload-Limit ist zusätzlich im Proxy freizugeben (z. B. `client_max_body_si
 | `assets_uploads` | Hochgeladene Dokumente (`storage/uploads/documents`) und Importdateien (`storage/uploads/imports`, temporär bis Import/Verwerfen) |
 | `assets_logs` | Anwendungs-Logs (`storage/logs/app-YYYY-MM-DD.log`) |
 | `assets_labels` | Hochgeladenes Etikettenlogo (`storage/labels/`) |
+| `assets_dictionaries` | Erzeugtes Wörterbuch der Help-Desk-Rechtschreibprüfung (`storage/dictionaries/`, jederzeit über `php bin/spellcheck-dictionary.php` neu aufbaubar) |
 
 Sicherung und Wiederherstellung sind in [Backup & Wiederherstellung](backup.md) beschrieben.
 

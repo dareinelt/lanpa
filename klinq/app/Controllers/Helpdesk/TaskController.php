@@ -164,7 +164,7 @@ final class TaskController extends HelpdeskBaseController
             'canManageAttachments' => $this->currentUser->can('helpdesk.tasks.assign'),
             'currentUserId' => $this->currentUser->id(),
             'mentionAgents' => $this->mentions->suggestions(),
-            'scripts' => ['/js/helpdesk-pins.js', '/js/helpdesk-media.js', '/js/helpdesk-mail-frame.js', '/js/helpdesk-mentions.js'],
+            'scripts' => ['/js/helpdesk-pins.js', '/js/helpdesk-media.js', '/js/helpdesk-ai.js', '/js/helpdesk-mail-frame.js', '/js/helpdesk-mentions.js'],
         ]);
     }
 
@@ -192,6 +192,7 @@ final class TaskController extends HelpdeskBaseController
             'categories' => $this->categories->all(),
             'priorities' => $this->masterData->priorities(),
             'defaultPriorityId' => $default !== null ? (int) $default['id'] : null,
+            'scripts' => ['/js/helpdesk-ai.js'],
         ]);
     }
 

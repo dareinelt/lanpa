@@ -171,7 +171,7 @@ final class KnowledgeBaseController extends HelpdeskBaseController
             'attachments' => $article !== null ? $this->attachments->forArticle((int) $article['id']) : [],
             'statuses' => KnowledgeBaseService::STATUSES,
             'visibilities' => KnowledgeBaseService::VISIBILITIES,
-            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-media.js'],
+            'scripts' => ['/js/helpdesk.js', '/js/helpdesk-media.js', '/js/helpdesk-ai.js'],
         ]);
     }
 }

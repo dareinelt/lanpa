@@ -59,7 +59,7 @@ $required = ' <span class="required">*</span>';
         </div>
         <div class="form-group<?= has_error('notes') ? ' has-error' : '' ?>">
             <label for="ct-notes">Bemerkung <span class="text-muted">(optional)</span></label>
-            <textarea id="ct-notes" name="notes" rows="3" maxlength="2000" placeholder="z. B. Kundennummer, Servicezeiten, Zuständigkeit"><?= e($v('notes')) ?></textarea>
+            <textarea id="ct-notes" name="notes" rows="3" maxlength="2000" data-hd-field="generic" placeholder="z. B. Kundennummer, Servicezeiten, Zuständigkeit"><?= e($v('notes')) ?></textarea>
             <?= field_error('notes') ?>
         </div>
         <div class="form-actions">

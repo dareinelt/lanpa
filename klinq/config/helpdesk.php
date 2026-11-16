@@ -115,6 +115,17 @@ return [
         // Nur als Rückfall gedacht: der Schlüssel gehört verschlüsselt in die Datenbank.
         'api_key' => (string) Env::get('HELPDESK_AI_API_KEY', ''),
     ],
+    // Rechtschreibprüfung in den Help-Desk-Textfeldern (Kontextmenü). Das Wörterbuch
+    // (LibreOffice de_DE_frami) wird einmalig über `php bin/spellcheck-dictionary.php`
+    // bzw. beim Containerstart aufbereitet und liegt danach in `dir`.
+    'spellcheck' => [
+        'enabled' => Env::bool('HELPDESK_SPELLCHECK_ENABLED', true),
+        // Aufbereiteter Datensatz (words.dat, index, meta.json)
+        'dir' => rtrim(trim((string) Env::get('HELPDESK_SPELLCHECK_DIR', dirname(__DIR__) . '/storage/dictionaries/de_DE')), '/'),
+        // Quelle der .aff/.dic-Dateien (Verzeichnis mit de_DE_frami.aff und .dic)
+        'url' => trim((string) Env::get('HELPDESK_SPELLCHECK_URL', 'https://raw.githubusercontent.com/LibreOffice/dictionaries/master/de')),
+        'timeout' => max(5, Env::int('HELPDESK_SPELLCHECK_TIMEOUT', 120)),
+    ],
     // Vorlageneinstellungen (Help-Desk-Einstellungen → „Vorlageneinstellungen“).
     // Der Präfix-Text wird beim Senden einer Agenten-Mail serverseitig vor den Agententext
     // gesetzt und erscheint nicht im Mail-Dialog.

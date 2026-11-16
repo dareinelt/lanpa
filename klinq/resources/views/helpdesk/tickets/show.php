@@ -638,7 +638,7 @@ $statusTransitions = array_values(array_filter(
             </div>
             <div class="form-group">
                 <label for="fw-reason">Grund <span class="text-muted">(optional)</span></label>
-                <textarea id="fw-reason" name="reason" rows="2" maxlength="255" placeholder="z. B. benötigt Zugriff auf das Fachverfahren …"></textarea>
+                <textarea id="fw-reason" name="reason" rows="2" maxlength="255" data-hd-field="generic" placeholder="z. B. benötigt Zugriff auf das Fachverfahren …"></textarea>
                 <p class="form-hint">Der Grund erscheint beim neuen Bearbeiter in der Benachrichtigung und im Ticketverlauf.</p>
             </div>
             <label class="checkbox-row"><input type="checkbox" name="keep_group" value="1" checked> Gruppe beibehalten, wenn Bearbeiter in anderer Gruppe</label>
@@ -726,7 +726,7 @@ $statusTransitions = array_values(array_filter(
             </div>
             <div class="form-group">
                 <label for="convert-comment">Kommentar <span class="text-muted">(optional)</span></label>
-                <textarea id="convert-comment" name="comment" rows="3" maxlength="2000000" placeholder="Hinweis zur Umwandlung …"><?= e(old('comment')) ?></textarea>
+                <textarea id="convert-comment" name="comment" rows="3" maxlength="2000000" data-hd-field="generic" placeholder="Hinweis zur Umwandlung …"><?= e(old('comment')) ?></textarea>
                 <?= field_error('comment') ?>
                 <p class="form-hint">Der Kommentar erscheint als Eintrag im Journal der Aufgabe.</p>
             </div>
